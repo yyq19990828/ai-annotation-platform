@@ -520,6 +520,9 @@ async def test_instances_passthrough_classes(httpx_client, auth_headers, db_sess
     """/instances 透传 backend 自报的 classes (yolo COCO 等); 缺字段 → []。
 
     回归: classes 此前在 _shape_models 被裁掉, 导致前端拿不到类别清单、无法一键预填。
+    形态须是 [{index,name}] (与 MLModelCapability.classes 同构), 不是 string[] ——
+    schema 曾误标 list[str], 真实 backend 自报对象数组时校验爆错, 整条 backend 被
+    /instances 路由层静默 catch 掉 (「能力目录」协议分组视图丢失该 backend 全部模型)。
     """
     db_session.add(
         MLBackendRegistry(
@@ -538,7 +541,11 @@ async def test_instances_passthrough_classes(httpx_client, auth_headers, db_sess
                             "id": "detect",
                             "task": "detection",
                             "supported_geometric_outputs": ["bbox"],
-                            "classes": ["person", "car", "dog"],
+                            "classes": [
+                                {"index": 0, "name": "person"},
+                                {"index": 1, "name": "car"},
+                                {"index": 2, "name": "dog"},
+                            ],
                         },
                         {
                             "id": "noclass",
@@ -557,5 +564,9 @@ async def test_instances_passthrough_classes(httpx_client, auth_headers, db_sess
     )
     assert r.status_code == 200
     models = {m["id"]: m for m in r.json()["instances"][0]["models"]}
-    assert models["detect"]["classes"] == ["person", "car", "dog"]
+    assert models["detect"]["classes"] == [
+        {"index": 0, "name": "person"},
+        {"index": 1, "name": "car"},
+        {"index": 2, "name": "dog"},
+    ]
     assert models["noclass"]["classes"] == []

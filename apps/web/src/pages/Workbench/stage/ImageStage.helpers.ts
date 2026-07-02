@@ -25,6 +25,16 @@ export function normalizeImageCoordinate(
   };
 }
 
+// v0.20.14 · 父子同胞高亮的子框集: 恰好单选一个框时, 返回其直接子框 (parent_annotation_id ===
+// 选中框 id); 多选/无选返回空 (环仅辅助看清单个父框的子框归属)。纯函数, 便于单测。
+export function siblingHighlightChildren<
+  T extends { parent_annotation_id?: string | null },
+>(boxes: T[], selectedId: string | null, selectionSize: number): T[] {
+  const parentId = selectionSize === 1 ? selectedId : null;
+  if (!parentId) return [];
+  return boxes.filter((b) => b.parent_annotation_id === parentId);
+}
+
 // 取点吸附 / 线段吸附中距离更近者(阈值内)。从 ImageStage.findSnapMatch 提炼;
 // wrapper 仍负责 altKey/imgW 守卫、transform 构造与 excludeAnnotationId 过滤。
 export function resolveSnapMatch(

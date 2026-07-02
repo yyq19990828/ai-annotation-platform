@@ -78,6 +78,16 @@ class WorkbenchLayoutPreferences(BaseModel):
 
     left_open: bool | None = Field(default=None, alias="leftOpen")
     right_open: bool | None = Field(default=None, alias="rightOpen")
+    # v0.20.19 · 右栏「标注详情」属性区折叠态 (随账号持久, 不再每次选框重置)。
+    attr_panel_collapsed: bool | None = Field(default=None, alias="attrPanelCollapsed")
+    # v0.20.22 · 右栏「AI 待审」/「人工」分组头折叠 + 右栏下段「讨论」完全收起 (跨设备持久)。
+    # 强类型 extra="forbid" → 未在此声明的字段前端 PATCH 会 422 直接落不下去,
+    # 前端也就永远拿到默认值 (刷新后又全部展开)。
+    ai_section_collapsed: bool | None = Field(default=None, alias="aiSectionCollapsed")
+    manual_section_collapsed: bool | None = Field(
+        default=None, alias="manualSectionCollapsed"
+    )
+    discussion_collapsed: bool | None = Field(default=None, alias="discussionCollapsed")
     floating_task_queue: FloatingPanelState | None = Field(
         default=None,
         alias="floatingTaskQueue",
@@ -287,6 +297,10 @@ class AIToolPreferences(BaseModel):
     # localStorage(wb:preferred-interactive)不跨设备 = BUG; 现迁服务端与 model/params 对齐
     # (深合并故三键各自独立保存)。注: 按 project 分桶, 与 model 选择按 backend 分桶是有意区别。
     interactive_backend_by_project: dict[str, str] = Field(default_factory=dict)
+    # v0.20.17 · 单框二次推理的参数 + 模型变体偏好, 按 `backendId:modelId` 分桶(比 backend
+    # 更细: 二次推理选具体 model, 同 backend 多 model 的档位/阈值不互相串)。每桶为自由 dict
+    # {params: {...}, variants: {...}}, 平台只存取不强校验(随模型 schema 变化, 旧键无害忽略)。
+    secondary_by_model: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class UIPreferences(BaseModel):
@@ -298,6 +312,8 @@ class UIPreferences(BaseModel):
     model_config = {"extra": "forbid"}
 
     theme: Literal["light", "dark", "system"] = "system"
+    # v0.20.19 · 二次推理面板显隐 (跨设备): true=隐藏工具条。默认 false=显示 (不回归现状)。
+    secondary_bar_hidden: bool = False
 
 
 class UserPreferences(BaseModel):

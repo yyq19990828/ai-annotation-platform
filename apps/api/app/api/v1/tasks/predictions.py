@@ -162,16 +162,24 @@ async def accept_prediction(
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
-    await svc.accept_prediction(
+    anns = await svc.accept_prediction(
         prediction_id,
         current_user.id,
         shape_index=shape_index,
         override_class_name=override_class_name,
         attribute_overrides=attribute_overrides,
     )
+    # v0.20.22 · 契约: None → 404 (prediction 不存在 / shape_index 越界); 成功 →
+    # 仅返回本次新建的 annotation 列表。原实现另跑 list_by_task 返回整题全量,
+    # 前端把全量当"刚新建"逐条 PATCH 合并 AI 候选属性 → 污染人工标注 (改动 1 根因)。
+    if anns is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Prediction not found or shape_index out of range",
+        )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()
-    return await svc.list_by_task(task_id)
+    return anns
 
 
 @router.post("/{task_id}/predictions/{prediction_id}/reject", status_code=204)

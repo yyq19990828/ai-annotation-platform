@@ -14,6 +14,28 @@ import type {
   VideoFramePrefetchResponse,
 } from "@/types";
 
+/** v0.20.11 · 选中框单框二次推理请求: 在选中框 ROI 上跑一个能力。 */
+export interface SecondaryInferenceRequest {
+  ml_backend_id: string;
+  /** attributes → 写回原框; geometry → 建子框。 */
+  write_target?: "attributes" | "geometry";
+  write_keys?: string[] | null;
+  label?: string | null;
+  model_id?: string | null;
+  model_variants?: Record<string, string> | null;
+  params?: Record<string, unknown> | null;
+  task_type?: string | null;
+  prompt?: string | null;
+  class_filter?: number[] | null;
+  pad?: number;
+}
+
+/** v0.20.11 · 二次推理响应: 更新后的原框 + 新建子框(几何型)。 */
+export interface SecondaryInferenceResponse {
+  annotation: AnnotationResponse;
+  created_children: AnnotationResponse[];
+}
+
 /** v0.14.1 · 跨帧 propagate 响应: 复制到目标 task 的新 annotation。 */
 export interface PropagateResponse {
   annotation: AnnotationResponse;
@@ -172,6 +194,18 @@ export const tasksApi = {
       `/tasks/${id}/neighbor-annotations${q}`,
     );
   },
+
+  // v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库
+  // (属性写回原框 / 几何建子框, 带 AI 溯源)。
+  secondaryInference: (
+    taskId: string,
+    annotationId: string,
+    body: SecondaryInferenceRequest,
+  ) =>
+    apiClient.post<SecondaryInferenceResponse>(
+      `/tasks/${taskId}/annotations/${annotationId}/secondary-inference`,
+      body,
+    ),
 
   // v0.14.1 · 把源 annotation 跨帧 propagate 到目标 task(同 project 同 scene)。
   propagateToTask: (

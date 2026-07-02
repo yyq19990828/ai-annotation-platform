@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
+import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { CanvasToolbar } from "../../stage/CanvasToolbar";
 import { FloatingDock } from "../../shell/FloatingDock";
@@ -29,6 +29,8 @@ export interface ImageWorkbenchProps {
   selectedIds: string[];
   fadedAiIds: Set<string>;
   nudgeMap: Map<string, Geom>;
+  /** v0.20.22 · 提交在途几何 override, 见 usePendingGeom (防松手闪回原尺寸)。 */
+  pendingGeomMap: Map<string, Geometry>;
   userBoxes: Annotation[];
   aiBoxes: AiBox[];
   spacePan: boolean;
@@ -46,6 +48,8 @@ export interface ImageWorkbenchProps {
     flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
@@ -71,7 +75,12 @@ export interface ImageWorkbenchProps {
   /** v0.10.2 · 派生自 tool, 非 AI 工具时为 null. */
   samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
-  onCommitMove: (id: string, before: Geom, after: Geom) => void;
+  onCommitMove: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
   onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;
@@ -128,6 +137,7 @@ export function ImageWorkbench({
   selectedIds,
   fadedAiIds,
   nudgeMap,
+  pendingGeomMap,
   userBoxes,
   aiBoxes,
   spacePan,
@@ -141,6 +151,8 @@ export function ImageWorkbench({
   onRejectPrediction,
   onDeleteUserBox,
   onPatchShapeFlag,
+  secondaryBarHidden,
+  onToggleSecondaryBar,
   clipboardActions,
   onCommitDrawing,
   onCommitRotatedBbox,
@@ -204,6 +216,7 @@ export function ImageWorkbench({
       selectedIds={selectedIds}
       fadedAiIds={fadedAiIds}
       nudgeMap={nudgeMap}
+      pendingGeomMap={pendingGeomMap}
       userBoxes={userBoxes}
       aiBoxes={aiBoxes}
       spacePan={spacePan}
@@ -215,6 +228,8 @@ export function ImageWorkbench({
       onAcceptPrediction={onAcceptPrediction}
       onRejectPrediction={onRejectPrediction}
       onDeleteUserBox={onDeleteUserBox}
+      secondaryBarHidden={secondaryBarHidden}
+      onToggleSecondaryBar={onToggleSecondaryBar}
       onCommitDrawing={onCommitDrawing}
       onPatchShapeFlag={onPatchShapeFlag}
       clipboardActions={clipboardActions}

@@ -2,6 +2,7 @@ import { forwardRef, lazy, Suspense, type ReactNode } from "react";
 import type {
   Annotation,
   AnnotationResponse,
+  Geometry,
   RotatedBboxGeometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
@@ -132,6 +133,8 @@ interface WorkbenchStageHostImageProps {
   tool: Tool;
   fadedAiIds: Set<string>;
   nudgeMap: Map<string, Geom>;
+  /** v0.20.22 · 提交在途几何 override, 见 usePendingGeom (防松手闪回原尺寸)。 */
+  pendingGeomMap: Map<string, import("@/types").Geometry>;
   userBoxes: Annotation[];
   aiBoxes: AiBox[];
   spacePan: boolean;
@@ -145,6 +148,8 @@ interface WorkbenchStageHostImageProps {
     flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   imageClipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
@@ -156,7 +161,12 @@ interface WorkbenchStageHostImageProps {
     | { kind: "bbox"; bbox: [number, number, number, number] }
     | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
-  onCommitMove: (id: string, before: Geom, after: Geom) => void;
+  onCommitMove: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
   // v0.10.28 · keypoint 节点几何/可见性变更。
@@ -306,6 +316,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       tool,
       fadedAiIds,
       nudgeMap,
+      pendingGeomMap,
       userBoxes,
       aiBoxes,
       spacePan,
@@ -315,6 +326,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onAcceptPrediction,
       onRejectPrediction,
       onPatchShapeFlag,
+      secondaryBarHidden,
+      onToggleSecondaryBar,
       imageClipboardActions,
       onCommitDrawing,
       onCommitRotatedBbox,
@@ -454,6 +467,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             selectedIds={selectedIds}
             fadedAiIds={fadedAiIds}
             nudgeMap={nudgeMap}
+            pendingGeomMap={pendingGeomMap}
             userBoxes={userBoxes}
             aiBoxes={aiBoxes}
             spacePan={spacePan}
@@ -467,6 +481,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onRejectPrediction={onRejectPrediction}
             onDeleteUserBox={onDeleteUserBox}
             onPatchShapeFlag={onPatchShapeFlag}
+            secondaryBarHidden={secondaryBarHidden}
+            onToggleSecondaryBar={onToggleSecondaryBar}
             clipboardActions={imageClipboardActions}
             onCommitDrawing={onCommitDrawing}
             onCommitRotatedBbox={onCommitRotatedBbox}

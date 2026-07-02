@@ -28,6 +28,45 @@ describe("imageStageContextMenu", () => {
     expect(didImageContextMenuDrag({ x: 10, y: 10 }, { x: 13, y: 13 })).toBe(false);
   });
 
+  it("adds a secondary-bar toggle item only when onToggleSecondaryBar given", () => {
+    const withoutToggle = buildImageContextMenuItems({
+      annotation: annotation(),
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+    });
+    expect(withoutToggle.find((i) => i.id === "toggle-secondary-bar")).toBeUndefined();
+
+    const onToggleSecondaryBar = vi.fn();
+    const hidden = buildImageContextMenuItems({
+      annotation: annotation(),
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+      secondaryBarHidden: true,
+      onToggleSecondaryBar,
+    });
+    const item = hidden.find((i) => i.id === "toggle-secondary-bar");
+    expect(item?.label).toBe("打开二次推理面板");
+    item?.onSelect?.();
+    expect(onToggleSecondaryBar).toHaveBeenCalledTimes(1);
+
+    const shown = buildImageContextMenuItems({
+      annotation: annotation(),
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard: null,
+      secondaryBarHidden: false,
+      onToggleSecondaryBar,
+    });
+    expect(shown.find((i) => i.id === "toggle-secondary-bar")?.label).toBe(
+      "关闭二次推理面板",
+    );
+  });
+
   it("suppresses the menu during readOnly, keypoint drafting, or drag", () => {
     expect(shouldSuppressImageContextMenu({
       readOnly: true,

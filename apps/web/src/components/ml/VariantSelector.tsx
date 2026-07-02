@@ -256,8 +256,10 @@ export function VariantSelector({
           const selected =
             field.options.find((option) => option.value === current) ?? field.options[0]!;
           return (
-            <div key={field.key} className="flex items-center gap-1">
-              <span className="text-2xs text-muted-foreground">{field.title}</span>
+            <div key={field.key} className="flex shrink-0 items-center gap-1">
+              <span className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground">
+                {field.title}
+              </span>
               <select
                 data-testid={`ai-variant-${field.key}`}
                 value={selected.value}

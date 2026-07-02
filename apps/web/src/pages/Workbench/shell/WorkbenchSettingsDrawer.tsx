@@ -36,6 +36,9 @@ interface WorkbenchSettingsDrawerProps {
   /** 孤儿标注过滤开关(局部 UI 状态,不持久化)。 */
   hideOrphanAnnotations?: boolean;
   onToggleHideOrphans?: () => void;
+  /** v0.20.19 · 二次推理面板显隐(服务端偏好);true=隐藏。 */
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
 }
 
 export function WorkbenchSettingsDrawer({
@@ -45,6 +48,8 @@ export function WorkbenchSettingsDrawer({
   projectRenderingConfig,
   hideOrphanAnnotations,
   onToggleHideOrphans,
+  secondaryBarHidden,
+  onToggleSecondaryBar,
 }: WorkbenchSettingsDrawerProps) {
   // 独立 hook 实例:setFields 改动经模块级广播同步到画布侧实例 → 实时预览。
   const { config, loaded, lockedFields, setFields } = useWorkbenchConfig(
@@ -171,6 +176,19 @@ export function WorkbenchSettingsDrawer({
                       checked={hideOrphanAnnotations ?? false}
                       onChange={onToggleHideOrphans}
                       data-testid="toggle-hide-orphans"
+                    />
+                  </div>
+                )}
+                {category === "common" && onToggleSecondaryBar && (
+                  <div className="flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted">
+                    <span className="flex flex-1 min-w-0 flex-col gap-px">
+                      <span className="text-muted-foreground text-xs font-medium">二次推理面板</span>
+                      <span className="text-muted-foreground text-2xs">选中框时画布顶部的二次推理工具条</span>
+                    </span>
+                    <Switch
+                      checked={!(secondaryBarHidden ?? false)}
+                      onChange={onToggleSecondaryBar}
+                      data-testid="toggle-secondary-bar"
                     />
                   </div>
                 )}

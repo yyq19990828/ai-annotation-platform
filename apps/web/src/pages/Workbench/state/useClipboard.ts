@@ -1,6 +1,7 @@
 import { useCallback } from "react";
-import type { Annotation, AnnotationResponse, Geometry } from "@/types";
+import type { Annotation, AnnotationResponse } from "@/types";
 import type { AnnotationPayload } from "@/api/tasks";
+import { translateGeometry } from "./geometryTranslate";
 
 interface UseClipboardArgs {
   userBoxes: Annotation[];
@@ -16,112 +17,6 @@ interface UseClipboardArgs {
 }
 
 const PIXEL_OFFSET = 10;
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function translatePoints(
-  points: [number, number][],
-  offX: number,
-  offY: number,
-): [number, number][] {
-  return points.map(([x, y]) => [clamp01(x + offX), clamp01(y + offY)]);
-}
-
-function translateGeometry(
-  annotation: Annotation,
-  offX: number,
-  offY: number,
-): { geometry: Geometry; annotationType: string } {
-  const geometry = annotation.geometry;
-  if (geometry?.type === "polygon") {
-    return {
-      annotationType: "polygon",
-      geometry: {
-        type: "polygon",
-        points: translatePoints(geometry.points, offX, offY),
-        holes: geometry.holes ? geometry.holes.map((ring) => translatePoints(ring, offX, offY)) : undefined,
-      },
-    };
-  }
-  if (geometry?.type === "multi_polygon") {
-    return {
-      annotationType: "polygon",
-      geometry: {
-        type: "multi_polygon",
-        polygons: geometry.polygons.map((polygon) => ({
-          type: "polygon",
-          points: translatePoints(polygon.points, offX, offY),
-          holes: polygon.holes ? polygon.holes.map((ring) => translatePoints(ring, offX, offY)) : undefined,
-        })),
-      },
-    };
-  }
-  if (geometry?.type === "polyline") {
-    return {
-      annotationType: "polyline",
-      geometry: {
-        type: "polyline",
-        points: translatePoints(geometry.points, offX, offY),
-      },
-    };
-  }
-  if (geometry?.type === "rotated_bbox") {
-    return {
-      annotationType: "rotated_bbox",
-      geometry: {
-        ...geometry,
-        cx: clamp01(geometry.cx + offX),
-        cy: clamp01(geometry.cy + offY),
-      },
-    };
-  }
-  if (geometry?.type === "keypoint") {
-    return {
-      annotationType: "keypoint",
-      geometry: {
-        type: "keypoint",
-        points: geometry.points.map((point) => ({
-          ...point,
-          x: clamp01(point.x + offX),
-          y: clamp01(point.y + offY),
-        })),
-      },
-    };
-  }
-  if (geometry?.type === "bbox") {
-    return {
-      annotationType: "bbox",
-      geometry: {
-        type: "bbox",
-        x: Math.max(0, Math.min(1 - geometry.w, geometry.x + offX)),
-        y: Math.max(0, Math.min(1 - geometry.h, geometry.y + offY)),
-        w: geometry.w,
-        h: geometry.h,
-      },
-    };
-  }
-  if (annotation.polygon && annotation.polygon.length >= 3) {
-    return {
-      annotationType: "polygon",
-      geometry: {
-        type: "polygon",
-        points: translatePoints(annotation.polygon, offX, offY),
-      },
-    };
-  }
-  return {
-    annotationType: "bbox",
-    geometry: {
-      type: "bbox",
-      x: Math.max(0, Math.min(1 - annotation.w, annotation.x + offX)),
-      y: Math.max(0, Math.min(1 - annotation.h, annotation.y + offY)),
-      w: annotation.w,
-      h: annotation.h,
-    },
-  };
-}
 
 /** 把 Annotation 列表按 (+10px, +10px) 偏移粘贴到当前任务，落库后 batch 进 history。 */
 export function useClipboard({

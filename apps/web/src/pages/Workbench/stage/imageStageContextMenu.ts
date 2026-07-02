@@ -31,6 +31,9 @@ interface BuildImageContextMenuItemsArgs {
     flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
+  // v0.20.19 · 全局 UI 开关: 二次推理面板显隐 (非 per-标注状态)。缺省不显示该项。
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
 }
 
 export function didImageContextMenuDrag(
@@ -76,6 +79,8 @@ export function buildImageContextMenuItems({
   onCropSelected,
   onDelete,
   onPatchFlag,
+  secondaryBarHidden,
+  onToggleSecondaryBar,
 }: BuildImageContextMenuItemsArgs): DropdownItem[] {
   const locked = Boolean(annotation.is_locked);
   const hidden = Boolean(annotation.is_hidden);
@@ -184,6 +189,19 @@ export function buildImageContextMenuItems({
       onSelect: () => onDelete?.(annotation.id),
     },
   );
+
+  // v0.20.19 · 全局 UI 项 (独立分区): 二次推理面板显隐, 与上面 per-标注项区隔。
+  if (onToggleSecondaryBar) {
+    items.push(
+      { id: "secondary-bar-divider", divider: true, label: "" },
+      {
+        id: "toggle-secondary-bar",
+        label: secondaryBarHidden ? "打开二次推理面板" : "关闭二次推理面板",
+        icon: "sparkle",
+        onSelect: () => onToggleSecondaryBar(),
+      },
+    );
+  }
 
   return items;
 }

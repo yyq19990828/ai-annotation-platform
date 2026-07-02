@@ -402,6 +402,7 @@
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
+| POST | `/{task_id}/annotations/{annotation_id}/secondary-inference` |
 | POST | `/{task_id}/annotations/{annotation_id}/propagate-to-task` |
 | POST | `/{task_id}/annotations/propagate-batch` |
 | POST | `/{task_id}/annotations/interpolate-range` |
@@ -511,4 +512,4 @@
 
 ---
 
-_共 50 模块 / 274 路由_
+_共 50 模块 / 275 路由_

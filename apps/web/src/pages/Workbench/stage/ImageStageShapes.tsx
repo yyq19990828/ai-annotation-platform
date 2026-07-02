@@ -81,6 +81,10 @@ interface KonvaBoxProps {
   onResizeStart: ((dir: ResizeDirection, e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
 }
 
+// v0.20.14 · 父子标注同胞高亮环色。选中父框时其子框描边此固定色 + 细点线,
+// 刻意区别于 group 的调色板长虚线 (groupOutlineColor) 与 AI 框的类色虚线; 属画布数据域固定色。
+export const SIBLING_HIGHLIGHT_COLOR = "#38bdf8"; // sky-400
+
 /** I12 · 同 group_id 的多框共享同色虚线外圈; 用 group_id 哈希派生稳定色. */
 export function groupOutlineColor(groupId: number): string {
   // 8 档预设色, modulo 取色; 与类别色刻意区分 (类别色来自 classColorForCanvas).

@@ -34,6 +34,36 @@ logger = logging.getLogger("app.services.annotation")
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
 
+
+def _sync_attributes_meta(
+    old_attrs: dict | None,
+    old_meta: dict | None,
+    new_attrs: dict | None,
+) -> dict:
+    """v0.20.10 · 人工改属性时同步 attributes_meta（键同步是正确性红线）。
+
+    meta 只存 `origin=ai` 的条目；human 属性用「缺省即 human」隐式表达。规则：
+    - 某 AI key 的值**未变** → 保留其 meta（人工没动它，仍是 AI 产物）。
+    - 某 AI key 被人工**改值** → 删 meta（人工覆盖即认领，回落隐式 human）。
+    - 某 key 被**删除**（不在 new_attrs）→ meta 一并消失（不迭代即丢弃）。
+    - 新增的人工 key → 无 meta（隐式 human）。
+    内部键（`_shape_index` 等 `_` 前缀）不进 meta。
+    """
+    old_attrs = old_attrs or {}
+    old_meta = old_meta or {}
+    new_meta: dict = {}
+    for key, val in (new_attrs or {}).items():
+        if key.startswith("_"):
+            continue
+        entry = old_meta.get(key)
+        if entry is None:
+            continue  # 人工产物（隐式 human），不落 meta
+        # 该 key 原是 AI 产物：仅当值未被人工改动才保留 AI 溯源。
+        if key in old_attrs and old_attrs[key] == val:
+            new_meta[key] = entry
+    return new_meta
+
+
 # v0.14.1 · 可跨帧 propagate 的几何类型。视频内 track 几何由 video_tracker_runner
 # 处理(case A 内部), point_mask_3d 跨帧 point_indices 无意义(§5.4 留 v0.15+)。
 PROPAGATABLE_GEOMETRY_TYPES = frozenset(
@@ -87,6 +117,33 @@ class AnnotationService:
                 ),
             )
 
+    async def _validate_parent_annotation(
+        self, task_id: uuid.UUID, parent_annotation_id: uuid.UUID
+    ) -> None:
+        """v0.20.9 · 父子标注仅一层深度约束（应用层校验，不下沉 DB 约束，留后手支持多层）。
+
+        父框必须: 存在且 active、与子框同一 task（父子限帧内）、自身无 parent
+        （即父不能再有父 → 只允许一层嵌套）。任一不满足返回 400。
+        """
+        from fastapi import HTTPException
+
+        parent = await self.db.get(Annotation, parent_annotation_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(
+                status_code=400,
+                detail=f"parent annotation {parent_annotation_id} not found or inactive",
+            )
+        if parent.task_id != task_id:
+            raise HTTPException(
+                status_code=400,
+                detail="parent annotation must belong to the same task (parent-child is frame-internal)",
+            )
+        if parent.parent_annotation_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="parent-child nesting is limited to one level",
+            )
+
     async def create(
         self,
         task_id: uuid.UUID,
@@ -96,6 +153,7 @@ class AnnotationService:
         geometry: dict,
         confidence: float | None = None,
         parent_prediction_id: uuid.UUID | None = None,
+        parent_annotation_id: uuid.UUID | None = None,
         lead_time: float | None = None,
         attributes: dict | None = None,
         tool_unit_id: str = "bbox",
@@ -105,6 +163,9 @@ class AnnotationService:
 
         if task and task.project_id:
             await self._validate_class_name(task.project_id, tool_unit_id, class_name)
+
+        if parent_annotation_id is not None:
+            await self._validate_parent_annotation(task_id, parent_annotation_id)
 
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -118,6 +179,7 @@ class AnnotationService:
             geometry=geometry,
             confidence=confidence,
             parent_prediction_id=parent_prediction_id,
+            parent_annotation_id=parent_annotation_id,
             lead_time=lead_time,
             attributes=attributes or {},
         )
@@ -134,12 +196,18 @@ class AnnotationService:
         shape_index: int | None = None,
         override_class_name: str | None = None,
         attribute_overrides: dict | None = None,
-    ) -> Annotation | None:
-        """采纳预测 → 转 annotation.
+    ) -> list[Annotation] | None:
+        """采纳预测 → 转 annotation。
 
         - shape_index=None: 采纳整条 prediction 的所有 shape (旧默认, 用于"全部采纳"按钮).
         - shape_index=i:    仅采纳第 i 个 shape (用于画布单点"采纳"按钮, 避免一键采纳波及同 prediction 下其它框).
           每条 annotation 在 attributes 里写入 _shape_index, 让前端能按 (predictionId, shapeIndex) 双键判定.
+
+        返回值 (v0.20.22 契约):
+        - 找不到 prediction / shape_index 越界 → None (路由层转 404)。
+        - 成功 → 本次新建的 annotation 列表 (单 shape 场景返回 `[ann]`)。
+          原实现只返回循环最后一条, 上游 route 忽略返回值、另跑 `list_by_task` 回整题全量,
+          导致前端把整题当作"刚新建"逐条 PATCH 合并 AI 候选属性 → 污染人工标注 (改动 1 根因)。
         """
         # v0.10.25 · predictions 复合 PK (id, created_at) 后不能用 db.get(单值)，改按 id 查。
         prediction = (
@@ -149,6 +217,34 @@ class AnnotationService:
         ).scalar_one_or_none()
         if not prediction:
             return None
+
+        # v0.20.10 · 属性级溯源: 从 PredictionMeta.extra.pipeline 建「AI 富集属性键 → model_ref」
+        # 映射。pipeline 是 stage 级 (非 per-key), 但 enriched key = f"{label}_{k}" if label else k
+        # (与 tasks.py:_run_task_pipeline 一致), 故能精确反推每个键出自哪个 stage 的 backend/model。
+        # PredictionMeta 与 prediction 1:1 (prediction_id unique)。confidence 不在 extra 里, 不编造。
+        from app.db.models.prediction import PredictionMeta
+
+        ai_key_model: dict[str, dict] = {}
+        pred_meta = (
+            await self.db.execute(
+                select(PredictionMeta).where(
+                    PredictionMeta.prediction_id == prediction_id
+                )
+            )
+        ).scalar_one_or_none()
+        pipeline_meta = (pred_meta.extra or {}).get("pipeline") if pred_meta else None
+        if isinstance(pipeline_meta, dict):
+            for st in pipeline_meta.get("stages") or []:
+                if not isinstance(st, dict) or st.get("write_target") != "attributes":
+                    continue
+                label = st.get("label")
+                prefix = f"{label}_" if label else ""
+                model_ref = {
+                    "backend_id": st.get("ml_backend_id"),
+                    "model_id": st.get("model_id"),
+                }
+                for k in st.get("write_keys") or []:
+                    ai_key_model[f"{prefix}{k}"] = model_ref
 
         # v0.9.7 fix · prediction.result 是 LabelStudio 标准, 转内部 schema 后入 annotation
         from app.services.prediction import to_internal_shape
@@ -195,7 +291,7 @@ class AnnotationService:
         else:
             indexed = list(enumerate(raw_shapes))
 
-        annotation: Annotation | None = None
+        anns: list[Annotation] = []
         for idx, raw_shape in indexed:
             shape = to_internal_shape(raw_shape)
             raw_class = shape.get("class_name", "") or ""
@@ -252,6 +348,20 @@ class AnnotationService:
                         _akey,
                         _bad,
                     )
+            # v0.20.10 · per-key 溯源: pipeline 富集键标 origin=ai + model_ref; 采纳前
+            # 被人工改过的键 (attribute_overrides) 视为 human 认领, 不标 ai。内部键跳过。
+            overridden = (
+                {k for k in attribute_overrides if not k.startswith("_")}
+                if isinstance(attribute_overrides, dict)
+                else set()
+            )
+            attributes_meta: dict = {}
+            for _akey in attributes:
+                if _akey.startswith("_") or _akey in overridden:
+                    continue
+                _mref = ai_key_model.get(_akey)
+                if _mref is not None:
+                    attributes_meta[_akey] = {"origin": "ai", "model_ref": _mref}
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -267,12 +377,14 @@ class AnnotationService:
                 confidence=shape.get("confidence"),
                 parent_prediction_id=prediction_id,
                 attributes=attributes,
+                attributes_meta=attributes_meta,
             )
             self.db.add(annotation)
+            anns.append(annotation)
 
         await self.db.flush()
         await self._update_task_stats(prediction.task_id)
-        return annotation
+        return anns
 
     async def list_by_task(
         self, task_id: uuid.UUID, include_cancelled: bool = False
@@ -346,6 +458,22 @@ class AnnotationService:
         if not annotation:
             return False
         annotation.is_active = False
+        # v0.20.9 · 级联软删子框: 删父框时其所有 active 子框一并软删, 不留 orphan。
+        # 父子仅一层 (create 时约束), 故无需递归。
+        children = (
+            (
+                await self.db.execute(
+                    select(Annotation).where(
+                        Annotation.parent_annotation_id == annotation_id,
+                        Annotation.is_active.is_(True),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for child in children:
+            child.is_active = False
         await self.db.flush()
         await self._update_task_stats(annotation.task_id)
         return True
@@ -411,6 +539,10 @@ class AnnotationService:
             if class_name is not None:
                 r.class_name = class_name
             if attributes is not None:
+                # v0.20.10 · 同 update: 批量改属性时同步各行 meta（人工认领）。
+                r.attributes_meta = _sync_attributes_meta(
+                    r.attributes, r.attributes_meta, attributes
+                )
                 r.attributes = attributes
             if z_order is not None:
                 r.z_order = z_order
@@ -1057,6 +1189,10 @@ class AnnotationService:
         if confidence is not None:
             annotation.confidence = confidence
         if attributes is not None:
+            # v0.20.10 · 先据旧值算 meta 同步（人工改动即认领），再替换 attributes。
+            annotation.attributes_meta = _sync_attributes_meta(
+                annotation.attributes, annotation.attributes_meta, attributes
+            )
             annotation.attributes = attributes
         # v0.10.5 M4-β · shape 状态位字段级 PATCH（I15）
         if z_order is not None:

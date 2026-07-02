@@ -579,6 +579,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       let failCount = 0;
       const errors: string[] = [];
       const firedJobIds: string[] = [];
+      const pipelineWarnings = new Set<string>();
       const fireOne = async (bid: string) => {
         try {
           const resp = await trigger.mutateAsync({
@@ -592,6 +593,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               : {}),
           });
           if (resp?.job_id) firedJobIds.push(resp.job_id);
+          for (const w of resp?.warnings ?? []) pipelineWarnings.add(w);
           okCount += 1;
         } catch (err) {
           failCount += 1;
@@ -610,6 +612,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         sub: `${okCount} 成功 · ${failCount} 失败`,
         kind: failCount > 0 ? "warning" : "success",
       });
+      // v0.20.21 · 派发期软提示 (如 output=both + 多阶段致下游重复处理), 去重后逐条弹出。
+      for (const w of pipelineWarnings) {
+        pushToast({ msg: w, kind: "warning" });
+      }
       if (failCount > 0 && errors.length > 0) {
         console.warn("[ai-pre] 多批次预标部分失败:", errors);
       }

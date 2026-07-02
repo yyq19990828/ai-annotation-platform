@@ -39,6 +39,16 @@ interface AIInspectorPanelProps {
   /** 受控宽度（仅 open=true 生效；列宽 handle 实际由 WorkbenchLayout 渲染）。 */
   width: number;
   onResize: (w: number) => void;
+  /** v0.20.19 · 属性区折叠态 (受控, 走 workbench.layout 持久); 缺省回落组件内会话态。 */
+  attrCollapsed?: boolean;
+  onToggleAttrCollapsed?: () => void;
+  /** v0.20.22 · AI 待审 / 人工两大分组的折叠态 (受控, 走 workbench.layout 持久)。
+   *  与 BoxesList 内部的 `collapsedGroups` (人工段内的子组/GroupCard 折叠) 命名区分:
+   *  这里控制的是"两大分组头"整体折叠。缺省 = 展开。 */
+  aiSectionCollapsed?: boolean;
+  onToggleAiSection?: () => void;
+  manualSectionCollapsed?: boolean;
+  onToggleManualSection?: () => void;
   /** 列宽 handle 的像素边界与双击重置值(由 WorkbenchLayout 的 ResizeHandle 消费;随窗口宽度动态)。 */
   widthMin?: number;
   widthMax?: number;
@@ -135,13 +145,22 @@ export function AIInspectorPanel({
   floating = false,
   capabilityWarnings,
   onFillAttribute,
+  attrCollapsed: attrCollapsedProp,
+  onToggleAttrCollapsed,
+  aiSectionCollapsed = false,
+  onToggleAiSection,
+  manualSectionCollapsed = false,
+  onToggleManualSection,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
     : selectedId ? new Set([selectedId]) : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
   // 底部属性区折叠态（v0.11.28 上下分栏：属性区固定在列表下方，可折叠让出列表空间）。
-  const [attrCollapsed, setAttrCollapsed] = useState(false);
+  // v0.20.19 · 受控优先(走 workbench.layout 持久), 缺省回落组件内会话态(测试/独立使用)。
+  const [attrCollapsedLocal, setAttrCollapsedLocal] = useState(false);
+  const attrCollapsed = attrCollapsedProp ?? attrCollapsedLocal;
+  const toggleAttrCollapsed = onToggleAttrCollapsed ?? (() => setAttrCollapsedLocal((v) => !v));
   const attrMissing = selectedAnnotation && attributeSchema
     ? getMissingRequired(attributeSchema, selectedAnnotation.class_name, selectedAnnotation.attributes ?? {})
     : [];
@@ -164,6 +183,24 @@ export function AIInspectorPanel({
     selectedAiBox?.attributes && Object.keys(selectedAiBox.attributes).length > 0
       ? { ...selectedAiBox.attributes, ...(editedAiBoxAttrs ?? {}) }
       : null;
+
+  // v0.20.22 · 属性审阅"采纳"按钮退役 (与列表行采纳入口重复); 表单保持可编辑,
+  // 行内采纳时自动带上审阅改动。仅当被采纳候选 === 当前审阅中的候选且 editedAiBoxAttrs 非空
+  // 时附带; 未编辑时保持传 undefined, 避免多发一次空 dict 让下游/接口日志产生噪音。
+  // 画布贴框采纳 (SelectionOverlay/BoxRenderer 走 ImageStage.onAcceptPrediction 1-arg 版本)
+  // 拿不到该本地 state, 维持采纳原值 (计划内不上提 state)。
+  const acceptWithReviewEdits = (box: AiBox, overrides?: Record<string, unknown>) => {
+    const shouldAttachReviewEdits =
+      box.id === selectedAiBox?.id &&
+      editedAiBoxAttrs !== null &&
+      Object.keys(editedAiBoxAttrs).length > 0;
+    if (shouldAttachReviewEdits) {
+      onAcceptPrediction(box, { ...editedAiBoxAttrs, ...(overrides ?? {}) });
+    } else {
+      onAcceptPrediction(box, overrides);
+    }
+  };
+
   if (!open) {
     return null;
   }
@@ -241,7 +278,7 @@ export function AIInspectorPanel({
         currentFrameIndex={currentFrameIndex}
         onSeekFrame={onSeekFrame}
         onSelect={onSelect}
-        onAcceptPrediction={onAcceptPrediction}
+        onAcceptPrediction={acceptWithReviewEdits}
         onRejectPrediction={onRejectPrediction}
         onRefinePrediction={onRefinePrediction}
         onRefineUserPolygon={onRefineUserPolygon}
@@ -251,6 +288,10 @@ export function AIInspectorPanel({
         onToggleUserBoxFlag={onToggleUserBoxFlag}
         onSelectGroup={onSelectGroup}
         videoTrackPanel={videoTrackPanel}
+        aiSectionCollapsed={aiSectionCollapsed}
+        onToggleAiSection={onToggleAiSection}
+        manualSectionCollapsed={manualSectionCollapsed}
+        onToggleManualSection={onToggleManualSection}
       />
       {/* 视频任务的属性由 VideoTrackPanel 内的两层 VideoAttributesEditor 承载，此处仅图片任务渲染。 */}
       {!videoTrackPanel && selectedAnnotation && attributeSchema && onUpdateAttributes && (
@@ -258,7 +299,7 @@ export function AIInspectorPanel({
           <button
             type="button"
             className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
-            onClick={() => setAttrCollapsed((v) => !v)}
+            onClick={toggleAttrCollapsed}
             aria-expanded={!attrCollapsed}
             title={attrCollapsed ? "展开属性" : "折叠属性"}
           >
@@ -275,6 +316,7 @@ export function AIInspectorPanel({
                 schema={attributeSchema}
                 className={selectedAnnotation.class_name}
                 attributes={selectedAnnotation.attributes ?? {}}
+                attributesMeta={selectedAnnotation.attributes_meta}
                 // v0.10.20 · I12 多选批量: 有 onBulkUpdateAttributes 且选中 >1 时 fan-out, 否则单条 PATCH.
                 onChange={(next) => {
                   if (multiCount > 1 && onBulkUpdateAttributes) {
@@ -298,7 +340,7 @@ export function AIInspectorPanel({
           <button
             type="button"
             className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
-            onClick={() => setAttrCollapsed((v) => !v)}
+            onClick={toggleAttrCollapsed}
             aria-expanded={!attrCollapsed}
             title={attrCollapsed ? "展开属性审阅" : "折叠属性审阅"}
           >
@@ -320,18 +362,11 @@ export function AIInspectorPanel({
                 readOnly={readOnly}
                 hideHeading
               />
+              {/* v0.20.22 · 采纳按钮退役 (与列表行/画布采纳入口重复);
+                  行内/画布点采纳时 wrapper 自动带上此处改动 (仅列表行, 画布保持原值)。 */}
               {!readOnly && (
-                <div className="flex items-center gap-2 px-3.5 pb-2">
-                  <Button
-                    size="sm"
-                    data-testid="accept-candidate-attrs"
-                    onClick={() => onAcceptPrediction(selectedAiBox, editedAiBoxAttrs ?? undefined)}
-                  >
-                    采纳{editedAiBoxAttrs && Object.keys(editedAiBoxAttrs).length > 0 ? "（含改动）" : ""}
-                  </Button>
-                  <span className="text-2xs leading-normal text-muted-foreground">
-                    可先改属性再采纳，改动随采纳一并落库。
-                  </span>
+                <div className="px-3.5 pb-2 pt-1 text-2xs leading-normal text-muted-foreground">
+                  改动将随采纳一并落库。
                 </div>
               )}
             </div>
@@ -742,6 +777,10 @@ type Row =
     totalCount: number;
     key: string;
     label: string;
+    /** v0.20.22 · header 带上分组身份 + 折叠态 + 点击回调, 存在 onToggle 时 header 渲染为可点 button。 */
+    sectionKey?: "ai" | "manual";
+    collapsed?: boolean;
+    onToggle?: () => void;
   }
   | { kind: "videoTracks"; key: string }
   /** v0.10.20 · I12 同 group_id 折叠卡片头部. 单击 → 整组选中. 展开 → 下方插入 user 行. */
@@ -753,7 +792,8 @@ type Row =
     onToggle: () => void;
     key: string;
   }
-  | { kind: "user"; box: Annotation; key: string };
+  /** v0.20.9 · 父子标注: depth=1 的行是子框, 在其父框行下方缩进渲染。 */
+  | { kind: "user"; box: Annotation; key: string; depth?: number };
 
 type FrameFilter = "all" | "current";
 
@@ -885,6 +925,12 @@ interface BoxesListProps {
   onSeekFrame?: (frameIndex: number) => void;
   onSelectGroup?: (memberIds: string[]) => void;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
+  /** v0.20.22 · AI 待审 / 人工两大分组头折叠 (透传自 AIInspectorPanel;
+   *  与内部 `collapsedGroups` 子组折叠区分, 独立跨设备持久)。 */
+  aiSectionCollapsed?: boolean;
+  onToggleAiSection?: () => void;
+  manualSectionCollapsed?: boolean;
+  onToggleManualSection?: () => void;
 }
 
 function BoxesList({
@@ -897,6 +943,10 @@ function BoxesList({
   onToggleUserBoxFlag,
   onSelectGroup,
   videoTrackPanel,
+  aiSectionCollapsed = false,
+  onToggleAiSection,
+  manualSectionCollapsed = false,
+  onToggleManualSection,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   // 视频默认聚焦「当前帧」,避免一上来在「全部」视图里跨帧误操作;图片端 frameFilter 不显示
@@ -945,11 +995,17 @@ function BoxesList({
         count: filteredAiBoxes.length,
         totalCount: aiTotalCount,
         key: "ai-header",
+        sectionKey: "ai",
+        collapsed: aiSectionCollapsed,
+        onToggle: onToggleAiSection,
       });
-      if (predictionSourceFilter && hasKnownPredictionSources) {
-        out.push({ kind: "sourceFilter", key: "prediction-source-filter", filter: predictionSourceFilter });
+      // v0.20.22 · 分组收起时跳过成员行 + 附属的 sourceFilter 卡片, 但计数仍在 header 上显示。
+      if (!aiSectionCollapsed) {
+        if (predictionSourceFilter && hasKnownPredictionSources) {
+          out.push({ kind: "sourceFilter", key: "prediction-source-filter", filter: predictionSourceFilter });
+        }
+        filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
       }
-      filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
     }
     if (userBoxes.length > 0) {
       out.push({
@@ -958,45 +1014,78 @@ function BoxesList({
         count: filteredUserBoxes.length,
         totalCount: userBoxes.length,
         key: "user-header",
+        sectionKey: "manual",
+        collapsed: manualSectionCollapsed,
+        onToggle: onToggleManualSection,
       });
     }
-    // v0.10.20 · I12 按 group_id 分桶: 同 group_id (≥2 个成员) → group 卡片头, 展开时下方插入 user 行;
-    // group_id null 或单成员 group → 平铺. 保持 filteredUserBoxes 原顺序内的相对位置.
-    const bucketed: { groupId: number | null; boxes: Annotation[] }[] = [];
-    const groupBuckets = new Map<number, Annotation[]>();
-    for (const b of filteredUserBoxes) {
-      if (typeof b.group_id === "number") {
-        if (!groupBuckets.has(b.group_id)) {
-          groupBuckets.set(b.group_id, []);
-          bucketed.push({ groupId: b.group_id, boxes: groupBuckets.get(b.group_id)! });
+    // v0.20.22 · 人工分组整体收起时跳过所有成员行 (含 GroupCard/子组), 头 + 计数仍显示。
+    if (!manualSectionCollapsed) {
+      // v0.20.9 · 父子标注: 建 parent → children 映射。子框从顶层迭代中剔除, 改在父框行下方
+      // 缩进渲染 (depth=1)。parent 缩进是 go-forward 唯一主结构; group 分桶为过渡期 legacy
+      // (v0.21.3 移除)。同时挂 group 与 parent 的框以 parent 缩进为准。
+      const userIdSet = new Set(filteredUserBoxes.map((b) => b.id));
+      const childrenByParent = new Map<string, Annotation[]>();
+      for (const b of filteredUserBoxes) {
+        const pid = b.parent_annotation_id;
+        if (pid && userIdSet.has(pid)) {
+          if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+          childrenByParent.get(pid)!.push(b);
         }
-        groupBuckets.get(b.group_id)!.push(b);
-      } else {
-        bucketed.push({ groupId: null, boxes: [b] });
       }
-    }
-    for (const bucket of bucketed) {
-      if (bucket.groupId != null && bucket.boxes.length >= 2) {
-        const gid = bucket.groupId;
-        const expanded = !collapsedGroups.has(gid);
-        out.push({
-          kind: "userGroup",
-          groupId: gid,
-          memberIds: bucket.boxes.map((b) => b.id),
-          expanded,
-          onToggle: () => toggleGroup(gid),
-          key: `user-group-${gid}`,
-        });
-        if (expanded) {
-          bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+      // 顶层框: 无 parent, 或 parent 不在当前过滤集内 (跨帧过滤等 → 回落顶层展示, 不隐藏)。
+      const topLevelBoxes = filteredUserBoxes.filter(
+        (b) => !(b.parent_annotation_id && userIdSet.has(b.parent_annotation_id)),
+      );
+      const emitBoxWithChildren = (b: Annotation) => {
+        out.push({ kind: "user", box: b, key: `user-${b.id}` });
+        const kids = childrenByParent.get(b.id);
+        if (kids) kids.forEach((c) => out.push({ kind: "user", box: c, key: `user-${c.id}`, depth: 1 }));
+      };
+
+      // v0.10.20 · I12 按 group_id 分桶: 同 group_id (≥2 个成员) → group 卡片头, 展开时下方插入 user 行;
+      // group_id null 或单成员 group → 平铺. 保持 topLevelBoxes 原顺序内的相对位置.
+      const bucketed: { groupId: number | null; boxes: Annotation[] }[] = [];
+      const groupBuckets = new Map<number, Annotation[]>();
+      for (const b of topLevelBoxes) {
+        if (typeof b.group_id === "number") {
+          if (!groupBuckets.has(b.group_id)) {
+            groupBuckets.set(b.group_id, []);
+            bucketed.push({ groupId: b.group_id, boxes: groupBuckets.get(b.group_id)! });
+          }
+          groupBuckets.get(b.group_id)!.push(b);
+        } else {
+          bucketed.push({ groupId: null, boxes: [b] });
         }
-      } else {
-        bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+      }
+      for (const bucket of bucketed) {
+        if (bucket.groupId != null && bucket.boxes.length >= 2) {
+          const gid = bucket.groupId;
+          const expanded = !collapsedGroups.has(gid);
+          out.push({
+            kind: "userGroup",
+            groupId: gid,
+            memberIds: bucket.boxes.map((b) => b.id),
+            expanded,
+            onToggle: () => toggleGroup(gid),
+            key: `user-group-${gid}`,
+          });
+          if (expanded) {
+            bucket.boxes.forEach(emitBoxWithChildren);
+          }
+        } else {
+          bucket.boxes.forEach(emitBoxWithChildren);
+        }
       }
     }
     if (resolvedVideoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter, predictionSourceFilter, showFrameFilter, userBoxes.length, resolvedVideoTrackPanel, collapsedGroups]);
+  }, [
+    aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter,
+    predictionSourceFilter, showFrameFilter, userBoxes.length,
+    resolvedVideoTrackPanel, collapsedGroups,
+    aiSectionCollapsed, manualSectionCollapsed, onToggleAiSection, onToggleManualSection,
+  ]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
     if (!shift) {
@@ -1070,14 +1159,37 @@ function BoxesList({
                 />
               )}
               {r.kind === "header" && (
-                <div className={SECTION_CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{r.label}</span>
+                r.onToggle ? (
+                  // v0.20.22 · 分组头可点折叠 (AI 待审 / 人工)。计数常驻显示; 收起时下方成员行整体跳过。
+                  <button
+                    type="button"
+                    onClick={r.onToggle}
+                    aria-expanded={!r.collapsed}
+                    title={r.collapsed ? `展开${r.label}` : `折叠${r.label}`}
+                    data-testid={`section-header-${r.sectionKey ?? "unknown"}`}
+                    className={cn(
+                      SECTION_CARD_CLASS,
+                      "flex w-full cursor-pointer appearance-none items-center justify-between gap-2 text-left hover:bg-muted",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-semibold">
+                      <Icon name={r.collapsed ? "chevRight" : "chevDown"} size={13} />
+                      {r.label}
+                    </span>
                     <span className="mono text-xs font-medium text-muted-foreground">
                       {showFrameFilter && frameFilter === "current" ? `${r.count}/${r.totalCount}` : r.count}
                     </span>
+                  </button>
+                ) : (
+                  <div className={SECTION_CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold">{r.label}</span>
+                      <span className="mono text-xs font-medium text-muted-foreground">
+                        {showFrameFilter && frameFilter === "current" ? `${r.count}/${r.totalCount}` : r.count}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )
               )}
               {r.kind === "frameFilter" && (
                 <div className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5">
@@ -1103,19 +1215,21 @@ function BoxesList({
                 />
               )}
               {r.kind === "user" && (
-                <BoxListItem
-                  b={r.box}
-                  orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
-                  selected={selSet.has(r.box.id)}
-                  imageWidth={imageWidth} imageHeight={imageHeight}
-                  onSelect={(e) => selectBox(r.box, e?.shiftKey)}
-                  onDelete={() => onDeleteUserBox(r.box.id)}
-                  onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
-                  onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
-                  onRefine={onRefineUserPolygon && r.box.geometry?.type === "polygon"
-                    ? () => onRefineUserPolygon(r.box.id)
-                    : undefined}
-                />
+                <div className={r.depth ? "ml-3 border-l-2 border-border pl-2" : undefined}>
+                  <BoxListItem
+                    b={r.box}
+                    orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
+                    selected={selSet.has(r.box.id)}
+                    imageWidth={imageWidth} imageHeight={imageHeight}
+                    onSelect={(e) => selectBox(r.box, e?.shiftKey)}
+                    onDelete={() => onDeleteUserBox(r.box.id)}
+                    onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
+                    onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
+                    onRefine={onRefineUserPolygon && r.box.geometry?.type === "polygon"
+                      ? () => onRefineUserPolygon(r.box.id)
+                      : undefined}
+                  />
+                </div>
               )}
             </div>
           );

@@ -4,10 +4,13 @@ import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
-// 顶部 tab 切换条:小写 chrome 风格的下划线 tab(与 CommentsPanel 同形)。
-const TAB_BUTTON =
-  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+// 顶部 tab 切换条: 字号/字重与右栏上段"标注详情"标题 (text-sm font-semibold) 对齐,
+// 视觉上作为同级标题。v0.20.22 · 拆分中性/激活分支下发, 避免 border-transparent 与
+// border-brand 同挂被源顺序覆盖 (memory: "Tailwind 激活态色类冲突")。text 色同理。
+const TAB_BUTTON_BASE =
+  "cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-sm font-semibold [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
+const TAB_BUTTON_INACTIVE = "border-transparent text-muted-foreground";
 
 /**
  * v0.11.2-4 · B 组 · 工作台右栏下段统一讨论面板。
@@ -46,6 +49,10 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
   currentUserId: string | null;
   onDetach?: () => void;
   floating?: boolean;
+  /** v0.20.22 · 完全收起态 (受控, 走 workbench.layout 持久); 缺省回落组件内会话态。
+   *  收起时不渲染 tabpanel 内容区, 仅剩 tab 头一条。 */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 export function DiscussionPanel({
@@ -53,8 +60,14 @@ export function DiscussionPanel({
   backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame,
   onDetach,
   floating = false,
+  collapsed: collapsedProp,
+  onToggleCollapsed,
 }: DiscussionPanelProps) {
   const [tab, setTab] = useState<DiscussionTab>("comments");
+  // v0.20.22 · 受控优先 (走 workbench.layout 持久), 缺省回落组件内会话态 (测试/独立使用)。
+  const [collapsedLocal, setCollapsedLocal] = useState(false);
+  const collapsed = collapsedProp ?? collapsedLocal;
+  const toggleCollapsed = onToggleCollapsed ?? (() => setCollapsedLocal((v) => !v));
 
   // v0.11.4 · 单击/hover IssueLayer 图钉 → store.tabRequestTick++ → 自动切到 issues tab。
   const tabRequestTick = useActiveIssueStore((s) => s.tabRequestTick);
@@ -63,22 +76,39 @@ export function DiscussionPanel({
     if (tabRequestTick !== lastTabRequestRef.current) {
       lastTabRequestRef.current = tabRequestTick;
       setTab("issues");
+      // v0.20.22 · IssueLayer 图钉切 tab 时若讨论区处于收起态, 顺手展开让用户看到 issue 列表。
+      if (collapsed) toggleCollapsed();
     }
+  // toggleCollapsed / collapsed 依赖漂移会引起循环触发, 故按 tick 一路径走。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabRequestTick]);
 
   return (
     <div
       className={`flex h-full min-h-0 flex-col bg-card ${floating ? "" : "border-t border-border"}`}
     >
-      <div className="flex items-center justify-between gap-1 pl-3 pr-2 pt-1.5">
+      <div className="flex items-center justify-between gap-1 pl-2 pr-2 pt-1.5">
         <div className="flex items-center gap-1" role="tablist" aria-label="讨论面板">
+          {!floating && (
+            // v0.20.22 · 收起 chevron: 只在嵌入布局显示 (浮层已是独立窗口, 无收起语义)。
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-expanded={!collapsed}
+              title={collapsed ? "展开讨论" : "收起讨论"}
+              data-testid="discussion-toggle-collapsed"
+              className="inline-flex h-6 w-6 cursor-pointer appearance-none items-center justify-center rounded border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
+            </button>
+          )}
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               role="tab"
               aria-selected={tab === t.key}
-              className={`${TAB_BUTTON} ${tab === t.key ? TAB_BUTTON_ACTIVE : ""}`}
+              className={`${TAB_BUTTON_BASE} ${tab === t.key ? TAB_BUTTON_ACTIVE : TAB_BUTTON_INACTIVE}`}
               onClick={() => setTab(t.key)}
             >
               {t.label}
@@ -97,29 +127,32 @@ export function DiscussionPanel({
           </button>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" role="tabpanel">
-        {tab === "issues" ? (
-          projectId && taskId ? (
-            <DiscussionIssuesTab projectId={projectId} taskId={taskId} />
-          ) : null
-        ) : (
-          <CommentsPanel
-            annotationId={annotationId}
-            taskId={taskId}
-            projectId={projectId}
-            currentUserId={currentUserId ?? undefined}
-            backgroundUrl={backgroundUrl}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            enableCanvasDrawing={enableCanvasDrawing}
-            liveCanvas={liveCanvas}
-            commentAnchor={commentAnchor}
-            onSeekFrame={onSeekFrame}
-            hideTabs
-            forceTab={tab}
-          />
-        )}
-      </div>
+      {/* v0.20.22 · 完全收起时不渲染 tabpanel, 仅留 tab 头一条; 展开由 chevron 或 IssueLayer 图钉触发。 */}
+      {!collapsed && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" role="tabpanel">
+          {tab === "issues" ? (
+            projectId && taskId ? (
+              <DiscussionIssuesTab projectId={projectId} taskId={taskId} />
+            ) : null
+          ) : (
+            <CommentsPanel
+              annotationId={annotationId}
+              taskId={taskId}
+              projectId={projectId}
+              currentUserId={currentUserId ?? undefined}
+              backgroundUrl={backgroundUrl}
+              imageWidth={imageWidth}
+              imageHeight={imageHeight}
+              enableCanvasDrawing={enableCanvasDrawing}
+              liveCanvas={liveCanvas}
+              commentAnchor={commentAnchor}
+              onSeekFrame={onSeekFrame}
+              hideTabs
+              forceTab={tab}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

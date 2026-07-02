@@ -23,6 +23,7 @@ import os
 import threading
 import time
 from collections import OrderedDict
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,7 @@ from catalog import RUNTIME_PARAM_DEFAULTS, ResolvedEngine
 logger = logging.getLogger("rapidocr-backend.predictor")
 
 POLY_LABEL = "text"  # OCR 文本框无类别，用通用占位 label。
+UTC = timezone.utc
 
 
 def _box_to_points(box: np.ndarray, w: int, h: int) -> list[list[float]]:
@@ -278,9 +280,19 @@ class RapidOCRPredictor:
 
     # ---------------- 观测 ----------------
     def pool_snapshot(self) -> dict[str, Any]:
+        """协议 §4.3 PoolStatus: loaded_keys 需为 [{key, loaded_at, last_used_at, hit_count}]。"""
         with self._lock:
+            loaded_keys = []
+            for key in self._pool:
+                m = self._meta[key]
+                loaded_keys.append({
+                    "key": key,
+                    "loaded_at": datetime.fromtimestamp(m["loaded_at"], UTC).isoformat(),
+                    "last_used_at": datetime.fromtimestamp(m["last_used"], UTC).isoformat(),
+                    "hit_count": m["hit"],
+                })
             return {
                 "cap": self.pool_cap,
                 "current_size": len(self._pool),
-                "loaded_keys": list(self._pool.keys()),
+                "loaded_keys": loaded_keys,
             }

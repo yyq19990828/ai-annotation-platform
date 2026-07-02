@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,7 @@ from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
     check_capability_violations,
+    check_parent_geometry_roi,
     resolve_preannotate_queue,
 )
 from app.services.project_kind import (
@@ -51,6 +53,7 @@ from app.services.project_clone import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("app.api.projects")
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 _STATS_SERIES_POINTS = 12
@@ -1496,12 +1499,17 @@ async def _compute_pipeline_capability_warnings(db, stages) -> list[str]:
 
     svc = MLBackendService(db)
     warnings: list[str] = []
+    # v0.20.21 · 建 stage号→(caps, model_id) map, 供下面校验下游阶段的「上游产出几何可否作 ROI」。
+    stage_caps: dict[int, tuple[dict, object]] = {}
     for s in stages:
         if not isinstance(s, dict) or not s.get("ml_backend_id"):
             continue
         backend = await svc.get(s["ml_backend_id"])
         if not backend:
             continue
+        caps = _stage_model(backend, s.get("model_id"))
+        if s.get("stage") is not None:
+            stage_caps[s["stage"]] = (caps, s.get("model_id"))
         is_source = s.get("parent_stage") is None
         where = "源阶段" if is_source else f"stage {s.get('stage')} "
         # 源阶段不写属性, class 判据不适用 (与 dispatch 对称)。
@@ -1510,12 +1518,26 @@ async def _compute_pipeline_capability_warnings(db, stages) -> list[str]:
             and (s.get("write") or {}).get("target", "attributes") == "attributes"
         )
         violations = check_capability_violations(
-            _stage_model(backend, s.get("model_id")),
+            caps,
             where=where,
             model_id=s.get("model_id"),
             writes_attributes=writes_attributes,
         )
         warnings.extend(v.detail for v in violations)
+    # v0.20.21 · 上下游几何兼容: 下游按上游框作 ROI, 上游若不产 bbox/polygon → 软提示。
+    for s in stages:
+        if not isinstance(s, dict):
+            continue
+        parent = s.get("parent_stage")
+        if parent is None or parent not in stage_caps:
+            continue
+        parent_caps, parent_model_id = stage_caps[parent]
+        geo_violations = check_parent_geometry_roi(
+            parent_caps,
+            where=f"stage {s.get('stage')} ",
+            parent_model_id=parent_model_id,
+        )
+        warnings.extend(v.detail for v in geo_violations)
     return warnings
 
 
@@ -1549,6 +1571,11 @@ async def trigger_preannotation(
     pipeline_stages_payload: list[dict] | None = None
     if body.pipeline_stages:
         norm: list[dict] = []
+        # v0.20.21 · stage号→(caps, model_id) map, 源阶段固定 stage=0 (worker tasks.py:753)。
+        # 循环内填各下游 caps, 循环后校验「上游产出几何可否作下游 ROI」。
+        stage_caps: dict[int, tuple[dict, object]] = {
+            0: (_stage_model(backend, body.model_id), body.model_id)
+        }
         for st in body.pipeline_stages:
             resolved_input = st.input
             if st.parent_stage is not None:
@@ -1571,6 +1598,11 @@ async def trigger_preannotation(
                 )
                 # v0.19.5 · 收集下游阶段 device 供队列路由。
                 stage_devices.append(_stage_device(st_backend, st.model_id))
+                # v0.20.21 · 记本阶段 caps, 供循环后校验其作为下游父阶段时几何可否作 ROI。
+                stage_caps[st.stage] = (
+                    _stage_model(st_backend, st.model_id),
+                    st.model_id,
+                )
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
                 # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
                 # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
@@ -1611,6 +1643,19 @@ async def trigger_preannotation(
                     "on_key_conflict": body.on_key_conflict,
                 }
             )
+        # v0.20.21 · 上下游几何兼容闸门 (与「下游能否吃框」门对称): 下游按上游框作 ROI,
+        # 上游若完全不产 bbox/polygon → 该阶段所有父框运行期被跳过、零富集, 提前 422 硬挡。
+        for st in body.pipeline_stages:
+            if st.parent_stage is None or st.parent_stage not in stage_caps:
+                continue
+            parent_caps, parent_model_id = stage_caps[st.parent_stage]
+            geo_violations = check_parent_geometry_roi(
+                parent_caps,
+                where=f"stage {st.stage} ",
+                parent_model_id=parent_model_id,
+            )
+            if geo_violations:
+                raise HTTPException(status_code=422, detail=geo_violations[0].detail)
         pipeline_stages_payload = norm
 
     # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
@@ -1696,11 +1741,23 @@ async def trigger_preannotation(
         },
     )
     await db.commit()
+    # v0.20.21 · both 多阶段引导: output=both 仅文本 prompt 路径生效 (见上文 job payload 注释),
+    # 且会对同一实例产出框+多边形两条几何; 若还配了下游阶段, 编排会把两条各当一个父框各处理
+    # 一次 (重复裁剪/推理/富集) 并落两条 region。软提示、不拦截 (both 仍可跑)。
+    warnings: list[str] = []
+    if body.output_mode == "both" and body.prompt and body.pipeline_stages:
+        msg = (
+            "源阶段 output=both 会对同一实例产出「框 + 多边形」两条几何, 多阶段下游会各处理"
+            "一次 (重复裁剪 / 推理 / 富集) 并落两条 region; 建议源阶段改用 box 或 mask。"
+        )
+        warnings.append(msg)
+        logger.warning("[ai-pre] %s", msg)
     return {
         "job_id": job.id,
         "status": "queued",
         "total_tasks": total_tasks_hint,
         "channel": f"project:{project.id}:preannotate",
+        "warnings": warnings,
     }
 
 

@@ -12,6 +12,8 @@ import pytest
 
 from app.services.pipeline_validation import (
     check_capability_violations,
+    check_parent_geometry_roi,
+    normalize_geometry_outputs,
     resolve_preannotate_queue,
 )
 
@@ -64,6 +66,54 @@ def test_resolve_preannotate_queue(devices, expected):
         resolve_preannotate_queue(devices, gpu_queue="ml", cpu_queue="ml.cpu")
         == expected
     )
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (["bbox", "polygon"], ["bbox", "polygon"]),
+        (["box"], ["bbox"]),  # sam3 别名
+        (["mask"], ["polygon"]),  # sam3 别名
+        (["both"], ["bbox", "polygon"]),  # both 展开
+        (["BBox", " polygon "], ["bbox", "polygon"]),  # 大小写/空白归一
+        ([], []),
+        (None, []),  # 缺省
+        ([123, "keypoint"], ["keypoint"]),  # 非法项跳过
+    ],
+)
+def test_normalize_geometry_outputs(raw, expected):
+    caps = {} if raw is None else {"supported_geometric_outputs": raw}
+    assert normalize_geometry_outputs(caps) == expected
+
+
+@pytest.mark.parametrize(
+    "geo, expect_violation",
+    [
+        (["bbox"], False),  # 可裁
+        (["polygon"], False),  # 可裁 (取外接框)
+        (["bbox", "keypoint"], False),  # 至少一种可裁 → 放过, 部分交运行期兜底
+        (["mask"], False),  # 别名 → polygon → 可裁
+        (["both"], False),  # 展开含 bbox/polygon
+        (None, False),  # 未自报 → 零退化放过
+        ([], False),  # 空 → 放过
+        (["keypoint"], True),  # 完全不可裁
+        (["polyline"], True),
+        (["rotated_bbox"], True),  # 旋转框运行期被 _box_bbox_pct 跳过
+        (["keypoint", "polyline"], True),
+    ],
+)
+def test_check_parent_geometry_roi(geo, expect_violation):
+    caps = {} if geo is None else {"supported_geometric_outputs": geo}
+    violations = check_parent_geometry_roi(
+        caps, where="stage 1 ", parent_model_id="src"
+    )
+    if expect_violation:
+        assert len(violations) == 1
+        assert violations[0].code == "no_roi_geometry"
+        assert "stage 1 " in violations[0].detail
+        assert "'src'" in violations[0].detail
+    else:
+        assert violations == []
 
 
 def test_violation_detail_carries_context():

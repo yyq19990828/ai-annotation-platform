@@ -29,6 +29,7 @@ import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
+import { usePendingGeom } from "./usePendingGeom";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
@@ -56,6 +57,8 @@ import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolModelPref } from "./useAiToolModelPref";
 import { useInteractiveBackendPref } from "./useInteractiveBackendPref";
 import { InteractiveToolBar } from "../shell/InteractiveToolBar";
+import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
+import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
@@ -582,7 +585,13 @@ export function useWorkbenchShellModel({
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
+  // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
+  // 晚一帧于 setDrag(null) 而出现的原尺寸闪回。详见 usePendingGeom 注释。
+  const { pendingGeomMap, markPendingGeom, clearPendingGeom } = usePendingGeom(annotationsData);
   const [hideOrphanAnnotations, setHideOrphanAnnotations] = useState(false);
+  // v0.20.19 · 二次推理面板显隐 (服务端偏好, 跨设备); gate SecondaryInferenceBar 渲染。
+  const { hidden: secondaryBarHidden, setHidden: setSecondaryBarHidden } =
+    useSecondaryBarHiddenPref();
   const projectClassNames = useMemo(
     () =>
       currentProject
@@ -713,7 +722,11 @@ export function useWorkbenchShellModel({
   const createAnnotation = useCreateAnnotation(taskId);
   const deleteAnnotationMut = useDeleteAnnotation(taskId);
   const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
-  const updateAnnotationMut = useUpdateAnnotation(taskId, (...args) => conflictCbRef.current(...args));
+  const updateAnnotationMut = useUpdateAnnotation(
+    taskId,
+    (...args) => conflictCbRef.current(...args),
+    clearPendingGeom,
+  );
   const groupAnnotationMut = useAnnotationGroup(taskId ?? "");
   const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
@@ -866,8 +879,10 @@ export function useWorkbenchShellModel({
   // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
   // 写项目配置是有副作用操作, 故先 window.confirm 确认 (plan 风险项)。补完后 enabledToolUnits 派生
   // 收敛, useCapabilityValidation 重算, 该条警告自动消失。
-  const handleFillAttribute = useCallback(
-    (field: AttributeField) => {
+  // v0.20.12 · 抽出批量核心, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
+  const applyAttributeFields = useCallback(
+    (fields: AttributeField[], confirmMsg: string) => {
+      if (fields.length === 0) return;
       const tb = currentProject?.tool_bindings;
       if (!tb) return;
       const enabledUnits = (Object.keys(tb) as ToolUnitId[]).filter((u) => tb[u]?.enabled);
@@ -875,13 +890,7 @@ export function useWorkbenchShellModel({
         pushToast({ msg: "当前项目没有启用的工具单位, 无法补全属性", kind: "warning" });
         return;
       }
-      if (
-        !window.confirm(
-          `将把属性「${field.label}」(key=${field.key}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
-        )
-      ) {
-        return;
-      }
+      if (!window.confirm(confirmMsg)) return;
       // 仅改启用单位的 attribute_schema; 其余单位 (禁用/未配) 原样保留, 避免误丢配置。
       const nextTb: ToolBindings = {};
       for (const [unit, binding] of Object.entries(tb) as [ToolUnitId, ToolBinding][]) {
@@ -890,17 +899,19 @@ export function useWorkbenchShellModel({
           nextTb[unit] = binding;
           continue;
         }
-        const fields = ((binding.attribute_schema?.fields ?? []) as AttributeField[]).slice();
-        const idx = fields.findIndex((f) => f.key === field.key);
-        if (idx >= 0) fields[idx] = field;
-        else fields.push(field);
-        nextTb[unit] = { ...binding, attribute_schema: { fields } };
+        const merged = ((binding.attribute_schema?.fields ?? []) as AttributeField[]).slice();
+        for (const field of fields) {
+          const idx = merged.findIndex((f) => f.key === field.key);
+          if (idx >= 0) merged[idx] = field;
+          else merged.push(field);
+        }
+        nextTb[unit] = { ...binding, attribute_schema: { fields: merged } };
       }
       updateProjectMu.mutate(
         { tool_bindings: nextTb },
         {
           onSuccess: () =>
-            pushToast({ msg: `已补全属性「${field.label}」到项目`, kind: "success" }),
+            pushToast({ msg: `已补全 ${fields.length} 个属性字段到项目`, kind: "success" }),
           onError: (err) =>
             pushToast({ msg: "补全属性失败", sub: (err as Error).message, kind: "error" }),
         },
@@ -908,6 +919,40 @@ export function useWorkbenchShellModel({
     },
     [currentProject?.tool_bindings, updateProjectMu, pushToast],
   );
+  const handleFillAttribute = useCallback(
+    (field: AttributeField) =>
+      applyAttributeFields(
+        [field],
+        `将把属性「${field.label}」(key=${field.key}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
+      ),
+    [applyAttributeFields],
+  );
+  // v0.20.12 · 二次推理: 一次把多个缺失属性字段补进项目 (SecondaryInferenceBar 用)。
+  const handleEnsureAttributeFields = useCallback(
+    (fields: AttributeField[]) =>
+      applyAttributeFields(
+        fields,
+        `将把 ${fields.length} 个属性字段 (${fields
+          .map((f) => f.key)
+          .join(", ")}) 补进当前项目所有启用工具单位, 并立即保存。继续?`,
+      ),
+    [applyAttributeFields],
+  );
+  // v0.20.12 · 项目所有启用单位已有的属性键集合 (二次推理判定 backend 输出键是否有承接位)。
+  const projectAttributeKeys = useMemo(() => {
+    const tb = currentProject?.tool_bindings;
+    const keys = new Set<string>();
+    if (tb) {
+      for (const b of Object.values(tb) as (ToolBinding | undefined)[]) {
+        if (b?.enabled) {
+          for (const f of (b.attribute_schema?.fields ?? []) as AttributeField[]) {
+            if (f.key) keys.add(f.key);
+          }
+        }
+      }
+    }
+    return keys;
+  }, [currentProject?.tool_bindings]);
   // AI"配置区"共享状态 (任务类型 / 模型任务 / 类别白名单 / variant / 参数 / 输出形态 / buildArgs);
   // 与批量页 ProjectDetailPanel 同一 hook + PreannotateConfigForm (单一事实源). 驱动批量 AI 面板
   // (运行当前题 AI) — 批量线, 用 batchBackendId.
@@ -1014,6 +1059,9 @@ export function useWorkbenchShellModel({
       const target = all.find((op) => op.kind === "create" && op.tmpId === id);
       if (target) await offlineQueueRemoveById(target.id);
     },
+    // v0.20.22 · accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
+    // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
+    getAnnotation: (id) => annotationsRef.current.find((a) => a.id === id) ?? null,
   });
 
   const { avgMs } = useSessionStats(taskId ?? null, projectId ?? null, "annotate");
@@ -1063,6 +1111,7 @@ export function useWorkbenchShellModel({
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
       delete: { mutate: (id, opts) => deleteAnnotationMut.mutate(id, opts) },
     },
+    markPendingGeom,
   });
   const {
     aiBoxes,
@@ -1893,10 +1942,18 @@ export function useWorkbenchShellModel({
       collapsed: floatingSelection.collapsed,
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
+      // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
+      secondaryBarHidden,
+      onToggleSecondaryBar:
+        stageKind === "image"
+          ? () => setSecondaryBarHidden(!secondaryBarHidden)
+          : undefined,
       children,
     };
   }, [
     selectionCardEligible,
+    secondaryBarHidden,
+    setSecondaryBarHidden,
     selectionCount,
     selectedAnnotationForPanel,
     selectedAiBox,
@@ -2262,6 +2319,21 @@ export function useWorkbenchShellModel({
                 onVariantChange={handleInteractiveVariantChange}
               />
             )}
+            {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
+                已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
+            {!secondaryBarHidden &&
+              !isAIToolId(s.tool) &&
+              stageKind === "image" &&
+              selectedAnnotationForPanel && (
+                <SecondaryInferenceBar
+                  projectId={projectId}
+                  taskId={selectedAnnotationForPanel.task_id}
+                  annotation={selectedAnnotationForPanel}
+                  readOnly={isLocked}
+                  existingAttributeKeys={projectAttributeKeys}
+                  onEnsureAttributeFields={handleEnsureAttributeFields}
+                />
+              )}
             <WorkbenchOverlays
               pendingDrawing={s.pendingDrawing}
               editingClass={s.editingClass}
@@ -2327,6 +2399,7 @@ export function useWorkbenchShellModel({
         tool: s.tool,
         fadedAiIds: dimmedAiIds,
         nudgeMap,
+        pendingGeomMap,
         userBoxes: modeState.diffMode === "raw" ? [] : userBoxes,
         aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes,
         spacePan,
@@ -2336,6 +2409,8 @@ export function useWorkbenchShellModel({
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,
         onPatchShapeFlag: handlePatchShapeFlag,
+        secondaryBarHidden,
+        onToggleSecondaryBar: () => setSecondaryBarHidden(!secondaryBarHidden),
         imageClipboardActions: imageContextMenuClipboard,
         onCommitDrawing: handleCommitDrawing,
         onCommitRotatedBbox: createRotatedBbox,
@@ -2416,6 +2491,14 @@ export function useWorkbenchShellModel({
     },
     inspector: {
       open: rightOpen, width: rightPx, onResize: onResizeRight, readOnly: isLocked,
+      // v0.20.19 · 属性区折叠态走 workbench.layout 服务端偏好, 选框/刷新/换设备保留。
+      attrCollapsed: s.attrPanelCollapsed,
+      onToggleAttrCollapsed: () => s.setAttrPanelCollapsed(!s.attrPanelCollapsed),
+      // v0.20.22 · AI 待审 / 人工两大分组头折叠 (同一 workbench.layout 管道跨设备持久)。
+      aiSectionCollapsed: s.aiSectionCollapsed,
+      onToggleAiSection: () => s.setAiSectionCollapsed(!s.aiSectionCollapsed),
+      manualSectionCollapsed: s.manualSectionCollapsed,
+      onToggleManualSection: () => s.setManualSectionCollapsed(!s.manualSectionCollapsed),
       widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetach: detachInspector,
       capabilityWarnings,
@@ -2569,6 +2652,8 @@ export function useWorkbenchShellModel({
       projectRenderingConfig: currentProject?.rendering_config ?? null,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
+      secondaryBarHidden,
+      onToggleSecondaryBar: () => setSecondaryBarHidden(!secondaryBarHidden),
     },
     conflict: { open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) },
     rejectModal: modeState.rejectModal ? {
@@ -2606,6 +2691,9 @@ export function useWorkbenchShellModel({
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       onDetach: detachDiscussion,
+      // v0.20.22 · 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
+      collapsed: s.discussionCollapsed,
+      onToggleCollapsed: () => s.setDiscussionCollapsed(!s.discussionCollapsed),
     },
   };
 

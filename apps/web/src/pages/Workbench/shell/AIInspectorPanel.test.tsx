@@ -230,10 +230,12 @@ describe("AIInspectorPanel", () => {
     const aiBox = makeAiBox("ai-2", "truck");
     renderUI({ aiBoxes: [aiBox], onAcceptPrediction });
     fireEvent.click(screen.getByTestId("accept-ai-2"));
-    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox);
+    // v0.20.22 · AIInspectorPanel 通过 acceptWithReviewEdits wrapper 透传给 BoxesList,
+    // 未选中候选 / 未编辑时 overrides = undefined。
+    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
   });
 
-  it("v0.18.3 · 选中带属性的候选 → 属性审阅区采纳按钮调用 onAcceptPrediction(box, undefined)", () => {
+  it("v0.20.22 · 属性审阅按钮已退役, 选中带属性的候选未编辑时点行内采纳 → onAcceptPrediction(box, undefined)", () => {
     const onAcceptPrediction = vi.fn();
     const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
     const attributeSchema = {
@@ -255,10 +257,65 @@ describe("AIInspectorPanel", () => {
       attributeSchema,
       onAcceptPrediction,
     });
-    // 属性审阅区出现 + 采纳按钮 (未改动 → 文案不含「含改动」)
+    // 属性审阅区表单仍存在, 但 v0.20.22 采纳按钮已退役 (accept-candidate-attrs 不存在)。
     expect(screen.getByText("属性审阅")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("accept-candidate-attrs"));
+    expect(screen.queryByTestId("accept-candidate-attrs")).toBeNull();
+    // 行内 (BoxesList) 采纳按钮触发 wrapper: 未编辑 → 传 undefined。
+    fireEvent.click(screen.getByTestId("accept-ai-attr"));
     expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
+  });
+
+  it("v0.20.22 · 属性审阅区改属性后点行内采纳 → wrapper 附带 overrides", () => {
+    const onAcceptPrediction = vi.fn();
+    const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
+    const attributeSchema = {
+      fields: [{ key: "color", label: "颜色", type: "text" as const }],
+    };
+    renderUI({
+      aiBoxes: [aiBox],
+      selectedId: "ai-attr",
+      attributeSchema,
+      onAcceptPrediction,
+    });
+    // mock AttributeForm 的 change-attr 触发 onChange({ key: "val" }) → 写入 editedAiBoxAttrs。
+    fireEvent.click(screen.getByText("change-attr"));
+    // 点 BoxesList 行内采纳按钮 → wrapper 合并 editedAiBoxAttrs 作为 overrides。
+    fireEvent.click(screen.getByTestId("accept-ai-attr"));
+    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, { key: "val" });
+  });
+
+  it("属性区折叠态受控: attrCollapsed 隐藏表单, 点头部调 onToggleAttrCollapsed", () => {
+    const onToggleAttrCollapsed = vi.fn();
+    const attributeSchema = {
+      fields: [{ key: "color", label: "颜色", type: "text" as const }],
+    };
+    // 走候选「属性审阅」路径 (selectedAiBox), 与「属性」区共用 attrCollapsed 控制,
+    // 且不触发 selectedAnnotation 分支的 getMissingRequired (测试 mock 未导出)。
+    const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
+    const shared = {
+      aiBoxes: [aiBox],
+      selectedId: "ai-attr",
+      attributeSchema,
+      onToggleAttrCollapsed,
+    };
+    // 折叠态: 属性表单不渲染 (头部仍在)。
+    const { rerender } = render(
+      <MemoryRouter>
+        <AIInspectorPanel {...baseProps} {...shared} attrCollapsed />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("属性审阅")).toBeInTheDocument();
+    expect(screen.queryByTestId("attribute-form")).toBeNull();
+    // 点头部 → 调受控回调 (不改本地态)。
+    fireEvent.click(screen.getByText("属性审阅"));
+    expect(onToggleAttrCollapsed).toHaveBeenCalledTimes(1);
+    // 展开态: 属性表单渲染。
+    rerender(
+      <MemoryRouter>
+        <AIInspectorPanel {...baseProps} {...shared} attrCollapsed={false} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("attribute-form")).toBeInTheDocument();
   });
 
   it("点击驳回按钮 → 调用 onRejectPrediction + onClearSelection", () => {
@@ -281,6 +338,21 @@ describe("AIInspectorPanel", () => {
     renderUI({ aiBoxes: [polygonBox], onRefinePrediction });
     fireEvent.click(screen.getByTestId("refine-ai-poly"));
     expect(onRefinePrediction).toHaveBeenCalledWith(polygonBox);
+  });
+
+  it("v0.20.9 · 子框在父框下方缩进渲染 (depth=1 → border-l 包裹)", () => {
+    const parent = makeUserBox("u-parent", "car");
+    const child = { ...makeUserBox("u-child", "plate"), parent_annotation_id: "u-parent" };
+    renderUI({ userBoxes: [parent, child] });
+    // 父子都渲染
+    expect(screen.getByTestId("box-item-u-parent")).toBeInTheDocument();
+    const childItem = screen.getByTestId("box-item-u-child");
+    expect(childItem).toBeInTheDocument();
+    // 子框被缩进包裹 (border-l 连接线), 父框不被包裹
+    expect(childItem.parentElement?.className).toContain("border-l-2");
+    expect(
+      screen.getByTestId("box-item-u-parent").parentElement?.className ?? "",
+    ).not.toContain("border-l-2");
   });
 
   it("多选时显示 multiSelectionBar", () => {

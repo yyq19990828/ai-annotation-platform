@@ -72,10 +72,11 @@ graph TD
 | `geometry` | JSONB 几何体 |
 | `confidence` | 置信度，可空 |
 | `parent_prediction_id` | 来自哪条 prediction，可空 |
-| `parent_annotation_id` | 派生自哪条 annotation，可空 |
+| `parent_annotation_id` | 父框 id，可空；表「车牌属于车」这类从属层级（仅一层，见下方父子约束） |
 | `group_id` | 「平等成员同组」序号（`BigInteger`，可空；Ctrl+G 成组 / 跨帧链共享），区别于 `parent_annotation_id` 的层级语义 |
 | `lead_time` | 标注耗时 |
 | `attributes` | 扩展属性 |
+| `attributes_meta` | 属性级溯源 sidecar，`{key: {origin, model_ref?}}`（只记 `origin=ai` 的键，见下方属性溯源） |
 | `was_cancelled` | 逻辑取消标记 |
 | `is_active` | 软删除标记 |
 | `version` | 乐观并发控制版本号 |
@@ -85,6 +86,15 @@ graph TD
 - 真实删除走 soft delete，`delete()` 只会把 `is_active` 置 `False`
 - “有效标注数量”同时要求 `is_active=True` 且 `was_cancelled=False`
 - `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”
+
+#### 父子标注（`parent_annotation_id`）
+
+`parent_annotation_id` 表达「子物属于父物」的层级从属（车牌属于车、零件属于整机），与 `group_id` 的「平等成员同组」是正交的两套关系。约束与行为：
+
+- **仅一层深度**：`AnnotationService._validate_parent_annotation` 在 `create` 时校验——父框须存在且 `is_active`、与子框**同一 task**（父子限帧内）、且父框自身 `parent_annotation_id` 为空。任一不满足返回 `400`。约束放在应用层而非 DB，给未来多层留后手。
+- **级联软删**：`delete()` 软删一个父框时，其全部 `is_active` 子框一并置 `is_active=False`，不留孤儿；`_update_task_stats` 按剩余 active 数重算 task 计数。
+- **创建入口**：`AnnotationCreate` 携带可空 `parent_annotation_id`，`POST /tasks/{task_id}/annotations` 透传给 service 建子框；缺省即顶层框。此前该字段只由视频 `convert` / `split` 内部构造框时写入（见下方轨迹转换）。
+- **前端呈现**：工作台侧栏 `AIInspectorPanel` 按父子缩进渲染（父行下方缩进列出子框），是层级的主结构；`group_id` 分桶为并存的次结构。画布上，恰好单选一个框时，其直接子框描一圈**同胞高亮环**（`ImageStage` 用 `siblingHighlightChildren` 纯函数派生子框集，绕每个子框 bbox 画统一细点线环 `SIBLING_HIGHLIGHT_COLOR`，免逐 shape 穿 prop；offset 6px 与 group 长虚线的 4px 嵌套不打架）。图片任务限定（video/3D 父子走各自轨迹）。**Alt 拖动联动**：按住 Alt 拖动一个 bbox 父框主体时，其直接子框按父框的实际位移一并平移（复用 `geometryTranslate` 的几何平移，父+子作为 history `batch` 复合命令进单次 undo）；不按 Alt 则仅搬父框。作用面限 `kind:"move"`（bbox 父框主体），与折线插点/关键点的 Alt 交互不冲突。
 
 ### Geometry union
 
@@ -120,6 +130,33 @@ graph TD
 - 切类时属性按新类别 `applies_to` 过滤；改类悬浮框（`ClassPickerPopover`）即时联动刷新可见字段
 
 > **历史背景**：v0.11.27 之前 `Annotation` 上有 `is_occluded` 内置布尔列，只影响视觉、不进导出。迁移 `0088_remove_annotation_occlusion` 删除该列；旧项目如需保留遮挡语义，请在 schema 上新增一个 boolean 属性并启用 `style_occluded`。`video_track_bbox.keyframes[i].occluded` 是视频轨迹层面的"目标存在但被遮挡"语义，与 annotation 表无关，未变更。
+
+### 属性级溯源（`attributes_meta`）
+
+`attributes` 是裸 `dict[key, value]`，说不清「某个属性到底人填还是 AI 填」——典型混合体是「人手画的框 + AI 二次推理填的属性」。`attributes_meta`（独立 JSONB 列）给每个属性 key 补一层来源标记。设计取**最小 sidecar**：**只存 `origin=ai` 的键，human 用「缺省即 human」隐式表达**，故存量行 `{}` = 全 human，无需回填。
+
+形状：`{ "<key>": { "origin": "ai", "model_ref": { "backend_id", "model_id" } } }`。
+
+写入与维护（`AnnotationService`）：
+
+- **采纳预测**（`accept_prediction`）：查 `PredictionMeta`（与 prediction 1:1），从 `extra.pipeline.stages[]` 建「AI 富集属性键 → model_ref」映射。pipeline provenance 是 **stage 级、非 per-key**，per-key 靠前缀反推——富集键 = `f"{label}_{k}" if label else k`（与 `tasks.py` `_run_task_pipeline` 一致）。命中键标 `origin=ai` + model_ref；采纳前经 `attribute_overrides` 人工改过的键不标。`confidence` 在 extra 里不存在，不编造。
+- **人工改属性**（`update` / `bulk_update`）：经 `_sync_attributes_meta` 同步——某 AI 键**值被改** → 删其 meta（人工认领，回落隐式 human）；**值未改** → 保留；键被**删除** → meta 联动消失。**键同步是正确性红线**（meta 不得残留已不存在的 key）。
+
+前端：`AnnotationResponse.attributes_meta` 透传到 `AttributeForm`，`origin=ai` 的字段旁渲染极轻 `✦ AI` chip（hover 显 model）。
+
+### 选中框二次推理（single-box secondary inference）
+
+选中一个已落库的框 → 在它的 bbox ROI（crop）上同步跑一个能力（子物检测 / 属性分类 / OCR），产物按类型归位。端点 `POST /tasks/{task_id}/annotations/{annotation_id}/secondary-inference`，service `run_secondary_inference`（`app/services/secondary_inference.py`）。
+
+- **与批量二次推理同一套投递**：复用 `crop_inputs_from_boxes`（裁 ROI + presigned 上传）+ `_build_predict_context` + `merge_classify_attributes` / `remap_geometry_to_image`。区别只是「源」是选中的现成框而非检测阶段，且**同步执行、不走 worker**（单框秒回）。
+- **产物归位**：`write_target="attributes"` → 分类 / OCR 属性 union 回原框，写入键标 `attributes_meta.origin=ai`；`write_target="geometry"` → crop 检出几何回映回原图坐标后建**子框**（`parent_annotation_id=选中框`，`source=prediction_based`）。子检出类名不在项目标签集时回落 `__unknown`（不丢框，NG6 平台不做类映射）。
+- 前端入口是画布顶部 `SecondaryInferenceBar`（选中单框时显），`useSecondaryInference` 跨启用 backend 枚举 `supported_inputs` 含 `crop` 的非交互模型、派生 `write_target`（检测→geometry / 分类·OCR→attributes）。UI 借鉴 `InteractiveToolBar` 悬浮面板：能力收成一个按 task 分组的 `<select>`（`<optgroup>`），选中项旁挂 ⚙ 参数 / ⚠ 补字段，右侧「运行」。
+- **面板显隐**：二次推理不常用时可关闭该工具条（`useSecondaryBarHiddenPref` 读写 `User.preferences.ui.secondary_bar_hidden`，跨设备）；三入口切换、状态一致：工作台设置抽屉开关、选中框浮卡（`SelectedAnnotationCard`）头部 ✦ 按钮、标注右键菜单项（`buildImageContextMenuItems`）。gate 在 `useWorkbenchShellModel` 的 `SecondaryInferenceBar` 渲染条件（`!secondaryBarHidden`）。默认显示。
+- **属性可见性闭合**：`AttributeForm` 只渲染项目 `attribute_schema` 里的键，故 attributes-型能力若输出项目没配的属性键，产物会写库却不显示。`SecondaryInferenceBar` 用 `missingAttributeFields` 比对能力输出键与项目已有键（`projectAttributeKeys`），缺则在能力旁给「补 N 字段」CTA，复用工作台的属性字段补全 `applyAttributeFields`（`handleEnsureAttributeFields`，带 `window.confirm`）一次补进所有启用工具单位。
+- **参数控制**：能力若有可调推理参数（`hasConfigurableParams`：`params.properties` 除变体字段外还有字段），旁边给 ⚙，展开用与批量预标同一套 `SchemaForm` 渲染参数面板，初值取用户偏好 → `deriveDefaults`；调过的参数经 `buildSecondaryInferencePayload` 的 `params` 透传到后端 `_build_predict_context`。不调则沿用模型默认。
+- **模型档位（变体）选择**：几何类能力（`write_target=geometry`）在能力下拉旁挂 `VariantSelector`（`compact`，与 `InteractiveToolBar` 同款），列该模型 `supported_variants` 的 series/size 等轴；用户所选经 `buildSecondaryInferencePayload` 与模型 `default_variants` 合并（所选覆盖、缺轴回落默认）成 `model_variants` 下发。属性类能力走扁平路径，`model_variants=null`，不显示档位。
+- **开集文本输入**：`supported_prompts` 含 `text` 的开集（开放词表）检测 / 分割模型（`needsTextPrompt`），能力旁多一个文本框，值经 `buildSecondaryInferencePayload` 的 `prompt` 透传（后端 `run_secondary_inference` 的 `prompt` → `_build_predict_context`）；文本为空时禁运行。闭集模型不显示。
+- **参数 + 档位持久化**：`useSecondaryParamPrefs` 把参数与档位按 `backendId:modelId` 存进 `User.preferences.ai.secondary_by_model`（比 backend 更细，避免同 backend 多 model 串味），debounce 保存、`ai` 子树后端深合并，与 `useAiToolParamPrefs` 同范式；切框 / 刷新 / 换设备保留上次值，保存失败静默降级为组件内 state。
 
 ### `AnnotationDraft`
 

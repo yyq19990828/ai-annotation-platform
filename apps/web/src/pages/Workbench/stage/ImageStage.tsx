@@ -24,8 +24,9 @@ import {
   type SnapMatch,
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
-import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
-import { normalizeImageCoordinate, resolveSnapMatch } from "./ImageStage.helpers";
+import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex, SIBLING_HIGHLIGHT_COLOR } from "./ImageStageShapes";
+import { normalizeImageCoordinate, resolveSnapMatch, siblingHighlightChildren } from "./ImageStage.helpers";
+import { translateGeometry } from "../state/geometryTranslate";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
@@ -56,7 +57,7 @@ type Drag =
       cy: number;
       alt: boolean;
     }
-  | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
+  | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom; alt: boolean }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | {
       kind: "resizeRotatedBox";
@@ -151,6 +152,12 @@ interface ImageStageProps {
   pendingDrawing?: { geom: Geom } | null;
   /** 临时几何 override（方向键 nudge 期间用于显示）。优先级：drag > nudgeMap > b。 */
   nudgeMap?: Map<string, Geom>;
+  /**
+   * v0.20.22 · 「提交在途」几何 override（松手 → mutate 微任务回填 cache 之间的桥梁,
+   * 防原尺寸闪回一帧, 见 usePendingGeom）。优先级：drag > nudgeMap > pendingGeomMap > b。
+   * 值为整条 annotation.geometry, 各分支挑对应分量渲染 (bbox 分量 / polygon.points / …)。
+   */
+  pendingGeomMap?: Map<string, Geometry>;
   /** 多边形合并(右键菜单复用;批量改类 / 删除已迁出到浮动选中卡)。 */
   onJoinSelected?: () => void;
   /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
@@ -167,6 +174,9 @@ interface ImageStageProps {
     value: number | boolean,
   ) => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;
+  /** v0.20.19 · 二次推理面板显隐 + 右键菜单切换 (透传给上下文菜单)。 */
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   onCommitDrawing?: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出轴对齐矩形松手 → 提交 angle=0 的 rotated_bbox (类别用 activeClass)。 */
   onCommitRotatedBbox?: (geo: Geom) => void;
@@ -204,7 +214,13 @@ interface ImageStageProps {
    * 会话非空时渲染: 正框=绿色实线 (扩召回) / 负框=红色虚线 (排误检), 跟随视口缩放平移。
    */
   samSessionExemplars?: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
-  onCommitMove?: (id: string, before: Geom, after: Geom) => void;
+  // v0.20.15 · childMoves: Alt 拖父框时同位移的子框 (各自新旧几何), 供上游与父框一并 batch 进单次 undo。
+  onCommitMove?: (
+    id: string,
+    before: Geom,
+    after: Geom,
+    childMoves?: { id: string; before: Geometry; after: Geometry }[],
+  ) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
   /** polygon 顶点几何变更（拖动 / Alt 新增 / Shift 删除）；before/after 为完整 points 列表。 */
   onCommitPolygonGeometry?: (id: string, before: Pt[], after: Pt[]) => void;
@@ -375,9 +391,10 @@ function SamCandidateOverlay({
 export function ImageStage({
   fileUrl, mediaKey, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
-  readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
+  readOnly = false, fadedAiIds, pendingDrawing, nudgeMap, pendingGeomMap,
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
+  secondaryBarHidden, onToggleSecondaryBar,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0, samSessionPoints, samSessionExemplars,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samSubTool, samPolarity,
@@ -439,6 +456,10 @@ export function ImageStage({
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
   vpRef.current = vp;
+  // pointerdown → pointerup 之间 userBoxes 可能被上游改动 (删框 / 新加子框 / parent 改动)。
+  // pointerup 时用 ref 读最新值算 childMoves, 避免向已消失的 id 发 PATCH 或漏掉新子框。
+  const userBoxesRef = useRef(userBoxes);
+  userBoxesRef.current = userBoxes;
   const { ref: setContainerNode, size: vpSize } = useElementSize(containerRef);
 
   // file_url is presigned and can change when annotation mutations refetch the
@@ -481,6 +502,12 @@ export function ImageStage({
     ));
     return buildSnapIndex(polygonAnnotations);
   }, [visibleSortedUserBoxes]);
+  // v0.20.14 · 父子同胞高亮: 恰好单选一个框时, 其直接子框 (parent_annotation_id === 选中框) 描高亮环。
+  // 多选/无选 → 空 (环仅辅助"看清某父框的子框归属", 多选语义模糊故不画)。
+  const siblingHighlightChildBoxes = useMemo(
+    () => siblingHighlightChildren(visibleSortedUserBoxes, selectedId, selSet.size),
+    [visibleSortedUserBoxes, selSet, selectedId],
+  );
 
   // v0.10.4 I2.3 · 当前视口在归一化 [0,1] 空间的 bbox，用于大 polygon 顶点视口粗筛。
   // 加 1 顶点 buffer 防边缘抖动；imgW/imgH 未就绪时返回 undefined（不启用粗筛）。
@@ -808,7 +835,24 @@ export function ImageStage({
           }
         } else if (d.kind === "move") {
           if (d.cur.x !== d.start.x || d.cur.y !== d.start.y) {
-            onCommitMove?.(d.id, d.start, d.cur);
+            // v0.20.15 · Alt 起拖 → 把直接子框按父框实际位移 (已 clamp 的 cur-start) 同步平移,
+            // 与父框一并交给上游 batch (单次 undo)。非 Alt = 现状仅搬父框。
+            let childMoves: { id: string; before: Geometry; after: Geometry }[] | undefined;
+            if (d.alt) {
+              const dx = d.cur.x - d.start.x;
+              const dy = d.cur.y - d.start.y;
+              // 读 ref 的最新 userBoxes 而非闭包冻结值: pointerdown 到 pointerup 之间可能
+              // 有子框被删 / 新加, 冻结闭包会向已消失 id 发 PATCH 或漏掉新子框。
+              childMoves = userBoxesRef.current
+                .filter((c) => c.parent_annotation_id === d.id && c.geometry)
+                .map((c) => ({
+                  id: c.id,
+                  before: c.geometry as Geometry,
+                  after: translateGeometry(c, dx, dy).geometry,
+                }));
+              if (childMoves.length === 0) childMoves = undefined;
+            }
+            onCommitMove?.(d.id, d.start, d.cur, childMoves);
           }
         } else if (d.kind === "resize") {
           if (d.cur.w > 0.005 && d.cur.h > 0.005 &&
@@ -963,18 +1007,36 @@ export function ImageStage({
   const overrideGeom = (id: string): Geom | null => {
     if (drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === id) return drag.cur;
     if (nudgeMap?.has(id)) return nudgeMap.get(id) ?? null;
+    // v0.20.22 · 提交在途兜底: 松手 → onMutate 回填 cache 之间的一帧空窗顶住原尺寸,
+    // 见 usePendingGeom。整条 geometry 存的是 bbox / rotated_bbox / polygon / polyline / keypoint 之一,
+    // 这里只关心 bbox 分量, 其它类型走各自的 override 函数。
+    const pg = pendingGeomMap?.get(id);
+    if (pg && pg.type === "bbox") return { x: pg.x, y: pg.y, w: pg.w, h: pg.h };
     return null;
   };
 
   /** polygon 顶点 / 整体平移 drag 期间的实时 override；返回当前应渲染的 points 列表（或 null 表示无 override）。 */
   const polyOverridePoints = (id: string): Pt[] | null => {
     if (drag && (drag.kind === "polyVertex" || drag.kind === "polyMove") && drag.id === id) return drag.cur;
+    // v0.20.22 · 见上方 overrideGeom 注释。
+    const pg = pendingGeomMap?.get(id);
+    if (pg && (pg.type === "polygon" || pg.type === "polyline")) return pg.points;
     return null;
   };
 
   /** v0.10.28 · keypoint 单节点拖拽期间的实时 override。 */
   const kpOverridePoints = (id: string): Keypoint[] | null => {
     if (drag && drag.kind === "kpNode" && drag.id === id) return drag.cur;
+    // v0.20.22 · 见上方 overrideGeom 注释。
+    const pg = pendingGeomMap?.get(id);
+    if (pg && pg.type === "keypoint") return pg.points;
+    return null;
+  };
+
+  /** v0.20.22 · 旋转框整条 geometry override（松手后一帧桥, 见 usePendingGeom）。 */
+  const rotatedOverride = (id: string): RotatedBboxGeometry | null => {
+    const pg = pendingGeomMap?.get(id);
+    if (pg && pg.type === "rotated_bbox") return pg;
     return null;
   };
 
@@ -1014,6 +1076,8 @@ export function ImageStage({
       onCropSelected,
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
+      secondaryBarHidden,
+      onToggleSecondaryBar,
     });
   }, [
     clipboardActions,
@@ -1026,6 +1090,8 @@ export function ImageStage({
     onPatchShapeFlag,
     readOnly,
     userBoxes,
+    secondaryBarHidden,
+    onToggleSecondaryBar,
   ]);
 
   const isSelectedAi = selectedBox ? "predictionId" in selectedBox : false;
@@ -1188,7 +1254,11 @@ export function ImageStage({
             // v0.10.28 · 旋转框: 绕中心旋转的 Rect + 顶部旋转手柄。
             if (b.geometry?.type === "rotated_bbox") {
               const g = b.geometry;
-              const liveGeometry = drag?.kind === "resizeRotatedBox" && drag.id === b.id ? drag.cur : g;
+              // v0.20.22 · 优先级: drag(实时拖拽) > pendingGeom(松手在途) > b.geometry。
+              const rotPending = rotatedOverride(b.id);
+              const liveGeometry = drag?.kind === "resizeRotatedBox" && drag.id === b.id
+                ? drag.cur
+                : (rotPending ?? g);
               // 拖拽中实时角度 override (rotateBox)。
               const liveAngle = drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : liveGeometry.angle;
               const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
@@ -1393,7 +1463,8 @@ export function ImageStage({
                 onMoveStart={isPrimarySingleSelect ? (e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
                   if (!pt) return;
-                  setDrag({ kind: "move", id: b.id, start: { x: b.x, y: b.y, w: b.w, h: b.h }, sx: pt.x, sy: pt.y, cur: { x: b.x, y: b.y, w: b.w, h: b.h } });
+                  // v0.20.15 · 按住 Alt 起拖 = 子框联动 (在 commit 处据此把子框同位移一并 batch)。
+                  setDrag({ kind: "move", id: b.id, start: { x: b.x, y: b.y, w: b.w, h: b.h }, sx: pt.x, sy: pt.y, cur: { x: b.x, y: b.y, w: b.w, h: b.h }, alt: e.evt.altKey });
                 } : null}
                 onResizeStart={isPrimarySingleSelect ? (dir, e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
@@ -1403,6 +1474,23 @@ export function ImageStage({
               />
             );
           })}
+          {/* v0.20.14 · 父子同胞高亮环: 绕每个子框 bbox 画细点线 (统一形状, 免逐 shape 穿 prop);
+              offset 6px 使其在 group 长虚线 (offset 4px) 之外, 二者共存时嵌套不打架。listening=false。 */}
+          {siblingHighlightChildBoxes.map((b) => (
+            <Rect
+              key={`sibling-${b.id}`}
+              x={b.x * imgW - 6 / vp.scale}
+              y={b.y * imgH - 6 / vp.scale}
+              width={b.w * imgW + 12 / vp.scale}
+              height={b.h * imgH + 12 / vp.scale}
+              stroke={SIBLING_HIGHLIGHT_COLOR}
+              strokeWidth={2 / vp.scale}
+              dash={[2 / vp.scale, 2 / vp.scale]}
+              cornerRadius={2 / vp.scale}
+              fill="transparent"
+              listening={false}
+            />
+          ))}
         </Layer>
 
         {/* v0.10.8 · Mask 编辑器临时叠加层 (仅 tool === "mask" 且 active 时挂)。 */}

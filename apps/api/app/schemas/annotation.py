@@ -20,6 +20,8 @@ class AnnotationCreate(BaseModel):
     geometry: Geometry
     confidence: float | None = None
     parent_prediction_id: UUID | None = None
+    # v0.20.9 · 父子标注: 建子框时指向父框 (仅一层, service 层校验). 缺省为顶层框。
+    parent_annotation_id: UUID | None = None
     lead_time: float | None = None
     attributes: AnnotationAttributes | None = None
 
@@ -79,6 +81,39 @@ class AnnotationBulkUpdateRequest(BaseModel):
 class AnnotationBulkUpdateResponse(BaseModel):
     updated_ids: list[UUID]
     updated_count: int
+
+
+class SecondaryInferenceRequest(BaseModel):
+    """v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上跑一个能力。
+
+    镜像批量 pipeline 的单个下游阶段 (源=选中框, 无检测阶段)。
+    write_target 决定产物归位: attributes → 写回原框; geometry → 建子框。
+    """
+
+    # extra=forbid: 拒绝未声明字段, 避免前端误传的隐性字段被吞后跑出"看似成功但不生效"。
+    model_config = {"extra": "forbid"}
+
+    ml_backend_id: UUID
+    write_target: Literal["attributes", "geometry"] = "attributes"
+    # attributes: 只取这些下游返回键 (None=全取); label 给写回键加前缀 (子命名空间)
+    write_keys: list[str] | None = None
+    label: str | None = None
+    # backend wire 参数 (与批量下游 _build_predict_context 同义)
+    model_id: str | None = None
+    model_variants: dict[str, str] | None = None
+    params: dict | None = None
+    task_type: str | None = None
+    prompt: str | None = None
+    class_filter: list[int] | None = None
+    # ROI 外扩比例 (贴边小目标留边给上下文); 上下界与批量 pipeline ROI.pad 对齐 [0, 0.5]。
+    pad: float = Field(default=0.08, ge=0.0, le=0.5)
+
+
+class SecondaryInferenceResponse(BaseModel):
+    """更新后的原框 + 新建子框 (几何型)。属性型时 created_children 为空。"""
+
+    annotation: "AnnotationOut"
+    created_children: list["AnnotationOut"] = []
 
 
 class AnnotationGroupRequest(BaseModel):
@@ -213,6 +248,9 @@ class AnnotationOut(BaseModel):
     is_active: bool
     ground_truth: bool = False
     attributes: AnnotationAttributes = {}
+    # v0.20.10 · 属性级溯源 sidecar: {key: {origin, model_ref?, confidence?, at?}}.
+    # 存量行 / 无 AI 属性时为 {}; 前端据此渲染 AI 属性来源 chip。
+    attributes_meta: dict = {}
     # v0.10.5 M4-β · shape 状态位（I15）；旧记录回落默认值。
     z_order: int = 0
     is_locked: bool = False
@@ -254,6 +292,7 @@ class NeighborAnnotationsResponse(BaseModel):
 
 
 AnnotationListPage.model_rebuild()
+SecondaryInferenceResponse.model_rebuild()
 VideoTrackConvertToBboxesResponse.model_rebuild()
 VideoTrackCompositionResponse.model_rebuild()
 PropagateResponse.model_rebuild()

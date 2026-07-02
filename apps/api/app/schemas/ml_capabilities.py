@@ -101,7 +101,10 @@ class InstanceModelItem(BaseModel):
     output_attribute_schema: list[dict] = []
     # v0.20.3 · backend 自报的类别清单 (yolo COCO 等)。供前端「从 backend 预填配置」一键
     # 导入类别——此前本字段在 /instances 被裁掉, 类别只能手抄。缺省 [] 向后兼容。
-    classes: list[str] = []
+    # 形态与 MLModelCapability.classes (ml_backend.py) 一致: [{index,name}], 不是 string[] ——
+    # 此前误标 list[str] 导致任何自报非空 classes 的 backend (yolo/onnxtools) 校验 80+ 个
+    # ValidationError, 整条 backend 被 /instances 路由层静默 catch 掉, 能力目录整体丢失该 backend。
+    classes: list[dict] = []
     modality: str | None = None
     supported_variants: list[InstanceVariantGroup] = []
     variant_combinations: list[list[str]] = []

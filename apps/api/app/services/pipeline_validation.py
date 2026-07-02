@@ -74,6 +74,57 @@ def check_capability_violations(
     return violations
 
 
+# v0.20.21 · 可作下游 ROI 父框的输出几何 (对应 roi._box_bbox_pct: 轴对齐 bbox / 多边形取外接框)。
+_ROI_CAPABLE_GEOMETRIES = frozenset({"bbox", "polygon"})
+# sam3 等老 backend 用了受控词表外的输出几何别名, 归一化后再判可裁性 (否则漏判)。
+_GEO_ALIAS = {"box": "bbox", "mask": "polygon"}
+
+
+def normalize_geometry_outputs(caps: dict) -> list[str]:
+    """规范化模型的 supported_geometric_outputs, 兼容词表外别名 (box→bbox / mask→polygon /
+    both→bbox+polygon)。非法项跳过; 缺省返回空列表。"""
+    raw = (caps or {}).get("supported_geometric_outputs") or []
+    out: list[str] = []
+    for g in raw:
+        if not isinstance(g, str):
+            continue
+        key = g.strip().lower()
+        if key == "both":
+            out.extend(("bbox", "polygon"))
+        else:
+            out.append(_GEO_ALIAS.get(key, key))
+    return out
+
+
+def check_parent_geometry_roi(
+    parent_caps: dict, *, where: str, parent_model_id
+) -> list[CapabilityViolation]:
+    """v0.20.21 · 下游阶段按上游框裁 crop / 发 bbox_prompt 作 ROI, 仅 bbox/polygon 可作父框
+    (roi._box_bbox_pct)。校验上游父阶段的 supported_geometric_outputs 是否含可裁几何。
+
+    与 dispatch 已有的「下游能否吃框」门 (supported_inputs 含 bbox_prompt/crop) 对称: 那道查
+    下游输入侧, 这道查上游输出侧。判据「显式自报才拦, 缺省放过」——上游未自报几何 (老 backend)
+    → 放过零退化; 至少能产一种可裁几何 → 放过 (可能只产 bbox 的多形态模型, 部分不可裁交由
+    运行期 skipped_geometry 兜底); 完全不含可裁几何 → 违例 (该阶段所有父框运行期被跳过、零富集)。
+
+    where: 上下文前缀 ("stage N ")。parent_model_id: 仅用于成句。
+    """
+    geos = normalize_geometry_outputs(parent_caps)
+    if not geos:
+        return []
+    if any(g in _ROI_CAPABLE_GEOMETRIES for g in geos):
+        return []
+    return [
+        CapabilityViolation(
+            code="no_roi_geometry",
+            detail=(
+                f"{where}的上游模型 {parent_model_id!r} 只输出 {geos} (非 bbox/polygon), "
+                "下游无法按其框裁 ROI, 该阶段所有父框将被跳过、零富集"
+            ),
+        )
+    ]
+
+
 def resolve_preannotate_queue(devices, *, gpu_queue: str, cpu_queue: str) -> str:
     """v0.19.5 · 按整条 pipeline 各阶段 resource_profile.device 决定 Celery 队列。
 

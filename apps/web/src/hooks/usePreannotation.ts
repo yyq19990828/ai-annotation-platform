@@ -121,6 +121,8 @@ export interface TriggerPreannotationResponse {
   status: string;
   total_tasks?: number | null;
   channel?: string;
+  /** v0.20.21 · 派发期软提示 (不拦截), 如 output=both + 多阶段会导致下游重复处理。 */
+  warnings?: string[];
 }
 
 export function useTriggerPreannotation(projectId: string | undefined) {

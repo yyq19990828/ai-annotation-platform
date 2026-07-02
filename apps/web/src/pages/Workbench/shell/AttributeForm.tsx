@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
+import type { AttributesMeta, AttributeMetaEntry } from "@/types";
 import { Switch } from "@/components/ui/Switch";
 import { usePopover } from "@/hooks/usePopover";
 import type { DirtyTracker } from "../state/useDirtyTracker";
@@ -38,6 +39,21 @@ export interface AttributeFormProps {
   annotationId?: string;
   /** 隐藏内部「属性」标题行：外层（侧栏底部折叠头 / 悬浮框）已承载标题时使用，避免重复。 */
   hideHeading?: boolean;
+  /**
+   * v0.20.10 · 属性级溯源: {key: {origin, model_ref?}}。仅含 origin=ai 的键;
+   * 命中的字段旁渲染一枚极轻 AI chip（hover 显 model）。人工改该属性并保存后,
+   * 后端会删对应 meta,刷新后 chip 自然消失。
+   */
+  attributesMeta?: AttributesMeta | null;
+}
+
+/** v0.20.10 · AI 溯源 chip 的 hover 文案: 尽量显 model / backend。 */
+function aiChipTitle(entry: AttributeMetaEntry | undefined): string {
+  const ref = entry?.model_ref;
+  const parts: string[] = [];
+  if (ref?.model_id) parts.push(`模型 ${ref.model_id}`);
+  if (ref?.backend_id) parts.push(`后端 ${ref.backend_id}`);
+  return parts.length > 0 ? `AI 填充 · ${parts.join(" · ")}` : "AI 填充";
 }
 
 /** 判断 field 在当前 class + 当前值组合下是否应展示。 */
@@ -79,7 +95,7 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 export function AttributeForm({
   schema, className, attributes, onChange, readOnly,
   context = "image", dirtyTracker, annotationId,
-  batchCount, hideHeading,
+  batchCount, hideHeading, attributesMeta,
 }: AttributeFormProps) {
   const [draft, setDraft] = useState<Record<string, unknown>>(attributes ?? {});
   const lastFromUpstream = useRef<Record<string, unknown>>(attributes ?? {});
@@ -182,6 +198,16 @@ export function AttributeForm({
             <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
               {f.label}
               {f.required && <span className="ml-1 text-status-danger">*</span>}
+              {/* v0.20.10 · AI 属性溯源 chip: origin=ai 的字段旁一枚极轻标记, hover 显 model。 */}
+              {attributesMeta?.[f.key]?.origin === "ai" && (
+                <span
+                  title={aiChipTitle(attributesMeta[f.key])}
+                  data-testid={`attr-ai-origin-${f.key}`}
+                  className="rounded-[3px] border border-brand/30 bg-brand/10 px-1 py-px text-2xs font-semibold leading-[1.2] text-brand"
+                >
+                  ✦ AI
+                </span>
+              )}
               {/* v0.10.6 M4-γ · I13.2：视频任务下 mutable 字段标记徽标，提示「逐 keyframe 可变」语义。 */}
               {context === "video" && f.mutable === true && (
                 <span

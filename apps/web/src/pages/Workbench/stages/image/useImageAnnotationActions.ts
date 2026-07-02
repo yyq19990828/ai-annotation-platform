@@ -100,6 +100,8 @@ interface UseImageAnnotationActionsArgs {
   isLocked?: boolean;
   /** v0.10.8 · 由 WorkbenchShell 注入；mask 编辑器状态层。空时 refine/commitMask 返回 false。 */
   maskEditor?: UseMaskEditorReturn;
+  /** v0.20.22 · 桥接松手闪回, 见 usePendingGeom。 */
+  markPendingGeom?: (id: string, geom: import("@/types").Geometry) => void;
 }
 
 export function getBatchChangeTarget(
@@ -114,22 +116,6 @@ export function getBatchChangeTarget(
     className: firstBox.cls,
     count: selectedIds.length,
   };
-}
-
-// v0.14.9 · 采纳 OCR / doc_layout 候选时携带回新建标注的 attributes。
-// 仅保留候选提供的语义属性 (text/language/orientation 等), 丢弃以 `_` 开头的内部键
-// (如 _shape_index, 由后端 accept 自行写入)。无可携带键时返回 null (上层不发 PATCH)。
-function pickCarryAttributes(
-  attributes: Record<string, unknown> | undefined,
-): Record<string, unknown> | null {
-  if (!attributes) return null;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(attributes)) {
-    if (k.startsWith("_")) continue;
-    if (v === undefined || v === null || v === "") continue;
-    out[k] = v;
-  }
-  return Object.keys(out).length > 0 ? out : null;
 }
 
 function acceptedPredictionShapeKeys(annotations: AnnotationResponse[] | undefined): Set<string> {
@@ -172,6 +158,7 @@ export function useImageAnnotationActions({
   enqueueOnError,
   isLocked = false,
   maskEditor,
+  markPendingGeom,
 }: UseImageAnnotationActionsArgs) {
   const annotationActions = useWorkbenchAnnotationActions({
     taskId,
@@ -187,6 +174,7 @@ export function useImageAnnotationActions({
     isLocked,
     mutations,
     keypointNodeCount,
+    markPendingGeom,
   });
   const {
     createBboxWithClass,
@@ -659,18 +647,10 @@ export function useImageAnnotationActions({
       {
         onSuccess: (created) => {
           const ids = created.map((a) => a.id);
+          // v0.20.22 · 后端 accept_prediction 已在同一事务原子落库 shape 富属性
+          // + attribute_overrides (annotation.py:305-322), 前端不再逐条 PATCH 合并。
+          // 旧的 carry 循环在后端返回整题全量时会误改所有既有人工标注属性 → 已删除。
           history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
-          // v0.14.9 · OCR / doc_layout 候选的 attributes (text/language/orientation 等) 后端
-          // accept_prediction 仅写 _shape_index, 不带 OCR 文本; 这里 accept 成功后把候选 attributes
-          // 合并 PATCH 进新建标注 (保留服务端写的 _shape_index), 避免识别文本丢失。
-          // v0.18.3 · 审阅改过的值优先 (attribute_overrides 已原子落库, 这里 carry 也用改后值保持一致)。
-          const carry = { ...(pickCarryAttributes(box.attributes ?? undefined) ?? {}), ...(attributeOverrides ?? {}) };
-          if (Object.keys(carry).length > 0 && created.length > 0) {
-            for (const ann of created) {
-              const merged = { ...(ann.attributes ?? {}), ...carry };
-              mutations.update.mutate({ annotationId: ann.id, payload: { attributes: merged } });
-            }
-          }
           pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
         },
         onError: (err) => {
@@ -698,7 +678,7 @@ export function useImageAnnotationActions({
         },
       },
     );
-  }, [acceptPredictionMut, history, pushToast, mutations.update, s]);
+  }, [acceptPredictionMut, history, pushToast, s]);
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。

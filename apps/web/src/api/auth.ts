@@ -205,6 +205,14 @@ export interface PointcloudCameraState {
 export interface WorkbenchLayoutPreferences {
   leftOpen: boolean;
   rightOpen: boolean;
+  /** v0.20.19 · 右栏「标注详情」属性区折叠态(随账号持久)。 */
+  attrPanelCollapsed: boolean;
+  /** v0.20.22 · 右栏「AI 待审」分组折叠态(随账号持久)。 */
+  aiSectionCollapsed: boolean;
+  /** v0.20.22 · 右栏「人工」分组折叠态(随账号持久)。 */
+  manualSectionCollapsed: boolean;
+  /** v0.20.22 · 右栏下段「讨论」(评论/历史/Issue)完全收起态(随账号持久)。 */
+  discussionCollapsed: boolean;
   floatingTaskQueue: FloatingPanelState;
   floatingClassPalette: FloatingPanelState;
   floatingInspector: FloatingPanelState;
@@ -220,12 +228,17 @@ export interface WorkbenchLayoutPreferences {
  * - params_by_backend: 推理参数（按 backend；不同后端参数 schema 不同）。
  * - model_by_backend (v0.18.25): 交互工具的引擎(模型)选择（按 backend）。
  * - interactive_backend_by_project (v0.18.31): 交互后端(引擎)选择（按 project）。
+ * - secondary_by_model (v0.20.17): 单框二次推理的参数 + 模型变体（按 `backendId:modelId`）。
  * 各 writer 只提交自己那一子键，故皆可选。
  */
 export interface AIToolPreferences {
   params_by_backend?: Record<string, Record<string, unknown>>;
   model_by_backend?: Record<string, string>;
   interactive_backend_by_project?: Record<string, string>;
+  secondary_by_model?: Record<
+    string,
+    { params?: Record<string, unknown>; variants?: Record<string, unknown> }
+  >;
 }
 
 /** v0.15.25 · 主题偏好:light/dark 固定，system 跟随 OS prefers-color-scheme。 */
@@ -233,7 +246,10 @@ export type ThemePref = "light" | "dark" | "system";
 
 /** v0.15.25 · 全局 UI 偏好(工作台之外);主题从 localStorage 升到服务端,跟随账号跨设备。 */
 export interface UIPreferences {
-  theme: ThemePref;
+  /** 缺省(partial PATCH 只提交别的 ui 子键时)由后端回落 "system"。 */
+  theme?: ThemePref;
+  /** v0.20.19 · 二次推理面板显隐(跨设备);true=隐藏。缺省 false=显示。 */
+  secondary_bar_hidden?: boolean;
 }
 
 export interface UserPreferences {
@@ -297,6 +313,10 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   layout: {
     leftOpen: true,
     rightOpen: true,
+    attrPanelCollapsed: false,
+    aiSectionCollapsed: false,
+    manualSectionCollapsed: false,
+    discussionCollapsed: false,
     floatingTaskQueue: {
       detached: false,
       x: null,
