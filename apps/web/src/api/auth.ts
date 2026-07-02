@@ -238,7 +238,10 @@ export type ThemePref = "light" | "dark" | "system";
 
 /** v0.15.25 · 全局 UI 偏好(工作台之外);主题从 localStorage 升到服务端,跟随账号跨设备。 */
 export interface UIPreferences {
-  theme: ThemePref;
+  /** 缺省(partial PATCH 只提交别的 ui 子键时)由后端回落 "system"。 */
+  theme?: ThemePref;
+  /** v0.20.19 · 二次推理面板显隐(跨设备);true=隐藏。缺省 false=显示。 */
+  secondary_bar_hidden?: boolean;
 }
 
 export interface UserPreferences {

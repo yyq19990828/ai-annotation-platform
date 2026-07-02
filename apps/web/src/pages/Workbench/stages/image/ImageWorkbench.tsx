@@ -46,6 +46,8 @@ export interface ImageWorkbenchProps {
     flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
@@ -146,6 +148,8 @@ export function ImageWorkbench({
   onRejectPrediction,
   onDeleteUserBox,
   onPatchShapeFlag,
+  secondaryBarHidden,
+  onToggleSecondaryBar,
   clipboardActions,
   onCommitDrawing,
   onCommitRotatedBbox,
@@ -220,6 +224,8 @@ export function ImageWorkbench({
       onAcceptPrediction={onAcceptPrediction}
       onRejectPrediction={onRejectPrediction}
       onDeleteUserBox={onDeleteUserBox}
+      secondaryBarHidden={secondaryBarHidden}
+      onToggleSecondaryBar={onToggleSecondaryBar}
       onCommitDrawing={onCommitDrawing}
       onPatchShapeFlag={onPatchShapeFlag}
       clipboardActions={clipboardActions}

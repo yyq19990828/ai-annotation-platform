@@ -16773,6 +16773,11 @@
         "additionalProperties": false,
         "description": "v0.15.25 · 全局 UI 偏好（工作台之外）。当前仅主题；跟随账号跨设备。\n\n主题原先只存 localStorage（仅本机），升级到服务端偏好后换设备登录即保持。\n'system' = 跟随操作系统 prefers-color-scheme。",
         "properties": {
+          "secondary_bar_hidden": {
+            "default": false,
+            "title": "Secondary Bar Hidden",
+            "type": "boolean"
+          },
           "theme": {
             "default": "system",
             "enum": [
@@ -20079,7 +20084,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.17"
+    "version": "0.20.19"
   },
   "openapi": "3.1.0",
   "paths": {

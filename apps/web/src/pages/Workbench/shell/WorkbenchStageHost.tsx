@@ -146,6 +146,8 @@ interface WorkbenchStageHostImageProps {
     flag: "z_order" | "is_locked" | "is_hidden",
     value: number | boolean,
   ) => void;
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   imageClipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
@@ -321,6 +323,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onAcceptPrediction,
       onRejectPrediction,
       onPatchShapeFlag,
+      secondaryBarHidden,
+      onToggleSecondaryBar,
       imageClipboardActions,
       onCommitDrawing,
       onCommitRotatedBbox,
@@ -473,6 +477,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onRejectPrediction={onRejectPrediction}
             onDeleteUserBox={onDeleteUserBox}
             onPatchShapeFlag={onPatchShapeFlag}
+            secondaryBarHidden={secondaryBarHidden}
+            onToggleSecondaryBar={onToggleSecondaryBar}
             clipboardActions={imageClipboardActions}
             onCommitDrawing={onCommitDrawing}
             onCommitRotatedBbox={onCommitRotatedBbox}

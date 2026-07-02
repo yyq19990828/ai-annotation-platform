@@ -224,6 +224,10 @@ async def update_preferences(
     # 而非整体替换，避免一方写入冲掉另一方。其余子树 (workbench) 仍按顶层浅合并 (前端提交全量)。
     if isinstance(incoming.get("ai"), dict) and isinstance(existing.get("ai"), dict):
         merged["ai"] = {**existing["ai"], **incoming["ai"]}
+    # v0.20.19 · ui 子树同理深一层合并: theme (useTheme) 与 secondary_bar_hidden
+    # (二次推理面板显隐) 由不同 writer 各自只提交自己那半键, 避免一方冲掉另一方。
+    if isinstance(incoming.get("ui"), dict) and isinstance(existing.get("ui"), dict):
+        merged["ui"] = {**existing["ui"], **incoming["ui"]}
     merged = _strip_removed_workbench_keys(merged)
     user.preferences = merged
     await db.commit()

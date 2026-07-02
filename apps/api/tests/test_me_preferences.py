@@ -108,6 +108,38 @@ async def test_patch_ai_subtree_deep_merges_params_and_model(httpx_client, annot
     assert resp.json()["ai"]["model_by_backend"] == {bid: "detect-yoloe"}
 
 
+async def test_patch_ui_subtree_deep_merges_theme_and_secondary_bar(httpx_client, annotator):
+    """v0.20.19 · ui 子树深一层合并: theme (useTheme) 与 secondary_bar_hidden
+    (二次推理面板显隐) 由不同 writer 各自只提交自己那半键, 互不冲掉。"""
+    _, token = annotator
+
+    # 1) 先写主题 (模拟 useTheme)。
+    resp = await httpx_client.patch(
+        PREFS_URL, json={"ui": {"theme": "dark"}}, headers=_bearer(token)
+    )
+    assert resp.status_code == 200
+
+    # 2) 再写二次推理面板显隐 — 不应冲掉主题。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"secondary_bar_hidden": True}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    ui = resp.json()["ui"]
+    assert ui["theme"] == "dark"
+    assert ui["secondary_bar_hidden"] is True
+
+    # 3) 反向: 再改主题, 显隐仍在。
+    resp = await httpx_client.patch(
+        PREFS_URL, json={"ui": {"theme": "light"}}, headers=_bearer(token)
+    )
+    assert resp.status_code == 200
+    ui = resp.json()["ui"]
+    assert ui["theme"] == "light"
+    assert ui["secondary_bar_hidden"] is True
+
+
 async def test_patch_ai_interactive_backend_independent(httpx_client, annotator):
     """v0.18.31 · 第三个 ai 子键 interactive_backend_by_project (交互后端选择, 按 project)
     与 params/model 独立深合并, 三键互不覆盖。"""

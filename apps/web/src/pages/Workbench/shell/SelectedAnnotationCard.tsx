@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
-import { FloatingPanelShell, type FloatingPanelRect } from "./FloatingPanelShell";
+import {
+  FloatingPanelShell,
+  ICON_BUTTON_CLASS,
+  type FloatingPanelRect,
+} from "./FloatingPanelShell";
 import { useDragMove, type FloatingPanelPoint } from "./useDragMove";
 import {
   FLOATING_SELECTION_MAX_SIZE,
@@ -91,6 +95,9 @@ export interface SelectedAnnotationCardProps {
   onCollapse: () => void;
   onExpand: () => void;
   linkedToPet?: boolean;
+  /** v0.20.19 · 二次推理面板显隐 + 切换 (图片任务, 头部加 toggle 按钮)。 */
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   children: ReactNode;
 }
 
@@ -109,6 +116,8 @@ export function SelectedAnnotationCard({
   onCollapse,
   onExpand,
   linkedToPet = false,
+  secondaryBarHidden,
+  onToggleSecondaryBar,
   children,
 }: SelectedAnnotationCardProps) {
   const [renderCollapsed, setRenderCollapsed] = useState(collapsed);
@@ -216,6 +225,21 @@ export function SelectedAnnotationCard({
       onPositionChange={onPositionChange}
       onCollapse={onCollapse}
       variant="no-merge"
+      extraActions={
+        onToggleSecondaryBar && (
+          <button
+            type="button"
+            className={cn(ICON_BUTTON_CLASS, !secondaryBarHidden && "border-brand text-brand")}
+            onClick={onToggleSecondaryBar}
+            aria-pressed={!secondaryBarHidden}
+            aria-label={secondaryBarHidden ? "打开二次推理面板" : "关闭二次推理面板"}
+            title={secondaryBarHidden ? "打开二次推理面板" : "关闭二次推理面板"}
+            data-testid="selection-toggle-secondary-bar"
+          >
+            <Icon name="sparkle" size={13} />
+          </button>
+        )
+      }
       minSize={FLOATING_SELECTION_MIN_SIZE}
       maxSize={FLOATING_SELECTION_MAX_SIZE}
       // eslint-disable-next-line no-restricted-syntax -- 展开/收起 morph 比例由当前面板尺寸派生,通过局部 CSS 变量传给 module 动画。

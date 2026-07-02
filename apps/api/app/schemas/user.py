@@ -302,6 +302,8 @@ class UIPreferences(BaseModel):
     model_config = {"extra": "forbid"}
 
     theme: Literal["light", "dark", "system"] = "system"
+    # v0.20.19 · 二次推理面板显隐 (跨设备): true=隐藏工具条。默认 false=显示 (不回归现状)。
+    secondary_bar_hidden: bool = False
 
 
 class UserPreferences(BaseModel):

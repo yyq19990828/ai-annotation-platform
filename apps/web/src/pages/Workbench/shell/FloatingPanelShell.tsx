@@ -17,7 +17,7 @@ import {
   type FloatingPanelSize,
 } from "./useDragMove";
 
-const ICON_BUTTON_CLASS =
+export const ICON_BUTTON_CLASS =
   "inline-flex size-6 cursor-pointer appearance-none items-center justify-center rounded border border-border bg-card p-0 text-muted-foreground hover:border-brand hover:text-brand";
 
 export interface FloatingPanelRect extends FloatingPanelPoint, FloatingPanelSize {}
@@ -36,6 +36,8 @@ interface FloatingPanelShellProps {
   className?: string;
   style?: CSSProperties;
   headerContent?: ReactNode;
+  /** v0.20.19 · 头部右侧额外操作 (渲染在 收起/合并/关闭 图标簇最前)。 */
+  extraActions?: ReactNode;
   children: ReactNode;
 }
 
@@ -78,6 +80,7 @@ export function FloatingPanelShell({
   className,
   style,
   headerContent,
+  extraActions,
   children,
 }: FloatingPanelShellProps) {
   const [isResizing, setIsResizing] = useState(false);
@@ -196,6 +199,7 @@ export function FloatingPanelShell({
           data-floating-panel-no-drag
           onPointerDown={(event) => event.stopPropagation()}
         >
+          {extraActions}
           {onCollapse && (
             <button
               type="button"

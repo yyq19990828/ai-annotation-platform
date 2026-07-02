@@ -168,6 +168,9 @@ interface ImageStageProps {
     value: number | boolean,
   ) => void;
   clipboardActions?: ImageContextMenuClipboardActions | null;
+  /** v0.20.19 · 二次推理面板显隐 + 右键菜单切换 (透传给上下文菜单)。 */
+  secondaryBarHidden?: boolean;
+  onToggleSecondaryBar?: () => void;
   onCommitDrawing?: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出轴对齐矩形松手 → 提交 angle=0 的 rotated_bbox (类别用 activeClass)。 */
   onCommitRotatedBbox?: (geo: Geom) => void;
@@ -385,6 +388,7 @@ export function ImageStage({
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
+  secondaryBarHidden, onToggleSecondaryBar,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0, samSessionPoints, samSessionExemplars,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samSubTool, samPolarity,
@@ -1042,6 +1046,8 @@ export function ImageStage({
       onCropSelected,
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
+      secondaryBarHidden,
+      onToggleSecondaryBar,
     });
   }, [
     clipboardActions,
@@ -1054,6 +1060,8 @@ export function ImageStage({
     onPatchShapeFlag,
     readOnly,
     userBoxes,
+    secondaryBarHidden,
+    onToggleSecondaryBar,
   ]);
 
   const isSelectedAi = selectedBox ? "predictionId" in selectedBox : false;

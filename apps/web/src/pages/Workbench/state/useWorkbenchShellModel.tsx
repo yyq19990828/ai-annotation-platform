@@ -57,6 +57,7 @@ import { useAiToolModelPref } from "./useAiToolModelPref";
 import { useInteractiveBackendPref } from "./useInteractiveBackendPref";
 import { InteractiveToolBar } from "../shell/InteractiveToolBar";
 import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
+import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
@@ -584,6 +585,9 @@ export function useWorkbenchShellModel({
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
   const [hideOrphanAnnotations, setHideOrphanAnnotations] = useState(false);
+  // v0.20.19 · 二次推理面板显隐 (服务端偏好, 跨设备); gate SecondaryInferenceBar 渲染。
+  const { hidden: secondaryBarHidden, setHidden: setSecondaryBarHidden } =
+    useSecondaryBarHiddenPref();
   const projectClassNames = useMemo(
     () =>
       currentProject
@@ -1926,10 +1930,18 @@ export function useWorkbenchShellModel({
       collapsed: floatingSelection.collapsed,
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
+      // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
+      secondaryBarHidden,
+      onToggleSecondaryBar:
+        stageKind === "image"
+          ? () => setSecondaryBarHidden(!secondaryBarHidden)
+          : undefined,
       children,
     };
   }, [
     selectionCardEligible,
+    secondaryBarHidden,
+    setSecondaryBarHidden,
     selectionCount,
     selectedAnnotationForPanel,
     selectedAiBox,
@@ -2297,7 +2309,8 @@ export function useWorkbenchShellModel({
             )}
             {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
                 已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
-            {!isAIToolId(s.tool) &&
+            {!secondaryBarHidden &&
+              !isAIToolId(s.tool) &&
               stageKind === "image" &&
               selectedAnnotationForPanel && (
                 <SecondaryInferenceBar
@@ -2383,6 +2396,8 @@ export function useWorkbenchShellModel({
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,
         onPatchShapeFlag: handlePatchShapeFlag,
+        secondaryBarHidden,
+        onToggleSecondaryBar: () => setSecondaryBarHidden(!secondaryBarHidden),
         imageClipboardActions: imageContextMenuClipboard,
         onCommitDrawing: handleCommitDrawing,
         onCommitRotatedBbox: createRotatedBbox,
@@ -2616,6 +2631,8 @@ export function useWorkbenchShellModel({
       projectRenderingConfig: currentProject?.rendering_config ?? null,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
+      secondaryBarHidden,
+      onToggleSecondaryBar: () => setSecondaryBarHidden(!secondaryBarHidden),
     },
     conflict: { open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) },
     rejectModal: modeState.rejectModal ? {
