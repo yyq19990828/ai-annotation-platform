@@ -19811,6 +19811,17 @@
         "additionalProperties": false,
         "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
         "properties": {
+          "aiSectionCollapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aisectioncollapsed"
+          },
           "attrPanelCollapsed": {
             "anyOf": [
               {
@@ -19828,6 +19839,17 @@
             },
             "title": "Camerapanels",
             "type": "object"
+          },
+          "discussionCollapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussioncollapsed"
           },
           "floatingClassPalette": {
             "anyOf": [
@@ -19889,6 +19911,17 @@
               }
             ],
             "title": "Leftopen"
+          },
+          "manualSectionCollapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manualsectioncollapsed"
           },
           "pointcloudCamera": {
             "anyOf": [
