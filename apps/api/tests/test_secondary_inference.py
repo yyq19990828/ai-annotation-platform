@@ -437,7 +437,14 @@ async def test_non_croppable_geometry_raises_400(db_session, super_admin, monkey
     [
         (
             "rotated_bbox",
-            {"type": "rotated_bbox", "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.1, "angle": 30},
+            {
+                "type": "rotated_bbox",
+                "cx": 0.5,
+                "cy": 0.5,
+                "w": 0.2,
+                "h": 0.1,
+                "angle": 30,
+            },
         ),
         (
             "keypoint",
@@ -454,8 +461,14 @@ async def test_non_croppable_geometry_raises_400(db_session, super_admin, monkey
             {
                 "type": "multi_polygon",
                 "polygons": [
-                    {"type": "polygon", "points": [[0.1, 0.1], [0.2, 0.1], [0.15, 0.2]]},
-                    {"type": "polygon", "points": [[0.5, 0.5], [0.6, 0.5], [0.55, 0.6]]},
+                    {
+                        "type": "polygon",
+                        "points": [[0.1, 0.1], [0.2, 0.1], [0.15, 0.2]],
+                    },
+                    {
+                        "type": "polygon",
+                        "points": [[0.5, 0.5], [0.6, 0.5], [0.55, 0.6]],
+                    },
                 ],
             },
         ),
