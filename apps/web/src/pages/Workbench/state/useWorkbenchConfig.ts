@@ -171,6 +171,11 @@ const LAYOUT_KEY_NAMES = [
   "triViewFloat",
   "cameraPanels",
   "pointcloudCamera",
+  // v0.20.22 · 分组折叠 + 讨论区收起进 localStorage 白名单: 服务端仍是权威,
+  // 但初始 render 直接从 localStorage 拿最近值, 避免"刷新一瞬间看到展开态再收起"闪。
+  "aiSectionCollapsed",
+  "manualSectionCollapsed",
+  "discussionCollapsed",
 ] as const;
 
 type LayoutKeyName = (typeof LAYOUT_KEY_NAMES)[number];
@@ -235,6 +240,10 @@ function readLocalLayout(
     pointcloudCamera: readJsonObject<PointcloudCameraState>(
       K.pointcloudCamera,
     ) as PointcloudCameraState | undefined,
+    // v0.20.22 · 分组折叠 + 讨论区收起本地读回, 消除首屏闪。
+    aiSectionCollapsed: readBool(K.aiSectionCollapsed),
+    manualSectionCollapsed: readBool(K.manualSectionCollapsed),
+    discussionCollapsed: readBool(K.discussionCollapsed),
   };
 }
 
@@ -303,6 +312,19 @@ function writeLocalLayout(
     window.localStorage.setItem(
       K.pointcloudCamera,
       JSON.stringify(layout.pointcloudCamera),
+    );
+    // v0.20.22 · 分组折叠 + 讨论区收起本地写入, 消除首屏闪。
+    window.localStorage.setItem(
+      K.aiSectionCollapsed,
+      layout.aiSectionCollapsed ? "1" : "0",
+    );
+    window.localStorage.setItem(
+      K.manualSectionCollapsed,
+      layout.manualSectionCollapsed ? "1" : "0",
+    );
+    window.localStorage.setItem(
+      K.discussionCollapsed,
+      layout.discussionCollapsed ? "1" : "0",
     );
   } catch {
     /* local fallback is best-effort */
@@ -406,8 +428,9 @@ function mergeLayout(
     attrPanelCollapsed:
       merged.attrPanelCollapsed ??
       DEFAULT_WORKBENCH_PREFERENCES.layout.attrPanelCollapsed,
-    // v0.20.22 · 分组折叠 + 讨论区完全收起 (照抄 attrPanelCollapsed 范式, 不进
-    // LAYOUT_KEY_NAMES localStorage 白名单, 纯服务端持久跨设备跟随)。
+    // v0.20.22 · 分组折叠 + 讨论区完全收起 (跨设备持久); 与 attrPanelCollapsed
+    // 不同, 这三个进 LAYOUT_KEY_NAMES localStorage 双写以消首屏闪 (进任务立即渲染,
+    // 属性区选中后才渲染, 闪的可见度差异催出这一分化)。
     aiSectionCollapsed:
       merged.aiSectionCollapsed ??
       DEFAULT_WORKBENCH_PREFERENCES.layout.aiSectionCollapsed,

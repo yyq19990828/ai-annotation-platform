@@ -4,11 +4,11 @@ import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
-// 顶部 tab 切换条:小写 chrome 风格的下划线 tab(与 CommentsPanel 同形)。
-// v0.20.22 · 拆分中性/激活分支下发, 避免 border-transparent 与 border-brand 同挂被源顺序覆盖
-// (memory: "Tailwind 激活态色类冲突" — 静默失效)。text 色同理。
+// 顶部 tab 切换条: 字号/字重与右栏上段"标注详情"标题 (text-sm font-semibold) 对齐,
+// 视觉上作为同级标题。v0.20.22 · 拆分中性/激活分支下发, 避免 border-transparent 与
+// border-brand 同挂被源顺序覆盖 (memory: "Tailwind 激活态色类冲突")。text 色同理。
 const TAB_BUTTON_BASE =
-  "cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] [font:inherit]";
+  "cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-sm font-semibold [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
 const TAB_BUTTON_INACTIVE = "border-transparent text-muted-foreground";
 
