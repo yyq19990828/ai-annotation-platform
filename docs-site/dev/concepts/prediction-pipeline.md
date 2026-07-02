@@ -228,6 +228,39 @@ crop 模式默认走 **presigned URL** 而非 `data:` base64：平台把裁好�
 - `on_key_conflict=reject`（默认）→ worker 校验失败抛 422；前端阶段卡在**配置期**就用红字 + 红 chip 预警，不再跑完才 422。
 - `on_key_conflict=last_wins` → 按阶段顺序末位覆盖。
 
+### 上游几何可裁校验（`check_parent_geometry_roi`）
+
+下游阶段按上游父框裁 crop 或转 `bbox_prompt` 作 ROI 时，只有 **bbox / polygon** 是可裁几何（`roi._box_bbox_pct`）。若上游模型自报的 `supported_geometric_outputs` 只输出其它形态（如仅 `keypoint` / `polyline`），该阶段的所有父框会在运行期被跳过、零富集。为把这种"跑完才发现是空"的场景提前到配置期暴露，`check_parent_geometry_roi`（`apps/api/app/services/pipeline_validation.py`）作为**上游输出侧的对称门**，与已有的「下游能否吃框」门（`supported_inputs` 含 `bbox_prompt` / `crop`）形成上下游对称：
+
+| 上游 `supported_geometric_outputs` | 判决 | 说明 |
+|---|---|---|
+| 未自报（老 backend） | 放过 | 保零退化 |
+| 至少含一种可裁几何（bbox / polygon） | 放过 | 部分不可裁交由运行期 `skipped_geometry` 兜底 |
+| 完全不含可裁几何（如仅 `keypoint`） | 违例 `no_roi_geometry` | 保存编排时软提示 `capability_warnings`，触发预标时 **422 硬挡** |
+
+两条通道复用同一纯函数：
+
+- **保存编排** `PATCH /projects/{id}`：`_compute_pipeline_capability_warnings` 收集违例 detail 作为 `capability_warnings` 返回给前端阶段卡，红字预警但不拦保存（`apps/api/app/api/v1/projects.py`）。
+- **触发预标** `POST /projects/{id}/preannotate`：dispatch-time 闸门 `_check_pipeline_capabilities` 命中直接 `HTTPException(status_code=422, detail=violations[0].detail)`，与「下游能否吃框」违例走同一 422 通道。
+
+### trigger 响应的 `warnings` 字段
+
+`POST /projects/{id}/preannotate` 成功入队时返回体新增 `warnings: string[]`，用于把**能跑但有代价**的选项（不硬挡的软提示）带回前端，与硬挡的 422 分开：
+
+```json
+{
+  "job_id": "...",
+  "status": "queued",
+  "total_tasks": 12,
+  "channel": "project:{id}:preannotate",
+  "warnings": [
+    "源阶段 output=both 会对同一实例产出「框 + 多边形」两条几何, 多阶段下游会各处理一次 (重复裁剪 / 推理 / 富集) 并落两条 region; 建议源阶段改用 box 或 mask。"
+  ]
+}
+```
+
+当前触发一条：源阶段 `output_mode=both` 且开启文本 prompt 又挂了下游阶段时，一条 both 结果会被两个下游各处理一次。空数组表示无软提示。硬校验违例不进这里，直接 422。
+
 ### ROI 模块（`roi.py`）
 
 `apps/api/app/workers/roi.py` 集中所有 ROI 路由纯函数：
