@@ -254,7 +254,15 @@ export function WorkbenchLayout({
                 </div>
               )}
               {!discussionDetached && (
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                // v0.20.22 · 完全收起时下段收缩为 flex-none, 只按 tab 头自身内容高度; 否则
+                // 会与上段 flex-1 (upperExpandsToFill) 争抢空间, 讨论 tab 头挂在正中间。
+                <div
+                  className={
+                    discussionCollapsed
+                      ? "flex min-h-0 flex-none flex-col overflow-hidden"
+                      : "flex min-h-0 flex-1 flex-col overflow-hidden"
+                  }
+                >
                   <DiscussionPanel {...discussionPanel} />
                 </div>
               )}
