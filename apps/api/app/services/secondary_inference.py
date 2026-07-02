@@ -182,13 +182,19 @@ async def run_secondary_inference(
         merge_classify_attributes([ls_box], results, write_keys=write_keys, label=label)
         ai_attrs = ls_box.get("attributes") or {}
         if ai_attrs:
-            # union 进原框 attributes, 并给每个 AI 写入键标 origin=ai + model_ref。
-            merged_attrs = {**(annotation.attributes or {}), **ai_attrs}
-            new_meta = dict(annotation.attributes_meta or {})
-            for k in ai_attrs:
-                new_meta[k] = {"origin": "ai", "model_ref": model_ref}
-            annotation.attributes = merged_attrs
-            annotation.attributes_meta = new_meta
+            # 遵守 v0.20.10 溯源规则 (annotation-module.md §属性级溯源):
+            #   attributes_meta 只存 origin=ai 的键, "缺省即 human"; 人工手改会删该键 meta。
+            # 故某键**已有值且 meta 不标 origin=ai** → 视为人工手改过, 二次推理不再顶回;
+            # 键尚未存在 或 meta 标 origin=ai → 可安全覆盖并 (重) 标 origin=ai + 新 model_ref。
+            cur_attrs = dict(annotation.attributes or {})
+            cur_meta = dict(annotation.attributes_meta or {})
+            for k, v in ai_attrs.items():
+                if k in cur_attrs and (cur_meta.get(k) or {}).get("origin") != "ai":
+                    continue
+                cur_attrs[k] = v
+                cur_meta[k] = {"origin": "ai", "model_ref": model_ref}
+            annotation.attributes = cur_attrs
+            annotation.attributes_meta = cur_meta
             await db.flush()
         return annotation, []
 

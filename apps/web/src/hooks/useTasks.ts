@@ -160,6 +160,7 @@ export function useDeleteAnnotation(taskId: string | undefined) {
 export function useUpdateAnnotation(
   taskId: string | undefined,
   onConflict?: (annotationId: string, currentVersion: number) => void,
+  onSettledAnnotation?: (annotationId: string) => void,
 ) {
   const qc = useQueryClient();
   return useMutation({
@@ -200,8 +201,12 @@ export function useUpdateAnnotation(
       }
       if (ctx?.prev !== undefined) qc.setQueryData(["annotations", taskId], ctx.prev);
     },
-    onSettled: () => {
+    onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });
+      // 通知桥 (usePendingGeom): mutation 已 settle (成功或失败), 主动清 pending override,
+      // 不依赖被动 800ms 兜底 — 避免慢网 (> 800ms) 回滚后 pending 已 drop 而画面闪到旧几何。
+      const annotationId = (vars as { annotationId?: string } | undefined)?.annotationId;
+      if (annotationId && onSettledAnnotation) onSettledAnnotation(annotationId);
     },
   });
 }

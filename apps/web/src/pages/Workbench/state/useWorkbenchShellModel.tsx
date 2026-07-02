@@ -587,7 +587,7 @@ export function useWorkbenchShellModel({
   annotationsRef.current = annotationsData ?? [];
   // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
   // 晚一帧于 setDrag(null) 而出现的原尺寸闪回。详见 usePendingGeom 注释。
-  const { pendingGeomMap, markPendingGeom } = usePendingGeom(annotationsData);
+  const { pendingGeomMap, markPendingGeom, clearPendingGeom } = usePendingGeom(annotationsData);
   const [hideOrphanAnnotations, setHideOrphanAnnotations] = useState(false);
   // v0.20.19 · 二次推理面板显隐 (服务端偏好, 跨设备); gate SecondaryInferenceBar 渲染。
   const { hidden: secondaryBarHidden, setHidden: setSecondaryBarHidden } =
@@ -722,7 +722,11 @@ export function useWorkbenchShellModel({
   const createAnnotation = useCreateAnnotation(taskId);
   const deleteAnnotationMut = useDeleteAnnotation(taskId);
   const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
-  const updateAnnotationMut = useUpdateAnnotation(taskId, (...args) => conflictCbRef.current(...args));
+  const updateAnnotationMut = useUpdateAnnotation(
+    taskId,
+    (...args) => conflictCbRef.current(...args),
+    clearPendingGeom,
+  );
   const groupAnnotationMut = useAnnotationGroup(taskId ?? "");
   const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");

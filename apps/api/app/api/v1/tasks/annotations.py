@@ -36,6 +36,7 @@ from app.schemas.annotation import (
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
 from app.services.ml_backend import MLBackendService
+from app.services.pipeline_validation import check_capability_violations
 from app.services.secondary_inference import run_secondary_inference
 from app.services.task_lock import TaskLockService
 
@@ -283,6 +284,25 @@ async def secondary_inference(
     backend = await ml_svc.get(data.ml_backend_id)
     if not backend or not await ml_svc.is_enabled(task.project_id, data.ml_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    # 与批量 pipeline 保持同一能力判据 SSOT (services/pipeline_validation): batchable=false
+    # (交互 backend) 与「写属性但模型不产 class」都在 predict 前 422 硬挡, 避免选错模型
+    # 返 201 空产物 (与"跑完无检出"混淆)。判据本身「显式自报才拦, 缺省放过」, 对老 backend 零退化。
+    from app.api.v1.projects import _stage_model
+
+    _writes_attributes = data.write_target == "attributes"
+    violations = check_capability_violations(
+        _stage_model(backend, data.model_id),
+        where="选中框二次推理",
+        model_id=data.model_id,
+        writes_attributes=_writes_attributes,
+    )
+    if violations:
+        raise HTTPException(status_code=422, detail=violations[0].detail)
+
+    # 释放当前只读事务再进入 10-30s 的远程 predict, 避免 async 连接池在高并发下饥饿
+    # (expire_on_commit=False, annotation / task / backend 对象保持 attached 可继续使用)。
+    await db.commit()
 
     updated, children = await run_secondary_inference(
         db,

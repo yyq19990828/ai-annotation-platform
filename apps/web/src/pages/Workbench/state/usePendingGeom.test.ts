@@ -50,11 +50,16 @@ describe("usePendingGeom", () => {
     expect(result.current.pendingGeomMap.has("a")).toBe(false);
   });
 
-  it("annotations 未反映时 800ms 超时兜底清 (防网络失败挂死顶住旧几何)", () => {
+  it("annotations 未反映时超时兜底清 (10s 后主收敛路径均失效才清, 防挂死顶住旧几何)", () => {
     const { result } = renderHook(() => usePendingGeom([ann("a", G1)]));
     act(() => result.current.markPendingGeom("a", G2));
     expect(result.current.pendingGeomMap.has("a")).toBe(true);
-    act(() => { vi.advanceTimersByTime(900); });
+    // 主收敛路径是 (a) annotations cache 命中新几何, (b) useUpdateAnnotation.onSettled 主动
+    // clear; 兜底超时提到 10s 让慢网 mutation 也在 pending 保持内完成 (避免 <800ms 即 drop
+    // 让画面在 onError rollback 到旧几何时闪一下)。
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(result.current.pendingGeomMap.has("a")).toBe(true);
+    act(() => { vi.advanceTimersByTime(5500); });
     expect(result.current.pendingGeomMap.has("a")).toBe(false);
   });
 

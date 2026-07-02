@@ -22,7 +22,11 @@ interface PendingEntry {
   ts: number;
 }
 
-const MAX_AGE_MS = 800;
+// 兜底超时: 主收敛路径是 (a) annotations cache 命中新几何; (b) useUpdateAnnotation.onSettled
+// 主动 clear。此超时仅在两路径均未触发时 (前端逻辑漏挂 / mutation 未走 useUpdateAnnotation)
+// 防挂死。挑 10s 是让它显著长于典型 mutation 耗时 —— 慢网 mutation error 之前 pending 保住,
+// 不会像原 800ms 让画面提前闪到 (即将被回滚的) 旧几何。
+const MAX_AGE_MS = 10_000;
 
 function geomEquals(a: Geometry | undefined, b: Geometry): boolean {
   if (!a) return false;

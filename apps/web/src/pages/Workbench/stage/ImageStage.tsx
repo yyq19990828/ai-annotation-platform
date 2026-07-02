@@ -456,6 +456,10 @@ export function ImageStage({
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
   vpRef.current = vp;
+  // pointerdown → pointerup 之间 userBoxes 可能被上游改动 (删框 / 新加子框 / parent 改动)。
+  // pointerup 时用 ref 读最新值算 childMoves, 避免向已消失的 id 发 PATCH 或漏掉新子框。
+  const userBoxesRef = useRef(userBoxes);
+  userBoxesRef.current = userBoxes;
   const { ref: setContainerNode, size: vpSize } = useElementSize(containerRef);
 
   // file_url is presigned and can change when annotation mutations refetch the
@@ -837,7 +841,9 @@ export function ImageStage({
             if (d.alt) {
               const dx = d.cur.x - d.start.x;
               const dy = d.cur.y - d.start.y;
-              childMoves = userBoxes
+              // 读 ref 的最新 userBoxes 而非闭包冻结值: pointerdown 到 pointerup 之间可能
+              // 有子框被删 / 新加, 冻结闭包会向已消失 id 发 PATCH 或漏掉新子框。
+              childMoves = userBoxesRef.current
                 .filter((c) => c.parent_annotation_id === d.id && c.geometry)
                 .map((c) => ({
                   id: c.id,

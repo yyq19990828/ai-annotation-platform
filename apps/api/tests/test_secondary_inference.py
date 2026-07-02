@@ -156,6 +156,67 @@ async def test_label_prefix_on_written_keys(
 
 
 @pytest.mark.asyncio
+async def test_attributes_respects_human_edits_and_reuses_ai_slots(
+    db_session, super_admin, monkeypatch, _patch_io
+):
+    """守护 v0.20.10 溯源规则: 人工手改过的属性键 (缺省即 human) 二次推理不再顶回;
+    上次 AI 写的键 (origin=ai) 可被再次 AI 覆盖并刷新 model_ref。"""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+
+    # 预置一个框: color=red 是人工手改 (attributes_meta 无该键 → 隐式 human);
+    # brand=BMW 是上次 AI 写的 (origin=ai, model_ref 指向旧模型)。
+    box = await _mk_box(db_session, task.id, user.id)
+    box.attributes = {"color": "red", "brand": "BMW"}
+    box.attributes_meta = {
+        "brand": {"origin": "ai", "model_ref": {"backend_id": "old", "model_id": "old-cls"}}
+    }
+    await db_session.flush()
+
+    # 本次 AI 返回 color=blue (想改人工) 与 brand=Audi (想改 AI 上次值)。
+    _patch_predict(
+        monkeypatch,
+        [
+            PredictionResult(
+                task_id="0",
+                result=[
+                    {"attributes": {"color": "blue", "brand": "Audi"}, "score": 0.9}
+                ],
+            )
+        ],
+    )
+
+    updated, children = await run_secondary_inference(
+        db_session,
+        annotation=box,
+        task=task,
+        backend=_fake_backend(),
+        write_target="attributes",
+        write_keys=None,
+        label=None,
+        model_id="new-cls",
+        model_variants=None,
+        params=None,
+        task_type="classification",
+        prompt=None,
+        class_filter=None,
+        pad=0.08,
+        user_id=user.id,
+    )
+
+    assert children == []
+    # 人工手改的 color 保住原值, meta 仍无该键。
+    assert updated.attributes["color"] == "red"
+    assert "color" not in updated.attributes_meta
+    # AI 上次写的 brand 被本次 AI 覆盖, model_ref 刷新到新模型。
+    assert updated.attributes["brand"] == "Audi"
+    assert updated.attributes_meta["brand"]["origin"] == "ai"
+    assert updated.attributes_meta["brand"]["model_ref"]["model_id"] == "new-cls"
+
+
+@pytest.mark.asyncio
 async def test_geometry_creates_child_boxes(
     db_session, super_admin, monkeypatch, _patch_io
 ):

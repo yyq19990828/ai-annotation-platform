@@ -214,9 +214,23 @@ export function useRunSecondaryInference(taskId: string | undefined) {
     }: {
       annotationId: string;
       body: SecondaryInferenceRequest;
-    }) => tasksApi.secondaryInference(taskId!, annotationId, body),
+    }) => {
+      // mount 后 taskId 可能变 undefined; 用非空断言会拼出 "/tasks/undefined/…" 静默 404,
+      // 且 onSuccess 里的 `if (taskId)` gate 会掩盖失败信号 → 早失败, 触发 onError toast。
+      if (!taskId) throw new Error("No task selected for secondary inference");
+      return tasksApi.secondaryInference(taskId, annotationId, body);
+    },
+    // refetchType: "none" — 不触发 in-flight refetch, 只标 stale; 下次读时才 fetch。
+    // 避免与并发 useUpdateAnnotation 乐观写竞态 (refetch 回来的服务端状态可能覆盖用户
+    // in-flight 修改)。二次推理落库后是"新 attributes / 新子框" — 用户视觉延迟到下次读
+    // (通常 <1s) 可接受。
     onSuccess: () => {
-      if (taskId) qc.invalidateQueries({ queryKey: ["annotations", taskId] });
+      if (taskId) {
+        qc.invalidateQueries({
+          queryKey: ["annotations", taskId],
+          refetchType: "none",
+        });
+      }
     },
   });
 }

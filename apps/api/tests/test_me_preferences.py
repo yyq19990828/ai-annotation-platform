@@ -108,6 +108,109 @@ async def test_patch_ai_subtree_deep_merges_params_and_model(httpx_client, annot
     assert resp.json()["ai"]["model_by_backend"] == {bid: "detect-yoloe"}
 
 
+async def test_patch_workbench_layout_deep_merges_new_collapse_flags(
+    httpx_client, annotator
+):
+    """workbench.layout 深合并: 四个新的分组折叠字段 (aiSectionCollapsed /
+    manualSectionCollapsed / discussionCollapsed / attrPanelCollapsed) 由不同 writer
+    单键 PATCH, 互不冲掉。守护 v0.20.19 已修的 ui.* / ai.* 同源 bug 不在 workbench.layout 复发。"""
+    _, token = annotator
+
+    # 1) 先展开状态改一次 attrPanelCollapsed。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"layout": {"attrPanelCollapsed": True}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+
+    # 2) 再单独提交 aiSectionCollapsed — 不应冲掉 attrPanelCollapsed。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"layout": {"aiSectionCollapsed": True}}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    layout = resp.json()["workbench"]["layout"]
+    assert layout["attrPanelCollapsed"] is True
+    assert layout["aiSectionCollapsed"] is True
+
+    # 3) 单独提交 manualSectionCollapsed + discussionCollapsed - 前两键仍在。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {"manualSectionCollapsed": True, "discussionCollapsed": True}
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    layout = resp.json()["workbench"]["layout"]
+    assert layout["attrPanelCollapsed"] is True
+    assert layout["aiSectionCollapsed"] is True
+    assert layout["manualSectionCollapsed"] is True
+    assert layout["discussionCollapsed"] is True
+
+
+async def test_patch_ai_secondary_by_model_deep_merges_per_backend_bucket(
+    httpx_client, annotator
+):
+    """ai.secondary_by_model 深度 2 合并: 单 backend 桶 PATCH 不覆盖其它 backend 桶。
+    (useSecondaryParamPrefs debounce 单 backend 写时不冲掉相邻 backend 偏好。)"""
+    _, token = annotator
+    b1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    b2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    # 1) 先写 backend1 的桶。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "ai": {
+                "secondary_by_model": {
+                    b1: {"model-a": {"params": {"threshold": 0.3}}}
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+
+    # 2) 单独写 backend2 的桶 — 不应冲掉 backend1 的桶。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "ai": {
+                "secondary_by_model": {
+                    b2: {"model-b": {"params": {"threshold": 0.5}}}
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    sbm = resp.json()["ai"]["secondary_by_model"]
+    assert sbm[b1] == {"model-a": {"params": {"threshold": 0.3}}}
+    assert sbm[b2] == {"model-b": {"params": {"threshold": 0.5}}}
+
+    # 3) 反向: 再改 backend1 桶里某 model 参数 — backend2 仍在。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "ai": {
+                "secondary_by_model": {
+                    b1: {"model-a": {"params": {"threshold": 0.9}}}
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    sbm = resp.json()["ai"]["secondary_by_model"]
+    assert sbm[b1] == {"model-a": {"params": {"threshold": 0.9}}}
+    assert sbm[b2] == {"model-b": {"params": {"threshold": 0.5}}}
+
+
 async def test_patch_ui_subtree_deep_merges_theme_and_secondary_bar(
     httpx_client, annotator
 ):

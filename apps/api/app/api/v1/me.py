@@ -162,6 +162,26 @@ def _promote_legacy_workbench_keys(payload: dict) -> dict:
 _REMOVED_WORKBENCH_LAYOUT_KEYS = ("leftWidth", "rightWidth")
 
 
+def _deep_merge_preferences(existing: dict, incoming: dict) -> dict:
+    """把 incoming 深合并到 existing 的副本: dict 递归、其它类型 (list / scalar) 直接覆盖。
+
+    动机: pydantic exclude_unset PATCH 只带用户本次改的键, 顶层浅合并会让"改一个字段=
+    整棵子树被 incoming 替换"→ 相邻字段被吹没 (v0.20.19 修过 ui/theme × secondary_bar_hidden
+    的同源 bug)。深合并让 workbench.layout.attrPanelCollapsed 单键 PATCH 不冲掉 layout 其他
+    字段, ai.secondary_by_model 里单 backend 桶 PATCH 也不冲掉其它 backend 的偏好。
+
+    注: list 直接覆盖 (合并语义不确定), 前端如需增删列表元素应提交完整列表。
+    """
+    out: dict = dict(existing)
+    for k, v in incoming.items():
+        cur = out.get(k)
+        if isinstance(v, dict) and isinstance(cur, dict):
+            out[k] = _deep_merge_preferences(cur, v)
+        else:
+            out[k] = v
+    return out
+
+
 def _strip_removed_workbench_keys(prefs: dict) -> dict:
     """剥除 workbench.layout 里已移除的边栏像素宽度旧键（leftWidth/rightWidth）。
 
@@ -215,19 +235,12 @@ async def update_preferences(
             ]
         ) from exc
     incoming = validated.model_dump(mode="json", exclude_unset=True, by_alias=True)
-    # 顶层子树浅合并：本次未提交 workbench 时 merged.workbench 取存量值，可能仍残留已移除的
-    # layout 旧键 → strip 后再存回，使每次 PATCH 顺带自愈，下方 return 的 validate 也不 422。
+    # 通用深度合并: dict 递归合并子键, 其它类型 (list/scalar) 直接覆盖。
+    # 覆盖历史上按需增加的两层浅合并 (ai.* / ui.*): 现在 workbench 子树 (layout / common /
+    # image / video / pointcloud) 与 ai.secondary_by_model (深度 2) 都能守住"单键 PATCH
+    # 不冲掉同层邻居"的不变量, 前端任一 debounce writer 提交自己那半子键即可。
     existing = user.preferences or {}
-    merged = {**existing, **incoming}
-    # v0.18.25 · ai 子树「深一层合并」：params_by_backend / model_by_backend 由不同前端 hook
-    # 各自只提交自己那半子键 (exclude_unset 下 incoming.ai 仅含本次提交键)，故合并 child key
-    # 而非整体替换，避免一方写入冲掉另一方。其余子树 (workbench) 仍按顶层浅合并 (前端提交全量)。
-    if isinstance(incoming.get("ai"), dict) and isinstance(existing.get("ai"), dict):
-        merged["ai"] = {**existing["ai"], **incoming["ai"]}
-    # v0.20.19 · ui 子树同理深一层合并: theme (useTheme) 与 secondary_bar_hidden
-    # (二次推理面板显隐) 由不同 writer 各自只提交自己那半键, 避免一方冲掉另一方。
-    if isinstance(incoming.get("ui"), dict) and isinstance(existing.get("ui"), dict):
-        merged["ui"] = {**existing["ui"], **incoming["ui"]}
+    merged = _deep_merge_preferences(existing, incoming)
     merged = _strip_removed_workbench_keys(merged)
     user.preferences = merged
     await db.commit()
