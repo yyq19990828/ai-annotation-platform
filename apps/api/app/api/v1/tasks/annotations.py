@@ -280,6 +280,18 @@ async def secondary_inference(
     if annotation is None or annotation.task_id != task_id or not annotation.is_active:
         raise HTTPException(status_code=404, detail="annotation not found")
 
+    # v0.20.9 一层父子约束: 选中框如果已经是子框 (parent 非空), geometry 型二次推理会
+    # 建"孙子"框 (子框的子框), 违反一层深度。前置到端点, 不再等 ML predict 跑完 10-30s
+    # 才在 AnnotationService.create 里 400, 省一次 backend 调用。属性型无此问题, 放过。
+    if data.write_target == "geometry" and annotation.parent_annotation_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "选中框已是子框, geometry 型二次推理会破坏一层父子约束 "
+                "(不能建孙子框); 请选顶层父框后再跑, 或改 write_target=attributes"
+            ),
+        )
+
     ml_svc = MLBackendService(db)
     backend = await ml_svc.get(data.ml_backend_id)
     if not backend or not await ml_svc.is_enabled(task.project_id, data.ml_backend_id):

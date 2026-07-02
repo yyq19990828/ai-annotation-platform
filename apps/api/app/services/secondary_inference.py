@@ -43,11 +43,15 @@ async def _create_child_box(
     confidence: float | None,
     parent: Annotation,
 ) -> Annotation:
-    """建子框; class 不在项目标签集时回落 "__unknown" 哨兵 (不丢 AI 检出框)。
+    """建子框; **仅** class 不在项目标签集时回落 "__unknown" 哨兵 (不丢 AI 检出框)。
 
     子检测产出 backend 原生类名 (NG6: 平台不做类→项目标签映射)。若该类名不在项目
     tool_bindings 允许集, create 的软校验会 422 —— 对 AI 产物不应丢框, 回落"未分类
     待补", 由用户后续归类。
+
+    历史坑: 早版本吞掉**所有** 422, 未来若 create 加了 geometry / attribute 校验, 也会
+    被静默回落 __unknown, 覆盖真正的 bug。收窄条件: 只对 detail 明确点名"类别集合内"的
+    422 回落, 其它 422 (含未来新增校验) 原样抛。
     """
     try:
         return await svc.create(
@@ -61,7 +65,10 @@ async def _create_child_box(
             tool_unit_id=parent.tool_unit_id,
         )
     except HTTPException as exc:
-        if exc.status_code != 422:
+        # 判据: AnnotationService._assert_class_allowed 的 detail 稳定串「不在工具单位
+        # '<tool_unit>' 的类别集合内」——用这个哨兵区分"class 不在标签集"vs 其它 422。
+        detail = str(getattr(exc, "detail", ""))
+        if exc.status_code != 422 or "类别集合内" not in detail:
             raise
         logger.info(
             "secondary_inference: 子检测类名 %r 不在项目标签集, 回落 __unknown",

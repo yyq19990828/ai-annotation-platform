@@ -430,3 +430,68 @@ async def test_non_croppable_geometry_raises_400(db_session, super_admin, monkey
         )
     assert exc.value.status_code == 400
     assert "polyline" in exc.value.detail
+
+
+@pytest.mark.parametrize(
+    "geo_type,geometry",
+    [
+        (
+            "rotated_bbox",
+            {"type": "rotated_bbox", "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.1, "angle": 30},
+        ),
+        (
+            "keypoint",
+            {
+                "type": "keypoint",
+                "points": [
+                    {"x": 0.3, "y": 0.3, "v": 2, "id": "n0"},
+                    {"x": 0.5, "y": 0.4, "v": 2, "id": "n1"},
+                ],
+            },
+        ),
+        (
+            "multi_polygon",
+            {
+                "type": "multi_polygon",
+                "polygons": [
+                    {"type": "polygon", "points": [[0.1, 0.1], [0.2, 0.1], [0.15, 0.2]]},
+                    {"type": "polygon", "points": [[0.5, 0.5], [0.6, 0.5], [0.55, 0.6]]},
+                ],
+            },
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_non_croppable_geometry_variants_raise_400(
+    db_session, super_admin, monkeypatch, geo_type, geometry
+):
+    """v0.20.21 · 门2 兜底覆盖: 除 polyline 外, rotated_bbox / keypoint / multi_polygon
+    (走 _box_bbox_pct → None 路径) 都应提前 400, 不静默返回空。"""
+    _patch_predict(monkeypatch, [])  # 不应被调用
+    fake_ann = types.SimpleNamespace(
+        id=f"ann-{geo_type}",
+        geometry=geometry,
+        class_name="cls",
+        confidence=None,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await run_secondary_inference(
+            db_session,
+            annotation=fake_ann,
+            task=types.SimpleNamespace(id="task-0001"),
+            backend=_fake_backend(),
+            write_target="attributes",
+            write_keys=None,
+            label=None,
+            model_id="cls",
+            model_variants=None,
+            params=None,
+            task_type="classification",
+            prompt=None,
+            class_filter=None,
+            pad=0.08,
+            user_id="user-0001",
+        )
+    assert exc.value.status_code == 400
+    assert geo_type in exc.value.detail

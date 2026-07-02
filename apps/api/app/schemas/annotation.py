@@ -90,6 +90,9 @@ class SecondaryInferenceRequest(BaseModel):
     write_target 决定产物归位: attributes → 写回原框; geometry → 建子框。
     """
 
+    # extra=forbid: 拒绝未声明字段, 避免前端误传的隐性字段被吞后跑出"看似成功但不生效"。
+    model_config = {"extra": "forbid"}
+
     ml_backend_id: UUID
     write_target: Literal["attributes", "geometry"] = "attributes"
     # attributes: 只取这些下游返回键 (None=全取); label 给写回键加前缀 (子命名空间)
@@ -102,8 +105,8 @@ class SecondaryInferenceRequest(BaseModel):
     task_type: str | None = None
     prompt: str | None = None
     class_filter: list[int] | None = None
-    # ROI 外扩比例 (贴边小目标留边给上下文)
-    pad: float = 0.08
+    # ROI 外扩比例 (贴边小目标留边给上下文); 上下界与批量 pipeline ROI.pad 对齐 [0, 0.5]。
+    pad: float = Field(default=0.08, ge=0.0, le=0.5)
 
 
 class SecondaryInferenceResponse(BaseModel):

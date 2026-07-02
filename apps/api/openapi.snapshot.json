@@ -14760,6 +14760,7 @@
         "type": "object"
       },
       "SecondaryInferenceRequest": {
+        "additionalProperties": false,
         "description": "v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上跑一个能力。\n\n镜像批量 pipeline 的单个下游阶段 (源=选中框, 无检测阶段)。\nwrite_target 决定产物归位: attributes → 写回原框; geometry → 建子框。",
         "properties": {
           "class_filter": {
@@ -14819,6 +14820,8 @@
           },
           "pad": {
             "default": 0.08,
+            "maximum": 0.5,
+            "minimum": 0.0,
             "title": "Pad",
             "type": "number"
           },
