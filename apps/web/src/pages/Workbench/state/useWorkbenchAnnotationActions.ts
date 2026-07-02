@@ -57,6 +57,11 @@ export interface UseWorkbenchAnnotationActionsArgs {
   isLocked?: boolean;
   /** v0.10.28 · 当前 keypoint 单元 schema 节点数；放满即自动提交一个实例。0 = 未配置 schema。 */
   keypointNodeCount?: number;
+  /**
+   * v0.20.22 · 同步登记提交在途几何 override, 桥接「setDrag(null)」与「onMutate 微任务
+   * 回填 cache」之间的一帧空窗, 防松手闪回原尺寸。见 usePendingGeom。
+   */
+  markPendingGeom?: (id: string, geom: Geometry) => void;
 }
 
 export interface UseWorkbenchAnnotationActionsReturn {
@@ -113,6 +118,7 @@ export function useWorkbenchAnnotationActions({
   annotationsRef,
   isLocked = false,
   keypointNodeCount = 0,
+  markPendingGeom,
 }: UseWorkbenchAnnotationActionsArgs): UseWorkbenchAnnotationActionsReturn {
   const setQ = queryClient.setQueryData.bind(queryClient);
 
@@ -338,6 +344,8 @@ export function useWorkbenchAnnotationActions({
       const beforeG = keypointGeom(before);
       const afterG = keypointGeom(after);
       const payload = { geometry: afterG };
+      // v0.20.22 · 见 usePendingGeom: 同步 mark 目标几何以桥接一帧闪回。
+      markPendingGeom?.(id, afterG);
       mutations.update.mutate(
         { annotationId: id, payload },
         {
@@ -359,7 +367,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, markPendingGeom],
   );
 
 
@@ -441,6 +449,8 @@ export function useWorkbenchAnnotationActions({
       if (before.cx === after.cx && before.cy === after.cy && before.w === after.w &&
           before.h === after.h && before.angle === after.angle) return;
       const payload = { geometry: after };
+      // v0.20.22 · 见 usePendingGeom。
+      markPendingGeom?.(id, after);
       mutations.update.mutate(
         { annotationId: id, payload },
         {
@@ -462,7 +472,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, markPendingGeom],
   );
 
   const handlePickPendingClass = useCallback(
@@ -523,6 +533,8 @@ export function useWorkbenchAnnotationActions({
         ]);
         const fire = (annotationId: string, geometry: Geometry) => {
           const p = { geometry };
+          // v0.20.22 · 见 usePendingGeom。
+          markPendingGeom?.(annotationId, geometry);
           mutations.update.mutate(
             { annotationId, payload: p },
             {
@@ -540,6 +552,8 @@ export function useWorkbenchAnnotationActions({
         return;
       }
       const payload = { geometry: afterG };
+      // v0.20.22 · 见 usePendingGeom。
+      markPendingGeom?.(id, afterG);
       mutations.update.mutate(
         { annotationId: id, payload },
         {
@@ -561,7 +575,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, pushToast],
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, pushToast, markPendingGeom],
   );
 
   const handleCommitResize = useCallback(
@@ -575,6 +589,8 @@ export function useWorkbenchAnnotationActions({
       const beforeG = bboxGeom(before);
       const afterG = bboxGeom(after);
       const payload = { geometry: afterG };
+      // v0.20.22 · 见 usePendingGeom。
+      markPendingGeom?.(id, afterG);
       mutations.update.mutate(
         { annotationId: id, payload },
         {
@@ -596,7 +612,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom, markPendingGeom],
   );
 
   const handleCommitPolygonGeometry = useCallback(
@@ -624,6 +640,8 @@ export function useWorkbenchAnnotationActions({
       const beforeG = isPolyline ? polylineGeom(before) : polygonGeom(before);
       const afterG = isPolyline ? polylineGeom(after) : polygonGeom(after);
       const payload = { geometry: afterG };
+      // v0.20.22 · 见 usePendingGeom。
+      markPendingGeom?.(id, afterG);
       mutations.update.mutate(
         { annotationId: id, payload },
         {
@@ -645,7 +663,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom, annotationsRef],
+    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom, annotationsRef, markPendingGeom],
   );
 
   // v0.10.5 M4-β · I15 shape 状态位字段级 PATCH。

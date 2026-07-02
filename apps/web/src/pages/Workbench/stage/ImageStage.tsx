@@ -152,6 +152,12 @@ interface ImageStageProps {
   pendingDrawing?: { geom: Geom } | null;
   /** 临时几何 override（方向键 nudge 期间用于显示）。优先级：drag > nudgeMap > b。 */
   nudgeMap?: Map<string, Geom>;
+  /**
+   * v0.20.22 · 「提交在途」几何 override（松手 → mutate 微任务回填 cache 之间的桥梁,
+   * 防原尺寸闪回一帧, 见 usePendingGeom）。优先级：drag > nudgeMap > pendingGeomMap > b。
+   * 值为整条 annotation.geometry, 各分支挑对应分量渲染 (bbox 分量 / polygon.points / …)。
+   */
+  pendingGeomMap?: Map<string, Geometry>;
   /** 多边形合并(右键菜单复用;批量改类 / 删除已迁出到浮动选中卡)。 */
   onJoinSelected?: () => void;
   /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
@@ -385,7 +391,7 @@ function SamCandidateOverlay({
 export function ImageStage({
   fileUrl, mediaKey, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
-  readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
+  readOnly = false, fadedAiIds, pendingDrawing, nudgeMap, pendingGeomMap,
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   secondaryBarHidden, onToggleSecondaryBar,
@@ -995,18 +1001,36 @@ export function ImageStage({
   const overrideGeom = (id: string): Geom | null => {
     if (drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === id) return drag.cur;
     if (nudgeMap?.has(id)) return nudgeMap.get(id) ?? null;
+    // v0.20.22 · 提交在途兜底: 松手 → onMutate 回填 cache 之间的一帧空窗顶住原尺寸,
+    // 见 usePendingGeom。整条 geometry 存的是 bbox / rotated_bbox / polygon / polyline / keypoint 之一,
+    // 这里只关心 bbox 分量, 其它类型走各自的 override 函数。
+    const pg = pendingGeomMap?.get(id);
+    if (pg && pg.type === "bbox") return { x: pg.x, y: pg.y, w: pg.w, h: pg.h };
     return null;
   };
 
   /** polygon 顶点 / 整体平移 drag 期间的实时 override；返回当前应渲染的 points 列表（或 null 表示无 override）。 */
   const polyOverridePoints = (id: string): Pt[] | null => {
     if (drag && (drag.kind === "polyVertex" || drag.kind === "polyMove") && drag.id === id) return drag.cur;
+    // v0.20.22 · 见上方 overrideGeom 注释。
+    const pg = pendingGeomMap?.get(id);
+    if (pg && (pg.type === "polygon" || pg.type === "polyline")) return pg.points;
     return null;
   };
 
   /** v0.10.28 · keypoint 单节点拖拽期间的实时 override。 */
   const kpOverridePoints = (id: string): Keypoint[] | null => {
     if (drag && drag.kind === "kpNode" && drag.id === id) return drag.cur;
+    // v0.20.22 · 见上方 overrideGeom 注释。
+    const pg = pendingGeomMap?.get(id);
+    if (pg && pg.type === "keypoint") return pg.points;
+    return null;
+  };
+
+  /** v0.20.22 · 旋转框整条 geometry override（松手后一帧桥, 见 usePendingGeom）。 */
+  const rotatedOverride = (id: string): RotatedBboxGeometry | null => {
+    const pg = pendingGeomMap?.get(id);
+    if (pg && pg.type === "rotated_bbox") return pg;
     return null;
   };
 
@@ -1224,7 +1248,11 @@ export function ImageStage({
             // v0.10.28 · 旋转框: 绕中心旋转的 Rect + 顶部旋转手柄。
             if (b.geometry?.type === "rotated_bbox") {
               const g = b.geometry;
-              const liveGeometry = drag?.kind === "resizeRotatedBox" && drag.id === b.id ? drag.cur : g;
+              // v0.20.22 · 优先级: drag(实时拖拽) > pendingGeom(松手在途) > b.geometry。
+              const rotPending = rotatedOverride(b.id);
+              const liveGeometry = drag?.kind === "resizeRotatedBox" && drag.id === b.id
+                ? drag.cur
+                : (rotPending ?? g);
               // 拖拽中实时角度 override (rotateBox)。
               const liveAngle = drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : liveGeometry.angle;
               const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;

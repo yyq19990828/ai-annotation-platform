@@ -29,6 +29,7 @@ import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
+import { usePendingGeom } from "./usePendingGeom";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
@@ -584,6 +585,9 @@ export function useWorkbenchShellModel({
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
+  // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
+  // 晚一帧于 setDrag(null) 而出现的原尺寸闪回。详见 usePendingGeom 注释。
+  const { pendingGeomMap, markPendingGeom } = usePendingGeom(annotationsData);
   const [hideOrphanAnnotations, setHideOrphanAnnotations] = useState(false);
   // v0.20.19 · 二次推理面板显隐 (服务端偏好, 跨设备); gate SecondaryInferenceBar 渲染。
   const { hidden: secondaryBarHidden, setHidden: setSecondaryBarHidden } =
@@ -1103,6 +1107,7 @@ export function useWorkbenchShellModel({
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
       delete: { mutate: (id, opts) => deleteAnnotationMut.mutate(id, opts) },
     },
+    markPendingGeom,
   });
   const {
     aiBoxes,
@@ -2390,6 +2395,7 @@ export function useWorkbenchShellModel({
         tool: s.tool,
         fadedAiIds: dimmedAiIds,
         nudgeMap,
+        pendingGeomMap,
         userBoxes: modeState.diffMode === "raw" ? [] : userBoxes,
         aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes,
         spacePan,

@@ -100,6 +100,8 @@ interface UseImageAnnotationActionsArgs {
   isLocked?: boolean;
   /** v0.10.8 · 由 WorkbenchShell 注入；mask 编辑器状态层。空时 refine/commitMask 返回 false。 */
   maskEditor?: UseMaskEditorReturn;
+  /** v0.20.22 · 桥接松手闪回, 见 usePendingGeom。 */
+  markPendingGeom?: (id: string, geom: import("@/types").Geometry) => void;
 }
 
 export function getBatchChangeTarget(
@@ -156,6 +158,7 @@ export function useImageAnnotationActions({
   enqueueOnError,
   isLocked = false,
   maskEditor,
+  markPendingGeom,
 }: UseImageAnnotationActionsArgs) {
   const annotationActions = useWorkbenchAnnotationActions({
     taskId,
@@ -171,6 +174,7 @@ export function useImageAnnotationActions({
     isLocked,
     mutations,
     keypointNodeCount,
+    markPendingGeom,
   });
   const {
     createBboxWithClass,

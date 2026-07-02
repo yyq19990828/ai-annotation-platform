@@ -29,6 +29,8 @@ export interface ImageWorkbenchProps {
   selectedIds: string[];
   fadedAiIds: Set<string>;
   nudgeMap: Map<string, Geom>;
+  /** v0.20.22 · 提交在途几何 override, 见 usePendingGeom (防松手闪回原尺寸)。 */
+  pendingGeomMap: Map<string, Geometry>;
   userBoxes: Annotation[];
   aiBoxes: AiBox[];
   spacePan: boolean;
@@ -135,6 +137,7 @@ export function ImageWorkbench({
   selectedIds,
   fadedAiIds,
   nudgeMap,
+  pendingGeomMap,
   userBoxes,
   aiBoxes,
   spacePan,
@@ -213,6 +216,7 @@ export function ImageWorkbench({
       selectedIds={selectedIds}
       fadedAiIds={fadedAiIds}
       nudgeMap={nudgeMap}
+      pendingGeomMap={pendingGeomMap}
       userBoxes={userBoxes}
       aiBoxes={aiBoxes}
       spacePan={spacePan}

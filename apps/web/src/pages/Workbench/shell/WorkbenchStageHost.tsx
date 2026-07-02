@@ -133,6 +133,8 @@ interface WorkbenchStageHostImageProps {
   tool: Tool;
   fadedAiIds: Set<string>;
   nudgeMap: Map<string, Geom>;
+  /** v0.20.22 · 提交在途几何 override, 见 usePendingGeom (防松手闪回原尺寸)。 */
+  pendingGeomMap: Map<string, import("@/types").Geometry>;
   userBoxes: Annotation[];
   aiBoxes: AiBox[];
   spacePan: boolean;
@@ -314,6 +316,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       tool,
       fadedAiIds,
       nudgeMap,
+      pendingGeomMap,
       userBoxes,
       aiBoxes,
       spacePan,
@@ -464,6 +467,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             selectedIds={selectedIds}
             fadedAiIds={fadedAiIds}
             nudgeMap={nudgeMap}
+            pendingGeomMap={pendingGeomMap}
             userBoxes={userBoxes}
             aiBoxes={aiBoxes}
             spacePan={spacePan}
