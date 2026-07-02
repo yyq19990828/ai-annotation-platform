@@ -3310,6 +3310,14 @@
             "title": "Supported Geometric Outputs",
             "type": "array"
           },
+          "supported_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Inputs",
+            "type": "array"
+          },
           "supported_prompts": {
             "default": [],
             "items": {
@@ -7992,6 +8000,17 @@
             "title": "Composition",
             "type": "string"
           },
+          "default_input_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Input Type"
+          },
           "default_variants": {
             "additionalProperties": {
               "type": "string"
@@ -9109,6 +9128,17 @@
             "title": "Composition",
             "type": "string"
           },
+          "default_input_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Input Type"
+          },
           "default_thresholds": {
             "additionalProperties": true,
             "default": {},
@@ -9205,6 +9235,14 @@
               "type": "string"
             },
             "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Inputs",
             "type": "array"
           },
           "supported_prompts": {
@@ -13820,6 +13858,14 @@
             "title": "Infras",
             "type": "array"
           },
+          "inputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProtocolInputItem"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
           "modalities": {
             "items": {
               "$ref": "#/components/schemas/ProtocolModalityItem"
@@ -13901,6 +13947,29 @@
           "summary"
         ],
         "title": "ProtocolInfraItem",
+        "type": "object"
+      },
+      "ProtocolInputItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolInputItem",
         "type": "object"
       },
       "ProtocolModalityItem": {

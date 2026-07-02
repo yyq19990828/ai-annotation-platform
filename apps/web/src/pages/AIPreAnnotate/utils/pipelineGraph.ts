@@ -7,6 +7,11 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
+import {
+  inputLabel,
+  INPUT_BBOX_PROMPT_ID,
+  INPUT_CROP_ID,
+} from "@/api/capabilityInputs";
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 
 export interface StageEntry {
@@ -35,7 +40,7 @@ export function producesGeometry(payload: PipelineStagePayload | null | undefine
 /** 角色徽标: crop-detect(input.mode=crop)=检测; 其它产几何=分割; ocr=识别; 否则=分类。 */
 export function roleOf(payload: PipelineStagePayload | null | undefined): StageRole {
   if (producesGeometry(payload)) {
-    return payload?.input?.mode === "crop"
+    return payload?.input?.mode === INPUT_CROP_ID
       ? { label: "检测", variant: "accent", icon: "box" }
       : { label: "分割", variant: "ai", icon: "sparkles" };
   }
@@ -119,7 +124,9 @@ export function stageWarning(
     return "该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线";
   if (producesGeometry(payload)) {
     if (caps.knownInputs && !caps.acceptsCrop && !caps.acceptsBboxPrompt)
-      return "该模型不接受裁剪图 / 框提示，无法作几何下游（运行将被端点拒绝）";
+      return `该模型不接受${inputLabel(INPUT_CROP_ID)}图 / ${inputLabel(
+        INPUT_BBOX_PROMPT_ID,
+      )}，无法作几何下游（运行将被端点拒绝）`;
     return null;
   }
   // task=ocr 是识别阶段 (产 text/orientation/language 非 class), 不套「分类下游须产 class」判据。

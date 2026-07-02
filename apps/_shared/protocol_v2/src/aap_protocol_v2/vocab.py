@@ -57,6 +57,15 @@ PROMPT_VALUES: tuple[str, ...] = (
     "scribble",
 )
 
+# `/setup.models[].supported_inputs` 受控值. `video` 只能由 backend 显式声明, 平台不合成。
+INPUT_VALUES: tuple[str, ...] = (
+    "full_image",
+    "crop",
+    "bbox_prompt",
+    "point_prompt",
+    "video",
+)
+
 # task → 默认几何输出 (capability_registry.TASK_DEFAULT_GEOMETRY 镜像).
 # backend 没显式声明 `supported_geometric_outputs` 时, apps/api 会合成此默认。
 TASK_DEFAULT_GEOMETRY: dict[str, tuple[str, ...]] = {

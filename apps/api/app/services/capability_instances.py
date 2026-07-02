@@ -83,6 +83,7 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 # v0.19.2 WS0 · 透传一等输入契约 + 资源画像, 让走 /instances 的消费方
                 # (模型市场 instances / 全局编排选择器) 与项目级 /capabilities 拿到同一字段集。
                 "supported_inputs": list(m.get("supported_inputs") or []),
+                "default_input_type": m.get("default_input_type"),
                 "resource_profile": dict(m.get("resource_profile") or {}),
                 "supported_geometric_outputs": list(
                     m.get("supported_geometric_outputs") or []

@@ -18,6 +18,11 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import {
+  hasInput,
+  INPUT_BBOX_PROMPT_ID,
+  INPUT_CROP_ID,
+} from "@/api/capabilityInputs";
 import { usePreannotateConfig, type PreannotateArgs } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import type {
@@ -440,8 +445,8 @@ export function StageCard({
     () => ({
       hasCapabilities: capabilitiesReady,
       knownInputs: supportedInputs.length > 0,
-      acceptsCrop: supportedInputs.includes("crop"),
-      acceptsBboxPrompt: supportedInputs.includes("bbox_prompt"),
+      acceptsCrop: hasInput(supportedInputs, INPUT_CROP_ID),
+      acceptsBboxPrompt: hasInput(supportedInputs, INPUT_BBOX_PROMPT_ID),
       producesAttributes,
       producesClass,
       batchable,

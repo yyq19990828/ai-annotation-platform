@@ -57,6 +57,13 @@ class ProtocolPromptItem(BaseModel):
     interactive_route: bool
 
 
+class ProtocolInputItem(BaseModel):
+    # v0.21.0 · supported_inputs 受控词表对外暴露 (供前端 codegen + 判据同源)。
+    id: str
+    label: str
+    summary: str
+
+
 class InstanceVariantOption(BaseModel):
     """variants axis 内一条选项 (透传自 backend /setup; 用于前端列表按 axis 拆行)."""
 
@@ -93,6 +100,8 @@ class InstanceModelItem(BaseModel):
     # v0.19.2 WS0 · 一等输入契约 (full_image|crop|bbox_prompt|point_prompt) + 资源画像
     # (device / batchable)。原 /instances 裁掉了二者, 全局编排选择器需要。
     supported_inputs: list[str] = []
+    # v0.21.0 · 源阶段默认输入类型; backend 未声明时由 supported_inputs[0] 兜底。
+    default_input_type: str | None = None
     resource_profile: dict = {}
     supported_geometric_outputs: list[str] = []
     supported_trackers: list[str] = []
@@ -158,3 +167,5 @@ class ProtocolCapabilitiesResponse(BaseModel):
     geometries: list[ProtocolGeometryItem]
     # v0.18.30 · prompt 受控词表 (第五张; 此前仅内部消费, 现对外暴露供前端 codegen)。
     prompts: list[ProtocolPromptItem] = []
+    # v0.21.0 · input 受控词表 (第六张; supported_inputs 合法值)。
+    inputs: list[ProtocolInputItem] = []

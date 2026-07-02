@@ -38,7 +38,7 @@ function labeledRecord(recordName, typeName, items) {
   return `export const ${recordName}: Record<${typeName}, LabeledMeta> = {\n${entries}\n};`;
 }
 
-const { tasks, infras, modalities, geometries, prompts } = data;
+const { tasks, infras, modalities, geometries, prompts, inputs } = data;
 
 const taskEntries = tasks
   .map(
@@ -105,6 +105,9 @@ export const INTERACTIVE_ROUTE_PROMPT_IDS = [${interactiveRoute
   .map(s)
   .join(", ")}] as const;
 export const REQUIRES_INPUT_PROMPT_IDS = [${requiresInput.map(s).join(", ")}] as const;
+
+${idsBlock("InputId", "INPUT_IDS", inputs)}
+${labeledRecord("INPUTS", "InputId", inputs)}
 `;
 
 mkdirSync(outDir, { recursive: true });

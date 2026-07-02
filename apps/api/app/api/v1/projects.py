@@ -39,6 +39,7 @@ from app.services.pipeline_validation import (
     check_parent_geometry_roi,
     resolve_preannotate_queue,
 )
+from app.services.capability_registry import INPUT_BBOX_PROMPT, INPUT_CROP
 from app.services.project_kind import (
     ProjectKind,
     canonical_media_kind,
@@ -1604,22 +1605,23 @@ async def trigger_preannotation(
                     st.model_id,
                 )
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
-                # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
-                # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
+                # 产几何的子: supported_inputs 须含 bbox_prompt (geometry-prompt 路径) 或
+                # crop (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
                 # worker 直接消费 (无快照时 inputs=[] → 放过门控、不烘焙, 保持零退化)。
                 target = (st.write or {}).get("target", "attributes")
                 inputs = _stage_supported_inputs(st_backend, st.model_id)
                 if target in {"geometry", "intermediate"} and inputs:
-                    if "bbox_prompt" not in inputs and "crop" not in inputs:
+                    if INPUT_BBOX_PROMPT not in inputs and INPUT_CROP not in inputs:
                         raise HTTPException(
                             status_code=422,
                             detail=(
                                 f"stage {st.stage} 产几何 (write.target={target!r}), 但其模型 "
-                                f"supported_inputs={inputs} 不含 'bbox_prompt'/'crop', 无法作几何下游"
+                                f"supported_inputs={inputs} 不含 "
+                                f"{INPUT_BBOX_PROMPT!r}/{INPUT_CROP!r}, 无法作几何下游"
                             ),
                         )
                     if not (st.input or {}).get("mode"):
-                        mode = "geometry" if "bbox_prompt" in inputs else "crop"
+                        mode = "geometry" if INPUT_BBOX_PROMPT in inputs else "crop"
                         resolved_input = {**(st.input or {}), "mode": mode}
             norm.append(
                 {

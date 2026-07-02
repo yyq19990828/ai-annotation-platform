@@ -1,7 +1,7 @@
 // v0.14.11 · 协议级能力目录 API (与 ml backend 注册解耦).
 // 后端 SSOT: apps/api/app/services/capability_registry.py.
-// 端点: GET /v1/ml-capabilities/protocol — 返回 task / infra / modality / geometry
-// 四张受控词表 + 每条 task 的人类可读元数据。
+// 端点: GET /v1/ml-capabilities/protocol — 返回 task / infra / modality / geometry /
+// prompt / input 受控词表 + 每条 task 的人类可读元数据。
 
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "./client";
@@ -44,12 +44,28 @@ export interface ProtocolGeometry {
   summary: string;
 }
 
+export interface ProtocolPrompt {
+  id: string;
+  label: string;
+  summary: string;
+  requires_input: boolean;
+  interactive_route: boolean;
+}
+
+export interface ProtocolInput {
+  id: string;
+  label: string;
+  summary: string;
+}
+
 export interface ProtocolCapabilities {
   version: string;
   tasks: ProtocolTask[];
   infras: ProtocolInfra[];
   modalities: ProtocolModality[];
   geometries: ProtocolGeometry[];
+  prompts: ProtocolPrompt[];
+  inputs: ProtocolInput[];
 }
 
 // v0.14.11 · 平台已知 backend 实例 (env-only + 项目级注册合并, 与注册解耦)。
@@ -81,8 +97,9 @@ export interface CapabilityInstanceModel {
   infra: string | null;
   is_interactive: boolean;
   supported_prompts: string[];
-  // v0.18.15 · 一等输入契约 (full_image | crop | bbox_prompt | point_prompt); 见 MLModelCapability.
+  // v0.21.0 · 一等输入契约 (full_image | crop | bbox_prompt | point_prompt | video); 见 MLModelCapability.
   supported_inputs?: string[];
+  default_input_type?: string | null;
   // v0.19.2 WS0 · backend 自报的资源画像 (batchable / device / vram 等); 由 /instances 透传。
   // 老 backend 缺字段 = {}。前端模型市场卡据此渲染「可批量 / 设备」徽标。
   resource_profile?: Record<string, unknown>;

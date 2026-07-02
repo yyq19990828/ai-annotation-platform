@@ -381,6 +381,7 @@ async def test_instances_passthrough_supported_inputs_and_resource_profile(
                                 "id": "classify",
                                 "task": "classification",
                                 "supported_inputs": ["crop", "full_image"],
+                                "default_input_type": "full_image",
                                 "resource_profile": {
                                     "device": "gpu",
                                     "batchable": True,
@@ -424,10 +425,12 @@ async def test_instances_passthrough_supported_inputs_and_resource_profile(
 
     m = by_name["onnxtools-env"]["models"][0]
     assert m["supported_inputs"] == ["crop", "full_image"]
+    assert m["default_input_type"] == "full_image"
     assert m["resource_profile"] == {"device": "gpu", "batchable": True}
 
     legacy = by_name["legacy-no-fields"]["models"][0]
     assert legacy["supported_inputs"] == []
+    assert legacy["default_input_type"] is None
     assert legacy["resource_profile"] == {}
 
 

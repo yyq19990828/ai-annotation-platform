@@ -56,9 +56,10 @@ export interface MLModelCapability {
   is_interactive?: boolean;
   supported_prompts?: string[];
   // v0.18.15 · 一等输入契约 (与 supported_prompts 解耦): 模型能吃哪些投递形态
-  // (full_image | crop | bbox_prompt | point_prompt). 老 backend 缺字段时由平台合成默认.
+  // (full_image | crop | bbox_prompt | point_prompt | video). 老 backend 缺字段时由平台合成默认.
   // 模型市场「可接受输入」行 + 多阶段编排父子兼容过滤据此判定.
   supported_inputs?: string[];
+  default_input_type?: string | null;
   supported_geometric_outputs?: string[];
   output_attribute_types?: string[];
   // v0.18.0 · backend 自报输出属性 schema (含 select options); 二阶段 backend (onnxtools

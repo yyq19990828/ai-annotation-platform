@@ -22,6 +22,11 @@ from __future__ import annotations
 # `GET /v1/ml-capabilities/protocol` 直接对外暴露。
 from .capability_registry import (
     GEOMETRY_VALUES,
+    INPUT_BBOX_PROMPT,
+    INPUT_CROP,
+    INPUT_FULL_IMAGE,
+    INPUT_POINT_PROMPT,
+    INPUT_VALUES,
     INFRA_VALUES,
     PROMPT_VALUES,
     PROMPTS_REQUIRES_INPUT,
@@ -33,6 +38,7 @@ __all__ = [
     "INFRA_VALUES",
     "TASK_VALUES",
     "GEOMETRY_VALUES",
+    "INPUT_VALUES",
     "extract_capabilities",
     "derive_modalities",
 ]
@@ -48,19 +54,20 @@ _LIDAR_GEOMETRY = {"lidar_box_3d", "point_mask_3d"}
 def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
     """v0.18.15 · 老 backend 缺 supported_inputs 时, 按 supported_prompts 合成兼容默认。
 
-    受控词表: ``full_image | crop | bbox_prompt | point_prompt``。
+    受控词表: ``full_image | crop | bbox_prompt | point_prompt | video``。
     - bbox/point prompt → 对应 ``bbox_prompt`` / ``point_prompt`` (box-seg 类走 geometry-prompt)。
     - 一律含 ``full_image`` (任何模型都能吃整图)。
     - 非交互模型 (纯检测/分类/OCR…) 额外含 ``crop`` (平台可裁父框 ROI 喂入), 让其能作几何/属性下游。
+    - ``video`` 只能由 backend 显式声明, 老 backend 合成路径绝不补 video。
     """
     out: list[str] = []
     if "interactive_box" in prompts or "bbox" in prompts:
-        out.append("bbox_prompt")
+        out.append(INPUT_BBOX_PROMPT)
     if "point" in prompts:
-        out.append("point_prompt")
-    out.append("full_image")
+        out.append(INPUT_POINT_PROMPT)
+    out.append(INPUT_FULL_IMAGE)
     if not any(p in PROMPTS_REQUIRES_INPUT for p in prompts):
-        out.append("crop")
+        out.append(INPUT_CROP)
     return list(dict.fromkeys(out))
 
 
@@ -99,6 +106,15 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
     if not geo and task in _TASK_DEFAULT_GEOMETRY:
         geo = list(_TASK_DEFAULT_GEOMETRY[task])
     model_id = str(model.get("id") or model.get("name") or "default")
+    supported_inputs = list(
+        model.get("supported_inputs") or []
+    ) or _synthesize_supported_inputs(list(model.get("supported_prompts") or []))
+    default_input_type = model.get("default_input_type")
+    if (
+        not isinstance(default_input_type, str)
+        or default_input_type not in supported_inputs
+    ):
+        default_input_type = supported_inputs[0] if supported_inputs else None
     out: dict = {
         "id": model_id,
         "display_name": model.get("display_name") or model.get("name") or model_id,
@@ -110,9 +126,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "is_interactive": bool(model.get("is_interactive")),
         "supported_prompts": list(model.get("supported_prompts") or []),
         # v0.18.15 · 一等输入契约 (与 supported_prompts 解耦): 模型能吃哪些投递形态
-        # (full_image | crop | bbox_prompt | point_prompt)。缺省按 prompts 合成兼容默认。
-        "supported_inputs": list(model.get("supported_inputs") or [])
-        or _synthesize_supported_inputs(list(model.get("supported_prompts") or [])),
+        # (full_image | crop | bbox_prompt | point_prompt | video)。缺省按 prompts 合成兼容默认。
+        "supported_inputs": supported_inputs,
+        "default_input_type": default_input_type,
         "supported_geometric_outputs": geo,
         "output_attribute_types": list(model.get("output_attribute_types") or []),
         # 协议③ · backend 自报的属性 schema (含 select options), 供平台一键导入项目 attribute_schema.
@@ -168,6 +184,13 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
     else:
         task = "detection"
     model_id = str(setup.get("name") or "default")
+    supported_inputs = _synthesize_supported_inputs(prompts)
+    default_input_type = setup.get("default_input_type")
+    if (
+        not isinstance(default_input_type, str)
+        or default_input_type not in supported_inputs
+    ):
+        default_input_type = supported_inputs[0] if supported_inputs else None
     out: dict = {
         "id": model_id,
         "display_name": setup.get("name") or model_id,
@@ -177,7 +200,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "is_interactive": bool(setup.get("is_interactive")),
         "supported_prompts": prompts,
         # v0.18.15 · 老 backend 无 supported_inputs, 按 prompts 合成兼容默认 (零退化)。
-        "supported_inputs": _synthesize_supported_inputs(prompts),
+        "supported_inputs": supported_inputs,
+        "default_input_type": default_input_type,
         "supported_geometric_outputs": list(
             setup.get("supported_geometric_outputs") or []
         ),
@@ -201,7 +225,7 @@ def _collect_warnings(models: list[dict]) -> list[dict]:
     """校验规范化后各 model 的受控值, 越界即记 warning (只诊断、不改写)。
 
     v0.18.29 · 把「字段拼错 / 值越界致工具静默不亮」变成模型市场可见信号。只校验受控值
-    (task / infra / supported_prompts / supported_geometric_outputs); 派生缺省
+    (task / infra / supported_prompts / supported_inputs / supported_geometric_outputs); 派生缺省
     (task / infra == "unknown") 跳过 — 那是 backend 没声明、平台已兜底, 非越界。
 
     claude[bot] P2 · 加未知字段名检测: ModelCapability 用 ``extra=allow``, backend 拼错
@@ -213,7 +237,6 @@ def _collect_warnings(models: list[dict]) -> list[dict]:
 
     known_model_keys = set(ModelCapability.model_fields.keys()) | {
         # ModelCapability 用 extra=allow 接以下透传 / 派生字段, 不算未知。
-        "supported_inputs",  # v0.18.15 输入契约
         "exemplar_capabilities",  # v0.18.23 透传给前端 exemplar 控件
     }
     out: list[dict] = []
@@ -258,6 +281,22 @@ def _collect_warnings(models: list[dict]) -> list[dict]:
                     p,
                     f"未知 prompt「{p}」; 前端工具门控不识别, 该提示将静默失效。",
                 )
+        for i in m.get("supported_inputs") or []:
+            if i not in INPUT_VALUES:
+                warn(
+                    mid,
+                    "supported_inputs",
+                    i,
+                    f"未知 input「{i}」不在受控词表; 编排可达性判据不识别。",
+                )
+        default_input = m.get("default_input_type")
+        if isinstance(default_input, str) and default_input not in INPUT_VALUES:
+            warn(
+                mid,
+                "default_input_type",
+                default_input,
+                f"未知 default_input_type「{default_input}」不在受控词表。",
+            )
         for g in m.get("supported_geometric_outputs") or []:
             if g not in GEOMETRY_VALUES:
                 warn(

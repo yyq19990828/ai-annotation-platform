@@ -96,6 +96,9 @@ class ModelCapability(BaseModel):
     infra: str = "unknown"
     is_interactive: bool = False
     supported_prompts: list[str] = []
+    # v0.21.0 · 一等输入契约 (full_image/crop/bbox_prompt/point_prompt/video)。
+    supported_inputs: list[str] = []
+    default_input_type: str | None = None
     supported_geometric_outputs: list[str] = []
     output_attribute_types: list[str] = []
     # 协议③ · 属性 schema 自描述 ([{key,label,type,options}]), 供平台导入项目 attribute_schema.
@@ -157,6 +160,7 @@ class BackendCapabilities(BaseModel):
     # 扁平并集 (向后兼容)
     is_interactive: bool = False
     supported_prompts: list[str] = []
+    supported_inputs: list[str] = []
     supported_trackers: list[str] = []
     supported_text_outputs: list[str] = []
     supported_geometric_outputs: list[str] = []

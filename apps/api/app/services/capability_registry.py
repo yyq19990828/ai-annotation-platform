@@ -3,7 +3,7 @@
 v0.14.11 引入。本模块定义平台对外承诺支持的「能力清单」, 是「模型市场 / 能力目录」
 的协议层数据源:
 
-- task / infra / modality / geometry / prompt 五张受控词表;
+- task / infra / modality / geometry / prompt / input 六张受控词表;
 - 每条 task 的人类可读元数据 (label / 简介 / 协议要求 / 推荐 backend);
 - 由 `GET /v1/ml-capabilities/protocol` 直接对外暴露 (无 project 作用域);
 - 也被 `services/ml_capabilities.py` 内部消费 (受控词表 + task 默认几何)。
@@ -80,6 +80,13 @@ class PromptSpec:
     summary: str
     requires_input: bool
     interactive_route: bool
+
+
+@dataclass(frozen=True)
+class InputSpec:
+    id: str
+    label: str
+    summary: str
 
 
 # ── 9 个 task (v0.14.9 协议 v2 受控词表, 顺序即 UI 展示顺序) ───────────────────
@@ -440,12 +447,28 @@ PROMPTS: tuple[PromptSpec, ...] = (
 )
 
 
+# ── input 受控词表 (v0.21.0 · supported_inputs 合法值) ─────────────────────────
+INPUTS: tuple[InputSpec, ...] = (
+    InputSpec(id="full_image", label="整图", summary="整张图片或视频帧作为模型输入。"),
+    InputSpec(id="crop", label="裁剪", summary="上游几何裁出的 ROI 图像。"),
+    InputSpec(id="bbox_prompt", label="框提示", summary="整图 + 上游 bbox/polygon 框提示。"),
+    InputSpec(id="point_prompt", label="点提示", summary="整图 + 点提示。"),
+    InputSpec(id="video", label="视频", summary="多帧视频序列输入。"),
+)
+
+
 # ── 派生表 (供 ml_capabilities.py 消费, 避免双份维护) ───────────────────────────
 INFRA_VALUES: tuple[str, ...] = tuple(s.id for s in INFRAS)
 TASK_VALUES: tuple[str, ...] = tuple(s.id for s in TASKS)
 GEOMETRY_VALUES: tuple[str, ...] = tuple(s.id for s in GEOMETRIES)
 MODALITY_VALUES: tuple[str, ...] = tuple(s.id for s in MODALITIES)
 PROMPT_VALUES: tuple[str, ...] = tuple(s.id for s in PROMPTS)
+INPUT_VALUES: tuple[str, ...] = tuple(s.id for s in INPUTS)
+INPUT_FULL_IMAGE = "full_image"
+INPUT_CROP = "crop"
+INPUT_BBOX_PROMPT = "bbox_prompt"
+INPUT_POINT_PROMPT = "point_prompt"
+INPUT_VIDEO = "video"
 # requires_input 集合 = 旧 _INTERACTIVE_PROMPTS (含 text/bbox); interactive_route 集合 =
 # 旧前端 INTERACTIVE_PROMPTS 的超集 (含预留 scribble/sketch/mask, 不含 text)。
 PROMPTS_REQUIRES_INPUT: frozenset[str] = frozenset(

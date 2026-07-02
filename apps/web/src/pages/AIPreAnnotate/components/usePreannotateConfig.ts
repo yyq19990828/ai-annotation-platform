@@ -12,6 +12,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { type TextOutputMode, type PredictMode } from "@/hooks/usePreannotation";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
+import { hasInput, INPUT_FULL_IMAGE_ID } from "@/api/capabilityInputs";
 import {
   mlBackendsApi,
   mlBackendSetupQueryKey,
@@ -44,7 +45,7 @@ export const GEOMETRIC_TASKS = ["detection", "segmentation", "keypoint", "obb"];
 // supported_inputs 缺字段 = 老 backend,按平台默认视为支持 full_image(向后兼容)。
 export function supportsFullImageInput(m: MLModelCapability): boolean {
   const inputs = m.supported_inputs;
-  return !inputs || inputs.length === 0 || inputs.includes("full_image");
+  return !inputs || inputs.length === 0 || hasInput(inputs, INPUT_FULL_IMAGE_ID);
 }
 
 export interface PreannotateAlias {

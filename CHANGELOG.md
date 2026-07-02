@@ -40,6 +40,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.20.x 版本段累积在本区；进入 0.21.x 后整体移到 docs/changelogs/0.20.x.md。
 -->
 
+### Added
+
+- **能力协议新增统一输入类型词表**：`supported_inputs` 现在有后端、共享协议和前端生成物共用的受控词表，并新增 `video` 预留输入类型与 `default_input_type` 字段，后续全局编排选择器和视频检测追踪可以用同一套输入判据。
+
 ## [0.20.22] - 2026-07-01
 
 ### Added
