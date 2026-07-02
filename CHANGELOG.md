@@ -49,6 +49,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 ### Changed
 
 - **多阶段预标注的源阶段成为执行字段来源**：触发预标注时不再让顶层兼容字段覆盖流水线源阶段，源阶段的 backend、模型、任务类型、参数、variant 和类别过滤会一并派生到执行 payload，避免项目主 backend 或旧调用参数成为第二真值。
+- **全局能力实例响应补齐编排所需定位字段**：`/ml-capabilities/instances` 现在返回 `backend_id` 与 `state`，全局编排选择器可以用 registry id 落 `pipeline_stages.ml_backend_id`，并把 `state=error` 的 backend 展示为不可选择而不是静默消失。
 
 ## [0.20.22] - 2026-07-01
 

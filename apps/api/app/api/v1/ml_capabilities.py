@@ -160,6 +160,8 @@ async def get_capability_instances(
         try:
             instances.append(
                 CapabilityInstanceItem(
+                    backend_id=item["backend_id"],
+                    state=item["state"],
                     source=item["source"],
                     name=item["name"],
                     infra=item["infra"],

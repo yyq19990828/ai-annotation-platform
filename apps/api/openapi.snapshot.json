@@ -5596,8 +5596,12 @@
         "type": "object"
       },
       "CapabilityInstanceItem": {
-        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
+        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`backend_id` 是 ml_backend_registry.id, 供全局编排选择器落 pipeline_stages.ml_backend_id。\n`state` 保留 connected/error 等注册表状态; disconnected 已在 service 层过滤。\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
         "properties": {
+          "backend_id": {
+            "title": "Backend Id",
+            "type": "string"
+          },
           "infra": {
             "default": "unknown",
             "title": "Infra",
@@ -5619,6 +5623,10 @@
             "title": "Source",
             "type": "string"
           },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
           "warmup_endpoint": {
             "default": false,
             "title": "Warmup Endpoint",
@@ -5626,6 +5634,8 @@
           }
         },
         "required": [
+          "backend_id",
+          "state",
           "source",
           "name"
         ],

@@ -136,6 +136,10 @@ export interface OutputAttributeSchemaItem {
 }
 
 export interface CapabilityInstance {
+  /** v0.21.0 · ml_backend_registry.id; 全局编排选择器保存 pipeline_stages.ml_backend_id 用。 */
+  backend_id: string;
+  /** v0.21.0 · connected/error 等注册表状态；error 可展示但应禁用选择动作。 */
+  state: string;
   source: "env_only" | "registered" | string;
   name: string;
   infra: string;

@@ -42,10 +42,12 @@ async def test_instances_returns_env_and_manual_registry_rows(
     httpx_client, auth_headers, db_session
 ):
     """source=env 与 source=manual 的全局注册项同时返回, source 透传注册行。"""
+    env_id = uuid.uuid4()
+    manual_id = uuid.uuid4()
     db_session.add_all(
         [
             MLBackendRegistry(
-                id=uuid.uuid4(),
+                id=env_id,
                 name="gsam2-env",
                 url="http://gsam2:8001",
                 state="connected",
@@ -69,7 +71,7 @@ async def test_instances_returns_env_and_manual_registry_rows(
                 },
             ),
             MLBackendRegistry(
-                id=uuid.uuid4(),
+                id=manual_id,
                 name="sam3-registered",
                 url="http://sam3:8002",
                 state="connected",
@@ -105,15 +107,61 @@ async def test_instances_returns_env_and_manual_registry_rows(
 
     by_name = {inst["name"]: inst for inst in data["instances"]}
     env_inst = by_name["gsam2-env"]
+    assert env_inst["backend_id"] == str(env_id)
+    assert env_inst["state"] == "connected"
     assert env_inst["source"] == "env"
     assert env_inst["infra"] == "pytorch"
     assert len(env_inst["models"]) == 1
     assert env_inst["models"][0]["task"] == "detection"
 
     reg_inst = by_name["sam3-registered"]
+    assert reg_inst["backend_id"] == str(manual_id)
+    assert reg_inst["state"] == "connected"
     assert reg_inst["source"] == "manual"
     assert reg_inst["infra"] == "pytorch"
     assert reg_inst["models"][0]["task"] == "detection"
+
+
+@pytest.mark.asyncio
+async def test_instances_keeps_error_state_backend_for_disabled_selection(
+    httpx_client, auth_headers, db_session
+):
+    """v0.21.0 · 全局编排选择器需要展示 state=error backend, 但前端禁用选择动作。"""
+    backend_id = uuid.uuid4()
+    db_session.add(
+        MLBackendRegistry(
+            id=backend_id,
+            name="flaky-yolo",
+            url="http://flaky-yolo:8001",
+            state="error",
+            is_interactive=False,
+            auth_method="none",
+            extra_params={},
+            source="manual",
+            health_meta={
+                "capabilities": {
+                    "infra": "onnx",
+                    "models": [
+                        {
+                            "id": "yolo-det",
+                            "display_name": "YOLO Det",
+                            "task": "detection",
+                            "supported_geometric_outputs": ["bbox"],
+                        }
+                    ],
+                }
+            },
+        )
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/ml-capabilities/instances", headers=auth_headers
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["instances"][0]["backend_id"] == str(backend_id)
+    assert data["instances"][0]["state"] == "error"
 
 
 @pytest.mark.asyncio

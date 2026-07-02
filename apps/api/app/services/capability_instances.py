@@ -8,7 +8,7 @@ v0.19.0 ADR-0044 · 数据源统一为**全局注册表 ml_backend_registry**: e
 启动钩子已自动 upsert 成 source=env 注册行, 不再有 env-only 临时探测分支。每行优先读
 health_meta.capabilities 快照, 缺失时 fallback live 探测 /setup。
 
-输出字段裁剪: 只暴露 source / display_name / infra / models[], 不暴露 url /
+输出字段裁剪: 只暴露 backend_id / state / source / display_name / infra / models[], 不暴露 url /
 gpu_info / cache / pool 等运维敏感信息, 让普通用户安全消费。
 """
 
@@ -165,6 +165,8 @@ async def load_capability_instances(db: AsyncSession) -> list[dict]:
             continue
         instances.append(
             {
+                "backend_id": str(b.id),
+                "state": b.state,
                 "source": b.source,
                 "name": b.name,
                 "infra": (caps or {}).get("infra") or "unknown",
