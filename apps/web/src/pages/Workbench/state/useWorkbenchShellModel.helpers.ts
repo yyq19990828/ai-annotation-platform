@@ -163,6 +163,18 @@ export function buildPipelineRunPayload(
   };
 }
 
+interface ProjectPipelineStageSource {
+  is_default?: boolean | null;
+  stages?: PipelineStagePayload[] | null;
+}
+
+export function selectProjectPipelineStages(
+  namedPipelines: readonly ProjectPipelineStageSource[] | null | undefined,
+  legacyStages: PipelineStagePayload[] | null | undefined,
+): PipelineStagePayload[] | null {
+  return namedPipelines?.find((p) => p.is_default)?.stages ?? legacyStages ?? null;
+}
+
 // claude[bot] P1 #5 · 列出 stages 里引用的 backend id 中, 不在 available 集合里的 (= 被删/停)。
 // 给 UI 渲染"引用后端不可用"提示用; stages 重复引用同一 backend 时去重。
 export function missingBackendIdsForStages(
