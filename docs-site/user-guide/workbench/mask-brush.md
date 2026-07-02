@@ -81,4 +81,4 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 ## 相关 ADR
 
-- [ADR-0022 · Mask 编辑器工具架构](/dev/adr/0022-mask-editor-tool-architecture)
+- [ADR-0022 · Mask 编辑器工具架构](/dev/adr/archive/0022-mask-editor-tool-architecture)

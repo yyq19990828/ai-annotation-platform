@@ -30,7 +30,7 @@
 
 ### Phase 1 · 2D 框种 3D 框(frustum fit)— v0.15.24 ✅ **已落地**
 
-在相机图上拖一个 2D 矩形 → 该相机标定反算视锥 → 框住落在锥内的点云 → `psrFromPoints` 拟合出 3D box 初值 → 切主视图微调。详细计划:[`docs/plans/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md`](../docs/plans/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md)。
+在相机图上拖一个 2D 矩形 → 该相机标定反算视锥 → 框住落在锥内的点云 → `psrFromPoints` 拟合出 3D box 初值 → 切主视图微调。详细计划:[`docs/plans/archive/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md`](../docs/plans/archive/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md)。
 
 **已落地(v0.15.24)**:`geometry/frustum.ts`(视锥选点 + 深度门控 + 中央射线)+ `CameraProjectionView` 种框拖框交互 + 放大模态「种框」toggle 编排(选点→拟合→落 box_3d→选中)。MVP 收窄为**仅放大相机视图**启用(小浮动面板太小画不准)。详见 [CHANGELOG](../CHANGELOG.md)。
 

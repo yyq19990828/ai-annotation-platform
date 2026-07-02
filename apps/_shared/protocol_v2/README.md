@@ -17,7 +17,7 @@ ML backend 协议 v2 的共享 Pydantic schema 与受控词表常量。
 **不包含**：
 - 每个 backend 的 `Context` —— prompt 字段集差异大（sam3 有 `exemplar`、yolo 走 `variants`），各 backend 自己定义。
 - `/setup` 字典字面量 —— 各 backend 自己构造。
-- 任何抽象基类、推理生命周期、模型池等业务实现。详见 [ADR-0038](../../../docs/adr/0038-defer-ml-backend-base-class.md)。
+- 任何抽象基类、推理生命周期、模型池等业务实现。详见 [ADR-0038](../../../docs/adr/archive/0038-defer-ml-backend-base-class.md)。
 
 ## 协议版本同步
 

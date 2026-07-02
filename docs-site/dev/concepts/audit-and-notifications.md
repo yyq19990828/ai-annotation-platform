@@ -335,7 +335,7 @@ WS 握手时会校验 JWT，然后订阅：
 
 ## 反馈统一表(ADR-0027)
 
-反馈入口历史上散在 `bug_reports`（产品 BUG）、`annotation_comments`（标注评论）、`tasks.reject_reason`（审核驳回）和 pixel-anchored issue。当前用 `annotation_feedbacks` 表统一锚点（`anchor_type` ∈ project/task/annotation/pixel）+ `kind` ∈ issue/comment/reject/bug，并通过旧源镜像与对账任务逐步收口为单一写入入口。详见 [ADR-0027](/dev/adr/0027-annotation-feedback-unified-table)（规范由 docs/adr 维护）。
+反馈入口历史上散在 `bug_reports`（产品 BUG）、`annotation_comments`（标注评论）、`tasks.reject_reason`（审核驳回）和 pixel-anchored issue。当前用 `annotation_feedbacks` 表统一锚点（`anchor_type` ∈ project/task/annotation/pixel）+ `kind` ∈ issue/comment/reject/bug，并通过旧源镜像与对账任务逐步收口为单一写入入口。详见 [ADR-0027](/dev/adr/archive/0027-annotation-feedback-unified-table)（规范由 docs/adr 维护）。
 
 迁移按三段式推进，每段独立可回退：
 

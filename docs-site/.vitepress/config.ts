@@ -32,8 +32,10 @@ export default withMermaid(defineConfig({
     (url) => /\.(tsx?|py|json|ya?ml|sh|toml|Dockerfile\w*)$/.test(url),
     (url) => /\/(apps|infra)\//.test(url),
     // ADR mirrors may point back to repo-local docs/plans files, which are not
-    // rendered as VitePress pages.
-    (url) => /(^|\/)\.\.\/plans\/\d{4}-/.test(url) || /\/plans\/\d{4}-/.test(url),
+    // rendered as VitePress pages.（兼容 v0.21+ 引入的 plans/archive/ 子目录）
+    (url) =>
+      /(^|\/)\.\.\/plans\/(archive\/)?\d{4}-/.test(url) ||
+      /\/plans\/(archive\/)?\d{4}-/.test(url),
     (url) => /IMAGE_CHECKLIST/.test(url),
     // ROADMAP/inspiration 文档引用本地 clone 的 CVAT 源码（`../../cvat/...`），
     // 这些不是站点页面，构建期不应判为 dead。

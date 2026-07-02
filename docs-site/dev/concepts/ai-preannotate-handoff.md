@@ -87,7 +87,7 @@ flowchart TD
 - `output_mode`
 - `batch_id`
 - `params` —— 选中 backend 的 `/setup.params` 值；worker 合并进 `/predict` context，覆盖项目级阈值兜底；无此字段时行为不变
-- `pipeline_stages` —— **多阶段编排**，声明源 + 下游 stage 列表，把单 backend 调用扩展为「检测 → 分类 / 几何分割 → 写回属性」跨 backend 流水线；缺省时与原单阶段批量预标逐字等价，完全向后兼容。形态、ROI 路由、并行兄弟语义详见 [prediction-pipeline §多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) 与 [ADR 0043](../adr/0043-staged-preannotation-pipeline)
+- `pipeline_stages` —— **多阶段编排**，声明源 + 下游 stage 列表，把单 backend 调用扩展为「检测 → 分类 / 几何分割 → 写回属性」跨 backend 流水线；缺省时与原单阶段批量预标逐字等价，完全向后兼容。形态、ROI 路由、并行兄弟语义详见 [prediction-pipeline §多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) 与 [ADR 0043](../adr/archive/0043-staged-preannotation-pipeline)
 
 ### 当前约束
 
@@ -193,7 +193,7 @@ annotator 可选择：
 1. `accept prediction`(候选层 → annotation)
 2. 在 prediction 基础上继续改
 3. 完全忽略 prediction，手工新建 annotation
-4. **Magic Box**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。归 `ai_interactive` 工具单位, 详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)
+4. **Magic Box**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。归 `ai_interactive` 工具单位, 详见 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)
 
 ### 采纳前候选属性预览 + 分步采纳
 

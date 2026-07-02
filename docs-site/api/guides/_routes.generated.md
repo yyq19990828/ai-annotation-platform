@@ -315,6 +315,14 @@
 | POST | `/projects/{project_id}/predictions/import` |
 | POST | `/projects/{project_id}/predictions/purge` |
 
+## `project_pipelines.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{pipeline_id}` |
+| PUT | `/{pipeline_id}` |
+| DELETE | `/{pipeline_id}` |
+
 ## `project_templates.py`
 
 | Method | Path |
@@ -331,6 +339,7 @@
 | GET | `/stats` |
 | GET | `/{project_id}` |
 | PATCH | `/{project_id}` |
+| POST | `/{project_id}/pipelines/apply` |
 | DELETE | `/{project_id}` |
 | POST | `/{project_id}/classes/rename` |
 | GET | `/{project_id}/class-usage` |
@@ -512,4 +521,4 @@
 
 ---
 
-_共 50 模块 / 275 路由_
+_共 51 模块 / 279 路由_

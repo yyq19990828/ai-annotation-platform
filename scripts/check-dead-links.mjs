@@ -276,7 +276,8 @@ function collectAllFiles(root, out = []) {
 }
 
 // 历史快照目录：默认不视为死链来源（内容已固化，引用的源码常已搬迁）
-const HISTORICAL_SOURCE_PREFIXES = ["docs/plans/", "docs/changelogs/"];
+// docs/adr/archive/ = Accepted ADR 归档，内部相对引用维持原样，不作为死链源。
+const HISTORICAL_SOURCE_PREFIXES = ["docs/plans/", "docs/changelogs/", "docs/adr/archive/"];
 
 function isHistoricalSource(relPath) {
   const p = relPath.split(sep).join("/");

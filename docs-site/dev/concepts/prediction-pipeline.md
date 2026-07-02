@@ -10,7 +10,7 @@ last_reviewed: 2026-06-24
 
 AI 预标注流水线以 `async_jobs(kind=batch_predict)` 作为用户可见任务真值，以 `predictions` / `failed_predictions` 保存可采纳结果和失败项。本页讲清状态机、写入时点、与下游表的关系。
 
-> 决策依据：[ADR 0014 — Prediction Jobs 历史表](../adr/0014-prediction-jobs-table)
+> 决策依据：[ADR 0014 — Prediction Jobs 历史表](../adr/archive/0014-prediction-jobs-table)
 
 <!-- history: prediction_jobs was the early dedicated table; current docs describe async_jobs as the single job source. -->
 
@@ -92,7 +92,7 @@ sequenceDiagram
 - `to_internal_shape()` 出参也带 `tool_unit_id`, 供前端候选层 / AAP JSON 导出消费
 - `accept_prediction()` 创建的 annotation 沿用 prediction 的 `tool_unit_id` (与项目 `tool_bindings[unit].classes` 软校验保一致)
 
-详见 [annotation-module · 工具单位](./annotation-module#工具单位tool_unit维度) 与 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)。
+详见 [annotation-module · 工具单位](./annotation-module#工具单位tool_unit维度) 与 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)。
 
 ## WebSocket 通道
 
@@ -173,7 +173,7 @@ if params:
 
 ## 多阶段预标注（pipeline_stages，路径 B）
 
-`PreannotateRequest.pipeline_stages` 把单阶段批量预标泛化为**平台层跨 backend 编排**：源阶段（如 detect）产框 → 下游阶段（如 classify / box-seg）对每个父框按各自路由方式投递 → 结果合并回同一框。缺省（无 `pipeline_stages`）与单阶段 `batch_predict` 逐字等价，完全向后兼容。决策与边界见 [ADR 0043 — 多阶段预标注编排](../adr/0043-staged-preannotation-pipeline)。
+`PreannotateRequest.pipeline_stages` 把单阶段批量预标泛化为**平台层跨 backend 编排**：源阶段（如 detect）产框 → 下游阶段（如 classify / box-seg）对每个父框按各自路由方式投递 → 结果合并回同一框。缺省（无 `pipeline_stages`）与单阶段 `batch_predict` 逐字等价，完全向后兼容。决策与边界见 [ADR 0043 — 多阶段预标注编排](../adr/archive/0043-staged-preannotation-pipeline)。
 
 ### 请求形态
 

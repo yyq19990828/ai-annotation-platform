@@ -34,14 +34,14 @@
 
 ## Phase 2 · 轨迹工具对齐 CVAT（核心生产力）
 
-> **2.1–2.8（v0.10.30）+ 2.10 侧栏外操作入口（v0.10.32）已落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.30 plan](../docs/plans/2026-05-21-v0.10.30-phase2-tracks-plan.md) / [v0.10.32 plan](../docs/plans/2026-05-22-v0.10.32-track-ops-out-of-sidebar.md)。建立的轨迹模型是 Phase 5/6 底座：`semantic_label` + `track_number` 确定性派生（`track_id` uuid 只读）、`outside`/`occluded` 两态（对齐 CVAT）、track/帧级属性、split/merge/join/propagate、关键帧导航、`O`/`Q`/`H`/`L`/`Ctrl+B` track 快捷键（侧栏/快捷键/浮动条共享同组 actions）。
+> **2.1–2.8（v0.10.30）+ 2.10 侧栏外操作入口（v0.10.32）已落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.30 plan](../docs/plans/archive/2026-05-21-v0.10.30-phase2-tracks-plan.md) / [v0.10.32 plan](../docs/plans/archive/2026-05-22-v0.10.32-track-ops-out-of-sidebar.md)。建立的轨迹模型是 Phase 5/6 底座：`semantic_label` + `track_number` 确定性派生（`track_id` uuid 只读）、`outside`/`occluded` 两态（对齐 CVAT）、track/帧级属性、split/merge/join/propagate、关键帧导航、`O`/`Q`/`H`/`L`/`Ctrl+B` track 快捷键（侧栏/快捷键/浮动条共享同组 actions）。
 
 ### 2.9 多几何 track（polygon / polyline / mask）（**延后**；原 R9）
 - 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
 - **体量大、依赖点对应插值**，排在轨迹基础能力之后；DAVIS mask 导出（Phase 4.5）依赖此项。
 
 ### 2.11 采样下 propagate「N 帧」单位对齐导航网格（**v0.10.35 落地**）
-- 已落地（设计前提保留供后续 Phase 参考）：采样开启时 propagate 对话框「N」改以网格格子为单位、tracker 只回填 `frame_index % step == 0` 的网格帧（底层仍逐源帧算、`frame_index` 存源帧，D2）。详见 [CHANGELOG v0.10.35](../CHANGELOG.md) / [v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §A。
+- 已落地（设计前提保留供后续 Phase 参考）：采样开启时 propagate 对话框「N」改以网格格子为单位、tracker 只回填 `frame_index % step == 0` 的网格帧（底层仍逐源帧算、`frame_index` 存源帧，D2）。详见 [CHANGELOG v0.10.35](../CHANGELOG.md) / [v0.10.35 计划](../docs/plans/archive/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §A。
 
 ---
 
@@ -49,7 +49,7 @@
 
 ### 3.1 真实 SAM 2/3 video backend（原 C.6 P0）
 
-> **gsam2 `sam2_video` 已于 v0.10.35/36 落地**（独立显存池 + `/health.video_pool` 观测 + 模型市场 image/video 模态拆分 + sam_variant 选择）。详见 [CHANGELOG](../CHANGELOG.md)、[v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md)、[ml-backend-protocol.md](../docs-site/dev/reference/ml-backend-protocol.md) `type=video_tracker`。
+> **gsam2 `sam2_video` 已于 v0.10.35/36 落地**（独立显存池 + `/health.video_pool` 观测 + 模型市场 image/video 模态拆分 + sam_variant 选择）。详见 [CHANGELOG](../CHANGELOG.md)、[v0.10.35 计划](../docs/plans/archive/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md)、[ml-backend-protocol.md](../docs-site/dev/reference/ml-backend-protocol.md) `type=video_tracker`。
 
 **遗留待续**：
 - **`sam3_video` 真实 backend**：sam3-backend 尚未实现 `/predict context.type="video_tracker"`（收到即 422），待 SAM3 video 能力跟进，约束同 sam2（独立池 / 不入 `apps/api` / 跨窗续追）。
@@ -66,7 +66,7 @@
 
 ## Phase 4 · 视频导出（D3 落地）
 
-> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.31 plan](../docs/plans/2026-05-21-v0.10.31-phase4-video-export-plan.md)：视频并入异步 zip 管线、AAP schema 升 1.2（task 层 `media_type` + `video` 子块、`video_track` 无损透传，envelope 不拆 D3）、MOT 16/17/20 + KITTI Tracking 2D 导出（整数 id 按采样网格重编号 D2、附 `fetch_frames.py` 抽帧不物理打包 D1）。**v0.10.44 追加 `yolo-frames-det`**：按采样网格抽帧，合并单帧 `video_bbox` 与摊平后的 `video_track`，导出传统检测训练用 YOLO labels。
+> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.31 plan](../docs/plans/archive/2026-05-21-v0.10.31-phase4-video-export-plan.md)：视频并入异步 zip 管线、AAP schema 升 1.2（task 层 `media_type` + `video` 子块、`video_track` 无损透传，envelope 不拆 D3）、MOT 16/17/20 + KITTI Tracking 2D 导出（整数 id 按采样网格重编号 D2、附 `fetch_frames.py` 抽帧不物理打包 D1）。**v0.10.44 追加 `yolo-frames-det`**：按采样网格抽帧，合并单帧 `video_bbox` 与摊平后的 `video_track`，导出传统检测训练用 YOLO labels。
 >
 > **统一映射约定**（已落地于 [export_video.py](../apps/api/app/services/export_video.py) 顶部，保留供后续格式扩展参考）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
 

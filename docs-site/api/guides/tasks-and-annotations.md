@@ -25,7 +25,7 @@ POST /api/v1/tasks/next
 { "project_id": 1, "batch_id": 5 }
 ```
 
-返回一个未被锁定的任务并**加锁 30 分钟**（[ADR 0005](../../dev/adr/0005-task-lock-and-review-matrix)）。同一标注员重复调用拿同一个；其他人拿不到。
+返回一个未被锁定的任务并**加锁 30 分钟**（[ADR 0005](../../dev/adr/archive/0005-task-lock-and-review-matrix)）。同一标注员重复调用拿同一个；其他人拿不到。
 
 ## 提交标注
 
@@ -231,7 +231,7 @@ GET /api/v1/tasks/:id/comments         # 标注评论
 | `POST /tasks/:id/lock` | 显式续锁 |
 | `DELETE /tasks/:id/lock` | 主动释放 |
 
-锁过期后由后台清理任务自动归还。详见 [ADR 0005](../../dev/adr/0005-task-lock-and-review-matrix)。
+锁过期后由后台清理任务自动归还。详见 [ADR 0005](../../dev/adr/archive/0005-task-lock-and-review-matrix)。
 
 ## 相关
 

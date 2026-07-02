@@ -151,7 +151,7 @@ Size:  LRU cap = 16（4060）/ 32（3090+）
 - [x] Prometheus metrics：`embedding_cache_hits_total` / `embedding_cache_misses_total` / `embedding_cache_size` / `inference_latency_seconds{prompt_type,cache}`
 - [x] `docs-site/dev/architecture/ai-models.md` 写缓存策略 + 显存预算 + Prometheus 查询
 
-**验收**：连续点同图 5 次，第 1 次 ≤ 500ms（4060），第 2-5 次 ≤ 50ms。计划 [`docs/plans/2026-05-07-v0.9.1-declarative-feather.md`](../docs/plans/2026-05-07-v0.9.1-declarative-feather.md)。
+**验收**：连续点同图 5 次，第 1 次 ≤ 500ms（4060），第 2-5 次 ≤ 50ms。计划 [`docs/plans/archive/2026-05-07-v0.9.1-declarative-feather.md`](../docs/plans/archive/2026-05-07-v0.9.1-declarative-feather.md)。
 
 ### v0.9.2 — 工作台 `S` 工具 + 文本入口（M2，~6 工作日）✅ 已落地（2026-05-07）
 
@@ -165,15 +165,15 @@ Size:  LRU cap = 16（4060）/ 32（3090+）
 - [x] **额外**：DINO `box_threshold` / `text_threshold` 项目级 override（§5 决策 2 同窗口完成）
 - [ ] E2E：`annotation.spec` 加 SAM 路径 → 推迟到 v0.9.3 / M3 收口前补（需 `/_test_seed` ML backend 工厂）
 
-**验收**：标注员用 SAM 工具 10 分钟内标完 50 张图，AI 接管率 ≥ 60%；文本 "person" 在 3 张含人图都能返回正确 polygon。计划 [`docs/plans/2026-05-07-v0.9.2-luminous-canvas.md`](../docs/plans/2026-05-07-v0.9.2-luminous-canvas.md)。
+**验收**：标注员用 SAM 工具 10 分钟内标完 50 张图，AI 接管率 ≥ 60%；文本 "person" 在 3 张含人图都能返回正确 polygon。计划 [`docs/plans/archive/2026-05-07-v0.9.2-luminous-canvas.md`](../docs/plans/archive/2026-05-07-v0.9.2-luminous-canvas.md)。
 
 ### v0.9.3 — 前端杂项收口 + ML Backend 全链路注册（三 phase，~3 工作日）✅ 已落地（2026-05-07）
 
 > **范围调整说明**：原计划本版做 M3 mask→polygon 调参，但 M2 落地后实施期发现"前端 ML Backend 注册入口缺失"等几条更紧迫问题（前端注册 UI 缺位让 PROJECT_ADMIN 无法自服务接 backend；提示文案指向不存在的 tab）。本版改做"前端杂项收口 + 模型市场激活 + ML Backend 注册端到端"，M3 顺势挪到 v0.9.4 phase 3（在 SAM UX 完善后再调更合理，能拿到真实标注样本数据）。
 
-- [x] **phase 1 (Refactored Lighthouse)**：API 密钥端到端（`api_keys` 表 + `/me/api-keys` CRUD + `ak_` token + `ApiKeysModal`）+ 超管 ML 集成总览（`/admin/ml-integrations`）+ 登录 progressive CAPTCHA（Redis IP 计数 + Turnstile 阈值后强制）+ IoU rbush 加速（同类分桶 + 候选裁剪）+ DropdownMenu 收编。计划 [`docs/plans/2026-05-07-v0.9.3-phase1-refactored-lighthouse.md`](../docs/plans/2026-05-07-v0.9.3-phase1-refactored-lighthouse.md)。
-- [x] **phase 2 (Merged Market)**：三页合二激活模型市场 — 删 `/admin/ml-integrations` 与 `/admin/failed-predictions`，合并到 `/model-market`（Tabs `?tab=backends|failed`）；Sidebar 「模型市场」失败预测 > 0 时显红色 danger 徽章。计划 [`docs/plans/2026-05-07-v0.9.3-phase2-merged-market.md`](../docs/plans/2026-05-07-v0.9.3-phase2-merged-market.md)。
-- [x] **phase 3 (Happy Meadow)**：前端接通 ML Backend 注册能力 — `MlBackendsSection`（项目设置「ML 模型」选项卡）+ `MlBackendFormModal`（注册 / 编辑 / 删除 / 健康检查）+ `RegisteredBackendsTab` 由只读改可写；`useUpdateMLBackend` / `useDeleteMLBackend` 补齐；四个写 mutation 双 invalidate。计划 [`docs/plans/2026-05-07-v0.9.3-phase3-ml-backend-registration.md`](../docs/plans/2026-05-07-v0.9.3-phase3-ml-backend-registration.md)。
+- [x] **phase 1 (Refactored Lighthouse)**：API 密钥端到端（`api_keys` 表 + `/me/api-keys` CRUD + `ak_` token + `ApiKeysModal`）+ 超管 ML 集成总览（`/admin/ml-integrations`）+ 登录 progressive CAPTCHA（Redis IP 计数 + Turnstile 阈值后强制）+ IoU rbush 加速（同类分桶 + 候选裁剪）+ DropdownMenu 收编。计划 [`docs/plans/archive/2026-05-07-v0.9.3-phase1-refactored-lighthouse.md`](../docs/plans/archive/2026-05-07-v0.9.3-phase1-refactored-lighthouse.md)。
+- [x] **phase 2 (Merged Market)**：三页合二激活模型市场 — 删 `/admin/ml-integrations` 与 `/admin/failed-predictions`，合并到 `/model-market`（Tabs `?tab=backends|failed`）；Sidebar 「模型市场」失败预测 > 0 时显红色 danger 徽章。计划 [`docs/plans/archive/2026-05-07-v0.9.3-phase2-merged-market.md`](../docs/plans/archive/2026-05-07-v0.9.3-phase2-merged-market.md)。
+- [x] **phase 3 (Happy Meadow)**：前端接通 ML Backend 注册能力 — `MlBackendsSection`（项目设置「ML 模型」选项卡）+ `MlBackendFormModal`（注册 / 编辑 / 删除 / 健康检查）+ `RegisteredBackendsTab` 由只读改可写；`useUpdateMLBackend` / `useDeleteMLBackend` 补齐；四个写 mutation 双 invalidate。计划 [`docs/plans/archive/2026-05-07-v0.9.3-phase3-ml-backend-registration.md`](../docs/plans/archive/2026-05-07-v0.9.3-phase3-ml-backend-registration.md)。
 
 ### v0.9.4 — SAM 真接通 + UX 完善 + M3 调参（三 phase，~5 工作日，进行中）
 
@@ -218,8 +218,8 @@ Size:  LRU cap = 16（4060）/ 32（3090+）
 - [x] 跑完后 batch 自动转 `pre_annotated`（`BatchStatus.PRE_ANNOTATED` + `VALID_TRANSITIONS` 加合法迁移 + `REVERSE_TRANSITIONS` 加 owner 兜底重置；零迁移 — `status` 是 String(30) 非 enum）
 - [x] **类别英文 alias（取代中→英翻译开关）**：`ClassConfigEntry.alias` 字段（ASCII-only `^[a-zA-Z0-9 ,_\-]+$` max=50）+ ClassEditor UI + SamTextPanel + AIPreAnnotatePage alias chips。零运行时 LLM 依赖
 - [x] backend 显存监控进 `/health` 响应 body（`gpu_info` + `cache` 子对象，旧字段 backward-compat）
-- [x] **ADR-0012**：[SAM 系列 backend 独立 GPU 服务化](../docs/adr/0012-sam-backend-as-independent-gpu-service.md)
-- [x] **ADR-0013**：[mask→polygon 后端化](../docs/adr/0013-mask-to-polygon-server-side.md)
+- [x] **ADR-0012**：[SAM 系列 backend 独立 GPU 服务化](../docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)
+- [x] **ADR-0013**：[mask→polygon 后端化](../docs/adr/archive/0013-mask-to-polygon-server-side.md)
 - [x] `docs-site/dev/deploy.md` §8.5 GPU 节点部署章节
 - [x] **chip 包**：AI 助手「本题花费 X 元」单条透传（`PredictionOut` 加 cost / inference_time_ms 字段 + outerjoin PredictionMeta）；`text_output_default` 项目级字段（迁移 0050 + GeneralSection 下拉，把 v0.9.4 phase 2 的 sessionStorage 兜底转持久化）；GeneralSection AI 绑定 UX 解耦（MlBackendsSection 行内「绑定到本项目」按钮）；9 处 sparkles 重整 + `docs-site/dev/icon-conventions.md`
 
@@ -227,7 +227,7 @@ Size:  LRU cap = 16（4060）/ 32（3090+）
 
 **未落地，留 v0.9.6 独立 epic**：工具栏 Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔；数字键 1/2/3/4 直跳工具（与 setClassByDigit 1-9 切类别冲突，需 target.tagName 区分调研）；SAM 子工具栏改右展开抽屉；截图自动化 14 张实跑回填（依赖 docker + uvicorn + seed 完整启动栈）。
 
-详细计划：[`docs/plans/2026-05-08-v0.9.5-async-oasis.md`](../docs/plans/2026-05-08-v0.9.5-async-oasis.md)。
+详细计划：[`docs/plans/archive/2026-05-08-v0.9.5-async-oasis.md`](../docs/plans/archive/2026-05-08-v0.9.5-async-oasis.md)。
 
 ---
 

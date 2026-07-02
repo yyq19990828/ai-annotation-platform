@@ -18,7 +18,7 @@ ML backend 运行时共享的**无状态叶子函数**。单一来源, 避免跨
 - `gpu_info_snapshot() -> dict` — torch CUDA context 视角显存快照 (used/total/free MB 等);
   无 torch / 无 GPU 返回 `{}`。
 
-**不包含** (见 `docs/plans/2026-06-29-v0.20.3-ml-backend-shared-layer-extraction.md`):
+**不包含** (见 `docs/plans/archive/2026-06-29-v0.20.3-ml-backend-shared-layer-extraction.md`):
 
 - `model_pool.py` / `observability.py` / FastAPI app 骨架 —— 已各自漂移, 留作复制模板而非共享 import。
 - 各 backend 的 `/health` `gpu_info`: 多叠加 pynvml 整卡视角 + util/温度/功耗 + 自定义

@@ -261,7 +261,7 @@ Local preview: `pnpm docs:dev` → http://localhost:5173
 ### Architecture Decisions (docs/adr/)
 
 - [README.md](docs/adr/README.md) — guide to writing ADRs
-- [0001-record-architecture-decisions.md](docs/adr/0001-record-architecture-decisions.md)
+- [0001-record-architecture-decisions.md](docs/adr/archive/0001-record-architecture-decisions.md)
 
 ### Research Reports (docs/research/)
 

@@ -248,7 +248,7 @@ B 的「对每个框跑分类」有交互式对应：选中一个框 →「对�
 
 ## 8. 参考
 
-- 路径 A（先行验证，v0.18.0）：[`docs/plans/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md`](../docs/plans/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md) —— onnxtools 内 `detector`/`VehicleAttributeORT` 保持独立单元，B 可直接拆成原子 model 编排；协议③（`/setup` 自报 attribute schema）在 A 先落地，B 复用。
+- 路径 A（先行验证，v0.18.0）：[`docs/plans/archive/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md`](../docs/plans/archive/2026-06-23-v0.18.0-onnxtools-vehicle-attribute-backend.md) —— onnxtools 内 `detector`/`VehicleAttributeORT` 保持独立单元，B 可直接拆成原子 model 编排；协议③（`/setup` 自报 attribute schema）在 A 先落地，B 复用。
 - 协议：`docs-site/dev/reference/ml-backend-protocol.md` §3 / §4.1.7（ONNX 聚合 backend）/ §4.1.8（OCR/DocLayout 输出约定）/ 属性自描述小节（v0.18.0 新增）。
 - backend 骨架参考：`apps/yolo-backend/`；协议形态参考：`docs-site/dev/examples/mock-v2-backend/`。
 - 行业编排 UI：

@@ -13,7 +13,7 @@ last_reviewed: 2026-05-27
 - **收敛目标**：把历史上散在 4 处的反馈入口收口为 `annotation_feedbacks` 单一写入源
 - **对账安全网**：在切单源之前，用一个每日定时任务持续给出「双写零漂移」的证据
 
-如果你要改 `bug_reports` / `annotation_comments` / `tasks.reject_reason` 的写路径，或想理解 superadmin 收到「反馈双写对账发现不一致」通知意味着什么，先读这页。背景规范见 [ADR-0027](/dev/adr/0027-annotation-feedback-unified-table)，审计与通知机制见 [审计与通知](./audit-and-notifications)。
+如果你要改 `bug_reports` / `annotation_comments` / `tasks.reject_reason` 的写路径，或想理解 superadmin 收到「反馈双写对账发现不一致」通知意味着什么，先读这页。背景规范见 [ADR-0027](/dev/adr/archive/0027-annotation-feedback-unified-table)，审计与通知机制见 [审计与通知](./audit-and-notifications)。
 
 ## 为什么需要收敛
 
@@ -116,7 +116,7 @@ drift=0 时只写 `log.info`，不打扰任何人。
 
 ## 相关文档
 
-- [ADR-0027 反馈统一表](/dev/adr/0027-annotation-feedback-unified-table)
+- [ADR-0027 反馈统一表](/dev/adr/archive/0027-annotation-feedback-unified-table)
 - [审计与通知](./audit-and-notifications)
 - [审核模块](./review-module)
 - [工作台 Shell 架构](./workbench-shell)

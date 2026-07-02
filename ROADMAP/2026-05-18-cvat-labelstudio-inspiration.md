@@ -17,11 +17,11 @@
 
 > **§1.1–1.7 已完成**（v0.10.13 / v0.10.15 / v0.10.16，第 1 波收尾）。落地细节与复盘见各自 CHANGELOG / plan / ADR；后续延伸均已转录到主 [ROADMAP.md](../ROADMAP.md) §A/§B。以下仅留一行登记，详情走 SoT。
 
-- **§1.1 Annotation Guide** ✅ v0.10.13 — 项目级 Markdown 指引 + asset（CodeMirror 6 + 工作台浮层）。SoT: CHANGELOG v0.10.13 / [plan](../../docs/plans/2026-05-18-v0.10.13-annotation-guide.md)；延伸见 ROADMAP §A「Annotation Guide 配套延伸」。
+- **§1.1 Annotation Guide** ✅ v0.10.13 — 项目级 Markdown 指引 + asset（CodeMirror 6 + 工作台浮层）。SoT: CHANGELOG v0.10.13 / [plan](../../docs/plans/archive/2026-05-18-v0.10.13-annotation-guide.md)；延伸见 ROADMAP §A「Annotation Guide 配套延伸」。
 - **§1.2 `reject_reason_type` 结构化枚举** ✅ v0.10.16 — 4 类 enum（`missing/extra/wrong_label/wrong_geometry`）+ RejectReasonModal。SoT: CHANGELOG v0.10.16。
 - **§1.3 Webhook `event_version` 信封** ✅ v0.10.16（仅 ADR + Pydantic 占位）— [ADR-0025](../../docs/adr/0025-webhook-event-envelope-versioning.md) Proposed；publisher/delivery 表留 §2.1 epic 实施。
 - **§1.4 截图 fixture** — 主 ROADMAP 已有，本文不重复（仅 §7 登记）。
-- **§1.5 Predictions Import 端点** ✅ v0.10.15 — `POST /projects/{id}/predictions/import?format=aap_json|coco`，lenient + dry_run + overwrite。SoT: CHANGELOG v0.10.15 / [ADR-0024](../../docs/adr/0024-aap-json-format.md)；延伸见 ROADMAP §A「Predictions Import / AAP JSON 后续延伸」。
+- **§1.5 Predictions Import 端点** ✅ v0.10.15 — `POST /projects/{id}/predictions/import?format=aap_json|coco`，lenient + dry_run + overwrite。SoT: CHANGELOG v0.10.15 / [ADR-0024](../../docs/adr/archive/0024-aap-json-format.md)；延伸见 ROADMAP §A「Predictions Import / AAP JSON 后续延伸」。
 - **§1.6 DuckDB 离线分析视图** ✅ v0.10.16 — 3 固定面板 + super_admin 守卫；升级 ClickHouse 触发=`task_events` 单月 > 1000万 或单 query > 10s。SoT: CHANGELOG v0.10.16。
 - **§1.7 统一异步任务表 `async_jobs`（MVP）** ✅ v0.10.16 — 双写双轨（async_jobs 汇总索引 + 专表 domain 真值）+ Topbar JobsBell。SoT: CHANGELOG v0.10.16；延伸（kind 注册中心 / WS 进度 / 全 kind cancel）见 ROADMAP §B。
 
@@ -63,7 +63,7 @@
 
 ### 2.2 AnnotationFeedback 表（Issue / Comment / BugReport 收敛）◑ 核心已落，剩切单源
 
-> 统一模型本身已落地（[ADR-0027](../../docs/adr/0027-annotation-feedback-unified-table.md)）：`annotation_feedbacks` 表（migration 0076 / v0.10.19）、`v_annotation_feedback_unified` UNION ALL view（0077 / v0.10.21，段二）、bug/comment/reject 三源同事务双写 mirror（`feedback.py mirror_*`）、双写一致性对账安全网（`feedback_reconcile.py` / v0.11.0）均就位。实现的 `kind` / `anchor_type` 枚举与本节原设计基本一致。
+> 统一模型本身已落地（[ADR-0027](../../docs/adr/archive/0027-annotation-feedback-unified-table.md)）：`annotation_feedbacks` 表（migration 0076 / v0.10.19）、`v_annotation_feedback_unified` UNION ALL view（0077 / v0.10.21，段二）、bug/comment/reject 三源同事务双写 mirror（`feedback.py mirror_*`）、双写一致性对账安全网（`feedback_reconcile.py` / v0.11.0）均就位。实现的 `kind` / `anchor_type` 枚举与本节原设计基本一致。
 >
 > **唯一仍 open**：ADR-0027 第三段「切单源 + 旧表退役」（标 v0.11.9+，drift 长期为 0 后才切），在主 ROADMAP 优先级表 I4/I12/I18 行跟踪。
 
@@ -97,7 +97,7 @@
 
 ### 2.6 平台原生 task JSON 格式（"AAP JSON"） ✅ 已完成 v0.10.15
 
-> AAP JSON v1.0 已作导出格式与 COCO/YOLO/VOC 并列、并作 Predictions Import 推荐格式落地（与 §1.5 同窗口）。关键决策（schema_version 必备、annotations/predictions 双数组分开、导出写满 null/导入 lenient、内部 geometry 格式、task_match display_id 优先）均按本节原设计实现。SoT：[ADR-0024](../../docs/adr/0024-aap-json-format.md)、[schema](../../apps/api/app/schemas/aap_json.py)、CHANGELOG v0.10.15。后续延伸（manifest 打包 / 多 shape / video_track 导入 / annotations import / export_meta.filter）见 [ROADMAP §A AI/模型](../ROADMAP.md#ai--模型)「Predictions Import / AAP JSON 后续延伸」。
+> AAP JSON v1.0 已作导出格式与 COCO/YOLO/VOC 并列、并作 Predictions Import 推荐格式落地（与 §1.5 同窗口）。关键决策（schema_version 必备、annotations/predictions 双数组分开、导出写满 null/导入 lenient、内部 geometry 格式、task_match display_id 优先）均按本节原设计实现。SoT：[ADR-0024](../../docs/adr/archive/0024-aap-json-format.md)、[schema](../../apps/api/app/schemas/aap_json.py)、CHANGELOG v0.10.15。后续延伸（manifest 打包 / 多 shape / video_track 导入 / annotations import / export_meta.filter）见 [ROADMAP §A AI/模型](../ROADMAP.md#ai--模型)「Predictions Import / AAP JSON 后续延伸」。
 
 ---
 

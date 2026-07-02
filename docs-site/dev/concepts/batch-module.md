@@ -377,7 +377,7 @@ scene / frame_index 的语义见 [scene 与 frame_index](scene-and-frame-index)�
 当前与 batch 相关的文档入口：
 
 - 用户视角：[批次与分配](/user-guide/projects/batch)
-- 决策视角：[ADR-0008](/dev/adr/0008-batch-admin-locked-status)
+- 决策视角：[ADR-0008](/dev/adr/archive/0008-batch-admin-locked-status)
 
 如果你改了以下内容，记得同步文档：
 

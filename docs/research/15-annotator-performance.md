@@ -4,7 +4,7 @@
 >
 > **目的**:为平台「绩效相关页面」的下一步深化做对标输入。源码级深读 CVAT(`../cvat`)、Label Studio(`../label-studio`),web 调研 6 个商业产品(Labelbox / Kili / Scale Rapid / Encord / Supervisely / Segments.ai / SuperAnnotate)。
 >
-> **使用方式**:本档是**研究输入**,不是 sprint backlog。落地节奏与版本切片见配套计划 [`docs/plans/2026-06-03-annotator-performance-deepening.md`](../plans/2026-06-03-annotator-performance-deepening.md)。
+> **使用方式**:本档是**研究输入**,不是 sprint backlog。落地节奏与版本切片见配套计划 [`docs/plans/archive/2026-06-03-annotator-performance-deepening.md`](../plans/archive/2026-06-03-annotator-performance-deepening.md)。
 
 ---
 
