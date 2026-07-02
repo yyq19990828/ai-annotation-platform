@@ -199,7 +199,7 @@ annotator 可选择：
 
 工作台选中**尚未采纳**的 AI 候选时,画布选中卡 + 右栏标注详情都以**只读** `AttributeForm` 预览候选 `attributes`(项目 schema 的 select options 解析为中文 label),候选列表行也补属性摘要 chip。免去先采纳再核对车型 / 颜色等多阶段产出属性。
 
-进入「分步采纳」时,属性审阅区从只读升为**可编辑**——先看多阶段预标产出的 select / multiselect 属性、改后再采纳。改动经端点的可选 body 原子落库:
+进入「分步采纳」时,属性审阅区表单可编辑(面板底部专用「采纳」按钮已退役——与列表行 / 画布采纳入口重复,不重复挂)——先看多阶段预标产出的 select / multiselect 属性、改后再从**列表行**采纳,`AIInspectorPanel` 内部 wrapper 会把审阅区草稿改动自动作为 `attribute_overrides` 附带给端点原子落库;画布贴框采纳(SelectionOverlay / BoxRenderer 走单参 `onAcceptPrediction`)读不到审阅区本地 state,仍走候选原值。落库路径:
 
 - `POST /api/v1/tasks/{task_id}/predictions/{prediction_id}/accept`
   - `body.attribute_overrides: dict | None` —— 按属性键覆盖 shape 自带 attributes 落库(内部键 `_shape_index` 等不受影响);为 `None` 时沿用候选原值
