@@ -167,9 +167,7 @@ async def test_patch_ai_secondary_by_model_deep_merges_per_backend_bucket(
         PREFS_URL,
         json={
             "ai": {
-                "secondary_by_model": {
-                    b1: {"model-a": {"params": {"threshold": 0.3}}}
-                }
+                "secondary_by_model": {b1: {"model-a": {"params": {"threshold": 0.3}}}}
             }
         },
         headers=_bearer(token),
@@ -181,9 +179,7 @@ async def test_patch_ai_secondary_by_model_deep_merges_per_backend_bucket(
         PREFS_URL,
         json={
             "ai": {
-                "secondary_by_model": {
-                    b2: {"model-b": {"params": {"threshold": 0.5}}}
-                }
+                "secondary_by_model": {b2: {"model-b": {"params": {"threshold": 0.5}}}}
             }
         },
         headers=_bearer(token),
@@ -198,9 +194,7 @@ async def test_patch_ai_secondary_by_model_deep_merges_per_backend_bucket(
         PREFS_URL,
         json={
             "ai": {
-                "secondary_by_model": {
-                    b1: {"model-a": {"params": {"threshold": 0.9}}}
-                }
+                "secondary_by_model": {b1: {"model-a": {"params": {"threshold": 0.9}}}}
             }
         },
         headers=_bearer(token),

@@ -171,7 +171,10 @@ async def test_attributes_respects_human_edits_and_reuses_ai_slots(
     box = await _mk_box(db_session, task.id, user.id)
     box.attributes = {"color": "red", "brand": "BMW"}
     box.attributes_meta = {
-        "brand": {"origin": "ai", "model_ref": {"backend_id": "old", "model_id": "old-cls"}}
+        "brand": {
+            "origin": "ai",
+            "model_ref": {"backend_id": "old", "model_id": "old-cls"},
+        }
     }
     await db_session.flush()
 
