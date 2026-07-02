@@ -87,9 +87,7 @@ class WorkbenchLayoutPreferences(BaseModel):
     manual_section_collapsed: bool | None = Field(
         default=None, alias="manualSectionCollapsed"
     )
-    discussion_collapsed: bool | None = Field(
-        default=None, alias="discussionCollapsed"
-    )
+    discussion_collapsed: bool | None = Field(default=None, alias="discussionCollapsed")
     floating_task_queue: FloatingPanelState | None = Field(
         default=None,
         alias="floatingTaskQueue",

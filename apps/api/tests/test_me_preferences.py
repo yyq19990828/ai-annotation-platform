@@ -108,7 +108,9 @@ async def test_patch_ai_subtree_deep_merges_params_and_model(httpx_client, annot
     assert resp.json()["ai"]["model_by_backend"] == {bid: "detect-yoloe"}
 
 
-async def test_patch_ui_subtree_deep_merges_theme_and_secondary_bar(httpx_client, annotator):
+async def test_patch_ui_subtree_deep_merges_theme_and_secondary_bar(
+    httpx_client, annotator
+):
     """v0.20.19 · ui 子树深一层合并: theme (useTheme) 与 secondary_bar_hidden
     (二次推理面板显隐) 由不同 writer 各自只提交自己那半键, 互不冲掉。"""
     _, token = annotator
