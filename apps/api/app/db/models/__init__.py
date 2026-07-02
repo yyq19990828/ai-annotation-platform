@@ -3,6 +3,7 @@ from app.db.models.group import Group
 from app.db.models.organization import Organization, OrganizationMember
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.project_pipeline import ProjectPipeline
 from app.db.models.project_template import ProjectTemplate
 from app.db.models.project_task_view import ProjectTaskView
 from app.db.models.task import Task
@@ -51,6 +52,7 @@ __all__ = [
     "OrganizationMember",
     "Project",
     "ProjectMember",
+    "ProjectPipeline",
     "ProjectTemplate",
     "ProjectTaskView",
     "Task",

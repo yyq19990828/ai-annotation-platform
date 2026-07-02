@@ -20,6 +20,7 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.project_pipeline import ProjectPipeline
 from app.schemas.project import (
     ProjectOut,
     ProjectCreate,
@@ -32,6 +33,7 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
 )
+from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
 from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
@@ -40,6 +42,12 @@ from app.services.pipeline_validation import (
     resolve_preannotate_queue,
 )
 from app.services.capability_registry import INPUT_BBOX_PROMPT, INPUT_CROP
+from app.services.pipeline_template import (
+    assert_pipeline_visible,
+    copy_pipeline_stages,
+    switch_project_default_pipeline,
+    unenabled_backend_ids,
+)
 from app.services.project_kind import (
     ProjectKind,
     canonical_media_kind,
@@ -705,6 +713,54 @@ async def update_project(
     return result
 
 
+@router.post(
+    "/{project_id}/pipelines/apply",
+    response_model=ProjectPipelineOut,
+    status_code=201,
+)
+async def apply_project_pipeline(
+    body: ProjectPipelineApplyRequest,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    pipeline = await db.get(ProjectPipeline, body.pipeline_id)
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail="编排不存在")
+    await assert_pipeline_visible(db, pipeline, current_user)
+    _validate_saved_pipeline(pipeline.stages)
+
+    missing = await unenabled_backend_ids(db, project.id, pipeline.stages)
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "编排引用的 backend 未在当前项目启用",
+                "unenabled_backends": missing,
+            },
+        )
+
+    new_pipeline = ProjectPipeline(
+        id=uuid.uuid4(),
+        scope="private",
+        project_id=project.id,
+        organization_id=None,
+        name=pipeline.name,
+        stages=copy_pipeline_stages(pipeline.stages),
+        is_default=False,
+        created_by=current_user.id,
+    )
+    pipeline.usage_count = (pipeline.usage_count or 0) + 1
+    if body.set_default:
+        await switch_project_default_pipeline(db, project.id)
+        new_pipeline.is_default = True
+    db.add(new_pipeline)
+    await db.flush()
+    await db.commit()
+    await db.refresh(new_pipeline)
+    return new_pipeline
+
+
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
     project: Project = Depends(require_project_owner),
@@ -1256,7 +1312,7 @@ class PipelineStage(BaseModel):
 
 
 class PreannotateRequest(BaseModel):
-    ml_backend_id: uuid.UUID
+    ml_backend_id: uuid.UUID | None = None
     task_ids: list[uuid.UUID] | None = None
     # v0.9.5 · 文本批量预标可选参数
     prompt: str | None = None
@@ -1292,18 +1348,24 @@ class PreannotateRequest(BaseModel):
     def _validate_pipeline_stages(self) -> "PreannotateRequest":
         stages = self.pipeline_stages
         if not stages:
+            if self.ml_backend_id is None:
+                raise ValueError("ml_backend_id 必填")
             return self
         indices = {s.stage for s in stages}
         if len(indices) != len(stages):
             raise ValueError("pipeline_stages 的 stage 序号不可重复")
-        # 源阶段: 恰一个 parent_stage=None, 且其 ml_backend_id 须等于顶层 ml_backend_id
-        # (顶层字段仍是源 backend, 复用既有 backend 存在性/健康检查路径)。
+        # 源阶段: 恰一个 parent_stage=None。顶层 ml_backend_id 是兼容字段, 多阶段时
+        # 自动从源阶段派生, 避免项目主 backend / payload 顶层成为第二真值。
         roots = [s for s in stages if s.parent_stage is None]
         if len(roots) != 1:
             raise ValueError("pipeline_stages 须恰有一个源阶段 (parent_stage=None)")
         root = roots[0]
-        if root.ml_backend_id != self.ml_backend_id:
-            raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
+        self.ml_backend_id = root.ml_backend_id
+        self.model_id = root.model_id
+        self.task_type = root.task_type
+        self.model_variants = root.model_variants
+        self.params = root.params
+        self.class_filter = root.class_filter
         # v0.18.14 · 受限树形校验 (max depth 3): 替换原单层扇出约束。
         # parent_stage 须指向已定义且更早的阶段 (序号严格小于, 自然无环); 父须产可消费几何
         # (write.target ∈ {geometry, intermediate}); 任一链路深度 ≤ 3。
@@ -1554,10 +1616,13 @@ async def trigger_preannotation(
     from app.services.audit import AuditService
 
     svc = MLBackendService(db)
-    backend = await svc.get(body.ml_backend_id)
+    source_backend_id = body.ml_backend_id
+    if source_backend_id is None:
+        raise HTTPException(status_code=422, detail="ml_backend_id 必填")
+    backend = await svc.get(source_backend_id)
     # v0.19.0 ADR-0044 · 校验 backend 存在且在本项目「已启用」(project_ml_backend.enabled):
     # 与下游阶段校验对称, 防止 owner 手动 POST 未启用/别项目 backend id 触发预标。
-    if not backend or not await svc.is_enabled(project.id, body.ml_backend_id):
+    if not backend or not await svc.is_enabled(project.id, source_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     # v0.19.2 WS2 · 源阶段 (单模型预标 / 流水线源) batchable 闸门: 交互/有状态模型不可批量。
@@ -1697,7 +1762,7 @@ async def trigger_preannotation(
     job = batch_predict.apply_async(
         args=[
             str(project.id),
-            str(body.ml_backend_id),
+            str(source_backend_id),
             [str(tid) for tid in body.task_ids] if body.task_ids else None,
         ],
         kwargs={
@@ -1729,7 +1794,7 @@ async def trigger_preannotation(
         status_code=200,
         detail={
             "job_id": job.id,
-            "ml_backend_id": str(body.ml_backend_id),
+            "ml_backend_id": str(source_backend_id),
             "batch_id": str(body.batch_id) if body.batch_id else None,
             "task_count": len(body.task_ids) if body.task_ids else total_tasks_hint,
             "prompt": (body.prompt or "")[:200],

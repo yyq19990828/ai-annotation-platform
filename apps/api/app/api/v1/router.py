@@ -29,6 +29,7 @@ from app.api.v1 import (
     notifications,
     predictions,
     projects,
+    project_pipelines,
     project_templates,
     task_views,
     scenes,
@@ -76,6 +77,9 @@ api_router.include_router(
 # v0.10.14 · E2 · 项目模板库
 api_router.include_router(
     project_templates.router, prefix="/project-templates", tags=["project-templates"]
+)
+api_router.include_router(
+    project_pipelines.router, prefix="/project-pipelines", tags=["project-pipelines"]
 )
 # /tasks 前缀已下放至 tasks 包内部聚合(见 app/api/v1/tasks/__init__.py);
 # 此处仅施加 tag,避免与包内前缀叠加成 /tasks/tasks。

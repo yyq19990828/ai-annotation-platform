@@ -2,7 +2,8 @@
 
 - pipeline_stages 透传给 batch_predict.delay (含下游阶段 backend 校验)。
 - 缺省 (无 pipeline_stages) 仍走单阶段, 透传 None (向后兼容)。
-- 校验: >2 阶段 / 重复 stage / 源阶段 backend 不一致 / 下游 backend 不存在 → 拒绝。
+- 校验: >2 阶段 / 重复 stage / 下游 backend 不存在 → 拒绝。
+- 多阶段时顶层 ml_backend_id 从源阶段自动派生, 避免第二真值。
 """
 
 from __future__ import annotations
@@ -154,6 +155,41 @@ async def test_pipeline_stages_forwarded(
     assert fwd is not None and len(fwd) == 2
     assert fwd[1]["parent_stage"] == 0
     assert fwd[1]["write"]["keys"] == ["color"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_source_stage_is_execution_source(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    stages = _stages(detect.id, classify.id)
+    stages[0].update(
+        {
+            "model_id": "detect-root",
+            "task_type": "object_detection",
+            "model_variants": {"size": "n"},
+            "params": {"conf": 0.4},
+            "class_filter": [1, 2],
+        }
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(classify.id),
+            "model_id": "wrong-top-level",
+            "batch_id": str(batch.id),
+            "pipeline_stages": stages,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["args"][1] == str(detect.id)
+    assert _mock_celery["kwargs"]["model_id"] == "detect-root"
+    assert _mock_celery["kwargs"]["task_type"] == "object_detection"
+    assert _mock_celery["kwargs"]["model_variants"] == {"size": "n"}
+    assert _mock_celery["kwargs"]["params"] == {"conf": 0.4}
+    assert _mock_celery["kwargs"]["class_filter"] == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -679,12 +715,12 @@ async def test_label_forwarded_to_worker(
 
 
 @pytest.mark.asyncio
-async def test_reject_source_backend_mismatch(
+async def test_pipeline_source_backend_overrides_top_level_compat_field(
     httpx_client_bound, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, detect, classify, batch = await _seed(db_session, owner.id)
-    # 顶层 ml_backend_id 用 detect, 但源阶段写成 classify → 拒绝
+    # 顶层 ml_backend_id 用 detect, 但源阶段写成 classify → 派发时以源阶段为准。
     stages = _stages(classify.id, classify.id)
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
@@ -695,7 +731,8 @@ async def test_reject_source_backend_mismatch(
             "pipeline_stages": stages,
         },
     )
-    assert resp.status_code == 422, resp.text
+    assert resp.status_code == 200, resp.text
+    assert _mock_celery["args"][1] == str(classify.id)
 
 
 @pytest.mark.asyncio

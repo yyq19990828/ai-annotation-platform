@@ -40,9 +40,7 @@ class Project(Base):
     )
     status: Mapped[str] = mapped_column(String(30), default="in_progress")
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("ml_backend_registry.id", ondelete="SET NULL")
-    )
+    ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
     # 形状: { "<backend_uuid>": { "<axis_key>": "<axis_value>", ... }, ... }
     # 优先级链: 本字段 > backend.default_variants > backend env 默认.
