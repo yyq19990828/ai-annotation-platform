@@ -5,9 +5,12 @@ import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
 // 顶部 tab 切换条:小写 chrome 风格的下划线 tab(与 CommentsPanel 同形)。
-const TAB_BUTTON =
-  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+// v0.20.22 · 拆分中性/激活分支下发, 避免 border-transparent 与 border-brand 同挂被源顺序覆盖
+// (memory: "Tailwind 激活态色类冲突" — 静默失效)。text 色同理。
+const TAB_BUTTON_BASE =
+  "cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
+const TAB_BUTTON_INACTIVE = "border-transparent text-muted-foreground";
 
 /**
  * v0.11.2-4 · B 组 · 工作台右栏下段统一讨论面板。
@@ -105,7 +108,7 @@ export function DiscussionPanel({
               type="button"
               role="tab"
               aria-selected={tab === t.key}
-              className={`${TAB_BUTTON} ${tab === t.key ? TAB_BUTTON_ACTIVE : ""}`}
+              className={`${TAB_BUTTON_BASE} ${tab === t.key ? TAB_BUTTON_ACTIVE : TAB_BUTTON_INACTIVE}`}
               onClick={() => setTab(t.key)}
             >
               {t.label}
