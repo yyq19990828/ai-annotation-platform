@@ -14,15 +14,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import {
-  INPUT_BBOX_PROMPT_ID,
-  INPUT_CROP_ID,
-  hasInput,
-} from "@/api/capabilityInputs";
-import {
-  useCapabilityInstances,
-  type CapabilityInstanceModel,
-} from "@/api/mlCapabilities";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import {
   useApplyProjectPipeline,
@@ -95,15 +86,6 @@ const PIPELINE_SCOPE_LABELS: Record<ProjectPipelineScope, string> = {
 
 type ConcurrencyMode = "serial" | "parallel";
 
-interface GlobalModelOption {
-  key: string;
-  backendId: string;
-  backendName: string;
-  backendState: string;
-  model: CapabilityInstanceModel;
-  disabled: boolean;
-}
-
 function cx(...classNames: Array<string | false | null | undefined>) {
   return classNames.filter(Boolean).join(" ");
 }
@@ -120,53 +102,6 @@ function describePipelineError(error: unknown): string {
     return `未启用 backend: ${ids.join("、")}`;
   }
   return (error as Error).message;
-}
-
-function isGeometryModel(model: CapabilityInstanceModel | undefined): boolean {
-  if (!model) return false;
-  return (model.supported_geometric_outputs ?? []).length > 0;
-}
-
-function stageCapsFromGlobalModel(model: CapabilityInstanceModel | undefined): StageCaps | null {
-  if (!model) return null;
-  const supportedInputs = model.supported_inputs ?? [];
-  const outputTypes = model.output_attribute_types ?? [];
-  const rpBatchable = model.resource_profile?.batchable;
-  return {
-    hasCapabilities: true,
-    knownInputs: supportedInputs.length > 0,
-    acceptsCrop: hasInput(supportedInputs, INPUT_CROP_ID),
-    acceptsBboxPrompt: hasInput(supportedInputs, INPUT_BBOX_PROMPT_ID),
-    producesAttributes:
-      outputTypes.length > 0 || (model.output_attribute_schema?.length ?? 0) > 0,
-    producesClass: outputTypes.length > 0 ? outputTypes.includes("class") : undefined,
-    batchable: typeof rpBatchable === "boolean" ? rpBatchable : undefined,
-  };
-}
-
-function globalStagePayload(
-  option: GlobalModelOption | null,
-  stage: number,
-  parentStage?: number,
-): PipelineStagePayload | null {
-  if (!option || option.disabled) return null;
-  const geometry = isGeometryModel(option.model);
-  const supportedInputs = option.model.supported_inputs ?? [];
-  const inputMode = hasInput(supportedInputs, INPUT_BBOX_PROMPT_ID) ? "geometry" : "crop";
-  return {
-    stage,
-    ml_backend_id: option.backendId,
-    model_id: option.model.id,
-    task_type: option.model.task,
-    ...(parentStage == null
-      ? {}
-      : {
-          parent_stage: parentStage,
-          roi: { mode: "crop", pad: 0.05 },
-          input: { mode: inputMode },
-          write: { target: geometry ? "geometry" : "attributes" },
-        }),
-  };
 }
 
 /**
@@ -303,131 +238,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 预标配置区共享状态 (任务类型 / 几何 task / 类别白名单 / variant / 参数 / prompt / 预设 /
   // 输出形态 / buildArgs); 详见 usePreannotateConfig. 工作台 AI 面板复用同一 hook + PreannotateConfigForm.
   const cfg = usePreannotateConfig({ projectId, backendId: selectedBackendId });
-  const capabilityInstancesQ = useCapabilityInstances();
-  const globalModelOptions = useMemo<GlobalModelOption[]>(() => {
-    const out: GlobalModelOption[] = [];
-    for (const inst of capabilityInstancesQ.data?.instances ?? []) {
-      for (const model of inst.models ?? []) {
-        out.push({
-          key: `${inst.backend_id}::${model.id}`,
-          backendId: inst.backend_id,
-          backendName: inst.name,
-          backendState: inst.state,
-          model,
-          disabled: inst.state === "error",
-        });
-      }
-    }
-    return out;
-  }, [capabilityInstancesQ.data]);
-  const globalEnabledOptions = useMemo(
-    () => globalModelOptions.filter((o) => !o.disabled),
-    [globalModelOptions],
-  );
-  const [globalSourceKey, setGlobalSourceKey] = useState("");
-  const [globalDownstreamKey, setGlobalDownstreamKey] = useState("");
-  const [globalDownstreamKeys, setGlobalDownstreamKeys] = useState<string[]>([]);
-  const [selectedGlobalSid, setSelectedGlobalSid] = useState(ROOT_SID);
-  const globalOptionByKey = useMemo(
-    () => new Map(globalModelOptions.map((o) => [o.key, o])),
-    [globalModelOptions],
-  );
-  useEffect(() => {
-    if (!globalSourceKey || !globalOptionByKey.has(globalSourceKey)) {
-      setGlobalSourceKey(globalEnabledOptions[0]?.key ?? "");
-    }
-  }, [globalEnabledOptions, globalOptionByKey, globalSourceKey]);
-  useEffect(() => {
-    if (!globalDownstreamKey || !globalOptionByKey.has(globalDownstreamKey)) {
-      setGlobalDownstreamKey(globalEnabledOptions[1]?.key ?? globalEnabledOptions[0]?.key ?? "");
-    }
-  }, [globalDownstreamKey, globalEnabledOptions, globalOptionByKey]);
-  const globalSourceOption = globalOptionByKey.get(globalSourceKey) ?? null;
-  const globalDownstreamOptions = useMemo(
-    () =>
-      globalDownstreamKeys
-        .map((key) => globalOptionByKey.get(key))
-        .filter((o): o is GlobalModelOption => !!o && !o.disabled),
-    [globalDownstreamKeys, globalOptionByKey],
-  );
-  const globalPipelineStages = useMemo(() => {
-    const source = globalStagePayload(globalSourceOption, 0);
-    if (!source) return null;
-    const stages: PipelineStagePayload[] = [source];
-    globalDownstreamOptions.forEach((opt, index) => {
-      const stage = globalStagePayload(opt, index + 1, 0);
-      if (stage) stages.push(stage);
-    });
-    return stages;
-  }, [globalSourceOption, globalDownstreamOptions]);
-  const globalGraphNodes = useMemo<GraphNodeModel[]>(() => {
-    const sourcePayload = globalPipelineStages?.[0] ?? null;
-    const sourceCaps = stageCapsFromGlobalModel(globalSourceOption?.model);
-    const sourceWarning =
-      globalSourceOption?.disabled
-        ? "该 backend 探测失败，不能加入编排"
-        : stageWarning(sourcePayload, sourceCaps);
-    return [
-      {
-        sid: ROOT_SID,
-        parentSid: null,
-        kind: "source",
-        role: roleOf(sourcePayload),
-        detail: globalSourceOption?.model.display_name ?? "请选择源模型",
-        runState: "pending",
-        producesGeometry: true,
-        canAddChild: false,
-        conflict: false,
-        backendName: globalSourceOption?.backendName,
-        ready: !!sourcePayload,
-        warning: sourceWarning,
-        modelId: globalSourceOption?.model.id,
-        taskType: globalSourceOption?.model.task,
-      },
-      ...globalDownstreamOptions.map((opt, index) => {
-        const stage = globalPipelineStages?.[index + 1] ?? null;
-        const caps = stageCapsFromGlobalModel(opt.model);
-        return {
-          sid: `global-${index + 1}`,
-          parentSid: ROOT_SID,
-          kind: "stage" as const,
-          role: roleOf(stage),
-          detail: opt.model.display_name,
-          runState: "pending" as const,
-          producesGeometry: producesGeometry(stage),
-          canAddChild: false,
-          conflict: false,
-          backendName: opt.backendName,
-          ready: !!stage,
-          warning: opt.disabled
-            ? "该 backend 探测失败，不能加入编排"
-            : stageWarning(stage, caps),
-          classFilter: classFilterText(stage),
-          modelId: opt.model.id,
-          taskType: opt.model.task,
-          roiInfo: roiText(stage),
-          variantInfo: variantText(stage),
-        };
-      }),
-    ];
-  }, [globalDownstreamOptions, globalPipelineStages, globalSourceOption]);
-  const addGlobalDownstream = useCallback(() => {
-    if (!globalDownstreamKey) return;
-    const opt = globalOptionByKey.get(globalDownstreamKey);
-    if (!opt || opt.disabled) {
-      pushToast({ msg: "该 backend 探测失败，不能加入编排", kind: "warning" });
-      return;
-    }
-    setGlobalDownstreamKeys((keys) => [...keys, globalDownstreamKey]);
-    setSelectedGlobalSid(`global-${globalDownstreamKeys.length + 1}`);
-  }, [globalDownstreamKey, globalDownstreamKeys.length, globalOptionByKey, pushToast]);
-  const removeGlobalStage = useCallback((sid: string) => {
-    if (!sid.startsWith("global-")) return;
-    const idx = Number(sid.replace("global-", "")) - 1;
-    if (!Number.isInteger(idx) || idx < 0) return;
-    setGlobalDownstreamKeys((keys) => keys.filter((_, i) => i !== idx));
-    setSelectedGlobalSid(ROOT_SID);
-  }, []);
 
   // v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡列表 (并行兄弟, 单层扇出)。每张卡 (StageCard)
   // 自持一份 usePreannotateConfig + PreannotateConfigForm 实例 —— 共享 hook/组件本身不感知阶段
@@ -828,14 +638,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     await saveNamedPipeline(stages);
   };
 
-  const onSaveGlobalPipeline = async () => {
-    if (!globalPipelineStages?.length) {
-      pushToast({ msg: "请选择全局源模型", kind: "warning" });
-      return;
-    }
-    await saveNamedPipeline(globalPipelineStages);
-  };
-
   const onClearPipeline = () => {
     if (defaultProjectPipeline) {
       deleteProjectPipeline.mutate(defaultProjectPipeline.id, {
@@ -1136,98 +938,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                   <Icon name="download" size={12} />
                   套用为默认
                 </Button>
-              </div>
-            </div>
-
-            <div className={styles.globalBuilder}>
-              <div className={styles.globalBuilderPool}>
-                <strong className={styles.sectionTitle}>全局 backend/model 池</strong>
-                <label className={styles.pipelineLibraryField}>
-                  <span className={styles.fieldLabel}>源阶段模型</span>
-                  <select
-                    className={styles.selectInput}
-                    value={globalSourceKey}
-                    onChange={(e) => setGlobalSourceKey(e.target.value)}
-                    disabled={capabilityInstancesQ.isLoading || globalModelOptions.length === 0}
-                    aria-label="全局源阶段模型"
-                  >
-                    {globalModelOptions.length === 0 ? (
-                      <option value="">暂无全局模型</option>
-                    ) : (
-                      globalModelOptions.map((opt) => (
-                        <option key={opt.key} value={opt.key} disabled={opt.disabled}>
-                          {opt.backendName} · {opt.model.display_name}
-                          {opt.disabled ? " · 探测失败" : ""}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-                <label className={styles.pipelineLibraryField}>
-                  <span className={styles.fieldLabel}>下游模型</span>
-                  <select
-                    className={styles.selectInput}
-                    value={globalDownstreamKey}
-                    onChange={(e) => setGlobalDownstreamKey(e.target.value)}
-                    disabled={capabilityInstancesQ.isLoading || globalModelOptions.length === 0}
-                    aria-label="全局下游模型"
-                  >
-                    {globalModelOptions.length === 0 ? (
-                      <option value="">暂无全局模型</option>
-                    ) : (
-                      globalModelOptions.map((opt) => (
-                        <option key={opt.key} value={opt.key} disabled={opt.disabled}>
-                          {opt.backendName} · {opt.model.display_name}
-                          {opt.disabled ? " · 探测失败" : ""}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-                <div className={styles.globalBuilderActions}>
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={addGlobalDownstream}
-                    disabled={!globalDownstreamKey}
-                  >
-                    <Icon name="plus" size={12} />
-                    加入下游
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={onSaveGlobalPipeline}
-                    disabled={
-                      !globalPipelineStages ||
-                      createProjectPipeline.isPending ||
-                      applyProjectPipeline.isPending
-                    }
-                    title="把全局池构建的 DAG 保存为命名编排"
-                  >
-                    <Icon name="save" size={12} />
-                    保存全局编排
-                  </Button>
-                </div>
-                <span className={styles.stageEmptyHint}>
-                  探测失败的 backend 会保留在池里但不可选择；套用到项目时仍会校验 backend 是否已启用。
-                </span>
-              </div>
-
-              <div className={styles.globalBuilderCanvas}>
-                <Suspense
-                  fallback={<div className={styles.canvasFallback}>加载全局编排预览…</div>}
-                >
-                  <PipelineGraphCanvas
-                    models={globalGraphNodes}
-                    selectedSid={selectedGlobalSid}
-                    onSelect={setSelectedGlobalSid}
-                    onAddChild={() => undefined}
-                    onRemove={removeGlobalStage}
-                    onReparent={() => undefined}
-                    canReparentConn={() => false}
-                  />
-                </Suspense>
               </div>
             </div>
 

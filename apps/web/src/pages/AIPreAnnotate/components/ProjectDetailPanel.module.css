@@ -408,40 +408,6 @@
   min-width: 180px;
 }
 
-.globalBuilder {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.72fr) minmax(300px, 1.28fr);
-  gap: 12px;
-  align-items: stretch;
-}
-
-@media (max-width: 820px) {
-  .globalBuilder {
-    grid-template-columns: 1fr;
-  }
-}
-
-.globalBuilderPool {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  padding: 10px;
-  background: var(--sc-card);
-  border: 1px solid var(--sc-border);
-  border-radius: var(--radius-sm);
-}
-
-.globalBuilderActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.globalBuilderCanvas {
-  min-width: 0;
-}
-
 .concurrencyGroup {
   display: inline-flex;
   gap: 14px;

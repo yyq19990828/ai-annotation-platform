@@ -12,7 +12,6 @@ const mockUseBatches = vi.fn();
 const mockUseMLBackends = vi.fn();
 const mockUseTrigger = vi.fn();
 const mockUseProjectPipelines = vi.fn();
-const mockUseCapabilityInstances = vi.fn();
 const mockSummaryAPI = vi.fn();
 const mockQueueAPI = vi.fn();
 const mockAliasFreqAPI = vi.fn();
@@ -56,9 +55,6 @@ vi.mock("@/hooks/useProjectPipelines", () => ({
     mutate: mockDeleteProjectPipelineMutate,
     isPending: false,
   }),
-}));
-vi.mock("@/api/mlCapabilities", () => ({
-  useCapabilityInstances: () => mockUseCapabilityInstances(),
 }));
 vi.mock("@/hooks/useBatches", () => ({
   useBatches: (pid: string, status: string) => mockUseBatches(pid, status),
@@ -147,11 +143,6 @@ describe("ProjectDetailPanel v0.9.12", () => {
     });
     mockUseProjectPipelines.mockReset();
     mockUseProjectPipelines.mockReturnValue({ data: [], isLoading: false });
-    mockUseCapabilityInstances.mockReset();
-    mockUseCapabilityInstances.mockReturnValue({
-      data: { instances: [] },
-      isLoading: false,
-    });
     mockCreateProjectPipelineMutateAsync.mockReset();
     mockCreateProjectPipelineMutateAsync.mockResolvedValue({
       id: "pipe-created",
@@ -248,6 +239,12 @@ describe("ProjectDetailPanel v0.9.12", () => {
     expect(screen.getByText("Demo")).toBeInTheDocument();
     expect(screen.getByText(/P-9/)).toBeInTheDocument();
     expect(screen.getByText("grounded-sam2")).toBeInTheDocument();
+  });
+
+  it("项目预标注入口不承载全局 backend/model 池", () => {
+    renderUI();
+    expect(screen.queryByText("全局 backend/model 池")).toBeNull();
+    expect(screen.queryByRole("button", { name: /保存公共编排|保存全局编排/ })).toBeNull();
   });
 
   it("空选中时配置区常驻 · prompt 表单仍显示但运行按钮禁用 (v0.14.16)", () => {
@@ -446,130 +443,6 @@ describe("ProjectDetailPanel v0.9.12", () => {
       { pipelineId: "pipe-public", setDefault: true },
       expect.any(Object),
     );
-  });
-
-  it("全局池保留探测失败 backend 但禁用选择", async () => {
-    mockUseCapabilityInstances.mockReturnValue({
-      data: {
-        instances: [
-          {
-            backend_id: "bk-global-ok",
-            state: "connected",
-            source: "manual",
-            name: "global-det",
-            infra: "onnx",
-            models: [
-              {
-                id: "det",
-                display_name: "Global Det",
-                task: "detection",
-                supported_inputs: ["full_image"],
-                supported_geometric_outputs: ["bbox"],
-                supported_prompts: [],
-                supported_trackers: [],
-                is_interactive: false,
-              },
-            ],
-          },
-          {
-            backend_id: "bk-global-error",
-            state: "error",
-            source: "manual",
-            name: "bad-det",
-            infra: "onnx",
-            models: [
-              {
-                id: "bad",
-                display_name: "Bad Det",
-                task: "detection",
-                supported_inputs: ["full_image"],
-                supported_geometric_outputs: ["bbox"],
-                supported_prompts: [],
-                supported_trackers: [],
-                is_interactive: false,
-              },
-            ],
-          },
-        ],
-      },
-      isLoading: false,
-    });
-    renderUI();
-    const source = screen.getByLabelText("全局源阶段模型") as HTMLSelectElement;
-    const errorOption = Array.from(source.options).find((o) =>
-      o.textContent?.includes("探测失败"),
-    );
-    expect(errorOption).toBeTruthy();
-    expect(errorOption?.disabled).toBe(true);
-  });
-
-  it("保存全局编排时使用 instances.backend_id 作为 stage backend", async () => {
-    mockUseCapabilityInstances.mockReturnValue({
-      data: {
-        instances: [
-          {
-            backend_id: "bk-global-det",
-            state: "connected",
-            source: "manual",
-            name: "global-det",
-            infra: "onnx",
-            models: [
-              {
-                id: "det",
-                display_name: "Global Det",
-                task: "detection",
-                supported_inputs: ["full_image"],
-                supported_geometric_outputs: ["bbox"],
-                supported_prompts: [],
-                supported_trackers: [],
-                is_interactive: false,
-              },
-              {
-                id: "attr",
-                display_name: "Vehicle Attr",
-                task: "classification",
-                supported_inputs: ["crop"],
-                supported_geometric_outputs: [],
-                supported_prompts: [],
-                supported_trackers: [],
-                output_attribute_types: ["class"],
-                output_attribute_schema: [{ key: "color", label: "Color", type: "select" }],
-                is_interactive: false,
-              },
-            ],
-          },
-        ],
-      },
-      isLoading: false,
-    });
-    renderUI();
-    fireEvent.change(screen.getByPlaceholderText(/例如 detect/), {
-      target: { value: "global detect attr" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /加入下游/ }));
-    fireEvent.click(screen.getByRole("button", { name: /保存全局编排/ }));
-
-    await waitFor(() => {
-      expect(mockCreateProjectPipelineMutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: "global detect attr",
-          stages: [
-            expect.objectContaining({
-              stage: 0,
-              ml_backend_id: "bk-global-det",
-              model_id: "det",
-            }),
-            expect.objectContaining({
-              stage: 1,
-              parent_stage: 0,
-              ml_backend_id: "bk-global-det",
-              model_id: "attr",
-              write: { target: "attributes" },
-            }),
-          ],
-        }),
-      );
-    });
   });
 
   it("点返回按钮触发 onBack", () => {
