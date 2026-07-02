@@ -69,6 +69,12 @@ export async function applyLeaf(
     // accept 的 undo：删掉那一批由 prediction 派生的 annotation；redo 走批量删除策略不实现，避免重复采纳引发 ID 漂移。
     if (direction === "undo") {
       for (const id of cmd.createdAnnotationIds) {
+        // v0.20.22 · 防御过滤: 只删 parent_prediction_id === cmd.predictionId 的标注,
+        // 防未来别处误把全量 id 塞进 createdAnnotationIds (原因: 后端曾返回整题全量,
+        // 前端把返回值 map 出 id 入历史栈, 撤销会误删他人标注)。
+        // handler 未注入或 cache miss (ann 为空/undefined) → 保持旧行为直删, 不 regress。
+        const ann = h.getAnnotation?.(id);
+        if (ann && ann.parent_prediction_id !== cmd.predictionId) continue;
         try { await h.deleteAnnotation(id); } catch { /* ignore */ }
       }
     }
@@ -88,6 +94,10 @@ export interface HistoryHandlers {
   /** v0.6.3 P0：tmpId 上的 create undo 不能走远端（必 404）。
    *  调用方在工作台闭包内提供：从 react-query cache 删 tmpId + 从离线队列删对应 create op。 */
   removeLocalCreate?: (annotationId: string) => Promise<void> | void;
+  /** v0.20.22 · accept 的 undo 过滤: 按 id 查当前 annotation, 用于校验
+   *  parent_prediction_id === cmd.predictionId 才删 (防未来别处再往数组塞脏 id)。
+   *  未注入 / 读不到时 fallback 到无过滤直删, 保持旧行为不 regress。 */
+  getAnnotation?: (annotationId: string) => AnnotationResponse | null | undefined;
 }
 
 // v0.8.7 F8 · sessionStorage 持久化（5min TTL，避免误用过期 prediction id）

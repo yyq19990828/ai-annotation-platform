@@ -152,12 +152,25 @@ export function useWorkbenchState() {
     leftOpen: false,
     rightOpen: false,
     attrPanelCollapsed: false,
+    aiSectionCollapsed: false,
+    manualSectionCollapsed: false,
+    discussionCollapsed: false,
   });
   const [leftOpen, setLeftOpenRaw] = useState(workbenchLayout.leftOpen);
   const [rightOpen, setRightOpenRaw] = useState(workbenchLayout.rightOpen);
   // v0.20.19 · 右栏属性区折叠态: 走 workbench.layout 服务端偏好, 与 leftOpen/rightOpen 同套持久。
   const [attrPanelCollapsed, setAttrPanelCollapsedRaw] = useState(
     workbenchLayout.attrPanelCollapsed,
+  );
+  // v0.20.22 · AI 待审 / 人工分组折叠 + 讨论区完全收起 (照抄 attrPanelCollapsed 范式)。
+  const [aiSectionCollapsed, setAiSectionCollapsedRaw] = useState(
+    workbenchLayout.aiSectionCollapsed,
+  );
+  const [manualSectionCollapsed, setManualSectionCollapsedRaw] = useState(
+    workbenchLayout.manualSectionCollapsed,
+  );
+  const [discussionCollapsed, setDiscussionCollapsedRaw] = useState(
+    workbenchLayout.discussionCollapsed,
   );
 
   useEffect(() => {
@@ -166,10 +179,19 @@ export function useWorkbenchState() {
     if (!layoutTouchedRef.current.rightOpen) setRightOpenRaw(workbenchLayout.rightOpen);
     if (!layoutTouchedRef.current.attrPanelCollapsed)
       setAttrPanelCollapsedRaw(workbenchLayout.attrPanelCollapsed);
+    if (!layoutTouchedRef.current.aiSectionCollapsed)
+      setAiSectionCollapsedRaw(workbenchLayout.aiSectionCollapsed);
+    if (!layoutTouchedRef.current.manualSectionCollapsed)
+      setManualSectionCollapsedRaw(workbenchLayout.manualSectionCollapsed);
+    if (!layoutTouchedRef.current.discussionCollapsed)
+      setDiscussionCollapsedRaw(workbenchLayout.discussionCollapsed);
   }, [
     workbenchLayout.leftOpen,
     workbenchLayout.rightOpen,
     workbenchLayout.attrPanelCollapsed,
+    workbenchLayout.aiSectionCollapsed,
+    workbenchLayout.manualSectionCollapsed,
+    workbenchLayout.discussionCollapsed,
     workbenchConfigLoaded,
   ]);
 
@@ -196,6 +218,33 @@ export function useWorkbenchState() {
       layoutTouchedRef.current.attrPanelCollapsed = true;
       setAttrPanelCollapsedRaw(collapsed);
       setWorkbenchLayout({ attrPanelCollapsed: collapsed });
+    },
+    [setWorkbenchLayout],
+  );
+
+  const setAiSectionCollapsed = useCallback(
+    (collapsed: boolean) => {
+      layoutTouchedRef.current.aiSectionCollapsed = true;
+      setAiSectionCollapsedRaw(collapsed);
+      setWorkbenchLayout({ aiSectionCollapsed: collapsed });
+    },
+    [setWorkbenchLayout],
+  );
+
+  const setManualSectionCollapsed = useCallback(
+    (collapsed: boolean) => {
+      layoutTouchedRef.current.manualSectionCollapsed = true;
+      setManualSectionCollapsedRaw(collapsed);
+      setWorkbenchLayout({ manualSectionCollapsed: collapsed });
+    },
+    [setWorkbenchLayout],
+  );
+
+  const setDiscussionCollapsed = useCallback(
+    (collapsed: boolean) => {
+      layoutTouchedRef.current.discussionCollapsed = true;
+      setDiscussionCollapsedRaw(collapsed);
+      setWorkbenchLayout({ discussionCollapsed: collapsed });
     },
     [setWorkbenchLayout],
   );
@@ -350,6 +399,9 @@ export function useWorkbenchState() {
     leftOpen, setLeftOpen,
     rightOpen, setRightOpen,
     attrPanelCollapsed, setAttrPanelCollapsed,
+    aiSectionCollapsed, setAiSectionCollapsed,
+    manualSectionCollapsed, setManualSectionCollapsed,
+    discussionCollapsed, setDiscussionCollapsed,
     workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
     workbenchLayout, setWorkbenchLayout,
     clipboard, setClipboard,

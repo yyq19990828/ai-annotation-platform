@@ -230,10 +230,12 @@ describe("AIInspectorPanel", () => {
     const aiBox = makeAiBox("ai-2", "truck");
     renderUI({ aiBoxes: [aiBox], onAcceptPrediction });
     fireEvent.click(screen.getByTestId("accept-ai-2"));
-    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox);
+    // v0.20.22 · AIInspectorPanel 通过 acceptWithReviewEdits wrapper 透传给 BoxesList,
+    // 未选中候选 / 未编辑时 overrides = undefined。
+    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
   });
 
-  it("v0.18.3 · 选中带属性的候选 → 属性审阅区采纳按钮调用 onAcceptPrediction(box, undefined)", () => {
+  it("v0.20.22 · 属性审阅按钮已退役, 选中带属性的候选未编辑时点行内采纳 → onAcceptPrediction(box, undefined)", () => {
     const onAcceptPrediction = vi.fn();
     const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
     const attributeSchema = {
@@ -255,10 +257,31 @@ describe("AIInspectorPanel", () => {
       attributeSchema,
       onAcceptPrediction,
     });
-    // 属性审阅区出现 + 采纳按钮 (未改动 → 文案不含「含改动」)
+    // 属性审阅区表单仍存在, 但 v0.20.22 采纳按钮已退役 (accept-candidate-attrs 不存在)。
     expect(screen.getByText("属性审阅")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("accept-candidate-attrs"));
+    expect(screen.queryByTestId("accept-candidate-attrs")).toBeNull();
+    // 行内 (BoxesList) 采纳按钮触发 wrapper: 未编辑 → 传 undefined。
+    fireEvent.click(screen.getByTestId("accept-ai-attr"));
     expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
+  });
+
+  it("v0.20.22 · 属性审阅区改属性后点行内采纳 → wrapper 附带 overrides", () => {
+    const onAcceptPrediction = vi.fn();
+    const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
+    const attributeSchema = {
+      fields: [{ key: "color", label: "颜色", type: "text" as const }],
+    };
+    renderUI({
+      aiBoxes: [aiBox],
+      selectedId: "ai-attr",
+      attributeSchema,
+      onAcceptPrediction,
+    });
+    // mock AttributeForm 的 change-attr 触发 onChange({ key: "val" }) → 写入 editedAiBoxAttrs。
+    fireEvent.click(screen.getByText("change-attr"));
+    // 点 BoxesList 行内采纳按钮 → wrapper 合并 editedAiBoxAttrs 作为 overrides。
+    fireEvent.click(screen.getByTestId("accept-ai-attr"));
+    expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, { key: "val" });
   });
 
   it("属性区折叠态受控: attrCollapsed 隐藏表单, 点头部调 onToggleAttrCollapsed", () => {

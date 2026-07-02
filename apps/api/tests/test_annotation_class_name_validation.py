@@ -186,8 +186,10 @@ async def test_accept_prediction_alias_scoped_to_prediction_unit(
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(pred.id, user.id)
-    assert ann is not None
+    # v0.20.22 · accept_prediction 现返回 list[Annotation] | None
+    anns = await svc.accept_prediction(pred.id, user.id)
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert ann.class_name == "person"
     assert ann.tool_unit_id == "ai_interactive"
 
@@ -252,8 +254,9 @@ async def test_accept_prediction_override_class_name_lands_project_label(
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(pred.id, user.id, override_class_name="行人")
-    assert ann is not None
+    anns = await svc.accept_prediction(pred.id, user.id, override_class_name="行人")
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert ann.class_name == "行人"
 
 
@@ -316,8 +319,9 @@ async def test_accept_prediction_no_match_pass_through_class_name(
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(pred.id, user.id)
-    assert ann is not None
+    anns = await svc.accept_prediction(pred.id, user.id)
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert ann.class_name == "person"
 
 

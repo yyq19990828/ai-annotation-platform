@@ -196,12 +196,18 @@ class AnnotationService:
         shape_index: int | None = None,
         override_class_name: str | None = None,
         attribute_overrides: dict | None = None,
-    ) -> Annotation | None:
-        """采纳预测 → 转 annotation.
+    ) -> list[Annotation] | None:
+        """采纳预测 → 转 annotation。
 
         - shape_index=None: 采纳整条 prediction 的所有 shape (旧默认, 用于"全部采纳"按钮).
         - shape_index=i:    仅采纳第 i 个 shape (用于画布单点"采纳"按钮, 避免一键采纳波及同 prediction 下其它框).
           每条 annotation 在 attributes 里写入 _shape_index, 让前端能按 (predictionId, shapeIndex) 双键判定.
+
+        返回值 (v0.20.22 契约):
+        - 找不到 prediction / shape_index 越界 → None (路由层转 404)。
+        - 成功 → 本次新建的 annotation 列表 (单 shape 场景返回 `[ann]`)。
+          原实现只返回循环最后一条, 上游 route 忽略返回值、另跑 `list_by_task` 回整题全量,
+          导致前端把整题当作"刚新建"逐条 PATCH 合并 AI 候选属性 → 污染人工标注 (改动 1 根因)。
         """
         # v0.10.25 · predictions 复合 PK (id, created_at) 后不能用 db.get(单值)，改按 id 查。
         prediction = (
@@ -285,7 +291,7 @@ class AnnotationService:
         else:
             indexed = list(enumerate(raw_shapes))
 
-        annotation: Annotation | None = None
+        anns: list[Annotation] = []
         for idx, raw_shape in indexed:
             shape = to_internal_shape(raw_shape)
             raw_class = shape.get("class_name", "") or ""
@@ -374,10 +380,11 @@ class AnnotationService:
                 attributes_meta=attributes_meta,
             )
             self.db.add(annotation)
+            anns.append(annotation)
 
         await self.db.flush()
         await self._update_task_stats(prediction.task_id)
-        return annotation
+        return anns
 
     async def list_by_task(
         self, task_id: uuid.UUID, include_cancelled: bool = False

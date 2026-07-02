@@ -142,6 +142,9 @@ export function WorkbenchLayout({
   const classPaletteDetached = Boolean(floatingClassPalette?.detached);
   const inspectorDetached = Boolean(floatingInspector?.detached);
   const discussionDetached = Boolean(floatingDiscussion?.detached);
+  // v0.20.22 · 讨论区完全收起 (仅 tab 头一条); 与"分离"不同, 收起时上段自动吃满剩余高度。
+  const discussionCollapsed = Boolean(discussionPanel.collapsed);
+  const upperExpandsToFill = discussionDetached || discussionCollapsed;
   const rightHasEmbeddedPanel = !inspectorDetached || !discussionDetached;
   const rightShouldRenderEmbeddedPanel = inspector.open && rightHasEmbeddedPanel;
   const linkedFloatingSelection = pet?.enabled && floatingSelection && !floatingSelection.collapsed
@@ -230,13 +233,15 @@ export function WorkbenchLayout({
                 <div
                   ref={splitTopStyleRef}
                   className={
-                    discussionDetached
+                    // v0.20.22 · 讨论区分离 or 完全收起 → 上段 flex-1 吃满 (复用同一分支);
+                    // 仅"嵌入 + 展开"时才用 h-[var(--right-split-top-height)] 固定高。
+                    upperExpandsToFill
                       ? "relative flex min-h-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1"
                       : "relative flex min-h-0 flex-none flex-col h-[var(--right-split-top-height)] [&>*]:min-h-0 [&>*]:flex-1"
                   }
                 >
                   <AIInspectorPanel {...inspector} />
-                  {!discussionDetached && (
+                  {!upperExpandsToFill && (
                     <ResizeHandle
                       side="bottom"
                       width={splitTopHeight}

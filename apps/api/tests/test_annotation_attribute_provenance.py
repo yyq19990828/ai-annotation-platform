@@ -86,9 +86,10 @@ async def test_accept_prediction_marks_ai_attributes(db_session, super_admin):
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(pred.id, user.id)
-
-    assert ann is not None
+    # v0.20.22 · accept_prediction 现返回 list[Annotation] | None
+    anns = await svc.accept_prediction(pred.id, user.id)
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert ann.attributes_meta["color"]["origin"] == "ai"
     assert ann.attributes_meta["color"]["model_ref"] == {
         "backend_id": "be-1",
@@ -125,8 +126,9 @@ async def test_accept_prediction_label_prefix(db_session, super_admin):
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(pred.id, user.id)
-
+    anns = await svc.accept_prediction(pred.id, user.id)
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert ann.attributes_meta["sub_color"]["origin"] == "ai"
     assert ann.attributes_meta["sub_color"]["model_ref"]["model_id"] == "clf2"
 
@@ -157,10 +159,11 @@ async def test_accept_prediction_human_override_not_ai(db_session, super_admin):
 
     svc = AnnotationService(db_session)
     # 采纳前人工把 color 改成 white → color 视为 human 认领, 不标 ai
-    ann = await svc.accept_prediction(
+    anns = await svc.accept_prediction(
         pred.id, user.id, attribute_overrides={"color": "white"}
     )
-
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert "color" not in ann.attributes_meta
     assert ann.attributes_meta["vehicle_type"]["origin"] == "ai"
 
@@ -181,8 +184,9 @@ async def test_accept_prediction_no_pipeline_no_meta(db_session, super_admin):
     )
 
     svc = AnnotationService(db_session)
-    ann = await svc.accept_prediction(pred.id, user.id)
-
+    anns = await svc.accept_prediction(pred.id, user.id)
+    assert anns is not None and len(anns) == 1
+    ann = anns[0]
     assert ann.attributes_meta == {}
 
 

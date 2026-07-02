@@ -207,6 +207,12 @@ export interface WorkbenchLayoutPreferences {
   rightOpen: boolean;
   /** v0.20.19 · 右栏「标注详情」属性区折叠态(随账号持久)。 */
   attrPanelCollapsed: boolean;
+  /** v0.20.22 · 右栏「AI 待审」分组折叠态(随账号持久)。 */
+  aiSectionCollapsed: boolean;
+  /** v0.20.22 · 右栏「人工」分组折叠态(随账号持久)。 */
+  manualSectionCollapsed: boolean;
+  /** v0.20.22 · 右栏下段「讨论」(评论/历史/Issue)完全收起态(随账号持久)。 */
+  discussionCollapsed: boolean;
   floatingTaskQueue: FloatingPanelState;
   floatingClassPalette: FloatingPanelState;
   floatingInspector: FloatingPanelState;
@@ -308,6 +314,9 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     leftOpen: true,
     rightOpen: true,
     attrPanelCollapsed: false,
+    aiSectionCollapsed: false,
+    manualSectionCollapsed: false,
+    discussionCollapsed: false,
     floatingTaskQueue: {
       detached: false,
       x: null,

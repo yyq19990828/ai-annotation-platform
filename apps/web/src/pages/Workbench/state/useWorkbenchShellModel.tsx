@@ -1051,6 +1051,9 @@ export function useWorkbenchShellModel({
       const target = all.find((op) => op.kind === "create" && op.tmpId === id);
       if (target) await offlineQueueRemoveById(target.id);
     },
+    // v0.20.22 · accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
+    // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
+    getAnnotation: (id) => annotationsRef.current.find((a) => a.id === id) ?? null,
   });
 
   const { avgMs } = useSessionStats(taskId ?? null, projectId ?? null, "annotate");
@@ -2481,6 +2484,11 @@ export function useWorkbenchShellModel({
       // v0.20.19 · 属性区折叠态走 workbench.layout 服务端偏好, 选框/刷新/换设备保留。
       attrCollapsed: s.attrPanelCollapsed,
       onToggleAttrCollapsed: () => s.setAttrPanelCollapsed(!s.attrPanelCollapsed),
+      // v0.20.22 · AI 待审 / 人工两大分组头折叠 (同一 workbench.layout 管道跨设备持久)。
+      aiSectionCollapsed: s.aiSectionCollapsed,
+      onToggleAiSection: () => s.setAiSectionCollapsed(!s.aiSectionCollapsed),
+      manualSectionCollapsed: s.manualSectionCollapsed,
+      onToggleManualSection: () => s.setManualSectionCollapsed(!s.manualSectionCollapsed),
       widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetach: detachInspector,
       capabilityWarnings,
@@ -2673,6 +2681,9 @@ export function useWorkbenchShellModel({
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       onDetach: detachDiscussion,
+      // v0.20.22 · 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
+      collapsed: s.discussionCollapsed,
+      onToggleCollapsed: () => s.setDiscussionCollapsed(!s.discussionCollapsed),
     },
   };
 

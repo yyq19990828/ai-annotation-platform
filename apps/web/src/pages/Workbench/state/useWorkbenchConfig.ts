@@ -406,6 +406,17 @@ function mergeLayout(
     attrPanelCollapsed:
       merged.attrPanelCollapsed ??
       DEFAULT_WORKBENCH_PREFERENCES.layout.attrPanelCollapsed,
+    // v0.20.22 · 分组折叠 + 讨论区完全收起 (照抄 attrPanelCollapsed 范式, 不进
+    // LAYOUT_KEY_NAMES localStorage 白名单, 纯服务端持久跨设备跟随)。
+    aiSectionCollapsed:
+      merged.aiSectionCollapsed ??
+      DEFAULT_WORKBENCH_PREFERENCES.layout.aiSectionCollapsed,
+    manualSectionCollapsed:
+      merged.manualSectionCollapsed ??
+      DEFAULT_WORKBENCH_PREFERENCES.layout.manualSectionCollapsed,
+    discussionCollapsed:
+      merged.discussionCollapsed ??
+      DEFAULT_WORKBENCH_PREFERENCES.layout.discussionCollapsed,
     floatingTaskQueue: mergeFloatingPanel(
       DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue,
       floatingTaskQueue,
