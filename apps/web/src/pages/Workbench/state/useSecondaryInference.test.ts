@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import type { MLModelCapability } from "@/api/ml-backends";
 import {
   buildSecondaryInferencePayload,
+  needsTextPrompt,
   type SecondaryCapability,
 } from "./useSecondaryInference";
 
@@ -99,5 +100,25 @@ describe("buildSecondaryInferencePayload", () => {
     expect(
       buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
     ).toBeNull();
+  });
+
+  it("prompt: 开集文本带进请求 (trim); 空/空白 → null", () => {
+    const c = cap({ id: "gdino", task: "detection" }, "geometry");
+    expect(
+      buildSecondaryInferencePayload(c, undefined, undefined, "  car . person  ")
+        .prompt,
+    ).toBe("car . person");
+    expect(buildSecondaryInferencePayload(c, undefined, undefined, "   ").prompt).toBeNull();
+    expect(buildSecondaryInferencePayload(c).prompt).toBeNull();
+  });
+
+  it("needsTextPrompt: supported_prompts 含 text → true", () => {
+    expect(
+      needsTextPrompt(cap({ id: "g", supported_prompts: ["text"] }, "geometry")),
+    ).toBe(true);
+    expect(
+      needsTextPrompt(cap({ id: "y", supported_prompts: ["none"] }, "geometry")),
+    ).toBe(false);
+    expect(needsTextPrompt(cap({ id: "z" }, "geometry"))).toBe(false);
   });
 });

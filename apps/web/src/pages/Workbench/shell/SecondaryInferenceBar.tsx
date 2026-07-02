@@ -8,9 +8,12 @@
 // (取代平铺一大坨按钮), 选中项旁给 ⚙ 参数 / ⚠ 补字段, 右侧「运行」。有参数时下方展开 SchemaForm。
 // v0.20.17 · 几何能力加模型档位下拉 (复用交互条 VariantSelector); 参数 + 变体按 backendId:modelId
 // 持久化到用户偏好 (useSecondaryParamPrefs), 切框/刷新/换设备保留上次值。
+// v0.20.18 · 开集(开放词表)检测/分割模型 (supported_prompts 含 text) 加目标文本输入 (空则禁运行);
+// 参数面板改为 ⚙ 下方的独立 popover (固定列宽, 不随工具条变宽被拉满); ⚙ 用 Icon settings 替 emoji。
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { AttributeField } from "@/api/projects";
@@ -25,6 +28,7 @@ import {
   buildSecondaryInferencePayload,
   hasConfigurableParams,
   missingAttributeFields,
+  needsTextPrompt,
   useRunSecondaryInference,
   useSecondaryCapabilities,
   type SecondaryCapability,
@@ -109,6 +113,8 @@ export function SecondaryInferenceBar({
   const [variantByKey, setVariantByKey] = useState<
     Record<string, Record<string, unknown>>
   >({});
+  // v0.20.18 · 开集文本模型的查询文本 (按能力); 每次运行的临时查询, 不持久化。
+  const [promptByKey, setPromptByKey] = useState<Record<string, string>>({});
   const [paramsOpen, setParamsOpen] = useState(false);
   // v0.20.17 · 用户级偏好 (按 backendId:modelId): 参数 + 变体跨框/跨设备记住。
   const { byModel, loaded: prefsLoaded, save: savePref } =
@@ -151,6 +157,9 @@ export function SecondaryInferenceBar({
   const busy = runningKey !== null;
   const missing = missingAttributeFields(selected, existing);
   const canParams = hasConfigurableParams(selected.model);
+  // v0.20.18 · 开集文本模型: 需用户输入检测/分割目标文本; 空文本禁运行 (跑了也检不出)。
+  const wantsText = needsTextPrompt(selected);
+  const promptMissing = wantsText && !(promptByKey[selKey] ?? "").trim();
 
   const openParamsFor = (cap: SecondaryCapability) => {
     setParamsOpen((v) => !v);
@@ -174,6 +183,7 @@ export function SecondaryInferenceBar({
           cap,
           paramsByKey[key],
           variantByKey[key],
+          promptByKey[key],
         ),
       });
       const childCount = resp.created_children.length;
@@ -274,17 +284,37 @@ export function SecondaryInferenceBar({
             />
           )}
           {canParams && (
-            <button
-              type="button"
-              onClick={() => openParamsFor(selected)}
-              disabled={busy}
-              title="推理参数 (阈值等)"
-              data-testid="secondary-params-toggle"
-              aria-pressed={paramsOpen}
-              className={`flex size-6 items-center justify-center rounded-sm border border-border text-xs ${paramsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-            >
-              ⚙
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => openParamsFor(selected)}
+                disabled={busy}
+                title="推理参数 (阈值等)"
+                data-testid="secondary-params-toggle"
+                aria-pressed={paramsOpen}
+                className={`flex size-6 items-center justify-center rounded-sm border border-border ${paramsOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                <Icon name="settings" size={14} />
+              </button>
+              {/* v0.20.18 · 参数以独立 popover 弹在 ⚙ 下方 (不再挂工具条底部被拉宽);
+                  固定列宽, 与工具条宽度无关。 */}
+              {paramsOpen && (
+                <div
+                  className="absolute right-0 top-full z-local-2 mt-1 max-h-64 w-72 overflow-y-auto rounded-md border border-border bg-card p-2 shadow-lg [&_select]:self-start"
+                  data-testid="secondary-params-panel"
+                >
+                  <SchemaForm
+                    schema={selected.model.params as JsonSchemaObject}
+                    value={paramsByKey[selKey] ?? {}}
+                    onChange={(next) => {
+                      setParamsByKey((prev) => ({ ...prev, [selKey]: next }));
+                      savePref(selKey, { params: next });
+                    }}
+                    disabled={busy}
+                  />
+                </div>
+              )}
+            </div>
           )}
           {missing.length > 0 && onEnsureAttributeFields && (
             <button
@@ -300,36 +330,45 @@ export function SecondaryInferenceBar({
           )}
         </div>
 
+        {/* v0.20.18 · 开集(开放词表)检测/分割: 需输入目标文本 (如 car . person)。 */}
+        {wantsText && (
+          <>
+            {DIVIDER}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className={FIELD_LABEL_CLASS}>文本</span>
+              <input
+                type="text"
+                value={promptByKey[selKey] ?? ""}
+                disabled={busy}
+                onChange={(e) =>
+                  setPromptByKey((prev) => ({ ...prev, [selKey]: e.target.value }))
+                }
+                placeholder="如 car . person"
+                title="开集模型的检测/分割目标文本 (多个用 . 分隔)"
+                data-testid="secondary-prompt"
+                className="w-40 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
+              />
+            </div>
+          </>
+        )}
+
         {DIVIDER}
 
         <Button
           size="sm"
           variant="ai"
-          disabled={busy}
+          disabled={busy || promptMissing}
           onClick={() => onRun(selected)}
-          title={`${selected.backendName} · ${TARGET_HINT[selected.writeTarget]}`}
+          title={
+            promptMissing
+              ? "请先输入检测/分割目标文本"
+              : `${selected.backendName} · ${TARGET_HINT[selected.writeTarget]}`
+          }
           data-testid="secondary-run"
         >
           {busy ? "运行中…" : "运行"}
         </Button>
       </div>
-
-      {paramsOpen && canParams && (
-        <div
-          className="max-h-64 overflow-y-auto border-t border-border pt-1"
-          data-testid="secondary-params-panel"
-        >
-          <SchemaForm
-            schema={selected.model.params as JsonSchemaObject}
-            value={paramsByKey[selKey] ?? {}}
-            onChange={(next) => {
-              setParamsByKey((prev) => ({ ...prev, [selKey]: next }));
-              savePref(selKey, { params: next });
-            }}
-            disabled={busy}
-          />
-        </div>
-      )}
     </div>
   );
 }

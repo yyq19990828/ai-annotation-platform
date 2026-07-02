@@ -154,6 +154,7 @@ graph TD
 - **属性可见性闭合**：`AttributeForm` 只渲染项目 `attribute_schema` 里的键，故 attributes-型能力若输出项目没配的属性键，产物会写库却不显示。`SecondaryInferenceBar` 用 `missingAttributeFields` 比对能力输出键与项目已有键（`projectAttributeKeys`），缺则在能力旁给「补 N 字段」CTA，复用工作台的属性字段补全 `applyAttributeFields`（`handleEnsureAttributeFields`，带 `window.confirm`）一次补进所有启用工具单位。
 - **参数控制**：能力若有可调推理参数（`hasConfigurableParams`：`params.properties` 除变体字段外还有字段），旁边给 ⚙，展开用与批量预标同一套 `SchemaForm` 渲染参数面板，初值取用户偏好 → `deriveDefaults`；调过的参数经 `buildSecondaryInferencePayload` 的 `params` 透传到后端 `_build_predict_context`。不调则沿用模型默认。
 - **模型档位（变体）选择**：几何类能力（`write_target=geometry`）在能力下拉旁挂 `VariantSelector`（`compact`，与 `InteractiveToolBar` 同款），列该模型 `supported_variants` 的 series/size 等轴；用户所选经 `buildSecondaryInferencePayload` 与模型 `default_variants` 合并（所选覆盖、缺轴回落默认）成 `model_variants` 下发。属性类能力走扁平路径，`model_variants=null`，不显示档位。
+- **开集文本输入**：`supported_prompts` 含 `text` 的开集（开放词表）检测 / 分割模型（`needsTextPrompt`），能力旁多一个文本框，值经 `buildSecondaryInferencePayload` 的 `prompt` 透传（后端 `run_secondary_inference` 的 `prompt` → `_build_predict_context`）；文本为空时禁运行。闭集模型不显示。
 - **参数 + 档位持久化**：`useSecondaryParamPrefs` 把参数与档位按 `backendId:modelId` 存进 `User.preferences.ai.secondary_by_model`（比 backend 更细，避免同 backend 多 model 串味），debounce 保存、`ai` 子树后端深合并，与 `useAiToolParamPrefs` 同范式；切框 / 刷新 / 换设备保留上次值，保存失败静默降级为组件内 state。
 
 ### `AnnotationDraft`

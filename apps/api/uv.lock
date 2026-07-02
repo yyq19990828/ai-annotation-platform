@@ -30,7 +30,7 @@ wheels = [
 
 [[package]]
 name = "anno-api"
-version = "0.20.17"
+version = "0.20.18"
 source = { virtual = "." }
 dependencies = [
     { name = "alembic" },

@@ -167,17 +167,20 @@ function mergeVariants(
  * `params` 为用户在参数面板 (SchemaForm) 调过的推理参数 (阈值等); 空则不带 (后端用模型默认)。
  * `variants` 为用户在变体下拉选过的模型档位 (series/size 等); 与模型默认档位合并 (用户所选覆盖),
  *   缺则回落模型 default_variants。仅几何能力走 model_variants (分类/OCR 扁平路径恒 null)。
+ * `prompt` 为开集(开放词表)检测/分割模型 (supported_prompts 含 text) 的文本查询; 空则不带。
  */
 export function buildSecondaryInferencePayload(
   cap: SecondaryCapability,
   params?: Record<string, unknown>,
   variants?: Record<string, unknown>,
+  prompt?: string,
 ): SecondaryInferenceRequest {
   const m = cap.model;
   // attributes: 只取 backend 声明的输出属性键; 空 → null (=全取, 别发空数组致后端过滤成空)。
   const attrKeys = (m.output_attribute_schema ?? [])
     .map((f) => f.key)
     .filter(Boolean);
+  const trimmedPrompt = prompt?.trim();
   return {
     ml_backend_id: cap.backendId,
     write_target: cap.writeTarget,
@@ -192,7 +195,13 @@ export function buildSecondaryInferencePayload(
     write_keys:
       cap.writeTarget === "attributes" && attrKeys.length > 0 ? attrKeys : null,
     params: params && Object.keys(params).length > 0 ? params : null,
+    prompt: trimmedPrompt ? trimmedPrompt : null,
   };
+}
+
+/** 该能力是否为开集文本模型 (supported_prompts 含 text): 需用户输入检测/分割目标文本。 */
+export function needsTextPrompt(cap: SecondaryCapability): boolean {
+  return (cap.model.supported_prompts ?? []).includes("text");
 }
 
 /** 运行单框二次推理; 成功后刷新该 task 的标注列表 (画布 + 侧栏自动重渲染)。 */

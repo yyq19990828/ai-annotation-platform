@@ -129,6 +129,48 @@ describe("SecondaryInferenceBar", () => {
     expect(getByTestId("ai-variant-size")).toBeTruthy();
   });
 
+  it("开集文本能力 → 出现文本框; 空文本禁运行, 填后可运行并带 prompt", async () => {
+    capabilitiesRef.current = [
+      {
+        backendId: "be-3",
+        backendName: "gsam2",
+        model: model({
+          id: "gdino",
+          display_name: "开集检测",
+          task: "detection",
+          supported_prompts: ["text"],
+        }),
+        writeTarget: "geometry",
+        label: "开集检测",
+      },
+    ];
+    mutateAsync.mockResolvedValue({
+      annotation: { ...annotation, attributes_meta: {} },
+      created_children: [{ id: "c1" }],
+    });
+    const { getByTestId } = render(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+    );
+    // 文本框出现, 空文本 → 运行禁用。
+    const input = getByTestId("secondary-prompt") as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect((getByTestId("secondary-run") as HTMLButtonElement).disabled).toBe(true);
+    // 填文本 → 可运行, payload 带 prompt。
+    fireEvent.change(input, { target: { value: "car . person" } });
+    expect((getByTestId("secondary-run") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(getByTestId("secondary-run"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0].body.prompt).toBe("car . person");
+  });
+
+  it("非开集能力 → 无文本框", () => {
+    capabilitiesRef.current = [geomCap()];
+    const { queryByTestId } = render(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+    );
+    expect(queryByTestId("secondary-prompt")).toBeNull();
+  });
+
   it("选几何能力后运行 → 调 run + 新增子框 toast", async () => {
     capabilitiesRef.current = [attrCap(), geomCap()];
     mutateAsync.mockResolvedValue({
