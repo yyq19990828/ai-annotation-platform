@@ -140,6 +140,22 @@
   border-color: var(--sc-ring);
 }
 
+.selectInput {
+  height: 28px;
+  min-width: 168px;
+  padding: 0 8px;
+  color: var(--sc-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  background: var(--sc-background);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+.selectInput:focus {
+  outline: none;
+  border-color: var(--sc-ring);
+}
+
 .fieldLabel {
   color: var(--sc-muted-foreground);
   font-size: 11px;
@@ -362,6 +378,36 @@
   border-radius: var(--radius-sm);
 }
 
+.pipelineLibraryBar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-sm);
+}
+
+.pipelineLibraryGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: min(100%, 280px);
+}
+
+.pipelineLibraryField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.pipelineLibraryField .textInput {
+  min-width: 180px;
+}
+
 .concurrencyGroup {
   display: inline-flex;
   gap: 14px;
@@ -370,7 +416,10 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .savingText {

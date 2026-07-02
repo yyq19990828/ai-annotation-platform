@@ -11,6 +11,7 @@ const mockUseProject = vi.fn();
 const mockUseBatches = vi.fn();
 const mockUseMLBackends = vi.fn();
 const mockUseTrigger = vi.fn();
+const mockUseProjectPipelines = vi.fn();
 const mockSummaryAPI = vi.fn();
 const mockQueueAPI = vi.fn();
 const mockAliasFreqAPI = vi.fn();
@@ -18,6 +19,10 @@ const mockSetupAPI = vi.fn();
 const mockCapabilitiesAPI = vi.fn();
 const mockUpdateProjectMutate = vi.fn();
 const mockUpdateProjectMutateAsync = vi.fn();
+const mockCreateProjectPipelineMutateAsync = vi.fn();
+const mockApplyProjectPipelineMutate = vi.fn();
+const mockApplyProjectPipelineMutateAsync = vi.fn();
+const mockDeleteProjectPipelineMutate = vi.fn();
 const mockUpdatePreferences = vi.fn();
 
 vi.mock("@/hooks/useProjects", () => ({
@@ -34,6 +39,22 @@ vi.mock("@/hooks/useProjects", () => ({
 // libuv stream assert → worker crash. 单测里直接 noop 即可 (WS 行为另有 useBatchEventsSocket 自己的 smoke 测试).
 vi.mock("@/hooks/useBatchEventsSocket", () => ({
   useBatchEventsSocket: () => undefined,
+}));
+vi.mock("@/hooks/useProjectPipelines", () => ({
+  useProjectPipelines: (...args: unknown[]) => mockUseProjectPipelines(...args),
+  useCreateProjectPipeline: () => ({
+    mutateAsync: mockCreateProjectPipelineMutateAsync,
+    isPending: false,
+  }),
+  useApplyProjectPipeline: () => ({
+    mutate: mockApplyProjectPipelineMutate,
+    mutateAsync: mockApplyProjectPipelineMutateAsync,
+    isPending: false,
+  }),
+  useDeleteProjectPipeline: () => ({
+    mutate: mockDeleteProjectPipelineMutate,
+    isPending: false,
+  }),
 }));
 vi.mock("@/hooks/useBatches", () => ({
   useBatches: (pid: string, status: string) => mockUseBatches(pid, status),
@@ -120,6 +141,30 @@ describe("ProjectDetailPanel v0.9.12", () => {
       data: { type_key: "image-det", ml_backend_id: "bk1" },
       isLoading: false,
     });
+    mockUseProjectPipelines.mockReset();
+    mockUseProjectPipelines.mockReturnValue({ data: [], isLoading: false });
+    mockCreateProjectPipelineMutateAsync.mockReset();
+    mockCreateProjectPipelineMutateAsync.mockResolvedValue({
+      id: "pipe-created",
+      name: "项目默认编排",
+      scope: "private",
+      project_id: "p1",
+      organization_id: null,
+      stages: [{ stage: 0, ml_backend_id: "bk1" }],
+      is_default: true,
+    });
+    mockApplyProjectPipelineMutate.mockReset();
+    mockApplyProjectPipelineMutateAsync.mockReset();
+    mockApplyProjectPipelineMutateAsync.mockResolvedValue({
+      id: "pipe-applied",
+      name: "项目默认编排",
+      scope: "private",
+      project_id: "p1",
+      organization_id: null,
+      stages: [{ stage: 0, ml_backend_id: "bk1" }],
+      is_default: true,
+    });
+    mockDeleteProjectPipelineMutate.mockReset();
     mockUseBatches.mockReturnValue({
       data: [
         { id: "b1", display_id: "B-1", name: "批次甲", total_tasks: 10 },
@@ -336,6 +381,62 @@ describe("ProjectDetailPanel v0.9.12", () => {
         params: expect.objectContaining({ box_threshold: 0.35 }),
       }));
     });
+  });
+
+  it("保存当前配置时写入命名项目编排并设为默认", async () => {
+    renderUI();
+    fireEvent.change(screen.getByPlaceholderText(/car, person/), {
+      target: { value: "car" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/例如 detect/), {
+      target: { value: "车辆属性" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存为命名编排/ }));
+
+    await waitFor(() => {
+      expect(mockCreateProjectPipelineMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "车辆属性",
+          scope: "private",
+          project_id: "p1",
+          is_default: true,
+          stages: [
+            expect.objectContaining({
+              stage: 0,
+              ml_backend_id: "bk1",
+            }),
+          ],
+        }),
+      );
+    });
+    expect(mockApplyProjectPipelineMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("可从命名编排库套用为当前项目默认", async () => {
+    mockUseProjectPipelines.mockReturnValue({
+      data: [
+        {
+          id: "pipe-public",
+          name: "detect-to-attr",
+          scope: "public",
+          project_id: null,
+          organization_id: null,
+          stages: [{ stage: 0, ml_backend_id: "bk1" }],
+          is_default: false,
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /套用为默认/ })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /套用为默认/ }));
+    expect(mockApplyProjectPipelineMutate).toHaveBeenCalledWith(
+      { pipelineId: "pipe-public", setDefault: true },
+      expect.any(Object),
+    );
   });
 
   it("点返回按钮触发 onBack", () => {

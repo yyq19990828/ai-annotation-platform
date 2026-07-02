@@ -43,6 +43,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 ### Added
 
 - **项目预标注编排升级为可命名模板库**：新增 `project_pipelines` 表与 `/project-pipelines`、`/projects/{project_id}/pipelines/apply` 接口，支持 private / organization / public 作用域、copy-on-write 套用、项目默认编排切换和未启用 backend 提前拦截，原有项目内保存的 `preannotate_pipeline` 会回填为项目默认编排。
+- **AI 预标面板接入命名编排库**：项目详情里可以把当前 DAG 保存为命名编排、从可见编排库套用为项目默认，并在套用失败时直接提示缺少启用的 backend；工作台「按项目编排运行当前题」优先读取项目默认命名编排，旧项目列只作为兼容兜底。
 - **能力协议新增统一输入类型词表**：`supported_inputs` 现在有后端、共享协议和前端生成物共用的受控词表，并新增 `video` 预留输入类型与 `default_input_type` 字段，后续全局编排选择器和视频检测追踪可以用同一套输入判据。
 
 ### Changed

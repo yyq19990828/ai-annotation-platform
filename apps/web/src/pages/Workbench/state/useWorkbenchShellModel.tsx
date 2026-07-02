@@ -5,6 +5,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProjectPipelines } from "@/hooks/useProjectPipelines";
 import {
   useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
@@ -190,6 +191,10 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
+  const projectPipelinesQ = useProjectPipelines(
+    { scope: "private", project_id: projectId },
+    { enabled: !!projectId },
+  );
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
@@ -1253,9 +1258,14 @@ export function useWorkbenchShellModel({
     );
   }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
 
-  // v0.18.28 · 项目已存编排 (v0.18.27) 时, popover 多出「运行当前题（按项目编排）」入口。
+  // v0.21.0 · 项目默认命名编排成为 popover「按项目编排」来源; 旧 preannotate_pipeline 仅作读兼容兜底。
   // popover 仍是执行器、不是编排编辑器: 编排在 /ai-pre 定义保存, 这里只把那条编排跑当前一图。
-  const projectPipeline = currentProject?.preannotate_pipeline ?? null;
+  const defaultNamedPipeline = useMemo(
+    () => projectPipelinesQ.data?.find((p) => p.is_default) ?? null,
+    [projectPipelinesQ.data],
+  );
+  const projectPipeline =
+    defaultNamedPipeline?.stages ?? currentProject?.preannotate_pipeline ?? null;
   const hasProjectPipeline = (projectPipeline?.length ?? 0) > 0;
   const projectPipelineStageCount = projectPipeline?.length ?? 0;
   // claude[bot] P1 #5 · 编排引用的 backend 被删/停时, popover 入口该不可点 + 弹明确原因, 而非默默 422。
@@ -1280,7 +1290,7 @@ export function useWorkbenchShellModel({
       return;
     }
     const payload = buildPipelineRunPayload(
-      currentProject?.preannotate_pipeline,
+      projectPipeline,
       taskId,
       availableBackendIds,
     );
@@ -1295,7 +1305,7 @@ export function useWorkbenchShellModel({
         pushToast({ msg: "AI 编排预标失败", sub: String(err), kind: "error" }),
     });
   }, [
-    currentProject?.preannotate_pipeline,
+    projectPipeline,
     taskId,
     triggerPreannotation,
     pushToast,

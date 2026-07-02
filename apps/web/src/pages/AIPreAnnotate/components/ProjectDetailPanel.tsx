@@ -15,6 +15,12 @@ import { Icon } from "@/components/ui/Icon";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import {
+  useApplyProjectPipeline,
+  useCreateProjectPipeline,
+  useDeleteProjectPipeline,
+  useProjectPipelines,
+} from "@/hooks/useProjectPipelines";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
@@ -28,6 +34,7 @@ import {
 import { useAsyncJob } from "@/hooks/useAsyncJob";
 import type { PreannotateArgs } from "./usePreannotateConfig";
 import { adminPreannotateApi } from "@/api/adminPreannotate";
+import type { ProjectPipeline, ProjectPipelineScope } from "@/api/projectPipelines";
 import { HistoryTable } from "./HistoryTable";
 import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
 import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
@@ -71,10 +78,30 @@ const PREDICT_MODE_BY_LABEL: Record<string, PredictMode> = {
   追加: "append",
 };
 
+const PIPELINE_SCOPE_LABELS: Record<ProjectPipelineScope, string> = {
+  private: "项目私有",
+  organization: "组织",
+  public: "公共",
+};
+
 type ConcurrencyMode = "serial" | "parallel";
 
 function cx(...classNames: Array<string | false | null | undefined>) {
   return classNames.filter(Boolean).join(" ");
+}
+
+function describePipelineError(error: unknown): string {
+  const detailRaw = (error as { detailRaw?: unknown })?.detailRaw;
+  if (
+    detailRaw &&
+    typeof detailRaw === "object" &&
+    "unenabled_backends" in detailRaw &&
+    Array.isArray((detailRaw as { unenabled_backends?: unknown }).unenabled_backends)
+  ) {
+    const ids = (detailRaw as { unenabled_backends: string[] }).unenabled_backends;
+    return `未启用 backend: ${ids.join("、")}`;
+  }
+  return (error as Error).message;
 }
 
 /**
@@ -141,8 +168,44 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     | undefined;
   // v0.18.27 · 项目编排保存 / 清除 (方案 A, 一项目一条)。
   const updateProject = useUpdateProject(projectId);
-  const savedPipeline = project?.preannotate_pipeline ?? null;
+  const createProjectPipeline = useCreateProjectPipeline();
+  const applyProjectPipeline = useApplyProjectPipeline(projectId);
+  const deleteProjectPipeline = useDeleteProjectPipeline();
+  const projectPipelinesQ = useProjectPipelines(undefined, { enabled: !!projectId });
+  const projectPipelines = useMemo(
+    () => projectPipelinesQ.data ?? [],
+    [projectPipelinesQ.data],
+  );
+  const defaultProjectPipeline = useMemo(
+    () =>
+      projectPipelines.find(
+        (p) => p.scope === "private" && p.project_id === projectId && p.is_default,
+      ) ?? null,
+    [projectPipelines, projectId],
+  );
+  const savedPipeline = defaultProjectPipeline?.stages ?? project?.preannotate_pipeline ?? null;
   const savedStageCount = savedPipeline?.length ?? 0;
+  const savedPipelineName = defaultProjectPipeline?.name ?? (savedStageCount > 0 ? "旧项目编排" : null);
+  const [pipelineName, setPipelineName] = useState("项目默认编排");
+  const [pipelineScope, setPipelineScope] = useState<ProjectPipelineScope>("private");
+  const [selectedLibraryPipelineId, setSelectedLibraryPipelineId] = useState("");
+  const libraryPipelines = useMemo(
+    () => projectPipelines.filter((p) => (p.stages?.length ?? 0) > 0),
+    [projectPipelines],
+  );
+  const selectedLibraryPipeline = useMemo(
+    () => libraryPipelines.find((p) => p.id === selectedLibraryPipelineId) ?? null,
+    [libraryPipelines, selectedLibraryPipelineId],
+  );
+  useEffect(() => {
+    if (libraryPipelines.length === 0) {
+      if (selectedLibraryPipelineId) setSelectedLibraryPipelineId("");
+      return;
+    }
+    if (!selectedLibraryPipelineId || !libraryPipelines.some((p) => p.id === selectedLibraryPipelineId)) {
+      setSelectedLibraryPipelineId(libraryPipelines[0].id);
+    }
+  }, [libraryPipelines, selectedLibraryPipelineId]);
   // v0.10.38 · 模态分流: summary 优先 (列表已带), 回落 project 查询.
   const dataType = summary?.data_type ?? project?.data_type ?? "image";
 
@@ -522,10 +585,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
 
   // v0.18.27 · 保存当前配置为「项目编排」(方案 A, 一项目一条)。单阶段也存成单元素数组,
   // 保持「一项目一编排」语义; v0.18.28 popover 据此对当前图跑完整链。本版只存不跑。
-  const onSavePipeline = () => {
+  const onSavePipeline = async () => {
     const baseArgs = cfg.buildArgs(predictMode);
     if (!baseArgs) {
       pushToast({ msg: "配置未就绪", sub: "请先选模型 / 配齐参数", kind: "warning" });
+      return;
+    }
+    const name = pipelineName.trim();
+    if (!name) {
+      pushToast({ msg: "请输入编排名称", kind: "warning" });
       return;
     }
     if (stagesGraph.length > 0 && !allDownstreamReady) {
@@ -533,26 +601,52 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       return;
     }
     const stages = buildDownstreamStages(baseArgs) ?? [argsToStage(baseArgs, 0)];
-    updateProject.mutate(
-      { preannotate_pipeline: stages },
-      {
-        onSuccess: () =>
-          pushToast({
-            msg: "已保存为项目编排",
-            sub: `${stages.length} 阶段`,
-            kind: "success",
-          }),
-        onError: (e) =>
-          pushToast({
-            msg: "保存项目编排失败",
-            sub: (e as Error).message,
-            kind: "warning",
-          }),
-      },
-    );
+    try {
+      const created = await createProjectPipeline.mutateAsync({
+        name,
+        scope: pipelineScope,
+        project_id: pipelineScope === "private" ? projectId : null,
+        organization_id: null,
+        stages,
+        is_default: pipelineScope === "private",
+      });
+      if (pipelineScope !== "private") {
+        await applyProjectPipeline.mutateAsync({
+          pipelineId: created.id,
+          setDefault: true,
+        });
+      }
+      setSelectedLibraryPipelineId(created.id);
+      pushToast({
+        msg: "已保存为命名编排",
+        sub:
+          pipelineScope === "private"
+            ? `${stages.length} 阶段 · 已设为项目默认`
+            : `${PIPELINE_SCOPE_LABELS[pipelineScope]} · 已套用为项目默认`,
+        kind: "success",
+      });
+    } catch (e) {
+      pushToast({
+        msg: "保存命名编排失败",
+        sub: describePipelineError(e),
+        kind: "warning",
+      });
+    }
   };
 
   const onClearPipeline = () => {
+    if (defaultProjectPipeline) {
+      deleteProjectPipeline.mutate(defaultProjectPipeline.id, {
+        onSuccess: () => pushToast({ msg: "已清除项目默认编排", kind: "success" }),
+        onError: (e) =>
+          pushToast({
+            msg: "清除项目默认编排失败",
+            sub: (e as Error).message,
+            kind: "warning",
+          }),
+      });
+      return;
+    }
     updateProject.mutate(
       { preannotate_pipeline: null },
       {
@@ -561,6 +655,27 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
           pushToast({
             msg: "清除项目编排失败",
             sub: (e as Error).message,
+            kind: "warning",
+          }),
+      },
+    );
+  };
+
+  const onApplyLibraryPipeline = () => {
+    if (!selectedLibraryPipeline) return;
+    applyProjectPipeline.mutate(
+      { pipelineId: selectedLibraryPipeline.id, setDefault: true },
+      {
+        onSuccess: (p: ProjectPipeline) =>
+          pushToast({
+            msg: "已套用命名编排",
+            sub: `${p.name} · ${p.stages.length} 阶段`,
+            kind: "success",
+          }),
+        onError: (e) =>
+          pushToast({
+            msg: "套用命名编排失败",
+            sub: describePipelineError(e),
             kind: "warning",
           }),
       },
@@ -765,6 +880,63 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               : "批跑预标设置"}
           </strong>
 
+            <div className={styles.pipelineLibraryBar}>
+              <div className={styles.pipelineLibraryGroup}>
+                <label className={styles.pipelineLibraryField}>
+                  <span className={styles.fieldLabel}>保存名称</span>
+                  <input
+                    className={styles.textInput}
+                    value={pipelineName}
+                    onChange={(e) => setPipelineName(e.target.value)}
+                    placeholder="例如 detect → 车辆属性"
+                  />
+                </label>
+                <label className={styles.pipelineLibraryField}>
+                  <span className={styles.fieldLabel}>可见范围</span>
+                  <select
+                    className={styles.selectInput}
+                    value={pipelineScope}
+                    onChange={(e) => setPipelineScope(e.target.value as ProjectPipelineScope)}
+                  >
+                    <option value="private">项目私有</option>
+                    <option value="public">公共</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className={styles.pipelineLibraryGroup}>
+                <label className={styles.pipelineLibraryField}>
+                  <span className={styles.fieldLabel}>命名编排库</span>
+                  <select
+                    className={styles.selectInput}
+                    value={selectedLibraryPipelineId}
+                    onChange={(e) => setSelectedLibraryPipelineId(e.target.value)}
+                    disabled={projectPipelinesQ.isLoading || libraryPipelines.length === 0}
+                  >
+                    {libraryPipelines.length === 0 ? (
+                      <option value="">暂无可套用编排</option>
+                    ) : (
+                      libraryPipelines.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} · {PIPELINE_SCOPE_LABELS[p.scope]} · {p.stages.length} 阶段
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={onApplyLibraryPipeline}
+                  disabled={!selectedLibraryPipeline || applyProjectPipeline.isPending}
+                  title="把所选命名编排 copy-on-write 套用到当前项目，并设为项目默认"
+                >
+                  <Icon name="download" size={12} />
+                  套用为默认
+                </Button>
+              </div>
+            </div>
+
             {/* v0.18.16 · 两列编排: 左 DAG 画布 (点选/增删/拖边改父), 右选中节点参数检查器。
                 页面高度恒定 (右列永远一张卡), 结构所见即所得。 */}
             <div className={styles.editorTwoCol}>
@@ -925,16 +1097,17 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 disabled={
                   !cfg.configReady ||
                   (stagesGraph.length > 0 && !allDownstreamReady) ||
-                  updateProject.isPending
+                  createProjectPipeline.isPending ||
+                  applyProjectPipeline.isPending
                 }
-                title="把当前配置（含多阶段编排）保存到项目，供工作台 popover 单图执行"
+                title="把当前配置（含多阶段编排）保存为命名编排，并设为当前项目默认"
               >
                 <Icon name="save" size={12} />
-                保存为项目编排
+                保存为命名编排
               </Button>
               {savedStageCount > 0 && (
                 <>
-                  <Badge>已保存编排 · {savedStageCount} 阶段</Badge>
+                  <Badge>{savedPipelineName} · {savedStageCount} 阶段</Badge>
                   {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 工作台 popover「按编排跑」会禁用; 这里同时提示。 */}
                   {savedPipelineMissingBackendCount > 0 && (
                     <span
@@ -948,8 +1121,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                   <Button
                     variant="ghost"
                     onClick={onClearPipeline}
-                    disabled={updateProject.isPending}
-                    title="清除项目已保存的编排"
+                    disabled={updateProject.isPending || deleteProjectPipeline.isPending}
+                    title="清除项目默认命名编排；若仅有旧项目编排，则清除旧兼容列"
                   >
                     清除
                   </Button>
