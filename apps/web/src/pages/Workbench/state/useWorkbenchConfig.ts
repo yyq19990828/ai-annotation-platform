@@ -403,6 +403,9 @@ function mergeLayout(
   return {
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
+    attrPanelCollapsed:
+      merged.attrPanelCollapsed ??
+      DEFAULT_WORKBENCH_PREFERENCES.layout.attrPanelCollapsed,
     floatingTaskQueue: mergeFloatingPanel(
       DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue,
       floatingTaskQueue,

@@ -39,6 +39,9 @@ interface AIInspectorPanelProps {
   /** 受控宽度（仅 open=true 生效；列宽 handle 实际由 WorkbenchLayout 渲染）。 */
   width: number;
   onResize: (w: number) => void;
+  /** v0.20.19 · 属性区折叠态 (受控, 走 workbench.layout 持久); 缺省回落组件内会话态。 */
+  attrCollapsed?: boolean;
+  onToggleAttrCollapsed?: () => void;
   /** 列宽 handle 的像素边界与双击重置值(由 WorkbenchLayout 的 ResizeHandle 消费;随窗口宽度动态)。 */
   widthMin?: number;
   widthMax?: number;
@@ -135,13 +138,18 @@ export function AIInspectorPanel({
   floating = false,
   capabilityWarnings,
   onFillAttribute,
+  attrCollapsed: attrCollapsedProp,
+  onToggleAttrCollapsed,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
     : selectedId ? new Set([selectedId]) : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
   // 底部属性区折叠态（v0.11.28 上下分栏：属性区固定在列表下方，可折叠让出列表空间）。
-  const [attrCollapsed, setAttrCollapsed] = useState(false);
+  // v0.20.19 · 受控优先(走 workbench.layout 持久), 缺省回落组件内会话态(测试/独立使用)。
+  const [attrCollapsedLocal, setAttrCollapsedLocal] = useState(false);
+  const attrCollapsed = attrCollapsedProp ?? attrCollapsedLocal;
+  const toggleAttrCollapsed = onToggleAttrCollapsed ?? (() => setAttrCollapsedLocal((v) => !v));
   const attrMissing = selectedAnnotation && attributeSchema
     ? getMissingRequired(attributeSchema, selectedAnnotation.class_name, selectedAnnotation.attributes ?? {})
     : [];
@@ -258,7 +266,7 @@ export function AIInspectorPanel({
           <button
             type="button"
             className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
-            onClick={() => setAttrCollapsed((v) => !v)}
+            onClick={toggleAttrCollapsed}
             aria-expanded={!attrCollapsed}
             title={attrCollapsed ? "展开属性" : "折叠属性"}
           >
@@ -299,7 +307,7 @@ export function AIInspectorPanel({
           <button
             type="button"
             className="flex w-full cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-3.5 py-2 text-left text-xs font-semibold text-foreground hover:bg-muted"
-            onClick={() => setAttrCollapsed((v) => !v)}
+            onClick={toggleAttrCollapsed}
             aria-expanded={!attrCollapsed}
             title={attrCollapsed ? "展开属性审阅" : "折叠属性审阅"}
           >

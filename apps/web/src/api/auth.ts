@@ -205,6 +205,8 @@ export interface PointcloudCameraState {
 export interface WorkbenchLayoutPreferences {
   leftOpen: boolean;
   rightOpen: boolean;
+  /** v0.20.19 · 右栏「标注详情」属性区折叠态(随账号持久)。 */
+  attrPanelCollapsed: boolean;
   floatingTaskQueue: FloatingPanelState;
   floatingClassPalette: FloatingPanelState;
   floatingInspector: FloatingPanelState;
@@ -305,6 +307,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   layout: {
     leftOpen: true,
     rightOpen: true,
+    attrPanelCollapsed: false,
     floatingTaskQueue: {
       detached: false,
       x: null,

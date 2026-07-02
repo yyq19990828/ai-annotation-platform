@@ -151,17 +151,25 @@ export function useWorkbenchState() {
   const layoutTouchedRef = useRef({
     leftOpen: false,
     rightOpen: false,
+    attrPanelCollapsed: false,
   });
   const [leftOpen, setLeftOpenRaw] = useState(workbenchLayout.leftOpen);
   const [rightOpen, setRightOpenRaw] = useState(workbenchLayout.rightOpen);
+  // v0.20.19 · 右栏属性区折叠态: 走 workbench.layout 服务端偏好, 与 leftOpen/rightOpen 同套持久。
+  const [attrPanelCollapsed, setAttrPanelCollapsedRaw] = useState(
+    workbenchLayout.attrPanelCollapsed,
+  );
 
   useEffect(() => {
     if (!workbenchConfigLoaded) return;
     if (!layoutTouchedRef.current.leftOpen) setLeftOpenRaw(workbenchLayout.leftOpen);
     if (!layoutTouchedRef.current.rightOpen) setRightOpenRaw(workbenchLayout.rightOpen);
+    if (!layoutTouchedRef.current.attrPanelCollapsed)
+      setAttrPanelCollapsedRaw(workbenchLayout.attrPanelCollapsed);
   }, [
     workbenchLayout.leftOpen,
     workbenchLayout.rightOpen,
+    workbenchLayout.attrPanelCollapsed,
     workbenchConfigLoaded,
   ]);
 
@@ -179,6 +187,15 @@ export function useWorkbenchState() {
       layoutTouchedRef.current.rightOpen = true;
       setRightOpenRaw(open);
       setWorkbenchLayout({ rightOpen: open });
+    },
+    [setWorkbenchLayout],
+  );
+
+  const setAttrPanelCollapsed = useCallback(
+    (collapsed: boolean) => {
+      layoutTouchedRef.current.attrPanelCollapsed = true;
+      setAttrPanelCollapsedRaw(collapsed);
+      setWorkbenchLayout({ attrPanelCollapsed: collapsed });
     },
     [setWorkbenchLayout],
   );
@@ -332,6 +349,7 @@ export function useWorkbenchState() {
     confThreshold, setConfThreshold,
     leftOpen, setLeftOpen,
     rightOpen, setRightOpen,
+    attrPanelCollapsed, setAttrPanelCollapsed,
     workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
     workbenchLayout, setWorkbenchLayout,
     clipboard, setClipboard,

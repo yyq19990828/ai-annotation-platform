@@ -19811,6 +19811,17 @@
         "additionalProperties": false,
         "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
         "properties": {
+          "attrPanelCollapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attrpanelcollapsed"
+          },
           "cameraPanels": {
             "additionalProperties": {
               "$ref": "#/components/schemas/CameraPanelState"
@@ -20084,7 +20095,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.19"
+    "version": "0.20.20"
   },
   "openapi": "3.1.0",
   "paths": {

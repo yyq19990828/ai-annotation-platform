@@ -2478,6 +2478,9 @@ export function useWorkbenchShellModel({
     },
     inspector: {
       open: rightOpen, width: rightPx, onResize: onResizeRight, readOnly: isLocked,
+      // v0.20.19 · 属性区折叠态走 workbench.layout 服务端偏好, 选框/刷新/换设备保留。
+      attrCollapsed: s.attrPanelCollapsed,
+      onToggleAttrCollapsed: () => s.setAttrPanelCollapsed(!s.attrPanelCollapsed),
       widthMin: sidebarMinPx, widthMax: sidebarMaxPx, widthResetTo: sidebarResetPx,
       onDetach: detachInspector,
       capabilityWarnings,

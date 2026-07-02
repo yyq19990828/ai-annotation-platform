@@ -261,6 +261,40 @@ describe("AIInspectorPanel", () => {
     expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
   });
 
+  it("属性区折叠态受控: attrCollapsed 隐藏表单, 点头部调 onToggleAttrCollapsed", () => {
+    const onToggleAttrCollapsed = vi.fn();
+    const attributeSchema = {
+      fields: [{ key: "color", label: "颜色", type: "text" as const }],
+    };
+    // 走候选「属性审阅」路径 (selectedAiBox), 与「属性」区共用 attrCollapsed 控制,
+    // 且不触发 selectedAnnotation 分支的 getMissingRequired (测试 mock 未导出)。
+    const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
+    const shared = {
+      aiBoxes: [aiBox],
+      selectedId: "ai-attr",
+      attributeSchema,
+      onToggleAttrCollapsed,
+    };
+    // 折叠态: 属性表单不渲染 (头部仍在)。
+    const { rerender } = render(
+      <MemoryRouter>
+        <AIInspectorPanel {...baseProps} {...shared} attrCollapsed />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("属性审阅")).toBeInTheDocument();
+    expect(screen.queryByTestId("attribute-form")).toBeNull();
+    // 点头部 → 调受控回调 (不改本地态)。
+    fireEvent.click(screen.getByText("属性审阅"));
+    expect(onToggleAttrCollapsed).toHaveBeenCalledTimes(1);
+    // 展开态: 属性表单渲染。
+    rerender(
+      <MemoryRouter>
+        <AIInspectorPanel {...baseProps} {...shared} attrCollapsed={false} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("attribute-form")).toBeInTheDocument();
+  });
+
   it("点击驳回按钮 → 调用 onRejectPrediction + onClearSelection", () => {
     const onRejectPrediction = vi.fn();
     const onClearSelection = vi.fn();
