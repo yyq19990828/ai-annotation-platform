@@ -6,7 +6,7 @@
  * 本 hook 只负责交互线: 对每个注册后端拉 /setup 建 capIndex, 产出 isPromptSupported (并集) +
  * resolveInteractive (逐 prompt 确定性解析 + preferred 兜底) + preferred 状态/持久化。
  *
- * 设计见 docs/plans/2026-06-09-v0.14.18-ml-backend-capability-routing.md (§3/§4)。
+ * 设计见 docs/plans/archive/2026-06-09-v0.14.18-ml-backend-capability-routing.md (§3/§4)。
  * 纯路由逻辑抽成下方独立函数, 便于单测 (capIndex 构建 / resolveInteractive 三情形 / 兜底链 / reachable 降级)。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";

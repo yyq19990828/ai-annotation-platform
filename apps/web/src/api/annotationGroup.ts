@@ -1,7 +1,7 @@
 /**
  * I12 · Object Group + 批量编辑 API client.
  *
- * 端点设计见 docs/plans/2026-05-19-v0.10.19-i4-i12-i18-workbench-detail-extensions.md.
+ * 端点设计见 docs/plans/archive/2026-05-19-v0.10.19-i4-i12-i18-workbench-detail-extensions.md.
  * 所有端点要求 ids 属于同一 task (router 层强约束).
  */
 import { apiClient } from "./client";

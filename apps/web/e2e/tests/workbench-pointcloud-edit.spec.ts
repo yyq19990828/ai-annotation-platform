@@ -1,7 +1,7 @@
 /**
  * v0.16.x · 点云工作台交互断言基线(P2)—— 拆 3D 整簇前的真正守护网。
  *
- * 见 docs/plans/2026-06-17-v0.16.x-pointcloud-e2e-baseline-for-3d-split.md §1:
+ * 见 docs/plans/archive/2026-06-17-v0.16.x-pointcloud-e2e-baseline-for-3d-split.md §1:
  * 以"交互后状态断言"(GPU 无关、确定性)钉死 usePsrEditor / usePointCloudSelection
  * 拆分前后必须保持的可观测行为,而非脆弱的画布像素。覆盖:
  *   ⑥ 点选框 → 选中高亮 + PSR 数值面板出现(选择链 + 面板渲染)

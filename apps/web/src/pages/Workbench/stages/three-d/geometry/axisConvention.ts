@@ -11,7 +11,7 @@
  * `E_iso = E_src · diag(R_normᵀ, 1)` (推导见 ADR-0034 Decision §3)。
  *
  * 详细枚举语义 / 数学契约 / 反向映射 / 嗅探见 ADR-0034 与 plan
- * `docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`。
+ * `docs/plans/archive/2026-06-05-v0.13.11-lidar-axis-convention.md`。
  */
 import * as THREE from "three";
 
