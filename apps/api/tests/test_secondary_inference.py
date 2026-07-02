@@ -11,6 +11,7 @@ from __future__ import annotations
 import types
 
 import pytest
+from fastapi import HTTPException
 from PIL import Image
 
 import app.services.ml_client as ml_client_mod
@@ -291,9 +292,8 @@ async def test_geometry_unknown_class_falls_back(
 
 
 @pytest.mark.asyncio
-async def test_tiny_crop_skipped_no_products(
-    db_session, super_admin, monkeypatch, _patch_io
-):
+async def test_tiny_crop_raises_422(db_session, super_admin, monkeypatch, _patch_io):
+    """v0.20.21 · 极小框 (退化 ROI) 不再静默返回空, 改明确 422 (不伪装成没结果)。"""
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
     task = await create_task(db_session, project_id=proj.id)
@@ -312,22 +312,57 @@ async def test_tiny_crop_skipped_no_products(
 
     _patch_predict(monkeypatch, [])  # 不应被调用
 
-    updated, children = await run_secondary_inference(
-        db_session,
-        annotation=box,
-        task=task,
-        backend=_fake_backend(),
-        write_target="attributes",
-        write_keys=None,
-        label=None,
-        model_id="cls",
-        model_variants=None,
-        params=None,
-        task_type="classification",
-        prompt=None,
-        class_filter=None,
-        pad=0.08,
-        user_id=user.id,
+    with pytest.raises(HTTPException) as exc:
+        await run_secondary_inference(
+            db_session,
+            annotation=box,
+            task=task,
+            backend=_fake_backend(),
+            write_target="attributes",
+            write_keys=None,
+            label=None,
+            model_id="cls",
+            model_variants=None,
+            params=None,
+            task_type="classification",
+            prompt=None,
+            class_filter=None,
+            pad=0.08,
+            user_id=user.id,
+        )
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_non_croppable_geometry_raises_400(db_session, super_admin, monkeypatch):
+    """v0.20.21 · 门1 能转 LS shape 但门2 取不到外接框的几何 (如 polyline) → 明确 400。"""
+    # polyline 门1 → polylinelabels, 门2 _box_bbox_pct 非 rectangle/polygon → None → 400。
+    # 400 在读图 / 裁 crop 之前触发, 用 fake annotation 即可 (不落库)。
+    _patch_predict(monkeypatch, [])  # 不应被调用
+    fake_ann = types.SimpleNamespace(
+        id="ann-0001",
+        geometry={"type": "polyline", "points": [[0.2, 0.2], [0.5, 0.5], [0.7, 0.3]]},
+        class_name="lane",
+        confidence=None,
     )
-    assert children == []
-    assert updated.attributes_meta == {}
+
+    with pytest.raises(HTTPException) as exc:
+        await run_secondary_inference(
+            db_session,
+            annotation=fake_ann,
+            task=types.SimpleNamespace(id="task-0001"),
+            backend=_fake_backend(),
+            write_target="attributes",
+            write_keys=None,
+            label=None,
+            model_id="cls",
+            model_variants=None,
+            params=None,
+            task_type="classification",
+            prompt=None,
+            class_filter=None,
+            pad=0.08,
+            user_id="user-0001",
+        )
+    assert exc.value.status_code == 400
+    assert "polyline" in exc.value.detail

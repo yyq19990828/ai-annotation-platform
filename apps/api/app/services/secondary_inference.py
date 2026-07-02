@@ -22,6 +22,7 @@ from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.task import Task
 from app.services.predictions_import import internal_geometry_to_ls_shape
 from app.workers.roi import (
+    _box_bbox_pct,
     crop_inputs_from_boxes,
     merge_classify_attributes,
     remap_geometry_to_image,
@@ -118,6 +119,19 @@ async def run_secondary_inference(
             detail="selected annotation geometry is not croppable (need bbox/polygon)",
         )
 
+    # v0.20.21 · 门2 几何判据: 旋转框 / polyline / keypoint / multi_polygon 能转 LS shape
+    #   (门1 过), 但 _box_bbox_pct 取不到轴对齐外接框 → 无法作 ROI。此前静默返回空被前端
+    #   伪装成「没结果」, 这里提前明确报错并告知实际几何类型 (与批量链路 skipped_geometry 对称)。
+    if _box_bbox_pct(ls_box) is None:
+        geo_type = (annotation.geometry or {}).get("type", "unknown")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"几何类型 {geo_type!r} 无法作二次推理 ROI (仅支持轴对齐 bbox / 多边形; "
+                "旋转框 / 线 / 点 / 多连通多边形不支持)"
+            ),
+        )
+
     # 2. 读原图 (RGB) 供裁 ROI。
     image = _load_task_image(task)
 
@@ -139,8 +153,12 @@ async def run_secondary_inference(
         min_crop_side_px=32,
     )
     if not batch.inputs:
-        # crop 被守卫跳过 (框太小 / 贴边退化) → 无产物, 原框不变。
-        return annotation, []
+        # v0.20.21 · 几何已判可裁 (上面门2 通过), 此处 inputs 空只可能是 crop 退化:
+        #   框太小 (短边 < min_crop_side_px=32) 或贴边裁出零面积。明确报错, 不再静默返回空。
+        raise HTTPException(
+            status_code=422,
+            detail="选中框过小或贴边, 裁出的 ROI 退化, 无法二次推理 (可放大框或改选更大的对象)",
+        )
 
     # 4. 构造发往 backend 的 context (与批量下游同一纯函数)。
     context = _build_predict_context(

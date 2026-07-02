@@ -1038,3 +1038,40 @@ async def test_route_mixed_pipeline_to_gpu_queue(
     )
     assert resp.status_code == 200, resp.text
     assert _mock_celery["queue"] == "ml"
+
+
+@pytest.mark.asyncio
+async def test_reject_parent_geometry_not_roi_capable(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    """v0.20.21 · 源阶段模型只输出 keypoint (非 bbox/polygon) → 下游无法按其框裁 ROI → 422。
+
+    与「下游能否吃框」门对称的上游产出几何校验。校验需源阶段有能力快照且顶层带 model_id。
+    """
+    owner, token = super_admin
+    proj, detect, classify, batch = await _seed(db_session, owner.id)
+    # 源阶段 detect 自报只产 keypoint (不可作 ROI 外接框)。
+    detect.health_meta = {
+        "capabilities": {
+            "models": [
+                {
+                    "id": "detect",
+                    "task": "keypoint",
+                    "supported_geometric_outputs": ["keypoint"],
+                }
+            ]
+        }
+    }
+    await db_session.commit()
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(detect.id),
+            "model_id": "detect",
+            "batch_id": str(batch.id),
+            "pipeline_stages": _stages(detect.id, classify.id),
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert "ROI" in resp.text
