@@ -287,6 +287,10 @@ class AIToolPreferences(BaseModel):
     # localStorage(wb:preferred-interactive)不跨设备 = BUG; 现迁服务端与 model/params 对齐
     # (深合并故三键各自独立保存)。注: 按 project 分桶, 与 model 选择按 backend 分桶是有意区别。
     interactive_backend_by_project: dict[str, str] = Field(default_factory=dict)
+    # v0.20.17 · 单框二次推理的参数 + 模型变体偏好, 按 `backendId:modelId` 分桶(比 backend
+    # 更细: 二次推理选具体 model, 同 backend 多 model 的档位/阈值不互相串)。每桶为自由 dict
+    # {params: {...}, variants: {...}}, 平台只存取不强校验(随模型 schema 变化, 旧键无害忽略)。
+    secondary_by_model: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class UIPreferences(BaseModel):

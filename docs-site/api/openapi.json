@@ -72,6 +72,14 @@
             },
             "title": "Params By Backend",
             "type": "object"
+          },
+          "secondary_by_model": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Secondary By Model",
+            "type": "object"
           }
         },
         "title": "AIToolPreferences",
@@ -20071,7 +20079,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.11"
+    "version": "0.20.17"
   },
   "openapi": "3.1.0",
   "paths": {

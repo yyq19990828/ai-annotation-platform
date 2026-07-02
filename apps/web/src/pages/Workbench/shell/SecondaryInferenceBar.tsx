@@ -6,10 +6,13 @@
 // 无可跑能力时不渲染 (不占位)。
 // v0.20.16-ui · 借鉴 InteractiveToolBar 悬浮面板: 能力用按 task 分组的 <select> 收成一个下拉
 // (取代平铺一大坨按钮), 选中项旁给 ⚙ 参数 / ⚠ 补字段, 右侧「运行」。有参数时下方展开 SchemaForm。
-import { useState } from "react";
+// v0.20.17 · 几何能力加模型档位下拉 (复用交互条 VariantSelector); 参数 + 变体按 backendId:modelId
+// 持久化到用户偏好 (useSecondaryParamPrefs), 切框/刷新/换设备保留上次值。
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
+import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { AttributeField } from "@/api/projects";
 import type { AnnotationResponse } from "@/types";
 import { displayClassName } from "../stage/colors";
@@ -26,6 +29,7 @@ import {
   useSecondaryCapabilities,
   type SecondaryCapability,
 } from "../state/useSecondaryInference";
+import { useSecondaryParamPrefs } from "../state/useSecondaryParamPrefs";
 
 interface Props {
   projectId: string | undefined;
@@ -39,7 +43,8 @@ interface Props {
 }
 
 // 与 InteractiveToolBar 同款样式常量, 保持悬浮面板视觉一致。
-const FIELD_LABEL_CLASS = "text-2xs text-muted-foreground";
+// whitespace-nowrap + shrink-0: 标签不被 flex 挤压逐字竖排, 面板按内容自适应加宽。
+const FIELD_LABEL_CLASS = "shrink-0 whitespace-nowrap text-2xs text-muted-foreground";
 const SELECT_CLASS =
   "appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground";
 const DIVIDER = <span aria-hidden className="h-5 w-px bg-border" />;
@@ -100,7 +105,41 @@ export function SecondaryInferenceBar({
   const [paramsByKey, setParamsByKey] = useState<
     Record<string, Record<string, unknown>>
   >({});
+  // v0.20.17 · 每能力已选的模型变体档位 (series/size 等); 与 default_variants 合并成实际下发档位。
+  const [variantByKey, setVariantByKey] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
   const [paramsOpen, setParamsOpen] = useState(false);
+  // v0.20.17 · 用户级偏好 (按 backendId:modelId): 参数 + 变体跨框/跨设备记住。
+  const { byModel, loaded: prefsLoaded, save: savePref } =
+    useSecondaryParamPrefs();
+
+  // 偏好载入后, 把存过的 params/variants 灌进组件 state (仅未触碰的键, 不覆盖当前编辑)。
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    setParamsByKey((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [k, entry] of Object.entries(byModel)) {
+        if (!(k in next) && entry.params) {
+          next[k] = entry.params;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setVariantByKey((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [k, entry] of Object.entries(byModel)) {
+        if (!(k in next) && entry.variants) {
+          next[k] = entry.variants;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [prefsLoaded, byModel]);
 
   if (readOnly || capabilities.length === 0) return null;
 
@@ -131,7 +170,11 @@ export function SecondaryInferenceBar({
     try {
       const resp = await run.mutateAsync({
         annotationId: annotation.id,
-        body: buildSecondaryInferencePayload(cap, paramsByKey[key]),
+        body: buildSecondaryInferencePayload(
+          cap,
+          paramsByKey[key],
+          variantByKey[key],
+        ),
       });
       const childCount = resp.created_children.length;
       const attrKeys = Object.keys(resp.annotation.attributes_meta ?? {});
@@ -178,8 +221,8 @@ export function SecondaryInferenceBar({
     >
       <div className="flex items-center gap-2.5">
         {/* 标题 */}
-        <div className="flex items-center gap-1.5">
-          <b className="text-xs">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <b className="whitespace-nowrap text-xs">
             <span className="text-brand">✦</span> 二次推理
           </b>
           <span className={FIELD_LABEL_CLASS}>
@@ -214,6 +257,22 @@ export function SecondaryInferenceBar({
             ))}
           </select>
           <span className={FIELD_LABEL_CLASS}>{TARGET_HINT[selected.writeTarget]}</span>
+          {/* v0.20.17 · 几何能力的模型档位下拉 (复用交互条同款紧凑变体选择器);
+              无变体轴时 VariantSelector 自返 null 不占位。 */}
+          {selected.writeTarget === "geometry" && (
+            <VariantSelector
+              compact
+              supportedVariants={selected.model.supported_variants}
+              variantCombinations={selected.model.variant_combinations}
+              defaults={selected.model.default_variants ?? {}}
+              value={variantByKey[selKey] ?? {}}
+              disabled={busy}
+              onChange={(next) => {
+                setVariantByKey((prev) => ({ ...prev, [selKey]: next }));
+                savePref(selKey, { variants: next });
+              }}
+            />
+          )}
           {canParams && (
             <button
               type="button"
@@ -263,9 +322,10 @@ export function SecondaryInferenceBar({
           <SchemaForm
             schema={selected.model.params as JsonSchemaObject}
             value={paramsByKey[selKey] ?? {}}
-            onChange={(next) =>
-              setParamsByKey((prev) => ({ ...prev, [selKey]: next }))
-            }
+            onChange={(next) => {
+              setParamsByKey((prev) => ({ ...prev, [selKey]: next }));
+              savePref(selKey, { params: next });
+            }}
             disabled={busy}
           />
         </div>

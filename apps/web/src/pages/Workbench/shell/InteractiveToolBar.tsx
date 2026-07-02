@@ -21,7 +21,8 @@ import type { TextOutputMode } from "../state/useInteractiveAI";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 
-const FIELD_LABEL_CLASS = "text-2xs text-muted-foreground";
+// whitespace-nowrap + shrink-0: 标签不被 flex 挤压逐字竖排, 面板按内容自适应加宽。
+const FIELD_LABEL_CLASS = "shrink-0 whitespace-nowrap text-2xs text-muted-foreground";
 const SELECT_CLASS =
   "appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground";
 
@@ -213,9 +214,9 @@ export function InteractiveToolBar({
       {/* 主行: 标题 + 引擎 + 工具控件 + 状态 (横排) */}
       <div className="flex items-center gap-2.5">
         {/* 标题 */}
-        <div className="flex items-center gap-1.5" title={hint ?? undefined}>
+        <div className="flex shrink-0 items-center gap-1.5" title={hint ?? undefined}>
           <Icon name={meta.icon} size={13} />
-          <b className="text-xs">{meta.label}</b>
+          <b className="whitespace-nowrap text-xs">{meta.label}</b>
         </div>
 
         {DIVIDER}

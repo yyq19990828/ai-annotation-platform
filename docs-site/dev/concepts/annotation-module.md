@@ -152,7 +152,9 @@ graph TD
 - **产物归位**：`write_target="attributes"` → 分类 / OCR 属性 union 回原框，写入键标 `attributes_meta.origin=ai`；`write_target="geometry"` → crop 检出几何回映回原图坐标后建**子框**（`parent_annotation_id=选中框`，`source=prediction_based`）。子检出类名不在项目标签集时回落 `__unknown`（不丢框，NG6 平台不做类映射）。
 - 前端入口是画布顶部 `SecondaryInferenceBar`（选中单框时显），`useSecondaryInference` 跨启用 backend 枚举 `supported_inputs` 含 `crop` 的非交互模型、派生 `write_target`（检测→geometry / 分类·OCR→attributes）。UI 借鉴 `InteractiveToolBar` 悬浮面板：能力收成一个按 task 分组的 `<select>`（`<optgroup>`），选中项旁挂 ⚙ 参数 / ⚠ 补字段，右侧「运行」。
 - **属性可见性闭合**：`AttributeForm` 只渲染项目 `attribute_schema` 里的键，故 attributes-型能力若输出项目没配的属性键，产物会写库却不显示。`SecondaryInferenceBar` 用 `missingAttributeFields` 比对能力输出键与项目已有键（`projectAttributeKeys`），缺则在能力旁给「补 N 字段」CTA，复用工作台的属性字段补全 `applyAttributeFields`（`handleEnsureAttributeFields`，带 `window.confirm`）一次补进所有启用工具单位。
-- **参数控制**：能力若有可调推理参数（`hasConfigurableParams`：`params.properties` 除变体字段外还有字段），旁边给 ⚙，展开用与批量预标同一套 `SchemaForm` 渲染参数面板，初值取 `deriveDefaults`；调过的参数经 `buildSecondaryInferencePayload` 的 `params` 透传到后端 `_build_predict_context`。不调则沿用模型默认。
+- **参数控制**：能力若有可调推理参数（`hasConfigurableParams`：`params.properties` 除变体字段外还有字段），旁边给 ⚙，展开用与批量预标同一套 `SchemaForm` 渲染参数面板，初值取用户偏好 → `deriveDefaults`；调过的参数经 `buildSecondaryInferencePayload` 的 `params` 透传到后端 `_build_predict_context`。不调则沿用模型默认。
+- **模型档位（变体）选择**：几何类能力（`write_target=geometry`）在能力下拉旁挂 `VariantSelector`（`compact`，与 `InteractiveToolBar` 同款），列该模型 `supported_variants` 的 series/size 等轴；用户所选经 `buildSecondaryInferencePayload` 与模型 `default_variants` 合并（所选覆盖、缺轴回落默认）成 `model_variants` 下发。属性类能力走扁平路径，`model_variants=null`，不显示档位。
+- **参数 + 档位持久化**：`useSecondaryParamPrefs` 把参数与档位按 `backendId:modelId` 存进 `User.preferences.ai.secondary_by_model`（比 backend 更细，避免同 backend 多 model 串味），debounce 保存、`ai` 子树后端深合并，与 `useAiToolParamPrefs` 同范式；切框 / 刷新 / 换设备保留上次值，保存失败静默降级为组件内 state。
 
 ### `AnnotationDraft`
 

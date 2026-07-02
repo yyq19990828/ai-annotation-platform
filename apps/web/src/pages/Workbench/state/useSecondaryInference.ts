@@ -150,13 +150,28 @@ export function missingAttributeFields(
   return out;
 }
 
+/** 模型默认档位叠加用户所选 (只取 string 值; 缺轴回落默认), 产出协议 v2 的 model_variants。 */
+function mergeVariants(
+  defaults: Record<string, string> | null | undefined,
+  picked: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = { ...(defaults ?? {}) };
+  for (const [k, v] of Object.entries(picked ?? {})) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
 /**
  * 把一个能力 + 目标框拼成 secondary-inference 请求。
  * `params` 为用户在参数面板 (SchemaForm) 调过的推理参数 (阈值等); 空则不带 (后端用模型默认)。
+ * `variants` 为用户在变体下拉选过的模型档位 (series/size 等); 与模型默认档位合并 (用户所选覆盖),
+ *   缺则回落模型 default_variants。仅几何能力走 model_variants (分类/OCR 扁平路径恒 null)。
  */
 export function buildSecondaryInferencePayload(
   cap: SecondaryCapability,
   params?: Record<string, unknown>,
+  variants?: Record<string, unknown>,
 ): SecondaryInferenceRequest {
   const m = cap.model;
   // attributes: 只取 backend 声明的输出属性键; 空 → null (=全取, 别发空数组致后端过滤成空)。
@@ -168,8 +183,11 @@ export function buildSecondaryInferencePayload(
     write_target: cap.writeTarget,
     model_id: m.id,
     // 几何 backend (yolo/onnxtools) 走协议 v2 需 model_variants (非 null); 分类/OCR 扁平路径 null。
+    // 用户所选档位覆盖模型默认 (缺轴回落默认), 与交互条 interactiveVariantSlice 同语义。
     model_variants:
-      cap.writeTarget === "geometry" ? (m.default_variants ?? {}) : null,
+      cap.writeTarget === "geometry"
+        ? mergeVariants(m.default_variants, variants)
+        : null,
     task_type: m.task ?? null,
     write_keys:
       cap.writeTarget === "attributes" && attrKeys.length > 0 ? attrKeys : null,

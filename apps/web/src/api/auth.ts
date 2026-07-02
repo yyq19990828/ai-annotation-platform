@@ -220,12 +220,17 @@ export interface WorkbenchLayoutPreferences {
  * - params_by_backend: 推理参数（按 backend；不同后端参数 schema 不同）。
  * - model_by_backend (v0.18.25): 交互工具的引擎(模型)选择（按 backend）。
  * - interactive_backend_by_project (v0.18.31): 交互后端(引擎)选择（按 project）。
+ * - secondary_by_model (v0.20.17): 单框二次推理的参数 + 模型变体（按 `backendId:modelId`）。
  * 各 writer 只提交自己那一子键，故皆可选。
  */
 export interface AIToolPreferences {
   params_by_backend?: Record<string, Record<string, unknown>>;
   model_by_backend?: Record<string, string>;
   interactive_backend_by_project?: Record<string, string>;
+  secondary_by_model?: Record<
+    string,
+    { params?: Record<string, unknown>; variants?: Record<string, unknown> }
+  >;
 }
 
 /** v0.15.25 · 主题偏好:light/dark 固定，system 跟随 OS prefers-color-scheme。 */

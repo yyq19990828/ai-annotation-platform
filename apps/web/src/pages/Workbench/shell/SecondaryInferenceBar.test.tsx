@@ -96,6 +96,39 @@ describe("SecondaryInferenceBar", () => {
     expect(getByTestId("secondary-run")).toBeTruthy();
   });
 
+  it("几何能力有变体轴 → 渲染档位下拉; 属性能力 → 无", () => {
+    capabilitiesRef.current = [
+      attrCap(),
+      {
+        backendId: "be-2",
+        backendName: "yolo",
+        model: model({
+          id: "det",
+          display_name: "车牌检测",
+          task: "detection",
+          supported_variants: [
+            {
+              key: "size",
+              variants: [{ value: "s" }, { value: "l" }],
+            },
+          ] as MLModelCapability["supported_variants"],
+        }),
+        writeTarget: "geometry",
+        label: "车牌检测",
+      },
+    ];
+    const { getByTestId, queryByTestId } = render(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+    );
+    // 默认选中首个 (属性能力) → 无档位下拉。
+    expect(queryByTestId("ai-variant-size")).toBeNull();
+    // 切到几何能力 → 出现档位下拉。
+    fireEvent.change(getByTestId("secondary-cap-select"), {
+      target: { value: "be-2:det" },
+    });
+    expect(getByTestId("ai-variant-size")).toBeTruthy();
+  });
+
   it("选几何能力后运行 → 调 run + 新增子框 toast", async () => {
     capabilitiesRef.current = [attrCap(), geomCap()];
     mutateAsync.mockResolvedValue({

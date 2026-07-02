@@ -77,4 +77,27 @@ describe("buildSecondaryInferencePayload", () => {
     expect(buildSecondaryInferencePayload(c, {}).params).toBeNull();
     expect(buildSecondaryInferencePayload(c).params).toBeNull();
   });
+
+  it("variants: 用户所选档位覆盖模型默认 (缺轴回落默认)", () => {
+    const c = cap(
+      { id: "yolo-det", task: "detection", default_variants: { series: "yolo11", size: "l" } },
+      "geometry",
+    );
+    // 用户只改 size, series 保留默认。
+    expect(
+      buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
+    ).toEqual({ series: "yolo11", size: "s" });
+    // 未传 variants → 纯默认。
+    expect(buildSecondaryInferencePayload(c).model_variants).toEqual({
+      series: "yolo11",
+      size: "l",
+    });
+  });
+
+  it("variants: attributes 能力恒 null (不走 model_variants)", () => {
+    const c = cap({ id: "cls", task: "classification" }, "attributes");
+    expect(
+      buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
+    ).toBeNull();
+  });
 });
