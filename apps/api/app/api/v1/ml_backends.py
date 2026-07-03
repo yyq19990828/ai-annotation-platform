@@ -27,7 +27,7 @@ from app.schemas.ml_backend import (
 from app.services.ml_backend import MLBackendService
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
-from app.services.prediction import PredictionService, to_internal_shape
+from app.services.prediction import PredictionService, to_video_bbox_result
 from app.services.storage import StorageService
 from app.services.audit import AuditService
 
@@ -59,46 +59,6 @@ def _resolve_task_url(task: Task) -> str:
     bucket = storage.datasets_bucket if task.dataset_item_id else storage.bucket
     url = storage.generate_download_url(task.file_path, bucket=bucket)
     return storage.rewrite_host_for_ml_backend(url)
-
-
-def _to_video_bbox_result(raw_result: list[dict], frame_index: int) -> list[dict]:
-    """v0.21.4 · 图像 backend 检测结果 (LS 标准 shape) → 单帧 ``video_bbox`` 内部几何。
-
-    复用 ``to_internal_shape`` 把 ``rectanglelabels`` 归一到 0-1 的 bbox (内含 ``_percent_scale``
-    自动兼容 backend 的 0-1 / 0-100 两种口径, 与图像检测候选完全同源), 再套一层 ``frame_index``
-    改写成 ``video_bbox``。**只收 bbox 几何** (Phase 1 scope = 检测框 → VideoBboxGeometry);
-    非 bbox (旋转框 / polygon / keypoint 等) 跳过——视频单帧几何目前只有 ``video_bbox``。
-
-    ``VideoBboxGeometry`` 是 ``extra="forbid"``: geometry dict 只放 ``type/frame_index/x/y/w/h``;
-    ``class_name`` / ``confidence`` 放在 result item 顶层 (accept 从顶层读 ``type`` 决定
-    annotation_type, 见 ``services/annotation.py``)。
-    """
-    out: list[dict] = []
-    for raw in raw_result:
-        if not isinstance(raw, dict):
-            continue
-        shape = to_internal_shape(raw)
-        geom = shape.get("geometry") or {}
-        if geom.get("type") != "bbox":
-            continue
-        out.append(
-            {
-                "type": "video_bbox",
-                "class_name": shape.get("class_name", "") or "",
-                "confidence": shape.get("confidence", 0.0),
-                "geometry": {
-                    "type": "video_bbox",
-                    "frame_index": frame_index,
-                    "x": geom["x"],
-                    "y": geom["y"],
-                    "w": geom["w"],
-                    "h": geom["h"],
-                },
-                "tool_unit_id": "bbox",
-                "attributes": shape.get("attributes") or {},
-            }
-        )
-    return out
 
 
 @router.post("", response_model=MLBackendOut, status_code=201)
@@ -702,7 +662,7 @@ async def predict_frame(
     for r in results:
         if isinstance(r.result, list):
             raw_shapes.extend(r.result)
-    video_shapes = _to_video_bbox_result(raw_shapes, frame_index)
+    video_shapes = to_video_bbox_result(raw_shapes, frame_index)
 
     score = next((r.score for r in results if r.score is not None), None)
     pred_svc = PredictionService(db)

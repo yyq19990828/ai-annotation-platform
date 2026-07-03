@@ -330,6 +330,49 @@ def to_internal_shape(s: dict) -> dict:
     }
 
 
+def to_video_bbox_result(raw_result: list[dict], frame_index: int) -> list[dict]:
+    """v0.21.4 / v0.21.7 · 图像 backend 检测结果 (LS 标准 shape) → 单帧 ``video_bbox`` 内部几何。
+
+    复用 ``to_internal_shape`` 把 ``rectanglelabels`` 归一到 0-1 的 bbox (内含 ``_percent_scale``
+    自动兼容 backend 的 0-1 / 0-100 两种口径, 与图像检测候选完全同源), 再套一层 ``frame_index``
+    改写成 ``video_bbox``。**只收 bbox 几何**——非 bbox (旋转框 / polygon / keypoint 等) 跳过,
+    视频单帧几何目前只有 ``video_bbox``。
+
+    ``VideoBboxGeometry`` 是 ``extra="forbid"``: geometry dict 只放 ``type/frame_index/x/y/w/h``;
+    ``class_name`` / ``confidence`` 放在 result item 顶层 (accept 从顶层读 ``type`` 决定
+    annotation_type, 见 ``services/annotation.py``)。
+
+    v0.21.4 单帧工作台 (ml_backends.predict-frame) 与 v0.21.7 逐帧批量 fan-out (workers 段任务)
+    共用这一个 reshaper —— 故从 API 模块提升到 services 层, 两侧同源。
+    """
+    out: list[dict] = []
+    for raw in raw_result:
+        if not isinstance(raw, dict):
+            continue
+        shape = to_internal_shape(raw)
+        geom = shape.get("geometry") or {}
+        if geom.get("type") != "bbox":
+            continue
+        out.append(
+            {
+                "type": "video_bbox",
+                "class_name": shape.get("class_name", "") or "",
+                "confidence": shape.get("confidence", 0.0),
+                "geometry": {
+                    "type": "video_bbox",
+                    "frame_index": frame_index,
+                    "x": geom["x"],
+                    "y": geom["y"],
+                    "w": geom["w"],
+                    "h": geom["h"],
+                },
+                "tool_unit_id": "bbox",
+                "attributes": shape.get("attributes") or {},
+            }
+        )
+    return out
+
+
 def _remap_track_ids(result: list[dict]) -> list[dict]:
     """v0.21.1 · 检测式追踪 result item 的原生 int ``track_id`` → ``trk_<uuid>`` (ingestion
     一次性映射)。

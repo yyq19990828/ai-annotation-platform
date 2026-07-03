@@ -1769,6 +1769,14 @@ async def trigger_preannotation(
         (s or {}).get("task_type") == "tracker"
         for s in (pipeline_stages_payload or [])
     )
+    # v0.21.7 · 逐帧执行单位: 从源阶段(stage 0)的 source.execution_unit 提取 (norm 丢弃了 source,
+    #   故从原始 body.pipeline_stages 取)。frame → worker 走二级 fan-out 逐帧跑图像 backend。
+    #   execution_unit 是整任务迭代粒度、非 per-stage, 故作 batch_predict 顶层参数。
+    execution_unit: str | None = None
+    if body.pipeline_stages:
+        src_stage = next((s for s in body.pipeline_stages if s.stage == 0), None)
+        if src_stage is not None and src_stage.source:
+            execution_unit = (src_stage.source or {}).get("execution_unit")
     apply_opts: dict = {"queue": queue}
     if has_tracker_stage:
         apply_opts["soft_time_limit"] = settings.tracker_soft_time_limit_seconds
@@ -1793,6 +1801,8 @@ async def trigger_preannotation(
             "class_filter": body.class_filter,
             # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
             "pipeline_stages": pipeline_stages_payload,
+            # v0.21.7 · 执行单位 (video/frame/scene): frame → 逐帧 fan-out。缺省=整段/逐题。
+            "execution_unit": execution_unit,
         },
         **apply_opts,
     )

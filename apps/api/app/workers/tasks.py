@@ -494,6 +494,7 @@ async def _run_batch(
     model_variants: dict | None = None,
     class_filter: list[int] | None = None,
     pipeline_stages: list[dict] | None = None,
+    execution_unit: str | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
 
@@ -1025,6 +1026,7 @@ def batch_predict(
     model_variants: dict | None = None,
     class_filter: list[int] | None = None,
     pipeline_stages: list[dict] | None = None,
+    execution_unit: str | None = None,
 ):
     asyncio.run(
         _run_batch(
@@ -1043,5 +1045,6 @@ def batch_predict(
             model_variants=model_variants,
             class_filter=class_filter,
             pipeline_stages=pipeline_stages,
+            execution_unit=execution_unit,
         )
     )
