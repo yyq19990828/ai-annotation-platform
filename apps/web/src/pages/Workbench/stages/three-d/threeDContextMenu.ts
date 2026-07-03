@@ -18,7 +18,7 @@ export interface ThreeDBoxContextMenuArgs {
   hasClipboard: boolean;
   /** scene 任务才有邻帧,可延续。 */
   canPropagate: boolean;
-  /** 选中框已建跨帧链(group_id != null)才能插值填充。 */
+  /** 选中框已建跨帧链(track_id != null)才能插值填充。 */
   canInterpolate: boolean;
   onPropagateNext: () => void;
   onPropagatePrev: () => void;

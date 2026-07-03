@@ -6,7 +6,7 @@
 // navigateToCrossFrameTask(绑组件导航原语)作参数传入。逐字搬运,行为零变化。
 //
 // 守护手段(诚实标注):jsdom 测不到 ref 竞态时序,靠人工冒烟 ——
-// 连按 Shift+→ 验证邻帧不重复建标注(同 group_id)、导航后自动补选新框。
+// 连按 Shift+→ 验证邻帧不重复建标注(同 track_id)、导航后自动补选新框。
 import { useCallback, useEffect, useRef } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
@@ -35,7 +35,7 @@ export function usePredictionPropagation({
     annotationId: string;
   } | null>(null);
   // v0.14.1 · 并发/重复触发守卫: 按住 Alt+→ auto-repeat 或快速连按时, 防止并发
-  // 多个 propagate POST 在目标帧造出共享同一新 group_id 的重复 annotation。
+  // 多个 propagate POST 在目标帧造出共享同一新 track_id 的重复 annotation。
   const crossFrameInFlightRef = useRef(false);
   // v0.15.1 · "scene 无 ego 轨迹,未做运动补偿" 每会话只轻提示一次,避免逐帧刷 toast。
   const motionCompWarnedRef = useRef(false);
@@ -117,7 +117,7 @@ export function usePredictionPropagation({
           queryClient.invalidateQueries({
             queryKey: ["annotations", resolution.taskId],
           });
-          // 源 task 框可能刚被分配 group_id, 失效让本帧高亮同步。
+          // 源 task 框可能刚被分配 track_id, 失效让本帧高亮同步。
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
           settleCrossFrameTarget(taskId, {
             taskId: resolution.taskId,

@@ -35,7 +35,8 @@ function shapeLabelText(b: Annotation, isAi: boolean, content: AnnotationVisualC
   return buildLabelText(
     {
       className: displayClassName(b.cls),
-      instanceId: b.group_id ?? null,
+      // v0.21.3 · 编组下线后图片框无实例序号 (原读 group_id); 跨帧实例身份走 track_id, 不入此标签。
+      instanceId: null,
       confidence: b.conf,
       attributes: (b as { attributes?: Record<string, unknown> }).attributes ?? null,
       sourcePrefix: isAi ? `✦ ${predictionSourceLabel(predictionSource)} ` : undefined,

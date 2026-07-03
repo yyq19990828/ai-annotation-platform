@@ -690,7 +690,7 @@ export function ThreeDWorkbench({
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
       // v0.14.1 · 阻断按住 Shift+→ 的 auto-repeat: 否则连发多个 propagate POST,
-      // 在目标帧造出共享同一新 group_id 的重复 annotation。
+      // 在目标帧造出共享同一新 track_id 的重复 annotation。
       if (e.repeat) return;
       if (!e.shiftKey || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
       const t = e.target as HTMLElement | null;
@@ -1743,7 +1743,7 @@ export function ThreeDWorkbench({
     ].map((n) => ({ taskId: n.task_id, frameIndex: n.frame_index }));
   }, [pointOverlayActive, neighborsData, pointOverlayK]);
   // v0.15.23 · §C.8-A align 模式:把落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标
-  // 补偿,真·消除拖影)。需邻帧「全部」框(按 group_id 与当前帧框配对),独立于框叠加
+  // 补偿,真·消除拖影)。需邻帧「全部」框(按 track_id 与当前帧框配对),独立于框叠加
   // (overlayK)且 scope 恒为 all;仅 align 时拉取,避免无谓请求。
   const alignActive = pointOverlayActive && neighborPointCull === "align";
   const { byTask: alignAnnsByTask } = useNeighborAnnotations(

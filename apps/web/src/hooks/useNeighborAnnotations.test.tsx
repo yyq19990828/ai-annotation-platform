@@ -28,8 +28,8 @@ function makeWrapper() {
   );
 }
 
-function ann(id: string, group_id: number | null) {
-  return { id, task_id: "x", group_id, geometry: { type: "box_3d" } } as any;
+function ann(id: string, track_id: string | null) {
+  return { id, task_id: "x", track_id, geometry: { type: "box_3d" } } as any;
 }
 
 describe("useNeighborAnnotations", () => {
@@ -54,8 +54,8 @@ describe("useNeighborAnnotations", () => {
       scene_id: "s1",
       frame_index: 2,
       frames: [
-        { task_id: "t1", frame_index: 1, annotations: [ann("a1", 5)] },
-        { task_id: "t2", frame_index: 3, annotations: [ann("b1", 5), ann("b2", 5)] },
+        { task_id: "t1", frame_index: 1, annotations: [ann("a1", "trk_5")] },
+        { task_id: "t2", frame_index: 3, annotations: [ann("b1", "trk_5"), ann("b2", "trk_5")] },
       ],
     });
     const { result } = renderHook(
@@ -68,7 +68,7 @@ describe("useNeighborAnnotations", () => {
     expect(result.current.byTask["t2"].map((a) => a.id)).toEqual(["b1", "b2"]);
   });
 
-  it("scope=all 时 groupId=null 仍发请求(回全部)", async () => {
+  it("scope=all 时 trackId=null 仍发请求(回全部)", async () => {
     mockGet.mockResolvedValue({ scene_id: "s1", frame_index: 2, frames: [] });
     renderHook(() => useNeighborAnnotations("t0", 3, null, true), {
       wrapper: makeWrapper(),

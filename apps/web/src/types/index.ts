@@ -386,8 +386,6 @@ export interface Annotation extends AIBox {
   occluded?: boolean;
   // 乐观创建时用于稳定 React/Konva key 的前端内部字段；真实业务 id 仍使用 id。
   render_key?: string;
-  // I12 · Object Group; 同 task 内 group_id 相同的多框为一组 (Ctrl+G 形成).
-  group_id?: number | null;
   // v0.20.9 · 父子标注; 指向父框 id (仅一层)。null / 缺省为顶层框。侧栏据此缩进呈现。
   parent_annotation_id?: string | null;
   // v0.18.0 · 落库标注的属性字典(透传供画布标签「标签内容·属性」渲染)。
@@ -431,8 +429,6 @@ export interface AnnotationResponse {
   z_order?: number;
   is_locked?: boolean;
   is_hidden?: boolean;
-  // I12 · Object Group; null 表示未分组.
-  group_id?: number | null;
   // v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (trk_<hex>); 3D 跨帧插值/高亮据此认链.
   track_id?: string | null;
   version?: number;

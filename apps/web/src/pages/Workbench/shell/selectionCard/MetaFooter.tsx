@@ -13,7 +13,6 @@ export interface MetaFooterProps {
   createdAt?: string | null;
   updatedAt?: string | null;
   zOrder?: number;
-  groupId?: number | null;
   /** 各端补充行(如模型名 / 候选序号)。 */
   extra?: MetaFooterRow[];
 }
@@ -49,7 +48,7 @@ const ROW_VALUE_CLASS = "truncate text-xs text-muted-foreground";
 
 /**
  * v0.16.14 · 选中信息卡 · 可折叠次要信息(默认收起)。
- * ID 短码 / 来源 / 创建·更新时间 / z-order / 分组,各端可经 extra 追加行。
+ * ID 短码 / 来源 / 创建·更新时间 / z-order,各端可经 extra 追加行。
  * 用原生 details/summary,无 JS 状态、键盘可达;无任何行时不渲染。
  */
 export function MetaFooter({
@@ -58,7 +57,6 @@ export function MetaFooter({
   createdAt,
   updatedAt,
   zOrder,
-  groupId,
   extra,
 }: MetaFooterProps) {
   const rows: MetaFooterRow[] = [{ label: "ID", value: shortId(id), mono: true }];
@@ -66,7 +64,6 @@ export function MetaFooter({
   if (createdAt) rows.push({ label: "创建", value: formatTime(createdAt), mono: true });
   if (updatedAt) rows.push({ label: "更新", value: formatTime(updatedAt), mono: true });
   if (typeof zOrder === "number") rows.push({ label: "层级", value: `${zOrder}`, mono: true });
-  if (typeof groupId === "number") rows.push({ label: "分组", value: `#${groupId}`, mono: true });
   if (extra?.length) rows.push(...extra);
 
   return (
