@@ -231,8 +231,10 @@ def build_nuscenes_frame_records(
                         "description": "",
                     },
                 )
-            group_id = getattr(ann, "group_id", None)
-            instance_key = f"{ann.class_name}-{group_id}" if group_id else str(ann.id)
+            # v0.21.2 · ADR-0045 · 跨帧同一对象 instance 归并按 track_id (原 group_id);
+            # 无 track_id 的孤立框退化为按 annotation id 各自成 instance。
+            track_id = getattr(ann, "track_id", None)
+            instance_key = f"{ann.class_name}-{track_id}" if track_id else str(ann.id)
             instance_token = f"instance-{instance_key}"
             instances.setdefault(
                 instance_token,
