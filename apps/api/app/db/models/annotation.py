@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    BigInteger,
     Integer,
     String,
     Float,
@@ -46,13 +45,9 @@ class Annotation(Base):
     parent_annotation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("annotations.id")
     )
-    # I12 · 同 task 内分组序号; 与 parent_annotation_id 正交.
-    # parent 表"车牌属于车"层级语义, group_id 表"平等成员同组" (Ctrl+G 形成).
-    # 数值来源: tasks.next_group_seq 自增序号.
-    group_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (几何类型无关), 格式 trk_<uuid.hex>.
-    # 权威落点 (原分裂: video geometry 内 track_id + box_3d 借 group_id>=1e9). 单一工厂
-    # _new_track_id() 产出; propagate/interpolate/导出/3D 前端统一读本列.
+    # 权威落点 (原分裂: video geometry 内 track_id + box_3d 借 group_id>=1e9, 编组下线后
+    # group_id 列已删). 单一工厂 _new_track_id() 产出; propagate/interpolate/导出/3D 前端统一读本列.
     track_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     lead_time: Mapped[float | None] = mapped_column(Float)
     was_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)

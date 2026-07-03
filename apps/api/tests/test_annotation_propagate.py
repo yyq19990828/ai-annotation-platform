@@ -1,9 +1,9 @@
 """v0.14.1 · 跨帧 propagate 复制语义 + axis_convention + 权限/边界
 
 覆盖判据(plan §1.4 判据 1 / §3.4):
-- box_3d 复制 geometry/class/attributes + 共享 group_id(源无则从全局序列分配并写回)
+- box_3d 复制 geometry/class/attributes + 共享 track_id(源无则新分配并写回, ADR-0045)
 - convention_at_create 取**目标** dataset 的 axis_convention(不是源的)
-- 源已有 group_id → 复用, 不再分配新序列值
+- 源已有 track_id → 复用, 不再分配新值
 - 2D bbox / polygon 同样可 propagate
 - 不支持的几何(video_bbox / point_mask_3d)→ 422
 - 跨 project → 422; 同 task 自身 → 422
@@ -89,7 +89,7 @@ def _box3d(center=(1.0, 2.0, 3.0), size=(4.0, 5.0, 6.0), rotation=(0.0, 0.0, 0.5
 
 
 async def _add_annotation(
-    db, *, task, project, user_id, geometry, group_id=None, track_id=None
+    db, *, task, project, user_id, geometry, track_id=None
 ):
     ann = Annotation(
         id=uuid.uuid4(),
@@ -101,7 +101,6 @@ async def _add_annotation(
         tool_unit_id="lidar_box_3d" if geometry["type"] == "box_3d" else "bbox",
         class_name="car",
         geometry=geometry,
-        group_id=group_id,
         track_id=track_id,
         attributes={"occluded": True},
     )
@@ -122,7 +121,6 @@ async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super
     src = await _add_annotation(
         db_session, task=tasks[0], project=project, user_id=user.id, geometry=_box3d()
     )
-    assert src.group_id is None
 
     svc = AnnotationService(db_session)
     new, _ = await svc.propagate(
@@ -141,33 +139,9 @@ async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super
     assert new.class_name == "car"
     assert new.attributes == {"occluded": True}
     assert new.task_id == tasks[1].id
-    # v0.21.2 · ADR-0045 · Phase 6 · 跨帧不再写 group_id; 共享 track_id 为唯一标识
-    assert new.group_id is None
+    # v0.21.2 · ADR-0045 · 跨帧共享 track_id 为唯一标识 (group_id 列已删)
     assert new.track_id is not None and new.track_id.startswith("trk_")
     assert src.track_id == new.track_id
-
-
-@pytest.mark.asyncio
-async def test_propagate_does_not_carry_group_id(db_session, super_admin):
-    # v0.21.2 · ADR-0045 · Phase 6 · propagate 不再延续 group_id (跨帧改 track_id);
-    # 源的 group_id (图像编组语义) 不带入目标, 目标 group_id 为 None。
-    user, _ = super_admin
-    project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id)
-    src = await _add_annotation(
-        db_session,
-        task=tasks[0],
-        project=project,
-        user_id=user.id,
-        geometry=_box3d(),
-        group_id=42,
-    )
-    svc = AnnotationService(db_session)
-    new, _ = await svc.propagate(
-        source_annotation_id=src.id, target_task_id=tasks[1].id, user_id=user.id
-    )
-    assert new.group_id is None
-    assert src.group_id == 42  # 源不变
-    assert new.track_id is not None and new.track_id.startswith("trk_")
 
 
 @pytest.mark.asyncio
@@ -222,8 +196,7 @@ async def test_propagate_bbox_2d(db_session, super_admin):
     assert new.geometry == bbox
     # 2D 不写 convention_at_create
     assert "convention_at_create" not in new.geometry
-    # v0.21.2 · Phase 6 · 跨帧不写 group_id, 走 track_id
-    assert new.group_id is None
+    # v0.21.2 · ADR-0045 · 跨帧标识走 track_id
     assert new.track_id is not None and new.track_id.startswith("trk_")
 
 
@@ -360,8 +333,7 @@ async def test_propagate_endpoint_201(db_session, httpx_client, super_admin):
     ann = body["annotation"]
     assert ann["task_id"] == str(tasks[1].id)
     assert ann["geometry"]["convention_at_create"] == "ros_rep103"
-    # v0.21.2 · Phase 6 · 跨帧标识走 track_id, group_id 不再写
-    assert ann["group_id"] is None
+    # v0.21.2 · ADR-0045 · 跨帧标识走 track_id
     assert ann["track_id"] is not None and ann["track_id"].startswith("trk_")
 
 

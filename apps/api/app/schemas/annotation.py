@@ -220,10 +220,8 @@ class AnnotationOut(BaseModel):
     confidence: float | None = None
     parent_prediction_id: UUID | None = None
     parent_annotation_id: UUID | None = None
-    # I12 · 同 task 内分组序号; 与 parent_annotation_id 正交.
-    group_id: int | None = None
     # v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (trk_<hex>). 前端 3D 跨帧配对/
-    # 插值/高亮据此认同一对象 (原用 group_id 高位段).
+    # 插值/高亮据此认同一对象 (原用 group_id 高位段, 编组下线后该列已删).
     track_id: str | None = None
     lead_time: float | None = None
     is_active: bool
@@ -250,7 +248,7 @@ class AnnotationOut(BaseModel):
 
 
 class NeighborFrameAnnotations(BaseModel):
-    """v0.15.17 · 单个邻帧 task 的标注集合(若请求带 group_id 则已服务端过滤)。"""
+    """v0.15.17 · 单个邻帧 task 的标注集合(若请求带 track_id 则已服务端过滤)。"""
 
     task_id: UUID
     frame_index: int
@@ -260,9 +258,9 @@ class NeighborFrameAnnotations(BaseModel):
 class NeighborAnnotationsResponse(BaseModel):
     """v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。
 
-    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」:
-    - group_id 给定 → 服务端只回该 group(scope=selected,payload 最小);
-    - group_id 省略 → 回区间全部框(scope=all)。
+    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」:
+    - track_id 给定 → 服务端只回该跨帧链(scope=selected,payload 最小);
+    - track_id 省略 → 回区间全部框(scope=all)。
     几何坐标不变(各帧 ego 系 PSR),ego 对齐仍由前端 egoAlign 做。
     非 scene / 历史未 backfill 的 task → frames=[](不报错)。
     """

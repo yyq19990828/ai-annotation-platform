@@ -377,7 +377,7 @@ async def propagate_annotation_to_task(
     """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。
 
     源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。
-    复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create
+    复制 geometry/class/attributes + 共享 track_id 跨帧链; box_3d 的 convention_at_create
     取目标 dataset 的 axis_convention(详 service.propagate)。
     """
     source_task = await _load_task_or_404(db, task_id)
@@ -415,7 +415,7 @@ async def propagate_annotation_to_task(
             "source_annotation_id": str(annotation_id),
             "propagated": True,
             "motion_compensated": motion_compensated,
-            "group_id": new_annotation.group_id,
+            "track_id": new_annotation.track_id,
             "class_name": new_annotation.class_name,
         },
     )

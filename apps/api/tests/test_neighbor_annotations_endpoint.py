@@ -2,8 +2,8 @@
 
 覆盖判据(plan §1.4 判据 4):
 - 一次返回 ±k 帧的邻帧标注,按距中心远近排序
-- group_id 给定 → 服务端只回该 group(scope=selected)
-- group_id 省略 → 回区间全部框(scope=all)
+- track_id 给定 → 服务端只回该跨帧链(scope=selected)
+- track_id 省略 → 回区间全部框(scope=all)
 - 不含中心帧自身
 - 历史未 backfill / 非 scene task → 200 + frames=[]
 - 跨 dataset 不串
@@ -80,7 +80,7 @@ def _box3d():
     }
 
 
-async def _add_box(db, *, task, project, user_id, group_id=None, track_id=None):
+async def _add_box(db, *, task, project, user_id, track_id=None):
     ann = Annotation(
         id=uuid.uuid4(),
         task_id=task.id,
@@ -91,7 +91,6 @@ async def _add_box(db, *, task, project, user_id, group_id=None, track_id=None):
         tool_unit_id="lidar_box_3d",
         class_name="car",
         geometry=_box3d(),
-        group_id=group_id,
         track_id=track_id,
     )
     db.add(ann)
@@ -100,15 +99,15 @@ async def _add_box(db, *, task, project, user_id, group_id=None, track_id=None):
 
 
 async def test_neighbor_annotations_scope_all(db_session, httpx_client, super_admin):
-    """group_id 省略 → 回 ±k 帧全部框,按距中心远近排序,不含中心帧。"""
+    """track_id 省略 → 回 ±k 帧全部框,按距中心远近排序,不含中心帧。"""
     user, token = super_admin
     project, _, scene, tasks = await _seed_scene_with_n_tasks(
         db_session, owner_id=user.id, n=5
     )
-    # 每帧各放两个框(group 7 / group 8)
+    # 每帧各放两个框
     for t in tasks:
-        await _add_box(db_session, task=t, project=project, user_id=user.id, group_id=7)
-        await _add_box(db_session, task=t, project=project, user_id=user.id, group_id=8)
+        await _add_box(db_session, task=t, project=project, user_id=user.id)
+        await _add_box(db_session, task=t, project=project, user_id=user.id)
 
     resp = await httpx_client.get(
         f"/api/v1/tasks/{tasks[2].id}/neighbor-annotations?k=1",
@@ -264,9 +263,7 @@ async def test_neighbor_annotations_filters_cross_batch(
     await db_session.flush()
 
     for t in tasks:
-        await _add_box(
-            db_session, task=t, project=project, user_id=admin.id, group_id=7
-        )
+        await _add_box(db_session, task=t, project=project, user_id=admin.id)
 
     resp = await httpx_client.get(
         f"/api/v1/tasks/{tasks[1].id}/neighbor-annotations?k=1",
