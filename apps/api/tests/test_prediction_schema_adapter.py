@@ -511,3 +511,90 @@ def test_pydantic_multi_polygon_requires_at_least_one():
 
     with _pytest.raises(ValidationError):
         MultiPolygonGeometry(polygons=[])
+
+
+# ── v0.21.1 · 检测式视频追踪 result item → VideoTrackGeometry ──────────────────
+
+
+def test_video_track_bbox_reshapes_keyframes_to_geometry():
+    raw = {
+        "type": "video_track_bbox",
+        "track_id": "trk_abc",
+        "class_name": "car",
+        "score": 0.87,
+        "keyframes": [
+            {"frame_index": 0, "bbox": {"x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06}, "score": 0.9},
+            {"frame_index": 1, "bbox": {"x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06}, "score": 0.88},
+        ],
+    }
+    out = to_internal_shape(raw)
+    assert out["type"] == "video_track_bbox"
+    assert out["class_name"] == "car"
+    assert out["confidence"] == 0.87
+    assert out["tool_unit_id"] == "bbox"
+    g = out["geometry"]
+    assert g["type"] == "video_track_bbox"
+    assert g["track_id"] == "trk_abc"
+    assert g["outside"] == []
+    assert len(g["keyframes"]) == 2
+    # 每帧标 source=prediction, bbox 保 0-1, keyframe 级 score 不入几何。
+    assert g["keyframes"][0] == {
+        "frame_index": 0,
+        "bbox": {"x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06},
+        "source": "prediction",
+    }
+
+
+def test_video_track_bbox_small_coords_not_percent_scaled():
+    """坐标全 <1 (小目标) 不得被 _percent_scale 误判为百分比而除 100。"""
+    raw = {
+        "type": "video_track_bbox",
+        "track_id": "trk_1",
+        "class_name": "ball",
+        "score": 0.5,
+        "keyframes": [{"frame_index": 3, "bbox": {"x": 0.5, "y": 0.5, "w": 0.02, "h": 0.02}}],
+    }
+    kf = to_internal_shape(raw)["geometry"]["keyframes"][0]
+    assert kf["bbox"] == {"x": 0.5, "y": 0.5, "w": 0.02, "h": 0.02}
+
+
+def test_video_track_bbox_semantic_label_passthrough():
+    raw = {
+        "type": "video_track_bbox",
+        "track_id": "trk_1",
+        "semantic_label": "car_3",
+        "class_name": "car",
+        "keyframes": [{"frame_index": 0, "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}}],
+    }
+    assert to_internal_shape(raw)["geometry"]["semantic_label"] == "car_3"
+
+
+def test_video_track_bbox_no_semantic_label_omitted():
+    raw = {
+        "type": "video_track_bbox",
+        "track_id": "trk_1",
+        "class_name": "car",
+        "keyframes": [{"frame_index": 0, "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}}],
+    }
+    assert "semantic_label" not in to_internal_shape(raw)["geometry"]
+
+
+def test_video_track_bbox_geometry_validates_against_pydantic():
+    """产出的 geometry dict 必须能通过 VideoTrackGeometry 校验 (accept 落库不会 422)。"""
+    from app.schemas._jsonb_types import VideoTrackGeometry
+
+    raw = {
+        "type": "video_track_bbox",
+        "track_id": "trk_x",
+        "semantic_label": "car_3",
+        "class_name": "car",
+        "score": 0.8,
+        "keyframes": [
+            {"frame_index": 0, "bbox": {"x": 0.1, "y": 0.2, "w": 0.08, "h": 0.06}},
+            {"frame_index": 5, "bbox": {"x": 0.12, "y": 0.21, "w": 0.08, "h": 0.06}},
+        ],
+    }
+    g = VideoTrackGeometry.model_validate(to_internal_shape(raw)["geometry"])
+    assert g.track_id == "trk_x"
+    assert g.keyframes[0].source == "prediction"
+    assert g.keyframes[1].frame_index == 5

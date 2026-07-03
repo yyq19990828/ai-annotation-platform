@@ -126,6 +126,55 @@ def _normalize_keypoints(points: Any) -> list[dict[str, float | int]]:
     return [{"x": x / scale, "y": y / scale, "v": v} for x, y, v in parsed]
 
 
+def _track_to_internal_shape(s: dict, confidence: float, attributes: dict) -> dict:
+    """v0.21.1 · 检测式视频追踪 result item → 内部 `VideoTrackGeometry` 形态.
+
+    输入 (backend 聚合轨迹, worker ingestion 已把 int track_id 映射成 `trk_<uuid>`)::
+
+        {"type": "video_track_bbox", "track_id": "trk_...", "semantic_label": "car_3",
+         "class_name": "car", "score": 0.87,
+         "keyframes": [{"frame_index": 0, "bbox": {"x","y","w","h"}, "score"?: ...}, ...]}
+
+    输出内部 shape 的 ``geometry`` 对齐 ``VideoTrackGeometry`` (``_jsonb_types.py``):
+    每帧 ``source="prediction"``; bbox 直接信 0-1 (不 ``_percent_scale``)。keyframe 级 score
+    不入几何 (schema 无此字段), 轨迹级 score 走 ``confidence``。
+    """
+    keyframes: list[dict] = []
+    for kf in s.get("keyframes") or []:
+        if not isinstance(kf, dict):
+            continue
+        bbox = kf.get("bbox") or {}
+        keyframes.append(
+            {
+                "frame_index": int(kf.get("frame_index", 0)),
+                "bbox": {
+                    "x": float(bbox.get("x", 0.0)),
+                    "y": float(bbox.get("y", 0.0)),
+                    "w": float(bbox.get("w", 0.0)),
+                    "h": float(bbox.get("h", 0.0)),
+                },
+                "source": "prediction",
+            }
+        )
+    geometry: dict = {
+        "type": "video_track_bbox",
+        "track_id": str(s.get("track_id", "")),
+        "keyframes": keyframes,
+        "outside": [],
+    }
+    semantic_label = s.get("semantic_label")
+    if semantic_label is not None:
+        geometry["semantic_label"] = str(semantic_label)
+    return {
+        "type": "video_track_bbox",
+        "class_name": s.get("class_name", "") or "",
+        "geometry": geometry,
+        "confidence": confidence,
+        "tool_unit_id": derive_tool_unit_from_ls_type("video_track_bbox"),
+        "attributes": attributes,
+    }
+
+
 def to_internal_shape(s: dict) -> dict:
     """v0.9.7 fix · LabelStudio 标准 result shape → 内部前端 schema.
 
@@ -165,6 +214,15 @@ def to_internal_shape(s: dict) -> dict:
     # 这里原样提取, 供 accept 路径透传到 annotation.attributes; 无则 {}。
     raw_attributes = s.get("attributes")
     attributes = dict(raw_attributes) if isinstance(raw_attributes, dict) else {}
+
+    # v0.21.1 · 检测式视频追踪 result item: 与扁平单几何不同, 是**嵌套聚合轨迹**
+    # `{type, track_id, class_name, keyframes:[{frame_index, bbox:{x,y,w,h}, ...}]}`。
+    # class_name 在顶层 (非 value.{type}); 坐标已归一 0-1 (backend 直返, 见协议约定),
+    # **不走 _percent_scale 自动探测** —— 小目标 bbox 各分量可能全 <1, 探测会误判为百分比。
+    # track_id 应已在 worker ingestion 阶段由原生 int 映射成 `trk_<uuid>` (读路径纯函数、
+    # 每次调用不得再生 uuid, 否则轨迹身份漂移)。此处只做形态重塑, 不做映射。
+    if typ == "video_track_bbox":
+        return _track_to_internal_shape(s, confidence, attributes)
 
     # LabelStudio 字段名约定: value.{type} 是 label 数组 (rectanglelabels/polygonlabels/...)
     labels = val.get(typ)
