@@ -29,6 +29,7 @@ import { GlobalStageInspector, type GlobalModelOption } from "./components/Globa
 import {
   ROOT_SID,
   classFilterText,
+  deriveSourceShape,
   detailOf,
   producesGeometry,
   roleOf,
@@ -161,11 +162,13 @@ export default function GlobalPipelineLibraryPage() {
     const srcOption = sourcePayload
       ? globalModelOptions.find((o) => o.key === `${sourcePayload.ml_backend_id}::${sourcePayload.model_id}`)
       : null;
+    // v0.21.1 WS0 · 源形态由 model.task + 词表派生, 不 hardcode「检测」。
+    const srcShape = deriveSourceShape(srcOption?.model);
     const source: GraphNodeModel = {
       sid: ROOT_SID,
       parentSid: null,
       kind: "source",
-      role: { label: "检测", variant: "accent", icon: "box" },
+      role: srcShape.role,
       detail: srcOption?.model.display_name ?? "请配置源阶段模型",
       runState: "pending",
       producesGeometry: true,
@@ -175,6 +178,8 @@ export default function GlobalPipelineLibraryPage() {
       backendName: srcOption?.backendName,
       modelId: srcOption?.model.id,
       taskType: srcOption?.model.task,
+      sourceTypeLabel: srcShape.sourceTypeLabel,
+      sourceCountLabel: srcShape.countLabel,
       warning: stageWarning(sourcePayload, stageCapsRef.current[ROOT_SID]),
     };
     const stages = stagesGraph.map<GraphNodeModel>((e, i) => {

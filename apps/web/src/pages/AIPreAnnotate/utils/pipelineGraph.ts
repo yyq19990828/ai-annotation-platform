@@ -11,7 +11,14 @@ import {
   inputLabel,
   INPUT_BBOX_PROMPT_ID,
   INPUT_CROP_ID,
+  INPUT_VIDEO_ID,
 } from "@/api/capabilityInputs";
+import {
+  TASKS,
+  MODALITIES,
+  type ModalityId,
+  type TaskId,
+} from "@/api/generated/capabilityVocab.gen";
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 
 export interface StageEntry {
@@ -153,6 +160,52 @@ export function deriveDownstreamShape(model: DownstreamModelLike): DownstreamSha
     return { role: "识别", roiMode: "crop", writeTarget: "attributes", isAttributes: true };
   }
   return { role: "分类", roiMode: "crop", writeTarget: "attributes", isAttributes: true };
+}
+
+/** 源阶段 model 所需最小结构 (MLModelCapability / CapabilityInstanceModel 公共子集)。 */
+export interface SourceModelLike {
+  task?: string;
+  supported_inputs?: string[];
+}
+
+/**
+ * v0.21.1 WS0 · 源阶段"内生形态": role / 源类型 / 产物 由 model.task + 词表派生, 不 hardcode
+ * (此前项目侧 / 全局侧 / 画布把「源=检测=整图」写死在 6 处, tracker 上 video 源时会渲染成"检测")。
+ * 与 deriveDownstreamShape 同一套模式。sourceType 驱动节点头「源类型」徽标 (图像 / 视频)。
+ */
+export interface SourceShape {
+  /** 角色徽标 (走 TASKS[task].label: detection→目标检测 / tracker→视频追踪)。 */
+  role: StageRole;
+  /** 投喂数据模态 (image | video | ...); 节点头源类型徽标据此。 */
+  sourceType: ModalityId;
+  /** 模态人类可读名 (图像 / 视频)。 */
+  sourceTypeLabel: string;
+  /** 产物名词 (检测框 / 轨迹); 项目侧源节点详情行。 */
+  productLabel: string;
+  /** 源计数标签 (检出 / 轨迹); 画布 footer。 */
+  countLabel: string;
+}
+
+function isTaskId(task: string | undefined): task is TaskId {
+  return task != null && task in TASKS;
+}
+
+export function deriveSourceShape(model: SourceModelLike | null | undefined): SourceShape {
+  const task = model?.task;
+  const meta = isTaskId(task) ? TASKS[task] : undefined;
+  const inputs = model?.supported_inputs ?? [];
+  // 源类型: supported_inputs 含 video 权威判 video; 否则回落 task 默认模态首项; 再兜底 image。
+  const sourceType: ModalityId = inputs.includes(INPUT_VIDEO_ID)
+    ? "video"
+    : ((meta?.defaultModalities?.[0] as ModalityId | undefined) ?? "image");
+  const isTracker = task === "tracker";
+  return {
+    role: { label: meta?.label ?? "检测", variant: "accent", icon: "box" },
+    sourceType,
+    sourceTypeLabel: MODALITIES[sourceType]?.label ?? sourceType,
+    productLabel: isTracker ? "轨迹" : "检测框",
+    countLabel: isTracker ? "轨迹" : "检出",
+  };
 }
 
 /** 阶段模型能力旗标 (StageCard 自报, 供画布作可达性 / 产属性警示)。 */
@@ -324,6 +377,9 @@ export interface GraphNodeModel {
   producesGeometry: boolean;
   canAddChild: boolean;
   conflict: boolean;
+  // v0.21.1 WS0 · 源节点「源类型」徽标 (图像 / 视频) + 计数标签 (检出 / 轨迹); 下游为 undefined。
+  sourceTypeLabel?: string;
+  sourceCountLabel?: string;
   // ── v0.18.16 §13 信息增强 ──
   /** backend 名 (副标题); 看不出用哪个后端是主要痛点。 */
   backendName?: string;

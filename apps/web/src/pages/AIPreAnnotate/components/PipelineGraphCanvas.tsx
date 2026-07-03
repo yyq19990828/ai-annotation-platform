@@ -107,7 +107,7 @@ function NodeBody({ data }: { data: StageNodeData }) {
   const okPct = data.targeted && data.targeted > 0 ? ((data.ok ?? 0) / data.targeted) * 100 : 0;
 
   return (
-    <Tooltip name={isSource ? "检测（源）" : data.role.label} desc={tooltipDesc(data, isSource)} side="top">
+    <Tooltip name={isSource ? `${data.role.label}（源）` : data.role.label} desc={tooltipDesc(data, isSource)} side="top">
       <div
         className={cx(
           styles.node,
@@ -124,7 +124,11 @@ function NodeBody({ data }: { data: StageNodeData }) {
           <Badge variant={isSource ? "outline" : data.role.variant}>
             {isSource ? "源" : data.role.label}
           </Badge>
-          <span className={styles.nodeName}>{isSource ? "检测" : ""}</span>
+          {/* v0.21.1 WS0 · 源节点显任务名 (目标检测 / 视频追踪) + 源类型徽标 (图像 / 视频); tracker 与 detection 源不再同貌。 */}
+          <span className={styles.nodeName}>{isSource ? data.role.label : ""}</span>
+          {isSource && data.sourceTypeLabel && (
+            <Badge variant="outline">{data.sourceTypeLabel}</Badge>
+          )}
           {data.warning && <Icon name="warning" size={12} className={styles.nodeWarn} />}
           <span className={cx(styles.dot, DOT_CLASS[data.runState])} title={data.runState} />
         </div>
@@ -152,7 +156,7 @@ function NodeBody({ data }: { data: StageNodeData }) {
         <div className={styles.nodeFooter}>
           <span className={styles.nodeCounts}>
             {isSource
-              ? data.ok != null && <span>检出 {data.ok}</span>
+              ? data.ok != null && <span>{data.sourceCountLabel ?? "检出"} {data.ok}</span>
               : data.targeted != null && (
                   <>
                     <span>目标 {data.targeted}</span>

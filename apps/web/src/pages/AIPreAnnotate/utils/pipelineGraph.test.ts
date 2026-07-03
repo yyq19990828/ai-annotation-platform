@@ -12,6 +12,7 @@ import {
   classifyDownstream,
   depthBySid,
   deriveDownstreamShape,
+  deriveSourceShape,
   descendantsOf,
   detailOf,
   producesGeometry,
@@ -185,6 +186,41 @@ describe("下游归类 classifyDownstream / deriveDownstreamShape", () => {
       isOcrRecognize: false,
     });
     expect(classifyDownstream(undefined).isGeometryDownstream).toBe(false);
+  });
+});
+
+describe("源归类 deriveSourceShape (WS0 · 源类型词表驱动, 不 hardcode 检测)", () => {
+  it("detection → 图像源 / 目标检测 / 检测框", () => {
+    const s = deriveSourceShape({ task: "detection", supported_inputs: ["full_image"] });
+    expect(s.role.label).toBe("目标检测");
+    expect(s.sourceType).toBe("image");
+    expect(s.sourceTypeLabel).toBe("图像");
+    expect(s.productLabel).toBe("检测框");
+    expect(s.countLabel).toBe("检出");
+  });
+
+  it("tracker → 视频源 / 视频追踪 / 轨迹 (supported_inputs 含 video 权威判)", () => {
+    const s = deriveSourceShape({ task: "tracker", supported_inputs: ["video"] });
+    expect(s.role.label).toBe("视频追踪");
+    expect(s.sourceType).toBe("video");
+    expect(s.sourceTypeLabel).toBe("视频");
+    expect(s.productLabel).toBe("轨迹");
+    expect(s.countLabel).toBe("轨迹");
+  });
+
+  it("tracker 缺 supported_inputs → 回落 task 默认模态 video", () => {
+    expect(deriveSourceShape({ task: "tracker" }).sourceType).toBe("video");
+  });
+
+  it("detection 缺 supported_inputs → 回落 task 默认模态首项 image", () => {
+    expect(deriveSourceShape({ task: "detection" }).sourceType).toBe("image");
+  });
+
+  it("null / 未知 task → 兜底 检测 / 图像 (不炸)", () => {
+    const s = deriveSourceShape(null);
+    expect(s.role.label).toBe("检测");
+    expect(s.sourceType).toBe("image");
+    expect(deriveSourceShape({ task: "nope" }).sourceType).toBe("image");
   });
 });
 

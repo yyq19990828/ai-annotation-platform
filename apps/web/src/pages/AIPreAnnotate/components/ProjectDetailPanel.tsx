@@ -45,6 +45,7 @@ import { usePipelineComposer } from "../hooks/usePipelineComposer";
 import {
   ROOT_SID,
   classFilterText,
+  deriveSourceShape,
   detailOf,
   producesGeometry,
   roiText,
@@ -383,13 +384,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const graphNodes = useMemo<GraphNodeModel[]>(() => {
     const nameOf = (id?: string | null) =>
       id ? (backends.find((b) => b.id === id)?.name ?? undefined) : undefined;
+    // v0.21.1 WS0 · 源形态由 model.task + 词表派生 (不 hardcode「检测」), tracker 上 video 源正确渲染。
+    const srcShape = deriveSourceShape(cfg.primaryModel);
     const source: GraphNodeModel = {
       sid: ROOT_SID,
       parentSid: null,
       kind: "source",
-      role: { label: "检测", variant: "accent", icon: "box" },
-      // 源「产物」= 检测框 (不是后端名; 后端已在副标题)。
-      detail: "检测框",
+      role: srcShape.role,
+      // 源「产物」= 检测框 / 轨迹 (不是后端名; 后端已在副标题)。
+      detail: srcShape.productLabel,
       runState: stageRunState(0),
       ok: sourceDetected ?? undefined,
       producesGeometry: true,
@@ -399,6 +402,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       backendName: selectedBackend?.name,
       modelId: cfg.primaryModel?.id,
       taskType: cfg.primaryModel?.task,
+      sourceTypeLabel: srcShape.sourceTypeLabel,
+      sourceCountLabel: srcShape.countLabel,
       warning: null,
     };
     const stages = stagesGraph.map<GraphNodeModel>((e, i) => {
