@@ -41,6 +41,13 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.21.x 版本段累积在本区；进入 0.22.x 后整体移到 docs/changelogs/0.21.x.md。
 -->
 
+## [0.21.7] - 2026-07-03
+
+### Added
+- **单帧分支批量逐帧预标注（execution_unit=frame）**：视频项目现在可以让**图像检测 backend（YOLO det/seg）在整段视频逐帧跑**，每帧落 `VideoBboxGeometry` 单帧框——区别于整段追踪（tracker，跨帧轨迹 video_track）与单题工作台单帧 AI（同步、单帧）。这是把「执行单位」维度落进批量预标的一环：pipeline 从「per-task 一次执行」升级为「per-frame N 次执行」。
+  - **输入节点执行单位顶层分叉**：视频项目的输入节点新增「执行单位」选择器——**整段序列**（源模型只列 tracker，做多目标追踪）/ **逐帧**（源模型只列图像检测，逐帧跑）。选择成为源模型类型的顶层分叉（母计划「输入节点的对等分叉」），据此过滤源模型下拉。全局编排库的输入节点也改为**显式声明** data_type + execution_unit（取代此前从源模型 `supported_inputs` 反推），据声明过滤可选源模型。
+  - **二级 Celery fan-out 执行引擎**：逐帧模式下，每个视频 task 抽全帧后按段（frame chunk）拆成 Celery 子任务，`chord(group(段任务), finalize)` 聚合。段任务抽本段帧（复用帧缓存、幂等）→ 逐帧检测 → `video_bbox(frame_index)` 落库；**段级幂等支持断点续跑**（跳过已落库帧）、段边界 cancel、每任务帧数上限（`FRAME_PREANNOTATE_MAX_FRAMES`，默认 900）+ 每帧框数上限 + 段级 soft 超时护栏；Redis 计数聚合分布式进度，chord 回调收尾 async_job。首版为源单阶段检测（frame × pipeline-depth 多阶段与 frame × track 同属组合爆炸，不在范围）。
+
 ## [0.21.6] - 2026-07-03
 
 ### Added
