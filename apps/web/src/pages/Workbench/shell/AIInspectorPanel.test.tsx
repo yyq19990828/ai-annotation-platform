@@ -88,9 +88,6 @@ vi.mock("../stage/BoxListItem", () => ({
 }));
 
 // ── mock stage helpers ────────────────────────────────────────────────────────
-vi.mock("../stage/ImageStageShapes", () => ({
-  groupOutlineColor: () => "#ff0000",
-}));
 vi.mock("../stage/videoStageGeometry", () => ({
   resolveTrackAtFrame: () => null,
 }));

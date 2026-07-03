@@ -82,24 +82,8 @@ interface KonvaBoxProps {
 }
 
 // v0.20.14 · 父子标注同胞高亮环色。选中父框时其子框描边此固定色 + 细点线,
-// 刻意区别于 group 的调色板长虚线 (groupOutlineColor) 与 AI 框的类色虚线; 属画布数据域固定色。
+// 刻意区别于 AI 框的类色虚线; 属画布数据域固定色。
 export const SIBLING_HIGHLIGHT_COLOR = "#38bdf8"; // sky-400
-
-/** I12 · 同 group_id 的多框共享同色虚线外圈; 用 group_id 哈希派生稳定色. */
-export function groupOutlineColor(groupId: number): string {
-  // 8 档预设色, modulo 取色; 与类别色刻意区分 (类别色来自 classColorForCanvas).
-  const palette = [
-    "#f59e0b", // amber
-    "#10b981", // emerald
-    "#ec4899", // pink
-    "#8b5cf6", // violet
-    "#06b6d4", // cyan
-    "#ef4444", // red
-    "#84cc16", // lime
-    "#6366f1", // indigo
-  ];
-  return palette[Math.abs(groupId) % palette.length];
-}
 
 export function KonvaBox({
   b, annotationId, isAi, selected, editable, faded, occluded = false,
@@ -160,21 +144,6 @@ export function KonvaBox({
             fontFamily={BOX_LABEL_FONT_FAMILY}
           />
         </Label>
-      )}
-
-      {/* I12 · 同 group_id 第二层虚线外圈 (offset 4px / scale, 不阻挡 hit-test). */}
-      {b.group_id != null && !isAi && (
-        <Rect
-          x={b.x * imgW - 4 / scale}
-          y={b.y * imgH - 4 / scale}
-          width={b.w * imgW + 8 / scale}
-          height={b.h * imgH + 8 / scale}
-          stroke={groupOutlineColor(b.group_id)}
-          strokeWidth={1.5 / scale}
-          dash={[6 / scale, 4 / scale]}
-          fill="transparent"
-          listening={false}
-        />
       )}
 
       {isUserSelected && onResizeStart && HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (

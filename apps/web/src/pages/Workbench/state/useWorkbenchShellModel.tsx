@@ -2488,7 +2488,6 @@ export function useWorkbenchShellModel({
         if (!taskId || ids.length === 0) return;
         bulkUpdateMut.mutate({ ids, patch });
       },
-      onSelectGroup: (memberIds) => s.replaceSelected(memberIds),
       hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,
       isFetchingMorePredictions: modeState.diffMode !== "final" && predictionsInfinite.isFetchingNextPage,
       onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
