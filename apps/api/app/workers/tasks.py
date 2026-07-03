@@ -763,6 +763,52 @@ async def _run_batch(
                     "write": None,
                 }
             ]
+
+        # v0.21.7 · 逐帧执行单位: 视频 task 逐帧跑图像 backend (二级 Celery fan-out chord)。
+        # 首刀 = 源**单阶段**检测; 多阶段逐帧不在范围 (frame × depth 组合爆炸, 见 plan)。
+        # 段任务 + finalize_frame_job 接管抽帧/predict/落库/进度/收尾, 此处只发起并返回。
+        if execution_unit == "frame":
+            from app.workers.frame_preannotate import dispatch_frame_preannotate
+
+            disp = await dispatch_frame_preannotate(
+                db,
+                project_id=project_id,
+                ml_backend_id=ml_backend_id,
+                tasks=tasks,
+                stage0=stages[0],
+                job_id=str(async_job_id),
+                celery_root_task_id=celery_task_id,
+            )
+            if disp["dispatched"]:
+                _publish_progress(
+                    project_id,
+                    0,
+                    disp["total_frames"],
+                    status="running",
+                    job_meta=job_meta_base,
+                )
+                await db.commit()
+                await engine.dispose()
+                return
+            # 无可跑帧 (元数据缺失 / 非视频 task) → 空收尾, 不落到图像主循环。
+            await async_job_svc.mark_complete(
+                db,
+                async_job_id,
+                result={
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "execution_unit": "frame",
+                    "reason": "no_frames",
+                },
+            )
+            await notify_job_terminal(db, job_id=async_job_id)
+            await db.commit()
+            _publish_progress(
+                project_id, 0, 0, status="completed", job_meta=job_meta_base
+            )
+            await engine.dispose()
+            return
+
         box_thr = float(project.box_threshold) if project is not None else None
         text_thr = float(project.text_threshold) if project is not None else None
         stage_clients: list[MLBackendClient] = []
