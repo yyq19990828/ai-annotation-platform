@@ -25,6 +25,9 @@ TASK_DETECTION: Final[str] = "detection"
 TASK_SEGMENTATION: Final[str] = "segmentation"
 TASK_KEYPOINT: Final[str] = "keypoint"
 TASK_OBB: Final[str] = "obb"
+# v0.21.1 · 检测式视频追踪: 不是独立权重, 而是 detection 权重的 video 推理模式 (ultralytics
+# 原生 ByteTrack/BoT-SORT)。故权重矩阵别名到 detection (见 MODEL_MATRIX 下方), 文件名后缀空。
+TASK_TRACKER: Final[str] = "tracker"
 
 # task → series → sizes (按 ultralytics/assets v8.3.0 + v8.4.0 实际有的预训练权重).
 # 维护规则: ultralytics 发布新权重时, 改本表 + 协议 /setup 输出会自动跟随.
@@ -56,6 +59,11 @@ MODEL_MATRIX: Final[dict[str, dict[str, tuple[str, ...]]]] = {
         "yolo26": ("n", "s", "m", "l", "x"),
     },
 }
+
+# v0.21.1 · tracker 复用 detection 权重 (追踪不换权重, 只在推理时外挂关联算法)。别名共享同一
+# series→sizes 对象, 保证与 det 矩阵零漂移; /setup 的 tracker 条目、is_supported、
+# resolve_weight_filename 因此对 tracker 一致工作 (task=tracker → 解出 detection 权重文件名)。
+MODEL_MATRIX[TASK_TRACKER] = MODEL_MATRIX[TASK_DETECTION]
 
 # series 推荐选项 (UI 默认选中). 选 yolo11 因为兼顾精度 / 速度 / 任务覆盖.
 RECOMMENDED_SERIES: Final[str] = "yolo11"
@@ -94,6 +102,8 @@ _TASK_SUFFIX: Final[dict[str, str]] = {
     TASK_SEGMENTATION: "-seg",
     TASK_KEYPOINT: "-pose",
     TASK_OBB: "-obb",
+    # v0.21.1 · tracker 解出 detection 权重文件名 (无后缀), 与 MODEL_MATRIX 别名一致。
+    TASK_TRACKER: "",
 }
 
 
