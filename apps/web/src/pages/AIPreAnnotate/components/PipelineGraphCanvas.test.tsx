@@ -27,7 +27,6 @@ const models: GraphNodeModel[] = [
   {
     sid: "root",
     parentSid: null,
-    kind: "source",
     role: { label: "检测", variant: "accent", icon: "box" },
     detail: "源检测",
     runState: "pending",
@@ -41,7 +40,6 @@ const models: GraphNodeModel[] = [
   {
     sid: "a",
     parentSid: "root",
-    kind: "stage",
     role: roleOf(attr()),
     detail: "hat_color",
     runState: "pending",
@@ -72,9 +70,9 @@ function renderCanvas(over: Partial<React.ComponentProps<typeof PipelineGraphCan
 }
 
 describe("PipelineGraphCanvas", () => {
-  it("渲染源节点 + 下游节点的角色与详情", () => {
+  it("渲染输入节点 + 下游节点的角色与详情", () => {
     renderCanvas();
-    expect(screen.getByText("源")).toBeInTheDocument();
+    expect(screen.getByText("输入")).toBeInTheDocument();
     expect(screen.getByText("分类")).toBeInTheDocument();
     expect(screen.getByText("hat_color")).toBeInTheDocument();
     expect(screen.getByText("grounded-sam2")).toBeInTheDocument();

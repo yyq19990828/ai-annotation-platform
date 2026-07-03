@@ -1287,6 +1287,10 @@ class PipelineStage(BaseModel):
 
     stage: int
     ml_backend_id: uuid.UUID
+    # v0.21.5 · 初始输入节点 (stage 0) 的数据源描述: {"kind":"dataset","data_type":...,"execution_unit":...}。
+    # 声明「源类型 + 执行单位」维度 (ROADMAP 方向 B/C)。本版仅接受并透传/持久化, 不改派发语义
+    # (video tracker 逐帧/整段编排由 v0.21.6 接线)。下游 stage 无此字段。
+    source: dict | None = None
     model_id: str | None = None
     task_type: str | None = None
     model_variants: dict[str, str] | None = None

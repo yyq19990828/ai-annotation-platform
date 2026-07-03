@@ -41,6 +41,14 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.21.x 版本段累积在本区；进入 0.22.x 后整体移到 docs/changelogs/0.21.x.md。
 -->
 
+## [0.21.5] - 2026-07-03
+
+### Added
+- **视频项目可进入预标注编排画布**：视频项目不再在 AI 预标入口被引导卡片挡在编排之外，而是进入与图像项目统一的编排画布，输入节点显示「视频」源类型 + 「整段序列」执行单位徽标。这是把「源类型 + 执行单位」维度落进编排模型的地基——后续检测式视频追踪接入编排即基于此。本版仅开放 `execution_unit=video` 单分支；逐帧（frame）分支 UI 与 tracker 派发接线为后续。
+
+### Changed
+- **编排画布的「源」收敛为一等「输入节点」**：此前源是画布/序列化层合成的「第 0 号 root 阶段」，靠 `ROOT_SID` 哨兵、`kind:"source"` 节点类型、`deriveSourceShape` 反推等五套散落特判维系。现统一为受限 DAG 内一条 `parentSid=null` 的普通节点，携带 `source:{kind,data_type,execution_unit}` 数据源描述：画布不再有 source/stage 两种节点类型（入 handle 由 `parentSid` 决定），源类型（图像 / 视频）与执行单位改由输入节点显式携带而非从模型反推，项目侧 / 全局编排库 / Inspector 的序列化与反序列化统一走输入节点。图像项目编排行为零回归（输入节点等价旧「源阶段」，下游加子 / 改父 / 键冲突判据不变）。旧持久化的项目 / 命名编排模板（stage 0 无 `source` 字段）加载时按输入节点识别，不受影响。
+
 ## [0.21.4] - 2026-07-03
 
 ### Added

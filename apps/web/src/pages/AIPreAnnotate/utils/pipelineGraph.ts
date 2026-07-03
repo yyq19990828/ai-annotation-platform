@@ -11,7 +11,6 @@ import {
   inputLabel,
   INPUT_BBOX_PROMPT_ID,
   INPUT_CROP_ID,
-  INPUT_VIDEO_ID,
 } from "@/api/capabilityInputs";
 import {
   TASKS,
@@ -19,11 +18,13 @@ import {
   type ModalityId,
   type TaskId,
 } from "@/api/generated/capabilityVocab.gen";
-import type { PipelineStagePayload } from "@/hooks/usePreannotation";
+import type { PipelineSource, PipelineStagePayload } from "@/hooks/usePreannotation";
 
 export interface StageEntry {
   sid: string;
-  parentSid: string;
+  /** v0.21.5 · 输入节点(编排首节点)parentSid=null; 其余为父 sid。源不再是合成的画布外 root,
+   *  而是 stagesGraph 内一条 parentSid=null 的普通 entry。 */
+  parentSid: string | null;
 }
 
 export type StageRole = {
@@ -169,18 +170,21 @@ export interface SourceModelLike {
 }
 
 /**
- * v0.21.1 WS0 · 源阶段"内生形态": role / 源类型 / 产物 由 model.task + 词表派生, 不 hardcode
- * (此前项目侧 / 全局侧 / 画布把「源=检测=整图」写死在 6 处, tracker 上 video 源时会渲染成"检测")。
- * 与 deriveDownstreamShape 同一套模式。sourceType 驱动节点头「源类型」徽标 (图像 / 视频)。
+ * v0.21.5 · 输入节点"内生形态"。此前 v0.21.1 WS0 的 deriveSourceShape 从 model.supported_inputs
+ * 反推源类型, 现退役 —— 源类型 (data_type) / 执行单位 (execution_unit) 改由输入节点
+ * `source:{}` 直接携带 (SSOT 前移到 graph)。角色 / 产物仍随 model.task (detection→目标检测 /
+ * tracker→视频追踪), 因为输入节点仍绑一个源检测/追踪模型。
  */
-export interface SourceShape {
-  /** 角色徽标 (走 TASKS[task].label: detection→目标检测 / tracker→视频追踪)。 */
+export interface SourceNodeShape {
+  /** 角色徽标 (走 TASKS[task].label)。 */
   role: StageRole;
-  /** 投喂数据模态 (image | video | ...); 节点头源类型徽标据此。 */
+  /** 投喂数据模态 (image | video | ...); 由 source.data_type 决定, 兜底 image。 */
   sourceType: ModalityId;
   /** 模态人类可读名 (图像 / 视频)。 */
   sourceTypeLabel: string;
-  /** 产物名词 (检测框 / 轨迹); 项目侧源节点详情行。 */
+  /** 执行单位人类可读名 (整段序列 / 逐帧 / 场景); 无则 undefined。 */
+  executionUnitLabel?: string;
+  /** 产物名词 (检测框 / 轨迹); 项目侧输入节点详情行。 */
   productLabel: string;
   /** 源计数标签 (检出 / 轨迹); 画布 footer。 */
   countLabel: string;
@@ -190,19 +194,27 @@ function isTaskId(task: string | undefined): task is TaskId {
   return task != null && task in TASKS;
 }
 
-export function deriveSourceShape(model: SourceModelLike | null | undefined): SourceShape {
+const EXECUTION_UNIT_LABELS: Record<string, string> = {
+  video: "整段序列",
+  frame: "逐帧",
+  scene: "场景",
+};
+
+export function sourceNodeShape(
+  source: PipelineSource | null | undefined,
+  model: SourceModelLike | null | undefined,
+): SourceNodeShape {
   const task = model?.task;
   const meta = isTaskId(task) ? TASKS[task] : undefined;
-  const inputs = model?.supported_inputs ?? [];
-  // 源类型: supported_inputs 含 video 权威判 video; 否则回落 task 默认模态首项; 再兜底 image。
-  const sourceType: ModalityId = inputs.includes(INPUT_VIDEO_ID)
-    ? "video"
-    : ((meta?.defaultModalities?.[0] as ModalityId | undefined) ?? "image");
+  const sourceType = (source?.data_type as ModalityId | undefined) ?? "image";
   const isTracker = task === "tracker";
   return {
     role: { label: meta?.label ?? "检测", variant: "accent", icon: "box" },
     sourceType,
     sourceTypeLabel: MODALITIES[sourceType]?.label ?? sourceType,
+    executionUnitLabel: source?.execution_unit
+      ? EXECUTION_UNIT_LABELS[source.execution_unit]
+      : undefined,
     productLabel: isTracker ? "轨迹" : "检测框",
     countLabel: isTracker ? "轨迹" : "检出",
   };
@@ -266,9 +278,10 @@ export function stageWarning(
  * (否则深度被低估 → canAddChild 误判 → 造出 depth>3)。带环兜底。
  */
 export function depthBySid(graph: StageEntry[]): Record<string, number> {
-  const parentOf: Record<string, string> = {};
+  const parentOf: Record<string, string | null> = {};
   for (const e of graph) parentOf[e.sid] = e.parentSid;
-  const memo: Record<string, number> = { [ROOT_SID]: 1 };
+  // v0.21.5 · 输入节点 parentSid=null → depthOf 的 `p == null` 分支归 1, 无需再种子 ROOT_SID。
+  const memo: Record<string, number> = {};
   const depthOf = (sid: string, seen: Set<string>): number => {
     if (memo[sid] != null) return memo[sid];
     const p = parentOf[sid];
@@ -303,12 +316,14 @@ export function subtreeHeight(graph: StageEntry[], sid: string): number {
   return 1 + Math.max(...kids.map((e) => subtreeHeight(graph, e.sid)));
 }
 
-/** sid (含合成 root) 是否产几何 —— 源恒产几何 (检测器)。 */
+/** sid 是否产几何 —— 输入节点(parentSid=null)恒产几何(源检测/追踪, 下游可挂)。 */
 function sidProducesGeometry(
+  graph: StageEntry[],
   payloadBySid: Record<string, PipelineStagePayload | null>,
   sid: string,
 ): boolean {
-  if (sid === ROOT_SID) return true;
+  const e = graph.find((x) => x.sid === sid);
+  if (e && e.parentSid == null) return true;
   return producesGeometry(payloadBySid[sid]);
 }
 
@@ -318,7 +333,7 @@ export function canAddChild(
   payloadBySid: Record<string, PipelineStagePayload | null>,
   parentSid: string,
 ): boolean {
-  if (!sidProducesGeometry(payloadBySid, parentSid)) return false;
+  if (!sidProducesGeometry(graph, payloadBySid, parentSid)) return false;
   return (depthBySid(graph)[parentSid] ?? 1) < MAX_DEPTH;
 }
 
@@ -342,13 +357,13 @@ export function canReparent(
   childSid: string,
   newParentSid: string,
 ): ReparentCheck {
-  if (childSid === ROOT_SID) return { ok: false, reason: "源阶段不可改父" };
-  if (newParentSid === childSid) return { ok: false, reason: "不能连到自身" };
   const cur = graph.find((e) => e.sid === childSid);
+  if (cur && cur.parentSid == null) return { ok: false, reason: "输入节点不可改父" };
+  if (newParentSid === childSid) return { ok: false, reason: "不能连到自身" };
   if (cur && cur.parentSid === newParentSid) return { ok: false, reason: "已是当前父阶段" };
   if (descendantsOf(graph, childSid).has(newParentSid))
     return { ok: false, reason: "不能连到自己的后代（成环）" };
-  if (!sidProducesGeometry(payloadBySid, newParentSid))
+  if (!sidProducesGeometry(graph, payloadBySid, newParentSid))
     return { ok: false, reason: "父阶段须产几何（检测/分割）" };
   const newChildDepth = (depthBySid(graph)[newParentSid] ?? 1) + 1;
   if (newChildDepth + subtreeHeight(graph, childSid) - 1 > MAX_DEPTH)
@@ -363,11 +378,10 @@ export function reparent(graph: StageEntry[], childSid: string, newParentSid: st
 
 // ── 布局 + react-flow 派生 ─────────────────────────────────────────────
 
-/** buildFlow 的输入: 每节点的展示模型 (含合成源节点, sid=ROOT_SID)。 */
+/** buildFlow 的输入: 每节点的展示模型。输入节点 = parentSid==null 的普通 entry (不再 kind 二分)。 */
 export interface GraphNodeModel {
   sid: string;
   parentSid: string | null;
-  kind: "source" | "stage";
   role: StageRole;
   detail: string;
   runState: "pending" | "running" | "done";
@@ -377,9 +391,11 @@ export interface GraphNodeModel {
   producesGeometry: boolean;
   canAddChild: boolean;
   conflict: boolean;
-  // v0.21.1 WS0 · 源节点「源类型」徽标 (图像 / 视频) + 计数标签 (检出 / 轨迹); 下游为 undefined。
+  // v0.21.1 WS0 · 输入节点「源类型」徽标 (图像 / 视频) + 计数标签 (检出 / 轨迹); 下游为 undefined。
   sourceTypeLabel?: string;
   sourceCountLabel?: string;
+  // v0.21.5 · 输入节点「执行单位」徽标 (整段序列 / 逐帧); 下游为 undefined。
+  executionUnitLabel?: string;
   // ── v0.18.16 §13 信息增强 ──
   /** backend 名 (副标题); 看不出用哪个后端是主要痛点。 */
   backendName?: string;
@@ -441,7 +457,8 @@ export function buildFlow(
 
   const nodes: Node<StageNodeData>[] = models.map((m) => ({
     id: m.sid,
-    type: m.kind === "source" ? "source" : "stage",
+    // v0.21.5 · 单一 node type; 输入 handle 由 parentSid==null 在节点组件内决定 (去 source/stage 二分)。
+    type: "stage",
     position: { x: (depth[m.sid] - 1) * COL_W, y: yBySid[m.sid] ?? 0 },
     data: { ...m, selected: m.sid === selectedSid },
     selected: m.sid === selectedSid,

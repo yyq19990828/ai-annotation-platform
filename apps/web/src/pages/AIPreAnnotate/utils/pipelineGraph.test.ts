@@ -12,7 +12,7 @@ import {
   classifyDownstream,
   depthBySid,
   deriveDownstreamShape,
-  deriveSourceShape,
+  sourceNodeShape,
   descendantsOf,
   detailOf,
   producesGeometry,
@@ -32,6 +32,8 @@ const geom = (input: "crop" | "geometry" = "crop"): PipelineStagePayload =>
   ({ stage: 0, ml_backend_id: "bk", model_id: "det", input: { mode: input }, write: { target: "geometry" } }) as PipelineStagePayload;
 const attr = (keys?: string[], label?: string): PipelineStagePayload =>
   ({ stage: 0, ml_backend_id: "bk", write: { target: "attributes", keys }, label }) as PipelineStagePayload;
+// v0.21.5 · 输入节点 entry (parentSid=null); 新模型 root 常驻 stagesGraph, 夹具须含它。
+const R: StageEntry = { sid: ROOT_SID, parentSid: null };
 
 describe("派生", () => {
   it("depthBySid: 链 root→a→b 深度 1/2/3", () => {
@@ -189,56 +191,64 @@ describe("下游归类 classifyDownstream / deriveDownstreamShape", () => {
   });
 });
 
-describe("源归类 deriveSourceShape (WS0 · 源类型词表驱动, 不 hardcode 检测)", () => {
-  it("detection → 图像源 / 目标检测 / 检测框", () => {
-    const s = deriveSourceShape({ task: "detection", supported_inputs: ["full_image"] });
+describe("输入节点归类 sourceNodeShape (v0.21.5 · 源类型/执行单位由 source 元数据携带)", () => {
+  it("image 源 + detection → 图像 / 目标检测 / 检测框", () => {
+    const s = sourceNodeShape({ kind: "dataset", data_type: "image" }, { task: "detection" });
     expect(s.role.label).toBe("目标检测");
     expect(s.sourceType).toBe("image");
     expect(s.sourceTypeLabel).toBe("图像");
+    expect(s.executionUnitLabel).toBeUndefined();
     expect(s.productLabel).toBe("检测框");
     expect(s.countLabel).toBe("检出");
   });
 
-  it("tracker → 视频源 / 视频追踪 / 轨迹 (supported_inputs 含 video 权威判)", () => {
-    const s = deriveSourceShape({ task: "tracker", supported_inputs: ["video"] });
+  it("video 源 + tracker + execution_unit=video → 视频 / 视频追踪 / 整段序列 / 轨迹", () => {
+    const s = sourceNodeShape(
+      { kind: "dataset", data_type: "video", execution_unit: "video" },
+      { task: "tracker" },
+    );
     expect(s.role.label).toBe("视频追踪");
     expect(s.sourceType).toBe("video");
     expect(s.sourceTypeLabel).toBe("视频");
+    expect(s.executionUnitLabel).toBe("整段序列");
     expect(s.productLabel).toBe("轨迹");
     expect(s.countLabel).toBe("轨迹");
   });
 
-  it("tracker 缺 supported_inputs → 回落 task 默认模态 video", () => {
-    expect(deriveSourceShape({ task: "tracker" }).sourceType).toBe("video");
-  });
-
-  it("detection 缺 supported_inputs → 回落 task 默认模态首项 image", () => {
-    expect(deriveSourceShape({ task: "detection" }).sourceType).toBe("image");
-  });
-
-  it("null / 未知 task → 兜底 检测 / 图像 (不炸)", () => {
-    const s = deriveSourceShape(null);
+  it("source 缺省 (null) → 兜底 检测 / 图像 (不炸)", () => {
+    const s = sourceNodeShape(null, null);
     expect(s.role.label).toBe("检测");
     expect(s.sourceType).toBe("image");
-    expect(deriveSourceShape({ task: "nope" }).sourceType).toBe("image");
+    expect(sourceNodeShape(undefined, { task: "nope" }).sourceType).toBe("image");
+  });
+
+  it("角色随 model.task, 源类型随 source.data_type (二者解耦)", () => {
+    // data_type=video 但 model 是 detection → 视频源 + 目标检测 (逐帧检测场景)。
+    const s = sourceNodeShape({ kind: "dataset", data_type: "video", execution_unit: "frame" }, {
+      task: "detection",
+    });
+    expect(s.sourceType).toBe("video");
+    expect(s.executionUnitLabel).toBe("逐帧");
+    expect(s.role.label).toBe("目标检测");
   });
 });
 
 describe("加子门控", () => {
   const payloads = { a: geom(), b: attr() };
-  it("源恒可加子 (depth1, 产几何)", () => {
-    expect(canAddChild([], {}, ROOT_SID)).toBe(true);
+  it("输入节点恒可加子 (depth1, 产几何)", () => {
+    expect(canAddChild([R], {}, ROOT_SID)).toBe(true);
   });
   it("产几何的 depth-2 阶段可加子", () => {
-    const g: StageEntry[] = [{ sid: "a", parentSid: ROOT_SID }];
+    const g: StageEntry[] = [R, { sid: "a", parentSid: ROOT_SID }];
     expect(canAddChild(g, payloads, "a")).toBe(true);
   });
   it("分类阶段不可加子 (不产几何)", () => {
-    const g: StageEntry[] = [{ sid: "b", parentSid: ROOT_SID }];
+    const g: StageEntry[] = [R, { sid: "b", parentSid: ROOT_SID }];
     expect(canAddChild(g, payloads, "b")).toBe(false);
   });
   it("depth-3 几何阶段不可加子 (超深)", () => {
     const g: StageEntry[] = [
+      R,
       { sid: "a", parentSid: ROOT_SID },
       { sid: "c", parentSid: "a" },
     ];
@@ -248,13 +258,14 @@ describe("加子门控", () => {
 
 describe("改父校验 canReparent", () => {
   const g: StageEntry[] = [
+    R,
     { sid: "a", parentSid: ROOT_SID },
     { sid: "b", parentSid: "a" },
     { sid: "c", parentSid: ROOT_SID },
   ];
   const payloads = { a: geom(), b: attr(), c: attr() };
 
-  it("源不可改父", () => {
+  it("输入节点不可改父", () => {
     expect(canReparent(g, payloads, ROOT_SID, "a").ok).toBe(false);
   });
   it("连到自身 / 当前父 无效", () => {
@@ -274,6 +285,7 @@ describe("改父校验 canReparent", () => {
   it("超深被拒: 把含两层子树挂到 depth-2 几何阶段", () => {
     // a2(几何,d2) → s(几何,d3); 把 a(高度2) 挂到 a2 → a 新 d3 + 高度2-1 = d4 > 3。
     const g2: StageEntry[] = [
+      R,
       { sid: "a", parentSid: ROOT_SID },
       { sid: "b", parentSid: "a" },
       { sid: "a2", parentSid: ROOT_SID },
@@ -284,6 +296,7 @@ describe("改父校验 canReparent", () => {
   });
   it("合法改父: 叶子挂到另一几何父", () => {
     const g2: StageEntry[] = [
+      R,
       { sid: "a", parentSid: ROOT_SID },
       { sid: "a2", parentSid: ROOT_SID },
       { sid: "b", parentSid: "a" },
@@ -349,9 +362,9 @@ describe("§13 信息 helper", () => {
 
 describe("buildFlow 派生 + 分层布局", () => {
   const models: GraphNodeModel[] = [
-    { sid: ROOT_SID, parentSid: null, kind: "source", role: roleOf(geom()), detail: "src", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
-    { sid: "a", parentSid: ROOT_SID, kind: "stage", role: roleOf(geom()), detail: "a", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
-    { sid: "b", parentSid: "a", kind: "stage", role: roleOf(attr()), detail: "b", runState: "pending", producesGeometry: false, canAddChild: false, conflict: false, ready: true },
+    { sid: ROOT_SID, parentSid: null, role: roleOf(geom()), detail: "src", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
+    { sid: "a", parentSid: ROOT_SID, role: roleOf(geom()), detail: "a", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
+    { sid: "b", parentSid: "a", role: roleOf(attr()), detail: "b", runState: "pending", producesGeometry: false, canAddChild: false, conflict: false, ready: true },
   ];
 
   it("节点数 = 模型数; 边连 parent→child", () => {
@@ -373,10 +386,12 @@ describe("buildFlow 派生 + 分层布局", () => {
     expect(nodes.find((n) => n.id === "b")!.selected).toBe(false);
   });
 
-  it("源节点 type=source, 下游 type=stage", () => {
+  it("v0.21.5 · 统一 node type=stage (输入/下游同型; 入 handle 由 parentSid 在组件内决定)", () => {
     const { nodes } = buildFlow(models, null);
-    expect(nodes.find((n) => n.id === ROOT_SID)!.type).toBe("source");
+    expect(nodes.find((n) => n.id === ROOT_SID)!.type).toBe("stage");
     expect(nodes.find((n) => n.id === "a")!.type).toBe("stage");
+    // 输入节点 parentSid=null (组件据此不渲染入 handle)。
+    expect((nodes.find((n) => n.id === ROOT_SID)!.data as { parentSid: string | null }).parentSid).toBeNull();
   });
 
   // claude[bot] P2 · DAG 三个已修回归此前只覆盖 "新建节点 depth>3"; 补两条:

@@ -95,7 +95,8 @@ function tooltipDesc(data: StageNodeData, isSource: boolean) {
 /** 节点公共内容 (角色徽标 + backend + 就绪/警示 + 详情 + 父框 + 进度 + 计数 + 增删)。 */
 function NodeBody({ data }: { data: StageNodeData }) {
   const { onSelect, onAddChild, onRemove, connectingFrom, canReparentConn } = useContext(CanvasCtx);
-  const isSource = data.kind === "source";
+  // v0.21.5 · 输入节点 = parentSid==null (去 kind 二分); 无入 handle、不可删、显源类型/执行单位徽标。
+  const isSource = data.parentSid == null;
 
   // 拖拽中: 本节点是否合法落点 (连线 source=connectingFrom 父, target=本节点 子)。
   const drop =
@@ -107,7 +108,7 @@ function NodeBody({ data }: { data: StageNodeData }) {
   const okPct = data.targeted && data.targeted > 0 ? ((data.ok ?? 0) / data.targeted) * 100 : 0;
 
   return (
-    <Tooltip name={isSource ? `${data.role.label}（源）` : data.role.label} desc={tooltipDesc(data, isSource)} side="top">
+    <Tooltip name={isSource ? `${data.role.label}（输入）` : data.role.label} desc={tooltipDesc(data, isSource)} side="top">
       <div
         className={cx(
           styles.node,
@@ -122,12 +123,15 @@ function NodeBody({ data }: { data: StageNodeData }) {
         <div className={styles.nodeHeader}>
           <Icon name={data.role.icon} size={12} className={styles.nodeIcon} />
           <Badge variant={isSource ? "outline" : data.role.variant}>
-            {isSource ? "源" : data.role.label}
+            {isSource ? "输入" : data.role.label}
           </Badge>
-          {/* v0.21.1 WS0 · 源节点显任务名 (目标检测 / 视频追踪) + 源类型徽标 (图像 / 视频); tracker 与 detection 源不再同貌。 */}
+          {/* v0.21.5 · 输入节点显任务名 (目标检测 / 视频追踪) + 源类型 (图像 / 视频) + 执行单位 (整段序列/逐帧) 徽标。 */}
           <span className={styles.nodeName}>{isSource ? data.role.label : ""}</span>
           {isSource && data.sourceTypeLabel && (
             <Badge variant="outline">{data.sourceTypeLabel}</Badge>
+          )}
+          {isSource && data.executionUnitLabel && (
+            <Badge variant="outline">{data.executionUnitLabel}</Badge>
           )}
           {data.warning && <Icon name="warning" size={12} className={styles.nodeWarn} />}
           <span className={cx(styles.dot, DOT_CLASS[data.runState])} title={data.runState} />
@@ -198,25 +202,18 @@ function NodeBody({ data }: { data: StageNodeData }) {
   );
 }
 
-const SourceNode = memo(({ data }: NodeProps<Node<StageNodeData>>) => (
-  <>
-    <NodeBody data={data} />
-    {data.canAddChild && <Handle type="source" position={Position.Right} />}
-  </>
-));
-SourceNode.displayName = "SourceNode";
-
+// v0.21.5 · 单一节点组件 (去 source/stage 二分): 入 handle 仅非输入节点 (parentSid!=null) 有;
+// 出 handle 产几何且未达深度上限才有 (物理上把「叶子不可有子」编码进 UI)。
 const StageNode = memo(({ data }: NodeProps<Node<StageNodeData>>) => (
   <>
-    <Handle type="target" position={Position.Left} />
+    {data.parentSid != null && <Handle type="target" position={Position.Left} />}
     <NodeBody data={data} />
-    {/* 产几何且未达深度上限才有出 handle —— 物理上把「叶子不可有子」编码进 UI。 */}
     {data.canAddChild && <Handle type="source" position={Position.Right} />}
   </>
 ));
 StageNode.displayName = "StageNode";
 
-const nodeTypes = { source: SourceNode, stage: StageNode };
+const nodeTypes = { stage: StageNode };
 
 interface Props {
   models: GraphNodeModel[];

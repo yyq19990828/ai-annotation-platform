@@ -30,13 +30,13 @@ import {
   type PredictMode,
   type PipelineStagePayload,
   type PipelineStageStat,
+  type PipelineSource,
 } from "@/hooks/usePreannotation";
 import { useAsyncJob } from "@/hooks/useAsyncJob";
 import type { PreannotateArgs } from "./usePreannotateConfig";
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import type { ProjectPipeline, ProjectPipelineScope } from "@/api/projectPipelines";
 import { HistoryTable } from "./HistoryTable";
-import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
 import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
 import { usePreannotateConfig } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
@@ -45,7 +45,7 @@ import { usePipelineComposer } from "../hooks/usePipelineComposer";
 import {
   ROOT_SID,
   classFilterText,
-  deriveSourceShape,
+  sourceNodeShape,
   detailOf,
   producesGeometry,
   roiText,
@@ -379,43 +379,55 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // conflictInfo/hasKeyConflict/onReparent/canReparentConn 现由 usePipelineComposer 提供.
   const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
 
+  // v0.21.5 · 输入节点数据源描述: 数据类型随项目 (image/video), 执行单位本版 video 单分支。
+  const sourceMeta = useMemo<PipelineSource>(
+    () => ({
+      kind: "dataset",
+      data_type: dataType,
+      execution_unit: dataType === "video" ? "video" : undefined,
+    }),
+    [dataType],
+  );
+
   // v0.18.16 · DAG 图节点模型 (源 + 各下游): 角色徽标 / 运行态 / 迷你计数 / 可加子 / 键冲突。
   // 下游须用不同于检测的 backend → composer.canAddChildAt 已合并 backends 数<2 判据.
   const graphNodes = useMemo<GraphNodeModel[]>(() => {
     const nameOf = (id?: string | null) =>
       id ? (backends.find((b) => b.id === id)?.name ?? undefined) : undefined;
-    // v0.21.1 WS0 · 源形态由 model.task + 词表派生 (不 hardcode「检测」), tracker 上 video 源正确渲染。
-    const srcShape = deriveSourceShape(cfg.primaryModel);
-    const source: GraphNodeModel = {
-      sid: ROOT_SID,
-      parentSid: null,
-      kind: "source",
-      role: srcShape.role,
-      // 源「产物」= 检测框 / 轨迹 (不是后端名; 后端已在副标题)。
-      detail: srcShape.productLabel,
-      runState: stageRunState(0),
-      ok: sourceDetected ?? undefined,
-      producesGeometry: true,
-      canAddChild: canAddChildAt(ROOT_SID),
-      conflict: false,
-      ready: cfg.configReady,
-      backendName: selectedBackend?.name,
-      modelId: cfg.primaryModel?.id,
-      taskType: cfg.primaryModel?.task,
-      sourceTypeLabel: srcShape.sourceTypeLabel,
-      sourceCountLabel: srcShape.countLabel,
-      warning: null,
-    };
-    const stages = stagesGraph.map<GraphNodeModel>((e, i) => {
+    // v0.21.5 · 输入节点(parentSid==null)源类型/执行单位由 source 元数据携带 (退役 deriveSourceShape)。
+    const srcShape = sourceNodeShape(sourceMeta, cfg.primaryModel);
+    // 输入节点 = stagesGraph[0]; 下游 stage 号 = 其数组索引 (输入=0, d1=1 …)。
+    return stagesGraph.map<GraphNodeModel>((e, i) => {
+      if (e.parentSid == null) {
+        return {
+          sid: e.sid,
+          parentSid: null,
+          role: srcShape.role,
+          // 输入节点「产物」= 检测框 / 轨迹 (后端已在副标题)。
+          detail: srcShape.productLabel,
+          runState: stageRunState(0),
+          ok: sourceDetected ?? undefined,
+          producesGeometry: true,
+          canAddChild: canAddChildAt(e.sid),
+          conflict: false,
+          ready: cfg.configReady,
+          backendName: selectedBackend?.name,
+          modelId: cfg.primaryModel?.id,
+          taskType: cfg.primaryModel?.task,
+          sourceTypeLabel: srcShape.sourceTypeLabel,
+          sourceCountLabel: srcShape.countLabel,
+          executionUnitLabel: srcShape.executionUnitLabel,
+          warning: null,
+        };
+      }
       const p = downstreamPayloads[i];
-      const stat = stageStatByIndex.get(i + 1);
+      const stat = stageStatByIndex.get(i);
       return {
         sid: e.sid,
         parentSid: e.parentSid,
-        kind: "stage",
         role: roleOf(p),
         detail: detailOf(p),
-        runState: stageRunState(i + 1),
+        runState: stageRunState(i),
         targeted: stat?.targeted,
         ok: stat?.ok,
         producesGeometry: producesGeometry(p),
@@ -431,7 +443,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         variantInfo: variantText(p),
       };
     });
-    return [source, ...stages];
     // stageRunState 每渲染重建 (依赖 stagesRunning/统计); stageCapsRef 是 ref, composer 内 tick 触发重算.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -446,6 +457,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     cfg.configReady,
     cfg.primaryModel?.id,
     cfg.primaryModel?.task,
+    sourceMeta,
     backends,
   ]);
 
@@ -453,32 +465,33 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // (无键冲突 || 已选末位覆盖)。
   const canRun =
     cfg.configReady &&
-    (stagesGraph.length === 0 || allDownstreamReady) &&
+    (stagesGraph.length === 1 || allDownstreamReady) &&
     selectedBatchIds.size > 0 &&
     !running &&
     (!hasKeyConflict || keyConflictLastWins);
 
-  // v0.18.2 · 有下游阶段卡且全就绪 → 组装 pipeline_stages (源 + N 个并行兄弟 classify)。
-  // 源阶段 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
-  // 单阶段 (无下游卡) 返回 undefined: onRun 据此走单阶段执行 (向后兼容); 保存编排时另行兜成
+  // v0.18.2 · 有下游阶段卡且全就绪 → 组装 pipeline_stages (输入节点 + N 个并行兄弟 classify)。
+  // 输入节点 ml_backend_id 须等于顶层 (baseArgs.ml_backend_id), 后端据此复用既有 backend 校验。
+  // 仅输入节点 (无下游卡) 返回 undefined: onRun 据此走单阶段执行 (向后兼容); 保存编排时另行兜成
   // 单元素数组 (见 onSavePipeline)。两处共用本函数, 避免拼装逻辑分叉 (plan §7 风险)。
   const buildDownstreamStages = (
     baseArgs: PreannotateArgs,
   ): PipelineStagePayload[] | undefined => {
-    if (stagesGraph.length === 0 || !allDownstreamReady) return undefined;
-    // sid → stage 号: 源="root"=0, 下游按 stagesGraph 顺序 1..N (父总在前 → 父号 < 子号)。
-    const numberBySid: Record<string, number> = { root: 0 };
+    if (stagesGraph.length === 1 || !allDownstreamReady) return undefined;
+    // v0.21.5 · sid → stage 号 = stagesGraph 索引 (输入节点=0, 下游 1..N; 父总在前 → 父号 < 子号)。
+    const numberBySid: Record<string, number> = {};
     stagesGraph.forEach((e, i) => {
-      numberBySid[e.sid] = i + 1;
+      numberBySid[e.sid] = i;
     });
-    return [
-      argsToStage(baseArgs, 0),
-      ...stagesGraph.map((e, i) => ({
+    return stagesGraph.map((e, i) => {
+      // 输入节点(parentSid==null) → stage 0, 携带源模型配置 + source 数据源描述。
+      if (e.parentSid == null) return argsToStage(baseArgs, 0, { source: sourceMeta });
+      return {
         ...(downstreamPayloads[i] as PipelineStagePayload),
-        stage: i + 1,
+        stage: i,
         parent_stage: numberBySid[e.parentSid],
-      })),
-    ];
+      };
+    });
   };
 
   // v0.18.27 · 保存当前配置为「项目编排」(方案 A, 一项目一条)。单阶段也存成单元素数组,
@@ -528,11 +541,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       pushToast({ msg: "配置未就绪", sub: "请先选模型 / 配齐参数", kind: "warning" });
       return;
     }
-    if (stagesGraph.length > 0 && !allDownstreamReady) {
+    if (stagesGraph.length > 1 && !allDownstreamReady) {
       pushToast({ msg: "下游阶段未就绪", sub: "请配齐各阶段卡", kind: "warning" });
       return;
     }
-    const stages = buildDownstreamStages(baseArgs) ?? [argsToStage(baseArgs, 0)];
+    const stages =
+      buildDownstreamStages(baseArgs) ?? [argsToStage(baseArgs, 0, { source: sourceMeta })];
     await saveNamedPipeline(stages);
   };
 
@@ -588,7 +602,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     const baseArgs = cfg.buildArgs(predictMode);
     if (!baseArgs || selectedBatchIds.size === 0) return;
     const pipelineStages = buildDownstreamStages(baseArgs);
-    if (stagesGraph.length > 0 && !pipelineStages) return;
+    // 有下游阶段(length>1)但未就绪 → 不发; 仅输入节点(length===1)走单阶段执行。
+    if (stagesGraph.length > 1 && !pipelineStages) return;
     const ids = Array.from(selectedBatchIds);
     setRunning(true);
     try {
@@ -652,18 +667,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
 
   const headerName = summary?.project_name ?? `项目 ${projectId.slice(0, 8)}`;
 
-  // v0.10.38 · 模态分流: 视频项目无批量文本预标语义 (AI 预标在工作台逐轨迹 Shift+T 发起),
-  // 渲染引导卡片 + job 历史链接, 不误用图像批量面板 (epic 阶段 2).
-  if (dataType === "video") {
-    return (
-      <VideoPreannotateGuide
-        projectId={projectId}
-        projectName={headerName}
-        displayId={summary?.project_display_id}
-        onBack={onBack}
-      />
-    );
-  }
+  // v0.21.5 · 解除 video 早退: 视频项目进统一编排画布, 输入节点 data_type=video + 执行单位=video。
+  // 下游 tracker 接线由 v0.21.6 落地; 本版仅让 video 入编排 + 输入节点徽标正确。
   if (dataType === "lidar") {
     return (
       <div className={styles.root}>
@@ -866,18 +871,18 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                   <span className={styles.stageEmptyHint}>
                     需在项目设置绑定第二个 ML backend，才能加下游分类/检测子阶段（下游须用不同于检测的后端）。
                   </span>
-                ) : stagesGraph.length === 0 ? (
+                ) : stagesGraph.length === 1 ? (
                   <span className={styles.stageEmptyHint}>
-                    从源节点的 <Icon name="plus" size={10} /> 拖出（或点 +）加下游阶段：检出框后，下游对每个框跑分类补属性 / 检测子物体。
+                    从输入节点的 <Icon name="plus" size={10} /> 拖出（或点 +）加下游阶段：检出框后，下游对每个框跑分类补属性 / 检测子物体。
                   </span>
                 ) : null}
               </div>
 
               {/* 检查器: 所有配置体常驻挂载, 非选中者 CSS 隐藏 (保住各自 usePreannotateConfig 状态)。 */}
               <div className={styles.editorInspector}>
-                {/* 源参数 (检测): 选中源时显示。 */}
+                {/* 输入节点参数 (源检测): 选中输入节点时显示。 */}
                 <div hidden={selectedSid !== ROOT_SID}>
-                  <strong className={styles.sectionTitle}>源阶段 · 检测参数</strong>
+                  <strong className={styles.sectionTitle}>输入节点 · 检测参数</strong>
                   <PreannotateConfigForm
                     cfg={cfg}
                     backends={backends}
@@ -886,28 +891,30 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     projectMlBackendId={project?.ml_backend_id}
                   />
                 </div>
-                {/* 各下游阶段卡: 全部挂载, 非选中 hidden。 */}
-                {stagesGraph.map((e, i) => (
-                  <StageCard
-                    key={e.sid}
-                    id={e.sid}
-                    displayIndex={i + 2}
-                    projectId={projectId}
-                    backends={backends}
-                    projectMlBackendId={project?.ml_backend_id}
-                    sourceBackendId={selectedBackendId}
-                    projectClasses={projectClasses}
-                    parentClassOptions={sourceEffectiveClasses}
-                    projectAttributeKeys={projectAttributeKeys}
-                    conflictKeys={conflictInfo.perCard[e.sid]}
-                    stat={stageStatByIndex.get(i + 1)}
-                    runState={stageRunState(i + 1)}
-                    hidden={selectedSid !== e.sid}
-                    onChange={onStageChange}
-                    onCaps={onStageCaps}
-                    onRemove={removeStage}
-                  />
-                ))}
+                {/* 各下游阶段卡: 全部挂载, 非选中 hidden。输入节点(parentSid==null)不出卡, 走上方配置体。 */}
+                {stagesGraph.map((e, i) =>
+                  e.parentSid == null ? null : (
+                    <StageCard
+                      key={e.sid}
+                      id={e.sid}
+                      displayIndex={i + 1}
+                      projectId={projectId}
+                      backends={backends}
+                      projectMlBackendId={project?.ml_backend_id}
+                      sourceBackendId={selectedBackendId}
+                      projectClasses={projectClasses}
+                      parentClassOptions={sourceEffectiveClasses}
+                      projectAttributeKeys={projectAttributeKeys}
+                      conflictKeys={conflictInfo.perCard[e.sid]}
+                      stat={stageStatByIndex.get(i)}
+                      runState={stageRunState(i)}
+                      hidden={selectedSid !== e.sid}
+                      onChange={onStageChange}
+                      onCaps={onStageCaps}
+                      onRemove={removeStage}
+                    />
+                  ),
+                )}
               </div>
             </div>
 

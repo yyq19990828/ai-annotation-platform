@@ -83,7 +83,10 @@ export function usePipelineComposer(
 ): UsePipelineComposerReturn {
   const { availableBackendCount, onWarn, onCascadeDelete } = args;
 
-  const [stagesGraph, setStagesGraph] = useState<StageEntry[]>([]);
+  // v0.21.5 · 输入节点(parentSid=null)作 graph 首节点常驻; 不再由调用方画布外合成。
+  const [stagesGraph, setStagesGraph] = useState<StageEntry[]>([
+    { sid: ROOT_SID, parentSid: null },
+  ]);
   const [selectedSid, setSelectedSid] = useState<string>(ROOT_SID);
   const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
   const stageCapsRef = useRef<Record<string, StageCaps | null>>({});
@@ -106,7 +109,8 @@ export function usePipelineComposer(
 
   const addStage = useCallback(
     (parentSid: string) => {
-      if (parentSid !== ROOT_SID && (depthBySid(stagesGraph)[parentSid] ?? 1) >= MAX_DEPTH) {
+      // 输入节点 depth=1, 通用判据天然放行; 不再 ROOT_SID 特判。
+      if ((depthBySid(stagesGraph)[parentSid] ?? 1) >= MAX_DEPTH) {
         onWarn?.("无法加子阶段", `流水线最深 ${MAX_DEPTH} 层`);
         return;
       }
@@ -119,7 +123,9 @@ export function usePipelineComposer(
 
   const removeStage = useCallback(
     (sid: string) => {
-      if (sid === ROOT_SID) return;
+      // 输入节点(parentSid=null)不可删。
+      const target = stagesGraph.find((e) => e.sid === sid);
+      if (!target || target.parentSid == null) return;
       const kids = descendantsOf(stagesGraph, sid);
       if (kids.size > 0) onCascadeDelete?.(kids.size);
       setStagesGraph((g) => {
@@ -127,7 +133,7 @@ export function usePipelineComposer(
         for (let changed = true; changed; ) {
           changed = false;
           for (const e of g) {
-            if (dead.has(e.parentSid) && !dead.has(e.sid)) {
+            if (e.parentSid != null && dead.has(e.parentSid) && !dead.has(e.sid)) {
               dead.add(e.sid);
               changed = true;
             }
@@ -146,7 +152,10 @@ export function usePipelineComposer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stagesGraph, stageTick],
   );
-  const allDownstreamReady = downstreamPayloads.every((p) => p != null);
+  // v0.21.5 · 输入节点(parentSid=null)就绪由调用方 cfg.configReady 门控, 不进复合器 —— 仅判下游卡。
+  const allDownstreamReady = stagesGraph.every(
+    (e, i) => e.parentSid == null || downstreamPayloads[i] != null,
+  );
 
   const payloadBySid = useMemo(() => {
     const m: Record<string, PipelineStagePayload | null> = {};
@@ -210,7 +219,7 @@ export function usePipelineComposer(
   const hasKeyConflict = conflictInfo.conflictFinals.size > 0;
 
   const reset = useCallback(() => {
-    setStagesGraph([]);
+    setStagesGraph([{ sid: ROOT_SID, parentSid: null }]);
     setSelectedSid(ROOT_SID);
     stagePayloadsRef.current = {};
     stageCapsRef.current = {};

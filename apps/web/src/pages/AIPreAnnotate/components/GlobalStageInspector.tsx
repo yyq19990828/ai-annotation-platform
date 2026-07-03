@@ -32,7 +32,7 @@ import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 import {
   deriveDownstreamShape,
-  deriveSourceShape,
+  sourceNodeShape,
   type DownstreamShape,
   type StageCaps,
 } from "../utils/pipelineGraph";
@@ -267,10 +267,10 @@ export function GlobalStageInspector({
     }
   }, [modelKey, value, optionByKey, kind]);
 
-  // v0.21.1 WS0 · 源阶段标题按 model.task 派生 (不 hardcode「检测」): 目标检测 / 视频追踪 参数。
+  // v0.21.5 · 输入节点标题按 model.task 派生 (不 hardcode「检测」): 目标检测 / 视频追踪 参数。
   const roleLabel =
     kind === "source"
-      ? `源阶段 · ${deriveSourceShape(selectedOption?.model).role.label}参数`
+      ? `输入节点 · ${sourceNodeShape(undefined, selectedOption?.model).role.label}参数`
       : `阶段 ${displayIndex} · 参数`;
 
   return (

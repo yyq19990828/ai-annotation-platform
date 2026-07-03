@@ -24,17 +24,20 @@ const geoPayload = (backendId: string, keys?: string[], label?: string): Pipelin
 });
 
 describe("usePipelineComposer", () => {
-  it("初始状态: 空 stagesGraph, 选中 ROOT_SID, 无冲突", () => {
+  // v0.21.5 · 输入节点(parentSid=null)常驻 stagesGraph[0]; 下游从索引 1 起。
+  it("初始状态: stagesGraph 仅含输入节点, 选中 ROOT_SID, 无冲突", () => {
     const { result } = renderHook(() =>
       usePipelineComposer({ availableBackendCount: 2 }),
     );
-    expect(result.current.stagesGraph).toEqual([]);
+    expect(result.current.stagesGraph).toHaveLength(1);
+    expect(result.current.stagesGraph[0].parentSid).toBeNull();
+    expect(result.current.stagesGraph[0].sid).toBe(ROOT_SID);
     expect(result.current.selectedSid).toBe(ROOT_SID);
     expect(result.current.hasKeyConflict).toBe(false);
     expect(result.current.allDownstreamReady).toBe(true);
   });
 
-  it("addStage: 加到 root 后 stagesGraph 长度=1, 选中新节点; backend<2 时 canAddChildAt(root)=false", () => {
+  it("addStage: 加到输入节点后 stagesGraph 长度=2, 选中新节点; backend<2 时 canAddChildAt(root)=false", () => {
     const { result } = renderHook(() =>
       usePipelineComposer({ availableBackendCount: 1 }),
     );
@@ -45,9 +48,10 @@ describe("usePipelineComposer", () => {
     );
     expect(result2.current.canAddChildAt(ROOT_SID)).toBe(true);
     act(() => result2.current.addStage(ROOT_SID));
-    expect(result2.current.stagesGraph).toHaveLength(1);
-    expect(result2.current.stagesGraph[0].parentSid).toBe(ROOT_SID);
-    expect(result2.current.selectedSid).toBe(result2.current.stagesGraph[0].sid);
+    expect(result2.current.stagesGraph).toHaveLength(2); // 输入节点 + 新下游
+    const added = result2.current.stagesGraph[1];
+    expect(added.parentSid).toBe(ROOT_SID);
+    expect(result2.current.selectedSid).toBe(added.sid);
   });
 
   it("removeStage: 级联删后代, 选中回落 ROOT_SID", () => {
@@ -62,19 +66,28 @@ describe("usePipelineComposer", () => {
     );
     // 建 root -> A -> B (受 MAX_DEPTH=3 上限约束, B depth=3 后不能再挂 C).
     act(() => result.current.addStage(ROOT_SID));
-    const sidA = result.current.stagesGraph[0].sid;
+    const sidA = result.current.stagesGraph[1].sid;
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a")));
     act(() => result.current.addStage(sidA));
-    const sidB = result.current.stagesGraph[1].sid;
+    const sidB = result.current.stagesGraph[2].sid;
     act(() => result.current.onStageChange(sidB, geoPayload("bk-b")));
 
-    // 删 A → B 级联删除 (1 个后代).
+    // 删 A → B 级联删除 (1 个后代); 仅剩输入节点。
     act(() => result.current.removeStage(sidA));
-    expect(result.current.stagesGraph).toHaveLength(0);
+    expect(result.current.stagesGraph).toHaveLength(1);
+    expect(result.current.stagesGraph[0].sid).toBe(ROOT_SID);
     expect(result.current.selectedSid).toBe(ROOT_SID);
     expect(cascade).toBe(1);
-    // eslint 别把 sidB 视作 unused: 上文断言用到了它对应的层级.
     expect(sidB).toBeTruthy();
+  });
+
+  it("输入节点不可删: removeStage(ROOT_SID) 无效", () => {
+    const { result } = renderHook(() =>
+      usePipelineComposer({ availableBackendCount: 2 }),
+    );
+    act(() => result.current.removeStage(ROOT_SID));
+    expect(result.current.stagesGraph).toHaveLength(1);
+    expect(result.current.stagesGraph[0].sid).toBe(ROOT_SID);
   });
 
   it(`最深 ${MAX_DEPTH} 层: 尝试超深加子会被拒并触发 onWarn`, () => {
@@ -89,16 +102,16 @@ describe("usePipelineComposer", () => {
     );
     // root (depth=1) -> A (2) -> B (3). 再想在 B 上加子 → 会到 depth=4 > MAX_DEPTH=3, 应拒.
     act(() => result.current.addStage(ROOT_SID));
-    const sidA = result.current.stagesGraph[0].sid;
+    const sidA = result.current.stagesGraph[1].sid;
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a")));
     act(() => result.current.addStage(sidA));
-    const sidB = result.current.stagesGraph[1].sid;
+    const sidB = result.current.stagesGraph[2].sid;
     act(() => result.current.onStageChange(sidB, geoPayload("bk-b")));
     expect(result.current.canAddChildAt(sidB)).toBe(false);
     // 强行调 addStage 触发 onWarn.
     act(() => result.current.addStage(sidB));
     expect(warned).toBe("无法加子阶段");
-    expect(result.current.stagesGraph).toHaveLength(2); // 未新增第三个.
+    expect(result.current.stagesGraph).toHaveLength(3); // 输入节点 + A + B, 未新增第三下游.
   });
 
   it("键冲突: 两下游写同一最终键 → hasKeyConflict=true, perCard 标出冲突键", () => {
@@ -106,9 +119,9 @@ describe("usePipelineComposer", () => {
       usePipelineComposer({ availableBackendCount: 2 }),
     );
     act(() => result.current.addStage(ROOT_SID));
-    const sidA = result.current.stagesGraph[0].sid;
+    const sidA = result.current.stagesGraph[1].sid;
     act(() => result.current.addStage(ROOT_SID));
-    const sidB = result.current.stagesGraph[1].sid;
+    const sidB = result.current.stagesGraph[2].sid;
     // A / B 都写 attributes.color, 无 label 前缀 → 最终键都是 color → 冲突.
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a", ["color"])));
     act(() => result.current.onStageChange(sidB, geoPayload("bk-b", ["color"])));
@@ -123,17 +136,18 @@ describe("usePipelineComposer", () => {
     expect(result.current.hasKeyConflict).toBe(false);
   });
 
-  it("reset: 清空 stagesGraph / selectedSid / payloadsRef", () => {
+  it("reset: 回落到仅输入节点 / selectedSid / payloadsRef", () => {
     const { result } = renderHook(() =>
       usePipelineComposer({ availableBackendCount: 2 }),
     );
     act(() => result.current.addStage(ROOT_SID));
-    const sidA = result.current.stagesGraph[0].sid;
+    const sidA = result.current.stagesGraph[1].sid;
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a", ["color"])));
-    expect(result.current.stagesGraph).toHaveLength(1);
+    expect(result.current.stagesGraph).toHaveLength(2);
 
     act(() => result.current.reset());
-    expect(result.current.stagesGraph).toEqual([]);
+    expect(result.current.stagesGraph).toHaveLength(1);
+    expect(result.current.stagesGraph[0].parentSid).toBeNull();
     expect(result.current.selectedSid).toBe(ROOT_SID);
     expect(result.current.hasKeyConflict).toBe(false);
   });
@@ -143,17 +157,17 @@ describe("usePipelineComposer", () => {
       usePipelineComposer({ availableBackendCount: 2 }),
     );
     act(() => result.current.addStage(ROOT_SID)); // A
-    const sidA = result.current.stagesGraph[0].sid;
+    const sidA = result.current.stagesGraph[1].sid;
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a")));
     act(() => result.current.addStage(sidA)); // B (A 的子)
-    const sidB = result.current.stagesGraph[1].sid;
+    const sidB = result.current.stagesGraph[2].sid;
     act(() => result.current.onStageChange(sidB, geoPayload("bk-b")));
 
     // A 不能连到自己.
     expect(result.current.canReparentConn(sidA, sidA)).toBe(false);
     // A 不能连到自己的后代 B (成环).
     expect(result.current.canReparentConn(sidA, sidB)).toBe(false);
-    // B 挂到 ROOT_SID (源恒产几何) OK.
+    // B 挂到 ROOT_SID (输入节点恒产几何) OK.
     expect(result.current.canReparentConn(sidB, ROOT_SID)).toBe(true);
   });
 });

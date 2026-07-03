@@ -85,10 +85,23 @@ export interface TriggerPreannotationPayload {
   on_key_conflict?: "reject" | "last_wins";
 }
 
+/** v0.21.5 · 初始输入节点数据源描述: 数据源 + 数据类型 + 执行单位。
+ *  仅编排首节点(parent_stage=null)携带; 声明「源类型」维度(ROADMAP 方向 B/C)。
+ *  execution_unit 决定下游分支: video=检测式追踪整段序列 / frame=逐帧(v0.21.7)。 */
+export interface PipelineSource {
+  kind: "dataset";
+  /** 项目数据类型(image / video / lidar); 缺省按 image 兼容旧持久化。 */
+  data_type?: string;
+  /** 执行单位: 缺省 video(本版单分支); frame/scene 为后续。 */
+  execution_unit?: "frame" | "video" | "scene";
+}
+
 /** v0.18.1 · 单个预标阶段声明; 字段对应后端 PipelineStage. */
 export interface PipelineStagePayload {
   stage: number;
   ml_backend_id: string;
+  /** v0.21.5 · 初始输入节点(parent_stage=null)的数据源描述; 下游 stage 无此字段。 */
+  source?: PipelineSource;
   model_id?: string;
   task_type?: string;
   model_variants?: Record<string, string>;
