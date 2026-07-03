@@ -88,7 +88,9 @@ def _box3d(center=(1.0, 2.0, 3.0), size=(4.0, 5.0, 6.0), rotation=(0.0, 0.0, 0.5
     }
 
 
-async def _add_annotation(db, *, task, project, user_id, geometry, group_id=None):
+async def _add_annotation(
+    db, *, task, project, user_id, geometry, group_id=None, track_id=None
+):
     ann = Annotation(
         id=uuid.uuid4(),
         task_id=task.id,
@@ -100,6 +102,7 @@ async def _add_annotation(db, *, task, project, user_id, geometry, group_id=None
         class_name="car",
         geometry=geometry,
         group_id=group_id,
+        track_id=track_id,
         attributes={"occluded": True},
     )
     db.add(ann)
@@ -138,9 +141,12 @@ async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super
     assert new.class_name == "car"
     assert new.attributes == {"occluded": True}
     assert new.task_id == tasks[1].id
-    # 共享 group_id: 高位序列, 写回源
+    # 共享 group_id: 高位序列, 写回源(过渡期 dual-write, 见 ADR-0045)
     assert new.group_id is not None and new.group_id >= 1_000_000_000
     assert src.group_id == new.group_id
+    # v0.21.2 · 共享 track_id: 新权威跨帧标识, 源无则分配并写回源
+    assert new.track_id is not None and new.track_id.startswith("trk_")
+    assert src.track_id == new.track_id
 
 
 @pytest.mark.asyncio
@@ -161,6 +167,27 @@ async def test_propagate_reuses_existing_group_id(db_session, super_admin):
     )
     assert new.group_id == 42
     assert src.group_id == 42
+
+
+@pytest.mark.asyncio
+async def test_propagate_reuses_existing_track_id(db_session, super_admin):
+    # v0.21.2 · 源已有 track_id → 复用不重分配 (跨帧链身份延续的关键)。
+    user, _ = super_admin
+    project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id)
+    src = await _add_annotation(
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        track_id="trk_preexisting",
+    )
+    svc = AnnotationService(db_session)
+    new, _ = await svc.propagate(
+        source_annotation_id=src.id, target_task_id=tasks[1].id, user_id=user.id
+    )
+    assert new.track_id == "trk_preexisting"
+    assert src.track_id == "trk_preexisting"
 
 
 @pytest.mark.asyncio

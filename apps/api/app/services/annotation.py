@@ -780,14 +780,24 @@ class AnnotationService:
                 detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
             )
 
-        # 共享 group_id: 源无则分配并写回(每框各自一条独立链,故 nextval 必须逐框)。
+        # 共享跨帧标识: 源无则分配并写回(每框各自一条独立链,故 nextval 必须逐框)。
+        # v0.21.2 · ADR-0045 · track_id 是新权威跨帧标识; 过渡期 dual-write group_id
+        # (readers 尚未全切到 track_id), 待 Phase 6 停 group_id 写 + 废 cross_frame_group_seq。
+        track_id = src.track_id
         group_id = src.group_id
+        src_dirty = False
+        if track_id is None:
+            track_id = _new_track_id()
+            src.track_id = track_id
+            src_dirty = True
         if group_id is None:
             seq_row = await self.db.execute(
                 text("SELECT nextval('cross_frame_group_seq')")
             )
             group_id = int(seq_row.scalar_one())
             src.group_id = group_id
+            src_dirty = True
+        if src_dirty:
             src.version += 1
 
         geometry = copy.deepcopy(src.geometry or {})
@@ -827,6 +837,7 @@ class AnnotationService:
             class_name=src.class_name,
             geometry=geometry,
             group_id=group_id,
+            track_id=track_id,
             attributes=copy.deepcopy(src.attributes or {}),
         )
         self.db.add(new_annotation)
