@@ -433,6 +433,8 @@ export interface AnnotationResponse {
   is_hidden?: boolean;
   // I12 · Object Group; null 表示未分组.
   group_id?: number | null;
+  // v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (trk_<hex>); 3D 跨帧插值/高亮据此认链.
+  track_id?: string | null;
   version?: number;
   created_at: string;
   updated_at: string | null;

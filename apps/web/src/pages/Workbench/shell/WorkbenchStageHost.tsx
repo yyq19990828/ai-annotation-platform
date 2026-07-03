@@ -73,8 +73,8 @@ interface WorkbenchStageHostCommonProps {
   onCrossFramePropagateBatch: (direction: "next" | "prev") => void;
   /** v0.15.1 · 把选中框延续到 scene 内指定帧 task(插值工作流的建链一步)。 */
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
-  /** v0.15.1 · 区间插值: 当前 task(起点)与 toTask(终点)的同 group 框之间插值填充。 */
-  onCrossFrameInterpolate: (groupId: number, toTaskId: string) => void;
+  /** v0.15.1 · 区间插值: 当前 task(起点)与 toTask(终点)的同 track 框之间插值填充。 */
+  onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
   /** v0.13.10 · 3D 浮层避让右栏 + 三视图浮窗偏好。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;

@@ -937,17 +937,20 @@ class AnnotationService:
     async def interpolate_range(
         self,
         *,
-        group_id: int,
+        track_id: str,
         from_task_id: uuid.UUID,
         to_task_id: uuid.UUID,
         user_id: uuid.UUID,
         assert_task_editable=None,
         assert_task_visible=None,
     ) -> tuple[list[Annotation], bool, list[int]]:
-        """v0.15.1 · 关键帧区间插值: 同 group_id 链上帧 i 与帧 k 各有一框,
+        """v0.15.1 · 关键帧区间插值: 同 track_id 链上帧 i 与帧 k 各有一框,
         给区间 (i,k) 内每个有 task 的中间帧生成插值框(source="interpolated")。
 
-        - 两端框: 各自 task 上该 group 的唯一 active box_3d(0 或 >1 → 422)。
+        v0.21.2 · ADR-0045 · 跨帧链按 track_id 查询(原按 group_id); 新插值框
+        dual-write track_id + 端点框的 group_id(readers 尚未全切, 过渡期兼容)。
+
+        - 两端框: 各自 task 上该 track 的唯一 active box_3d(0 或 >1 → 422)。
         - 几何: 世界系线性内插中心 + slerp 朝向 + 线性尺寸,投回各帧 ego 系;
           任一帧缺 pose → 纯 ego 系插值(motion_compensated=False)。
         - 幂等: 中间帧已有该 group 的 active 标注 → 跳过(记入 skipped_frames),
@@ -1009,7 +1012,7 @@ class AnnotationService:
                     await self.db.execute(
                         select(Annotation)
                         .where(Annotation.task_id == task_id)
-                        .where(Annotation.group_id == group_id)
+                        .where(Annotation.track_id == track_id)
                         .where(Annotation.is_active.is_(True))
                         .where(Annotation.geometry["type"].astext == "box_3d")
                     )
@@ -1021,7 +1024,7 @@ class AnnotationService:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"task {task_id} 上 group {group_id} 的 active box_3d "
+                        f"task {task_id} 上 track {track_id} 的 active box_3d "
                         f"数量为 {len(rows)},插值要求恰好 1 个"
                     ),
                 )
@@ -1029,6 +1032,9 @@ class AnnotationService:
 
         box_from = await _endpoint_box(from_task_id)
         box_to = await _endpoint_box(to_task_id)
+        # 过渡期 dual-write: 新插值框沿用端点框的 group_id(可能为 None), 兼容尚未
+        # 切到 track_id 的 readers(3D 高亮 / 导出)。
+        legacy_group_id = box_from.group_id
 
         # 统一成 i < k(几何插值对称,t 取向不影响结果)
         if from_frame > to_frame:
@@ -1075,12 +1081,12 @@ class AnnotationService:
         skipped_frames: list[int] = []
         motion_compensated = True
         for f, mid_task in mid_tasks.items():
-            # 幂等: 该帧已有同 group 的 active 标注 → 跳过
+            # 幂等: 该帧已有同 track 的 active 标注 → 跳过
             existing = await self.db.scalar(
                 select(func.count())
                 .select_from(Annotation)
                 .where(Annotation.task_id == mid_task.id)
-                .where(Annotation.group_id == group_id)
+                .where(Annotation.track_id == track_id)
                 .where(Annotation.is_active.is_(True))
             )
             if existing:
@@ -1111,7 +1117,8 @@ class AnnotationService:
                 tool_unit_id=box_from.tool_unit_id,
                 class_name=box_from.class_name,
                 geometry=geometry,
-                group_id=group_id,
+                group_id=legacy_group_id,
+                track_id=track_id,
                 attributes=copy.deepcopy(box_from.attributes or {}),
             )
             self.db.add(ann)

@@ -213,11 +213,12 @@ class PropagateBatchResponse(BaseModel):
 class InterpolateRangeRequest(BaseModel):
     """v0.15.1 · 关键帧区间插值(from task 走端点路径)。
 
-    同 group_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框
-    (source="interpolated",便于审核过滤/批量删)。
+    同 track_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框
+    (source="interpolated",便于审核过滤/批量删)。v0.21.2 · ADR-0045 · 按 track_id
+    (原 group_id)标识跨帧链。
     """
 
-    group_id: int
+    track_id: str
     to_task_id: UUID
 
 
@@ -244,6 +245,9 @@ class AnnotationOut(BaseModel):
     parent_annotation_id: UUID | None = None
     # I12 · 同 task 内分组序号; 与 parent_annotation_id 正交.
     group_id: int | None = None
+    # v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (trk_<hex>). 前端 3D 跨帧配对/
+    # 插值/高亮据此认同一对象 (原用 group_id 高位段).
+    track_id: str | None = None
     lead_time: float | None = None
     is_active: bool
     ground_truth: bool = False

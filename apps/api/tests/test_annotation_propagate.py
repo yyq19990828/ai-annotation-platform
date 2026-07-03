@@ -624,7 +624,7 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_001,
+        track_id="trk_wl",
     )
     await _add_annotation(
         db_session,
@@ -632,11 +632,11 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 4.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_001,
+        track_id="trk_wl",
     )
     svc = AnnotationService(db_session)
     created, compensated, skipped = await svc.interpolate_range(
-        group_id=7_000_000_001,
+        track_id="trk_wl",
         from_task_id=tasks[0].id,
         to_task_id=tasks[4].id,
         user_id=user.id,
@@ -648,12 +648,12 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
     mid = created[1]
     assert mid.geometry["center"] == pytest.approx([10.0, 2.0, 0.0])
     assert mid.source == "interpolated"
-    assert mid.group_id == 7_000_000_001
+    assert mid.track_id == "trk_wl"
     assert mid.class_name == a0.class_name
 
     # 幂等: 重跑全部跳过,不重复生成
     created2, _, skipped2 = await svc.interpolate_range(
-        group_id=7_000_000_001,
+        track_id="trk_wl",
         from_task_id=tasks[0].id,
         to_task_id=tasks[4].id,
         user_id=user.id,
@@ -673,7 +673,7 @@ async def test_interpolate_range_no_pose_degrades(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_002,
+        track_id="trk_np",
     )
     await _add_annotation(
         db_session,
@@ -681,11 +681,11 @@ async def test_interpolate_range_no_pose_degrades(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(4.0, 2.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_002,
+        track_id="trk_np",
     )
     svc = AnnotationService(db_session)
     created, compensated, _ = await svc.interpolate_range(
-        group_id=7_000_000_002,
+        track_id="trk_np",
         from_task_id=tasks[0].id,
         to_task_id=tasks[2].id,
         user_id=user.id,
@@ -706,7 +706,7 @@ async def test_interpolate_range_validations(db_session, super_admin):
     # 两端缺框 → 422
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=123,
+            track_id="trk_v0",
             from_task_id=tasks[0].id,
             to_task_id=tasks[2].id,
             user_id=user.id,
@@ -720,7 +720,7 @@ async def test_interpolate_range_validations(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=456,
+        track_id="trk_v1",
     )
     await _add_annotation(
         db_session,
@@ -728,11 +728,11 @@ async def test_interpolate_range_validations(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=456,
+        track_id="trk_v1",
     )
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=456,
+            track_id="trk_v1",
             from_task_id=tasks[0].id,
             to_task_id=tasks[1].id,
             user_id=user.id,
@@ -754,7 +754,7 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=789,
+        track_id="trk_lk",
     )
     await _add_annotation(
         db_session,
@@ -762,7 +762,7 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=789,
+        track_id="trk_lk",
     )
     tasks[1].status = "completed"
     await db_session.flush()
@@ -774,7 +774,7 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
     svc = AnnotationService(db_session)
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=789,
+            track_id="trk_lk",
             from_task_id=tasks[0].id,
             to_task_id=tasks[2].id,
             user_id=user.id,
@@ -811,7 +811,7 @@ async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=321,
+        track_id="trk_inv",
     )
     await _add_annotation(
         db_session,
@@ -819,7 +819,7 @@ async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=321,
+        track_id="trk_inv",
     )
 
     async def _deny_visible(t):
@@ -830,7 +830,7 @@ async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_a
     svc = AnnotationService(db_session)
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=321,
+            track_id="trk_inv",
             from_task_id=tasks[0].id,
             to_task_id=tasks[2].id,
             user_id=user.id,
@@ -861,7 +861,7 @@ async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 0.0, 0.0)),
-        group_id=9_000_000_001,
+        track_id="trk_bi",
     )
 
     # propagate-batch: 帧 0 全部 box_3d → 帧 1
@@ -883,11 +883,11 @@ async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 3.0, 0.0)),
-        group_id=9_000_000_001,
+        track_id="trk_bi",
     )
     resp = await httpx_client.post(
         f"/api/v1/tasks/{tasks[0].id}/annotations/interpolate-range",
-        json={"group_id": 9_000_000_001, "to_task_id": str(tasks[3].id)},
+        json={"track_id": "trk_bi", "to_task_id": str(tasks[3].id)},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text

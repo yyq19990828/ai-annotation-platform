@@ -219,8 +219,8 @@ interface ThreeDWorkbenchProps {
   onCrossFramePropagateBatch: (direction: "next" | "prev") => void;
   /** v0.15.1 · 把选中框延续到 scene 内指定帧(插值工作流建链)。 */
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
-  /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。 */
-  onCrossFrameInterpolate: (groupId: number, toTaskId: string) => void;
+  /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。v0.21.2 · 按 track_id 认链。 */
+  onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
   /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -1430,7 +1430,7 @@ export function ThreeDWorkbench({
         hidden: !!ann?.is_hidden,
         hasClipboard,
         canPropagate,
-        canInterpolate: ann?.group_id != null,
+        canInterpolate: ann?.track_id != null,
         onPropagateNext: () => onCrossFramePropagate("next"),
         onPropagatePrev: () => onCrossFramePropagate("prev"),
         onPropagateToFrame: () =>
@@ -1621,6 +1621,9 @@ export function ThreeDWorkbench({
   // v0.13.4 · 跨模态高亮集合:选中框 + 同 group_id 成员。3D 主视图仍按 selected 单框高亮,
   // overlay 按本集合高亮(为未来同组 2D 框成员预留;孤立框 group_id 为空时退化为仅选中本身)。
   const selectedGroupId = selectedAnn?.group_id ?? null;
+  // v0.21.2 · ADR-0045 · 跨帧插值改按 track_id 认链 (高亮/overlay/align 仍用
+  // group_id, 待 Phase 5 一并切)。
+  const selectedTrackId = selectedAnn?.track_id ?? null;
   const highlightedIds = useMemo(() => {
     const s = new Set<string>();
     for (const id of selectedIds) s.add(id);
@@ -2112,8 +2115,8 @@ export function ThreeDWorkbench({
             onConfirm={({ targetTaskId, targetFrame }) => {
               if (framePicker.mode === "propagate") {
                 onCrossFramePropagateToTask(targetTaskId, targetFrame);
-              } else if (selectedGroupId != null) {
-                onCrossFrameInterpolate(selectedGroupId, targetTaskId);
+              } else if (selectedTrackId != null) {
+                onCrossFrameInterpolate(selectedTrackId, targetTaskId);
               }
               setFramePicker(null);
             }}

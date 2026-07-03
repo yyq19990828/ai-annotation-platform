@@ -1834,6 +1834,17 @@
             "title": "Tool Unit Id",
             "type": "string"
           },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -8296,20 +8307,20 @@
         "type": "object"
       },
       "InterpolateRangeRequest": {
-        "description": "v0.15.1 · 关键帧区间插值(from task 走端点路径)。\n\n同 group_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框\n(source=\"interpolated\",便于审核过滤/批量删)。",
+        "description": "v0.15.1 · 关键帧区间插值(from task 走端点路径)。\n\n同 track_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框\n(source=\"interpolated\",便于审核过滤/批量删)。v0.21.2 · ADR-0045 · 按 track_id\n(原 group_id)标识跨帧链。",
         "properties": {
-          "group_id": {
-            "title": "Group Id",
-            "type": "integer"
-          },
           "to_task_id": {
             "format": "uuid",
             "title": "To Task Id",
             "type": "string"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
           }
         },
         "required": [
-          "group_id",
+          "track_id",
           "to_task_id"
         ],
         "title": "InterpolateRangeRequest",
@@ -20482,7 +20493,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.22"
+    "version": "0.21.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -33525,7 +33536,7 @@
     },
     "/api/v1/tasks/{task_id}/annotations/interpolate-range": {
       "post": {
-        "description": "v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =\n终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框\n(source=\"interpolated\")。中间帧已有同 group 标注 → 幂等跳过。",
+        "description": "v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =\n终点帧;同 track_id 链两端各有一个 box_3d,中间帧自动生成插值框\n(source=\"interpolated\")。中间帧已有同 track 标注 → 幂等跳过。\nv0.21.2 · ADR-0045 · 按 track_id 标识跨帧链。",
         "operationId": "interpolate_annotations_range_api_v1_tasks__task_id__annotations_interpolate_range_post",
         "parameters": [
           {

@@ -241,16 +241,16 @@ export function usePredictionPropagation({
     ],
   );
 
-  // v0.15.1 · 区间插值: 当前 task(起点帧)与 toTask(终点帧)的同 group 框之间,
-  // 中间帧自动生成插值框;完成后跳首个插值帧预览。
+  // v0.15.1 · 区间插值: 当前 task(起点帧)与 toTask(终点帧)的同 track 框之间,
+  // 中间帧自动生成插值框;完成后跳首个插值帧预览。v0.21.2 · ADR-0045 · 按 track_id。
   const crossFrameInterpolate = useCallback(
-    async (groupId: number, toTaskId: string) => {
+    async (trackId: string, toTaskId: string) => {
       if (!taskId) return;
       if (crossFrameInFlightRef.current) return;
       crossFrameInFlightRef.current = true;
       try {
         const { annotations, motion_compensated, skipped_frames } =
-          await tasksApi.interpolateRange(taskId, groupId, toTaskId);
+          await tasksApi.interpolateRange(taskId, trackId, toTaskId);
         const affectedTasks = new Set(annotations.map((a) => a.task_id));
         for (const tid of affectedTasks) {
           queryClient.invalidateQueries({ queryKey: ["annotations", tid] });

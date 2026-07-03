@@ -500,8 +500,9 @@ async def interpolate_annotations_range(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     """v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =
-    终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框
-    (source="interpolated")。中间帧已有同 group 标注 → 幂等跳过。
+    终点帧;同 track_id 链两端各有一个 box_3d,中间帧自动生成插值框
+    (source="interpolated")。中间帧已有同 track 标注 → 幂等跳过。
+    v0.21.2 · ADR-0045 · 按 track_id 标识跨帧链。
     """
     from_task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, from_task, current_user)
@@ -511,7 +512,7 @@ async def interpolate_annotations_range(
 
     svc = AnnotationService(db)
     created, motion_compensated, skipped_frames = await svc.interpolate_range(
-        group_id=data.group_id,
+        track_id=data.track_id,
         from_task_id=task_id,
         to_task_id=data.to_task_id,
         user_id=current_user.id,
@@ -528,7 +529,7 @@ async def interpolate_annotations_range(
         status_code=201,
         detail={
             "interpolate_range": True,
-            "group_id": data.group_id,
+            "track_id": data.track_id,
             "to_task_id": str(data.to_task_id),
             "motion_compensated": motion_compensated,
             "created": len(created),

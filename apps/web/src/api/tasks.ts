@@ -231,12 +231,12 @@ export const tasksApi = {
       { target_task_id: targetTaskId, annotation_ids: annotationIds ?? null },
     ),
 
-  // v0.15.1 · 关键帧区间插值: 路径 task = 起点帧, 同 group 链两端框之间的
-  // 中间帧自动生成插值框(source="interpolated")。
-  interpolateRange: (taskId: string, groupId: number, toTaskId: string) =>
+  // v0.15.1 · 关键帧区间插值: 路径 task = 起点帧, 同 track 链两端框之间的
+  // 中间帧自动生成插值框(source="interpolated")。v0.21.2 · ADR-0045 · 按 track_id。
+  interpolateRange: (taskId: string, trackId: string, toTaskId: string) =>
     apiClient.post<InterpolateRangeResponse>(
       `/tasks/${taskId}/annotations/interpolate-range`,
-      { group_id: groupId, to_task_id: toTaskId },
+      { track_id: trackId, to_task_id: toTaskId },
     ),
 
   getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
