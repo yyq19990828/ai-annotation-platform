@@ -6,7 +6,12 @@
 视频工作台 AI 面板也未接线检测式推理。
 
 **执行**：串行推进 Phase 1 → 2 → 3 → 4；Phase 3（tracking）在既定链 v0.21.2 → v0.21.3 之后
-（见「与前置版本协同」）。
+（见「与前置版本协同」）。**每 phase 落一个补版**，已拆成独立计划文件：
+
+- Phase 1 → [`2026-07-03-v0.21.4-video-workbench-frame-ai.md`](2026-07-03-v0.21.4-video-workbench-frame-ai.md)（视频工作台单题 AI）
+- Phase 2 → [`2026-07-03-v0.21.5-pipeline-input-node.md`](2026-07-03-v0.21.5-pipeline-input-node.md)（初始输入节点重构）
+- Phase 3 → [`2026-07-03-v0.21.6-tracker-orchestration.md`](2026-07-03-v0.21.6-tracker-orchestration.md)（tracker 接编排）
+- Phase 4 → [`2026-07-03-v0.21.7-frame-batch-preannotation.md`](2026-07-03-v0.21.7-frame-batch-preannotation.md)（逐帧批量，实现待细化）
 
 本计划把「视频项目能不能用 AI 预标」这件事，落到 ROADMAP 已定的**「初始输入节点」重构**终态上
 （见 ROADMAP §编排「初始输入节点」重构 方向 B/C）。

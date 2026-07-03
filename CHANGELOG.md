@@ -41,7 +41,10 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.21.x 版本段累积在本区；进入 0.22.x 后整体移到 docs/changelogs/0.21.x.md。
 -->
 
-## [0.21.3] - 2026-07-03
+## [0.21.4] - 2026-07-03
+
+### Added
+- **视频工作台单题 AI 预标注**：视频工作台现在可对**当前帧**直接调用图像检测后端（YOLO / grounded-sam2 / sam3 等），把候选落成该帧的框预标注、人工采纳入库。此前视频项目进不了当前题 AI（工具栏 AI 按钮与浮层对视频禁用），因为所有推理路径都在服务端从 task 派生图 URL，而视频 task 的 URL 是整段 mp4、图像后端取不到帧。现新增一条「客户端供图帧」推理路：前端把当前帧解码成 JPEG 随 multipart 上传（`POST /projects/{id}/ml-backends/{backend_id}/predict-frame`），服务端转存对象存储换成后端可拉取的 URL（通用 http URL，不走仅部分后端支持的 data: 捷径）后投递，返回的检测框逐个改写成单帧 `video_bbox`（带 `frame_index`）落一条预测，采纳复用既有 `/predictions/{id}/accept` 机制写成 `VideoBboxGeometry`。候选进右侧 AI 面板列表（支持「当前帧 / 全部」过滤），并**像图片工作台一样直接画在视频画布上**——只在候选所属帧渲染（虚线 + 类色候选框），select 工具下点选候选即弹「采纳 / 忽略」贴框快捷条，采纳落成该帧 `VideoBboxGeometry`、忽略驳回，与图片工作台的画布采纳/驳回一致。区别于整段视频批量预标（投 signed URL 走 worker）与交互式 SAM 视频追踪，这是同步、单帧、客户端供图的即时预标。首版限检测框（`video_bbox`）；分割 / 分类等无对应单帧几何的输出暂跳过。
 
 ### Added
 - **检测式视频追踪（detect-then-track）**：视频源经检测模型 + ByteTrack / BoT-SORT 全自动多目标追踪，落成一批轨迹预标注。yolo-backend `/setup` 新增 `track` 模型（`task=tracker`、仅接受 `video` 输入、自报 `bytetrack` / `botsort`，复用检测权重矩阵与 COCO 类别表——追踪不加载新权重，只在推理时外挂关联算法）；`/predict` 的 `type=tracker` 分支用 ultralytics `model.track` 逐帧关联，返回每条已聚合轨迹（原生 track id + 逐帧 0-1 归一 bbox），支持 `conf` / `iou` / 追踪算法 / 类别白名单，首版单次整段追踪并对超长视频按帧数上限截断。平台侧把轨迹落成 `VideoTrackGeometry` 预标注：投递沿用现有批量链路（视频 task 投 signed URL），入库时把后端原生整型 track id 映射成稳定的 `trk_<uuid>` + 语义标签（如 `car_3`），读取路径把嵌套轨迹重塑成逐帧关键帧几何（每帧标记来源为预测）。区别于既有的交互式 SAM 视频追踪（人在环、单对象种子传播），这是无种子、多对象、离线批量的另一条链。

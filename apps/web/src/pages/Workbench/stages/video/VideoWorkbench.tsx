@@ -9,6 +9,7 @@ import type {
 } from "@/types";
 import type { VideoStageControls } from "../../stage/videoStageControls";
 import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
+import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
@@ -28,6 +29,8 @@ export interface VideoWorkbenchProps {
   isLoading?: boolean;
   error?: unknown;
   annotations: AnnotationResponse[];
+  /** v0.21.4 · AI 候选框(全部帧); 舞台内按当前帧过滤渲染 + 采纳/驳回。 */
+  aiBoxes?: AiBox[];
   selectedId: string | null;
   activeClass: string;
   frameIndex: number;
@@ -59,6 +62,8 @@ export interface VideoWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onDeleteUserBox: (id: string) => void;
   onConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onAcceptPrediction?: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
@@ -77,6 +82,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     isLoading,
     error,
     annotations,
+    aiBoxes,
     selectedId,
     activeClass,
     frameIndex,
@@ -102,6 +108,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onChangeUserBoxClass,
     onDeleteUserBox,
     onConvertToBboxes,
+    onAcceptPrediction,
+    onRejectPrediction,
     onComposeTracks,
     onToggleHiddenTrack,
     onToggleLockedTrack,
@@ -131,6 +139,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         performanceTier={performanceTier}
         onFrameIndexChange={onFrameIndexChange}
         annotations={annotations}
+        aiBoxes={aiBoxes}
         selectedId={selectedId}
         hiddenTrackIds={hiddenTrackIds}
         reviewDisplayMode={reviewDisplayMode}
@@ -156,6 +165,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onChangeUserBoxClass={onChangeUserBoxClass}
         onComposeTracks={onComposeTracks}
         onConvertToBboxes={onConvertToBboxes}
+        onAcceptPrediction={onAcceptPrediction}
+        onRejectPrediction={onRejectPrediction}
         onDelete={(ann) => onDeleteUserBox(ann.id)}
         onPropagateTrack={onPropagateTrack}
         onToggleHiddenTrack={onToggleHiddenTrack}

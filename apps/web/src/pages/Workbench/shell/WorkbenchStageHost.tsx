@@ -120,6 +120,10 @@ interface WorkbenchStageHostVideoProps {
   onToggleHiddenVideoTrack?: (trackId: string) => void;
   onToggleLockedVideoTrack?: (trackId: string) => void;
   onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
+  // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回)。
+  aiBoxes?: AiBox[];
+  onAcceptPrediction?: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
 }
 
 interface WorkbenchStageHostImageProps {
@@ -305,6 +309,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onToggleHiddenVideoTrack,
       onToggleLockedVideoTrack,
       onPropagateVideoTrack,
+      // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回); aiBoxes 属 video 组(非 image 组)。
+      aiBoxes: videoAiBoxes,
+      onAcceptPrediction: onVideoAcceptPrediction,
+      onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
       fileUrl,
@@ -417,6 +425,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             isLoading={videoManifestLoading}
             error={videoManifestError}
             annotations={annotations}
+            aiBoxes={videoAiBoxes}
             selectedId={selectedId}
             activeClass={activeClass}
             frameIndex={videoFrameIndex}
@@ -443,6 +452,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onDeleteUserBox={onDeleteUserBox}
             onConvertToBboxes={onVideoConvertToBboxes}
+            onAcceptPrediction={onVideoAcceptPrediction}
+            onRejectPrediction={onVideoRejectPrediction}
             onComposeTracks={onVideoComposeTracks}
             onToggleHiddenTrack={onToggleHiddenVideoTrack}
             onToggleLockedTrack={onToggleLockedVideoTrack}

@@ -36,9 +36,13 @@ import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annota
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
 import type { VideoStageControls } from "./videoStageControls";
+import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
+import { SelectionOverlay } from "./SelectionOverlay";
+import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
 
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
+const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
 
 interface VideoKonvaStageProps {
@@ -51,6 +55,8 @@ interface VideoKonvaStageProps {
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
   annotations?: AnnotationResponse[];
+  /** v0.21.4 · AI 候选框(全部帧); 舞台内按当前帧过滤 video_bbox 渲染 + 采纳/驳回。 */
+  aiBoxes?: AiBox[];
   selectedId?: string | null;
   hiddenTrackIds?: Set<string>;
   reviewDisplayMode?: DiffMode;
@@ -85,6 +91,9 @@ interface VideoKonvaStageProps {
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
+  /** v0.21.4 · AI 候选采纳 / 驳回(贴框快捷条, 复用图片工作台的 handleAcceptPrediction/Reject)。 */
+  onAcceptPrediction?: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
@@ -120,6 +129,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   performanceTier = "standard",
   onFrameIndexChange,
   annotations = EMPTY_ANNOTATIONS,
+  aiBoxes = EMPTY_AI_BOXES,
   selectedId = null,
   hiddenTrackIds,
   reviewDisplayMode,
@@ -146,6 +156,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onComposeTracks,
   onConvertToBboxes,
   onDelete,
+  onAcceptPrediction,
+  onRejectPrediction,
   onPropagateTrack,
   onToggleHiddenTrack,
   onToggleLockedTrack,
@@ -282,6 +294,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       pendingDraft,
     }),
     [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, selectedId, trackColorOverrides, visual],
+  );
+
+  // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
+  const frameAiBoxes = useMemo(
+    () =>
+      aiBoxes.filter(
+        (b) => b.geometry?.type === "video_bbox" && b.geometry.frame_index === frameIndex,
+      ),
+    [aiBoxes, frameIndex],
+  );
+  const selectedAiBox = useMemo(
+    () => frameAiBoxes.find((b) => b.id === selectedId) ?? null,
+    [frameAiBoxes, selectedId],
   );
 
   // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。
@@ -551,6 +576,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }, [fitViewport, seekToFrame, selectedTrack, setActualSize]);
 
   // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
+  // (captureCurrentFrameJpeg 由 controller.controls 提供, 见 useVideoPlaybackController。)
   useImperativeHandle(ref, () => ({
     ...controls,
     deleteSelectedTrackKeyframe,
@@ -643,6 +669,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         data-testid="video-konva-source"
         src={manifest.video_url}
         poster={manifest.poster_url ?? undefined}
+        // v0.21.4 · CORS-clean 加载, 否则 createImageBitmap(video) → canvas 会被跨域 MinIO 视频
+        // 污染, 单题 AI 抓帧导出 JPEG 抛 SecurityError。storage 已对 presigned GET 返回 ACAO。
+        crossOrigin="anonymous"
         playsInline
         className={styles.hiddenVideo}
       />
@@ -679,6 +708,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             scale={vp.scale}
             visual={visual}
           />
+          {/* v0.21.4 · AI 候选层(当前帧 video_bbox); select 工具下可点选。 */}
+          <VideoKonvaAiLayer
+            boxes={frameAiBoxes}
+            size={size}
+            scale={vp.scale}
+            selectedId={selectedId}
+            listening={videoTool === "select" && !readOnly}
+            onSelect={(id) => onSelect?.(id)}
+          />
           {issuePixelFeedbacks && issuePixelFeedbacks.length > 0 && (
             <VideoKonvaIssueLayer
               pixelIssues={issuePixelFeedbacks.filter(
@@ -713,6 +751,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             "--frame-h": `${size.h * vp.scale}px`,
           } as CSSProperties}
         />
+        {/* v0.21.4 · AI 候选贴框快捷条(采纳 / 忽略), 复用图片工作台 SelectionOverlay。 */}
+        {selectedAiBox && !readOnly && videoTool === "select" && (
+          <SelectionOverlay
+            box={selectedAiBox}
+            isAi
+            imgW={size.w}
+            imgH={size.h}
+            vp={vp}
+            onAccept={() => onAcceptPrediction?.(selectedAiBox)}
+            onReject={() => {
+              onRejectPrediction?.(selectedAiBox);
+              onSelect?.(null);
+            }}
+          />
+        )}
       </div>
       {playbackError && (
         <div data-testid="video-konva-playback-error" className={styles.playbackError}>

@@ -24,4 +24,9 @@ export interface VideoStageControls {
   toggleSelectedTrackLocked: () => void;
   propagateSelectedTrack: () => void;
   deleteSelectedTrackKeyframe: () => boolean;
+  /**
+   * v0.21.4 · 把当前帧解码后的 ImageBitmap 编码成 JPEG Blob(单题 AI 供图路径用)。
+   * 当前帧尚未解出位图时返回 null。
+   */
+  captureCurrentFrameJpeg: (quality?: number) => Promise<Blob | null>;
 }

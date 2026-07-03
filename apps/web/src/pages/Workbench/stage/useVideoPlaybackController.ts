@@ -10,6 +10,7 @@ import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from ".
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
+import { imageBitmapToJpeg } from "@/utils/imageBitmapToJpeg";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import type { VideoFramePreview } from "./useVideoFramePreview";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -272,6 +273,9 @@ export function useVideoPlaybackController({
 
   // 精确帧: 无 WebCodecs 路径，直接用 <video> 位图缓存。
   const displayBitmap = activeBitmap;
+  // v0.21.4 · 当前帧位图 ref(读最新值, 避免把 activeBitmap 塞进 controls memo deps → 逐帧重建句柄)。
+  const activeBitmapRef = useRef(activeBitmap);
+  activeBitmapRef.current = activeBitmap;
   const showCachedBitmap = Boolean(displayBitmap && !isPlaybackActive);
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
@@ -812,6 +816,12 @@ export function useVideoPlaybackController({
     toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
     propagateSelectedTrack: trackActions.propagateSelectedTrack,
     deleteSelectedTrackKeyframe,
+    // v0.21.4 · 当前帧 → JPEG(视频单题 AI 供图), 经 ref 读最新位图故不入 deps。
+    captureCurrentFrameJpeg: async (quality?: number) => {
+      const bmp = activeBitmapRef.current?.bitmap;
+      if (!bmp) return null;
+      return imageBitmapToJpeg(bmp, quality);
+    },
   }), [
     clearLoopRegion,
     deleteSelectedTrackKeyframe,

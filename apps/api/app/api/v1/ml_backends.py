@@ -1,8 +1,9 @@
+import json
 import time
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_roles
@@ -10,6 +11,7 @@ from app.db.enums import UserRole
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.user import User
 from app.db.models.task import Task
+from app.db.models.project import Project
 from app.schemas.ml_backend import (
     MLBackendCreate,
     MLBackendUpdate,
@@ -25,6 +27,7 @@ from app.schemas.ml_backend import (
 from app.services.ml_backend import MLBackendService
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
+from app.services.prediction import PredictionService, to_internal_shape
 from app.services.storage import StorageService
 from app.services.audit import AuditService
 
@@ -56,6 +59,46 @@ def _resolve_task_url(task: Task) -> str:
     bucket = storage.datasets_bucket if task.dataset_item_id else storage.bucket
     url = storage.generate_download_url(task.file_path, bucket=bucket)
     return storage.rewrite_host_for_ml_backend(url)
+
+
+def _to_video_bbox_result(raw_result: list[dict], frame_index: int) -> list[dict]:
+    """v0.21.4 · 图像 backend 检测结果 (LS 标准 shape) → 单帧 ``video_bbox`` 内部几何。
+
+    复用 ``to_internal_shape`` 把 ``rectanglelabels`` 归一到 0-1 的 bbox (内含 ``_percent_scale``
+    自动兼容 backend 的 0-1 / 0-100 两种口径, 与图像检测候选完全同源), 再套一层 ``frame_index``
+    改写成 ``video_bbox``。**只收 bbox 几何** (Phase 1 scope = 检测框 → VideoBboxGeometry);
+    非 bbox (旋转框 / polygon / keypoint 等) 跳过——视频单帧几何目前只有 ``video_bbox``。
+
+    ``VideoBboxGeometry`` 是 ``extra="forbid"``: geometry dict 只放 ``type/frame_index/x/y/w/h``;
+    ``class_name`` / ``confidence`` 放在 result item 顶层 (accept 从顶层读 ``type`` 决定
+    annotation_type, 见 ``services/annotation.py``)。
+    """
+    out: list[dict] = []
+    for raw in raw_result:
+        if not isinstance(raw, dict):
+            continue
+        shape = to_internal_shape(raw)
+        geom = shape.get("geometry") or {}
+        if geom.get("type") != "bbox":
+            continue
+        out.append(
+            {
+                "type": "video_bbox",
+                "class_name": shape.get("class_name", "") or "",
+                "confidence": shape.get("confidence", 0.0),
+                "geometry": {
+                    "type": "video_bbox",
+                    "frame_index": frame_index,
+                    "x": geom["x"],
+                    "y": geom["y"],
+                    "w": geom["w"],
+                    "h": geom["h"],
+                },
+                "tool_unit_id": "bbox",
+                "attributes": shape.get("attributes") or {},
+            }
+        )
+    return out
 
 
 @router.post("", response_model=MLBackendOut, status_code=201)
@@ -574,4 +617,105 @@ async def interactive_annotating(
         "model_load_ms": result.model_load_ms,
         # v0.18.18 · 交互精修 low-res logits 回灌 (前端原样存储、下次点击经 context.mask_input 回传)
         "mask_input_next": result.mask_input_next,
+    }
+
+
+@router.post("/{backend_id}/predict-frame")
+async def predict_frame(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    frame: UploadFile = File(...),
+    task_id: uuid.UUID = Form(...),
+    frame_index: int = Form(...),
+    config: str = Form("{}"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
+):
+    """v0.21.4 · 对客户端传入的「视频当前帧」JPEG 跑图像 backend, 落单帧 ``video_bbox`` 候选。
+
+    视频 task 的 ``file_path`` 是整段 mp4, 图像 backend 从 task URL 取不到帧 (见
+    ``_resolve_task_url``)。故前端把当前帧解成 JPEG 随 multipart 传入; 服务端上传 import 桶换
+    presigned URL 投递 (``upload_crop_bytes``, **通用**——gsam2/sam3 全支持 http URL, 不走
+    ``data:`` 捷径); 结果逐框改写成 ``video_bbox(frame_index)`` 落一条 Prediction, 采纳复用既有
+    ``/predictions/{id}/accept`` 机制 → ``VideoBboxGeometry``。
+
+    与批量预标 (整段视频投 signed URL 走 worker) 是两条路: 本路同步、单帧、client 供图。
+    """
+    from app.workers.tasks import _build_predict_context
+
+    svc = MLBackendService(db)
+    backend = await svc.get(backend_id)
+    if not backend or not await svc.is_enabled(project_id, backend_id):
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    try:
+        cfg = json.loads(config) if config else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid config JSON")
+    if not isinstance(cfg, dict):
+        raise HTTPException(status_code=400, detail="config must be a JSON object")
+
+    # DINO 阈值取项目级 override (与 worker 单阶段路径一致, 见 workers/tasks.py `_run_batch`)。
+    project = await db.get(Project, project_id)
+    context = _build_predict_context(
+        prompt=cfg.get("prompt"),
+        # 单帧只要框: 文本 backend (gsam2) 输出 box; mask/polygon 非 video_bbox 会被丢弃。
+        output_mode=cfg.get("output_mode") or "box",
+        params=cfg.get("params"),
+        model_id=cfg.get("model_id"),
+        task_type=cfg.get("task_type"),
+        model_variants=cfg.get("model_variants"),
+        class_filter=cfg.get("class_filter"),
+        box_threshold=(
+            float(project.box_threshold)
+            if project is not None and project.box_threshold is not None
+            else None
+        ),
+        text_threshold=(
+            float(project.text_threshold)
+            if project is not None and project.text_threshold is not None
+            else None
+        ),
+    )
+
+    jpeg_bytes = await frame.read()
+    if not jpeg_bytes:
+        raise HTTPException(status_code=400, detail="Empty frame image")
+
+    storage = StorageService()
+    frame_url = storage.upload_crop_bytes(
+        jpeg_bytes, f"frame-predict/{task_id}/{frame_index}.jpg"
+    )
+
+    client = ml_client_module.MLBackendClient(backend)
+    results = await client.predict(
+        [{"id": str(task.id), "file_path": frame_url}], context=context
+    )
+
+    raw_shapes: list[dict] = []
+    for r in results:
+        if isinstance(r.result, list):
+            raw_shapes.extend(r.result)
+    video_shapes = _to_video_bbox_result(raw_shapes, frame_index)
+
+    score = next((r.score for r in results if r.score is not None), None)
+    pred_svc = PredictionService(db)
+    prediction = await pred_svc.create_from_ml_result(
+        task_id=task.id,
+        project_id=project_id,
+        ml_backend_id=backend_id,
+        result=video_shapes,
+        score=score,
+    )
+    await db.commit()
+    return {
+        "prediction_id": str(prediction.id),
+        "candidate_count": len(video_shapes),
+        "frame_index": frame_index,
     }

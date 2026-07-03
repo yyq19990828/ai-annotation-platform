@@ -22,6 +22,7 @@ import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
+import { mlBackendsApi } from "@/api/ml-backends";
 import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
@@ -360,6 +361,9 @@ export function useWorkbenchShellModel({
   // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
+  // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
+  // 单独一个运行态并入 aiRunning, 供 popover 转圈 + 防重复点击。
+  const [videoFrameAiRunning, setVideoFrameAiRunning] = useState(false);
   // v0.16.x 第 3 批 · AI 浮层位置/尺寸(+localStorage 持久化)抽到 useAiPopoverFrame;
   // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
   const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
@@ -1031,7 +1035,7 @@ export function useWorkbenchShellModel({
     prefetch(tasks[idx - 1]);
   }, [taskId, tasks, queryClient, debouncedConf]);
 
-  const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending;
+  const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending || videoFrameAiRunning;
 
   const currentBatchStatus = useMemo<string | undefined>(() => {
     if (!task?.batch_id || !batchList) return undefined;
@@ -1412,6 +1416,63 @@ export function useWorkbenchShellModel({
   });
 
   const videoControlsRef = useRef<VideoStageControls | null>(null);
+
+  // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
+  // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
+  const handleRunVideoFrameAi = useCallback(async () => {
+    if (!projectId) return;
+    const mlBackendId = batchBackendId;
+    if (!mlBackendId) {
+      pushToast({
+        msg: "AI 暂不可用",
+        sub: "项目尚未绑定 ML 推理后端,请到「项目设置 → AI 配置」注册并选择",
+        kind: "error",
+      });
+      return;
+    }
+    const args = preCfg.buildArgs("overwrite");
+    if (!args) return;
+    if (!preCfg.configReady) {
+      pushToast({
+        msg: "AI 暂不可用",
+        sub: preCfg.isGeometricBackend
+          ? "请在 AI 面板选择模型任务"
+          : "请在 AI 面板填写 prompt (或为类别配置英文 alias)",
+        kind: "error",
+      });
+      return;
+    }
+    const blob = await videoControlsRef.current?.captureCurrentFrameJpeg();
+    if (!blob) {
+      pushToast({
+        msg: "当前帧尚未就绪",
+        sub: "请等待画面加载完成后重试",
+        kind: "warning",
+      });
+      return;
+    }
+    setVideoFrameAiRunning(true);
+    pushToast({ msg: "AI 正在分析当前帧...", sub: aiModel });
+    try {
+      const res = await mlBackendsApi.predictFrame(projectId, mlBackendId, {
+        blob,
+        taskId: taskId!,
+        frameIndex: videoFrameIndex,
+        config: args as unknown as Record<string, unknown>,
+      });
+      preCfg.markHot();
+      await queryClient.invalidateQueries({ queryKey: ["predictions", taskId] });
+      pushToast({
+        msg: "当前帧分析完成",
+        sub: `第 ${videoFrameIndex} 帧新增 ${res.candidate_count} 个候选`,
+        kind: "success",
+      });
+    } catch (err) {
+      pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" });
+    } finally {
+      setVideoFrameAiRunning(false);
+    }
+  }, [projectId, batchBackendId, preCfg, aiModel, taskId, videoFrameIndex, queryClient, pushToast]);
 
   const annotateModeState = useAnnotateMode({
     mode,
@@ -2163,7 +2224,8 @@ export function useWorkbenchShellModel({
       onRunAi: () => {
         setAiPopoverOpen((open) => !open);
       },
-      aiDisabled: isVideoTask,
+      // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
+      aiDisabled: false,
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
@@ -2348,6 +2410,10 @@ export function useWorkbenchShellModel({
         onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
         onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
         onPropagateVideoTrack: openPropagateDialog,
+        // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回); 复用图片的 accept/reject handler(几何无关)。
+        aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes,
+        onAcceptPrediction: handleAcceptPrediction,
+        onRejectPrediction: handleRejectPrediction,
       },
       image: {
         fileUrl,
@@ -2571,7 +2637,8 @@ export function useWorkbenchShellModel({
       onExpand: expandSelectionCard,
     },
     aiPopover: {
-      open: aiPopoverOpen && !isVideoTask,
+      // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), onRunAi 走帧路径。
+      open: aiPopoverOpen,
       rightOffset: rightOpen ? rightPx + 44 : 44,
       position: aiPopoverPosition,
       onPositionChange: setAiPopoverPosition,
@@ -2580,7 +2647,8 @@ export function useWorkbenchShellModel({
       aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
-      onRunAi: handleRunAi,
+      // v0.21.4 · 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。
+      onRunAi: isVideoTask ? handleRunVideoFrameAi : handleRunAi,
       // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
       hasProjectPipeline,
       projectPipelineStageCount,
