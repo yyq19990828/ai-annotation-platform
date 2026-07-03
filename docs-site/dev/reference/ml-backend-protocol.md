@@ -270,6 +270,42 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 }
 ```
 
+### 2.3 检测式视频追踪（批量 `/predict`）
+
+**与 §2.2 的 `type=video_tracker` 是两条不同的链**。§2.2 是「人在环、单对象、种子传播」的交互式追踪（SAM2/SAM3，`predict_interactive`，平台分窗续追）；这里的**检测式追踪**（detect-then-track）是「无种子、多对象、全自动、离线批量」：检测器逐帧出框 + 内建关联算法（ByteTrack / BoT-SORT），**时间关联全在 backend 内**，平台只投整段视频、收已聚合的轨迹，自己不做任何时间编排。它走**标准批量 `/predict`**（复数 `tasks` wire），不进交互式那条链。
+
+**请求**：`context.type="tracker"`，`task.file_path` 是整段视频（presigned URL 或本地路径，backend 内部解帧）：
+```json
+{
+  "tasks": [{ "id": "v1", "file_path": "https://.../clip.mp4" }],
+  "context": {
+    "type": "tracker",
+    "model_variants": { "series": "yolo11", "size": "s" },
+    "params": { "conf": 0.35, "iou": 0.7, "tracker": "bytetrack" },
+    "classes": [2]                              // 可选类别白名单 (模型原生 index)
+  }
+}
+```
+- `params.tracker` 从 `/setup.models[].supported_trackers` 选定（缺省取首项）；enum 约束到 backend 内建的 tracker 配置（yolo：`bytetrack` / `botsort`）。追踪算法是 **param**（apply-time 选、不换权重），不是 variant 轴。
+- `supported_inputs=["video"]`：检测式追踪**只接受视频**——单帧图像无跨帧状态、产不出有意义的 `track_id`。
+
+**响应**：`result[]` 每项是一条**已聚合好的轨迹**（backend 已 stream 整段视频、按原生 track id 聚合，平台不再聚合），`type="video_track_bbox"`：
+```jsonc
+{
+  "type": "video_track_bbox",
+  "track_id": 3,                    // backend 原生 int; 平台 ingestion 映射成 trk_<uuid>
+  "class_name": "car",
+  "score": 0.87,                    // 轨迹级 (帧置信度均值)
+  "keyframes": [
+    // bbox 用 {x,y,w,h}、直接 0-1 归一化 (不发百分比、平台不做百分比自动探测)
+    { "frame_index": 0, "bbox": { "x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06 }, "score": 0.90 },
+    { "frame_index": 1, "bbox": { "x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06 }, "score": 0.88 }
+    // 某帧无 track id (低置信) 直接不出该帧关键帧
+  ]
+}
+```
+平台把它落成 `VideoTrackGeometry` 预标注（每帧 `source="prediction"`），视频工作台按轨迹渲染、人工审核接受。**首版限制**：单次整段追踪（不分窗），帧数超上限（yolo `YOLO_TRACKER_MAX_FRAMES`，默认 900）截断并 `log`（不静默丢）；长超时须配 tracker 专属超时 + 独立 queue / 限并发（长视频整段追踪独占 worker slot）。
+
 ---
 
 ## 3. `result` 字段 — 标注 schema

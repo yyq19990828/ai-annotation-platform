@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import logging
 import math
+import os
+import tempfile
 import time
 from typing import Any
 
@@ -213,6 +215,10 @@ class YoloPredictor:
         if task == "exemplar":
             return await self._predict_visual_prompt(file_path, ctx)
 
+        # v0.21.1 · 检测式视频追踪: type=tracker, 整段视频 → ultralytics model.track → 聚合轨迹.
+        if task == "tracker":
+            return await self._predict_tracker(file_path, ctx)
+
         model, cache_hit, load_ms = await self._pool.get(task, variants.series, variants.size)
         img = fetch_image(file_path)
         img_w, img_h = img.size
@@ -394,6 +400,164 @@ class YoloPredictor:
         if want_mask:
             items += _emit_segmentation(r0, names, img_w, img_h, normalized=True)
         return items, cache_hit, load_ms, inference_ms
+
+    async def _predict_tracker(
+        self, file_path: str, ctx: Context
+    ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
+        """v0.21.1 · 检测式视频追踪 (detect-then-track). 整段视频喂 ultralytics
+        ``model.track(stream=True)``, 逐帧收 ``boxes.id``, 按 track_id 聚合成
+        ``video_track_bbox`` item (每项一条已聚合轨迹, 平台不再做时间关联)。
+
+        - 复用 detection 权重 (pool key task=tracker → MODEL_MATRIX 别名解出 det 权重)。
+        - 坐标**直接归一 0-1** (对齐 VideoTrackKeyframe + 平台"直信 0-1 不做百分比探测"约定)。
+        - track_id 返回 ultralytics 原生 int; 平台 ingestion 再映射成 ``trk_<uuid>``。
+        - 首版**单次整段** track (不分窗), 帧数超 ``YOLO_TRACKER_MAX_FRAMES`` 截断并 log
+          (不静默丢), 避免长视频爆内存 / 超时。
+        """
+        variants: Variants = ctx.variants
+        params = ctx.params
+        model, cache_hit, load_ms = await self._pool.get(
+            "tracker", variants.series, variants.size
+        )
+        tracker_yaml = f"{params.tracker}.yaml"  # bytetrack.yaml / botsort.yaml (ultralytics 内建)
+        class_filter = getattr(ctx, "classes", None) or None
+        max_frames = int(os.environ.get("YOLO_TRACKER_MAX_FRAMES", "900"))
+
+        video_path, cleanup = _fetch_video(file_path)
+        # track_id → {class_counts, scores, keyframes[]} 聚合累加器。
+        tracks: dict[int, dict[str, Any]] = {}
+        frame_idx = 0
+        truncated = False
+        t0 = time.time()
+        try:
+            # persist=False: 每段视频独立起追 —— 池化 model 可能残留上一段视频的 tracker 状态,
+            # persist=True 会错误续接上一段的 track_id。单次整段一个 track() 调用内, 帧间状态天然
+            # 保持, 无需 persist。
+            stream = model.track(
+                source=video_path,
+                stream=True,
+                persist=False,
+                tracker=tracker_yaml,
+                conf=params.conf,
+                iou=params.iou,
+                classes=class_filter,
+                verbose=False,
+            )
+            for r in stream:
+                if frame_idx >= max_frames:
+                    truncated = True
+                    break
+                _accumulate_track_frame(r, frame_idx, tracks)
+                frame_idx += 1
+        finally:
+            if cleanup:
+                _safe_unlink(video_path)
+        elapsed = time.time() - t0
+        record_inference("tracker", variants.series, variants.size, elapsed)
+        inference_ms = int(elapsed * 1000)
+        if truncated:
+            logger.warning(
+                "tracker 视频超帧上限 %d, 已截断 (track_id 数=%d); 首版单次整段限制, "
+                "长视频请拆分或调高 YOLO_TRACKER_MAX_FRAMES",
+                max_frames,
+                len(tracks),
+            )
+        return _emit_tracks(tracks), cache_hit, load_ms, inference_ms
+
+
+# ── v0.21.1 · 检测式视频追踪辅助 ──────────────────────────────────────────────
+
+
+def _fetch_video(file_path: str) -> tuple[str, bool]:
+    """把视频取到本地路径供 ultralytics ``model.track(source=path)`` 消费.
+
+    返回 ``(path, cleanup)``: http(s) presigned URL 下载到临时文件 (cleanup=True, 用后删);
+    本地绝对路径 / ``file://`` 原样返回 (cleanup=False)。与 fetch_image 的来源并集对齐,
+    但视频不进内存 (交给 ultralytics 解帧), 故落磁盘临时文件而非 PIL。
+    """
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    parsed = urlparse(file_path)
+    if parsed.scheme in ("http", "https"):
+        import httpx  # noqa: PLC0415
+
+        suffix = os.path.splitext(parsed.path)[1] or ".mp4"
+        fd, tmp = tempfile.mkstemp(suffix=suffix, prefix="yolo-track-")
+        try:
+            with os.fdopen(fd, "wb") as f, httpx.stream(
+                "GET", file_path, timeout=60.0, follow_redirects=True
+            ) as resp:
+                resp.raise_for_status()
+                for chunk in resp.iter_bytes(chunk_size=1 << 20):
+                    f.write(chunk)
+        except Exception:
+            _safe_unlink(tmp)
+            raise
+        return tmp, True
+    if parsed.scheme == "file":
+        return parsed.path, False
+    return file_path, False
+
+
+def _safe_unlink(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _accumulate_track_frame(r: Any, frame_idx: int, tracks: dict[int, dict[str, Any]]) -> None:
+    """把一帧 ultralytics Results 的带 id 检测框累加进 track 聚合器 (id=None 的帧/框跳过)。"""
+    boxes = getattr(r, "boxes", None)
+    if boxes is None or getattr(boxes, "id", None) is None:
+        return
+    h, w = r.orig_shape  # (height, width) 像素
+    if not w or not h:
+        return
+    ids = boxes.id.int().cpu().tolist()
+    xyxy = boxes.xyxy.cpu().numpy() if hasattr(boxes.xyxy, "cpu") else boxes.xyxy
+    confs = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else boxes.conf
+    clss = boxes.cls.int().cpu().tolist() if hasattr(boxes.cls, "cpu") else [int(c) for c in boxes.cls]
+    names: dict[int, str] = getattr(r, "names", {}) or {}
+    for i, tid in enumerate(ids):
+        x1, y1, x2, y2 = (float(v) for v in xyxy[i])
+        # 归一 0-1 + clamp (防越界的亚像素/负值污染下游)。
+        bbox = {
+            "x": min(max(x1 / w, 0.0), 1.0),
+            "y": min(max(y1 / h, 0.0), 1.0),
+            "w": min(max((x2 - x1) / w, 0.0), 1.0),
+            "h": min(max((y2 - y1) / h, 0.0), 1.0),
+        }
+        score = float(confs[i])
+        entry = tracks.setdefault(tid, {"class_counts": {}, "scores": [], "keyframes": []})
+        entry["keyframes"].append({"frame_index": frame_idx, "bbox": bbox, "score": score})
+        cls_name = names.get(clss[i], str(clss[i]))
+        entry["class_counts"][cls_name] = entry["class_counts"].get(cls_name, 0) + 1
+        entry["scores"].append(score)
+
+
+def _emit_tracks(tracks: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """聚合器 → ``video_track_bbox`` result item 列表 (track_id 升序稳定输出)。
+
+    class_name 取该轨迹跨帧多数票 (类别可能逐帧抖动); score 取帧置信度均值。
+    """
+    items: list[dict[str, Any]] = []
+    for tid in sorted(tracks):
+        entry = tracks[tid]
+        counts: dict[str, int] = entry["class_counts"]
+        class_name = max(counts, key=lambda k: counts[k]) if counts else ""
+        scores: list[float] = entry["scores"]
+        track_score = sum(scores) / len(scores) if scores else 0.0
+        items.append(
+            {
+                "type": "video_track_bbox",
+                "track_id": int(tid),  # ultralytics 原生 int; 平台 ingestion 映射 trk_<uuid>
+                "class_name": class_name,
+                "score": track_score,
+                "keyframes": entry["keyframes"],
+            }
+        )
+    return items
 
 
 def _emit_detection(

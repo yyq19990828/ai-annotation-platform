@@ -42,7 +42,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 -->
 
 ### Added
-- **yolo-backend 声明检测式视频追踪能力**：`/setup` 新增 `track` 模型（`task=tracker`、仅接受 `video` 输入、自报 `bytetrack` / `botsort` 两种追踪算法），复用检测权重矩阵（series × size）与 COCO 类别表——追踪不加载新权重，只在推理时外挂多目标关联算法。这是检测式视频追踪（区别于交互式 SAM 追踪）落地的第一步，接入实际推理与落库随后跟进。
+- **yolo-backend 检测式视频追踪推理**：`/setup` 新增 `track` 模型（`task=tracker`、仅接受 `video` 输入、自报 `bytetrack` / `botsort` 两种追踪算法，复用检测权重矩阵与 COCO 类别表——追踪不加载新权重，只在推理时外挂多目标关联算法）；`/predict` 的 `type=tracker` 分支用 ultralytics `model.track` 逐帧关联，返回每条已聚合轨迹（原生 track id + 逐帧 0-1 归一 bbox），支持 `conf` / `iou` / 追踪算法 / 类别白名单调节，首版单次整段追踪并对超长视频按帧数上限截断。这是检测式视频追踪（区别于交互式 SAM 追踪）的 backend 侧；平台落库（轨迹预标注）随后跟进。
 
 ### Changed
 - 预标注流水线画布的**源阶段渲染改为按模型任务派生**，不再把「源 = 检测 = 整图」写死：源节点的角色名（目标检测 / 视频追踪）、产物（检测框 / 轨迹）、计数标签与源类型徽标（图像 / 视频）均从模型能力与受控词表推导。为后续检测式视频追踪（video 源）接入铺路——此前六处硬编码会把视频源错误显示成「检测 / 整图」。
