@@ -11,7 +11,7 @@
  * 下游 backend 不产属性时给 ⚠ 警示; 键冲突 chip 由容器传 conflictKeys 标红。
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -25,11 +25,12 @@ import {
 } from "@/api/capabilityInputs";
 import { usePreannotateConfig, type PreannotateArgs } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
+import { ChipMultiSelect } from "./ChipMultiSelect";
 import type {
   PipelineStagePayload,
   PipelineStageStat,
 } from "@/hooks/usePreannotation";
-import type { StageCaps } from "../utils/pipelineGraph";
+import { classifyDownstream, type StageCaps } from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
 
 // v0.18.8 · 运行态 → Badge 原语 (语义色 + 暗色配对走设计系统, 不裸色)。
@@ -45,123 +46,6 @@ const RUN_STATE_BADGE: Record<
 
 function cx(...names: Array<string | false | null | undefined>) {
   return names.filter(Boolean).join(" ");
-}
-
-/** 通用 chip 多选 (类别 / 属性键共用)。选中集合即语义值, 空集=全部。conflictKeys 命中的 chip 标红。
- *  allowFreeText=true (父框类别用): 额外渲染文本输入框 (datalist 补全), 可加任意名字 (匹配检测框
- *  class_name), 且把「已选但不在 options 里」的值也渲染成 chip (否则自由输入的项不可见/不可删)。 */
-function ChipMultiSelect({
-  options,
-  selected,
-  onChange,
-  conflictKeys,
-  emptyHint,
-  allowFreeText = false,
-}: {
-  options: Array<{ value: string; label: string }>;
-  selected: Set<string>;
-  onChange: (next: Set<string>) => void;
-  conflictKeys?: Set<string>;
-  emptyHint?: string;
-  allowFreeText?: boolean;
-}) {
-  const listId = useId();
-  const [draft, setDraft] = useState("");
-  if (options.length === 0 && !allowFreeText) {
-    return <span className={styles.mutedText}>{emptyHint ?? "无可选项"}</span>;
-  }
-  const toggle = (v: string) => {
-    const next = new Set(selected);
-    if (next.has(v)) next.delete(v);
-    else next.add(v);
-    onChange(next);
-  };
-  const add = (raw: string) => {
-    const v = raw.trim();
-    if (!v) return;
-    const next = new Set(selected);
-    next.add(v);
-    onChange(next);
-    setDraft("");
-  };
-  // 自由文本模式: chip 列 = options ∪ 已选但不在 options 的值 (保证自由输入项可见可删)。
-  const optionValues = new Set(options.map((o) => o.value));
-  const extraSelected = allowFreeText
-    ? Array.from(selected)
-        .filter((v) => !optionValues.has(v))
-        .map((v) => ({ value: v, label: v }))
-    : [];
-  const allChips = [...options, ...extraSelected];
-  return (
-    <>
-      {allowFreeText && (
-        <div className={styles.presetRow}>
-          <input
-            className={styles.textInput}
-            type="text"
-            list={listId}
-            value={draft}
-            placeholder="输入类名添加（匹配检测框类名）"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                add(draft);
-              }
-            }}
-          />
-          <datalist id={listId}>
-            {options.map((o) => (
-              <option key={o.value} value={o.value} />
-            ))}
-          </datalist>
-          <button
-            type="button"
-            className={styles.presetButton}
-            disabled={!draft.trim()}
-            onClick={() => add(draft)}
-            title="添加类名"
-          >
-            添加
-          </button>
-        </div>
-      )}
-      <div className={styles.aliasList}>
-        {allChips.map((o) => {
-          const active = selected.has(o.value);
-          const conflict = active && conflictKeys?.has(o.value);
-          return (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => toggle(o.value)}
-              className={cx(
-                styles.aliasChip,
-                active && styles.aliasChipActive,
-                conflict && styles.aliasChipConflict,
-              )}
-              title={conflict ? `属性键 ${o.value} 与其它并行阶段冲突` : o.label}
-            >
-              <span>
-                {active ? "✓ " : ""}
-                {o.label}
-              </span>
-            </button>
-          );
-        })}
-        {selected.size > 0 && (
-          <button
-            type="button"
-            onClick={() => onChange(new Set())}
-            className={styles.refillButton}
-            title="清空选择"
-          >
-            清空
-          </button>
-        )}
-      </div>
-    </>
-  );
 }
 
 interface Props {
@@ -291,25 +175,12 @@ export function StageCard({
   }, [backendId, downstreamModels]);
   const selectedModel = downstreamModels.find((m) => m.id === selectedModelId) ?? null;
 
-  // box-seg geometry 下游: 消费上游框出 polygon (走平台 geometry 投递, 无需 prompt / 不裁 crop)。
-  const isBoxSegGeometry =
-    selectedModel?.task === "segmentation" &&
-    (selectedModel?.supported_prompts ?? []).includes("bbox") &&
-    !selectedModel?.is_interactive;
-  // v0.18.15 · crop-detect geometry 下游: 普通检测器在父 crop 上检子物体, crop 投递 + 坐标回映。
-  const isCropDetectGeometry =
-    selectedModel?.task === "detection" && !selectedModel?.is_interactive;
-  // 产几何的两类下游 (共用: 隐藏属性字段, 允许作父阶段)。isBoxSegGeometry 走 geometry 投递,
-  // isCropDetectGeometry 走 crop 投递。
-  const isGeometryDownstream = isBoxSegGeometry || isCropDetectGeometry;
-
-  // v0.20.x · 文本识别下游 (rec 原子, task=ocr, crop 投递, 产 text/orientation/language)：
-  //   跨 backend 编排里「上游 det 出框 → 裁 crop → 喂 rec 认字」的下游识别阶段。语义是识别 (非分类),
-  //   走 attributes 投递。rec 是 crop-only, 不在 selectableModels (单阶段整图下拉被排除), 只能在此选。
-  const isOcrRecognize =
-    selectedModel?.task === "ocr" &&
-    selectedModel?.composition !== "composite" &&
-    !selectedModel?.is_interactive;
+  // 下游 model 归类 (判据抽到 pipelineGraph.classifyDownstream, 与全局侧 GlobalStageInspector 共用):
+  //   box-seg geometry (消费上游框出 polygon, geometry 投递) / crop-detect geometry (父 crop 检子物体,
+  //   crop 投递 + 坐标回映, v0.18.15) / 文本识别 (rec 原子, task=ocr, crop 投递, 产 text/orientation/
+  //   language 属性, v0.20.x)。产几何的两类共用: 隐藏属性字段、允许作父阶段。
+  const { isBoxSegGeometry, isCropDetectGeometry, isGeometryDownstream, isOcrRecognize } =
+    classifyDownstream(selectedModel);
 
   // 选中 rec 下游时, 把本卡继承的配置表单切到其整图 OCR 同胞 (e2e): ① 让 cfg.configReady=true (否则
   //   纯 rec 既非 doc/几何/prompt, stageArgs 为 null), ② 让继承的变体选择器暴露 version/size/lang
@@ -633,6 +504,7 @@ export function StageCard({
           selected={classFilter}
           onChange={setClassFilter}
           allowFreeText
+          freeTextPlaceholder="输入类名添加（匹配检测框类名）"
           emptyHint="留空=对全部父框跑"
         />
       </div>

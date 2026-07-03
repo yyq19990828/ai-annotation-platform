@@ -85,6 +85,76 @@ export function variantText(payload: PipelineStagePayload | null | undefined): s
     .join(", ");
 }
 
+/** 分类下游 model 所需的最小结构 (MLModelCapability / CapabilityInstanceModel 公共子集)。 */
+export interface DownstreamModelLike {
+  task?: string;
+  supported_prompts?: string[];
+  is_interactive?: boolean;
+  composition?: string;
+}
+
+/**
+ * 下游 model 归类旗标 (单一真相; 项目侧 StageCard 与全局侧 GlobalStageInspector 共用)。
+ * 三类判据互斥 (task 单值), 语义:
+ * - isCropDetectGeometry: 普通检测器在父 crop 上检子物体 (crop 投递 + 坐标回映, 产几何)。
+ * - isBoxSegGeometry: box-seg (segmentation + bbox prompt) 消费上游框出 mask (geometry 投递, 产几何)。
+ * - isOcrRecognize: rec 原子在父 crop 上认字 (crop 投递, 产 text/orientation/language 属性)。
+ * 三者皆非 → 分类下游 (crop 投递, 产属性)。
+ */
+export interface DownstreamKind {
+  isBoxSegGeometry: boolean;
+  isCropDetectGeometry: boolean;
+  /** 产几何的两类 (box-seg / crop-detect) 之一; 用于隐藏属性字段、允许作父阶段。 */
+  isGeometryDownstream: boolean;
+  isOcrRecognize: boolean;
+}
+
+export function classifyDownstream(
+  model: DownstreamModelLike | null | undefined,
+): DownstreamKind {
+  const isBoxSegGeometry =
+    model?.task === "segmentation" &&
+    (model?.supported_prompts ?? []).includes("bbox") &&
+    !model?.is_interactive;
+  const isCropDetectGeometry =
+    model?.task === "detection" && !model?.is_interactive;
+  const isOcrRecognize =
+    model?.task === "ocr" &&
+    model?.composition !== "composite" &&
+    !model?.is_interactive;
+  return {
+    isBoxSegGeometry: !!isBoxSegGeometry,
+    isCropDetectGeometry: !!isCropDetectGeometry,
+    isGeometryDownstream: !!(isBoxSegGeometry || isCropDetectGeometry),
+    isOcrRecognize: !!isOcrRecognize,
+  };
+}
+
+/** 下游阶段"内生形态": roi/input/write 由 model task 定死 (不给用户手选)。 */
+export interface DownstreamShape {
+  role: "检测" | "分割" | "识别" | "分类";
+  roiMode: "crop" | "geometry";
+  /** 仅检测下游显式下发 input=crop; 其余省略, 后端按 supported_inputs 烘焙。 */
+  inputMode?: "crop";
+  writeTarget: "geometry" | "attributes";
+  /** 是否写属性 (决定是否出 write.keys / label 字段)。 */
+  isAttributes: boolean;
+}
+
+export function deriveDownstreamShape(model: DownstreamModelLike): DownstreamShape {
+  const k = classifyDownstream(model);
+  if (k.isCropDetectGeometry) {
+    return { role: "检测", roiMode: "crop", inputMode: "crop", writeTarget: "geometry", isAttributes: false };
+  }
+  if (k.isBoxSegGeometry) {
+    return { role: "分割", roiMode: "geometry", writeTarget: "geometry", isAttributes: false };
+  }
+  if (k.isOcrRecognize) {
+    return { role: "识别", roiMode: "crop", writeTarget: "attributes", isAttributes: true };
+  }
+  return { role: "分类", roiMode: "crop", writeTarget: "attributes", isAttributes: true };
+}
+
 /** 阶段模型能力旗标 (StageCard 自报, 供画布作可达性 / 产属性警示)。 */
 export interface StageCaps {
   /** capabilities 查询已就绪 (否则不判, 免误报)。 */

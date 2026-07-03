@@ -4,7 +4,7 @@
  * 进入条件: ProjectCardGrid 点击某项目卡片;此面板替代主视图渲染.
  */
 
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -41,24 +41,17 @@ import { PredictionImportWizard } from "@/components/predictions/PredictionImpor
 import { usePreannotateConfig } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import { StageCard } from "./StageCard";
+import { usePipelineComposer } from "../hooks/usePipelineComposer";
 import {
-  MAX_DEPTH,
   ROOT_SID,
-  canAddChild as pureCanAddChild,
-  canReparent,
   classFilterText,
-  depthBySid,
-  descendantsOf,
   detailOf,
   producesGeometry,
-  reparent,
   roiText,
   roleOf,
   stageWarning,
   variantText,
   type GraphNodeModel,
-  type StageCaps,
-  type StageEntry,
 } from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
 
@@ -186,7 +179,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const savedPipeline = defaultProjectPipeline?.stages ?? project?.preannotate_pipeline ?? null;
   const savedStageCount = savedPipeline?.length ?? 0;
   const savedPipelineName = defaultProjectPipeline?.name ?? (savedStageCount > 0 ? "旧项目编排" : null);
-  const [pipelineName, setPipelineName] = useState("项目默认编排");
+  const [pipelineName, setPipelineName] = useState("");
   const [pipelineScope, setPipelineScope] = useState<ProjectPipelineScope>("private");
   const [selectedLibraryPipelineId, setSelectedLibraryPipelineId] = useState("");
   const libraryPipelines = useMemo(
@@ -244,62 +237,31 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 编排 (红线)。卡片把派生 stage payload 上抛, 容器在运行时组装成 pipeline_stages。
   // v0.18.15 · 受限树形 (max depth 3): 下游阶段为 {sid, parentSid} 列表, parentSid="root"=源阶段。
   // 数组顺序即添加顺序 (子总在父之后追加 → 运行期分配的 stage 号天然满足「父序号 < 子序号」)。
-  const [stagesGraph, setStagesGraph] = useState<StageEntry[]>([]);
-  // v0.18.16 · DAG 画布选中节点 (右列检查器据此显参数); 默认选源 (ROOT_SID), 始终有一张可编辑。
-  const [selectedSid, setSelectedSid] = useState<string>(ROOT_SID);
-  const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
-  // v0.18.16 §13 · 各卡上抛的能力旗标 (可达性 / 产属性警示)。
-  const stageCapsRef = useRef<Record<string, StageCaps | null>>({});
-  const [stageTick, setStageTick] = useState(0); // 卡片回报 payload/caps → bump 触发重算
-  const onStageChange = useCallback(
-    (sid: string, payload: PipelineStagePayload | null) => {
-      stagePayloadsRef.current[sid] = payload;
-      setStageTick((n) => n + 1);
-    },
-    [],
-  );
-  const onStageCaps = useCallback((sid: string, caps: StageCaps | null) => {
-    stageCapsRef.current[sid] = caps;
-    setStageTick((n) => n + 1);
-  }, []);
-  const seqRef = useRef(0);
-  const addStage = useCallback(
-    (parentSid: string) => {
-      // 超深兜底: 父已达最大深度则拒绝 (UI 的 canAddChild 正常已挡, 这里防漏)。
-      if (parentSid !== ROOT_SID && (depthBySid(stagesGraph)[parentSid] ?? 1) >= MAX_DEPTH) {
-        pushToast({ msg: "无法加子阶段", sub: `流水线最深 ${MAX_DEPTH} 层`, kind: "warning" });
-        return;
-      }
-      const sid = `stage-${(seqRef.current += 1)}`;
-      setStagesGraph((g) => [...g, { sid, parentSid }]);
-      setSelectedSid(sid); // 新建即选中 → 右列直接进该阶段参数。
-    },
-    [stagesGraph, pushToast],
-  );
-  const removeStage = useCallback((sid: string) => {
-    if (sid === ROOT_SID) return; // 源不可删 (会级联清空整棵树)。
-    // 删带后代的节点 → 提示连带删除数 (现状静默级联)。
-    const kids = descendantsOf(stagesGraph, sid);
-    if (kids.size > 0) {
-      pushToast({ msg: "已删除阶段", sub: `连带移除 ${kids.size} 个子阶段` });
-    }
-    setStagesGraph((g) => {
-      // 级联移除该阶段及其全部后代 (父被删, 子无依附)。
-      const dead = new Set([sid]);
-      for (let changed = true; changed; ) {
-        changed = false;
-        for (const e of g) {
-          if (dead.has(e.parentSid) && !dead.has(e.sid)) {
-            dead.add(e.sid);
-            changed = true;
-          }
-        }
-      }
-      // 选中节点被删 → 回落到源。
-      setSelectedSid((cur) => (dead.has(cur) ? ROOT_SID : cur));
-      return g.filter((e) => !dead.has(e.sid));
-    });
-  }, [stagesGraph, pushToast]);
+  // v0.21.0 收尾优化 · 编排状态机层提取到 usePipelineComposer, 与全局编排页共用 (方案 B refactor).
+  // 下游须用不同于源检测的 backend, backends 数<2 时不允许加子 (原 canAddBackend 语义)。
+  const {
+    stagesGraph,
+    selectedSid,
+    setSelectedSid,
+    onStageChange,
+    onStageCaps,
+    downstreamPayloads,
+    allDownstreamReady,
+    addStage,
+    removeStage,
+    onReparent,
+    canReparentConn,
+    canAddChildAt,
+    conflictInfo,
+    hasKeyConflict,
+    reset: resetComposer,
+    stageCapsRef,
+  } = usePipelineComposer({
+    availableBackendCount: backends.length,
+    onWarn: (msg, sub) => pushToast({ msg, sub, kind: "warning" }),
+    onCascadeDelete: (n) =>
+      pushToast({ msg: "已删除阶段", sub: `连带移除 ${n} 个子阶段` }),
+  });
 
   // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages (终态真值)。
   const [lastPipelineJobId, setLastPipelineJobId] = useState<string | null>(null);
@@ -358,11 +320,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 项目切换时重置批次选择 + 下游阶段卡 (prompt / outputMode 的重置在 usePreannotateConfig 内).
   useEffect(() => {
     setSelectedBatchIds(new Set());
-    setStagesGraph([]);
-    setSelectedSid(ROOT_SID);
-    stagePayloadsRef.current = {};
+    resetComposer();
     setLastPipelineJobId(null);
     setKeyConflictLastWins(false);
+    // resetComposer 已是稳定引用, 无需入依赖.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const trigger = useTriggerPreannotation(projectId);
@@ -389,23 +351,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     });
   };
 
-  // 下游卡的派生 payload (stageTick 变化时重算); 全部就绪才允许跑。按 stagesGraph 顺序。
-  const downstreamPayloads = useMemo(
-    () => stagesGraph.map((e) => stagePayloadsRef.current[e.sid] ?? null),
-    // stagePayloadsRef 是 ref, 卡片回报后靠 stageTick 触发重算 (eslint 看不到这层)。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stagesGraph, stageTick],
-  );
-  const allDownstreamReady = downstreamPayloads.every((p) => p != null);
-
-  // v0.18.16 · sid → 派生 payload (供 DAG 图节点角色 / 改父校验)。
-  const payloadBySid = useMemo(() => {
-    const m: Record<string, PipelineStagePayload | null> = {};
-    stagesGraph.forEach((e, i) => {
-      m[e.sid] = downstreamPayloads[i] ?? null;
-    });
-    return m;
-  }, [stagesGraph, downstreamPayloads]);
+  // downstreamPayloads / allDownstreamReady / payloadBySid 现由 usePipelineComposer 提供 (v0.21.0).
 
   // v0.18.5 · 选择器化数据源: 项目类别 (类名) + 项目属性 schema 字段键, 传给 StageCard 多选。
   const projectClasses = useMemo(
@@ -428,44 +374,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     return picked.map((c) => c.name);
   }, [cfg.geometricModel, cfg.selectedClassIdx]);
 
-  // v0.18.5 / v0.18.15 · 键冲突配置期预警: 多个 attributes 阶段写同一「最终键」(label 前缀后) → 冲突。
-  // 与后端校验对齐 (按 label 加完前缀的最终键去重): hat_color 与 shoe_color 不冲突。
-  // 算出冲突的最终键 (供顶部提示) + 每卡命中的原始键集 (供 chip 标红)。
-  const conflictInfo = useMemo(() => {
-    const counts = new Map<string, number>();
-    downstreamPayloads.forEach((p) => {
-      if (p?.write?.target !== "attributes") return;
-      const prefix = p.label ? `${p.label}_` : "";
-      for (const k of p.write.keys ?? []) counts.set(prefix + k, (counts.get(prefix + k) ?? 0) + 1);
-    });
-    const conflictFinals = new Set(
-      Array.from(counts).filter(([, n]) => n >= 2).map(([k]) => k),
-    );
-    const perCard: Record<string, Set<string>> = {};
-    const displayFinals = new Set<string>();
-    stagesGraph.forEach((e, i) => {
-      const p = downstreamPayloads[i];
-      if (p?.write?.target !== "attributes") return;
-      const prefix = p.label ? `${p.label}_` : "";
-      const set = new Set<string>();
-      for (const k of p.write.keys ?? []) {
-        if (conflictFinals.has(prefix + k)) {
-          set.add(k);
-          displayFinals.add(prefix + k);
-        }
-      }
-      if (set.size) perCard[e.sid] = set;
-    });
-    return { conflictFinals, perCard, displayFinals };
-  }, [stagesGraph, downstreamPayloads]);
-  const hasKeyConflict = conflictInfo.conflictFinals.size > 0;
-  // 键冲突策略: reject (默认, 后端校验期拦) | last_wins (末位覆盖, 用户显式允许)。
+  // 键冲突策略: reject (默认, 后端校验期拦) | last_wins (末位覆盖, 用户显式允许).
+  // conflictInfo/hasKeyConflict/onReparent/canReparentConn 现由 usePipelineComposer 提供.
   const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
 
   // v0.18.16 · DAG 图节点模型 (源 + 各下游): 角色徽标 / 运行态 / 迷你计数 / 可加子 / 键冲突。
-  // 下游须用不同于检测的 backend → 加子额外要求项目已启用 backend 数>=2 (与原 canHaveChild 一致)。
-  // backends 读 GET /projects/{id}/ml-backends, ADR-0044 后该端点只返回项目「已启用」集合。
-  const canAddBackend = backends.length >= 2;
+  // 下游须用不同于检测的 backend → composer.canAddChildAt 已合并 backends 数<2 判据.
   const graphNodes = useMemo<GraphNodeModel[]>(() => {
     const nameOf = (id?: string | null) =>
       id ? (backends.find((b) => b.id === id)?.name ?? undefined) : undefined;
@@ -479,7 +393,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       runState: stageRunState(0),
       ok: sourceDetected ?? undefined,
       producesGeometry: true,
-      canAddChild: canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, ROOT_SID),
+      canAddChild: canAddChildAt(ROOT_SID),
       conflict: false,
       ready: cfg.configReady,
       backendName: selectedBackend?.name,
@@ -500,7 +414,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         targeted: stat?.targeted,
         ok: stat?.ok,
         producesGeometry: producesGeometry(p),
-        canAddChild: canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, e.sid),
+        canAddChild: canAddChildAt(e.sid),
         conflict: (conflictInfo.perCard[e.sid]?.size ?? 0) > 0,
         ready: p != null,
         backendName: nameOf(p?.ml_backend_id),
@@ -513,43 +427,22 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       };
     });
     return [source, ...stages];
-    // stageRunState 每渲染重建 (依赖 stagesRunning/统计); stageCapsRef 是 ref, 靠 stageTick 触发重算。
+    // stageRunState 每渲染重建 (依赖 stagesRunning/统计); stageCapsRef 是 ref, composer 内 tick 触发重算.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     stagesGraph,
     downstreamPayloads,
-    payloadBySid,
+    canAddChildAt,
     stageStatByIndex,
     stagesRunning,
     sourceDetected,
     selectedBackend?.name,
-    canAddBackend,
     conflictInfo,
     cfg.configReady,
     cfg.primaryModel?.id,
     cfg.primaryModel?.task,
     backends,
-    stageTick,
   ]);
-
-  // v0.18.16 · 改父校验 (连线 source=新父, target=子) + 提交。受限规则全在 canReparent 纯函数。
-  const canReparentConn = useCallback(
-    (childSid: string, newParentSid: string) =>
-      canReparent(stagesGraph, payloadBySid, childSid, newParentSid).ok,
-    [stagesGraph, payloadBySid],
-  );
-  const onReparent = useCallback(
-    (childSid: string, newParentSid: string) => {
-      const chk = canReparent(stagesGraph, payloadBySid, childSid, newParentSid);
-      if (!chk.ok) {
-        if (chk.reason) pushToast({ msg: "无法改父", sub: chk.reason, kind: "warning" });
-        return;
-      }
-      setStagesGraph((g) => reparent(g, childSid, newParentSid));
-      setSelectedSid(childSid);
-    },
-    [stagesGraph, payloadBySid, pushToast],
-  );
 
   // 配置层就绪 (源 cfg.configReady) && 下游卡 (若有) 全就绪 && 选了批次 && 不在跑 &&
   // (无键冲突 || 已选末位覆盖)。
@@ -903,8 +796,14 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     onChange={(e) => setPipelineScope(e.target.value as ProjectPipelineScope)}
                   >
                     <option value="private">项目私有</option>
+                    <option value="organization">组织</option>
                     <option value="public">公共</option>
                   </select>
+                  {pipelineScope === "organization" && (
+                    <span className={styles.fieldHint}>
+                      组织编排需在创建后通过 PATCH 指定 organization_id（首版未提供 UI 字段）
+                    </span>
+                  )}
                 </label>
               </div>
 

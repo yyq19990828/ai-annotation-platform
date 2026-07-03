@@ -9,7 +9,9 @@ import {
   canAddChild,
   canReparent,
   classFilterText,
+  classifyDownstream,
   depthBySid,
+  deriveDownstreamShape,
   descendantsOf,
   detailOf,
   producesGeometry,
@@ -92,6 +94,97 @@ describe("派生", () => {
     expect(roleOf(attr()).label).toBe("分类");
     expect(detailOf(attr(["color"], "hat"))).toBe("hat_color");
     expect(detailOf(attr())).toBe("全部属性");
+  });
+});
+
+describe("下游归类 classifyDownstream / deriveDownstreamShape", () => {
+  // 项目侧 StageCard 与全局侧 GlobalStageInspector 共用的单一判据; 锁死四类映射。
+  const detect = { task: "detection", is_interactive: false };
+  const boxSeg = { task: "segmentation", supported_prompts: ["bbox"], is_interactive: false };
+  const segNoBbox = { task: "segmentation", supported_prompts: [], is_interactive: false };
+  const ocr = { task: "ocr", composition: "atom" as const, is_interactive: false };
+  const ocrComposite = { task: "ocr", composition: "composite" as const, is_interactive: false };
+  const classify = { task: "classification", is_interactive: false };
+  const interactive = { task: "detection", is_interactive: true };
+
+  it("检测: crop 投递 / 产几何", () => {
+    expect(classifyDownstream(detect)).toMatchObject({
+      isCropDetectGeometry: true,
+      isGeometryDownstream: true,
+      isBoxSegGeometry: false,
+      isOcrRecognize: false,
+    });
+    expect(deriveDownstreamShape(detect)).toEqual({
+      role: "检测",
+      roiMode: "crop",
+      inputMode: "crop",
+      writeTarget: "geometry",
+      isAttributes: false,
+    });
+  });
+
+  it("box-seg (segmentation + bbox prompt): geometry 投递 / 产几何 / 无 input", () => {
+    expect(classifyDownstream(boxSeg)).toMatchObject({
+      isBoxSegGeometry: true,
+      isGeometryDownstream: true,
+    });
+    expect(deriveDownstreamShape(boxSeg)).toEqual({
+      role: "分割",
+      roiMode: "geometry",
+      writeTarget: "geometry",
+      isAttributes: false,
+    });
+  });
+
+  it("segmentation 无 bbox prompt → 退化为分类 (写属性)", () => {
+    expect(classifyDownstream(segNoBbox).isBoxSegGeometry).toBe(false);
+    expect(deriveDownstreamShape(segNoBbox).role).toBe("分类");
+    expect(deriveDownstreamShape(segNoBbox).writeTarget).toBe("attributes");
+  });
+
+  it("ocr 原子: 识别 (crop 投递 / 写属性)", () => {
+    expect(classifyDownstream(ocr).isOcrRecognize).toBe(true);
+    expect(deriveDownstreamShape(ocr)).toEqual({
+      role: "识别",
+      roiMode: "crop",
+      writeTarget: "attributes",
+      isAttributes: true,
+    });
+  });
+
+  it("ocr composite (整锅端 e2e) → 不算识别下游, 退化为分类", () => {
+    expect(classifyDownstream(ocrComposite).isOcrRecognize).toBe(false);
+    expect(deriveDownstreamShape(ocrComposite).role).toBe("分类");
+  });
+
+  it("分类: crop 投递 / 写属性 / 出 write.keys+label", () => {
+    expect(classifyDownstream(classify)).toMatchObject({
+      isGeometryDownstream: false,
+      isOcrRecognize: false,
+    });
+    expect(deriveDownstreamShape(classify)).toEqual({
+      role: "分类",
+      roiMode: "crop",
+      writeTarget: "attributes",
+      isAttributes: true,
+    });
+  });
+
+  it("交互/有状态 model 不算任何几何下游 (退化为分类)", () => {
+    const k = classifyDownstream(interactive);
+    expect(k.isCropDetectGeometry).toBe(false);
+    expect(k.isGeometryDownstream).toBe(false);
+    expect(deriveDownstreamShape(interactive).role).toBe("分类");
+  });
+
+  it("null / undefined model → 全 false", () => {
+    expect(classifyDownstream(null)).toEqual({
+      isBoxSegGeometry: false,
+      isCropDetectGeometry: false,
+      isGeometryDownstream: false,
+      isOcrRecognize: false,
+    });
+    expect(classifyDownstream(undefined).isGeometryDownstream).toBe(false);
   });
 });
 
