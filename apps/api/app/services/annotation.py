@@ -487,8 +487,6 @@ class AnnotationService:
         z_order: int | None = None,
         is_locked: bool | None = None,
         is_hidden: bool | None = None,
-        group_id: int | None = None,
-        group_id_explicit_clear: bool = False,
     ) -> list[Annotation]:
         """I12 · 批量 patch N 个标注. 任一标注被锁/已软删则整体 422.
 
@@ -520,8 +518,6 @@ class AnnotationService:
                 class_name is not None
                 or attributes is not None
                 or z_order is not None
-                or group_id is not None
-                or group_id_explicit_clear
             ):
                 raise HTTPException(
                     status_code=422,
@@ -550,10 +546,6 @@ class AnnotationService:
                 r.is_locked = is_locked
             if is_hidden is not None:
                 r.is_hidden = is_hidden
-            if group_id is not None:
-                r.group_id = group_id
-            elif group_id_explicit_clear:
-                r.group_id = None
             r.version += 1
         await self.db.flush()
         return rows

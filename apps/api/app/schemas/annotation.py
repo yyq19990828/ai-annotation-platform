@@ -55,11 +55,10 @@ class AnnotationListPage(BaseModel):
 
 
 class AnnotationBulkPatch(BaseModel):
-    """I12 · 批量更新的字段子集.
+    """批量更新的字段子集.
 
     不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),
     也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).
-    group_id=None 表示从原 group 移除.
     """
 
     class_name: str | None = None
@@ -67,10 +66,6 @@ class AnnotationBulkPatch(BaseModel):
     z_order: int | None = None
     is_locked: bool | None = None
     is_hidden: bool | None = None
-    group_id: int | None = None
-    # group_id 特殊语义: explicit_clear=True 时把 group_id 置 null;
-    # 单 None 字段 pydantic 无法区分"未提供"与"显式 null".
-    group_id_explicit_clear: bool = False
 
 
 class AnnotationBulkUpdateRequest(BaseModel):

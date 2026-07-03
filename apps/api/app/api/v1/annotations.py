@@ -1,9 +1,9 @@
-"""I12 · Object Group 与批量编辑 router.
+"""批量编辑 router.
 
 端点(均要求 ids 属于同一 task, 简化权限校验且符合工作台 UX):
-- POST /annotations/bulk-update  批量 patch class_name / attributes / 状态位 / group_id
-- POST /annotations/group        把 ids 合到新 group_id (走 tasks.next_group_seq +1 RETURNING)
-- POST /annotations/ungroup      把 ids 的 group_id 置 null; 仅剩 1 个成员的 group 自动 orphan ungroup
+- POST /annotations/bulk-update  批量 patch class_name / attributes / 状态位
+
+v0.21.3 · 标注编组 (group / ungroup) 持久化已删除; 批量编辑退化为前端临时多选。
 
 v0.10.54 · annotations import:
 - POST /projects/{project_id}/annotations/import  导入 AAP JSON annotations[] (ADR-0028)
@@ -122,7 +122,6 @@ async def bulk_update_annotations(
     设计取舍:
     - 不允许 bulk 改 geometry (同一 geometry 应用到 N 个 shape 无意义)
     - 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)
-    - group_id 通过 explicit_clear 字段区分 "未提供" vs "显式清空"
     """
     task = await _load_single_task_for_ids(db, payload.ids)
     await assert_project_visible(task.project_id, db, user)
@@ -136,8 +135,6 @@ async def bulk_update_annotations(
         z_order=payload.patch.z_order,
         is_locked=payload.patch.is_locked,
         is_hidden=payload.patch.is_hidden,
-        group_id=payload.patch.group_id,
-        group_id_explicit_clear=payload.patch.group_id_explicit_clear,
     )
     await AuditService.log(
         db,

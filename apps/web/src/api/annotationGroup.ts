@@ -12,10 +12,6 @@ export interface AnnotationBulkPatch {
   z_order?: number;
   is_locked?: boolean;
   is_hidden?: boolean;
-  /** 显式赋 group_id (数值); 不传保持原值. */
-  group_id?: number;
-  /** 显式清空 group_id (置 null); 与上面 group_id 互斥. */
-  group_id_explicit_clear?: boolean;
 }
 
 export interface BulkUpdateRequest {

@@ -537,7 +537,7 @@
         "type": "object"
       },
       "AnnotationBulkPatch": {
-        "description": "I12 · 批量更新的字段子集.\n\n不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),\n也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).\ngroup_id=None 表示从原 group 移除.",
+        "description": "批量更新的字段子集.\n\n不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),\n也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).",
         "properties": {
           "attributes": {
             "anyOf": [
@@ -585,22 +585,6 @@
               }
             ],
             "title": "Class Name"
-          },
-          "group_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group Id"
-          },
-          "group_id_explicit_clear": {
-            "default": false,
-            "title": "Group Id Explicit Clear",
-            "type": "boolean"
           },
           "is_hidden": {
             "anyOf": [
@@ -21292,7 +21276,7 @@
     },
     "/api/v1/annotations/bulk-update": {
       "post": {
-        "description": "I12 · 批量更新 N 个标注. 失败整体回滚 (单事务).\n\n设计取舍:\n- 不允许 bulk 改 geometry (同一 geometry 应用到 N 个 shape 无意义)\n- 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)\n- group_id 通过 explicit_clear 字段区分 \"未提供\" vs \"显式清空\"",
+        "description": "I12 · 批量更新 N 个标注. 失败整体回滚 (单事务).\n\n设计取舍:\n- 不允许 bulk 改 geometry (同一 geometry 应用到 N 个 shape 无意义)\n- 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)",
         "operationId": "bulk_update_annotations_api_v1_annotations_bulk_update_post",
         "requestBody": {
           "content": {
