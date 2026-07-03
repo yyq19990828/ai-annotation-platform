@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.task import Task
+from app.services.annotation_propagation import _new_track_id
 
 TOOL_UNIT_IDS = {
     "bbox",
@@ -348,7 +349,7 @@ def _remap_track_ids(result: list[dict]) -> list[dict]:
             out.append(item)
             continue
         new_item = dict(item)
-        new_item["track_id"] = f"trk_{uuid.uuid4().hex}"
+        new_item["track_id"] = _new_track_id()
         if item.get("semantic_label") is None and raw_tid is not None:
             cls = item.get("class_name") or "obj"
             new_item["semantic_label"] = f"{cls}_{raw_tid}"

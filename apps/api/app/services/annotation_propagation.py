@@ -43,7 +43,9 @@ class _PropagateContext:
 
 
 def _new_track_id() -> str:
-    return f"trk_{uuid.uuid4()}"
+    # v0.21.2 · 全局唯一 track_id 工厂 (跨帧对象一等标识)。检测式追踪 ingestion
+    # (_remap_track_ids)、交互式传播、3D 存量回填共用本工厂, 统一 `trk_<hex>` 形态。
+    return f"trk_{uuid.uuid4().hex}"
 
 
 def _clean_bbox_geometry(geometry: dict) -> dict:
