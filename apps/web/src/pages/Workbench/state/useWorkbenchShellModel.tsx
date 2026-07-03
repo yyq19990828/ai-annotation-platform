@@ -13,11 +13,7 @@ import {
   useVideoFrameTimetable,
 } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
-import {
-  useAnnotationGroup,
-  useAnnotationUngroup,
-  useAnnotationBulkUpdate,
-} from "@/hooks/useAnnotationGroup";
+import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
@@ -733,8 +729,6 @@ export function useWorkbenchShellModel({
     (...args) => conflictCbRef.current(...args),
     clearPendingGeom,
   );
-  const groupAnnotationMut = useAnnotationGroup(taskId ?? "");
-  const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
   const {
@@ -1501,45 +1495,6 @@ export function useWorkbenchShellModel({
     beginCanvasDraft: s.beginCanvasDraft,
   });
 
-  const handleAnnotationGroup = useCallback(() => {
-    if (!taskId) return;
-    const ids = s.selectedIds;
-    if (ids.length < 2) {
-      pushToast({ msg: "至少选择 2 个标注才能成组", kind: "warning" });
-      return;
-    }
-    groupAnnotationMut.mutate(ids, {
-      onSuccess: (resp) => {
-        pushToast({ msg: `已成组 (group #${resp.group_id}, ${resp.affected_ids.length} 个)`, kind: "success" });
-      },
-      onError: (err: unknown) => {
-        const msg = (err as { message?: string })?.message ?? "成组失败";
-        pushToast({ msg, kind: "error" });
-      },
-    });
-  }, [taskId, s.selectedIds, groupAnnotationMut, pushToast]);
-
-  const handleAnnotationUngroup = useCallback(() => {
-    if (!taskId) return;
-    const ids = s.selectedIds;
-    if (ids.length === 0) {
-      pushToast({ msg: "请先选择已成组的标注", kind: "warning" });
-      return;
-    }
-    ungroupAnnotationMut.mutate(ids, {
-      onSuccess: (resp) => {
-        const extra = resp.auto_cleared_orphans.length > 0
-          ? ` (含 ${resp.auto_cleared_orphans.length} 个自动解散的剩 1 个成员)`
-          : "";
-        pushToast({ msg: `已解组 ${resp.cleared_ids.length} 个${extra}`, kind: "success" });
-      },
-      onError: (err: unknown) => {
-        const msg = (err as { message?: string })?.message ?? "解组失败";
-        pushToast({ msg, kind: "error" });
-      },
-    });
-  }, [taskId, s.selectedIds, ungroupAnnotationMut, pushToast]);
-
   // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
   // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
@@ -1571,8 +1526,6 @@ export function useWorkbenchShellModel({
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
-    handleAnnotationGroup,
-    handleAnnotationUngroup,
   });
 
   const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
@@ -2050,10 +2003,7 @@ export function useWorkbenchShellModel({
       backendOnline: undefined,
     },
     workflow: {
-      saving: isSubmittingTask ||
-        bulkUpdateMut.isPending ||
-        groupAnnotationMut.isPending ||
-        ungroupAnnotationMut.isPending,
+      saving: isSubmittingTask || bulkUpdateMut.isPending,
       offline: !online,
       offlineQueueCount: queueCount,
       readOnly: isLocked,
@@ -2067,7 +2017,6 @@ export function useWorkbenchShellModel({
     aiRunning,
     annotationsData?.length,
     bulkUpdateMut.isPending,
-    groupAnnotationMut.isPending,
     isLocked,
     isSubmittingTask,
     mode,
@@ -2080,7 +2029,6 @@ export function useWorkbenchShellModel({
     selectionCard?.title,
     selectionCount,
     selectionSourceKind,
-    ungroupAnnotationMut.isPending,
   ]);
 
   const toggleLeftSidebar = useCallback(() => {

@@ -44,6 +44,9 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 ### Added
 - **检测式视频追踪（detect-then-track）**：视频源经检测模型 + ByteTrack / BoT-SORT 全自动多目标追踪，落成一批轨迹预标注。yolo-backend `/setup` 新增 `track` 模型（`task=tracker`、仅接受 `video` 输入、自报 `bytetrack` / `botsort`，复用检测权重矩阵与 COCO 类别表——追踪不加载新权重，只在推理时外挂关联算法）；`/predict` 的 `type=tracker` 分支用 ultralytics `model.track` 逐帧关联，返回每条已聚合轨迹（原生 track id + 逐帧 0-1 归一 bbox），支持 `conf` / `iou` / 追踪算法 / 类别白名单，首版单次整段追踪并对超长视频按帧数上限截断。平台侧把轨迹落成 `VideoTrackGeometry` 预标注：投递沿用现有批量链路（视频 task 投 signed URL），入库时把后端原生整型 track id 映射成稳定的 `trk_<uuid>` + 语义标签（如 `car_3`），读取路径把嵌套轨迹重塑成逐帧关键帧几何（每帧标记来源为预测）。区别于既有的交互式 SAM 视频追踪（人在环、单对象种子传播），这是无种子、多对象、离线批量的另一条链。
 
+### Removed
+- **标注编组（Ctrl+G / Ctrl+Shift+G)持久化下线**：此前「把 ≥2 个框绑成一个持久组」的能力（`group_id` 平等分组、重开仍是一组、同色虚线外圈）语义弱、场景罕见——相关关系已由父子（parent）、跨帧 track（ADR-0045）、同类 class 三态覆盖。现移除 `POST /annotations/group`、`/annotations/ungroup` 端点与对应 service/schema、前端 Ctrl+G 快捷键与接线。**批量编辑（选中多框一次改 class/属性/锁定/隐藏）保留**,退化为前端临时多选（`bulk-update`,不再落 `group_id`)。
+
 ### Changed
 - 预标注流水线画布的**源阶段渲染改为按模型任务派生**，不再把「源 = 检测 = 整图」写死：源节点的角色名（目标检测 / 视频追踪）、产物（检测框 / 轨迹）、计数标签与源类型徽标（图像 / 视频）均从模型能力与受控词表推导。为后续检测式视频追踪（video 源）接入铺路——此前六处硬编码会把视频源错误显示成「检测 / 整图」。
 - **跨帧同一对象标识统一到 `track_id`**（ADR-0045）：此前「同一物体跨多帧」用两套 id——静态 box_3d 借 `group_id` 高位段、视频轨迹用 geometry 内 `track_id`。现在统一为 annotation 级的通用 `track_id`（几何类型无关）：跨帧延续（propagate）、关键帧区间插值、3D 工作台的跨帧高亮 / 邻帧叠加 / 逐目标点云对齐、以及导出全部改按 `track_id` 认链。**导出格式随之调整**：COCO `attributes.__group_id` → `__track_id`；LiDAR / nuScenes 的 `instance_token` 按 `track_id` 归并同一实例（MOT / KITTI 早已用 track_id，不变）。存量跨帧链已迁移回填，新链只写 `track_id`。

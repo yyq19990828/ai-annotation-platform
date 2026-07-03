@@ -116,26 +116,8 @@ class SecondaryInferenceResponse(BaseModel):
     created_children: list["AnnotationOut"] = []
 
 
-class AnnotationGroupRequest(BaseModel):
-    """I12 · 创建/合入分组. ids 必须属于同一 task."""
-
-    ids: list[UUID]
-    task_id: UUID
-
-
-class AnnotationGroupResponse(BaseModel):
-    group_id: int
-    affected_ids: list[UUID]
-
-
-class AnnotationUngroupRequest(BaseModel):
-    ids: list[UUID]
-
-
-class AnnotationUngroupResponse(BaseModel):
-    cleared_ids: list[UUID]
-    # 若 group 仅剩 1 个成员, 该 orphan 也会被自动 ungroup; 这里列出.
-    auto_cleared_orphans: list[UUID] = []
+# v0.21.3 · 标注编组(Ctrl+G)持久化已删除:AnnotationGroup/Ungroup 请求响应 schema
+# 随端点下线一并移除。批量编辑走 AnnotationBulkUpdate(保留)。
 
 
 class VideoTrackConvertToBboxesRequest(BaseModel):

@@ -1,8 +1,8 @@
 /**
- * I12 · Object Group + 批量编辑 API client.
+ * 批量编辑 API client。
  *
- * 端点设计见 docs/plans/archive/2026-05-19-v0.10.19-i4-i12-i18-workbench-detail-extensions.md.
- * 所有端点要求 ids 属于同一 task (router 层强约束).
+ * v0.21.3 · 标注编组(group / ungroup)端点已下线,仅保留 bulk-update
+ * (选中多框一次改 class/属性/状态位)。ids 需属于同一 task(router 层强约束)。
  */
 import { apiClient } from "./client";
 
@@ -28,32 +28,7 @@ export interface BulkUpdateResponse {
   updated_count: number;
 }
 
-export interface GroupRequest {
-  ids: string[];
-  task_id: string;
-}
-
-export interface GroupResponse {
-  group_id: number;
-  affected_ids: string[];
-}
-
-export interface UngroupRequest {
-  ids: string[];
-}
-
-export interface UngroupResponse {
-  cleared_ids: string[];
-  auto_cleared_orphans: string[];
-}
-
 export const annotationGroupApi = {
   bulkUpdate: (payload: BulkUpdateRequest) =>
     apiClient.post<BulkUpdateResponse>("/annotations/bulk-update", payload),
-
-  group: (payload: GroupRequest) =>
-    apiClient.post<GroupResponse>("/annotations/group", payload),
-
-  ungroup: (payload: UngroupRequest) =>
-    apiClient.post<UngroupResponse>("/annotations/ungroup", payload),
 };

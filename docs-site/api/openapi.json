@@ -1508,52 +1508,6 @@
         "title": "AnnotationFeedbackReply",
         "type": "object"
       },
-      "AnnotationGroupRequest": {
-        "description": "I12 · 创建/合入分组. ids 必须属于同一 task.",
-        "properties": {
-          "ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Ids",
-            "type": "array"
-          },
-          "task_id": {
-            "format": "uuid",
-            "title": "Task Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "ids",
-          "task_id"
-        ],
-        "title": "AnnotationGroupRequest",
-        "type": "object"
-      },
-      "AnnotationGroupResponse": {
-        "properties": {
-          "affected_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Affected Ids",
-            "type": "array"
-          },
-          "group_id": {
-            "title": "Group Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "group_id",
-          "affected_ids"
-        ],
-        "title": "AnnotationGroupResponse",
-        "type": "object"
-      },
       "AnnotationHistoryResponse": {
         "properties": {
           "annotation_id": {
@@ -1891,49 +1845,6 @@
           "created_at"
         ],
         "title": "AnnotationOut",
-        "type": "object"
-      },
-      "AnnotationUngroupRequest": {
-        "properties": {
-          "ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "ids"
-        ],
-        "title": "AnnotationUngroupRequest",
-        "type": "object"
-      },
-      "AnnotationUngroupResponse": {
-        "properties": {
-          "auto_cleared_orphans": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Auto Cleared Orphans",
-            "type": "array"
-          },
-          "cleared_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Cleared Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "cleared_ids"
-        ],
-        "title": "AnnotationUngroupResponse",
         "type": "object"
       },
       "AnnotationUpdate": {
@@ -21421,100 +21332,6 @@
           }
         ],
         "summary": "Bulk Update Annotations",
-        "tags": [
-          "annotations"
-        ]
-      }
-    },
-    "/api/v1/annotations/group": {
-      "post": {
-        "description": "I12 · 把 ids 合到新 group; 走 tasks.next_group_seq +1 RETURNING.",
-        "operationId": "group_annotations_api_v1_annotations_group_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnnotationGroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnnotationGroupResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Group Annotations",
-        "tags": [
-          "annotations"
-        ]
-      }
-    },
-    "/api/v1/annotations/ungroup": {
-      "post": {
-        "description": "I12 · 把 ids 的 group_id 置 null; orphan group (仅剩 1 个) 自动级联清理.",
-        "operationId": "ungroup_annotations_api_v1_annotations_ungroup_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnnotationUngroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnnotationUngroupResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Ungroup Annotations",
         "tags": [
           "annotations"
         ]

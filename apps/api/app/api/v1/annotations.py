@@ -44,10 +44,6 @@ from app.schemas.aap_json import AAPImportResult
 from app.schemas.annotation import (
     AnnotationBulkUpdateRequest,
     AnnotationBulkUpdateResponse,
-    AnnotationGroupRequest,
-    AnnotationGroupResponse,
-    AnnotationUngroupRequest,
-    AnnotationUngroupResponse,
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
@@ -164,85 +160,8 @@ async def bulk_update_annotations(
     )
 
 
-@router.post(
-    "/annotations/group",
-    response_model=AnnotationGroupResponse,
-    dependencies=[Depends(require_scopes("annotations:write"))],
-)
-async def group_annotations(
-    payload: AnnotationGroupRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(*_ANNOTATORS)),
-):
-    """I12 · 把 ids 合到新 group; 走 tasks.next_group_seq +1 RETURNING."""
-    task = await _load_single_task_for_ids(db, payload.ids)
-    if task.id != payload.task_id:
-        raise HTTPException(
-            status_code=422,
-            detail=f"payload task_id mismatch (ids belong to task {task.id})",
-        )
-    await assert_project_visible(task.project_id, db, user)
-    _assert_task_editable(task, user)
-
-    service = AnnotationService(db)
-    new_group_id, rows = await service.group(payload.ids, task.id)
-    await AuditService.log(
-        db,
-        actor=user,
-        action=AuditAction.ANNOTATION_GROUP,
-        target_type="task",
-        target_id=task.id,
-        request=request,
-        status_code=200,
-        detail={
-            "group_id": new_group_id,
-            "annotation_ids": [str(r.id) for r in rows],
-        },
-    )
-    await db.commit()
-    return AnnotationGroupResponse(
-        group_id=new_group_id,
-        affected_ids=[r.id for r in rows],
-    )
-
-
-@router.post(
-    "/annotations/ungroup",
-    response_model=AnnotationUngroupResponse,
-    dependencies=[Depends(require_scopes("annotations:write"))],
-)
-async def ungroup_annotations(
-    payload: AnnotationUngroupRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(*_ANNOTATORS)),
-):
-    """I12 · 把 ids 的 group_id 置 null; orphan group (仅剩 1 个) 自动级联清理."""
-    task = await _load_single_task_for_ids(db, payload.ids)
-    await assert_project_visible(task.project_id, db, user)
-    _assert_task_editable(task, user)
-
-    service = AnnotationService(db)
-    cleared, orphans = await service.ungroup(payload.ids)
-    await AuditService.log(
-        db,
-        actor=user,
-        action=AuditAction.ANNOTATION_UNGROUP,
-        target_type="task",
-        target_id=task.id,
-        request=request,
-        status_code=200,
-        detail={
-            "cleared_ids": [str(i) for i in cleared],
-            "auto_cleared_orphans": [str(i) for i in orphans],
-        },
-    )
-    await db.commit()
-    return AnnotationUngroupResponse(
-        cleared_ids=cleared,
-        auto_cleared_orphans=orphans,
-    )
+# v0.21.3 · 标注编组(Ctrl+G)持久化已删除:group/ungroup 端点下线,批量编辑退化为
+# 前端临时多选(bulk-update 保留)。跨帧同一对象走 track_id(ADR-0045),不再用 group_id。
 
 
 # ── v0.10.54 · annotations import (ADR-0028) ──────────────────────────
