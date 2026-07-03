@@ -41,6 +41,8 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.21.x 版本段累积在本区；进入 0.22.x 后整体移到 docs/changelogs/0.21.x.md。
 -->
 
+## [0.21.3] - 2026-07-03
+
 ### Added
 - **检测式视频追踪（detect-then-track）**：视频源经检测模型 + ByteTrack / BoT-SORT 全自动多目标追踪，落成一批轨迹预标注。yolo-backend `/setup` 新增 `track` 模型（`task=tracker`、仅接受 `video` 输入、自报 `bytetrack` / `botsort`，复用检测权重矩阵与 COCO 类别表——追踪不加载新权重，只在推理时外挂关联算法）；`/predict` 的 `type=tracker` 分支用 ultralytics `model.track` 逐帧关联，返回每条已聚合轨迹（原生 track id + 逐帧 0-1 归一 bbox），支持 `conf` / `iou` / 追踪算法 / 类别白名单，首版单次整段追踪并对超长视频按帧数上限截断。平台侧把轨迹落成 `VideoTrackGeometry` 预标注：投递沿用现有批量链路（视频 task 投 signed URL），入库时把后端原生整型 track id 映射成稳定的 `trk_<uuid>` + 语义标签（如 `car_3`），读取路径把嵌套轨迹重塑成逐帧关键帧几何（每帧标记来源为预测）。区别于既有的交互式 SAM 视频追踪（人在环、单对象种子传播），这是无种子、多对象、离线批量的另一条链。
 
