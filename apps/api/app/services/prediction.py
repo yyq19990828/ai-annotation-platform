@@ -329,6 +329,33 @@ def to_internal_shape(s: dict) -> dict:
     }
 
 
+def _remap_track_ids(result: list[dict]) -> list[dict]:
+    """v0.21.1 · 检测式追踪 result item 的原生 int ``track_id`` → ``trk_<uuid>`` (ingestion
+    一次性映射)。
+
+    必须在 **worker 存 ``prediction.result`` 之前**做, 而非读路径 ``to_internal_shape`` ——
+    后者每次 read 都跑, 在其中 ``uuid4()`` 会导致轨迹身份逐次漂移。原 int 记进
+    ``semantic_label`` (如 ``car_3``, 供跨 task Re-ID 心智)。非 ``video_track_bbox`` item 原样;
+    已是 ``trk_`` 字符串 (幂等 / 重入) 不重映射。返回新列表, 不改传入对象。
+    """
+    out: list[dict] = []
+    for item in result:
+        if not isinstance(item, dict) or item.get("type") != "video_track_bbox":
+            out.append(item)
+            continue
+        raw_tid = item.get("track_id")
+        if isinstance(raw_tid, str) and raw_tid.startswith("trk_"):
+            out.append(item)
+            continue
+        new_item = dict(item)
+        new_item["track_id"] = f"trk_{uuid.uuid4().hex}"
+        if item.get("semantic_label") is None and raw_tid is not None:
+            cls = item.get("class_name") or "obj"
+            new_item["semantic_label"] = f"{cls}_{raw_tid}"
+        out.append(new_item)
+    return out
+
+
 class PredictionService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -346,6 +373,8 @@ class PredictionService:
         source: str = "ml_backend",
         pipeline_extra: dict | None = None,
     ) -> Prediction:
+        # v0.21.1 · 检测式追踪原生 int track_id → trk_<uuid> (读路径不得再生 uuid, 见 _remap_track_ids)。
+        result = _remap_track_ids(result)
         prediction = Prediction(
             id=uuid.uuid4(),
             task_id=task_id,

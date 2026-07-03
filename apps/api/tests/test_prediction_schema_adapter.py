@@ -598,3 +598,47 @@ def test_video_track_bbox_geometry_validates_against_pydantic():
     assert g.track_id == "trk_x"
     assert g.keyframes[0].source == "prediction"
     assert g.keyframes[1].frame_index == 5
+
+
+# ── v0.21.1 · ingestion 端 int track_id → trk_<uuid> 映射 ──────────────────────
+
+
+def test_remap_track_ids_int_to_uuid_with_semantic_label():
+    from app.services.prediction import _remap_track_ids
+
+    out = _remap_track_ids(
+        [{"type": "video_track_bbox", "track_id": 3, "class_name": "car", "keyframes": []}]
+    )
+    assert out[0]["track_id"].startswith("trk_")
+    assert out[0]["semantic_label"] == "car_3"
+
+
+def test_remap_track_ids_passthrough_non_track():
+    from app.services.prediction import _remap_track_ids
+
+    items = [{"type": "rectanglelabels", "value": {"x": 1}}]
+    out = _remap_track_ids(items)
+    assert out[0] == {"type": "rectanglelabels", "value": {"x": 1}}
+
+
+def test_remap_track_ids_idempotent_for_existing_trk():
+    from app.services.prediction import _remap_track_ids
+
+    item = {"type": "video_track_bbox", "track_id": "trk_deadbeef", "semantic_label": "car_3", "keyframes": []}
+    out = _remap_track_ids([item])
+    assert out[0]["track_id"] == "trk_deadbeef"  # 不重映射
+
+
+def test_remap_track_ids_does_not_mutate_input():
+    from app.services.prediction import _remap_track_ids
+
+    items = [{"type": "video_track_bbox", "track_id": 5, "class_name": "car", "keyframes": []}]
+    _remap_track_ids(items)
+    assert items[0]["track_id"] == 5  # 原对象未被改
+
+
+def test_remap_track_ids_missing_class_falls_back_to_obj():
+    from app.services.prediction import _remap_track_ids
+
+    out = _remap_track_ids([{"type": "video_track_bbox", "track_id": 9, "keyframes": []}])
+    assert out[0]["semantic_label"] == "obj_9"
