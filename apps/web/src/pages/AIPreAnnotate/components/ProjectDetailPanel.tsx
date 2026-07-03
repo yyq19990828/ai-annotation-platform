@@ -203,6 +203,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   }, [libraryPipelines, selectedLibraryPipelineId]);
   // v0.10.38 · 模态分流: summary 优先 (列表已带), 回落 project 查询.
   const dataType = summary?.data_type ?? project?.data_type ?? "image";
+  // v0.21.7 · 视频项目执行单位 (输入节点顶层分叉): "video"=整段序列(tracker) / "frame"=逐帧(图像检测)。
+  //   默认整段序列 (视频主能力)。图像项目无此选择 (恒图像检测)。
+  const [executionUnit, setExecutionUnit] = useState<"video" | "frame">("video");
 
   const backendsQ = useMLBackends(projectId);
   const backends = useMemo(
@@ -232,7 +235,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
 
   // 预标配置区共享状态 (任务类型 / 几何 task / 类别白名单 / variant / 参数 / prompt / 预设 /
   // 输出形态 / buildArgs); 详见 usePreannotateConfig. 工作台 AI 面板复用同一 hook + PreannotateConfigForm.
-  const cfg = usePreannotateConfig({ projectId, backendId: selectedBackendId });
+  const cfg = usePreannotateConfig({
+    projectId,
+    backendId: selectedBackendId,
+    executionUnit: dataType === "video" ? executionUnit : undefined,
+  });
 
   // v0.18.2 · 多阶段预标注 (路径 B M2): 下游阶段卡列表 (并行兄弟, 单层扇出)。每张卡 (StageCard)
   // 自持一份 usePreannotateConfig + PreannotateConfigForm 实例 —— 共享 hook/组件本身不感知阶段
@@ -380,14 +387,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // conflictInfo/hasKeyConflict/onReparent/canReparentConn 现由 usePipelineComposer 提供.
   const [keyConflictLastWins, setKeyConflictLastWins] = useState(false);
 
-  // v0.21.5 · 输入节点数据源描述: 数据类型随项目 (image/video), 执行单位本版 video 单分支。
+  // v0.21.5 / v0.21.7 · 输入节点数据源描述: 数据类型随项目 (image/video); 视频项目执行单位随
+  //   顶层选择 (整段序列=video / 逐帧=frame), 串进 source → 序列化 → 后端逐帧 fan-out。
   const sourceMeta = useMemo<PipelineSource>(
     () => ({
       kind: "dataset",
       data_type: dataType,
-      execution_unit: dataType === "video" ? "video" : undefined,
+      execution_unit: dataType === "video" ? executionUnit : undefined,
     }),
-    [dataType],
+    [dataType, executionUnit],
   );
 
   // v0.18.16 · DAG 图节点模型 (源 + 各下游): 角色徽标 / 运行态 / 迷你计数 / 可加子 / 键冲突。
@@ -901,18 +909,40 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
 
               {/* 检查器: 所有配置体常驻挂载, 非选中者 CSS 隐藏 (保住各自 usePreannotateConfig 状态)。 */}
               <div className={styles.editorInspector}>
-                {/* 输入节点: 纯数据源 (data_type 只读 + 执行单位); 选中时显示。 */}
+                {/* 输入节点: 纯数据源 (data_type 只读 + 执行单位可选); 选中时显示。 */}
                 <div hidden={selectedSid !== ROOT_SID}>
                   <strong className={styles.sectionTitle}>输入节点 · 数据源</strong>
                   <div className={styles.mutedText}>
                     数据类型：{dataType === "video" ? "视频" : dataType === "image" ? "图像" : dataType}
-                    {dataType === "video" && " · 执行单位：整段序列（detect-then-track）"}
                   </div>
+                  {/* v0.21.7 · 视频项目执行单位顶层分叉: 换它会重置源模型下拉 (整段=tracker / 逐帧=图像检测)。 */}
+                  {dataType === "video" && (
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>执行单位</span>
+                      <select
+                        className={styles.selectInput}
+                        value={executionUnit}
+                        onChange={(e) =>
+                          setExecutionUnit(e.target.value as "video" | "frame")
+                        }
+                      >
+                        <option value="video">整段序列（detect-then-track 追踪）</option>
+                        <option value="frame">逐帧（图像检测逐帧跑，落单帧框）</option>
+                      </select>
+                      <span className={styles.mutedText}>
+                        {executionUnit === "video"
+                          ? "对整段视频做多目标追踪，产跨帧轨迹。"
+                          : "对每一帧独立跑图像检测，产逐帧单帧框（无跨帧关联）。"}
+                      </span>
+                    </label>
+                  )}
                 </div>
                 {/* 源模型参数 (整图检测/tracker, 后端 stage 0): 选中 SOURCE_SID 时显示。 */}
                 <div hidden={selectedSid !== SOURCE_SID}>
                   <strong className={styles.sectionTitle}>
-                    {dataType === "video" ? "源模型 · 追踪参数" : "源模型 · 检测参数"}
+                    {dataType === "video" && executionUnit === "video"
+                      ? "源模型 · 追踪参数"
+                      : "源模型 · 检测参数"}
                   </strong>
                   <PreannotateConfigForm
                     cfg={cfg}

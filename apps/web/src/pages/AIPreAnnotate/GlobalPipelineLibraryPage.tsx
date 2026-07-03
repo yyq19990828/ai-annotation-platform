@@ -24,7 +24,7 @@ import {
 } from "@/hooks/useProjectPipelines";
 import type { ProjectPipeline, ProjectPipelineScope } from "@/api/projectPipelines";
 import type { PipelineSource, PipelineStagePayload } from "@/hooks/usePreannotation";
-import { INPUT_VIDEO_ID } from "@/api/capabilityInputs";
+import { GEOMETRIC_TASKS } from "./components/usePreannotateConfig";
 import { usePipelineComposer } from "./hooks/usePipelineComposer";
 import { GlobalStageInspector, type GlobalModelOption } from "./components/GlobalStageInspector";
 import {
@@ -147,17 +147,29 @@ export default function GlobalPipelineLibraryPage() {
     [sourcePayload, downstreamPayloads, stagesGraph, globalModelOptions],
   );
 
-  // v0.21.5 · 输入节点数据源描述。全局库无项目 data_type, 从源模型 supported_inputs 推断
-  // (含 video → 视频源), 保留 tracker 源的「视频」徽标行为。
-  const srcMeta = useMemo<PipelineSource>(() => {
-    const opt = sourcePayload
-      ? globalModelOptions.find(
-          (o) => o.key === `${sourcePayload.ml_backend_id}::${sourcePayload.model_id}`,
-        )
-      : null;
-    const dt = opt?.model.supported_inputs?.includes(INPUT_VIDEO_ID) ? "video" : "image";
-    return { kind: "dataset", data_type: dt, execution_unit: dt === "video" ? "video" : undefined };
-  }, [sourcePayload, globalModelOptions]);
+  // v0.21.7 · 输入节点数据源**显式声明** (取代 v0.21.5 从源模型 supported_inputs 反推):
+  //   全局库无项目, 用户自顶向下选数据类型 + 执行单位, 据此过滤可选源模型。
+  const [srcDataType, setSrcDataType] = useState<"image" | "video">("image");
+  const [srcExecUnit, setSrcExecUnit] = useState<"video" | "frame">("video");
+  const isVideoTracking = srcDataType === "video" && srcExecUnit === "video";
+  const srcMeta = useMemo<PipelineSource>(
+    () => ({
+      kind: "dataset",
+      data_type: srcDataType,
+      execution_unit: srcDataType === "video" ? srcExecUnit : undefined,
+    }),
+    [srcDataType, srcExecUnit],
+  );
+  // 源模型下拉按声明过滤: 整段序列 → 只 tracker; 图像 / 逐帧 → 图像检测 (GEOMETRIC_TASKS, 非 tracker)。
+  const sourcePool = useMemo(
+    () =>
+      globalModelOptions.filter((o) =>
+        isVideoTracking
+          ? o.model.task === "tracker"
+          : GEOMETRIC_TASKS.includes(o.model.task ?? ""),
+      ),
+    [globalModelOptions, isVideoTracking],
+  );
 
   // 汇总所有 warning (源 + 下游), 顶部条展示.
   const allWarnings = useMemo(() => {
@@ -512,19 +524,48 @@ export default function GlobalPipelineLibraryPage() {
           </div>
 
           <div className={styles.editorInspector}>
-            {/* 输入节点: 纯数据源 (只读); 选中时显示。 */}
+            {/* v0.21.7 · 输入节点: 显式声明数据源形态 (取代反推), 据此过滤源模型池; 选中时显示。 */}
             <div hidden={selectedSid !== ROOT_SID}>
               <strong className={styles.sectionTitle}>输入节点 · 数据源</strong>
+              <label className={styles.field}>
+                <span>数据类型</span>
+                <select
+                  className={styles.selectInput}
+                  value={srcDataType}
+                  onChange={(e) =>
+                    setSrcDataType(e.target.value as "image" | "video")
+                  }
+                >
+                  <option value="image">图像</option>
+                  <option value="video">视频</option>
+                </select>
+              </label>
+              {srcDataType === "video" && (
+                <label className={styles.field}>
+                  <span>执行单位</span>
+                  <select
+                    className={styles.selectInput}
+                    value={srcExecUnit}
+                    onChange={(e) =>
+                      setSrcExecUnit(e.target.value as "video" | "frame")
+                    }
+                  >
+                    <option value="video">整段序列（detect-then-track 追踪）</option>
+                    <option value="frame">逐帧（图像检测逐帧跑，落单帧框）</option>
+                  </select>
+                </label>
+              )}
               <div className={styles.stageEmptyHint}>
-                数据类型：{srcMeta.data_type === "video" ? "视频" : "图像"}
-                {srcMeta.data_type === "video" && " · 执行单位：整段序列（detect-then-track）"}
+                {isVideoTracking
+                  ? "源模型只列 tracker；下游对轨迹富集。"
+                  : "源模型只列图像检测；下游对检出框富集。"}
               </div>
             </div>
-            {/* 源模型 stage (SOURCE_SID, 后端 stage 0): 选中时显示。 */}
+            {/* 源模型 stage (SOURCE_SID, 后端 stage 0): 选中时显示; 池按数据源声明过滤。 */}
             <GlobalStageInspector
               kind="source"
               stageIndex={0}
-              pool={globalModelOptions}
+              pool={sourcePool}
               value={sourcePayload ?? loadedSourceSeed}
               onChange={onSourceChange}
               onCaps={onSourceCaps}

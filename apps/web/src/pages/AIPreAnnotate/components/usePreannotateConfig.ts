@@ -71,9 +71,20 @@ export interface UsePreannotateConfigArgs {
   projectId: string;
   /** 当前选中的 backend id (批量页可多选; 工作台为项目绑定值). null 时多数派生为空/禁用. */
   backendId: string | null;
+  /**
+   * v0.21.7 · 视频项目的执行单位, 决定源模型过滤:
+   * - "video" (整段序列): 源模型只列 tracker (detect-then-track, 落 video_track)。
+   * - "frame" (逐帧): 源模型只列图像检测 (yolo detect/seg 逐帧跑, 落 video_bbox)。
+   * 图像项目忽略此参数 (恒图像检测)。缺省视为 "video" (视频项目主选择)。
+   */
+  executionUnit?: "video" | "frame";
 }
 
-export function usePreannotateConfig({ projectId, backendId }: UsePreannotateConfigArgs) {
+export function usePreannotateConfig({
+  projectId,
+  backendId,
+  executionUnit,
+}: UsePreannotateConfigArgs) {
   const pushToast = useToastStore((s) => s.push);
   const qc = useQueryClient();
 
@@ -182,20 +193,25 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     return models.find((m) => m.task !== "ocr" && m.task !== "doc_layout") ?? models[0];
   }, [isDocMode, activeDocModel, capabilitiesQ.data]);
 
-  // v0.21.6 · 视频项目额外把 tracker (detect-then-track, supported_inputs=['video']) 纳入几何路径:
-  //   它产逐帧几何轨迹, 配置层(变体 series×size / 参数 conf-iou-tracker / 类别白名单)与检测同构,
-  //   故复用几何 model 机制 —— buildArgs 几何分支自然发 task_type='tracker'。图像项目不纳入。
+  // v0.21.6 / v0.21.7 · 视频项目源模型按**执行单位**分叉 (输入节点顶层选择, 见 母计划对等分叉):
+  //   - 整段序列 (executionUnit!=='frame', 默认): 只列 tracker (detect-then-track, 落 video_track);
+  //     配置层(变体 series×size / 参数 conf-iou-tracker / 类别白名单)与检测同构, 复用几何 model 机制,
+  //     buildArgs 几何分支自然发 task_type='tracker'。
+  //   - 逐帧 (executionUnit==='frame'): 只列图像检测 (GEOMETRIC_TASKS, 排除 tracker), yolo det/seg
+  //     逐帧跑、落 video_bbox。
+  //   图像项目恒图像检测 (GEOMETRIC_TASKS)。
   const isVideoProject = Array.isArray(project?.data_type)
     ? project.data_type.includes("video")
     : project?.data_type === "video";
+  const isVideoTracking = isVideoProject && executionUnit !== "frame";
   const geometricModels = useMemo<MLModelCapability[]>(
     () =>
-      (capabilitiesQ.data?.models ?? []).filter(
-        (m) =>
-          GEOMETRIC_TASKS.includes(m.task ?? "") ||
-          (isVideoProject && m.task === "tracker"),
+      (capabilitiesQ.data?.models ?? []).filter((m) =>
+        isVideoTracking
+          ? m.task === "tracker"
+          : GEOMETRIC_TASKS.includes(m.task ?? ""),
       ),
-    [capabilitiesQ.data, isVideoProject],
+    [capabilitiesQ.data, isVideoTracking],
   );
   const isGeometricBackend =
     !isDocMode &&
@@ -252,17 +268,23 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     const out: MLModelCapability[] = [];
     for (const m of capabilitiesQ.data?.models ?? []) {
       if (m.is_interactive) continue;
-      // v0.21.6 · tracker (video 输入) 不吃 full_image, 单独放行给 video 项目; 其余仍须支持 full_image。
-      const isTracker = isVideoProject && m.task === "tracker";
-      if (!isTracker && !supportsFullImageInput(m)) continue;
+      // v0.21.7 · 整段序列 (video tracking): 源下拉**只列 tracker** (吃 video 输入, 跳 full_image 门)。
+      if (isVideoTracking) {
+        if (m.task !== "tracker" || seen.has(m.id)) continue;
+        seen.add(m.id);
+        out.push(m);
+        continue;
+      }
+      // 逐帧 / 图像: 非 tracker 几何 (det/seg/...) + doc, 须支持 full_image。
+      if (!supportsFullImageInput(m)) continue;
       const isGeo = GEOMETRIC_TASKS.includes(m.task ?? "");
       const isDoc = m.task === "ocr" || m.task === "doc_layout";
-      if ((!isGeo && !isDoc && !isTracker) || seen.has(m.id)) continue;
+      if ((!isGeo && !isDoc) || seen.has(m.id)) continue;
       seen.add(m.id);
       out.push(m);
     }
     return out;
-  }, [capabilitiesQ.data, isVideoProject]);
+  }, [capabilitiesQ.data, isVideoTracking]);
   const selectedModelId = isDocMode
     ? (activeDocModel?.id ?? null)
     : isGeometricBackend
