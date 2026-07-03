@@ -1763,6 +1763,15 @@ async def trigger_preannotation(
         gpu_queue=settings.preannotate_gpu_queue,
         cpu_queue=settings.preannotate_cpu_queue,
     )
+    # v0.21.6 · detect-then-track: 含 tracker 阶段的 job 施加 soft 超时 (帧上限之外的双保险)。
+    #   单阶段源 tracker 走 body.task_type; 编排里的 tracker 阶段走 pipeline_stages_payload。
+    has_tracker_stage = body.task_type == "tracker" or any(
+        (s or {}).get("task_type") == "tracker"
+        for s in (pipeline_stages_payload or [])
+    )
+    apply_opts: dict = {"queue": queue}
+    if has_tracker_stage:
+        apply_opts["soft_time_limit"] = settings.tracker_soft_time_limit_seconds
     job = batch_predict.apply_async(
         args=[
             str(project.id),
@@ -1785,7 +1794,7 @@ async def trigger_preannotation(
             # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
             "pipeline_stages": pipeline_stages_payload,
         },
-        queue=queue,
+        **apply_opts,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

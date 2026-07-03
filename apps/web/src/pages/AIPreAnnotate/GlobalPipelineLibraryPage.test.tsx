@@ -31,7 +31,7 @@ type CanvasProps = {
 vi.mock("./components/PipelineGraphCanvas", () => ({
   default: (props: CanvasProps) => (
     <div data-testid="pipeline-canvas">
-      <button data-testid="add-child-root" onClick={() => props.onAddChild?.("root")}>
+      <button data-testid="add-child-source" onClick={() => props.onAddChild?.("source")}>
         +child
       </button>
       <button data-testid="select-stage-1" onClick={() => props.onSelect?.("stage-1")}>
@@ -183,8 +183,8 @@ describe("GlobalPipelineLibraryPage", () => {
     fireEvent.change(screen.getByLabelText("源阶段模型"), {
       target: { value: "bk-global-det::det" },
     });
-    // 从画布触发 addStage(root) 挂子.
-    fireEvent.click(screen.getByTestId("add-child-root"));
+    // v0.21.6 · 从画布触发 addStage(source) 给源模型 stage 挂下游子.
+    fireEvent.click(screen.getByTestId("add-child-source"));
     // 切到 stage-1 Inspector.
     fireEvent.click(screen.getByTestId("select-stage-1"));
     fireEvent.change(screen.getByLabelText("阶段 2 模型"), {

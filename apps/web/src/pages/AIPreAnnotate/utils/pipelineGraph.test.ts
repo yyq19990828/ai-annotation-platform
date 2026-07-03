@@ -36,12 +36,13 @@ const attr = (keys?: string[], label?: string): PipelineStagePayload =>
 const R: StageEntry = { sid: ROOT_SID, parentSid: null };
 
 describe("派生", () => {
-  it("depthBySid: 链 root→a→b 深度 1/2/3", () => {
+  it("depthBySid: 输入节点 0, 链 a→b 深度 1/2 (v0.21.6 输入节点不计模型层)", () => {
     const g: StageEntry[] = [
+      R,
       { sid: "a", parentSid: ROOT_SID },
       { sid: "b", parentSid: "a" },
     ];
-    expect(depthBySid(g)).toEqual({ root: 1, a: 2, b: 3 });
+    expect(depthBySid(g)).toEqual({ root: 0, a: 1, b: 2 });
   });
 
   it("depthBySid: 顺序无关 —— 子排在父之前 (改父后) 仍算对深度", () => {
@@ -49,11 +50,12 @@ describe("派生", () => {
     const g: StageEntry[] = [
       { sid: "b", parentSid: "a" }, // 子先出现
       { sid: "a", parentSid: ROOT_SID }, // 父后出现
+      R,
     ];
-    expect(depthBySid(g)).toEqual({ root: 1, a: 2, b: 3 });
+    expect(depthBySid(g)).toEqual({ root: 0, a: 1, b: 2 });
   });
 
-  it("depthBySid: 环不死循环 (兜底为 1)", () => {
+  it("depthBySid: 环不死循环 (兜底为 0)", () => {
     const g: StageEntry[] = [
       { sid: "a", parentSid: "b" },
       { sid: "b", parentSid: "a" },
@@ -61,13 +63,15 @@ describe("派生", () => {
     expect(() => depthBySid(g)).not.toThrow();
   });
 
-  it("canAddChild: 乱序下 depth-3 节点仍不可加子 (防造 depth>3)", () => {
-    // root→a→b, 但数组里 b 在 a 前。b 实为 depth-3, 不可再加子。
+  it("canAddChild: 乱序下 depth-max 节点仍不可加子 (防造超深)", () => {
+    // 输入→a→x→b (深度 0/1/2/3), 但数组乱序。b 为 depth-3=MAX_DEPTH, 不可再加子。
     const g: StageEntry[] = [
-      { sid: "b", parentSid: "a" },
+      { sid: "b", parentSid: "x" },
+      { sid: "x", parentSid: "a" },
       { sid: "a", parentSid: ROOT_SID },
+      R,
     ];
-    expect(canAddChild(g, { a: geom(), b: geom() }, "b")).toBe(false);
+    expect(canAddChild(g, { a: geom(), x: geom(), b: geom() }, "b")).toBe(false);
   });
 
   it("descendantsOf: 含全部后代不含自身", () => {
@@ -243,25 +247,33 @@ describe("加子门控", () => {
     expect(canAddChild(g, payloads, "a")).toBe(true);
   });
   it("分类阶段不可加子 (不产几何)", () => {
-    const g: StageEntry[] = [R, { sid: "b", parentSid: ROOT_SID }];
+    // 分类阶段是下游 (父=源模型 stage), 非源式; producesGeometry(attr)=false → 不可加子。
+    const g: StageEntry[] = [
+      R,
+      { sid: "src", parentSid: ROOT_SID },
+      { sid: "b", parentSid: "src" },
+    ];
     expect(canAddChild(g, payloads, "b")).toBe(false);
   });
   it("depth-3 几何阶段不可加子 (超深)", () => {
+    // 输入(0)→a(1)→mid(2)→c(3); c 为 MAX_DEPTH, 不可再加。
     const g: StageEntry[] = [
       R,
       { sid: "a", parentSid: ROOT_SID },
-      { sid: "c", parentSid: "a" },
+      { sid: "mid", parentSid: "a" },
+      { sid: "c", parentSid: "mid" },
     ];
-    expect(canAddChild(g, { a: geom(), c: geom() }, "c")).toBe(false);
+    expect(canAddChild(g, { a: geom(), mid: geom(), c: geom() }, "c")).toBe(false);
   });
 });
 
 describe("改父校验 canReparent", () => {
+  // a=源式检测(父=输入节点, 恒几何); b/c=a 的下游分类 (非几何)。
   const g: StageEntry[] = [
     R,
     { sid: "a", parentSid: ROOT_SID },
     { sid: "b", parentSid: "a" },
-    { sid: "c", parentSid: ROOT_SID },
+    { sid: "c", parentSid: "a" },
   ];
   const payloads = { a: geom(), b: attr(), c: attr() };
 
@@ -283,14 +295,15 @@ describe("改父校验 canReparent", () => {
     expect(r.reason).toMatch(/几何/);
   });
   it("超深被拒: 把含两层子树挂到 depth-2 几何阶段", () => {
-    // a2(几何,d2) → s(几何,d3); 把 a(高度2) 挂到 a2 → a 新 d3 + 高度2-1 = d4 > 3。
+    // 输入(0)→p(1)→a2(2, 几何); 把 a(高度2: a→b) 挂到 a2 → a 新 d3 + 高度2-1 = d4 > 3。
     const g2: StageEntry[] = [
       R,
       { sid: "a", parentSid: ROOT_SID },
       { sid: "b", parentSid: "a" },
-      { sid: "a2", parentSid: ROOT_SID },
+      { sid: "p", parentSid: ROOT_SID },
+      { sid: "a2", parentSid: "p" },
     ];
-    const r = canReparent(g2, { a: geom(), b: attr(), a2: geom() }, "a", "a2");
+    const r = canReparent(g2, { a: geom(), b: attr(), p: geom(), a2: geom() }, "a", "a2");
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/超过最大/);
   });

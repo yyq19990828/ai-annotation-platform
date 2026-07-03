@@ -33,8 +33,15 @@ export type StageRole = {
   icon: "box" | "sparkles" | "tag";
 };
 
-/** 源 sid (源检测阶段, parentSid 链的根)。 */
+/** 输入节点 sid (纯数据源, parentSid 链的根, parentSid=null)。 */
 export const ROOT_SID = "root";
+
+/**
+ * v0.21.6 · 首模型 stage 的固定 sid (输入节点唯一子, 承接原源检测/tracker 模型配置)。
+ * 输入节点=纯数据源(不绑模型), 首模型 stage=后端 stage 0(parent_stage=null)。母计划 frame/video
+ * 双分支(多首模型 stage)留 v0.21.7; 本版单首模型 stage 用此固定 sid, cfg 绑它。
+ */
+export const SOURCE_SID = "source";
 
 /** 受限树形最大深度 (源=1, 下游 2/3)。 */
 export const MAX_DEPTH = 3;
@@ -273,19 +280,19 @@ export function stageWarning(
 }
 
 /**
- * 每 sid 深度 (root=1, 子=父+1)。
- * 顺父链递归求值, **与数组顺序无关** —— 改父后子可能排在新父之前, 不能假设父先于子出现
- * (否则深度被低估 → canAddChild 误判 → 造出 depth>3)。带环兜底。
+ * 每 sid 深度 (输入节点=0, 首模型 stage=1, 子=父+1)。
+ * v0.21.6 · 输入节点是纯数据源不计模型层 → depth 0; MAX_DEPTH=3 因此指模型 stage 的 1..3 三层
+ * (输入→检测→子检测→分类)。顺父链递归求值, **与数组顺序无关** —— 改父后子可能排在新父之前,
+ * 不能假设父先于子出现 (否则深度被低估 → canAddChild 误判 → 造出超深)。带环兜底。
  */
 export function depthBySid(graph: StageEntry[]): Record<string, number> {
   const parentOf: Record<string, string | null> = {};
   for (const e of graph) parentOf[e.sid] = e.parentSid;
-  // v0.21.5 · 输入节点 parentSid=null → depthOf 的 `p == null` 分支归 1, 无需再种子 ROOT_SID。
   const memo: Record<string, number> = {};
   const depthOf = (sid: string, seen: Set<string>): number => {
     if (memo[sid] != null) return memo[sid];
     const p = parentOf[sid];
-    if (p == null || seen.has(sid)) return (memo[sid] = 1); // 孤儿 / 环 → 兜底为 1
+    if (p == null || seen.has(sid)) return (memo[sid] = 0); // 输入节点 / 孤儿 / 环 → 0
     seen.add(sid);
     return (memo[sid] = depthOf(p, seen) + 1);
   };
@@ -316,14 +323,23 @@ export function subtreeHeight(graph: StageEntry[], sid: string): number {
   return 1 + Math.max(...kids.map((e) => subtreeHeight(graph, e.sid)));
 }
 
-/** sid 是否产几何 —— 输入节点(parentSid=null)恒产几何(源检测/追踪, 下游可挂)。 */
+/**
+ * sid 是否产几何 (可作下游的父)。
+ * - 输入节点(parentSid=null): 纯数据源, 恒 true (其源模型子可挂)。
+ * - 源式 stage(父=输入节点): 源检测/tracker 模型, 恒产几何 (payload 由 cfg 管、不在复合器,
+ *   故不能靠 producesGeometry(payload); 结构性判为 true, 与 v0.21.5「源恒产几何」一致)。
+ * - 其余下游 stage: 按 producesGeometry(payload)。
+ */
 function sidProducesGeometry(
   graph: StageEntry[],
   payloadBySid: Record<string, PipelineStagePayload | null>,
   sid: string,
 ): boolean {
   const e = graph.find((x) => x.sid === sid);
-  if (e && e.parentSid == null) return true;
+  if (!e) return producesGeometry(payloadBySid[sid]);
+  if (e.parentSid == null) return true;
+  const parent = graph.find((x) => x.sid === e.parentSid);
+  if (parent && parent.parentSid == null) return true;
   return producesGeometry(payloadBySid[sid]);
 }
 

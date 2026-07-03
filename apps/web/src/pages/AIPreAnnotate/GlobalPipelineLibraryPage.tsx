@@ -29,6 +29,7 @@ import { usePipelineComposer } from "./hooks/usePipelineComposer";
 import { GlobalStageInspector, type GlobalModelOption } from "./components/GlobalStageInspector";
 import {
   ROOT_SID,
+  SOURCE_SID,
   classFilterText,
   sourceNodeShape,
   detailOf,
@@ -117,9 +118,9 @@ export default function GlobalPipelineLibraryPage() {
   const onSourceChange = useCallback((payload: PipelineStagePayload | null) => {
     setSourcePayload(payload);
   }, []);
-  // 源阶段 caps 走 stageCapsRef.current[ROOT_SID] 一样的模式; 借 composer 的 onStageCaps.
+  // v0.21.6 · 源模型 caps 挂 SOURCE_SID (源模型 stage); 借 composer 的 onStageCaps。
   const onSourceCaps = useCallback(
-    (caps: Parameters<typeof onStageCaps>[1]) => onStageCaps(ROOT_SID, caps),
+    (caps: Parameters<typeof onStageCaps>[1]) => onStageCaps(SOURCE_SID, caps),
     [onStageCaps],
   );
 
@@ -134,7 +135,7 @@ export default function GlobalPipelineLibraryPage() {
   const classesForSid = useCallback(
     (sid: string): string[] => {
       const payload =
-        sid === ROOT_SID
+        sid === SOURCE_SID
           ? sourcePayload
           : downstreamPayloads[stagesGraph.findIndex((s) => s.sid === sid)] ?? null;
       if (!payload?.ml_backend_id || !payload?.model_id) return [];
@@ -161,12 +162,12 @@ export default function GlobalPipelineLibraryPage() {
   // 汇总所有 warning (源 + 下游), 顶部条展示.
   const allWarnings = useMemo(() => {
     const out: string[] = [];
-    const srcWarn = stageWarning(sourcePayload, stageCapsRef.current[ROOT_SID]);
+    const srcWarn = stageWarning(sourcePayload, stageCapsRef.current[SOURCE_SID]);
     if (srcWarn) out.push(`源: ${srcWarn}`);
     stagesGraph.forEach((e, i) => {
-      if (e.parentSid == null) return; // 输入节点由 srcWarn 覆盖
+      if (e.parentSid == null || e.sid === SOURCE_SID) return; // 输入节点/源模型由 srcWarn 覆盖
       const w = stageWarning(downstreamPayloads[i], stageCapsRef.current[e.sid]);
-      if (w) out.push(`阶段 ${i + 1}: ${w}`);
+      if (w) out.push(`阶段 ${i - 1}: ${w}`);
     });
     return out;
   }, [sourcePayload, stagesGraph, downstreamPayloads, stageCapsRef]);
@@ -176,15 +177,33 @@ export default function GlobalPipelineLibraryPage() {
     const srcOption = sourcePayload
       ? globalModelOptions.find((o) => o.key === `${sourcePayload.ml_backend_id}::${sourcePayload.model_id}`)
       : null;
-    // v0.21.5 · 输入节点 = stagesGraph[0] (parentSid==null); 源类型/执行单位由 srcMeta 携带。
+    // v0.21.6 · 输入节点=纯数据源; 源模型 stage(SOURCE_SID)=sourcePayload 承接的整图检测/tracker。
     const srcShape = sourceNodeShape(srcMeta, srcOption?.model);
     return stagesGraph.map<GraphNodeModel>((e, i) => {
       if (e.parentSid == null) {
+        // 输入节点: 纯数据源 (数据类型 + 执行单位徽标, 无模型)。
         return {
           sid: e.sid,
           parentSid: null,
+          role: { label: "数据源", variant: "accent", icon: "box" },
+          detail: srcShape.sourceTypeLabel,
+          runState: "pending",
+          producesGeometry: true,
+          canAddChild: false,
+          conflict: false,
+          ready: true,
+          sourceTypeLabel: srcShape.sourceTypeLabel,
+          executionUnitLabel: srcShape.executionUnitLabel,
+          warning: null,
+        };
+      }
+      if (e.sid === SOURCE_SID) {
+        // 源模型 stage: sourcePayload 配置的整图检测/tracker, 后端 stage 0。
+        return {
+          sid: e.sid,
+          parentSid: e.parentSid,
           role: srcShape.role,
-          detail: srcOption?.model.display_name ?? "请配置源阶段模型",
+          detail: srcOption?.model.display_name ?? "请配置源模型",
           runState: "pending",
           producesGeometry: true,
           canAddChild: canAddChildAt(e.sid),
@@ -193,10 +212,7 @@ export default function GlobalPipelineLibraryPage() {
           backendName: srcOption?.backendName,
           modelId: srcOption?.model.id,
           taskType: srcOption?.model.task,
-          sourceTypeLabel: srcShape.sourceTypeLabel,
-          sourceCountLabel: srcShape.countLabel,
-          executionUnitLabel: srcShape.executionUnitLabel,
-          warning: stageWarning(sourcePayload, stageCapsRef.current[ROOT_SID]),
+          warning: stageWarning(sourcePayload, stageCapsRef.current[SOURCE_SID]),
         };
       }
       const p = downstreamPayloads[i];
@@ -232,14 +248,19 @@ export default function GlobalPipelineLibraryPage() {
     globalModelOptions,
   ]);
 
-  // v0.21.5 · sid → stage 号 = stagesGraph 索引 (输入节点=0, 下游 1..N; 父总在前故父号 < 子号).
+  // v0.21.6 · sid → 后端 stage 号 = 数组索引-1 (SOURCE_SID index1→0, 下游 index k→k-1; 输入节点不计).
   const stageNumberBySid = useMemo(() => {
     const m: Record<string, number> = {};
     stagesGraph.forEach((e, i) => {
-      m[e.sid] = i;
+      if (e.parentSid != null) m[e.sid] = i - 1;
     });
     return m;
   }, [stagesGraph]);
+
+  // v0.21.6 · 有无 StageCard 下游卡 (父=模型 stage, 非源模型 SOURCE_SID)。
+  const hasDownstreamCards = stagesGraph.some(
+    (e) => e.parentSid != null && e.sid !== SOURCE_SID,
+  );
 
   // 保存: 组装 pipeline_stages (源 + N 下游, 按 sid 序号) → POST /project-pipelines (scope=public).
   const savePipeline = async () => {
@@ -252,7 +273,7 @@ export default function GlobalPipelineLibraryPage() {
       pushToast({ msg: "请配置源阶段模型", kind: "warning" });
       return;
     }
-    if (stagesGraph.length > 1 && !allDownstreamReady) {
+    if (hasDownstreamCards && !allDownstreamReady) {
       pushToast({ msg: "下游阶段未就绪", sub: "请配齐各阶段参数", kind: "warning" });
       return;
     }
@@ -265,16 +286,26 @@ export default function GlobalPipelineLibraryPage() {
       return;
     }
 
-    // v0.21.5 · 输入节点(parentSid==null) → stage 0 (源模型配置 + source 数据源描述); 下游 → stage i。
-    const stages: PipelineStagePayload[] = stagesGraph.map((e, i) =>
-      e.parentSid == null
-        ? { ...(sourcePayload as PipelineStagePayload), stage: 0, source: srcMeta }
-        : {
-            ...(downstreamPayloads[i] as PipelineStagePayload),
-            stage: i,
-            parent_stage: stageNumberBySid[e.parentSid],
-          },
-    );
+    // v0.21.6 · 输入节点不入后端; 源模型 stage(SOURCE_SID) → stage 0 (sourcePayload + source 描述);
+    // 下游 → stage i-1。
+    const stages: PipelineStagePayload[] = stagesGraph.flatMap<PipelineStagePayload>((e, i) => {
+      if (e.parentSid == null) return [];
+      if (e.sid === SOURCE_SID)
+        return [
+          {
+            ...(sourcePayload as PipelineStagePayload),
+            stage: 0,
+            source: srcMeta,
+          } as PipelineStagePayload,
+        ];
+      return [
+        {
+          ...(downstreamPayloads[i] as PipelineStagePayload),
+          stage: i - 1,
+          parent_stage: stageNumberBySid[e.parentSid],
+        } as PipelineStagePayload,
+      ];
+    });
 
     try {
       await createProjectPipeline.mutateAsync({
@@ -299,10 +330,10 @@ export default function GlobalPipelineLibraryPage() {
     }
   };
 
-  // 若 stagesGraph 变空 → 选中回落 root (由 composer removeStage 内部已处理; effect 兜底).
+  // 若选中的 stage 被删 → 回落源模型 stage (由 composer removeStage 内部已处理; effect 兜底).
   useEffect(() => {
-    if (selectedSid !== ROOT_SID && !stagesGraph.some((e) => e.sid === selectedSid)) {
-      setSelectedSid(ROOT_SID);
+    if (!stagesGraph.some((e) => e.sid === selectedSid)) {
+      setSelectedSid(SOURCE_SID);
     }
   }, [selectedSid, stagesGraph, setSelectedSid]);
 
@@ -326,25 +357,29 @@ export default function GlobalPipelineLibraryPage() {
       }
       const stages = p.stages ?? [];
       if (stages.length === 0) return;
-      // 源阶段 (stage=0): 落 loadedSourceSeed 与 sourcePayload 双写, 避免 Inspector 未及回填时保存空.
+      // 源模型 stage (后端 stage=0): 落 loadedSourceSeed 与 sourcePayload 双写, 避免 Inspector 未及回填时保存空.
       setLoadedSourceSeed(stages[0]);
       setSourcePayload(stages[0]);
-      // v0.21.5 · 输入节点作 graph 首节点常驻; 下游: parent_stage=0 → ROOT_SID; 否则 loaded-<parent_stage>.
-      const newGraph: StageEntry[] = [{ sid: ROOT_SID, parentSid: null }];
+      // v0.21.6 · 输入节点(纯数据源) + 源模型 stage(SOURCE_SID) 常驻; 下游: parent_stage=0 → SOURCE_SID;
+      // 否则 loaded-<parent_stage>。
+      const newGraph: StageEntry[] = [
+        { sid: ROOT_SID, parentSid: null },
+        { sid: SOURCE_SID, parentSid: ROOT_SID },
+      ];
       const seed: Record<string, PipelineStagePayload> = {};
       for (let i = 1; i < stages.length; i++) {
         const s = stages[i];
         const sid = `loaded-${s.stage}`;
         const parentSid =
           s.parent_stage == null || s.parent_stage === 0
-            ? ROOT_SID
+            ? SOURCE_SID
             : `loaded-${s.parent_stage}`;
         newGraph.push({ sid, parentSid });
         seed[sid] = s;
       }
       setStagesGraph(newGraph);
       setLoadedDownstreamSeedBySid(seed);
-      setSelectedSid(ROOT_SID);
+      setSelectedSid(SOURCE_SID);
       pushToast({
         msg: "已加载到画布",
         sub: `${p.name} · ${stages.length} 阶段`,
@@ -468,15 +503,24 @@ export default function GlobalPipelineLibraryPage() {
               <span className={styles.stageEmptyHint}>
                 全局池至少需要 2 个不同 backend 才能加下游阶段（下游须用不同于源的 backend）。
               </span>
-            ) : stagesGraph.length === 1 ? (
+            ) : !hasDownstreamCards ? (
               <span className={styles.stageEmptyHint}>
-                从输入节点的 <Icon name="plus" size={10} /> 拖出（或点 +）加下游阶段：源出框后，
+                从源模型的 <Icon name="plus" size={10} /> 拖出（或点 +）加下游阶段：源出框后，
                 下游对每个框跑分类/检测子物体。
               </span>
             ) : null}
           </div>
 
           <div className={styles.editorInspector}>
+            {/* 输入节点: 纯数据源 (只读); 选中时显示。 */}
+            <div hidden={selectedSid !== ROOT_SID}>
+              <strong className={styles.sectionTitle}>输入节点 · 数据源</strong>
+              <div className={styles.stageEmptyHint}>
+                数据类型：{srcMeta.data_type === "video" ? "视频" : "图像"}
+                {srcMeta.data_type === "video" && " · 执行单位：整段序列（detect-then-track）"}
+              </div>
+            </div>
+            {/* 源模型 stage (SOURCE_SID, 后端 stage 0): 选中时显示。 */}
             <GlobalStageInspector
               kind="source"
               stageIndex={0}
@@ -484,16 +528,16 @@ export default function GlobalPipelineLibraryPage() {
               value={sourcePayload ?? loadedSourceSeed}
               onChange={onSourceChange}
               onCaps={onSourceCaps}
-              hidden={selectedSid !== ROOT_SID}
+              hidden={selectedSid !== SOURCE_SID}
               displayIndex={1}
             />
-            {/* 输入节点(parentSid==null)走上方 kind="source" 检查器, 下游卡在此。 */}
+            {/* 下游卡: 输入节点/源模型不出卡 (走上方)。 */}
             {stagesGraph.map((e, i) =>
-              e.parentSid == null ? null : (
+              e.parentSid == null || e.sid === SOURCE_SID ? null : (
                 <GlobalStageInspector
                   key={e.sid}
                   kind="stage"
-                  stageIndex={i}
+                  stageIndex={i - 1}
                   parentStageIndex={stageNumberBySid[e.parentSid]}
                   pool={globalModelOptions}
                   parentClasses={classesForSid(e.parentSid)}
@@ -504,7 +548,7 @@ export default function GlobalPipelineLibraryPage() {
                   warning={stageWarning(downstreamPayloads[i], stageCapsRef.current[e.sid])}
                   conflictKeys={conflictInfo.perCard[e.sid]}
                   hidden={selectedSid !== e.sid}
-                  displayIndex={i + 1}
+                  displayIndex={i}
                 />
               ),
             )}

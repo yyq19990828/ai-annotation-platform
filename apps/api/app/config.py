@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.21.5"
+    app_version: str = "0.21.6"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -170,6 +170,10 @@ class Settings(BaseSettings):
     video_segment_lock_ttl_seconds: int = 300
     video_tracker_window_size_frames: int = 300
     video_tracker_low_confidence_outside_threshold: float = 0.15
+    # v0.21.6 · detect-then-track 批量预标注 soft 超时 (秒)。tracker 阶段整段跑帧、耗时远超逐帧
+    #   检测; 与 YOLO_TRACKER_MAX_FRAMES 帧上限双保险, 防单 job 卡死 worker。到点抛
+    #   SoftTimeLimitExceeded, worker 可清理落库已处理帧。仅含 tracker 阶段的 job 施加。
+    tracker_soft_time_limit_seconds: int = 1800
 
     # v0.7.6 · AuditMiddleware 异步化开关。true = 通过 Celery 旁路写 audit_logs；
     # false 或 broker 不可用时，自动 fallback 到原同步路径。

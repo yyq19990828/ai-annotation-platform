@@ -202,13 +202,16 @@ function NodeBody({ data }: { data: StageNodeData }) {
   );
 }
 
-// v0.21.5 · 单一节点组件 (去 source/stage 二分): 入 handle 仅非输入节点 (parentSid!=null) 有;
-// 出 handle 产几何且未达深度上限才有 (物理上把「叶子不可有子」编码进 UI)。
+// v0.21.5/v0.21.6 · 单一节点组件 (去 source/stage 二分): 入 handle 仅非输入节点 (parentSid!=null) 有;
+// 出 handle 产几何且未达深度上限 (canAddChild) 才有 —— 输入节点(parentSid==null)恒有出 handle
+// (总有源模型子, 供边渲染), 但 + 按钮由 canAddChild 单独门控 (v0.21.6 输入节点不加子)。
 const StageNode = memo(({ data }: NodeProps<Node<StageNodeData>>) => (
   <>
     {data.parentSid != null && <Handle type="target" position={Position.Left} />}
     <NodeBody data={data} />
-    {data.canAddChild && <Handle type="source" position={Position.Right} />}
+    {(data.canAddChild || data.parentSid == null) && (
+      <Handle type="source" position={Position.Right} />
+    )}
   </>
 ));
 StageNode.displayName = "StageNode";

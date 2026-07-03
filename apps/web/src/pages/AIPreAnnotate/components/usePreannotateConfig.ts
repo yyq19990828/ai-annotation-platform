@@ -81,6 +81,7 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
   const project = projectQ.data as unknown as
     | {
         type_key?: string;
+        data_type?: string[] | string | null;
         classes_config?: Record<string, { alias?: string | null }>;
         default_variants?: Record<string, Record<string, string>>;
       }
@@ -181,10 +182,20 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     return models.find((m) => m.task !== "ocr" && m.task !== "doc_layout") ?? models[0];
   }, [isDocMode, activeDocModel, capabilitiesQ.data]);
 
+  // v0.21.6 · 视频项目额外把 tracker (detect-then-track, supported_inputs=['video']) 纳入几何路径:
+  //   它产逐帧几何轨迹, 配置层(变体 series×size / 参数 conf-iou-tracker / 类别白名单)与检测同构,
+  //   故复用几何 model 机制 —— buildArgs 几何分支自然发 task_type='tracker'。图像项目不纳入。
+  const isVideoProject = Array.isArray(project?.data_type)
+    ? project.data_type.includes("video")
+    : project?.data_type === "video";
   const geometricModels = useMemo<MLModelCapability[]>(
     () =>
-      (capabilitiesQ.data?.models ?? []).filter((m) => GEOMETRIC_TASKS.includes(m.task ?? "")),
-    [capabilitiesQ.data],
+      (capabilitiesQ.data?.models ?? []).filter(
+        (m) =>
+          GEOMETRIC_TASKS.includes(m.task ?? "") ||
+          (isVideoProject && m.task === "tracker"),
+      ),
+    [capabilitiesQ.data, isVideoProject],
   );
   const isGeometricBackend =
     !isDocMode &&
@@ -240,15 +251,18 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     const seen = new Set<string>();
     const out: MLModelCapability[] = [];
     for (const m of capabilitiesQ.data?.models ?? []) {
-      if (m.is_interactive || !supportsFullImageInput(m)) continue;
+      if (m.is_interactive) continue;
+      // v0.21.6 · tracker (video 输入) 不吃 full_image, 单独放行给 video 项目; 其余仍须支持 full_image。
+      const isTracker = isVideoProject && m.task === "tracker";
+      if (!isTracker && !supportsFullImageInput(m)) continue;
       const isGeo = GEOMETRIC_TASKS.includes(m.task ?? "");
       const isDoc = m.task === "ocr" || m.task === "doc_layout";
-      if ((!isGeo && !isDoc) || seen.has(m.id)) continue;
+      if ((!isGeo && !isDoc && !isTracker) || seen.has(m.id)) continue;
       seen.add(m.id);
       out.push(m);
     }
     return out;
-  }, [capabilitiesQ.data]);
+  }, [capabilitiesQ.data, isVideoProject]);
   const selectedModelId = isDocMode
     ? (activeDocModel?.id ?? null)
     : isGeometricBackend
@@ -322,9 +336,17 @@ export function usePreannotateConfig({ projectId, backendId }: UsePreannotateCon
     setSelectedClassIdx(new Set());
   }, [backendId, geometricTaskId]);
 
-  // 文本任务用 /setup.params; OCR / 版面用所选 model 条目自带的 params schema.
+  // 文本任务用 /setup.params; OCR / 版面用所选 model 条目自带的 params schema。
+  // v0.21.6 · 几何路径改用**选中几何 model** 的 per-model params (每条 model entry 都自带,
+  //   见 yolo-backend `_build_model_entry`), 回落 /setup 顶层。此前恒用顶层 (= 检测的 conf/iou/max_det),
+  //   导致 tracker 的「追踪算法」enum、obb 的专属 params 等 per-model 字段被吞。检测/分割的 per-model
+  //   与顶层同构, 零回归。
   const paramsSchema = (
-    isDocMode ? activeDocModel?.params : setupQ.data?.params
+    isDocMode
+      ? activeDocModel?.params
+      : isGeometricBackend
+        ? (geometricModel?.params ?? setupQ.data?.params)
+        : setupQ.data?.params
   ) as JsonSchemaObject | undefined;
   const paramKeys = Object.keys(paramsSchema?.properties ?? {});
   const hasAnyParams = paramKeys.length > 0;

@@ -267,10 +267,11 @@ export function GlobalStageInspector({
     }
   }, [modelKey, value, optionByKey, kind]);
 
-  // v0.21.5 · 输入节点标题按 model.task 派生 (不 hardcode「检测」): 目标检测 / 视频追踪 参数。
+  // v0.21.6 · 源模型阶段标题按 model.task 派生 (不 hardcode「检测」): 目标检测 / 视频追踪 参数。
+  //   (输入节点已收敛为独立纯数据源, 此处是其子源模型 stage。)
   const roleLabel =
     kind === "source"
-      ? `输入节点 · ${sourceNodeShape(undefined, selectedOption?.model).role.label}参数`
+      ? `源模型 · ${sourceNodeShape(undefined, selectedOption?.model).role.label}参数`
       : `阶段 ${displayIndex} · 参数`;
 
   return (

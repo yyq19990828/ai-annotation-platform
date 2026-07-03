@@ -15,6 +15,7 @@ import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 import {
   MAX_DEPTH,
   ROOT_SID,
+  SOURCE_SID,
   canAddChild as pureCanAddChild,
   canReparent,
   depthBySid,
@@ -23,6 +24,12 @@ import {
   type StageCaps,
   type StageEntry,
 } from "../utils/pipelineGraph";
+
+// v0.21.6 · 终态初始图: 输入节点(纯数据源) + 一个首模型 stage(承接源模型配置)。
+const initialGraph = (): StageEntry[] => [
+  { sid: ROOT_SID, parentSid: null },
+  { sid: SOURCE_SID, parentSid: ROOT_SID },
+];
 
 export interface UsePipelineComposerArgs {
   /**
@@ -83,11 +90,9 @@ export function usePipelineComposer(
 ): UsePipelineComposerReturn {
   const { availableBackendCount, onWarn, onCascadeDelete } = args;
 
-  // v0.21.5 · 输入节点(parentSid=null)作 graph 首节点常驻; 不再由调用方画布外合成。
-  const [stagesGraph, setStagesGraph] = useState<StageEntry[]>([
-    { sid: ROOT_SID, parentSid: null },
-  ]);
-  const [selectedSid, setSelectedSid] = useState<string>(ROOT_SID);
+  // v0.21.6 · 输入节点(纯数据源) + 首模型 stage 常驻; 默认选中首模型 stage(输入节点是被动数据源)。
+  const [stagesGraph, setStagesGraph] = useState<StageEntry[]>(initialGraph);
+  const [selectedSid, setSelectedSid] = useState<string>(SOURCE_SID);
   const stagePayloadsRef = useRef<Record<string, PipelineStagePayload | null>>({});
   const stageCapsRef = useRef<Record<string, StageCaps | null>>({});
   const [stageTick, setStageTick] = useState(0);
@@ -123,9 +128,9 @@ export function usePipelineComposer(
 
   const removeStage = useCallback(
     (sid: string) => {
-      // 输入节点(parentSid=null)不可删。
+      // 输入节点(纯数据源, parentSid=null)与首模型 stage(SOURCE_SID, 每流水线必有一个模型)不可删。
       const target = stagesGraph.find((e) => e.sid === sid);
-      if (!target || target.parentSid == null) return;
+      if (!target || target.parentSid == null || sid === SOURCE_SID) return;
       const kids = descendantsOf(stagesGraph, sid);
       if (kids.size > 0) onCascadeDelete?.(kids.size);
       setStagesGraph((g) => {
@@ -139,7 +144,7 @@ export function usePipelineComposer(
             }
           }
         }
-        setSelectedSid((cur) => (dead.has(cur) ? ROOT_SID : cur));
+        setSelectedSid((cur) => (dead.has(cur) ? SOURCE_SID : cur));
         return g.filter((e) => !dead.has(e.sid));
       });
     },
@@ -152,9 +157,10 @@ export function usePipelineComposer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stagesGraph, stageTick],
   );
-  // v0.21.5 · 输入节点(parentSid=null)就绪由调用方 cfg.configReady 门控, 不进复合器 —— 仅判下游卡。
+  // v0.21.6 · 输入节点(纯数据源)与源式 stage(父=输入节点, 走 cfg/PreannotateConfigForm) 的就绪
+  // 由调用方 cfg.configReady 门控, 不进复合器 —— 这里仅判 StageCard 配置的下游卡(父=模型 stage)。
   const allDownstreamReady = stagesGraph.every(
-    (e, i) => e.parentSid == null || downstreamPayloads[i] != null,
+    (e, i) => e.parentSid == null || e.parentSid === ROOT_SID || downstreamPayloads[i] != null,
   );
 
   const payloadBySid = useMemo(() => {
@@ -219,8 +225,8 @@ export function usePipelineComposer(
   const hasKeyConflict = conflictInfo.conflictFinals.size > 0;
 
   const reset = useCallback(() => {
-    setStagesGraph([{ sid: ROOT_SID, parentSid: null }]);
-    setSelectedSid(ROOT_SID);
+    setStagesGraph(initialGraph());
+    setSelectedSid(SOURCE_SID);
     stagePayloadsRef.current = {};
     stageCapsRef.current = {};
     seqRef.current = 0;

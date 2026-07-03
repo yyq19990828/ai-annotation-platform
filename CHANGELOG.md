@@ -41,6 +41,15 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 「## [Unreleased]」。0.21.x 版本段累积在本区；进入 0.22.x 后整体移到 docs/changelogs/0.21.x.md。
 -->
 
+## [0.21.6] - 2026-07-03
+
+### Added
+- **检测式视频追踪接入编排画布**：视频项目的编排源模型现在可以直接选 `tracker`（detect-then-track）。此前 `task=tracker` 的模型（`supported_inputs=['video']`）被源模型下拉的两道整图门（`supportsFullImageInput` + `GEOMETRIC_TASKS`）挡在外面，只能靠后端手拼 payload 触发；现在视频项目把 tracker 纳入几何路径的可选模型——变体（series × size）、参数（conf / iou / max_det / 追踪算法 bytetrack/botsort）、类别白名单与检测同构，`buildArgs` 自然发 `task_type='tracker'`。图像项目不受影响（tracker 只对 `data_type` 含 video 的项目放行）。
+
+### Changed
+- **编排「输入节点」收敛为纯数据源，源模型下沉为其子阶段（母计划终态）**：接续 v0.21.5——输入节点此前同时承载「数据源描述」和「源检测模型配置」两职。现彻底拆分：输入节点是深度 0 的纯数据源（只带 `source:{data_type,execution_unit}`，不配模型、不入后端 stage），源检测/追踪模型下沉为输入节点的子阶段（`SOURCE_SID`，后端 stage 0），下游从它继续挂。这让「图像跑检测 / 视频跑追踪 / 视频跑单帧检测」成为输入节点的对等分叉，而非写死在源节点里。受限 DAG 深度模型随之调整：输入节点不再计入模型层（深度 0），一条链的模型阶段为深度 1..3。图像项目编排行为零回归（源模型阶段等价旧「源阶段」，下游加子/改父/键冲突判据不变），旧持久化编排（stage 0 为源模型）加载时按此结构回填。
+- **含 tracker 阶段的批量预标注加 soft 超时**：detect-then-track 整段跑帧耗时远超逐帧检测，新增 `TRACKER_SOFT_TIME_LIMIT_SECONDS`（默认 1800s）——仅对含 tracker 阶段的 job 施加 Celery `soft_time_limit`，与后端 `YOLO_TRACKER_MAX_FRAMES` 帧上限构成双保险，防单个追踪 job 长时间占住 worker。
+
 ## [0.21.5] - 2026-07-03
 
 ### Added
