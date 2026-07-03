@@ -141,16 +141,16 @@ async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super
     assert new.class_name == "car"
     assert new.attributes == {"occluded": True}
     assert new.task_id == tasks[1].id
-    # 共享 group_id: 高位序列, 写回源(过渡期 dual-write, 见 ADR-0045)
-    assert new.group_id is not None and new.group_id >= 1_000_000_000
-    assert src.group_id == new.group_id
-    # v0.21.2 · 共享 track_id: 新权威跨帧标识, 源无则分配并写回源
+    # v0.21.2 · ADR-0045 · Phase 6 · 跨帧不再写 group_id; 共享 track_id 为唯一标识
+    assert new.group_id is None
     assert new.track_id is not None and new.track_id.startswith("trk_")
     assert src.track_id == new.track_id
 
 
 @pytest.mark.asyncio
-async def test_propagate_reuses_existing_group_id(db_session, super_admin):
+async def test_propagate_does_not_carry_group_id(db_session, super_admin):
+    # v0.21.2 · ADR-0045 · Phase 6 · propagate 不再延续 group_id (跨帧改 track_id);
+    # 源的 group_id (图像编组语义) 不带入目标, 目标 group_id 为 None。
     user, _ = super_admin
     project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id)
     src = await _add_annotation(
@@ -165,8 +165,9 @@ async def test_propagate_reuses_existing_group_id(db_session, super_admin):
     new, _ = await svc.propagate(
         source_annotation_id=src.id, target_task_id=tasks[1].id, user_id=user.id
     )
-    assert new.group_id == 42
-    assert src.group_id == 42
+    assert new.group_id is None
+    assert src.group_id == 42  # 源不变
+    assert new.track_id is not None and new.track_id.startswith("trk_")
 
 
 @pytest.mark.asyncio
@@ -221,7 +222,9 @@ async def test_propagate_bbox_2d(db_session, super_admin):
     assert new.geometry == bbox
     # 2D 不写 convention_at_create
     assert "convention_at_create" not in new.geometry
-    assert new.group_id == src.group_id
+    # v0.21.2 · Phase 6 · 跨帧不写 group_id, 走 track_id
+    assert new.group_id is None
+    assert new.track_id is not None and new.track_id.startswith("trk_")
 
 
 @pytest.mark.asyncio
@@ -357,7 +360,9 @@ async def test_propagate_endpoint_201(db_session, httpx_client, super_admin):
     ann = body["annotation"]
     assert ann["task_id"] == str(tasks[1].id)
     assert ann["geometry"]["convention_at_create"] == "ros_rep103"
-    assert ann["group_id"] is not None and ann["group_id"] >= 1_000_000_000
+    # v0.21.2 · Phase 6 · 跨帧标识走 track_id, group_id 不再写
+    assert ann["group_id"] is None
+    assert ann["track_id"] is not None and ann["track_id"].startswith("trk_")
 
 
 @pytest.mark.asyncio
@@ -514,8 +519,9 @@ async def test_propagate_batch_all_box3d(db_session, super_admin):
     by_src = {src_id: ann for src_id, ann in results}
     assert by_src[a1.id].geometry["center"] == pytest.approx([8.0, 0.0, 0.0])
     assert by_src[a2.id].geometry["center"] == pytest.approx([18.0, 5.0, 0.0])
-    # 各自延续独立 group 链
-    assert by_src[a1.id].group_id != by_src[a2.id].group_id
+    # v0.21.2 · 各自延续独立 track 链 (原 group 链)
+    t1, t2 = by_src[a1.id].track_id, by_src[a2.id].track_id
+    assert t1 and t2 and t1 != t2
     assert all(ann.task_id == tasks[1].id for _, ann in results)
 
 

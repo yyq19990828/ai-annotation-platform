@@ -46,6 +46,7 @@ Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空�
 
 ### Changed
 - 预标注流水线画布的**源阶段渲染改为按模型任务派生**，不再把「源 = 检测 = 整图」写死：源节点的角色名（目标检测 / 视频追踪）、产物（检测框 / 轨迹）、计数标签与源类型徽标（图像 / 视频）均从模型能力与受控词表推导。为后续检测式视频追踪（video 源）接入铺路——此前六处硬编码会把视频源错误显示成「检测 / 整图」。
+- **跨帧同一对象标识统一到 `track_id`**（ADR-0045）：此前「同一物体跨多帧」用两套 id——静态 box_3d 借 `group_id` 高位段、视频轨迹用 geometry 内 `track_id`。现在统一为 annotation 级的通用 `track_id`（几何类型无关）：跨帧延续（propagate）、关键帧区间插值、3D 工作台的跨帧高亮 / 邻帧叠加 / 逐目标点云对齐、以及导出全部改按 `track_id` 认链。**导出格式随之调整**：COCO `attributes.__group_id` → `__track_id`；LiDAR / nuScenes 的 `instance_token` 按 `track_id` 归并同一实例（MOT / KITTI 早已用 track_id，不变）。存量跨帧链已迁移回填，新链只写 `track_id`。
 
 ## [0.21.0] - 2026-07-02
 

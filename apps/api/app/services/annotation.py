@@ -4,7 +4,7 @@ import copy
 import logging
 import uuid
 from datetime import datetime
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -647,8 +647,8 @@ class AnnotationService:
 
         语义:
         - 仅复制静态几何(PROPAGATABLE_GEOMETRY_TYPES); video_* / point_mask_3d 拒。
-        - 跨帧链共享 group_id: 源无 group_id 时从全局序列 cross_frame_group_seq
-          分配一个(高位起始, 与 per-task next_group_seq 永不冲突)并写回源, 再复用。
+        - 跨帧链共享 track_id (ADR-0045): 源无 track_id 时 _new_track_id() 分配并
+          写回源, 再复用; 不再写 group_id (跨帧语义已全切 track_id)。
         - box_3d 的 convention_at_create 取**目标** dataset 的 axis_convention:
           DB 内 PSR 永远是 ISO 系字节, 原值复制即对齐世界坐标; convention_at_create
           写目标值仅为让前端 banner 不误报(v0.13.11 安全网)。
@@ -761,7 +761,7 @@ class AnnotationService:
         user_id: uuid.UUID,
         override_psr: dict | None = None,
     ) -> tuple[Annotation, bool]:
-        """单框 propagate 核心: 校验几何类型、延续 group_id、box_3d 运动补偿、
+        """单框 propagate 核心: 校验几何类型、延续 track_id、box_3d 运动补偿、
         建新 annotation。
 
         使用 ctx 中整批预解析好的 scene/frame/axis/pose,不再逐框解析。
@@ -780,24 +780,13 @@ class AnnotationService:
                 detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
             )
 
-        # 共享跨帧标识: 源无则分配并写回(每框各自一条独立链,故 nextval 必须逐框)。
-        # v0.21.2 · ADR-0045 · track_id 是新权威跨帧标识; 过渡期 dual-write group_id
-        # (readers 尚未全切到 track_id), 待 Phase 6 停 group_id 写 + 废 cross_frame_group_seq。
+        # 共享跨帧标识 track_id: 源无则分配并写回(每框各自一条独立链)。
+        # v0.21.2 · ADR-0045 · Phase 6 · track_id 为唯一权威跨帧标识, 不再 dual-write
+        # group_id (readers 已全切 track_id); cross_frame_group_seq 停写 (v0.21.3 DROP)。
         track_id = src.track_id
-        group_id = src.group_id
-        src_dirty = False
         if track_id is None:
             track_id = _new_track_id()
             src.track_id = track_id
-            src_dirty = True
-        if group_id is None:
-            seq_row = await self.db.execute(
-                text("SELECT nextval('cross_frame_group_seq')")
-            )
-            group_id = int(seq_row.scalar_one())
-            src.group_id = group_id
-            src_dirty = True
-        if src_dirty:
             src.version += 1
 
         geometry = copy.deepcopy(src.geometry or {})
@@ -836,7 +825,6 @@ class AnnotationService:
             tool_unit_id=src.tool_unit_id,
             class_name=src.class_name,
             geometry=geometry,
-            group_id=group_id,
             track_id=track_id,
             attributes=copy.deepcopy(src.attributes or {}),
         )
@@ -1032,9 +1020,6 @@ class AnnotationService:
 
         box_from = await _endpoint_box(from_task_id)
         box_to = await _endpoint_box(to_task_id)
-        # 过渡期 dual-write: 新插值框沿用端点框的 group_id(可能为 None), 兼容尚未
-        # 切到 track_id 的 readers(3D 高亮 / 导出)。
-        legacy_group_id = box_from.group_id
 
         # 统一成 i < k(几何插值对称,t 取向不影响结果)
         if from_frame > to_frame:
@@ -1117,7 +1102,6 @@ class AnnotationService:
                 tool_unit_id=box_from.tool_unit_id,
                 class_name=box_from.class_name,
                 geometry=geometry,
-                group_id=legacy_group_id,
                 track_id=track_id,
                 attributes=copy.deepcopy(box_from.attributes or {}),
             )
