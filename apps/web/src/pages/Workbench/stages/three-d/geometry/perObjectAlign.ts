@@ -29,9 +29,9 @@ export interface AlignPsr {
   rotation: Vec3;
 }
 
-/** 邻帧 box:原始邻帧 ego 系 PSR + 跨帧链 group。 */
+/** 邻帧 box:原始邻帧 ego 系 PSR + 跨帧链 track_id。 */
 export interface AlignNeighborBox extends AlignPsr {
-  groupId: number;
+  trackId: string;
 }
 
 export interface PerObjectAlignResult {
@@ -48,8 +48,8 @@ export interface PerObjectAlignResult {
  *
  * @param positions 邻帧点(邻帧 ISO ego 系,xyz 连续 Float32Array)
  * @param relMatrix 邻帧→当前帧 ego 的刚体变换(egoAlign.frameRelMatrix),背景点用
- * @param neighborBoxes 该邻帧的 box(原始邻帧 ego 系 PSR + groupId)
- * @param currentBoxes 当前帧 box:groupId → PSR(当前帧 ego 系)
+ * @param neighborBoxes 该邻帧的 box(原始邻帧 ego 系 PSR + trackId)
+ * @param currentBoxes 当前帧 box:trackId → PSR(当前帧 ego 系)
  * @param opts.margin 框各方向放宽米数,默认 0(align 宜更紧,避免把背景点搬走)
  * @param opts.fallback 命中目标但当前帧无配对时:"cull" 丢弃(默认,视觉最干净)/ "ego" 退背景
  */
@@ -57,16 +57,16 @@ export function alignNeighborPointsPerObject(
   positions: Float32Array,
   relMatrix: THREE.Matrix4,
   neighborBoxes: AlignNeighborBox[],
-  currentBoxes: Map<number, AlignPsr>,
+  currentBoxes: Map<string, AlignPsr>,
   opts?: { margin?: number; fallback?: "cull" | "ego" },
 ): PerObjectAlignResult {
   const margin = opts?.margin ?? 0;
   const fallback = opts?.fallback ?? "cull";
 
   // 预计算每个邻帧 box:point-in-OBB 用(中心 + 三轴 + 半边长),以及配对目标的搬运矩阵。
-  // target 为 null = 当前帧无同 group 框 → 命中后走 fallback。
+  // target 为 null = 当前帧无同 track 框 → 命中后走 fallback。
   const precomp = neighborBoxes.map((b) => {
-    const cur = currentBoxes.get(b.groupId);
+    const cur = currentBoxes.get(b.trackId);
     return {
       center: new THREE.Vector3(b.center[0], b.center[1], b.center[2]),
       axes: [

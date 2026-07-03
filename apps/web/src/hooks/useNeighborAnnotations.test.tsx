@@ -36,7 +36,7 @@ describe("useNeighborAnnotations", () => {
   beforeEach(() => mockGet.mockReset());
 
   it("enabled=false → 短路不发请求", () => {
-    renderHook(() => useNeighborAnnotations("t0", 5, 5, false), {
+    renderHook(() => useNeighborAnnotations("t0", 5, "trk_5", false), {
       wrapper: makeWrapper(),
     });
     expect(mockGet).not.toHaveBeenCalled();
@@ -59,11 +59,11 @@ describe("useNeighborAnnotations", () => {
       ],
     });
     const { result } = renderHook(
-      () => useNeighborAnnotations("t0", 5, 5, true),
+      () => useNeighborAnnotations("t0", 5, "trk_5", true),
       { wrapper: makeWrapper() },
     );
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(mockGet).toHaveBeenCalledWith("t0", 5, 5);
+    expect(mockGet).toHaveBeenCalledWith("t0", 5, "trk_5");
     expect(result.current.byTask["t1"].map((a) => a.id)).toEqual(["a1"]);
     expect(result.current.byTask["t2"].map((a) => a.id)).toEqual(["b1", "b2"]);
   });

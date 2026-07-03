@@ -1618,22 +1618,20 @@ export function ThreeDWorkbench({
     sceneRef.current?.highlightPointMask(selectedPointMask?.point_indices ?? null);
   }, [selectedPointMask?.point_indices, stats]);
 
-  // v0.13.4 · 跨模态高亮集合:选中框 + 同 group_id 成员。3D 主视图仍按 selected 单框高亮,
-  // overlay 按本集合高亮(为未来同组 2D 框成员预留;孤立框 group_id 为空时退化为仅选中本身)。
-  const selectedGroupId = selectedAnn?.group_id ?? null;
-  // v0.21.2 · ADR-0045 · 跨帧插值改按 track_id 认链 (高亮/overlay/align 仍用
-  // group_id, 待 Phase 5 一并切)。
+  // v0.13.4 · 跨模态高亮集合:选中框 + 同 track_id 成员。3D 主视图仍按 selected 单框高亮,
+  // overlay 按本集合高亮(为未来同链 2D 框成员预留;孤立框 track_id 为空时退化为仅选中本身)。
+  // v0.21.2 · ADR-0045 · 跨帧链按 track_id 认同一对象 (原 group_id 高位段)。
   const selectedTrackId = selectedAnn?.track_id ?? null;
   const highlightedIds = useMemo(() => {
     const s = new Set<string>();
     for (const id of selectedIds) s.add(id);
-    if (selectedGroupId != null) {
+    if (selectedTrackId != null) {
       for (const a of annotations ?? []) {
-        if (a.group_id === selectedGroupId) s.add(a.id);
+        if (a.track_id === selectedTrackId) s.add(a.id);
       }
     }
     return s;
-  }, [selectedIds, selectedGroupId, annotations]);
+  }, [selectedIds, selectedTrackId, annotations]);
 
   // v0.15.18 · 框叠加(overlayK)或点云叠加(pointOverlayK)任一开启都要邻帧 + 轨迹;
   // 取两者最大帧数拉取,各自再按需切片(框用 overlayK,点云用 pointOverlayK),互不放大。
@@ -1650,15 +1648,15 @@ export function ThreeDWorkbench({
       ...(neighborsData.next ?? []).slice(0, overlayK),
     ].map((n) => n.task_id);
   }, [overlayK, neighborsData]);
-  // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 group_id 服务端过滤);
-  // scope=all 不依赖选中(group_id=null,回全部框)。
+  // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 track_id 服务端过滤);
+  // scope=all 不依赖选中(track_id=null,回全部框)。
   const boxAnnotationOverlayEnabled =
-    overlayK > 0 && (overlayScope === "all" || selectedGroupId != null);
-  const overlayGroupId = overlayScope === "all" ? null : selectedGroupId;
+    overlayK > 0 && (overlayScope === "all" || selectedTrackId != null);
+  const overlayTrackId = overlayScope === "all" ? null : selectedTrackId;
   const { byTask: neighborAnnsByTask } = useNeighborAnnotations(
     overlayK > 0 ? taskId : null,
     overlayK,
-    overlayGroupId,
+    overlayTrackId,
     boxAnnotationOverlayEnabled,
   );
   // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
@@ -1678,7 +1676,7 @@ export function ThreeDWorkbench({
   const referenceBoxes = useMemo<ReferenceBox[]>(() => {
     if (overlayK <= 0) return [];
     // scope=selected:必须选中对象;scope=all:不选也叠全部邻帧框。
-    if (overlayScope === "selected" && selectedGroupId == null) return [];
+    if (overlayScope === "selected" && selectedTrackId == null) return [];
     const curFrame = neighborsData?.frame_index ?? null;
     const out: ReferenceBox[] = [];
     for (const tid of neighborTaskIds) {
@@ -1704,11 +1702,11 @@ export function ThreeDWorkbench({
             rotation = aligned.rotation;
           }
         }
-        // scope=all 且有选中对象:非选中 group 的邻帧框弱化(dim),突出当前对象轨迹。
+        // scope=all 且有选中对象:非选中 track 的邻帧框弱化(dim),突出当前对象轨迹。
         const dim =
           overlayScope === "all" &&
-          selectedGroupId != null &&
-          a.group_id !== selectedGroupId;
+          selectedTrackId != null &&
+          a.track_id !== selectedTrackId;
         out.push({
           id: `${tid}:${a.id}`,
           center,
@@ -1723,7 +1721,7 @@ export function ThreeDWorkbench({
   }, [
     overlayK,
     overlayScope,
-    selectedGroupId,
+    selectedTrackId,
     neighborTaskIds,
     neighborAnnsByTask,
     neighborsData,
@@ -1754,12 +1752,12 @@ export function ThreeDWorkbench({
     null,
     alignActive,
   );
-  // 当前帧 box:group_id → PSR(逐目标搬运的配对目标)。
-  const currentBoxesByGroup = useMemo<Map<number, AlignPsr>>(() => {
-    const m = new Map<number, AlignPsr>();
+  // 当前帧 box:track_id → PSR(逐目标搬运的配对目标)。
+  const currentBoxesByTrack = useMemo<Map<string, AlignPsr>>(() => {
+    const m = new Map<string, AlignPsr>();
     if (!alignActive) return m;
     for (const a of annotations ?? []) {
-      if (a.group_id == null) continue;
+      if (a.track_id == null) continue;
       const g = a.geometry as {
         type?: string;
         center?: number[];
@@ -1767,7 +1765,7 @@ export function ThreeDWorkbench({
         rotation?: number[];
       };
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
-      m.set(a.group_id, {
+      m.set(a.track_id, {
         center: g.center as [number, number, number],
         size: g.size.map((v) => Math.abs(v)) as [number, number, number],
         rotation: g.rotation as [number, number, number],
@@ -1775,14 +1773,14 @@ export function ThreeDWorkbench({
     }
     return m;
   }, [alignActive, annotations]);
-  // 邻帧 box(原始邻帧 ego 系 PSR + group_id),按 task 分组;不预对齐(搬运矩阵自带 ego 补偿)。
+  // 邻帧 box(原始邻帧 ego 系 PSR + track_id),按 task 分组;不预对齐(搬运矩阵自带 ego 补偿)。
   const neighborBoxesByTask = useMemo<Map<string, AlignNeighborBox[]>>(() => {
     const m = new Map<string, AlignNeighborBox[]>();
     if (!alignActive) return m;
     for (const [tid, anns] of Object.entries(alignAnnsByTask)) {
       const list: AlignNeighborBox[] = [];
       for (const a of anns) {
-        if (a.group_id == null) continue;
+        if (a.track_id == null) continue;
         const g = a.geometry as {
           type?: string;
           center?: number[];
@@ -1791,7 +1789,7 @@ export function ThreeDWorkbench({
         };
         if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
         list.push({
-          groupId: a.group_id,
+          trackId: a.track_id,
           center: g.center as [number, number, number],
           size: g.size.map((v) => Math.abs(v)) as [number, number, number],
           rotation: g.rotation as [number, number, number],
@@ -1833,7 +1831,7 @@ export function ThreeDWorkbench({
     // v0.15.23 · align:落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标补偿,无拖影);
     //   搬运后点已是当前帧 ego 系坐标,渲染走 identity 矩阵(其余背景点仍 ego 对齐)。
     const cullOn = neighborPointCull === "cull" && boxes.length > 0;
-    const alignOn = neighborPointCull === "align" && currentBoxesByGroup.size > 0;
+    const alignOn = neighborPointCull === "align" && currentBoxesByTrack.size > 0;
     let culledTotal = 0;
     let movedTotal = 0;
     const frames = neighborPcds
@@ -1847,7 +1845,7 @@ export function ThreeDWorkbench({
             positions,
             matrix,
             neighborBoxesByTask.get(pcd.taskId) ?? [],
-            currentBoxesByGroup,
+            currentBoxesByTrack,
           );
           positions = res.aligned;
           movedTotal += res.movedCount;
@@ -1876,7 +1874,7 @@ export function ThreeDWorkbench({
     neighborsData,
     neighborPointCull,
     boxes,
-    currentBoxesByGroup,
+    currentBoxesByTrack,
     neighborBoxesByTask,
   ]);
 

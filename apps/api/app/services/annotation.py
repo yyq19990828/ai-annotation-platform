@@ -401,11 +401,11 @@ class AnnotationService:
     async def list_by_tasks(
         self,
         task_ids: list[uuid.UUID],
-        group_id: int | None = None,
+        track_id: str | None = None,
     ) -> list[Annotation]:
         """v0.15.17 · 一次性拉多个 task 的 active 标注(邻帧框叠加批量端点用)。
 
-        group_id 非空 → 服务端只回该 group(scope=selected);
+        v0.21.2 · ADR-0045 · track_id 非空 → 服务端只回该 track(scope=selected);
         省略 → 回全部(scope=all)。空 task_ids 直接回 []。
         """
         if not task_ids:
@@ -415,8 +415,8 @@ class AnnotationService:
             Annotation.is_active.is_(True),
             Annotation.was_cancelled.is_(False),
         )
-        if group_id is not None:
-            q = q.where(Annotation.group_id == group_id)
+        if track_id is not None:
+            q = q.where(Annotation.track_id == track_id)
         q = q.order_by(Annotation.task_id, Annotation.created_at)
         result = await self.db.execute(q)
         return list(result.scalars().all())

@@ -62,16 +62,17 @@ router = APIRouter()
 async def get_neighbor_annotations(
     task_id: uuid.UUID,
     k: int = Query(1, ge=1, le=20),
-    group_id: int | None = Query(
+    track_id: str | None = Query(
         None,
-        description="给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
+        description="给定则服务端只回该 track(scope=selected);省略回全部(scope=all)",
     ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。
 
-    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。
+    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」。
+    v0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)过滤。
     非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。
 
     v0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态
@@ -114,7 +115,7 @@ async def get_neighbor_annotations(
 
     svc = AnnotationService(db)
     anns = (
-        await svc.list_by_tasks(list(visible_ids), group_id=group_id)
+        await svc.list_by_tasks(list(visible_ids), track_id=track_id)
         if visible_ids
         else []
     )
