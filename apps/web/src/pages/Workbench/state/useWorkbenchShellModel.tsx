@@ -76,7 +76,7 @@ import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialo
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
-import { useVideoChapters } from "@/hooks/useVideoChapters";
+import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
@@ -453,13 +453,27 @@ export function useWorkbenchShellModel({
     },
     [],
   );
-  const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
-    if (!isVideoTask) return undefined;
-    return {
-      rangeSelectPurpose: chapterDraftArmed ? "chapter-draft" : "loop",
-      onRangeSelect: handleTimelineRangeSelect,
-    };
-  }, [isVideoTask, chapterDraftArmed, handleTimelineRangeSelect]);
+  // v0.21.13 WS3 · 章节条 resize: 松手才落库, 短 debounce 合并快速连续调整, PATCH 只带起止帧。
+  const updateChapterMutation = useUpdateVideoChapter(isVideoTask ? videoDatasetItemId : null);
+  const chapterResizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleResizeChapter = useCallback(
+    (chapterId: string, region: VideoLoopRegion) => {
+      if (chapterResizeDebounceRef.current) clearTimeout(chapterResizeDebounceRef.current);
+      chapterResizeDebounceRef.current = setTimeout(() => {
+        updateChapterMutation.mutate({
+          chapterId,
+          payload: { start_frame: region.startFrame, end_frame: region.endFrame },
+        });
+      }, 200);
+    },
+    [updateChapterMutation],
+  );
+  useEffect(
+    () => () => {
+      if (chapterResizeDebounceRef.current) clearTimeout(chapterResizeDebounceRef.current);
+    },
+    [],
+  );
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
@@ -1522,6 +1536,16 @@ export function useWorkbenchShellModel({
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
+  // v0.21.13 · 章节 × 时间轴联动控制器 (状态/handler 声明在前, 此处 isLocked 就绪后组装并 gate 编辑)。
+  const canEditChapters = !isLocked && isOwner;
+  const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
+    if (!isVideoTask) return undefined;
+    return {
+      rangeSelectPurpose: chapterDraftArmed ? "chapter-draft" : "loop",
+      onRangeSelect: handleTimelineRangeSelect,
+      onResizeChapter: canEditChapters ? handleResizeChapter : undefined,
+    };
+  }, [isVideoTask, chapterDraftArmed, handleTimelineRangeSelect, canEditChapters, handleResizeChapter]);
   const isSubmittingTask = topbarActions.isSubmitting ?? submitTaskMut.isPending;
 
   // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且

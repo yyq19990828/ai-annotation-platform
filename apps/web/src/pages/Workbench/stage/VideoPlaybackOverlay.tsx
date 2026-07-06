@@ -3,6 +3,7 @@ import type {
   ButtonHTMLAttributes,
   HTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
 } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -219,9 +220,17 @@ export function VideoPlaybackOverlay({
   onHoverFrameChange,
   onSeekChapter,
   onRangeSelect,
+  onChapterResize,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const [rangeDraft, setRangeDraft] = useState<TimelineRangeDraft | null>(null);
+  // v0.21.13 WS3 · 章节条边界 resize 的本地预览 (拖动中不落库, 松手才 onChapterResize → debounce PATCH)。
+  const [chapterResizePreview, setChapterResizePreview] = useState<
+    { id: string; startFrame: number; endFrame: number } | null
+  >(null);
+  const chapterResizeRef = useRef<
+    { id: string; edge: "start" | "end"; startFrame: number; endFrame: number } | null
+  >(null);
   const rangeDraftRef = useRef<TimelineRangeDraft | null>(null);
   const seekDragRef = useRef(false);
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
@@ -261,6 +270,53 @@ export function VideoPlaybackOverlay({
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
     const ratio = rect.width > 0 ? (pointerX - rect.left) / rect.width : 0;
     return Math.max(0, Math.min(maxFrame, Math.round(ratio * maxFrame)));
+  };
+  // v0.21.13 WS3 · 章节条边界 resize。命中区: 章节条左右边缘各一把手 (data-chapter-resize),
+  // 拖动改起/止帧, 松手才 onChapterResize (shell debounce PATCH); 中间仍点选 seek。
+  const beginChapterResize = (
+    e: ReactPointerEvent<HTMLElement>,
+    chapter: VideoTimelineChapter,
+    edge: "start" | "end",
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chapterResizeRef.current = {
+      id: chapter.id,
+      edge,
+      startFrame: chapter.startFrame,
+      endFrame: chapter.endFrame,
+    };
+    setChapterResizePreview({
+      id: chapter.id,
+      startFrame: chapter.startFrame,
+      endFrame: chapter.endFrame,
+    });
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const moveChapterResize = (e: ReactPointerEvent<HTMLElement>) => {
+    const st = chapterResizeRef.current;
+    const shell = timelineShellRef.current;
+    if (!st || !shell) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const frame = frameFromPointer(e.clientX, shell.getBoundingClientRect());
+    const next =
+      st.edge === "start"
+        ? { ...st, startFrame: Math.max(0, Math.min(frame, st.endFrame)) }
+        : { ...st, endFrame: Math.min(maxFrame, Math.max(frame, st.startFrame)) };
+    chapterResizeRef.current = next;
+    setChapterResizePreview({ id: next.id, startFrame: next.startFrame, endFrame: next.endFrame });
+  };
+  const endChapterResize = (e: ReactPointerEvent<HTMLElement>) => {
+    const st = chapterResizeRef.current;
+    chapterResizeRef.current = null;
+    setChapterResizePreview(null);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (!st) return;
+    const original = chapters.find((c) => c.id === st.id);
+    if (original && (original.startFrame !== st.startFrame || original.endFrame !== st.endFrame)) {
+      onChapterResize?.(st.id, { startFrame: st.startFrame, endFrame: st.endFrame });
+    }
   };
   const normalizeLoop = (from: number, to: number): VideoLoopRegion => ({
     startFrame: Math.min(from, to),
@@ -381,6 +437,8 @@ export function VideoPlaybackOverlay({
           stepTimelineByKey(e, e.currentTarget);
         }}
         onPointerDownCapture={(e) => {
+          // 章节条 resize 把手自行处理 pointer, 不走 shell 的 seek/刷选。
+          if ((e.target as HTMLElement)?.closest?.("[data-chapter-resize]")) return;
           e.preventDefault();
           e.stopPropagation();
           const rect = e.currentTarget.getBoundingClientRect();
@@ -522,28 +580,59 @@ export function VideoPlaybackOverlay({
               className={styles.chaptersTrack}
             >
               {chapters.map((chapter) => {
-                const span = Math.max(0, chapter.endFrame - chapter.startFrame);
+                const preview =
+                  chapterResizePreview?.id === chapter.id ? chapterResizePreview : null;
+                const startFrame = preview ? preview.startFrame : chapter.startFrame;
+                const endFrame = preview ? preview.endFrame : chapter.endFrame;
+                const span = Math.max(0, endFrame - startFrame);
                 const widthPct = maxFrame > 0 ? ((span + 1) / (maxFrame + 1)) * 100 : 100;
-                const leftPct = maxFrame > 0 ? (chapter.startFrame / maxFrame) * 100 : 0;
+                const leftPct = maxFrame > 0 ? (startFrame / maxFrame) * 100 : 0;
+                const rightPct = maxFrame > 0 ? (endFrame / maxFrame) * 100 : 100;
                 const chapterStyle: CSSVars = {
                   "--timeline-left": `${leftPct}%`,
                   "--timeline-width": `${Math.max(0.5, widthPct)}%`,
                   "--chapter-color": chapter.color ?? "oklch(0.62 0.18 252)",
                 };
+                const resizable = Boolean(onChapterResize) && isInteractive;
                 return (
-                  <TimelineButton
-                    key={chapter.id}
-                    type="button"
-                    data-testid="video-timeline-chapter"
-                    title={`${chapter.title} · F${chapter.startFrame}-F${chapter.endFrame}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onSeekChapter?.(chapter.id, chapter.startFrame);
-                    }}
-                    className={cn(styles.chapterMarker, isInteractive && styles.interactive)}
-                    vars={chapterStyle}
-                  />
+                  <div key={chapter.id} className={styles.chapterEntry}>
+                    <TimelineButton
+                      type="button"
+                      data-testid="video-timeline-chapter"
+                      title={`${chapter.title} · F${startFrame}-F${endFrame}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSeekChapter?.(chapter.id, startFrame);
+                      }}
+                      className={cn(styles.chapterMarker, isInteractive && styles.interactive)}
+                      vars={chapterStyle}
+                    />
+                    {resizable && (
+                      <>
+                        <TimelineSpan
+                          data-testid="video-chapter-resize-start"
+                          data-chapter-resize="start"
+                          className={styles.chapterResizeHandle}
+                          vars={{ "--timeline-left": `${leftPct}%` }}
+                          onPointerDown={(e) => beginChapterResize(e, chapter, "start")}
+                          onPointerMove={moveChapterResize}
+                          onPointerUp={endChapterResize}
+                          onPointerCancel={endChapterResize}
+                        />
+                        <TimelineSpan
+                          data-testid="video-chapter-resize-end"
+                          data-chapter-resize="end"
+                          className={styles.chapterResizeHandle}
+                          vars={{ "--timeline-left": `${rightPct}%` }}
+                          onPointerDown={(e) => beginChapterResize(e, chapter, "end")}
+                          onPointerMove={moveChapterResize}
+                          onPointerUp={endChapterResize}
+                          onPointerCancel={endChapterResize}
+                        />
+                      </>
+                    )}
+                  </div>
                 );
               })}
             </div>

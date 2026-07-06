@@ -211,6 +211,42 @@
   pointer-events: auto;
 }
 
+/* v0.21.13 WS3 · 章节条 resize 把手。display:contents 让内部绝对定位元素仍相对 chaptersTrack 定位。 */
+.chapterEntry {
+  display: contents;
+}
+
+/* 章节左右边缘各一把手: 比 5px 条更高更宽的抓取区 (ew-resize), hover 才显竖握把, 平时不抢视觉。 */
+.chapterResizeHandle {
+  position: absolute;
+  top: -3px;
+  left: var(--timeline-left);
+  width: 9px;
+  height: 11px;
+  background: transparent;
+  cursor: ew-resize;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.chapterResizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 2px;
+  height: 7px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.9);
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease;
+}
+
+.chapterResizeHandle:hover::after {
+  opacity: 1;
+}
+
 .bookmarkMarker {
   position: absolute;
   top: -1px;

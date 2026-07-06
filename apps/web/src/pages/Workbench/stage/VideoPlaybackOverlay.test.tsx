@@ -295,6 +295,33 @@ describe("VideoPlaybackOverlay", () => {
     expect(onLoopRegionChange).not.toHaveBeenCalled();
   });
 
+  // v0.21.13 WS3 · 拖章节条右边界 → 松手 onChapterResize 落新起止帧 (拖动中本地预览)。
+  it("resizes a chapter by dragging its end handle and commits on pointer up", () => {
+    const onChapterResize = vi.fn();
+    const { getByTestId } = renderOverlay({
+      chapters: [{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }],
+      onChapterResize,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+    const endHandle = getByTestId("video-chapter-resize-end");
+
+    fireEvent(endHandle, pointerDown(500));
+    fireEvent(endHandle, pointerMove(900));
+    // 拖动中不落库, 仅预览。
+    expect(onChapterResize).not.toHaveBeenCalled();
+    fireEvent(endHandle, pointerUp(900));
+
+    expect(onChapterResize).toHaveBeenCalledWith("ch1", { startFrame: 1, endFrame: 8 });
+  });
+
+  it("does not render resize handles without an onChapterResize handler", () => {
+    const { queryByTestId } = renderOverlay({
+      chapters: [{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }],
+    });
+    expect(queryByTestId("video-chapter-resize-end")).toBeNull();
+  });
+
   // 回归: 人工关键帧密度与 AI 候选密度必须共用同一计数基准, 柱高才真实反映数量占比。
   // 修复前两条 lane 各自独立归一化, 会把「1 个关键帧」画得比「8 个候选」还高 (倒挂)。
   it("scales manual and prediction density on a shared count basis so bar height reflects real ratio", () => {
