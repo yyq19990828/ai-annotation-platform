@@ -24,6 +24,26 @@ export function aiBoxOnFrame(box: AiBox, frameIndex: number): boolean {
 }
 
 /**
+ * 解出 AI 候选在给定帧的可渲染框 (归一化 x/y/w/h); 不在该帧则 null。
+ *  - video_bbox: 帧号命中则原样返回
+ *  - video_track_bbox: resolveTrackAtFrame 解出当前帧框, 覆盖顶层 x/y/w/h
+ *    (顶层坐标本是代表关键帧、非当前帧, 直接渲染会画错位置)
+ * 画布 AI 层用它把逐帧候选与检测式轨迹候选统一渲染为当前帧的框。
+ */
+export function resolveAiBoxAtFrame(box: AiBox, frameIndex: number): AiBox | null {
+  const g = box.geometry;
+  if (!g) return null;
+  if (g.type === "video_bbox") return g.frame_index === frameIndex ? box : null;
+  if (g.type === "video_track_bbox") {
+    const resolved = resolveTrackAtFrame(g as VideoTrackGeometry, frameIndex);
+    if (!resolved) return null;
+    const { x, y, w, h } = resolved.geom;
+    return { ...box, x, y, w, h };
+  }
+  return box;
+}
+
+/**
  * 按 id 去重 (predictionsToBoxes 的 id = `pred-{predictionId}-{shapeIndex}`)。
  * offset 分页重取期相邻页 shape 可能重叠, 去重消除重复计数 (v0.21.10 断点 C)。
  */

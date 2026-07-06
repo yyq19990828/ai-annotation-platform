@@ -35,7 +35,7 @@ import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConv
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
-import { collectPredictedFrames } from "./aiBoxFrames";
+import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
 import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { SelectionOverlay } from "./SelectionOverlay";
@@ -305,11 +305,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   );
 
   // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
+  // v0.21.9 WS2 · 检测式轨迹候选(video_track_bbox)也纳入: 用 resolveTrackAtFrame 解出当前帧框,
+  //   与逐帧 video_bbox 候选同层渲染(此前只在侧栏可见、画布不画)。
   const frameAiBoxes = useMemo(
     () =>
-      aiBoxes.filter(
-        (b) => b.geometry?.type === "video_bbox" && b.geometry.frame_index === frameIndex,
-      ),
+      aiBoxes
+        .map((b) => resolveAiBoxAtFrame(b, frameIndex))
+        .filter((b): b is (typeof aiBoxes)[number] => b !== null),
     [aiBoxes, frameIndex],
   );
   const selectedAiBox = useMemo(

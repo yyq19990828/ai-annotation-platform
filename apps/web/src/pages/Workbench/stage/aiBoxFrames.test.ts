@@ -5,6 +5,7 @@ import {
   aiBoxOnFrame,
   collectPredictedFrames,
   dedupeAiBoxesById,
+  resolveAiBoxAtFrame,
 } from "./aiBoxFrames";
 
 const bbox = { x: 0, y: 0, w: 0.2, h: 0.2 };
@@ -61,5 +62,20 @@ describe("aiBoxFrames", () => {
     expect(aiBoxOnFrame(box, 0)).toBe(true);
     expect(aiBoxOnFrame(box, 5)).toBe(true); // interpolated between keyframes
     expect(aiBoxOnFrame(box, 20)).toBe(false); // beyond last keyframe
+  });
+
+  it("resolveAiBoxAtFrame returns video_bbox as-is on its frame, null otherwise", () => {
+    const box = bboxBox("pred-1-0", 4);
+    expect(resolveAiBoxAtFrame(box, 4)).toBe(box);
+    expect(resolveAiBoxAtFrame(box, 5)).toBeNull();
+  });
+
+  it("resolveAiBoxAtFrame overrides track x/y/w/h with the current-frame geometry", () => {
+    const box = trackBox("pred-9-0", [0, 10]);
+    const resolved = resolveAiBoxAtFrame(box, 0);
+    expect(resolved).not.toBeNull();
+    // 顶层坐标被解出的当前帧框覆盖 (关键帧 0 的 bbox = {0,0,0.2,0.2})
+    expect({ x: resolved!.x, y: resolved!.y, w: resolved!.w, h: resolved!.h }).toEqual(bbox);
+    expect(resolveAiBoxAtFrame(box, 20)).toBeNull();
   });
 });
