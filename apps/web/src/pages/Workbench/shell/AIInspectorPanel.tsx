@@ -384,6 +384,8 @@ interface AIPredictionPopoverProps {
   aiModel: string;
   aiRunning: boolean;
   aiBoxCount: number;
+  // v0.21.10 · 视频任务时面板做单帧检测 (方案 a); 留一句指引告诉找整段追踪的用户去哪跑。
+  isVideoTask?: boolean;
   confThreshold: number;
   aiTakeoverRate: number;
   onClose: () => void;
@@ -424,6 +426,7 @@ export function AIPredictionPopover({
   aiModel,
   aiRunning,
   aiBoxCount,
+  isVideoTask,
   confThreshold,
   aiTakeoverRate,
   onClose,
@@ -622,6 +625,11 @@ export function AIPredictionPopover({
               ? `运行当前题（按项目编排 · ${projectPipelineStageCount} 阶段）`
               : `编排引用 ${pipelineMissingBackendCount} 个后端不可用`}
           </Button>
+        )}
+        {isVideoTask && (
+          <p className="mb-1 text-2xs leading-snug text-muted-foreground">
+            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Shift+T 种子追踪，或到「AI 预标」批量页按整段序列跑。
+          </p>
         )}
       </div>
 

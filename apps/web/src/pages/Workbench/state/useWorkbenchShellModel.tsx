@@ -963,6 +963,11 @@ export function useWorkbenchShellModel({
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
     backendId: batchBackendId,
+    // v0.21.10 · 工作台「当前题 AI」面板恒做**单帧检测**(方案 a): 传 executionUnit="frame" 放开
+    //   图像检测模型 (GEOMETRIC_TASKS), 而非整段 tracker——单帧发 detection → /predict-frame →
+    //   to_video_bbox_result 落 video_bbox。整段追踪走 Shift+T 种子追踪 / 批量页 (execution_unit=video)。
+    //   (图像项目 isVideoProject=false, 此参数无副作用。)
+    executionUnit: "frame",
   });
   useEffect(() => {
     sam.cancel();
@@ -2648,6 +2653,7 @@ export function useWorkbenchShellModel({
       size: aiPopoverSize,
       onSizeChange: setAiPopoverSize,
       aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
+      isVideoTask,
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
       // v0.21.4 · 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。

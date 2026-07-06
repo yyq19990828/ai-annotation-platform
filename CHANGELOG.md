@@ -34,6 +34,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **视频工作台「当前题 AI」面板恢复单帧检测能力**：视频项目下该面板的模型下拉此前被写死只剩整段 tracker（工作台调用共享配置 hook 时漏传 `executionUnit`），选不到图像检测模型；点「运行当前题」发给 tracker 产出 `video_track_bbox`，又被单帧 reshaper 丢弃 → 静默「新增 0 个候选」，等于点了没用。现工作台恒传 `executionUnit="frame"`，面板放开 YOLO 检测模型、单帧检测正确落 `video_bbox` 候选（后端零改动）。面板加一句指引：整段目标追踪走 Shift+T 种子追踪或「AI 预标」批量页。
+
 ## [0.21.9] - 2026-07-05
 
 ### Added
