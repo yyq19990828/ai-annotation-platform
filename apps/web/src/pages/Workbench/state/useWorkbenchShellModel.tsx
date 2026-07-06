@@ -72,6 +72,7 @@ import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
@@ -2176,6 +2177,15 @@ export function useWorkbenchShellModel({
         .sort((a, b) => a - b)[0] ?? null
     : null;
 
+  // v0.21.10 · 「当前题 AI」header 待审数: 视频按**当前帧**过滤 (与下方候选列表口径一致), 图像取全部。
+  //   aiBoxes 已在源头按 id 去重 (见 useImageAnnotationActions), 故此处只做帧作用域, 消除跨帧+分页
+  //   漂移导致的 100→500→100 抖动。
+  const aiPopoverBoxCount = modeState.diffMode === "final"
+    ? 0
+    : isVideoTask
+      ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex)).length
+      : aiBoxes.length;
+
   const layout: ComponentProps<typeof WorkbenchLayout> = {
     gridTemplateColumns: `${leftOpen ? `clamp(180px, ${leftPct}%, 600px)` : "0px"} 48px 1fr ${rightOpen ? `clamp(180px, ${rightPct}%, 600px)` : "0px"}`,
     taskQueue: {
@@ -2652,7 +2662,7 @@ export function useWorkbenchShellModel({
       onPositionChange: setAiPopoverPosition,
       size: aiPopoverSize,
       onSizeChange: setAiPopoverSize,
-      aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
+      aiModel, aiRunning, aiBoxCount: aiPopoverBoxCount,
       isVideoTask,
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
