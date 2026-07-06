@@ -216,6 +216,16 @@ export function VideoTrackerPropagateDialog({
     return () => onRangeChange?.(null);
   }, [open, range.from, range.to, onRangeChange]);
 
+  // v0.21.14 · 浮层化后无遮罩, 用 Esc 关闭 (替代原点击遮罩关闭)。
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
+
   if (!open) return null;
 
   const handleSubmit = async () => {
@@ -243,16 +253,14 @@ export function VideoTrackerPropagateDialog({
   };
 
   return (
+    // v0.21.14 · 浮层化 (原全屏 modal 会遮住底部时间轴, 看不到传播范围高亮 / 无法刷选)。
+    // 定位在顶部居中, 不覆盖底部时间轴; 无遮罩, 时间轴保持可见可交互。Esc / ✕ / 取消 关闭。
     <div
       role="dialog"
       aria-label="AI 追踪传播"
       data-testid="video-tracker-propagate-dialog"
-      className="fixed inset-0 z-workbench-modal grid place-items-center bg-black/40"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
+      className="fixed left-1/2 top-16 -translate-x-1/2 z-workbench-modal grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-2xl"
     >
-      <div className="grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
         <div className="flex items-center justify-between">
           <b className="text-sm">AI 传播 (Ctrl+B)</b>
           <button
@@ -362,7 +370,6 @@ export function VideoTrackerPropagateDialog({
             {submitting ? "发起中…" : "发起传播"}
           </Button>
         </div>
-      </div>
     </div>
   );
 }
