@@ -40,6 +40,7 @@ import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConv
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
+import type { VideoLoopRegion } from "./videoNavigationState";
 import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
 import { buildFrameCategories, nextInCategory, nextCategory, type FrameObjectRef } from "./frameObjectCycle";
 import type { VideoStageControls } from "./videoStageControls";
@@ -113,6 +114,8 @@ interface VideoKonvaStageProps {
   chapters?: VideoTimelineChapter[];
   /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
   timelineChapterControls?: VideoTimelineChapterControls;
+  /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
+  propagateRange?: VideoLoopRegion | null;
   /** 采样配置(帧网格步进策略)。 */
   videoSampling?: VideoSamplingConfig | null;
   /** 默认播放速率。 */
@@ -179,6 +182,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onToggleLockedTrack,
   chapters = [],
   timelineChapterControls,
+  propagateRange = null,
   videoSampling = null,
   defaultPlaybackRate,
   largeFrameStep = 10,
@@ -904,6 +908,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         onSeekPredicted={hasPredictedFrames ? seekToAdjacentPredictedFrame : undefined}
         trackColorOverrides={trackColorOverrides}
         loopRegion={loopRegion}
+        propagateRange={propagateRange}
         rangeSelectPurpose={timelineChapterControls?.rangeSelectPurpose ?? "loop"}
         bookmarks={bookmarks}
         chapters={chapters}

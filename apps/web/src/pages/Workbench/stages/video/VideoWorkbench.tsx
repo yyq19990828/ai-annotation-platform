@@ -47,6 +47,7 @@ export interface VideoWorkbenchProps {
   pendingDrawing: PendingDrawing;
   chapters?: VideoTimelineChapter[];
   timelineChapterControls?: VideoTimelineChapterControls;
+  propagateRange?: { startFrame: number; endFrame: number } | null;
   videoSampling?: VideoSamplingConfig | null;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
@@ -100,6 +101,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     pendingDrawing,
     chapters,
     timelineChapterControls,
+    propagateRange,
     videoSampling,
     performanceTier,
     onSelect,
@@ -177,6 +179,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onToggleLockedTrack={onToggleLockedTrack}
         chapters={chapters}
         timelineChapterControls={timelineChapterControls}
+        propagateRange={propagateRange}
         videoSampling={videoSampling}
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
         largeFrameStep={workbenchVideo.largeFrameStep}

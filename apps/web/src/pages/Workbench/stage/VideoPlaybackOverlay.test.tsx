@@ -322,6 +322,28 @@ describe("VideoPlaybackOverlay", () => {
     expect(queryByTestId("video-chapter-resize-end")).toBeNull();
   });
 
+  // v0.21.14 WS3 · AI 传播对话框打开时在时间轴受控高亮影响范围。
+  it("renders the propagate range highlight when provided", () => {
+    const { getByTestId, queryByTestId, rerender } = renderOverlay();
+    expect(queryByTestId("video-propagate-range")).toBeNull();
+    rerender(
+      <VideoPlaybackOverlay
+        frameIndex={0}
+        maxFrame={9}
+        timebase={timebase}
+        isPlaying={false}
+        currentFrameEntryCount={0}
+        visible
+        propagateRange={{ startFrame: 2, endFrame: 7 }}
+        onSeek={() => {}}
+        onSeekByFrames={() => {}}
+        onTogglePlay={() => {}}
+      />,
+    );
+    const band = getByTestId("video-propagate-range");
+    expect(band.style.getPropertyValue("--timeline-left")).toBe(`${(2 / 9) * 100}%`);
+  });
+
   // v0.21.13 WS4 · 时间轴章节条 hover 上报 + 受控高亮 (与侧栏行双向联动)。
   it("reports chapter hover and reflects the controlled hovered chapter", () => {
     const onHoverChapter = vi.fn();

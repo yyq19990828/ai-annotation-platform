@@ -96,6 +96,8 @@ interface WorkbenchStageHostVideoProps {
   videoChapters?: VideoTimelineChapter[];
   /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
   videoTimelineChapterControls?: VideoTimelineChapterControls;
+  /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
+  videoPropagateRange?: { startFrame: number; endFrame: number } | null;
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
@@ -292,6 +294,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoManifestError,
       videoChapters,
       videoTimelineChapterControls,
+      videoPropagateRange,
       videoSampling,
       videoTool,
       videoModes,
@@ -445,6 +448,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
             timelineChapterControls={videoTimelineChapterControls}
+            propagateRange={videoPropagateRange}
             videoSampling={videoSampling}
             performanceTier={workbenchCommon.performanceTier}
             onSelect={onSelectBox}

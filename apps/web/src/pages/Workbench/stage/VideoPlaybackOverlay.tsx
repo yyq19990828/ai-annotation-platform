@@ -83,6 +83,8 @@ interface VideoPlaybackOverlayProps {
   /** 会话级轨迹色覆盖; 密度条按各 bin 的主导轨迹着色时用它解析颜色。 */
   trackColorOverrides?: Record<string, string>;
   loopRegion?: VideoLoopRegion | null;
+  /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮「将影响哪段帧」(受控静态带, 非刷选草稿)。 */
+  propagateRange?: VideoLoopRegion | null;
   /** v0.21.13 · 时间轴刷选产物的用途 (默认 "loop", 原行为)。非 loop 时松手走 onRangeSelect。 */
   rangeSelectPurpose?: TimelineRangePurpose;
   bookmarks?: VideoBookmark[];
@@ -202,6 +204,7 @@ export function VideoPlaybackOverlay({
   onSeekPredicted,
   trackColorOverrides,
   loopRegion = null,
+  propagateRange = null,
   rangeSelectPurpose = "loop",
   bookmarks = [],
   chapters = [],
@@ -563,6 +566,13 @@ export function VideoPlaybackOverlay({
               data-testid="video-loop-region"
               className={styles.loopRegion}
               vars={rangeStyle(loopRegion.startFrame, loopRegion.endFrame)}
+            />
+          )}
+          {propagateRange && (
+            <TimelineSpan
+              data-testid="video-propagate-range"
+              className={styles.propagateRegion}
+              vars={rangeStyle(propagateRange.startFrame, propagateRange.endFrame)}
             />
           )}
           {rangeDraft && (

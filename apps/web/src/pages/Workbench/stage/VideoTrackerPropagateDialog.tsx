@@ -124,6 +124,8 @@ interface VideoTrackerPropagateDialogProps {
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
+  /** v0.21.14 WS3 · 上报当前影响范围, 供时间轴高亮「将影响哪段帧」; 关闭时上报 null。 */
+  onRangeChange?: (range: { startFrame: number; endFrame: number } | null) => void;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -138,6 +140,7 @@ export function VideoTrackerPropagateDialog({
   submitting,
   onCancel,
   onSubmit,
+  onRangeChange,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -202,6 +205,16 @@ export function VideoTrackerPropagateDialog({
     }
     return { from: frameIndex, to: Math.min(maxFrame, frameIndex + span) };
   }, [direction, frameIndex, grid, maxFrame, nextKeyframeAfter, rangePreset]);
+
+  // v0.21.14 WS3 · 把当前影响范围上报给时间轴高亮; 关闭 / 卸载时清空。
+  useEffect(() => {
+    if (!open) {
+      onRangeChange?.(null);
+      return;
+    }
+    onRangeChange?.({ startFrame: range.from, endFrame: range.to });
+    return () => onRangeChange?.(null);
+  }, [open, range.from, range.to, onRangeChange]);
 
   if (!open) return null;
 

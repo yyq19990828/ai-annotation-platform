@@ -140,10 +140,24 @@
 .loopRegion,
 .trackSegment,
 .chapterDraftRegion,
-.propagateDraftRegion {
+.propagateDraftRegion,
+.propagateRegion {
   position: absolute;
   left: var(--timeline-left);
   width: var(--timeline-width);
+}
+
+/* v0.21.14 WS3 · AI 传播范围高亮 (对话框打开时): 贯穿轨道的 violet 半透明填充 + 高亮边界,
+   与 loop (cyan) / 章节 (条状) 区分, 让「将影响哪段帧」在时间轴一目了然。 */
+.propagateRegion {
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 22%, transparent);
+  box-shadow:
+    inset 2px 0 0 oklch(0.62 0.21 293),
+    inset -2px 0 0 oklch(0.62 0.21 293),
+    inset 0 2px 0 color-mix(in oklch, oklch(0.62 0.21 293) 70%, transparent);
 }
 
 /* v0.11.26 · loop 区间从 4px 细条改为贯穿轨道高度的半透明填充块 + 高亮左右边界,

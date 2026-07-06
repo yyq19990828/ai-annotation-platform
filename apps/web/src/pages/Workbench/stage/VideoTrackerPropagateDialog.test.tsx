@@ -69,6 +69,35 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(values).toContain("mock_bbox");
   });
 
+  it("上报当前影响范围给时间轴高亮, 随方向/预设变化更新, 关闭清空", () => {
+    const onRangeChange = vi.fn();
+    const { rerender } = render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        samplingStep={1}
+        onRangeChange={onRangeChange}
+        onSubmit={vi.fn()}
+      />,
+    );
+    // 默认 forward + 30 帧 → F50 → F80。
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 50, endFrame: 80 });
+    // 切「向前」→ F20 → F50。
+    fireEvent.click(screen.getByText("向前"));
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 20, endFrame: 50 });
+    // 关闭 → 清空。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        open={false}
+        frameIndex={50}
+        onRangeChange={onRangeChange}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+  });
+
   it("closed 时不渲染", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} open={false} frameIndex={5} onSubmit={vi.fn()} />,

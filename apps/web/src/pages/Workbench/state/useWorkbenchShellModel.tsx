@@ -446,6 +446,10 @@ export function useWorkbenchShellModel({
   const [chapterDraft, setChapterDraft] = useState<{ startFrame: number; endFrame: number } | null>(null);
   // v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动的共享态。
   const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
+  // v0.21.14 WS3 · AI 传播对话框打开时上报的影响范围 (时间轴高亮「将影响哪段帧」)。
+  const [propagateHighlight, setPropagateHighlight] = useState<
+    { startFrame: number; endFrame: number } | null
+  >(null);
   const handleTimelineRangeSelect = useCallback(
     (purpose: TimelineRangePurpose, region: VideoLoopRegion) => {
       if (purpose === "chapter-draft") {
@@ -2466,6 +2470,7 @@ export function useWorkbenchShellModel({
         videoFrameTimetable: videoFrameTimetable.data,
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
         videoTimelineChapterControls,
+        videoPropagateRange: propagateHighlight,
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
@@ -2820,6 +2825,7 @@ export function useWorkbenchShellModel({
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,
+    onRangeChange: setPropagateHighlight,
   };
 
   const issueSection = projectId && taskId ? {
