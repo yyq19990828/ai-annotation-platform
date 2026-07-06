@@ -34,6 +34,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- 编排画布输入节点的「数据源」标题在视频项目下被源类型 + 执行单位徽标挤压成逐字竖排（数\据\源）：节点头改为徽标过多时换行、标题不换行、运行态圆点绝对定位到右上角（不再靠标题 flex 撑开），标题恢复正常横排。
+
 <!--
 日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：
 Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空组省略）。
