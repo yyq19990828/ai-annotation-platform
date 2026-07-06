@@ -211,6 +211,13 @@
   pointer-events: auto;
 }
 
+/* v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover: 命中时抬高 + 白边描亮, 与侧栏行高亮呼应。 */
+.chapterMarkerHovered {
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  filter: brightness(1.15);
+}
+
 /* v0.21.13 WS3 · 章节条 resize 把手。display:contents 让内部绝对定位元素仍相对 chaptersTrack 定位。 */
 .chapterEntry {
   display: contents;

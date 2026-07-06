@@ -444,6 +444,8 @@ export function useWorkbenchShellModel({
   // 时间轴普通拖即圈选 chapter-draft。chapterDraft: 刷选产物 (松手后一次性喂给侧栏预填表单)。
   const [chapterDraftArmed, setChapterDraftArmed] = useState(false);
   const [chapterDraft, setChapterDraft] = useState<{ startFrame: number; endFrame: number } | null>(null);
+  // v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动的共享态。
+  const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
   const handleTimelineRangeSelect = useCallback(
     (purpose: TimelineRangePurpose, region: VideoLoopRegion) => {
       if (purpose === "chapter-draft") {
@@ -1544,8 +1546,17 @@ export function useWorkbenchShellModel({
       rangeSelectPurpose: chapterDraftArmed ? "chapter-draft" : "loop",
       onRangeSelect: handleTimelineRangeSelect,
       onResizeChapter: canEditChapters ? handleResizeChapter : undefined,
+      hoveredChapterId,
+      onHoverChapter: setHoveredChapterId,
     };
-  }, [isVideoTask, chapterDraftArmed, handleTimelineRangeSelect, canEditChapters, handleResizeChapter]);
+  }, [
+    isVideoTask,
+    chapterDraftArmed,
+    handleTimelineRangeSelect,
+    canEditChapters,
+    handleResizeChapter,
+    hoveredChapterId,
+  ]);
   const isSubmittingTask = topbarActions.isSubmitting ?? submitTaskMut.isPending;
 
   // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
@@ -2639,6 +2650,8 @@ export function useWorkbenchShellModel({
             onToggleTimelineDraft={() => setChapterDraftArmed((v) => !v)}
             draftRange={chapterDraft}
             onConsumeDraftRange={() => setChapterDraft(null)}
+            hoveredChapterId={hoveredChapterId}
+            onHoverChapter={setHoveredChapterId}
           />
         </div>
       )) : undefined,

@@ -322,6 +322,37 @@ describe("VideoPlaybackOverlay", () => {
     expect(queryByTestId("video-chapter-resize-end")).toBeNull();
   });
 
+  // v0.21.13 WS4 · 时间轴章节条 hover 上报 + 受控高亮 (与侧栏行双向联动)。
+  it("reports chapter hover and reflects the controlled hovered chapter", () => {
+    const onHoverChapter = vi.fn();
+    const { getByTestId, rerender } = renderOverlay({
+      chapters: [{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }],
+      onHoverChapter,
+    });
+    const bar = getByTestId("video-timeline-chapter");
+    fireEvent.pointerEnter(bar);
+    expect(onHoverChapter).toHaveBeenCalledWith("ch1");
+    fireEvent.pointerLeave(bar);
+    expect(onHoverChapter).toHaveBeenCalledWith(null);
+
+    rerender(
+      <VideoPlaybackOverlay
+        frameIndex={0}
+        maxFrame={9}
+        timebase={timebase}
+        isPlaying={false}
+        currentFrameEntryCount={0}
+        visible
+        chapters={[{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }]}
+        hoveredChapterId="ch1"
+        onSeek={() => {}}
+        onSeekByFrames={() => {}}
+        onTogglePlay={() => {}}
+      />,
+    );
+    expect(getByTestId("video-timeline-chapter")).toHaveAttribute("data-hovered", "true");
+  });
+
   // 回归: 人工关键帧密度与 AI 候选密度必须共用同一计数基准, 柱高才真实反映数量占比。
   // 修复前两条 lane 各自独立归一化, 会把「1 个关键帧」画得比「8 个候选」还高 (倒挂)。
   it("scales manual and prediction density on a shared count basis so bar height reflects real ratio", () => {

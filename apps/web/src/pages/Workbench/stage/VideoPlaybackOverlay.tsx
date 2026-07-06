@@ -220,6 +220,8 @@ export function VideoPlaybackOverlay({
   onHoverFrameChange,
   onSeekChapter,
   onRangeSelect,
+  hoveredChapterId = null,
+  onHoverChapter,
   onChapterResize,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
@@ -599,13 +601,20 @@ export function VideoPlaybackOverlay({
                     <TimelineButton
                       type="button"
                       data-testid="video-timeline-chapter"
+                      data-hovered={hoveredChapterId === chapter.id ? "true" : undefined}
                       title={`${chapter.title} · F${startFrame}-F${endFrame}`}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         onSeekChapter?.(chapter.id, startFrame);
                       }}
-                      className={cn(styles.chapterMarker, isInteractive && styles.interactive)}
+                      onPointerEnter={() => onHoverChapter?.(chapter.id)}
+                      onPointerLeave={() => onHoverChapter?.(null)}
+                      className={cn(
+                        styles.chapterMarker,
+                        isInteractive && styles.interactive,
+                        hoveredChapterId === chapter.id && styles.chapterMarkerHovered,
+                      )}
                       vars={chapterStyle}
                     />
                     {resizable && (

@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { VideoChapter } from "@/api/videoChapters";
@@ -84,6 +84,28 @@ describe("VideoChapterSidebar timeline draft (v0.21.13 WS2)", () => {
       />,
     );
     expect(getByTestId("video-chapter-draft-hint")).toBeInTheDocument();
+  });
+
+  it("reports row hover and highlights the controlled hovered chapter", () => {
+    chaptersRef.current = [chapter({ id: "ch1", title: "A" })];
+    const onHoverChapter = vi.fn();
+    const { getByTestId } = render(
+      <VideoChapterSidebar
+        datasetItemId="item-1"
+        frameIndex={50}
+        maxFrame={100}
+        canEdit={false}
+        hoveredChapterId="ch1"
+        onHoverChapter={onHoverChapter}
+      />,
+    );
+    const row = getByTestId("video-chapter-row");
+    // 受控 hover → data-hovered。
+    expect(row).toHaveAttribute("data-hovered", "true");
+    fireEvent.mouseEnter(row);
+    expect(onHoverChapter).toHaveBeenCalledWith("ch1");
+    fireEvent.mouseLeave(row);
+    expect(onHoverChapter).toHaveBeenCalledWith(null);
   });
 
   it("opens the create form prefilled from a timeline brush and consumes the draft once", () => {

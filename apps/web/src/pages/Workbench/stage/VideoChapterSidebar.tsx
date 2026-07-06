@@ -35,6 +35,9 @@ interface VideoChapterSidebarProps {
   draftRange?: { startFrame: number; endFrame: number } | null;
   /** 消费完 draftRange 后通知 shell 清空, 使同一区间可再次触发。 */
   onConsumeDraftRange?: () => void;
+  /** v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动。 */
+  hoveredChapterId?: string | null;
+  onHoverChapter?: (chapterId: string | null) => void;
 }
 
 function formatChapterDuration(start: number, end: number, timebase?: FrameTimebase) {
@@ -99,6 +102,8 @@ export function VideoChapterSidebar({
   onToggleTimelineDraft,
   draftRange = null,
   onConsumeDraftRange,
+  hoveredChapterId = null,
+  onHoverChapter,
 }: VideoChapterSidebarProps) {
   const { data: chapters = [], isLoading } = useVideoChapters(datasetItemId);
   const createMutation = useCreateVideoChapter(datasetItemId);
@@ -211,8 +216,8 @@ export function VideoChapterSidebar({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <b className="text-sm">章节</b>
-          <span className="mono text-muted-foreground text-xs">
+          <span className="text-sm font-semibold">章节</span>
+          <span className="mono text-xs font-medium text-muted-foreground">
             {sortedChapters.length}
           </span>
         </div>
@@ -267,15 +272,20 @@ export function VideoChapterSidebar({
       <div className="grid gap-1.5">
         {sortedChapters.map((chapter, idx) => {
           const isInside = frameIndex >= chapter.start_frame && frameIndex <= chapter.end_frame;
+          const isHovered = hoveredChapterId === chapter.id;
           const color = chapter.color ?? defaultChapterColor(idx);
           return (
             <div
               key={chapter.id}
               data-testid="video-chapter-row"
+              data-hovered={isHovered ? "true" : undefined}
               aria-selected={isInside}
+              onMouseEnter={() => onHoverChapter?.(chapter.id)}
+              onMouseLeave={() => onHoverChapter?.(null)}
               className={cn(
                 "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2 items-center py-2 px-2.5 border border-border rounded-lg bg-background",
                 isInside && "!border-brand bg-brand/10",
+                isHovered && !isInside && "!border-brand/60 bg-muted",
               )}
             >
               <svg className="w-2.5 h-2.5 rounded-full" viewBox="0 0 10 10" aria-hidden="true">
