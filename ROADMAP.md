@@ -12,12 +12,6 @@
 
 ### 计划中
 
-- **[轨迹画框「吞框」修复 + 粘轨迹态可视化（v0.21.12）](../docs/plans/2026-07-05-v0.21.12-video-track-draw-overwrite-fix.md)**：视频 UX 三连之一。修轨迹工具**同一帧再画一个框会把上一个框吞掉**的反直觉交互（选中轨迹后同帧画框走 `upsertKeyframe` 替换而非新建）——在 `resolveDragCommit` 加「同帧已有关键帧 → 判新建而非覆盖」守卫，语义收敛为「跨帧延展轨迹、同帧新建物体」；配「粘轨迹态」常驻提示。纯前端，无 alembic。
-- **[时间轴区间选择基建 + 刷选建章节 + 双向联动（v0.21.13）](../docs/plans/2026-07-05-v0.21.13-timeline-range-select-chapters.md)**：视频 UX 三连之二。补「章节只能在侧栏数字表单建/改」的缺口——把 loopRegion 刷选泛化成带 `purpose` 的通用「时间轴区间选择」primitive（供 v0.21.14 传播范围复用），落地时间轴刷选一键建章节 + 章节条 resize + 章节条↔侧栏行双向 hover。前端为主，复用既有 `PATCH .../chapters/{id}`，无 alembic。
-- **[交互式轨迹操作易用性收口（v0.21.14）](../docs/plans/2026-07-05-v0.21.14-interactive-track-ops-usability.md)**：视频 UX 三连之三。收口交互式轨迹操作一批易用性问题——AI 传播默认落测试模型 `mock_bbox`（正解=默认切真实模型 + 生产隐藏 mock，即「删 mock」真实靶点）、快捷键文案写 Shift+T 实为 Ctrl+B、传播范围盲填（WS3 依赖 v0.21.13 区间基建接时间轴）、两类「传播」易混、跳连/合并禁用无引导。纯前端，无 alembic。
-- **[时间轴横向缩放（v0.21.15）](../docs/plans/2026-07-05-v0.21.15-timeline-horizontal-zoom.md)**：视频 UX 续作。补长视频时间轴恒等宽、无法精细定位/圈选——引入可见帧窗口 `[visibleFrom,visibleTo]` + Ctrl+滚轮缩放/拖拽平移，把散落的帧↔像素换算（`frameLeft`/`rangeStyle`/`frameFromPointer`）收敛到单一坐标 util，与 v0.21.13 区间基建**强共享**故排其后。全窗口态零回归。纯前端，无 alembic。
-- **[轨迹操作入口收敛（v0.21.16）](../docs/plans/2026-07-05-v0.21.16-track-ops-entry-consolidation.md)**：视频 UX 续作。收口轨迹操作入口割裂——**「拆」一词混指 split→独立框 与 split_track 切两条轨迹两种操作**（术语消歧为硬前提）、转框 4 入口重复且锁判据不一致、多选轨迹时浮卡退化为占位（根因：轨迹多选走私有 `selectedTrackIds` 非全局 `selectedIds`，需提升选择态数据源）。纯前端，无 alembic。
-- **[前端随手优化批（v0.21.17）](../docs/plans/2026-07-05-v0.21.17-frontend-preference-dedup.md)**：交互工具 preference 去重（Workbench 首屏 3 处并发相同 `getPreferences()` GET 收敛到共享 react-query `["me","preferences",userId]`）+（可选尾项）PipelineGraphCanvas 无条件 `setNodes` 引用稳定化（原「跳视口/闪烁」命题已被前序优化修复，仅剩一次无谓 re-render）。纯前端，非 bug，无 alembic。
 - **[sam3_video 文本驱动追踪接入（v0.21.18）](../docs/plans/2026-07-05-v0.21.18-sam3-video-text-tracking.md)**：视频 epic Phase 5 前哨。把纯占位的 `sam3_video` 选项接成真能力——协议 text 字段贯通 + 前端 text UI + 能力协商区分 seed-bbox/text-driven tracker；**跨前后端 epic**，sam3-backend 现无任何 video 实现（新建 video predictor + 显存池为 gating 依赖单列 PR）。与 v0.21.19 在「保留 mask」上 AB 耦合。
 - **[多几何 track（v0.21.19）](../docs/plans/2026-07-05-v0.21.19-multi-geometry-track.md)**：视频 epic 延后项 2.9（**P1，体量大，多 PR/多版本**）。track 几何从 bbox 硬编码扩 polygon/polyline/mask——扩 `VideoTrackGeometry`（判别字段是 `type` 非 `kind`）、周长/弧长参数化插值、多几何渲染、seg 导出。**polygon track 先行**（复用图片 polygon schema + SAM2 已算 mask），真·mask 栅格 track + DAVIS 导出（平台零占位）单独立项。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
@@ -35,7 +29,7 @@
 
 ### 现在可做（无前置依赖，纯前端随手优化，可作为 `chip:maintenance` 穿插推进）
 
-- **前端随手优化批** → **[v0.21.17 计划](../docs/plans/2026-07-05-v0.21.17-frontend-preference-dedup.md)**：交互工具 preference 重复拉取去重（Workbench 首屏 3 处相同 GET 收敛到共享 react-query）+（可选尾项）PipelineGraphCanvas 无条件 `setNodes` 引用稳定化。均非 bug。
+- **前端随手优化批剩余项**（`ai.*` preference 去重已落 v0.21.17）：`ai.*` 四偏好 hook 首屏并发 GET 已收敛到共享 react-query。**仍可做**：① `useWorkbenchConfig` 首屏裸 fetch 同一 `GET /me/preferences`（实测每次加载 6 次，是首屏该端点冗余的真正大头，需单独评估其 layout 持久化副作用）；② PipelineGraphCanvas 运行态每 tick 无谓 `setNodes` re-render 微优化。详见 §C.1。均非 bug。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile）：极大图 > 50MP 才必要，等真有此规模图片触发再做。
@@ -138,8 +132,8 @@
 
 ### C.1 渲染性能 / 大图大量框
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
-- **交互工具 preference 重复拉取去重**（**P3**，纯前端，非 bug）→ **已细化为 [v0.21.17 计划](../docs/plans/2026-07-05-v0.21.17-frontend-preference-dedup.md)**：Workbench 首屏实际 3 处并发相同 `getPreferences()` GET（`useInteractiveBackendPref` + `useAiToolModelPref` + `useSecondaryParamPrefs`；`useAiToolParamPrefs` 在 AIPreAnnotate 页）。收敛到共享 react-query `["me","preferences",userId]`。
-- **PipelineGraphCanvas 节点态每 tick 重置**：原「每 tick 重置/跳视口/闪烁」命题**已被前序优化修复**（`fitView` 改依赖 `topoFingerprint` 只在拓扑变时触发、measured 尺寸按 id 保留）。仅剩「运行态轮询每 1.5s 无条件 `setNodes` 一次无谓 re-render」微优化——低收益、回归面广（DAG 交互 + 运行进度实时性），列为 v0.21.17 可选尾项，非必做。
+- **交互工具 preference 重复拉取去重**（`ai.*` 部分已落 v0.21.17）：`ai.*` 四个偏好 hook（`useInteractiveBackendPref` / `useAiToolModelPref` / `useSecondaryParamPrefs` / `useAiToolParamPrefs`）首屏并发的相同 `getPreferences()` GET 已收敛到共享 react-query `["me","preferences",userId]`（浏览器实测：单次工作台加载共享 query 仅 fire 1 次）。**剩余后续（P3，未做）**：`useWorkbenchConfig`（`workbench.layout` 子树，独立 layout 持久化管道，v0.21.17 计划明确排除）仍在首屏裸 fetch 同一 `GET /me/preferences`，实测每次加载 **6 次**（StrictMode dev 放大，生产约 3 次）——才是首屏该端点冗余的真正大头。若要把首屏压到「1 次」，把它也接入共享 query 是最有价值的下一步；但它读 `.workbench`、写路径带 `mergeUser` / `writeLocalLayout` / 防抖 flush，且 `update` 后需 invalidate 共享 query 保一致，是有真实副作用面的改动，需单独评估（非 ai.* 去重的机械延伸）。
+- **PipelineGraphCanvas 运行态每 tick 无谓 re-render**（**P3**，可选，未做）：原「每 tick 重置/跳视口/闪烁」命题**已被前序优化修复**（`fitView` 改依赖 `topoFingerprint` 只在拓扑变时触发、measured 尺寸按 id 保留）。仅剩「运行态轮询每 1.5s 无条件 `setNodes` 一次无谓 re-render」微优化——低收益、回归面广（DAG 交互 + 运行进度实时性），原列为 v0.21.17 可选尾项、随 v0.21.17 放行时未做，保留待触发。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
