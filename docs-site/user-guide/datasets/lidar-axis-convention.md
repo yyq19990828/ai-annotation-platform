@@ -136,5 +136,5 @@ v0.13.12 起,新建的 `box_3d` / `point_mask_3d` 几何会记录 `convention_at
 ## 相关
 
 - 架构决策: [ADR-0034 lidar 坐标系约定](../../dev/adr/0034-lidar-axis-convention)
-- 实现计划: [`docs/plans/archive/2026-06-05-v0.13.11-lidar-axis-convention.md`](../../../docs/plans/archive/2026-06-05-v0.13.11-lidar-axis-convention.md)
-- 收尾计划: [`docs/plans/archive/2026-06-05-v0.13.12-3d-polish-and-pointmask.md`](../../../docs/plans/archive/2026-06-05-v0.13.12-3d-polish-and-pointmask.md)
+- 实现计划: [lidar 坐标系约定实现计划](../../../docs/plans/archive/2026-06-05-v0.13.11-lidar-axis-convention.md)
+- 收尾计划: [3D 打磨与 point mask 收尾计划](../../../docs/plans/archive/2026-06-05-v0.13.12-3d-polish-and-pointmask.md)

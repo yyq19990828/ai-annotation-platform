@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-06
 ---
 
 # 环境变量参考
@@ -101,6 +101,11 @@ last_reviewed: 2026-06-29
 | `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | `300` | segment claim/heartbeat 锁 TTL，单位秒。 |
 | `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | `300` | AI tracker 调 ML Backend 时单次请求最多覆盖的帧数；长区间会由 worker 自动分窗，降低 GPU OOM 风险。 |
 | `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | `0.15` | AI tracker 返回 confidence 低于该阈值时，后端按 outside prediction range 写回而不是生成 keyframe。 |
+| `TRACKER_SOFT_TIME_LIMIT_SECONDS` | `1800` | detect-then-track 批量预标注 tracker 阶段的 soft 超时（秒）。tracker 整段跑帧耗时远超逐帧检测，与 YOLO_TRACKER_MAX_FRAMES 帧上限双保险，防单个追踪 job 长时间占住 worker；仅对含 tracker 阶段的 job 施加。 |
+| `FRAME_PREANNOTATE_MAX_FRAMES` | `900` | 单帧分支批量逐帧预标注（execution_unit=frame）：每个视频 task 逐帧的帧数上限（对齐 YOLO_TRACKER_MAX_FRAMES），超限截断，防长视频 × 全帧 × 多框砸库。 |
+| `FRAME_PREANNOTATE_CHUNK_SIZE` | `30` | 逐帧预标注每个 Celery 段子任务处理的帧数（fan-out 粒度：太小则子任务过多、太大则并行差）。 |
+| `FRAME_PREANNOTATE_MAX_BOXES_PER_FRAME` | `100` | 逐帧预标注单帧落库框数上限（防单帧检出爆量）。 |
+| `FRAME_PREANNOTATE_SEGMENT_SOFT_TIME_LIMIT_SECONDS` | `900` | 逐帧预标注段子任务的 soft 超时（秒，段内逐帧跑图像 predict）。 |
 
 ## 认证 / 安全
 
