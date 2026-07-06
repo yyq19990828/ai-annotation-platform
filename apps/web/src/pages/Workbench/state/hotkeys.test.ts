@@ -252,9 +252,14 @@ describe("dispatchKey · video mode", () => {
       .toEqual({ type: "videoDeleteSelected", scope: "track" });
   });
 
-  it("Tab / Shift+Tab → videoCycleTrack", () => {
-    expect(dispatch({ key: "Tab" }, videoCtx)).toEqual({ type: "videoCycleTrack", dir: 1 });
-    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({ type: "videoCycleTrack", dir: -1 });
+  it("Tab / Shift+Tab → videoCycleInCategory (同类流转)", () => {
+    expect(dispatch({ key: "Tab" }, videoCtx)).toEqual({ type: "videoCycleInCategory", dir: 1 });
+    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({ type: "videoCycleInCategory", dir: -1 });
+  });
+
+  it("` / Shift+` → videoStepCategory (跨类跳转)", () => {
+    expect(dispatch({ key: "`" }, videoCtx)).toEqual({ type: "videoStepCategory", dir: 1 });
+    expect(dispatch({ key: "`", shiftKey: true }, videoCtx)).toEqual({ type: "videoStepCategory", dir: -1 });
   });
 
   it("Esc → cancel", () => {

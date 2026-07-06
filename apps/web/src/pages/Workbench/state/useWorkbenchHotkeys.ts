@@ -413,15 +413,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           }
           handleDeleteBox(s.selectedId);
           return;
-        case "videoCycleTrack": {
-          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track_bbox");
-          if (list.length === 0) return;
+        case "videoCycleInCategory":
           e.preventDefault();
-          const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
-          const next = (idxNow + action.dir + list.length) % list.length;
-          s.setSelectedId(list[next].id);
+          videoControlsRef?.current?.cycleInCategory(action.dir);
           return;
-        }
+        case "videoStepCategory":
+          e.preventDefault();
+          videoControlsRef?.current?.stepCategory(action.dir);
+          return;
 
         case "selectAllUser":
           e.preventDefault();

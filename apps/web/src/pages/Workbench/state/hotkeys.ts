@@ -83,8 +83,10 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Ctrl", "Delete / Backspace"], desc: "删除整条选中轨迹", group: "video", actionType: "videoDeleteSelected" },
   { keys: ["PageUp"], desc: "跳到上一章节", group: "video" },
   { keys: ["PageDown"], desc: "跳到下一章节", group: "video" },
-  { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
-  { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
+  { keys: ["Tab"], desc: "同类下一个（AI 待审 / 人工 / 轨迹，按选中类循环）", group: "video", actionType: "videoCycleInCategory" },
+  { keys: ["Shift", "Tab"], desc: "同类上一个（按选中类循环）", group: "video", actionType: "videoCycleInCategory" },
+  { keys: ["`"], desc: "跳到下一类首对象（AI 待审 → 人工 → 轨迹）", group: "video", actionType: "videoStepCategory" },
+  { keys: ["Shift", "`"], desc: "跳到上一类首对象", group: "video", actionType: "videoStepCategory" },
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
   { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
 
@@ -189,7 +191,8 @@ export type HotkeyAction =
   | { type: "videoJumpHistory"; dir: -1 | 1 }
   | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected"; scope: "keyframe" | "track" }
-  | { type: "videoCycleTrack"; dir: 1 | -1 };
+  | { type: "videoCycleInCategory"; dir: 1 | -1 }
+  | { type: "videoStepCategory"; dir: 1 | -1 };
 
 /** 属性 hotkey 解析结果（D.1）：
  * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
@@ -317,7 +320,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
           : null;
       }
     }
-    if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
+    if (e.key === "Tab") return { type: "videoCycleInCategory", dir: e.shiftKey ? -1 : 1 };
+    // v0.21.11 · ` / Shift+` 跨类跳转(AI 待审 → 人工 → 轨迹); 紧邻 Tab、当前未占用。
+    if (e.key === "`") return { type: "videoStepCategory", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
     if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected", scope: "keyframe" };
     if (e.key >= "1" && e.key <= "9") {

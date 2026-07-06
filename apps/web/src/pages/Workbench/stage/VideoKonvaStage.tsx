@@ -36,6 +36,7 @@ import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annota
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
 import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
+import { buildFrameCategories, nextInCategory, nextCategory, type FrameObjectRef } from "./frameObjectCycle";
 import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { SelectionOverlay } from "./SelectionOverlay";
@@ -319,6 +320,31 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     [frameAiBoxes, selectedId],
   );
 
+  // v0.21.11 · 当前帧三类对象(AI 待审 / 人工 video_bbox / 轨迹当前帧视图)分类 + 空间排序,
+  // 供 Tab 同类流转 / ` 跨类跳转。人工 vs 轨迹按 annotation.geometry 类型判别; AI 用扁平 x/y。
+  const frameCategories = useMemo(() => {
+    const aiRefs: FrameObjectRef[] = frameAiBoxes.map((b) => ({ id: b.id, x: b.x, y: b.y }));
+    const userRefs: FrameObjectRef[] = [];
+    const trackRefs: FrameObjectRef[] = [];
+    for (const entry of frameViews.entries) {
+      const ann = annotations.find((a) => a.id === entry.id);
+      const ref: FrameObjectRef = { id: entry.id, x: entry.geom.x, y: entry.geom.y };
+      if (ann && isVideoTrack(ann)) trackRefs.push(ref);
+      else userRefs.push(ref);
+    }
+    return buildFrameCategories(aiRefs, userRefs, trackRefs);
+  }, [annotations, frameAiBoxes, frameViews.entries]);
+
+  const cycleInCategory = useCallback((dir: -1 | 1) => {
+    const next = nextInCategory(frameCategories, selectedId, dir);
+    if (next) onSelect?.(next);
+  }, [frameCategories, onSelect, selectedId]);
+
+  const stepCategory = useCallback((dir: -1 | 1) => {
+    const next = nextCategory(frameCategories, selectedId, dir);
+    if (next) onSelect?.(next);
+  }, [frameCategories, onSelect, selectedId]);
+
   // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。
   // 用当前帧 frameViews.entries(带 geom+className),解决控制器内因 frameIndex→entries 循环依赖
   // 而拿不到当前帧框的问题(此处 entries 已在 controller.frameIndex 之后派生)。
@@ -590,7 +616,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   useImperativeHandle(ref, () => ({
     ...controls,
     deleteSelectedTrackKeyframe,
-  }), [controls, deleteSelectedTrackKeyframe]);
+    cycleInCategory,
+    stepCategory,
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, stepCategory]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;
