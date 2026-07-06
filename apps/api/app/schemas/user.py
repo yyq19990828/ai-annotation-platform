@@ -185,6 +185,9 @@ class WorkbenchCommonPreferences(BaseModel):
     fillOpacitySelected: float = Field(default=0.12, ge=0, le=0.8)
     # v0.20.x · 工作台桌宠（常驻像素小精灵）开关；历史偏好缺该字段时默认开启。
     petEnabled: bool = True
+    # v0.21.11 · 选中自动聚焦：键盘循环 / 点选对象时若出视口或过小则自动平移居中 + 适度放大。
+    # 视频 + 图片 2D 工作台通用；默认关（不改选中前不移动视口的现状）。
+    focusSelectionEnabled: bool = False
 
     @field_validator("labelContent", mode="before")
     @classmethod

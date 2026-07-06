@@ -19947,6 +19947,11 @@
             "title": "Fillopacityselected",
             "type": "number"
           },
+          "focusSelectionEnabled": {
+            "default": false,
+            "title": "Focusselectionenabled",
+            "type": "boolean"
+          },
           "labelContent": {
             "$ref": "#/components/schemas/LabelContentByType"
           },

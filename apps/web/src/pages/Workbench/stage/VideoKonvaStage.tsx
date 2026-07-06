@@ -54,6 +54,8 @@ interface VideoKonvaStageProps {
   error?: unknown;
   frameIndex?: number;
   autoFitOnResize?: boolean;
+  /** v0.21.11 · 选中自动聚焦(common.focusSelectionEnabled); 关闭时选中不移动视口。 */
+  focusSelectionEnabled?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
   annotations?: AnnotationResponse[];
@@ -128,6 +130,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   error,
   frameIndex: controlledFrameIndex,
   autoFitOnResize = true,
+  focusSelectionEnabled = false,
   performanceTier = "standard",
   onFrameIndexChange,
   annotations = EMPTY_ANNOTATIONS,
@@ -344,6 +347,40 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const next = nextCategory(frameCategories, selectedId, dir);
     if (next) onSelect?.(next);
   }, [frameCategories, onSelect, selectedId]);
+
+  // v0.21.11 WS2 · 焦点联动: 把对象平移居中(仅出视口/过小才动, 保守不打断已在视口的选中)。
+  const focusObject = useCallback((id: string) => {
+    if (!viewportSize.w || !viewportSize.h || !size.w || !size.h) return;
+    const ai = frameAiBoxes.find((b) => b.id === id);
+    const geom = ai
+      ? { x: ai.x, y: ai.y, w: ai.w, h: ai.h }
+      : frameViews.entries.find((e) => e.id === id)?.geom ?? null;
+    if (!geom) return;
+    const cur = vpRef.current;
+    const cx = (geom.x + geom.w / 2) * size.w;
+    const cy = (geom.y + geom.h / 2) * size.h;
+    const objMaxDimPx = Math.max(geom.w * size.w, geom.h * size.h, 1);
+    // 保守缩放: 仅当对象在屏过小才放大到舒适尺寸, 否则保持当前 scale(优先平移居中)。
+    let scale = cur.scale;
+    if (objMaxDimPx * scale < 48) scale = clampScale(140 / objMaxDimPx);
+    const margin = 48;
+    const screenCx = cx * scale + cur.tx;
+    const screenCy = cy * scale + cur.ty;
+    const outOfView =
+      screenCx < margin || screenCx > viewportSize.w - margin ||
+      screenCy < margin || screenCy > viewportSize.h - margin;
+    // 已在视口内且无需变焦 → 不动(避免每次选中都重排, 保留上下文)。
+    if (!outOfView && scale === cur.scale) return;
+    setVp({ scale, tx: viewportSize.w / 2 - cx * scale, ty: viewportSize.h / 2 - cy * scale });
+  }, [frameAiBoxes, frameViews.entries, setVp, size.h, size.w, viewportSize.h, viewportSize.w, vpRef]);
+
+  // 选中变化即触发焦点联动(键盘两级循环 / 侧栏点选 / 画布点选统一走此)。用 ref 读最新 focusObject,
+  // 使 effect 只在 selectedId 变化时跑 —— 否则 focusObject 逐帧变身份会让播放中每帧重排。
+  const focusObjectRef = useRef(focusObject);
+  focusObjectRef.current = focusObject;
+  useEffect(() => {
+    if (focusSelectionEnabled && selectedId) focusObjectRef.current(selectedId);
+  }, [focusSelectionEnabled, selectedId]);
 
   // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。
   // 用当前帧 frameViews.entries(带 geom+className),解决控制器内因 frameIndex→entries 循环依赖
@@ -618,7 +655,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     deleteSelectedTrackKeyframe,
     cycleInCategory,
     stepCategory,
-  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, stepCategory]);
+    focusObject,
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, stepCategory]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;

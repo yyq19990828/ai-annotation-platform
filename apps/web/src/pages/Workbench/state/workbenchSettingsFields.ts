@@ -148,6 +148,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
+    key: "common.focusSelectionEnabled",
+    category: "common",
+    label: "选中自动聚焦",
+    description: "键盘循环(Tab / `)或点选对象时,若对象在画布外或过小,自动平移居中并适度放大。视频 + 图片工作台通用",
+    control: { type: "toggle", onText: "已开启", offText: "已关闭" },
+  },
+  {
     key: "common.crossFrameOverlayEnabled",
     category: "common",
     label: "邻帧框叠加",

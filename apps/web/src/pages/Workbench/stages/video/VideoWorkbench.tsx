@@ -136,6 +136,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         error={error}
         frameIndex={frameIndex}
         autoFitOnResize={workbenchVideo.autoFitOnResize}
+        focusSelectionEnabled={workbenchConfig.common.focusSelectionEnabled}
         performanceTier={performanceTier}
         onFrameIndexChange={onFrameIndexChange}
         annotations={annotations}

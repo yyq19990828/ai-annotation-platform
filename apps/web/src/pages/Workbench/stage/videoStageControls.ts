@@ -35,6 +35,11 @@ export interface VideoStageControls {
    */
   stepCategory: (dir: -1 | 1) => void;
   /**
+   * v0.21.11 WS2 · 焦点联动: 把对象平移居中到画布(仅当出视口/过小才动, 保守不打断已在视口的选中)。
+   * 键盘两级循环 / 侧栏点选 / 画布点选 统一经选中变化触发。
+   */
+  focusObject: (id: string) => void;
+  /**
    * v0.21.4 · 把当前帧解码后的 ImageBitmap 编码成 JPEG Blob(单题 AI 供图路径用)。
    * 当前帧尚未解出位图时返回 null。
    */

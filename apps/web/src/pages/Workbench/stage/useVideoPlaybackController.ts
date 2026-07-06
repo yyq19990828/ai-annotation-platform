@@ -132,7 +132,7 @@ export interface UseVideoPlaybackControllerResult {
   seekOverlayByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
   pausePlayback: (options?: { snapToGrid?: boolean }) => void;
   /** cycleInCategory / stepCategory 由 VideoKonvaStage 补齐, 故此处 Omit(见 controls memo)。 */
-  controls: Omit<VideoStageControls, "cycleInCategory" | "stepCategory">;
+  controls: Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject">;
 }
 
 export function useVideoPlaybackController({
@@ -822,7 +822,7 @@ export function useVideoPlaybackController({
   // ---- controls 句柄(对齐 VideoStage useImperativeHandle) ----
   // cycleInCategory / stepCategory 依赖 stage 侧的当前帧分类 + selectedId + onSelect,
   // 由 VideoKonvaStage 在 useImperativeHandle 补齐, 故此处 Omit。
-  const controls = useMemo<Omit<VideoStageControls, "cycleInCategory" | "stepCategory">>(() => ({
+  const controls = useMemo<Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject">>(() => ({
     togglePlayback,
     jogPlayback: jogPlaybackBy,
     pausePlayback,

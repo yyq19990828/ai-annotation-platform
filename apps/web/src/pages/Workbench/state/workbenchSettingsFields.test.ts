@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(45);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(46);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -39,6 +39,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "common.confirmDelete": "never",
       "common.recentClassesLimit": 5,
       "common.petEnabled": true,
+      "common.focusSelectionEnabled": false,
       "common.crossFrameOverlayEnabled": false,
       "common.crossFrameOverlayK": 1,
       "common.crossFrameOverlayScope": "selected",

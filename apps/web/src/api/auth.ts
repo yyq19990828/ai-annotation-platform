@@ -42,6 +42,11 @@ export interface WorkbenchCommonPreferences {
   fillOpacitySelected: number;
   /** v0.20.x · 工作台桌宠(常驻像素小精灵);关闭后选中信息卡折叠态回退为纯文字小条。 */
   petEnabled: boolean;
+  /**
+   * v0.21.11 · 焦点联动:选中对象(键盘两级循环 / 点选)时, 若对象出视口或过小则自动平移居中 + 适度缩放。
+   * 视频 + 图片 2D 工作台共享。默认关(不改选中前不移动视口的现状)。
+   */
+  focusSelectionEnabled: boolean;
 }
 
 /** v0.16.7 · 标签字段 token 全集;class 三段恒显,不入表。 */
@@ -278,6 +283,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     fillOpacity: 0.07,
     fillOpacitySelected: 0.12,
     petEnabled: true,
+    focusSelectionEnabled: false,
   },
   image: {
     smoothImage: true,
