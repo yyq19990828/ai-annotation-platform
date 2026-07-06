@@ -11,6 +11,7 @@ import {
   type VideoTrackGapMode,
 } from "./VideoTrackComposeDialog";
 import type { VideoFrameEntry, VideoTrackAnnotation } from "./videoStageTypes";
+import type { VideoTrackKeyframe } from "@/types";
 import { firstVisibleTrackFrame, frameRange, sourceChipText, statusChipText } from "./videoTrackFormat";
 
 export type TrackFilter = "all" | "current";
@@ -66,6 +67,45 @@ function sourceChipClass(source: VideoFrameEntry["source"] | null): string | nul
   if (source === "interpolated") return "text-status-caution border-amber-500/45";
   if (source === "manual" || source === "legacy") return "text-status-positive border-emerald-500/40";
   return null;
+}
+
+/**
+ * v0.21.9 · 轨迹关键帧来源迷你条: 沿帧区间 bucket 化 (最多 40 桶, 防大量关键帧撑爆 DOM),
+ * AI 追出的关键帧 (source==="prediction") 着 violet (对齐本面板 source chip 语言), 人工帧着中性。
+ * 全人工轨迹不渲染 (省视觉噪音, 只在有 AI 追帧时提示"哪几段是 AI 补的")。
+ */
+function KeyframeSourceStrip({ keyframes }: { keyframes: readonly VideoTrackKeyframe[] }) {
+  if (keyframes.length === 0 || !keyframes.some((kf) => kf.source === "prediction")) return null;
+  const frames = keyframes.map((kf) => kf.frame_index);
+  const min = Math.min(...frames);
+  const max = Math.max(...frames);
+  const span = max - min + 1;
+  const BUCKETS = 40;
+  // 每桶: 0=空, 1=人工, 2=AI 追 (AI 优先着色)。
+  const buckets = new Array<number>(BUCKETS).fill(0);
+  for (const kf of keyframes) {
+    const idx = Math.min(BUCKETS - 1, Math.floor(((kf.frame_index - min) / span) * BUCKETS));
+    const weight = kf.source === "prediction" ? 2 : 1;
+    if (weight > buckets[idx]) buckets[idx] = weight;
+  }
+  // 桶等宽且连续 → 用 flex 等分格渲染, 避免逐格内联定位 (本文件禁 inline style)。
+  return (
+    <div
+      data-testid="track-keyframe-source-strip"
+      title="关键帧来源: 紫=AI 追出 · 灰=人工"
+      className="col-start-2 flex h-1.5 mt-1 rounded-full bg-muted overflow-hidden"
+    >
+      {buckets.map((weight, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex-1",
+            weight === 2 ? "bg-violet-500" : weight === 1 ? "bg-muted-foreground" : "bg-transparent",
+          )}
+        />
+      ))}
+    </div>
+  );
 }
 
 function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: DiffMode): boolean {
@@ -345,6 +385,7 @@ export function VideoTrackPanel({
                   <div className={cn("mono", "text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap")}>
                     {track.keyframes.length} 关键帧 · {frameRange(frames)}
                   </div>
+                  <KeyframeSourceStrip keyframes={track.keyframes} />
                   <div className="col-start-2 flex flex-wrap gap-1 min-w-0 mt-0.5">
                     <span
                       className={cn(

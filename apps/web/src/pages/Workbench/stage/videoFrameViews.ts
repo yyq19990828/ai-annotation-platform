@@ -36,6 +36,8 @@ export type VideoEntryView = {
   /** 插值帧或遮挡 → 虚线。 */
   dashed: boolean;
   occluded: boolean;
+  /** v0.21.9 · 当前帧是 AI 追出的关键帧 (source==="prediction") → 常态加区别于插值虚线的 AI 线索。 */
+  predicted: boolean;
   labelText: string;
   /** 类别名(供 QC 密度/重叠率计算消费)。 */
   className: string;
@@ -237,6 +239,7 @@ function buildEntryView(
     selected: ann.id === selectedId,
     dashed: source === "interpolated" || occluded,
     occluded,
+    predicted: source === "prediction",
     labelText: buildTrackLabelText(
       {
         className: ann.class_name,

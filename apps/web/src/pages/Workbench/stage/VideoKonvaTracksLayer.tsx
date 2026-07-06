@@ -89,6 +89,7 @@ export function VideoKonvaTracksLayer({
           geom={entry.geom}
           color={entry.color}
           dashed={entry.dashed}
+          predicted={entry.predicted}
           selected={entry.selected}
           size={size}
           scale={scale}
