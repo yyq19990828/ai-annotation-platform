@@ -47,8 +47,16 @@ function pointerMove(clientX: number) {
   return event;
 }
 
-function pointerDown(clientX: number) {
+function pointerDown(clientX: number, shiftKey = false) {
   const event = new Event("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clientX", { value: clientX });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "shiftKey", { value: shiftKey });
+  return event;
+}
+
+function pointerUp(clientX: number) {
+  const event = new Event("pointerup", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clientX", { value: clientX });
   Object.defineProperty(event, "pointerId", { value: 1 });
   return event;
@@ -247,6 +255,44 @@ describe("VideoPlaybackOverlay", () => {
 
     expect(onSeekByFrames).toHaveBeenNthCalledWith(1, 1);
     expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
+  });
+
+  // v0.21.13 · 区间选择基建: 默认 purpose="loop" 时 Shift+拖仍提交循环区间 (零回归)。
+  it("commits a loop region on Shift+drag by default (range-select purpose loop)", () => {
+    const onLoopRegionChange = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId } = renderOverlay({ onLoopRegionChange, onRangeSelect });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointerDown(100, true));
+    expect(getByTestId("video-loop-region-preview")).toBeInTheDocument();
+    fireEvent(shell, pointerMove(600));
+    fireEvent(shell, pointerUp(600));
+
+    expect(onLoopRegionChange).toHaveBeenCalledWith({ startFrame: 1, endFrame: 5 });
+    expect(onRangeSelect).not.toHaveBeenCalled();
+  });
+
+  // v0.21.13 · 区间选择基建: purpose="chapter-draft" 时 Shift+拖走通用 onRangeSelect, 草稿带用章节样式。
+  it("routes a chapter-draft brush to onRangeSelect with the purpose tag", () => {
+    const onLoopRegionChange = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId } = renderOverlay({
+      rangeSelectPurpose: "chapter-draft",
+      onLoopRegionChange,
+      onRangeSelect,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointerDown(200, true));
+    expect(getByTestId("video-timeline-chapter-draft")).toBeInTheDocument();
+    fireEvent(shell, pointerMove(900));
+    fireEvent(shell, pointerUp(900));
+
+    expect(onRangeSelect).toHaveBeenCalledWith("chapter-draft", { startFrame: 2, endFrame: 8 });
+    expect(onLoopRegionChange).not.toHaveBeenCalled();
   });
 
   // 回归: 人工关键帧密度与 AI 候选密度必须共用同一计数基准, 柱高才真实反映数量占比。

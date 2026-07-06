@@ -29,6 +29,25 @@ export interface VideoTimelineChapter {
   color?: string | null;
 }
 
+/**
+ * v0.21.13 · 时间轴区间刷选的用途。决定松手后 {from,to} 交给谁、草稿带用什么样式渲染。
+ * - `loop`: 循环播放区间 (原行为, 零回归)。
+ * - `chapter-draft`: 圈一段预填章节表单 (WS2)。
+ * - `propagate-range`: 圈一段喂给 AI 传播对话框 (v0.21.14 WS3)。
+ */
+export type TimelineRangePurpose = "loop" | "chapter-draft" | "propagate-range";
+
+interface TimelineRangeDraft {
+  region: VideoLoopRegion;
+  purpose: TimelineRangePurpose;
+}
+
+const RANGE_DRAFT_TESTID: Record<TimelineRangePurpose, string> = {
+  loop: "video-loop-region-preview",
+  "chapter-draft": "video-timeline-chapter-draft",
+  "propagate-range": "video-timeline-propagate-draft",
+};
+
 interface VideoPlaybackOverlayProps {
   frameIndex: number;
   maxFrame: number;
@@ -50,6 +69,8 @@ interface VideoPlaybackOverlayProps {
   /** 会话级轨迹色覆盖; 密度条按各 bin 的主导轨迹着色时用它解析颜色。 */
   trackColorOverrides?: Record<string, string>;
   loopRegion?: VideoLoopRegion | null;
+  /** v0.21.13 · 时间轴刷选产物的用途 (默认 "loop", 原行为)。非 loop 时松手走 onRangeSelect。 */
+  rangeSelectPurpose?: TimelineRangePurpose;
   bookmarks?: VideoBookmark[];
   chapters?: VideoTimelineChapter[];
   /** v0.11.7 · 含 pixel-anchored issue 的帧 (时间轴上加标记, 单击跳转)。 */
@@ -67,6 +88,8 @@ interface VideoPlaybackOverlayProps {
   onSeekBookmark?: (frameIndex: number) => void;
   onHoverFrameChange?: (frameIndex: number | null) => void;
   onSeekChapter?: (chapterId: string, frameIndex: number) => void;
+  /** v0.21.13 · 非 loop 用途的区间刷选提交 (松手时按 rangeSelectPurpose 分派)。 */
+  onRangeSelect?: (purpose: TimelineRangePurpose, region: VideoLoopRegion) => void;
 }
 
 function formatTime(seconds: number) {
@@ -160,6 +183,7 @@ export function VideoPlaybackOverlay({
   onSeekPredicted,
   trackColorOverrides,
   loopRegion = null,
+  rangeSelectPurpose = "loop",
   bookmarks = [],
   chapters = [],
   issueFrames = [],
@@ -176,10 +200,11 @@ export function VideoPlaybackOverlay({
   onSeekBookmark,
   onHoverFrameChange,
   onSeekChapter,
+  onRangeSelect,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
-  const [loopDraft, setLoopDraft] = useState<VideoLoopRegion | null>(null);
-  const loopDraftRef = useRef<VideoLoopRegion | null>(null);
+  const [rangeDraft, setRangeDraft] = useState<TimelineRangeDraft | null>(null);
+  const rangeDraftRef = useRef<TimelineRangeDraft | null>(null);
   const seekDragRef = useRef(false);
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
@@ -343,27 +368,35 @@ export function VideoPlaybackOverlay({
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
           focusTimelineShell(e.currentTarget);
-          if (!e.shiftKey || !onLoopRegionChange) {
+          const brushEnabled =
+            rangeSelectPurpose === "loop" ? Boolean(onLoopRegionChange) : Boolean(onRangeSelect);
+          if (!e.shiftKey || !brushEnabled) {
             seekDragRef.current = true;
             onSeek(frame);
             e.currentTarget.setPointerCapture?.(e.pointerId);
             return;
           }
-          const next = { startFrame: frame, endFrame: frame };
-          loopDraftRef.current = next;
-          setLoopDraft(next);
+          const next: TimelineRangeDraft = {
+            region: { startFrame: frame, endFrame: frame },
+            purpose: rangeSelectPurpose,
+          };
+          rangeDraftRef.current = next;
+          setRangeDraft(next);
           e.currentTarget.setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
           updateHoverFrame(frame);
-          const draft = loopDraftRef.current;
+          const draft = rangeDraftRef.current;
           if (draft) {
             e.preventDefault();
-            const next = normalizeLoop(draft.startFrame, frame);
-            loopDraftRef.current = next;
-            setLoopDraft(next);
+            const next: TimelineRangeDraft = {
+              region: normalizeLoop(draft.region.startFrame, frame),
+              purpose: draft.purpose,
+            };
+            rangeDraftRef.current = next;
+            setRangeDraft(next);
             return;
           }
           if (seekDragRef.current) {
@@ -372,12 +405,13 @@ export function VideoPlaybackOverlay({
           }
         }}
         onPointerUp={(e) => {
-          const draft = loopDraftRef.current;
-          if (draft && onLoopRegionChange) {
+          const draft = rangeDraftRef.current;
+          if (draft) {
             e.preventDefault();
-            onLoopRegionChange(draft);
-            loopDraftRef.current = null;
-            setLoopDraft(null);
+            if (draft.purpose === "loop") onLoopRegionChange?.(draft.region);
+            else onRangeSelect?.(draft.purpose, draft.region);
+            rangeDraftRef.current = null;
+            setRangeDraft(null);
             e.currentTarget.releasePointerCapture?.(e.pointerId);
             return;
           }
@@ -389,14 +423,14 @@ export function VideoPlaybackOverlay({
           }
         }}
         onPointerCancel={(e) => {
-          if (!loopDraftRef.current && !seekDragRef.current) return;
+          if (!rangeDraftRef.current && !seekDragRef.current) return;
           seekDragRef.current = false;
-          loopDraftRef.current = null;
-          setLoopDraft(null);
+          rangeDraftRef.current = null;
+          setRangeDraft(null);
           e.currentTarget.releasePointerCapture?.(e.pointerId);
         }}
         onPointerLeave={() => {
-          if (seekDragRef.current || loopDraftRef.current) return;
+          if (seekDragRef.current || rangeDraftRef.current) return;
           updateHoverFrame(null);
         }}
       >
@@ -443,11 +477,22 @@ export function VideoPlaybackOverlay({
               vars={{ "--timeline-left": frameLeft(frameIndex) }}
             />
           )}
-          {(loopRegion || loopDraft) && (
+          {loopRegion && rangeDraft?.purpose !== "loop" && (
             <TimelineSpan
-              data-testid={loopDraft ? "video-loop-region-preview" : "video-loop-region"}
-              className={cn(styles.loopRegion, loopDraft && styles.loopRegionDraft)}
-              vars={rangeStyle((loopDraft ?? loopRegion)!.startFrame, (loopDraft ?? loopRegion)!.endFrame)}
+              data-testid="video-loop-region"
+              className={styles.loopRegion}
+              vars={rangeStyle(loopRegion.startFrame, loopRegion.endFrame)}
+            />
+          )}
+          {rangeDraft && (
+            <TimelineSpan
+              data-testid={RANGE_DRAFT_TESTID[rangeDraft.purpose]}
+              className={cn(
+                rangeDraft.purpose === "loop" && cn(styles.loopRegion, styles.loopRegionDraft),
+                rangeDraft.purpose === "chapter-draft" && styles.chapterDraftRegion,
+                rangeDraft.purpose === "propagate-range" && styles.propagateDraftRegion,
+              )}
+              vars={rangeStyle(rangeDraft.region.startFrame, rangeDraft.region.endFrame)}
             />
           )}
           {chapters.length > 0 && (

@@ -138,7 +138,9 @@
 }
 
 .loopRegion,
-.trackSegment {
+.trackSegment,
+.chapterDraftRegion,
+.propagateDraftRegion {
   position: absolute;
   left: var(--timeline-left);
   width: var(--timeline-width);
@@ -162,6 +164,25 @@
   box-shadow:
     inset 2px 0 0 rgba(34, 211, 238, 0.55),
     inset -2px 0 0 rgba(34, 211, 238, 0.55);
+}
+
+/* v0.21.13 · 章节草稿刷选带: 与 loop (cyan) 区分, 用章节主色 (violet-ish) 的半透明填充 + 虚线边界,
+   松手后交给章节表单预填。position 走上方共享选择器。 */
+.chapterDraftRegion {
+  top: 0;
+  bottom: 0;
+  border: 1px dashed color-mix(in oklch, oklch(0.62 0.18 252) 80%, transparent);
+  border-radius: 3px;
+  background: color-mix(in oklch, oklch(0.62 0.18 252) 22%, transparent);
+}
+
+/* v0.21.13 · 传播范围草稿刷选带 (v0.21.14 WS3 使用): AI violet, 与 loop / chapter 均区分。 */
+.propagateDraftRegion {
+  top: 0;
+  bottom: 0;
+  border: 1px dashed color-mix(in oklch, oklch(0.62 0.21 293) 80%, transparent);
+  border-radius: 3px;
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 20%, transparent);
 }
 
 .chaptersTrack {
