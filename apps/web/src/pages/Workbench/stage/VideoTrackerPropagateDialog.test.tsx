@@ -39,6 +39,36 @@ describe("VideoTrackerPropagateDialog", () => {
     })).toBe("mock_bbox");
   });
 
+  it("已绑真实后端 (preferNonMockModel) 时下拉隐藏 mock_bbox, 默认落真实模型", () => {
+    // 即便用户记忆里残留 mock_bbox, 绑后端项目也不应复现它。
+    window.localStorage.setItem(
+      videoDialogMemoryStorageKey("u1", "trackerPropagate"),
+      JSON.stringify({ rangePreset: "30", direction: "forward", modelKey: "mock_bbox", samVariant: "" }),
+    );
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        userId="u1"
+        preferNonMockModel
+        onSubmit={vi.fn()}
+      />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const values = Array.from(modelSelect.options).map((o) => o.value);
+    expect(values).not.toContain("mock_bbox");
+    expect(modelSelect.value).toBe("sam2_video");
+  });
+
+  it("未绑后端 / 测试环境仍保留 mock_bbox 可见", () => {
+    render(
+      <VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const values = Array.from(modelSelect.options).map((o) => o.value);
+    expect(values).toContain("mock_bbox");
+  });
+
   it("closed 时不渲染", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} open={false} frameIndex={5} onSubmit={vi.fn()} />,

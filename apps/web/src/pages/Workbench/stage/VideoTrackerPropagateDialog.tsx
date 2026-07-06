@@ -146,6 +146,17 @@ export function VideoTrackerPropagateDialog({
   const [samVariant, setSamVariant] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
+  // v0.21.14 · 项目已绑真实 tracker 后端 (preferNonMockModel) 时从下拉过滤掉测试用 mock_bbox,
+  // 避免误选跑出假框; 未绑后端 / 测试环境仍保留 mock 可见。过滤后的表也用于默认模型解析,
+  // 使记忆里残留的 mock_bbox 不再复现 (不在候选 → 回退到首个真实模型)。
+  const modelOptions = useMemo(
+    () =>
+      preferNonMockModel
+        ? TRACKER_MODEL_OPTIONS.filter((m) => m.value !== "mock_bbox")
+        : TRACKER_MODEL_OPTIONS,
+    [preferNonMockModel],
+  );
+
   useEffect(() => {
     if (open) {
       const remembered =
@@ -157,11 +168,12 @@ export function VideoTrackerPropagateDialog({
         projectDefaultModel,
         rememberedModel: remembered.modelKey,
         preferNonMockModel,
+        options: modelOptions,
       }));
       setSamVariant(remembered.samVariant);
       setError(null);
     }
-  }, [open, preferNonMockModel, projectDefaultModel, userId]);
+  }, [open, preferNonMockModel, projectDefaultModel, userId, modelOptions]);
 
   const grid = Math.max(1, Math.round(samplingStep));
 
@@ -294,14 +306,14 @@ export function VideoTrackerPropagateDialog({
             onChange={(e) => setModelKey(e.target.value)}
             className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
           >
-            {TRACKER_MODEL_OPTIONS.map((m) => (
+            {modelOptions.map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>
             ))}
           </select>
           <span className="text-muted-foreground text-xs">
-            {TRACKER_MODEL_OPTIONS.find((m) => m.value === modelKey)?.note}
+            {modelOptions.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
 
