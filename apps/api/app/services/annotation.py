@@ -515,9 +515,7 @@ class AnnotationService:
                     detail=f"annotation {r.id} is not active",
                 )
             if r.is_locked and (
-                class_name is not None
-                or attributes is not None
-                or z_order is not None
+                class_name is not None or attributes is not None or z_order is not None
             ):
                 raise HTTPException(
                     status_code=422,
@@ -549,7 +547,6 @@ class AnnotationService:
             r.version += 1
         await self.db.flush()
         return rows
-
 
     async def _resolve_axis_convention(self, task: Task) -> str | None:
         """v0.14.1 · 取 task 主 dataset_item 所在 dataset 的 axis_convention。

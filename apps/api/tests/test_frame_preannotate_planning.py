@@ -58,9 +58,7 @@ class TestPlanSegments:
 
     def test_segments_never_cross_task(self):
         # 每段属单一 task (一次视频下载); 不跨 task 合并。
-        segments, _ = plan_segments(
-            [("a", 3), ("b", 3)], max_frames=100, chunk_size=10
-        )
+        segments, _ = plan_segments([("a", 3), ("b", 3)], max_frames=100, chunk_size=10)
         assert all(len({s["task_id"]}) == 1 for s in segments)
         assert {s["task_id"] for s in segments} == {"a", "b"}
 

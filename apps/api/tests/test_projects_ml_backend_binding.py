@@ -116,7 +116,9 @@ async def test_patch_project_unbind_backend_clears_binding(
     assert data["ml_backend_id"] is None
 
 
-async def test_raw_delete_ml_backend_no_longer_sets_project_null(db_session, super_admin):
+async def test_raw_delete_ml_backend_no_longer_sets_project_null(
+    db_session, super_admin
+):
     user, _ = super_admin
     proj = await _seed_project(db_session, user.id)
     backend = await _seed_backend(db_session, proj.id)

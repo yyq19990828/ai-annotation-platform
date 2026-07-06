@@ -95,8 +95,7 @@ def _build_payload() -> ProtocolCapabilitiesResponse:
             for s in PROMPTS
         ],
         inputs=[
-            ProtocolInputItem(id=s.id, label=s.label, summary=s.summary)
-            for s in INPUTS
+            ProtocolInputItem(id=s.id, label=s.label, summary=s.summary) for s in INPUTS
         ],
     )
 

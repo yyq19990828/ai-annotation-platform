@@ -19,10 +19,14 @@ def _validate_scope_owner(
 ) -> None:
     if scope == "private":
         if project_id is None or organization_id is not None:
-            raise ValueError("private 编排必须指定 project_id 且不能指定 organization_id")
+            raise ValueError(
+                "private 编排必须指定 project_id 且不能指定 organization_id"
+            )
     elif scope == "organization":
         if project_id is not None or organization_id is None:
-            raise ValueError("organization 编排必须指定 organization_id 且不能指定 project_id")
+            raise ValueError(
+                "organization 编排必须指定 organization_id 且不能指定 project_id"
+            )
     elif project_id is not None or organization_id is not None:
         raise ValueError("public 编排不能指定 project_id / organization_id")
 

@@ -88,9 +88,7 @@ def _box3d(center=(1.0, 2.0, 3.0), size=(4.0, 5.0, 6.0), rotation=(0.0, 0.0, 0.5
     }
 
 
-async def _add_annotation(
-    db, *, task, project, user_id, geometry, track_id=None
-):
+async def _add_annotation(db, *, task, project, user_id, geometry, track_id=None):
     ann = Annotation(
         id=uuid.uuid4(),
         task_id=task.id,

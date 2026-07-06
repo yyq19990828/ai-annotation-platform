@@ -1766,8 +1766,7 @@ async def trigger_preannotation(
     # v0.21.6 · detect-then-track: 含 tracker 阶段的 job 施加 soft 超时 (帧上限之外的双保险)。
     #   单阶段源 tracker 走 body.task_type; 编排里的 tracker 阶段走 pipeline_stages_payload。
     has_tracker_stage = body.task_type == "tracker" or any(
-        (s or {}).get("task_type") == "tracker"
-        for s in (pipeline_stages_payload or [])
+        (s or {}).get("task_type") == "tracker" for s in (pipeline_stages_payload or [])
     )
     # v0.21.7 · 逐帧执行单位: 从源阶段(stage 0)的 source.execution_unit 提取 (norm 丢弃了 source,
     #   故从原始 body.pipeline_stages 取)。frame → worker 走二级 fan-out 逐帧跑图像 backend。

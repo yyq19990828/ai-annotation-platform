@@ -236,7 +236,9 @@ async def _run_extract(
 
     stats = {"task_id": task_id, "requested": len(frame_indices), "extracted": 0}
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     try:
         async with SessionLocal() as db:
             task = await db.get(Task, uuid.UUID(task_id))
@@ -287,9 +289,7 @@ def launch_predict_phase(
     ]
     if not seg_sigs:
         return
-    chord(group(seg_sigs))(
-        finalize_frame_job.s(project_id=project_id, job_id=job_id)
-    )
+    chord(group(seg_sigs))(finalize_frame_job.s(project_id=project_id, job_id=job_id))
 
 
 # ── 段任务: 逐帧 predict + 落库 ─────────────────────────────────────────────
@@ -354,9 +354,17 @@ async def _run_segment(
     box_cap = settings.frame_preannotate_max_boxes_per_frame
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
-    stats = {"task_id": task_id, "frames_done": 0, "boxes": 0, "failed": 0, "skipped": 0}
+    stats = {
+        "task_id": task_id,
+        "frames_done": 0,
+        "boxes": 0,
+        "failed": 0,
+        "skipped": 0,
+    }
     try:
         async with SessionLocal() as db:
             backend = await db.get(MLBackend, uuid.UUID(ml_backend_id))
@@ -451,7 +459,9 @@ async def _write_job_progress(job_id: str, done: int, total: int) -> None:
     from app.db.models.async_job import AsyncJob
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     try:
         async with SessionLocal() as db:
             job = await db.get(AsyncJob, uuid.UUID(job_id))
@@ -504,7 +514,9 @@ async def _existing_frame_indices(db, task_uuid: uuid.UUID) -> set[int]:
     return done
 
 
-async def _extract_frames_for_video(db, ctx, frame_indices: list[int]) -> dict[int, str]:
+async def _extract_frames_for_video(
+    db, ctx, frame_indices: list[int]
+) -> dict[int, str]:
     """阶段 A: 抽这些帧 → VideoFrameCache (下载源视频一次), 返回 {frame_index: url}。
 
     先 ``_ensure_frame_row`` 建行, 再 ``_extract_video_frames`` (下载一次 + 逐帧落存储),
@@ -563,7 +575,9 @@ def _publish_frame_progress(
 
 
 @celery_app.task
-def finalize_frame_job(segment_stats: list[dict], *, project_id: str, job_id: str) -> None:
+def finalize_frame_job(
+    segment_stats: list[dict], *, project_id: str, job_id: str
+) -> None:
     """段全绿后聚合各段 stats → async_job 收尾 + SSE completed。"""
     asyncio.run(_finalize(segment_stats or [], project_id=project_id, job_id=job_id))
 
@@ -584,7 +598,9 @@ async def _finalize(segment_stats: list[dict], *, project_id: str, job_id: str) 
     skipped = sum(int(s.get("skipped", 0)) for s in segment_stats if s)
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     try:
         async with SessionLocal() as db:
             job = await db.get(AsyncJob, uuid.UUID(job_id))

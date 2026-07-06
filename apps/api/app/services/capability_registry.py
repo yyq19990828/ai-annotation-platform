@@ -451,7 +451,9 @@ PROMPTS: tuple[PromptSpec, ...] = (
 INPUTS: tuple[InputSpec, ...] = (
     InputSpec(id="full_image", label="整图", summary="整张图片或视频帧作为模型输入。"),
     InputSpec(id="crop", label="裁剪", summary="上游几何裁出的 ROI 图像。"),
-    InputSpec(id="bbox_prompt", label="框提示", summary="整图 + 上游 bbox/polygon 框提示。"),
+    InputSpec(
+        id="bbox_prompt", label="框提示", summary="整图 + 上游 bbox/polygon 框提示。"
+    ),
     InputSpec(id="point_prompt", label="点提示", summary="整图 + 点提示。"),
     InputSpec(id="video", label="视频", summary="多帧视频序列输入。"),
 )

@@ -64,12 +64,21 @@ def test_non_bbox_shapes_skipped():
         {
             "type": "polygonlabels",
             "score": 0.7,
-            "value": {"points": [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]], "polygonlabels": ["road"]},
+            "value": {
+                "points": [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]],
+                "polygonlabels": ["road"],
+            },
         },
         {
             "type": "rectanglelabels",
             "score": 0.6,
-            "value": {"x": 0.5, "y": 0.5, "width": 0.1, "height": 0.1, "rectanglelabels": ["car"]},
+            "value": {
+                "x": 0.5,
+                "y": 0.5,
+                "width": 0.1,
+                "height": 0.1,
+                "rectanglelabels": ["car"],
+            },
         },
     ]
     out = to_video_bbox_result(raw, frame_index=3)
@@ -80,8 +89,28 @@ def test_non_bbox_shapes_skipped():
 
 def test_frame_index_stamped_on_every_box():
     raw = [
-        {"type": "rectanglelabels", "score": 0.5, "value": {"x": 0.0, "y": 0.0, "width": 0.1, "height": 0.1, "rectanglelabels": ["a"]}},
-        {"type": "rectanglelabels", "score": 0.5, "value": {"x": 0.2, "y": 0.2, "width": 0.1, "height": 0.1, "rectanglelabels": ["b"]}},
+        {
+            "type": "rectanglelabels",
+            "score": 0.5,
+            "value": {
+                "x": 0.0,
+                "y": 0.0,
+                "width": 0.1,
+                "height": 0.1,
+                "rectanglelabels": ["a"],
+            },
+        },
+        {
+            "type": "rectanglelabels",
+            "score": 0.5,
+            "value": {
+                "x": 0.2,
+                "y": 0.2,
+                "width": 0.1,
+                "height": 0.1,
+                "rectanglelabels": ["b"],
+            },
+        },
     ]
     out = to_video_bbox_result(raw, frame_index=7)
     assert [o["geometry"]["frame_index"] for o in out] == [7, 7]

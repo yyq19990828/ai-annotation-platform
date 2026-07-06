@@ -523,8 +523,16 @@ def test_video_track_bbox_reshapes_keyframes_to_geometry():
         "class_name": "car",
         "score": 0.87,
         "keyframes": [
-            {"frame_index": 0, "bbox": {"x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06}, "score": 0.9},
-            {"frame_index": 1, "bbox": {"x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06}, "score": 0.88},
+            {
+                "frame_index": 0,
+                "bbox": {"x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06},
+                "score": 0.9,
+            },
+            {
+                "frame_index": 1,
+                "bbox": {"x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06},
+                "score": 0.88,
+            },
         ],
     }
     out = to_internal_shape(raw)
@@ -552,7 +560,9 @@ def test_video_track_bbox_small_coords_not_percent_scaled():
         "track_id": "trk_1",
         "class_name": "ball",
         "score": 0.5,
-        "keyframes": [{"frame_index": 3, "bbox": {"x": 0.5, "y": 0.5, "w": 0.02, "h": 0.02}}],
+        "keyframes": [
+            {"frame_index": 3, "bbox": {"x": 0.5, "y": 0.5, "w": 0.02, "h": 0.02}}
+        ],
     }
     kf = to_internal_shape(raw)["geometry"]["keyframes"][0]
     assert kf["bbox"] == {"x": 0.5, "y": 0.5, "w": 0.02, "h": 0.02}
@@ -564,7 +574,9 @@ def test_video_track_bbox_semantic_label_passthrough():
         "track_id": "trk_1",
         "semantic_label": "car_3",
         "class_name": "car",
-        "keyframes": [{"frame_index": 0, "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}}],
+        "keyframes": [
+            {"frame_index": 0, "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}}
+        ],
     }
     assert to_internal_shape(raw)["geometry"]["semantic_label"] == "car_3"
 
@@ -574,7 +586,9 @@ def test_video_track_bbox_no_semantic_label_omitted():
         "type": "video_track_bbox",
         "track_id": "trk_1",
         "class_name": "car",
-        "keyframes": [{"frame_index": 0, "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}}],
+        "keyframes": [
+            {"frame_index": 0, "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}}
+        ],
     }
     assert "semantic_label" not in to_internal_shape(raw)["geometry"]
 
@@ -607,7 +621,14 @@ def test_remap_track_ids_int_to_uuid_with_semantic_label():
     from app.services.prediction import _remap_track_ids
 
     out = _remap_track_ids(
-        [{"type": "video_track_bbox", "track_id": 3, "class_name": "car", "keyframes": []}]
+        [
+            {
+                "type": "video_track_bbox",
+                "track_id": 3,
+                "class_name": "car",
+                "keyframes": [],
+            }
+        ]
     )
     assert out[0]["track_id"].startswith("trk_")
     assert out[0]["semantic_label"] == "car_3"
@@ -624,7 +645,12 @@ def test_remap_track_ids_passthrough_non_track():
 def test_remap_track_ids_idempotent_for_existing_trk():
     from app.services.prediction import _remap_track_ids
 
-    item = {"type": "video_track_bbox", "track_id": "trk_deadbeef", "semantic_label": "car_3", "keyframes": []}
+    item = {
+        "type": "video_track_bbox",
+        "track_id": "trk_deadbeef",
+        "semantic_label": "car_3",
+        "keyframes": [],
+    }
     out = _remap_track_ids([item])
     assert out[0]["track_id"] == "trk_deadbeef"  # 不重映射
 
@@ -632,7 +658,14 @@ def test_remap_track_ids_idempotent_for_existing_trk():
 def test_remap_track_ids_does_not_mutate_input():
     from app.services.prediction import _remap_track_ids
 
-    items = [{"type": "video_track_bbox", "track_id": 5, "class_name": "car", "keyframes": []}]
+    items = [
+        {
+            "type": "video_track_bbox",
+            "track_id": 5,
+            "class_name": "car",
+            "keyframes": [],
+        }
+    ]
     _remap_track_ids(items)
     assert items[0]["track_id"] == 5  # 原对象未被改
 
@@ -640,5 +673,7 @@ def test_remap_track_ids_does_not_mutate_input():
 def test_remap_track_ids_missing_class_falls_back_to_obj():
     from app.services.prediction import _remap_track_ids
 
-    out = _remap_track_ids([{"type": "video_track_bbox", "track_id": 9, "keyframes": []}])
+    out = _remap_track_ids(
+        [{"type": "video_track_bbox", "track_id": 9, "keyframes": []}]
+    )
     assert out[0]["semantic_label"] == "obj_9"

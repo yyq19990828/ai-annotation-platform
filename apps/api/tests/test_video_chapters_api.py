@@ -69,7 +69,9 @@ async def _video_item_with_task(db_session, owner_id):
     return item
 
 
-async def test_update_chapter_frames_returns_200(db_session, httpx_client_bound, super_admin):
+async def test_update_chapter_frames_returns_200(
+    db_session, httpx_client_bound, super_admin
+):
     """拖章节条 resize 的 PATCH 只带 start/end_frame, 必须 200 且落新值 (不再 500)。"""
     user, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
