@@ -70,7 +70,8 @@ import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import type { TimelineRangePurpose, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
 import type { VideoLoopRegion } from "../stage/videoNavigationState";
-import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
+import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSidebar";
+import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
@@ -91,6 +92,7 @@ import { getMissingRequired } from "../shell/AttributeForm";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
 import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
+import { VideoTrackBatchCardContent } from "../shell/VideoTrackBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
@@ -446,6 +448,9 @@ export function useWorkbenchShellModel({
   const [chapterDraft, setChapterDraft] = useState<{ startFrame: number; endFrame: number } | null>(null);
   // v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动的共享态。
   const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
+  // v0.21.16 WS3 · 轨迹多选态镜像 (由 roster 的 VideoTrackSidebar 经 onSelectionChange 上报),
+  // 供浮卡在多选 ≥2 轨迹时渲染批量卡。roster 仍是唯一 owner, 此处只读镜像, 不双写。
+  const [videoBatchTracks, setVideoBatchTracks] = useState<VideoTrackAnnotation[]>([]);
   // v0.21.14 WS3 · AI 传播对话框打开时上报的影响范围 (时间轴高亮「将影响哪段帧」)。
   const [propagateHighlight, setPropagateHighlight] = useState<
     { startFrame: number; endFrame: number } | null
@@ -1900,6 +1905,7 @@ export function useWorkbenchShellModel({
         onUpdate={handleVideoUpdate}
         onConvertToBboxes={handleVideoConvertToBboxes}
         onComposeTracks={handleVideoComposeTracks}
+        onSelectionChange={view === "roster" ? setVideoBatchTracks : undefined}
         trackerJobsByAnnotation={trackerJobs.byAnnotation}
         onPropagateTrack={openPropagateDialog}
         onCancelTrackerJob={trackerJobs.cancel}
@@ -2021,6 +2027,55 @@ export function useWorkbenchShellModel({
             onUpdateAttributes={handleUpdateAttributes}
           />
         );
+      } else if (videoBatchTracks.length >= 2) {
+        // v0.21.16 WS3 · 多选 ≥2 条轨迹 → 浮卡渲染批量卡 (与右栏 roster 批量条对等), 不再退化为
+        // 「最后选中那条」的单卡。选择态由 roster 实例上报的 videoBatchTracks 镜像驱动。
+        const ids = videoBatchTracks.map((t) => t.id);
+        const sameClass =
+          videoBatchTracks.length === 2 && videoBatchTracks[0].class_name === videoBatchTracks[1].class_name;
+        const canMerge = sameClass;
+        const canJoin = sameClass && !trackRangesOverlap(videoBatchTracks[0], videoBatchTracks[1]);
+        const countHint = `需恰好选中 2 条轨迹（当前 ${videoBatchTracks.length} 条）`;
+        const mergeReason = canMerge ? null : videoBatchTracks.length !== 2 ? countHint : "两条轨迹需同类";
+        const joinReason = canJoin
+          ? null
+          : videoBatchTracks.length !== 2
+            ? countHint
+            : !sameClass
+              ? "两条轨迹需同类"
+              : "两条轨迹的可见帧区间不能重叠";
+        const setBatchHidden = (hidden: boolean) =>
+          videoBatchTracks.forEach((t) => {
+            if (s.hiddenVideoTrackIds.has(t.geometry.track_id) !== hidden) s.toggleHiddenVideoTrack(t.geometry.track_id);
+          });
+        const setBatchLocked = (locked: boolean) =>
+          videoBatchTracks.forEach((t) => {
+            if (s.lockedVideoTrackIds.has(t.geometry.track_id) !== locked) s.toggleLockedVideoTrack(t.geometry.track_id);
+          });
+        children = (
+          <VideoTrackBatchCardContent
+            count={videoBatchTracks.length}
+            readOnly={isLocked}
+            classes={classes}
+            canMerge={canMerge}
+            canJoin={canJoin}
+            mergeDisabledReason={mergeReason}
+            joinDisabledReason={joinReason}
+            onChangeClass={(cls) => handleVideoBatchRename(videoBatchTracks, cls)}
+            onShow={() => setBatchHidden(false)}
+            onHide={() => setBatchHidden(true)}
+            onLock={() => setBatchLocked(true)}
+            onUnlock={() => setBatchLocked(false)}
+            onMerge={() => handleVideoComposeTracks({ operation: "merge_tracks", annotationIds: ids })}
+            onJoin={(gapMode: VideoTrackGapMode) =>
+              handleVideoComposeTracks({ operation: "join_tracks", annotationIds: ids, gapMode })
+            }
+            onDelete={() => {
+              if (window.confirm(`确定删除 ${videoBatchTracks.length} 条轨迹？`)) handleVideoBatchDelete(videoBatchTracks);
+            }}
+            onClear={() => handleSelectBox(null)}
+          />
+        );
       } else {
         // 视频轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
         // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
@@ -2085,6 +2140,15 @@ export function useWorkbenchShellModel({
     handleBatchPatchFlag,
     handleBatchDelete,
     handleVideoComposeTracks,
+    handleVideoBatchRename,
+    handleVideoBatchDelete,
+    handleSelectBox,
+    videoBatchTracks,
+    classes,
+    s.hiddenVideoTrackIds,
+    s.lockedVideoTrackIds,
+    s.toggleHiddenVideoTrack,
+    s.toggleLockedVideoTrack,
     handleStartChangeClass,
     handlePatchShapeFlag,
     handleDeleteBox,

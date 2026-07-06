@@ -53,6 +53,8 @@ interface VideoTrackSidebarProps {
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
+  /** v0.21.16 WS3 · 上报轨迹多选态给 shell (浮卡多选批量卡消费)。仅 roster 实例传入。 */
+  onSelectionChange?: (selectedTracks: VideoTrackAnnotation[]) => void;
   reviewDisplayMode?: DiffMode;
   trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
@@ -142,6 +144,7 @@ export function VideoTrackSidebar({
   onUpdate,
   onConvertToBboxes,
   onComposeTracks,
+  onSelectionChange,
   reviewDisplayMode,
   trackerJobsByAnnotation,
   onPropagateTrack,
@@ -190,6 +193,11 @@ export function VideoTrackSidebar({
     () => videoTracks.filter((ann) => selectedTrackIds.has(ann.id)),
     [selectedTrackIds, videoTracks],
   );
+  // v0.21.16 WS3 · 把轨迹多选态上报给 shell (浮卡多选批量卡消费)。roster 实例是多选唯一 owner,
+  // 浮卡实例 (view="card") 不传此回调, 不参与上报, 保证单一数据源。
+  useEffect(() => {
+    onSelectionChange?.(selectedTracks);
+  }, [onSelectionChange, selectedTracks]);
   const canMergeSelectedTracks = selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
   // join: 恰好两条同类且可见帧区间不重叠的 track。
   const canJoinSelectedTracks = selectedTracks.length === 2
