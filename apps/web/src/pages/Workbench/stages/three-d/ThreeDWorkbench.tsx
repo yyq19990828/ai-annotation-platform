@@ -36,7 +36,11 @@ import {
 } from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
-import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
+import { classColorForCanvas, displayClassName } from "@/pages/Workbench/stage/colors";
+import {
+  buildTrackLabelText,
+  shouldShowLabel,
+} from "@/pages/Workbench/stage/annotationVisual";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
 import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
@@ -563,8 +567,24 @@ export function ThreeDWorkbench({
   // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
   const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
 
-  // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态)。
+  // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态 + 标签)。
   const boxes = useMemo<SceneBox[]>(() => {
+    // 标签内容复用 common.labelContent 的 track 段(点云框是跨帧 track 语义):类别名恒显,
+    // 轨迹号 / 属性按开关。state 后缀点云渲染层无逐帧态,留空。可见性走 labelVisibility 门控。
+    const trackContent = workbenchCommon.labelContent.track;
+    const labelVisibility = workbenchCommon.labelVisibility;
+    // 轨迹号:当前帧内按 track_id 字典序派生 1..N,供 track 段的 id token 显示。
+    const trackNumbers = new Map<string, number>();
+    Array.from(
+      new Set(
+        (annotations ?? [])
+          .filter((a) => !a.is_hidden && a.geometry?.type === "box_3d" && a.track_id)
+          .map((a) => a.track_id as string),
+      ),
+    )
+      .sort((x, y) => x.localeCompare(y))
+      .forEach((tid, i) => trackNumbers.set(tid, i + 1));
+
     const list: SceneBox[] = [];
     for (const a of annotations ?? []) {
       if (a.is_hidden) continue; // 隐藏的框(列表 H 切换)不渲染,与 2D 画布同语义
@@ -577,6 +597,18 @@ export function ThreeDWorkbench({
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
       // 三视图拖拽中:用本地草稿覆盖该框的 PSR(实时预览, 不发请求)。
       const dp = draftPsr && draftPsr.id === a.id ? draftPsr.psr : null;
+      const selected = selectedIdSet.has(a.id);
+      const label = shouldShowLabel(selected, labelVisibility)
+        ? buildTrackLabelText(
+            {
+              className: displayClassName(a.class_name),
+              trackNumber: a.track_id ? trackNumbers.get(a.track_id) : undefined,
+              attributes:
+                (a as { attributes?: Record<string, unknown> | null }).attributes ?? null,
+            },
+            trackContent,
+          )
+        : undefined;
       list.push({
         id: a.id,
         center: dp
@@ -591,11 +623,18 @@ export function ThreeDWorkbench({
           ? [dp.rotation[0], dp.rotation[1], dp.rotation[2]]
           : (g.rotation as [number, number, number]),
         color: classColorForCanvas(a.class_name),
-        selected: selectedIdSet.has(a.id),
+        selected,
+        label,
       });
     }
     return list;
-  }, [annotations, selectedIdSet, draftPsr]);
+  }, [
+    annotations,
+    selectedIdSet,
+    draftPsr,
+    workbenchCommon.labelContent.track,
+    workbenchCommon.labelVisibility,
+  ]);
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;

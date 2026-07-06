@@ -51,6 +51,11 @@ export interface SceneBox {
   /** 类别色(hex 字符串,如 "#4f8cff");选中时线框另用高亮色。 */
   color: string;
   selected: boolean;
+  /**
+   * 框顶悬浮文本标签(类别名/轨迹号/属性,已在 React 侧按 labelContent + 可见性组装好)。
+   * 空 / undefined = 不显示标签。渲染层只负责把字符串画成 billboard sprite。
+   */
+  label?: string;
 }
 
 /** v0.14.1 · 邻帧参考框(只读叠加层): PSR + 类别色, 不可选不可拖。 */
@@ -107,6 +112,12 @@ export class PointCloudScene {
   private readonly unitEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
   private readonly unitBox = new THREE.BoxGeometry(1, 1, 1);
   private readonly raycaster = new THREE.Raycaster();
+
+  // 框标签图层:悬浮在框顶的文字 billboard(CanvasTexture → Sprite)。独立于 boxLayer,
+  // 因为 box group 用非均匀 scale + 绕 Z 旋转,把 sprite 挂进去会因 shear 让文字变形;
+  // 这里按世界坐标独立定位、不缩放。每个有 label 的框一条,按框 id 复用。
+  private labelLayer = new THREE.Group();
+  private boxLabels = new Map<string, THREE.Sprite>();
 
   // v0.14.1 · 邻帧参考框图层:半透明 dashed 线框, 不参与 raycast(不加入 boxGroups,
   // pickBox 只遍历 boxGroups), 仅作时序连续性参考。切 selectedGroupId / overlay K 时整层重建。
@@ -177,6 +188,7 @@ export class PointCloudScene {
     this.scene.add(this.grid);
 
     this.scene.add(this.boxLayer);
+    this.scene.add(this.labelLayer);
     this.scene.add(this.referenceLayer);
     this.scene.add(this.neighborLayer);
     this.initAxisGizmo();
@@ -755,6 +767,90 @@ export class PointCloudScene {
       }
       this.updateBoxGroup(group, b);
     }
+    this.syncBoxLabels(boxes, next);
+  }
+
+  /**
+   * 同步框标签图层:按框 id 增删 sprite,文本变化才重画纹理,位置放框顶(随框旋转)。
+   * label 为空 / undefined 的框不显示标签(拆除已有 sprite)。
+   */
+  private syncBoxLabels(boxes: SceneBox[], next: Set<string>) {
+    // 拆除:框已删除,或该框不再需要标签。
+    for (const [id, sprite] of this.boxLabels) {
+      const stillHasLabel = next.has(id) && boxes.some((b) => b.id === id && b.label);
+      if (!stillHasLabel) {
+        this.labelLayer.remove(sprite);
+        this.disposeLabelSprite(sprite);
+        this.boxLabels.delete(id);
+      }
+    }
+    // 建 / 更新。
+    for (const b of boxes) {
+      if (!b.label) continue;
+      let sprite = this.boxLabels.get(b.id);
+      if (!sprite) {
+        sprite = this.createLabelSprite(b.label);
+        this.boxLabels.set(b.id, sprite);
+        this.labelLayer.add(sprite);
+      } else if (sprite.userData.text !== b.label) {
+        this.drawLabelTexture(sprite, b.label);
+      }
+      // 位置:框顶面中心(局部 +Z 半高)随框旋转,再上抬一点留白。
+      const euler = new THREE.Euler(b.rotation[0], b.rotation[1], b.rotation[2], "XYZ");
+      const top = new THREE.Vector3(0, 0, b.size[2] / 2 + 0.3).applyEuler(euler);
+      sprite.position.set(b.center[0] + top.x, b.center[1] + top.y, b.center[2] + top.z);
+    }
+  }
+
+  /** 建一个空的标签 sprite(材质 depthTest 关,画在框线之上),文本由 drawLabelTexture 填。 */
+  private createLabelSprite(text: string): THREE.Sprite {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false }),
+    );
+    sprite.renderOrder = 4; // 在框线(3)之上
+    this.drawLabelTexture(sprite, text);
+    return sprite;
+  }
+
+  /** 把文本画进 CanvasTexture 贴到 sprite;按文本宽度定 canvas 尺寸,世界高度固定、宽度按纵横比。 */
+  private drawLabelTexture(sprite: THREE.Sprite, text: string) {
+    const fontPx = 44;
+    const padX = 18;
+    const padY = 12;
+    const measure = document.createElement("canvas").getContext("2d");
+    if (measure) measure.font = `600 ${fontPx}px sans-serif`;
+    const textW = measure ? measure.measureText(text).width : text.length * fontPx * 0.6;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.ceil(textW + padX * 2));
+    canvas.height = Math.ceil(fontPx + padY * 2);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // 半透明底衬,保证亮 / 暗点云上都可读。
+      ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `600 ${fontPx}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const mat = sprite.material as THREE.SpriteMaterial;
+    mat.map?.dispose();
+    mat.map = texture;
+    mat.needsUpdate = true;
+    // 世界尺寸:固定高度(米),宽度按 canvas 纵横比,避免文字拉伸。
+    const worldH = 0.55;
+    sprite.scale.set(worldH * (canvas.width / canvas.height), worldH, 1);
+    sprite.userData.text = text;
+  }
+
+  private disposeLabelSprite(sprite: THREE.Sprite) {
+    const mat = sprite.material as THREE.SpriteMaterial;
+    mat.map?.dispose();
+    mat.dispose();
   }
 
   /**
@@ -1001,6 +1097,11 @@ export class PointCloudScene {
     this.removePoints();
     for (const group of this.boxGroups.values()) this.disposeBoxGroup(group);
     this.boxGroups.clear();
+    for (const sprite of this.boxLabels.values()) {
+      this.labelLayer.remove(sprite);
+      this.disposeLabelSprite(sprite);
+    }
+    this.boxLabels.clear();
     // 参考框共用 this.unitEdges 几何(下面统一 dispose),仅各自持有 LineDashedMaterial,
     // 与 setReferenceBoxes 的清理口径一致:只 dispose 材质。
     for (const seg of this.referenceBoxes) {
