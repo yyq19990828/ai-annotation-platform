@@ -9,12 +9,19 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
 
 import { useAuthStore } from "@/stores/authStore";
 import { useInteractiveBackendPref } from "./useInteractiveBackendPref";
 
 const getPreferencesMock = vi.fn();
 const updatePreferencesMock = vi.fn();
+
+// v0.21.17 · hook 拉取改走共享 useUserPreferences (react-query), 需 QueryClientProvider。
+let queryClient: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) =>
+  createElement(QueryClientProvider, { client: queryClient }, children);
 
 vi.mock("@/api/auth", () => ({
   authApi: {
@@ -33,6 +40,9 @@ describe("useInteractiveBackendPref", () => {
     getPreferencesMock.mockReset();
     updatePreferencesMock.mockReset();
     setUser(null);
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
   });
   afterEach(() => setUser(null));
 
@@ -42,7 +52,7 @@ describe("useInteractiveBackendPref", () => {
     getPreferencesMock.mockResolvedValueOnce({
       ai: { interactive_backend_by_project: { p1: "b1" } },
     });
-    const { result, rerender } = renderHook(() => useInteractiveBackendPref("p1"));
+    const { result, rerender } = renderHook(() => useInteractiveBackendPref("p1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
     expect(result.current.savedBackendId).toBe("b1");
 
@@ -65,7 +75,7 @@ describe("useInteractiveBackendPref", () => {
     getPreferencesMock.mockResolvedValueOnce({ ai: {} });
     updatePreferencesMock.mockResolvedValue(undefined);
 
-    const { result, unmount } = renderHook(() => useInteractiveBackendPref("p1"));
+    const { result, unmount } = renderHook(() => useInteractiveBackendPref("p1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
 
     // 立刻切换 → 进入 600ms 节流窗口, 还没真正 PATCH。
@@ -85,7 +95,7 @@ describe("useInteractiveBackendPref", () => {
     getPreferencesMock.mockResolvedValueOnce({
       ai: { interactive_backend_by_project: { p1: "b1" } },
     });
-    const { result, unmount } = renderHook(() => useInteractiveBackendPref("p1"));
+    const { result, unmount } = renderHook(() => useInteractiveBackendPref("p1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
     unmount();
     expect(updatePreferencesMock).not.toHaveBeenCalled();
@@ -97,7 +107,7 @@ describe("useInteractiveBackendPref", () => {
       ai: { interactive_backend_by_project: { p1: "b1", p2: "b2" } },
     });
     updatePreferencesMock.mockResolvedValue(undefined);
-    const { result, unmount } = renderHook(() => useInteractiveBackendPref("p1"));
+    const { result, unmount } = renderHook(() => useInteractiveBackendPref("p1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
 
     act(() => result.current.save(null));

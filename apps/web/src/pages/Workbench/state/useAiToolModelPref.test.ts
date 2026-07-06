@@ -5,12 +5,19 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
 
 import { useAuthStore } from "@/stores/authStore";
 import { useAiToolModelPref } from "./useAiToolModelPref";
 
 const getPreferencesMock = vi.fn();
 const updatePreferencesMock = vi.fn();
+
+// v0.21.17 · hook 拉取改走共享 useUserPreferences (react-query), 需 QueryClientProvider。
+let queryClient: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) =>
+  createElement(QueryClientProvider, { client: queryClient }, children);
 
 vi.mock("@/api/auth", () => ({
   authApi: {
@@ -29,6 +36,9 @@ describe("useAiToolModelPref", () => {
     getPreferencesMock.mockReset();
     updatePreferencesMock.mockReset();
     setUser(null);
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
   });
   afterEach(() => setUser(null));
 
@@ -37,7 +47,7 @@ describe("useAiToolModelPref", () => {
     getPreferencesMock.mockResolvedValueOnce({
       ai: { model_by_backend: { b1: "m1" } },
     });
-    const { result, rerender } = renderHook(() => useAiToolModelPref("b1"));
+    const { result, rerender } = renderHook(() => useAiToolModelPref("b1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
     expect(result.current.savedModelId).toBe("m1");
 
@@ -58,7 +68,7 @@ describe("useAiToolModelPref", () => {
     getPreferencesMock.mockResolvedValueOnce({ ai: {} });
     updatePreferencesMock.mockResolvedValue(undefined);
 
-    const { result, unmount } = renderHook(() => useAiToolModelPref("b1"));
+    const { result, unmount } = renderHook(() => useAiToolModelPref("b1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
 
     act(() => result.current.save("m9"));
@@ -76,7 +86,7 @@ describe("useAiToolModelPref", () => {
     getPreferencesMock.mockResolvedValueOnce({
       ai: { model_by_backend: { b1: "m1" } },
     });
-    const { result, unmount } = renderHook(() => useAiToolModelPref("b1"));
+    const { result, unmount } = renderHook(() => useAiToolModelPref("b1"), { wrapper });
     await waitFor(() => expect(result.current.loaded).toBe(true));
     unmount();
     expect(updatePreferencesMock).not.toHaveBeenCalled();

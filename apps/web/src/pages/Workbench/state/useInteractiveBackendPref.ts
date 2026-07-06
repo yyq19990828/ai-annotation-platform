@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
+import { useUserPreferences, userPreferencesQueryKey } from "./useUserPreferences";
 
 /**
  * v0.18.31 · 工作台「交互后端(引擎)选择」的用户级偏好, 按 project 分桶。
@@ -15,41 +17,35 @@ import { useAuthStore } from "@/stores/authStore";
  *
  * 读取优先级链由 {@link useBackendRouting} 实现: 本会话显式切换 > 本偏好 (savedBackendId) >
  * 项目默认 / 首个交互后端。
+ *
+ * v0.21.17 · 拉取收敛到共享 {@link useUserPreferences} query (进工作台首屏不再各自并发 GET);
+ * 本地态仍作乐观覆盖 (即时反映选择), 写回走 600ms 节流 + 成功后 invalidate 刷新缓存。
  */
 export function useInteractiveBackendPref(projectId: string | null | undefined) {
   const userId = useAuthStore((s) => s.user?.id);
+  const queryClient = useQueryClient();
+  const { prefs, loaded } = useUserPreferences();
+  const server = prefs?.ai?.interactive_backend_by_project;
   const [byProject, setByProject] = useState<Record<string, string>>({});
-  const [loaded, setLoaded] = useState(false);
   const pendingRef = useRef<Record<string, string> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 从共享 query 同步本地态 (替代各自 getPreferences)。server 引用变 (含写回后 invalidate) 才刷;
+  // react-query structuralSharing 保证无关子键改动不会误刷本键。
   useEffect(() => {
-    let active = true;
-    if (!userId) {
-      // 切账号/登出: 清掉上一个用户的 byProject + 取消任何 pending 写, 否则下一个用户首渲染
-      // useBackendRouting.preferredOverride 会读到上一个用户的项目→后端映射 (issue claude[bot] P1).
-      setByProject({});
-      pendingRef.current = null;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      setLoaded(false);
-      return;
+    setByProject(server ?? {});
+  }, [server]);
+
+  // 切账号/登出: 清掉上一个用户的 byProject + 取消 pending 写, 否则新用户首渲染
+  // useBackendRouting.preferredOverride 会读到上一个用户的项目→后端映射 (issue claude[bot] P1)。
+  useEffect(() => {
+    if (userId) return;
+    setByProject({});
+    pendingRef.current = null;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-    authApi
-      .getPreferences()
-      .then((res) => {
-        if (!active) return;
-        setByProject(res.ai?.interactive_backend_by_project ?? {});
-        setLoaded(true);
-      })
-      .catch(() => {
-        if (active) setLoaded(true);
-      });
-    return () => {
-      active = false;
-    };
   }, [userId]);
 
   useEffect(() => {
@@ -88,10 +84,11 @@ export function useInteractiveBackendPref(projectId: string | null | undefined) 
         if (!payload) return;
         authApi
           .updatePreferences({ ai: { interactive_backend_by_project: payload } })
+          .then(() => queryClient.invalidateQueries({ queryKey: userPreferencesQueryKey(userId) }))
           .catch(() => {});
       }, 600);
     },
-    [projectId],
+    [projectId, queryClient, userId],
   );
 
   return { savedBackendId, loaded, save };
