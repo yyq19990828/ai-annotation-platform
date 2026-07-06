@@ -20445,7 +20445,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.21.12"
+    "version": "0.21.14"
   },
   "openapi": "3.1.0",
   "paths": {
