@@ -12,15 +12,19 @@
 
 ### 计划中
 
-- **[逐帧批量预标注优化（v0.21.8）](../docs/plans/2026-07-03-v0.21.8-frame-preannotate-optimization.md)**：收 v0.21.7 两笔债——段级重复下载整段视频（每视频只抽一次帧，段任务退化为纯预测）+ 跑中 `async_job.progress_pct` 落库（`/ai-pre/jobs` 列表实时进度）。纯性能/可观测优化，无 schema/alembic。
-- **[视频工作台「当前题 AI」单帧检测 + 待审计数稳定（v0.21.10）](../docs/plans/2026-07-05-v0.21.10-video-workbench-frame-ai.md)**：修视频工作台「当前题 AI」面板对视频**基本不可用**——① 模型下拉被写死只剩 tracker（工作台没传 `executionUnit`）、无单帧检测入口；② 单帧「运行当前题」发给 tracker 产 `video_track_bbox` 被单帧 reshaper 丢弃 → 静默 0 候选；③「待审」数跨帧无去重 + offset 分页漂移 → 抖动 100→500→100。附带收编排按钮「运行当前题」对视频跑整段而非当前帧。纯前端为主。
-- **[视频预测审阅联动（v0.21.9）](../docs/plans/2026-07-05-v0.21.9-video-prediction-review-linkage.md)**：收视频工作台「AI 来源可辨」三处缺失——① 时间轴增预测密度标记轨 +「跳到下一个有预测的帧」（逐帧 `video_bbox` 预测当前在时间轴完全不可见）；② 画布 AI 层兼容 `video_track_bbox`（检测式追踪候选当前只在侧栏可见、画布不画）；③ committed 轨迹里 AI 追出的关键帧（`source=prediction`）常态画布/时间轴/右栏（roster 迷你条 + 选中卡 keyframe 徽标）与人工帧可辨（当前仅复审模式可过滤）。纯前端，与 v0.21.8 正交。
-- **[审阅流水线：当前帧对象统一循环 + 焦点联动（v0.21.11）](../docs/plans/2026-07-05-v0.21.11-review-pipeline-frame-object-cycle.md)**：收视频审阅「三类对象循环割裂」——① AI 待审 / 人工 / 轨迹各有各的循环键（Tab/X/视频Tab）、互不连通，无统一「当前帧对象环」；② 选中/切换后画布不居中、右栏不滚动到对应行（无 `focusObject` 焦点联动，全 repo 缺失）；③ 采纳/拒绝后不自动前进下一个未决对象。定「统一环 + 焦点对象（居中 + scrollIntoView）+ 采纳后自动前进」三层流水线。纯前端，与 v0.21.9 主题相关但量级更重（焦点联动是新基建）。
+- **[轨迹画框「吞框」修复 + 粘轨迹态可视化（v0.21.12）](../docs/plans/2026-07-05-v0.21.12-video-track-draw-overwrite-fix.md)**：视频 UX 三连之一。修轨迹工具**同一帧再画一个框会把上一个框吞掉**的反直觉交互（选中轨迹后同帧画框走 `upsertKeyframe` 替换而非新建）——在 `resolveDragCommit` 加「同帧已有关键帧 → 判新建而非覆盖」守卫，语义收敛为「跨帧延展轨迹、同帧新建物体」；配「粘轨迹态」常驻提示。纯前端，无 alembic。
+- **[时间轴区间选择基建 + 刷选建章节 + 双向联动（v0.21.13）](../docs/plans/2026-07-05-v0.21.13-timeline-range-select-chapters.md)**：视频 UX 三连之二。补「章节只能在侧栏数字表单建/改」的缺口——把 loopRegion 刷选泛化成带 `purpose` 的通用「时间轴区间选择」primitive（供 v0.21.14 传播范围复用），落地时间轴刷选一键建章节 + 章节条 resize + 章节条↔侧栏行双向 hover。前端为主，复用既有 `PATCH .../chapters/{id}`，无 alembic。
+- **[交互式轨迹操作易用性收口（v0.21.14）](../docs/plans/2026-07-05-v0.21.14-interactive-track-ops-usability.md)**：视频 UX 三连之三。收口交互式轨迹操作一批易用性问题——AI 传播默认落测试模型 `mock_bbox`（正解=默认切真实模型 + 生产隐藏 mock，即「删 mock」真实靶点）、快捷键文案写 Shift+T 实为 Ctrl+B、传播范围盲填（WS3 依赖 v0.21.13 区间基建接时间轴）、两类「传播」易混、跳连/合并禁用无引导。纯前端，无 alembic。
+- **[时间轴横向缩放（v0.21.15）](../docs/plans/2026-07-05-v0.21.15-timeline-horizontal-zoom.md)**：视频 UX 续作。补长视频时间轴恒等宽、无法精细定位/圈选——引入可见帧窗口 `[visibleFrom,visibleTo]` + Ctrl+滚轮缩放/拖拽平移，把散落的帧↔像素换算（`frameLeft`/`rangeStyle`/`frameFromPointer`）收敛到单一坐标 util，与 v0.21.13 区间基建**强共享**故排其后。全窗口态零回归。纯前端，无 alembic。
+- **[轨迹操作入口收敛（v0.21.16）](../docs/plans/2026-07-05-v0.21.16-track-ops-entry-consolidation.md)**：视频 UX 续作。收口轨迹操作入口割裂——**「拆」一词混指 split→独立框 与 split_track 切两条轨迹两种操作**（术语消歧为硬前提）、转框 4 入口重复且锁判据不一致、多选轨迹时浮卡退化为占位（根因：轨迹多选走私有 `selectedTrackIds` 非全局 `selectedIds`，需提升选择态数据源）。纯前端，无 alembic。
+- **[前端随手优化批（v0.21.17）](../docs/plans/2026-07-05-v0.21.17-frontend-preference-dedup.md)**：交互工具 preference 去重（Workbench 首屏 3 处并发相同 `getPreferences()` GET 收敛到共享 react-query `["me","preferences",userId]`）+（可选尾项）PipelineGraphCanvas 无条件 `setNodes` 引用稳定化（原「跳视口/闪烁」命题已被前序优化修复，仅剩一次无谓 re-render）。纯前端，非 bug，无 alembic。
+- **[sam3_video 文本驱动追踪接入（v0.21.18）](../docs/plans/2026-07-05-v0.21.18-sam3-video-text-tracking.md)**：视频 epic Phase 5 前哨。把纯占位的 `sam3_video` 选项接成真能力——协议 text 字段贯通 + 前端 text UI + 能力协商区分 seed-bbox/text-driven tracker；**跨前后端 epic**，sam3-backend 现无任何 video 实现（新建 video predictor + 显存池为 gating 依赖单列 PR）。与 v0.21.19 在「保留 mask」上 AB 耦合。
+- **[多几何 track（v0.21.19）](../docs/plans/2026-07-05-v0.21.19-multi-geometry-track.md)**：视频 epic 延后项 2.9（**P1，体量大，多 PR/多版本**）。track 几何从 bbox 硬编码扩 polygon/polyline/mask——扩 `VideoTrackGeometry`（判别字段是 `type` 非 `kind`）、周长/弧长参数化插值、多几何渲染、seg 导出。**polygon track 先行**（复用图片 polygon schema + SAM2 已算 mask），真·mask 栅格 track + DAVIS 导出（平台零占位）单独立项。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
-- **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 待续）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
-  - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）——扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap，DAVIS mask 导出（Phase 4.5）依赖此项。
+- **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 文本驱动追踪已细化为 [v0.21.18 计划](../docs/plans/2026-07-05-v0.21.18-sam3-video-text-tracking.md)——现 `sam3_video` 前端选项/adapter 槽位纯占位、sam3-backend 无任何 video 实现）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
+  - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）→ **已细化为 [v0.21.19 计划](../docs/plans/2026-07-05-v0.21.19-multi-geometry-track.md)**——扩 `VideoTrackGeometry.type`（判别字段是 `type` 非 `kind`；当前只 `video_track_bbox`），按周长/长度参数化插值（现插值 bbox-only）；polygon track 先行（复用图片 polygon schema + SAM2 已算 mask），真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建，非「已有待接」）单独立项。
 
 
 ---
@@ -29,9 +33,9 @@
 
 > 优先级表（§ 末尾）按价值/成本排序；本节按**触发条件**重组，一眼看清"现在能做什么 / 等什么再做"。
 
-### 现在可做（无前置依赖，作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线）
+### 现在可做（无前置依赖，纯前端随手优化，可作为 `chip:maintenance` 穿插推进）
 
-- 当前无与 `WorkbenchShell` 行数直接绑定的 maintenance 条目：v0.10.39 已收口 `WorkbenchStageHostProps` 嵌套重构与 `useWorkbenchShellModel` 装配 hook，后续 open 项回到优先级表的测试补强与业务驱动功能项。
+- **前端随手优化批** → **[v0.21.17 计划](../docs/plans/2026-07-05-v0.21.17-frontend-preference-dedup.md)**：交互工具 preference 重复拉取去重（Workbench 首屏 3 处相同 GET 收敛到共享 react-query）+（可选尾项）PipelineGraphCanvas 无条件 `setNodes` 引用稳定化。均非 bug。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile）：极大图 > 50MP 才必要，等真有此规模图片触发再做。
@@ -134,12 +138,11 @@
 
 ### C.1 渲染性能 / 大图大量框
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
-- **交互工具 preference 重复拉取去重**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.2）：`useInteractiveBackendPref` / `useAiToolModelPref` / `useAiToolParamPrefs` 三个 hook 各自 mount 时各发一次 `authApi.getPreferences()` → 每次进工作台 3 次相同 GET（均在 `useWorkbenchShellModel` 挂载）。非正确性问题（服务端按子键 deep-merge，写不互相覆盖，已验证）。改为共享一个 react-query `["me","preferences"]` query，writer 走 `setQueryData`/invalidate。触发：随手优化，或进工作台网络瀑布观察到冗余请求。
-- **PipelineGraphCanvas 节点态每 tick 重置**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.6）：`apps/web/src/pages/AIPreAnnotate/components/PipelineGraphCanvas.tsx` 的 `useEffect(() => setNodes(flow.nodes), [flow.nodes])` 中 `flow` 依赖频繁重建的 `models`，每次子卡回报 payload 都整体 `setNodes`，丢弃 react-flow 已测量尺寸再重测（`fitView` 已用 `nodeCount` 限流不会跳视口，故仅轻微重测量/闪烁）。让 `graphNodes` 在 payload 浅相等时保持引用稳定。触发：编排画布闪烁反馈或随手优化。
+- **交互工具 preference 重复拉取去重**（**P3**，纯前端，非 bug）→ **已细化为 [v0.21.17 计划](../docs/plans/2026-07-05-v0.21.17-frontend-preference-dedup.md)**：Workbench 首屏实际 3 处并发相同 `getPreferences()` GET（`useInteractiveBackendPref` + `useAiToolModelPref` + `useSecondaryParamPrefs`；`useAiToolParamPrefs` 在 AIPreAnnotate 页）。收敛到共享 react-query `["me","preferences",userId]`。
+- **PipelineGraphCanvas 节点态每 tick 重置**：原「每 tick 重置/跳视口/闪烁」命题**已被前序优化修复**（`fitView` 改依赖 `topoFingerprint` 只在拓扑变时触发、measured 尺寸按 id 保留）。仅剩「运行态轮询每 1.5s 无条件 `setNodes` 一次无谓 re-render」微优化——低收益、回归面广（DAG 交互 + 运行进度实时性），列为 v0.21.17 可选尾项，非必做。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
-- **父子标注画布同胞高亮 / Alt 拖动联动**（**P3**，纯前端；v0.20.9 首版显式延后）：v0.20.9 已落父子标注的**侧栏缩进呈现** + 后端一层约束 + 级联删；画布上「选中父框 → 其子框描边高亮」与「拖父框子框跟随」当时评估为**跨组件横切**故延后。v0.20.11–13 二次推理让子框在画布批量出现，价值变实。**已细化为 plan（待实现）**：`docs/plans/archive/2026-07-01-v0.20.14-parent-child-canvas-sibling-highlight.md`（复用即将退役的 group outline 视觉槽）、`docs/plans/archive/2026-07-01-v0.20.15-parent-child-alt-drag-linkage.md`（Alt 拖父联动子，注意 Alt 键与折线/关键点交互的冲突）。
 
 ### C.5 / C.6 视频工作台前端 + 后端剩余 → 已抽离
 
