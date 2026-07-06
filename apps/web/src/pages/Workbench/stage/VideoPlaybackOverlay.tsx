@@ -274,16 +274,22 @@ export function VideoPlaybackOverlay({
   // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
   const gridTicks = useMemo(() => {
     if (samplingStep <= 1 || maxFrame <= 0) return [];
-    const total = Math.floor(maxFrame / samplingStep) + 1;
-    const stride = total > 200 ? Math.ceil(total / 200) : 1;
+    // v0.21.15 WS3 · 按可见窗口重算 + 抽稀: 只渲染窗口内采样帧, 抽稀基于可见帧数 (放大后同一像素带
+    // 内网格才不过密)。全窗口 [0,maxFrame] 时 firstI=0、lastI=floor(maxFrame/step), 与旧结果一致。
+    const from = Math.max(0, Math.floor(timelineWindow.from));
+    const to = Math.min(maxFrame, Math.ceil(timelineWindow.to));
+    const firstI = Math.ceil(from / samplingStep);
+    const lastI = Math.floor(to / samplingStep);
+    const visibleCount = Math.max(0, lastI - firstI + 1);
+    const stride = visibleCount > 200 ? Math.ceil(visibleCount / 200) : 1;
     const ticks: number[] = [];
-    for (let i = 0; i < total; i += stride) {
-      const frame = Math.min(maxFrame, i * samplingStep);
+    for (let i = firstI; i <= lastI; i += stride) {
+      const frame = i * samplingStep;
       if (frame <= 0 || frame >= maxFrame) continue;
       ticks.push(frame);
     }
     return ticks;
-  }, [maxFrame, samplingStep]);
+  }, [maxFrame, samplingStep, timelineWindow]);
   const currentFrameOffGrid = !isPlaying && samplingStep > 1 && frameIndex % samplingStep !== 0;
   const isZoomed = !isFullWindow(timelineWindow, maxFrame);
   const resetTimelineWindow = () => setTimelineWindow({ from: 0, to: maxFrame });
@@ -351,8 +357,29 @@ export function VideoPlaybackOverlay({
     onHoverFrameChange?.(nextFrame);
   };
   const rangeStyle = (from: number, to: number): CSSVars => {
-    const left = frameToPct(from, timelineWindow);
-    const right = frameToPct(to, timelineWindow);
+    const rawLeft = frameToPct(from, timelineWindow);
+    const rawRight = frameToPct(to, timelineWindow);
+    // v0.21.15 WS3 · 完全落在窗口外 → 宽度 0 (不显示); 否则 clamp 到 [0,100] 裁掉窗口外部分。
+    // 全窗口态 from/to 本就在 [0,100] 内, clamp 为空操作 → 零回归 (loop/传播/草稿/章节/轨迹段共用)。
+    if (rawRight <= 0 || rawLeft >= 100) {
+      return { "--timeline-left": "0%", "--timeline-width": "0%" };
+    }
+    const left = Math.max(0, rawLeft);
+    const right = Math.min(100, rawRight);
+    return {
+      "--timeline-left": `${left}%`,
+      "--timeline-width": `${Math.max(0.5, right - left)}%`,
+    };
+  };
+  // v0.21.15 WS3 · 点位标记是否落在可见窗口内 (无 overflow 裁剪, 窗口外书签/issue/关键帧/离网格标记须跳过)。
+  const frameInWindow = (frame: number) => frame >= timelineWindow.from && frame <= timelineWindow.to;
+  // v0.21.15 WS3 · 密度 bin 按其帧区间 [from, to] 经窗口映射 (替代 index/binCount 等宽), 完全窗口外返回 null。
+  const binWindowStyle = (from: number, to: number): CSSVars | null => {
+    const rawLeft = frameToPct(from, timelineWindow);
+    const rawRight = frameToPct(to + 1, timelineWindow);
+    if (rawRight <= 0 || rawLeft >= 100) return null;
+    const left = Math.max(0, rawLeft);
+    const right = Math.min(100, rawRight);
     return {
       "--timeline-left": `${left}%`,
       "--timeline-width": `${Math.max(0.5, right - left)}%`,
@@ -588,10 +615,12 @@ export function VideoPlaybackOverlay({
           aria-label="视频帧时间轴"
           type="range"
           min={0}
-          max={maxFrame}
+          // v0.21.15 WS3 · range 映射到可见窗口 (0..10000 = 窗口 0..100%*100), 原生 accent 进度填充随缩放
+          // 正确落点。全窗口时 value=frameIndex/maxFrame*10000, 与旧 value/max 比例一致 → 零回归。
+          max={10000}
           tabIndex={-1}
-          value={frameIndex}
-          onChange={(e) => onSeek(Number(e.currentTarget.value))}
+          value={Math.round(frameToPct(frameIndex, timelineWindow) * 100)}
+          onChange={(e) => onSeek(pctToFrame(Number(e.currentTarget.value) / 10000, timelineWindow))}
           onFocus={(e) => focusTimelineShell(e.currentTarget)}
           onKeyDown={(e) => {
             stepTimelineByKey(e, e.currentTarget);
@@ -619,7 +648,7 @@ export function VideoPlaybackOverlay({
               ))}
             </div>
           )}
-          {currentFrameOffGrid && (
+          {currentFrameOffGrid && frameInWindow(frameIndex) && (
             <TimelineSpan
               data-testid="video-timeline-offgrid-marker"
               className={styles.offGridMarker}
@@ -661,13 +690,12 @@ export function VideoPlaybackOverlay({
                   chapterResizePreview?.id === chapter.id ? chapterResizePreview : null;
                 const startFrame = preview ? preview.startFrame : chapter.startFrame;
                 const endFrame = preview ? preview.endFrame : chapter.endFrame;
-                const span = Math.max(0, endFrame - startFrame);
-                const widthPct = maxFrame > 0 ? ((span + 1) / (maxFrame + 1)) * 100 : 100;
-                const leftPct = maxFrame > 0 ? (startFrame / maxFrame) * 100 : 0;
-                const rightPct = maxFrame > 0 ? (endFrame / maxFrame) * 100 : 100;
+                // v0.21.15 WS3 · 章节条改走 rangeStyle (窗口映射 + 裁剪), 顺带修正既有 left/width 分母
+                // 不一致 (旧 left 用 /maxFrame、width 用 /(maxFrame+1))。把手按窗口定位, 窗口外则不渲染。
+                const leftPct = frameToPct(startFrame, timelineWindow);
+                const rightPct = frameToPct(endFrame, timelineWindow);
                 const chapterStyle: CSSVars = {
-                  "--timeline-left": `${leftPct}%`,
-                  "--timeline-width": `${Math.max(0.5, widthPct)}%`,
+                  ...rangeStyle(startFrame, endFrame),
                   "--chapter-color": chapter.color ?? "oklch(0.62 0.18 252)",
                 };
                 const resizable = Boolean(onChapterResize) && isInteractive;
@@ -694,26 +722,30 @@ export function VideoPlaybackOverlay({
                     />
                     {resizable && (
                       <>
-                        <TimelineSpan
-                          data-testid="video-chapter-resize-start"
-                          data-chapter-resize="start"
-                          className={styles.chapterResizeHandle}
-                          vars={{ "--timeline-left": `${leftPct}%` }}
-                          onPointerDown={(e) => beginChapterResize(e, chapter, "start")}
-                          onPointerMove={moveChapterResize}
-                          onPointerUp={endChapterResize}
-                          onPointerCancel={endChapterResize}
-                        />
-                        <TimelineSpan
-                          data-testid="video-chapter-resize-end"
-                          data-chapter-resize="end"
-                          className={styles.chapterResizeHandle}
-                          vars={{ "--timeline-left": `${rightPct}%` }}
-                          onPointerDown={(e) => beginChapterResize(e, chapter, "end")}
-                          onPointerMove={moveChapterResize}
-                          onPointerUp={endChapterResize}
-                          onPointerCancel={endChapterResize}
-                        />
+                        {frameInWindow(startFrame) && (
+                          <TimelineSpan
+                            data-testid="video-chapter-resize-start"
+                            data-chapter-resize="start"
+                            className={styles.chapterResizeHandle}
+                            vars={{ "--timeline-left": `${leftPct}%` }}
+                            onPointerDown={(e) => beginChapterResize(e, chapter, "start")}
+                            onPointerMove={moveChapterResize}
+                            onPointerUp={endChapterResize}
+                            onPointerCancel={endChapterResize}
+                          />
+                        )}
+                        {frameInWindow(endFrame) && (
+                          <TimelineSpan
+                            data-testid="video-chapter-resize-end"
+                            data-chapter-resize="end"
+                            className={styles.chapterResizeHandle}
+                            vars={{ "--timeline-left": `${rightPct}%` }}
+                            onPointerDown={(e) => beginChapterResize(e, chapter, "end")}
+                            onPointerMove={moveChapterResize}
+                            onPointerUp={endChapterResize}
+                            onPointerCancel={endChapterResize}
+                          />
+                        )}
                       </>
                     )}
                   </div>
@@ -721,7 +753,7 @@ export function VideoPlaybackOverlay({
               })}
             </div>
           )}
-          {bookmarks.map((bookmark) => (
+          {bookmarks.filter((bookmark) => frameInWindow(bookmark.frameIndex)).map((bookmark) => (
             <TimelineButton
               key={bookmark.id}
               type="button"
@@ -736,7 +768,7 @@ export function VideoPlaybackOverlay({
               vars={{ "--timeline-left": frameLeft(bookmark.frameIndex) }}
             />
           ))}
-          {issueFrames.map((frame) => (
+          {issueFrames.filter((frame) => frameInWindow(frame)).map((frame) => (
             <TimelineButton
               key={`issue-${frame}`}
               type="button"
@@ -755,13 +787,12 @@ export function VideoPlaybackOverlay({
             <div data-testid="video-timeline-density" className={styles.densityTrack}>
               {globalTimelineDensity.map((bin) => {
                 if (bin.density <= 0) return null;
-                // 等宽分桶: 每个 bin 占 1/binCount 的等宽切片, 不按帧数比例算宽度
-                // —— 否则首末桶因 floor 取整只覆盖 1 帧而显著偏窄, 且与网格刻度 (frameLeft) 的
-                //    坐标系不一致 (此前 left 用 /maxFrame、width 用 /(maxFrame+1))。
-                const binCount = globalTimelineDensity.length;
+                // v0.21.15 WS3 · 按 bin 帧区间 [from, to] 经窗口映射 (替代 index/binCount 等宽), 与网格/
+                // 关键帧点回到同一坐标基准; 完全落在可见窗口外的 bin 跳过。
+                const pos = binWindowStyle(bin.from, bin.to);
+                if (!pos) return null;
                 const binStyle: CSSVars = {
-                  "--timeline-left": `${(bin.index / binCount) * 100}%`,
-                  "--timeline-width": `${(1 / binCount) * 100}%`,
+                  ...pos,
                   "--density-height": `${Math.max(2, (bin.density / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
                   "--density-gradient": densityBinGradient(bin, trackColorOverrides),
                 };
@@ -780,10 +811,11 @@ export function VideoPlaybackOverlay({
             <div data-testid="video-timeline-prediction-density" className={styles.predictionTrack}>
               {predictionDensity.map((bin) => {
                 if (bin.count <= 0) return null;
-                const binCount = predictionDensity.length;
+                // v0.21.15 WS3 · 同人工密度: 按 bin 帧区间经窗口映射, 与之逐桶对齐; 窗口外 bin 跳过。
+                const pos = binWindowStyle(bin.from, bin.to);
+                if (!pos) return null;
                 const binStyle: CSSVars = {
-                  "--timeline-left": `${(bin.index / binCount) * 100}%`,
-                  "--timeline-width": `${(1 / binCount) * 100}%`,
+                  ...pos,
                   "--density-height": `${Math.max(2, (bin.count / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
                 };
                 return (
@@ -818,7 +850,7 @@ export function VideoPlaybackOverlay({
                   vars={rangeStyle(segment.from, segment.to)}
                 />
               ))}
-              {selectedTrackTimeline.keyframes.map((keyframe) => (
+              {selectedTrackTimeline.keyframes.filter((keyframe) => frameInWindow(keyframe.frame)).map((keyframe) => (
                 <TimelineSpan
                   key={`track-keyframe-${keyframe.frame}`}
                   data-testid="video-timeline-track-keyframe"
