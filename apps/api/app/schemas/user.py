@@ -188,6 +188,9 @@ class WorkbenchCommonPreferences(BaseModel):
     # v0.21.11 · 选中自动聚焦：键盘循环 / 点选对象时若出视口或过小则自动平移居中 + 适度放大。
     # 视频 + 图片 2D 工作台通用；默认关（不改选中前不移动视口的现状）。
     focusSelectionEnabled: bool = False
+    # v0.21.11 · 采纳/拒绝 AI 候选后自动前进到下一个待决（仅移动选中，不缩放视口）。
+    # 视频 + 图片 2D 通用；默认开（审阅流水线手感）。历史偏好缺该字段时默认开启。
+    autoAdvanceOnDecide: bool = True
 
     @field_validator("labelContent", mode="before")
     @classmethod

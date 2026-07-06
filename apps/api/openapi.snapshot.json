@@ -19897,6 +19897,11 @@
         "additionalProperties": false,
         "description": "v0.15.3 · 跨模态通用偏好（性能观测等）。",
         "properties": {
+          "autoAdvanceOnDecide": {
+            "default": true,
+            "title": "Autoadvanceondecide",
+            "type": "boolean"
+          },
           "confirmDelete": {
             "default": "never",
             "enum": [

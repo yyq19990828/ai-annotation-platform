@@ -47,6 +47,11 @@ export interface WorkbenchCommonPreferences {
    * 视频 + 图片 2D 工作台共享。默认关(不改选中前不移动视口的现状)。
    */
   focusSelectionEnabled: boolean;
+  /**
+   * v0.21.11 · 审阅流水线:采纳/拒绝(A/D)AI 候选后, 自动把选中推进到下一个待决 AI(仅移动选中,
+   * 不缩放视口;视口聚焦另由 focusSelectionEnabled 控制)。视频 + 图片 2D 共享。默认开(流水线手感)。
+   */
+  autoAdvanceOnDecide: boolean;
 }
 
 /** v0.16.7 · 标签字段 token 全集;class 三段恒显,不入表。 */
@@ -284,6 +289,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     fillOpacitySelected: 0.12,
     petEnabled: true,
     focusSelectionEnabled: false,
+    autoAdvanceOnDecide: true,
   },
   image: {
     smoothImage: true,

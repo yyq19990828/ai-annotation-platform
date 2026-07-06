@@ -82,6 +82,8 @@ export interface UseWorkbenchHotkeysArgs {
 
   // ai
   aiBoxes: AiBox[];
+  /** v0.21.11 · 采纳/拒绝后自动推进选中到下一个待决 AI(common.autoAdvanceOnDecide, 默认开)。 */
+  autoAdvanceOnDecide?: boolean;
 
   // ui state setters
   setShowHotkeys: React.Dispatch<React.SetStateAction<boolean>>;
@@ -144,7 +146,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
-    aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
+    aiBoxes, autoAdvanceOnDecide = true, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported,
@@ -647,19 +649,25 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
 
         case "submit": handleSubmitTask(); return;
 
+        // v0.21.11 · 采纳/拒绝后, 若开启自动前进则把选中推进到下一个待决 AI(移除当前后落到后一个,
+        // 没有则前一个, 都没有=审完置空)。决策前按当前 aiBoxes 顺序算好, 避免异步刷新后列表已变。
+        // 关闭时保持现状: 采纳后不动选中(指向的框随即消失=去选), 拒绝后置空。
         case "acceptAi": {
           if (!s.selectedId) return;
-          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) handleAcceptPrediction(aiBox);
+          const idx = aiBoxes.findIndex((b) => b.id === s.selectedId);
+          if (idx < 0) return;
+          const nextId = aiBoxes[idx + 1]?.id ?? aiBoxes[idx - 1]?.id ?? null;
+          handleAcceptPrediction(aiBoxes[idx]);
+          if (autoAdvanceOnDecide) s.setSelectedId(nextId);
           return;
         }
         case "rejectAi": {
           if (!s.selectedId) return;
-          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) {
-            handleRejectPrediction?.(aiBox);
-            s.setSelectedId(null);
-          }
+          const idx = aiBoxes.findIndex((b) => b.id === s.selectedId);
+          if (idx < 0) return;
+          const nextId = aiBoxes[idx + 1]?.id ?? aiBoxes[idx - 1]?.id ?? null;
+          handleRejectPrediction?.(aiBoxes[idx]);
+          s.setSelectedId(autoAdvanceOnDecide ? nextId : null);
           return;
         }
       }
@@ -695,7 +703,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     isPromptSupported,
-    aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
+    aiBoxes, autoAdvanceOnDecide, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
     flushNudges,
   ]);
 

@@ -155,6 +155,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
+    key: "common.autoAdvanceOnDecide",
+    category: "common",
+    label: "决策后自动前进",
+    description: "采纳 / 拒绝(A / D)AI 候选后,自动把选中推进到下一个待决对象,连续审阅无需重新点选(仅移动选中,不缩放;视口聚焦由上一项控制)。视频 + 图片工作台通用",
+    control: { type: "toggle", onText: "已开启", offText: "已关闭" },
+  },
+  {
     key: "common.crossFrameOverlayEnabled",
     category: "common",
     label: "邻帧框叠加",
