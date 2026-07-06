@@ -28,6 +28,13 @@ interface VideoChapterSidebarProps {
   timebase?: FrameTimebase;
   canEdit: boolean;
   onSeekFrame?: (frameIndex: number) => void;
+  /** v0.21.13 · 时间轴「圈选建章节」臂选态 (由 shell 管理, 圈一段后自动解除)。 */
+  timelineDraftArmed?: boolean;
+  onToggleTimelineDraft?: () => void;
+  /** v0.21.13 · 时间轴刷选产物 (start/end 帧); 一变化即打开新建表单并预填范围。 */
+  draftRange?: { startFrame: number; endFrame: number } | null;
+  /** 消费完 draftRange 后通知 shell 清空, 使同一区间可再次触发。 */
+  onConsumeDraftRange?: () => void;
 }
 
 function formatChapterDuration(start: number, end: number, timebase?: FrameTimebase) {
@@ -88,6 +95,10 @@ export function VideoChapterSidebar({
   timebase,
   canEdit,
   onSeekFrame,
+  timelineDraftArmed = false,
+  onToggleTimelineDraft,
+  draftRange = null,
+  onConsumeDraftRange,
 }: VideoChapterSidebarProps) {
   const { data: chapters = [], isLoading } = useVideoChapters(datasetItemId);
   const createMutation = useCreateVideoChapter(datasetItemId);
@@ -100,6 +111,23 @@ export function VideoChapterSidebar({
   useEffect(() => {
     setError(null);
   }, [editing?.chapterId]);
+
+  // v0.21.13 · 时间轴刷选产物到达 → 打开新建表单并预填起止帧 (只剩填标题 / 选色), 随即通知 shell 清空。
+  useEffect(() => {
+    if (!draftRange) return;
+    const start = Math.max(0, Math.min(draftRange.startFrame, draftRange.endFrame));
+    const end = Math.min(maxFrame, Math.max(draftRange.startFrame, draftRange.endFrame));
+    setEditing({
+      chapterId: null,
+      title: "",
+      startFrame: start,
+      endFrame: end,
+      color: defaultChapterColor(chapters.length),
+    });
+    onConsumeDraftRange?.();
+    // 仅在 draftRange 变化时触发; 消费后 shell 会把它清空, guard 提前返回避免重入。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRange]);
 
   const sortedChapters = useMemo(
     () => [...chapters].sort((a, b) => a.start_frame - b.start_frame),
@@ -189,17 +217,42 @@ export function VideoChapterSidebar({
           </span>
         </div>
         {canEdit && (
-          <Button
-            size="sm"
-            className="!py-1 !px-2 !rounded-lg"
-            disabled={Boolean(editing)}
-            onClick={startCreate}
-            title="新建章节"
-          >
-            <Icon name="plus" size={13} />新建
-          </Button>
+          <div className="flex items-center gap-1">
+            {onToggleTimelineDraft && (
+              <Button
+                size="sm"
+                variant={timelineDraftArmed ? "primary" : "ghost"}
+                className="!py-1 !px-2 !rounded-lg"
+                disabled={Boolean(editing)}
+                onClick={onToggleTimelineDraft}
+                title={timelineDraftArmed ? "取消时间轴圈选" : "在时间轴上拖选章节范围"}
+                aria-pressed={timelineDraftArmed}
+              >
+                <Icon name="scan" size={13} />圈选
+              </Button>
+            )}
+            <Button
+              size="sm"
+              className="!py-1 !px-2 !rounded-lg"
+              disabled={Boolean(editing)}
+              onClick={startCreate}
+              title="新建章节"
+            >
+              <Icon name="plus" size={13} />新建
+            </Button>
+          </div>
         )}
       </div>
+
+      {timelineDraftArmed && !editing && (
+        <div
+          data-testid="video-chapter-draft-hint"
+          className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg bg-brand/10 text-brand text-xs"
+        >
+          <Icon name="scan" size={12} />
+          在时间轴上按住拖动圈选章节范围…
+        </div>
+      )}
 
       {isLoading && sortedChapters.length === 0 && (
         <div className="text-muted-foreground text-xs">载入中…</div>

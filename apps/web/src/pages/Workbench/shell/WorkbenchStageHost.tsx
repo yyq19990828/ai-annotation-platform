@@ -24,7 +24,7 @@ import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/videoStageControls";
-import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
+import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
@@ -94,6 +94,8 @@ interface WorkbenchStageHostVideoProps {
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
   videoChapters?: VideoTimelineChapter[];
+  /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
+  videoTimelineChapterControls?: VideoTimelineChapterControls;
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
@@ -289,6 +291,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoManifestLoading,
       videoManifestError,
       videoChapters,
+      videoTimelineChapterControls,
       videoSampling,
       videoTool,
       videoModes,
@@ -441,6 +444,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onSpacePanDragStart={onVideoSpacePanDragStart}
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
+            timelineChapterControls={videoTimelineChapterControls}
             videoSampling={videoSampling}
             performanceTier={workbenchCommon.performanceTier}
             onSelect={onSelectBox}

@@ -18,7 +18,12 @@ import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
-import { VideoPlaybackOverlay, type VideoLargeFrameStep, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
+import {
+  VideoPlaybackOverlay,
+  type VideoLargeFrameStep,
+  type VideoTimelineChapter,
+  type VideoTimelineChapterControls,
+} from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
@@ -106,6 +111,8 @@ interface VideoKonvaStageProps {
   onToggleLockedTrack?: (trackId: string) => void;
   /** 时间轴章节(从工作台 shell 透传)。 */
   chapters?: VideoTimelineChapter[];
+  /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
+  timelineChapterControls?: VideoTimelineChapterControls;
   /** 采样配置(帧网格步进策略)。 */
   videoSampling?: VideoSamplingConfig | null;
   /** 默认播放速率。 */
@@ -171,6 +178,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onToggleHiddenTrack,
   onToggleLockedTrack,
   chapters = [],
+  timelineChapterControls,
   videoSampling = null,
   defaultPlaybackRate,
   largeFrameStep = 10,
@@ -896,6 +904,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         onSeekPredicted={hasPredictedFrames ? seekToAdjacentPredictedFrame : undefined}
         trackColorOverrides={trackColorOverrides}
         loopRegion={loopRegion}
+        rangeSelectPurpose={timelineChapterControls?.rangeSelectPurpose ?? "loop"}
         bookmarks={bookmarks}
         chapters={chapters}
         issueFrames={issueFrames}
@@ -915,6 +924,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         onClearLoopRegion={clearLoopRegion}
         onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
         onSeekChapter={(_, frame) => seekToFrame(frame, { recordHistory: true })}
+        onRangeSelect={timelineChapterControls?.onRangeSelect}
+        hoveredChapterId={timelineChapterControls?.hoveredChapterId ?? null}
+        onHoverChapter={timelineChapterControls?.onHoverChapter}
+        onChapterResize={timelineChapterControls?.onResizeChapter}
         onHoverFrameChange={previewFrame}
       />
       <ContextMenu

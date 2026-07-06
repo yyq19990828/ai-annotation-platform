@@ -68,6 +68,8 @@ import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/videoStageControls";
 import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
+import type { TimelineRangePurpose, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
+import type { VideoLoopRegion } from "../stage/videoNavigationState";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
@@ -438,6 +440,26 @@ export function useWorkbenchShellModel({
       })),
     [videoChaptersData],
   );
+  // v0.21.13 · 章节 × 时间轴刷选联动。chapterDraftArmed: 侧栏「时间轴圈选」臂选态; 臂选时
+  // 时间轴普通拖即圈选 chapter-draft。chapterDraft: 刷选产物 (松手后一次性喂给侧栏预填表单)。
+  const [chapterDraftArmed, setChapterDraftArmed] = useState(false);
+  const [chapterDraft, setChapterDraft] = useState<{ startFrame: number; endFrame: number } | null>(null);
+  const handleTimelineRangeSelect = useCallback(
+    (purpose: TimelineRangePurpose, region: VideoLoopRegion) => {
+      if (purpose === "chapter-draft") {
+        setChapterDraft({ startFrame: region.startFrame, endFrame: region.endFrame });
+        setChapterDraftArmed(false);
+      }
+    },
+    [],
+  );
+  const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
+    if (!isVideoTask) return undefined;
+    return {
+      rangeSelectPurpose: chapterDraftArmed ? "chapter-draft" : "loop",
+      onRangeSelect: handleTimelineRangeSelect,
+    };
+  }, [isVideoTask, chapterDraftArmed, handleTimelineRangeSelect]);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
@@ -2408,6 +2430,7 @@ export function useWorkbenchShellModel({
         videoManifestLoading: videoManifest.isLoading,
         videoFrameTimetable: videoFrameTimetable.data,
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
+        videoTimelineChapterControls,
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
@@ -2588,6 +2611,10 @@ export function useWorkbenchShellModel({
             timebase={videoChapterTimebase}
             canEdit={!isLocked && isOwner}
             onSeekFrame={s.setVideoFrameIndex}
+            timelineDraftArmed={chapterDraftArmed}
+            onToggleTimelineDraft={() => setChapterDraftArmed((v) => !v)}
+            draftRange={chapterDraft}
+            onConsumeDraftRange={() => setChapterDraft(null)}
           />
         </div>
       )) : undefined,

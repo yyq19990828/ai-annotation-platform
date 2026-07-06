@@ -42,6 +42,19 @@ interface TimelineRangeDraft {
   purpose: TimelineRangePurpose;
 }
 
+/**
+ * v0.21.13 · 章节 × 时间轴联动的一组控制器, 从 shell 经 StageHost / VideoWorkbench 透传到本组件。
+ * 分批填充: WS2 刷选建章节 (rangeSelectPurpose + onRangeSelect); WS3 章节条 resize (onResizeChapter);
+ * WS4 双向 hover (hoveredChapterId + onHoverChapter)。非视频任务不传。
+ */
+export interface VideoTimelineChapterControls {
+  rangeSelectPurpose: TimelineRangePurpose;
+  onRangeSelect: (purpose: TimelineRangePurpose, region: VideoLoopRegion) => void;
+  hoveredChapterId?: string | null;
+  onHoverChapter?: (chapterId: string | null) => void;
+  onResizeChapter?: (chapterId: string, region: VideoLoopRegion) => void;
+}
+
 const RANGE_DRAFT_TESTID: Record<TimelineRangePurpose, string> = {
   loop: "video-loop-region-preview",
   "chapter-draft": "video-timeline-chapter-draft",
@@ -90,6 +103,11 @@ interface VideoPlaybackOverlayProps {
   onSeekChapter?: (chapterId: string, frameIndex: number) => void;
   /** v0.21.13 · 非 loop 用途的区间刷选提交 (松手时按 rangeSelectPurpose 分派)。 */
   onRangeSelect?: (purpose: TimelineRangePurpose, region: VideoLoopRegion) => void;
+  /** v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动。 */
+  hoveredChapterId?: string | null;
+  onHoverChapter?: (chapterId: string | null) => void;
+  /** v0.21.13 WS3 · 章节色条边界 resize 提交 (拖动松手, debounce PATCH 在 shell)。 */
+  onChapterResize?: (chapterId: string, region: VideoLoopRegion) => void;
 }
 
 function formatTime(seconds: number) {
@@ -370,7 +388,10 @@ export function VideoPlaybackOverlay({
           focusTimelineShell(e.currentTarget);
           const brushEnabled =
             rangeSelectPurpose === "loop" ? Boolean(onLoopRegionChange) : Boolean(onRangeSelect);
-          if (!e.shiftKey || !brushEnabled) {
+          // loop 用途保持 Shift+拖 (原行为); 已臂选的非 loop 用途 (chapter-draft/propagate-range)
+          // 进入专用圈选态, 普通拖即圈选, 无需再按 Shift。
+          const wantsBrush = brushEnabled && (rangeSelectPurpose !== "loop" || e.shiftKey);
+          if (!wantsBrush) {
             seekDragRef.current = true;
             onSeek(frame);
             e.currentTarget.setPointerCapture?.(e.pointerId);

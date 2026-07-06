@@ -69,3 +69,41 @@ describe("VideoChapterSidebar frame_step / source display", () => {
     expect(queryByText(/步长/)).toBeNull();
   });
 });
+
+describe("VideoChapterSidebar timeline draft (v0.21.13 WS2)", () => {
+  it("shows the arming hint when timeline draft is armed", () => {
+    chaptersRef.current = [];
+    const { getByTestId } = render(
+      <VideoChapterSidebar
+        datasetItemId="item-1"
+        frameIndex={0}
+        maxFrame={100}
+        canEdit
+        timelineDraftArmed
+        onToggleTimelineDraft={() => {}}
+      />,
+    );
+    expect(getByTestId("video-chapter-draft-hint")).toBeInTheDocument();
+  });
+
+  it("opens the create form prefilled from a timeline brush and consumes the draft once", () => {
+    chaptersRef.current = [];
+    const onConsumeDraftRange = vi.fn();
+    const { getByTestId, getByDisplayValue } = render(
+      <VideoChapterSidebar
+        datasetItemId="item-1"
+        frameIndex={0}
+        maxFrame={100}
+        canEdit
+        draftRange={{ startFrame: 12, endFrame: 34 }}
+        onConsumeDraftRange={onConsumeDraftRange}
+      />,
+    );
+    // 表单打开并预填 start/end (数字输入框以 value 呈现)。
+    expect(getByTestId("video-chapter-form")).toBeInTheDocument();
+    expect(getByDisplayValue("12")).toBeInTheDocument();
+    expect(getByDisplayValue("34")).toBeInTheDocument();
+    // 消费一次, 通知 shell 清空 draftRange。
+    expect(onConsumeDraftRange).toHaveBeenCalledTimes(1);
+  });
+});

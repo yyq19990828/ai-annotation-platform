@@ -12,7 +12,7 @@ import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
 import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
-import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
+import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
@@ -46,6 +46,7 @@ export interface VideoWorkbenchProps {
   onSpacePanDragStart?: () => void;
   pendingDrawing: PendingDrawing;
   chapters?: VideoTimelineChapter[];
+  timelineChapterControls?: VideoTimelineChapterControls;
   videoSampling?: VideoSamplingConfig | null;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
@@ -98,6 +99,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onSpacePanDragStart,
     pendingDrawing,
     chapters,
+    timelineChapterControls,
     videoSampling,
     performanceTier,
     onSelect,
@@ -174,6 +176,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onToggleHiddenTrack={onToggleHiddenTrack}
         onToggleLockedTrack={onToggleLockedTrack}
         chapters={chapters}
+        timelineChapterControls={timelineChapterControls}
         videoSampling={videoSampling}
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
         largeFrameStep={workbenchVideo.largeFrameStep}
