@@ -56,6 +56,9 @@ export default function GlobalPipelineLibraryPage() {
   const createProjectPipeline = useCreateProjectPipeline();
   const capabilityInstancesQ = useCapabilityInstances();
   const [pipelineName, setPipelineName] = useState("");
+  // 当前加载进画布的命名编排 id: 用作源 Inspector 的 key, 切换编排时强制 remount 重新回填。
+  // 否则源 Inspector 内部 modelKey 已被上一条编排设过、reverse-sync 短路 → 以新名存旧配置。
+  const [loadedPipelineId, setLoadedPipelineId] = useState<string | null>(null);
   const [pipelineScope, setPipelineScope] = useState<Extract<ProjectPipelineScope, "public" | "organization">>("public");
 
   // 全局池: 所有 backend × 所有 model 展平 (backend state=error 保留展示但禁用).
@@ -363,6 +366,7 @@ export default function GlobalPipelineLibraryPage() {
   const loadFromPipeline = useCallback(
     (p: ProjectPipeline) => {
       resetComposer();
+      setLoadedPipelineId(p.id);
       setPipelineName(p.name);
       if (p.scope === "public" || p.scope === "organization") {
         setPipelineScope(p.scope);
@@ -563,6 +567,7 @@ export default function GlobalPipelineLibraryPage() {
             </div>
             {/* 源模型 stage (SOURCE_SID, 后端 stage 0): 选中时显示; 池按数据源声明过滤。 */}
             <GlobalStageInspector
+              key={loadedPipelineId ?? "source-new"}
               kind="source"
               stageIndex={0}
               pool={sourcePool}

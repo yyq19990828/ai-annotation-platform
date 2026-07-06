@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text, or_, and_
+from sqlalchemy import select, func, text, or_, and_, update
 from app.deps import (
     get_db,
     get_current_user,
@@ -750,7 +750,12 @@ async def apply_project_pipeline(
         is_default=False,
         created_by=current_user.id,
     )
-    pipeline.usage_count = (pipeline.usage_count or 0) + 1
+    # 原子自增, 避免并发套用同一源编排时的 read-modify-write 丢更新。
+    await db.execute(
+        update(ProjectPipeline)
+        .where(ProjectPipeline.id == pipeline.id)
+        .values(usage_count=func.coalesce(ProjectPipeline.usage_count, 0) + 1)
+    )
     if body.set_default:
         await switch_project_default_pipeline(db, project.id)
         new_pipeline.is_default = True
@@ -1768,12 +1773,16 @@ async def trigger_preannotation(
     has_tracker_stage = body.task_type == "tracker" or any(
         (s or {}).get("task_type") == "tracker" for s in (pipeline_stages_payload or [])
     )
-    # v0.21.7 · 逐帧执行单位: 从源阶段(stage 0)的 source.execution_unit 提取 (norm 丢弃了 source,
-    #   故从原始 body.pipeline_stages 取)。frame → worker 走二级 fan-out 逐帧跑图像 backend。
+    # v0.21.7 · 逐帧执行单位: 从源阶段(parent_stage=None)的 source.execution_unit 提取 (norm 丢弃了
+    #   source, 故从原始 body.pipeline_stages 取)。frame → worker 走二级 fan-out 逐帧跑图像 backend。
     #   execution_unit 是整任务迭代粒度、非 per-stage, 故作 batch_predict 顶层参数。
+    #   源阶段判据须与 _validate_pipeline_stages 一致 (恰一个 parent_stage=None); stage 号是自由整数,
+    #   不保证为 0, 故不能按 s.stage == 0 找源。
     execution_unit: str | None = None
     if body.pipeline_stages:
-        src_stage = next((s for s in body.pipeline_stages if s.stage == 0), None)
+        src_stage = next(
+            (s for s in body.pipeline_stages if s.parent_stage is None), None
+        )
         if src_stage is not None and src_stage.source:
             execution_unit = (src_stage.source or {}).get("execution_unit")
     apply_opts: dict = {"queue": queue}

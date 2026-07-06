@@ -835,14 +835,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     onChange={(e) => setPipelineScope(e.target.value as ProjectPipelineScope)}
                   >
                     <option value="private">项目私有</option>
-                    <option value="organization">组织</option>
-                    <option value="public">公共</option>
                   </select>
-                  {pipelineScope === "organization" && (
-                    <span className={styles.fieldHint}>
-                      组织编排需在创建后通过 PATCH 指定 organization_id（首版未提供 UI 字段）
-                    </span>
-                  )}
+                  {/* 组织 / 公共 scope 需 organization_id / 超管权限, 首版未提供对应 UI 与选项,
+                      故项目内保存只放行 private, 避免选了必定 400/403。跨项目复用走全局 Pipeline 库。 */}
                 </label>
               </div>
 

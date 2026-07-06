@@ -473,25 +473,36 @@ export function useWorkbenchShellModel({
   );
   // v0.21.13 WS3 · 章节条 resize: 松手才落库, 短 debounce 合并快速连续调整, PATCH 只带起止帧。
   const updateChapterMutation = useUpdateVideoChapter(isVideoTask ? videoDatasetItemId : null);
-  const chapterResizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 按 chapterId 分槽维护 debounce timer: 单槽会让「200ms 内连续 resize 不同章节」时,
+  // 前一章节的 PATCH 被后一次 clearTimeout 无声取消 → 落库前被 refetch 回滚、调整丢失。
+  const chapterResizeDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
   const handleResizeChapter = useCallback(
     (chapterId: string, region: VideoLoopRegion) => {
-      if (chapterResizeDebounceRef.current) clearTimeout(chapterResizeDebounceRef.current);
-      chapterResizeDebounceRef.current = setTimeout(() => {
-        updateChapterMutation.mutate({
-          chapterId,
-          payload: { start_frame: region.startFrame, end_frame: region.endFrame },
-        });
-      }, 200);
+      const timers = chapterResizeDebounceRef.current;
+      const existing = timers.get(chapterId);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        chapterId,
+        setTimeout(() => {
+          timers.delete(chapterId);
+          updateChapterMutation.mutate({
+            chapterId,
+            payload: { start_frame: region.startFrame, end_frame: region.endFrame },
+          });
+        }, 200),
+      );
     },
     [updateChapterMutation],
   );
-  useEffect(
-    () => () => {
-      if (chapterResizeDebounceRef.current) clearTimeout(chapterResizeDebounceRef.current);
-    },
-    [],
-  );
+  useEffect(() => {
+    const timers = chapterResizeDebounceRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;

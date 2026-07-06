@@ -31,11 +31,21 @@ from app.services.pipeline_template import (
 router = APIRouter()
 
 
-async def _serialize(db: AsyncSession, pipeline: ProjectPipeline) -> dict:
+async def _serialize(
+    db: AsyncSession,
+    pipeline: ProjectPipeline,
+    creator_name_map: dict[uuid.UUID, str | None] | None = None,
+) -> dict:
     creator_name: str | None = None
     if pipeline.created_by:
-        row = await db.execute(select(User.name).where(User.id == pipeline.created_by))
-        creator_name = row.scalar_one_or_none()
+        if creator_name_map is not None:
+            # 批量场景 (list): 名字已一次性查好, 不再逐条往返 (避免 N+1)。
+            creator_name = creator_name_map.get(pipeline.created_by)
+        else:
+            row = await db.execute(
+                select(User.name).where(User.id == pipeline.created_by)
+            )
+            creator_name = row.scalar_one_or_none()
     data = {c.name: getattr(pipeline, c.name) for c in pipeline.__table__.columns}
     data["created_by_name"] = creator_name
     return data
@@ -85,7 +95,16 @@ async def list_pipelines(
     if organization_id:
         q = q.where(ProjectPipeline.organization_id == organization_id)
     rows = await db.execute(q.order_by(ProjectPipeline.created_at.desc()))
-    return [await _serialize(db, p) for p in rows.scalars().all()]
+    pipelines = rows.scalars().all()
+    # 一次性取全部创建者名字, 消除 _serialize 里的逐条 SELECT (N+1)。
+    creator_ids = {p.created_by for p in pipelines if p.created_by}
+    creator_name_map: dict[uuid.UUID, str | None] = {}
+    if creator_ids:
+        name_rows = await db.execute(
+            select(User.id, User.name).where(User.id.in_(creator_ids))
+        )
+        creator_name_map = {uid: uname for uid, uname in name_rows.all()}
+    return [await _serialize(db, p, creator_name_map) for p in pipelines]
 
 
 @router.post("", response_model=ProjectPipelineOut, status_code=201)
@@ -159,6 +178,14 @@ async def update_pipeline(
         await assert_project_visible(project_id, db, user)
     if payload.get("stages") is not None:
         _validate_saved_pipeline(payload["stages"])
+    # 跨项目搬迁且未显式给 is_default 时, 不继承 default 身份: 换归属不应隐式改「谁是默认」,
+    # 否则会静默降级目标项目既有的默认编排。要设为新项目默认须显式传 is_default=true。
+    if (
+        project_id is not None
+        and project_id != pipeline.project_id
+        and "is_default" not in payload
+    ):
+        payload["is_default"] = False
     next_is_default = payload.get("is_default", pipeline.is_default)
     if scope != "private" and next_is_default:
         raise HTTPException(status_code=422, detail="只有 private 项目编排可以设为默认")

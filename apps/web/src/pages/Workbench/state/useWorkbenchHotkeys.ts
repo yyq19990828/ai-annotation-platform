@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
+import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
@@ -654,19 +655,27 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         // 关闭时保持现状: 采纳后不动选中(指向的框随即消失=去选), 拒绝后置空。
         case "acceptAi": {
           if (!s.selectedId) return;
-          const idx = aiBoxes.findIndex((b) => b.id === s.selectedId);
+          // 视频模式 aiBoxes 是跨帧候选全集; 自动前进须限定当前帧, 否则 nextId 会指向别帧的候选、
+          // 当前帧画布上「什么都没选中」。图片模式无帧维度, scoped 即全集。
+          const scoped = videoMode
+            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
+            : aiBoxes;
+          const idx = scoped.findIndex((b) => b.id === s.selectedId);
           if (idx < 0) return;
-          const nextId = aiBoxes[idx + 1]?.id ?? aiBoxes[idx - 1]?.id ?? null;
-          handleAcceptPrediction(aiBoxes[idx]);
+          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
+          handleAcceptPrediction(scoped[idx]);
           if (autoAdvanceOnDecide) s.setSelectedId(nextId);
           return;
         }
         case "rejectAi": {
           if (!s.selectedId) return;
-          const idx = aiBoxes.findIndex((b) => b.id === s.selectedId);
+          const scoped = videoMode
+            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
+            : aiBoxes;
+          const idx = scoped.findIndex((b) => b.id === s.selectedId);
           if (idx < 0) return;
-          const nextId = aiBoxes[idx + 1]?.id ?? aiBoxes[idx - 1]?.id ?? null;
-          handleRejectPrediction?.(aiBoxes[idx]);
+          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
+          handleRejectPrediction?.(scoped[idx]);
           s.setSelectedId(autoAdvanceOnDecide ? nextId : null);
           return;
         }

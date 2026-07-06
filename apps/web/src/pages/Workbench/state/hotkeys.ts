@@ -324,7 +324,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     }
     if (e.key === "Tab") return { type: "videoCycleInCategory", dir: e.shiftKey ? -1 : 1 };
     // v0.21.11 · ` / Shift+` 跨类跳转(AI 待审 → 人工 → 轨迹); 紧邻 Tab、当前未占用。
-    if (e.key === "`") return { type: "videoStepCategory", dir: e.shiftKey ? -1 : 1 };
+    // e.code 而非 e.key: Shift+` 的 key 在美式布局是 "~" 而非 "`", 用 key 判定会让反向(Shift)永不触发。
+    if (e.code === "Backquote") return { type: "videoStepCategory", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
     if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected", scope: "keyframe" };
     if (e.key >= "1" && e.key <= "9") {
@@ -399,7 +400,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // v0.21.11 · 图片 Tab 升级为「同类流转」(AI 待审 / 人工, 按选中对象类型环内循环),
   // ` 跨类跳转。J/K 保留为人工框专属循环(老肌肉记忆)。
   if (e.key === "Tab") return { type: "imageCycleInCategory", dir: e.shiftKey ? -1 : 1 };
-  if (e.key === "`") return { type: "imageStepCategory", dir: e.shiftKey ? -1 : 1 };
+  // e.code 而非 e.key: Shift+` 的 key 在美式布局是 "~" 而非 "`", 用 key 判定会让反向(Shift)永不触发。
+  if (e.code === "Backquote") return { type: "imageStepCategory", dir: e.shiftKey ? -1 : 1 };
   if (e.key === "j" || e.key === "J") return { type: "cycleUser", dir: 1, loop: false };
   if (e.key === "k" || e.key === "K") return { type: "cycleUser", dir: -1, loop: false };
 
