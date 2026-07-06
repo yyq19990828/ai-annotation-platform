@@ -97,6 +97,26 @@
   pointer-events: none;
 }
 
+/* 播放头「圆点」退役: 保留原生轨道的进度填充 (左侧填充色已反映当前帧位置, 填充右缘即 playhead),
+   仅把原生 thumb 圆点收成 0 尺寸隐藏 —— 圆点既与预测/关键帧密度条视觉重叠, 又与填充右缘冗余。
+   input 本体保持 appearance:auto (原生填充需要它), 只改 thumb 伪元素, 故填充不受影响。
+   seek 交互不受影响: 拖拽走 timelineShell 的指针捕获, 键盘走 range 的 onChange, 均不依赖 thumb 命中。 */
+.rangeInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.rangeInput::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: 0;
+  opacity: 0;
+  background: transparent;
+}
+
 .timelineLayer {
   position: absolute;
   /* v0.11.26 · 左右内缩须等于 range thumb 半宽, 标记 (网格刻度/关键帧/密度) 才与 playhead 实际行程
