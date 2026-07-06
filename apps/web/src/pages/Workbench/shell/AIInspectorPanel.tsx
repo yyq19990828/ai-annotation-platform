@@ -607,7 +607,10 @@ export function AIPredictionPopover({
         </div>
         {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
         {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 按钮禁用 + 标注原因, 避免默默 422。 */}
-        {hasProjectPipeline && onRunPipeline && (
+        {/* v0.21.10 · 视频任务隐藏此按钮: batch 预标不接受 frame_index (payload 无该字段),
+            对视频会跑整段而非"当前题"; 单帧路径 /predict-frame 又是单模型、跑不了多阶段编排。
+            视频单帧检测走上面的主「运行当前题」(方案 a), 整段/多阶段编排到「AI 预标」批量页。 */}
+        {!isVideoTask && hasProjectPipeline && onRunPipeline && (
           <Button
             variant="ai"
             size="sm"
