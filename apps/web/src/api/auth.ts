@@ -133,6 +133,11 @@ export interface WorkbenchVideoPreferences {
   defaultPlaybackRate: VideoDefaultPlaybackRate;
   largeFrameStep: VideoLargeFrameStep;
   autoFitOnResize: boolean;
+  /**
+   * v0.21.12 · 轨迹「续写后自动前进」:跨网格帧续写完一条轨迹后, 自动选中同帧下一条待续轨迹
+   * (上一网格帧有关键帧、当前帧未画者)。默认关(保持逐条手动 Tab / 点选的现状)。
+   */
+  trackContinueAutoAdvance: boolean;
 }
 
 /** v0.15.6 · 点云工作台渲染 / 导航偏好。 */
@@ -307,6 +312,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     defaultPlaybackRate: 1,
     largeFrameStep: 10,
     autoFitOnResize: true,
+    trackContinueAutoAdvance: false,
   },
   pointcloud: {
     pointSize: 0.06,

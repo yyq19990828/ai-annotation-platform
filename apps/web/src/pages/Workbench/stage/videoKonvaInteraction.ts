@@ -119,6 +119,11 @@ export interface UseVideoKonvaInteractionParams {
   entries: VideoPickable[];
   /** 选中轨迹当前帧无框时的参考 ghost(可拖出关键帧),归一化 geom。 */
   ghost: VideoPickable | null;
+  /**
+   * v0.21.12 · 跨网格帧续写参考框(非选中待续轨迹);点击 → 仅选中该轨迹(随后画框 / 拖其 ghost 续写),
+   * 不直接落关键帧。优先级最低(实框 / 选中 ghost 覆盖时让位)。
+   */
+  carryOverGhosts: VideoPickable[];
   selectedTrack: (AnnotationResponse & { geometry: VideoTrackGeometry }) | null;
   videoTool: VideoTool;
   readOnly: boolean;
@@ -126,6 +131,8 @@ export interface UseVideoKonvaInteractionParams {
   lockedTrackIds: Set<string>;
   creationEnabled: boolean;
   frameIndex: number;
+  /** v0.21.12 · 续写后自动前进(video.trackContinueAutoAdvance);续写完一条 → 选中下一条待续 carryOver。 */
+  trackContinueAutoAdvance: boolean;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
   onPendingDraw?: (
@@ -221,10 +228,24 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     const p = paramsRef.current;
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
-    const pickables: VideoPickable[] = p.ghost ? [...p.entries, p.ghost] : p.entries;
+    // z 序:carryOver(最低) → entries → 选中 ghost(最高);pickTop 逆序取「最后命中」为 top,
+    // 故 carryOver 置首,让实框 / 选中 ghost 覆盖时优先。
+    const pickables: VideoPickable[] = [
+      ...p.carryOverGhosts,
+      ...p.entries,
+      ...(p.ghost ? [p.ghost] : []),
+    ];
     const hit = pickTopVideoEntryAt(pickables, pt);
-    if (hit) beginMove(hit, native);
-    else beginDraw(native);
+    if (!hit) {
+      beginDraw(native);
+      return;
+    }
+    // 点中待续轨迹 ghost → 仅选中(不落关键帧);续写交给随后画框(WS1)或拖其 ghost。
+    if (p.carryOverGhosts.some((g) => g.id === hit.id)) {
+      p.onSelect(hit.id, { shift: native.shiftKey || native.metaKey || native.ctrlKey });
+      return;
+    }
+    beginMove(hit, native);
   }, [beginDraw, beginMove, pointFromClient]);
 
   const commit = useCallback((finalDrag: VideoDragState, finalPt: { x: number; y: number }) => {
@@ -251,7 +272,15 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
       return;
     }
     if (action.type === "track") {
-      p.onUpdate(action.ann, upsertKeyframe(action.ann.geometry as VideoTrackGeometry, p.frameIndex, action.geom));
+      const trackGeom = action.ann.geometry as VideoTrackGeometry;
+      // 「续写」判定:此前当前帧无关键帧(延展),而非移动/缩放已有帧。仅续写才触发自动前进。
+      const wasContinue = !trackGeom.keyframes.some((kf) => kf.frame_index === p.frameIndex);
+      p.onUpdate(action.ann, upsertKeyframe(trackGeom, p.frameIndex, action.geom));
+      // v0.21.12 · 续写后自动前进:选中下一条待续轨迹(carryOverGhosts 已排除当前选中,取首个)。
+      if (p.trackContinueAutoAdvance && wasContinue) {
+        const next = p.carryOverGhosts.find((g) => g.id !== action.ann.id);
+        if (next) p.onSelect(next.id);
+      }
       return;
     }
     // bbox:替换该帧几何。

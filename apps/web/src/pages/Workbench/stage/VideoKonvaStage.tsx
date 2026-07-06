@@ -57,6 +57,8 @@ interface VideoKonvaStageProps {
   autoFitOnResize?: boolean;
   /** v0.21.11 · 选中自动聚焦(common.focusSelectionEnabled); 关闭时选中不移动视口。 */
   focusSelectionEnabled?: boolean;
+  /** v0.21.12 · 轨迹「续写后自动前进」(video.trackContinueAutoAdvance); 续写完自动选中下一条待续轨迹。 */
+  trackContinueAutoAdvance?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
   annotations?: AnnotationResponse[];
@@ -132,6 +134,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   frameIndex: controlledFrameIndex,
   autoFitOnResize = true,
   focusSelectionEnabled = false,
+  trackContinueAutoAdvance = false,
   performanceTier = "standard",
   onFrameIndexChange,
   annotations = EMPTY_ANNOTATIONS,
@@ -305,8 +308,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       visual,
       referenceConfig,
       pendingDraft,
+      samplingStep,
     }),
-    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, selectedId, trackColorOverrides, visual],
+    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, samplingStep, selectedId, trackColorOverrides, visual],
   );
 
   // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
@@ -336,8 +340,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (ann && isVideoTrack(ann)) trackRefs.push(ref);
       else userRefs.push(ref);
     }
+    // v0.21.12 · 跨网格帧续写待续轨迹并入「轨迹」类:Tab 一起循环(当前帧已画 + 待续 ghost),
+    // 选中待续轨迹即可续写,不必回上一帧 / 右栏。
+    for (const g of frameViews.carryOverGhosts) {
+      trackRefs.push({ id: g.id, x: g.geom.x, y: g.geom.y });
+    }
     return buildFrameCategories(aiRefs, userRefs, trackRefs);
-  }, [annotations, frameAiBoxes, frameViews.entries]);
+  }, [annotations, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries]);
 
   const cycleInCategory = useCallback((dir: -1 | 1) => {
     const next = nextInCategory(frameCategories, selectedId, dir);
@@ -355,7 +364,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const ai = frameAiBoxes.find((b) => b.id === id);
     const geom = ai
       ? { x: ai.x, y: ai.y, w: ai.w, h: ai.h }
-      : frameViews.entries.find((e) => e.id === id)?.geom ?? null;
+      : frameViews.entries.find((e) => e.id === id)?.geom
+        ?? frameViews.carryOverGhosts.find((g) => g.id === id)?.geom
+        ?? null;
     if (!geom) return;
     const cur = vpRef.current;
     const cx = (geom.x + geom.w / 2) * size.w;
@@ -373,7 +384,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // 已在视口内且无需变焦 → 不动(避免每次选中都重排, 保留上下文)。
     if (!outOfView && scale === cur.scale) return;
     setVp({ scale, tx: viewportSize.w / 2 - cx * scale, ty: viewportSize.h / 2 - cy * scale });
-  }, [frameAiBoxes, frameViews.entries, setVp, size.h, size.w, viewportSize.h, viewportSize.w, vpRef]);
+  }, [frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, setVp, size.h, size.w, viewportSize.h, viewportSize.w, vpRef]);
 
   // 选中变化即触发焦点联动(键盘两级循环 / 侧栏点选 / 画布点选统一走此)。用 ref 读最新 focusObject,
   // 使 effect 只在 selectedId 变化时跑 —— 否则 focusObject 逐帧变身份会让播放中每帧重排。
@@ -423,6 +434,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     annotations,
     entries: frameViews.entries,
     ghost: frameViews.ghost,
+    carryOverGhosts: frameViews.carryOverGhosts,
     selectedTrack,
     videoTool,
     creationEnabled: videoTool !== "select" && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track)),
@@ -430,6 +442,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     isPlaybackActive,
     lockedTrackIds,
     frameIndex,
+    trackContinueAutoAdvance,
     onSelect: onSelect ?? noopSelect,
     onCreate: onCreate ?? noopCreate,
     onPendingDraw,
@@ -785,6 +798,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             entries={frameViews.entries}
             previews={frameViews.previews}
             ghost={frameViews.ghost}
+            carryOverGhosts={frameViews.carryOverGhosts}
             size={size}
             scale={vp.scale}
             visual={visual}

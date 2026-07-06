@@ -25,7 +25,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(47);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(48);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [
         f.key,
@@ -64,6 +64,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "video.defaultPlaybackRate": 1,
       "video.largeFrameStep": 10,
       "video.autoFitOnResize": true,
+      "video.trackContinueAutoAdvance": false,
       "pointcloud.pointSize": 0.06,
       "pointcloud.persistCameraView": false,
       "pointcloud.colorizeWithCamera": false,

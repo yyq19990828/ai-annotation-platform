@@ -17,6 +17,8 @@ interface VideoKonvaTracksLayerProps {
   entries: VideoEntryView[];
   previews: VideoTrackPreviewView[];
   ghost: VideoGhostView | null;
+  /** v0.21.12 · 跨网格帧续写参考框(非选中待续轨迹);比选中 ghost 更淡, 提示「仅参考、点选后可续」。 */
+  carryOverGhosts?: VideoGhostView[];
   size: VideoPixelSize;
   scale: number;
   visual: AnnotationVisualConfig;
@@ -34,6 +36,7 @@ export function VideoKonvaTracksLayer({
   entries,
   previews,
   ghost,
+  carryOverGhosts,
   size,
   scale,
   visual,
@@ -136,6 +139,25 @@ export function VideoKonvaTracksLayer({
           </>
         );
       })()}
+      {(carryOverGhosts ?? []).map((g) => {
+        const hex = colorToHex(g.color);
+        const stroke = screenToWorld(strokeWidthFor(false, visual), scale);
+        return (
+          <Rect
+            key={`carryover-${g.id}`}
+            name="video-track-carryover-ghost"
+            x={g.geom.x * size.w}
+            y={g.geom.y * size.h}
+            width={g.geom.w * size.w}
+            height={g.geom.h * size.h}
+            stroke={hex}
+            strokeWidth={stroke}
+            dash={[3 / scale, 5 / scale]}
+            opacity={0.34}
+            listening={false}
+          />
+        );
+      })}
     </Layer>
   );
 }

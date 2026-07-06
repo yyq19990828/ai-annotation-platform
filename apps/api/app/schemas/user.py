@@ -242,6 +242,9 @@ class WorkbenchVideoPreferences(BaseModel):
     defaultPlaybackRate: Literal[0.25, 0.5, 1, 2, 4] = 1
     largeFrameStep: Literal[5, 10, 30, "grid"] = 10
     autoFitOnResize: bool = True
+    # v0.21.12 · 轨迹「续写后自动前进」：跨网格帧续写完一条轨迹后，自动选中同帧下一条待续轨迹
+    # （上一网格帧有关键帧、当前帧未画者）。默认关（保持逐条手动 Tab / 点选的现状）。
+    trackContinueAutoAdvance: bool = False
 
 
 class WorkbenchPointcloudPreferences(BaseModel):

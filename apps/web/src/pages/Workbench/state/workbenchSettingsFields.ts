@@ -424,6 +424,13 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
+    key: "video.trackContinueAutoAdvance",
+    category: "video",
+    label: "续写后自动前进",
+    description: "用轨迹工具跨网格帧续写完一条轨迹后,自动选中同帧下一条待续轨迹(上一网格帧有框、当前帧未画者),连续续写无需逐条 Tab / 点选。默认关",
+    control: { type: "toggle", onText: "已开启", offText: "已关闭" },
+  },
+  {
     key: "pointcloud.pointSize",
     category: "pointcloud",
     label: "点大小",

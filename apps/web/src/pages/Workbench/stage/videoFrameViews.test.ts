@@ -136,4 +136,46 @@ describe("deriveVideoFrameViews", () => {
     const v = deriveVideoFrameViews({ ...base, annotations: [], frameIndex: 0, pendingDraft: { geom: { x: 0.2, y: 0.2, w: 0.1, h: 0.1 }, className: "person" } });
     expect(v.labels.find((l) => l.key === "pending-draft")?.text).toBe("person");
   });
+
+  describe("carryOverGhosts(跨网格帧续写参考框, v0.21.12)", () => {
+    const kf = (frame_index: number, x: number) => ({ frame_index, bbox: { x, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" });
+
+    it("恰好上一网格帧有关键帧、当前帧未画 → 出现 carryOver ghost(取参考框)", () => {
+      const ann = trackAnn("t1", "trk1", [kf(0, 0.1)]);
+      const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1 }); // step 默认 1 → 上一网格帧=0
+      expect(v.entries).toHaveLength(0); // 只有 before 无 after → 不解析实框
+      expect(v.carryOverGhosts).toHaveLength(1);
+      expect(v.carryOverGhosts[0].id).toBe("t1");
+      expect(v.carryOverGhosts[0].geom).toMatchObject({ x: 0.1 }); // off=最近关键帧原位
+    });
+
+    it("网格 step>1:上一网格帧按 gridPrev 判定", () => {
+      const ann = trackAnn("t1", "trk1", [kf(0, 0.1)]);
+      const hit = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 10, samplingStep: 10 }); // 上一网格帧=0
+      expect(hit.carryOverGhosts).toHaveLength(1);
+    });
+
+    it("跳格(最近关键帧非上一网格帧)→ 不进 S", () => {
+      const ann = trackAnn("t1", "trk1", [kf(0, 0.1)]);
+      // frame 20 / step 10 → 上一网格帧=10;kf 在 0(两格前)→ 不命中
+      const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 20, samplingStep: 10 });
+      expect(v.carryOverGhosts).toHaveLength(0);
+    });
+
+    it("锁定 / 隐藏 / 当前帧已画 → 排除", () => {
+      const ann = trackAnn("t1", "trk1", [kf(0, 0.1)]);
+      expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1, lockedTrackIds: new Set(["trk1"]) }).carryOverGhosts).toHaveLength(0);
+      expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1, hiddenTrackIds: new Set(["trk1"]) }).carryOverGhosts).toHaveLength(0);
+      const drawn = trackAnn("t1", "trk1", [kf(0, 0.1), kf(1, 0.3)]); // 当前帧 1 已有关键帧
+      expect(deriveVideoFrameViews({ ...base, annotations: [drawn], frameIndex: 1 }).carryOverGhosts).toHaveLength(0);
+    });
+
+    it("选中那条不进 carryOver(由 ghost 承),其余进", () => {
+      const a = trackAnn("t1", "trk1", [kf(0, 0.1)]);
+      const b = trackAnn("t2", "trk2", [kf(0, 0.5)]);
+      const v = deriveVideoFrameViews({ ...base, annotations: [a, b], frameIndex: 1, selectedId: "t1" });
+      expect(v.ghost?.id).toBe("t1");
+      expect(v.carryOverGhosts.map((g) => g.id)).toEqual(["t2"]);
+    });
+  });
 });

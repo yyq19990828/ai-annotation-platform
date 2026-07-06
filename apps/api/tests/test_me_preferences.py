@@ -465,6 +465,7 @@ async def test_patch_video_subtree_fields(httpx_client, annotator):
         "defaultPlaybackRate": 0.5,
         "largeFrameStep": "grid",
         "autoFitOnResize": True,
+        "trackContinueAutoAdvance": False,
     }
 
 

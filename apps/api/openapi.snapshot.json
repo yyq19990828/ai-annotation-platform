@@ -20425,6 +20425,11 @@
               "grid"
             ],
             "title": "Largeframestep"
+          },
+          "trackContinueAutoAdvance": {
+            "default": false,
+            "title": "Trackcontinueautoadvance",
+            "type": "boolean"
           }
         },
         "title": "WorkbenchVideoPreferences",
@@ -20440,7 +20445,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.21.11"
+    "version": "0.21.12"
   },
   "openapi": "3.1.0",
   "paths": {

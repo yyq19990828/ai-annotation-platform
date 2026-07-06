@@ -9,6 +9,7 @@ import {
   trackReferenceAtFrame,
 } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
+import { gridPrev } from "./videoSamplingGrid";
 import { buildTrackLabelText, shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
 import type { VideoStageGeom } from "./videoStageTypes";
 import type { VideoReferenceConfig } from "./videoReferencePredict";
@@ -79,6 +80,11 @@ export interface VideoFrameViews {
   entries: VideoEntryView[];
   previews: VideoTrackPreviewView[];
   ghost: VideoGhostView | null;
+  /**
+   * v0.21.12 · 「跨网格帧续写」参考框:恰好上一网格帧有关键帧、未锁定、当前帧还没画的**非选中**
+   * 轨迹(选中那条由 `ghost` 承)。让新网格帧上「其余待续轨迹」可见 + 可命中,不必回上一帧 / 右栏选。
+   */
+  carryOverGhosts: VideoGhostView[];
   labels: VideoLabelView[];
 }
 
@@ -96,6 +102,8 @@ export interface DeriveVideoFrameViewsInput {
   referenceConfig?: VideoReferenceConfig;
   /** pending 草稿(画一半 / 待确认);仅当前帧透传。 */
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
+  /** v0.21.12 · 采样网格步长;用于「上一网格帧」(gridPrev)判定「跨网格帧续写」集合 S。缺省 1。 */
+  samplingStep?: number;
 }
 
 const EMPTY_SET = new Set<string>();
@@ -119,6 +127,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     visual,
     referenceConfig = DEFAULT_REFERENCE_CONFIG,
     pendingDraft,
+    samplingStep = 1,
   } = input;
 
   const videoTracks = annotations.filter(isVideoTrack);
@@ -195,6 +204,32 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     }
   }
 
+  // v0.21.12 · 跨网格帧续写参考框(集合 S 的非选中成员):恰好上一网格帧有关键帧、未锁定/未隐藏、
+  // 当前帧还没画,且不在当前帧 entries(无插值实框)。选中那条已由上面的 `ghost` 承,这里排除。
+  // gridPrev 用 frameIndex 当 maxFrame(上界钳位对「更早的帧」无影响),step=1 时退化为 frameIndex-1。
+  const carryOverGhosts: VideoGhostView[] = [];
+  const prevGridFrame = gridPrev(frameIndex, samplingStep, frameIndex);
+  if (prevGridFrame < frameIndex && visibleInReviewMode("manual", reviewDisplayMode)) {
+    for (const ann of videoTracks) {
+      if (ann.id === selectedId) continue;
+      const tid = ann.geometry.track_id;
+      if (hiddenTrackIds.has(tid) || lockedTrackIds.has(tid)) continue;
+      const keyframes = ann.geometry.keyframes;
+      if (!keyframes.some((kf) => kf.frame_index === prevGridFrame)) continue;
+      if (keyframes.some((kf) => kf.frame_index === frameIndex)) continue;
+      if (entries.some((e) => e.id === ann.id)) continue;
+      const reference = trackReferenceAtFrame(ann.geometry, frameIndex, referenceConfig.mode, referenceConfig.preset);
+      if (!reference) continue;
+      const num = trackNumbers.get(ann.id);
+      carryOverGhosts.push({
+        id: ann.id,
+        geom: reference.bbox,
+        color: getTrackColor(tid, ann.class_name, trackColorOverrides),
+        labelText: `${num !== undefined ? `#${num} · ` : ""}${ann.class_name}`,
+      });
+    }
+  }
+
   // 标签门控(always / selected / none);草稿与 ghost 按 selected=true 门控。
   const visibility = visual.labelVisibility;
   const labels: VideoLabelView[] = [];
@@ -209,8 +244,14 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   if (ghost && shouldShowLabel(true, visibility)) {
     labels.push({ key: `ghost-${ghost.id}`, geom: ghost.geom, color: ghost.color, text: ghost.labelText, opacity: 0.86 });
   }
+  // 跨网格帧续写 ghost 的精简标签(更淡):供识别是哪条待续轨迹(Tab / 点选目标)。
+  if (shouldShowLabel(true, visibility)) {
+    for (const g of carryOverGhosts) {
+      labels.push({ key: `carryover-${g.id}`, geom: g.geom, color: g.color, text: g.labelText, opacity: 0.6 });
+    }
+  }
 
-  return { entries, previews, ghost, labels };
+  return { entries, previews, ghost, carryOverGhosts, labels };
 }
 
 function buildEntryView(
