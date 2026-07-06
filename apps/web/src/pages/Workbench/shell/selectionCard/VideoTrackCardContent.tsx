@@ -285,7 +285,7 @@ export function VideoTrackCardContent({
   );
 
   const convertTrackMenuItems = useMemo<DropdownItem[]>(() => {
-    const disabled = readOnly || !onConvertToBboxes;
+    const disabled = readOnly || selectedTrackLocked || !onConvertToBboxes;
     return [
       {
         id: "copy-keyframes",
@@ -317,7 +317,7 @@ export function VideoTrackCardContent({
         onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "track", frameMode: "all_frames" }),
       },
     ];
-  }, [onConvertToBboxes, readOnly, selectedTrack]);
+  }, [onConvertToBboxes, readOnly, selectedTrackLocked, selectedTrack]);
 
   const hasAttributes = Boolean(attributeSchema && (onUpdateTrackAttributes || onUpdateKeyframeAttributes));
 
@@ -354,7 +354,7 @@ export function VideoTrackCardContent({
                   type="button"
                   size="sm"
                   className={ICON_BUTTON_CLASS}
-                  disabled={readOnly || !onConvertToBboxes}
+                  disabled={readOnly || selectedTrackLocked || !onConvertToBboxes}
                   title="转换为独立框"
                   aria-label="转换为独立框"
                   aria-expanded={open}
@@ -592,7 +592,7 @@ export function VideoTrackCardContent({
                   <Button
                     size="sm"
                     className={KF_BUTTON_CLASS}
-                    disabled={readOnly || kfOutside}
+                    disabled={readOnly || selectedTrackLocked || kfOutside}
                     title="复制此关键帧为独立框"
                     aria-label="复制此关键帧为独立框"
                     onClick={() => onConvertToBboxes?.(selectedTrack, { operation: "copy", scope: "frame", frameIndex: kf.frame_index })}
@@ -602,7 +602,7 @@ export function VideoTrackCardContent({
                   <Button
                     size="sm"
                     className={KF_BUTTON_CLASS}
-                    disabled={readOnly || kfOutside}
+                    disabled={readOnly || selectedTrackLocked || kfOutside}
                     title="拆此关键帧为独立框"
                     aria-label="拆此关键帧为独立框"
                     onClick={() => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "frame", frameIndex: kf.frame_index })}
