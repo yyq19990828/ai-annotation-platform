@@ -829,6 +829,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             scale={vp.scale}
             selectedId={selectedId}
             listening={videoTool === "select" && !readOnly}
+            visual={visual}
             onSelect={(id) => onSelect?.(id)}
           />
           {issuePixelFeedbacks && issuePixelFeedbacks.length > 0 && (
