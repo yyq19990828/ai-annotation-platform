@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { getTrackColor } from "./colors";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
+import { frameToPct, pctToFrame, type TimelineWindow } from "./timelineCoords";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
 import type { PredictionDensityBin, VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
@@ -270,11 +271,13 @@ export function VideoPlaybackOverlay({
     return ticks;
   }, [maxFrame, samplingStep]);
   const currentFrameOffGrid = !isPlaying && samplingStep > 1 && frameIndex % samplingStep !== 0;
-  const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
+  // v0.21.15 WS1 · 可见帧窗口。WS1 固定为全窗口 {0, maxFrame} —— 零行为变更; WS2 起改为可缩放状态。
+  const timelineWindow: TimelineWindow = { from: 0, to: maxFrame };
+  const frameLeft = (frame: number) => `${frameToPct(frame, timelineWindow)}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
     const ratio = rect.width > 0 ? (pointerX - rect.left) / rect.width : 0;
-    return Math.max(0, Math.min(maxFrame, Math.round(ratio * maxFrame)));
+    return pctToFrame(ratio, timelineWindow);
   };
   // v0.21.13 WS3 · 章节条边界 resize。命中区: 章节条左右边缘各一把手 (data-chapter-resize),
   // 拖动改起/止帧, 松手才 onChapterResize (shell debounce PATCH); 中间仍点选 seek。
@@ -334,8 +337,8 @@ export function VideoPlaybackOverlay({
     onHoverFrameChange?.(nextFrame);
   };
   const rangeStyle = (from: number, to: number): CSSVars => {
-    const left = maxFrame > 0 ? (from / maxFrame) * 100 : 0;
-    const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
+    const left = frameToPct(from, timelineWindow);
+    const right = frameToPct(to, timelineWindow);
     return {
       "--timeline-left": `${left}%`,
       "--timeline-width": `${Math.max(0.5, right - left)}%`,
