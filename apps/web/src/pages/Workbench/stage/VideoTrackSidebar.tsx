@@ -74,6 +74,9 @@ interface VideoTrackSidebarProps {
   /** v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。 */
   samplingStep?: number;
   propagateOverwrite?: boolean | null;
+  /** roster 视图「轨迹」分组头折叠态 (受控, 走 workbench.layout 服务端持久); card 视图忽略。 */
+  trackSectionCollapsed?: boolean;
+  onToggleTrackSection?: () => void;
 }
 
 interface CopiedKeyframe {
@@ -152,6 +155,8 @@ export function VideoTrackSidebar({
   onUpdateSemanticLabel,
   samplingStep,
   propagateOverwrite,
+  trackSectionCollapsed = false,
+  onToggleTrackSection,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedBboxes = useMemo(
@@ -501,6 +506,8 @@ export function VideoTrackSidebar({
       reviewDisplayMode={reviewDisplayMode}
       trackColorOverrides={trackColorOverrides}
       onSetTrackColor={onSetTrackColor}
+      collapsed={trackSectionCollapsed}
+      onToggleCollapsed={onToggleTrackSection}
     />
   );
 }

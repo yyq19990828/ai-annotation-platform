@@ -154,6 +154,7 @@ export function useWorkbenchState() {
     attrPanelCollapsed: false,
     aiSectionCollapsed: false,
     manualSectionCollapsed: false,
+    trackSectionCollapsed: false,
     discussionCollapsed: false,
   });
   const [leftOpen, setLeftOpenRaw] = useState(workbenchLayout.leftOpen);
@@ -169,6 +170,9 @@ export function useWorkbenchState() {
   const [manualSectionCollapsed, setManualSectionCollapsedRaw] = useState(
     workbenchLayout.manualSectionCollapsed,
   );
+  const [trackSectionCollapsed, setTrackSectionCollapsedRaw] = useState(
+    workbenchLayout.trackSectionCollapsed,
+  );
   const [discussionCollapsed, setDiscussionCollapsedRaw] = useState(
     workbenchLayout.discussionCollapsed,
   );
@@ -183,6 +187,8 @@ export function useWorkbenchState() {
       setAiSectionCollapsedRaw(workbenchLayout.aiSectionCollapsed);
     if (!layoutTouchedRef.current.manualSectionCollapsed)
       setManualSectionCollapsedRaw(workbenchLayout.manualSectionCollapsed);
+    if (!layoutTouchedRef.current.trackSectionCollapsed)
+      setTrackSectionCollapsedRaw(workbenchLayout.trackSectionCollapsed);
     if (!layoutTouchedRef.current.discussionCollapsed)
       setDiscussionCollapsedRaw(workbenchLayout.discussionCollapsed);
   }, [
@@ -191,6 +197,7 @@ export function useWorkbenchState() {
     workbenchLayout.attrPanelCollapsed,
     workbenchLayout.aiSectionCollapsed,
     workbenchLayout.manualSectionCollapsed,
+    workbenchLayout.trackSectionCollapsed,
     workbenchLayout.discussionCollapsed,
     workbenchConfigLoaded,
   ]);
@@ -236,6 +243,15 @@ export function useWorkbenchState() {
       layoutTouchedRef.current.manualSectionCollapsed = true;
       setManualSectionCollapsedRaw(collapsed);
       setWorkbenchLayout({ manualSectionCollapsed: collapsed });
+    },
+    [setWorkbenchLayout],
+  );
+
+  const setTrackSectionCollapsed = useCallback(
+    (collapsed: boolean) => {
+      layoutTouchedRef.current.trackSectionCollapsed = true;
+      setTrackSectionCollapsedRaw(collapsed);
+      setWorkbenchLayout({ trackSectionCollapsed: collapsed });
     },
     [setWorkbenchLayout],
   );
@@ -401,6 +417,7 @@ export function useWorkbenchState() {
     attrPanelCollapsed, setAttrPanelCollapsed,
     aiSectionCollapsed, setAiSectionCollapsed,
     manualSectionCollapsed, setManualSectionCollapsed,
+    trackSectionCollapsed, setTrackSectionCollapsed,
     discussionCollapsed, setDiscussionCollapsed,
     workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
     workbenchLayout, setWorkbenchLayout,

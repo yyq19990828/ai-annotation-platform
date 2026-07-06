@@ -51,6 +51,10 @@ interface VideoTrackPanelProps {
   // v0.10.30 · 1A 选色器: session 级覆盖 (trackId → oklch), 未接线时回落到 classColor。
   trackColorOverrides?: Record<string, string>;
   onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
+  /** 「轨迹」分组头折叠态 (受控, 走 workbench.layout 服务端持久)。缺省 = 展开;
+   *  未传 onToggleCollapsed 时不渲染折叠箭头, 退化为静态头。 */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -109,6 +113,8 @@ export function VideoTrackPanel({
   reviewDisplayMode,
   trackColorOverrides,
   onSetTrackColor,
+  collapsed = false,
+  onToggleCollapsed,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -131,29 +137,47 @@ export function VideoTrackPanel({
 
   return (
     <div className="grid gap-3 py-0.5 pb-2">
-      <div className="border border-border rounded-lg bg-card px-2.5 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <b className="text-sm">轨迹</b>
-            <Button
-              size="sm"
-              className="!w-7 !h-7 !p-0 !justify-center !rounded-lg"
-              disabled={readOnly || !onStartNewTrack}
-              title="清除当前轨迹选择，下一次画框会新建轨迹"
-              aria-label="新建轨迹"
-              onClick={onStartNewTrack}
-            >
-              <Icon name="plus" size={14} />
-            </Button>
-          </div>
-          <span className={cn("mono", "text-xs text-muted-foreground")}>
+      {/* 轨迹分组头:与「AI 待审 / 人工」分组头 (AIInspectorPanel SECTION_CARD_CLASS) 视觉对齐 + 可折叠。 */}
+      <div
+        className={cn(
+          "rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground",
+          "flex flex-wrap items-center justify-between gap-2",
+          onToggleCollapsed && "hover:bg-muted",
+        )}
+      >
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          disabled={!onToggleCollapsed}
+          aria-expanded={!collapsed}
+          title={collapsed ? "展开轨迹" : "折叠轨迹"}
+          data-testid="section-header-track"
+          className="flex items-center gap-1.5 min-w-0 appearance-none bg-transparent cursor-pointer text-left disabled:cursor-default"
+        >
+          {onToggleCollapsed && (
+            <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
+          )}
+          <span className="text-sm font-semibold">轨迹</span>
+        </button>
+        <div className="flex items-center gap-1.5">
+          <span className={cn("mono", "text-xs font-medium text-muted-foreground")}>
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
-        </div>
-        {selectedBboxCount > 1 && (
           <Button
             size="sm"
-            className="!w-full !justify-center !mt-2 !rounded-lg !py-1 !px-2"
+            className="!w-6 !h-6 !p-0 !justify-center !rounded-md"
+            disabled={readOnly || !onStartNewTrack}
+            title="清除当前轨迹选择，下一次画框会新建轨迹"
+            aria-label="新建轨迹"
+            onClick={onStartNewTrack}
+          >
+            <Icon name="plus" size={13} />
+          </Button>
+        </div>
+        {!collapsed && selectedBboxCount > 1 && (
+          <Button
+            size="sm"
+            className="!w-full !justify-center !rounded-lg !py-1 !px-2"
             disabled={!canAggregateBboxes}
             title="把已多选的单帧 video_bbox 聚合为一条 video_track"
             onClick={onAggregateSelectedBboxes}
@@ -162,6 +186,7 @@ export function VideoTrackPanel({
           </Button>
         )}
       </div>
+      {!collapsed && (
       <div className={cn("grid gap-2", selectedTrack && "order-2")}>
         {/* 批量操作仅在「当前帧」tab 下可用:全局视图下多选极易误删整条跨帧轨迹。 */}
         {batchCount > 1 && trackFilter !== "current" && (
@@ -428,6 +453,7 @@ export function VideoTrackPanel({
         )}
       </div>
       </div>
+      )}
       <VideoTrackComposeDialog
         open={joinOpen}
         onCancel={() => setJoinOpen(false)}

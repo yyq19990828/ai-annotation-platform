@@ -87,6 +87,10 @@ class WorkbenchLayoutPreferences(BaseModel):
     manual_section_collapsed: bool | None = Field(
         default=None, alias="manualSectionCollapsed"
     )
+    # 右栏「轨迹」分组头折叠 (视频任务; 跨设备持久)。
+    track_section_collapsed: bool | None = Field(
+        default=None, alias="trackSectionCollapsed"
+    )
     discussion_collapsed: bool | None = Field(default=None, alias="discussionCollapsed")
     floating_task_queue: FloatingPanelState | None = Field(
         default=None,

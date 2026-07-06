@@ -211,6 +211,8 @@ export interface WorkbenchLayoutPreferences {
   aiSectionCollapsed: boolean;
   /** v0.20.22 · 右栏「人工」分组折叠态(随账号持久)。 */
   manualSectionCollapsed: boolean;
+  /** 右栏「轨迹」分组折叠态(视频任务;随账号持久)。 */
+  trackSectionCollapsed: boolean;
   /** v0.20.22 · 右栏下段「讨论」(评论/历史/Issue)完全收起态(随账号持久)。 */
   discussionCollapsed: boolean;
   floatingTaskQueue: FloatingPanelState;
@@ -316,6 +318,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     attrPanelCollapsed: false,
     aiSectionCollapsed: false,
     manualSectionCollapsed: false,
+    trackSectionCollapsed: false,
     discussionCollapsed: false,
     floatingTaskQueue: {
       detached: false,

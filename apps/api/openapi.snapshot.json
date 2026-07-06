@@ -20235,6 +20235,17 @@
             ],
             "title": "Rightopen"
           },
+          "trackSectionCollapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracksectioncollapsed"
+          },
           "triViewFloat": {
             "anyOf": [
               {

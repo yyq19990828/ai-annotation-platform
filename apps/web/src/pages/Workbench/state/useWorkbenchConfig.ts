@@ -175,6 +175,7 @@ const LAYOUT_KEY_NAMES = [
   // 但初始 render 直接从 localStorage 拿最近值, 避免"刷新一瞬间看到展开态再收起"闪。
   "aiSectionCollapsed",
   "manualSectionCollapsed",
+  "trackSectionCollapsed",
   "discussionCollapsed",
 ] as const;
 
@@ -243,6 +244,7 @@ function readLocalLayout(
     // v0.20.22 · 分组折叠 + 讨论区收起本地读回, 消除首屏闪。
     aiSectionCollapsed: readBool(K.aiSectionCollapsed),
     manualSectionCollapsed: readBool(K.manualSectionCollapsed),
+    trackSectionCollapsed: readBool(K.trackSectionCollapsed),
     discussionCollapsed: readBool(K.discussionCollapsed),
   };
 }
@@ -321,6 +323,10 @@ function writeLocalLayout(
     window.localStorage.setItem(
       K.manualSectionCollapsed,
       layout.manualSectionCollapsed ? "1" : "0",
+    );
+    window.localStorage.setItem(
+      K.trackSectionCollapsed,
+      layout.trackSectionCollapsed ? "1" : "0",
     );
     window.localStorage.setItem(
       K.discussionCollapsed,
@@ -437,6 +443,9 @@ function mergeLayout(
     manualSectionCollapsed:
       merged.manualSectionCollapsed ??
       DEFAULT_WORKBENCH_PREFERENCES.layout.manualSectionCollapsed,
+    trackSectionCollapsed:
+      merged.trackSectionCollapsed ??
+      DEFAULT_WORKBENCH_PREFERENCES.layout.trackSectionCollapsed,
     discussionCollapsed:
       merged.discussionCollapsed ??
       DEFAULT_WORKBENCH_PREFERENCES.layout.discussionCollapsed,

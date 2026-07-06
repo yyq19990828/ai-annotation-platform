@@ -1809,6 +1809,8 @@ export function useWorkbenchShellModel({
         onToggleLockedTrack={s.toggleLockedVideoTrack}
         onSeekFrame={s.setVideoFrameIndex}
         reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
+        trackSectionCollapsed={s.trackSectionCollapsed}
+        onToggleTrackSection={() => s.setTrackSectionCollapsed(!s.trackSectionCollapsed)}
         onChangeUserBoxClass={handleStartChangeClass}
         onRenameTracks={handleVideoBatchRename}
         onDeleteTracks={handleVideoBatchDelete}
@@ -1837,6 +1839,7 @@ export function useWorkbenchShellModel({
       trackerJobs.cancel, s.trackColorOverrides, s.setVideoTrackColor, toolView.attributeSchema,
       handleUpdateTrackAttributes, handleUpdateKeyframeAttributes, handlePropagateKeyframe, samplingStep,
       currentProject?.rendering_config?.propagateOverwrite, videoFps, imageWidth, imageHeight,
+      s.trackSectionCollapsed, s.setTrackSectionCollapsed,
     ],
   );
 
