@@ -28,3 +28,51 @@ export function pctToFrame(ratio: number, win: TimelineWindow): number {
   const frame = win.from + ratio * span;
   return Math.max(win.from, Math.min(win.to, Math.round(frame)));
 }
+
+// —— v0.21.15 WS2 · 横向缩放/平移 ——
+// 缩放/平移的窗口可为分数帧 (避免反复缩放的整数取整漂移); 渲染与反解不受影响 (pctToFrame 末端取整)。
+
+/** 最小可见跨度 (帧): 放大到此即停, 保证单帧仍有可点像素宽度。 */
+export const MIN_VISIBLE_SPAN = 4;
+/** 每次滚轮的缩放系数指数 k: factor = exp(deltaY * k)。deltaY<0 (上滚) → factor<1 放大。 */
+export const ZOOM_WHEEL_K = 0.0015;
+
+/** 是否全窗口 (未缩放)。maxFrame<=0 视为全窗口 (空视频不缩放)。 */
+export function isFullWindow(win: TimelineWindow, maxFrame: number): boolean {
+  return win.from <= 0 && win.to >= maxFrame;
+}
+
+/** 把窗口约束进 [0, maxFrame], 跨度夹到 [min(minSpan,maxFrame), maxFrame], 越界时整体平移保跨度。 */
+export function clampWindow(win: TimelineWindow, maxFrame: number, minSpan: number): TimelineWindow {
+  if (maxFrame <= 0) return { from: 0, to: 0 };
+  const span = Math.min(Math.max(win.to - win.from, Math.min(minSpan, maxFrame)), maxFrame);
+  let from = win.from;
+  if (from + span > maxFrame) from = maxFrame - span;
+  if (from < 0) from = 0;
+  return { from, to: from + span };
+}
+
+/** 以锚点比例 anchorRatio∈[0,1] 为不动点缩放窗口。factor<1 放大, >1 缩小。 */
+export function zoomWindow(
+  win: TimelineWindow,
+  maxFrame: number,
+  anchorRatio: number,
+  factor: number,
+  minSpan: number,
+): TimelineWindow {
+  const span = win.to - win.from;
+  const anchor = win.from + anchorRatio * span;
+  const nextSpan = Math.min(Math.max(span * factor, Math.min(minSpan, maxFrame)), maxFrame);
+  const from = anchor - anchorRatio * nextSpan;
+  return clampWindow({ from, to: from + nextSpan }, maxFrame, minSpan);
+}
+
+/** 平移窗口 (deltaFrames>0 向后/右移), 保跨度并 clamp 进 [0, maxFrame]。 */
+export function panWindow(
+  win: TimelineWindow,
+  maxFrame: number,
+  deltaFrames: number,
+  minSpan: number,
+): TimelineWindow {
+  return clampWindow({ from: win.from + deltaFrames, to: win.to + deltaFrames }, maxFrame, minSpan);
+}

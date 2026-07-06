@@ -9,7 +9,16 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { getTrackColor } from "./colors";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
-import { frameToPct, pctToFrame, type TimelineWindow } from "./timelineCoords";
+import {
+  frameToPct,
+  pctToFrame,
+  isFullWindow,
+  zoomWindow,
+  panWindow,
+  MIN_VISIBLE_SPAN,
+  ZOOM_WHEEL_K,
+  type TimelineWindow,
+} from "./timelineCoords";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
 import type { PredictionDensityBin, VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
@@ -239,6 +248,11 @@ export function VideoPlaybackOverlay({
   >(null);
   const rangeDraftRef = useRef<TimelineRangeDraft | null>(null);
   const seekDragRef = useRef(false);
+  // v0.21.15 WS2 · 可见帧窗口 [from,to] (横向 zoom)。默认全窗口; 换视频 (maxFrame 变) 复位, 不持久化
+  // (跨视频帧数不同易越界)。窗口可为分数帧, 渲染/反解经 timelineCoords 收口, 保证同一坐标基准。
+  const [timelineWindow, setTimelineWindow] = useState<TimelineWindow>({ from: 0, to: maxFrame });
+  const timelineWindowRef = useRef(timelineWindow);
+  timelineWindowRef.current = timelineWindow;
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
   const frameTooltip = useMemo(() => {
@@ -271,8 +285,8 @@ export function VideoPlaybackOverlay({
     return ticks;
   }, [maxFrame, samplingStep]);
   const currentFrameOffGrid = !isPlaying && samplingStep > 1 && frameIndex % samplingStep !== 0;
-  // v0.21.15 WS1 · 可见帧窗口。WS1 固定为全窗口 {0, maxFrame} —— 零行为变更; WS2 起改为可缩放状态。
-  const timelineWindow: TimelineWindow = { from: 0, to: maxFrame };
+  const isZoomed = !isFullWindow(timelineWindow, maxFrame);
+  const resetTimelineWindow = () => setTimelineWindow({ from: 0, to: maxFrame });
   const frameLeft = (frame: number) => `${frameToPct(frame, timelineWindow)}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
@@ -377,10 +391,41 @@ export function VideoPlaybackOverlay({
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [interactive, largeFrameStep, onSeekByFrames, samplingStep, visible]);
-  const hoverLeft = maxFrame > 0 ? ((hoverFrame ?? 0) / maxFrame) * 100 : 0;
+  const hoverLeft = frameToPct(hoverFrame ?? 0, timelineWindow);
   const hoverPopoverLeft = `${Math.max(12, Math.min(88, hoverLeft))}%`;
 
   const isInteractive = visible && interactive;
+
+  // v0.21.15 WS2 · 换视频 (maxFrame 变) 复位窗口, 避免跨视频窗口越界 (窗口不持久化)。
+  useEffect(() => {
+    setTimelineWindow({ from: 0, to: maxFrame });
+  }, [maxFrame]);
+  // v0.21.15 WS2 · Ctrl/⌘+滚轮以指针帧为锚缩放; 已放大时普通滚轮横向平移 (全窗口放行页面滚动)。
+  // 原生非被动监听才能 preventDefault (React onWheel 被动); 窗口从 ref 读, 避免每次缩放重挂监听。
+  useEffect(() => {
+    const shell = timelineShellRef.current;
+    if (!shell || !isInteractive || maxFrame <= 0) return;
+    const onWheel = (e: WheelEvent) => {
+      const rect = shell.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const factor = Math.exp(e.deltaY * ZOOM_WHEEL_K);
+        setTimelineWindow((win) => zoomWindow(win, maxFrame, ratio, factor, MIN_VISIBLE_SPAN));
+        return;
+      }
+      const win = timelineWindowRef.current;
+      if (isFullWindow(win, maxFrame)) return; // 全窗口: 不劫持, 放行页面滚动
+      e.preventDefault();
+      const span = win.to - win.from;
+      const panPx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      const deltaFrames = (panPx / rect.width) * span;
+      setTimelineWindow((prev) => panWindow(prev, maxFrame, deltaFrames, MIN_VISIBLE_SPAN));
+    };
+    shell.addEventListener("wheel", onWheel, { passive: false });
+    return () => shell.removeEventListener("wheel", onWheel);
+  }, [isInteractive, maxFrame]);
 
   return (
     <div
@@ -433,6 +478,18 @@ export function VideoPlaybackOverlay({
               <Icon name="chevRight" size={13} />
             </Button>
           </div>
+        )}
+        {isZoomed && (
+          <Button
+            size="sm"
+            title="适配全部帧 (退出时间轴缩放)"
+            aria-label="适配全部帧"
+            data-testid="video-timeline-zoom-reset"
+            onClick={resetTimelineWindow}
+            className={styles.controlButton}
+          >
+            <Icon name="scan" size={13} />
+          </Button>
         )}
       </div>
 
@@ -520,6 +577,10 @@ export function VideoPlaybackOverlay({
         onPointerLeave={() => {
           if (seekDragRef.current || rangeDraftRef.current) return;
           updateHoverFrame(null);
+        }}
+        onDoubleClick={() => {
+          // v0.21.15 WS2 · 双击时间轴复位到全窗口 (与控制条「适配全部」等价)。
+          if (isZoomed) resetTimelineWindow();
         }}
       >
         <input
