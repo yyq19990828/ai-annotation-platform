@@ -35,6 +35,7 @@ import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConv
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
+import { collectPredictedFrames } from "./aiBoxFrames";
 import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { SelectionOverlay } from "./SelectionOverlay";
@@ -205,6 +206,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     setContextMenuTargetId(null);
   }, [contextMenu]);
 
+  // v0.21.9 · 预测帧集合 (video_bbox 帧号 + video_track_bbox 关键帧号, 去重升序); 喂时间轴预测密度轨。
+  const predictedFrames = useMemo(() => collectPredictedFrames(aiBoxes), [aiBoxes]);
+
   // ---- useVideoPlaybackController ----
   // currentFrameEntries 供 QC 用,控制器内部用它做重叠率计算。
   // 此处传空数组占位 — 重叠率 QC 会不计分,属于可接受的简化(旧栈的 currentFrameEntries 走的
@@ -220,6 +224,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     videoSampling,
     defaultPlaybackRate: defaultPlaybackRate as (1 | 0.25 | 0.5 | 2 | 4) | undefined,
     annotations,
+    predictedFrames,
     selectedId,
     selectedTrack,
     trackColorOverrides,
@@ -251,6 +256,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     selectedTrackTimeline,
     selectedTrackColor,
     globalTimelineDensity,
+    predictionDensity,
+    hasPredictedFrames,
+    seekToAdjacentPredictedFrame,
     issueFrames,
     playbackOverlayVisible,
     highlightAction,
@@ -784,6 +792,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         selectedTrackTimeline={selectedTrackTimeline}
         trackColor={selectedTrackColor}
         globalTimelineDensity={globalTimelineDensity}
+        predictionDensity={predictionDensity}
+        onSeekPredicted={hasPredictedFrames ? seekToAdjacentPredictedFrame : undefined}
         trackColorOverrides={trackColorOverrides}
         loopRegion={loopRegion}
         bookmarks={bookmarks}

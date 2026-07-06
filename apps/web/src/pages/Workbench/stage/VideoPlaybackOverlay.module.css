@@ -68,6 +68,14 @@
   background: rgba(255, 255, 255, 0.2) !important;
 }
 
+/* v0.21.9 · 跳预测帧按钮: amber 描边区分于普通帧导航, 对齐 AI 预测视觉语言。 */
+.controlButtonPredicted {
+  gap: 0;
+  padding-inline: 4px;
+  border-color: rgba(251, 191, 36, 0.55) !important;
+  color: oklch(0.82 0.13 78) !important;
+}
+
 .timelineShell {
   grid-column: 2;
   grid-row: 1;
@@ -237,6 +245,23 @@
   /* v0.11.26 · 每个 bin 按各轨迹关键帧占比, 自底向上堆叠成彩色渐变 (--density-gradient, 由 JS 注入),
      无轨迹归属 (legacy bbox) 的差额用 accent 兜底。半透明保持密度条不过抢眼。 */
   background: var(--density-gradient, color-mix(in oklch, var(--sc-brand) 68%, transparent));
+}
+
+/* v0.21.9 · AI 预测密度轨: 独立 lane (baseline 抬高到人工密度条上方), amber 单色, 与人工密度条不同层。 */
+.predictionTrack {
+  position: absolute;
+  inset: 5px 0 24px;
+  pointer-events: none;
+}
+
+.predictionBin {
+  position: absolute;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  height: var(--density-height);
+  border-radius: 2px;
+  background: color-mix(in oklch, oklch(0.78 0.14 78) 72%, transparent);
 }
 
 .trackTimeline {

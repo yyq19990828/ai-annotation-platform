@@ -28,10 +28,12 @@ import {
 import type { VideoBookmark, VideoJumpHistory, VideoLoopRegion } from "./videoNavigationState";
 import {
   buildGlobalTimelineDensity,
+  buildPredictionDensity,
   buildSelectedTrackTimeline,
   nextVisibleKeyframeFrame,
 } from "./videoTrackTimeline";
-import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import type { PredictionDensityBin, VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import { adjacentPredictedFrame } from "./aiBoxFrames";
 import { getTrackColor } from "./colors";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import { isVideoBbox, isVideoTrack, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
@@ -72,6 +74,8 @@ export interface UseVideoPlaybackControllerOptions {
   videoSampling?: VideoSamplingConfig | null;
   defaultPlaybackRate?: VideoPlaybackRate;
   annotations: AnnotationResponse[];
+  /** v0.21.9 · AI 预测有内容的帧集合 (升序去重, collectPredictedFrames 产); 时间轴预测密度轨 + 跳预测帧。 */
+  predictedFrames?: readonly number[];
   selectedId: string | null;
   selectedTrack: VideoTrackAnnotation | null;
   trackColorOverrides?: Record<string, string>;
@@ -107,6 +111,9 @@ export interface UseVideoPlaybackControllerResult {
   selectedTrackColor: string | null;
   selectedTrackKeyframes: ReturnType<typeof sortedKeyframes>;
   globalTimelineDensity: VideoTimelineDensityBin[];
+  predictionDensity: PredictionDensityBin[];
+  hasPredictedFrames: boolean;
+  seekToAdjacentPredictedFrame: (dir: -1 | 1) => void;
   qualityWarnings: string[];
   issueFrames: number[];
   playbackOverlayVisible: boolean;
@@ -138,6 +145,7 @@ export function useVideoPlaybackController({
   videoSampling = null,
   defaultPlaybackRate = DEFAULT_VIDEO_PLAYBACK_RATE,
   annotations,
+  predictedFrames = [],
   selectedTrack,
   trackColorOverrides,
   hiddenTrackIds,
@@ -309,6 +317,13 @@ export function useVideoPlaybackController({
       : buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame, 80, manualBboxFrames),
     [manualBboxFrames, maxFrame, selectedTrack, videoTracks],
   );
+
+  // v0.21.9 · 预测密度轨: 始终计算 (不像人工密度条在选中轨迹时清空), 让审阅时预测分布常驻可见。
+  const predictionDensity = useMemo(
+    () => buildPredictionDensity(predictedFrames, maxFrame, 80),
+    [predictedFrames, maxFrame],
+  );
+  const hasPredictedFrames = predictedFrames.length > 0;
 
   const qualityWarnings = useMemo(() => {
     const warnings: string[] = [];
@@ -550,6 +565,12 @@ export function useVideoPlaybackController({
     },
     [pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
+
+  // v0.21.9 · 跳到下一个/上一个有预测的帧 (预测帧集合上的 next/prev)。
+  const seekToAdjacentPredictedFrame = useCallback((dir: -1 | 1) => {
+    const target = adjacentPredictedFrame(predictedFrames, frameIndex, dir);
+    if (target !== null) seekToFrame(target, { recordHistory: true });
+  }, [predictedFrames, frameIndex, seekToFrame]);
 
   const toggleBookmark = useCallback(() => {
     showPlaybackOverlay();
@@ -862,6 +883,9 @@ export function useVideoPlaybackController({
     selectedTrackColor,
     selectedTrackKeyframes,
     globalTimelineDensity,
+    predictionDensity,
+    hasPredictedFrames,
+    seekToAdjacentPredictedFrame,
     qualityWarnings,
     issueFrames,
     playbackOverlayVisible,

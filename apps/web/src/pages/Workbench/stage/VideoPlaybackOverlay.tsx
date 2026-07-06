@@ -10,7 +10,7 @@ import { getTrackColor } from "./colors";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
-import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import type { PredictionDensityBin, VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 import styles from "./VideoPlaybackOverlay.module.css";
 
 type HighlightAction = "prev" | "next" | "play" | null;
@@ -39,6 +39,10 @@ interface VideoPlaybackOverlayProps {
   /** 选中轨迹的显示色 (oklch 字符串); 关键帧点用它着色, 与画布框/侧栏同源。 */
   trackColor?: string | null;
   globalTimelineDensity?: VideoTimelineDensityBin[];
+  /** v0.21.9 · AI 预测密度轨 (bucket 化, 单 amber 色); 与人工密度条独立叠加。 */
+  predictionDensity?: PredictionDensityBin[];
+  /** v0.21.9 · 跳到下一个/上一个有预测的帧; undefined 时不渲染导航按钮 (无预测帧)。 */
+  onSeekPredicted?: (dir: -1 | 1) => void;
   /** 会话级轨迹色覆盖; 密度条按各 bin 的主导轨迹着色时用它解析颜色。 */
   trackColorOverrides?: Record<string, string>;
   loopRegion?: VideoLoopRegion | null;
@@ -148,6 +152,8 @@ export function VideoPlaybackOverlay({
   selectedTrackTimeline = null,
   trackColor = null,
   globalTimelineDensity = [],
+  predictionDensity = [],
+  onSeekPredicted,
   trackColorOverrides,
   loopRegion = null,
   bookmarks = [],
@@ -180,6 +186,10 @@ export function VideoPlaybackOverlay({
   const maxDensity = useMemo(
     () => Math.max(1, ...globalTimelineDensity.map((bin) => bin.density)),
     [globalTimelineDensity],
+  );
+  const maxPredictionCount = useMemo(
+    () => Math.max(1, ...predictionDensity.map((bin) => bin.count)),
+    [predictionDensity],
   );
   // v0.10.29 · 采样网格刻度：step>1 时在时间轴渲染网格帧 tick。
   // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
@@ -288,6 +298,30 @@ export function VideoPlaybackOverlay({
         >
           <Icon name="chevRight" size={13} />
         </Button>
+        {onSeekPredicted && (
+          <>
+            <Button
+              size="sm"
+              title="上一个有预测的帧"
+              data-testid="video-seek-prev-predicted"
+              onClick={() => onSeekPredicted(-1)}
+              className={cn(styles.controlButton, styles.controlButtonPredicted)}
+            >
+              <Icon name="chevLeft" size={11} />
+              <Icon name="sparkle" size={11} />
+            </Button>
+            <Button
+              size="sm"
+              title="下一个有预测的帧"
+              data-testid="video-seek-next-predicted"
+              onClick={() => onSeekPredicted(1)}
+              className={cn(styles.controlButton, styles.controlButtonPredicted)}
+            >
+              <Icon name="sparkle" size={11} />
+              <Icon name="chevRight" size={11} />
+            </Button>
+          </>
+        )}
       </div>
 
       <div
@@ -491,6 +525,27 @@ export function VideoPlaybackOverlay({
                   <TimelineSpan
                     key={bin.index}
                     className={styles.densityBin}
+                    vars={binStyle}
+                  />
+                );
+              })}
+            </div>
+          )}
+          {/* v0.21.9 · AI 预测密度轨 (独立 amber lane, 始终显示; 与人工密度条不同层)。 */}
+          {predictionDensity.some((bin) => bin.count > 0) && (
+            <div data-testid="video-timeline-prediction-density" className={styles.predictionTrack}>
+              {predictionDensity.map((bin) => {
+                if (bin.count <= 0) return null;
+                const binCount = predictionDensity.length;
+                const binStyle: CSSVars = {
+                  "--timeline-left": `${(bin.index / binCount) * 100}%`,
+                  "--timeline-width": `${(1 / binCount) * 100}%`,
+                  "--density-height": `${Math.max(3, (bin.count / maxPredictionCount) * 6)}px`,
+                };
+                return (
+                  <TimelineSpan
+                    key={bin.index}
+                    className={styles.predictionBin}
                     vars={binStyle}
                   />
                 );

@@ -1,0 +1,70 @@
+// AI 候选 (预测) 的「帧作用域 + 去重」SSOT。
+// 被三处共用, 避免各写一份口径漂移:
+//  - 侧栏 AI 待审计数/列表按当前帧过滤 (v0.21.10 断点 C)
+//  - 画布 AI 层当前帧渲染 (video_bbox + video_track_bbox)
+//  - 时间轴预测密度轨 + 跳到下一/上一预测帧 (v0.21.9 WS1)
+import type { VideoTrackGeometry } from "@/types";
+import type { AiBox } from "../state/transforms";
+import { resolveTrackAtFrame } from "./videoStageGeometry";
+
+/**
+ * AI 候选在给定帧是否可见:
+ *  - video_bbox: 比对 frame_index
+ *  - video_track_bbox: 该帧能否从 keyframes 解出框 (resolveTrackAtFrame 非 null)
+ *  - 其它 (图片候选): 不做帧过滤, 恒可见
+ */
+export function aiBoxOnFrame(box: AiBox, frameIndex: number): boolean {
+  const g = box.geometry;
+  if (!g) return false;
+  if (g.type === "video_bbox") return g.frame_index === frameIndex;
+  if (g.type === "video_track_bbox") {
+    return resolveTrackAtFrame(g as VideoTrackGeometry, frameIndex) !== null;
+  }
+  return true;
+}
+
+/**
+ * 按 id 去重 (predictionsToBoxes 的 id = `pred-{predictionId}-{shapeIndex}`)。
+ * offset 分页重取期相邻页 shape 可能重叠, 去重消除重复计数 (v0.21.10 断点 C)。
+ */
+export function dedupeAiBoxesById(boxes: readonly AiBox[]): AiBox[] {
+  const seen = new Set<string>();
+  const out: AiBox[] = [];
+  for (const b of boxes) {
+    if (seen.has(b.id)) continue;
+    seen.add(b.id);
+    out.push(b);
+  }
+  return out;
+}
+
+/**
+ * 汇「有预测的帧集合」: video_bbox 取 frame_index; video_track_bbox 取其各关键帧帧号。
+ * 升序去重, 供时间轴预测密度轨 + 跳到下一/上一预测帧。
+ */
+export function collectPredictedFrames(boxes: readonly AiBox[]): number[] {
+  const frames = new Set<number>();
+  for (const b of dedupeAiBoxesById(boxes)) {
+    const g = b.geometry;
+    if (!g) continue;
+    if (g.type === "video_bbox") {
+      frames.add(g.frame_index);
+    } else if (g.type === "video_track_bbox") {
+      for (const kf of (g as VideoTrackGeometry).keyframes) frames.add(kf.frame_index);
+    }
+  }
+  return [...frames].sort((a, b) => a - b);
+}
+
+/** 从升序帧集合里找 current 之后 (dir>0) / 之前 (dir<0) 最近的预测帧; 无则 null。 */
+export function adjacentPredictedFrame(
+  frames: readonly number[],
+  current: number,
+  dir: -1 | 1,
+): number | null {
+  if (dir > 0) return frames.find((f) => f > current) ?? null;
+  for (let i = frames.length - 1; i >= 0; i--) {
+    if (frames[i] < current) return frames[i];
+  }
+  return null;
+}

@@ -132,6 +132,37 @@ export function buildGlobalTimelineDensity(
   });
 }
 
+export interface PredictionDensityBin {
+  index: number;
+  from: number;
+  to: number;
+  count: number;
+}
+
+/**
+ * 预测帧集合 → bucket 化密度轨。与 buildGlobalTimelineDensity 用同一 bin 划分 (等宽 binOf),
+ * 保证预测密度条与人工密度条在时间轴上逐桶对齐; 但预测无轨迹归属, 单色渲染。
+ */
+export function buildPredictionDensity(
+  predictedFrames: readonly number[],
+  maxFrame: number,
+  bins = 80,
+): PredictionDensityBin[] {
+  const safeMaxFrame = Math.max(0, Math.floor(maxFrame));
+  const binCount = Math.max(1, Math.min(Math.floor(bins), safeMaxFrame + 1 || 1));
+  const counts = Array.from({ length: binCount }, () => 0);
+  const binOf = (frameIndex: number) => {
+    const frame = Math.max(0, Math.min(safeMaxFrame, Math.floor(frameIndex)));
+    return safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
+  };
+  for (const frameIndex of predictedFrames) counts[binOf(frameIndex)] += 1;
+  return counts.map((count, index) => {
+    const from = Math.floor((index / binCount) * (safeMaxFrame + 1));
+    const to = Math.max(from, Math.floor(((index + 1) / binCount) * (safeMaxFrame + 1)) - 1);
+    return { index, from, to, count };
+  });
+}
+
 export function nextVisibleKeyframeFrame(
   track: VideoTrackGeometry,
   frameIndex: number,
