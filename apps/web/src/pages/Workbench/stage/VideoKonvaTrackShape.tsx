@@ -6,8 +6,8 @@ import { screenToWorld } from "./shared/viewport/scaleCancel";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { VideoStageGeom } from "./videoStageTypes";
 
-/** v0.21.9 · AI 追出关键帧的角标色 (amber, 对齐时间轴 trackKeyframePrediction / 预测密度轨)。 */
-const PREDICTED_BADGE_HEX = "#fbbf24";
+/** v0.21.9 · AI 追出关键帧的角标色 (violet, 对齐时间轴 trackKeyframePrediction / 预测密度轨 / roster)。 */
+const PREDICTED_BADGE_HEX = "#8b5cf6";
 
 interface VideoKonvaTrackShapeProps {
   /** 归一化 [0,1] bbox。 */
@@ -16,7 +16,7 @@ interface VideoKonvaTrackShapeProps {
   color: string;
   /** 插值帧或遮挡 → 虚线(对齐旧 SVG VideoTrackShape 的 "6 4")。 */
   dashed: boolean;
-  /** v0.21.9 · 当前帧是 AI 追出的关键帧 → 左上角 amber 角标 (区别于插值虚线、人工实线)。 */
+  /** v0.21.9 · 当前帧是 AI 追出的关键帧 → 左上角 violet 角标 (区别于插值虚线、人工实线)。 */
   predicted?: boolean;
   selected: boolean;
   size: VideoPixelSize;

@@ -68,12 +68,23 @@
   background: rgba(255, 255, 255, 0.2) !important;
 }
 
-/* v0.21.9 · 跳预测帧按钮: amber 描边区分于普通帧导航, 对齐 AI 预测视觉语言。 */
+/* v0.21.9 · 跳预测帧按钮组: 与帧导航同形 (单 chevron), 仅以 violet 图标色区分 AI 预测语言,
+   对齐右侧栏 roster / AI 面板的 violet。左侧细分隔线把「跳预测帧」与「逐帧导航」分组, 避免两组
+   同形 chevron 读成误重复。 */
+.predictedGroup {
+  display: flex;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
 .controlButtonPredicted {
-  gap: 0;
-  padding-inline: 4px;
-  border-color: rgba(251, 191, 36, 0.55) !important;
-  color: oklch(0.82 0.13 78) !important;
+  color: oklch(0.72 0.17 293) !important;
+}
+
+.controlButtonPredicted:hover {
+  border-color: rgba(139, 92, 246, 0.45) !important;
 }
 
 .timelineShell {
@@ -267,7 +278,7 @@
   background: var(--density-gradient, color-mix(in oklch, var(--sc-brand) 68%, transparent));
 }
 
-/* v0.21.9 · AI 预测密度轨: 独立 lane (baseline 抬高到人工密度条上方), amber 单色, 与人工密度条不同层。 */
+/* v0.21.9 · AI 预测密度轨: 独立 lane (baseline 抬高到人工密度条上方), violet 单色, 与人工密度条不同层。 */
 .predictionTrack {
   position: absolute;
   inset: 5px 0 24px;
@@ -281,7 +292,7 @@
   width: var(--timeline-width);
   height: var(--density-height);
   border-radius: 2px;
-  background: color-mix(in oklch, oklch(0.78 0.14 78) 72%, transparent);
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 72%, transparent);
 }
 
 .trackTimeline {
@@ -297,7 +308,7 @@
 }
 
 .predictedSegment {
-  border-top-color: rgba(251, 191, 36, 0.82);
+  border-top-color: rgba(139, 92, 246, 0.82);
 }
 
 .outsideSegment {
@@ -332,7 +343,7 @@
 .trackKeyframePrediction {
   width: 8px;
   height: 8px;
-  background: oklch(0.78 0.14 78);
+  background: oklch(0.62 0.21 293);
 }
 
 .trackKeyframeOccluded {

@@ -15,6 +15,10 @@ import styles from "./VideoPlaybackOverlay.module.css";
 
 type HighlightAction = "prev" | "next" | "play" | null;
 type CSSVars = Record<`--${string}`, string | number>;
+
+// 密度柱最大像素高度。人工/AI 两条 lane 共用同一 max 计数与同一柱高上限,
+// 柱高才能跨 lane 直接反映数量占比 (见 densityScaleMax)。
+const DENSITY_BAR_MAX_PX = 9;
 export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
 
 export interface VideoTimelineChapter {
@@ -39,7 +43,7 @@ interface VideoPlaybackOverlayProps {
   /** 选中轨迹的显示色 (oklch 字符串); 关键帧点用它着色, 与画布框/侧栏同源。 */
   trackColor?: string | null;
   globalTimelineDensity?: VideoTimelineDensityBin[];
-  /** v0.21.9 · AI 预测密度轨 (bucket 化, 单 amber 色); 与人工密度条独立叠加。 */
+  /** v0.21.9 · AI 预测密度轨 (bucket 化, 单 violet 色); 与人工密度条独立叠加。 */
   predictionDensity?: PredictionDensityBin[];
   /** v0.21.9 · 跳到下一个/上一个有预测的帧; undefined 时不渲染导航按钮 (无预测帧)。 */
   onSeekPredicted?: (dir: -1 | 1) => void;
@@ -183,13 +187,16 @@ export function VideoPlaybackOverlay({
     if (hoverFrame === null) return null;
     return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
   }, [hoverFrame, timebase]);
-  const maxDensity = useMemo(
-    () => Math.max(1, ...globalTimelineDensity.map((bin) => bin.density)),
-    [globalTimelineDensity],
-  );
-  const maxPredictionCount = useMemo(
-    () => Math.max(1, ...predictionDensity.map((bin) => bin.count)),
-    [predictionDensity],
+  // 人工关键帧密度与 AI 候选密度共用同一计数基准, 使两条 lane 的柱高可以直接横向比较。
+  // 否则各自独立归一化会让「1 个关键帧」和「8 个候选」都撑满各自 lane, 把 1:8 的真实比例
+  // 画成等高甚至倒挂 (关键帧反而更高)。共享 max 后, 柱高才真实反映数量占比。
+  const densityScaleMax = useMemo(
+    () => Math.max(
+      1,
+      ...globalTimelineDensity.map((bin) => bin.density),
+      ...predictionDensity.map((bin) => bin.count),
+    ),
+    [globalTimelineDensity, predictionDensity],
   );
   // v0.10.29 · 采样网格刻度：step>1 时在时间轴渲染网格帧 tick。
   // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
@@ -299,7 +306,7 @@ export function VideoPlaybackOverlay({
           <Icon name="chevRight" size={13} />
         </Button>
         {onSeekPredicted && (
-          <>
+          <div className={styles.predictedGroup}>
             <Button
               size="sm"
               title="上一个有预测的帧"
@@ -307,8 +314,7 @@ export function VideoPlaybackOverlay({
               onClick={() => onSeekPredicted(-1)}
               className={cn(styles.controlButton, styles.controlButtonPredicted)}
             >
-              <Icon name="chevLeft" size={11} />
-              <Icon name="sparkle" size={11} />
+              <Icon name="chevLeft" size={13} />
             </Button>
             <Button
               size="sm"
@@ -317,10 +323,9 @@ export function VideoPlaybackOverlay({
               onClick={() => onSeekPredicted(1)}
               className={cn(styles.controlButton, styles.controlButtonPredicted)}
             >
-              <Icon name="sparkle" size={11} />
-              <Icon name="chevRight" size={11} />
+              <Icon name="chevRight" size={13} />
             </Button>
-          </>
+          </div>
         )}
       </div>
 
@@ -518,7 +523,7 @@ export function VideoPlaybackOverlay({
                 const binStyle: CSSVars = {
                   "--timeline-left": `${(bin.index / binCount) * 100}%`,
                   "--timeline-width": `${(1 / binCount) * 100}%`,
-                  "--density-height": `${Math.max(3, (bin.density / maxDensity) * 8)}px`,
+                  "--density-height": `${Math.max(2, (bin.density / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
                   "--density-gradient": densityBinGradient(bin, trackColorOverrides),
                 };
                 return (
@@ -531,7 +536,7 @@ export function VideoPlaybackOverlay({
               })}
             </div>
           )}
-          {/* v0.21.9 · AI 预测密度轨 (独立 amber lane, 始终显示; 与人工密度条不同层)。 */}
+          {/* v0.21.9 · AI 预测密度轨 (独立 violet lane, 始终显示; 与人工密度条不同层)。 */}
           {predictionDensity.some((bin) => bin.count > 0) && (
             <div data-testid="video-timeline-prediction-density" className={styles.predictionTrack}>
               {predictionDensity.map((bin) => {
@@ -540,7 +545,7 @@ export function VideoPlaybackOverlay({
                 const binStyle: CSSVars = {
                   "--timeline-left": `${(bin.index / binCount) * 100}%`,
                   "--timeline-width": `${(1 / binCount) * 100}%`,
-                  "--density-height": `${Math.max(3, (bin.count / maxPredictionCount) * 6)}px`,
+                  "--density-height": `${Math.max(2, (bin.count / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
                 };
                 return (
                   <TimelineSpan

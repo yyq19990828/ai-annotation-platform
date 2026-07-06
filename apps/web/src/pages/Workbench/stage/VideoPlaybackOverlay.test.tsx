@@ -248,6 +248,23 @@ describe("VideoPlaybackOverlay", () => {
     expect(onSeekByFrames).toHaveBeenNthCalledWith(1, 1);
     expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
   });
+
+  // 回归: 人工关键帧密度与 AI 候选密度必须共用同一计数基准, 柱高才真实反映数量占比。
+  // 修复前两条 lane 各自独立归一化, 会把「1 个关键帧」画得比「8 个候选」还高 (倒挂)。
+  it("scales manual and prediction density on a shared count basis so bar height reflects real ratio", () => {
+    const px = (el: HTMLElement) => parseFloat(el.style.getPropertyValue("--density-height"));
+    const { getByTestId } = renderOverlay({
+      globalTimelineDensity: [{ index: 0, from: 0, to: 0, density: 1, tracks: [] }],
+      predictionDensity: [{ index: 0, from: 0, to: 0, count: 8 }],
+    });
+
+    const manualBin = getByTestId("video-timeline-density").querySelector("span") as HTMLElement;
+    const predBin = getByTestId("video-timeline-prediction-density").querySelector("span") as HTMLElement;
+
+    // 8 个候选的柱必须显著高于 1 个关键帧的柱 (共享 max=8 下: 9px vs 2px), 不再倒挂。
+    expect(px(predBin)).toBeGreaterThan(px(manualBin));
+    expect(px(predBin)).toBeGreaterThan(px(manualBin) * 3);
+  });
 });
 
 describe("densityBinGradient", () => {
