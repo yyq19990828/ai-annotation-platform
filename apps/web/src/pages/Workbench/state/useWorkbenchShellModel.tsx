@@ -450,11 +450,18 @@ export function useWorkbenchShellModel({
   const [propagateHighlight, setPropagateHighlight] = useState<
     { startFrame: number; endFrame: number } | null
   >(null);
+  // v0.21.14 · 传播对话框打开时时间轴 Shift+拖刷选回填的范围 (每次刷选替换新对象喂给对话框)。
+  const [propagateBrush, setPropagateBrush] = useState<
+    { startFrame: number; endFrame: number } | null
+  >(null);
   const handleTimelineRangeSelect = useCallback(
     (purpose: TimelineRangePurpose, region: VideoLoopRegion) => {
       if (purpose === "chapter-draft") {
         setChapterDraft({ startFrame: region.startFrame, endFrame: region.endFrame });
         setChapterDraftArmed(false);
+      } else if (purpose === "propagate-range") {
+        // 传播对话框开着时刷选 → 回填对话框的自定义范围 (每次新对象, 对话框按引用触发)。
+        setPropagateBrush({ startFrame: region.startFrame, endFrame: region.endFrame });
       }
     },
     [],
@@ -517,6 +524,7 @@ export function useWorkbenchShellModel({
 
   const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
+    setPropagateBrush(null);
   }, []);
 
   const handlePropagateSubmit = useCallback(
@@ -1546,8 +1554,14 @@ export function useWorkbenchShellModel({
   const canEditChapters = !isLocked && isOwner;
   const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
     if (!isVideoTask) return undefined;
+    // 传播对话框开着时优先臂选 propagate-range (Shift+拖回填对话框); 否则章节圈选 / loop。
+    const rangeSelectPurpose = propagateDialog
+      ? "propagate-range"
+      : chapterDraftArmed
+        ? "chapter-draft"
+        : "loop";
     return {
-      rangeSelectPurpose: chapterDraftArmed ? "chapter-draft" : "loop",
+      rangeSelectPurpose,
       onRangeSelect: handleTimelineRangeSelect,
       onResizeChapter: canEditChapters ? handleResizeChapter : undefined,
       hoveredChapterId,
@@ -1555,6 +1569,7 @@ export function useWorkbenchShellModel({
     };
   }, [
     isVideoTask,
+    propagateDialog,
     chapterDraftArmed,
     handleTimelineRangeSelect,
     canEditChapters,
@@ -2826,6 +2841,7 @@ export function useWorkbenchShellModel({
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
+    brushedRange: propagateBrush,
   };
 
   const issueSection = projectId && taskId ? {

@@ -295,6 +295,31 @@ describe("VideoPlaybackOverlay", () => {
     expect(onLoopRegionChange).not.toHaveBeenCalled();
   });
 
+  // v0.21.14 · propagate-range 用途保留普通拖 seek, 仅 Shift+拖才圈选 (对话框开着仍能 scrub 预览)。
+  it("keeps plain-drag seek under propagate-range purpose; only Shift+drag brushes", () => {
+    const onSeek = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId } = renderOverlay({
+      rangeSelectPurpose: "propagate-range",
+      onSeek,
+      onRangeSelect,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    // 普通拖 → seek, 不圈选。
+    fireEvent(shell, pointerDown(300));
+    expect(onSeek).toHaveBeenCalledWith(3);
+    expect(onRangeSelect).not.toHaveBeenCalled();
+    fireEvent(shell, pointerUp(300));
+
+    // Shift+拖 → 圈选 propagate-range。
+    fireEvent(shell, pointerDown(200, true));
+    fireEvent(shell, pointerMove(800));
+    fireEvent(shell, pointerUp(800));
+    expect(onRangeSelect).toHaveBeenCalledWith("propagate-range", { startFrame: 2, endFrame: 7 });
+  });
+
   // v0.21.13 WS3 · 拖章节条右边界 → 松手 onChapterResize 落新起止帧 (拖动中本地预览)。
   it("resizes a chapter by dragging its end handle and commits on pointer up", () => {
     const onChapterResize = vi.fn();

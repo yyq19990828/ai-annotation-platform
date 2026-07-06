@@ -126,6 +126,8 @@ interface VideoTrackerPropagateDialogProps {
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
   /** v0.21.14 WS3 · 上报当前影响范围, 供时间轴高亮「将影响哪段帧」; 关闭时上报 null。 */
   onRangeChange?: (range: { startFrame: number; endFrame: number } | null) => void;
+  /** v0.21.14 · 时间轴 Shift+拖刷选回填的范围 (覆盖预设/方向派生的范围); 每次刷选传新对象。 */
+  brushedRange?: { startFrame: number; endFrame: number } | null;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -141,6 +143,7 @@ export function VideoTrackerPropagateDialog({
   onCancel,
   onSubmit,
   onRangeChange,
+  brushedRange = null,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -148,6 +151,9 @@ export function VideoTrackerPropagateDialog({
   // v0.10.36: SAM 模型尺寸; 空 = 默认 (tiny)。
   const [samVariant, setSamVariant] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  // v0.21.14 · 时间轴 Shift+拖刷选回填的自定义范围; 非 null 时覆盖预设/方向派生的范围。
+  // 改预设 / 方向即清空 (回到派生范围)。
+  const [customRange, setCustomRange] = useState<{ from: number; to: number } | null>(null);
 
   // v0.21.14 · 项目已绑真实 tracker 后端 (preferNonMockModel) 时从下拉过滤掉测试用 mock_bbox,
   // 避免误选跑出假框; 未绑后端 / 测试环境仍保留 mock 可见。过滤后的表也用于默认模型解析,
@@ -175,12 +181,19 @@ export function VideoTrackerPropagateDialog({
       }));
       setSamVariant(remembered.samVariant);
       setError(null);
+      setCustomRange(null);
     }
   }, [open, preferNonMockModel, projectDefaultModel, userId, modelOptions]);
 
+  // 时间轴 Shift+拖刷选 → 覆盖为自定义范围 (每次刷选传新对象, 故按引用触发)。
+  useEffect(() => {
+    if (!open || !brushedRange) return;
+    setCustomRange({ from: brushedRange.startFrame, to: brushedRange.endFrame });
+  }, [open, brushedRange]);
+
   const grid = Math.max(1, Math.round(samplingStep));
 
-  const range = useMemo(() => {
+  const derivedRange = useMemo(() => {
     if (rangePreset === "next-keyframe") {
       if (nextKeyframeAfter !== null && nextKeyframeAfter > frameIndex) {
         return { from: frameIndex, to: nextKeyframeAfter };
@@ -205,6 +218,9 @@ export function VideoTrackerPropagateDialog({
     }
     return { from: frameIndex, to: Math.min(maxFrame, frameIndex + span) };
   }, [direction, frameIndex, grid, maxFrame, nextKeyframeAfter, rangePreset]);
+
+  // 自定义范围 (来自时间轴刷选) 优先; 否则用预设/方向派生的范围。
+  const range = customRange ?? derivedRange;
 
   // v0.21.14 WS3 · 把当前影响范围上报给时间轴高亮; 关闭 / 卸载时清空。
   useEffect(() => {
@@ -279,7 +295,10 @@ export function VideoTrackerPropagateDialog({
               <button
                 key={d}
                 type="button"
-                onClick={() => setDirection(d)}
+                onClick={() => {
+                  setDirection(d);
+                  setCustomRange(null);
+                }}
                 className={cn(
                   "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
                   direction === d
@@ -297,7 +316,10 @@ export function VideoTrackerPropagateDialog({
           范围
           <select
             value={rangePreset}
-            onChange={(e) => setRangePreset(e.target.value as RangePresetValue)}
+            onChange={(e) => {
+              setRangePreset(e.target.value as RangePresetValue);
+              setCustomRange(null);
+            }}
             className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
           >
             {RANGE_PRESETS.map((preset) => (
@@ -317,6 +339,12 @@ export function VideoTrackerPropagateDialog({
                 F{range.from} → F{range.to}
               </>
             )}
+            {customRange && (
+              <span data-testid="tracker-range-custom" className="ml-1.5 text-brand">· 自定义</span>
+            )}
+          </span>
+          <span className="text-muted-foreground text-2xs">
+            按住 Shift 在时间轴上拖选可直接圈定范围
           </span>
         </label>
 

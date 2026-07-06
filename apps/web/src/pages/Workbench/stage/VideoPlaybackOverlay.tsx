@@ -451,9 +451,10 @@ export function VideoPlaybackOverlay({
           focusTimelineShell(e.currentTarget);
           const brushEnabled =
             rangeSelectPurpose === "loop" ? Boolean(onLoopRegionChange) : Boolean(onRangeSelect);
-          // loop 用途保持 Shift+拖 (原行为); 已臂选的非 loop 用途 (chapter-draft/propagate-range)
-          // 进入专用圈选态, 普通拖即圈选, 无需再按 Shift。
-          const wantsBrush = brushEnabled && (rangeSelectPurpose !== "loop" || e.shiftKey);
+          // 手势区分: chapter-draft 有显式「圈选」按钮臂选, 普通拖即圈选; loop / propagate-range
+          // 保留普通拖 seek/scrub (传播对话框开着时仍能拖动预览帧), 用 Shift+拖 才圈选。
+          const plainDragBrushes = rangeSelectPurpose === "chapter-draft";
+          const wantsBrush = brushEnabled && (plainDragBrushes || e.shiftKey);
           if (!wantsBrush) {
             seekDragRef.current = true;
             onSeek(frame);
