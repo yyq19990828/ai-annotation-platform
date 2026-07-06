@@ -195,6 +195,18 @@ export function VideoTrackSidebar({
   const canJoinSelectedTracks = selectedTracks.length === 2
     && selectedTracks[0].class_name === selectedTracks[1].class_name
     && !trackRangesOverlap(selectedTracks[0], selectedTracks[1]);
+  // v0.21.14 · 合并 / 跳连禁用时按当前选择态给出动态原因 (差在哪), 而非笼统「只支持…」。
+  const mergeDisabledReason = useMemo(() => {
+    if (canMergeSelectedTracks) return null;
+    if (selectedTracks.length !== 2) return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
+    return "两条轨迹需同类";
+  }, [canMergeSelectedTracks, selectedTracks]);
+  const joinDisabledReason = useMemo(() => {
+    if (canJoinSelectedTracks) return null;
+    if (selectedTracks.length !== 2) return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
+    if (selectedTracks[0].class_name !== selectedTracks[1].class_name) return "两条轨迹需同类";
+    return "两条轨迹的可见帧区间不能重叠";
+  }, [canJoinSelectedTracks, selectedTracks]);
 
   const currentKeyframe = useMemo(
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
@@ -497,8 +509,10 @@ export function VideoTrackSidebar({
       onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
       onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
       canMergeSelectedTracks={canMergeSelectedTracks}
+      mergeDisabledReason={mergeDisabledReason}
       onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
       canJoinSelectedTracks={canJoinSelectedTracks}
+      joinDisabledReason={joinDisabledReason}
       onShowSelectedTracks={() => setSelectedTracksHidden(false)}
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}

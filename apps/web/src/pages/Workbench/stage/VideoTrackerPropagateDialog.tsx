@@ -232,7 +232,7 @@ export function VideoTrackerPropagateDialog({
   return (
     <div
       role="dialog"
-      aria-label="AI 传播"
+      aria-label="AI 追踪传播"
       data-testid="video-tracker-propagate-dialog"
       className="fixed inset-0 z-workbench-modal grid place-items-center bg-black/40"
       onClick={(e) => {

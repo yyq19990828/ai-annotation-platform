@@ -420,19 +420,19 @@ export function VideoTrackCardContent({
             size="sm"
             className={ACTION_BUTTON_CLASS}
             disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
-            title="发起 AI 传播 (Ctrl+B)"
+            title="AI 追踪传播 · 调用追踪模型逐帧预测新框 (Ctrl+B)"
             onClick={() => onPropagateTrack?.(selectedTrack)}
           >
-            <Icon name="bot" size={13} />AI 传播
+            <Icon name="bot" size={13} />AI 追踪
           </Button>
           <Button
             size="sm"
             className={ACTION_BUTTON_CLASS}
             disabled={!canPropagate}
-            title="把当前帧的框复制到后续/向前 N 帧"
+            title="复制到后续帧 · 纯几何铺帧, 不调用模型"
             onClick={() => setPropagateOpen(true)}
           >
-            <Icon name="layers" size={13} />复制后续
+            <Icon name="copy" size={13} />复制后续
           </Button>
         </div>
       </div>

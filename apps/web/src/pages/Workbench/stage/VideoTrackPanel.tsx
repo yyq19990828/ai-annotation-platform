@@ -41,9 +41,13 @@ interface VideoTrackPanelProps {
   onAggregateSelectedBboxes?: () => void;
   onMergeSelectedTracks?: () => void;
   canMergeSelectedTracks?: boolean;
+  /** v0.21.14 · 合并禁用时按当前选择态给出动态原因 (差在哪); 可用时为 null。 */
+  mergeDisabledReason?: string | null;
   // v0.10.30 · 2.5 Join: 选中两条同类且帧号不重叠的轨迹时跳连, gapMode 由 ComposeDialog 选定。
   onJoinSelectedTracks?: (gapMode: VideoTrackGapMode) => void;
   canJoinSelectedTracks?: boolean;
+  /** v0.21.14 · 跳连禁用时按当前选择态给出动态原因; 可用时为 null。 */
+  joinDisabledReason?: string | null;
   onShowSelectedTracks?: () => void;
   onHideSelectedTracks?: () => void;
   onLockSelectedTracks?: () => void;
@@ -144,8 +148,10 @@ export function VideoTrackPanel({
   onAggregateSelectedBboxes,
   onMergeSelectedTracks,
   canMergeSelectedTracks = false,
+  mergeDisabledReason = null,
   onJoinSelectedTracks,
   canJoinSelectedTracks = false,
+  joinDisabledReason = null,
   onShowSelectedTracks,
   onHideSelectedTracks,
   onLockSelectedTracks,
@@ -274,7 +280,7 @@ export function VideoTrackPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
+                title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : (mergeDisabledReason ?? "只支持合并两条同类轨迹")}
                 aria-label="合并"
                 disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
                 onClick={onMergeSelectedTracks}
@@ -284,7 +290,7 @@ export function VideoTrackPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : "只支持跳连两条同类且帧号不重叠的轨迹"}
+                title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : (joinDisabledReason ?? "只支持跳连两条同类且帧号不重叠的轨迹")}
                 aria-label="跳连"
                 disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
                 onClick={() => setJoinOpen(true)}
