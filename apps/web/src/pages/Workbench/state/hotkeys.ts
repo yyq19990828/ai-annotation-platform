@@ -192,7 +192,9 @@ export type HotkeyAction =
   | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected"; scope: "keyframe" | "track" }
   | { type: "videoCycleInCategory"; dir: 1 | -1 }
-  | { type: "videoStepCategory"; dir: 1 | -1 };
+  | { type: "videoStepCategory"; dir: 1 | -1 }
+  | { type: "imageCycleInCategory"; dir: 1 | -1 }
+  | { type: "imageStepCategory"; dir: 1 | -1 };
 
 /** 属性 hotkey 解析结果（D.1）：
  * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
@@ -394,7 +396,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   if (e.key === "+" || e.key === "=") return { type: "samPolarity", polarity: "positive" };
   if (e.key === "-") return { type: "samPolarity", polarity: "negative" };
 
-  if (e.key === "Tab") return { type: "cycleUser", dir: e.shiftKey ? -1 : 1, loop: true };
+  // v0.21.11 · 图片 Tab 升级为「同类流转」(AI 待审 / 人工, 按选中对象类型环内循环),
+  // ` 跨类跳转。J/K 保留为人工框专属循环(老肌肉记忆)。
+  if (e.key === "Tab") return { type: "imageCycleInCategory", dir: e.shiftKey ? -1 : 1 };
+  if (e.key === "`") return { type: "imageStepCategory", dir: e.shiftKey ? -1 : 1 };
   if (e.key === "j" || e.key === "J") return { type: "cycleUser", dir: 1, loop: false };
   if (e.key === "k" || e.key === "K") return { type: "cycleUser", dir: -1, loop: false };
 

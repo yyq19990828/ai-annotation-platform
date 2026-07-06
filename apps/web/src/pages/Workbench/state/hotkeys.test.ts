@@ -84,9 +84,11 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "u" })).toEqual({ type: "smartNext", mode: "uncertain" });
     expect(dispatch({ key: "e" })).toEqual({ type: "submit" });
   });
-  it("Tab / Shift+Tab → cycleUser loop", () => {
-    expect(dispatch({ key: "Tab" })).toEqual({ type: "cycleUser", dir: 1, loop: true });
-    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({ type: "cycleUser", dir: -1, loop: true });
+  it("Tab / Shift+Tab → imageCycleInCategory (同类流转); ` → imageStepCategory (跨类)", () => {
+    expect(dispatch({ key: "Tab" })).toEqual({ type: "imageCycleInCategory", dir: 1 });
+    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({ type: "imageCycleInCategory", dir: -1 });
+    expect(dispatch({ key: "`" })).toEqual({ type: "imageStepCategory", dir: 1 });
+    expect(dispatch({ key: "`", shiftKey: true })).toEqual({ type: "imageStepCategory", dir: -1 });
   });
   it("J / K → cycleUser 不循环", () => {
     expect(dispatch({ key: "j" })).toEqual({ type: "cycleUser", dir: 1, loop: false });

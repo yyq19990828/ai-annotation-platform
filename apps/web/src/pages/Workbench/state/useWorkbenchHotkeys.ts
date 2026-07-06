@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
+import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
@@ -529,6 +530,23 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           const idxNow = s.selectedId ? aiBoxes.findIndex((b) => b.id === s.selectedId) : -1;
           const next = (idxNow + action.dir + aiBoxes.length) % aiBoxes.length;
           s.setSelectedId(aiBoxes[next].id);
+          return;
+        }
+
+        // v0.21.11 · 图片「同类流转」(Tab) / 「跨类跳转」(`): 类别 = AI 待审(aiBoxes) + 人工(annotations),
+        // 无轨迹。数组序循环(与 cycleUser 一致, 无需坐标)。焦点联动由 ImageWorkbench 的选中 effect 处理。
+        case "imageCycleInCategory": {
+          e.preventDefault();
+          const cats = { ai: aiBoxes.map((b) => b.id), user: annotationsRef.current.map((a) => a.id), track: [] as string[] };
+          const next = nextInCategory(cats, s.selectedId, action.dir);
+          if (next) s.setSelectedId(next);
+          return;
+        }
+        case "imageStepCategory": {
+          e.preventDefault();
+          const cats = { ai: aiBoxes.map((b) => b.id), user: annotationsRef.current.map((a) => a.id), track: [] as string[] };
+          const next = nextCategory(cats, s.selectedId, action.dir);
+          if (next) s.setSelectedId(next);
           return;
         }
 
