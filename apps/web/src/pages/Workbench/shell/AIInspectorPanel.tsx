@@ -631,7 +631,7 @@ export function AIPredictionPopover({
         )}
         {isVideoTask && (
           <p className="mb-1 text-2xs leading-snug text-muted-foreground">
-            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Shift+T 种子追踪，或到「AI 预标」批量页按整段序列跑。
+            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Ctrl+B 种子追踪，或到「AI 预标」批量页按整段序列跑。
           </p>
         )}
       </div>

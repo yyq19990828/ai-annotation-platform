@@ -1004,7 +1004,7 @@ export function useWorkbenchShellModel({
     backendId: batchBackendId,
     // v0.21.10 · 工作台「当前题 AI」面板恒做**单帧检测**(方案 a): 传 executionUnit="frame" 放开
     //   图像检测模型 (GEOMETRIC_TASKS), 而非整段 tracker——单帧发 detection → /predict-frame →
-    //   to_video_bbox_result 落 video_bbox。整段追踪走 Shift+T 种子追踪 / 批量页 (execution_unit=video)。
+    //   to_video_bbox_result 落 video_bbox。整段追踪走 Ctrl+B 种子追踪 / 批量页 (execution_unit=video)。
     //   (图像项目 isVideoProject=false, 此参数无副作用。)
     executionUnit: "frame",
   });

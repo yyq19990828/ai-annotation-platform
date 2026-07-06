@@ -241,7 +241,7 @@ export function VideoTrackerPropagateDialog({
     >
       <div className="grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
         <div className="flex items-center justify-between">
-          <b className="text-sm">AI 传播 (Shift+T)</b>
+          <b className="text-sm">AI 传播 (Ctrl+B)</b>
           <button
             type="button"
             onClick={onCancel}

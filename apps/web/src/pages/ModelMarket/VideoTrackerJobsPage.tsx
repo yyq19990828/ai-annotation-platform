@@ -234,7 +234,7 @@ function EmptyState() {
       <Icon name="sparkles" size={28} />
       <div className="text-xs text-muted-foreground">暂无视频追踪任务</div>
       <div className="text-xs">
-        去视频工作台按 Shift+T 发起一次追踪，任务会出现在这里。
+        去视频工作台按 Ctrl+B 发起一次追踪，任务会出现在这里。
       </div>
     </div>
   );

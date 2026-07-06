@@ -420,7 +420,7 @@ export function VideoTrackCardContent({
             size="sm"
             className={ACTION_BUTTON_CLASS}
             disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
-            title="发起 AI 传播 (Shift+T)"
+            title="发起 AI 传播 (Ctrl+B)"
             onClick={() => onPropagateTrack?.(selectedTrack)}
           >
             <Icon name="bot" size={13} />AI 传播
