@@ -304,14 +304,14 @@ export function VideoTrackCardContent({
       { id: "convert-divider", divider: true, label: "" },
       {
         id: "split-keyframes",
-        label: "拆关键帧",
-        icon: "scissors",
+        label: "关键帧转独立框",
+        icon: "box",
         disabled,
         onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "track", frameMode: "keyframes" }),
       },
       {
         id: "split-all-frames",
-        label: "拆全帧",
+        label: "全帧转独立框",
         icon: "film",
         disabled,
         onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "track", frameMode: "all_frames" }),
@@ -400,10 +400,10 @@ export function VideoTrackCardContent({
             size="sm"
             className={ACTION_BUTTON_CLASS}
             disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
-            title="在当前帧之后拆出后段轨迹"
+            title="在当前帧把这条轨迹拆分为前后两条（不生成独立框）"
             onClick={onSplitSelectedTrack}
           >
-            <Icon name="scissors" size={13} />拆轨迹
+            <Icon name="scissors" size={13} />拆分轨迹
           </Button>
           <Button
             size="sm"
@@ -603,11 +603,11 @@ export function VideoTrackCardContent({
                     size="sm"
                     className={KF_BUTTON_CLASS}
                     disabled={readOnly || selectedTrackLocked || kfOutside}
-                    title="拆此关键帧为独立框"
-                    aria-label="拆此关键帧为独立框"
+                    title="此关键帧转独立框"
+                    aria-label="此关键帧转独立框"
                     onClick={() => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "frame", frameIndex: kf.frame_index })}
                   >
-                    <Icon name="scissors" size={13} />
+                    <Icon name="box" size={13} />
                   </Button>
                   <Button
                     size="sm"
