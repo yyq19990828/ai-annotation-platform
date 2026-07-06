@@ -25,7 +25,7 @@ import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
 import { classColor, getTrackColor } from "./colors";
-import { isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { deriveTrackNumber, isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -40,6 +40,7 @@ import { buildFrameCategories, nextInCategory, nextCategory, type FrameObjectRef
 import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { SelectionOverlay } from "./SelectionOverlay";
+import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
 import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
 
@@ -503,6 +504,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
     [frameIndex, selectedTrack],
   );
+
+  // v0.21.12 · 粘轨迹态提示数据: 轨迹显示编号 + 当前帧是否已有关键帧(切「延展 / 同帧新建」措辞)。
+  // 仅轨迹工具 + 有选中轨迹时非空 → 显式化「下一次画框归属选中轨迹」这一隐式模型。
+  const stickyTrackHint = useMemo(() => {
+    if (videoTool !== "track" || !selectedTrack) return null;
+    const num = deriveTrackNumber(videoTracks).get(selectedTrack.id);
+    const label = num != null
+      ? `#${num} ${selectedTrack.class_name}`
+      : `${shortTrackId(selectedTrack.geometry.track_id)} ${selectedTrack.class_name}`;
+    return { label, hasKeyframeAtFrame: selectedTrackCurrentKeyframe != null };
+  }, [videoTool, selectedTrack, videoTracks, selectedTrackCurrentKeyframe]);
   const canDeleteSelectedTrackKeyframe = Boolean(
     selectedTrack
     && selectedTrackCurrentKeyframe
@@ -849,6 +861,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         </div>
       )}
       <VideoQcWarnings warnings={qualityWarnings} />
+      {stickyTrackHint && (
+        <VideoStickyTrackHint
+          label={stickyTrackHint.label}
+          hasKeyframeAtFrame={stickyTrackHint.hasKeyframeAtFrame}
+        />
+      )}
       <VideoPlaybackOverlay
         frameIndex={frameIndex}
         maxFrame={maxFrame}

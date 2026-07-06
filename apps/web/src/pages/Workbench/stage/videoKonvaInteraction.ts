@@ -69,6 +69,8 @@ export interface ResolveDragCommitCtx {
   videoTool: VideoTool;
   selectedTrack: (AnnotationResponse & { geometry: VideoTrackGeometry }) | null;
   lockedTrackIds: Set<string>;
+  /** 当前帧号:用于「选中轨迹该帧已有关键帧时,同帧再画框判为新建而非覆盖」的分流(v0.21.12)。 */
+  frameIndex: number;
 }
 
 /** 松手提交:复刻 finishDrag 分支(draw → 建框/落关键帧;move/resize → 更新 track/bbox)。 */
@@ -78,15 +80,19 @@ export function resolveDragCommit(
   ctx: ResolveDragCommitCtx,
 ): VideoDragCommit {
   if (!drag || drag.kind === "pan") return { type: "none" };
-  const { annotations, videoTool, selectedTrack, lockedTrackIds } = ctx;
+  const { annotations, videoTool, selectedTrack, lockedTrackIds, frameIndex } = ctx;
 
   if (drag.kind === "draw") {
     if (videoTool === "select") return { type: "none" };
     const geom = normalizeGeom(drag.start, finalPt);
     if (geom.w < VIDEO_MIN_BOX || geom.h < VIDEO_MIN_BOX) return { type: "none" };
-    // track 工具且选中轨迹未锁:画框落到该轨迹当前帧关键帧(而非建独立框)。
+    // track 工具且选中轨迹未锁:画框落到该轨迹关键帧(而非建独立框)——但仅当当前帧「尚无关键帧」时。
+    // v0.21.12 · 断吞框:同帧再画框(该帧已有关键帧)几乎总是「标第二个物体」,而非重做本帧关键帧。
+    // 此时跳过 track 分支、落到下方 draw 新建分支,避免 upsertKeyframe 静默替换第一个框。
+    // 跨帧画框(该帧无关键帧)仍延展当前轨迹,保留插值这一轨迹标注的核心价值。
     if (videoTool === "track" && selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
-      return { type: "track", ann: selectedTrack, geom };
+      const hasKeyframeAtFrame = selectedTrack.geometry.keyframes.some((kf) => kf.frame_index === frameIndex);
+      if (!hasKeyframeAtFrame) return { type: "track", ann: selectedTrack, geom };
     }
     const kind = videoTool === "track" ? "video_track_bbox" : "video_bbox";
     return { type: "draw", kind, geom };
@@ -228,6 +234,7 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
       videoTool: p.videoTool,
       selectedTrack: p.selectedTrack,
       lockedTrackIds: p.lockedTrackIds,
+      frameIndex: p.frameIndex,
     });
     if (action.type === "none") return;
     if (action.type === "draw") {
