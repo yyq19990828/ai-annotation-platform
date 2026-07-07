@@ -41,6 +41,8 @@ from app.schemas._jsonb_types import (
     VideoTrackKeyframe,
     VideoTrackPolygonGeometry,
     VideoTrackPolygonKeyframe,
+    VideoTrackPolylineGeometry,
+    VideoTrackPolylineKeyframe,
 )
 
 
@@ -321,6 +323,38 @@ def test_video_track_polygon_keyframe_pair_shape():
         VideoTrackPolygonKeyframe(
             frame_index=0, points=[[0.0, 0.0], [0.1, 0.1], [0.2, 0.2, 0.3]]
         )
+
+
+def test_video_track_polyline_geometry_valid():
+    """v0.21.20 · polyline track: 开路径 (min 2 点), 与 polygon 平行。"""
+    geom = VideoTrackPolylineGeometry(
+        track_id="l1",
+        keyframes=[
+            VideoTrackPolylineKeyframe(frame_index=0, points=[[0.0, 0.0], [0.4, 0.0]]),
+            VideoTrackPolylineKeyframe(frame_index=5, points=[[0.0, 0.2], [0.4, 0.2]]),
+        ],
+    )
+    assert geom.type == "video_track_polyline"
+    assert geom.keyframes[0].points == [[0.0, 0.0], [0.4, 0.0]]
+
+
+def test_video_track_polyline_keyframe_min_2_points():
+    with pytest.raises(ValidationError):
+        VideoTrackPolylineKeyframe(frame_index=0, points=[[0.0, 0.0]])
+
+
+def test_video_track_polyline_geometry_in_union():
+    from pydantic import TypeAdapter
+
+    adapter = TypeAdapter(Geometry)
+    parsed = adapter.validate_python(
+        {
+            "type": "video_track_polyline",
+            "track_id": "l1",
+            "keyframes": [{"frame_index": 0, "points": [[0.0, 0.0], [0.4, 0.0]]}],
+        }
+    )
+    assert isinstance(parsed, VideoTrackPolylineGeometry)
 
 
 def test_video_track_polygon_geometry_in_union():

@@ -5,6 +5,8 @@ import type {
   VideoTrackKeyframe,
   VideoTrackPolygonGeometry,
   VideoTrackPolygonKeyframe,
+  VideoTrackPolylineGeometry,
+  VideoTrackPolylineKeyframe,
 } from "@/types";
 import type { VideoFrameEntry, VideoStageGeom } from "./videoStageTypes";
 import { runReferenceKalman } from "./videoReferenceKalman";
@@ -54,6 +56,13 @@ export function isVideoPolygonTrack(
   ann: AnnotationResponse,
 ): ann is AnnotationResponse & { geometry: VideoTrackPolygonGeometry } {
   return ann.geometry.type === "video_track_polygon";
+}
+
+/** v0.21.20 · polyline track 判定。 */
+export function isVideoPolylineTrack(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoTrackPolylineGeometry } {
+  return ann.geometry.type === "video_track_polyline";
 }
 
 type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };
@@ -301,6 +310,85 @@ export function resolveVideoPolygonTrackAtFrame(
   return { points: interpolatePolygon(before, after, frameIndex), source: "interpolated" };
 }
 
+// ── v0.21.20 · polyline (开路径) track 插值 (镜像后端 lerp_polyline) ──
+
+/** 把开路径折线按弧长重采样为 n 个等距顶点 (含首尾端点, 不闭合)。退化时安全回退。 */
+export function resampleOpenPolyline(points: Point[], n: number): Point[] {
+  const pts = points.filter((p) => p.length >= 2);
+  if (n <= 1 || pts.length < 2) return pts.map((p) => [p[0], p[1]] as Point);
+  const segLengths: number[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    segLengths.push(Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]));
+  }
+  const total = segLengths.reduce((a, b) => a + b, 0);
+  if (total === 0) return Array.from({ length: n }, () => [pts[0][0], pts[0][1]] as Point);
+  const cum = [0];
+  for (const len of segLengths) cum.push(cum[cum.length - 1] + len);
+  const step = total / (n - 1);
+  const out: Point[] = [];
+  for (let k = 0; k < n; k++) {
+    const target = Math.min(k * step, total);
+    let seg = 0;
+    while (seg < segLengths.length - 1 && cum[seg + 1] < target) seg++;
+    const segLen = segLengths[seg];
+    const t = segLen === 0 ? 0 : (target - cum[seg]) / segLen;
+    const [x0, y0] = pts[seg];
+    const [x1, y1] = pts[seg + 1];
+    out.push([round6(x0 + (x1 - x0) * t), round6(y0 + (y1 - y0) * t)]);
+  }
+  return out;
+}
+
+/** polyline 关键帧插值: 开路径弧长重采样到公共顶点数 + 逐点 lerp (端点固定对应, 无旋转对齐)。 */
+export function interpolatePolyline(
+  a: VideoTrackPolylineKeyframe,
+  b: VideoTrackPolylineKeyframe,
+  frameIndex: number,
+): Point[] {
+  const pa = a.points.filter((p) => p.length >= 2);
+  const pb = b.points.filter((p) => p.length >= 2);
+  if (!pa.length) return pb.map((p) => [p[0], p[1]] as Point);
+  if (!pb.length) return pa.map((p) => [p[0], p[1]] as Point);
+  const span = Math.max(1, b.frame_index - a.frame_index);
+  const t = (frameIndex - a.frame_index) / span;
+  const n = Math.max(pa.length, pb.length);
+  const ra = resampleOpenPolyline(pa, n);
+  const rb = resampleOpenPolyline(pb, n);
+  return ra.map((p, i) => {
+    const q = rb[i];
+    return [round6(p[0] + (q[0] - p[0]) * t), round6(p[1] + (q[1] - p[1]) * t)] as Point;
+  });
+}
+
+/** 解析 polyline track 在某帧的折线 (精确关键帧 / 开路径插值 / outside → null)。 */
+export function resolveVideoPolylineTrackAtFrame(
+  track: VideoTrackPolylineGeometry,
+  frameIndex: number,
+): ResolvedPolygonFrame | null {
+  const outsideRanges = normalizeOutsideRanges(track.outside ?? []);
+  if (isFrameInOutsideRanges(outsideRanges, frameIndex)) return null;
+  const keyframes = [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
+  const visible = keyframes.filter((kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+
+  const exact = keyframes.find((kf) => kf.frame_index === frameIndex);
+  if (exact) {
+    return {
+      points: exact.points.map((p) => [p[0], p[1]] as Point),
+      source: exact.source === "prediction" ? "prediction" : "manual",
+      occluded: exact.occluded,
+    };
+  }
+
+  const afterIndex = lowerBound(visible, frameIndex, (kf) => kf.frame_index);
+  const before = visible[afterIndex - 1];
+  const after = visible[afterIndex];
+  if (!before || !after) return null;
+  if (outsideRangesIntersect(outsideRanges, before.frame_index + 1, after.frame_index - 1)) {
+    return null;
+  }
+  return { points: interpolatePolyline(before, after, frameIndex), source: "interpolated" };
+}
+
 export function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number): VideoStageGeom {
   const current = resolveTrackAtFrame(track, frameIndex);
   if (current) return current.geom;
@@ -420,9 +508,9 @@ export function shortTrackId(trackId: string) {
  * 返回 `Map<annotationId, number>`。
  */
 export function deriveTrackNumber(
-  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry | VideoTrackPolygonGeometry }>,
+  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry }>,
 ): Map<string, number> {
-  const firstFrame = (geometry: VideoTrackGeometry | VideoTrackPolygonGeometry) => {
+  const firstFrame = (geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => {
     const frames = geometry.keyframes.map((kf) => kf.frame_index);
     return frames.length > 0 ? Math.min(...frames) : 0;
   };

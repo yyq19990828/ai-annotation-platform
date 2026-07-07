@@ -512,6 +512,46 @@ class VideoTrackPolygonGeometry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class VideoTrackPolylineKeyframe(BaseModel):
+    """v0.21.20 · polyline track 的单关键帧。
+
+    `points` 为归一化 [0,1] 的开路径折线顶点序列 (不闭合, 至少 2 点)。帧间由开路径弧长
+    参数化插值 (首尾端点固定对应, 见 video_tracks.lerp_polyline)。
+    """
+
+    frame_index: int = Field(ge=0)
+    points: list[list[float]] = Field(min_length=2)
+    source: Literal["manual", "interpolated", "prediction"] = "manual"
+    occluded: bool = False
+    attributes: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("points")
+    @classmethod
+    def _check_points(cls, v: list[list[float]]) -> list[list[float]]:
+        for i, pt in enumerate(v):
+            if len(pt) != 2:
+                raise ValueError(f"points[{i}] 必须是 [x, y]")
+        return v
+
+
+class VideoTrackPolylineGeometry(BaseModel):
+    """v0.21.20 · 视频对象轨迹 (polyline / 开路径几何)。
+
+    与 `video_track_polygon` 平行, 但 keyframes 为不闭合折线 (无 holes / 无闭合边);
+    帧间按开路径弧长参数化插值。存量轨迹零迁移。
+    """
+
+    type: Literal["video_track_polyline"] = "video_track_polyline"
+    track_id: str = Field(min_length=1)
+    semantic_label: str | None = None
+    keyframes: list[VideoTrackPolylineKeyframe] = Field(min_length=1)
+    outside: list[VideoTrackOutsideRange] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PolygonGeometry(BaseModel):
     """单连通域 polygon。
 
@@ -660,6 +700,7 @@ Geometry = Annotated[
     | VideoBboxGeometry
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
+    | VideoTrackPolylineGeometry
     | PolygonGeometry
     | MultiPolygonGeometry
     | RotatedBboxGeometry

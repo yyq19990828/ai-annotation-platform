@@ -27,9 +27,31 @@ function polygonTrackAnn(id: string, trackId: string, keyframes: { frame_index: 
   } as unknown as AnnotationResponse;
 }
 
+function polylineTrackAnn(id: string, trackId: string, keyframes: { frame_index: number; points: [number, number][]; source?: string }[], className = "car"): AnnotationResponse {
+  return {
+    id,
+    class_name: className,
+    geometry: { type: "video_track_polyline", track_id: trackId, keyframes },
+  } as unknown as AnnotationResponse;
+}
+
 const base = { visual: DEFAULT_ANNOTATION_VISUAL, selectedId: null };
 
 describe("deriveVideoFrameViews", () => {
+  it("v0.21.20 · polyline track: entry 带 points + open=true, 插值帧虚线", () => {
+    const ann = polylineTrackAnn("l1", "line1", [
+      { frame_index: 0, points: [[0, 0], [0.2, 0], [0.4, 0]], source: "manual" },
+      { frame_index: 10, points: [[0, 0.2], [0.2, 0.2], [0.4, 0.2]], source: "manual" },
+    ]);
+    const atKf = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 0 });
+    expect(atKf.entries).toHaveLength(1);
+    expect(atKf.entries[0].open).toBe(true);
+    expect(atKf.entries[0].points).toEqual([[0, 0], [0.2, 0], [0.4, 0]]);
+    const atInterp = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 5 });
+    expect(atInterp.entries[0].dashed).toBe(true);
+    expect(atInterp.entries[0].points).toEqual([[0, 0.1], [0.2, 0.1], [0.4, 0.1]]);
+  });
+
   it("v0.21.20 · polygon track: entry 带 points + 外接盒 geom, 插值帧虚线", () => {
     const ann = polygonTrackAnn("p1", "poly1", [
       { frame_index: 0, points: [[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]], source: "manual" },

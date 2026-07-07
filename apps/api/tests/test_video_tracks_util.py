@@ -4,9 +4,11 @@ v0.21.20 · polygon track 弧长参数化插值单测。"""
 from app.services.video_tracks import (
     derive_track_number,
     lerp_polygon,
+    lerp_polyline,
     resolve_track_at_frame,
     resolved_track_frames,
     _resample_closed_polygon,
+    _resample_open_polyline,
 )
 
 
@@ -127,6 +129,60 @@ def test_resolved_track_frames_polygon_keyframes_mode():
     rows = resolved_track_frames(geom, frame_mode="keyframes")
     assert [r["frame_index"] for r in rows] == [0, 10]
     assert all("points" in r and "bbox" not in r for r in rows)
+
+
+# ── v0.21.20 · polyline (开路径) track 插值 ─────────────────────────
+
+_LINE_A = [[0.0, 0.0], [0.2, 0.0], [0.4, 0.0]]
+_LINE_B = [[0.0, 0.2], [0.2, 0.2], [0.4, 0.2]]
+
+
+def _polyline_track(keyframes: list[dict]) -> dict:
+    return {"type": "video_track_polyline", "track_id": "l1", "keyframes": keyframes}
+
+
+def test_resample_open_polyline_keeps_endpoints():
+    # 开路径重采样到 3 点 = 原顶点 (等距三点线)。
+    assert _resample_open_polyline(_LINE_A, 3) == _LINE_A
+    # 重采样到 5 点: 首尾端点保持, 中间插值。
+    out = _resample_open_polyline([[0.0, 0.0], [0.4, 0.0]], 5)
+    assert out[0] == [0.0, 0.0]
+    assert out[-1] == [0.4, 0.0]
+    assert len(out) == 5
+
+
+def test_lerp_polyline_midpoint_open():
+    out = lerp_polyline({"points": _LINE_A}, {"points": _LINE_B}, 0.5)
+    assert out == [[0.0, 0.1], [0.2, 0.1], [0.4, 0.1]]
+
+
+def test_lerp_polyline_unequal_counts_resample():
+    short = [[0.0, 0.0], [0.4, 0.0]]
+    out = lerp_polyline({"points": short}, {"points": _LINE_B}, 0.5)
+    assert len(out) == 3
+
+
+def test_resolve_polyline_track_exact_and_interpolated():
+    geom = _polyline_track(
+        [
+            {"frame_index": 0, "points": _LINE_A},
+            {"frame_index": 10, "points": _LINE_B},
+        ]
+    )
+    exact = resolve_track_at_frame(geom, 0)
+    assert exact is not None and exact["points"] == _LINE_A and "bbox" not in exact
+    mid = resolve_track_at_frame(geom, 5)
+    assert mid is not None and mid["source"] == "interpolated"
+    assert mid["points"] == [[0.0, 0.1], [0.2, 0.1], [0.4, 0.1]]
+
+
+def test_polyline_uses_open_resample_not_closed():
+    # polyline 与 polygon 对同一组点插值结果不同 (开 vs 闭路径参数化)。
+    tri = [[0.0, 0.0], [0.4, 0.0], [0.2, 0.4]]
+    quad = [[0.0, 0.2], [0.4, 0.2], [0.4, 0.5], [0.0, 0.5]]
+    line = lerp_polyline({"points": tri}, {"points": quad}, 0.5)
+    poly = lerp_polygon({"points": tri}, {"points": quad}, 0.5)
+    assert line != poly
 
 
 def test_bbox_track_resolve_unchanged_regression():

@@ -11,6 +11,16 @@ def is_polygon_track(geometry: dict) -> bool:
     return geometry.get("type") == "video_track_polygon"
 
 
+def is_polyline_track(geometry: dict) -> bool:
+    """v0.21.20 · geometry 是否为 polyline track (开路径 points, 不闭合)。"""
+    return geometry.get("type") == "video_track_polyline"
+
+
+def _is_points_track(geometry: dict) -> bool:
+    """polygon / polyline track: 关键帧存 points; 二者共享 points 形状分派。"""
+    return is_polygon_track(geometry) or is_polyline_track(geometry)
+
+
 def _clean_frame(value: object) -> int | None:
     try:
         frame = int(value)  # type: ignore[arg-type]
@@ -183,9 +193,66 @@ def lerp_polygon(before: dict, after: dict, ratio: float) -> list[list[float]]:
     ]
 
 
-def _shape_fields(kf: dict, *, polygon: bool) -> dict:
-    """v0.21.20 · 按 track 类型取关键帧形状字段: polygon→points, bbox→bbox。"""
-    if polygon:
+def _resample_open_polyline(points: list, n: int) -> list[list[float]]:
+    """把开路径折线按弧长重采样为 n 个等距顶点 (含首尾端点, 不闭合)。
+
+    与 _resample_closed_polygon 的区别: 段数 = 顶点数-1 (无回环闭合边),
+    采样步长 = 全长/(n-1) 使两端点必被采到。退化时安全回退。
+    """
+    pts = [(float(p[0]), float(p[1])) for p in points if len(p) >= 2]
+    if n <= 1 or len(pts) < 2:
+        return [list(p) for p in pts]
+    seg_lengths = [
+        math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+        for i in range(len(pts) - 1)
+    ]
+    total = sum(seg_lengths)
+    if total == 0:
+        return [list(pts[0]) for _ in range(n)]
+    cum = [0.0]
+    for length in seg_lengths:
+        cum.append(cum[-1] + length)
+    step = total / (n - 1)
+    out: list[list[float]] = []
+    for k in range(n):
+        target = min(k * step, total)
+        seg = 0
+        while seg < len(seg_lengths) - 1 and cum[seg + 1] < target:
+            seg += 1
+        seg_len = seg_lengths[seg]
+        t = 0.0 if seg_len == 0 else (target - cum[seg]) / seg_len
+        x0, y0 = pts[seg]
+        x1, y1 = pts[seg + 1]
+        out.append([round(x0 + (x1 - x0) * t, 6), round(y0 + (y1 - y0) * t, 6)])
+    return out
+
+
+def lerp_polyline(before: dict, after: dict, ratio: float) -> list[list[float]]:
+    """v0.21.20 · polyline (开路径) 关键帧插值: 开路径弧长重采样到公共顶点数 + 逐点 lerp。
+
+    与 lerp_polygon 的区别: 开路径重采样 (首尾端点固定对应) + 无旋转对齐 (端点即对应)。
+    """
+    a = [p for p in (before.get("points") or []) if len(p) >= 2]
+    b = [p for p in (after.get("points") or []) if len(p) >= 2]
+    if not a:
+        return [list(p) for p in b]
+    if not b:
+        return [list(p) for p in a]
+    n = max(len(a), len(b))
+    ra = _resample_open_polyline(a, n)
+    rb = _resample_open_polyline(b, n)
+    return [
+        [
+            round(ra[i][0] + (rb[i][0] - ra[i][0]) * ratio, 6),
+            round(ra[i][1] + (rb[i][1] - ra[i][1]) * ratio, 6),
+        ]
+        for i in range(len(ra))
+    ]
+
+
+def _shape_fields(kf: dict, *, points: bool) -> dict:
+    """v0.21.20 · 按 track 类型取关键帧形状字段: polygon/polyline→points, bbox→bbox。"""
+    if points:
         return {"points": [list(pt) for pt in (kf.get("points") or [])]}
     return {"bbox": kf.get("bbox") or {}}
 
@@ -204,7 +271,7 @@ def resolve_track_at_frame(
     geometry_or_keyframes: dict | list[dict], frame_index: int
 ) -> dict | None:
     geometry = _coerce_geometry(geometry_or_keyframes)
-    polygon = is_polygon_track(geometry)
+    points_track = _is_points_track(geometry)
     keyframes = sorted_keyframes(geometry)
     outside_ranges = effective_outside_ranges(geometry)
     if range_intersects_outside(outside_ranges, frame_index, frame_index):
@@ -217,7 +284,7 @@ def resolve_track_at_frame(
     if exact:
         return {
             "frame_index": frame_index,
-            **_shape_fields(exact, polygon=polygon),
+            **_shape_fields(exact, points=points_track),
             "source": exact.get("source", "manual"),
             "occluded": bool(exact.get("occluded", False)),
         }
@@ -257,11 +324,12 @@ def resolve_track_at_frame(
     ):
         return None
     ratio = (frame_index - before_frame) / (after_frame - before_frame)
-    interp_shape = (
-        {"points": lerp_polygon(before, after, ratio)}
-        if polygon
-        else {"bbox": lerp_bbox(before, after, ratio)}
-    )
+    if is_polygon_track(geometry):
+        interp_shape = {"points": lerp_polygon(before, after, ratio)}
+    elif is_polyline_track(geometry):
+        interp_shape = {"points": lerp_polyline(before, after, ratio)}
+    else:
+        interp_shape = {"bbox": lerp_bbox(before, after, ratio)}
     return {
         "frame_index": frame_index,
         **interp_shape,
@@ -279,14 +347,14 @@ def resolved_track_frames(
     if frame_mode not in VIDEO_FRAME_MODES:
         raise ValueError("video_frame_mode must be one of: keyframes, all_frames")
 
-    polygon = is_polygon_track(geometry)
+    points_track = _is_points_track(geometry)
     keyframes = sorted_keyframes(geometry)
     outside_ranges = effective_outside_ranges(geometry)
     if frame_mode == "keyframes":
         return [
             {
                 "frame_index": int(kf.get("frame_index", 0)),
-                **_shape_fields(kf, polygon=polygon),
+                **_shape_fields(kf, points=points_track),
                 "source": kf.get("source", "manual"),
                 "occluded": bool(kf.get("occluded", False)),
             }

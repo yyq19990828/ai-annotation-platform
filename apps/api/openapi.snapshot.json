@@ -958,7 +958,8 @@
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
-                "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry"
+                "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
+                "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
               },
               "propertyName": "type"
             },
@@ -974,6 +975,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1633,7 +1637,8 @@
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
-                "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry"
+                "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
+                "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
               },
               "propertyName": "type"
             },
@@ -1649,6 +1654,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1903,7 +1911,8 @@
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                     "video_bbox": "#/components/schemas/VideoBboxGeometry",
                     "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
-                    "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry"
+                    "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
+                    "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
                   },
                   "propertyName": "type"
                 },
@@ -1919,6 +1928,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackPolygonGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/PolygonGeometry"
@@ -19554,6 +19566,110 @@
           "points"
         ],
         "title": "VideoTrackPolygonKeyframe",
+        "type": "object"
+      },
+      "VideoTrackPolylineGeometry": {
+        "additionalProperties": false,
+        "description": "v0.21.20 · 视频对象轨迹 (polyline / 开路径几何)。\n\n与 `video_track_polygon` 平行, 但 keyframes 为不闭合折线 (无 holes / 无闭合边);\n帧间按开路径弧长参数化插值。存量轨迹零迁移。",
+        "properties": {
+          "keyframes": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackPolylineKeyframe"
+            },
+            "minItems": 1,
+            "title": "Keyframes",
+            "type": "array"
+          },
+          "outside": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackOutsideRange"
+            },
+            "title": "Outside",
+            "type": "array"
+          },
+          "semantic_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Label"
+          },
+          "track_id": {
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "video_track_polyline",
+            "default": "video_track_polyline",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "keyframes"
+        ],
+        "title": "VideoTrackPolylineGeometry",
+        "type": "object"
+      },
+      "VideoTrackPolylineKeyframe": {
+        "additionalProperties": false,
+        "description": "v0.21.20 · polyline track 的单关键帧。\n\n`points` 为归一化 [0,1] 的开路径折线顶点序列 (不闭合, 至少 2 点)。帧间由开路径弧长\n参数化插值 (首尾端点固定对应, 见 video_tracks.lerp_polyline)。",
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          },
+          "points": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "minItems": 2,
+            "title": "Points",
+            "type": "array"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "interpolated",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "points"
+        ],
+        "title": "VideoTrackPolylineKeyframe",
         "type": "object"
       },
       "VideoTrackerJobCounts": {

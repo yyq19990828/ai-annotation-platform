@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   interpolatePolygon,
+  interpolatePolyline,
   nearestTrackKeyframe,
   resampleClosedPolygon,
+  resampleOpenPolyline,
   resolveTrackAtFrame,
   resolveVideoPolygonTrackAtFrame,
+  resolveVideoPolylineTrackAtFrame,
   sortedKeyframes,
   trackReferenceAtFrame,
   upsertKeyframe,
 } from "./videoStageGeometry";
-import type { VideoTrackGeometry, VideoTrackPolygonGeometry } from "@/types";
+import type { VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
 
 function track(keyframes: VideoTrackGeometry["keyframes"], patch?: Partial<VideoTrackGeometry>): VideoTrackGeometry {
   return {
@@ -171,5 +174,43 @@ describe("videoStageGeometry · polygon track", () => {
       { outside: [{ from: 4, to: 6, source: "manual" }] },
     );
     expect(resolveVideoPolygonTrackAtFrame(withOutside, 5)).toBeNull();
+  });
+});
+
+// ── v0.21.20 · polyline (开路径) track 插值 (前端, 镜像后端 lerp_polyline) ──
+
+const LINE_A: [number, number][] = [[0, 0], [0.2, 0], [0.4, 0]];
+const LINE_B: [number, number][] = [[0, 0.2], [0.2, 0.2], [0.4, 0.2]];
+
+function polylineTrack(
+  keyframes: VideoTrackPolylineGeometry["keyframes"],
+  patch?: Partial<VideoTrackPolylineGeometry>,
+): VideoTrackPolylineGeometry {
+  return { type: "video_track_polyline", track_id: "line_1", keyframes, ...patch };
+}
+
+describe("videoStageGeometry · polyline track", () => {
+  it("resampleOpenPolyline 保端点 + 等距三点线不变", () => {
+    expect(resampleOpenPolyline(LINE_A, 3)).toEqual(LINE_A);
+    const out = resampleOpenPolyline([[0, 0], [0.4, 0]], 5);
+    expect(out[0]).toEqual([0, 0]);
+    expect(out[4]).toEqual([0.4, 0]);
+    expect(out).toHaveLength(5);
+  });
+
+  it("interpolatePolyline 中点 = y 平移一半", () => {
+    const a = { frame_index: 0, points: LINE_A, source: "manual" as const };
+    const b = { frame_index: 10, points: LINE_B, source: "manual" as const };
+    expect(interpolatePolyline(a, b, 5)).toEqual([[0, 0.1], [0.2, 0.1], [0.4, 0.1]]);
+  });
+
+  it("resolveVideoPolylineTrackAtFrame: 精确/插值/outside→null", () => {
+    const geom = polylineTrack([
+      { frame_index: 0, points: LINE_A, source: "manual" },
+      { frame_index: 10, points: LINE_B, source: "manual" },
+    ]);
+    expect(resolveVideoPolylineTrackAtFrame(geom, 0)?.points).toEqual(LINE_A);
+    expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.source).toBe("interpolated");
+    expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.points).toEqual([[0, 0.1], [0.2, 0.1], [0.4, 0.1]]);
   });
 });

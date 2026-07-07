@@ -267,6 +267,22 @@ export type VideoTrackPolygonGeometry = {
   keyframes: VideoTrackPolygonKeyframe[];
   outside?: VideoTrackOutsideRange[];
 };
+/** v0.21.20 · polyline track 关键帧: points 为开路径折线顶点 (不闭合, ≥2 点)。 */
+export type VideoTrackPolylineKeyframe = {
+  frame_index: number;
+  points: [number, number][];
+  source: "manual" | "interpolated" | "prediction";
+  occluded?: boolean;
+  attributes?: Record<string, unknown> | null;
+};
+/** v0.21.20 · 视频对象轨迹 (polyline / 开路径几何), 与 polygon 平行; 帧间开路径弧长插值。 */
+export type VideoTrackPolylineGeometry = {
+  type: "video_track_polyline";
+  track_id: string;
+  semantic_label?: string | null;
+  keyframes: VideoTrackPolylineKeyframe[];
+  outside?: VideoTrackOutsideRange[];
+};
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
  * hole. 新 prediction (mask 单连通带空洞) 在此填 hole 顶点列表 (内环, 与外环 evenodd
@@ -341,6 +357,7 @@ export type Geometry =
   | VideoBboxGeometry
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
+  | VideoTrackPolylineGeometry
   | PolygonGeometry
   | MultiPolygonGeometry
   | RotatedBboxGeometry

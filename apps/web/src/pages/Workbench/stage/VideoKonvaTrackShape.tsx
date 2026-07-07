@@ -12,8 +12,10 @@ const PREDICTED_BADGE_HEX = "#8b5cf6";
 interface VideoKonvaTrackShapeProps {
   /** 归一化 [0,1] bbox (polygon track 时为多边形外接盒, 供角标定位)。 */
   geom: VideoStageGeom;
-  /** v0.21.20 · polygon track 当前帧归一化顶点; 存在时画 <Line closed> 而非 <Rect>。 */
+  /** v0.21.20 · polygon/polyline track 当前帧归一化顶点; 存在时画 <Line> 而非 <Rect>。 */
   points?: [number, number][];
+  /** v0.21.20 · true = polyline 开路径 (Line 不闭合、不填充); 缺省 = polygon 闭合。 */
+  open?: boolean;
   /** 原始 CSS 色(轨迹色 / 类别色);内部转 hex。 */
   color: string;
   /** 插值帧或遮挡 → 虚线(对齐旧 SVG VideoTrackShape 的 "6 4")。 */
@@ -36,6 +38,7 @@ interface VideoKonvaTrackShapeProps {
 function VideoKonvaTrackShapeComponent({
   geom,
   points,
+  open = false,
   color,
   dashed,
   predicted = false,
@@ -51,17 +54,19 @@ function VideoKonvaTrackShapeComponent({
   const badge = 6 / scale; // 屏幕恒定的角标边长
   const dash = dashed ? [6 / scale, 4 / scale] : undefined;
   const fill = hexToRgba(hex, fillAlpha(selected, visual));
+  // polyline (open) 至少 2 点、不闭合不填充; polygon 至少 3 点、闭合带填充。
+  const minPts = open ? 2 : 3;
   return (
     <Fragment>
-      {points && points.length >= 3 ? (
+      {points && points.length >= minPts ? (
         <Line
           name="video-track-shape"
           points={points.flatMap(([px, py]) => [px * size.w, py * size.h])}
-          closed
+          closed={!open}
           stroke={hex}
           strokeWidth={sw}
           dash={dash}
-          fill={fill}
+          fill={open ? undefined : fill}
           lineCap="round"
           lineJoin="round"
           listening={false}

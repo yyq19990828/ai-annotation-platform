@@ -76,6 +76,27 @@ describe("VideoKonvaTrackShape", () => {
     expect(line.getAttribute("data-closed")).toBe("true");
   });
 
+  it("v0.21.20 · open (polyline) → <Line closed=false>, 无填充, 2 点即可", () => {
+    render(
+      <VideoKonvaTrackShape
+        geom={{ x: 0.1, y: 0.2, w: 0.3, h: 0 }}
+        points={[[0.1, 0.2], [0.4, 0.2]]}
+        open
+        color="#ff0000"
+        dashed={false}
+        selected={false}
+        size={size}
+        scale={1}
+        visual={DEFAULT_ANNOTATION_VISUAL}
+      />,
+    );
+    const line = document.querySelector('[data-konva="Line"]')!;
+    expect(line.getAttribute("data-closed")).toBe("false");
+    expect(line.getAttribute("data-points")).toBe(JSON.stringify([100, 100, 400, 100]));
+    // 开路径不填充。
+    expect(line.hasAttribute("data-fill")).toBe(false);
+  });
+
   it("v0.21.20 · points < 3 → 回退 <Rect>", () => {
     render(
       <VideoKonvaTrackShape

@@ -5,9 +5,11 @@ import {
   deriveTrackNumber,
   isVideoBbox,
   isVideoPolygonTrack,
+  isVideoPolylineTrack,
   isVideoTrack,
   resolveTrackAtFrame,
   resolveVideoPolygonTrackAtFrame,
+  resolveVideoPolylineTrackAtFrame,
   trackReferenceAtFrame,
 } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
@@ -33,8 +35,10 @@ export type VideoEntryView = {
   key: string;
   id: string;
   geom: VideoStageGeom;
-  /** v0.21.20 · polygon track 当前帧的归一化多边形顶点; 存在时 Konva 层画 <Line> 而非 <Rect>。 */
+  /** v0.21.20 · polygon/polyline track 当前帧的归一化顶点; 存在时 Konva 层画 <Line> 而非 <Rect>。 */
   points?: [number, number][];
+  /** v0.21.20 · true = polyline (开路径, Line 不闭合); 缺省/false = polygon (闭合)。 */
+  open?: boolean;
   /** 原始 CSS 色(轨迹色 / 类别色);Konva 层 render 时转 hex。 */
   color: string;
   selected: boolean;
@@ -136,8 +140,9 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
 
   const videoTracks = annotations.filter(isVideoTrack);
   const polygonTracks = annotations.filter(isVideoPolygonTrack);
-  // v0.21.20 · bbox + polygon track 统一编号 (deriveTrackNumber 只读 frame_index/track_id)。
-  const trackNumbers = deriveTrackNumber([...videoTracks, ...polygonTracks]);
+  const polylineTracks = annotations.filter(isVideoPolylineTrack);
+  // v0.21.20 · bbox + polygon + polyline track 统一编号 (deriveTrackNumber 只读 frame_index/track_id)。
+  const trackNumbers = deriveTrackNumber([...videoTracks, ...polygonTracks, ...polylineTracks]);
   const trackContent = visual.labelContent.track;
 
   // 当前帧应显示的 bbox(legacy bbox + track 解析帧)。
@@ -159,6 +164,13 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       currentFrameTrackIds.add(ann.geometry.track_id);
       const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: resolved.points });
+    } else if (isVideoPolylineTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
+      // v0.21.20 · polyline track: 同 polygon 但开路径 (Line 不闭合)。
+      const resolved = resolveVideoPolylineTrackAtFrame(ann.geometry, frameIndex);
+      if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
+      currentFrameTrackIds.add(ann.geometry.track_id);
+      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      entries.push({ ...entry, points: resolved.points, open: true });
     }
   }
 
