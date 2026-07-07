@@ -4,7 +4,9 @@ import { classColor, getTrackColor } from "./colors";
 import {
   deriveTrackNumber,
   isVideoBbox,
+  isVideoPolygon,
   isVideoPolygonTrack,
+  isVideoPolyline,
   isVideoPolylineTrack,
   isVideoTrack,
   resolveTrackAtFrame,
@@ -152,6 +154,16 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
       entries.push(buildEntryView(ann, ann.geometry, "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent));
+    } else if (isVideoPolygon(ann) && ann.geometry.frame_index === frameIndex) {
+      // v0.21.21 · 单帧 polygon: 外接盒作 geom (标签/选中锚点) + points 供 <Line closed>。
+      if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
+      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      entries.push({ ...entry, points: ann.geometry.points });
+    } else if (isVideoPolyline(ann) && ann.geometry.frame_index === frameIndex) {
+      // v0.21.21 · 单帧 polyline: 同 polygon 但开路径 (Line 不闭合、不填充)。
+      if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
+      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      entries.push({ ...entry, points: ann.geometry.points, open: true });
     } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;

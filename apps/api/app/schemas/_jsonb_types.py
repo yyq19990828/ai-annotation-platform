@@ -298,23 +298,28 @@ class KeypointSchema(BaseModel):
 
 
 class VideoModesConfig(BaseModel):
-    """v0.11.29 · 仅视频项目的 bbox 单位消费：控制「单帧框 / 轨迹框」是否各自可用。
+    """v0.11.29 · 仅视频项目的 bbox 单位消费：控制各单帧 / 轨迹几何是否各自可用。
 
-    单帧框 = video_bbox 几何, 轨迹框 = video_track_bbox 几何, 共享同一套类别 / 属性绑定.
-    仅用于工具栏可用性过滤; 不强制校验已存在的 annotation. None = 两者均可用 (向后兼容老项目).
+    单帧框 = video_bbox, 轨迹框 = video_track_bbox, 单帧 polygon/polyline = video_polygon/
+    video_polyline (v0.21.21), 共享同一套类别 / 属性绑定. 仅用于工具栏可用性过滤; 不强制校验
+    已存在的 annotation. None = 全部可用 (向后兼容老项目)。老配置只存 box/track, extra=forbid 下
+    pydantic 按默认值补齐新开关 (默认 True), 老项目升级后自动获得单帧 polygon/polyline 工具。
     """
 
     box: bool = True
     track: bool = True
+    # v0.21.21 · 单帧 polygon / polyline 子开关, 与 box 共享 bbox 单位的类别/属性绑定。
+    polygon: bool = True
+    polyline: bool = True
 
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
     def _at_least_one_enabled(self) -> "VideoModesConfig":
-        # 与前端 ClassesSection 语义一致：不允许 box / track 全 false，
+        # 与前端 ClassesSection 语义一致：不允许全部几何开关都 false，
         # 否则 bbox 单元 enabled=true 却什么都画不了。
-        if not self.box and not self.track:
-            raise ValueError("video_modes 必须至少保留 box / track 其一可用")
+        if not (self.box or self.track or self.polygon or self.polyline):
+            raise ValueError("video_modes 必须至少保留一个几何开关可用")
         return self
 
 
@@ -420,6 +425,58 @@ class VideoBboxGeometry(BaseModel):
     h: float
 
     model_config = ConfigDict(extra="forbid")
+
+
+class VideoPolygonGeometry(BaseModel):
+    """v0.21.21 · 视频单帧 polygon。与图片 PolygonGeometry 平行, 多一个 frame_index
+    定位到具体帧; 与 track/keyframe/插值无关 (那是 video_track_polygon)。points 归一化 [0,1]。
+    """
+
+    type: Literal["video_polygon"] = "video_polygon"
+    frame_index: int = Field(ge=0)
+    points: list[list[float]] = Field(min_length=3)
+    holes: list[list[list[float]]] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("points")
+    @classmethod
+    def _check_points(cls, v: list[list[float]]) -> list[list[float]]:
+        for i, pt in enumerate(v):
+            if len(pt) != 2:
+                raise ValueError(f"points[{i}] 必须是 [x, y]")
+        return v
+
+    @field_validator("holes")
+    @classmethod
+    def _check_holes(cls, v: list[list[list[float]]]) -> list[list[list[float]]]:
+        for hi, hole in enumerate(v):
+            if len(hole) < 3:
+                raise ValueError(f"holes[{hi}] 顶点 < 3, 不构成有效环")
+            for pi, pt in enumerate(hole):
+                if len(pt) != 2:
+                    raise ValueError(f"holes[{hi}][{pi}] 必须是 [x, y]")
+        return v
+
+
+class VideoPolylineGeometry(BaseModel):
+    """v0.21.21 · 视频单帧开放折线 (不闭合)。与图片 PolylineGeometry 平行 + frame_index;
+    points 至少 2 个归一化 [0,1] 顶点。
+    """
+
+    type: Literal["video_polyline"] = "video_polyline"
+    frame_index: int = Field(ge=0)
+    points: list[list[float]] = Field(min_length=2)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("points")
+    @classmethod
+    def _check_points(cls, v: list[list[float]]) -> list[list[float]]:
+        for i, pt in enumerate(v):
+            if len(pt) != 2:
+                raise ValueError(f"points[{i}] 必须是 [x, y]")
+        return v
 
 
 class VideoTrackBbox(BaseModel):
@@ -698,6 +755,8 @@ class PointMaskGeometry(BaseModel):
 Geometry = Annotated[
     BboxGeometry
     | VideoBboxGeometry
+    | VideoPolygonGeometry
+    | VideoPolylineGeometry
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
     | VideoTrackPolylineGeometry

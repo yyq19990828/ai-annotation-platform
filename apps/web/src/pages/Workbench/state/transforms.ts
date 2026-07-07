@@ -118,6 +118,16 @@ export function geometryToShape(g: Geometry): {
   if (g.type === "video_bbox") {
     return { x: g.x, y: g.y, w: g.w, h: g.h };
   }
+  if (g.type === "video_polygon") {
+    // v0.21.21 · 单帧 polygon: 与图片 polygon 同样返回外接盒 + polygon 顶点 (供列表 / Minimap / 选中锚点)。
+    const b = polygonBounds(g.points);
+    return { ...b, polygon: g.points, holes: g.holes };
+  }
+  if (g.type === "video_polyline") {
+    // v0.21.21 · 单帧 polyline: 顶点 AABB + polyline 顶点。
+    const b = polygonBounds(g.points);
+    return { ...b, polyline: g.points };
+  }
   if (g.type === "video_track_bbox") {
     const outside = g.outside ?? [];
     const isOutside = (frame: number) => outside.some((r) => frame >= r.from && frame <= r.to);

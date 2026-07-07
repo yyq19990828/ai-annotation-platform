@@ -19,6 +19,22 @@ function bboxAnn(id: string, frame: number, className = "car"): AnnotationRespon
   } as unknown as AnnotationResponse;
 }
 
+function polygonAnn(id: string, frame: number, points: [number, number][], className = "car"): AnnotationResponse {
+  return {
+    id,
+    class_name: className,
+    geometry: { type: "video_polygon", frame_index: frame, points },
+  } as unknown as AnnotationResponse;
+}
+
+function polylineAnn(id: string, frame: number, points: [number, number][], className = "car"): AnnotationResponse {
+  return {
+    id,
+    class_name: className,
+    geometry: { type: "video_polyline", frame_index: frame, points },
+  } as unknown as AnnotationResponse;
+}
+
 function polygonTrackAnn(id: string, trackId: string, keyframes: { frame_index: number; points: [number, number][]; source?: string }[], className = "car"): AnnotationResponse {
   return {
     id,
@@ -38,6 +54,28 @@ function polylineTrackAnn(id: string, trackId: string, keyframes: { frame_index:
 const base = { visual: DEFAULT_ANNOTATION_VISUAL, selectedId: null };
 
 describe("deriveVideoFrameViews", () => {
+  it("v0.21.21 · 单帧 polygon: entry 带 points + 外接盒 geom, 实线, 只在所属帧显示", () => {
+    const ann = polygonAnn("sp1", 3, [[0.1, 0.1], [0.5, 0.1], [0.3, 0.6]]);
+    const atFrame = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 3 });
+    expect(atFrame.entries).toHaveLength(1);
+    expect(atFrame.entries[0].points).toEqual([[0.1, 0.1], [0.5, 0.1], [0.3, 0.6]]);
+    expect(atFrame.entries[0].open).toBeUndefined();
+    expect(atFrame.entries[0].geom).toEqual({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 });
+    expect(atFrame.entries[0].dashed).toBe(false);
+    // 切到别的帧 → 不显示 (单帧几何不跨帧)。
+    const otherFrame = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 4 });
+    expect(otherFrame.entries).toHaveLength(0);
+  });
+
+  it("v0.21.21 · 单帧 polyline: entry 带 points + open=true, 只在所属帧显示", () => {
+    const ann = polylineAnn("sl1", 7, [[0.1, 0.1], [0.9, 0.9]]);
+    const atFrame = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 7 });
+    expect(atFrame.entries).toHaveLength(1);
+    expect(atFrame.entries[0].open).toBe(true);
+    expect(atFrame.entries[0].points).toEqual([[0.1, 0.1], [0.9, 0.9]]);
+    expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 6 }).entries).toHaveLength(0);
+  });
+
   it("v0.21.20 · polyline track: entry 带 points + open=true, 插值帧虚线", () => {
     const ann = polylineTrackAnn("l1", "line1", [
       { frame_index: 0, points: [[0, 0], [0.2, 0], [0.4, 0]], source: "manual" },

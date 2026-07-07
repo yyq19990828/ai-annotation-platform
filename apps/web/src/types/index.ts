@@ -228,6 +228,19 @@ export type VideoBboxGeometry = {
   w: number;
   h: number;
 };
+/** v0.21.21 · 视频单帧 polygon (非 track): 与图片 PolygonGeometry 平行 + frame_index. 归一化 [0,1]. */
+export type VideoPolygonGeometry = {
+  type: "video_polygon";
+  frame_index: number;
+  points: [number, number][];
+  holes?: [number, number][][];
+};
+/** v0.21.21 · 视频单帧开放折线 (非 track): 与图片 PolylineGeometry 平行 + frame_index. ≥2 点归一化. */
+export type VideoPolylineGeometry = {
+  type: "video_polyline";
+  frame_index: number;
+  points: [number, number][];
+};
 export type VideoTrackBbox = { x: number; y: number; w: number; h: number };
 export type VideoTrackKeyframe = {
   frame_index: number;
@@ -355,6 +368,8 @@ export type PointMaskGeometry = {
 export type Geometry =
   | BboxGeometry
   | VideoBboxGeometry
+  | VideoPolygonGeometry
+  | VideoPolylineGeometry
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry

@@ -1,6 +1,8 @@
 import type {
   AnnotationResponse,
   VideoBboxGeometry,
+  VideoPolygonGeometry,
+  VideoPolylineGeometry,
   VideoTrackGeometry,
   VideoTrackKeyframe,
   VideoTrackPolygonGeometry,
@@ -45,6 +47,20 @@ export function normalizeGeom(a: { x: number; y: number }, b: { x: number; y: nu
 
 export function isVideoBbox(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoBboxGeometry } {
   return ann.geometry.type === "video_bbox";
+}
+
+/** v0.21.21 · 单帧 polygon 判定 (非 track, 与 isVideoBbox 平行)。 */
+export function isVideoPolygon(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoPolygonGeometry } {
+  return ann.geometry.type === "video_polygon";
+}
+
+/** v0.21.21 · 单帧 polyline 判定 (非 track)。 */
+export function isVideoPolyline(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoPolylineGeometry } {
+  return ann.geometry.type === "video_polyline";
 }
 
 export function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {

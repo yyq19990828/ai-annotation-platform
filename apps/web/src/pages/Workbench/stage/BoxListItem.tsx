@@ -99,6 +99,12 @@ function annotationToolMeta(
   if (geometry.type === "video_track_polyline") {
     return { label: "轨迹(折线)", detail: `${geometry.keyframes.length} 关键帧` };
   }
+  if (geometry.type === "video_polygon") {
+    return { label: "多边形", detail: `F${geometry.frame_index} · ${geometry.points.length} 点` };
+  }
+  if (geometry.type === "video_polyline") {
+    return { label: "折线", detail: `F${geometry.frame_index} · ${geometry.points.length} 点` };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,
