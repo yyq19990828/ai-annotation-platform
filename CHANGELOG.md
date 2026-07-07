@@ -62,8 +62,10 @@
 - **sam3.1 文本驱动视频追踪 backend（sam3_video）**：sam3-backend 新增 `sam3.1_multiplex` 视频追踪模型，`/predict` 的
   `type=video_tracker` 分支按文本 query 在每帧检测目标（multiplex 多目标，首切片按种子框选单目标消费），mask 矢量化为
   polygon / bbox 逐帧回填；`/setup` 声明 `supported_trackers:[sam3_video]` + `text_driven_trackers:[sam3_video]`，
-  未绑该 backend 的项目文本追踪保持灰置。**显存**：单卡 8GB 容不下图像 + 视频两模型，二者「互斥常驻」——加载视频前
-  自动卸载图像模型（反之亦然），空闲各自 idle 卸载。至此 v0.21.19 文本视频追踪从协议、UI 到 backend 全链路打通。
+  未绑该 backend 的项目文本追踪保持灰置。图像模型与视频模型「互斥常驻」——加载视频前自动卸载图像模型（反之亦然），
+  空闲各自 idle 卸载。至此 v0.21.19 文本视频追踪从协议、UI 到 backend 全链路打通。**显存硬约束**：该 multiplex 模型
+  FP16 加载即约 7GB，8GB 卡前向激活会 OOM（已开 `expandable_segments` 仍不够；`multiplex_count` 被 checkpoint 锁死
+  16 不可调小），**实用需 >8GB 显存的 GPU**。
 
 ## [0.21.18] - 2026-07-07
 

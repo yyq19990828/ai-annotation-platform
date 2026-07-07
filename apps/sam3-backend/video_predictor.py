@@ -74,12 +74,16 @@ class SAM3MultiplexVideoTracker:
             raise FileNotFoundError(_VIDEO_CKPT)
         logger.info("building sam3 multiplex video predictor ckpt=%s use_fa3=%s",
                     _VIDEO_CKPT, use_fa3)
-        return build_sam3_multiplex_video_predictor(
+        # max_num_objects / multiplex_count 锁定 16 (checkpoint 按此训练, 调小会
+        # state_dict 形状不匹配加载失败)——不暴露为可调项。
+        predictor = build_sam3_multiplex_video_predictor(
             checkpoint_path=_VIDEO_CKPT,
             bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
             use_fa3=use_fa3,
             warm_up=False,
         )
+        _patch_init_state_kwargs(predictor)
+        return predictor
 
     # ---------- 公开接口 ----------
 
@@ -272,6 +276,31 @@ class SAM3MultiplexVideoTracker:
             shutil.rmtree(tmp_dir, ignore_errors=True)
         except Exception:  # noqa: BLE001
             logger.debug("failed to remove tmp dir %s", tmp_dir)
+
+
+def _patch_init_state_kwargs(predictor: Any) -> None:
+    """兼容垫片: vendor Sam3BasePredictor.start_session 无条件给 init_state 传
+    offload_state_to_cpu / video_loader_type, 但 multiplex 模型的 init_state 签名不收
+    (sam3_multiplex_tracking.init_state 只认 resource_path/offload_video_to_cpu/
+    async_loading_frames/use_*), 直接调用会 TypeError。包一层按真实签名过滤 kwargs。
+    """
+    import inspect
+
+    model = getattr(predictor, "model", None)
+    if model is None or not hasattr(model, "init_state"):
+        return
+    orig = model.init_state
+    try:
+        accepted = set(inspect.signature(orig).parameters)
+    except (TypeError, ValueError):
+        return
+    if any(p in accepted for p in ("kwargs", "args")):
+        return  # 已收 **kwargs, 无需过滤
+
+    def _filtered(*args: Any, **kwargs: Any) -> Any:
+        return orig(*args, **{k: v for k, v in kwargs.items() if k in accepted})
+
+    model.init_state = _filtered
 
 
 def output_geometry_type(output_geometry: str) -> str:

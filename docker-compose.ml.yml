@@ -100,6 +100,10 @@ services:
       # SAM3_ 前缀, 与 grounded-sam2 的 IDLE_UNLOAD_SECONDS 解耦, 两个 backend 可独立调.
       SAM3_IDLE_UNLOAD_SECONDS: ${SAM3_IDLE_UNLOAD_SECONDS:-600}
       SAM3_IDLE_CHECK_INTERVAL: ${SAM3_IDLE_CHECK_INTERVAL:-60}
+      # v0.21.19 §PR3 · sam3.1_multiplex 视频模型显存吃紧 (单卡 8GB 几乎占满), 用
+      # expandable_segments 减碎片, 挤出激活空间避免 OOM (报错信息即建议此项)。
+      # 注: 该模型 FP16 加载即 ~7GB, 8GB 卡前向激活仍会 OOM——需 >8GB 显存实用。
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
     volumes:
       - sam3_checkpoints:/app/checkpoints
       - sam3_hf_cache:/app/.cache/huggingface
