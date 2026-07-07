@@ -75,8 +75,6 @@
 | Method | Path |
 |---|---|
 | POST | `/annotations/bulk-update` |
-| POST | `/annotations/group` |
-| POST | `/annotations/ungroup` |
 | POST | `/projects/{project_id}/annotations/import` |
 
 ## `api_keys.py`
@@ -283,6 +281,7 @@
 | POST | `/{backend_id}/health` |
 | POST | `/{backend_id}/predict-test` |
 | POST | `/{backend_id}/interactive-annotating` |
+| POST | `/{backend_id}/predict-frame` |
 
 ## `ml_capabilities.py`
 
@@ -521,4 +520,4 @@
 
 ---
 
-_共 51 模块 / 279 路由_
+_共 51 模块 / 278 路由_

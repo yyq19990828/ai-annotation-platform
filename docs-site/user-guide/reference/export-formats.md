@@ -87,7 +87,8 @@ COCO 单文件可同时承载多种几何：
 - `bbox`：矩形框（也作为 polygon / keypoint 标注的外接框）。
 - `segmentation`：polygon / multi_polygon 标注的多边形顶点（像素坐标；孔洞/多连通域的完整还原留作后续）。
 - `keypoints` + `num_keypoints`：keypoint 标注的 `[x,y,v,…]`（v=0 未标注 / 1 遮挡 / 2 可见）。骨架拓扑写在对应 `categories[].keypoints`（节点名）+ `categories[].skeleton`（连线，COCO 1-indexed），直接来自项目 keypoint 工具单位的 `keypoint_schema`。
-- `attributes.__group_id`：Ctrl+G 同组标注的组号（启用 `include_attributes` 时）。
+- `attributes.__track_id`：跨帧同一对象的 `track_id`（启用 `include_attributes` 时）。<!-- since v0.21.2 · ADR-0045：原 `__group_id`（Ctrl+G 组号），编组下线后统一到 track_id -->
+
 
 > `rotated_bbox` / `polyline` 无 COCO 原生表示，不进 COCO（rotated 走 `YOLO 旋转框`，polyline 走 AAP JSON）；被跳过的条数记在 `info.skipped_annotations`。
 

@@ -243,7 +243,7 @@ scene 模式把一段时序录像切成多个 task，每个 task 通过其关联
 
 `POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task`（v0.14.1）把源 task 的一条 annotation 复制到目标 task（`target_task_id` 走 body），用于跨帧把同一目标延续到相邻帧。
 
-- 复制 geometry / class / attributes，并共享 `group_id`
+- 复制 geometry / class / attributes，并共享 `track_id`（跨帧同一对象的通用标识；源无则 `_new_track_id()` 分配，见 [标注模块 · 跨帧链](./annotation-module)）<!-- since v0.21.2 · ADR-0045 -->
 - `box_3d` 的 `convention_at_create` 取**目标** dataset 的 `axis_convention`（3D 场景，详 service `propagate`）
 - `override_psr`（可空）为扩展位：给定时按 key 覆盖 box_3d 的 center/size/rotation，前端本期总传 `None` = 完全复制源几何
 - 权限：源 task 需对当前用户可见；目标 task 需可见且可写（未进 `review` / `completed` 锁态，走 `_assert_task_editable`）

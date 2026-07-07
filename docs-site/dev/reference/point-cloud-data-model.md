@@ -14,7 +14,7 @@
 | G2 标定存储（v0.13.1） | `SensorCalibration` 进 `DatasetItem.metadata_` | `_jsonb_types.py` / `services/pointcloud_import.py` |
 | G3 3D 几何 | `Box3DGeometry` / `PointMaskGeometry` | `app/schemas/_jsonb_types.py` |
 | G4 工具单位 / file_type | `lidar_box_3d`（启用）/ `point_mask_3d`（新增）；点云扩展名 | `_jsonb_types.py` / `services/dataset.py` |
-| G6 跨模态 ID 约定 | 复用 `Annotation.group_id`（不改模型） | 见下文「跨模态身份」 |
+| G6 跨模态 ID 约定 | 复用 `Annotation.track_id`（不改模型） | 见下文「跨模态身份」 |
 
 > v0.13.0 落 G1/G3/G4/G6 静态地基；v0.13.1 补 **G2 标定存储** + **scene 导入管线**（见下文「scene 导入数据流」）。
 
@@ -101,15 +101,17 @@ POST /datasets/{id}/link  (project.data_type=="lidar"):
 - **工具单位**（`ToolUnitId` / `TOOL_UNIT_IDS`）：`lidar_box_3d` 从「留位」转为后端可用；新增 `point_mask_3d`。
 - **file_type**：`services/dataset.py` 的 `_infer_file_type_from_ext` 放开点云扩展名 `.pcd` / `.bin` / `.las` / `.ply` → `file_type = "point_cloud"`（对应 `DatasetDataType.POINT_CLOUD`）。
 
-## G6 · 跨模态身份：复用 `Annotation.group_id`
+## G6 · 跨模态身份：复用 `Annotation.track_id`
 
-**不新增任何模型**。同一物理物体的「3D 框 + 各相机 2D 框」共享同一 `Annotation.group_id`，聚为一个逻辑对象（等价 xtreme1 的 trackId / SUSTechPOINTS 的 obj_id）。
+<!-- since v0.21.2 · ADR-0045：跨模态身份从 group_id 迁到独立 track_id 列，group_id 列 / group 端点已下线 -->
+
+**不新增任何模型**。同一物理物体的「3D 框 + 各相机 2D 框」共享同一 `Annotation.track_id`，聚为一个逻辑对象（等价 xtreme1 的 trackId / SUSTechPOINTS 的 obj_id）。
 
 约定：
 
-- 在 3D 工作台新建一个物体时，先分配一个 `group_id`（沿用现有 `POST /annotations/group` 的 `next_group_seq` 自增机制）。
-- 该物体的 3D `box_3d` 标注与投影到各相机视图后生成 / 校正的 2D 标注，全部写入**同一** `group_id`。
-- 跨模态联动（选中 3D 框高亮各 2D 框、批量改类别）按 `group_id` 聚合查询，无需新表或新外键。
+- 在 3D 工作台新建一个物体时，先分配一个 `track_id`（`_new_track_id()` 产出 `trk_<uuid.hex>`）。
+- 该物体的 3D `box_3d` 标注与投影到各相机视图后生成 / 校正的 2D 标注，全部写入**同一** `track_id`。
+- 跨模态联动（选中 3D 框高亮各 2D 框、批量改类别）按 `track_id` 聚合查询，无需新表或新外键。
 
 > 投影本身（标定驱动 3D→2D）是 v0.13.4 前端工作；v0.13.0 仅约定身份字段，不预存投影结果。
 
@@ -195,6 +197,6 @@ visible = w > 0                            // 相机前方; w<=0(后方)剔除�
 - **3D→2D**:选中 3D 框 → 各相机投影框高亮(白描边加粗 + 淡填充),承共享 `selectedId`。
 - **2D→3D 反选**:点相机里的投影框 → 命中测试(投影包围盒含点、取最小面积框)→ `onSelectBox` 选中对应 3D 框。
 - **最佳相机提示**:选中框按可见角点数统计被几个相机看到,状态条显示「投影可见于 N 相机 · 正对 X」,最正对相机 figcaption 标「· 正对」。
-- **`group_id` 聚合高亮**:overlay 高亮集合 = 选中框 + 同 `group_id` 成员(G6)。本切片只打通身份可视化:相机视图上**独立绘制 / 编辑 2D 框成员**留后续。注意后端 `/annotations/group` 要求 `len(ids) >= 2`,**单个 3D 框无法自分组**;孤立框 `group_id` 为空时退化为仅高亮自身,待 2D 成员落地再聚合。
+- **`track_id` 聚合高亮**:overlay 高亮集合 = 选中框 + 同 `track_id` 成员(G6)。本切片只打通身份可视化:相机视图上**独立绘制 / 编辑 2D 框成员**留后续。新建 3D 框即由 `_new_track_id()` 分配一个 `track_id`(不再需要「≥2 个成员才能成组」的旧编组端点);`track_id` 为空的孤立框退化为仅高亮自身,待 2D 成员落地再聚合。<!-- since v0.21.2 · ADR-0045：原按 group_id + /annotations/group 端点，编组下线后统一到 track_id -->
 
 > `point_mask_3d` 分割、三正交视图精修(ADR-0032 方案 B,v0.13.5)、跨帧轨迹留后续。

@@ -73,7 +73,7 @@ graph TD
 | `confidence` | 置信度，可空 |
 | `parent_prediction_id` | 来自哪条 prediction，可空 |
 | `parent_annotation_id` | 父框 id，可空；表「车牌属于车」这类从属层级（仅一层，见下方父子约束） |
-| `group_id` | 「平等成员同组」序号（`BigInteger`，可空；Ctrl+G 成组 / 跨帧链共享），区别于 `parent_annotation_id` 的层级语义 |
+| `track_id` | 跨帧同一对象的通用标识（`String(64)`，可空，格式 `trk_<uuid.hex>`，几何类型无关）；由单一工厂 `_new_track_id()` 产出，propagate / interpolate / 导出 / 3D 前端统一读本列（见下方跨帧链）<!-- since v0.21.2 · ADR-0045 --> |
 | `lead_time` | 标注耗时 |
 | `attributes` | 扩展属性 |
 | `attributes_meta` | 属性级溯源 sidecar，`{key: {origin, model_ref?}}`（只记 `origin=ai` 的键，见下方属性溯源） |
@@ -89,12 +89,12 @@ graph TD
 
 #### 父子标注（`parent_annotation_id`）
 
-`parent_annotation_id` 表达「子物属于父物」的层级从属（车牌属于车、零件属于整机），与 `group_id` 的「平等成员同组」是正交的两套关系。约束与行为：
+`parent_annotation_id` 表达「子物属于父物」的层级从属（车牌属于车、零件属于整机）。约束与行为：
 
 - **仅一层深度**：`AnnotationService._validate_parent_annotation` 在 `create` 时校验——父框须存在且 `is_active`、与子框**同一 task**（父子限帧内）、且父框自身 `parent_annotation_id` 为空。任一不满足返回 `400`。约束放在应用层而非 DB，给未来多层留后手。
 - **级联软删**：`delete()` 软删一个父框时，其全部 `is_active` 子框一并置 `is_active=False`，不留孤儿；`_update_task_stats` 按剩余 active 数重算 task 计数。
 - **创建入口**：`AnnotationCreate` 携带可空 `parent_annotation_id`，`POST /tasks/{task_id}/annotations` 透传给 service 建子框；缺省即顶层框。此前该字段只由视频 `convert` / `split` 内部构造框时写入（见下方轨迹转换）。
-- **前端呈现**：工作台侧栏 `AIInspectorPanel` 按父子缩进渲染（父行下方缩进列出子框），是层级的主结构；`group_id` 分桶为并存的次结构。画布上，恰好单选一个框时，其直接子框描一圈**同胞高亮环**（`ImageStage` 用 `siblingHighlightChildren` 纯函数派生子框集，绕每个子框 bbox 画统一细点线环 `SIBLING_HIGHLIGHT_COLOR`，免逐 shape 穿 prop；offset 6px 与 group 长虚线的 4px 嵌套不打架）。图片任务限定（video/3D 父子走各自轨迹）。**Alt 拖动联动**：按住 Alt 拖动一个 bbox 父框主体时，其直接子框按父框的实际位移一并平移（复用 `geometryTranslate` 的几何平移，父+子作为 history `batch` 复合命令进单次 undo）；不按 Alt 则仅搬父框。作用面限 `kind:"move"`（bbox 父框主体），与折线插点/关键点的 Alt 交互不冲突。
+- **前端呈现**：工作台侧栏 `AIInspectorPanel` 按父子缩进渲染（父行下方缩进列出子框），是层级的主结构（编组已下线，顶层框平铺）。画布上，恰好单选一个框时，其直接子框描一圈**同胞高亮环**（`ImageStage` 用 `siblingHighlightChildren` 纯函数派生子框集，绕每个子框 bbox 画统一细点线环 `SIBLING_HIGHLIGHT_COLOR`，免逐 shape 穿 prop；offset 6px）。图片任务限定（video/3D 父子走各自轨迹）。**Alt 拖动联动**：按住 Alt 拖动一个 bbox 父框主体时，其直接子框按父框的实际位移一并平移（复用 `geometryTranslate` 的几何平移，父+子作为 history `batch` 复合命令进单次 undo）；不按 Alt 则仅搬父框。作用面限 `kind:"move"`（bbox 父框主体），与折线插点/关键点的 Alt 交互不冲突。
 
 ### Geometry union
 
@@ -251,9 +251,11 @@ graph TD
 
 点云 3D 时序标注支持「跨帧延续 + 区间插值」，把同一物体在 scene 多帧间的 `box_3d` 标注从「逐帧手搬框」升级为「ego 运动补偿延续 + 关键帧插值」。几何核心在 `apps/api/app/services/ego_transform.py`（`box_ego_to_world` / `box_world_to_ego` / `compensate_psr` / `interpolate_psr` 等纯函数，euler 约定与前端 three.js 锁步），业务编排在 `AnnotationService.propagate` / `propagate_batch` / `interpolate_range`，HTTP 入口都在 `api/v1/tasks/annotations.py`。
 
-### group_id：跨帧链的键
+### track_id：跨帧链的键
 
-`Annotation.group_id`（见上表）是跨帧延续的链键：同一物体在各帧的框共享同一个 `group_id` 形成一条链。源框无 `group_id` 时从全局序列 `cross_frame_group_seq` 分配并写回源框（区别于同 task 内 Ctrl+G 成组用的 `tasks.next_group_seq`）。区间插值据此找到链两端的关键帧。
+<!-- since v0.21.2 · ADR-0045 · 跨帧链键从 group_id 高位段迁移到独立 track_id 列，编组 / group_id 列已下线 -->
+
+`Annotation.track_id`（见上表）是跨帧延续的链键：同一物体在各帧的框共享同一个 `track_id` 形成一条链。源框无 `track_id` 时由 `_new_track_id()`（`services/annotation_propagation.py`）分配一个 `trk_<uuid.hex>` 并写回源框。区间插值据此找到链两端的关键帧。此前跨帧链借 `group_id` 高位段表达，随标注编组下线，`group_id` 列已删、跨帧语义统一到独立的 `track_id` 列。
 
 ### 单条 / 批量 propagate（运动补偿延续）
 
@@ -264,15 +266,15 @@ graph TD
 
 - `PropagateBatchRequest`：`annotation_ids: list[UUID] | None`（`None` → 源 task 全部 active `box_3d`）+ `to_task_id`。
 - 运动补偿：源 / 目标帧均有 ego pose 时，由「世界位置不变」反算目标帧 PSR（`compensate_psr`），静止物在下一帧自动套住目标；任一帧缺 pose 则退化为原样复制（零回归）。响应带 `motion_compensated: bool` 标记，前端据此轻提示一次。
-- 各源框延续后与源共享 `group_id` 链。
+- 各源框延续后与源共享 `track_id` 链。
 
 ### 区间插值
 
-`POST /tasks/{task_id}/annotations/interpolate-range` → `interpolate_range()`，`InterpolateRangeRequest`：`group_id: int` + `to_task_id`。
+`POST /tasks/{task_id}/annotations/interpolate-range` → `interpolate_range()`，`InterpolateRangeRequest`：`track_id: str` + `to_task_id`。
 
-- 在同 `group_id` 链两端关键帧之间，给区间内每个有 task 的中间帧生成一个插值框（世界系线性内插中心 + slerp 朝向 + 线性尺寸，见 `interpolate_psr`）。
+- 在同 `track_id` 链两端关键帧之间，给区间内每个有 task 的中间帧生成一个插值框（世界系线性内插中心 + slerp 朝向 + 线性尺寸，见 `interpolate_psr`）。
 - 生成框 `source="interpolated"`，便于审核按来源过滤 / 批量删。
-- 幂等：中间帧已有同 `group_id` 标注则跳过；返回 `(created, motion_compensated, skipped_frames)`。
+- 幂等：中间帧已有同 `track_id` 标注则跳过；返回 `(created, motion_compensated, skipped_frames)`。
 - 任一帧缺 pose → 纯 ego 系插值（`motion_compensated=False`）。
 
 > `point_mask_3d` 跨帧明确不做（点索引跨帧无意义）；Kalman / 非线性运动模型留后续。邻帧 overlay 的 ego 对齐是前端能力（`useSceneTrajectory` + `egoAlign.ts`），见用户指南 [点云跨帧标注](/user-guide/workbench/pointcloud-crossframe)。
