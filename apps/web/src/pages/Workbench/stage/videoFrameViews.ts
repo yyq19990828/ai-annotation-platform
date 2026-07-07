@@ -4,8 +4,10 @@ import { classColor, getTrackColor } from "./colors";
 import {
   deriveTrackNumber,
   isVideoBbox,
+  isVideoPolygonTrack,
   isVideoTrack,
   resolveTrackAtFrame,
+  resolveVideoPolygonTrackAtFrame,
   trackReferenceAtFrame,
 } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
@@ -31,6 +33,8 @@ export type VideoEntryView = {
   key: string;
   id: string;
   geom: VideoStageGeom;
+  /** v0.21.20 · polygon track 当前帧的归一化多边形顶点; 存在时 Konva 层画 <Line> 而非 <Rect>。 */
+  points?: [number, number][];
   /** 原始 CSS 色(轨迹色 / 类别色);Konva 层 render 时转 hex。 */
   color: string;
   selected: boolean;
@@ -131,7 +135,9 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   } = input;
 
   const videoTracks = annotations.filter(isVideoTrack);
-  const trackNumbers = deriveTrackNumber(videoTracks);
+  const polygonTracks = annotations.filter(isVideoPolygonTrack);
+  // v0.21.20 · bbox + polygon track 统一编号 (deriveTrackNumber 只读 frame_index/track_id)。
+  const trackNumbers = deriveTrackNumber([...videoTracks, ...polygonTracks]);
   const trackContent = visual.labelContent.track;
 
   // 当前帧应显示的 bbox(legacy bbox + track 解析帧)。
@@ -146,6 +152,13 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
       entries.push(buildEntryView(ann, resolved.geom, resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent));
+    } else if (isVideoPolygonTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
+      // v0.21.20 · polygon track: 解析当前帧多边形 → 外接盒作 geom (标签/选中锚点) + points 供 <Line>。
+      const resolved = resolveVideoPolygonTrackAtFrame(ann.geometry, frameIndex);
+      if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
+      currentFrameTrackIds.add(ann.geometry.track_id);
+      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      entries.push({ ...entry, points: resolved.points });
     }
   }
 
@@ -252,6 +265,19 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   }
 
   return { entries, previews, ghost, carryOverGhosts, labels };
+}
+
+/** v0.21.20 · 多边形顶点的轴对齐外接盒 (归一化); 供 polygon track 的标签/选中锚点定位。 */
+function boundsOfPoints(points: [number, number][]): VideoStageGeom {
+  if (points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 function buildEntryView(

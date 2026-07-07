@@ -55,6 +55,42 @@ describe("VideoKonvaTrackShape", () => {
     render(<VideoKonvaTrackShape geom={{ x: 0, y: 0, w: 0.2, h: 0.2 }} color="#ff0000" dashed selected={false} size={size} scale={1} visual={DEFAULT_ANNOTATION_VISUAL} />);
     expect(document.querySelector('[data-konva="Rect"]')!.getAttribute("data-dash")).toBe(JSON.stringify([6, 4]));
   });
+
+  it("v0.21.20 · points 存在 → 画 <Line closed> 而非 <Rect>, 像素空间顶点", () => {
+    render(
+      <VideoKonvaTrackShape
+        geom={{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }}
+        points={[[0.1, 0.2], [0.4, 0.2], [0.4, 0.6]]}
+        color="#ff0000"
+        dashed={false}
+        selected={false}
+        size={size}
+        scale={1}
+        visual={DEFAULT_ANNOTATION_VISUAL}
+      />,
+    );
+    expect(document.querySelector('[data-konva="Rect"]')).toBeNull();
+    const line = document.querySelector('[data-konva="Line"]')!;
+    // 归一化 × size 展平: [0.1*1000,0.2*500, 0.4*1000,0.2*500, 0.4*1000,0.6*500]
+    expect(line.getAttribute("data-points")).toBe(JSON.stringify([100, 100, 400, 100, 400, 300]));
+    expect(line.getAttribute("data-closed")).toBe("true");
+  });
+
+  it("v0.21.20 · points < 3 → 回退 <Rect>", () => {
+    render(
+      <VideoKonvaTrackShape
+        geom={{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }}
+        points={[[0.1, 0.2], [0.4, 0.2]]}
+        color="#ff0000"
+        dashed={false}
+        selected={false}
+        size={size}
+        scale={1}
+        visual={DEFAULT_ANNOTATION_VISUAL}
+      />,
+    );
+    expect(document.querySelector('[data-konva="Rect"]')).not.toBeNull();
+  });
 });
 
 describe("VideoKonvaTracksLayer", () => {

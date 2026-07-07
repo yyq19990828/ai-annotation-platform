@@ -1,5 +1,5 @@
 import { memo, Fragment } from "react";
-import { Rect } from "react-konva";
+import { Rect, Line } from "react-konva";
 import { colorToHex, hexToRgba } from "./colors";
 import { fillAlpha, strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
 import { screenToWorld } from "./shared/viewport/scaleCancel";
@@ -10,8 +10,10 @@ import type { VideoStageGeom } from "./videoStageTypes";
 const PREDICTED_BADGE_HEX = "#8b5cf6";
 
 interface VideoKonvaTrackShapeProps {
-  /** 归一化 [0,1] bbox。 */
+  /** 归一化 [0,1] bbox (polygon track 时为多边形外接盒, 供角标定位)。 */
   geom: VideoStageGeom;
+  /** v0.21.20 · polygon track 当前帧归一化顶点; 存在时画 <Line closed> 而非 <Rect>。 */
+  points?: [number, number][];
   /** 原始 CSS 色(轨迹色 / 类别色);内部转 hex。 */
   color: string;
   /** 插值帧或遮挡 → 虚线(对齐旧 SVG VideoTrackShape 的 "6 4")。 */
@@ -33,6 +35,7 @@ interface VideoKonvaTrackShapeProps {
  */
 function VideoKonvaTrackShapeComponent({
   geom,
+  points,
   color,
   dashed,
   predicted = false,
@@ -46,20 +49,37 @@ function VideoKonvaTrackShapeComponent({
   const x = geom.x * size.w;
   const y = geom.y * size.h;
   const badge = 6 / scale; // 屏幕恒定的角标边长
+  const dash = dashed ? [6 / scale, 4 / scale] : undefined;
+  const fill = hexToRgba(hex, fillAlpha(selected, visual));
   return (
     <Fragment>
-      <Rect
-        name="video-track-shape"
-        x={x}
-        y={y}
-        width={geom.w * size.w}
-        height={geom.h * size.h}
-        stroke={hex}
-        strokeWidth={sw}
-        dash={dashed ? [6 / scale, 4 / scale] : undefined}
-        fill={hexToRgba(hex, fillAlpha(selected, visual))}
-        listening={false}
-      />
+      {points && points.length >= 3 ? (
+        <Line
+          name="video-track-shape"
+          points={points.flatMap(([px, py]) => [px * size.w, py * size.h])}
+          closed
+          stroke={hex}
+          strokeWidth={sw}
+          dash={dash}
+          fill={fill}
+          lineCap="round"
+          lineJoin="round"
+          listening={false}
+        />
+      ) : (
+        <Rect
+          name="video-track-shape"
+          x={x}
+          y={y}
+          width={geom.w * size.w}
+          height={geom.h * size.h}
+          stroke={hex}
+          strokeWidth={sw}
+          dash={dash}
+          fill={fill}
+          listening={false}
+        />
+      )}
       {predicted && (
         <Rect
           name="video-track-predicted-badge"

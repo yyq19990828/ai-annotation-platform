@@ -90,6 +90,7 @@ export function VideoKonvaTracksLayer({
         <VideoKonvaTrackShape
           key={entry.key}
           geom={entry.geom}
+          points={entry.points}
           color={entry.color}
           dashed={entry.dashed}
           predicted={entry.predicted}

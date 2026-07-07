@@ -19,9 +19,33 @@ function bboxAnn(id: string, frame: number, className = "car"): AnnotationRespon
   } as unknown as AnnotationResponse;
 }
 
+function polygonTrackAnn(id: string, trackId: string, keyframes: { frame_index: number; points: [number, number][]; source?: string }[], className = "car"): AnnotationResponse {
+  return {
+    id,
+    class_name: className,
+    geometry: { type: "video_track_polygon", track_id: trackId, keyframes },
+  } as unknown as AnnotationResponse;
+}
+
 const base = { visual: DEFAULT_ANNOTATION_VISUAL, selectedId: null };
 
 describe("deriveVideoFrameViews", () => {
+  it("v0.21.20 · polygon track: entry 带 points + 外接盒 geom, 插值帧虚线", () => {
+    const ann = polygonTrackAnn("p1", "poly1", [
+      { frame_index: 0, points: [[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]], source: "manual" },
+      { frame_index: 10, points: [[0.4, 0], [0.6, 0], [0.6, 0.2], [0.4, 0.2]], source: "manual" },
+    ]);
+    const atKf = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 0 });
+    expect(atKf.entries).toHaveLength(1);
+    expect(atKf.entries[0].points).toEqual([[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]]);
+    expect(atKf.entries[0].geom).toEqual({ x: 0, y: 0, w: 0.2, h: 0.2 });
+    expect(atKf.entries[0].dashed).toBe(false);
+
+    const atInterp = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 5 });
+    expect(atInterp.entries[0].dashed).toBe(true);
+    expect(atInterp.entries[0].points).toEqual([[0.2, 0], [0.4, 0], [0.4, 0.2], [0.2, 0.2]]);
+  });
+
   it("精确关键帧:实线、非遮挡;插值帧:虚线", () => {
     const ann = trackAnn("t1", "trk1", [
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },

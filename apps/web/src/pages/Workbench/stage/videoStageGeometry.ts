@@ -420,9 +420,9 @@ export function shortTrackId(trackId: string) {
  * 返回 `Map<annotationId, number>`。
  */
 export function deriveTrackNumber(
-  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry }>,
+  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry | VideoTrackPolygonGeometry }>,
 ): Map<string, number> {
-  const firstFrame = (geometry: VideoTrackGeometry) => {
+  const firstFrame = (geometry: VideoTrackGeometry | VideoTrackPolygonGeometry) => {
     const frames = geometry.keyframes.map((kf) => kf.frame_index);
     return frames.length > 0 ? Math.min(...frames) : 0;
   };
