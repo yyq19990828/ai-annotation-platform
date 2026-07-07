@@ -3,6 +3,7 @@ import type { AnnotationResponse, VideoTrackGeometry } from "@/types";
 import {
   buildVideoCompositionCommands,
   buildVideoCreatePayload,
+  buildVideoPointsTrackCreatePayload,
   buildVideoUpdateCommand,
 } from "./useVideoAnnotationActions";
 
@@ -39,6 +40,20 @@ describe("video annotation actions helpers", () => {
       class_name: "Car",
       geometry: { type: "video_bbox", frame_index: 7, ...box },
     });
+  });
+
+  it("builds video_track_polygon/polyline create payload from drawn points", () => {
+    const pts: [number, number][] = [[0.1, 0.1], [0.3, 0.1], [0.3, 0.3]];
+    const poly = buildVideoPointsTrackCreatePayload("video_track_polygon", 4, pts, "Car");
+    expect(poly.annotation_type).toBe("video_track_polygon");
+    expect(poly.geometry.type).toBe("video_track_polygon");
+    const g = poly.geometry as { track_id: string; keyframes: { frame_index: number; points: number[][]; source: string }[] };
+    expect(g.track_id).toMatch(/^trk_/);
+    expect(g.keyframes).toEqual([{ frame_index: 4, points: pts, source: "manual", occluded: false }]);
+
+    const line = buildVideoPointsTrackCreatePayload("video_track_polyline", 2, [[0, 0], [0.5, 0.5]], "");
+    expect(line.annotation_type).toBe("video_track_polyline");
+    expect(line.class_name).toBe("__unknown");
   });
 
   it("builds video_track create payload with one manual keyframe", () => {

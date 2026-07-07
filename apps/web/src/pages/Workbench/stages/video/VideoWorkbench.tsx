@@ -53,6 +53,12 @@ export interface VideoWorkbenchProps {
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
+  /** v0.21.20 · 由绘制顶点新建 polygon/polyline track。 */
+  onCreatePointsTrack?: (
+    type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => void;
   onPendingDraw: (
     kind: "video_bbox" | "video_track_bbox",
     frameIndex: number,
@@ -107,6 +113,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onSelect,
     onFrameIndexChange,
     onCreate,
+    onCreatePointsTrack,
     onPendingDraw,
     onUpdate,
     onChangeUserBoxClass,
@@ -166,6 +173,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onSelect={onSelect}
         onCursorMove={onCursorMove}
         onCreate={onCreate}
+        onCreatePointsTrack={onCreatePointsTrack}
         onPendingDraw={onPendingDraw}
         onUpdate={onUpdate}
         onChangeUserBoxClass={onChangeUserBoxClass}

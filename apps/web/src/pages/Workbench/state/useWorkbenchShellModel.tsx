@@ -1388,6 +1388,7 @@ export function useWorkbenchShellModel({
 
   const {
     handleVideoCreate,
+    handleVideoPointsTrackCreate,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,
@@ -2574,6 +2575,7 @@ export function useWorkbenchShellModel({
         trackColorOverrides: s.trackColorOverrides,
         onVideoFrameIndexChange: s.setVideoFrameIndex,
         onVideoCreate: handleVideoCreate,
+        onVideoCreatePointsTrack: handleVideoPointsTrackCreate,
         onVideoPendingDraw: handleVideoPendingDraw,
         onVideoUpdate: handleVideoUpdate,
         onVideoRename: handleVideoRename,

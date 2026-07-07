@@ -111,6 +111,12 @@ interface WorkbenchStageHostVideoProps {
   trackColorOverrides?: Record<string, string>;
   onVideoFrameIndexChange: (frameIndex: number) => void;
   onVideoCreate: (frameIndex: number, geom: Geom) => void;
+  /** v0.21.20 · 由绘制顶点新建 polygon/polyline track。 */
+  onVideoCreatePointsTrack?: (
+    type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => void;
   onVideoPendingDraw: (
     kind: "video_bbox" | "video_track_bbox",
     frameIndex: number,
@@ -307,6 +313,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       trackColorOverrides,
       onVideoFrameIndexChange,
       onVideoCreate,
+      onVideoCreatePointsTrack,
       onVideoPendingDraw,
       onVideoUpdate,
       onVideoRename,
@@ -454,6 +461,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}
+            onCreatePointsTrack={onVideoCreatePointsTrack}
             onPendingDraw={onVideoPendingDraw}
             onUpdate={onVideoUpdate}
             onRename={onVideoRename}

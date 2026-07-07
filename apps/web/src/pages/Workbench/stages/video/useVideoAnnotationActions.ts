@@ -2,7 +2,14 @@ import { useCallback } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import { tasksApi, type AnnotationPayload } from "@/api/tasks";
-import type { AnnotationResponse, Geometry, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type {
+  AnnotationResponse,
+  Geometry,
+  VideoBboxGeometry,
+  VideoTrackGeometry,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolylineGeometry,
+} from "@/types";
 import { UNKNOWN_CLASS } from "../../stage/colors";
 import { enqueue } from "../../state/offlineQueue";
 import type { useAnnotationHistory, Command } from "../../state/useAnnotationHistory";
@@ -111,6 +118,23 @@ export function buildVideoCreatePayload(
   };
 }
 
+/** v0.21.20 · 由绘制的归一化顶点新建 polygon/polyline track (单关键帧于当前帧)。 */
+export function buildVideoPointsTrackCreatePayload(
+  type: "video_track_polygon" | "video_track_polyline",
+  frameIndex: number,
+  points: [number, number][],
+  cls: string,
+): AnnotationPayload {
+  const className = cls || UNKNOWN_CLASS;
+  const trackId = `trk_${randomId()}`;
+  const geometry: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry = {
+    type,
+    track_id: trackId,
+    keyframes: [{ frame_index: frameIndex, points, source: "manual", occluded: false }],
+  };
+  return { annotation_type: type, class_name: className, geometry };
+}
+
 export function buildVideoUpdateCommand(ann: AnnotationResponse, geometry: VideoGeometry): Command {
   if (ann.geometry.type === "video_track_bbox" && geometry.type === "video_track_bbox") {
     const keyframeCommand = buildVideoKeyframeCommand(ann.id, ann.geometry, geometry);
@@ -212,6 +236,27 @@ export function useVideoAnnotationActions({
   const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
     handleVideoCreateWithClass("video_track_bbox", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
   }, [handleVideoCreateWithClass, s.activeClass]);
+
+  // v0.21.20 · 由绘制顶点新建 polygon/polyline track (单关键帧于当前帧)。
+  const handleVideoPointsTrackCreate = useCallback((
+    type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => {
+    const payload = buildVideoPointsTrackCreatePayload(type, frameIndex, points, s.activeClass || UNKNOWN_CLASS);
+    const className = payload.class_name;
+    mutations.create.mutate(payload, {
+      onSuccess: (created) => {
+        history.push({ kind: "create", annotationId: created.id, payload });
+        if (className !== UNKNOWN_CLASS) {
+          s.setActiveClass(className);
+          recordRecentClass(className);
+        }
+        s.setSelectedId(created.id);
+      },
+      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+    });
+  }, [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s]);
 
   const handleVideoPendingDraw = useCallback((
     kind: "video_bbox" | "video_track_bbox",
@@ -516,6 +561,7 @@ export function useVideoAnnotationActions({
 
   return {
     handleVideoCreate,
+    handleVideoPointsTrackCreate,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,

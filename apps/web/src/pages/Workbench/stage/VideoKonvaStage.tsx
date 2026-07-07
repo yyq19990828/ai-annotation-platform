@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Stage } from "react-konva";
+import { Stage, Layer, Line, Circle } from "react-konva";
 import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -29,7 +29,8 @@ import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
-import { classColor, getTrackColor } from "./colors";
+import { classColor, colorToHex, getTrackColor } from "./colors";
+import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
 import { deriveTrackNumber, isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
@@ -93,6 +94,12 @@ interface VideoKonvaStageProps {
   /** 光标归一化坐标上报(供状态栏坐标读出);离开画布时上报 null。 */
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
   onCreate?: (frameIndex: number, geom: { x: number; y: number; w: number; h: number }) => void;
+  /** v0.21.20 · 由绘制顶点新建 polygon/polyline track (单关键帧于当前帧)。 */
+  onCreatePointsTrack?: (
+    type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => void;
   onPendingDraw?: (
     kind: "video_bbox" | "video_track_bbox",
     frameIndex: number,
@@ -169,6 +176,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onSelect,
   onCursorMove,
   onCreate,
+  onCreatePointsTrack,
   onPendingDraw,
   onUpdate,
   onChangeUserBoxClass,
@@ -447,7 +455,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     carryOverGhosts: frameViews.carryOverGhosts,
     selectedTrack,
     videoTool,
-    creationEnabled: videoTool !== "select" && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track)),
+    creationEnabled: (videoTool === "box" || videoTool === "track") && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track)),
     readOnly,
     isPlaybackActive,
     lockedTrackIds,
@@ -459,6 +467,54 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     onUpdate: onUpdate ?? noopUpdate,
   });
   const { drag } = interaction;
+
+  // v0.21.20 · polygon/polyline 轨迹绘制 (点击落点, Enter/双击闭合)。与拖拽 bbox 正交。
+  const pointsDraft = useVideoPolygonDraft();
+  const isPointsDrawTool = videoTool === "polygon" || videoTool === "polyline";
+  const pointsDrawEnabled = isPointsDrawTool && !readOnly && !isPlaybackActive
+    && (!videoModes || videoModes.track);
+
+  const pointFromClientEvt = useCallback((clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return clientToVideoNorm(clientX, clientY, rect, vpRef.current, size);
+  }, [size, vpRef]);
+
+  const commitPointsDraft = useCallback(() => {
+    const pts = pointsDraft.commit();
+    if (!pts) return;
+    onCreatePointsTrack?.(
+      videoTool === "polyline" ? "video_track_polyline" : "video_track_polygon",
+      frameIndex,
+      pts,
+    );
+  }, [pointsDraft, onCreatePointsTrack, videoTool, frameIndex]);
+
+  // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
+  const handleStagePointerDown = useCallback((e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
+    if (pointsDrawEnabled) {
+      const native = e.evt;
+      if (native.button !== 0) return; // 右键/中键平移交容器层
+      const pt = pointFromClientEvt(native.clientX, native.clientY);
+      if (pt) pointsDraft.addPoint(pt, videoTool === "polygon");
+      return;
+    }
+    interaction.onStagePointerDown(e);
+  }, [pointsDrawEnabled, pointFromClientEvt, pointsDraft, videoTool, interaction]);
+
+  // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
+  useEffect(() => {
+    if (!pointsDrawEnabled && pointsDraft.draft) pointsDraft.cancel();
+  }, [pointsDrawEnabled, pointsDraft]);
+  useEffect(() => {
+    if (!pointsDrawEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") { e.preventDefault(); commitPointsDraft(); }
+      else if (e.key === "Escape") { e.preventDefault(); pointsDraft.cancel(); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [pointsDrawEnabled, commitPointsDraft, pointsDraft]);
 
   // 可编辑选中框 → 画 8 向句柄(拖拽中跟随 live geom);live 预览框(画框/移动/缩放)。
   const interactionEditable = !readOnly && !isPlaybackActive;
@@ -739,7 +795,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // 工具模式光标反馈:平移中 grabbing;按住 Space 可抓;创建工具十字,选择工具普通光标。
   // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
-  const creationEnabled = videoTool !== "select" && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track));
+  const creationEnabled = (videoTool === "box" || videoTool === "track") && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track));
   const cursorClass = panning
     ? styles.rootPanning
     : spacePan
@@ -798,7 +854,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           y={vp.ty}
           scaleX={vp.scale}
           scaleY={vp.scale}
-          onPointerDown={interaction.onStagePointerDown}
+          onPointerDown={handleStagePointerDown}
+          onDblClick={isPointsDrawTool ? commitPointsDraft : undefined}
         >
           <VideoKonvaMediaLayer
             videoEl={videoEl}
@@ -853,6 +910,34 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             preview={preview}
             onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
           />
+          {pointsDraft.draft && pointsDraft.draft.points.length > 0 && (() => {
+            const hex = colorToHex(classColor(activeClass));
+            const flat = pointsDraft.draft.points.flatMap(([px, py]) => [px * size.w, py * size.h]);
+            return (
+              <Layer name="points-draft" listening={false}>
+                <Line
+                  points={flat}
+                  closed={pointsDraft.draft.closed && pointsDraft.draft.points.length >= 3}
+                  stroke={hex}
+                  strokeWidth={1.5 / vp.scale}
+                  dash={[6 / vp.scale, 4 / vp.scale]}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                />
+                {pointsDraft.draft.points.map(([px, py], i) => (
+                  <Circle
+                    key={i}
+                    x={px * size.w}
+                    y={py * size.h}
+                    radius={3 / vp.scale}
+                    fill={hex}
+                    listening={false}
+                  />
+                ))}
+              </Layer>
+            );
+          })()}
         </Stage>
         {/* 跟踪当前帧屏幕矩形的不可见标记:改类/批量改类弹窗经 [data-video-overlay] 锚到画布上的框
             (Konva 栈无旧 SVG overlay,此 div 复刻其矩形,随 vp 平移/缩放同步)。 */}
