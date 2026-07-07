@@ -1,3 +1,4 @@
+import pytest
 import uuid
 from datetime import datetime, timezone
 
@@ -189,6 +190,108 @@ def test_apply_tracker_results_only_backfills_grid_frames():
         kf["source"] == "prediction"
         for kf in annotation.geometry["keyframes"]
         if kf["frame_index"] != 0
+    )
+
+
+def _polygon_track_annotation() -> Annotation:
+    tri = [[0.1, 0.1], [0.3, 0.1], [0.2, 0.3]]
+    return Annotation(
+        annotation_type="video_track_polygon",
+        class_name="car",
+        geometry={
+            "type": "video_track_polygon",
+            "track_id": "trk_poly",
+            "keyframes": [
+                {"frame_index": 0, "points": tri, "source": "manual", "occluded": False}
+            ],
+            "outside": [],
+        },
+    )
+
+
+def _job(from_frame=0, to_frame=3) -> VideoTrackerJob:
+    return VideoTrackerJob(
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=from_frame,
+        to_frame=to_frame,
+        prompt={},
+        event_channel="video-tracker-job:test",
+    )
+
+
+def test_apply_tracker_results_writes_polygon_keyframes():
+    """v0.21.20 · polygon track: 保留多边形 points 关键帧 + video_track_polygon 类型。"""
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    annotation = _polygon_track_annotation()
+    results = [
+        TrackerFrameResult(
+            frame_index=i,
+            geometry={
+                "type": "polygon",
+                "points": [[0.1 + i * 0.01, 0.1], [0.3, 0.1], [0.2, 0.3]],
+            },
+            confidence=1.0,
+            outside=False,
+        )
+        for i in range(1, 4)
+    ]
+
+    apply_tracker_results(annotation, _job(), results, grid_step=1)
+
+    assert annotation.annotation_type == "video_track_polygon"
+    assert annotation.geometry["type"] == "video_track_polygon"
+    kfs = annotation.geometry["keyframes"]
+    frames = [kf["frame_index"] for kf in kfs]
+    assert frames == [0, 1, 2, 3]
+    # seed 帧手动保留; 预测帧写 points (非 bbox)。
+    assert kfs[0]["source"] == "manual"
+    for kf in kfs[1:]:
+        assert kf["source"] == "prediction"
+        assert "points" in kf and "bbox" not in kf
+        assert len(kf["points"]) >= 3
+
+
+def test_apply_tracker_results_degenerate_polygon_marked_outside():
+    """退化多边形(顶点<3)不写坏 schema，转 outside 帧。"""
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    annotation = _polygon_track_annotation()
+    results = [
+        TrackerFrameResult(
+            frame_index=1,
+            geometry={"type": "polygon", "points": [[0.1, 0.1], [0.2, 0.2]]},
+            confidence=1.0,
+            outside=False,
+        )
+    ]
+
+    apply_tracker_results(annotation, _job(), results, grid_step=1)
+
+    frames = [kf["frame_index"] for kf in annotation.geometry["keyframes"]]
+    assert frames == [0]  # 只剩手动 seed；退化帧未落库
+    outside = annotation.geometry["outside"]
+    assert any(r["from"] <= 1 <= r["to"] for r in outside)
+
+
+def test_bbox_from_geometry_seeds_from_polygon_vertices():
+    """SAM2 只吃 bbox seed: polygon track / 单帧 polygon 结果都取顶点外接框。"""
+    from app.services.video_tracker_adapters import _bbox_from_geometry
+
+    track = {
+        "type": "video_track_polygon",
+        "keyframes": [
+            {"frame_index": 0, "points": [[0.1, 0.2], [0.5, 0.2], [0.3, 0.6]]}
+        ],
+    }
+    seed = _bbox_from_geometry(track)
+    assert seed == pytest.approx({"x": 0.1, "y": 0.2, "w": 0.4, "h": 0.4})
+
+    single = {"type": "polygon", "points": [[0.0, 0.0], [0.4, 0.0], [0.2, 0.4]]}
+    assert _bbox_from_geometry(single) == pytest.approx(
+        {"x": 0.0, "y": 0.0, "w": 0.4, "h": 0.4}
     )
 
 

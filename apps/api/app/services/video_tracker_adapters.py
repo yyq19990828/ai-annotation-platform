@@ -41,12 +41,29 @@ class TrackerContext:
     # backend context 顶层 (而非仅塞进自由 prompt), 与 seed-bbox tracker 区分。
     text: str | None = None
     exemplars: list[dict] | None = None
+    # v0.21.20 · polygon track 回填: "polygon" 时 backend 每帧保留 mask 矢量化的多边形
+    # 而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。由 runner 按源几何类型定。
+    output_geometry: str = "bbox"
 
 
 class TrackerAdapter(Protocol):
     model_key: str
 
     def propagate(self, ctx: TrackerContext) -> AsyncIterator[TrackerFrameResult]: ...
+
+
+def _bbox_from_points(points: list) -> dict:
+    """归一化多边形/折线顶点 → 外接 bbox {x,y,w,h}; 空/退化 → 零框。
+
+    v0.21.20 · SAM2 只吃 bbox seed, polygon track 的种子 = 多边形外接框; 跨窗续追时
+    上一窗结果几何也是多边形, 同样取外接框喂下一窗。
+    """
+    xs = [float(p[0]) for p in points if len(p) >= 2]
+    ys = [float(p[1]) for p in points if len(p) >= 2]
+    if not xs or not ys:
+        return {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
 
 
 def _bbox_from_geometry(geometry: dict) -> dict:
@@ -57,6 +74,18 @@ def _bbox_from_geometry(geometry: dict) -> dict:
         )
         if keyframes:
             return dict(keyframes[0].get("bbox") or {})
+
+    # v0.21.20 · polygon track: 取首关键帧顶点外接框 / 单帧 polygon 结果取其顶点外接框。
+    if geometry.get("type") == "video_track_polygon":
+        keyframes = sorted(
+            geometry.get("keyframes") or [],
+            key=lambda item: int(item.get("frame_index", 0)),
+        )
+        if keyframes:
+            return _bbox_from_points(keyframes[0].get("points") or [])
+
+    if geometry.get("type") == "polygon":
+        return _bbox_from_points(geometry.get("points") or [])
 
     if geometry.get("type") in {"bbox", "video_bbox"}:
         return {
@@ -131,6 +160,10 @@ class MLBackendVideoTrackerAdapter:
             context["text"] = ctx.text
         if ctx.exemplars:
             context["exemplars"] = ctx.exemplars
+        # v0.21.20 · polygon track 回填: 显式下发期望输出几何, backend 据此保留 mask
+        # 矢量化的多边形; 缺省 bbox 不下发, 老 backend 无此键也不受影响。
+        if ctx.output_geometry and ctx.output_geometry != "bbox":
+            context["output_geometry"] = ctx.output_geometry
         result = await client.predict_interactive(
             task_data=ctx.task_data,
             context=context,

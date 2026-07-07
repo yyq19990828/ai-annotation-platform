@@ -23,6 +23,7 @@ v0.9.1 (M1) 加入 SAM 2 image embedding LRU 缓存:
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import time
@@ -983,7 +984,7 @@ def _seed_bbox_from_ctx(ctx: dict) -> dict:
         if not isinstance(geometry, dict):
             return None
         gtype = geometry.get("type")
-        if gtype == "video_track":
+        if gtype in {"video_track", "video_track_bbox"}:
             keyframes = sorted(
                 geometry.get("keyframes") or [],
                 key=lambda item: int(item.get("frame_index", 0)),
@@ -992,6 +993,17 @@ def _seed_bbox_from_ctx(ctx: dict) -> dict:
                 bbox = keyframes[0].get("bbox") or {}
                 return _norm_bbox(bbox)
             return None
+        # v0.21.20 · polygon track: seed = 首关键帧顶点外接框 (SAM2 只吃 bbox seed)。
+        if gtype == "video_track_polygon":
+            keyframes = sorted(
+                geometry.get("keyframes") or [],
+                key=lambda item: int(item.get("frame_index", 0)),
+            )
+            if keyframes:
+                return _bbox_from_points(keyframes[0].get("points") or [])
+            return None
+        if gtype == "polygon":
+            return _bbox_from_points(geometry.get("points") or [])
         if gtype in {"bbox", "video_bbox"} or any(
             k in geometry for k in ("x", "y", "w", "width")
         ):
@@ -1005,6 +1017,14 @@ def _seed_bbox_from_ctx(ctx: dict) -> dict:
             "w": float(bbox.get("w", bbox.get("width", 0.0))),
             "h": float(bbox.get("h", bbox.get("height", 0.0))),
         }
+
+    def _bbox_from_points(points: list) -> dict:
+        xs = [float(p[0]) for p in points if len(p) >= 2]
+        ys = [float(p[1]) for p in points if len(p) >= 2]
+        if not xs or not ys:
+            return {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
+        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+        return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
 
     prompt = ctx.get("prompt")
     if isinstance(prompt, dict):
@@ -1076,6 +1096,14 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
             detail=f"video_tracker direction must be forward|backward, got {direction!r}",
         )
     seed_bbox = _seed_bbox_from_ctx(ctx)
+    # v0.21.20 · polygon track 回填: 平台按源几何类型下发 output_geometry, "polygon" 时
+    # 每帧保留 mask 矢量化为多边形而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。
+    output_geometry = ctx.get("output_geometry") or "bbox"
+    if output_geometry not in ("bbox", "polygon"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"video_tracker output_geometry must be bbox|polygon, got {output_geometry!r}",
+        )
 
     try:
         tracker = await _video_pool.get(sv)
@@ -1092,12 +1120,15 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
         # propagate 是 CPU/GPU 阻塞调用, 丢到 executor 避免堵事件循环 (含 /health).
         result = await loop.run_in_executor(
             None,
-            tracker.propagate,
-            local_path,
-            from_frame,
-            to_frame,
-            direction,
-            seed_bbox,
+            functools.partial(
+                tracker.propagate,
+                local_path,
+                from_frame,
+                to_frame,
+                direction,
+                seed_bbox,
+                output_geometry=output_geometry,
+            ),
         )
     finally:
         if cleanup:

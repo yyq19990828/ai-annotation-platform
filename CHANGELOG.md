@@ -55,6 +55,10 @@
 - **polygon / polyline 轨迹可导出到 bbox 格式**：导出 MOT / KITTI / YOLO-frames-det 时，polygon/polyline 轨迹逐帧
   降级为顶点外接框（此前这些 bbox-only 格式读不到 `points`、会把这类轨迹导成全 0 的空框）。真·segmentation 导出
   （COCO-seg / YOLO-seg）另行落地。
+- **polygon 轨迹 SAM2 追踪保留多边形（mask 回填）**：对 polygon 轨迹发起 AI 追踪时，SAM2 video predictor 每帧算出的
+  mask 不再降级为 bbox 丢弃，而是矢量化为归一化多边形顶点（复用图片栈 `mask_to_polygon`）逐帧回填为 polygon 关键帧；
+  轨迹类型据源几何自动选择（polygon → 输出 polygon，bbox → 维持 bbox 不变）。种子仍取多边形外接框喂 SAM2（其只吃
+  bbox 提示），跨窗续追亦按上一窗多边形外接框重新播种。与 bbox 追踪链路平行，seed-bbox 追踪行为零改变。
 
 ## [0.21.18] - 2026-07-07
 

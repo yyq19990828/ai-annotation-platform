@@ -47,7 +47,12 @@ import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
 import torch
 
+from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
+
 logger = logging.getLogger("grounded-sam2-backend.video")
+
+# mask→polygon 简化容差 (像素); 与 predictor 单环路径同源默认。
+_POLYGON_TOLERANCE = 1.0
 
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
 
@@ -102,14 +107,20 @@ class SAM2VideoTracker:
         to_frame: int,
         direction: str,
         seed_bbox: dict[str, float],
+        output_geometry: str = "bbox",
     ) -> list[dict[str, Any]]:
-        """在 [from_frame, to_frame] 窗内传播 seed bbox, 返回逐帧 bbox 结果。
+        """在 [from_frame, to_frame] 窗内传播 seed bbox, 返回逐帧几何结果。
 
         seed_bbox: 归一化 {x, y, w, h} (0-1), 锚在窗首帧 (forward=from_frame,
         backward=to_frame; 与平台 _tracker_windows 的窗口方向一致)。
 
-        返回: [{frame_index(源帧号), geometry:{type:"bbox",x,y,w,h(归一化)},
-                confidence, outside}], 含 seed 帧在内的整个窗。
+        output_geometry: "bbox"(默认) 每帧把 mask 降级为外接框, 返回
+        ``{type:"bbox",x,y,w,h}``; "polygon" 则把 mask 矢量化为归一化多边形顶点,
+        返回 ``{type:"polygon", points:[[x,y],...]}`` (v0.21.20 · polygon track 回填,
+        复用图片栈 mask_to_polygon; SAM2 传播本就逐帧算 mask, 此前一律降 bbox 丢弃)。
+
+        返回: [{frame_index(源帧号), geometry, confidence, outside}], 含 seed 帧在内的
+        整个窗。空 mask / 退化多边形(顶点<3) → outside=True。
         """
         lo, hi = int(min(from_frame, to_frame)), int(max(from_frame, to_frame))
         span = hi - lo + 1
@@ -161,11 +172,17 @@ class SAM2VideoTracker:
             ):
                 src_idx = int(local_idx) + lo
                 mask = self._first_obj_mask(video_res_masks)
-                bbox_norm, outside = self._mask_to_bbox_norm(mask, frame_w, frame_h)
+                if output_geometry == "polygon":
+                    geometry, outside = self._mask_to_polygon_geometry(
+                        mask, frame_w, frame_h
+                    )
+                else:
+                    bbox_norm, outside = self._mask_to_bbox_norm(mask, frame_w, frame_h)
+                    geometry = {"type": "bbox", **bbox_norm}
                 results.append(
                     {
                         "frame_index": src_idx,
-                        "geometry": {"type": "bbox", **bbox_norm},
+                        "geometry": geometry,
                         "confidence": 0.0 if outside else 1.0,
                         "outside": outside,
                     }
@@ -281,6 +298,20 @@ class SAM2VideoTracker:
             "w": _clamp(bw),
             "h": _clamp(bh),
         }, False
+
+    @staticmethod
+    def _mask_to_polygon_geometry(
+        mask: np.ndarray, w: int, h: int
+    ) -> tuple[dict[str, Any], bool]:
+        """mask → 归一化多边形 geometry; 空 mask / 顶点<3 → outside=True (空 points)。
+
+        复用图片栈 ``mask_to_polygon`` (cv2.findContours 取最大外环 → shapely.simplify →
+        归一化)。polygon track keyframe 要求 points 至少 3 个, 退化时标 outside 让平台跳过。
+        """
+        points = mask_to_polygon(mask, _POLYGON_TOLERANCE, normalize_to=(w, h))
+        if len(points) < 3:
+            return {"type": "polygon", "points": []}, True
+        return {"type": "polygon", "points": points}, False
 
     @staticmethod
     def _cleanup_tmp(tmp_dir: str) -> None:

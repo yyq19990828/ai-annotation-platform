@@ -21,6 +21,7 @@ from app.services.video_tracker_adapters import (
     TrackerFrameResult,
     get_tracker_adapter,
 )
+from app.services.video_tracks import is_polygon_track
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +68,12 @@ def _normalize_bbox(geometry: dict) -> dict:
     }
 
 
+def _normalize_points(geometry: dict) -> list[list[float]]:
+    """result geometry ({type:"polygon", points:[[x,y],...]}) → 归一化顶点列表。"""
+    points = geometry.get("points") or []
+    return [[float(p[0]), float(p[1])] for p in points if len(p) >= 2]
+
+
 def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     size = max(1, int(settings.video_tracker_window_size_frames))
     windows = []
@@ -93,6 +100,14 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
 
 def _coerce_video_track_geometry(annotation: Annotation, job: VideoTrackerJob) -> dict:
     geometry = annotation.geometry or {}
+    # v0.21.20 · polygon track: 保留 points 关键帧 + 类型, 回填走多边形路径。
+    if geometry.get("type") == "video_track_polygon":
+        return {
+            "type": "video_track_polygon",
+            "track_id": str(geometry.get("track_id") or annotation.id),
+            "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
+            "outside": [dict(item) for item in geometry.get("outside") or []],
+        }
     if geometry.get("type") == "video_track_bbox":
         return {
             "type": "video_track_bbox",
@@ -132,6 +147,7 @@ def apply_tracker_results(
     grid_step: int = 1,
 ) -> None:
     geometry = _coerce_video_track_geometry(annotation, job)
+    is_polygon = geometry.get("type") == "video_track_polygon"
     keyframes = geometry["keyframes"]
     manual_frames = {
         int(item.get("frame_index", 0))
@@ -156,9 +172,19 @@ def apply_tracker_results(
             continue
         if result.frame_index in manual_frames:
             continue
+        if is_polygon:
+            points = _normalize_points(result.geometry)
+            if len(points) < 3:
+                # 退化多边形(顶点<3)当 outside 处理, 避免写坏 schema。
+                outside_frames.append(result.frame_index)
+                prediction_by_frame.pop(result.frame_index, None)
+                continue
+            shape_field = {"points": points}
+        else:
+            shape_field = {"bbox": _normalize_bbox(result.geometry)}
         prediction_by_frame[result.frame_index] = {
             "frame_index": result.frame_index,
-            "bbox": _normalize_bbox(result.geometry),
+            **shape_field,
             "source": "prediction",
             "occluded": False,
         }
@@ -182,7 +208,9 @@ def apply_tracker_results(
     )
 
     annotation.geometry = geometry
-    annotation.annotation_type = "video_track_bbox"
+    annotation.annotation_type = (
+        "video_track_polygon" if is_polygon else "video_track_bbox"
+    )
     annotation.version = int(annotation.version or 1) + 1
 
 
@@ -277,6 +305,10 @@ async def run_tracker_job(
         # non-outside frame geometry so the tracker keeps following a moving
         # target instead of restarting from the original box every window.
         last_geometry = annotation.geometry or {}
+        # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
+        output_geometry = (
+            "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
+        )
 
         for from_frame, to_frame in _tracker_windows(job):
             ctx = TrackerContext(
@@ -296,6 +328,8 @@ async def run_tracker_job(
                 # v0.21.19 · text-driven 追踪的 text/exemplars 从 prompt JSONB 读出透传。
                 text=(job.prompt or {}).get("text"),
                 exemplars=(job.prompt or {}).get("exemplars"),
+                # v0.21.20 · polygon track 回填: 期望输出几何 (polygon/bbox)。
+                output_geometry=output_geometry,
             )
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)
