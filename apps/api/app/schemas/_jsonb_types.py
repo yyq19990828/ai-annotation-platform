@@ -311,6 +311,8 @@ class VideoModesConfig(BaseModel):
     # v0.21.21 · 单帧 polygon / polyline 子开关, 与 box 共享 bbox 单位的类别/属性绑定。
     polygon: bool = True
     polyline: bool = True
+    # v0.21.22 · 单帧 keypoint 子开关; 骨骼拓扑走 bbox 单位携带的 keypoint_schema。
+    keypoint: bool = True
 
     model_config = ConfigDict(extra="forbid")
 
@@ -318,7 +320,7 @@ class VideoModesConfig(BaseModel):
     def _at_least_one_enabled(self) -> "VideoModesConfig":
         # 与前端 ClassesSection 语义一致：不允许全部几何开关都 false，
         # 否则 bbox 单元 enabled=true 却什么都画不了。
-        if not (self.box or self.track or self.polygon or self.polyline):
+        if not (self.box or self.track or self.polygon or self.polyline or self.keypoint):
             raise ValueError("video_modes 必须至少保留一个几何开关可用")
         return self
 
@@ -715,6 +717,18 @@ class KeypointGeometry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class VideoKeypointGeometry(BaseModel):
+    """v0.21.22 · 视频单帧关键点集合。与图片 KeypointGeometry 平行 + frame_index;
+    骨骼拓扑仍走 bbox 工具单位的 keypoint_schema (视频破例挂 bbox 单位)。坐标归一化 [0,1]。
+    """
+
+    type: Literal["video_keypoint"] = "video_keypoint"
+    frame_index: int = Field(ge=0)
+    points: list[Keypoint] = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 # ── v0.13.0 · 点云 3D 几何（box_3d / point_mask_3d） ──────────────────
 
 
@@ -757,6 +771,7 @@ Geometry = Annotated[
     | VideoBboxGeometry
     | VideoPolygonGeometry
     | VideoPolylineGeometry
+    | VideoKeypointGeometry
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
     | VideoTrackPolylineGeometry

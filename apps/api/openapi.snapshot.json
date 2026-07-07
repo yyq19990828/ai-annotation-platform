@@ -957,6 +957,7 @@
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
                 "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
@@ -977,6 +978,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoKeypointGeometry"
               },
               {
                 "$ref": "#/components/schemas/VideoTrackGeometry"
@@ -1644,6 +1648,7 @@
                 "polyline": "#/components/schemas/PolylineGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
                 "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
@@ -1664,6 +1669,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoKeypointGeometry"
               },
               {
                 "$ref": "#/components/schemas/VideoTrackGeometry"
@@ -1926,6 +1934,7 @@
                     "polyline": "#/components/schemas/PolylineGeometry",
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                     "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                    "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
                     "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                     "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                     "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
@@ -1946,6 +1955,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoPolylineGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoKeypointGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackGeometry"
@@ -18686,6 +18698,37 @@
         "title": "VideoFrameTimetableEntry",
         "type": "object"
       },
+      "VideoKeypointGeometry": {
+        "additionalProperties": false,
+        "description": "v0.21.22 · 视频单帧关键点集合。与图片 KeypointGeometry 平行 + frame_index;\n骨骼拓扑仍走 bbox 工具单位的 keypoint_schema (视频破例挂 bbox 单位)。坐标归一化 [0,1]。",
+        "properties": {
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Keypoint"
+            },
+            "minItems": 1,
+            "title": "Points",
+            "type": "array"
+          },
+          "type": {
+            "const": "video_keypoint",
+            "default": "video_keypoint",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "points"
+        ],
+        "title": "VideoKeypointGeometry",
+        "type": "object"
+      },
       "VideoManifestV2Response": {
         "properties": {
           "chunk_size_frames": {
@@ -18975,6 +19018,11 @@
           "box": {
             "default": true,
             "title": "Box",
+            "type": "boolean"
+          },
+          "keypoint": {
+            "default": true,
+            "title": "Keypoint",
             "type": "boolean"
           },
           "polygon": {
