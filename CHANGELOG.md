@@ -38,7 +38,10 @@
 - **视频追踪协议贯通 text-driven 维度（sam3_video 前哨）**：`tracks/{id}:propagate` 请求新增 `text`（文本 query）与
   `exemplars`（归一化视觉示例框，复用 sam3 图片侧 Exemplar 形状）显式字段，落库 prompt JSONB 后经 tracker 上下文显式透传
   到 ML backend；能力协商新增 `text_driven_trackers` 字段，让平台区分「seed-bbox tracker（sam2）」与「text-driven
-  tracker（sam3，需 text/exemplars）」。为文本驱动的视频目标追踪打通协议与能力底座（前端 UI 与 backend 实现随后落地）。
+  tracker（sam3，需 text/exemplars）」。为文本驱动的视频目标追踪打通协议与能力底座（backend 实现随后落地）。
+- **AI 追踪对话框支持文本驱动**：选中 text-driven tracker（sam3_video）时对话框显示「文本描述」输入框，按描述在每帧检测目标
+  （而非从种子框传播），发起时随请求下发。text-driven tracker 仅在项目 ML backend 声明支持后可选，未声明时在模型下拉
+  中灰置并禁用发起（不做假占位可点）；seed-bbox tracker（sam2_video）行为不变、不显文本框。
 
 ## [0.21.18] - 2026-07-07
 

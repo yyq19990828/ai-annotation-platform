@@ -2912,6 +2912,9 @@ export function useWorkbenchShellModel({
     samplingStep,
     projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
     preferNonMockModel: Boolean(currentProject?.ml_backend_id),
+    // v0.21.19 · 能力协商: backend 声明的 tracker 列表, 用于灰置未声明的 text-driven tracker (sam3_video)。
+    supportedTrackers: mlCapabilities.capability?.supported_trackers,
+    textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,

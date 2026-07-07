@@ -31,6 +31,12 @@ export interface VideoTrackerJob {
   updated_at: string | null;
 }
 
+/** v0.21.19 · text-driven 追踪的视觉示例框 (归一化 xyxy)。复用 sam3 图片侧 Exemplar 形状。 */
+export interface VideoTrackerExemplar {
+  bbox: [number, number, number, number];
+  label?: boolean;
+}
+
 export interface VideoTrackerPropagatePayload {
   from_frame: number;
   to_frame: number;
@@ -40,6 +46,9 @@ export interface VideoTrackerPropagatePayload {
   prompt?: Record<string, unknown>;
   // v0.10.36: SAM 模型尺寸 (tiny/small/base_plus/large); 省略时后端回退 tiny。
   sam_variant?: string;
+  // v0.21.19: text-driven 追踪 (sam3_video) 的文本 query + 可选视觉示例框。
+  text?: string;
+  exemplars?: VideoTrackerExemplar[];
 }
 
 export const videoTrackerApi = {

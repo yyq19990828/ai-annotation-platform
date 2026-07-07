@@ -121,6 +121,10 @@ interface VideoTrackerPropagateDialogProps {
   samplingStep?: number;
   projectDefaultModel?: string | null;
   preferNonMockModel?: boolean;
+  /** v0.21.19 · backend /setup 声明的可用 tracker; 用于灰置未声明的 text-driven tracker (sam3_video)。 */
+  supportedTrackers?: string[];
+  /** v0.21.19 · text-driven tracker 子集; 选中其中之一时显 text 框。缺省时 sam3_video 静态视为 text-driven。 */
+  textDrivenTrackers?: string[];
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
@@ -139,6 +143,8 @@ export function VideoTrackerPropagateDialog({
   samplingStep = 1,
   projectDefaultModel = null,
   preferNonMockModel = false,
+  supportedTrackers,
+  textDrivenTrackers,
   submitting,
   onCancel,
   onSubmit,
@@ -150,6 +156,8 @@ export function VideoTrackerPropagateDialog({
   const [modelKey, setModelKey] = useState<string>("mock_bbox");
   // v0.10.36: SAM 模型尺寸; 空 = 默认 (tiny)。
   const [samVariant, setSamVariant] = useState<string>("");
+  // v0.21.19: text-driven 追踪 (sam3_video) 的文本 query; 每次打开重置 (非持久化)。
+  const [text, setText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   // v0.21.14 · 时间轴 Shift+拖刷选回填的自定义范围; 非 null 时覆盖预设/方向派生的范围。
   // 改预设 / 方向即清空 (回到派生范围)。
@@ -166,6 +174,21 @@ export function VideoTrackerPropagateDialog({
     [preferNonMockModel],
   );
 
+  // v0.21.19 · text-driven 判定 + 能力灰置。sam3_video 天然 text-driven (backend 未声明前
+  // 也据静态兜底显 text 框); text-driven tracker 仅在 backend /setup 的 supported_trackers
+  // 声明后可选, 否则灰置 (不做假占位可点)。mock_bbox / sam2_video 不受此门控 (零回归)。
+  const isTextDrivenModel = useMemo(() => {
+    const set = new Set(textDrivenTrackers ?? []);
+    return (value: string) => set.has(value) || value === "sam3_video";
+  }, [textDrivenTrackers]);
+  const isModelDisabled = useMemo(() => {
+    const supported = new Set(supportedTrackers ?? []);
+    return (value: string) => isTextDrivenModel(value) && !supported.has(value);
+  }, [supportedTrackers, isTextDrivenModel]);
+
+  const textDrivenActive = isTextDrivenModel(modelKey);
+  const selectedModelDisabled = isModelDisabled(modelKey);
+
   useEffect(() => {
     if (open) {
       const remembered =
@@ -180,6 +203,7 @@ export function VideoTrackerPropagateDialog({
         options: modelOptions,
       }));
       setSamVariant(remembered.samVariant);
+      setText("");
       setError(null);
       setCustomRange(null);
     }
@@ -249,6 +273,16 @@ export function VideoTrackerPropagateDialog({
       setError("起止帧无效");
       return;
     }
+    if (selectedModelDisabled) {
+      setError("该 tracker 未由 backend 声明支持, 暂不可用");
+      return;
+    }
+    // v0.21.19 · text-driven tracker 必须有文本描述 (否则每帧无检测依据)。
+    const trimmedText = text.trim();
+    if (textDrivenActive && !trimmedText) {
+      setError("文本驱动追踪需填写文本描述");
+      return;
+    }
     try {
       await onSubmit({
         from_frame: range.from,
@@ -256,6 +290,7 @@ export function VideoTrackerPropagateDialog({
         model_key: modelKey,
         direction,
         sam_variant: samVariant || undefined,
+        text: textDrivenActive ? trimmedText : undefined,
       });
       writeDialogMemory(userId, "trackerPropagate", {
         rangePreset,
@@ -355,16 +390,39 @@ export function VideoTrackerPropagateDialog({
             onChange={(e) => setModelKey(e.target.value)}
             className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
           >
-            {modelOptions.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
+            {modelOptions.map((m) => {
+              const disabled = isModelDisabled(m.value);
+              return (
+                <option key={m.value} value={m.value} disabled={disabled}>
+                  {m.label}
+                  {disabled ? " (未绑定后端)" : ""}
+                </option>
+              );
+            })}
           </select>
           <span className="text-muted-foreground text-xs">
-            {modelOptions.find((m) => m.value === modelKey)?.note}
+            {selectedModelDisabled
+              ? "该 tracker 需项目绑定并由 backend 声明支持 (未声明, 暂不可用)"
+              : modelOptions.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
+
+        {textDrivenActive && (
+          <label className="grid gap-1 text-muted-foreground text-xs">
+            文本描述
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="如: the red car / a person walking"
+              data-testid="tracker-text-input"
+              className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm"
+            />
+            <span className="text-muted-foreground text-xs">
+              文本驱动追踪: 按描述在每帧检测目标 (而非从种子框传播)。
+            </span>
+          </label>
+        )}
 
         {modelKey !== "mock_bbox" && (
           <label className="grid gap-1 text-muted-foreground text-xs">
@@ -394,7 +452,11 @@ export function VideoTrackerPropagateDialog({
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
             取消
           </Button>
-          <Button size="sm" onClick={handleSubmit} disabled={submitting}>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={submitting || selectedModelDisabled}
+          >
             {submitting ? "发起中…" : "发起传播"}
           </Button>
         </div>

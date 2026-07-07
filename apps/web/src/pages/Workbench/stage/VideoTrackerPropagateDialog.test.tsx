@@ -279,6 +279,73 @@ describe("VideoTrackerPropagateDialog", () => {
   });
 
 
+  it("sam3_video 未在 supported_trackers 声明时灰置 (option disabled), 提交按钮禁用", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        projectDefaultModel="sam3_video"
+        onSubmit={vi.fn()}
+      />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const sam3Option = Array.from(modelSelect.options).find((o) => o.value === "sam3_video");
+    expect(sam3Option?.disabled).toBe(true);
+    // 选中的是被灰置的 sam3_video → 提交按钮禁用。
+    expect((screen.getByText("发起传播").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    // 未灰置的 sam2_video 不受门控。
+    const sam2Option = Array.from(modelSelect.options).find((o) => o.value === "sam2_video");
+    expect(sam2Option?.disabled).toBe(false);
+  });
+
+  it("backend 声明 sam3_video 后可选, 显 text 框, 提交带 text", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        projectDefaultModel="sam3_video"
+        supportedTrackers={["sam2_video", "sam3_video"]}
+        textDrivenTrackers={["sam3_video"]}
+        onSubmit={onSubmit}
+      />,
+    );
+    // sam3_video 已声明 → 不灰置, 默认选中它 → text 框出现。
+    expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("sam3_video");
+    const textInput = screen.getByTestId("tracker-text-input") as HTMLInputElement;
+    expect(textInput).toBeTruthy();
+    // 空 text 提交被拦。
+    fireEvent.click(screen.getByText("发起传播"));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("文本驱动追踪需填写文本描述")).toBeTruthy();
+    // 填 text → 提交带 text。
+    fireEvent.change(textInput, { target: { value: "the red car" } });
+    fireEvent.click(screen.getByText("发起传播"));
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ model_key: "sam3_video", text: "the red car" }),
+      ),
+    );
+  });
+
+  it("seed-bbox tracker (sam2_video) 不显 text 框, 提交不带 text", () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        projectDefaultModel="sam2_video"
+        supportedTrackers={["sam2_video"]}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.queryByTestId("tracker-text-input")).toBeNull();
+    fireEvent.click(screen.getByText("发起传播"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ model_key: "sam2_video", text: undefined }),
+    );
+  });
+
   it("取消不写记忆,且非法模型 / 变体安全回退", () => {
     const key = videoDialogMemoryStorageKey("u1", "trackerPropagate");
     const remembered = {
