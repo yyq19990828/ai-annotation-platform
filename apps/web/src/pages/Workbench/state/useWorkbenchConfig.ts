@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
@@ -17,6 +18,7 @@ import {
 } from "@/api/auth";
 import type { ProjectRenderingConfig } from "@/api/projects";
 import { useAuthStore } from "@/stores/authStore";
+import { useUserPreferences, userPreferencesQueryKey } from "./useUserPreferences";
 
 // v0.10.10 · I17.3 · 项目级覆盖的字段名集合（用于 SettingsPage badge 与控件 disabled）。
 // 与 ProjectRenderingConfig 字段同集（平铺命名不变），不含 longTaskSampleRate / layout。
@@ -574,12 +576,19 @@ export function useWorkbenchConfig(
 ): WorkbenchConfigState {
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
+  const queryClient = useQueryClient();
+  // v0.21.18 · 读路径接入共享 preferences query: 与 ai.* 四偏好 hook 复用同一
+  // ["me","preferences",userId] GET, 消除首屏多个 useWorkbenchConfig 实例各自裸 fetch。
+  const { prefs, loaded } = useUserPreferences();
   const [userConfig, setUserConfig] = useState<WorkbenchPreferences>(() =>
     mergeUser(user?.preferences?.workbench, userId, { preferLocalLayout: true }),
   );
   const userConfigRef = useRef(userConfig);
   const layoutSaveTimerRef = useRef<number | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  // 每个 userId 只用共享 query 数据 hydrate 一次本地态: 首屏 remote 优先同步, 之后共享 query
+  // 的后续变化(ai.* 写触发的 refetch / 本 hook 写回灌)不再覆盖本地 userConfig, 避免盖掉
+  // 「正在拖动但防抖 PATCH 未发」的 layout。切账号 userId 变则重新 hydrate。
+  const hydratedUserIdRef = useRef<string | null | undefined>(null);
   const [saving, setSaving] = useState(false);
   // v0.15.3 · 多实例同步:本实例广播时携带 sourceRef 标识,收到自己发的广播不回灌。
   const sourceRef = useRef<object>({});
@@ -606,37 +615,32 @@ export function useWorkbenchConfig(
         window.clearTimeout(layoutSaveTimerRef.current);
         // 卸载(路由切换)时若仍有未发出的防抖 PATCH，立即 flush，避免拖完 300ms 内
         // 离开页面丢失跨设备同步。timer 仅在已登录时设置，故无需再判 userId。
+        // v0.21.18 · flush 成功后把整份返回值回灌共享 query 缓存, 否则 staleTime 内再进
+        // 工作台会读到被本次 flush 覆盖前的旧缓存。userId 从 store 取最新(本 effect deps 稳定)。
+        const flushUserId = useAuthStore.getState().user?.id;
         void authApi
           .updatePreferences({ workbench: sanitizeForPersist(userConfigRef.current) })
+          .then((res) => {
+            queryClient.setQueryData(userPreferencesQueryKey(flushUserId), res);
+          })
           .catch(() => undefined);
       }
     },
-    [],
+    [queryClient],
   );
 
+  // v0.21.18 · 共享 query 数据到达时把 workbench 子树 hydrate 进本地态(每 userId 一次,
+  // 见 hydratedUserIdRef)。首屏由 useUserPreferences 的单次 GET 供数; 各挂载实例各自在此
+  // mergeUser + 写回本地 layout 缓存(幂等)。
   useEffect(() => {
-    let active = true;
-    if (!userId) {
-      setLoaded(false);
-      return;
-    }
-    authApi
-      .getPreferences()
-      .then((res) => {
-        if (!active) return;
-        const next = mergeUser(res.workbench, userId);
-        setUserConfig(next);
-        writeLocalLayout(next.layout, userId);
-        setLoaded(true);
-      })
-      .catch(() => {
-        if (!active) return;
-        setLoaded(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [userId]);
+    if (!userId || !prefs) return;
+    if (hydratedUserIdRef.current === userId) return;
+    hydratedUserIdRef.current = userId;
+    const next = mergeUser(prefs.workbench, userId);
+    userConfigRef.current = next;
+    setUserConfig(next);
+    writeLocalLayout(next.layout, userId);
+  }, [prefs, userId]);
 
   const update = useCallback(
     async (patch: WorkbenchConfigPatch) => {
@@ -654,6 +658,8 @@ export function useWorkbenchConfig(
         const res = await authApi.updatePreferences({
           workbench: sanitizeForPersist(next),
         });
+        // v0.21.18 · 整份返回值回灌共享 query 缓存(PATCH 返回整份 preferences, 无子键覆盖风险)。
+        queryClient.setQueryData(userPreferencesQueryKey(userId), res);
         const saved = mergeUser(res.workbench, userId);
         userConfigRef.current = saved;
         setUserConfig(saved);
@@ -667,7 +673,7 @@ export function useWorkbenchConfig(
         setSaving(false);
       }
     },
-    [userId],
+    [userId, queryClient],
   );
 
   // setLayout / setFields 共用的 300ms 防抖全量 PATCH(卸载时由上方 cleanup flush)。
@@ -685,6 +691,7 @@ export function useWorkbenchConfig(
       authApi
         .updatePreferences({ workbench: sanitizeForPersist(payload) })
         .then((res) => {
+          queryClient.setQueryData(userPreferencesQueryKey(userId), res);
           const saved = mergeUser(res.workbench, userId);
           userConfigRef.current = saved;
           setUserConfig(saved);
@@ -696,7 +703,7 @@ export function useWorkbenchConfig(
         })
         .finally(() => setSaving(false));
     }, 300);
-  }, [userId]);
+  }, [userId, queryClient]);
 
   const setLayout = useCallback(
     (patch: WorkbenchLayoutPatch) => {
