@@ -37,6 +37,10 @@ class TrackerContext:
     sam_variant: str | None = (
         None  # v0.10.36 · 透传到 backend /predict video_tracker 分支
     )
+    # v0.21.19 · text-driven 追踪 (sam3_video): 文本 query + 视觉示例框, 显式透传到
+    # backend context 顶层 (而非仅塞进自由 prompt), 与 seed-bbox tracker 区分。
+    text: str | None = None
+    exemplars: list[dict] | None = None
 
 
 class TrackerAdapter(Protocol):
@@ -121,6 +125,12 @@ class MLBackendVideoTrackerAdapter:
         # v0.14.15 · 仅当显式指定时透传模型变体; 缺省让后端回退默认 tiny.
         if ctx.sam_variant:
             context["model_variants"] = {"sam_variant": ctx.sam_variant}
+        # v0.21.19 · text-driven 追踪的 text/exemplars 显式提到 context 顶层 (seed-bbox
+        # tracker 无此二键), 让 backend /predict video_tracker 分支按 text 重检测。
+        if ctx.text:
+            context["text"] = ctx.text
+        if ctx.exemplars:
+            context["exemplars"] = ctx.exemplars
         result = await client.predict_interactive(
             task_data=ctx.task_data,
             context=context,

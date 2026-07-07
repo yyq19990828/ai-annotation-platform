@@ -135,6 +135,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         "output_attribute_schema": list(model.get("output_attribute_schema") or []),
         "supported_text_outputs": list(model.get("supported_text_outputs") or []),
         "supported_trackers": list(model.get("supported_trackers") or []),
+        # v0.21.19 · text-driven tracker (sam3_video) 子集: 这些 tracker 的 propagate
+        # 请求需 text/exemplars 而非仅 seed bbox。前端据此在选中该 tracker 时显 text 框。
+        "text_driven_trackers": list(model.get("text_driven_trackers") or []),
         "supported_variants": model.get("supported_variants") or [],
         "variant_combinations": list(model.get("variant_combinations") or []),
         "variants_shared_across_tasks": bool(
@@ -208,6 +211,8 @@ def _synthesize_single_model(setup: dict, backend_infra: str) -> dict:
         "output_attribute_types": [],
         "supported_text_outputs": list(setup.get("supported_text_outputs") or []),
         "supported_trackers": trackers,
+        # v0.21.19 · text-driven tracker 子集 (见 _normalize_model)。
+        "text_driven_trackers": list(setup.get("text_driven_trackers") or []),
         "supported_variants": setup.get("supported_variants") or [],
         # 老 backend 均为单次推理原子（协议 v2.2）。
         "composition": "atom",
@@ -352,6 +357,7 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         "supported_prompts": _union(models, "supported_prompts"),
         "supported_inputs": _union(models, "supported_inputs"),
         "supported_trackers": _union(models, "supported_trackers"),
+        "text_driven_trackers": _union(models, "text_driven_trackers"),  # v0.21.19
         "supported_text_outputs": _union(models, "supported_text_outputs"),
         "supported_geometric_outputs": _union(models, "supported_geometric_outputs"),
         # v0.18.29 · 受控词表校验诊断 (越界 task/infra/prompt/geometry); 空 = 全合法。

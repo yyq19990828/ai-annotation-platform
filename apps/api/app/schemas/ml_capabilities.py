@@ -105,6 +105,8 @@ class InstanceModelItem(BaseModel):
     resource_profile: dict = {}
     supported_geometric_outputs: list[str] = []
     supported_trackers: list[str] = []
+    # v0.21.19 · text-driven tracker (sam3_video) 子集; 前端选中该 tracker 时显 text 框。
+    text_driven_trackers: list[str] = []
     # 协议③ · 属性输出类型 + schema 自描述 (含 select options), 供「从 backend 导入属性」.
     output_attribute_types: list[str] = []
     output_attribute_schema: list[dict] = []

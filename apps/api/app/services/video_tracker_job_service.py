@@ -165,9 +165,17 @@ async def create_tracker_job(
         from_frame=payload.from_frame,
         to_frame=payload.to_frame,
         # v0.10.36 · sam_variant 存进自由 JSONB prompt (无需 DB 迁移).
+        # v0.21.19 · text-driven 追踪的 text/exemplars 同样落 prompt JSONB, runner 读出后
+        # 经 TrackerContext 显式字段透传到 backend (见 video_tracker_adapters context)。
         prompt={
             **(payload.prompt or {}),
             **({"sam_variant": payload.sam_variant} if payload.sam_variant else {}),
+            **({"text": payload.text} if payload.text else {}),
+            **(
+                {"exemplars": [e.model_dump() for e in payload.exemplars]}
+                if payload.exemplars
+                else {}
+            ),
         },
         event_channel="pending",
     )

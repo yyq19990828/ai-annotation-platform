@@ -3237,6 +3237,14 @@
             "title": "Supported Trackers",
             "type": "array"
           },
+          "text_driven_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Text Driven Trackers",
+            "type": "array"
+          },
           "warmup_endpoint": {
             "default": false,
             "title": "Warmup Endpoint",
@@ -8068,6 +8076,14 @@
             "title": "Task",
             "type": "string"
           },
+          "text_driven_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Text Driven Trackers",
+            "type": "array"
+          },
           "variant_combinations": {
             "default": [],
             "items": {
@@ -9217,6 +9233,14 @@
             "default": "unknown",
             "title": "Task",
             "type": "string"
+          },
+          "text_driven_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Text Driven Trackers",
+            "type": "array"
           },
           "variant_combinations": {
             "default": [],
@@ -16977,6 +17001,28 @@
         "title": "ToolClassEntry",
         "type": "object"
       },
+      "TrackerExemplar": {
+        "description": "v0.21.19 · text-driven 追踪 (sam3_video) 的单个视觉示例框。\n\nbbox: 归一化 xyxy [x1, y1, x2, y2]; label: True=正框(扩召回) / False=负框(排误检)。\n复用 sam3 图片侧 `Exemplar` 形状 (sam3-backend/schemas.py), 沿用归一化坐标红线。",
+        "properties": {
+          "bbox": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Bbox",
+            "type": "array"
+          },
+          "label": {
+            "default": true,
+            "title": "Label",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bbox"
+        ],
+        "title": "TrackerExemplar",
+        "type": "object"
+      },
       "TrajectoryResponse": {
         "description": "scene 的有序逐帧轨迹(按 frame_index 升序);无位姿 scene → poses=[]。",
         "properties": {
@@ -19815,6 +19861,20 @@
             "title": "Direction",
             "type": "string"
           },
+          "exemplars": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TrackerExemplar"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exemplars"
+          },
           "from_frame": {
             "minimum": 0.0,
             "title": "From Frame",
@@ -19854,6 +19914,18 @@
               }
             ],
             "title": "Segment Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
           },
           "to_frame": {
             "minimum": 0.0,

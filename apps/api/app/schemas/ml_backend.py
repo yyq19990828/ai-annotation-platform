@@ -105,6 +105,8 @@ class ModelCapability(BaseModel):
     output_attribute_schema: list[dict] = []
     supported_text_outputs: list[str] = []
     supported_trackers: list[str] = []
+    # v0.21.19 · text-driven tracker (sam3_video) 子集; propagate 需 text/exemplars。
+    text_driven_trackers: list[str] = []
     supported_variants: list[dict] = []
     # v0.14.12 · 多轴 variants 非笛卡尔积时显式列举合法组合 (前端目录展开用).
     variant_combinations: list[list[str]] = []
@@ -162,6 +164,8 @@ class BackendCapabilities(BaseModel):
     supported_prompts: list[str] = []
     supported_inputs: list[str] = []
     supported_trackers: list[str] = []
+    # v0.21.19 · text-driven tracker (sam3_video) 子集; propagate 需 text/exemplars。
+    text_driven_trackers: list[str] = []
     supported_text_outputs: list[str] = []
     supported_geometric_outputs: list[str] = []
     modalities: list[str] = []

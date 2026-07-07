@@ -293,6 +293,9 @@ async def run_tracker_job(
                 task_data=task_data,
                 ml_backend=backend,
                 sam_variant=(job.prompt or {}).get("sam_variant"),  # v0.10.36
+                # v0.21.19 · text-driven 追踪的 text/exemplars 从 prompt JSONB 读出透传。
+                text=(job.prompt or {}).get("text"),
+                exemplars=(job.prompt or {}).get("exemplars"),
             )
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)

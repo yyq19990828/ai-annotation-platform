@@ -285,6 +285,8 @@ TASKS: tuple[TaskSpec, ...] = (
         protocol_notes=(
             "/setup.supported_trackers 声明可用 tracker; /predict 在视频帧上"
             "返回带 instance_id 的 bbox 序列。"
+            "text-driven tracker (如 sam3_video) 额外在 /setup.text_driven_trackers "
+            "声明, propagate 请求带 text/exemplars (而非仅 seed bbox), 每窗按 text 重检测。"
         ),
         suggested_backends=(
             SuggestedBackend(
