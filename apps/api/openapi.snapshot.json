@@ -960,6 +960,7 @@
                 "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
                 "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
+                "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
                 "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                 "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
@@ -981,6 +982,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoKeypointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoRotatedBboxGeometry"
               },
               {
                 "$ref": "#/components/schemas/VideoTrackGeometry"
@@ -1651,6 +1655,7 @@
                 "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
                 "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
+                "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
                 "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                 "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
@@ -1672,6 +1677,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoKeypointGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoRotatedBboxGeometry"
               },
               {
                 "$ref": "#/components/schemas/VideoTrackGeometry"
@@ -1937,6 +1945,7 @@
                     "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
                     "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                     "video_polyline": "#/components/schemas/VideoPolylineGeometry",
+                    "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                     "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
                     "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                     "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
@@ -1958,6 +1967,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoKeypointGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoRotatedBboxGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackGeometry"
@@ -19035,6 +19047,11 @@
             "title": "Polyline",
             "type": "boolean"
           },
+          "rotated_box": {
+            "default": true,
+            "title": "Rotated Box",
+            "type": "boolean"
+          },
           "track": {
             "default": true,
             "title": "Track",
@@ -19123,6 +19140,57 @@
           "points"
         ],
         "title": "VideoPolylineGeometry",
+        "type": "object"
+      },
+      "VideoRotatedBboxGeometry": {
+        "additionalProperties": false,
+        "description": "v0.21.22 · 视频单帧旋转矩形 (OBB)。与图片 RotatedBboxGeometry 平行 + frame_index;\ncx,cy 中心, w,h 边长, angle 顺时针角度 (度, [0,360))。坐标归一化 [0,1]。",
+        "properties": {
+          "angle": {
+            "exclusiveMaximum": 360.0,
+            "minimum": 0.0,
+            "title": "Angle",
+            "type": "number"
+          },
+          "cx": {
+            "title": "Cx",
+            "type": "number"
+          },
+          "cy": {
+            "title": "Cy",
+            "type": "number"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "h": {
+            "exclusiveMinimum": 0.0,
+            "title": "H",
+            "type": "number"
+          },
+          "type": {
+            "const": "video_rotated_bbox",
+            "default": "video_rotated_bbox",
+            "title": "Type",
+            "type": "string"
+          },
+          "w": {
+            "exclusiveMinimum": 0.0,
+            "title": "W",
+            "type": "number"
+          }
+        },
+        "required": [
+          "frame_index",
+          "cx",
+          "cy",
+          "w",
+          "h",
+          "angle"
+        ],
+        "title": "VideoRotatedBboxGeometry",
         "type": "object"
       },
       "VideoSamplingConfig": {

@@ -76,6 +76,20 @@ describe("deriveVideoFrameViews", () => {
     expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 6 }).entries).toHaveLength(0);
   });
 
+  it("v0.21.22 · 单帧 OBB: entry 四角旋转顶点 (angle=0 时轴对齐), 只在所属帧显示", () => {
+    const ann = {
+      id: "obb1",
+      class_name: "car",
+      geometry: { type: "video_rotated_bbox", frame_index: 2, cx: 0.5, cy: 0.5, w: 0.4, h: 0.2, angle: 0 },
+    } as unknown as AnnotationResponse;
+    const atFrame = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 2 });
+    expect(atFrame.entries).toHaveLength(1);
+    // angle=0 → 四角为轴对齐矩形角点
+    expect(atFrame.entries[0].points).toEqual([[0.3, 0.4], [0.7, 0.4], [0.7, 0.6], [0.3, 0.6]]);
+    expect(atFrame.entries[0].open).toBeUndefined();
+    expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 3 }).entries).toHaveLength(0);
+  });
+
   it("v0.21.20 · polyline track: entry 带 points + open=true, 插值帧虚线", () => {
     const ann = polylineTrackAnn("l1", "line1", [
       { frame_index: 0, points: [[0, 0], [0.2, 0], [0.4, 0]], source: "manual" },

@@ -105,6 +105,9 @@ function annotationToolMeta(
   if (geometry.type === "video_polyline") {
     return { label: "折线", detail: `F${geometry.frame_index} · ${geometry.points.length} 点` };
   }
+  if (geometry.type === "video_rotated_bbox") {
+    return { label: "旋转框", detail: `F${geometry.frame_index} · ${Math.round(geometry.angle)}°` };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,

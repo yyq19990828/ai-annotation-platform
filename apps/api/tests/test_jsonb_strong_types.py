@@ -189,7 +189,9 @@ def test_video_modes_config_at_least_one_enabled():
     assert VideoModesConfig(box=False, track=False, polyline=False).polygon is True
     # 全部几何开关 false 才非法：bbox 单元 enabled 却什么都画不了
     with pytest.raises(ValidationError):
-        VideoModesConfig(box=False, track=False, polygon=False, polyline=False, keypoint=False)
+        VideoModesConfig(
+            box=False, track=False, polygon=False, polyline=False, keypoint=False, rotated_box=False,
+        )
 
 
 # ── Attribute schema ────────────────────────────────────────────────

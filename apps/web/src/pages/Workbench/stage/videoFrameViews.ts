@@ -8,7 +8,9 @@ import {
   isVideoPolygonTrack,
   isVideoPolyline,
   isVideoPolylineTrack,
+  isVideoRotatedBbox,
   isVideoTrack,
+  rotatedBboxCorners,
   resolveTrackAtFrame,
   resolveVideoPolygonTrackAtFrame,
   resolveVideoPolylineTrackAtFrame,
@@ -164,6 +166,12 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
       const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: ann.geometry.points, open: true });
+    } else if (isVideoRotatedBbox(ann) && ann.geometry.frame_index === frameIndex) {
+      // v0.21.22 · 单帧 OBB: 四角旋转顶点作闭合 Line (复用 polygon 渲染路径), 外接盒作 geom。
+      if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
+      const corners = rotatedBboxCorners(ann.geometry);
+      const entry = buildEntryView(ann, boundsOfPoints(corners), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      entries.push({ ...entry, points: corners });
     } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;

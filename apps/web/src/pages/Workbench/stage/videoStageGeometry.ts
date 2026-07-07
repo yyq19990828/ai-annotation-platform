@@ -3,6 +3,7 @@ import type {
   VideoBboxGeometry,
   VideoPolygonGeometry,
   VideoPolylineGeometry,
+  VideoRotatedBboxGeometry,
   VideoTrackGeometry,
   VideoTrackKeyframe,
   VideoTrackPolygonGeometry,
@@ -61,6 +62,25 @@ export function isVideoPolyline(
   ann: AnnotationResponse,
 ): ann is AnnotationResponse & { geometry: VideoPolylineGeometry } {
   return ann.geometry.type === "video_polyline";
+}
+
+/** v0.21.22 · 单帧旋转矩形 (OBB) 判定 (非 track)。 */
+export function isVideoRotatedBbox(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoRotatedBboxGeometry } {
+  return ann.geometry.type === "video_rotated_bbox";
+}
+
+/** v0.21.22 · 旋转矩形四角 (归一化)。cx,cy 中心, w,h 边长, angle 顺时针度。供渲染 <Line closed> / 外接盒。 */
+export function rotatedBboxCorners(g: {
+  cx: number; cy: number; w: number; h: number; angle: number;
+}): [number, number][] {
+  const rad = (g.angle * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const hw = g.w / 2, hh = g.h / 2;
+  return ([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as [number, number][]).map(
+    ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
+  );
 }
 
 export function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {

@@ -241,6 +241,16 @@ export type VideoPolylineGeometry = {
   frame_index: number;
   points: [number, number][];
 };
+/** v0.21.22 · 视频单帧旋转矩形 (OBB, 非 track): 与图片 RotatedBboxGeometry 平行 + frame_index. 归一化. */
+export type VideoRotatedBboxGeometry = {
+  type: "video_rotated_bbox";
+  frame_index: number;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  angle: number;
+};
 export type VideoTrackBbox = { x: number; y: number; w: number; h: number };
 export type VideoTrackKeyframe = {
   frame_index: number;
@@ -370,6 +380,7 @@ export type Geometry =
   | VideoBboxGeometry
   | VideoPolygonGeometry
   | VideoPolylineGeometry
+  | VideoRotatedBboxGeometry
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry

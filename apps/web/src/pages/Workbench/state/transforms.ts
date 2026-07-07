@@ -128,6 +128,16 @@ export function geometryToShape(g: Geometry): {
     const b = polygonBounds(g.points);
     return { ...b, polyline: g.points };
   }
+  if (g.type === "video_rotated_bbox") {
+    // v0.21.22 · 单帧 OBB: 四角旋转后 AABB + polygon 顶点 (供列表/Minimap/选中锚点)。
+    const rad = (g.angle * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const hw = g.w / 2, hh = g.h / 2;
+    const corners = ([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as [number, number][]).map(
+      ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
+    );
+    return { ...polygonBounds(corners), polygon: corners };
+  }
   if (g.type === "video_track_bbox") {
     const outside = g.outside ?? [];
     const isOutside = (frame: number) => outside.some((r) => frame >= r.from && frame <= r.to);

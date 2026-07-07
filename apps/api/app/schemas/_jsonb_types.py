@@ -313,6 +313,8 @@ class VideoModesConfig(BaseModel):
     polyline: bool = True
     # v0.21.22 · 单帧 keypoint 子开关; 骨骼拓扑走 bbox 单位携带的 keypoint_schema。
     keypoint: bool = True
+    # v0.21.22 · 单帧 rotated_bbox (OBB) 子开关。
+    rotated_box: bool = True
 
     model_config = ConfigDict(extra="forbid")
 
@@ -320,7 +322,7 @@ class VideoModesConfig(BaseModel):
     def _at_least_one_enabled(self) -> "VideoModesConfig":
         # 与前端 ClassesSection 语义一致：不允许全部几何开关都 false，
         # 否则 bbox 单元 enabled=true 却什么都画不了。
-        if not (self.box or self.track or self.polygon or self.polyline or self.keypoint):
+        if not (self.box or self.track or self.polygon or self.polyline or self.keypoint or self.rotated_box):
             raise ValueError("video_modes 必须至少保留一个几何开关可用")
         return self
 
@@ -479,6 +481,22 @@ class VideoPolylineGeometry(BaseModel):
             if len(pt) != 2:
                 raise ValueError(f"points[{i}] 必须是 [x, y]")
         return v
+
+
+class VideoRotatedBboxGeometry(BaseModel):
+    """v0.21.22 · 视频单帧旋转矩形 (OBB)。与图片 RotatedBboxGeometry 平行 + frame_index;
+    cx,cy 中心, w,h 边长, angle 顺时针角度 (度, [0,360))。坐标归一化 [0,1]。
+    """
+
+    type: Literal["video_rotated_bbox"] = "video_rotated_bbox"
+    frame_index: int = Field(ge=0)
+    cx: float
+    cy: float
+    w: float = Field(gt=0)
+    h: float = Field(gt=0)
+    angle: float = Field(ge=0, lt=360)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class VideoTrackBbox(BaseModel):
@@ -772,6 +790,7 @@ Geometry = Annotated[
     | VideoPolygonGeometry
     | VideoPolylineGeometry
     | VideoKeypointGeometry
+    | VideoRotatedBboxGeometry
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
     | VideoTrackPolylineGeometry
