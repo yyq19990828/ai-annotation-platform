@@ -39,6 +39,8 @@ from app.schemas._jsonb_types import (
     VideoTrackBbox,
     VideoTrackGeometry,
     VideoTrackKeyframe,
+    VideoTrackPolygonGeometry,
+    VideoTrackPolygonKeyframe,
 )
 
 
@@ -287,6 +289,55 @@ def test_video_track_geometry_keyframes_with_overrides():
     )
     assert geom.keyframes[0].attributes is None
     assert geom.keyframes[1].attributes == {"occluded": True}
+
+
+def test_video_track_polygon_geometry_valid():
+    """v0.21.20 · polygon track: keyframe 存归一化 points, 与 bbox track 平行。"""
+    geom = VideoTrackPolygonGeometry(
+        track_id="p1",
+        keyframes=[
+            VideoTrackPolygonKeyframe(
+                frame_index=0, points=[[0.0, 0.0], [0.2, 0.0], [0.2, 0.2], [0.0, 0.2]]
+            ),
+            VideoTrackPolygonKeyframe(
+                frame_index=5,
+                points=[[0.4, 0.0], [0.6, 0.0], [0.6, 0.2]],
+                attributes={"occluded": True},
+            ),
+        ],
+    )
+    assert geom.type == "video_track_polygon"
+    assert geom.keyframes[0].points[1] == [0.2, 0.0]
+    assert geom.keyframes[1].attributes == {"occluded": True}
+
+
+def test_video_track_polygon_keyframe_min_3_points():
+    with pytest.raises(ValidationError):
+        VideoTrackPolygonKeyframe(frame_index=0, points=[[0.0, 0.0], [0.1, 0.1]])
+
+
+def test_video_track_polygon_keyframe_pair_shape():
+    with pytest.raises(ValidationError):
+        VideoTrackPolygonKeyframe(
+            frame_index=0, points=[[0.0, 0.0], [0.1, 0.1], [0.2, 0.2, 0.3]]
+        )
+
+
+def test_video_track_polygon_geometry_in_union():
+    """polygon track 能经 Geometry 判别联合按 type 解析。"""
+    from pydantic import TypeAdapter
+
+    adapter = TypeAdapter(Geometry)
+    parsed = adapter.validate_python(
+        {
+            "type": "video_track_polygon",
+            "track_id": "p1",
+            "keyframes": [
+                {"frame_index": 0, "points": [[0.0, 0.0], [0.2, 0.0], [0.2, 0.2]]}
+            ],
+        }
+    )
+    assert isinstance(parsed, VideoTrackPolygonGeometry)
 
 
 # ── ClassConfigEntry alias（v0.9.5）────────────────────────────────

@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 VIDEO_FRAME_MODES = {"keyframes", "all_frames"}
+
+
+def is_polygon_track(geometry: dict) -> bool:
+    """v0.21.20 · geometry 是否为 polygon track (关键帧存 points 而非 bbox)。"""
+    return geometry.get("type") == "video_track_polygon"
 
 
 def _clean_frame(value: object) -> int | None:
@@ -24,12 +30,16 @@ def sorted_keyframes(geometry: dict) -> list[dict]:
 
 
 def clean_keyframe(kf: dict, *, include_attributes: bool = True) -> dict:
-    row = {
+    # v0.21.20 · polygon 关键帧存 points, bbox 关键帧存 bbox; 按存在的形状键保留。
+    row: dict = {
         "frame_index": int(kf.get("frame_index", 0)),
-        "bbox": kf.get("bbox") or {},
         "source": kf.get("source", "manual"),
         "occluded": bool(kf.get("occluded", False)),
     }
+    if kf.get("points") is not None:
+        row["points"] = [list(pt) for pt in (kf.get("points") or [])]
+    else:
+        row["bbox"] = kf.get("bbox") or {}
     if include_attributes and isinstance(kf.get("attributes"), dict):
         row["attributes"] = kf["attributes"]
     return row
@@ -102,6 +112,84 @@ def lerp_bbox(before: dict, after: dict, ratio: float) -> dict:
     }
 
 
+def _resample_closed_polygon(points: list, n: int) -> list[list[float]]:
+    """把闭合多边形按弧长重采样为 n 个等距顶点 (从 index 0 起)。
+
+    顶点数不等的两帧插值前先各自重采样到公共 n, 使顶点一一对应。退化 (顶点<2 /
+    周长 0) 时回退到复制首点, 不抛异常。
+    """
+    pts = [(float(p[0]), float(p[1])) for p in points if len(p) >= 2]
+    if n <= 0 or len(pts) < 2:
+        return [list(p) for p in pts]
+    seg_lengths = [
+        math.hypot(pts[(i + 1) % len(pts)][0] - pts[i][0], pts[(i + 1) % len(pts)][1] - pts[i][1])
+        for i in range(len(pts))
+    ]
+    perim = sum(seg_lengths)
+    if perim == 0:
+        return [list(pts[0]) for _ in range(n)]
+    cum = [0.0]
+    for length in seg_lengths:
+        cum.append(cum[-1] + length)
+    step = perim / n
+    out: list[list[float]] = []
+    for k in range(n):
+        target = k * step
+        seg = 0
+        while seg < len(seg_lengths) - 1 and cum[seg + 1] < target:
+            seg += 1
+        seg_len = seg_lengths[seg]
+        t = 0.0 if seg_len == 0 else (target - cum[seg]) / seg_len
+        x0, y0 = pts[seg]
+        x1, y1 = pts[(seg + 1) % len(pts)]
+        out.append([round(x0 + (x1 - x0) * t, 6), round(y0 + (y1 - y0) * t, 6)])
+    return out
+
+
+def _best_rotation_offset(a: list[list[float]], b: list[list[float]]) -> int:
+    """在 b 的 n 个循环起点里选与 a 逐点距离和最小者, 减少插值中途扭曲。"""
+    n = len(a)
+    if n == 0 or len(b) != n:
+        return 0
+    best_offset, best_cost = 0, float("inf")
+    for offset in range(n):
+        cost = 0.0
+        for i in range(n):
+            bx, by = b[(i + offset) % n]
+            cost += (a[i][0] - bx) ** 2 + (a[i][1] - by) ** 2
+        if cost < best_cost:
+            best_cost, best_offset = cost, offset
+    return best_offset
+
+
+def lerp_polygon(before: dict, after: dict, ratio: float) -> list[list[float]]:
+    """v0.21.20 · polygon 关键帧插值: 弧长参数化重采样到公共顶点数 + 旋转对齐后逐点 lerp。"""
+    a = [p for p in (before.get("points") or []) if len(p) >= 2]
+    b = [p for p in (after.get("points") or []) if len(p) >= 2]
+    if not a:
+        return [list(p) for p in b]
+    if not b:
+        return [list(p) for p in a]
+    n = max(len(a), len(b))
+    ra = _resample_closed_polygon(a, n)
+    rb = _resample_closed_polygon(b, n)
+    offset = _best_rotation_offset(ra, rb)
+    return [
+        [
+            round(ra[i][0] + (rb[(i + offset) % n][0] - ra[i][0]) * ratio, 6),
+            round(ra[i][1] + (rb[(i + offset) % n][1] - ra[i][1]) * ratio, 6),
+        ]
+        for i in range(n)
+    ]
+
+
+def _shape_fields(kf: dict, *, polygon: bool) -> dict:
+    """v0.21.20 · 按 track 类型取关键帧形状字段: polygon→points, bbox→bbox。"""
+    if polygon:
+        return {"points": [list(pt) for pt in (kf.get("points") or [])]}
+    return {"bbox": kf.get("bbox") or {}}
+
+
 def _coerce_geometry(geometry_or_keyframes: dict | list[dict]) -> dict:
     if isinstance(geometry_or_keyframes, list):
         return {
@@ -116,6 +204,7 @@ def resolve_track_at_frame(
     geometry_or_keyframes: dict | list[dict], frame_index: int
 ) -> dict | None:
     geometry = _coerce_geometry(geometry_or_keyframes)
+    polygon = is_polygon_track(geometry)
     keyframes = sorted_keyframes(geometry)
     outside_ranges = effective_outside_ranges(geometry)
     if range_intersects_outside(outside_ranges, frame_index, frame_index):
@@ -128,7 +217,7 @@ def resolve_track_at_frame(
     if exact:
         return {
             "frame_index": frame_index,
-            "bbox": exact.get("bbox") or {},
+            **_shape_fields(exact, polygon=polygon),
             "source": exact.get("source", "manual"),
             "occluded": bool(exact.get("occluded", False)),
         }
@@ -168,9 +257,14 @@ def resolve_track_at_frame(
     ):
         return None
     ratio = (frame_index - before_frame) / (after_frame - before_frame)
+    interp_shape = (
+        {"points": lerp_polygon(before, after, ratio)}
+        if polygon
+        else {"bbox": lerp_bbox(before, after, ratio)}
+    )
     return {
         "frame_index": frame_index,
-        "bbox": lerp_bbox(before, after, ratio),
+        **interp_shape,
         "source": "interpolated",
         "occluded": False,
     }
@@ -185,13 +279,14 @@ def resolved_track_frames(
     if frame_mode not in VIDEO_FRAME_MODES:
         raise ValueError("video_frame_mode must be one of: keyframes, all_frames")
 
+    polygon = is_polygon_track(geometry)
     keyframes = sorted_keyframes(geometry)
     outside_ranges = effective_outside_ranges(geometry)
     if frame_mode == "keyframes":
         return [
             {
                 "frame_index": int(kf.get("frame_index", 0)),
-                "bbox": kf.get("bbox") or {},
+                **_shape_fields(kf, polygon=polygon),
                 "source": kf.get("source", "manual"),
                 "occluded": bool(kf.get("occluded", False)),
             }

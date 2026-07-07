@@ -470,6 +470,48 @@ class VideoTrackGeometry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class VideoTrackPolygonKeyframe(BaseModel):
+    """v0.21.20 · polygon track 的单关键帧。
+
+    `points` 为归一化 [0,1] 的闭合多边形顶点序列 (与图片 PolygonGeometry 同形状,
+    不含 holes——track 首切片只做单连通)。帧间由弧长参数化插值 (见 video_tracks.lerp_polygon)。
+    """
+
+    frame_index: int = Field(ge=0)
+    points: list[list[float]] = Field(min_length=3)
+    source: Literal["manual", "interpolated", "prediction"] = "manual"
+    occluded: bool = False
+    # 与 VideoTrackKeyframe.attributes 同义: mutable 属性的逐帧覆盖。
+    attributes: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("points")
+    @classmethod
+    def _check_points(cls, v: list[list[float]]) -> list[list[float]]:
+        for i, pt in enumerate(v):
+            if len(pt) != 2:
+                raise ValueError(f"points[{i}] 必须是 [x, y]")
+        return v
+
+
+class VideoTrackPolygonGeometry(BaseModel):
+    """v0.21.20 · 视频对象轨迹 (polygon 几何)。
+
+    与 `video_track_bbox` 平行的附加类型 (非泛化 bbox), 复用 track_id / semantic_label /
+    outside 语义; keyframes 存 polygon 顶点, 帧间按弧长参数化插值 (顶点数不等时先重采样到
+    公共参数化)。存量 bbox track 零迁移、零改动。
+    """
+
+    type: Literal["video_track_polygon"] = "video_track_polygon"
+    track_id: str = Field(min_length=1)
+    semantic_label: str | None = None
+    keyframes: list[VideoTrackPolygonKeyframe] = Field(min_length=1)
+    outside: list[VideoTrackOutsideRange] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PolygonGeometry(BaseModel):
     """单连通域 polygon。
 
@@ -617,6 +659,7 @@ Geometry = Annotated[
     BboxGeometry
     | VideoBboxGeometry
     | VideoTrackGeometry
+    | VideoTrackPolygonGeometry
     | PolygonGeometry
     | MultiPolygonGeometry
     | RotatedBboxGeometry
