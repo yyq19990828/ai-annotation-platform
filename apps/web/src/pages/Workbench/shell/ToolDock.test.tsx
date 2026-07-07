@@ -29,13 +29,15 @@ describe("ToolDock · video tools", () => {
         videoMode
         videoTool="select"
         onSetVideoTool={vi.fn()}
-        videoModes={{ box: false, track: false }}
+        videoModes={{ box: false, track: false, polygon: false, polyline: false }}
       />,
     );
 
     expect(screen.getByTestId("video-tool-btn-select")).toBeInTheDocument();
     expect(screen.queryByTestId("video-tool-btn-box")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-track")).toBeNull();
+    expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
+    expect(screen.queryByTestId("video-tool-btn-polyline")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-hand")).toBeNull();
   });
 });

@@ -101,7 +101,7 @@ interface WorkbenchStageHostVideoProps {
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
-  videoModes?: { box: boolean; track: boolean } | null;
+  videoModes?: { box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null;
   spacePan: boolean;
   onSpacePanDragStart: () => void;
   videoFrameIndex: number;
@@ -114,6 +114,11 @@ interface WorkbenchStageHostVideoProps {
   /** v0.21.20 · 由绘制顶点新建 polygon/polyline track。 */
   onVideoCreatePointsTrack?: (
     type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => void;
+  onVideoCreatePoints?: (
+    type: "video_polygon" | "video_polyline",
     frameIndex: number,
     points: [number, number][],
   ) => void;
@@ -314,6 +319,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onVideoFrameIndexChange,
       onVideoCreate,
       onVideoCreatePointsTrack,
+      onVideoCreatePoints,
       onVideoPendingDraw,
       onVideoUpdate,
       onVideoRename,
@@ -462,6 +468,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}
             onCreatePointsTrack={onVideoCreatePointsTrack}
+            onCreatePoints={onVideoCreatePoints}
             onPendingDraw={onVideoPendingDraw}
             onUpdate={onVideoUpdate}
             onRename={onVideoRename}

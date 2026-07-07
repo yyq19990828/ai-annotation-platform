@@ -41,7 +41,7 @@ export interface VideoWorkbenchProps {
   trackColorOverrides?: Record<string, string>;
   readOnly: boolean;
   videoTool: VideoTool;
-  videoModes?: { box: boolean; track: boolean } | null;
+  videoModes?: { box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null;
   spacePan?: boolean;
   onSpacePanDragStart?: () => void;
   pendingDrawing: PendingDrawing;
@@ -56,6 +56,12 @@ export interface VideoWorkbenchProps {
   /** v0.21.20 · 由绘制顶点新建 polygon/polyline track。 */
   onCreatePointsTrack?: (
     type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => void;
+  /** v0.21.21 · 由绘制顶点新建单帧 polygon/polyline。 */
+  onCreatePoints?: (
+    type: "video_polygon" | "video_polyline",
     frameIndex: number,
     points: [number, number][],
   ) => void;
@@ -114,6 +120,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onFrameIndexChange,
     onCreate,
     onCreatePointsTrack,
+    onCreatePoints,
     onPendingDraw,
     onUpdate,
     onChangeUserBoxClass,
@@ -174,6 +181,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onCursorMove={onCursorMove}
         onCreate={onCreate}
         onCreatePointsTrack={onCreatePointsTrack}
+        onCreatePoints={onCreatePoints}
         onPendingDraw={onPendingDraw}
         onUpdate={onUpdate}
         onChangeUserBoxClass={onChangeUserBoxClass}

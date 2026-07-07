@@ -323,10 +323,11 @@ export function useWorkbenchShellModel({
     return set;
   }, [currentProject?.tool_bindings]);
   // v0.11.29 · 视频 bbox 单位的单帧/轨迹子开关; null = 两者均可用 (兼容老项目)。
-  const videoModes = useMemo<{ box: boolean; track: boolean } | null>(() => {
+  const videoModes = useMemo<{ box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null>(() => {
     const vm = currentProject?.tool_bindings?.bbox?.video_modes;
     if (!vm) return null;
-    return { box: vm.box ?? true, track: vm.track ?? true };
+    // v0.21.21 · polygon/polyline 单帧子开关, 缺省 (老配置) 按 true 补齐, 与后端默认一致。
+    return { box: vm.box ?? true, track: vm.track ?? true, polygon: vm.polygon ?? true, polyline: vm.polyline ?? true };
   }, [currentProject?.tool_bindings]);
   const classes = toolView.classes;
   const classesConfig = toolView.classesConfig;
@@ -507,7 +508,9 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
     if (videoTool === "box" && !videoModes.box) setVideoTool("select");
-    else if (videoTool === "track" && !videoModes.track) setVideoTool("select");
+    else if (videoTool === "polygon" && !videoModes.polygon) setVideoTool("select");
+    else if (videoTool === "polyline" && !videoModes.polyline) setVideoTool("select");
+    else if ((videoTool === "track" || videoTool === "polygon-track" || videoTool === "polyline-track") && !videoModes.track) setVideoTool("select");
   }, [isVideoTask, videoModes, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
@@ -1389,6 +1392,7 @@ export function useWorkbenchShellModel({
   const {
     handleVideoCreate,
     handleVideoPointsTrackCreate,
+    handleVideoPointsCreate,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,
@@ -2576,6 +2580,7 @@ export function useWorkbenchShellModel({
         onVideoFrameIndexChange: s.setVideoFrameIndex,
         onVideoCreate: handleVideoCreate,
         onVideoCreatePointsTrack: handleVideoPointsTrackCreate,
+        onVideoCreatePoints: handleVideoPointsCreate,
         onVideoPendingDraw: handleVideoPendingDraw,
         onVideoUpdate: handleVideoUpdate,
         onVideoRename: handleVideoRename,

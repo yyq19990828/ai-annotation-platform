@@ -118,6 +118,21 @@ export function buildVideoCreatePayload(
   };
 }
 
+/** v0.21.21 · 由绘制的归一化顶点新建单帧 polygon/polyline (当前帧, 非 track)。 */
+export function buildVideoPointsCreatePayload(
+  type: "video_polygon" | "video_polyline",
+  frameIndex: number,
+  points: [number, number][],
+  cls: string,
+): AnnotationPayload {
+  const className = cls || UNKNOWN_CLASS;
+  return {
+    annotation_type: type,
+    class_name: className,
+    geometry: { type, frame_index: frameIndex, points },
+  };
+}
+
 /** v0.21.20 · 由绘制的归一化顶点新建 polygon/polyline track (单关键帧于当前帧)。 */
 export function buildVideoPointsTrackCreatePayload(
   type: "video_track_polygon" | "video_track_polyline",
@@ -244,6 +259,27 @@ export function useVideoAnnotationActions({
     points: [number, number][],
   ) => {
     const payload = buildVideoPointsTrackCreatePayload(type, frameIndex, points, s.activeClass || UNKNOWN_CLASS);
+    const className = payload.class_name;
+    mutations.create.mutate(payload, {
+      onSuccess: (created) => {
+        history.push({ kind: "create", annotationId: created.id, payload });
+        if (className !== UNKNOWN_CLASS) {
+          s.setActiveClass(className);
+          recordRecentClass(className);
+        }
+        s.setSelectedId(created.id);
+      },
+      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+    });
+  }, [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s]);
+
+  // v0.21.21 · 单帧 polygon/polyline 创建 (非 track), 与 handleVideoPointsTrackCreate 平行。
+  const handleVideoPointsCreate = useCallback((
+    type: "video_polygon" | "video_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => {
+    const payload = buildVideoPointsCreatePayload(type, frameIndex, points, s.activeClass || UNKNOWN_CLASS);
     const className = payload.class_name;
     mutations.create.mutate(payload, {
       onSuccess: (created) => {
@@ -562,6 +598,7 @@ export function useVideoAnnotationActions({
   return {
     handleVideoCreate,
     handleVideoPointsTrackCreate,
+    handleVideoPointsCreate,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,

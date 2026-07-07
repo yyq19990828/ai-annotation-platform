@@ -84,7 +84,7 @@ interface VideoKonvaStageProps {
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
   videoTool?: VideoTool;
-  videoModes?: { box: boolean; track: boolean } | null;
+  videoModes?: { box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null;
   spacePan?: boolean;
   onSpacePanDragStart?: () => void;
   readOnly?: boolean;
@@ -97,6 +97,12 @@ interface VideoKonvaStageProps {
   /** v0.21.20 · 由绘制顶点新建 polygon/polyline track (单关键帧于当前帧)。 */
   onCreatePointsTrack?: (
     type: "video_track_polygon" | "video_track_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => void;
+  /** v0.21.21 · 由绘制顶点新建单帧 polygon/polyline (video_polygon/video_polyline)。 */
+  onCreatePoints?: (
+    type: "video_polygon" | "video_polyline",
     frameIndex: number,
     points: [number, number][],
   ) => void;
@@ -177,6 +183,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onCursorMove,
   onCreate,
   onCreatePointsTrack,
+  onCreatePoints,
   onPendingDraw,
   onUpdate,
   onChangeUserBoxClass,
@@ -468,11 +475,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   });
   const { drag } = interaction;
 
-  // v0.21.20 · polygon/polyline 轨迹绘制 (点击落点, Enter/双击闭合)。与拖拽 bbox 正交。
+  // v0.21.20/21 · polygon/polyline 绘制 (点击落点, Enter/双击闭合)。与拖拽 bbox 正交。
+  // 四工具: polygon/polyline = 单帧几何; polygon-track/polyline-track = 轨迹关键帧。
   const pointsDraft = useVideoPolygonDraft();
-  const isPointsDrawTool = videoTool === "polygon" || videoTool === "polyline";
+  const isPointsClosedTool = videoTool === "polygon" || videoTool === "polygon-track";
+  const isPointsTrackTool = videoTool === "polygon-track" || videoTool === "polyline-track";
+  const isPointsDrawTool = isPointsClosedTool || videoTool === "polyline" || videoTool === "polyline-track";
   const pointsDrawEnabled = isPointsDrawTool && !readOnly && !isPlaybackActive
-    && (!videoModes || videoModes.track);
+    && (!videoModes
+      || (isPointsTrackTool
+        ? videoModes.track
+        : videoTool === "polygon" ? videoModes.polygon : videoModes.polyline));
 
   const pointFromClientEvt = useCallback((clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -483,12 +496,20 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const commitPointsDraft = useCallback(() => {
     const pts = pointsDraft.commit();
     if (!pts) return;
-    onCreatePointsTrack?.(
-      videoTool === "polyline" ? "video_track_polyline" : "video_track_polygon",
-      frameIndex,
-      pts,
-    );
-  }, [pointsDraft, onCreatePointsTrack, videoTool, frameIndex]);
+    if (videoTool === "polygon-track" || videoTool === "polyline-track") {
+      onCreatePointsTrack?.(
+        videoTool === "polyline-track" ? "video_track_polyline" : "video_track_polygon",
+        frameIndex,
+        pts,
+      );
+    } else {
+      onCreatePoints?.(
+        videoTool === "polyline" ? "video_polyline" : "video_polygon",
+        frameIndex,
+        pts,
+      );
+    }
+  }, [pointsDraft, onCreatePointsTrack, onCreatePoints, videoTool, frameIndex]);
 
   // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
   const handleStagePointerDown = useCallback((e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
@@ -496,11 +517,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       const native = e.evt;
       if (native.button !== 0) return; // 右键/中键平移交容器层
       const pt = pointFromClientEvt(native.clientX, native.clientY);
-      if (pt) pointsDraft.addPoint(pt, videoTool === "polygon");
+      if (pt) pointsDraft.addPoint(pt, isPointsClosedTool);
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [pointsDrawEnabled, pointFromClientEvt, pointsDraft, videoTool, interaction]);
+  }, [pointsDrawEnabled, pointFromClientEvt, pointsDraft, isPointsClosedTool, interaction]);
 
   // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
   useEffect(() => {

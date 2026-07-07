@@ -34,6 +34,13 @@
 
 ## [Unreleased]
 
+### Added
+- **视频工作台单帧 polygon / polyline 标注**：视频某一帧上可用「多边形」(G) / 「折线」(L) 工具逐点画单帧几何
+  (`video_polygon` / `video_polyline`, 与图片工具集同款、非轨迹), 点击落点、Enter/双击提交、Esc 取消, 只在所属帧显示。
+  与轨迹几何正交:原 v0.21.20 的 polygon/polyline **轨迹**工具拆分改名为「多边形轨迹」(Shift+G) /「折线轨迹」(Shift+L),
+  与单帧工具并列 (对齐 bbox 的 `矩形框`=单帧 /`轨迹` 双工具先例)。工具可用性走 bbox 工具单位新增的 `polygon`/`polyline`
+  子开关 (默认开, 与 `box`/`track` 共享类别/属性绑定);老项目升级后自动获得这两个单帧工具。
+
 ## [0.21.20] - 2026-07-07
 
 ### Added

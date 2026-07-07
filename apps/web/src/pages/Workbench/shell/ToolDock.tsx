@@ -44,7 +44,7 @@ interface ToolDockProps {
    * 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
    * null / undefined = 两者均显示 (向后兼容老项目)。
    */
-  videoModes?: { box: boolean; track: boolean } | null;
+  videoModes?: { box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null;
   /** v0.13.3-5 · 点云 3D 台:渲染 select / box 两个 3D 工具(双栈隔离,不走 2D ToolId)。 */
   threeDMode?: boolean;
   threeDTool?: ThreeDTool;
@@ -82,9 +82,12 @@ const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: I
   { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
   { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
-  // v0.21.20 · 点击落点绘制 polygon/polyline 轨迹关键帧 (Enter/双击闭合, Esc 取消)。
-  { id: "polygon", hotkey: "G", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", altDigit: 5, group: "track" },
-  { id: "polyline", hotkey: "L", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", altDigit: 6, group: "track" },
+  // v0.21.21 · 单帧 polygon/polyline (点击落点, Enter/双击闭合, Esc 取消)。
+  { id: "polygon", hotkey: "G", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", altDigit: 5, group: "static" },
+  { id: "polyline", hotkey: "L", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", altDigit: 6, group: "static" },
+  // v0.21.20 · polygon/polyline 轨迹关键帧 (原 polygon/polyline, 拆分后 -track 后缀)。
+  { id: "polygon-track", hotkey: "Shift+G", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", altDigit: 7, group: "track" },
+  { id: "polyline-track", hotkey: "Shift+L", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", altDigit: 8, group: "track" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
@@ -167,8 +170,10 @@ export function ToolDock({
       if (t.id === "select") return true;
       if (!videoModes) return true;
       if (t.id === "box") return videoModes.box;
-      // v0.21.20 · polygon/polyline 轨迹与 bbox 轨迹同属「轨迹」能力, 复用 track 开关。
-      if (t.id === "track" || t.id === "polygon" || t.id === "polyline") return videoModes.track;
+      if (t.id === "polygon") return videoModes.polygon;
+      if (t.id === "polyline") return videoModes.polyline;
+      // v0.21.20/21 · bbox 轨迹 + polygon/polyline 轨迹同属「轨迹」能力, 复用 track 开关。
+      if (t.id === "track" || t.id === "polygon-track" || t.id === "polyline-track") return videoModes.track;
       return true;
     });
     return (

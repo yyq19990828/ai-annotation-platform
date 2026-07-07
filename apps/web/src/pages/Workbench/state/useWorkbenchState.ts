@@ -28,8 +28,18 @@ export type Tool =
   // v0.10.28 · 关键点 (COCO 范式).
   | "keypoint";
 // 视频工具栏保留选择与创建工具；平移不再作为 VideoTool 模式。
-// v0.21.20 · polygon/polyline = 点击累加顶点绘制 polygon/polyline track (与 box/track 拖拽绘制正交)。
-export type VideoTool = "select" | "box" | "track" | "polygon" | "polyline";
+// v0.21.21 · 单帧 vs 轨迹拆成独立工具 (对齐 box=单帧 / track=轨迹 先例):
+//   polygon / polyline        = 点击落点画单帧 video_polygon / video_polyline;
+//   polygon-track / polyline-track = 画 polygon/polyline 轨迹关键帧 (原 v0.21.20 的 polygon/polyline)。
+// 四者都走点击累加顶点绘制 (与 box/track 拖拽绘制正交)。
+export type VideoTool =
+  | "select"
+  | "box"
+  | "track"
+  | "polygon"
+  | "polyline"
+  | "polygon-track"
+  | "polyline-track";
 // v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
 export type ThreeDTool = "select" | "box" | "point-mask";
 
