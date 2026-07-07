@@ -12,6 +12,10 @@
 统一映射约定（计划§统一映射约定）：
 - MOT：outside 帧省略；occluded 仍输出（conf=1）；frame 网格序号 **1-based**。
 - KITTI：outside 帧省略；occluded 列 ∈{0,1}；frame 网格序号 **0-based**；3D 字段占位 -1。
+
+v0.21.20 · polygon/polyline track（关键帧存 ``points``）导出到 bbox-only 格式
+（MOT/KITTI/YOLO-det）时，逐帧降级为顶点外接框（``points_to_bbox_norm``），而非
+空框（全 0）。真·segmentation 导出（COCO-seg/YOLO-seg）另行落地。
 """
 
 from __future__ import annotations
@@ -48,6 +52,28 @@ def _bbox_px(bbox: dict, img_w: int, img_h: int) -> tuple[float, float, float, f
     )
 
 
+def points_to_bbox_norm(points: list) -> dict:
+    """归一化 polygon/polyline 顶点 → 归一化外接 bbox ``{x,y,w,h}``。
+
+    v0.21.20 · polygon/polyline track 关键帧存 ``points`` 而非 ``bbox``；导出到
+    bbox-only 格式（MOT/KITTI/YOLO-det）时降级为顶点外接框，而非空框（全 0）。
+    """
+    xs = [float(p[0]) for p in points if len(p) >= 2]
+    ys = [float(p[1]) for p in points if len(p) >= 2]
+    if not xs or not ys:
+        return {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
+
+
+def _frame_bbox(frame: dict) -> dict:
+    """resolved frame → 归一化 bbox：points track 取顶点外接框，bbox track 取 bbox。"""
+    points = frame.get("points")
+    if points is not None:
+        return points_to_bbox_norm(points)
+    return frame.get("bbox") or {}
+
+
 def track_grid_rows(
     geometry: dict,
     *,
@@ -70,7 +96,7 @@ def track_grid_rows(
         fi = int(frame.get("frame_index", 0))
         if fi % step != 0:
             continue
-        left, top, w, h = _bbox_px(frame.get("bbox") or {}, img_w, img_h)
+        left, top, w, h = _bbox_px(_frame_bbox(frame), img_w, img_h)
         rows.append(
             {
                 "grid_index": fi // step,
@@ -138,7 +164,7 @@ def build_yolo_frame_det_labels(
                 continue
             out_frame = grid_index + frame_start_number
             lines, attrs = labels[out_frame]
-            lines.append(_yolo_det_line(class_id, frame.get("bbox") or {}))
+            lines.append(_yolo_det_line(class_id, _frame_bbox(frame)))
             if include_attributes:
                 attrs.append(attributes or {})
 

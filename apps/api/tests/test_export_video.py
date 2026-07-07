@@ -11,9 +11,24 @@ from app.services.export_video import (
     build_mot_gt,
     build_mot_seqinfo,
     effective_fps,
+    points_to_bbox_norm,
     source_to_grid,
     track_grid_rows,
 )
+
+
+def _polygon_track(
+    track_id: str, keyframes: list[tuple[int, list[list[float]]]], outside=None
+) -> dict:
+    return {
+        "type": "video_track_polygon",
+        "track_id": track_id,
+        "keyframes": [
+            {"frame_index": f, "points": pts, "source": "manual"}
+            for (f, pts) in keyframes
+        ],
+        "outside": outside or [],
+    }
 
 
 def _track(
@@ -173,3 +188,58 @@ def test_yolo_frame_det_skips_off_grid_bboxes_and_keeps_empty_labels():
     assert labels[1][0] == []
     assert labels[2][0] == ["0 0.300000 0.400000 0.200000 0.400000"]
     assert labels[3][0] == []
+
+
+# ── v0.21.20 · polygon/polyline track → bbox-only 格式降级为顶点外接框 ──
+
+
+def test_points_to_bbox_norm_computes_bounding_box():
+    # 三角形顶点 → 外接框 x=0.1,y=0.2,w=0.4,h=0.3。
+    pts = [[0.1, 0.2], [0.5, 0.2], [0.3, 0.5]]
+    assert points_to_bbox_norm(pts) == {"x": 0.1, "y": 0.2, "w": 0.4, "h": 0.3}
+
+
+def test_points_to_bbox_norm_empty_is_zero():
+    assert points_to_bbox_norm([]) == {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
+
+
+def test_polygon_track_grid_rows_use_vertex_bounds_not_zero():
+    # polygon track 关键帧存 points；MOT/KITTI 走 track_grid_rows → 顶点外接框像素。
+    geom = _polygon_track("a", [(0, [[0.1, 0.2], [0.5, 0.2], [0.3, 0.6]])])
+    rows = track_grid_rows(geom, frame_count=1, step=1, img_w=1000, img_h=1000)
+    assert len(rows) == 1
+    # 外接框归一 x=0.1,y=0.2,w=0.4,h=0.4 → 像素 100,200,400,400（非全 0）。
+    assert (rows[0]["left"], rows[0]["top"], rows[0]["w"], rows[0]["h"]) == (
+        100.0,
+        200.0,
+        400.0,
+        400.0,
+    )
+
+
+def test_polygon_track_mot_and_kitti_emit_bounding_box():
+    geom = _polygon_track("a", [(0, [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]])])
+    mot = build_mot_gt([(1, "car", geom)], frame_count=1, step=1, img_w=1000, img_h=1000)
+    # 正方形外接框 = 自身 → px 0,0,500,500。
+    assert mot == "1,1,0.0,0.0,500.0,500.0,1,-1,-1,-1"
+    kitti = build_kitti_labels(
+        [(1, "Car", geom)], frame_count=1, step=1, img_w=1000, img_h=1000
+    )
+    parts = kitti.split(" ")
+    # x1 y1 x2 y2 = 0 0 500 500。
+    assert parts[6:10] == ["0.0", "0.0", "500.0", "500.0"]
+
+
+def test_polygon_track_yolo_det_emits_bounding_box_center():
+    geom = _polygon_track("a", [(0, [[0.0, 0.0], [0.4, 0.0], [0.4, 0.4], [0.0, 0.4]])])
+    labels = build_yolo_frame_det_labels(
+        tracks=[("car", geom, {})],
+        bboxes=[],
+        cat_map={"car": 0},
+        frame_count=1,
+        step=1,
+        frame_start_number=1,
+        include_attributes=False,
+    )
+    # 外接框 x0=0,y0=0,w=0.4,h=0.4 → YOLO cx=cy=0.2, bw=bh=0.4。
+    assert labels[1][0] == ["0 0.200000 0.200000 0.400000 0.400000"]

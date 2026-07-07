@@ -52,6 +52,9 @@
   Enter 提交、Esc 取消，绘制过程实时预览（虚线路径 + 顶点圆点）；提交后按当前帧新建对应 `video_track_polygon` /
   `video_track_polyline` 轨迹（单关键帧）。两工具在项目开启「轨迹」模式时可用，与 bbox / 追踪工具互斥。至此 polygon /
   polyline 轨迹从数据模型到画布绘制全链路打通。
+- **polygon / polyline 轨迹可导出到 bbox 格式**：导出 MOT / KITTI / YOLO-frames-det 时，polygon/polyline 轨迹逐帧
+  降级为顶点外接框（此前这些 bbox-only 格式读不到 `points`、会把这类轨迹导成全 0 的空框）。真·segmentation 导出
+  （COCO-seg / YOLO-seg）另行落地。
 
 ## [0.21.18] - 2026-07-07
 
