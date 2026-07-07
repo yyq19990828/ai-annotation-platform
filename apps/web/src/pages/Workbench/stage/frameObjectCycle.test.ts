@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFrameCategories, nextInCategory, nextCategory } from "./frameObjectCycle";
+import { buildFrameCategories, collectFrameCategories, nextInCategory, nextCategory } from "./frameObjectCycle";
 
 describe("buildFrameCategories", () => {
   it("sorts each category by y↑ then x↑ then id", () => {
@@ -21,6 +21,52 @@ describe("buildFrameCategories", () => {
       [],
     );
     expect(cats.ai).toEqual(["a", "b"]);
+  });
+});
+
+describe("collectFrameCategories (来源归并)", () => {
+  it("entries 按 isTrack 分流到 track / user, carryOverGhosts 并入 track", () => {
+    const cats = collectFrameCategories({
+      ai: [{ id: "a1", x: 0.2, y: 0.1 }],
+      entries: [
+        { id: "u1", x: 0.1, y: 0.5, isTrack: false },
+        { id: "t1", x: 0.1, y: 0.1, isTrack: true },
+      ],
+      carryOverGhosts: [{ id: "g1", x: 0.3, y: 0.3 }],
+      selectedTrackGhost: null,
+    });
+    expect(cats.ai).toEqual(["a1"]);
+    expect(cats.user).toEqual(["u1"]);
+    expect(cats.track).toEqual(["t1", "g1"]);
+  });
+
+  it("回归: 全部轨迹以 ghost 显示时, 选中 ghost 并入 track, Tab 遍历全部四条而非只在两条间弹", () => {
+    // 场景: 当前帧过了各轨迹末关键帧, 四条 car 均以参考虚影显示; 选中 t1(→ ghost),
+    // 另外三条走 carryOverGhosts(排除 t1)。修复前 t1 不在 track 类, Tab 只在两条间弹。
+    const sources = (selectedId: string) => {
+      const all = [
+        { id: "t1", x: 0.1, y: 0.1 },
+        { id: "t2", x: 0.2, y: 0.2 },
+        { id: "t3", x: 0.3, y: 0.3 },
+        { id: "t4", x: 0.4, y: 0.4 },
+      ];
+      const sel = all.find((t) => t.id === selectedId)!;
+      return collectFrameCategories({
+        ai: [],
+        entries: [],
+        carryOverGhosts: all.filter((t) => t.id !== selectedId),
+        selectedTrackGhost: sel,
+      });
+    };
+    // 从 t1 起连按 Tab, 应依次经过 t2 → t3 → t4 → t1, 覆盖全部四条。
+    let selected = "t1";
+    const visited: string[] = [selected];
+    for (let i = 0; i < 4; i++) {
+      selected = nextInCategory(sources(selected), selected, 1)!;
+      visited.push(selected);
+    }
+    expect(visited).toEqual(["t1", "t2", "t3", "t4", "t1"]);
+    expect(new Set(visited).size).toBe(4); // 四条全部可达
   });
 });
 

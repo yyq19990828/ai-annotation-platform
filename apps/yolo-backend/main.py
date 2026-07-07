@@ -92,6 +92,39 @@ IDLE_CHECK_INTERVAL = float(os.environ.get("YOLO_IDLE_CHECK_INTERVAL", "60"))
 STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in ("0", "", "false", "False")
 CHECKPOINTS_DIR = Path(os.environ.get("YOLO_CHECKPOINTS_DIR", "/app/checkpoints"))
 
+# 已探测确定的有效推理设备 (None=未探测)。一旦退回 CPU 便 latch, 不再试 CUDA。
+_effective_device_cache: str | None = None
+
+
+def _effective_device() -> str:
+    """真实可用的推理设备, 缓存 (latch)。
+
+    ``torch.cuda.is_available()`` 只查驱动可见性, GPU 上下文损坏 (如笔记本挂起/恢复后的
+    ``CUDA error: unknown error``) 时它仍返回 True, 但任何 CUDA 算子会抛错。故这里用一次
+    **真实显存分配**探测, 探测失败即退回 CPU (推理变慢但不再硬 500)。一旦退回不再回探 CUDA。
+    """
+    global _effective_device_cache
+    if _effective_device_cache is not None:
+        return _effective_device_cache
+    dev = "cpu"
+    if DEVICE != "cpu" and torch.cuda.is_available():
+        try:
+            torch.zeros(1, device=DEVICE)
+            dev = DEVICE
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("CUDA 探测失败 (%s): %s; 退回 CPU 推理", DEVICE, exc)
+            dev = "cpu"
+    _effective_device_cache = dev
+    return dev
+
+
+def _latch_cpu(reason: str) -> None:
+    """把有效设备 latch 到 CPU (GPU 中途失效时调用), 后续加载/推理不再试 CUDA。"""
+    global _effective_device_cache
+    if _effective_device_cache != "cpu":
+        logger.warning("推理设备退回 CPU: %s", reason)
+    _effective_device_cache = "cpu"
+
 
 def _build_model(task: str, series: str, size: str):
     """同步构建 ultralytics 模型实例. 走 run_in_executor.
@@ -128,11 +161,16 @@ def _build_model(task: str, series: str, size: str):
     else:
         model = model_cls(str(weight_path))
 
-    if torch.cuda.is_available():
+    # 真正把模型放到有效设备。CUDA 中途失效时 model.to(DEVICE) 会抛错——此时 latch CPU
+    # 并把模型显式搬到 CPU (旧代码只打日志不搬, 导致后续 model.predict 仍走 CUDA 硬 500)。
+    dev = _effective_device()
+    if dev != "cpu":
         try:
-            model.to(DEVICE)
+            model.to(dev)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("model.to(%s) failed: %s; fallback CPU", DEVICE, exc)
+            _latch_cpu(f"model.to({dev}) 失败: {exc}")
+    if _effective_device() == "cpu":
+        model.to("cpu")
     return model
 
 
@@ -240,6 +278,9 @@ def health() -> dict[str, Any]:
         "model_version": MODEL_VERSION,
         "provisioning": {
             "device": DEVICE,
+            # 实际推理设备: CUDA 探测失败时会是 "cpu" (即便配置的 device 是 cuda:0),
+            # 供观测 GPU 是否静默退回 CPU (推理变慢的根因排查)。None=尚未加载任何模型。
+            "effective_device": _effective_device_cache,
             "strict_offline": STRICT_OFFLINE,
             "checkpoints_dir": str(CHECKPOINTS_DIR),
         },

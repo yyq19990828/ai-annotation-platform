@@ -42,7 +42,7 @@ import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
 import type { VideoLoopRegion } from "./videoNavigationState";
 import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
-import { buildFrameCategories, nextInCategory, nextCategory, type FrameObjectRef } from "./frameObjectCycle";
+import { collectFrameCategories, nextInCategory, nextCategory, type FrameObjectRef } from "./frameObjectCycle";
 import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { SelectionOverlay } from "./SelectionOverlay";
@@ -342,23 +342,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // v0.21.11 · 当前帧三类对象(AI 待审 / 人工 video_bbox / 轨迹当前帧视图)分类 + 空间排序,
   // 供 Tab 同类流转 / ` 跨类跳转。人工 vs 轨迹按 annotation.geometry 类型判别; AI 用扁平 x/y。
+  // v0.21.12 · 跨网格帧续写待续轨迹(carryOverGhosts)并入「轨迹」类一起循环。
+  // fix · 选中轨迹的参考虚影(ghost)也必须并入「轨迹」类, 否则选中它时 Tab 只在两条间弹
+  //       (根因见 collectFrameCategories.selectedTrackGhost 注释)。
   const frameCategories = useMemo(() => {
-    const aiRefs: FrameObjectRef[] = frameAiBoxes.map((b) => ({ id: b.id, x: b.x, y: b.y }));
-    const userRefs: FrameObjectRef[] = [];
-    const trackRefs: FrameObjectRef[] = [];
-    for (const entry of frameViews.entries) {
+    const ai: FrameObjectRef[] = frameAiBoxes.map((b) => ({ id: b.id, x: b.x, y: b.y }));
+    const entries = frameViews.entries.map((entry) => {
       const ann = annotations.find((a) => a.id === entry.id);
-      const ref: FrameObjectRef = { id: entry.id, x: entry.geom.x, y: entry.geom.y };
-      if (ann && isVideoTrack(ann)) trackRefs.push(ref);
-      else userRefs.push(ref);
-    }
-    // v0.21.12 · 跨网格帧续写待续轨迹并入「轨迹」类:Tab 一起循环(当前帧已画 + 待续 ghost),
-    // 选中待续轨迹即可续写,不必回上一帧 / 右栏。
-    for (const g of frameViews.carryOverGhosts) {
-      trackRefs.push({ id: g.id, x: g.geom.x, y: g.geom.y });
-    }
-    return buildFrameCategories(aiRefs, userRefs, trackRefs);
-  }, [annotations, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries]);
+      return { id: entry.id, x: entry.geom.x, y: entry.geom.y, isTrack: Boolean(ann && isVideoTrack(ann)) };
+    });
+    const carryOverGhosts = frameViews.carryOverGhosts.map((g) => ({ id: g.id, x: g.geom.x, y: g.geom.y }));
+    const selectedTrackGhost = frameViews.ghost
+      ? { id: frameViews.ghost.id, x: frameViews.ghost.geom.x, y: frameViews.ghost.geom.y }
+      : null;
+    return collectFrameCategories({ ai, entries, carryOverGhosts, selectedTrackGhost });
+  }, [annotations, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, frameViews.ghost]);
 
   const cycleInCategory = useCallback((dir: -1 | 1) => {
     const next = nextInCategory(frameCategories, selectedId, dir);

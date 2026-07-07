@@ -36,6 +36,35 @@ export function buildFrameCategories(
   return { ai: spatialSort(ai), user: spatialSort(user), track: spatialSort(track) };
 }
 
+/** 当前帧对象来源(与渲染视图一一对应, 便于把「哪些进 Tab 环」的组装逻辑纯化 + 单测)。 */
+export interface FrameObjectSources {
+  /** AI 待审候选(扁平 x/y)。 */
+  ai: readonly FrameObjectRef[];
+  /** 当前帧已画实框(人工 video_bbox + 轨迹解析帧), isTrack 区分归「轨迹」还是「人工」类。 */
+  entries: readonly (FrameObjectRef & { isTrack: boolean })[];
+  /** 跨网格帧续写的「其余待续轨迹」参考虚影(carryOverGhosts, 已排除选中那条)。 */
+  carryOverGhosts: readonly FrameObjectRef[];
+  /**
+   * 选中轨迹当前帧无实框时的参考虚影(ghost)。**必须并入「轨迹」类**——否则选中它时
+   * `categoryOf` 认不出所属类, `nextInCategory` 退化成 `firstOfFirstNonEmpty`(恒返首元素、
+   * 忽略方向), Tab 只会在「当前选中」与「空间首条」之间来回弹, 到不了其余待续轨迹。
+   */
+  selectedTrackGhost: FrameObjectRef | null;
+}
+
+/** 把当前帧各来源归并成三类对象环(轨迹类含选中 ghost, 保证 Tab 能覆盖全部待续轨迹)。 */
+export function collectFrameCategories(src: FrameObjectSources): FrameCategories {
+  const user: FrameObjectRef[] = [];
+  const track: FrameObjectRef[] = [];
+  for (const e of src.entries) {
+    const ref: FrameObjectRef = { id: e.id, x: e.x, y: e.y };
+    (e.isTrack ? track : user).push(ref);
+  }
+  for (const g of src.carryOverGhosts) track.push(g);
+  if (src.selectedTrackGhost) track.push(src.selectedTrackGhost);
+  return buildFrameCategories(src.ai, user, track);
+}
+
 /** selectedId 命中的类; 无命中(未选/不在当前帧任何类)返回 null。 */
 function categoryOf(cats: FrameCategories, id: string | null): keyof FrameCategories | null {
   if (!id) return null;

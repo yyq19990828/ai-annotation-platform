@@ -107,7 +107,13 @@
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，SMTP 配置框架已就位（`config.py` + Alertmanager 邮件投递）；剩 LLM 聚类 + `bug_reports` 加 `cluster_id` / `llm_distance` 字段 + 邮件 digest 工作流；与通知偏好（按 type 静音）协同。
 
 ### 性能 / 扩展
-暂无
+
+- **ML 后端 GPU 失效 → CPU fallback 健壮性审计（五镜像统一，P2）**：起因 = 视频单帧推理报 500 根因排查——yolo-backend 的「CPU fallback」是假的：`torch.cuda.is_available()` 只查驱动可见性，GPU 上下文损坏（如笔记本挂起/恢复后的 `CUDA error: unknown error`）时它仍返回 True，但任何 CUDA 算子会硬抛错。旧代码 `model.to(cuda)` 失败只打日志不搬 CPU，且 ultralytics 在 predict 时又按 `is_available()` 自动选回 cuda:0 → 硬 500。**yolo-backend 已修**（真实显存分配探测 + latch CPU + `device=str(model.device)` 贯通 predict/track + `/health.provisioning.effective_device` 观测，见本次改动）。**剩余四镜像需同款探查**：
+  - **grounded-sam2-backend**：`video_predictor.py:80`、`main.py` 均 `self.device = "cuda" if torch.cuda.is_available() else "cpu"` —— 同一 `is_available()` 陷阱，无真实算子探测；SAM2 build/predict 走 `self.device`，GPU 上下文坏时会硬 500。
+  - **sam3-backend**：`predictor.py:105` 同款 `is_available()` 判定，且 `torch.autocast(self.device, enabled=(self.device=="cuda"))` 直接绑定该值；需同样加真实探测 + latch。
+  - **rapidocr-backend**：`predictor.py:101` 由 `RAPIDOCR_DEVICE` 决定 `use_cuda`，走 onnxruntime。需验证 CUDAExecutionProvider 不可用/上下文坏时是否自动降级到 CPUExecutionProvider（onnxruntime 一般会，但要确认「坏上下文」而非「缺 provider」也能降级，并观测降级信号）。
+  - **onnxtools-backend**：onnxruntime-gpu，compose 注释称「缺 GPU/cuDNN 时自动 fallback CPU」；需实测坏上下文场景并把降级结果暴露到 `/health`。
+  - **统一交付**：抽一个共享探测 helper（候选落 `aap_backend_runtime`，五镜像复用）——`effective_device()` 做真实分配探测 + 失败 latch CPU；torch 系（yolo/gsam2/sam3）显式把 device 贯通到推理调用，onnxruntime 系（rapidocr/onnxtools）显式声明 provider 优先级并观测实际生效 provider；各 `/health` 统一暴露 `effective_device` / 实际 provider，供「GPU 静默退回 CPU」告警。**触发**：现在可做（yolo 已开路，四镜像照抄）。
 
 ### 测试 / 开发体验
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座（v0.7.4）。v0.10.48 起覆盖率口径已排除测试文件，当前真实源码 lines 47.68% / 阈值 45（branches 70）。下阶段目标 47→55：补 `BatchesSection`（~32%）/ `useWorkbenchShellModel` / `useImageAnnotationActions` 等复杂 hook；Konva 渲染层（`ImageStage` / `ImageStageShapes`）难测，留待。

@@ -226,13 +226,15 @@ class YoloPredictor:
         t0 = time.time()
         # v0.14.17 · 类别白名单: 非空时传 ultralytics classes= 只检出选中 index (原生过滤, 不后处理).
         class_filter = getattr(ctx, "classes", None) or None
-        # ultralytics .predict() 返回 list[Results] (一图一项).
+        # 显式传 device=模型实际所在设备: model 已由 _build_model 放到有效设备 (CUDA 坏时是 CPU),
+        # 若不传, ultralytics 会因 torch.cuda.is_available()==True 自动选回 cuda:0 → 硬 500。
         results = model.predict(
             img,
             conf=params.conf,
             iou=params.iou,
             max_det=params.max_det,
             classes=class_filter,
+            device=str(model.device),
             verbose=False,
         )
         elapsed = time.time() - t0
@@ -304,6 +306,7 @@ class YoloPredictor:
             conf=params.conf,
             iou=params.iou,
             max_det=params.max_det,
+            device=str(model.device),
             verbose=False,
         )
         elapsed = time.time() - t0
@@ -377,6 +380,7 @@ class YoloPredictor:
             conf=conf,
             iou=ctx.params.iou,
             max_det=ctx.params.max_det,
+            device=str(model.device),
             verbose=False,
         )
         elapsed = time.time() - t0
@@ -441,6 +445,7 @@ class YoloPredictor:
                 conf=params.conf,
                 iou=params.iou,
                 classes=class_filter,
+                device=str(model.device),
                 verbose=False,
             )
             for r in stream:
