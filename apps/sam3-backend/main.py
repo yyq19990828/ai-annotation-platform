@@ -31,12 +31,15 @@ Idle Unload (双 backend 并存场景的显存让渡机制):
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
+import tempfile
 import time
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 import torch
 from aap_backend_runtime import fetch_image, free_gpu_memory, versions_payload
 from aap_protocol_v2 import (
@@ -67,6 +70,7 @@ from predictor import (
     MODEL_VARIANT,
     SAM3Predictor,
 )
+from video_predictor import SAM3MultiplexVideoTracker
 from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
 
 UTC = timezone.utc
@@ -104,6 +108,11 @@ _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION
 _last_request_at: float = time.monotonic()
 _predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
+# v0.21.19 §PR3 · sam3.1_multiplex 视频追踪模型 (单档, 无变体)。与图像模型**互斥常驻**
+# (单卡 8GB 容不下二者): 加载视频前先卸图像, 反之亦然。见 _ensure_video_tracker_loaded。
+_video_tracker: SAM3MultiplexVideoTracker | None = None
+_video_lock = asyncio.Lock()
+_video_last_request_at: float = time.monotonic()
 # v0.14.14: PoolStatus 元数据 (sam3 图像模型单档, cap 永远 1).
 _pool_loaded_at: datetime | None = None
 _pool_last_used_at: datetime | None = None
@@ -134,6 +143,8 @@ async def _ensure_predictor_loaded(
         if count_as_hit:
             _pool_hit_count += 1
         return _predictor, True, None
+    # v0.21.19 §PR3 · 冷加载图像模型前先卸视频追踪模型 (互斥常驻)。锁外完成, 避免锁序反转。
+    await _unload_video_tracker(reason="swap to image model")
     async with _predictor_lock:
         if _predictor is not None:
             # 锁内 double-check: 等锁期间别的协程可能已加载完.
@@ -186,6 +197,49 @@ async def _unload_predictor(reason: str) -> bool:
         return True
 
 
+# ── v0.21.19 §PR3 · 视频追踪模型 (与图像模型互斥常驻) ──────────────────
+
+
+def _build_video_tracker() -> SAM3MultiplexVideoTracker:
+    return SAM3MultiplexVideoTracker()
+
+
+async def _unload_video_tracker(reason: str) -> bool:
+    """卸载视频追踪模型释放显存。返回是否真的卸载。"""
+    global _video_tracker
+    async with _video_lock:
+        if _video_tracker is None:
+            return False
+        logger.info("unloading sam3 video tracker: reason=%s", reason)
+        _video_tracker = None
+        free_gpu_memory()
+        return True
+
+
+async def _ensure_video_tracker_loaded() -> SAM3MultiplexVideoTracker:
+    """懒加载视频追踪模型。**先卸图像模型**腾显存 (单卡 8GB 二者互斥)。
+
+    互斥卸载在获取 _video_lock **之前**完成 (acquire+release _predictor_lock 全程结束),
+    与 _ensure_predictor_loaded 的对称卸载不嵌套加锁, 杜绝锁序反转死锁。
+    """
+    global _video_tracker, _video_last_request_at
+    if _video_tracker is not None:
+        _video_last_request_at = time.monotonic()
+        return _video_tracker
+    # 互斥: 加载视频前先卸载图像模型 (释放 ~5.8GB)。锁外完成。
+    await _unload_predictor(reason="swap to video tracker")
+    async with _video_lock:
+        if _video_tracker is not None:
+            _video_last_request_at = time.monotonic()
+            return _video_tracker
+        logger.info("building sam3 video tracker on demand")
+        loop = asyncio.get_running_loop()
+        _video_tracker = await loop.run_in_executor(None, _build_video_tracker)
+        _video_last_request_at = time.monotonic()
+        logger.info("sam3 video tracker built; device=%s", _video_tracker.device)
+        return _video_tracker
+
+
 def _pool_status() -> dict[str, Any]:
     """v0.14.14 协议 §4.3 PoolStatus: cap=1, current_size 0/1, loaded_keys, last_evict.
 
@@ -232,11 +286,17 @@ async def _idle_watcher() -> None:
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
-            if _predictor is None or IDLE_UNLOAD_SECONDS <= 0:
+            if IDLE_UNLOAD_SECONDS <= 0:
                 continue
-            idle_for = time.monotonic() - _last_request_at
-            if idle_for >= IDLE_UNLOAD_SECONDS:
-                await _unload_predictor(reason=f"idle {idle_for:.0f}s")
+            if _predictor is not None:
+                idle_for = time.monotonic() - _last_request_at
+                if idle_for >= IDLE_UNLOAD_SECONDS:
+                    await _unload_predictor(reason=f"idle {idle_for:.0f}s")
+            # v0.21.19 §PR3 · 视频追踪模型同样 idle 卸载 (无活跃会话时)。
+            if _video_tracker is not None and _video_tracker.active_sessions == 0:
+                v_idle = time.monotonic() - _video_last_request_at
+                if v_idle >= IDLE_UNLOAD_SECONDS:
+                    await _unload_video_tracker(reason=f"idle {v_idle:.0f}s")
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -360,6 +420,11 @@ def setup() -> dict:
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
+        # v0.21.19 §PR3 · sam3.1_multiplex 视频文本追踪 (text-driven, 每帧按文本检测目标)。
+        # 平台据 supported_trackers 判 backend 支持视频追踪; text_driven_trackers 让其区分
+        # seed-bbox tracker(sam2) 与文本驱动 tracker(sam3, 需 text)。
+        "supported_trackers": ["sam3_video"],
+        "text_driven_trackers": ["sam3_video"],
         # v0.14.12 · 显式暴露单档 variant, 让模型市场能展示该具体权重 (此前 [] 导致
         # 卡片/列表无法显示「该 backend 加载的是 sam3」). 三个 task 共享同一份权重,
         # variants_shared_across_tasks 在每个 model 上设 True 让列表合并到 1 行。
@@ -498,6 +563,29 @@ def setup() -> dict:
             "default_variants": _default_variants,
             "params": base["params"],
         },
+        {
+            # v0.21.19 §PR3 · 文本驱动视频追踪 (sam3.1_multiplex)。
+            "id": "sam3-video-tracker",
+            "display_name": "SAM 3.1 · 视频文本追踪 (Multiplex)",
+            "task": "tracker",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": True,
+            # 跨帧有状态 + 文本每帧检测, 内部编排复合。
+            "composition": "composite",
+            # text-driven: 以文本 query 初始化 (非 bbox 种子)。
+            "supported_prompts": ["text"],
+            "supported_inputs": ["full_image"],
+            "supported_geometric_outputs": ["polygon"],
+            "output_attribute_types": ["class"],
+            "resource_profile": {"device": "gpu", "batchable": False},
+            "supported_trackers": ["sam3_video"],
+            "text_driven_trackers": ["sam3_video"],
+            "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
+            "params": base["params"],
+        },
     ]
     return base
 
@@ -520,9 +608,15 @@ def cache_stats() -> dict:
 
 @app.post("/unload")
 async def unload() -> dict:
-    """主动卸载模型释放显存. 已为空闲状态时返回 ok=true, unloaded=false."""
-    unloaded = await _unload_predictor(reason="manual")
-    return {"ok": True, "unloaded": unloaded, "loaded": _predictor is not None}
+    """主动卸载模型释放显存 (图像 + 视频). 已为空闲状态时返回 ok=true, unloaded=false."""
+    unloaded_img = await _unload_predictor(reason="manual")
+    unloaded_vid = await _unload_video_tracker(reason="manual")
+    return {
+        "ok": True,
+        "unloaded": unloaded_img or unloaded_vid,
+        "loaded": _predictor is not None,
+        "video_loaded": _video_tracker is not None,
+    }
 
 
 @app.post("/reload")
@@ -699,6 +793,123 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
     return int(elapsed * 1000)
 
 
+# ── v0.21.19 §PR3 · video_tracker 分支 (text-driven sam3_video) ────────
+
+
+def _seed_bbox_from_video_ctx(ctx: dict) -> dict[str, float] | None:
+    """从 video_tracker context 取归一化 seed bbox (仅用于 multiplex 多目标里挑目标)。
+
+    支持 source_geometry / prompt.geometry 为 video_track_bbox / video_track_polygon /
+    bbox / polygon。取不到返回 None (text-driven 无种子时退最高分目标)。
+    """
+
+    def _from_points(points: list) -> dict[str, float] | None:
+        xs = [float(p[0]) for p in points if len(p) >= 2]
+        ys = [float(p[1]) for p in points if len(p) >= 2]
+        if not xs or not ys:
+            return None
+        return {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
+
+    def _extract(geom: Any) -> dict[str, float] | None:
+        if not isinstance(geom, dict):
+            return None
+        gtype = geom.get("type")
+        if gtype in {"video_track_bbox", "video_track_polygon"}:
+            kfs = sorted(geom.get("keyframes") or [],
+                         key=lambda k: int(k.get("frame_index", 0)))
+            if not kfs:
+                return None
+            first = kfs[0]
+            if gtype == "video_track_polygon":
+                return _from_points(first.get("points") or [])
+            b = first.get("bbox") or {}
+            return {"x": float(b.get("x", 0)), "y": float(b.get("y", 0)),
+                    "w": float(b.get("w", 0)), "h": float(b.get("h", 0))}
+        if gtype == "polygon":
+            return _from_points(geom.get("points") or [])
+        if gtype in {"bbox", "video_bbox"} or any(k in geom for k in ("x", "y", "w", "width")):
+            return {"x": float(geom.get("x", 0)), "y": float(geom.get("y", 0)),
+                    "w": float(geom.get("w", geom.get("width", 0))),
+                    "h": float(geom.get("h", geom.get("height", 0)))}
+        return None
+
+    prompt = ctx.get("prompt")
+    if isinstance(prompt, dict):
+        seed = _extract(prompt.get("geometry"))
+        if seed is not None:
+            return seed
+    return _extract(ctx.get("source_geometry"))
+
+
+def _video_local_path(file_path: str) -> str:
+    """video_tracker 的 file_path → OpenCV 可打开的源 (http(s) 先整段下载到临时文件)。"""
+    if file_path.startswith(("http://", "https://")):
+        from urllib.parse import urlsplit
+
+        suffix = os.path.splitext(urlsplit(file_path).path)[-1] or ".mp4"
+        fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="sam3vid_src_")
+        try:
+            with os.fdopen(fd, "wb") as fh, httpx.Client(
+                timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True
+            ) as client, client.stream("GET", file_path) as resp:
+                resp.raise_for_status()
+                for chunk in resp.iter_bytes():
+                    fh.write(chunk)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        return tmp_path
+    if os.path.isfile(file_path):
+        return file_path
+    raise HTTPException(status_code=400, detail=f"unsupported video file_path: {file_path[:64]}")
+
+
+async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
+    """sam3_video: 按 text 在窗内检测+追踪目标, 返回逐帧几何 (polygon/bbox)。"""
+    try:
+        from_frame = int(ctx["from_frame"])
+        to_frame = int(ctx["to_frame"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422,
+                            detail="video_tracker requires integer from_frame / to_frame") from exc
+    direction = ctx.get("direction") or "forward"
+    if direction not in ("forward", "backward"):
+        raise HTTPException(status_code=422,
+                            detail=f"video_tracker direction must be forward|backward, got {direction!r}")
+    text = (ctx.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422,
+                            detail="sam3_video tracker requires context.text (text-driven detection)")
+    output_geometry = ctx.get("output_geometry") or "bbox"
+    if output_geometry not in ("bbox", "polygon"):
+        raise HTTPException(status_code=422,
+                            detail=f"output_geometry must be bbox|polygon, got {output_geometry!r}")
+    seed_bbox = _seed_bbox_from_video_ctx(ctx)
+
+    tracker = await _ensure_video_tracker_loaded()
+    local_path = _video_local_path(file_path)
+    cleanup = local_path != file_path
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            functools.partial(
+                tracker.propagate, local_path, from_frame, to_frame, direction,
+                text, seed_bbox, output_geometry,
+            ),
+        )
+    finally:
+        if cleanup:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+    return result
+
+
 @app.post("/predict")
 async def predict(request: Request):
     body = await request.json()
@@ -707,6 +918,18 @@ async def predict(request: Request):
     if isinstance(body, dict) and "task" in body and "context" in body:
         task = body["task"]
         ctx = _normalize_predict_context(body.get("context") or {})
+        # v0.21.19 §PR3 · video_tracker 走独立视频模型分支 (与图像 prompt 路径分流)。
+        if ctx.get("type") == "video_tracker":
+            result = await _run_video_tracker(task["file_path"], ctx)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return PredictionResult(
+                result=result,
+                score=None,
+                model_version=MODEL_VERSION,
+                inference_time_ms=elapsed_ms,
+                cache_hit=False,
+                model_load_ms=None,
+            ).model_dump(exclude_none=True)
         # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
         p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
         result, hit, mask_input_next = _run_prompt(p, task["file_path"], ctx)

@@ -59,6 +59,11 @@
   mask 不再降级为 bbox 丢弃，而是矢量化为归一化多边形顶点（复用图片栈 `mask_to_polygon`）逐帧回填为 polygon 关键帧；
   轨迹类型据源几何自动选择（polygon → 输出 polygon，bbox → 维持 bbox 不变）。种子仍取多边形外接框喂 SAM2（其只吃
   bbox 提示），跨窗续追亦按上一窗多边形外接框重新播种。与 bbox 追踪链路平行，seed-bbox 追踪行为零改变。
+- **sam3.1 文本驱动视频追踪 backend（sam3_video）**：sam3-backend 新增 `sam3.1_multiplex` 视频追踪模型，`/predict` 的
+  `type=video_tracker` 分支按文本 query 在每帧检测目标（multiplex 多目标，首切片按种子框选单目标消费），mask 矢量化为
+  polygon / bbox 逐帧回填；`/setup` 声明 `supported_trackers:[sam3_video]` + `text_driven_trackers:[sam3_video]`，
+  未绑该 backend 的项目文本追踪保持灰置。**显存**：单卡 8GB 容不下图像 + 视频两模型，二者「互斥常驻」——加载视频前
+  自动卸载图像模型（反之亦然），空闲各自 idle 卸载。至此 v0.21.19 文本视频追踪从协议、UI 到 backend 全链路打通。
 
 ## [0.21.18] - 2026-07-07
 
