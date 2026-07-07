@@ -68,6 +68,25 @@
   background: rgba(255, 255, 255, 0.2) !important;
 }
 
+/* v0.21.9 · 跳预测帧按钮组: 与帧导航同形 (单 chevron), 仅以 violet 图标色区分 AI 预测语言,
+   对齐右侧栏 roster / AI 面板的 violet。左侧细分隔线把「跳预测帧」与「逐帧导航」分组, 避免两组
+   同形 chevron 读成误重复。 */
+.predictedGroup {
+  display: flex;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.controlButtonPredicted {
+  color: oklch(0.72 0.17 293) !important;
+}
+
+.controlButtonPredicted:hover {
+  border-color: rgba(139, 92, 246, 0.45) !important;
+}
+
 .timelineShell {
   grid-column: 2;
   grid-row: 1;
@@ -89,6 +108,26 @@
   pointer-events: none;
 }
 
+/* 播放头「圆点」退役: 保留原生轨道的进度填充 (左侧填充色已反映当前帧位置, 填充右缘即 playhead),
+   仅把原生 thumb 圆点收成 0 尺寸隐藏 —— 圆点既与预测/关键帧密度条视觉重叠, 又与填充右缘冗余。
+   input 本体保持 appearance:auto (原生填充需要它), 只改 thumb 伪元素, 故填充不受影响。
+   seek 交互不受影响: 拖拽走 timelineShell 的指针捕获, 键盘走 range 的 onChange, 均不依赖 thumb 命中。 */
+.rangeInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.rangeInput::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: 0;
+  opacity: 0;
+  background: transparent;
+}
+
 .timelineLayer {
   position: absolute;
   /* v0.11.26 · 左右内缩须等于 range thumb 半宽, 标记 (网格刻度/关键帧/密度) 才与 playhead 实际行程
@@ -99,10 +138,26 @@
 }
 
 .loopRegion,
-.trackSegment {
+.trackSegment,
+.chapterDraftRegion,
+.propagateDraftRegion,
+.propagateRegion {
   position: absolute;
   left: var(--timeline-left);
   width: var(--timeline-width);
+}
+
+/* v0.21.14 WS3 · AI 传播范围高亮 (对话框打开时): 贯穿轨道的 violet 半透明填充 + 高亮边界,
+   与 loop (cyan) / 章节 (条状) 区分, 让「将影响哪段帧」在时间轴一目了然。 */
+.propagateRegion {
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 22%, transparent);
+  box-shadow:
+    inset 2px 0 0 oklch(0.62 0.21 293),
+    inset -2px 0 0 oklch(0.62 0.21 293),
+    inset 0 2px 0 color-mix(in oklch, oklch(0.62 0.21 293) 70%, transparent);
 }
 
 /* v0.11.26 · loop 区间从 4px 细条改为贯穿轨道高度的半透明填充块 + 高亮左右边界,
@@ -123,6 +178,25 @@
   box-shadow:
     inset 2px 0 0 rgba(34, 211, 238, 0.55),
     inset -2px 0 0 rgba(34, 211, 238, 0.55);
+}
+
+/* v0.21.13 · 章节草稿刷选带: 与 loop (cyan) 区分, 用章节主色 (violet-ish) 的半透明填充 + 虚线边界,
+   松手后交给章节表单预填。position 走上方共享选择器。 */
+.chapterDraftRegion {
+  top: 0;
+  bottom: 0;
+  border: 1px dashed color-mix(in oklch, oklch(0.62 0.18 252) 80%, transparent);
+  border-radius: 3px;
+  background: color-mix(in oklch, oklch(0.62 0.18 252) 22%, transparent);
+}
+
+/* v0.21.13 · 传播范围草稿刷选带 (v0.21.14 WS3 使用): AI violet, 与 loop / chapter 均区分。 */
+.propagateDraftRegion {
+  top: 0;
+  bottom: 0;
+  border: 1px dashed color-mix(in oklch, oklch(0.62 0.21 293) 80%, transparent);
+  border-radius: 3px;
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 20%, transparent);
 }
 
 .chaptersTrack {
@@ -149,6 +223,49 @@
 
 .chapterMarker.interactive {
   pointer-events: auto;
+}
+
+/* v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover: 命中时抬高 + 白边描亮, 与侧栏行高亮呼应。 */
+.chapterMarkerHovered {
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  filter: brightness(1.15);
+}
+
+/* v0.21.13 WS3 · 章节条 resize 把手。display:contents 让内部绝对定位元素仍相对 chaptersTrack 定位。 */
+.chapterEntry {
+  display: contents;
+}
+
+/* 章节左右边缘各一把手: 比 5px 条更高更宽的抓取区 (ew-resize), hover 才显竖握把, 平时不抢视觉。 */
+.chapterResizeHandle {
+  position: absolute;
+  top: -3px;
+  left: var(--timeline-left);
+  width: 9px;
+  height: 11px;
+  background: transparent;
+  cursor: ew-resize;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.chapterResizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 2px;
+  height: 7px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.9);
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease;
+}
+
+.chapterResizeHandle:hover::after {
+  opacity: 1;
 }
 
 .bookmarkMarker {
@@ -239,6 +356,23 @@
   background: var(--density-gradient, color-mix(in oklch, var(--sc-brand) 68%, transparent));
 }
 
+/* v0.21.9 · AI 预测密度轨: 独立 lane (baseline 抬高到人工密度条上方), violet 单色, 与人工密度条不同层。 */
+.predictionTrack {
+  position: absolute;
+  inset: 5px 0 24px;
+  pointer-events: none;
+}
+
+.predictionBin {
+  position: absolute;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  height: var(--density-height);
+  border-radius: 2px;
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 72%, transparent);
+}
+
 .trackTimeline {
   position: absolute;
   inset: 0;
@@ -252,7 +386,7 @@
 }
 
 .predictedSegment {
-  border-top-color: rgba(251, 191, 36, 0.82);
+  border-top-color: rgba(139, 92, 246, 0.82);
 }
 
 .outsideSegment {
@@ -287,7 +421,7 @@
 .trackKeyframePrediction {
   width: 8px;
   height: 8px;
-  background: oklch(0.78 0.14 78);
+  background: oklch(0.62 0.21 293);
 }
 
 .trackKeyframeOccluded {

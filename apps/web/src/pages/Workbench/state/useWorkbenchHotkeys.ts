@@ -12,6 +12,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
+import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
+import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
@@ -81,6 +83,8 @@ export interface UseWorkbenchHotkeysArgs {
 
   // ai
   aiBoxes: AiBox[];
+  /** v0.21.11 · 采纳/拒绝后自动推进选中到下一个待决 AI(common.autoAdvanceOnDecide, 默认开)。 */
+  autoAdvanceOnDecide?: boolean;
 
   // ui state setters
   setShowHotkeys: React.Dispatch<React.SetStateAction<boolean>>;
@@ -119,10 +123,6 @@ export interface UseWorkbenchHotkeysArgs {
   maskEditor?: UseMaskEditorReturn;
   commitMaskAsPolygon?: () => void;
   cancelMaskEdit?: () => void;
-
-  // I12 · Object Group + 批量编辑 handlers; 缺省时该快捷键静默 no-op (例如 review-only 场景).
-  handleAnnotationGroup?: () => void;
-  handleAnnotationUngroup?: () => void;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -147,12 +147,11 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
-    aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
+    aiBoxes, autoAdvanceOnDecide = true, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported,
     maskEditor, commitMaskAsPolygon, cancelMaskEdit,
-    handleAnnotationGroup, handleAnnotationUngroup,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -333,7 +332,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "crossFramePropagate":
           e.preventDefault();
           // v0.14.1 · 阻断按住 Alt+→ 的 auto-repeat: 否则连发多个 propagate POST,
-          // 在目标帧造出共享同一新 group_id 的重复 annotation。
+          // 在目标帧造出共享同一新 track_id 的重复 annotation。
           if (e.repeat) return;
           onCrossFramePropagate?.(action.dir);
           return;
@@ -418,38 +417,19 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           }
           handleDeleteBox(s.selectedId);
           return;
-        case "videoCycleTrack": {
-          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track_bbox");
-          if (list.length === 0) return;
+        case "videoCycleInCategory":
           e.preventDefault();
-          const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
-          const next = (idxNow + action.dir + list.length) % list.length;
-          s.setSelectedId(list[next].id);
+          videoControlsRef?.current?.cycleInCategory(action.dir);
           return;
-        }
+        case "videoStepCategory":
+          e.preventDefault();
+          videoControlsRef?.current?.stepCategory(action.dir);
+          return;
 
         case "selectAllUser":
           e.preventDefault();
           if (annotationsRef.current.length > 0) {
             s.replaceSelected(annotationsRef.current.map((a) => a.id));
-          }
-          return;
-
-        case "annotationGroup":
-          e.preventDefault();
-          if (handleAnnotationGroup) {
-            handleAnnotationGroup();
-          } else {
-            pushToast({ msg: "当前工作台未启用 Object Group", kind: "warning" });
-          }
-          return;
-
-        case "annotationUngroup":
-          e.preventDefault();
-          if (handleAnnotationUngroup) {
-            handleAnnotationUngroup();
-          } else {
-            pushToast({ msg: "当前工作台未启用 Object Group", kind: "warning" });
           }
           return;
 
@@ -556,6 +536,23 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
         }
 
+        // v0.21.11 · 图片「同类流转」(Tab) / 「跨类跳转」(`): 类别 = AI 待审(aiBoxes) + 人工(annotations),
+        // 无轨迹。数组序循环(与 cycleUser 一致, 无需坐标)。焦点联动由 ImageWorkbench 的选中 effect 处理。
+        case "imageCycleInCategory": {
+          e.preventDefault();
+          const cats = { ai: aiBoxes.map((b) => b.id), user: annotationsRef.current.map((a) => a.id), track: [] as string[] };
+          const next = nextInCategory(cats, s.selectedId, action.dir);
+          if (next) s.setSelectedId(next);
+          return;
+        }
+        case "imageStepCategory": {
+          e.preventDefault();
+          const cats = { ai: aiBoxes.map((b) => b.id), user: annotationsRef.current.map((a) => a.id), track: [] as string[] };
+          const next = nextCategory(cats, s.selectedId, action.dir);
+          if (next) s.setSelectedId(next);
+          return;
+        }
+
         case "smartNext": smartNext(action.mode); return;
 
         case "changeClass": {
@@ -653,19 +650,33 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
 
         case "submit": handleSubmitTask(); return;
 
+        // v0.21.11 · 采纳/拒绝后, 若开启自动前进则把选中推进到下一个待决 AI(移除当前后落到后一个,
+        // 没有则前一个, 都没有=审完置空)。决策前按当前 aiBoxes 顺序算好, 避免异步刷新后列表已变。
+        // 关闭时保持现状: 采纳后不动选中(指向的框随即消失=去选), 拒绝后置空。
         case "acceptAi": {
           if (!s.selectedId) return;
-          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) handleAcceptPrediction(aiBox);
+          // 视频模式 aiBoxes 是跨帧候选全集; 自动前进须限定当前帧, 否则 nextId 会指向别帧的候选、
+          // 当前帧画布上「什么都没选中」。图片模式无帧维度, scoped 即全集。
+          const scoped = videoMode
+            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
+            : aiBoxes;
+          const idx = scoped.findIndex((b) => b.id === s.selectedId);
+          if (idx < 0) return;
+          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
+          handleAcceptPrediction(scoped[idx]);
+          if (autoAdvanceOnDecide) s.setSelectedId(nextId);
           return;
         }
         case "rejectAi": {
           if (!s.selectedId) return;
-          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) {
-            handleRejectPrediction?.(aiBox);
-            s.setSelectedId(null);
-          }
+          const scoped = videoMode
+            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
+            : aiBoxes;
+          const idx = scoped.findIndex((b) => b.id === s.selectedId);
+          if (idx < 0) return;
+          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
+          handleRejectPrediction?.(scoped[idx]);
+          s.setSelectedId(autoAdvanceOnDecide ? nextId : null);
           return;
         }
       }
@@ -700,8 +711,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
-    handleAnnotationGroup, handleAnnotationUngroup, isPromptSupported,
-    aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
+    isPromptSupported,
+    aiBoxes, autoAdvanceOnDecide, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
     flushNudges,
   ]);
 

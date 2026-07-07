@@ -30,7 +30,7 @@ POST /api/v1/admin/ml-integrations
 }
 ```
 
-URL 校验拒绝 `localhost / 127.x.x.x / 0.0.0.0 / ::1`（[ADR 0015](../../dev/adr/0015-ml-backend-url-validation)）。失败返回 422 + 提示用 docker bridge IP / service DNS。
+URL 校验拒绝 `localhost / 127.x.x.x / 0.0.0.0 / ::1`（[ADR 0015](../../dev/adr/archive/0015-ml-backend-url-validation)）。失败返回 422 + 提示用 docker bridge IP / service DNS。
 
 ## 修改 / 删除
 

@@ -24,7 +24,7 @@ import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/videoStageControls";
-import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
+import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
@@ -73,8 +73,8 @@ interface WorkbenchStageHostCommonProps {
   onCrossFramePropagateBatch: (direction: "next" | "prev") => void;
   /** v0.15.1 · 把选中框延续到 scene 内指定帧 task(插值工作流的建链一步)。 */
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
-  /** v0.15.1 · 区间插值: 当前 task(起点)与 toTask(终点)的同 group 框之间插值填充。 */
-  onCrossFrameInterpolate: (groupId: number, toTaskId: string) => void;
+  /** v0.15.1 · 区间插值: 当前 task(起点)与 toTask(终点)的同 track 框之间插值填充。 */
+  onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
   /** v0.13.10 · 3D 浮层避让右栏 + 三视图浮窗偏好。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -94,6 +94,10 @@ interface WorkbenchStageHostVideoProps {
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
   videoChapters?: VideoTimelineChapter[];
+  /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
+  videoTimelineChapterControls?: VideoTimelineChapterControls;
+  /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
+  videoPropagateRange?: { startFrame: number; endFrame: number } | null;
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
@@ -120,6 +124,10 @@ interface WorkbenchStageHostVideoProps {
   onToggleHiddenVideoTrack?: (trackId: string) => void;
   onToggleLockedVideoTrack?: (trackId: string) => void;
   onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
+  // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回)。
+  aiBoxes?: AiBox[];
+  onAcceptPrediction?: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
 }
 
 interface WorkbenchStageHostImageProps {
@@ -285,6 +293,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoManifestLoading,
       videoManifestError,
       videoChapters,
+      videoTimelineChapterControls,
+      videoPropagateRange,
       videoSampling,
       videoTool,
       videoModes,
@@ -305,6 +315,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onToggleHiddenVideoTrack,
       onToggleLockedVideoTrack,
       onPropagateVideoTrack,
+      // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回); aiBoxes 属 video 组(非 image 组)。
+      aiBoxes: videoAiBoxes,
+      onAcceptPrediction: onVideoAcceptPrediction,
+      onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
       fileUrl,
@@ -417,6 +431,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             isLoading={videoManifestLoading}
             error={videoManifestError}
             annotations={annotations}
+            aiBoxes={videoAiBoxes}
             selectedId={selectedId}
             activeClass={activeClass}
             frameIndex={videoFrameIndex}
@@ -432,6 +447,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onSpacePanDragStart={onVideoSpacePanDragStart}
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
+            timelineChapterControls={videoTimelineChapterControls}
+            propagateRange={videoPropagateRange}
             videoSampling={videoSampling}
             performanceTier={workbenchCommon.performanceTier}
             onSelect={onSelectBox}
@@ -443,6 +460,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onDeleteUserBox={onDeleteUserBox}
             onConvertToBboxes={onVideoConvertToBboxes}
+            onAcceptPrediction={onVideoAcceptPrediction}
+            onRejectPrediction={onVideoRejectPrediction}
             onComposeTracks={onVideoComposeTracks}
             onToggleHiddenTrack={onToggleHiddenVideoTrack}
             onToggleLockedTrack={onToggleLockedVideoTrack}

@@ -116,7 +116,9 @@ async def test_patch_project_unbind_backend_clears_binding(
     assert data["ml_backend_id"] is None
 
 
-async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
+async def test_raw_delete_ml_backend_no_longer_sets_project_null(
+    db_session, super_admin
+):
     user, _ = super_admin
     proj = await _seed_project(db_session, user.id)
     backend = await _seed_backend(db_session, proj.id)
@@ -124,7 +126,8 @@ async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
     await db_session.flush()
     await db_session.commit()
 
-    # ON DELETE SET NULL — 走原生 SQL 触发 FK 级联 (FK 现指向 ml_backend_registry)
+    # v0.21.0 · projects.ml_backend_id 不再是 FK; app/service 删除路径负责清兼容列。
+    # 直接 SQL 删除 registry 行不会再触发 ON DELETE SET NULL。
     await db_session.execute(
         text("DELETE FROM ml_backend_registry WHERE id = :bid"), {"bid": backend.id}
     )
@@ -137,7 +140,7 @@ async def test_delete_ml_backend_sets_project_null(db_session, super_admin):
             {"pid": proj.id},
         )
     ).scalar_one_or_none()
-    assert refreshed is None
+    assert refreshed == backend.id
 
 
 async def test_service_delete_ml_backend_clears_project_binding(

@@ -407,6 +407,19 @@ _EXEMPLAR_PARAMS_SCHEMA = {
 }
 
 
+# v0.21.1 · 检测式视频追踪 params: 闭集 conf/iou/max_det + tracker 算法选择 (ByteTrack/BoT-SORT)。
+# tracker 是 param 不是 variant 轴 (不换权重, 只换关联算法), 平台 apply-time 选, 不进全局池;
+# enum 约束到 supported_trackers, 默认 bytetrack (快、通用基线)。
+_TRACKER_PARAMS_SCHEMA = _build_params_schema()
+_TRACKER_PARAMS_SCHEMA["properties"]["tracker"] = {
+    "type": "string",
+    "enum": ["bytetrack", "botsort"],
+    "default": "bytetrack",
+    "title": "追踪算法",
+    "description": "多目标关联算法。ByteTrack 快、通用基线; BoT-SORT 带外观 ReID, 遮挡 / 交错更稳但更慢。",
+}
+
+
 def _variant_combinations_for(task: str) -> list[list[str]]:
     """该 task 下所有合法 (series, size) 组合, 与 supported_variants 轴顺序一致.
 
@@ -598,6 +611,47 @@ def _build_exemplar_model_entry() -> dict[str, Any]:
     }
 
 
+def _build_tracker_model_entry() -> dict[str, Any]:
+    """v0.21.1 · 检测式视频追踪 (detect-then-track) model 条目.
+
+    复用 detection 权重 + ultralytics 原生 ByteTrack/BoT-SORT: task=tracker、仅吃 video、
+    输出带 track_id 的逐帧 bbox (result item type=video_track_bbox)。走标准批量 /predict +
+    Celery pipeline, 与交互式 SAM2/SAM3 tracker (predict_interactive, 单对象种子传播) 是**两条
+    不同的链**。tracker 算法 (bytetrack/botsort) 经 params.tracker apply-time 选定 —— 不是
+    variant 轴 (不换权重), 也不进全局编排池 (与 conf/iou 阈值同属 apply-time 参数)。
+
+    supported_variants 复用 detection 的 series×size 轴 (MODEL_MATRIX 已把 tracker 别名到
+    detection)。类别表同 COCO detection。
+    """
+    entry: dict[str, Any] = {
+        "id": "track",
+        "display_name": "YOLO 检测式视频追踪",
+        "task": "tracker",
+        "model_family": "yolo",
+        "infra": "pytorch",
+        "is_interactive": False,
+        "composition": "atom",
+        "supported_prompts": ["none"],
+        # 仅 video: 单帧图像无跨帧状态、产不出有意义的 track_id (ultralytics 硬边界)。
+        # 故不含 full_image / crop —— 与检测/分割 model 条目的关键区别。
+        "supported_inputs": ["video"],
+        # 协议 · backend 自报可用追踪算法; 平台 apply-time 从中选 (默认取首项)。
+        "supported_trackers": ["bytetrack", "botsort"],
+        "supported_geometric_outputs": ["bbox"],
+        "output_attribute_types": ["class"],
+        "resource_profile": {"device": "gpu", "batchable": True},
+        "supported_variants": _supported_variants_for("tracker"),
+        "variant_combinations": _variant_combinations_for("tracker"),
+        "default_variants": _default_variants_for("tracker"),
+        "params": _TRACKER_PARAMS_SCHEMA,
+    }
+    # 追踪的是 detection 权重, 类别表同 COCO detection (供前端类别白名单 UI)。
+    classes = class_names.classes_for_task("detection")
+    if classes:
+        entry["classes"] = classes
+    return entry
+
+
 @app.get("/setup")
 def setup() -> dict[str, Any]:
     """协议 v2 多模型目录. 详见 docs-site/dev/reference/ml-backend-protocol.md §4.1.6."""
@@ -661,6 +715,8 @@ def setup() -> dict[str, Any]:
             ),
             # v0.18.23 · YOLOE visual prompt exemplar (交互工具, is_interactive=true).
             _build_exemplar_model_entry(),
+            # v0.21.1 · 检测式视频追踪 (video 源, 复用 detection 权重 + ultralytics tracker).
+            _build_tracker_model_entry(),
         ],
     }
 

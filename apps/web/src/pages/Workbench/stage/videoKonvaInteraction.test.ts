@@ -35,6 +35,8 @@ const baseCtx: ResolveDragCommitCtx = {
   videoTool: "box",
   selectedTrack: null,
   lockedTrackIds: new Set(),
+  // 默认帧 10:与 track() 唯一关键帧(frame 0)不同帧, 使「延展」用例走跨帧路径。
+  frameIndex: 10,
 };
 
 describe("advanceDrag", () => {
@@ -116,8 +118,8 @@ describe("resolveDragCommit", () => {
     expect(out.type).toBe("none");
   });
 
-  it("track 工具 + 选中轨迹未锁 draw → 落该轨迹关键帧", () => {
-    const t = track("trk-1");
+  it("track 工具 + 选中轨迹未锁 + 当前帧无关键帧 draw → 延展该轨迹(落新关键帧)", () => {
+    const t = track("trk-1"); // 唯一关键帧在 frame 0;baseCtx.frameIndex 为 10 → 跨帧
     const out = resolveDragCommit(draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }), { x: 0.4, y: 0.4 }, {
       ...baseCtx,
       videoTool: "track",
@@ -125,6 +127,17 @@ describe("resolveDragCommit", () => {
     });
     expect(out).toMatchObject({ type: "track" });
     if (out.type === "track") expect(out.ann.id).toBe("trk-1");
+  });
+
+  it("track 工具 + 选中轨迹未锁 + 当前帧已有关键帧 draw → 新建轨迹(不吞旧框)", () => {
+    const t = track("trk-1"); // 关键帧在 frame 0
+    const out = resolveDragCommit(draw({ x: 0.5, y: 0.5 }, { x: 0.7, y: 0.7 }), { x: 0.7, y: 0.7 }, {
+      ...baseCtx,
+      videoTool: "track",
+      selectedTrack: t as AnnotationResponse & { geometry: VideoTrackGeometry },
+      frameIndex: 0, // 同帧:选中轨迹在 frame 0 已有关键帧 → 判为「标第二个物体」
+    });
+    expect(out).toMatchObject({ type: "draw", kind: "video_track_bbox" });
   });
 
   it("track 工具 + 选中轨迹已锁 draw → 退化为新 video_track_bbox", () => {

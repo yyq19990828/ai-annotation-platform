@@ -16,7 +16,7 @@ last_reviewed: 2026-05-09
 ws://localhost:8000/ws?token=<access_token>
 ```
 
-token 用 query string 传（浏览器 WS API 不支持自定义 header）。后端在 accept 后立刻校验 + 续签机制（[ADR 0011](../../dev/adr/0011-websocket-token-reauth)）。
+token 用 query string 传（浏览器 WS API 不支持自定义 header）。后端在 accept 后立刻校验 + 续签机制（[ADR 0011](../../dev/adr/archive/0011-websocket-token-reauth)）。
 
 ## 订阅
 
@@ -76,7 +76,7 @@ access token 默认 30min。WS 连接长寿命，到期前 5min 服务端推：
 { "type": "reauth", "token": "<new_access_token>" }
 ```
 
-不重连，复用 socket。详见 [ADR 0011](../../dev/adr/0011-websocket-token-reauth)。
+不重连，复用 socket。详见 [ADR 0011](../../dev/adr/archive/0011-websocket-token-reauth)。
 
 ## 专用端点
 

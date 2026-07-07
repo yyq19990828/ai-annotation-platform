@@ -110,6 +110,6 @@ GET    /admin/ml-integrations/all                        # 全局列表（新建
 
 ## 相关
 
-- [ADR 0015 — ML Backend URL 验证](../../dev/adr/0015-ml-backend-url-validation)
+- [ADR 0015 — ML Backend URL 验证](../../dev/adr/archive/0015-ml-backend-url-validation)
 - [模型市场](./model-market)
 - [ML Backend 协议](../../dev/reference/ml-backend-protocol)

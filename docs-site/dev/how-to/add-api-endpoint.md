@@ -239,7 +239,7 @@ export async function logout(): Promise<void> {
 
 要点：
 
-- 不直接拼 URL 字符串，全部走 `generated/sdk.gen`——参见 [ADR-0003 / OpenAPI 客户端生成](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/0003-openapi-client-codegen.md)。
+- 不直接拼 URL 字符串，全部走 `generated/sdk.gen`——参见 [ADR-0003 / OpenAPI 客户端生成](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/archive/0003-openapi-client-codegen.md)。
 - 业务副作用（清 localStorage、跳页）放 wrapper 里；组件只负责调用。
 
 ---

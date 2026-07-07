@@ -14,7 +14,7 @@ Task lock 是工作台里的并发编辑保护层，不是权限系统，也不�
 
 - `apps/api/app/services/task_lock.py`
 - `apps/api/app/api/v1/tasks/locks.py`
-- [ADR-0005](/dev/adr/0005-task-lock-and-review-matrix)
+- [ADR-0005](/dev/adr/archive/0005-task-lock-and-review-matrix)
 
 ## 它解决什么问题
 

@@ -34,7 +34,7 @@ interface CameraProjectionViewProps {
   calibration?: SensorCalibration | null;
   /** 非隐藏的 3D 框(PSR + 类别色),与主视图同源。 */
   boxes: SceneBox[];
-  /** 需高亮的框 id(选中框 + 同 group_id 成员);决定描边粗细 / 填充。 */
+  /** 需高亮的框 id(选中框 + 同 track_id 成员);决定描边粗细 / 填充。 */
   highlightedIds: Set<string>;
   /** 点投影框反选(命中最小面积框,前景优先)。 */
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;

@@ -715,9 +715,10 @@ class ExportService:
                 row["keypoints"], row["num_keypoints"] = kp
             if include_attributes:
                 attrs = dict(ann.attributes or {})
-                # v0.10.43 · I12 · group_id 平等同组语义 → COCO attributes.__group_id。
-                if getattr(ann, "group_id", None) is not None:
-                    attrs["__group_id"] = ann.group_id
+                # v0.21.2 · ADR-0045 · 跨帧同一对象标识 → COCO attributes.__track_id
+                # (原 group_id 高位段 __group_id; 跨帧语义已统一到 track_id)。
+                if getattr(ann, "track_id", None) is not None:
+                    attrs["__track_id"] = ann.track_id
                 row["attributes"] = attrs
             coco_annotations.append(row)
 

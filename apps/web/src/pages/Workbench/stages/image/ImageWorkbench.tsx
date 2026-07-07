@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
+import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
+import { clampScale } from "../../stage/shared/viewport/zoom";
 import { CanvasToolbar } from "../../stage/CanvasToolbar";
 import { FloatingDock } from "../../shell/FloatingDock";
 import { ImageStage } from "../../stage/ImageStage";
@@ -202,6 +204,37 @@ export function ImageWorkbench({
   issuePinDropArmed,
   onIssuePinDrop,
 }: ImageWorkbenchProps) {
+  // v0.21.11 · 图片焦点联动: 选中对象(键盘两级循环 / 点选)若出视口或过小则平移居中 + 适度放大。
+  // 与视频同构, 由 common.focusSelectionEnabled gate; 默认关。用 ref 读最新盒集/几何,
+  // effect 只在 selectedId 变化时跑(避免盒集逐次变身份触发重排)。
+  const { config: focusConfig } = useWorkbenchConfig();
+  const focusSelectionEnabled = focusConfig.common.focusSelectionEnabled;
+  const focusStateRef = useRef({ aiBoxes, userBoxes, stageGeom, setVp });
+  focusStateRef.current = { aiBoxes, userBoxes, stageGeom, setVp };
+  useEffect(() => {
+    if (!focusSelectionEnabled || !selectedId) return;
+    const { aiBoxes: ai, userBoxes: users, stageGeom: geom, setVp: setViewport } = focusStateRef.current;
+    const { imgW, imgH, vpSize } = geom;
+    if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
+    const box = ai.find((b) => b.id === selectedId) ?? users.find((b) => b.id === selectedId);
+    if (!box) return;
+    const cx = (box.x + box.w / 2) * imgW;
+    const cy = (box.y + box.h / 2) * imgH;
+    const objMaxDimPx = Math.max(box.w * imgW, box.h * imgH, 1);
+    setViewport((cur) => {
+      let scale = cur.scale;
+      if (objMaxDimPx * scale < 48) scale = clampScale(140 / objMaxDimPx);
+      const margin = 48;
+      const screenCx = cx * scale + cur.tx;
+      const screenCy = cy * scale + cur.ty;
+      const outOfView =
+        screenCx < margin || screenCx > vpSize.w - margin ||
+        screenCy < margin || screenCy > vpSize.h - margin;
+      if (!outOfView && scale === cur.scale) return cur;
+      return { scale, tx: vpSize.w / 2 - cx * scale, ty: vpSize.h / 2 - cy * scale };
+    });
+  }, [focusSelectionEnabled, selectedId]);
+
   return (
     <ImageStage
       readOnly={readOnly}

@@ -47,8 +47,16 @@ function pointerMove(clientX: number) {
   return event;
 }
 
-function pointerDown(clientX: number) {
+function pointerDown(clientX: number, shiftKey = false) {
   const event = new Event("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clientX", { value: clientX });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "shiftKey", { value: shiftKey });
+  return event;
+}
+
+function pointerUp(clientX: number) {
+  const event = new Event("pointerup", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clientX", { value: clientX });
   Object.defineProperty(event, "pointerId", { value: 1 });
   return event;
@@ -247,6 +255,166 @@ describe("VideoPlaybackOverlay", () => {
 
     expect(onSeekByFrames).toHaveBeenNthCalledWith(1, 1);
     expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
+  });
+
+  // v0.21.13 · 区间选择基建: 默认 purpose="loop" 时 Shift+拖仍提交循环区间 (零回归)。
+  it("commits a loop region on Shift+drag by default (range-select purpose loop)", () => {
+    const onLoopRegionChange = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId } = renderOverlay({ onLoopRegionChange, onRangeSelect });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointerDown(100, true));
+    expect(getByTestId("video-loop-region-preview")).toBeInTheDocument();
+    fireEvent(shell, pointerMove(600));
+    fireEvent(shell, pointerUp(600));
+
+    expect(onLoopRegionChange).toHaveBeenCalledWith({ startFrame: 1, endFrame: 5 });
+    expect(onRangeSelect).not.toHaveBeenCalled();
+  });
+
+  // v0.21.13 · 区间选择基建: purpose="chapter-draft" 时 Shift+拖走通用 onRangeSelect, 草稿带用章节样式。
+  it("routes a chapter-draft brush to onRangeSelect with the purpose tag", () => {
+    const onLoopRegionChange = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId } = renderOverlay({
+      rangeSelectPurpose: "chapter-draft",
+      onLoopRegionChange,
+      onRangeSelect,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointerDown(200, true));
+    expect(getByTestId("video-timeline-chapter-draft")).toBeInTheDocument();
+    fireEvent(shell, pointerMove(900));
+    fireEvent(shell, pointerUp(900));
+
+    expect(onRangeSelect).toHaveBeenCalledWith("chapter-draft", { startFrame: 2, endFrame: 8 });
+    expect(onLoopRegionChange).not.toHaveBeenCalled();
+  });
+
+  // v0.21.14 · propagate-range 用途保留普通拖 seek, 仅 Shift+拖才圈选 (对话框开着仍能 scrub 预览)。
+  it("keeps plain-drag seek under propagate-range purpose; only Shift+drag brushes", () => {
+    const onSeek = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId } = renderOverlay({
+      rangeSelectPurpose: "propagate-range",
+      onSeek,
+      onRangeSelect,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    // 普通拖 → seek, 不圈选。
+    fireEvent(shell, pointerDown(300));
+    expect(onSeek).toHaveBeenCalledWith(3);
+    expect(onRangeSelect).not.toHaveBeenCalled();
+    fireEvent(shell, pointerUp(300));
+
+    // Shift+拖 → 圈选 propagate-range。
+    fireEvent(shell, pointerDown(200, true));
+    fireEvent(shell, pointerMove(800));
+    fireEvent(shell, pointerUp(800));
+    expect(onRangeSelect).toHaveBeenCalledWith("propagate-range", { startFrame: 2, endFrame: 7 });
+  });
+
+  // v0.21.13 WS3 · 拖章节条右边界 → 松手 onChapterResize 落新起止帧 (拖动中本地预览)。
+  it("resizes a chapter by dragging its end handle and commits on pointer up", () => {
+    const onChapterResize = vi.fn();
+    const { getByTestId } = renderOverlay({
+      chapters: [{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }],
+      onChapterResize,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+    const endHandle = getByTestId("video-chapter-resize-end");
+
+    fireEvent(endHandle, pointerDown(500));
+    fireEvent(endHandle, pointerMove(900));
+    // 拖动中不落库, 仅预览。
+    expect(onChapterResize).not.toHaveBeenCalled();
+    fireEvent(endHandle, pointerUp(900));
+
+    expect(onChapterResize).toHaveBeenCalledWith("ch1", { startFrame: 1, endFrame: 8 });
+  });
+
+  it("does not render resize handles without an onChapterResize handler", () => {
+    const { queryByTestId } = renderOverlay({
+      chapters: [{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }],
+    });
+    expect(queryByTestId("video-chapter-resize-end")).toBeNull();
+  });
+
+  // v0.21.14 WS3 · AI 传播对话框打开时在时间轴受控高亮影响范围。
+  it("renders the propagate range highlight when provided", () => {
+    const { getByTestId, queryByTestId, rerender } = renderOverlay();
+    expect(queryByTestId("video-propagate-range")).toBeNull();
+    rerender(
+      <VideoPlaybackOverlay
+        frameIndex={0}
+        maxFrame={9}
+        timebase={timebase}
+        isPlaying={false}
+        currentFrameEntryCount={0}
+        visible
+        propagateRange={{ startFrame: 2, endFrame: 7 }}
+        onSeek={() => {}}
+        onSeekByFrames={() => {}}
+        onTogglePlay={() => {}}
+      />,
+    );
+    const band = getByTestId("video-propagate-range");
+    expect(band.style.getPropertyValue("--timeline-left")).toBe(`${(2 / 9) * 100}%`);
+  });
+
+  // v0.21.13 WS4 · 时间轴章节条 hover 上报 + 受控高亮 (与侧栏行双向联动)。
+  it("reports chapter hover and reflects the controlled hovered chapter", () => {
+    const onHoverChapter = vi.fn();
+    const { getByTestId, rerender } = renderOverlay({
+      chapters: [{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }],
+      onHoverChapter,
+    });
+    const bar = getByTestId("video-timeline-chapter");
+    fireEvent.pointerEnter(bar);
+    expect(onHoverChapter).toHaveBeenCalledWith("ch1");
+    fireEvent.pointerLeave(bar);
+    expect(onHoverChapter).toHaveBeenCalledWith(null);
+
+    rerender(
+      <VideoPlaybackOverlay
+        frameIndex={0}
+        maxFrame={9}
+        timebase={timebase}
+        isPlaying={false}
+        currentFrameEntryCount={0}
+        visible
+        chapters={[{ id: "ch1", startFrame: 1, endFrame: 5, title: "A", color: null }]}
+        hoveredChapterId="ch1"
+        onSeek={() => {}}
+        onSeekByFrames={() => {}}
+        onTogglePlay={() => {}}
+      />,
+    );
+    expect(getByTestId("video-timeline-chapter")).toHaveAttribute("data-hovered", "true");
+  });
+
+  // 回归: 人工关键帧密度与 AI 候选密度必须共用同一计数基准, 柱高才真实反映数量占比。
+  // 修复前两条 lane 各自独立归一化, 会把「1 个关键帧」画得比「8 个候选」还高 (倒挂)。
+  it("scales manual and prediction density on a shared count basis so bar height reflects real ratio", () => {
+    const px = (el: HTMLElement) => parseFloat(el.style.getPropertyValue("--density-height"));
+    const { getByTestId } = renderOverlay({
+      globalTimelineDensity: [{ index: 0, from: 0, to: 0, density: 1, tracks: [] }],
+      predictionDensity: [{ index: 0, from: 0, to: 0, count: 8 }],
+    });
+
+    const manualBin = getByTestId("video-timeline-density").querySelector("span") as HTMLElement;
+    const predBin = getByTestId("video-timeline-prediction-density").querySelector("span") as HTMLElement;
+
+    // 8 个候选的柱必须显著高于 1 个关键帧的柱 (共享 max=8 下: 9px vs 2px), 不再倒挂。
+    expect(px(predBin)).toBeGreaterThan(px(manualBin));
+    expect(px(predBin)).toBeGreaterThan(px(manualBin) * 3);
   });
 });
 

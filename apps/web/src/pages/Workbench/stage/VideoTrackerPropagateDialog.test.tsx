@@ -39,6 +39,107 @@ describe("VideoTrackerPropagateDialog", () => {
     })).toBe("mock_bbox");
   });
 
+  it("已绑真实后端 (preferNonMockModel) 时下拉隐藏 mock_bbox, 默认落真实模型", () => {
+    // 即便用户记忆里残留 mock_bbox, 绑后端项目也不应复现它。
+    window.localStorage.setItem(
+      videoDialogMemoryStorageKey("u1", "trackerPropagate"),
+      JSON.stringify({ rangePreset: "30", direction: "forward", modelKey: "mock_bbox", samVariant: "" }),
+    );
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        userId="u1"
+        preferNonMockModel
+        onSubmit={vi.fn()}
+      />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const values = Array.from(modelSelect.options).map((o) => o.value);
+    expect(values).not.toContain("mock_bbox");
+    expect(modelSelect.value).toBe("sam2_video");
+  });
+
+  it("未绑后端 / 测试环境仍保留 mock_bbox 可见", () => {
+    render(
+      <VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const values = Array.from(modelSelect.options).map((o) => o.value);
+    expect(values).toContain("mock_bbox");
+  });
+
+  it("上报当前影响范围给时间轴高亮, 随方向/预设变化更新, 关闭清空", () => {
+    const onRangeChange = vi.fn();
+    const { rerender } = render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        samplingStep={1}
+        onRangeChange={onRangeChange}
+        onSubmit={vi.fn()}
+      />,
+    );
+    // 默认 forward + 30 帧 → F50 → F80。
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 50, endFrame: 80 });
+    // 切「向前」→ F20 → F50。
+    fireEvent.click(screen.getByText("向前"));
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 20, endFrame: 50 });
+    // 关闭 → 清空。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        open={false}
+        frameIndex={50}
+        onRangeChange={onRangeChange}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("时间轴刷选回填自定义范围, 覆盖预设; 改预设即回派生范围", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const onRangeChange = vi.fn();
+    const { rerender } = render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        samplingStep={1}
+        brushedRange={null}
+        onRangeChange={onRangeChange}
+        onSubmit={onSubmit}
+      />,
+    );
+    // 默认 forward + 30 帧 → F50 → F80。
+    expect(screen.getByText("F50 → F80")).toBeTruthy();
+    expect(screen.queryByTestId("tracker-range-custom")).toBeNull();
+
+    // 刷选 F10→F42 回填 → 覆盖为自定义范围, 上报高亮 + 提交都用它。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        samplingStep={1}
+        brushedRange={{ startFrame: 10, endFrame: 42 }}
+        onRangeChange={onRangeChange}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.getByText("F10 → F42")).toBeTruthy();
+    expect(screen.getByTestId("tracker-range-custom")).toBeInTheDocument();
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 10, endFrame: 42 });
+    fireEvent.click(screen.getByText("发起传播"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ from_frame: 10, to_frame: 42 }),
+    );
+
+    // 改预设 → 清自定义, 回派生范围。
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "60" } });
+    expect(screen.getByText("F50 → F110")).toBeTruthy();
+    expect(screen.queryByTestId("tracker-range-custom")).toBeNull();
+  });
+
   it("closed 时不渲染", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} open={false} frameIndex={5} onSubmit={vi.fn()} />,

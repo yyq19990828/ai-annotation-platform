@@ -36,7 +36,11 @@ import {
 } from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
-import { classColorForCanvas } from "@/pages/Workbench/stage/colors";
+import { classColorForCanvas, displayClassName } from "@/pages/Workbench/stage/colors";
+import {
+  buildTrackLabelText,
+  shouldShowLabel,
+} from "@/pages/Workbench/stage/annotationVisual";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
 import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
@@ -219,8 +223,8 @@ interface ThreeDWorkbenchProps {
   onCrossFramePropagateBatch: (direction: "next" | "prev") => void;
   /** v0.15.1 · 把选中框延续到 scene 内指定帧(插值工作流建链)。 */
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
-  /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。 */
-  onCrossFrameInterpolate: (groupId: number, toTaskId: string) => void;
+  /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。v0.21.2 · 按 track_id 认链。 */
+  onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
   /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -563,8 +567,24 @@ export function ThreeDWorkbench({
   // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
   const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
 
-  // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态)。
+  // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态 + 标签)。
   const boxes = useMemo<SceneBox[]>(() => {
+    // 标签内容复用 common.labelContent 的 track 段(点云框是跨帧 track 语义):类别名恒显,
+    // 轨迹号 / 属性按开关。state 后缀点云渲染层无逐帧态,留空。可见性走 labelVisibility 门控。
+    const trackContent = workbenchCommon.labelContent.track;
+    const labelVisibility = workbenchCommon.labelVisibility;
+    // 轨迹号:当前帧内按 track_id 字典序派生 1..N,供 track 段的 id token 显示。
+    const trackNumbers = new Map<string, number>();
+    Array.from(
+      new Set(
+        (annotations ?? [])
+          .filter((a) => !a.is_hidden && a.geometry?.type === "box_3d" && a.track_id)
+          .map((a) => a.track_id as string),
+      ),
+    )
+      .sort((x, y) => x.localeCompare(y))
+      .forEach((tid, i) => trackNumbers.set(tid, i + 1));
+
     const list: SceneBox[] = [];
     for (const a of annotations ?? []) {
       if (a.is_hidden) continue; // 隐藏的框(列表 H 切换)不渲染,与 2D 画布同语义
@@ -577,6 +597,18 @@ export function ThreeDWorkbench({
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
       // 三视图拖拽中:用本地草稿覆盖该框的 PSR(实时预览, 不发请求)。
       const dp = draftPsr && draftPsr.id === a.id ? draftPsr.psr : null;
+      const selected = selectedIdSet.has(a.id);
+      const label = shouldShowLabel(selected, labelVisibility)
+        ? buildTrackLabelText(
+            {
+              className: displayClassName(a.class_name),
+              trackNumber: a.track_id ? trackNumbers.get(a.track_id) : undefined,
+              attributes:
+                (a as { attributes?: Record<string, unknown> | null }).attributes ?? null,
+            },
+            trackContent,
+          )
+        : undefined;
       list.push({
         id: a.id,
         center: dp
@@ -591,11 +623,18 @@ export function ThreeDWorkbench({
           ? [dp.rotation[0], dp.rotation[1], dp.rotation[2]]
           : (g.rotation as [number, number, number]),
         color: classColorForCanvas(a.class_name),
-        selected: selectedIdSet.has(a.id),
+        selected,
+        label,
       });
     }
     return list;
-  }, [annotations, selectedIdSet, draftPsr]);
+  }, [
+    annotations,
+    selectedIdSet,
+    draftPsr,
+    workbenchCommon.labelContent.track,
+    workbenchCommon.labelVisibility,
+  ]);
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
@@ -690,7 +729,7 @@ export function ThreeDWorkbench({
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
       // v0.14.1 · 阻断按住 Shift+→ 的 auto-repeat: 否则连发多个 propagate POST,
-      // 在目标帧造出共享同一新 group_id 的重复 annotation。
+      // 在目标帧造出共享同一新 track_id 的重复 annotation。
       if (e.repeat) return;
       if (!e.shiftKey || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
       const t = e.target as HTMLElement | null;
@@ -1430,7 +1469,7 @@ export function ThreeDWorkbench({
         hidden: !!ann?.is_hidden,
         hasClipboard,
         canPropagate,
-        canInterpolate: ann?.group_id != null,
+        canInterpolate: ann?.track_id != null,
         onPropagateNext: () => onCrossFramePropagate("next"),
         onPropagatePrev: () => onCrossFramePropagate("prev"),
         onPropagateToFrame: () =>
@@ -1618,19 +1657,20 @@ export function ThreeDWorkbench({
     sceneRef.current?.highlightPointMask(selectedPointMask?.point_indices ?? null);
   }, [selectedPointMask?.point_indices, stats]);
 
-  // v0.13.4 · 跨模态高亮集合:选中框 + 同 group_id 成员。3D 主视图仍按 selected 单框高亮,
-  // overlay 按本集合高亮(为未来同组 2D 框成员预留;孤立框 group_id 为空时退化为仅选中本身)。
-  const selectedGroupId = selectedAnn?.group_id ?? null;
+  // v0.13.4 · 跨模态高亮集合:选中框 + 同 track_id 成员。3D 主视图仍按 selected 单框高亮,
+  // overlay 按本集合高亮(为未来同链 2D 框成员预留;孤立框 track_id 为空时退化为仅选中本身)。
+  // v0.21.2 · ADR-0045 · 跨帧链按 track_id 认同一对象 (原 group_id 高位段)。
+  const selectedTrackId = selectedAnn?.track_id ?? null;
   const highlightedIds = useMemo(() => {
     const s = new Set<string>();
     for (const id of selectedIds) s.add(id);
-    if (selectedGroupId != null) {
+    if (selectedTrackId != null) {
       for (const a of annotations ?? []) {
-        if (a.group_id === selectedGroupId) s.add(a.id);
+        if (a.track_id === selectedTrackId) s.add(a.id);
       }
     }
     return s;
-  }, [selectedIds, selectedGroupId, annotations]);
+  }, [selectedIds, selectedTrackId, annotations]);
 
   // v0.15.18 · 框叠加(overlayK)或点云叠加(pointOverlayK)任一开启都要邻帧 + 轨迹;
   // 取两者最大帧数拉取,各自再按需切片(框用 overlayK,点云用 pointOverlayK),互不放大。
@@ -1647,15 +1687,15 @@ export function ThreeDWorkbench({
       ...(neighborsData.next ?? []).slice(0, overlayK),
     ].map((n) => n.task_id);
   }, [overlayK, neighborsData]);
-  // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 group_id 服务端过滤);
-  // scope=all 不依赖选中(group_id=null,回全部框)。
+  // v0.15.17 · 批量端点拉邻帧标注。scope=selected 需选中对象(传 track_id 服务端过滤);
+  // scope=all 不依赖选中(track_id=null,回全部框)。
   const boxAnnotationOverlayEnabled =
-    overlayK > 0 && (overlayScope === "all" || selectedGroupId != null);
-  const overlayGroupId = overlayScope === "all" ? null : selectedGroupId;
+    overlayK > 0 && (overlayScope === "all" || selectedTrackId != null);
+  const overlayTrackId = overlayScope === "all" ? null : selectedTrackId;
   const { byTask: neighborAnnsByTask } = useNeighborAnnotations(
     overlayK > 0 ? taskId : null,
     overlayK,
-    overlayGroupId,
+    overlayTrackId,
     boxAnnotationOverlayEnabled,
   );
   // v0.15.1 · overlay ego 对齐: 邻帧框经 trajectory 变换到当前帧 ego 系再叠加,
@@ -1675,7 +1715,7 @@ export function ThreeDWorkbench({
   const referenceBoxes = useMemo<ReferenceBox[]>(() => {
     if (overlayK <= 0) return [];
     // scope=selected:必须选中对象;scope=all:不选也叠全部邻帧框。
-    if (overlayScope === "selected" && selectedGroupId == null) return [];
+    if (overlayScope === "selected" && selectedTrackId == null) return [];
     const curFrame = neighborsData?.frame_index ?? null;
     const out: ReferenceBox[] = [];
     for (const tid of neighborTaskIds) {
@@ -1701,11 +1741,11 @@ export function ThreeDWorkbench({
             rotation = aligned.rotation;
           }
         }
-        // scope=all 且有选中对象:非选中 group 的邻帧框弱化(dim),突出当前对象轨迹。
+        // scope=all 且有选中对象:非选中 track 的邻帧框弱化(dim),突出当前对象轨迹。
         const dim =
           overlayScope === "all" &&
-          selectedGroupId != null &&
-          a.group_id !== selectedGroupId;
+          selectedTrackId != null &&
+          a.track_id !== selectedTrackId;
         out.push({
           id: `${tid}:${a.id}`,
           center,
@@ -1720,7 +1760,7 @@ export function ThreeDWorkbench({
   }, [
     overlayK,
     overlayScope,
-    selectedGroupId,
+    selectedTrackId,
     neighborTaskIds,
     neighborAnnsByTask,
     neighborsData,
@@ -1742,7 +1782,7 @@ export function ThreeDWorkbench({
     ].map((n) => ({ taskId: n.task_id, frameIndex: n.frame_index }));
   }, [pointOverlayActive, neighborsData, pointOverlayK]);
   // v0.15.23 · §C.8-A align 模式:把落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标
-  // 补偿,真·消除拖影)。需邻帧「全部」框(按 group_id 与当前帧框配对),独立于框叠加
+  // 补偿,真·消除拖影)。需邻帧「全部」框(按 track_id 与当前帧框配对),独立于框叠加
   // (overlayK)且 scope 恒为 all;仅 align 时拉取,避免无谓请求。
   const alignActive = pointOverlayActive && neighborPointCull === "align";
   const { byTask: alignAnnsByTask } = useNeighborAnnotations(
@@ -1751,12 +1791,12 @@ export function ThreeDWorkbench({
     null,
     alignActive,
   );
-  // 当前帧 box:group_id → PSR(逐目标搬运的配对目标)。
-  const currentBoxesByGroup = useMemo<Map<number, AlignPsr>>(() => {
-    const m = new Map<number, AlignPsr>();
+  // 当前帧 box:track_id → PSR(逐目标搬运的配对目标)。
+  const currentBoxesByTrack = useMemo<Map<string, AlignPsr>>(() => {
+    const m = new Map<string, AlignPsr>();
     if (!alignActive) return m;
     for (const a of annotations ?? []) {
-      if (a.group_id == null) continue;
+      if (a.track_id == null) continue;
       const g = a.geometry as {
         type?: string;
         center?: number[];
@@ -1764,7 +1804,7 @@ export function ThreeDWorkbench({
         rotation?: number[];
       };
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
-      m.set(a.group_id, {
+      m.set(a.track_id, {
         center: g.center as [number, number, number],
         size: g.size.map((v) => Math.abs(v)) as [number, number, number],
         rotation: g.rotation as [number, number, number],
@@ -1772,14 +1812,14 @@ export function ThreeDWorkbench({
     }
     return m;
   }, [alignActive, annotations]);
-  // 邻帧 box(原始邻帧 ego 系 PSR + group_id),按 task 分组;不预对齐(搬运矩阵自带 ego 补偿)。
+  // 邻帧 box(原始邻帧 ego 系 PSR + track_id),按 task 分组;不预对齐(搬运矩阵自带 ego 补偿)。
   const neighborBoxesByTask = useMemo<Map<string, AlignNeighborBox[]>>(() => {
     const m = new Map<string, AlignNeighborBox[]>();
     if (!alignActive) return m;
     for (const [tid, anns] of Object.entries(alignAnnsByTask)) {
       const list: AlignNeighborBox[] = [];
       for (const a of anns) {
-        if (a.group_id == null) continue;
+        if (a.track_id == null) continue;
         const g = a.geometry as {
           type?: string;
           center?: number[];
@@ -1788,7 +1828,7 @@ export function ThreeDWorkbench({
         };
         if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
         list.push({
-          groupId: a.group_id,
+          trackId: a.track_id,
           center: g.center as [number, number, number],
           size: g.size.map((v) => Math.abs(v)) as [number, number, number],
           rotation: g.rotation as [number, number, number],
@@ -1830,7 +1870,7 @@ export function ThreeDWorkbench({
     // v0.15.23 · align:落在邻帧 box 内的点按目标位姿搬到当前帧位置(逐目标补偿,无拖影);
     //   搬运后点已是当前帧 ego 系坐标,渲染走 identity 矩阵(其余背景点仍 ego 对齐)。
     const cullOn = neighborPointCull === "cull" && boxes.length > 0;
-    const alignOn = neighborPointCull === "align" && currentBoxesByGroup.size > 0;
+    const alignOn = neighborPointCull === "align" && currentBoxesByTrack.size > 0;
     let culledTotal = 0;
     let movedTotal = 0;
     const frames = neighborPcds
@@ -1844,7 +1884,7 @@ export function ThreeDWorkbench({
             positions,
             matrix,
             neighborBoxesByTask.get(pcd.taskId) ?? [],
-            currentBoxesByGroup,
+            currentBoxesByTrack,
           );
           positions = res.aligned;
           movedTotal += res.movedCount;
@@ -1873,7 +1913,7 @@ export function ThreeDWorkbench({
     neighborsData,
     neighborPointCull,
     boxes,
-    currentBoxesByGroup,
+    currentBoxesByTrack,
     neighborBoxesByTask,
   ]);
 
@@ -2112,8 +2152,8 @@ export function ThreeDWorkbench({
             onConfirm={({ targetTaskId, targetFrame }) => {
               if (framePicker.mode === "propagate") {
                 onCrossFramePropagateToTask(targetTaskId, targetFrame);
-              } else if (selectedGroupId != null) {
-                onCrossFrameInterpolate(selectedGroupId, targetTaskId);
+              } else if (selectedTrackId != null) {
+                onCrossFrameInterpolate(selectedTrackId, targetTaskId);
               }
               setFramePicker(null);
             }}

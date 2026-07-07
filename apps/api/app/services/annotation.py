@@ -4,7 +4,7 @@ import copy
 import logging
 import uuid
 from datetime import datetime
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -401,11 +401,11 @@ class AnnotationService:
     async def list_by_tasks(
         self,
         task_ids: list[uuid.UUID],
-        group_id: int | None = None,
+        track_id: str | None = None,
     ) -> list[Annotation]:
         """v0.15.17 · 一次性拉多个 task 的 active 标注(邻帧框叠加批量端点用)。
 
-        group_id 非空 → 服务端只回该 group(scope=selected);
+        v0.21.2 · ADR-0045 · track_id 非空 → 服务端只回该 track(scope=selected);
         省略 → 回全部(scope=all)。空 task_ids 直接回 []。
         """
         if not task_ids:
@@ -415,8 +415,8 @@ class AnnotationService:
             Annotation.is_active.is_(True),
             Annotation.was_cancelled.is_(False),
         )
-        if group_id is not None:
-            q = q.where(Annotation.group_id == group_id)
+        if track_id is not None:
+            q = q.where(Annotation.track_id == track_id)
         q = q.order_by(Annotation.task_id, Annotation.created_at)
         result = await self.db.execute(q)
         return list(result.scalars().all())
@@ -487,8 +487,6 @@ class AnnotationService:
         z_order: int | None = None,
         is_locked: bool | None = None,
         is_hidden: bool | None = None,
-        group_id: int | None = None,
-        group_id_explicit_clear: bool = False,
     ) -> list[Annotation]:
         """I12 · 批量 patch N 个标注. 任一标注被锁/已软删则整体 422.
 
@@ -517,11 +515,7 @@ class AnnotationService:
                     detail=f"annotation {r.id} is not active",
                 )
             if r.is_locked and (
-                class_name is not None
-                or attributes is not None
-                or z_order is not None
-                or group_id is not None
-                or group_id_explicit_clear
+                class_name is not None or attributes is not None or z_order is not None
             ):
                 raise HTTPException(
                     status_code=422,
@@ -550,61 +544,9 @@ class AnnotationService:
                 r.is_locked = is_locked
             if is_hidden is not None:
                 r.is_hidden = is_hidden
-            if group_id is not None:
-                r.group_id = group_id
-            elif group_id_explicit_clear:
-                r.group_id = None
             r.version += 1
         await self.db.flush()
         return rows
-
-    async def group(
-        self,
-        ids: list[uuid.UUID],
-        task_id: uuid.UUID,
-    ) -> tuple[int, list[Annotation]]:
-        """I12 · 把 ids 合到一个新 group; 序号从 tasks.next_group_seq 自增取.
-
-        ids 中可能已含部分有 group_id 的成员; 此实现"覆盖式": 全部改写到新序号,
-        旧 group 残留的成员保留旧 group_id (不级联清理, 避免误伤其它框).
-        """
-        from fastapi import HTTPException
-
-        if len(ids) < 2:
-            raise HTTPException(
-                status_code=422,
-                detail="grouping requires at least 2 annotations",
-            )
-        # 校验 ids 都属于该 task.
-        rows = (
-            (await self.db.execute(select(Annotation).where(Annotation.id.in_(ids))))
-            .scalars()
-            .all()
-        )
-        if len(rows) != len(ids):
-            raise HTTPException(status_code=404, detail="some annotations not found")
-        for r in rows:
-            if r.task_id != task_id:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"annotation {r.id} does not belong to task {task_id}",
-                )
-            if not r.is_active or r.is_locked:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"annotation {r.id} not editable (inactive/locked)",
-                )
-        # 自增 task.next_group_seq, 拿到新 group_id (单 UPDATE ... RETURNING 原子).
-        task = await self.db.get(Task, task_id)
-        if task is None:
-            raise HTTPException(status_code=404, detail=f"task {task_id} not found")
-        task.next_group_seq += 1
-        new_group_id = task.next_group_seq
-        for r in rows:
-            r.group_id = new_group_id
-            r.version += 1
-        await self.db.flush()
-        return new_group_id, rows
 
     async def _resolve_axis_convention(self, task: Task) -> str | None:
         """v0.14.1 · 取 task 主 dataset_item 所在 dataset 的 axis_convention。
@@ -647,8 +589,8 @@ class AnnotationService:
 
         语义:
         - 仅复制静态几何(PROPAGATABLE_GEOMETRY_TYPES); video_* / point_mask_3d 拒。
-        - 跨帧链共享 group_id: 源无 group_id 时从全局序列 cross_frame_group_seq
-          分配一个(高位起始, 与 per-task next_group_seq 永不冲突)并写回源, 再复用。
+        - 跨帧链共享 track_id (ADR-0045): 源无 track_id 时 _new_track_id() 分配并
+          写回源, 再复用; 不再写 group_id (跨帧语义已全切 track_id)。
         - box_3d 的 convention_at_create 取**目标** dataset 的 axis_convention:
           DB 内 PSR 永远是 ISO 系字节, 原值复制即对齐世界坐标; convention_at_create
           写目标值仅为让前端 banner 不误报(v0.13.11 安全网)。
@@ -761,7 +703,7 @@ class AnnotationService:
         user_id: uuid.UUID,
         override_psr: dict | None = None,
     ) -> tuple[Annotation, bool]:
-        """单框 propagate 核心: 校验几何类型、延续 group_id、box_3d 运动补偿、
+        """单框 propagate 核心: 校验几何类型、延续 track_id、box_3d 运动补偿、
         建新 annotation。
 
         使用 ctx 中整批预解析好的 scene/frame/axis/pose,不再逐框解析。
@@ -780,14 +722,13 @@ class AnnotationService:
                 detail=f"geometry type '{geom_type}' 不支持跨帧 propagate",
             )
 
-        # 共享 group_id: 源无则分配并写回(每框各自一条独立链,故 nextval 必须逐框)。
-        group_id = src.group_id
-        if group_id is None:
-            seq_row = await self.db.execute(
-                text("SELECT nextval('cross_frame_group_seq')")
-            )
-            group_id = int(seq_row.scalar_one())
-            src.group_id = group_id
+        # 共享跨帧标识 track_id: 源无则分配并写回(每框各自一条独立链)。
+        # v0.21.2 · ADR-0045 · Phase 6 · track_id 为唯一权威跨帧标识, 不再 dual-write
+        # group_id (readers 已全切 track_id); cross_frame_group_seq 停写 (v0.21.3 DROP)。
+        track_id = src.track_id
+        if track_id is None:
+            track_id = _new_track_id()
+            src.track_id = track_id
             src.version += 1
 
         geometry = copy.deepcopy(src.geometry or {})
@@ -826,7 +767,7 @@ class AnnotationService:
             tool_unit_id=src.tool_unit_id,
             class_name=src.class_name,
             geometry=geometry,
-            group_id=group_id,
+            track_id=track_id,
             attributes=copy.deepcopy(src.attributes or {}),
         )
         self.db.add(new_annotation)
@@ -926,17 +867,20 @@ class AnnotationService:
     async def interpolate_range(
         self,
         *,
-        group_id: int,
+        track_id: str,
         from_task_id: uuid.UUID,
         to_task_id: uuid.UUID,
         user_id: uuid.UUID,
         assert_task_editable=None,
         assert_task_visible=None,
     ) -> tuple[list[Annotation], bool, list[int]]:
-        """v0.15.1 · 关键帧区间插值: 同 group_id 链上帧 i 与帧 k 各有一框,
+        """v0.15.1 · 关键帧区间插值: 同 track_id 链上帧 i 与帧 k 各有一框,
         给区间 (i,k) 内每个有 task 的中间帧生成插值框(source="interpolated")。
 
-        - 两端框: 各自 task 上该 group 的唯一 active box_3d(0 或 >1 → 422)。
+        v0.21.2 · ADR-0045 · 跨帧链按 track_id 查询(原按 group_id); 新插值框
+        dual-write track_id + 端点框的 group_id(readers 尚未全切, 过渡期兼容)。
+
+        - 两端框: 各自 task 上该 track 的唯一 active box_3d(0 或 >1 → 422)。
         - 几何: 世界系线性内插中心 + slerp 朝向 + 线性尺寸,投回各帧 ego 系;
           任一帧缺 pose → 纯 ego 系插值(motion_compensated=False)。
         - 幂等: 中间帧已有该 group 的 active 标注 → 跳过(记入 skipped_frames),
@@ -998,7 +942,7 @@ class AnnotationService:
                     await self.db.execute(
                         select(Annotation)
                         .where(Annotation.task_id == task_id)
-                        .where(Annotation.group_id == group_id)
+                        .where(Annotation.track_id == track_id)
                         .where(Annotation.is_active.is_(True))
                         .where(Annotation.geometry["type"].astext == "box_3d")
                     )
@@ -1010,7 +954,7 @@ class AnnotationService:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"task {task_id} 上 group {group_id} 的 active box_3d "
+                        f"task {task_id} 上 track {track_id} 的 active box_3d "
                         f"数量为 {len(rows)},插值要求恰好 1 个"
                     ),
                 )
@@ -1064,12 +1008,12 @@ class AnnotationService:
         skipped_frames: list[int] = []
         motion_compensated = True
         for f, mid_task in mid_tasks.items():
-            # 幂等: 该帧已有同 group 的 active 标注 → 跳过
+            # 幂等: 该帧已有同 track 的 active 标注 → 跳过
             existing = await self.db.scalar(
                 select(func.count())
                 .select_from(Annotation)
                 .where(Annotation.task_id == mid_task.id)
-                .where(Annotation.group_id == group_id)
+                .where(Annotation.track_id == track_id)
                 .where(Annotation.is_active.is_(True))
             )
             if existing:
@@ -1100,7 +1044,7 @@ class AnnotationService:
                 tool_unit_id=box_from.tool_unit_id,
                 class_name=box_from.class_name,
                 geometry=geometry,
-                group_id=group_id,
+                track_id=track_id,
                 attributes=copy.deepcopy(box_from.attributes or {}),
             )
             self.db.add(ann)
@@ -1110,56 +1054,6 @@ class AnnotationService:
         for ann in created:
             await self._update_task_stats(ann.task_id)
         return created, motion_compensated and bool(created), skipped_frames
-
-    async def ungroup(
-        self,
-        ids: list[uuid.UUID],
-    ) -> tuple[list[uuid.UUID], list[uuid.UUID]]:
-        """I12 · 把 ids 的 group_id 置 null;
-        若某 group 在此操作后仅剩 1 个成员, 该成员也自动 ungroup.
-
-        返回 (主清理 ids, 自动清理的 orphan ids).
-        """
-        from fastapi import HTTPException
-
-        if not ids:
-            return [], []
-        rows = (
-            (await self.db.execute(select(Annotation).where(Annotation.id.in_(ids))))
-            .scalars()
-            .all()
-        )
-        if len(rows) != len(ids):
-            raise HTTPException(status_code=404, detail="some annotations not found")
-        affected_groups: dict[tuple[uuid.UUID, int], None] = {}
-        for r in rows:
-            if r.group_id is not None:
-                affected_groups[(r.task_id, r.group_id)] = None
-            r.group_id = None
-            r.version += 1
-        # 检查每个被影响 group 的剩余成员; 仅剩 1 个时自动 ungroup.
-        orphans: list[uuid.UUID] = []
-        for tid, gid in affected_groups.keys():
-            remaining = (
-                (
-                    await self.db.execute(
-                        select(Annotation).where(
-                            Annotation.task_id == tid,
-                            Annotation.group_id == gid,
-                            Annotation.is_active == True,  # noqa: E712
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            if len(remaining) == 1:
-                orphan = remaining[0]
-                orphan.group_id = None
-                orphan.version += 1
-                orphans.append(orphan.id)
-        await self.db.flush()
-        return [r.id for r in rows], orphans
 
     async def update(
         self,

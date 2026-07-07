@@ -135,12 +135,17 @@ async def test_patch_workbench_layout_deep_merges_new_collapse_flags(
     assert layout["attrPanelCollapsed"] is True
     assert layout["aiSectionCollapsed"] is True
 
-    # 3) 单独提交 manualSectionCollapsed + discussionCollapsed - 前两键仍在。
+    # 3) 单独提交 manualSectionCollapsed + trackSectionCollapsed + discussionCollapsed
+    #    - 前两键仍在。
     resp = await httpx_client.patch(
         PREFS_URL,
         json={
             "workbench": {
-                "layout": {"manualSectionCollapsed": True, "discussionCollapsed": True}
+                "layout": {
+                    "manualSectionCollapsed": True,
+                    "trackSectionCollapsed": True,
+                    "discussionCollapsed": True,
+                }
             }
         },
         headers=_bearer(token),
@@ -150,6 +155,7 @@ async def test_patch_workbench_layout_deep_merges_new_collapse_flags(
     assert layout["attrPanelCollapsed"] is True
     assert layout["aiSectionCollapsed"] is True
     assert layout["manualSectionCollapsed"] is True
+    assert layout["trackSectionCollapsed"] is True
     assert layout["discussionCollapsed"] is True
 
 
@@ -459,6 +465,7 @@ async def test_patch_video_subtree_fields(httpx_client, annotator):
         "defaultPlaybackRate": 0.5,
         "largeFrameStep": "grid",
         "autoFitOnResize": True,
+        "trackContinueAutoAdvance": False,
     }
 
 

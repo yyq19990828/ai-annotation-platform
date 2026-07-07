@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildPipelineRunPayload,
   missingBackendIdsForStages,
+  selectProjectPipelineStages,
 } from "../useWorkbenchShellModel.helpers";
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 
@@ -78,5 +79,36 @@ describe("buildPipelineRunPayload", () => {
     // 空集合 / 空 stages 守卫。
     expect(missingBackendIdsForStages([], new Set())).toEqual([]);
     expect(missingBackendIdsForStages(STAGES, null)).toEqual([]);
+  });
+
+  it("selectProjectPipelineStages: 默认命名编排优先于旧 project.preannotate_pipeline", () => {
+    const legacy: PipelineStagePayload[] = [
+      { stage: 0, ml_backend_id: "legacy", model_id: "legacy-detect" },
+    ];
+    const named: PipelineStagePayload[] = [
+      { stage: 0, ml_backend_id: "named", model_id: "named-detect" },
+    ];
+
+    expect(
+      selectProjectPipelineStages(
+        [
+          { is_default: false, stages: legacy },
+          { is_default: true, stages: named },
+        ],
+        legacy,
+      ),
+    ).toBe(named);
+  });
+
+  it("selectProjectPipelineStages: 无默认命名编排时回落旧字段", () => {
+    const legacy: PipelineStagePayload[] = [
+      { stage: 0, ml_backend_id: "legacy", model_id: "legacy-detect" },
+    ];
+
+    expect(
+      selectProjectPipelineStages([{ is_default: false, stages: STAGES }], legacy),
+    ).toBe(legacy);
+    expect(selectProjectPipelineStages([], legacy)).toBe(legacy);
+    expect(selectProjectPipelineStages(undefined, null)).toBeNull();
   });
 });

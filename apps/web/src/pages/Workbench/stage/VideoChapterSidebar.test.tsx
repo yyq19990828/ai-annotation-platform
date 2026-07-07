@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { VideoChapter } from "@/api/videoChapters";
@@ -67,5 +67,65 @@ describe("VideoChapterSidebar frame_step / source display", () => {
     chaptersRef.current = [chapter({ id: "nostep", frame_step: null })];
     const { queryByText } = renderSidebar();
     expect(queryByText(/步长/)).toBeNull();
+  });
+});
+
+describe("VideoChapterSidebar timeline draft (v0.21.13 WS2)", () => {
+  it("shows the arming hint when timeline draft is armed", () => {
+    chaptersRef.current = [];
+    const { getByTestId } = render(
+      <VideoChapterSidebar
+        datasetItemId="item-1"
+        frameIndex={0}
+        maxFrame={100}
+        canEdit
+        timelineDraftArmed
+        onToggleTimelineDraft={() => {}}
+      />,
+    );
+    expect(getByTestId("video-chapter-draft-hint")).toBeInTheDocument();
+  });
+
+  it("reports row hover and highlights the controlled hovered chapter", () => {
+    chaptersRef.current = [chapter({ id: "ch1", title: "A" })];
+    const onHoverChapter = vi.fn();
+    const { getByTestId } = render(
+      <VideoChapterSidebar
+        datasetItemId="item-1"
+        frameIndex={50}
+        maxFrame={100}
+        canEdit={false}
+        hoveredChapterId="ch1"
+        onHoverChapter={onHoverChapter}
+      />,
+    );
+    const row = getByTestId("video-chapter-row");
+    // 受控 hover → data-hovered。
+    expect(row).toHaveAttribute("data-hovered", "true");
+    fireEvent.mouseEnter(row);
+    expect(onHoverChapter).toHaveBeenCalledWith("ch1");
+    fireEvent.mouseLeave(row);
+    expect(onHoverChapter).toHaveBeenCalledWith(null);
+  });
+
+  it("opens the create form prefilled from a timeline brush and consumes the draft once", () => {
+    chaptersRef.current = [];
+    const onConsumeDraftRange = vi.fn();
+    const { getByTestId, getByDisplayValue } = render(
+      <VideoChapterSidebar
+        datasetItemId="item-1"
+        frameIndex={0}
+        maxFrame={100}
+        canEdit
+        draftRange={{ startFrame: 12, endFrame: 34 }}
+        onConsumeDraftRange={onConsumeDraftRange}
+      />,
+    );
+    // 表单打开并预填 start/end (数字输入框以 value 呈现)。
+    expect(getByTestId("video-chapter-form")).toBeInTheDocument();
+    expect(getByDisplayValue("12")).toBeInTheDocument();
+    expect(getByDisplayValue("34")).toBeInTheDocument();
+    // 消费一次, 通知 shell 清空 draftRange。
+    expect(onConsumeDraftRange).toHaveBeenCalledTimes(1);
   });
 });

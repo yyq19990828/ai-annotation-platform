@@ -275,7 +275,7 @@ histogram_quantile(0.95,
 
 ### 6.1 yolo-backend(8003 / `gpu-yolo`)
 
-ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `classification`)。协议 v2 多模型目录(详 [ADR-0036](../adr/0036-ml-backend-capability-protocol-v2-multi-model))暴露所有上百权重,前端模型市场按 `task` × `series` × `size` 分组渲染。权重经 `yolo_checkpoints` 卷持久化。
+ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `classification`)。协议 v2 多模型目录(详 [ADR-0036](../adr/archive/0036-ml-backend-capability-protocol-v2-multi-model))暴露所有上百权重,前端模型市场按 `task` × `series` × `size` 分组渲染。权重经 `yolo_checkpoints` 卷持久化。
 
 ### 6.2 onnxtools-backend(8004 / `gpu-onnxtools`)
 
@@ -293,7 +293,7 @@ ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `
 | `vehicle-attr-classify` | `classification` | `atom` | 独立 `VehicleAttributeORT` | 多阶段编排**下游**(整图当一辆车,跳过 rtdetr,写车型 / 颜色) |
 | `vehicle-attr` | `detection` | `composite` | `VehicleAttributePipeline`(内部串 detect + classify) | 单阶段一锅端(开箱即用,内部编排复合) |
 
-`composition` 由能力声明协议(详 [ADR 0043 — 多阶段预标注编排](../adr/0043-staged-preannotation-pipeline))引入:`atom` 才能进**编排下游 stage** 选择器(只组合 atom,避免重复编排);`composite` 在单阶段配置可直接选用。模型市场目录 ModelCard / 列表视图均补「原子 / 内置流程」徽标。
+`composition` 由能力声明协议(详 [ADR 0043 — 多阶段预标注编排](../adr/archive/0043-staged-preannotation-pipeline))引入:`atom` 才能进**编排下游 stage** 选择器(只组合 atom,避免重复编排);`composite` 在单阶段配置可直接选用。模型市场目录 ModelCard / 列表视图均补「原子 / 内置流程」徽标。
 
 **`/unload` + idle-unload**:`POST /unload` 释放全部已加载句柄(模型市场卸载按钮直接生效,UI 零改动);末次推理后空闲 `ONNXTOOLS_IDLE_UNLOAD_SECONDS`(默认 600s)自动卸载。按 model 句柄粒度释放显存——原子化让 detect-only 工作流不再背 va 分类器显存。与 yolo 体验对齐。
 

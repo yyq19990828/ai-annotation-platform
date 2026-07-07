@@ -37,6 +37,8 @@ celery_app = Celery(
         "app.workers.prediction_partition",
         # v0.11.0 · ADR-0027 双写一致性对账（A 组安全网）
         "app.workers.feedback_reconcile",
+        # v0.21.7 · 单帧分支批量逐帧预标注 fan-out (段任务 + chord 收尾)
+        "app.workers.frame_preannotate",
     ],
 )
 
@@ -55,6 +57,12 @@ celery_app.conf.update(
     task_default_queue="default",
     task_routes={
         "app.workers.tasks.batch_predict": {"queue": "ml"},
+        # v0.21.7 · 逐帧段任务跑 GPU predict → ml 队列; finalize 轻量走 default。
+        "app.workers.frame_preannotate.predict_video_segment": {"queue": "ml"},
+        # v0.21.8 · 两阶段: 抽帧 (下载+ffmpeg) 走 media 队列 (跨视频并行, 有 ffmpeg);
+        #   衔接回调轻量派 chord 走 default。
+        "app.workers.frame_preannotate.extract_frames_task": {"queue": "media"},
+        "app.workers.frame_preannotate.launch_predict_phase": {"queue": "default"},
         "app.workers.predictions_retry.retry_failed_prediction": {"queue": "ml"},
         "app.workers.media.generate_thumbnail": {"queue": "media"},
         "app.workers.media.generate_video_metadata": {"queue": "media"},

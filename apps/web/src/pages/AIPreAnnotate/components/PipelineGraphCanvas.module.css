@@ -33,6 +33,7 @@
 
 /* 节点卡: 卡面 + 圆角描边; 选中 ring; 冲突 danger 描边。 */
 .node {
+  position: relative; /* 供状态圆点绝对定位到右上角 */
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -109,14 +110,17 @@
 .nodeHeader {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* 徽标过多 (输入节点: 源类型 + 执行单位) 时换行, 不挤压标题 */
   gap: 6px;
+  row-gap: 4px;
+  padding-right: 12px; /* 给右上角状态圆点留位, 避免首行内容与其相撞 */
 }
 .nodeIcon {
   color: var(--sc-muted-foreground);
 }
 .nodeName {
-  flex: 1;
   font-weight: 600;
+  white-space: nowrap; /* CJK 标题不再被挤成逐字竖排 */
 }
 .nodeDetail {
   color: var(--sc-muted-foreground);
@@ -157,8 +161,11 @@
   background: var(--sc-muted);
 }
 
-/* 运行态圆点。 */
+/* 运行态圆点 (绝对定位到节点右上角, 不再靠 nodeName flex 撑开)。 */
 .dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
   width: 7px;
   height: 7px;
   border-radius: 999px;

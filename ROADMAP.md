@@ -12,13 +12,13 @@
 
 ### 计划中
 
-- **ML 能力字段消费后续序列（v0.19.3 → v0.21.0）**：v0.19.2「字段消费」衍生的优化序列，已细化到 `docs/plans/`，按版本顺延：
-  - [v0.21.0 全局编排选择器](../docs/plans/2026-06-29-v0.21.0-global-pipeline-selector.md)（WS0 正主消费方 · 跨项目命名编排，依赖 `project_pipelines` 表）
+- **[sam3_video 文本驱动追踪接入（v0.21.18）](../docs/plans/2026-07-05-v0.21.18-sam3-video-text-tracking.md)**：视频 epic Phase 5 前哨。把纯占位的 `sam3_video` 选项接成真能力——协议 text 字段贯通 + 前端 text UI + 能力协商区分 seed-bbox/text-driven tracker；**跨前后端 epic**，sam3-backend 现无任何 video 实现（新建 video predictor + 显存池为 gating 依赖单列 PR）。与 v0.21.19 在「保留 mask」上 AB 耦合。
+- **[多几何 track（v0.21.19）](../docs/plans/2026-07-05-v0.21.19-multi-geometry-track.md)**：视频 epic 延后项 2.9（**P1，体量大，多 PR/多版本**）。track 几何从 bbox 硬编码扩 polygon/polyline/mask——扩 `VideoTrackGeometry`（判别字段是 `type` 非 `kind`）、周长/弧长参数化插值、多几何渲染、seg 导出。**polygon track 先行**（复用图片 polygon schema + SAM2 已算 mask），真·mask 栅格 track + DAVIS 导出（平台零占位）单独立项。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
-- **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 待续）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
-  - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）——扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap，DAVIS mask 导出（Phase 4.5）依赖此项。
+- **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic。进度：Phase 1-4 主体已落（帧采样 / 轨迹工具 2.1–2.8 / `sam2_video` backend + 能力协商 / 视频导出 + 逐帧 YOLO），Phase 5-6 待开工（sam3_video 文本驱动追踪已细化为 [v0.21.18 计划](../docs/plans/2026-07-05-v0.21.18-sam3-video-text-tracking.md)——现 `sam3_video` 前端选项/adapter 槽位纯占位、sam3-backend 无任何 video 实现）。衍生 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 三阶段已落地归档。
+  - **延后项**：**2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）→ **已细化为 [v0.21.19 计划](../docs/plans/2026-07-05-v0.21.19-multi-geometry-track.md)**——扩 `VideoTrackGeometry.type`（判别字段是 `type` 非 `kind`；当前只 `video_track_bbox`），按周长/长度参数化插值（现插值 bbox-only）；polygon track 先行（复用图片 polygon schema + SAM2 已算 mask），真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建，非「已有待接」）单独立项。
 
 
 ---
@@ -27,9 +27,9 @@
 
 > 优先级表（§ 末尾）按价值/成本排序；本节按**触发条件**重组，一眼看清"现在能做什么 / 等什么再做"。
 
-### 现在可做（无前置依赖，作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线）
+### 现在可做（无前置依赖，纯前端随手优化，可作为 `chip:maintenance` 穿插推进）
 
-- 当前无与 `WorkbenchShell` 行数直接绑定的 maintenance 条目：v0.10.39 已收口 `WorkbenchStageHostProps` 嵌套重构与 `useWorkbenchShellModel` 装配 hook，后续 open 项回到优先级表的测试补强与业务驱动功能项。
+- **前端随手优化批剩余项**（`ai.*` preference 去重已落 v0.21.17）：`ai.*` 四偏好 hook 首屏并发 GET 已收敛到共享 react-query。**仍可做**：① `useWorkbenchConfig` 首屏裸 fetch 同一 `GET /me/preferences`（实测每次加载 6 次，是首屏该端点冗余的真正大头，需单独评估其 layout 持久化副作用）；② PipelineGraphCanvas 运行态每 tick 无谓 `setNodes` re-render 微优化。详见 §C.1。均非 bug。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile）：极大图 > 50MP 才必要，等真有此规模图片触发再做。
@@ -46,7 +46,7 @@
 ## A · 代码观察到的硬占位 / 残留 mock
 
 ### 项目模块
-- **3D / 视频多模态工作台**（v0.10.17 项目"类型"已收敛到「image / video / lidar 数据载体 + 工具集多选」，详见 [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)）:
+- **3D / 视频多模态工作台**（v0.10.17 项目"类型"已收敛到「image / video / lidar 数据载体 + 工具集多选」，详见 [ADR-0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)）:
   - **lidar 3D 点云工作台已落地**（v0.13.2–v0.15.21，原 P0「`lidar_box_3d` 工具实现」已完成）：真实 Three.js `PointCloudScene` + `lidar_box_3d` 7-DoF 框标注 + 后端 `point-cloud/manifest` + KITTI/nuScenes 导出 + ego pose 跨帧插值/批量 propagate + 邻帧框/点云叠加 + PSR 面板 + 3D 右键菜单/帧选择器。`lidar` 数据类型入口已开放（`toolUnits.ts` `available:true`）。剩余优化见 §C.8（拖影彻底消除）与下方 3D 延伸项。
   - `video-mm` / `mm` 多模态工作台未实现；视频侧能力详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
   - **3D 延伸项**：① **点云 + 图像联合标注（2D⇄3D 互标）** → 抽为独立 epic [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)：读方向(3D 框投影到相机图)已于 v0.13.4 完成，写方向(相机图画框种 3D 框 / 投影手柄微调)Phase 1 已落 v0.15.24，Phase 2-3 待开工；② 多 lidar 融合标注（按反馈触发）。
@@ -61,7 +61,7 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
-- **批次 hard pause（严格暂停语义）**（**P3**，源自 [ADR-0008](docs/adr/0008-batch-admin-locked-status.md)）：v0.9.15 `admin_locked` 是 **soft hold**（冻结自动推进 + 阻断 `/tasks/next` 派单），不保证锁后只读（`GET /tasks` 仍可见、写接口放行）。硬只读需收敛任务可见性查询 + task lock 归属校验 + 写门禁，是更重的设计题。触发：客户反馈 soft hold 不够。
+- **批次 hard pause（严格暂停语义）**（**P3**，源自 [ADR-0008](docs/adr/archive/0008-batch-admin-locked-status.md)）：v0.9.15 `admin_locked` 是 **soft hold**（冻结自动推进 + 阻断 `/tasks/next` 派单），不保证锁后只读（`GET /tasks` 仍可见、写接口放行）。硬只读需收敛任务可见性查询 + task lock 归属校验 + 写门禁，是更重的设计题。触发：客户反馈 soft hold 不够。
 
 ### AI / 模型
 - **模型市场扩展 — 二期剩余 defer 项**：加权 AB 路由（按 task 自动分流打标，需路由配置 + 结果打标协议）、同输入双变体并排对比（工作台级独立 epic）、带 token 的观测容器（当前 observe URL 假定免鉴权）。触发条件按客户驱动。
@@ -71,9 +71,12 @@
   - **`predictions_import` 审计 detail 专项**（**P3**）：在 `app/services/audit.py` 加 `predictions_import_detail()` helper（补 task / model_version / hash 取证字段）。触发：审计期反馈 detail 不足。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
-- **Python SDK 暴露全局注册表 CRUD / 项目启用管理端点**（**P3**，按需触发）：v0.19.0 把 ML backend 上提为全局注册表（[ADR-0044](docs/adr/0044-global-ml-backend-registry-and-project-enablement.md)），v0.19.1 已让 SDK 只读路径（`MLBackends.list/get`）与之对齐（见 plan [`docs/plans/2026-06-29-v0.19.1-python-sdk-global-registry-alignment.md`](docs/plans/2026-06-29-v0.19.1-python-sdk-global-registry-alignment.md)），但**写路径仍只在 Web 端**：超管全局注册 CRUD（`POST/PUT/DELETE /admin/ml-integrations/registry` + `POST .../registry/{id}/health`）、项目启用清单（`GET /projects/{id}/ml-backends/available`、`PUT .../{rid}/enablement`）。封装为 SDK 客户端方法 + `aap` CLI 子命令，需同步扩 `packages/python-sdk/src/ai_annotation/_http.py` 端点白名单并过 `test_openapi_contract` 对账。属 **SDK feature（非 patch）**，对应 SDK minor。**触发**：出现脚本化批量注册 / 启用 backend 的诉求（CI 部署、多环境批量配置）。
-- **项目编排多条命名持久化（`project_pipelines` 表）**（**P3**，按需触发）：v0.18.x「项目编排」落地走**方案 A** —— `Project.preannotate_pipeline` 单列 JSONB 存「一项目一条当前编排」，供「当前题 AI」popover 的「运行当前题（按项目编排）」读取（见 plan [`docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md`](docs/plans/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md)，依赖 [多阶段预标注编排 epic](ROADMAP/2026-06-23-staged-preannotation-pipeline-roadmap.md)）。当出现「一个项目要保存多条命名编排并切换」（如『仅检测』『检测+车辆属性』『检测+OCR』并存）需求时，再升级为独立 `project_pipelines(id, project_id, name, stages JSONB, is_default, …)` 表 + 编排选择 UI。**触发**：单项目多命名编排诉求 ≥ 2 例，或跨项目编排复用/共享需求出现。不要因「灵活性」提前建表（YAGNI，对照决策底线表「标注配置」行）。
-- **`batchable` 驱动源阶段分块预标（WS3）**（**P3**，先压测再立项）：从 v0.19.2「ML 能力字段消费」计划[出范围存档](docs/plans/2026-06-26-v0.19.2-ml-capability-field-consumption.md#ws3--batchable-驱动源阶段分块不进-v0192存档待立项)。把 `_run_batch`（`apps/api/app/workers/tasks.py:801`）源阶段「逐图循环」改为 `batchable=true` 时按块聚合发 `predict(tasks=[...])`。**收益有限**：四个 backend 服务端都是 `for t in req.tasks` 顺序循环、不堆 GPU batch，故推理总时长一秒不省，3a 只摊销 per-call overhead（HTTP 往返 / context 校验 / Celery↔backend 延迟，毛估 5–15% wall-clock）；却要改动核心批量执行路径的失败 / 进度 / 取消三处粒度（逐图→逐块），改坏会静默吞结果。**触发**：批量吞吐成为实测痛点；且应与 3b（真 GPU 批量，需 backend 改动 + 单独 ADR + 逐 backend 计划）合并立项算总账，避免先改一遍执行路径、3b 再改第二遍。
+- **Python SDK 暴露全局注册表 CRUD / 项目启用管理端点**（**P3**，按需触发）：v0.19.0 把 ML backend 上提为全局注册表（[ADR-0044](docs/adr/archive/0044-global-ml-backend-registry-and-project-enablement.md)），v0.19.1 已让 SDK 只读路径（`MLBackends.list/get`）与之对齐（见 plan [`docs/plans/archive/2026-06-29-v0.19.1-python-sdk-global-registry-alignment.md`](docs/plans/archive/2026-06-29-v0.19.1-python-sdk-global-registry-alignment.md)），但**写路径仍只在 Web 端**：超管全局注册 CRUD（`POST/PUT/DELETE /admin/ml-integrations/registry` + `POST .../registry/{id}/health`）、项目启用清单（`GET /projects/{id}/ml-backends/available`、`PUT .../{rid}/enablement`）。封装为 SDK 客户端方法 + `aap` CLI 子命令，需同步扩 `packages/python-sdk/src/ai_annotation/_http.py` 端点白名单并过 `test_openapi_contract` 对账。属 **SDK feature（非 patch）**，对应 SDK minor。**触发**：出现脚本化批量注册 / 启用 backend 的诉求（CI 部署、多环境批量配置）。
+- **项目编排多条命名持久化（`project_pipelines` 表）**（**P3**，按需触发）：v0.18.x「项目编排」落地走**方案 A** —— `Project.preannotate_pipeline` 单列 JSONB 存「一项目一条当前编排」，供「当前题 AI」popover 的「运行当前题（按项目编排）」读取（见 plan [`docs/plans/archive/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md`](docs/plans/archive/2026-06-26-v0.18.25-interactive-ai-toolbar-redesign.md)，依赖 [多阶段预标注编排 epic](ROADMAP/2026-06-23-staged-preannotation-pipeline-roadmap.md)）。当出现「一个项目要保存多条命名编排并切换」（如『仅检测』『检测+车辆属性』『检测+OCR』并存）需求时，再升级为独立 `project_pipelines(id, project_id, name, stages JSONB, is_default, …)` 表 + 编排选择 UI。**触发**：单项目多命名编排诉求 ≥ 2 例，或跨项目编排复用/共享需求出现。不要因「灵活性」提前建表（YAGNI，对照决策底线表「标注配置」行）。
+- **`batchable` 驱动源阶段分块预标（WS3）**（**P3**，先压测再立项）：从 v0.19.2「ML 能力字段消费」计划[出范围存档](docs/plans/archive/2026-06-26-v0.19.2-ml-capability-field-consumption.md#ws3--batchable-驱动源阶段分块不进-v0192存档待立项)。把 `_run_batch`（`apps/api/app/workers/tasks.py:801`）源阶段「逐图循环」改为 `batchable=true` 时按块聚合发 `predict(tasks=[...])`。**收益有限**：四个 backend 服务端都是 `for t in req.tasks` 顺序循环、不堆 GPU batch，故推理总时长一秒不省，3a 只摊销 per-call overhead（HTTP 往返 / context 校验 / Celery↔backend 延迟，毛估 5–15% wall-clock）；却要改动核心批量执行路径的失败 / 进度 / 取消三处粒度（逐图→逐块），改坏会静默吞结果。**触发**：批量吞吐成为实测痛点；且应与 3b（真 GPU 批量，需 backend 改动 + 单独 ADR + 逐 backend 计划）合并立项算总账，避免先改一遍执行路径、3b 再改第二遍。
+- **编排源扩展：crops 源（方向 B）与 scene 源（方向 C）**（**P3**，各自触发）：**输入节点终态已落地**——v0.21.5/v0.21.6 把编排输入节点收敛为深度 0 的纯数据源（`source:{data_type,execution_unit}`，不配模型、不入后端 stage），源检测/追踪模型下沉为其子阶段；v0.21.7 又让 `execution_unit=frame`（视频逐帧检测，图像 backend 逐帧跑落 `VideoBboxGeometry`）落地。「输入 vs 第一模型」的解耦、「执行单位」作为输入节点字段的骨架都已成型，剩两种非平凡源仍待接入这套骨架：
+  - **方向 B · 矩形标注框（crops）作为源**：以项目里已有的矩形标注为父框来源、**第一个算子不是模型**（零推理）。输入节点已是纯数据源，故只需让其 payload 表达「无模型输入」（无 `ml_backend_id`/`model_id`，换 `source: {kind:"annotations", annotation_type:"rectangle"}`），backend 源阶段增「读已有标注而非调 backend」分支。**触发**：crops 源诉求出现（rule-of-three：客户明确要「用已有框跑下游」）。不要退而在模型节点上挂「源种类下拉」（那是把已解耦的东西糊回去）。
+  - **方向 C · 图片序列（scene 抽帧）作为源**：打破 pipeline per-task 独立执行、逼执行单位从 task/frame 再升到 **scene**（跨帧聚合），是执行单位维度**最贵的一块**。`execution_unit` 字段与 frame 单位已就位（v0.21.7），scene 是其上待补的值。**触发**：scene 跨帧聚合标注单独立项（计划已判「最贵、单独立项」）。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -129,12 +132,11 @@
 
 ### C.1 渲染性能 / 大图大量框
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
-- **交互工具 preference 重复拉取去重**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.2）：`useInteractiveBackendPref` / `useAiToolModelPref` / `useAiToolParamPrefs` 三个 hook 各自 mount 时各发一次 `authApi.getPreferences()` → 每次进工作台 3 次相同 GET（均在 `useWorkbenchShellModel` 挂载）。非正确性问题（服务端按子键 deep-merge，写不互相覆盖，已验证）。改为共享一个 react-query `["me","preferences"]` query，writer 走 `setQueryData`/invalidate。触发：随手优化，或进工作台网络瀑布观察到冗余请求。
-- **PipelineGraphCanvas 节点态每 tick 重置**（**P3**，纯前端，非 bug；feat/26-06-25 代码审查 0008.6）：`apps/web/src/pages/AIPreAnnotate/components/PipelineGraphCanvas.tsx` 的 `useEffect(() => setNodes(flow.nodes), [flow.nodes])` 中 `flow` 依赖频繁重建的 `models`，每次子卡回报 payload 都整体 `setNodes`，丢弃 react-flow 已测量尺寸再重测（`fitView` 已用 `nodeCount` 限流不会跳视口，故仅轻微重测量/闪烁）。让 `graphNodes` 在 payload 浅相等时保持引用稳定。触发：编排画布闪烁反馈或随手优化。
+- **交互工具 preference 重复拉取去重**（`ai.*` 部分已落 v0.21.17）：`ai.*` 四个偏好 hook（`useInteractiveBackendPref` / `useAiToolModelPref` / `useSecondaryParamPrefs` / `useAiToolParamPrefs`）首屏并发的相同 `getPreferences()` GET 已收敛到共享 react-query `["me","preferences",userId]`（浏览器实测：单次工作台加载共享 query 仅 fire 1 次）。**剩余后续（P3，未做）**：`useWorkbenchConfig`（`workbench.layout` 子树，独立 layout 持久化管道，v0.21.17 计划明确排除）仍在首屏裸 fetch 同一 `GET /me/preferences`，实测每次加载 **6 次**（StrictMode dev 放大，生产约 3 次）——才是首屏该端点冗余的真正大头。若要把首屏压到「1 次」，把它也接入共享 query 是最有价值的下一步；但它读 `.workbench`、写路径带 `mergeUser` / `writeLocalLayout` / 防抖 flush，且 `update` 后需 invalidate 共享 query 保一致，是有真实副作用面的改动，需单独评估（非 ai.* 去重的机械延伸）。
+- **PipelineGraphCanvas 运行态每 tick 无谓 re-render**（**P3**，可选，未做）：原「每 tick 重置/跳视口/闪烁」命题**已被前序优化修复**（`fitView` 改依赖 `topoFingerprint` 只在拓扑变时触发、measured 尺寸按 id 保留）。仅剩「运行态轮询每 1.5s 无条件 `setNodes` 一次无谓 re-render」微优化——低收益、回归面广（DAG 交互 + 运行进度实时性），原列为 v0.21.17 可选尾项、随 v0.21.17 放行时未做，保留待触发。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
-- **父子标注画布同胞高亮 / Alt 拖动联动**（**P3**，纯前端；v0.20.9 首版显式延后）：v0.20.9 已落父子标注的**侧栏缩进呈现** + 后端一层约束 + 级联删；画布上「选中父框 → 其子框描边高亮」与「拖父框子框跟随」当时评估为**跨组件横切**故延后。v0.20.11–13 二次推理让子框在画布批量出现，价值变实。**已细化为 plan（待实现）**：`docs/plans/2026-07-01-v0.20.14-parent-child-canvas-sibling-highlight.md`（复用即将退役的 group outline 视觉槽）、`docs/plans/2026-07-01-v0.20.15-parent-child-alt-drag-linkage.md`（Alt 拖父联动子，注意 Alt 键与折线/关键点交互的冲突）。
 
 ### C.5 / C.6 视频工作台前端 + 后端剩余 → 已抽离
 
@@ -156,7 +158,7 @@
 
 ### C.4 工作台架构分层（多任务类型如何复用同一外壳）
 
-> **已落地的架构基线，非待办**。单工作台外壳 + Mode 轴 + StageHost + 按类型独立 action hooks 的四层结构（含 `StageKind` / `StageCapabilities` / overlay 边界 / 3D 约束）SoT 见 [`dev/concepts/workbench-shell.md`](docs-site/dev/concepts/workbench-shell.md) 与 [ADR-0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md)。
+> **已落地的架构基线，非待办**。单工作台外壳 + Mode 轴 + StageHost + 按类型独立 action hooks 的四层结构（含 `StageKind` / `StageCapabilities` / overlay 边界 / 3D 约束）SoT 见 [`dev/concepts/workbench-shell.md`](docs-site/dev/concepts/workbench-shell.md) 与 [ADR-0017](docs/adr/archive/0017-workbench-shell-mode-and-stage-adapters.md)。
 >
 > 真实 lidar / 3D 接入**已落地**（v0.13.2+，`ThreeDWorkbench` + `PointCloudScene` 复用 `StageKind` / `StageCapabilities` / `WorkbenchStageHost` 边界，未破坏 overlay / 3D 约束）。架构基线无 open 项；具体能力优化见 §C.8（拖影消除）与 §A 3D 延伸项。
 
@@ -168,20 +170,20 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I21） | 大图 tile / 快捷键自定义；详见 §C.7（I10 Skeleton 进阶 + I12 Object Group + I18 图片 pin + I14 Polygon Crop 已落） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
-| **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
+| **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I21） | 大图 tile / 快捷键自定义；详见 §C.7（I10 Skeleton 进阶 + I12 Object Group + I18 图片 pin + I14 Polygon Crop 已落） | [0004](docs/adr/archive/0004-canvas-stack-konva.md) [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md) |
+| **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/archive/0013-mask-to-polygon-server-side.md) |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P3** | 截图 fixture 实际重跑 | v0.10.18 已落 `page.route` mock 注入式 prepare；maintainer 跑 `playwright test --config=playwright.screenshots.config.ts` 验证 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
-| **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | I4/I18 epic 续作余（I12 已落 / I18 图片 pin 已落） | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + IssueLayer **视频帧** pin；详见 §C.7 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
-| **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
-| **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
-| **P3** | 邻帧点云叠加动态拖影彻底消除（§C.8 D 学习式动静分割） | B 剔除(v0.15.22)+ A 逐目标对齐(v0.15.23)已落地,覆盖**已标注且跨帧成链**目标;剩 D=不依赖标注的学习式动静分割(能处理未标注动态物,重、性价比低),非必要不做 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | I4/I18 epic 续作余（I12 已落 / I18 图片 pin 已落） | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + IssueLayer **视频帧** pin；详见 §C.7 | [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md) |
+| **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) |
+| **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/archive/0007-audit-log-partitioning.md) |
+| **P3** | 邻帧点云叠加动态拖影彻底消除（§C.8 D 学习式动静分割） | B 剔除(v0.15.22)+ A 逐目标对齐(v0.15.23)已落地,覆盖**已标注且跨帧成链**目标;剩 D=不依赖标注的学习式动静分割(能处理未标注动态物,重、性价比低),非必要不做 | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | `useStageViewport`(图片工作台 paint 时序)拆分 | 巨石拆分 Epic 已结项;唯一遗留 —— render-time setState + 双 useLayoutEffect 顺序,需先立 Playwright 视觉基线另立项 | — |
 
 ---
@@ -194,13 +196,13 @@
 |---|---|---|---|
 | 状态字段 | 同时存 status/stage/state 三字段（CVAT Job） | 单 status enum | 加新状态前看一眼现有 enum 能否表达 |
 | 标注配置 | XML DSL（Label Studio） | JSONB `tool_bindings` 按 tool_unit 嵌套（v0.10.17+; v0.10.22 起为**唯一存储真值**, 扁平 `classes_config` 仅响应/导出读时派生, 无 DB 列） | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema；不要重新引入扁平存储列 |
-| 类别绑定 | 项目级扁平类别表（v0.10.16 之前的本平台 / Label Studio） | 按工具单位 `tool_bindings` **强隔离**（v0.10.17+, [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)） | 不要回到"项目级扁平 classes_config"; 跨工具复用类需求出现时走可选 `alias_to` 链而不是合并表 |
+| 类别绑定 | 项目级扁平类别表（v0.10.16 之前的本平台 / Label Studio） | 按工具单位 `tool_bindings` **强隔离**（v0.10.17+, [ADR-0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)） | 不要回到"项目级扁平 classes_config"; 跨工具复用类需求出现时走可选 `alias_to` 链而不是合并表 |
 | Task 双重含义 | task 既是标注题目也是后台 job（Label Studio） | 题目 / Celery 分离；async_jobs 作 job 索引 + batch_predict 单一真值（v0.10.49），但带活实体 FK + 运行时状态的 job（VideoTrackerJob）保留专表 | 新 job 类型默认进 async_jobs；仅当需 FK 级联到活标注 / 复杂运行时状态机时才建专表 |
 | 模块化拆分 | 24+ Django apps 跨依赖（Label Studio） | apps/api 单仓 | 不要因"模块化"动机拆出新 apps/* |
 | OSS/EE 分叉 | `if settings.EE` 满地（Label Studio） | 单分支无功能开关 | 商业化前不要拆，灰度走 feature flags |
 | 格式适配 | 自己维护 25+ 格式（CVAT） | COCO/YOLO/VOC + 平台原生 AAP JSON | 客户要新格式走 datumaro 中转，不自己加 |
 | 权限引擎 | Rego / OPA policy DSL（CVAT） | 单 RBAC 中间件 | 权限复杂化时先看 RBAC 内能否表达 |
-| AI backend | 自管 serverless（CVAT Nuclio） | HTTP `/predict` 协议 + 独立容器（[ADR-0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md)） | 保持；Plugin tool 也走 HTTP |
+| AI backend | 自管 serverless（CVAT Nuclio） | HTTP `/predict` 协议 + 独立容器（[ADR-0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)） | 保持；Plugin tool 也走 HTTP |
 | Skeleton 嵌套 | 无限 sublabel 递归（CVAT） | §C.7 I10 实现时**只支持 2 层**（label + sublabel） | 不开放任意嵌套 |
 | 标注 / 预测合并 | 同一数组用 type 字段区分（CVAT 部分格式） | `annotations[]` 和 `predictions[]` 双数组分开 | 设计任何新协议（导出、SDK、Plugin、AAP JSON）时保持双数组 |
 | 内部主键当稳定 ID | 用 user_id / annotation_id 数字 ID 跨实例匹配 | 导出可写内部 ID 审计用，导入匹配走 `external_id` + `file_path` + `schema_version` 三元组 | 设计 import 端点 / SDK / Plugin I/O 时 |

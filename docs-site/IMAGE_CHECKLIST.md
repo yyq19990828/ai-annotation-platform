@@ -52,6 +52,44 @@
 
 - [x] `images/projects/tool-units-panel.png` — 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区 `[auto]`
 
+## Batch 2 · 视频/点云 AI 审阅 + 时间轴交互（新增于 2026-07-06 · PR #50 · v0.21.9–17）
+
+> 配套 PR #50「视频/点云工作台 AI 审阅体验 + 时间轴交互增强」。这批交互性强（缩放/刷选/续写/键盘流转），基本都 `[manual]` 手工录，动图优先。文档侧对应改写 `video-playback.md` / `video-propagate.md` / `video-track.md` / `3d-box.md` / 新 `projects/pipeline-library.md` 时再嵌图。新增目录 `images/video-timeline/`、`images/pipeline-library/`。
+
+### 时间轴交互（对应 `workbench/video-playback.md`）
+
+- [ ] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → seek/密度条/章节条/关键帧点随可见窗口对齐 → 双击或「适配全部」复位全过程 [manual]
+- [ ] `images/video-timeline/prediction-density-track.png` — 时间轴 AI 预测密度轨（violet 柱）+「跳到上/下一个有预测的帧」导航按钮；红框：密度轨、跳转按钮 [manual]
+- [ ] `images/video-timeline/brush-create-chapter.gif` — 时间轴刷选一段 → 弹出「建章节」气泡 → 一键建章节全过程 [manual]
+- [ ] `images/video-timeline/chapter-resize-hover.gif` — 拖章节条边界改起止（松手 debounce PATCH）+ 章节条 ↔ 侧栏行双向 hover 高亮联动 [manual]
+
+### 视频 AI 审阅（对应 `workbench/video-track.md`）
+
+- [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 采纳/拒绝入口 [manual]
+- [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
+- [ ] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 / 点选即续写 →「续写后自动前进」自动跳下一条 [manual]
+- [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
+- [ ] `images/workbench/video-track-multiselect-batch-card.png` — 多选 ≥2 条轨迹时浮卡直接渲染批量卡（与右栏列表对等）；红框：批量卡、批量操作 [manual]
+
+### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
+
+- [ ] `images/workbench/review-two-level-cycle.png` — 两级键盘循环示意（建议矢量示意图）：`Tab`/`Shift+Tab` 同类流转，`` ` ``/``Shift+` `` 跨类跳转（AI 待审 → 人工 → 轨迹）[manual]
+- [ ] `images/workbench/review-auto-advance.gif` — 决策后自动前进：`A`/`D` 采纳/拒绝 AI 候选后选中自动推进到下一待决对象（配合「选中自动聚焦」平移居中）[manual]
+
+### 两类传播术语（对应 `workbench/video-propagate.md`）
+
+- [ ] `images/video-propagate/track-vs-copy-buttons.png` — 选中卡两类传播按钮对比：「AI 追踪」（bot 图标 · 调 tracker 模型）vs「复制后续」（copy 图标 · 纯几何铺帧）；红框：两按钮 + tooltip [manual]
+- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 传播范围 → 传播对话框顶部浮层化打开（不遮时间轴）+ 影响范围高亮可见 [manual]
+
+### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
+
+- [ ] `images/3d-box/billboard-label.png` — 3D 框顶部 billboard 文字标签（始终朝向相机，随视角旋转保持正对）；红框：标签、「标签内容」设置入口 [manual]
+
+### 全局 Pipeline 库（对应新建 `projects/pipeline-library.md` 或 `projects/ai-preannotate.md`）
+
+- [ ] `images/pipeline-library/library-list.png` — `/pipelines` 全局 Pipeline 库列表：命名编排模板卡 + 私有/组织/公开三档作用域 chip；红框：作用域 chip、新建按钮 [manual]
+- [ ] `images/pipeline-library/apply-to-project.png` — 从库「应用到项目」copy-on-write 落地为项目「当前编排」；红框：应用按钮、落地后「已保存编排 · N 阶段」badge [manual]
+
 ## 综合截图清单（按区域维护）
 
 > 新截图统一在这里按区域维护；已废弃截图保留删除原因，避免后续重复补拍。

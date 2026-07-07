@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.20.22"
+    app_version: str = "0.21.17"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -170,6 +170,22 @@ class Settings(BaseSettings):
     video_segment_lock_ttl_seconds: int = 300
     video_tracker_window_size_frames: int = 300
     video_tracker_low_confidence_outside_threshold: float = 0.15
+    # v0.21.6 · detect-then-track 批量预标注 soft 超时 (秒)。tracker 阶段整段跑帧、耗时远超逐帧
+    #   检测; 与 YOLO_TRACKER_MAX_FRAMES 帧上限双保险, 防单 job 卡死 worker。到点抛
+    #   SoftTimeLimitExceeded, worker 可清理落库已处理帧。仅含 tracker 阶段的 job 施加。
+    tracker_soft_time_limit_seconds: int = 1800
+
+    # v0.21.7 · 单帧分支批量逐帧预标注 (execution_unit=frame): 图像 backend 在整段视频逐帧跑,
+    #   每帧落 VideoBboxGeometry。二级 Celery fan-out (每段一子任务) 的护栏参数。
+    # - max_frames: 每个视频 task 逐帧的帧数上限 (对齐 YOLO_TRACKER_MAX_FRAMES=900)。超限截断,
+    #   防长视频 × 全帧 × 多框砸库。
+    # - chunk_size: 每个 Celery 段子任务处理的帧数 (fan-out 粒度: 太小则子任务过多、太大则并行差)。
+    # - max_boxes_per_frame: 单帧落库框数上限 (防单帧检出爆量)。
+    # - segment_soft_time_limit_seconds: 段子任务 soft 超时 (段内逐帧跑图像 predict)。
+    frame_preannotate_max_frames: int = 900
+    frame_preannotate_chunk_size: int = 30
+    frame_preannotate_max_boxes_per_frame: int = 100
+    frame_preannotate_segment_soft_time_limit_seconds: int = 900
 
     # v0.7.6 · AuditMiddleware 异步化开关。true = 通过 Celery 旁路写 audit_logs；
     # false 或 broker 不可用时，自动 fallback 到原同步路径。

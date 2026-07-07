@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.task import Task
+from app.services.annotation_propagation import _new_track_id
 
 TOOL_UNIT_IDS = {
     "bbox",
@@ -126,6 +127,55 @@ def _normalize_keypoints(points: Any) -> list[dict[str, float | int]]:
     return [{"x": x / scale, "y": y / scale, "v": v} for x, y, v in parsed]
 
 
+def _track_to_internal_shape(s: dict, confidence: float, attributes: dict) -> dict:
+    """v0.21.1 · 检测式视频追踪 result item → 内部 `VideoTrackGeometry` 形态.
+
+    输入 (backend 聚合轨迹, worker ingestion 已把 int track_id 映射成 `trk_<uuid>`)::
+
+        {"type": "video_track_bbox", "track_id": "trk_...", "semantic_label": "car_3",
+         "class_name": "car", "score": 0.87,
+         "keyframes": [{"frame_index": 0, "bbox": {"x","y","w","h"}, "score"?: ...}, ...]}
+
+    输出内部 shape 的 ``geometry`` 对齐 ``VideoTrackGeometry`` (``_jsonb_types.py``):
+    每帧 ``source="prediction"``; bbox 直接信 0-1 (不 ``_percent_scale``)。keyframe 级 score
+    不入几何 (schema 无此字段), 轨迹级 score 走 ``confidence``。
+    """
+    keyframes: list[dict] = []
+    for kf in s.get("keyframes") or []:
+        if not isinstance(kf, dict):
+            continue
+        bbox = kf.get("bbox") or {}
+        keyframes.append(
+            {
+                "frame_index": int(kf.get("frame_index", 0)),
+                "bbox": {
+                    "x": float(bbox.get("x", 0.0)),
+                    "y": float(bbox.get("y", 0.0)),
+                    "w": float(bbox.get("w", 0.0)),
+                    "h": float(bbox.get("h", 0.0)),
+                },
+                "source": "prediction",
+            }
+        )
+    geometry: dict = {
+        "type": "video_track_bbox",
+        "track_id": str(s.get("track_id", "")),
+        "keyframes": keyframes,
+        "outside": [],
+    }
+    semantic_label = s.get("semantic_label")
+    if semantic_label is not None:
+        geometry["semantic_label"] = str(semantic_label)
+    return {
+        "type": "video_track_bbox",
+        "class_name": s.get("class_name", "") or "",
+        "geometry": geometry,
+        "confidence": confidence,
+        "tool_unit_id": derive_tool_unit_from_ls_type("video_track_bbox"),
+        "attributes": attributes,
+    }
+
+
 def to_internal_shape(s: dict) -> dict:
     """v0.9.7 fix · LabelStudio 标准 result shape → 内部前端 schema.
 
@@ -165,6 +215,15 @@ def to_internal_shape(s: dict) -> dict:
     # 这里原样提取, 供 accept 路径透传到 annotation.attributes; 无则 {}。
     raw_attributes = s.get("attributes")
     attributes = dict(raw_attributes) if isinstance(raw_attributes, dict) else {}
+
+    # v0.21.1 · 检测式视频追踪 result item: 与扁平单几何不同, 是**嵌套聚合轨迹**
+    # `{type, track_id, class_name, keyframes:[{frame_index, bbox:{x,y,w,h}, ...}]}`。
+    # class_name 在顶层 (非 value.{type}); 坐标已归一 0-1 (backend 直返, 见协议约定),
+    # **不走 _percent_scale 自动探测** —— 小目标 bbox 各分量可能全 <1, 探测会误判为百分比。
+    # track_id 应已在 worker ingestion 阶段由原生 int 映射成 `trk_<uuid>` (读路径纯函数、
+    # 每次调用不得再生 uuid, 否则轨迹身份漂移)。此处只做形态重塑, 不做映射。
+    if typ == "video_track_bbox":
+        return _track_to_internal_shape(s, confidence, attributes)
 
     # LabelStudio 字段名约定: value.{type} 是 label 数组 (rectanglelabels/polygonlabels/...)
     labels = val.get(typ)
@@ -271,6 +330,76 @@ def to_internal_shape(s: dict) -> dict:
     }
 
 
+def to_video_bbox_result(raw_result: list[dict], frame_index: int) -> list[dict]:
+    """v0.21.4 / v0.21.7 · 图像 backend 检测结果 (LS 标准 shape) → 单帧 ``video_bbox`` 内部几何。
+
+    复用 ``to_internal_shape`` 把 ``rectanglelabels`` 归一到 0-1 的 bbox (内含 ``_percent_scale``
+    自动兼容 backend 的 0-1 / 0-100 两种口径, 与图像检测候选完全同源), 再套一层 ``frame_index``
+    改写成 ``video_bbox``。**只收 bbox 几何**——非 bbox (旋转框 / polygon / keypoint 等) 跳过,
+    视频单帧几何目前只有 ``video_bbox``。
+
+    ``VideoBboxGeometry`` 是 ``extra="forbid"``: geometry dict 只放 ``type/frame_index/x/y/w/h``;
+    ``class_name`` / ``confidence`` 放在 result item 顶层 (accept 从顶层读 ``type`` 决定
+    annotation_type, 见 ``services/annotation.py``)。
+
+    v0.21.4 单帧工作台 (ml_backends.predict-frame) 与 v0.21.7 逐帧批量 fan-out (workers 段任务)
+    共用这一个 reshaper —— 故从 API 模块提升到 services 层, 两侧同源。
+    """
+    out: list[dict] = []
+    for raw in raw_result:
+        if not isinstance(raw, dict):
+            continue
+        shape = to_internal_shape(raw)
+        geom = shape.get("geometry") or {}
+        if geom.get("type") != "bbox":
+            continue
+        out.append(
+            {
+                "type": "video_bbox",
+                "class_name": shape.get("class_name", "") or "",
+                "confidence": shape.get("confidence", 0.0),
+                "geometry": {
+                    "type": "video_bbox",
+                    "frame_index": frame_index,
+                    "x": geom["x"],
+                    "y": geom["y"],
+                    "w": geom["w"],
+                    "h": geom["h"],
+                },
+                "tool_unit_id": "bbox",
+                "attributes": shape.get("attributes") or {},
+            }
+        )
+    return out
+
+
+def _remap_track_ids(result: list[dict]) -> list[dict]:
+    """v0.21.1 · 检测式追踪 result item 的原生 int ``track_id`` → ``trk_<uuid>`` (ingestion
+    一次性映射)。
+
+    必须在 **worker 存 ``prediction.result`` 之前**做, 而非读路径 ``to_internal_shape`` ——
+    后者每次 read 都跑, 在其中 ``uuid4()`` 会导致轨迹身份逐次漂移。原 int 记进
+    ``semantic_label`` (如 ``car_3``, 供跨 task Re-ID 心智)。非 ``video_track_bbox`` item 原样;
+    已是 ``trk_`` 字符串 (幂等 / 重入) 不重映射。返回新列表, 不改传入对象。
+    """
+    out: list[dict] = []
+    for item in result:
+        if not isinstance(item, dict) or item.get("type") != "video_track_bbox":
+            out.append(item)
+            continue
+        raw_tid = item.get("track_id")
+        if isinstance(raw_tid, str) and raw_tid.startswith("trk_"):
+            out.append(item)
+            continue
+        new_item = dict(item)
+        new_item["track_id"] = _new_track_id()
+        if item.get("semantic_label") is None and raw_tid is not None:
+            cls = item.get("class_name") or "obj"
+            new_item["semantic_label"] = f"{cls}_{raw_tid}"
+        out.append(new_item)
+    return out
+
+
 class PredictionService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -288,6 +417,8 @@ class PredictionService:
         source: str = "ml_backend",
         pipeline_extra: dict | None = None,
     ) -> Prediction:
+        # v0.21.1 · 检测式追踪原生 int track_id → trk_<uuid> (读路径不得再生 uuid, 见 _remap_track_ids)。
+        result = _remap_track_ids(result)
         prediction = Prediction(
             id=uuid.uuid4(),
             task_id=task_id,

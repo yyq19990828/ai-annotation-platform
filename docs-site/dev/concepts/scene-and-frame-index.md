@@ -224,7 +224,7 @@ scene 只给了"帧的相对顺序";`scene_frame_poses` 表补上"帧的时空"�
 
 - **运动补偿 propagate**:`propagate` 对 box_3d 且源/目标帧均有 pose 时,`world = ego_to_world(psr_src, pose_src)` → `psr_dst = world_to_ego(world, pose_dst)`——静止物世界位置不变,目标帧 PSR 自动"追平"ego 运动。响应带 `motion_compensated` 标记;任一帧缺 pose 恒等降级(= v0.14.1 原样复制,byte 级零回归,`test_annotation_propagate.py` 既有用例守)。`override_psr` 显式给定时跳过补偿。
 - **批量**:`POST /tasks/{id}/annotations/propagate-batch` body `{target_task_id, annotation_ids|null}`(null=源帧全部 active box_3d),逐条复用单条 propagate 校验,整批一个事务。
-- **区间插值**:`POST /tasks/{id}/annotations/interpolate-range` body `{group_id, to_task_id}`(路径 task=起点帧)。两端框各 `ego_to_world` → 世界系线性插值中心 + **slerp** 插值朝向 + 线性插值尺寸,按 `t=(m-i)/(k-i)` 投回各中间帧 ego 系。生成框 `source="interpolated"`;已有同 group 标注的中间帧幂等跳过(`skipped_frames` 透出);任一中间帧锁态 → 整批拒。中间帧 task 经 `scene.get_scene_frame_task_map`(与 neighbors 共用)反查。
+- **区间插值**:`POST /tasks/{id}/annotations/interpolate-range` body `{track_id, to_task_id}`(路径 task=起点帧)。两端框各 `ego_to_world` → 世界系线性插值中心 + **slerp** 插值朝向 + 线性插值尺寸,按 `t=(m-i)/(k-i)` 投回各中间帧 ego 系。生成框 `source="interpolated"`;已有同 `track_id` 标注的中间帧幂等跳过(`skipped_frames` 透出);任一中间帧锁态 → 整批拒。中间帧 task 经 `scene.get_scene_frame_task_map`(与 neighbors 共用)反查。
 - **前端 overlay ego 对齐**:`useSceneTrajectory(sceneId)` 拉 trajectory → `stages/three-d/geometry/egoAlign.ts` 用 `inv(T_cur) @ T_nbr` 把邻帧参考框变换到当前帧 ego 系再 `setReferenceBoxes`,静止物参考框与当前帧重合。无轨迹 → 退回 v0.14.1 原样叠加。
 - **审核口径**:`source="interpolated"` 与 `manual` 可区分,审核侧可按来源过滤/批量删插值框(本期不新建审核 UI,只保证标记可查)。
 
@@ -233,9 +233,9 @@ scene 只给了"帧的相对顺序";`scene_frame_poses` 表补上"帧的时空"�
 v0.14.1 在这套地基上落了用户可用的跨帧能力,消费路径:
 
 1. **`useFrameNeighbors(taskId, k)`**(`apps/web/src/hooks/`):薄包 `GET /tasks/{id}/neighbors?k=K`,纯透传 `NeighborsResponse`,不感知几何类型,3D / 2D 共用。`refresh()` 在 propagate 前强刷避免缓存陈旧。
-2. **propagate**:`POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` body `{ target_task_id }`。`services/annotation.py::propagate` 复制 geometry / class / attributes,共享 `group_id`(源无则从全局序列 `cross_frame_group_seq` 分配并写回源),`box_3d.convention_at_create` 取**目标** dataset 的 `axis_convention`。
-   - **group_id 作用域**:per-task `tasks.next_group_seq` 产小整数;跨帧链用 `cross_frame_group_seq`(START 1e9)高位起始,两套命名空间共用 `group_id` 列但永不冲突——同 scene 跨帧 overlay 按 `group_id` 精确匹配不误命中无关分组。
-3. **邻帧框叠加**:`useNeighborAnnotations(taskIds, groupId)` 用 `useQueries` 批量拉前后 K 帧 task 的标注(复用 `["annotations",taskId]` 缓存键),client 端按 `group_id` 过滤 → `PointCloudScene.setReferenceBoxes` 渲染只读参考框。`groupId=null` 时整 hook 短路不发请求。
+2. **propagate**:`POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` body `{ target_task_id }`。`services/annotation.py::propagate` 复制 geometry / class / attributes,共享 `track_id`(源无则 `_new_track_id()` 分配一个 `trk_<uuid.hex>` 并写回源),`box_3d.convention_at_create` 取**目标** dataset 的 `axis_convention`。
+   - **track_id 作用域**:跨帧同一对象共享一个独立的 `track_id` 列(几何类型无关,`_new_track_id()` 产)——同 scene 跨帧 overlay 按 `track_id` 精确匹配不误命中无关对象。<!-- since v0.21.2 · ADR-0045：编组下线，原 per-task group 序列 / cross_frame_group_seq 高位段双命名空间已废，group_id 列删 -->
+3. **邻帧框叠加**:`useNeighborAnnotations(taskIds, trackId)` 用 `useQueries` 批量拉前后 K 帧 task 的标注(复用 `["annotations",taskId]` 缓存键),client 端按 `track_id` 过滤 → `PointCloudScene.setReferenceBoxes` 渲染只读参考框。`trackId=null` 时整 hook 短路不发请求。
 4. **键位**:3D `Shift+→/←`(ThreeDWorkbench 本地 keydown,3D 无 arrow-nudge 冲突);2D `Alt+→/←`(中央 hotkey,2D 的 `Shift+方向` 已被 10px nudge 占用)。两者共用壳层 `useWorkbenchShellModel.crossFramePropagate`(几何无关)+ `resolveCrossFrameTarget` 纯函数判 scene 边界。
 
 ## scheduler scene 连续标注(`prefer_same_scene_continuation`,v0.14.1)

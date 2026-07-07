@@ -194,13 +194,13 @@ ProjectSettings → ML 后端：
 
 ### v0.10.0 — sam3-backend 容器化（M0，~5 工作日） ✅ 2026-05-13
 
-> [plan](../docs/plans/2026-05-13-v0.10.0-mellow-lantern.md) · [CHANGELOG](../CHANGELOG.md#0100---2026-05-13)
+> [plan](../docs/plans/archive/2026-05-13-v0.10.0-mellow-lantern.md) · [CHANGELOG](../CHANGELOG.md#0100---2026-05-13)
 
 **已完成**：sam3-backend 跑通；ProjectSettings 能挂；与 grounded-sam2 互不干扰。详见原 §4.v0.10.0（git 历史）。
 
 ### v0.10.1 — Capability 协商基础设施（M1，~5 工作日） ✅ 2026-05-14
 
-> [plan](../docs/plans/2026-05-14-v0.10.1-capability-negotiation.md) · [CHANGELOG](../CHANGELOG.md#0101---2026-05-14)
+> [plan](../docs/plans/archive/2026-05-14-v0.10.1-capability-negotiation.md) · [CHANGELOG](../CHANGELOG.md#0101---2026-05-14)
 
 **目标**：`/setup` 标准化 + 前端 `useMLCapabilities` hook 落地；env 限流就位。
 
@@ -225,7 +225,7 @@ ProjectSettings → ML 后端：
 
 ### v0.10.2 — Prompt-first ToolDock + Exemplar 入口（M2，~6 工作日） ✅ 2026-05-14
 
-> [plan](../docs/plans/2026-05-14-v0.10.2-prompt-first-tooldock.md) · [CHANGELOG](../CHANGELOG.md#0102---2026-05-14)
+> [plan](../docs/plans/archive/2026-05-14-v0.10.2-prompt-first-tooldock.md) · [CHANGELOG](../CHANGELOG.md#0102---2026-05-14)
 
 **目标**：ToolDock 改 Prompt-first；不支持的工具置灰；schema-form 参数面板；exemplar 工具上线。
 
@@ -250,7 +250,7 @@ ProjectSettings → ML 后端：
 
 ### v0.10.3 — 1:N 后端管理 UI + 收口（M3，~4 工作日） ✅ 2026-05-14
 
-> [plan](../docs/plans/2026-05-14-v0.10.3-1n-backend-mgmt-ui.md) · [CHANGELOG](../CHANGELOG.md#0103---2026-05-14)
+> [plan](../docs/plans/archive/2026-05-14-v0.10.3-1n-backend-mgmt-ui.md) · [CHANGELOG](../CHANGELOG.md#0103---2026-05-14)
 
 **目标**：ProjectSettings 改 1:N 形态；env 锁满时弹「暂未支持」Modal；文档 + ADR 收口。
 

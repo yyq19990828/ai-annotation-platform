@@ -537,7 +537,7 @@
         "type": "object"
       },
       "AnnotationBulkPatch": {
-        "description": "I12 · 批量更新的字段子集.\n\n不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),\n也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).\ngroup_id=None 表示从原 group 移除.",
+        "description": "批量更新的字段子集.\n\n不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),\n也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).",
         "properties": {
           "attributes": {
             "anyOf": [
@@ -585,22 +585,6 @@
               }
             ],
             "title": "Class Name"
-          },
-          "group_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group Id"
-          },
-          "group_id_explicit_clear": {
-            "default": false,
-            "title": "Group Id Explicit Clear",
-            "type": "boolean"
           },
           "is_hidden": {
             "anyOf": [
@@ -1508,52 +1492,6 @@
         "title": "AnnotationFeedbackReply",
         "type": "object"
       },
-      "AnnotationGroupRequest": {
-        "description": "I12 · 创建/合入分组. ids 必须属于同一 task.",
-        "properties": {
-          "ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Ids",
-            "type": "array"
-          },
-          "task_id": {
-            "format": "uuid",
-            "title": "Task Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "ids",
-          "task_id"
-        ],
-        "title": "AnnotationGroupRequest",
-        "type": "object"
-      },
-      "AnnotationGroupResponse": {
-        "properties": {
-          "affected_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Affected Ids",
-            "type": "array"
-          },
-          "group_id": {
-            "title": "Group Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "group_id",
-          "affected_ids"
-        ],
-        "title": "AnnotationGroupResponse",
-        "type": "object"
-      },
       "AnnotationHistoryResponse": {
         "properties": {
           "annotation_id": {
@@ -1733,17 +1671,6 @@
             "title": "Ground Truth",
             "type": "boolean"
           },
-          "group_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group Id"
-          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1834,6 +1761,17 @@
             "title": "Tool Unit Id",
             "type": "string"
           },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -1880,49 +1818,6 @@
           "created_at"
         ],
         "title": "AnnotationOut",
-        "type": "object"
-      },
-      "AnnotationUngroupRequest": {
-        "properties": {
-          "ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "ids"
-        ],
-        "title": "AnnotationUngroupRequest",
-        "type": "object"
-      },
-      "AnnotationUngroupResponse": {
-        "properties": {
-          "auto_cleared_orphans": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Auto Cleared Orphans",
-            "type": "array"
-          },
-          "cleared_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Cleared Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "cleared_ids"
-        ],
-        "title": "AnnotationUngroupResponse",
         "type": "object"
       },
       "AnnotationUpdate": {
@@ -3310,6 +3205,14 @@
             "title": "Supported Geometric Outputs",
             "type": "array"
           },
+          "supported_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Inputs",
+            "type": "array"
+          },
           "supported_prompts": {
             "default": [],
             "items": {
@@ -4165,6 +4068,36 @@
           "file"
         ],
         "title": "Body_import_predictions_api_v1_projects__project_id__predictions_import_post",
+        "type": "object"
+      },
+      "Body_predict_frame_api_v1_projects__project_id__ml_backends__backend_id__predict_frame_post": {
+        "properties": {
+          "config": {
+            "default": "{}",
+            "title": "Config",
+            "type": "string"
+          },
+          "frame": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Frame",
+            "type": "string"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame",
+          "task_id",
+          "frame_index"
+        ],
+        "title": "Body_predict_frame_api_v1_projects__project_id__ml_backends__backend_id__predict_frame_post",
         "type": "object"
       },
       "Body_upload_zip_api_v1_datasets__dataset_id__items_upload_zip_post": {
@@ -5588,8 +5521,12 @@
         "type": "object"
       },
       "CapabilityInstanceItem": {
-        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
+        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`backend_id` 是 ml_backend_registry.id, 供全局编排选择器落 pipeline_stages.ml_backend_id。\n`state` 保留 connected/error 等注册表状态; disconnected 已在 service 层过滤。\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
         "properties": {
+          "backend_id": {
+            "title": "Backend Id",
+            "type": "string"
+          },
           "infra": {
             "default": "unknown",
             "title": "Infra",
@@ -5611,6 +5548,10 @@
             "title": "Source",
             "type": "string"
           },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
           "warmup_endpoint": {
             "default": false,
             "title": "Warmup Endpoint",
@@ -5618,6 +5559,8 @@
           }
         },
         "required": [
+          "backend_id",
+          "state",
           "source",
           "name"
         ],
@@ -7992,6 +7935,17 @@
             "title": "Composition",
             "type": "string"
           },
+          "default_input_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Input Type"
+          },
           "default_variants": {
             "additionalProperties": {
               "type": "string"
@@ -8267,20 +8221,20 @@
         "type": "object"
       },
       "InterpolateRangeRequest": {
-        "description": "v0.15.1 · 关键帧区间插值(from task 走端点路径)。\n\n同 group_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框\n(source=\"interpolated\",便于审核过滤/批量删)。",
+        "description": "v0.15.1 · 关键帧区间插值(from task 走端点路径)。\n\n同 track_id 链上两端帧各有一个 box_3d,区间内每个中间帧生成一个插值框\n(source=\"interpolated\",便于审核过滤/批量删)。v0.21.2 · ADR-0045 · 按 track_id\n(原 group_id)标识跨帧链。",
         "properties": {
-          "group_id": {
-            "title": "Group Id",
-            "type": "integer"
-          },
           "to_task_id": {
             "format": "uuid",
             "title": "To Task Id",
             "type": "string"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
           }
         },
         "required": [
-          "group_id",
+          "track_id",
           "to_task_id"
         ],
         "title": "InterpolateRangeRequest",
@@ -9109,6 +9063,17 @@
             "title": "Composition",
             "type": "string"
           },
+          "default_input_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Input Type"
+          },
           "default_thresholds": {
             "additionalProperties": true,
             "default": {},
@@ -9205,6 +9170,14 @@
               "type": "string"
             },
             "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Inputs",
             "type": "array"
           },
           "supported_prompts": {
@@ -9555,7 +9528,7 @@
         "type": "object"
       },
       "NeighborAnnotationsResponse": {
-        "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」:\n- group_id 给定 → 服务端只回该 group(scope=selected,payload 最小);\n- group_id 省略 → 回区间全部框(scope=all)。\n几何坐标不变(各帧 ego 系 PSR),ego 对齐仍由前端 egoAlign 做。\n非 scene / 历史未 backfill 的 task → frames=[](不报错)。",
+        "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」:\n- track_id 给定 → 服务端只回该跨帧链(scope=selected,payload 最小);\n- track_id 省略 → 回区间全部框(scope=all)。\n几何坐标不变(各帧 ego 系 PSR),ego 对齐仍由前端 egoAlign 做。\n非 scene / 历史未 backfill 的 task → frames=[](不报错)。",
         "properties": {
           "frame_index": {
             "anyOf": [
@@ -9592,7 +9565,7 @@
         "type": "object"
       },
       "NeighborFrameAnnotations": {
-        "description": "v0.15.17 · 单个邻帧 task 的标注集合(若请求带 group_id 则已服务端过滤)。",
+        "description": "v0.15.17 · 单个邻帧 task 的标注集合(若请求带 track_id 则已服务端过滤)。",
         "properties": {
           "annotations": {
             "items": {
@@ -10200,6 +10173,18 @@
             ],
             "title": "Roi"
           },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "stage": {
             "title": "Stage",
             "type": "integer"
@@ -10728,9 +10713,16 @@
             "title": "Class Filter"
           },
           "ml_backend_id": {
-            "format": "uuid",
-            "title": "Ml Backend Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
           },
           "model_id": {
             "anyOf": [
@@ -10850,9 +10842,6 @@
             "title": "Task Type"
           }
         },
-        "required": [
-          "ml_backend_id"
-        ],
         "title": "PreannotateRequest",
         "type": "object"
       },
@@ -12153,6 +12142,274 @@
           "updated_at"
         ],
         "title": "ProjectOut",
+        "type": "object"
+      },
+      "ProjectPipelineApplyRequest": {
+        "properties": {
+          "pipeline_id": {
+            "format": "uuid",
+            "title": "Pipeline Id",
+            "type": "string"
+          },
+          "set_default": {
+            "default": false,
+            "title": "Set Default",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pipeline_id"
+        ],
+        "title": "ProjectPipelineApplyRequest",
+        "type": "object"
+      },
+      "ProjectPipelineCreate": {
+        "properties": {
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "default": "private",
+            "enum": [
+              "private",
+              "organization",
+              "public"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "stages"
+        ],
+        "title": "ProjectPipelineCreate",
+        "type": "object"
+      },
+      "ProjectPipelineOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "organization",
+              "public"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usage_count": {
+            "default": 0,
+            "title": "Usage Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "name",
+          "stages",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectPipelineOut",
+        "type": "object"
+      },
+      "ProjectPipelineUpdate": {
+        "properties": {
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "private",
+                  "organization",
+                  "public"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "stages": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stages"
+          }
+        },
+        "title": "ProjectPipelineUpdate",
         "type": "object"
       },
       "ProjectRenderingConfig": {
@@ -13820,6 +14077,14 @@
             "title": "Infras",
             "type": "array"
           },
+          "inputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProtocolInputItem"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
           "modalities": {
             "items": {
               "$ref": "#/components/schemas/ProtocolModalityItem"
@@ -13901,6 +14166,29 @@
           "summary"
         ],
         "title": "ProtocolInfraItem",
+        "type": "object"
+      },
+      "ProtocolInputItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "summary"
+        ],
+        "title": "ProtocolInputItem",
         "type": "object"
       },
       "ProtocolModalityItem": {
@@ -19609,6 +19897,11 @@
         "additionalProperties": false,
         "description": "v0.15.3 · 跨模态通用偏好（性能观测等）。",
         "properties": {
+          "autoAdvanceOnDecide": {
+            "default": true,
+            "title": "Autoadvanceondecide",
+            "type": "boolean"
+          },
           "confirmDelete": {
             "default": "never",
             "enum": [
@@ -19658,6 +19951,11 @@
             "minimum": 0.0,
             "title": "Fillopacityselected",
             "type": "number"
+          },
+          "focusSelectionEnabled": {
+            "default": false,
+            "title": "Focusselectionenabled",
+            "type": "boolean"
           },
           "labelContent": {
             "$ref": "#/components/schemas/LabelContentByType"
@@ -19947,6 +20245,17 @@
             ],
             "title": "Rightopen"
           },
+          "trackSectionCollapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracksectioncollapsed"
+          },
           "triViewFloat": {
             "anyOf": [
               {
@@ -20116,6 +20425,11 @@
               "grid"
             ],
             "title": "Largeframestep"
+          },
+          "trackContinueAutoAdvance": {
+            "default": false,
+            "title": "Trackcontinueautoadvance",
+            "type": "boolean"
           }
         },
         "title": "WorkbenchVideoPreferences",
@@ -20131,7 +20445,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.20.22"
+    "version": "0.21.17"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -21019,7 +21333,7 @@
     },
     "/api/v1/annotations/bulk-update": {
       "post": {
-        "description": "I12 · 批量更新 N 个标注. 失败整体回滚 (单事务).\n\n设计取舍:\n- 不允许 bulk 改 geometry (同一 geometry 应用到 N 个 shape 无意义)\n- 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)\n- group_id 通过 explicit_clear 字段区分 \"未提供\" vs \"显式清空\"",
+        "description": "I12 · 批量更新 N 个标注. 失败整体回滚 (单事务).\n\n设计取舍:\n- 不允许 bulk 改 geometry (同一 geometry 应用到 N 个 shape 无意义)\n- 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)",
         "operationId": "bulk_update_annotations_api_v1_annotations_bulk_update_post",
         "requestBody": {
           "content": {
@@ -21059,100 +21373,6 @@
           }
         ],
         "summary": "Bulk Update Annotations",
-        "tags": [
-          "annotations"
-        ]
-      }
-    },
-    "/api/v1/annotations/group": {
-      "post": {
-        "description": "I12 · 把 ids 合到新 group; 走 tasks.next_group_seq +1 RETURNING.",
-        "operationId": "group_annotations_api_v1_annotations_group_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnnotationGroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnnotationGroupResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Group Annotations",
-        "tags": [
-          "annotations"
-        ]
-      }
-    },
-    "/api/v1/annotations/ungroup": {
-      "post": {
-        "description": "I12 · 把 ids 的 group_id 置 null; orphan group (仅剩 1 个) 自动级联清理.",
-        "operationId": "ungroup_annotations_api_v1_annotations_ungroup_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnnotationUngroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnnotationUngroupResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Ungroup Annotations",
         "tags": [
           "annotations"
         ]
@@ -26889,6 +27109,286 @@
         ]
       }
     },
+    "/api/v1/project-pipelines": {
+      "get": {
+        "operationId": "list_pipelines_api_v1_project_pipelines_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(private|organization|public)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectPipelineOut"
+                  },
+                  "title": "Response List Pipelines Api V1 Project Pipelines Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Pipelines",
+        "tags": [
+          "project-pipelines"
+        ]
+      },
+      "post": {
+        "operationId": "create_pipeline_api_v1_project_pipelines_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPipelineCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Pipeline",
+        "tags": [
+          "project-pipelines"
+        ]
+      }
+    },
+    "/api/v1/project-pipelines/{pipeline_id}": {
+      "delete": {
+        "operationId": "delete_pipeline_api_v1_project_pipelines__pipeline_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pipeline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Pipeline",
+        "tags": [
+          "project-pipelines"
+        ]
+      },
+      "get": {
+        "operationId": "get_pipeline_api_v1_project_pipelines__pipeline_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pipeline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Pipeline",
+        "tags": [
+          "project-pipelines"
+        ]
+      },
+      "put": {
+        "operationId": "update_pipeline_api_v1_project_pipelines__pipeline_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pipeline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPipelineUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Pipeline",
+        "tags": [
+          "project-pipelines"
+        ]
+      }
+    },
     "/api/v1/project-templates": {
       "get": {
         "operationId": "list_templates_api_v1_project_templates_get",
@@ -30343,6 +30843,73 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/predict-frame": {
+      "post": {
+        "description": "v0.21.4 · 对客户端传入的「视频当前帧」JPEG 跑图像 backend, 落单帧 ``video_bbox`` 候选。\n\n视频 task 的 ``file_path`` 是整段 mp4, 图像 backend 从 task URL 取不到帧 (见\n``_resolve_task_url``)。故前端把当前帧解成 JPEG 随 multipart 传入; 服务端上传 import 桶换\npresigned URL 投递 (``upload_crop_bytes``, **通用**——gsam2/sam3 全支持 http URL, 不走\n``data:`` 捷径); 结果逐框改写成 ``video_bbox(frame_index)`` 落一条 Prediction, 采纳复用既有\n``/predictions/{id}/accept`` 机制 → ``VideoBboxGeometry``。\n\n与批量预标 (整段视频投 signed URL 走 worker) 是两条路: 本路同步、单帧、client 供图。",
+        "operationId": "predict_frame_api_v1_projects__project_id__ml_backends__backend_id__predict_frame_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_predict_frame_api_v1_projects__project_id__ml_backends__backend_id__predict_frame_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Predict Frame",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}/predict-test": {
       "post": {
         "operationId": "predict_test_api_v1_projects__project_id__ml_backends__backend_id__predict_test_post",
@@ -30761,6 +31328,64 @@
           }
         ],
         "summary": "Preview Orphan Tasks",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pipelines/apply": {
+      "post": {
+        "operationId": "apply_project_pipeline_api_v1_projects__project_id__pipelines_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPipelineApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Project Pipeline",
         "tags": [
           "projects"
         ]
@@ -32836,7 +33461,7 @@
     },
     "/api/v1/tasks/{task_id}/annotations/interpolate-range": {
       "post": {
-        "description": "v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =\n终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框\n(source=\"interpolated\")。中间帧已有同 group 标注 → 幂等跳过。",
+        "description": "v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =\n终点帧;同 track_id 链两端各有一个 box_3d,中间帧自动生成插值框\n(source=\"interpolated\")。中间帧已有同 track 标注 → 幂等跳过。\nv0.21.2 · ADR-0045 · 按 track_id 标识跨帧链。",
         "operationId": "interpolate_annotations_range_api_v1_tasks__task_id__annotations_interpolate_range_post",
         "parameters": [
           {
@@ -33204,7 +33829,7 @@
     },
     "/api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task": {
       "post": {
-        "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。\n\n源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。\n复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create\n取目标 dataset 的 axis_convention(详 service.propagate)。",
+        "description": "v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。\n\n源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。\n复制 geometry/class/attributes + 共享 track_id 跨帧链; box_3d 的 convention_at_create\n取目标 dataset 的 axis_convention(详 service.propagate)。",
         "operationId": "propagate_annotation_to_task_api_v1_tasks__task_id__annotations__annotation_id__propagate_to_task_post",
         "parameters": [
           {
@@ -33669,7 +34294,7 @@
     },
     "/api/v1/tasks/{task_id}/neighbor-annotations": {
       "get": {
-        "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。\n非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。\n\nv0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态\n(`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)\n仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。",
+        "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」。\nv0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)过滤。\n非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。\n\nv0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态\n(`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)\n仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。",
         "operationId": "get_neighbor_annotations_api_v1_tasks__task_id__neighbor_annotations_get",
         "parameters": [
           {
@@ -33695,21 +34320,21 @@
             }
           },
           {
-            "description": "给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
+            "description": "给定则服务端只回该 track(scope=selected);省略回全部(scope=all)",
             "in": "query",
-            "name": "group_id",
+            "name": "track_id",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
-              "title": "Group Id"
+              "description": "给定则服务端只回该 track(scope=selected);省略回全部(scope=all)",
+              "title": "Track Id"
             }
           }
         ],

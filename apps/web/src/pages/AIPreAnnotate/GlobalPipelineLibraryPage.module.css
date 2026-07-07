@@ -1,0 +1,210 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 28px;
+}
+
+.pageIntro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.pageSubtitle {
+  margin-top: 4px;
+  color: var(--sc-muted-foreground);
+  font-size: 12px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border-bottom: 1px solid var(--sc-border);
+}
+
+.toolbarGroup,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.fieldLabel {
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+}
+
+.textInput,
+.selectInput {
+  height: 28px;
+  padding: 0 8px;
+  color: var(--sc-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  background: var(--sc-background);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+
+.textInput:focus,
+.selectInput:focus {
+  outline: none;
+  border-color: var(--sc-ring);
+}
+
+.builder {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.72fr) minmax(360px, 1.28fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 12px;
+}
+
+@media (max-width: 820px) {
+  .builder {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pool {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-sm);
+}
+
+.sectionTitle {
+  font-size: 12px;
+}
+
+.hint {
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.canvas {
+  min-width: 0;
+}
+
+.canvasFallback {
+  display: grid;
+  min-height: 240px;
+  color: var(--sc-muted-foreground);
+  place-items: center;
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-sm);
+}
+
+/* v0.21.0 收尾优化 · 两列编排: 左 DAG 画布 + 右选中节点参数检查器 (与 ProjectDetailPanel 语义一致). */
+.editorTwoCol {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+}
+@media (max-width: 720px) {
+  .editorTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+.editorCanvas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.editorInspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.stageEmptyHint {
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.warnBar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  color: var(--sc-warning-foreground, var(--sc-foreground));
+  font-size: 12px;
+  background: var(--sc-warning-bg, transparent);
+  border-top: 1px solid var(--sc-border);
+}
+
+/* 命名编排库列表 */
+.libraryHeader {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sc-border);
+}
+.libraryList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin: 0;
+  list-style: none;
+}
+.libraryRow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--sc-card);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+.libraryRowMain {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.libraryMeta {
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+}
+.libraryRowActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.warnList {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}

@@ -1,9 +1,9 @@
 """v0.14.1 · 跨帧 propagate 复制语义 + axis_convention + 权限/边界
 
 覆盖判据(plan §1.4 判据 1 / §3.4):
-- box_3d 复制 geometry/class/attributes + 共享 group_id(源无则从全局序列分配并写回)
+- box_3d 复制 geometry/class/attributes + 共享 track_id(源无则新分配并写回, ADR-0045)
 - convention_at_create 取**目标** dataset 的 axis_convention(不是源的)
-- 源已有 group_id → 复用, 不再分配新序列值
+- 源已有 track_id → 复用, 不再分配新值
 - 2D bbox / polygon 同样可 propagate
 - 不支持的几何(video_bbox / point_mask_3d)→ 422
 - 跨 project → 422; 同 task 自身 → 422
@@ -88,7 +88,7 @@ def _box3d(center=(1.0, 2.0, 3.0), size=(4.0, 5.0, 6.0), rotation=(0.0, 0.0, 0.5
     }
 
 
-async def _add_annotation(db, *, task, project, user_id, geometry, group_id=None):
+async def _add_annotation(db, *, task, project, user_id, geometry, track_id=None):
     ann = Annotation(
         id=uuid.uuid4(),
         task_id=task.id,
@@ -99,7 +99,7 @@ async def _add_annotation(db, *, task, project, user_id, geometry, group_id=None
         tool_unit_id="lidar_box_3d" if geometry["type"] == "box_3d" else "bbox",
         class_name="car",
         geometry=geometry,
-        group_id=group_id,
+        track_id=track_id,
         attributes={"occluded": True},
     )
     db.add(ann)
@@ -119,7 +119,6 @@ async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super
     src = await _add_annotation(
         db_session, task=tasks[0], project=project, user_id=user.id, geometry=_box3d()
     )
-    assert src.group_id is None
 
     svc = AnnotationService(db_session)
     new, _ = await svc.propagate(
@@ -138,13 +137,14 @@ async def test_propagate_box3d_copies_and_assigns_shared_group(db_session, super
     assert new.class_name == "car"
     assert new.attributes == {"occluded": True}
     assert new.task_id == tasks[1].id
-    # 共享 group_id: 高位序列, 写回源
-    assert new.group_id is not None and new.group_id >= 1_000_000_000
-    assert src.group_id == new.group_id
+    # v0.21.2 · ADR-0045 · 跨帧共享 track_id 为唯一标识 (group_id 列已删)
+    assert new.track_id is not None and new.track_id.startswith("trk_")
+    assert src.track_id == new.track_id
 
 
 @pytest.mark.asyncio
-async def test_propagate_reuses_existing_group_id(db_session, super_admin):
+async def test_propagate_reuses_existing_track_id(db_session, super_admin):
+    # v0.21.2 · 源已有 track_id → 复用不重分配 (跨帧链身份延续的关键)。
     user, _ = super_admin
     project, _, _, tasks = await _seed_scene(db_session, owner_id=user.id)
     src = await _add_annotation(
@@ -153,14 +153,14 @@ async def test_propagate_reuses_existing_group_id(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=42,
+        track_id="trk_preexisting",
     )
     svc = AnnotationService(db_session)
     new, _ = await svc.propagate(
         source_annotation_id=src.id, target_task_id=tasks[1].id, user_id=user.id
     )
-    assert new.group_id == 42
-    assert src.group_id == 42
+    assert new.track_id == "trk_preexisting"
+    assert src.track_id == "trk_preexisting"
 
 
 @pytest.mark.asyncio
@@ -194,7 +194,8 @@ async def test_propagate_bbox_2d(db_session, super_admin):
     assert new.geometry == bbox
     # 2D 不写 convention_at_create
     assert "convention_at_create" not in new.geometry
-    assert new.group_id == src.group_id
+    # v0.21.2 · ADR-0045 · 跨帧标识走 track_id
+    assert new.track_id is not None and new.track_id.startswith("trk_")
 
 
 @pytest.mark.asyncio
@@ -330,7 +331,8 @@ async def test_propagate_endpoint_201(db_session, httpx_client, super_admin):
     ann = body["annotation"]
     assert ann["task_id"] == str(tasks[1].id)
     assert ann["geometry"]["convention_at_create"] == "ros_rep103"
-    assert ann["group_id"] is not None and ann["group_id"] >= 1_000_000_000
+    # v0.21.2 · ADR-0045 · 跨帧标识走 track_id
+    assert ann["track_id"] is not None and ann["track_id"].startswith("trk_")
 
 
 @pytest.mark.asyncio
@@ -487,8 +489,9 @@ async def test_propagate_batch_all_box3d(db_session, super_admin):
     by_src = {src_id: ann for src_id, ann in results}
     assert by_src[a1.id].geometry["center"] == pytest.approx([8.0, 0.0, 0.0])
     assert by_src[a2.id].geometry["center"] == pytest.approx([18.0, 5.0, 0.0])
-    # 各自延续独立 group 链
-    assert by_src[a1.id].group_id != by_src[a2.id].group_id
+    # v0.21.2 · 各自延续独立 track 链 (原 group 链)
+    t1, t2 = by_src[a1.id].track_id, by_src[a2.id].track_id
+    assert t1 and t2 and t1 != t2
     assert all(ann.task_id == tasks[1].id for _, ann in results)
 
 
@@ -597,7 +600,7 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_001,
+        track_id="trk_wl",
     )
     await _add_annotation(
         db_session,
@@ -605,11 +608,11 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 4.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_001,
+        track_id="trk_wl",
     )
     svc = AnnotationService(db_session)
     created, compensated, skipped = await svc.interpolate_range(
-        group_id=7_000_000_001,
+        track_id="trk_wl",
         from_task_id=tasks[0].id,
         to_task_id=tasks[4].id,
         user_id=user.id,
@@ -621,12 +624,12 @@ async def test_interpolate_range_world_lerp(db_session, super_admin):
     mid = created[1]
     assert mid.geometry["center"] == pytest.approx([10.0, 2.0, 0.0])
     assert mid.source == "interpolated"
-    assert mid.group_id == 7_000_000_001
+    assert mid.track_id == "trk_wl"
     assert mid.class_name == a0.class_name
 
     # 幂等: 重跑全部跳过,不重复生成
     created2, _, skipped2 = await svc.interpolate_range(
-        group_id=7_000_000_001,
+        track_id="trk_wl",
         from_task_id=tasks[0].id,
         to_task_id=tasks[4].id,
         user_id=user.id,
@@ -646,7 +649,7 @@ async def test_interpolate_range_no_pose_degrades(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_002,
+        track_id="trk_np",
     )
     await _add_annotation(
         db_session,
@@ -654,11 +657,11 @@ async def test_interpolate_range_no_pose_degrades(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(4.0, 2.0, 0.0), rotation=(0.0, 0.0, 0.0)),
-        group_id=7_000_000_002,
+        track_id="trk_np",
     )
     svc = AnnotationService(db_session)
     created, compensated, _ = await svc.interpolate_range(
-        group_id=7_000_000_002,
+        track_id="trk_np",
         from_task_id=tasks[0].id,
         to_task_id=tasks[2].id,
         user_id=user.id,
@@ -679,7 +682,7 @@ async def test_interpolate_range_validations(db_session, super_admin):
     # 两端缺框 → 422
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=123,
+            track_id="trk_v0",
             from_task_id=tasks[0].id,
             to_task_id=tasks[2].id,
             user_id=user.id,
@@ -693,7 +696,7 @@ async def test_interpolate_range_validations(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=456,
+        track_id="trk_v1",
     )
     await _add_annotation(
         db_session,
@@ -701,11 +704,11 @@ async def test_interpolate_range_validations(db_session, super_admin):
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=456,
+        track_id="trk_v1",
     )
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=456,
+            track_id="trk_v1",
             from_task_id=tasks[0].id,
             to_task_id=tasks[1].id,
             user_id=user.id,
@@ -727,7 +730,7 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=789,
+        track_id="trk_lk",
     )
     await _add_annotation(
         db_session,
@@ -735,7 +738,7 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=789,
+        track_id="trk_lk",
     )
     tasks[1].status = "completed"
     await db_session.flush()
@@ -747,7 +750,7 @@ async def test_interpolate_range_locked_mid_task_rejected(db_session, super_admi
     svc = AnnotationService(db_session)
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=789,
+            track_id="trk_lk",
             from_task_id=tasks[0].id,
             to_task_id=tasks[2].id,
             user_id=user.id,
@@ -784,7 +787,7 @@ async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=321,
+        track_id="trk_inv",
     )
     await _add_annotation(
         db_session,
@@ -792,7 +795,7 @@ async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(),
-        group_id=321,
+        track_id="trk_inv",
     )
 
     async def _deny_visible(t):
@@ -803,7 +806,7 @@ async def test_interpolate_range_invisible_mid_task_rejected(db_session, super_a
     svc = AnnotationService(db_session)
     with pytest.raises(HTTPException) as exc:
         await svc.interpolate_range(
-            group_id=321,
+            track_id="trk_inv",
             from_task_id=tasks[0].id,
             to_task_id=tasks[2].id,
             user_id=user.id,
@@ -834,7 +837,7 @@ async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 0.0, 0.0)),
-        group_id=9_000_000_001,
+        track_id="trk_bi",
     )
 
     # propagate-batch: 帧 0 全部 box_3d → 帧 1
@@ -856,11 +859,11 @@ async def test_batch_and_interpolate_endpoints(db_session, httpx_client, super_a
         project=project,
         user_id=user.id,
         geometry=_box3d(center=(10.0, 3.0, 0.0)),
-        group_id=9_000_000_001,
+        track_id="trk_bi",
     )
     resp = await httpx_client.post(
         f"/api/v1/tasks/{tasks[0].id}/annotations/interpolate-range",
-        json={"group_id": 9_000_000_001, "to_task_id": str(tasks[3].id)},
+        json={"track_id": "trk_bi", "to_task_id": str(tasks[3].id)},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text

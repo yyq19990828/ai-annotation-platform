@@ -2,7 +2,7 @@
 
 > 状态：**Wave α 已落地 v0.9.41（2026-05-13）**；Wave β/γ/δ/ε proposal。与视频工作台优化（`[archived]2026-05-12-video-workbench-rendering-optimization.md`）并行。
 >
-> v0.9.41 落地清单（详见 [docs/plans/2026-05-13-v0.9.41-image-workbench-wave-alpha.md](../docs/plans/2026-05-13-v0.9.41-image-workbench-wave-alpha.md)）：
+> v0.9.41 落地清单（详见 [docs/plans/archive/2026-05-13-v0.9.41-image-workbench-wave-alpha.md](../docs/plans/archive/2026-05-13-v0.9.41-image-workbench-wave-alpha.md)）：
 > - ✅ **I3** selectedIds 签名稳定 + user 层按工具 listening
 > - ✅ **I7** `stage/shared/` 抽取（useViewportTransform / Minimap / geometry/polygon / useRafThrottle）
 > - ✅ **I8** `useWorkbenchPerf` + BugReport `[workbench-perf]` 快照
@@ -169,7 +169,7 @@
 > CVAT 对 mask 标注用单独的 `masksHandler.ts`：圆/方笔刷、橡皮、polygon-plus/polygon-minus、Shift+滚轮调笔刷大小，最后 RLE 压缩。
 
 - 我们当前 SAM 出的 mask 是"接受 → polygon"流程，不可二次精修。要实现"AI 出粗结果 → 笔刷细修"必须有 mask 编辑器。
-- ✅ **v0.10.7 v1 算法核已落地**（[ADR-0022](../docs/adr/0022-mask-editor-tool-architecture.md)）：
+- ✅ **v0.10.7 v1 算法核已落地**（[ADR-0022](../docs/adr/archive/0022-mask-editor-tool-architecture.md)）：
   - 数据层 [`stage/shared/geometry/maskBuffer.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts)：纯 TS Uint8Array alpha 缓冲，brush / erase / clear / fromPolygon / toAlphaImageData / clone（12 例单测）；
   - 算法层 [`stage/shared/geometry/maskToPolygon.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts)：marching-squares + Moore-Neighborhood tracing + polygon-clipping union 去自相交 + RDP 简化（7 例单测）；
   - 不引入 RLE schema：v1 走「mask 临时态 → polygon 入库」单向，与 polygon 等价落库；RLE 留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一。
@@ -273,7 +273,7 @@
 
 > CVAT 的 Lambda Manager 把"Interactor（SAM 类）"、"Tracker（跟踪类）"、"Auto Annotation（批量预标）"抽成统一协议。后端写一个 Lambda，前端自动支持。
 
-- **现状校准（2026-05-14）**：Interactor 类型的协议收口已经在 v0.10.1-v0.10.3 完成（参 [ADR-0020](../docs/adr/0020-ml-backend-capability-negotiation.md) Capability 协商 + [ADR-0019](../docs/adr/0019-prompt-first-tooldock-1n-arch.md) Prompt-first ToolDock + 1:N）。
+- **现状校准（2026-05-14）**：Interactor 类型的协议收口已经在 v0.10.1-v0.10.3 完成（参 [ADR-0020](../docs/adr/archive/0020-ml-backend-capability-negotiation.md) Capability 协商 + [ADR-0019](../docs/adr/archive/0019-prompt-first-tooldock-1n-arch.md) Prompt-first ToolDock + 1:N）。
 - ✅ **I20.1 Interactor 协议**：`GET /setup` 返回 JSON Schema Draft-07 子集 `{ name, version, model_version, supported_prompts, params }`；`POST /interactive-annotating` 携带 `context.type` 路由 backend。
 - ✅ **I20.2 注册式工具**：`useMLCapabilities` hook（[useMLCapabilities.ts](../apps/web/src/pages/Workbench/state/useMLCapabilities.ts)）作为单一事实源；4 个 prompt-first 工具 (SmartPoint / SmartBox / TextPrompt / Exemplar) 按 `supported_prompts` 自动置灰。
 - ✅ **I20.3 协议向后兼容**：`supported_prompts` 缺失时回落 `["point","bbox","text"]`，console.warn。

@@ -1,7 +1,7 @@
 """v0.14.11 · 协议级能力目录端点 (与 ml backend 注册解耦).
 
-- `GET /v1/ml-capabilities/protocol` 返回 task / infra / modality / geometry
-  四张受控词表 + 每条 task 的人类可读元数据。
+- `GET /v1/ml-capabilities/protocol` 返回 task / infra / modality / geometry /
+  prompt / input 六张受控词表 + 每条 task 的人类可读元数据。
 - 登录用户即可访问 (与 /model-market 页面同权限); 不暴露任何 backend 实例信息,
   因此不限 super_admin。
 - 响应为常量级别 SSOT 派生, 进程内构造一次后冻结, ETag + 304 缓存。
@@ -26,6 +26,7 @@ from app.schemas.ml_capabilities import (
     ProtocolCapabilitiesResponse,
     ProtocolGeometryItem,
     ProtocolInfraItem,
+    ProtocolInputItem,
     ProtocolModalityItem,
     ProtocolPromptItem,
     ProtocolTaskItem,
@@ -35,6 +36,7 @@ from app.services.capability_instances import load_capability_instances
 from app.services.capability_registry import (
     GEOMETRIES,
     INFRAS,
+    INPUTS,
     MODALITIES,
     PROMPTS,
     TASKS,
@@ -91,6 +93,9 @@ def _build_payload() -> ProtocolCapabilitiesResponse:
                 interactive_route=s.interactive_route,
             )
             for s in PROMPTS
+        ],
+        inputs=[
+            ProtocolInputItem(id=s.id, label=s.label, summary=s.summary) for s in INPUTS
         ],
     )
 
@@ -154,6 +159,8 @@ async def get_capability_instances(
         try:
             instances.append(
                 CapabilityInstanceItem(
+                    backend_id=item["backend_id"],
+                    state=item["state"],
                     source=item["source"],
                     name=item["name"],
                     infra=item["infra"],

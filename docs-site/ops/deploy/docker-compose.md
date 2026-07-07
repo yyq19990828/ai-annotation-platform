@@ -549,8 +549,8 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
 
 ### 进一步阅读
 
-- [ADR-0012](/dev/adr/0012-sam-backend-as-independent-gpu-service) — 为什么 SAM backend 独立 GPU 服务化
-- [ADR-0013](/dev/adr/0013-mask-to-polygon-server-side) — mask→polygon 后端化决策
+- [ADR-0012](/dev/adr/archive/0012-sam-backend-as-independent-gpu-service) — 为什么 SAM backend 独立 GPU 服务化
+- [ADR-0013](/dev/adr/archive/0013-mask-to-polygon-server-side) — mask→polygon 后端化决策
 
 ---
 

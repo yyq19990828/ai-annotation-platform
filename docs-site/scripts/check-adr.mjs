@@ -1,43 +1,56 @@
 #!/usr/bin/env node
 // 校验 docs/adr/ 下 ADR 文件：
 //   1. 编号唯一（00NN-*.md）
-//   2. 编号连续（无空号）
+//   2. 编号连续（无空号）—— archive/ 子目录也纳入统计（归档 ADR 保留编号占位）
 //   3. 文件首部包含 Status 字段
 // 失败退出 1。
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ADR_DIR = resolve(here, "../../docs/adr");
+const ARCHIVE_DIR = join(ADR_DIR, "archive");
 
 const SKIP = new Set(["README.md", "TEMPLATE.md"]);
 const NUM_RE = /^(\d{4})-[a-z0-9-]+\.md$/i;
 
-const files = readdirSync(ADR_DIR).filter((f) => f.endsWith(".md") && !SKIP.has(f));
+function collect(dir, label) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".md") && !SKIP.has(f))
+    .map((f) => ({ f, dir, label }));
+}
+
+const files = [
+  ...collect(ADR_DIR, "active"),
+  ...collect(ARCHIVE_DIR, "archive"),
+];
 const errors = [];
 const numbers = new Map();
 
-for (const f of files) {
+for (const { f, dir, label } of files) {
   const m = f.match(NUM_RE);
   if (!m) {
-    errors.push(`Bad ADR filename: ${f}（应为 NNNN-kebab-case.md）`);
+    errors.push(`Bad ADR filename [${label}]: ${f}（应为 NNNN-kebab-case.md）`);
     continue;
   }
   const n = parseInt(m[1], 10);
   if (numbers.has(n)) {
-    errors.push(`Duplicate ADR number ${m[1]}: ${numbers.get(n)} vs ${f}`);
+    const prev = numbers.get(n);
+    errors.push(`Duplicate ADR number ${m[1]}: ${prev.label}/${prev.f} vs ${label}/${f}`);
   }
-  numbers.set(n, f);
+  numbers.set(n, { f, label });
 
-  const content = readFileSync(join(ADR_DIR, f), "utf8");
+  const content = readFileSync(join(dir, f), "utf8");
   // 接受 `- **Status:** ...` / `Status: ...` / `## Status` 等多种写法
   const statusOk =
     /^\s*[-*]?\s*\**\s*Status\s*\**\s*[:：]/im.test(content) ||
-    /^##?\s*Status\b/im.test(content);
+    /^##?\s*Status\b/im.test(content) ||
+    /^\**\s*状态\s*\**\s*[:：]/im.test(content);
   if (!statusOk) {
-    errors.push(`Missing Status field: ${f}`);
+    errors.push(`Missing Status field [${label}]: ${f}`);
   }
 }
 

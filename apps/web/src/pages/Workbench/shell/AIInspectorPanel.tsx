@@ -16,7 +16,6 @@ import {
   type PredictionSourceVisibility,
 } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
-import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
 import { displayClassName } from "../stage/colors";
@@ -77,8 +76,6 @@ interface AIInspectorPanelProps {
     ids: string[],
     patch: { attributes?: Record<string, unknown> },
   ) => void;
-  /** v0.10.20 · I12 BoxList group card 头部单击 → 整组选中 (replaceSelected). */
-  onSelectGroup?: (memberIds: string[]) => void;
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
@@ -133,7 +130,7 @@ export function AIInspectorPanel({
   dimmedAiIds,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes,
-  onBulkUpdateAttributes, onSelectGroup,
+  onBulkUpdateAttributes,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame,
   onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
@@ -286,7 +283,6 @@ export function AIInspectorPanel({
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
         onToggleUserBoxFlag={onToggleUserBoxFlag}
-        onSelectGroup={onSelectGroup}
         videoTrackPanel={videoTrackPanel}
         aiSectionCollapsed={aiSectionCollapsed}
         onToggleAiSection={onToggleAiSection}
@@ -388,6 +384,8 @@ interface AIPredictionPopoverProps {
   aiModel: string;
   aiRunning: boolean;
   aiBoxCount: number;
+  // v0.21.10 · 视频任务时面板做单帧检测 (方案 a); 留一句指引告诉找整段追踪的用户去哪跑。
+  isVideoTask?: boolean;
   confThreshold: number;
   aiTakeoverRate: number;
   onClose: () => void;
@@ -428,6 +426,7 @@ export function AIPredictionPopover({
   aiModel,
   aiRunning,
   aiBoxCount,
+  isVideoTask,
   confThreshold,
   aiTakeoverRate,
   onClose,
@@ -608,7 +607,10 @@ export function AIPredictionPopover({
         </div>
         {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
         {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 按钮禁用 + 标注原因, 避免默默 422。 */}
-        {hasProjectPipeline && onRunPipeline && (
+        {/* v0.21.10 · 视频任务隐藏此按钮: batch 预标不接受 frame_index (payload 无该字段),
+            对视频会跑整段而非"当前题"; 单帧路径 /predict-frame 又是单模型、跑不了多阶段编排。
+            视频单帧检测走上面的主「运行当前题」(方案 a), 整段/多阶段编排到「AI 预标」批量页。 */}
+        {!isVideoTask && hasProjectPipeline && onRunPipeline && (
           <Button
             variant="ai"
             size="sm"
@@ -626,6 +628,11 @@ export function AIPredictionPopover({
               ? `运行当前题（按项目编排 · ${projectPipelineStageCount} 阶段）`
               : `编排引用 ${pipelineMissingBackendCount} 个后端不可用`}
           </Button>
+        )}
+        {isVideoTask && (
+          <p className="mb-1 text-2xs leading-snug text-muted-foreground">
+            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Ctrl+B 种子追踪，或到「AI 预标」批量页按整段序列跑。
+          </p>
         )}
       </div>
 
@@ -724,48 +731,6 @@ export function AIPredictionPopover({
   );
 }
 
-// ── I12 · Object Group 折叠卡片 ────────────────────────────────────────────
-interface GroupCardProps {
-  groupId: number;
-  memberCount: number;
-  expanded: boolean;
-  onToggle: () => void;
-  onSelectGroup?: () => void;
-}
-
-function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: GroupCardProps) {
-  const color = groupOutlineColor(groupId);
-  return (
-    <div
-      className="my-0.5 flex items-center gap-1 rounded border border-border bg-muted px-1.5 py-1"
-      data-testid={`box-list-group-card-${groupId}`}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="inline-flex size-5 flex-[0_0_auto] cursor-pointer appearance-none items-center justify-center rounded-[3px] border border-border bg-muted p-0 text-foreground hover:bg-muted"
-        title={expanded ? "折叠组" : "展开组"}
-      >
-        <Icon name={expanded ? "chevDown" : "chevRight"} size={14} />
-      </button>
-      <button
-        type="button"
-        onClick={onSelectGroup}
-        disabled={!onSelectGroup}
-        className="flex flex-1 cursor-pointer appearance-none items-center gap-1.5 border-0 bg-transparent px-1 py-0.5 text-left text-xs text-foreground hover:enabled:bg-muted disabled:cursor-default"
-        title="选中整组"
-      >
-        <span
-          className="size-2 rounded-[2px]"
-          ref={(node) => { if (node) node.style.background = color; }}
-        />
-        <span>组 #{groupId}</span>
-        <span className="text-xs text-muted-foreground">· {memberCount} 个标注</span>
-      </button>
-    </div>
-  );
-}
-
 // ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
@@ -783,15 +748,6 @@ type Row =
     onToggle?: () => void;
   }
   | { kind: "videoTracks"; key: string }
-  /** v0.10.20 · I12 同 group_id 折叠卡片头部. 单击 → 整组选中. 展开 → 下方插入 user 行. */
-  | {
-    kind: "userGroup";
-    groupId: number;
-    memberIds: string[];
-    expanded: boolean;
-    onToggle: () => void;
-    key: string;
-  }
   /** v0.20.9 · 父子标注: depth=1 的行是子框, 在其父框行下方缩进渲染。 */
   | { kind: "user"; box: Annotation; key: string; depth?: number };
 
@@ -923,7 +879,6 @@ interface BoxesListProps {
   /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden）。 */
   onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden") => void;
   onSeekFrame?: (frameIndex: number) => void;
-  onSelectGroup?: (memberIds: string[]) => void;
   videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
   /** v0.20.22 · AI 待审 / 人工两大分组头折叠 (透传自 AIInspectorPanel;
    *  与内部 `collapsedGroups` 子组折叠区分, 独立跨设备持久)。 */
@@ -941,7 +896,6 @@ function BoxesList({
   onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
-  onSelectGroup,
   videoTrackPanel,
   aiSectionCollapsed = false,
   onToggleAiSection,
@@ -953,18 +907,6 @@ function BoxesList({
   // 且 filterBoxesByFrame 在 currentFrameIndex 为 undefined 时回落全部,故对图片无影响。
   const [frameFilter, setFrameFilter] = useState<FrameFilter>("current");
   const showFrameFilter = typeof currentFrameIndex === "number";
-  // v0.10.20 · I12 group 折叠态. v0.10.21 反转语义: 默认展开 (B-44 反馈 "不能展开"
-  // 实为 chevron icon 名写错导致按钮看不到); 用 collapsedGroups 记 *显式收起* 的组,
-  // 默认空集 = 所有组都展开 + 成员可见.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set());
-  const toggleGroup = (groupId: number) =>
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-
   const resolvedVideoTrackPanel = useMemo(
     () => typeof videoTrackPanel === "function" ? videoTrackPanel(frameFilter) : videoTrackPanel,
     [frameFilter, videoTrackPanel],
@@ -1022,8 +964,7 @@ function BoxesList({
     // v0.20.22 · 人工分组整体收起时跳过所有成员行 (含 GroupCard/子组), 头 + 计数仍显示。
     if (!manualSectionCollapsed) {
       // v0.20.9 · 父子标注: 建 parent → children 映射。子框从顶层迭代中剔除, 改在父框行下方
-      // 缩进渲染 (depth=1)。parent 缩进是 go-forward 唯一主结构; group 分桶为过渡期 legacy
-      // (v0.21.3 移除)。同时挂 group 与 parent 的框以 parent 缩进为准。
+      // 缩进渲染 (depth=1)。parent 缩进是唯一主结构 (v0.21.3 已移除 group 分桶 legacy)。
       const userIdSet = new Set(filteredUserBoxes.map((b) => b.id));
       const childrenByParent = new Map<string, Annotation[]>();
       for (const b of filteredUserBoxes) {
@@ -1043,47 +984,15 @@ function BoxesList({
         if (kids) kids.forEach((c) => out.push({ kind: "user", box: c, key: `user-${c.id}`, depth: 1 }));
       };
 
-      // v0.10.20 · I12 按 group_id 分桶: 同 group_id (≥2 个成员) → group 卡片头, 展开时下方插入 user 行;
-      // group_id null 或单成员 group → 平铺. 保持 topLevelBoxes 原顺序内的相对位置.
-      const bucketed: { groupId: number | null; boxes: Annotation[] }[] = [];
-      const groupBuckets = new Map<number, Annotation[]>();
-      for (const b of topLevelBoxes) {
-        if (typeof b.group_id === "number") {
-          if (!groupBuckets.has(b.group_id)) {
-            groupBuckets.set(b.group_id, []);
-            bucketed.push({ groupId: b.group_id, boxes: groupBuckets.get(b.group_id)! });
-          }
-          groupBuckets.get(b.group_id)!.push(b);
-        } else {
-          bucketed.push({ groupId: null, boxes: [b] });
-        }
-      }
-      for (const bucket of bucketed) {
-        if (bucket.groupId != null && bucket.boxes.length >= 2) {
-          const gid = bucket.groupId;
-          const expanded = !collapsedGroups.has(gid);
-          out.push({
-            kind: "userGroup",
-            groupId: gid,
-            memberIds: bucket.boxes.map((b) => b.id),
-            expanded,
-            onToggle: () => toggleGroup(gid),
-            key: `user-group-${gid}`,
-          });
-          if (expanded) {
-            bucket.boxes.forEach(emitBoxWithChildren);
-          }
-        } else {
-          bucket.boxes.forEach(emitBoxWithChildren);
-        }
-      }
+      // v0.21.3 · 标注编组已删除: 顶层框平铺 (parent 缩进保留)。
+      topLevelBoxes.forEach(emitBoxWithChildren);
     }
     if (resolvedVideoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
   }, [
     aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter,
     predictionSourceFilter, showFrameFilter, userBoxes.length,
-    resolvedVideoTrackPanel, collapsedGroups,
+    resolvedVideoTrackPanel,
     aiSectionCollapsed, manualSectionCollapsed, onToggleAiSection, onToggleManualSection,
   ]);
 
@@ -1204,15 +1113,6 @@ function BoxesList({
                 <div data-testid="video-track-panel-row">
                   {resolvedVideoTrackPanel}
                 </div>
-              )}
-              {r.kind === "userGroup" && (
-                <GroupCard
-                  groupId={r.groupId}
-                  memberCount={r.memberIds.length}
-                  expanded={r.expanded}
-                  onToggle={r.onToggle}
-                  onSelectGroup={onSelectGroup ? () => onSelectGroup(r.memberIds) : undefined}
-                />
               )}
               {r.kind === "user" && (
                 <div className={r.depth ? "ml-3 border-l-2 border-border pl-2" : undefined}>

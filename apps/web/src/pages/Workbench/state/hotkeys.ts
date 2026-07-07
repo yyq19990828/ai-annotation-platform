@@ -51,9 +51,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Ctrl", "C"], desc: "复制选中框", group: "draw", actionType: "copy" },
   { keys: ["Ctrl", "V"], desc: "粘贴（偏移 +10px）", group: "draw", actionType: "paste" },
   { keys: ["Ctrl", "D"], desc: "原地复制（偏移 +10px）", group: "draw", actionType: "duplicate" },
-  // I12 · Object Group + 批量编辑
-  { keys: ["Ctrl", "G"], desc: "把选中的 ≥2 个标注合并为一个组（同色虚线外框）", group: "draw", actionType: "annotationGroup" },
-  { keys: ["Ctrl", "Shift", "G"], desc: "把选中的标注从组里拆出（剩 1 个成员的组自动解散）", group: "draw", actionType: "annotationUngroup" },
+  // v0.21.3 · 标注编组(Ctrl+G)持久化已删除;批量编辑走前端临时多选。
 
   { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw", actionType: "undo" },
   { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw", actionType: "redo" },
@@ -78,15 +76,17 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Q / Slash"], desc: "选中轨迹时标记 / 恢复当前帧遮挡", group: "video", actionType: "videoToggleOccluded" },
   { keys: ["L"], desc: "选中轨迹时锁定 / 解锁轨迹", group: "video", actionType: "videoToggleLockedTrack" },
   { keys: ["H"], desc: "选中轨迹时隐藏 / 显示轨迹", group: "video", actionType: "videoToggleHiddenTrack" },
-  { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 传播", group: "video", actionType: "videoPropagateTrack" },
+  { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 追踪", group: "video", actionType: "videoPropagateTrack" },
   { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
   { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
   { keys: ["Delete / Backspace"], desc: "选中轨迹时删除当前关键帧；选中单帧框时删除该框", group: "video", actionType: "videoDeleteSelected" },
   { keys: ["Ctrl", "Delete / Backspace"], desc: "删除整条选中轨迹", group: "video", actionType: "videoDeleteSelected" },
   { keys: ["PageUp"], desc: "跳到上一章节", group: "video" },
   { keys: ["PageDown"], desc: "跳到下一章节", group: "video" },
-  { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
-  { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
+  { keys: ["Tab"], desc: "同类下一个（AI 待审 / 人工 / 轨迹，按选中类循环）", group: "video", actionType: "videoCycleInCategory" },
+  { keys: ["Shift", "Tab"], desc: "同类上一个（按选中类循环）", group: "video", actionType: "videoCycleInCategory" },
+  { keys: ["`"], desc: "跳到下一类首对象（AI 待审 → 人工 → 轨迹）", group: "video", actionType: "videoStepCategory" },
+  { keys: ["Shift", "`"], desc: "跳到上一类首对象", group: "video", actionType: "videoStepCategory" },
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
   { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
 
@@ -191,10 +191,10 @@ export type HotkeyAction =
   | { type: "videoJumpHistory"; dir: -1 | 1 }
   | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected"; scope: "keyframe" | "track" }
-  | { type: "videoCycleTrack"; dir: 1 | -1 }
-  // I12 · Object Group
-  | { type: "annotationGroup" }
-  | { type: "annotationUngroup" };
+  | { type: "videoCycleInCategory"; dir: 1 | -1 }
+  | { type: "videoStepCategory"; dir: 1 | -1 }
+  | { type: "imageCycleInCategory"; dir: 1 | -1 }
+  | { type: "imageStepCategory"; dir: 1 | -1 };
 
 /** 属性 hotkey 解析结果（D.1）：
  * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
@@ -255,10 +255,6 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (k === "c") return { type: "copy" };
     if (k === "v") return { type: "paste" };
     if (k === "d") return { type: "duplicate" };
-    // I12 · Ctrl+G group / Ctrl+Shift+G ungroup; 仅在有选中时消费
-    if (k === "g" && ctx.hasSelection) {
-      return e.shiftKey ? { type: "annotationUngroup" } : { type: "annotationGroup" };
-    }
     return null;
   }
 
@@ -326,7 +322,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
           : null;
       }
     }
-    if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
+    if (e.key === "Tab") return { type: "videoCycleInCategory", dir: e.shiftKey ? -1 : 1 };
+    // v0.21.11 · ` / Shift+` 跨类跳转(AI 待审 → 人工 → 轨迹); 紧邻 Tab、当前未占用。
+    // e.code 而非 e.key: Shift+` 的 key 在美式布局是 "~" 而非 "`", 用 key 判定会让反向(Shift)永不触发。
+    if (e.code === "Backquote") return { type: "videoStepCategory", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
     if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected", scope: "keyframe" };
     if (e.key >= "1" && e.key <= "9") {
@@ -398,7 +397,11 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   if (e.key === "+" || e.key === "=") return { type: "samPolarity", polarity: "positive" };
   if (e.key === "-") return { type: "samPolarity", polarity: "negative" };
 
-  if (e.key === "Tab") return { type: "cycleUser", dir: e.shiftKey ? -1 : 1, loop: true };
+  // v0.21.11 · 图片 Tab 升级为「同类流转」(AI 待审 / 人工, 按选中对象类型环内循环),
+  // ` 跨类跳转。J/K 保留为人工框专属循环(老肌肉记忆)。
+  if (e.key === "Tab") return { type: "imageCycleInCategory", dir: e.shiftKey ? -1 : 1 };
+  // e.code 而非 e.key: Shift+` 的 key 在美式布局是 "~" 而非 "`", 用 key 判定会让反向(Shift)永不触发。
+  if (e.code === "Backquote") return { type: "imageStepCategory", dir: e.shiftKey ? -1 : 1 };
   if (e.key === "j" || e.key === "J") return { type: "cycleUser", dir: 1, loop: false };
   if (e.key === "k" || e.key === "K") return { type: "cycleUser", dir: -1, loop: false };
 

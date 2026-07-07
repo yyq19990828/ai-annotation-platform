@@ -4,7 +4,9 @@
 // - attributes-型选中且缺承接字段 → 出现补全 CTA; 运行后 warning toast
 // - 有可调参数 → ⚙ 显隐 + 展开参数面板
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { render as rtlRender, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
 import type { MLModelCapability } from "@/api/ml-backends";
 import type { AnnotationResponse } from "@/types";
 import { SecondaryInferenceBar } from "./SecondaryInferenceBar";
@@ -59,10 +61,20 @@ const annotation = {
   class_name: "car",
 } as AnnotationResponse;
 
+// v0.21.17 · SecondaryInferenceBar 内 useSecondaryParamPrefs 改走共享 useUserPreferences
+// (react-query), 需 QueryClientProvider。测试无登录用户 → query disabled, 不发 GET。
+let queryClient: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) =>
+  createElement(QueryClientProvider, { client: queryClient }, children);
+const render = (ui: Parameters<typeof rtlRender>[0]) => rtlRender(ui, { wrapper });
+
 beforeEach(() => {
   pushToast.mockReset();
   mutateAsync.mockReset();
   capabilitiesRef.current = [];
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
 });
 
 describe("SecondaryInferenceBar", () => {

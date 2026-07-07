@@ -127,7 +127,7 @@ archived
 }
 ```
 
-工具单位枚举 (与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐): `bbox` / `polyline` (留位) / `region` (polygon + mask 打包) / `ai_interactive` (smart-* + magic-box 打包) / `lidar_box_3d` (留位)。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)。
+工具单位枚举 (与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐): `bbox` / `polyline` (留位) / `region` (polygon + mask 打包) / `ai_interactive` (smart-* + magic-box 打包) / `lidar_box_3d` (留位)。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)。
 
 如果你改的是「标注长什么样」, 十有八九要从 project.tool_bindings 入手, 而不是 task。
 

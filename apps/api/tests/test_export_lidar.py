@@ -30,6 +30,7 @@ def _ann(
     class_name: str = "car",
     geometry: dict | None = None,
     attributes: dict | None = None,
+    track_id: str | None = None,
 ) -> Annotation:
     geometry = geometry or {
         "type": "box_3d",
@@ -51,6 +52,7 @@ def _ann(
         class_name=class_name,
         geometry=geometry,
         attributes=attributes or {},
+        track_id=track_id,
     )
 
 
@@ -116,6 +118,34 @@ def test_nuscenes_records_mark_identity_ego_pose():
     assert tables["sample_annotation"][0]["visibility_token"] == "visibility-2"
     assert tables["ego_pose"][0]["rotation"] == [1.0, 0.0, 0.0, 0.0]
     assert "placeholder" in tables["ego_pose"][0]["_aap_note"]
+
+
+def test_nuscenes_instance_grouped_by_track_id():
+    # v0.21.2 · ADR-0045 · 跨帧同一 track_id 的框归并为同一 nuScenes instance;
+    # 无 track_id 的框各自成 instance (退化为按 annotation id)。
+    task_a, task_b = uuid.uuid4(), uuid.uuid4()
+    ann_f1 = _ann(task_id=task_a, track_id="trk_abc")
+    ann_f2 = _ann(task_id=task_b, track_id="trk_abc")
+    ann_solo = _ann(task_id=task_b)  # 无 track_id
+    tables = build_nuscenes_frame_records(
+        [
+            LidarFrameExportCtx(
+                task_id=task_a, frame_key="000001", annotations=[ann_f1], cameras={}
+            ),
+            LidarFrameExportCtx(
+                task_id=task_b,
+                frame_key="000002",
+                annotations=[ann_f2, ann_solo],
+                cameras={},
+            ),
+        ]
+    )
+    tokens = [r["instance_token"] for r in tables["sample_annotation"]]
+    # 两帧同 track_id → 同一 instance_token; solo 框独立
+    assert tokens[0] == tokens[1] == "instance-car-trk_abc"
+    assert tokens[2] != tokens[0]
+    # instance 表去重: track 链 1 个 + solo 1 个 = 2 个 instance
+    assert len(tables["instance"]) == 2
 
 
 @pytest.mark.asyncio

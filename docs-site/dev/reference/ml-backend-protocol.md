@@ -236,7 +236,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > 落地细节：
 > - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
-> - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
+> - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/archive/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
 > - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
 > - **跨窗续追（平台侧）**：`video_tracker_runner.py` 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 `source_geometry` 续追，避免每窗从首帧框重新起追导致目标漂移。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
@@ -269,6 +269,42 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "mask_input_next": "<base64>"            // 可选; 仅 point 单 mask 精修阶段非空, 前端原样回带 (见上 mask_input)
 }
 ```
+
+### 2.3 检测式视频追踪（批量 `/predict`）
+
+**与 §2.2 的 `type=video_tracker` 是两条不同的链**。§2.2 是「人在环、单对象、种子传播」的交互式追踪（SAM2/SAM3，`predict_interactive`，平台分窗续追）；这里的**检测式追踪**（detect-then-track）是「无种子、多对象、全自动、离线批量」：检测器逐帧出框 + 内建关联算法（ByteTrack / BoT-SORT），**时间关联全在 backend 内**，平台只投整段视频、收已聚合的轨迹，自己不做任何时间编排。它走**标准批量 `/predict`**（复数 `tasks` wire），不进交互式那条链。
+
+**请求**：`context.type="tracker"`，`task.file_path` 是整段视频（presigned URL 或本地路径，backend 内部解帧）：
+```json
+{
+  "tasks": [{ "id": "v1", "file_path": "https://.../clip.mp4" }],
+  "context": {
+    "type": "tracker",
+    "model_variants": { "series": "yolo11", "size": "s" },
+    "params": { "conf": 0.35, "iou": 0.7, "tracker": "bytetrack" },
+    "classes": [2]                              // 可选类别白名单 (模型原生 index)
+  }
+}
+```
+- `params.tracker` 从 `/setup.models[].supported_trackers` 选定（缺省取首项）；enum 约束到 backend 内建的 tracker 配置（yolo：`bytetrack` / `botsort`）。追踪算法是 **param**（apply-time 选、不换权重），不是 variant 轴。
+- `supported_inputs=["video"]`：检测式追踪**只接受视频**——单帧图像无跨帧状态、产不出有意义的 `track_id`。
+
+**响应**：`result[]` 每项是一条**已聚合好的轨迹**（backend 已 stream 整段视频、按原生 track id 聚合，平台不再聚合），`type="video_track_bbox"`：
+```jsonc
+{
+  "type": "video_track_bbox",
+  "track_id": 3,                    // backend 原生 int; 平台 ingestion 映射成 trk_<uuid>
+  "class_name": "car",
+  "score": 0.87,                    // 轨迹级 (帧置信度均值)
+  "keyframes": [
+    // bbox 用 {x,y,w,h}、直接 0-1 归一化 (不发百分比、平台不做百分比自动探测)
+    { "frame_index": 0, "bbox": { "x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06 }, "score": 0.90 },
+    { "frame_index": 1, "bbox": { "x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06 }, "score": 0.88 }
+    // 某帧无 track id (低置信) 直接不出该帧关键帧
+  ]
+}
+```
+平台把它落成 `VideoTrackGeometry` 预标注（每帧 `source="prediction"`），视频工作台按轨迹渲染、人工审核接受。**首版限制**：单次整段追踪（不分窗），帧数超上限（yolo `YOLO_TRACKER_MAX_FRAMES`，默认 900）截断并 `log`（不静默丢）；长超时须配 tracker 专属超时 + 独立 queue / 限并发（长视频整段追踪独占 worker slot）。
 
 ---
 
@@ -309,7 +345,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **用途**：自描述 backend 能力，前端 `useMLCapabilities` hook 据此决定哪些 AI 工具可用、参数面板渲染哪些字段。
 
-> 协议背后的架构决策：[ADR-0020 — ML Backend Capability 协商协议](../adr/0020-ml-backend-capability-negotiation.md)。该 ADR 解释了为什么 `params` 限制为 Draft-07 子集、为什么走 apps/api 代理而非前端直连。
+> 协议背后的架构决策：[ADR-0020 — ML Backend Capability 协商协议](../adr/archive/0020-ml-backend-capability-negotiation.md)。该 ADR 解释了为什么 `params` 限制为 Draft-07 子集、为什么走 apps/api 代理而非前端直连。
 
 **响应**：JSON Schema 自描述协议。**必填**三元组：`name` / `version` / `model_version`；`supported_prompts` 决定 ToolDock 工具置灰；`params` 是 JSON Schema (Draft-07 子集)，前端 schema-form 自动渲染；`supported_variants` 可选，用于给变体选择器补充显存 / 档位 / 推荐等富元数据。
 
@@ -382,7 +418,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ## 4.1 能力声明协议 v2（多模型目录 + infra）
 
-> 协议背后的架构决策：[ADR-0036 — ML Backend 能力声明协议 v2（多模型目录 + infra）](../adr/0036-ml-backend-capability-protocol-v2-multi-model.md)。
+> 协议背后的架构决策：[ADR-0036 — ML Backend 能力声明协议 v2（多模型目录 + infra）](../adr/archive/0036-ml-backend-capability-protocol-v2-multi-model.md)。
 
 §4 描述的 `/setup` 是**单模型快照**形态——隐含「1 个 backend ≈ 1 个模型族」。协议 v2 在**完全向后兼容**前提下，把能力声明下沉到 **model 粒度**，让一个 backend 暴露一份 model list（一个 backend = N 个 model），每个 model 自带能力 + infra + variants。典型消费者是未来的 **YOLO 官仓 backend**（一个仓覆盖 det/seg/pose/obb/cls × series × size）与 **ONNX 聚合 backend**（一个进程聚合检测 / 关键点 / OCR / 抠图等异构模型）。
 
@@ -702,7 +738,7 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 ### 4.1.11 协议能力目录端点（v0.14.11）
 
-> 决策见 [ADR-0037 — 协议能力目录与 backend 注册解耦](../adr/0037-protocol-capability-catalog-decoupling.md)。
+> 决策见 [ADR-0037 — 协议能力目录与 backend 注册解耦](../adr/archive/0037-protocol-capability-catalog-decoupling.md)。
 
 §4.1 描述的 `/projects/{pid}/ml-backends/{bid}/capabilities` 是**实例能力视图**（已注册 backend 探测出的 `models[]` 派生）。但「模型市场 · 能力目录」面板在用户心智里要回答的是「平台支持哪些 AI 标注能力」，与 backend 是否注册无关。v0.14.11 引入**协议级**端点：
 

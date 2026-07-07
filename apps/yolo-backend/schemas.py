@@ -59,6 +59,9 @@ class PredictParams(BaseModel):
     conf: float = Field(default=0.25, ge=0.0, le=1.0)
     iou: float = Field(default=0.70, ge=0.0, le=1.0)
     max_det: int = Field(default=300, ge=1, le=1000)
+    # v0.21.1 · 检测式视频追踪的关联算法 (type=tracker 时生效; 其它 task 忽略)。平台 apply-time
+    # 从 /setup.supported_trackers 选定并下发; enum 约束到 ultralytics 内建 tracker 配置文件名。
+    tracker: Literal["bytetrack", "botsort"] = "bytetrack"
 
 
 class Exemplar(BaseModel):
@@ -95,7 +98,7 @@ class Context(BaseModel):
       平台文本路径把 conf/iou/max_det 扁平在顶层 (非嵌套 params), 由 before-validator 收拢.
     """
 
-    type: Literal["detection", "segmentation", "keypoint", "obb", "text", "exemplar"]
+    type: Literal["detection", "segmentation", "keypoint", "obb", "text", "exemplar", "tracker"]
     model_variants: dict[str, str] | None = None
     variants: Variants
     params: PredictParams = Field(default_factory=PredictParams)

@@ -141,7 +141,7 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
     },
     {
       id: "propagate",
-      label: "AI 传播",
+      label: "AI 追踪",
       icon: "bot",
       kbd: "Ctrl+B",
       disabled: frameEditDisabled || !onPropagateTrack,
@@ -157,8 +157,8 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
     },
     {
       id: "split-frame",
-      label: "拆当前帧为独立框",
-      icon: "scissors",
+      label: "当前帧转独立框",
+      icon: "box",
       disabled: trackMutationDisabled || !onConvertToBboxes,
       onSelect: () => onConvertToBboxes?.(selectedAnnotation, {
         operation: "split",

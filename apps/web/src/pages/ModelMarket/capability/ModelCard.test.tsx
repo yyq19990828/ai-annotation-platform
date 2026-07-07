@@ -57,4 +57,9 @@ describe("ModelCard 能力徽标 (v0.19.4)", () => {
     // 可接受输入行无数据 → 回落「整图」占位。
     expect(screen.getByText("整图")).toBeInTheDocument();
   });
+
+  it("supported_inputs=video → 使用词表标签", () => {
+    renderCard({ supported_inputs: ["video"] });
+    expect(screen.getByText("视频")).toBeInTheDocument();
+  });
 });

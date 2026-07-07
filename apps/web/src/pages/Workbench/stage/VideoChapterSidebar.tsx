@@ -28,6 +28,16 @@ interface VideoChapterSidebarProps {
   timebase?: FrameTimebase;
   canEdit: boolean;
   onSeekFrame?: (frameIndex: number) => void;
+  /** v0.21.13 · 时间轴「圈选建章节」臂选态 (由 shell 管理, 圈一段后自动解除)。 */
+  timelineDraftArmed?: boolean;
+  onToggleTimelineDraft?: () => void;
+  /** v0.21.13 · 时间轴刷选产物 (start/end 帧); 一变化即打开新建表单并预填范围。 */
+  draftRange?: { startFrame: number; endFrame: number } | null;
+  /** 消费完 draftRange 后通知 shell 清空, 使同一区间可再次触发。 */
+  onConsumeDraftRange?: () => void;
+  /** v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动。 */
+  hoveredChapterId?: string | null;
+  onHoverChapter?: (chapterId: string | null) => void;
 }
 
 function formatChapterDuration(start: number, end: number, timebase?: FrameTimebase) {
@@ -88,6 +98,12 @@ export function VideoChapterSidebar({
   timebase,
   canEdit,
   onSeekFrame,
+  timelineDraftArmed = false,
+  onToggleTimelineDraft,
+  draftRange = null,
+  onConsumeDraftRange,
+  hoveredChapterId = null,
+  onHoverChapter,
 }: VideoChapterSidebarProps) {
   const { data: chapters = [], isLoading } = useVideoChapters(datasetItemId);
   const createMutation = useCreateVideoChapter(datasetItemId);
@@ -100,6 +116,23 @@ export function VideoChapterSidebar({
   useEffect(() => {
     setError(null);
   }, [editing?.chapterId]);
+
+  // v0.21.13 · 时间轴刷选产物到达 → 打开新建表单并预填起止帧 (只剩填标题 / 选色), 随即通知 shell 清空。
+  useEffect(() => {
+    if (!draftRange) return;
+    const start = Math.max(0, Math.min(draftRange.startFrame, draftRange.endFrame));
+    const end = Math.min(maxFrame, Math.max(draftRange.startFrame, draftRange.endFrame));
+    setEditing({
+      chapterId: null,
+      title: "",
+      startFrame: start,
+      endFrame: end,
+      color: defaultChapterColor(chapters.length),
+    });
+    onConsumeDraftRange?.();
+    // 仅在 draftRange 变化时触发; 消费后 shell 会把它清空, guard 提前返回避免重入。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRange]);
 
   const sortedChapters = useMemo(
     () => [...chapters].sort((a, b) => a.start_frame - b.start_frame),
@@ -183,23 +216,48 @@ export function VideoChapterSidebar({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <b className="text-sm">章节</b>
-          <span className="mono text-muted-foreground text-xs">
+          <span className="text-sm font-semibold">章节</span>
+          <span className="mono text-xs font-medium text-muted-foreground">
             {sortedChapters.length}
           </span>
         </div>
         {canEdit && (
-          <Button
-            size="sm"
-            className="!py-1 !px-2 !rounded-lg"
-            disabled={Boolean(editing)}
-            onClick={startCreate}
-            title="新建章节"
-          >
-            <Icon name="plus" size={13} />新建
-          </Button>
+          <div className="flex items-center gap-1">
+            {onToggleTimelineDraft && (
+              <Button
+                size="sm"
+                variant={timelineDraftArmed ? "primary" : "ghost"}
+                className="!py-1 !px-2 !rounded-lg"
+                disabled={Boolean(editing)}
+                onClick={onToggleTimelineDraft}
+                title={timelineDraftArmed ? "取消时间轴圈选" : "在时间轴上拖选章节范围"}
+                aria-pressed={timelineDraftArmed}
+              >
+                <Icon name="scan" size={13} />圈选
+              </Button>
+            )}
+            <Button
+              size="sm"
+              className="!py-1 !px-2 !rounded-lg"
+              disabled={Boolean(editing)}
+              onClick={startCreate}
+              title="新建章节"
+            >
+              <Icon name="plus" size={13} />新建
+            </Button>
+          </div>
         )}
       </div>
+
+      {timelineDraftArmed && !editing && (
+        <div
+          data-testid="video-chapter-draft-hint"
+          className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg bg-brand/10 text-brand text-xs"
+        >
+          <Icon name="scan" size={12} />
+          在时间轴上按住拖动圈选章节范围…
+        </div>
+      )}
 
       {isLoading && sortedChapters.length === 0 && (
         <div className="text-muted-foreground text-xs">载入中…</div>
@@ -214,15 +272,20 @@ export function VideoChapterSidebar({
       <div className="grid gap-1.5">
         {sortedChapters.map((chapter, idx) => {
           const isInside = frameIndex >= chapter.start_frame && frameIndex <= chapter.end_frame;
+          const isHovered = hoveredChapterId === chapter.id;
           const color = chapter.color ?? defaultChapterColor(idx);
           return (
             <div
               key={chapter.id}
               data-testid="video-chapter-row"
+              data-hovered={isHovered ? "true" : undefined}
               aria-selected={isInside}
+              onMouseEnter={() => onHoverChapter?.(chapter.id)}
+              onMouseLeave={() => onHoverChapter?.(null)}
               className={cn(
                 "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2 items-center py-2 px-2.5 border border-border rounded-lg bg-background",
                 isInside && "!border-brand bg-brand/10",
+                isHovered && !isInside && "!border-brand/60 bg-muted",
               )}
             >
               <svg className="w-2.5 h-2.5 rounded-full" viewBox="0 0 10 10" aria-hidden="true">

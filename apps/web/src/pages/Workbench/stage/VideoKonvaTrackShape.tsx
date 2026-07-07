@@ -1,10 +1,13 @@
-import { memo } from "react";
+import { memo, Fragment } from "react";
 import { Rect } from "react-konva";
 import { colorToHex, hexToRgba } from "./colors";
 import { fillAlpha, strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
 import { screenToWorld } from "./shared/viewport/scaleCancel";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { VideoStageGeom } from "./videoStageTypes";
+
+/** v0.21.9 · AI 追出关键帧的角标色 (violet, 对齐时间轴 trackKeyframePrediction / 预测密度轨 / roster)。 */
+const PREDICTED_BADGE_HEX = "#8b5cf6";
 
 interface VideoKonvaTrackShapeProps {
   /** 归一化 [0,1] bbox。 */
@@ -13,6 +16,8 @@ interface VideoKonvaTrackShapeProps {
   color: string;
   /** 插值帧或遮挡 → 虚线(对齐旧 SVG VideoTrackShape 的 "6 4")。 */
   dashed: boolean;
+  /** v0.21.9 · 当前帧是 AI 追出的关键帧 → 左上角 violet 角标 (区别于插值虚线、人工实线)。 */
+  predicted?: boolean;
   selected: boolean;
   size: VideoPixelSize;
   scale: number;
@@ -30,6 +35,7 @@ function VideoKonvaTrackShapeComponent({
   geom,
   color,
   dashed,
+  predicted = false,
   selected,
   size,
   scale,
@@ -37,19 +43,35 @@ function VideoKonvaTrackShapeComponent({
 }: VideoKonvaTrackShapeProps) {
   const hex = colorToHex(color);
   const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
+  const x = geom.x * size.w;
+  const y = geom.y * size.h;
+  const badge = 6 / scale; // 屏幕恒定的角标边长
   return (
-    <Rect
-      name="video-track-shape"
-      x={geom.x * size.w}
-      y={geom.y * size.h}
-      width={geom.w * size.w}
-      height={geom.h * size.h}
-      stroke={hex}
-      strokeWidth={sw}
-      dash={dashed ? [6 / scale, 4 / scale] : undefined}
-      fill={hexToRgba(hex, fillAlpha(selected, visual))}
-      listening={false}
-    />
+    <Fragment>
+      <Rect
+        name="video-track-shape"
+        x={x}
+        y={y}
+        width={geom.w * size.w}
+        height={geom.h * size.h}
+        stroke={hex}
+        strokeWidth={sw}
+        dash={dashed ? [6 / scale, 4 / scale] : undefined}
+        fill={hexToRgba(hex, fillAlpha(selected, visual))}
+        listening={false}
+      />
+      {predicted && (
+        <Rect
+          name="video-track-predicted-badge"
+          x={x}
+          y={y}
+          width={badge}
+          height={badge}
+          fill={PREDICTED_BADGE_HEX}
+          listening={false}
+        />
+      )}
+    </Fragment>
   );
 }
 

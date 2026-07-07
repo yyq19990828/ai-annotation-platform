@@ -4,7 +4,7 @@
 
 ## 关联
 
-<!-- Issue / Bug ID / Plan 文件路径，例如：B-12、docs/plans/2026-05-08-xxx.md -->
+<!-- Issue / Bug ID / Plan 文件路径，例如：B-12、docs/plans/archive/2026-05-08-xxx.md -->
 
 ## 文档影响清单（CLAUDE.md §5）
 

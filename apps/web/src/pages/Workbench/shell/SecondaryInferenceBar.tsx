@@ -323,7 +323,7 @@ export function SecondaryInferenceBar({
               disabled={busy}
               title={`该模型会输出 ${missing.map((f) => f.key).join(", ")}，但项目缺承接字段（跑了也不显示）。点此补全。`}
               data-testid="secondary-fill"
-              className="rounded-sm border border-amber-400/60 px-1.5 py-1 text-2xs text-amber-600 dark:text-amber-400"
+              className="rounded-sm border border-amber-400/60 px-1.5 py-1 text-2xs text-status-caution"
             >
               ⚠ 补 {missing.length} 字段
             </button>

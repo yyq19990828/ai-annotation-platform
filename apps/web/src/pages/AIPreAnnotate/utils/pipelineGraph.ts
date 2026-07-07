@@ -7,11 +7,24 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
-import type { PipelineStagePayload } from "@/hooks/usePreannotation";
+import {
+  inputLabel,
+  INPUT_BBOX_PROMPT_ID,
+  INPUT_CROP_ID,
+} from "@/api/capabilityInputs";
+import {
+  TASKS,
+  MODALITIES,
+  type ModalityId,
+  type TaskId,
+} from "@/api/generated/capabilityVocab.gen";
+import type { PipelineSource, PipelineStagePayload } from "@/hooks/usePreannotation";
 
 export interface StageEntry {
   sid: string;
-  parentSid: string;
+  /** v0.21.5 · 输入节点(编排首节点)parentSid=null; 其余为父 sid。源不再是合成的画布外 root,
+   *  而是 stagesGraph 内一条 parentSid=null 的普通 entry。 */
+  parentSid: string | null;
 }
 
 export type StageRole = {
@@ -20,8 +33,15 @@ export type StageRole = {
   icon: "box" | "sparkles" | "tag";
 };
 
-/** 源 sid (源检测阶段, parentSid 链的根)。 */
+/** 输入节点 sid (纯数据源, parentSid 链的根, parentSid=null)。 */
 export const ROOT_SID = "root";
+
+/**
+ * v0.21.6 · 首模型 stage 的固定 sid (输入节点唯一子, 承接原源检测/tracker 模型配置)。
+ * 输入节点=纯数据源(不绑模型), 首模型 stage=后端 stage 0(parent_stage=null)。母计划 frame/video
+ * 双分支(多首模型 stage)留 v0.21.7; 本版单首模型 stage 用此固定 sid, cfg 绑它。
+ */
+export const SOURCE_SID = "source";
 
 /** 受限树形最大深度 (源=1, 下游 2/3)。 */
 export const MAX_DEPTH = 3;
@@ -35,7 +55,7 @@ export function producesGeometry(payload: PipelineStagePayload | null | undefine
 /** 角色徽标: crop-detect(input.mode=crop)=检测; 其它产几何=分割; ocr=识别; 否则=分类。 */
 export function roleOf(payload: PipelineStagePayload | null | undefined): StageRole {
   if (producesGeometry(payload)) {
-    return payload?.input?.mode === "crop"
+    return payload?.input?.mode === INPUT_CROP_ID
       ? { label: "检测", variant: "accent", icon: "box" }
       : { label: "分割", variant: "ai", icon: "sparkles" };
   }
@@ -80,6 +100,133 @@ export function variantText(payload: PipelineStagePayload | null | undefined): s
     .join(", ");
 }
 
+/** 分类下游 model 所需的最小结构 (MLModelCapability / CapabilityInstanceModel 公共子集)。 */
+export interface DownstreamModelLike {
+  task?: string;
+  supported_prompts?: string[];
+  is_interactive?: boolean;
+  composition?: string;
+}
+
+/**
+ * 下游 model 归类旗标 (单一真相; 项目侧 StageCard 与全局侧 GlobalStageInspector 共用)。
+ * 三类判据互斥 (task 单值), 语义:
+ * - isCropDetectGeometry: 普通检测器在父 crop 上检子物体 (crop 投递 + 坐标回映, 产几何)。
+ * - isBoxSegGeometry: box-seg (segmentation + bbox prompt) 消费上游框出 mask (geometry 投递, 产几何)。
+ * - isOcrRecognize: rec 原子在父 crop 上认字 (crop 投递, 产 text/orientation/language 属性)。
+ * 三者皆非 → 分类下游 (crop 投递, 产属性)。
+ */
+export interface DownstreamKind {
+  isBoxSegGeometry: boolean;
+  isCropDetectGeometry: boolean;
+  /** 产几何的两类 (box-seg / crop-detect) 之一; 用于隐藏属性字段、允许作父阶段。 */
+  isGeometryDownstream: boolean;
+  isOcrRecognize: boolean;
+}
+
+export function classifyDownstream(
+  model: DownstreamModelLike | null | undefined,
+): DownstreamKind {
+  const isBoxSegGeometry =
+    model?.task === "segmentation" &&
+    (model?.supported_prompts ?? []).includes("bbox") &&
+    !model?.is_interactive;
+  const isCropDetectGeometry =
+    model?.task === "detection" && !model?.is_interactive;
+  const isOcrRecognize =
+    model?.task === "ocr" &&
+    model?.composition !== "composite" &&
+    !model?.is_interactive;
+  return {
+    isBoxSegGeometry: !!isBoxSegGeometry,
+    isCropDetectGeometry: !!isCropDetectGeometry,
+    isGeometryDownstream: !!(isBoxSegGeometry || isCropDetectGeometry),
+    isOcrRecognize: !!isOcrRecognize,
+  };
+}
+
+/** 下游阶段"内生形态": roi/input/write 由 model task 定死 (不给用户手选)。 */
+export interface DownstreamShape {
+  role: "检测" | "分割" | "识别" | "分类";
+  roiMode: "crop" | "geometry";
+  /** 仅检测下游显式下发 input=crop; 其余省略, 后端按 supported_inputs 烘焙。 */
+  inputMode?: "crop";
+  writeTarget: "geometry" | "attributes";
+  /** 是否写属性 (决定是否出 write.keys / label 字段)。 */
+  isAttributes: boolean;
+}
+
+export function deriveDownstreamShape(model: DownstreamModelLike): DownstreamShape {
+  const k = classifyDownstream(model);
+  if (k.isCropDetectGeometry) {
+    return { role: "检测", roiMode: "crop", inputMode: "crop", writeTarget: "geometry", isAttributes: false };
+  }
+  if (k.isBoxSegGeometry) {
+    return { role: "分割", roiMode: "geometry", writeTarget: "geometry", isAttributes: false };
+  }
+  if (k.isOcrRecognize) {
+    return { role: "识别", roiMode: "crop", writeTarget: "attributes", isAttributes: true };
+  }
+  return { role: "分类", roiMode: "crop", writeTarget: "attributes", isAttributes: true };
+}
+
+/** 源阶段 model 所需最小结构 (MLModelCapability / CapabilityInstanceModel 公共子集)。 */
+export interface SourceModelLike {
+  task?: string;
+  supported_inputs?: string[];
+}
+
+/**
+ * v0.21.5 · 输入节点"内生形态"。此前 v0.21.1 WS0 的 deriveSourceShape 从 model.supported_inputs
+ * 反推源类型, 现退役 —— 源类型 (data_type) / 执行单位 (execution_unit) 改由输入节点
+ * `source:{}` 直接携带 (SSOT 前移到 graph)。角色 / 产物仍随 model.task (detection→目标检测 /
+ * tracker→视频追踪), 因为输入节点仍绑一个源检测/追踪模型。
+ */
+export interface SourceNodeShape {
+  /** 角色徽标 (走 TASKS[task].label)。 */
+  role: StageRole;
+  /** 投喂数据模态 (image | video | ...); 由 source.data_type 决定, 兜底 image。 */
+  sourceType: ModalityId;
+  /** 模态人类可读名 (图像 / 视频)。 */
+  sourceTypeLabel: string;
+  /** 执行单位人类可读名 (整段序列 / 逐帧 / 场景); 无则 undefined。 */
+  executionUnitLabel?: string;
+  /** 产物名词 (检测框 / 轨迹); 项目侧输入节点详情行。 */
+  productLabel: string;
+  /** 源计数标签 (检出 / 轨迹); 画布 footer。 */
+  countLabel: string;
+}
+
+function isTaskId(task: string | undefined): task is TaskId {
+  return task != null && task in TASKS;
+}
+
+const EXECUTION_UNIT_LABELS: Record<string, string> = {
+  video: "整段序列",
+  frame: "逐帧",
+  scene: "场景",
+};
+
+export function sourceNodeShape(
+  source: PipelineSource | null | undefined,
+  model: SourceModelLike | null | undefined,
+): SourceNodeShape {
+  const task = model?.task;
+  const meta = isTaskId(task) ? TASKS[task] : undefined;
+  const sourceType = (source?.data_type as ModalityId | undefined) ?? "image";
+  const isTracker = task === "tracker";
+  return {
+    role: { label: meta?.label ?? "检测", variant: "accent", icon: "box" },
+    sourceType,
+    sourceTypeLabel: MODALITIES[sourceType]?.label ?? sourceType,
+    executionUnitLabel: source?.execution_unit
+      ? EXECUTION_UNIT_LABELS[source.execution_unit]
+      : undefined,
+    productLabel: isTracker ? "轨迹" : "检测框",
+    countLabel: isTracker ? "轨迹" : "检出",
+  };
+}
+
 /** 阶段模型能力旗标 (StageCard 自报, 供画布作可达性 / 产属性警示)。 */
 export interface StageCaps {
   /** capabilities 查询已就绪 (否则不判, 免误报)。 */
@@ -119,7 +266,9 @@ export function stageWarning(
     return "该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线";
   if (producesGeometry(payload)) {
     if (caps.knownInputs && !caps.acceptsCrop && !caps.acceptsBboxPrompt)
-      return "该模型不接受裁剪图 / 框提示，无法作几何下游（运行将被端点拒绝）";
+      return `该模型不接受${inputLabel(INPUT_CROP_ID)}图 / ${inputLabel(
+        INPUT_BBOX_PROMPT_ID,
+      )}，无法作几何下游（运行将被端点拒绝）`;
     return null;
   }
   // task=ocr 是识别阶段 (产 text/orientation/language 非 class), 不套「分类下游须产 class」判据。
@@ -131,18 +280,19 @@ export function stageWarning(
 }
 
 /**
- * 每 sid 深度 (root=1, 子=父+1)。
- * 顺父链递归求值, **与数组顺序无关** —— 改父后子可能排在新父之前, 不能假设父先于子出现
- * (否则深度被低估 → canAddChild 误判 → 造出 depth>3)。带环兜底。
+ * 每 sid 深度 (输入节点=0, 首模型 stage=1, 子=父+1)。
+ * v0.21.6 · 输入节点是纯数据源不计模型层 → depth 0; MAX_DEPTH=3 因此指模型 stage 的 1..3 三层
+ * (输入→检测→子检测→分类)。顺父链递归求值, **与数组顺序无关** —— 改父后子可能排在新父之前,
+ * 不能假设父先于子出现 (否则深度被低估 → canAddChild 误判 → 造出超深)。带环兜底。
  */
 export function depthBySid(graph: StageEntry[]): Record<string, number> {
-  const parentOf: Record<string, string> = {};
+  const parentOf: Record<string, string | null> = {};
   for (const e of graph) parentOf[e.sid] = e.parentSid;
-  const memo: Record<string, number> = { [ROOT_SID]: 1 };
+  const memo: Record<string, number> = {};
   const depthOf = (sid: string, seen: Set<string>): number => {
     if (memo[sid] != null) return memo[sid];
     const p = parentOf[sid];
-    if (p == null || seen.has(sid)) return (memo[sid] = 1); // 孤儿 / 环 → 兜底为 1
+    if (p == null || seen.has(sid)) return (memo[sid] = 0); // 输入节点 / 孤儿 / 环 → 0
     seen.add(sid);
     return (memo[sid] = depthOf(p, seen) + 1);
   };
@@ -173,12 +323,23 @@ export function subtreeHeight(graph: StageEntry[], sid: string): number {
   return 1 + Math.max(...kids.map((e) => subtreeHeight(graph, e.sid)));
 }
 
-/** sid (含合成 root) 是否产几何 —— 源恒产几何 (检测器)。 */
+/**
+ * sid 是否产几何 (可作下游的父)。
+ * - 输入节点(parentSid=null): 纯数据源, 恒 true (其源模型子可挂)。
+ * - 源式 stage(父=输入节点): 源检测/tracker 模型, 恒产几何 (payload 由 cfg 管、不在复合器,
+ *   故不能靠 producesGeometry(payload); 结构性判为 true, 与 v0.21.5「源恒产几何」一致)。
+ * - 其余下游 stage: 按 producesGeometry(payload)。
+ */
 function sidProducesGeometry(
+  graph: StageEntry[],
   payloadBySid: Record<string, PipelineStagePayload | null>,
   sid: string,
 ): boolean {
-  if (sid === ROOT_SID) return true;
+  const e = graph.find((x) => x.sid === sid);
+  if (!e) return producesGeometry(payloadBySid[sid]);
+  if (e.parentSid == null) return true;
+  const parent = graph.find((x) => x.sid === e.parentSid);
+  if (parent && parent.parentSid == null) return true;
   return producesGeometry(payloadBySid[sid]);
 }
 
@@ -188,7 +349,7 @@ export function canAddChild(
   payloadBySid: Record<string, PipelineStagePayload | null>,
   parentSid: string,
 ): boolean {
-  if (!sidProducesGeometry(payloadBySid, parentSid)) return false;
+  if (!sidProducesGeometry(graph, payloadBySid, parentSid)) return false;
   return (depthBySid(graph)[parentSid] ?? 1) < MAX_DEPTH;
 }
 
@@ -212,13 +373,13 @@ export function canReparent(
   childSid: string,
   newParentSid: string,
 ): ReparentCheck {
-  if (childSid === ROOT_SID) return { ok: false, reason: "源阶段不可改父" };
-  if (newParentSid === childSid) return { ok: false, reason: "不能连到自身" };
   const cur = graph.find((e) => e.sid === childSid);
+  if (cur && cur.parentSid == null) return { ok: false, reason: "输入节点不可改父" };
+  if (newParentSid === childSid) return { ok: false, reason: "不能连到自身" };
   if (cur && cur.parentSid === newParentSid) return { ok: false, reason: "已是当前父阶段" };
   if (descendantsOf(graph, childSid).has(newParentSid))
     return { ok: false, reason: "不能连到自己的后代（成环）" };
-  if (!sidProducesGeometry(payloadBySid, newParentSid))
+  if (!sidProducesGeometry(graph, payloadBySid, newParentSid))
     return { ok: false, reason: "父阶段须产几何（检测/分割）" };
   const newChildDepth = (depthBySid(graph)[newParentSid] ?? 1) + 1;
   if (newChildDepth + subtreeHeight(graph, childSid) - 1 > MAX_DEPTH)
@@ -233,11 +394,10 @@ export function reparent(graph: StageEntry[], childSid: string, newParentSid: st
 
 // ── 布局 + react-flow 派生 ─────────────────────────────────────────────
 
-/** buildFlow 的输入: 每节点的展示模型 (含合成源节点, sid=ROOT_SID)。 */
+/** buildFlow 的输入: 每节点的展示模型。输入节点 = parentSid==null 的普通 entry (不再 kind 二分)。 */
 export interface GraphNodeModel {
   sid: string;
   parentSid: string | null;
-  kind: "source" | "stage";
   role: StageRole;
   detail: string;
   runState: "pending" | "running" | "done";
@@ -247,6 +407,11 @@ export interface GraphNodeModel {
   producesGeometry: boolean;
   canAddChild: boolean;
   conflict: boolean;
+  // v0.21.1 WS0 · 输入节点「源类型」徽标 (图像 / 视频) + 计数标签 (检出 / 轨迹); 下游为 undefined。
+  sourceTypeLabel?: string;
+  sourceCountLabel?: string;
+  // v0.21.5 · 输入节点「执行单位」徽标 (整段序列 / 逐帧); 下游为 undefined。
+  executionUnitLabel?: string;
   // ── v0.18.16 §13 信息增强 ──
   /** backend 名 (副标题); 看不出用哪个后端是主要痛点。 */
   backendName?: string;
@@ -308,7 +473,8 @@ export function buildFlow(
 
   const nodes: Node<StageNodeData>[] = models.map((m) => ({
     id: m.sid,
-    type: m.kind === "source" ? "source" : "stage",
+    // v0.21.5 · 单一 node type; 输入 handle 由 parentSid==null 在节点组件内决定 (去 source/stage 二分)。
+    type: "stage",
     position: { x: (depth[m.sid] - 1) * COL_W, y: yBySid[m.sid] ?? 0 },
     data: { ...m, selected: m.sid === selectedSid },
     selected: m.sid === selectedSid,

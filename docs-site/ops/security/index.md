@@ -229,7 +229,7 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 
 ### 6.1 Production 安全响应头
 
-`apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](/dev/adr/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
+`apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](/dev/adr/archive/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
 
 | Header | Value |
 |---|---|

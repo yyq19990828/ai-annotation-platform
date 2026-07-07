@@ -66,7 +66,7 @@ class TrackerJobStore {
     this.jobs = { ...this.jobs, [job.id]: state };
     this.emit();
     useToastStore.getState().push({
-      msg: "AI 传播已开始",
+      msg: "AI 追踪已开始",
       sub: `${job.model_key} · F${job.from_frame}-F${job.to_frame}`,
       kind: "",
     });
@@ -131,15 +131,15 @@ class TrackerJobStore {
 
     const range = `${cur.modelKey} · F${cur.fromFrame}-F${cur.toFrame}`;
     if (payload.type === "job_completed") {
-      useToastStore.getState().push({ msg: "AI 传播完成", sub: range, kind: "success" });
+      useToastStore.getState().push({ msg: "AI 追踪完成", sub: range, kind: "success" });
     } else if (payload.type === "job_failed") {
       useToastStore.getState().push({
-        msg: "AI 传播失败",
+        msg: "AI 追踪失败",
         sub: payload.error_message ?? cur.errorMessage ?? range,
         kind: "error",
       });
     } else if (payload.type === "job_cancelled") {
-      useToastStore.getState().push({ msg: "AI 传播已取消", sub: range, kind: "warning" });
+      useToastStore.getState().push({ msg: "AI 追踪已取消", sub: range, kind: "warning" });
     }
 
     if (payload.type === "job_completed" || payload.type === "job_cancelled") {

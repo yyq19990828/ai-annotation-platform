@@ -18,14 +18,19 @@ import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
-import { VideoPlaybackOverlay, type VideoLargeFrameStep, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
+import {
+  VideoPlaybackOverlay,
+  type VideoLargeFrameStep,
+  type VideoTimelineChapter,
+  type VideoTimelineChapterControls,
+} from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
 import { classColor, getTrackColor } from "./colors";
-import { isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { deriveTrackNumber, isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -35,10 +40,18 @@ import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConv
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
+import type { VideoLoopRegion } from "./videoNavigationState";
+import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
+import { buildFrameCategories, nextInCategory, nextCategory, type FrameObjectRef } from "./frameObjectCycle";
 import type { VideoStageControls } from "./videoStageControls";
+import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
+import { SelectionOverlay } from "./SelectionOverlay";
+import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
+import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
 
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
+const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
 
 interface VideoKonvaStageProps {
@@ -48,9 +61,15 @@ interface VideoKonvaStageProps {
   error?: unknown;
   frameIndex?: number;
   autoFitOnResize?: boolean;
+  /** v0.21.11 · 选中自动聚焦(common.focusSelectionEnabled); 关闭时选中不移动视口。 */
+  focusSelectionEnabled?: boolean;
+  /** v0.21.12 · 轨迹「续写后自动前进」(video.trackContinueAutoAdvance); 续写完自动选中下一条待续轨迹。 */
+  trackContinueAutoAdvance?: boolean;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
   annotations?: AnnotationResponse[];
+  /** v0.21.4 · AI 候选框(全部帧); 舞台内按当前帧过滤 video_bbox 渲染 + 采纳/驳回。 */
+  aiBoxes?: AiBox[];
   selectedId?: string | null;
   hiddenTrackIds?: Set<string>;
   reviewDisplayMode?: DiffMode;
@@ -85,11 +104,18 @@ interface VideoKonvaStageProps {
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
+  /** v0.21.4 · AI 候选采纳 / 驳回(贴框快捷条, 复用图片工作台的 handleAcceptPrediction/Reject)。 */
+  onAcceptPrediction?: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
   /** 时间轴章节(从工作台 shell 透传)。 */
   chapters?: VideoTimelineChapter[];
+  /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
+  timelineChapterControls?: VideoTimelineChapterControls;
+  /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
+  propagateRange?: VideoLoopRegion | null;
   /** 采样配置(帧网格步进策略)。 */
   videoSampling?: VideoSamplingConfig | null;
   /** 默认播放速率。 */
@@ -117,9 +143,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   error,
   frameIndex: controlledFrameIndex,
   autoFitOnResize = true,
+  focusSelectionEnabled = false,
+  trackContinueAutoAdvance = false,
   performanceTier = "standard",
   onFrameIndexChange,
   annotations = EMPTY_ANNOTATIONS,
+  aiBoxes = EMPTY_AI_BOXES,
   selectedId = null,
   hiddenTrackIds,
   reviewDisplayMode,
@@ -146,10 +175,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onComposeTracks,
   onConvertToBboxes,
   onDelete,
+  onAcceptPrediction,
+  onRejectPrediction,
   onPropagateTrack,
   onToggleHiddenTrack,
   onToggleLockedTrack,
   chapters = [],
+  timelineChapterControls,
+  propagateRange = null,
   videoSampling = null,
   defaultPlaybackRate,
   largeFrameStep = 10,
@@ -193,6 +226,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     setContextMenuTargetId(null);
   }, [contextMenu]);
 
+  // v0.21.9 · 预测帧集合 (video_bbox 帧号 + video_track_bbox 关键帧号, 去重升序); 喂时间轴预测密度轨。
+  const predictedFrames = useMemo(() => collectPredictedFrames(aiBoxes), [aiBoxes]);
+
   // ---- useVideoPlaybackController ----
   // currentFrameEntries 供 QC 用,控制器内部用它做重叠率计算。
   // 此处传空数组占位 — 重叠率 QC 会不计分,属于可接受的简化(旧栈的 currentFrameEntries 走的
@@ -208,6 +244,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     videoSampling,
     defaultPlaybackRate: defaultPlaybackRate as (1 | 0.25 | 0.5 | 2 | 4) | undefined,
     annotations,
+    predictedFrames,
     selectedId,
     selectedTrack,
     trackColorOverrides,
@@ -239,6 +276,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     selectedTrackTimeline,
     selectedTrackColor,
     globalTimelineDensity,
+    predictionDensity,
+    hasPredictedFrames,
+    seekToAdjacentPredictedFrame,
     issueFrames,
     playbackOverlayVisible,
     highlightAction,
@@ -280,9 +320,91 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       visual,
       referenceConfig,
       pendingDraft,
+      samplingStep,
     }),
-    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, selectedId, trackColorOverrides, visual],
+    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, samplingStep, selectedId, trackColorOverrides, visual],
   );
+
+  // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
+  // v0.21.9 WS2 · 检测式轨迹候选(video_track_bbox)也纳入: 用 resolveTrackAtFrame 解出当前帧框,
+  //   与逐帧 video_bbox 候选同层渲染(此前只在侧栏可见、画布不画)。
+  const frameAiBoxes = useMemo(
+    () =>
+      aiBoxes
+        .map((b) => resolveAiBoxAtFrame(b, frameIndex))
+        .filter((b): b is (typeof aiBoxes)[number] => b !== null),
+    [aiBoxes, frameIndex],
+  );
+  const selectedAiBox = useMemo(
+    () => frameAiBoxes.find((b) => b.id === selectedId) ?? null,
+    [frameAiBoxes, selectedId],
+  );
+
+  // v0.21.11 · 当前帧三类对象(AI 待审 / 人工 video_bbox / 轨迹当前帧视图)分类 + 空间排序,
+  // 供 Tab 同类流转 / ` 跨类跳转。人工 vs 轨迹按 annotation.geometry 类型判别; AI 用扁平 x/y。
+  const frameCategories = useMemo(() => {
+    const aiRefs: FrameObjectRef[] = frameAiBoxes.map((b) => ({ id: b.id, x: b.x, y: b.y }));
+    const userRefs: FrameObjectRef[] = [];
+    const trackRefs: FrameObjectRef[] = [];
+    for (const entry of frameViews.entries) {
+      const ann = annotations.find((a) => a.id === entry.id);
+      const ref: FrameObjectRef = { id: entry.id, x: entry.geom.x, y: entry.geom.y };
+      if (ann && isVideoTrack(ann)) trackRefs.push(ref);
+      else userRefs.push(ref);
+    }
+    // v0.21.12 · 跨网格帧续写待续轨迹并入「轨迹」类:Tab 一起循环(当前帧已画 + 待续 ghost),
+    // 选中待续轨迹即可续写,不必回上一帧 / 右栏。
+    for (const g of frameViews.carryOverGhosts) {
+      trackRefs.push({ id: g.id, x: g.geom.x, y: g.geom.y });
+    }
+    return buildFrameCategories(aiRefs, userRefs, trackRefs);
+  }, [annotations, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries]);
+
+  const cycleInCategory = useCallback((dir: -1 | 1) => {
+    const next = nextInCategory(frameCategories, selectedId, dir);
+    if (next) onSelect?.(next);
+  }, [frameCategories, onSelect, selectedId]);
+
+  const stepCategory = useCallback((dir: -1 | 1) => {
+    const next = nextCategory(frameCategories, selectedId, dir);
+    if (next) onSelect?.(next);
+  }, [frameCategories, onSelect, selectedId]);
+
+  // v0.21.11 WS2 · 焦点联动: 把对象平移居中(仅出视口/过小才动, 保守不打断已在视口的选中)。
+  const focusObject = useCallback((id: string) => {
+    if (!viewportSize.w || !viewportSize.h || !size.w || !size.h) return;
+    const ai = frameAiBoxes.find((b) => b.id === id);
+    const geom = ai
+      ? { x: ai.x, y: ai.y, w: ai.w, h: ai.h }
+      : frameViews.entries.find((e) => e.id === id)?.geom
+        ?? frameViews.carryOverGhosts.find((g) => g.id === id)?.geom
+        ?? null;
+    if (!geom) return;
+    const cur = vpRef.current;
+    const cx = (geom.x + geom.w / 2) * size.w;
+    const cy = (geom.y + geom.h / 2) * size.h;
+    const objMaxDimPx = Math.max(geom.w * size.w, geom.h * size.h, 1);
+    // 保守缩放: 仅当对象在屏过小才放大到舒适尺寸, 否则保持当前 scale(优先平移居中)。
+    let scale = cur.scale;
+    if (objMaxDimPx * scale < 48) scale = clampScale(140 / objMaxDimPx);
+    const margin = 48;
+    const screenCx = cx * scale + cur.tx;
+    const screenCy = cy * scale + cur.ty;
+    const outOfView =
+      screenCx < margin || screenCx > viewportSize.w - margin ||
+      screenCy < margin || screenCy > viewportSize.h - margin;
+    // 已在视口内且无需变焦 → 不动(避免每次选中都重排, 保留上下文)。
+    if (!outOfView && scale === cur.scale) return;
+    setVp({ scale, tx: viewportSize.w / 2 - cx * scale, ty: viewportSize.h / 2 - cy * scale });
+  }, [frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, setVp, size.h, size.w, viewportSize.h, viewportSize.w, vpRef]);
+
+  // 选中变化即触发焦点联动(键盘两级循环 / 侧栏点选 / 画布点选统一走此)。用 ref 读最新 focusObject,
+  // 使 effect 只在 selectedId 变化时跑 —— 否则 focusObject 逐帧变身份会让播放中每帧重排。
+  const focusObjectRef = useRef(focusObject);
+  focusObjectRef.current = focusObject;
+  useEffect(() => {
+    if (focusSelectionEnabled && selectedId) focusObjectRef.current(selectedId);
+  }, [focusSelectionEnabled, selectedId]);
 
   // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。
   // 用当前帧 frameViews.entries(带 geom+className),解决控制器内因 frameIndex→entries 循环依赖
@@ -324,6 +446,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     annotations,
     entries: frameViews.entries,
     ghost: frameViews.ghost,
+    carryOverGhosts: frameViews.carryOverGhosts,
     selectedTrack,
     videoTool,
     creationEnabled: videoTool !== "select" && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track)),
@@ -331,6 +454,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     isPlaybackActive,
     lockedTrackIds,
     frameIndex,
+    trackContinueAutoAdvance,
     onSelect: onSelect ?? noopSelect,
     onCreate: onCreate ?? noopCreate,
     onPendingDraw,
@@ -405,6 +529,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
     [frameIndex, selectedTrack],
   );
+
+  // v0.21.12 · 粘轨迹态提示数据: 轨迹显示编号 + 当前帧是否已有关键帧(切「延展 / 同帧新建」措辞)。
+  // 仅轨迹工具 + 有选中轨迹时非空 → 显式化「下一次画框归属选中轨迹」这一隐式模型。
+  const stickyTrackHint = useMemo(() => {
+    if (videoTool !== "track" || !selectedTrack) return null;
+    const num = deriveTrackNumber(videoTracks).get(selectedTrack.id);
+    const label = num != null
+      ? `#${num} ${selectedTrack.class_name}`
+      : `${shortTrackId(selectedTrack.geometry.track_id)} ${selectedTrack.class_name}`;
+    return { label, hasKeyframeAtFrame: selectedTrackCurrentKeyframe != null };
+  }, [videoTool, selectedTrack, videoTracks, selectedTrackCurrentKeyframe]);
   const canDeleteSelectedTrackKeyframe = Boolean(
     selectedTrack
     && selectedTrackCurrentKeyframe
@@ -551,10 +686,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   }, [fitViewport, seekToFrame, selectedTrack, setActualSize]);
 
   // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
+  // (captureCurrentFrameJpeg 由 controller.controls 提供, 见 useVideoPlaybackController。)
   useImperativeHandle(ref, () => ({
     ...controls,
     deleteSelectedTrackKeyframe,
-  }), [controls, deleteSelectedTrackKeyframe]);
+    cycleInCategory,
+    stepCategory,
+    focusObject,
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, stepCategory]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;
@@ -643,6 +782,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         data-testid="video-konva-source"
         src={manifest.video_url}
         poster={manifest.poster_url ?? undefined}
+        // v0.21.4 · CORS-clean 加载, 否则 createImageBitmap(video) → canvas 会被跨域 MinIO 视频
+        // 污染, 单题 AI 抓帧导出 JPEG 抛 SecurityError。storage 已对 presigned GET 返回 ACAO。
+        crossOrigin="anonymous"
         playsInline
         className={styles.hiddenVideo}
       />
@@ -668,6 +810,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             entries={frameViews.entries}
             previews={frameViews.previews}
             ghost={frameViews.ghost}
+            carryOverGhosts={frameViews.carryOverGhosts}
             size={size}
             scale={vp.scale}
             visual={visual}
@@ -678,6 +821,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             size={size}
             scale={vp.scale}
             visual={visual}
+          />
+          {/* v0.21.4 · AI 候选层(当前帧 video_bbox); select 工具下可点选。 */}
+          <VideoKonvaAiLayer
+            boxes={frameAiBoxes}
+            size={size}
+            scale={vp.scale}
+            selectedId={selectedId}
+            listening={videoTool === "select" && !readOnly}
+            visual={visual}
+            onSelect={(id) => onSelect?.(id)}
           />
           {issuePixelFeedbacks && issuePixelFeedbacks.length > 0 && (
             <VideoKonvaIssueLayer
@@ -713,6 +866,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             "--frame-h": `${size.h * vp.scale}px`,
           } as CSSProperties}
         />
+        {/* v0.21.4 · AI 候选贴框快捷条(采纳 / 忽略), 复用图片工作台 SelectionOverlay。 */}
+        {selectedAiBox && !readOnly && videoTool === "select" && (
+          <SelectionOverlay
+            box={selectedAiBox}
+            isAi
+            imgW={size.w}
+            imgH={size.h}
+            vp={vp}
+            onAccept={() => onAcceptPrediction?.(selectedAiBox)}
+            onReject={() => {
+              onRejectPrediction?.(selectedAiBox);
+              onSelect?.(null);
+            }}
+          />
+        )}
       </div>
       {playbackError && (
         <div data-testid="video-konva-playback-error" className={styles.playbackError}>
@@ -720,6 +888,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         </div>
       )}
       <VideoQcWarnings warnings={qualityWarnings} />
+      {stickyTrackHint && (
+        <VideoStickyTrackHint
+          label={stickyTrackHint.label}
+          hasKeyframeAtFrame={stickyTrackHint.hasKeyframeAtFrame}
+        />
+      )}
       <VideoPlaybackOverlay
         frameIndex={frameIndex}
         maxFrame={maxFrame}
@@ -731,8 +905,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         selectedTrackTimeline={selectedTrackTimeline}
         trackColor={selectedTrackColor}
         globalTimelineDensity={globalTimelineDensity}
+        predictionDensity={predictionDensity}
+        onSeekPredicted={hasPredictedFrames ? seekToAdjacentPredictedFrame : undefined}
         trackColorOverrides={trackColorOverrides}
         loopRegion={loopRegion}
+        propagateRange={propagateRange}
+        rangeSelectPurpose={timelineChapterControls?.rangeSelectPurpose ?? "loop"}
         bookmarks={bookmarks}
         chapters={chapters}
         issueFrames={issueFrames}
@@ -752,6 +930,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         onClearLoopRegion={clearLoopRegion}
         onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
         onSeekChapter={(_, frame) => seekToFrame(frame, { recordHistory: true })}
+        onRangeSelect={timelineChapterControls?.onRangeSelect}
+        hoveredChapterId={timelineChapterControls?.hoveredChapterId ?? null}
+        onHoverChapter={timelineChapterControls?.onHoverChapter}
+        onChapterResize={timelineChapterControls?.onResizeChapter}
         onHoverFrameChange={previewFrame}
       />
       <ContextMenu

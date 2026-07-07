@@ -8,7 +8,7 @@ v0.19.0 ADR-0044 · 数据源统一为**全局注册表 ml_backend_registry**: e
 启动钩子已自动 upsert 成 source=env 注册行, 不再有 env-only 临时探测分支。每行优先读
 health_meta.capabilities 快照, 缺失时 fallback live 探测 /setup。
 
-输出字段裁剪: 只暴露 source / display_name / infra / models[], 不暴露 url /
+输出字段裁剪: 只暴露 backend_id / state / source / display_name / infra / models[], 不暴露 url /
 gpu_info / cache / pool 等运维敏感信息, 让普通用户安全消费。
 """
 
@@ -83,6 +83,7 @@ def _shape_models(caps: dict | None) -> list[dict]:
                 # v0.19.2 WS0 · 透传一等输入契约 + 资源画像, 让走 /instances 的消费方
                 # (模型市场 instances / 全局编排选择器) 与项目级 /capabilities 拿到同一字段集。
                 "supported_inputs": list(m.get("supported_inputs") or []),
+                "default_input_type": m.get("default_input_type"),
                 "resource_profile": dict(m.get("resource_profile") or {}),
                 "supported_geometric_outputs": list(
                     m.get("supported_geometric_outputs") or []
@@ -164,6 +165,8 @@ async def load_capability_instances(db: AsyncSession) -> list[dict]:
             continue
         instances.append(
             {
+                "backend_id": str(b.id),
+                "state": b.state,
                 "source": b.source,
                 "name": b.name,
                 "infra": (caps or {}).get("infra") or "unknown",

@@ -7,9 +7,12 @@ const baseCtx: DispatchCtx = {
   pendingActive: false,
 };
 
-// 鸭子类型：dispatchKey 只读 key / *Key 修饰键，构造一个兼容 shape 即可，
+// 鸭子类型：dispatchKey 只读 key / code / *Key 修饰键，构造一个兼容 shape 即可，
 // 避免依赖 jsdom 等 DOM 环境。
-type FakeEvent = Pick<KeyboardEventInit, "ctrlKey" | "metaKey" | "shiftKey" | "altKey"> & { key: string };
+type FakeEvent = Pick<KeyboardEventInit, "ctrlKey" | "metaKey" | "shiftKey" | "altKey"> & {
+  key?: string;
+  code?: string;
+};
 
 function dispatch(e: FakeEvent, ctx: Partial<DispatchCtx> = {}): HotkeyAction | null {
   return dispatchKey(e as unknown as KeyboardEvent, { ...baseCtx, ...ctx });
@@ -84,9 +87,12 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "u" })).toEqual({ type: "smartNext", mode: "uncertain" });
     expect(dispatch({ key: "e" })).toEqual({ type: "submit" });
   });
-  it("Tab / Shift+Tab → cycleUser loop", () => {
-    expect(dispatch({ key: "Tab" })).toEqual({ type: "cycleUser", dir: 1, loop: true });
-    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({ type: "cycleUser", dir: -1, loop: true });
+  it("Tab / Shift+Tab → imageCycleInCategory (同类流转); ` → imageStepCategory (跨类)", () => {
+    expect(dispatch({ key: "Tab" })).toEqual({ type: "imageCycleInCategory", dir: 1 });
+    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({ type: "imageCycleInCategory", dir: -1 });
+    // Shift+` 在美式布局 key 是 "~" 而非 "`"，故按物理键位 code 判定；测试用 code 模拟真实事件。
+    expect(dispatch({ code: "Backquote" })).toEqual({ type: "imageStepCategory", dir: 1 });
+    expect(dispatch({ code: "Backquote", shiftKey: true })).toEqual({ type: "imageStepCategory", dir: -1 });
   });
   it("J / K → cycleUser 不循环", () => {
     expect(dispatch({ key: "j" })).toEqual({ type: "cycleUser", dir: 1, loop: false });
@@ -252,9 +258,15 @@ describe("dispatchKey · video mode", () => {
       .toEqual({ type: "videoDeleteSelected", scope: "track" });
   });
 
-  it("Tab / Shift+Tab → videoCycleTrack", () => {
-    expect(dispatch({ key: "Tab" }, videoCtx)).toEqual({ type: "videoCycleTrack", dir: 1 });
-    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({ type: "videoCycleTrack", dir: -1 });
+  it("Tab / Shift+Tab → videoCycleInCategory (同类流转)", () => {
+    expect(dispatch({ key: "Tab" }, videoCtx)).toEqual({ type: "videoCycleInCategory", dir: 1 });
+    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({ type: "videoCycleInCategory", dir: -1 });
+  });
+
+  it("` / Shift+` → videoStepCategory (跨类跳转)", () => {
+    // Shift+` 在美式布局 key 是 "~" 而非 "`"，故按物理键位 code 判定；测试用 code 模拟真实事件。
+    expect(dispatch({ code: "Backquote" }, videoCtx)).toEqual({ type: "videoStepCategory", dir: 1 });
+    expect(dispatch({ code: "Backquote", shiftKey: true }, videoCtx)).toEqual({ type: "videoStepCategory", dir: -1 });
   });
 
   it("Esc → cancel", () => {

@@ -4,7 +4,11 @@
 扁平并集、模态派生。
 """
 
-from app.services.ml_capabilities import derive_modalities, extract_capabilities
+from app.services.ml_capabilities import (
+    INPUT_VALUES,
+    derive_modalities,
+    extract_capabilities,
+)
 
 
 def test_extract_none_returns_none():
@@ -307,6 +311,32 @@ def test_supported_inputs_explicit_passthrough():
     }
     m = extract_capabilities(setup)["models"][0]
     assert m["supported_inputs"] == ["full_image"]
+    assert m["default_input_type"] == "full_image"
+
+
+def test_default_input_type_explicit_passthrough_and_fallback():
+    """default_input_type 显式透传; 未声明时按 supported_inputs[0] 兜底。"""
+    setup = {
+        "name": "bk",
+        "infra": "onnx",
+        "models": [
+            {
+                "id": "source",
+                "task": "detection",
+                "supported_inputs": ["crop", "full_image"],
+                "default_input_type": "full_image",
+                "supported_geometric_outputs": ["bbox"],
+            },
+            {
+                "id": "roi",
+                "task": "classification",
+                "supported_inputs": ["crop"],
+            },
+        ],
+    }
+    models = {m["id"]: m for m in extract_capabilities(setup)["models"]}
+    assert models["source"]["default_input_type"] == "full_image"
+    assert models["roi"]["default_input_type"] == "crop"
 
 
 def test_supported_inputs_synthesized_for_plain_detector():
@@ -320,6 +350,9 @@ def test_supported_inputs_synthesized_for_plain_detector():
     }
     m = extract_capabilities(setup)["models"][0]
     assert m["supported_inputs"] == ["full_image", "crop"]
+    assert m["default_input_type"] == "full_image"
+    assert "video" in INPUT_VALUES
+    assert "video" not in m["supported_inputs"]
 
 
 def test_supported_inputs_synthesized_for_box_seg():

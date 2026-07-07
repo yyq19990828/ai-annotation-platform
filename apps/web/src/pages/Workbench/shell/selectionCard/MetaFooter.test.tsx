@@ -1,22 +1,20 @@
-// v0.16.14 · MetaFooter 单测:ID 短码 / z-order / 分组 / 额外行;来源映射中文。
+// v0.16.14 · MetaFooter 单测:ID 短码 / z-order / 额外行;来源映射中文。
 
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { MetaFooter } from "./MetaFooter";
 
 describe("MetaFooter", () => {
-  it("渲染 ID 短码 / 层级 / 分组 / 额外行", () => {
+  it("渲染 ID 短码 / 层级 / 额外行", () => {
     const { getByText } = render(
       <MetaFooter
         id="abcd1234-5678-90ef-aaaa-bbbbbbbbbbbb"
         zOrder={3}
-        groupId={7}
         extra={[{ label: "模型", value: "grounding-sam2" }]}
       />,
     );
     expect(getByText("abcd1234")).not.toBeNull(); // 短码 = 前 8 位
     expect(getByText("3")).not.toBeNull();
-    expect(getByText("#7")).not.toBeNull();
     expect(getByText("grounding-sam2")).not.toBeNull();
   });
 

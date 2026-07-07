@@ -100,7 +100,6 @@ export function VideoFrameBoxCardContent({
         createdAt={annotation.created_at}
         updatedAt={annotation.updated_at}
         zOrder={annotation.z_order}
-        groupId={annotation.group_id}
       />
 
       <ActionBar label="单帧框操作">

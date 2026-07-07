@@ -6,7 +6,6 @@ docs-site/dev/reference/ml-backend-protocol.md §4.1 规范.
 
 from __future__ import annotations
 
-import os
 import sys
 from unittest.mock import MagicMock
 
@@ -46,6 +45,8 @@ CLOSED_IDS = {"detect", "segment", "pose", "obb"}
 OPENVOCAB_DETECT_IDS = {"detect-world", "detect-yoloe"}
 OPENVOCAB_SEGMENT_IDS = {"segment-yoloe"}
 EXEMPLAR_IDS = {"exemplar-yoloe"}
+# v0.21.1 · 检测式视频追踪 (video 源, 复用 detection 权重矩阵)。
+TRACKER_IDS = {"track"}
 # 全部走开集 yoloe/world 权重矩阵 (变体合法性校验共用 is_openvocab_supported).
 OPENVOCAB_IDS = OPENVOCAB_DETECT_IDS | OPENVOCAB_SEGMENT_IDS | EXEMPLAR_IDS
 
@@ -55,12 +56,12 @@ def test_setup_supported_prompts_none_text_exemplar(setup_dict: dict) -> None:
     assert setup_dict["supported_prompts"] == ["none", "text", "exemplar"]
 
 
-def test_setup_has_eight_models(setup_dict: dict) -> None:
-    """v0.18.23 · 闭集 4 + 开集文本检测 2 + 文本分割 1 + 视觉提示 exemplar 1 = 8."""
+def test_setup_has_nine_models(setup_dict: dict) -> None:
+    """v0.21.1 · 闭集 4 + 开集文本检测 2 + 文本分割 1 + 视觉提示 exemplar 1 + 检测式追踪 1 = 9."""
     models = setup_dict["models"]
-    assert len(models) == 8
+    assert len(models) == 9
     ids = {m["id"] for m in models}
-    assert ids == CLOSED_IDS | OPENVOCAB_IDS
+    assert ids == CLOSED_IDS | OPENVOCAB_IDS | TRACKER_IDS
 
 
 def test_setup_openvocab_models_declare_text_prompt(setup_dict: dict) -> None:
@@ -98,6 +99,28 @@ def test_setup_exemplar_model_shape(setup_dict: dict) -> None:
     assert ex["default_variants"] == {"series": "yoloe-11", "size": "s"}
 
 
+def test_setup_tracker_model_shape(setup_dict: dict) -> None:
+    """v0.21.1 · track: 检测式视频追踪。仅 video 输入 / 非交互可批量 / bbox 输出 /
+    自报 bytetrack+botsort / params 带 tracker enum / 复用 detection series (含 rtdetr)。"""
+    trk = next(m for m in setup_dict["models"] if m["id"] == "track")
+    assert trk["task"] == "tracker"
+    assert trk["is_interactive"] is False
+    assert trk["resource_profile"] == {"device": "gpu", "batchable": True}
+    assert trk["supported_inputs"] == ["video"]
+    assert trk["supported_prompts"] == ["none"]
+    assert trk["supported_geometric_outputs"] == ["bbox"]
+    assert trk["supported_trackers"] == ["bytetrack", "botsort"]
+    # tracker 算法是 param (apply-time 选), 不是 variant 轴。
+    tracker_param = trk["params"]["properties"]["tracker"]
+    assert tracker_param["enum"] == ["bytetrack", "botsort"]
+    assert tracker_param["default"] == "bytetrack"
+    assert "conf" in trk["params"]["properties"]
+    # 复用 detection 权重矩阵: series 含 rtdetr, 默认 yolo11/s。
+    series = {v["value"] for a in trk["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    assert "rtdetr" in series
+    assert trk["default_variants"] == {"series": "yolo11", "size": "s"}
+
+
 def test_setup_openvocab_text_outputs(setup_dict: dict) -> None:
     """v0.18.22 · 文本输出形态: 检测条目锁 box, 分割条目 mask/both (与 gsam2 同形)。"""
     for m in setup_dict["models"]:
@@ -126,10 +149,12 @@ def test_setup_openvocab_series_namespaces(setup_dict: dict) -> None:
 
 def test_setup_models_declare_supported_inputs(setup_dict: dict) -> None:
     """v0.18.16 · 批量 task 声明 supported_inputs (整图 + crop, 可作 crop-detect 下游);
-    交互 exemplar 仅整图。"""
+    交互 exemplar 仅整图; v0.21.1 · 检测式追踪仅 video (单帧无跨帧状态)。"""
     for m in setup_dict["models"]:
         if m["id"] in EXEMPLAR_IDS:
             assert m["supported_inputs"] == ["full_image"]
+        elif m["id"] in TRACKER_IDS:
+            assert m["supported_inputs"] == ["video"]
         else:
             assert m["supported_inputs"] == ["full_image", "crop"]
 
@@ -151,7 +176,7 @@ def test_setup_models_declare_resource_profile(setup_dict: dict) -> None:
 
 def test_setup_models_carry_protocol_task(setup_dict: dict) -> None:
     tasks = {m["task"] for m in setup_dict["models"]}
-    assert tasks == {"detection", "segmentation", "keypoint", "obb", "interactive_seg"}
+    assert tasks == {"detection", "segmentation", "keypoint", "obb", "interactive_seg", "tracker"}
 
 
 def test_setup_models_all_family_yolo(setup_dict: dict) -> None:
@@ -223,7 +248,6 @@ def test_setup_yolo11_recommended_in_each_model(setup_dict: dict) -> None:
         if m["id"] in OPENVOCAB_IDS:
             continue  # 开集模型无 yolo11 系列 (单独 test 校验其推荐项).
         series_axis = next(a for a in m["supported_variants"] if a["key"] == "series")
-        recommended = [v for v in series_axis["variants"] if v.get("recommended")]
         # yolo11 在 4 个 model 中都有, 应被标推荐.
         assert any(v["value"] == "yolo11" and v.get("recommended") for v in series_axis["variants"]), \
             f"yolo11 should be recommended for model {m['id']}"

@@ -5,6 +5,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProjectPipelines } from "@/hooks/useProjectPipelines";
 import {
   useTaskList, useTask, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
@@ -12,11 +13,7 @@ import {
   useVideoFrameTimetable,
 } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
-import {
-  useAnnotationGroup,
-  useAnnotationUngroup,
-  useAnnotationBulkUpdate,
-} from "@/hooks/useAnnotationGroup";
+import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
@@ -25,6 +22,7 @@ import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
+import { mlBackendsApi } from "@/api/ml-backends";
 import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
@@ -70,12 +68,16 @@ import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/videoStageControls";
 import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
-import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
+import type { TimelineRangePurpose, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
+import type { VideoLoopRegion } from "../stage/videoNavigationState";
+import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSidebar";
+import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
-import { useVideoChapters } from "@/hooks/useVideoChapters";
+import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
@@ -90,6 +92,7 @@ import { getMissingRequired } from "../shell/AttributeForm";
 import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
 import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
 import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
+import { VideoTrackBatchCardContent } from "../shell/VideoTrackBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
@@ -114,6 +117,7 @@ import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationAct
 import {
   buildPipelineRunPayload,
   missingBackendIdsForStages,
+  selectProjectPipelineStages,
   buildPredictParams,
   promptOfTool,
   resolveFloatingClassPaletteRect,
@@ -190,6 +194,10 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
+  const projectPipelinesQ = useProjectPipelines(
+    { scope: "private", project_id: projectId },
+    { enabled: !!projectId },
+  );
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
@@ -358,6 +366,9 @@ export function useWorkbenchShellModel({
   // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
+  // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
+  // 单独一个运行态并入 aiRunning, 供 popover 转圈 + 防重复点击。
+  const [videoFrameAiRunning, setVideoFrameAiRunning] = useState(false);
   // v0.16.x 第 3 批 · AI 浮层位置/尺寸(+localStorage 持久化)抽到 useAiPopoverFrame;
   // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
   const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
@@ -431,6 +442,67 @@ export function useWorkbenchShellModel({
       })),
     [videoChaptersData],
   );
+  // v0.21.13 · 章节 × 时间轴刷选联动。chapterDraftArmed: 侧栏「时间轴圈选」臂选态; 臂选时
+  // 时间轴普通拖即圈选 chapter-draft。chapterDraft: 刷选产物 (松手后一次性喂给侧栏预填表单)。
+  const [chapterDraftArmed, setChapterDraftArmed] = useState(false);
+  const [chapterDraft, setChapterDraft] = useState<{ startFrame: number; endFrame: number } | null>(null);
+  // v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动的共享态。
+  const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
+  // v0.21.16 WS3 · 轨迹多选态镜像 (由 roster 的 VideoTrackSidebar 经 onSelectionChange 上报),
+  // 供浮卡在多选 ≥2 轨迹时渲染批量卡。roster 仍是唯一 owner, 此处只读镜像, 不双写。
+  const [videoBatchTracks, setVideoBatchTracks] = useState<VideoTrackAnnotation[]>([]);
+  // v0.21.14 WS3 · AI 传播对话框打开时上报的影响范围 (时间轴高亮「将影响哪段帧」)。
+  const [propagateHighlight, setPropagateHighlight] = useState<
+    { startFrame: number; endFrame: number } | null
+  >(null);
+  // v0.21.14 · 传播对话框打开时时间轴 Shift+拖刷选回填的范围 (每次刷选替换新对象喂给对话框)。
+  const [propagateBrush, setPropagateBrush] = useState<
+    { startFrame: number; endFrame: number } | null
+  >(null);
+  const handleTimelineRangeSelect = useCallback(
+    (purpose: TimelineRangePurpose, region: VideoLoopRegion) => {
+      if (purpose === "chapter-draft") {
+        setChapterDraft({ startFrame: region.startFrame, endFrame: region.endFrame });
+        setChapterDraftArmed(false);
+      } else if (purpose === "propagate-range") {
+        // 传播对话框开着时刷选 → 回填对话框的自定义范围 (每次新对象, 对话框按引用触发)。
+        setPropagateBrush({ startFrame: region.startFrame, endFrame: region.endFrame });
+      }
+    },
+    [],
+  );
+  // v0.21.13 WS3 · 章节条 resize: 松手才落库, 短 debounce 合并快速连续调整, PATCH 只带起止帧。
+  const updateChapterMutation = useUpdateVideoChapter(isVideoTask ? videoDatasetItemId : null);
+  // 按 chapterId 分槽维护 debounce timer: 单槽会让「200ms 内连续 resize 不同章节」时,
+  // 前一章节的 PATCH 被后一次 clearTimeout 无声取消 → 落库前被 refetch 回滚、调整丢失。
+  const chapterResizeDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  const handleResizeChapter = useCallback(
+    (chapterId: string, region: VideoLoopRegion) => {
+      const timers = chapterResizeDebounceRef.current;
+      const existing = timers.get(chapterId);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        chapterId,
+        setTimeout(() => {
+          timers.delete(chapterId);
+          updateChapterMutation.mutate({
+            chapterId,
+            payload: { start_frame: region.startFrame, end_frame: region.endFrame },
+          });
+        }, 200),
+      );
+    },
+    [updateChapterMutation],
+  );
+  useEffect(() => {
+    const timers = chapterResizeDebounceRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
     if (!isVideoTask || !videoModes) return;
@@ -468,6 +540,7 @@ export function useWorkbenchShellModel({
 
   const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
+    setPropagateBrush(null);
   }, []);
 
   const handlePropagateSubmit = useCallback(
@@ -727,8 +800,6 @@ export function useWorkbenchShellModel({
     (...args) => conflictCbRef.current(...args),
     clearPendingGeom,
   );
-  const groupAnnotationMut = useAnnotationGroup(taskId ?? "");
-  const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
   const {
@@ -959,6 +1030,11 @@ export function useWorkbenchShellModel({
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
     backendId: batchBackendId,
+    // v0.21.10 · 工作台「当前题 AI」面板恒做**单帧检测**(方案 a): 传 executionUnit="frame" 放开
+    //   图像检测模型 (GEOMETRIC_TASKS), 而非整段 tracker——单帧发 detection → /predict-frame →
+    //   to_video_bbox_result 落 video_bbox。整段追踪走 Ctrl+B 种子追踪 / 批量页 (execution_unit=video)。
+    //   (图像项目 isVideoProject=false, 此参数无副作用。)
+    executionUnit: "frame",
   });
   useEffect(() => {
     sam.cancel();
@@ -1031,7 +1107,7 @@ export function useWorkbenchShellModel({
     prefetch(tasks[idx - 1]);
   }, [taskId, tasks, queryClient, debouncedConf]);
 
-  const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending;
+  const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending || videoFrameAiRunning;
 
   const currentBatchStatus = useMemo<string | undefined>(() => {
     if (!task?.batch_id || !batchList) return undefined;
@@ -1253,9 +1329,15 @@ export function useWorkbenchShellModel({
     );
   }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
 
-  // v0.18.28 · 项目已存编排 (v0.18.27) 时, popover 多出「运行当前题（按项目编排）」入口。
+  // v0.21.0 · 项目默认命名编排成为 popover「按项目编排」来源; 旧 preannotate_pipeline 仅作读兼容兜底。
   // popover 仍是执行器、不是编排编辑器: 编排在 /ai-pre 定义保存, 这里只把那条编排跑当前一图。
-  const projectPipeline = currentProject?.preannotate_pipeline ?? null;
+  const projectPipeline = useMemo(
+    () => selectProjectPipelineStages(
+      projectPipelinesQ.data,
+      currentProject?.preannotate_pipeline,
+    ),
+    [projectPipelinesQ.data, currentProject?.preannotate_pipeline],
+  );
   const hasProjectPipeline = (projectPipeline?.length ?? 0) > 0;
   const projectPipelineStageCount = projectPipeline?.length ?? 0;
   // claude[bot] P1 #5 · 编排引用的 backend 被删/停时, popover 入口该不可点 + 弹明确原因, 而非默默 422。
@@ -1280,7 +1362,7 @@ export function useWorkbenchShellModel({
       return;
     }
     const payload = buildPipelineRunPayload(
-      currentProject?.preannotate_pipeline,
+      projectPipeline,
       taskId,
       availableBackendIds,
     );
@@ -1295,7 +1377,7 @@ export function useWorkbenchShellModel({
         pushToast({ msg: "AI 编排预标失败", sub: String(err), kind: "error" }),
     });
   }, [
-    currentProject?.preannotate_pipeline,
+    projectPipeline,
     taskId,
     triggerPreannotation,
     pushToast,
@@ -1407,6 +1489,63 @@ export function useWorkbenchShellModel({
 
   const videoControlsRef = useRef<VideoStageControls | null>(null);
 
+  // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
+  // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
+  const handleRunVideoFrameAi = useCallback(async () => {
+    if (!projectId) return;
+    const mlBackendId = batchBackendId;
+    if (!mlBackendId) {
+      pushToast({
+        msg: "AI 暂不可用",
+        sub: "项目尚未绑定 ML 推理后端,请到「项目设置 → AI 配置」注册并选择",
+        kind: "error",
+      });
+      return;
+    }
+    const args = preCfg.buildArgs("overwrite");
+    if (!args) return;
+    if (!preCfg.configReady) {
+      pushToast({
+        msg: "AI 暂不可用",
+        sub: preCfg.isGeometricBackend
+          ? "请在 AI 面板选择模型任务"
+          : "请在 AI 面板填写 prompt (或为类别配置英文 alias)",
+        kind: "error",
+      });
+      return;
+    }
+    const blob = await videoControlsRef.current?.captureCurrentFrameJpeg();
+    if (!blob) {
+      pushToast({
+        msg: "当前帧尚未就绪",
+        sub: "请等待画面加载完成后重试",
+        kind: "warning",
+      });
+      return;
+    }
+    setVideoFrameAiRunning(true);
+    pushToast({ msg: "AI 正在分析当前帧...", sub: aiModel });
+    try {
+      const res = await mlBackendsApi.predictFrame(projectId, mlBackendId, {
+        blob,
+        taskId: taskId!,
+        frameIndex: videoFrameIndex,
+        config: args as unknown as Record<string, unknown>,
+      });
+      preCfg.markHot();
+      await queryClient.invalidateQueries({ queryKey: ["predictions", taskId] });
+      pushToast({
+        msg: "当前帧分析完成",
+        sub: `第 ${videoFrameIndex} 帧新增 ${res.candidate_count} 个候选`,
+        kind: "success",
+      });
+    } catch (err) {
+      pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" });
+    } finally {
+      setVideoFrameAiRunning(false);
+    }
+  }, [projectId, batchBackendId, preCfg, aiModel, taskId, videoFrameIndex, queryClient, pushToast]);
+
   const annotateModeState = useAnnotateMode({
     mode,
     taskId,
@@ -1427,6 +1566,32 @@ export function useWorkbenchShellModel({
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked;
+  // v0.21.13 · 章节 × 时间轴联动控制器 (状态/handler 声明在前, 此处 isLocked 就绪后组装并 gate 编辑)。
+  const canEditChapters = !isLocked && isOwner;
+  const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
+    if (!isVideoTask) return undefined;
+    // 传播对话框开着时优先臂选 propagate-range (Shift+拖回填对话框); 否则章节圈选 / loop。
+    const rangeSelectPurpose = propagateDialog
+      ? "propagate-range"
+      : chapterDraftArmed
+        ? "chapter-draft"
+        : "loop";
+    return {
+      rangeSelectPurpose,
+      onRangeSelect: handleTimelineRangeSelect,
+      onResizeChapter: canEditChapters ? handleResizeChapter : undefined,
+      hoveredChapterId,
+      onHoverChapter: setHoveredChapterId,
+    };
+  }, [
+    isVideoTask,
+    propagateDialog,
+    chapterDraftArmed,
+    handleTimelineRangeSelect,
+    canEditChapters,
+    handleResizeChapter,
+    hoveredChapterId,
+  ]);
   const isSubmittingTask = topbarActions.isSubmitting ?? submitTaskMut.isPending;
 
   // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
@@ -1489,45 +1654,6 @@ export function useWorkbenchShellModel({
     beginCanvasDraft: s.beginCanvasDraft,
   });
 
-  const handleAnnotationGroup = useCallback(() => {
-    if (!taskId) return;
-    const ids = s.selectedIds;
-    if (ids.length < 2) {
-      pushToast({ msg: "至少选择 2 个标注才能成组", kind: "warning" });
-      return;
-    }
-    groupAnnotationMut.mutate(ids, {
-      onSuccess: (resp) => {
-        pushToast({ msg: `已成组 (group #${resp.group_id}, ${resp.affected_ids.length} 个)`, kind: "success" });
-      },
-      onError: (err: unknown) => {
-        const msg = (err as { message?: string })?.message ?? "成组失败";
-        pushToast({ msg, kind: "error" });
-      },
-    });
-  }, [taskId, s.selectedIds, groupAnnotationMut, pushToast]);
-
-  const handleAnnotationUngroup = useCallback(() => {
-    if (!taskId) return;
-    const ids = s.selectedIds;
-    if (ids.length === 0) {
-      pushToast({ msg: "请先选择已成组的标注", kind: "warning" });
-      return;
-    }
-    ungroupAnnotationMut.mutate(ids, {
-      onSuccess: (resp) => {
-        const extra = resp.auto_cleared_orphans.length > 0
-          ? ` (含 ${resp.auto_cleared_orphans.length} 个自动解散的剩 1 个成员)`
-          : "";
-        pushToast({ msg: `已解组 ${resp.cleared_ids.length} 个${extra}`, kind: "success" });
-      },
-      onError: (err: unknown) => {
-        const msg = (err as { message?: string })?.message ?? "解组失败";
-        pushToast({ msg, kind: "error" });
-      },
-    });
-  }, [taskId, s.selectedIds, ungroupAnnotationMut, pushToast]);
-
   // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
   // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
@@ -1547,7 +1673,8 @@ export function useWorkbenchShellModel({
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     handleVideoSetSelectedClass,
-    aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
+    aiBoxes, autoAdvanceOnDecide: s.workbenchConfig.common.autoAdvanceOnDecide,
+    setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
@@ -1559,8 +1686,6 @@ export function useWorkbenchShellModel({
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
-    handleAnnotationGroup,
-    handleAnnotationUngroup,
   });
 
   const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
@@ -1783,12 +1908,15 @@ export function useWorkbenchShellModel({
         onToggleLockedTrack={s.toggleLockedVideoTrack}
         onSeekFrame={s.setVideoFrameIndex}
         reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
+        trackSectionCollapsed={s.trackSectionCollapsed}
+        onToggleTrackSection={() => s.setTrackSectionCollapsed(!s.trackSectionCollapsed)}
         onChangeUserBoxClass={handleStartChangeClass}
         onRenameTracks={handleVideoBatchRename}
         onDeleteTracks={handleVideoBatchDelete}
         onUpdate={handleVideoUpdate}
         onConvertToBboxes={handleVideoConvertToBboxes}
         onComposeTracks={handleVideoComposeTracks}
+        onSelectionChange={view === "roster" ? setVideoBatchTracks : undefined}
         trackerJobsByAnnotation={trackerJobs.byAnnotation}
         onPropagateTrack={openPropagateDialog}
         onCancelTrackerJob={trackerJobs.cancel}
@@ -1811,6 +1939,7 @@ export function useWorkbenchShellModel({
       trackerJobs.cancel, s.trackColorOverrides, s.setVideoTrackColor, toolView.attributeSchema,
       handleUpdateTrackAttributes, handleUpdateKeyframeAttributes, handlePropagateKeyframe, samplingStep,
       currentProject?.rendering_config?.propagateOverwrite, videoFps, imageWidth, imageHeight,
+      s.trackSectionCollapsed, s.setTrackSectionCollapsed,
     ],
   );
 
@@ -1909,6 +2038,55 @@ export function useWorkbenchShellModel({
             onUpdateAttributes={handleUpdateAttributes}
           />
         );
+      } else if (videoBatchTracks.length >= 2) {
+        // v0.21.16 WS3 · 多选 ≥2 条轨迹 → 浮卡渲染批量卡 (与右栏 roster 批量条对等), 不再退化为
+        // 「最后选中那条」的单卡。选择态由 roster 实例上报的 videoBatchTracks 镜像驱动。
+        const ids = videoBatchTracks.map((t) => t.id);
+        const sameClass =
+          videoBatchTracks.length === 2 && videoBatchTracks[0].class_name === videoBatchTracks[1].class_name;
+        const canMerge = sameClass;
+        const canJoin = sameClass && !trackRangesOverlap(videoBatchTracks[0], videoBatchTracks[1]);
+        const countHint = `需恰好选中 2 条轨迹（当前 ${videoBatchTracks.length} 条）`;
+        const mergeReason = canMerge ? null : videoBatchTracks.length !== 2 ? countHint : "两条轨迹需同类";
+        const joinReason = canJoin
+          ? null
+          : videoBatchTracks.length !== 2
+            ? countHint
+            : !sameClass
+              ? "两条轨迹需同类"
+              : "两条轨迹的可见帧区间不能重叠";
+        const setBatchHidden = (hidden: boolean) =>
+          videoBatchTracks.forEach((t) => {
+            if (s.hiddenVideoTrackIds.has(t.geometry.track_id) !== hidden) s.toggleHiddenVideoTrack(t.geometry.track_id);
+          });
+        const setBatchLocked = (locked: boolean) =>
+          videoBatchTracks.forEach((t) => {
+            if (s.lockedVideoTrackIds.has(t.geometry.track_id) !== locked) s.toggleLockedVideoTrack(t.geometry.track_id);
+          });
+        children = (
+          <VideoTrackBatchCardContent
+            count={videoBatchTracks.length}
+            readOnly={isLocked}
+            classes={classes}
+            canMerge={canMerge}
+            canJoin={canJoin}
+            mergeDisabledReason={mergeReason}
+            joinDisabledReason={joinReason}
+            onChangeClass={(cls) => handleVideoBatchRename(videoBatchTracks, cls)}
+            onShow={() => setBatchHidden(false)}
+            onHide={() => setBatchHidden(true)}
+            onLock={() => setBatchLocked(true)}
+            onUnlock={() => setBatchLocked(false)}
+            onMerge={() => handleVideoComposeTracks({ operation: "merge_tracks", annotationIds: ids })}
+            onJoin={(gapMode: VideoTrackGapMode) =>
+              handleVideoComposeTracks({ operation: "join_tracks", annotationIds: ids, gapMode })
+            }
+            onDelete={() => {
+              if (window.confirm(`确定删除 ${videoBatchTracks.length} 条轨迹？`)) handleVideoBatchDelete(videoBatchTracks);
+            }}
+            onClear={() => handleSelectBox(null)}
+          />
+        );
       } else {
         // 视频轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
         // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
@@ -1973,6 +2151,15 @@ export function useWorkbenchShellModel({
     handleBatchPatchFlag,
     handleBatchDelete,
     handleVideoComposeTracks,
+    handleVideoBatchRename,
+    handleVideoBatchDelete,
+    handleSelectBox,
+    videoBatchTracks,
+    classes,
+    s.hiddenVideoTrackIds,
+    s.lockedVideoTrackIds,
+    s.toggleHiddenVideoTrack,
+    s.toggleLockedVideoTrack,
     handleStartChangeClass,
     handlePatchShapeFlag,
     handleDeleteBox,
@@ -2038,10 +2225,7 @@ export function useWorkbenchShellModel({
       backendOnline: undefined,
     },
     workflow: {
-      saving: isSubmittingTask ||
-        bulkUpdateMut.isPending ||
-        groupAnnotationMut.isPending ||
-        ungroupAnnotationMut.isPending,
+      saving: isSubmittingTask || bulkUpdateMut.isPending,
       offline: !online,
       offlineQueueCount: queueCount,
       readOnly: isLocked,
@@ -2055,7 +2239,6 @@ export function useWorkbenchShellModel({
     aiRunning,
     annotationsData?.length,
     bulkUpdateMut.isPending,
-    groupAnnotationMut.isPending,
     isLocked,
     isSubmittingTask,
     mode,
@@ -2068,7 +2251,6 @@ export function useWorkbenchShellModel({
     selectionCard?.title,
     selectionCount,
     selectionSourceKind,
-    ungroupAnnotationMut.isPending,
   ]);
 
   const toggleLeftSidebar = useCallback(() => {
@@ -2147,6 +2329,15 @@ export function useWorkbenchShellModel({
         .sort((a, b) => a - b)[0] ?? null
     : null;
 
+  // v0.21.10 · 「当前题 AI」header 待审数: 视频按**当前帧**过滤 (与下方候选列表口径一致), 图像取全部。
+  //   aiBoxes 已在源头按 id 去重 (见 useImageAnnotationActions), 故此处只做帧作用域, 消除跨帧+分页
+  //   漂移导致的 100→500→100 抖动。
+  const aiPopoverBoxCount = modeState.diffMode === "final"
+    ? 0
+    : isVideoTask
+      ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex)).length
+      : aiBoxes.length;
+
   const layout: ComponentProps<typeof WorkbenchLayout> = {
     gridTemplateColumns: `${leftOpen ? `clamp(180px, ${leftPct}%, 600px)` : "0px"} 48px 1fr ${rightOpen ? `clamp(180px, ${rightPct}%, 600px)` : "0px"}`,
     taskQueue: {
@@ -2203,7 +2394,8 @@ export function useWorkbenchShellModel({
       onRunAi: () => {
         setAiPopoverOpen((open) => !open);
       },
-      aiDisabled: isVideoTask,
+      // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
+      aiDisabled: false,
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
@@ -2367,6 +2559,8 @@ export function useWorkbenchShellModel({
         videoManifestLoading: videoManifest.isLoading,
         videoFrameTimetable: videoFrameTimetable.data,
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
+        videoTimelineChapterControls,
+        videoPropagateRange: propagateHighlight,
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
@@ -2388,6 +2582,10 @@ export function useWorkbenchShellModel({
         onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
         onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
         onPropagateVideoTrack: openPropagateDialog,
+        // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回); 复用图片的 accept/reject handler(几何无关)。
+        aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes,
+        onAcceptPrediction: handleAcceptPrediction,
+        onRejectPrediction: handleRejectPrediction,
       },
       image: {
         fileUrl,
@@ -2528,7 +2726,6 @@ export function useWorkbenchShellModel({
         if (!taskId || ids.length === 0) return;
         bulkUpdateMut.mutate({ ids, patch });
       },
-      onSelectGroup: (memberIds) => s.replaceSelected(memberIds),
       hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,
       isFetchingMorePredictions: modeState.diffMode !== "final" && predictionsInfinite.isFetchingNextPage,
       onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
@@ -2544,6 +2741,12 @@ export function useWorkbenchShellModel({
             timebase={videoChapterTimebase}
             canEdit={!isLocked && isOwner}
             onSeekFrame={s.setVideoFrameIndex}
+            timelineDraftArmed={chapterDraftArmed}
+            onToggleTimelineDraft={() => setChapterDraftArmed((v) => !v)}
+            draftRange={chapterDraft}
+            onConsumeDraftRange={() => setChapterDraft(null)}
+            hoveredChapterId={hoveredChapterId}
+            onHoverChapter={setHoveredChapterId}
           />
         </div>
       )) : undefined,
@@ -2612,16 +2815,19 @@ export function useWorkbenchShellModel({
       onExpand: expandSelectionCard,
     },
     aiPopover: {
-      open: aiPopoverOpen && !isVideoTask,
+      // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), onRunAi 走帧路径。
+      open: aiPopoverOpen,
       rightOffset: rightOpen ? rightPx + 44 : 44,
       position: aiPopoverPosition,
       onPositionChange: setAiPopoverPosition,
       size: aiPopoverSize,
       onSizeChange: setAiPopoverSize,
-      aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
+      aiModel, aiRunning, aiBoxCount: aiPopoverBoxCount,
+      isVideoTask,
       confThreshold: s.confThreshold, aiTakeoverRate,
       onClose: () => setAiPopoverOpen(false),
-      onRunAi: handleRunAi,
+      // v0.21.4 · 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。
+      onRunAi: isVideoTask ? handleRunVideoFrameAi : handleRunAi,
       // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
       hasProjectPipeline,
       projectPipelineStageCount,
@@ -2709,6 +2915,8 @@ export function useWorkbenchShellModel({
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,
+    onRangeChange: setPropagateHighlight,
+    brushedRange: propagateBrush,
   };
 
   const issueSection = projectId && taskId ? {

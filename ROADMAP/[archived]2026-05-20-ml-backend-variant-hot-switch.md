@@ -160,7 +160,7 @@
 - **不做**自动 pool sizing（按工作集自动调 cap）—— cap 由 env 显式配，留 v0.11+。
 - **不做**跨容器 pool 共享（k8s sidecar）—— 留 v0.11+。
 - **不做** sam3-backend 的 pool（单变体，无意义）。
-- **不把 predictor 加进 `apps/api`**（遵循 [ADR-0012](../docs/adr/0012-sam-backend-as-independent-gpu-service.md)，pool 全在 GPU 容器内）。
+- **不把 predictor 加进 `apps/api`**（遵循 [ADR-0012](../docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)，pool 全在 GPU 容器内）。
 - **不引入注册时变体声明的强校验**（阶段一 C 的产物），pool 形态下用请求级参数即可。
 
 ---

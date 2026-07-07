@@ -1,7 +1,7 @@
 // v0.14.11 · 协议级能力目录 API (与 ml backend 注册解耦).
 // 后端 SSOT: apps/api/app/services/capability_registry.py.
-// 端点: GET /v1/ml-capabilities/protocol — 返回 task / infra / modality / geometry
-// 四张受控词表 + 每条 task 的人类可读元数据。
+// 端点: GET /v1/ml-capabilities/protocol — 返回 task / infra / modality / geometry /
+// prompt / input 受控词表 + 每条 task 的人类可读元数据。
 
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "./client";
@@ -44,12 +44,28 @@ export interface ProtocolGeometry {
   summary: string;
 }
 
+export interface ProtocolPrompt {
+  id: string;
+  label: string;
+  summary: string;
+  requires_input: boolean;
+  interactive_route: boolean;
+}
+
+export interface ProtocolInput {
+  id: string;
+  label: string;
+  summary: string;
+}
+
 export interface ProtocolCapabilities {
   version: string;
   tasks: ProtocolTask[];
   infras: ProtocolInfra[];
   modalities: ProtocolModality[];
   geometries: ProtocolGeometry[];
+  prompts: ProtocolPrompt[];
+  inputs: ProtocolInput[];
 }
 
 // v0.14.11 · 平台已知 backend 实例 (env-only + 项目级注册合并, 与注册解耦)。
@@ -81,8 +97,9 @@ export interface CapabilityInstanceModel {
   infra: string | null;
   is_interactive: boolean;
   supported_prompts: string[];
-  // v0.18.15 · 一等输入契约 (full_image | crop | bbox_prompt | point_prompt); 见 MLModelCapability.
+  // v0.21.0 · 一等输入契约 (full_image | crop | bbox_prompt | point_prompt | video); 见 MLModelCapability.
   supported_inputs?: string[];
+  default_input_type?: string | null;
   // v0.19.2 WS0 · backend 自报的资源画像 (batchable / device / vram 等); 由 /instances 透传。
   // 老 backend 缺字段 = {}。前端模型市场卡据此渲染「可批量 / 设备」徽标。
   resource_profile?: Record<string, unknown>;
@@ -104,6 +121,7 @@ export interface CapabilityInstanceModel {
   // 车辆属性) 通过此字段声明 /predict 会写入哪些 attributes (vehicle_type / color 等),
   // 含 select options. 前端「从 ML Backend 导入属性」据此一键导入项目 attribute_schema,
   // 免去手抄选项 + key 对齐。老 backend 缺字段 = 无属性输出。
+  output_attribute_types?: string[];
   output_attribute_schema?: OutputAttributeSchemaItem[];
   // v0.20.3 · backend 自报的类别清单 (yolo COCO 等). 前端「从 backend 预填配置」据此
   // 一键导入类别到工具单位, 与导入属性对称。老 backend / 无类别模型缺字段 = 无类别。
@@ -119,6 +137,10 @@ export interface OutputAttributeSchemaItem {
 }
 
 export interface CapabilityInstance {
+  /** v0.21.0 · ml_backend_registry.id; 全局编排选择器保存 pipeline_stages.ml_backend_id 用。 */
+  backend_id: string;
+  /** v0.21.0 · connected/error 等注册表状态；error 可展示但应禁用选择动作。 */
+  state: string;
   source: "env_only" | "registered" | string;
   name: string;
   infra: string;

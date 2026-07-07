@@ -82,7 +82,7 @@
   - 文档:`docs-site/user-guide/admin/datasets.md` / `docs-site/dev/reference/lidar-axis-conventions.md`
 - 相关 alembic:`XXXX_dataset_metadata.py`(新增 `datasets.metadata` jsonb)
 - 相关 ADR:ADR-0030(标定就近存进 DatasetItem.metadata,同一思路;本 ADR 把 dataset 级 metadata 列也开起来)
-- 相关 plan:`docs/plans/2026-06-05-v0.13.11-lidar-axis-convention.md`
+- 相关 plan:`docs/plans/archive/2026-06-05-v0.13.11-lidar-axis-convention.md`
 - 已知 TODO / 后续演进:
   - **多 lidar 不同系**:v1 单数据集单约定;若支持多 lidar 融合,需把 `axis_convention` 下沉到 sensor 级。
   - **导出反向映射**:`coco_pcd_export` / `aap_export` 加 `--restore-original-axis` 选项(留 v0.13.12+)。

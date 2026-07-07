@@ -6,7 +6,7 @@
  *
  * 状态向量 `[cx, cy, w, h, vx, vy, vw, vh]` 在恒速模型下四维互不耦合,F/Q/R/P 块对角,
  * 等价于 4 个独立的 1D 恒速卡尔曼(位置 + 变化率),无需 8×8 矩阵求逆——观测是标量,
- * 创新协方差 S 也是标量,增益闭式可算。详见 docs/plans/2026-06-22-v0.17.14-video-reference-kalman.md。
+ * 创新协方差 S 也是标量,增益闭式可算。详见 docs/plans/archive/2026-06-22-v0.17.14-video-reference-kalman.md。
  */
 import type { VideoReferencePreset } from "./videoReferencePredict";
 

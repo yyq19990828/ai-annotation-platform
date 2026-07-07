@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text, or_, and_
+from sqlalchemy import select, func, text, or_, and_, update
 from app.deps import (
     get_db,
     get_current_user,
@@ -20,6 +20,7 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.project_pipeline import ProjectPipeline
 from app.schemas.project import (
     ProjectOut,
     ProjectCreate,
@@ -32,12 +33,20 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
 )
+from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
 from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
     check_capability_violations,
     check_parent_geometry_roi,
     resolve_preannotate_queue,
+)
+from app.services.capability_registry import INPUT_BBOX_PROMPT, INPUT_CROP
+from app.services.pipeline_template import (
+    assert_pipeline_visible,
+    copy_pipeline_stages,
+    switch_project_default_pipeline,
+    unenabled_backend_ids,
 )
 from app.services.project_kind import (
     ProjectKind,
@@ -704,6 +713,59 @@ async def update_project(
     return result
 
 
+@router.post(
+    "/{project_id}/pipelines/apply",
+    response_model=ProjectPipelineOut,
+    status_code=201,
+)
+async def apply_project_pipeline(
+    body: ProjectPipelineApplyRequest,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    pipeline = await db.get(ProjectPipeline, body.pipeline_id)
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail="编排不存在")
+    await assert_pipeline_visible(db, pipeline, current_user)
+    _validate_saved_pipeline(pipeline.stages)
+
+    missing = await unenabled_backend_ids(db, project.id, pipeline.stages)
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "编排引用的 backend 未在当前项目启用",
+                "unenabled_backends": missing,
+            },
+        )
+
+    new_pipeline = ProjectPipeline(
+        id=uuid.uuid4(),
+        scope="private",
+        project_id=project.id,
+        organization_id=None,
+        name=pipeline.name,
+        stages=copy_pipeline_stages(pipeline.stages),
+        is_default=False,
+        created_by=current_user.id,
+    )
+    # 原子自增, 避免并发套用同一源编排时的 read-modify-write 丢更新。
+    await db.execute(
+        update(ProjectPipeline)
+        .where(ProjectPipeline.id == pipeline.id)
+        .values(usage_count=func.coalesce(ProjectPipeline.usage_count, 0) + 1)
+    )
+    if body.set_default:
+        await switch_project_default_pipeline(db, project.id)
+        new_pipeline.is_default = True
+    db.add(new_pipeline)
+    await db.flush()
+    await db.commit()
+    await db.refresh(new_pipeline)
+    return new_pipeline
+
+
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
     project: Project = Depends(require_project_owner),
@@ -1230,6 +1292,10 @@ class PipelineStage(BaseModel):
 
     stage: int
     ml_backend_id: uuid.UUID
+    # v0.21.5 · 初始输入节点 (stage 0) 的数据源描述: {"kind":"dataset","data_type":...,"execution_unit":...}。
+    # 声明「源类型 + 执行单位」维度 (ROADMAP 方向 B/C)。本版仅接受并透传/持久化, 不改派发语义
+    # (video tracker 逐帧/整段编排由 v0.21.6 接线)。下游 stage 无此字段。
+    source: dict | None = None
     model_id: str | None = None
     task_type: str | None = None
     model_variants: dict[str, str] | None = None
@@ -1255,7 +1321,7 @@ class PipelineStage(BaseModel):
 
 
 class PreannotateRequest(BaseModel):
-    ml_backend_id: uuid.UUID
+    ml_backend_id: uuid.UUID | None = None
     task_ids: list[uuid.UUID] | None = None
     # v0.9.5 · 文本批量预标可选参数
     prompt: str | None = None
@@ -1291,18 +1357,24 @@ class PreannotateRequest(BaseModel):
     def _validate_pipeline_stages(self) -> "PreannotateRequest":
         stages = self.pipeline_stages
         if not stages:
+            if self.ml_backend_id is None:
+                raise ValueError("ml_backend_id 必填")
             return self
         indices = {s.stage for s in stages}
         if len(indices) != len(stages):
             raise ValueError("pipeline_stages 的 stage 序号不可重复")
-        # 源阶段: 恰一个 parent_stage=None, 且其 ml_backend_id 须等于顶层 ml_backend_id
-        # (顶层字段仍是源 backend, 复用既有 backend 存在性/健康检查路径)。
+        # 源阶段: 恰一个 parent_stage=None。顶层 ml_backend_id 是兼容字段, 多阶段时
+        # 自动从源阶段派生, 避免项目主 backend / payload 顶层成为第二真值。
         roots = [s for s in stages if s.parent_stage is None]
         if len(roots) != 1:
             raise ValueError("pipeline_stages 须恰有一个源阶段 (parent_stage=None)")
         root = roots[0]
-        if root.ml_backend_id != self.ml_backend_id:
-            raise ValueError("源阶段 ml_backend_id 须与顶层 ml_backend_id 一致")
+        self.ml_backend_id = root.ml_backend_id
+        self.model_id = root.model_id
+        self.task_type = root.task_type
+        self.model_variants = root.model_variants
+        self.params = root.params
+        self.class_filter = root.class_filter
         # v0.18.14 · 受限树形校验 (max depth 3): 替换原单层扇出约束。
         # parent_stage 须指向已定义且更早的阶段 (序号严格小于, 自然无环); 父须产可消费几何
         # (write.target ∈ {geometry, intermediate}); 任一链路深度 ≤ 3。
@@ -1553,10 +1625,13 @@ async def trigger_preannotation(
     from app.services.audit import AuditService
 
     svc = MLBackendService(db)
-    backend = await svc.get(body.ml_backend_id)
+    source_backend_id = body.ml_backend_id
+    if source_backend_id is None:
+        raise HTTPException(status_code=422, detail="ml_backend_id 必填")
+    backend = await svc.get(source_backend_id)
     # v0.19.0 ADR-0044 · 校验 backend 存在且在本项目「已启用」(project_ml_backend.enabled):
     # 与下游阶段校验对称, 防止 owner 手动 POST 未启用/别项目 backend id 触发预标。
-    if not backend or not await svc.is_enabled(project.id, body.ml_backend_id):
+    if not backend or not await svc.is_enabled(project.id, source_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     # v0.19.2 WS2 · 源阶段 (单模型预标 / 流水线源) batchable 闸门: 交互/有状态模型不可批量。
@@ -1604,22 +1679,23 @@ async def trigger_preannotation(
                     st.model_id,
                 )
                 # v0.18.15 · 按子模型 supported_inputs 解析投递方式 + 几何可达性门控。
-                # 产几何的子: supported_inputs 须含 'bbox_prompt' (geometry-prompt 路径) 或
-                # 'crop' (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
+                # 产几何的子: supported_inputs 须含 bbox_prompt (geometry-prompt 路径) 或
+                # crop (普通检测器在 crop 上跑 + 坐标回映)。据此把投递方式烘焙进 input.mode,
                 # worker 直接消费 (无快照时 inputs=[] → 放过门控、不烘焙, 保持零退化)。
                 target = (st.write or {}).get("target", "attributes")
                 inputs = _stage_supported_inputs(st_backend, st.model_id)
                 if target in {"geometry", "intermediate"} and inputs:
-                    if "bbox_prompt" not in inputs and "crop" not in inputs:
+                    if INPUT_BBOX_PROMPT not in inputs and INPUT_CROP not in inputs:
                         raise HTTPException(
                             status_code=422,
                             detail=(
                                 f"stage {st.stage} 产几何 (write.target={target!r}), 但其模型 "
-                                f"supported_inputs={inputs} 不含 'bbox_prompt'/'crop', 无法作几何下游"
+                                f"supported_inputs={inputs} 不含 "
+                                f"{INPUT_BBOX_PROMPT!r}/{INPUT_CROP!r}, 无法作几何下游"
                             ),
                         )
                     if not (st.input or {}).get("mode"):
-                        mode = "geometry" if "bbox_prompt" in inputs else "crop"
+                        mode = "geometry" if INPUT_BBOX_PROMPT in inputs else "crop"
                         resolved_input = {**(st.input or {}), "mode": mode}
             norm.append(
                 {
@@ -1692,10 +1768,30 @@ async def trigger_preannotation(
         gpu_queue=settings.preannotate_gpu_queue,
         cpu_queue=settings.preannotate_cpu_queue,
     )
+    # v0.21.6 · detect-then-track: 含 tracker 阶段的 job 施加 soft 超时 (帧上限之外的双保险)。
+    #   单阶段源 tracker 走 body.task_type; 编排里的 tracker 阶段走 pipeline_stages_payload。
+    has_tracker_stage = body.task_type == "tracker" or any(
+        (s or {}).get("task_type") == "tracker" for s in (pipeline_stages_payload or [])
+    )
+    # v0.21.7 · 逐帧执行单位: 从源阶段(parent_stage=None)的 source.execution_unit 提取 (norm 丢弃了
+    #   source, 故从原始 body.pipeline_stages 取)。frame → worker 走二级 fan-out 逐帧跑图像 backend。
+    #   execution_unit 是整任务迭代粒度、非 per-stage, 故作 batch_predict 顶层参数。
+    #   源阶段判据须与 _validate_pipeline_stages 一致 (恰一个 parent_stage=None); stage 号是自由整数,
+    #   不保证为 0, 故不能按 s.stage == 0 找源。
+    execution_unit: str | None = None
+    if body.pipeline_stages:
+        src_stage = next(
+            (s for s in body.pipeline_stages if s.parent_stage is None), None
+        )
+        if src_stage is not None and src_stage.source:
+            execution_unit = (src_stage.source or {}).get("execution_unit")
+    apply_opts: dict = {"queue": queue}
+    if has_tracker_stage:
+        apply_opts["soft_time_limit"] = settings.tracker_soft_time_limit_seconds
     job = batch_predict.apply_async(
         args=[
             str(project.id),
-            str(body.ml_backend_id),
+            str(source_backend_id),
             [str(tid) for tid in body.task_ids] if body.task_ids else None,
         ],
         kwargs={
@@ -1713,8 +1809,10 @@ async def trigger_preannotation(
             "class_filter": body.class_filter,
             # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
             "pipeline_stages": pipeline_stages_payload,
+            # v0.21.7 · 执行单位 (video/frame/scene): frame → 逐帧 fan-out。缺省=整段/逐题。
+            "execution_unit": execution_unit,
         },
-        queue=queue,
+        **apply_opts,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(
@@ -1727,7 +1825,7 @@ async def trigger_preannotation(
         status_code=200,
         detail={
             "job_id": job.id,
-            "ml_backend_id": str(body.ml_backend_id),
+            "ml_backend_id": str(source_backend_id),
             "batch_id": str(body.batch_id) if body.batch_id else None,
             "task_count": len(body.task_ids) if body.task_ids else total_tasks_hint,
             "prompt": (body.prompt or "")[:200],

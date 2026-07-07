@@ -42,6 +42,16 @@ export interface WorkbenchCommonPreferences {
   fillOpacitySelected: number;
   /** v0.20.x · 工作台桌宠(常驻像素小精灵);关闭后选中信息卡折叠态回退为纯文字小条。 */
   petEnabled: boolean;
+  /**
+   * v0.21.11 · 焦点联动:选中对象(键盘两级循环 / 点选)时, 若对象出视口或过小则自动平移居中 + 适度缩放。
+   * 视频 + 图片 2D 工作台共享。默认关(不改选中前不移动视口的现状)。
+   */
+  focusSelectionEnabled: boolean;
+  /**
+   * v0.21.11 · 审阅流水线:采纳/拒绝(A/D)AI 候选后, 自动把选中推进到下一个待决 AI(仅移动选中,
+   * 不缩放视口;视口聚焦另由 focusSelectionEnabled 控制)。视频 + 图片 2D 共享。默认开(流水线手感)。
+   */
+  autoAdvanceOnDecide: boolean;
 }
 
 /** v0.16.7 · 标签字段 token 全集;class 三段恒显,不入表。 */
@@ -123,6 +133,11 @@ export interface WorkbenchVideoPreferences {
   defaultPlaybackRate: VideoDefaultPlaybackRate;
   largeFrameStep: VideoLargeFrameStep;
   autoFitOnResize: boolean;
+  /**
+   * v0.21.12 · 轨迹「续写后自动前进」:跨网格帧续写完一条轨迹后, 自动选中同帧下一条待续轨迹
+   * (上一网格帧有关键帧、当前帧未画者)。默认关(保持逐条手动 Tab / 点选的现状)。
+   */
+  trackContinueAutoAdvance: boolean;
 }
 
 /** v0.15.6 · 点云工作台渲染 / 导航偏好。 */
@@ -211,6 +226,8 @@ export interface WorkbenchLayoutPreferences {
   aiSectionCollapsed: boolean;
   /** v0.20.22 · 右栏「人工」分组折叠态(随账号持久)。 */
   manualSectionCollapsed: boolean;
+  /** 右栏「轨迹」分组折叠态(视频任务;随账号持久)。 */
+  trackSectionCollapsed: boolean;
   /** v0.20.22 · 右栏下段「讨论」(评论/历史/Issue)完全收起态(随账号持久)。 */
   discussionCollapsed: boolean;
   floatingTaskQueue: FloatingPanelState;
@@ -276,6 +293,8 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     fillOpacity: 0.07,
     fillOpacitySelected: 0.12,
     petEnabled: true,
+    focusSelectionEnabled: false,
+    autoAdvanceOnDecide: true,
   },
   image: {
     smoothImage: true,
@@ -293,6 +312,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     defaultPlaybackRate: 1,
     largeFrameStep: 10,
     autoFitOnResize: true,
+    trackContinueAutoAdvance: false,
   },
   pointcloud: {
     pointSize: 0.06,
@@ -316,6 +336,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     attrPanelCollapsed: false,
     aiSectionCollapsed: false,
     manualSectionCollapsed: false,
+    trackSectionCollapsed: false,
     discussionCollapsed: false,
     floatingTaskQueue: {
       detached: false,

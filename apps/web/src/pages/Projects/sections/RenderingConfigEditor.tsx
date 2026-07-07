@@ -263,7 +263,7 @@ export function RenderingConfigEditor({
 
       {/* trackerDefaultModel */}
       <div className={cn(ROW_CLASS, "border-b-0")}>
-        <span className={LABEL_CLASS}>AI 传播默认模型</span>
+        <span className={LABEL_CLASS}>AI 追踪默认模型</span>
         <label className={OVERRIDE_TOGGLE_CLASS}>
           <input
             type="checkbox"

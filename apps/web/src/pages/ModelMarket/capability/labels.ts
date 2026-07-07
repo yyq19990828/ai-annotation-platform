@@ -1,6 +1,8 @@
 // 能力目录的标签映射与配色(从 CapabilityCatalogPanel.tsx 拆出,行为零变化)。
 // 受控 task / infra / modality 的中文短标签 + task → Badge variant 配色 + 列表行 task 后缀。
 
+import { inputLabel as generatedInputLabel } from "@/api/capabilityInputs";
+
 // 受控 task → 中文短标签 (协议 v2 边界枚举).
 const TASK_LABELS: Record<string, string> = {
   detection: "检测",
@@ -78,11 +80,6 @@ export const COMPOSITION_BADGE: Record<
   composite: { variant: "ai", label: "内置流程", title: "一个 model 内部串联多个原子（内置编排）" },
 };
 
-// v0.18.15 · supported_inputs → 中文短标签 (一等输入契约: 模型能吃哪些投递形态)。
-// 「平台如何把数据喂给模型」(整图/裁剪/框提示/点提示), 与交互式 prompt 解耦。
-const INPUT_LABELS: Record<string, string> = {
-  full_image: "整图", crop: "裁剪", bbox_prompt: "框提示", point_prompt: "点提示",
-};
 export function inputLabel(i: string) {
-  return INPUT_LABELS[i] ?? i;
+  return generatedInputLabel(i);
 }

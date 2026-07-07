@@ -56,9 +56,10 @@ export interface MLModelCapability {
   is_interactive?: boolean;
   supported_prompts?: string[];
   // v0.18.15 · 一等输入契约 (与 supported_prompts 解耦): 模型能吃哪些投递形态
-  // (full_image | crop | bbox_prompt | point_prompt). 老 backend 缺字段时由平台合成默认.
+  // (full_image | crop | bbox_prompt | point_prompt | video). 老 backend 缺字段时由平台合成默认.
   // 模型市场「可接受输入」行 + 多阶段编排父子兼容过滤据此判定.
   supported_inputs?: string[];
+  default_input_type?: string | null;
   supported_geometric_outputs?: string[];
   output_attribute_types?: string[];
   // v0.18.0 · backend 自报输出属性 schema (含 select options); 二阶段 backend (onnxtools
@@ -266,4 +267,39 @@ export const mlBackendsApi = {
       cache_hit: boolean;
       evicted: string | null;
     }>(`/projects/${projectId}/ml-backends/${backendId}/warmup`, body ?? {}),
+
+  // v0.21.4 · 视频单题 AI: 对客户端传入的当前帧 JPEG 跑图像 backend, 落单帧 video_bbox 候选。
+  // 走 multipart/form-data(不用 apiClient, 其默认 Content-Type=application/json), config 是
+  // PreannotateConfig.buildArgs 产出的字段袋(task_type/model_id/model_variants/prompt/params/
+  // class_filter 等), 后端据此构造 predict context。
+  predictFrame: async (
+    projectId: string,
+    backendId: string,
+    params: {
+      blob: Blob;
+      taskId: string;
+      frameIndex: number;
+      config: Record<string, unknown>;
+    },
+  ): Promise<{ prediction_id: string; candidate_count: number; frame_index: number }> => {
+    const form = new FormData();
+    form.append("frame", params.blob, "frame.jpg");
+    form.append("task_id", params.taskId);
+    form.append("frame_index", String(params.frameIndex));
+    form.append("config", JSON.stringify(params.config));
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+      `/api/v1/projects/${projectId}/ml-backends/${backendId}/predict-frame`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(body.detail ?? `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
 };

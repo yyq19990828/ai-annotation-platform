@@ -53,6 +53,8 @@ interface VideoTrackSidebarProps {
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
+  /** v0.21.16 WS3 · 上报轨迹多选态给 shell (浮卡多选批量卡消费)。仅 roster 实例传入。 */
+  onSelectionChange?: (selectedTracks: VideoTrackAnnotation[]) => void;
   reviewDisplayMode?: DiffMode;
   trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
@@ -74,6 +76,9 @@ interface VideoTrackSidebarProps {
   /** v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。 */
   samplingStep?: number;
   propagateOverwrite?: boolean | null;
+  /** roster 视图「轨迹」分组头折叠态 (受控, 走 workbench.layout 服务端持久); card 视图忽略。 */
+  trackSectionCollapsed?: boolean;
+  onToggleTrackSection?: () => void;
 }
 
 interface CopiedKeyframe {
@@ -139,6 +144,7 @@ export function VideoTrackSidebar({
   onUpdate,
   onConvertToBboxes,
   onComposeTracks,
+  onSelectionChange,
   reviewDisplayMode,
   trackerJobsByAnnotation,
   onPropagateTrack,
@@ -152,6 +158,8 @@ export function VideoTrackSidebar({
   onUpdateSemanticLabel,
   samplingStep,
   propagateOverwrite,
+  trackSectionCollapsed = false,
+  onToggleTrackSection,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedBboxes = useMemo(
@@ -185,11 +193,28 @@ export function VideoTrackSidebar({
     () => videoTracks.filter((ann) => selectedTrackIds.has(ann.id)),
     [selectedTrackIds, videoTracks],
   );
+  // v0.21.16 WS3 · 把轨迹多选态上报给 shell (浮卡多选批量卡消费)。roster 实例是多选唯一 owner,
+  // 浮卡实例 (view="card") 不传此回调, 不参与上报, 保证单一数据源。
+  useEffect(() => {
+    onSelectionChange?.(selectedTracks);
+  }, [onSelectionChange, selectedTracks]);
   const canMergeSelectedTracks = selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
   // join: 恰好两条同类且可见帧区间不重叠的 track。
   const canJoinSelectedTracks = selectedTracks.length === 2
     && selectedTracks[0].class_name === selectedTracks[1].class_name
     && !trackRangesOverlap(selectedTracks[0], selectedTracks[1]);
+  // v0.21.14 · 合并 / 跳连禁用时按当前选择态给出动态原因 (差在哪), 而非笼统「只支持…」。
+  const mergeDisabledReason = useMemo(() => {
+    if (canMergeSelectedTracks) return null;
+    if (selectedTracks.length !== 2) return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
+    return "两条轨迹需同类";
+  }, [canMergeSelectedTracks, selectedTracks]);
+  const joinDisabledReason = useMemo(() => {
+    if (canJoinSelectedTracks) return null;
+    if (selectedTracks.length !== 2) return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
+    if (selectedTracks[0].class_name !== selectedTracks[1].class_name) return "两条轨迹需同类";
+    return "两条轨迹的可见帧区间不能重叠";
+  }, [canJoinSelectedTracks, selectedTracks]);
 
   const currentKeyframe = useMemo(
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
@@ -492,8 +517,10 @@ export function VideoTrackSidebar({
       onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
       onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
       canMergeSelectedTracks={canMergeSelectedTracks}
+      mergeDisabledReason={mergeDisabledReason}
       onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
       canJoinSelectedTracks={canJoinSelectedTracks}
+      joinDisabledReason={joinDisabledReason}
       onShowSelectedTracks={() => setSelectedTracksHidden(false)}
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}
@@ -501,6 +528,8 @@ export function VideoTrackSidebar({
       reviewDisplayMode={reviewDisplayMode}
       trackColorOverrides={trackColorOverrides}
       onSetTrackColor={onSetTrackColor}
+      collapsed={trackSectionCollapsed}
+      onToggleCollapsed={onToggleTrackSection}
     />
   );
 }

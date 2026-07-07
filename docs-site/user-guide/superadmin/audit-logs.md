@@ -104,7 +104,7 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 ## 分区策略
 
-`audit_logs` 按月分区（[ADR 0007](../../dev/adr/0007-audit-log-partitioning)）。运维上每月初由 cron 创建下月分区，旧分区可按合规策略归档/删除（默认保留 12 个月）。
+`audit_logs` 按月分区（[ADR 0007](../../dev/adr/archive/0007-audit-log-partitioning)）。运维上每月初由 cron 创建下月分区，旧分区可按合规策略归档/删除（默认保留 12 个月）。
 
 ## 写入侧约定
 

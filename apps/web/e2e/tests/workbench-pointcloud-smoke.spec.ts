@@ -1,7 +1,7 @@
 /**
  * v0.16.x · 点云工作台冒烟基线(P1)——拆 3D 整簇前的 Playwright 守护网地基。
  *
- * 缘由见 docs/plans/2026-06-17-v0.16.x-pointcloud-e2e-baseline-for-3d-split.md:
+ * 缘由见 docs/plans/archive/2026-06-17-v0.16.x-pointcloud-e2e-baseline-for-3d-split.md:
  * usePsrEditor/usePointMask/usePointCloudSelection 因共享 scene+form+合并键盘 handler
  * 职责纠缠不可干净切分,jsdom 无 WebGL 单测不了 → 唯一能在拆分前后证明行为等价的是
  * Playwright 端到端。本 spec 是该网的"地基 + go/no-go 闸":验证 headless Chromium(经

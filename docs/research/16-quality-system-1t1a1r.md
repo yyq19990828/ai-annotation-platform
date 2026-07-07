@@ -274,5 +274,5 @@ agreement_result
 ## 7. 与现有文档的关系
 
 - [`15-annotator-performance.md`](15-annotator-performance.md) 已确认质量体系两大结构性盲区:GT/Honeypot 与 Consensus/IAA。本文补充的是 **为什么当前 1:1:1 模式不能直接排实现**。
-- [`2026-06-03-annotator-performance-deepening.md`](../plans/2026-06-03-annotator-performance-deepening.md) 已把 B 轨标为“只设计,暂不排版本”。本文为这个判断补研究依据。
+- [`2026-06-03-annotator-performance-deepening.md`](../plans/archive/2026-06-03-annotator-performance-deepening.md) 已把 B 轨标为“只设计,暂不排版本”。本文为这个判断补研究依据。
 - 后续若要落地,建议先写 ADR:「质量评测与多人一致性地基」,再拆显式 benchmark MVP。

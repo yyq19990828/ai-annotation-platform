@@ -4,6 +4,7 @@ import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types
 import type { AnnotationPayload } from "@/api/tasks";
 import type { ToolBindings } from "@/api/projects";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
+import { dedupeAiBoxesById } from "../../stage/aiBoxFrames";
 import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
 import { guardDrawnBox } from "../../stage/drawGuard";
@@ -209,8 +210,10 @@ export function useImageAnnotationActions({
     () => acceptedPredictionShapeKeys(annotationsData),
     [annotationsData],
   );
+  // v0.21.10 · 按 id 去重: offset 分页重取期相邻页 shape 可能重叠, 不去重会让待审计数瞬时冲高
+  //   (100→500→100)。在源头去重, 下游 (reviewableAiBoxes / aiBoxes / 计数 / 时间轴密度) 全继承唯一 id。
   const allAiBoxes = useMemo(
-    () => predictionsToBoxes(predictionsData, toolBindings),
+    () => dedupeAiBoxesById(predictionsToBoxes(predictionsData, toolBindings)),
     [predictionsData, toolBindings],
   );
   const reviewableAiBoxes = useMemo(

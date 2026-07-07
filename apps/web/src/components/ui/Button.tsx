@@ -9,7 +9,7 @@ import { useElementStyle } from "./useElementStyle";
  * Button —— shadcn 适配层(v0.17.1)。
  * 保留原有 `variant/size` API(调用点零改动),内部改走 shadcn 的 `buttonVariants`。
  * 渲染原生 `<button>` 以保留 forwardRef + useElementStyle(`style` 透传,绕 eslint inline-style 禁令)。
- * 映射见 docs/plans/2026-06-19-v0.17.1-ui-primitives-wave1.md §3.1。
+ * 映射见 docs/plans/archive/2026-06-19-v0.17.1-ui-primitives-wave1.md §3.1。
  */
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "primary" | "ghost" | "ai" | "danger";

@@ -35,7 +35,7 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
       <div className="p-4">
         <h3 className="m-0 text-md font-semibold">工作台规范（项目级覆盖）</h3>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          项目级覆盖优先于成员的个人「标注偏好」，也可锁定 3D 新框尺寸、关键帧复制策略和 AI 传播默认模型。
+          项目级覆盖优先于成员的个人「标注偏好」，也可锁定 3D 新框尺寸、关键帧复制策略和 AI 追踪默认模型。
         </p>
         <RenderingConfigEditor
           value={draft}

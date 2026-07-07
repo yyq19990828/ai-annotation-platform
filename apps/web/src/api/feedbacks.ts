@@ -1,7 +1,7 @@
 /**
  * I18 · AnnotationFeedback 统一反馈表 API client.
  *
- * 端点列表见 docs/adr/0027-annotation-feedback-unified-table.md.
+ * 端点列表见 docs/adr/archive/0027-annotation-feedback-unified-table.md.
  * pixel anchor 携带 `anchor_position: { x, y, frame? }` (相对 0-1, 与 geometry 同语义).
  */
 import { apiClient } from "./client";

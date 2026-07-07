@@ -184,11 +184,11 @@ export const tasksApi = {
     apiClient.get<NeighborsResponse>(`/tasks/${id}/neighbors?k=${k}`),
 
   // v0.15.17 · 一次性拉 ±k 帧邻帧标注(替代 2k 条并发 getAnnotations + client 过滤)。
-  // groupId 给定 → 服务端只回该 group(scope=selected);省略 → 回全部(scope=all)。
-  getNeighborAnnotations: (id: string, k = 1, groupId?: number | null) => {
+  // v0.21.2 · trackId 给定 → 服务端只回该 track(scope=selected);省略 → 回全部(scope=all)。
+  getNeighborAnnotations: (id: string, k = 1, trackId?: string | null) => {
     const q =
-      groupId != null
-        ? `?k=${k}&group_id=${groupId}`
+      trackId != null
+        ? `?k=${k}&track_id=${encodeURIComponent(trackId)}`
         : `?k=${k}`;
     return apiClient.get<NeighborAnnotationsResponse>(
       `/tasks/${id}/neighbor-annotations${q}`,
@@ -231,12 +231,12 @@ export const tasksApi = {
       { target_task_id: targetTaskId, annotation_ids: annotationIds ?? null },
     ),
 
-  // v0.15.1 · 关键帧区间插值: 路径 task = 起点帧, 同 group 链两端框之间的
-  // 中间帧自动生成插值框(source="interpolated")。
-  interpolateRange: (taskId: string, groupId: number, toTaskId: string) =>
+  // v0.15.1 · 关键帧区间插值: 路径 task = 起点帧, 同 track 链两端框之间的
+  // 中间帧自动生成插值框(source="interpolated")。v0.21.2 · ADR-0045 · 按 track_id。
+  interpolateRange: (taskId: string, trackId: string, toTaskId: string) =>
     apiClient.post<InterpolateRangeResponse>(
       `/tasks/${taskId}/annotations/interpolate-range`,
-      { group_id: groupId, to_task_id: toTaskId },
+      { track_id: trackId, to_task_id: toTaskId },
     ),
 
   getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {

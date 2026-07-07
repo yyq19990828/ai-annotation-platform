@@ -10,6 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
+import { hasInput, INPUT_CROP_ID } from "@/api/capabilityInputs";
 import type { AttributeField } from "@/api/projects";
 import { tasksApi, type SecondaryInferenceRequest } from "@/api/tasks";
 import { useMLBackends } from "@/hooks/useMLBackends";
@@ -58,7 +59,7 @@ function deriveWriteTarget(
 /** 该 model 能否在选中框 ROI (crop) 上跑: 非交互 + supported_inputs 含 crop。 */
 function isCropRunnable(m: MLModelCapability): boolean {
   if (m.is_interactive) return false;
-  return (m.supported_inputs ?? []).includes("crop");
+  return hasInput(m.supported_inputs, INPUT_CROP_ID);
 }
 
 /** 该能力是否有可调推理参数 (params.properties 里除变体字段外还有别的)。 */

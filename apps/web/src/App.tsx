@@ -73,6 +73,9 @@ const AIPreAnnotateLayout = lazy(() =>
 const AIPreAnnotateJobsPage = lazy(() =>
   import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default }))
 );
+const GlobalPipelineLibraryPage = lazy(() =>
+  import("@/pages/AIPreAnnotate/GlobalPipelineLibraryPage").then((m) => ({ default: m.default }))
+);
 const AdminPeoplePage = lazy(() =>
   import("@/pages/Admin/AdminPeoplePage").then((m) => ({ default: m.AdminPeoplePage }))
 );
@@ -402,6 +405,7 @@ export function App() {
           }
         >
           <Route index element={<AIPreAnnotatePage />} />
+          <Route path="pipelines" element={<GlobalPipelineLibraryPage />} />
           <Route path="jobs" element={<AIPreAnnotateJobsPage />} />
         </Route>
         <Route

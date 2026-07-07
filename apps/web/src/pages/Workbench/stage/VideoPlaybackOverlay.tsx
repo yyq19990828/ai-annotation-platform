@@ -3,18 +3,33 @@ import type {
   ButtonHTMLAttributes,
   HTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
 } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { getTrackColor } from "./colors";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
+import {
+  frameToPct,
+  pctToFrame,
+  isFullWindow,
+  zoomWindow,
+  panWindow,
+  MIN_VISIBLE_SPAN,
+  ZOOM_WHEEL_K,
+  type TimelineWindow,
+} from "./timelineCoords";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
-import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import type { PredictionDensityBin, VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 import styles from "./VideoPlaybackOverlay.module.css";
 
 type HighlightAction = "prev" | "next" | "play" | null;
 type CSSVars = Record<`--${string}`, string | number>;
+
+// 密度柱最大像素高度。人工/AI 两条 lane 共用同一 max 计数与同一柱高上限,
+// 柱高才能跨 lane 直接反映数量占比 (见 densityScaleMax)。
+const DENSITY_BAR_MAX_PX = 9;
 export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
 
 export interface VideoTimelineChapter {
@@ -24,6 +39,38 @@ export interface VideoTimelineChapter {
   title: string;
   color?: string | null;
 }
+
+/**
+ * v0.21.13 · 时间轴区间刷选的用途。决定松手后 {from,to} 交给谁、草稿带用什么样式渲染。
+ * - `loop`: 循环播放区间 (原行为, 零回归)。
+ * - `chapter-draft`: 圈一段预填章节表单 (WS2)。
+ * - `propagate-range`: 圈一段喂给 AI 传播对话框 (v0.21.14 WS3)。
+ */
+export type TimelineRangePurpose = "loop" | "chapter-draft" | "propagate-range";
+
+interface TimelineRangeDraft {
+  region: VideoLoopRegion;
+  purpose: TimelineRangePurpose;
+}
+
+/**
+ * v0.21.13 · 章节 × 时间轴联动的一组控制器, 从 shell 经 StageHost / VideoWorkbench 透传到本组件。
+ * 分批填充: WS2 刷选建章节 (rangeSelectPurpose + onRangeSelect); WS3 章节条 resize (onResizeChapter);
+ * WS4 双向 hover (hoveredChapterId + onHoverChapter)。非视频任务不传。
+ */
+export interface VideoTimelineChapterControls {
+  rangeSelectPurpose: TimelineRangePurpose;
+  onRangeSelect: (purpose: TimelineRangePurpose, region: VideoLoopRegion) => void;
+  hoveredChapterId?: string | null;
+  onHoverChapter?: (chapterId: string | null) => void;
+  onResizeChapter?: (chapterId: string, region: VideoLoopRegion) => void;
+}
+
+const RANGE_DRAFT_TESTID: Record<TimelineRangePurpose, string> = {
+  loop: "video-loop-region-preview",
+  "chapter-draft": "video-timeline-chapter-draft",
+  "propagate-range": "video-timeline-propagate-draft",
+};
 
 interface VideoPlaybackOverlayProps {
   frameIndex: number;
@@ -39,9 +86,17 @@ interface VideoPlaybackOverlayProps {
   /** 选中轨迹的显示色 (oklch 字符串); 关键帧点用它着色, 与画布框/侧栏同源。 */
   trackColor?: string | null;
   globalTimelineDensity?: VideoTimelineDensityBin[];
+  /** v0.21.9 · AI 预测密度轨 (bucket 化, 单 violet 色); 与人工密度条独立叠加。 */
+  predictionDensity?: PredictionDensityBin[];
+  /** v0.21.9 · 跳到下一个/上一个有预测的帧; undefined 时不渲染导航按钮 (无预测帧)。 */
+  onSeekPredicted?: (dir: -1 | 1) => void;
   /** 会话级轨迹色覆盖; 密度条按各 bin 的主导轨迹着色时用它解析颜色。 */
   trackColorOverrides?: Record<string, string>;
   loopRegion?: VideoLoopRegion | null;
+  /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮「将影响哪段帧」(受控静态带, 非刷选草稿)。 */
+  propagateRange?: VideoLoopRegion | null;
+  /** v0.21.13 · 时间轴刷选产物的用途 (默认 "loop", 原行为)。非 loop 时松手走 onRangeSelect。 */
+  rangeSelectPurpose?: TimelineRangePurpose;
   bookmarks?: VideoBookmark[];
   chapters?: VideoTimelineChapter[];
   /** v0.11.7 · 含 pixel-anchored issue 的帧 (时间轴上加标记, 单击跳转)。 */
@@ -59,6 +114,13 @@ interface VideoPlaybackOverlayProps {
   onSeekBookmark?: (frameIndex: number) => void;
   onHoverFrameChange?: (frameIndex: number | null) => void;
   onSeekChapter?: (chapterId: string, frameIndex: number) => void;
+  /** v0.21.13 · 非 loop 用途的区间刷选提交 (松手时按 rangeSelectPurpose 分派)。 */
+  onRangeSelect?: (purpose: TimelineRangePurpose, region: VideoLoopRegion) => void;
+  /** v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动。 */
+  hoveredChapterId?: string | null;
+  onHoverChapter?: (chapterId: string | null) => void;
+  /** v0.21.13 WS3 · 章节色条边界 resize 提交 (拖动松手, debounce PATCH 在 shell)。 */
+  onChapterResize?: (chapterId: string, region: VideoLoopRegion) => void;
 }
 
 function formatTime(seconds: number) {
@@ -148,8 +210,12 @@ export function VideoPlaybackOverlay({
   selectedTrackTimeline = null,
   trackColor = null,
   globalTimelineDensity = [],
+  predictionDensity = [],
+  onSeekPredicted,
   trackColorOverrides,
   loopRegion = null,
+  propagateRange = null,
+  rangeSelectPurpose = "loop",
   bookmarks = [],
   chapters = [],
   issueFrames = [],
@@ -166,41 +232,119 @@ export function VideoPlaybackOverlay({
   onSeekBookmark,
   onHoverFrameChange,
   onSeekChapter,
+  onRangeSelect,
+  hoveredChapterId = null,
+  onHoverChapter,
+  onChapterResize,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
-  const [loopDraft, setLoopDraft] = useState<VideoLoopRegion | null>(null);
-  const loopDraftRef = useRef<VideoLoopRegion | null>(null);
+  const [rangeDraft, setRangeDraft] = useState<TimelineRangeDraft | null>(null);
+  // v0.21.13 WS3 · 章节条边界 resize 的本地预览 (拖动中不落库, 松手才 onChapterResize → debounce PATCH)。
+  const [chapterResizePreview, setChapterResizePreview] = useState<
+    { id: string; startFrame: number; endFrame: number } | null
+  >(null);
+  const chapterResizeRef = useRef<
+    { id: string; edge: "start" | "end"; startFrame: number; endFrame: number } | null
+  >(null);
+  const rangeDraftRef = useRef<TimelineRangeDraft | null>(null);
   const seekDragRef = useRef(false);
+  // v0.21.15 WS2 · 可见帧窗口 [from,to] (横向 zoom)。默认全窗口; 换视频 (maxFrame 变) 复位, 不持久化
+  // (跨视频帧数不同易越界)。窗口可为分数帧, 渲染/反解经 timelineCoords 收口, 保证同一坐标基准。
+  const [timelineWindow, setTimelineWindow] = useState<TimelineWindow>({ from: 0, to: maxFrame });
+  const timelineWindowRef = useRef(timelineWindow);
+  timelineWindowRef.current = timelineWindow;
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
   const frameTooltip = useMemo(() => {
     if (hoverFrame === null) return null;
     return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
   }, [hoverFrame, timebase]);
-  const maxDensity = useMemo(
-    () => Math.max(1, ...globalTimelineDensity.map((bin) => bin.density)),
-    [globalTimelineDensity],
+  // 人工关键帧密度与 AI 候选密度共用同一计数基准, 使两条 lane 的柱高可以直接横向比较。
+  // 否则各自独立归一化会让「1 个关键帧」和「8 个候选」都撑满各自 lane, 把 1:8 的真实比例
+  // 画成等高甚至倒挂 (关键帧反而更高)。共享 max 后, 柱高才真实反映数量占比。
+  const densityScaleMax = useMemo(
+    () => Math.max(
+      1,
+      ...globalTimelineDensity.map((bin) => bin.density),
+      ...predictionDensity.map((bin) => bin.count),
+    ),
+    [globalTimelineDensity, predictionDensity],
   );
   // v0.10.29 · 采样网格刻度：step>1 时在时间轴渲染网格帧 tick。
   // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
   const gridTicks = useMemo(() => {
     if (samplingStep <= 1 || maxFrame <= 0) return [];
-    const total = Math.floor(maxFrame / samplingStep) + 1;
-    const stride = total > 200 ? Math.ceil(total / 200) : 1;
+    // v0.21.15 WS3 · 按可见窗口重算 + 抽稀: 只渲染窗口内采样帧, 抽稀基于可见帧数 (放大后同一像素带
+    // 内网格才不过密)。全窗口 [0,maxFrame] 时 firstI=0、lastI=floor(maxFrame/step), 与旧结果一致。
+    const from = Math.max(0, Math.floor(timelineWindow.from));
+    const to = Math.min(maxFrame, Math.ceil(timelineWindow.to));
+    const firstI = Math.ceil(from / samplingStep);
+    const lastI = Math.floor(to / samplingStep);
+    const visibleCount = Math.max(0, lastI - firstI + 1);
+    const stride = visibleCount > 200 ? Math.ceil(visibleCount / 200) : 1;
     const ticks: number[] = [];
-    for (let i = 0; i < total; i += stride) {
-      const frame = Math.min(maxFrame, i * samplingStep);
+    for (let i = firstI; i <= lastI; i += stride) {
+      const frame = i * samplingStep;
       if (frame <= 0 || frame >= maxFrame) continue;
       ticks.push(frame);
     }
     return ticks;
-  }, [maxFrame, samplingStep]);
+  }, [maxFrame, samplingStep, timelineWindow]);
   const currentFrameOffGrid = !isPlaying && samplingStep > 1 && frameIndex % samplingStep !== 0;
-  const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
+  const isZoomed = !isFullWindow(timelineWindow, maxFrame);
+  const resetTimelineWindow = () => setTimelineWindow({ from: 0, to: maxFrame });
+  const frameLeft = (frame: number) => `${frameToPct(frame, timelineWindow)}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
     const ratio = rect.width > 0 ? (pointerX - rect.left) / rect.width : 0;
-    return Math.max(0, Math.min(maxFrame, Math.round(ratio * maxFrame)));
+    return pctToFrame(ratio, timelineWindow);
+  };
+  // v0.21.13 WS3 · 章节条边界 resize。命中区: 章节条左右边缘各一把手 (data-chapter-resize),
+  // 拖动改起/止帧, 松手才 onChapterResize (shell debounce PATCH); 中间仍点选 seek。
+  const beginChapterResize = (
+    e: ReactPointerEvent<HTMLElement>,
+    chapter: VideoTimelineChapter,
+    edge: "start" | "end",
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chapterResizeRef.current = {
+      id: chapter.id,
+      edge,
+      startFrame: chapter.startFrame,
+      endFrame: chapter.endFrame,
+    };
+    setChapterResizePreview({
+      id: chapter.id,
+      startFrame: chapter.startFrame,
+      endFrame: chapter.endFrame,
+    });
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const moveChapterResize = (e: ReactPointerEvent<HTMLElement>) => {
+    const st = chapterResizeRef.current;
+    const shell = timelineShellRef.current;
+    if (!st || !shell) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const frame = frameFromPointer(e.clientX, shell.getBoundingClientRect());
+    const next =
+      st.edge === "start"
+        ? { ...st, startFrame: Math.max(0, Math.min(frame, st.endFrame)) }
+        : { ...st, endFrame: Math.min(maxFrame, Math.max(frame, st.startFrame)) };
+    chapterResizeRef.current = next;
+    setChapterResizePreview({ id: next.id, startFrame: next.startFrame, endFrame: next.endFrame });
+  };
+  const endChapterResize = (e: ReactPointerEvent<HTMLElement>) => {
+    const st = chapterResizeRef.current;
+    chapterResizeRef.current = null;
+    setChapterResizePreview(null);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (!st) return;
+    const original = chapters.find((c) => c.id === st.id);
+    if (original && (original.startFrame !== st.startFrame || original.endFrame !== st.endFrame)) {
+      onChapterResize?.(st.id, { startFrame: st.startFrame, endFrame: st.endFrame });
+    }
   };
   const normalizeLoop = (from: number, to: number): VideoLoopRegion => ({
     startFrame: Math.min(from, to),
@@ -213,8 +357,29 @@ export function VideoPlaybackOverlay({
     onHoverFrameChange?.(nextFrame);
   };
   const rangeStyle = (from: number, to: number): CSSVars => {
-    const left = maxFrame > 0 ? (from / maxFrame) * 100 : 0;
-    const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
+    const rawLeft = frameToPct(from, timelineWindow);
+    const rawRight = frameToPct(to, timelineWindow);
+    // v0.21.15 WS3 · 完全落在窗口外 → 宽度 0 (不显示); 否则 clamp 到 [0,100] 裁掉窗口外部分。
+    // 全窗口态 from/to 本就在 [0,100] 内, clamp 为空操作 → 零回归 (loop/传播/草稿/章节/轨迹段共用)。
+    if (rawRight <= 0 || rawLeft >= 100) {
+      return { "--timeline-left": "0%", "--timeline-width": "0%" };
+    }
+    const left = Math.max(0, rawLeft);
+    const right = Math.min(100, rawRight);
+    return {
+      "--timeline-left": `${left}%`,
+      "--timeline-width": `${Math.max(0.5, right - left)}%`,
+    };
+  };
+  // v0.21.15 WS3 · 点位标记是否落在可见窗口内 (无 overflow 裁剪, 窗口外书签/issue/关键帧/离网格标记须跳过)。
+  const frameInWindow = (frame: number) => frame >= timelineWindow.from && frame <= timelineWindow.to;
+  // v0.21.15 WS3 · 密度 bin 按其帧区间 [from, to] 经窗口映射 (替代 index/binCount 等宽), 完全窗口外返回 null。
+  const binWindowStyle = (from: number, to: number): CSSVars | null => {
+    const rawLeft = frameToPct(from, timelineWindow);
+    const rawRight = frameToPct(to + 1, timelineWindow);
+    if (rawRight <= 0 || rawLeft >= 100) return null;
+    const left = Math.max(0, rawLeft);
+    const right = Math.min(100, rawRight);
     return {
       "--timeline-left": `${left}%`,
       "--timeline-width": `${Math.max(0.5, right - left)}%`,
@@ -253,10 +418,41 @@ export function VideoPlaybackOverlay({
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [interactive, largeFrameStep, onSeekByFrames, samplingStep, visible]);
-  const hoverLeft = maxFrame > 0 ? ((hoverFrame ?? 0) / maxFrame) * 100 : 0;
+  const hoverLeft = frameToPct(hoverFrame ?? 0, timelineWindow);
   const hoverPopoverLeft = `${Math.max(12, Math.min(88, hoverLeft))}%`;
 
   const isInteractive = visible && interactive;
+
+  // v0.21.15 WS2 · 换视频 (maxFrame 变) 复位窗口, 避免跨视频窗口越界 (窗口不持久化)。
+  useEffect(() => {
+    setTimelineWindow({ from: 0, to: maxFrame });
+  }, [maxFrame]);
+  // v0.21.15 WS2 · Ctrl/⌘+滚轮以指针帧为锚缩放; 已放大时普通滚轮横向平移 (全窗口放行页面滚动)。
+  // 原生非被动监听才能 preventDefault (React onWheel 被动); 窗口从 ref 读, 避免每次缩放重挂监听。
+  useEffect(() => {
+    const shell = timelineShellRef.current;
+    if (!shell || !isInteractive || maxFrame <= 0) return;
+    const onWheel = (e: WheelEvent) => {
+      const rect = shell.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const factor = Math.exp(e.deltaY * ZOOM_WHEEL_K);
+        setTimelineWindow((win) => zoomWindow(win, maxFrame, ratio, factor, MIN_VISIBLE_SPAN));
+        return;
+      }
+      const win = timelineWindowRef.current;
+      if (isFullWindow(win, maxFrame)) return; // 全窗口: 不劫持, 放行页面滚动
+      e.preventDefault();
+      const span = win.to - win.from;
+      const panPx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      const deltaFrames = (panPx / rect.width) * span;
+      setTimelineWindow((prev) => panWindow(prev, maxFrame, deltaFrames, MIN_VISIBLE_SPAN));
+    };
+    shell.addEventListener("wheel", onWheel, { passive: false });
+    return () => shell.removeEventListener("wheel", onWheel);
+  }, [isInteractive, maxFrame]);
 
   return (
     <div
@@ -288,6 +484,40 @@ export function VideoPlaybackOverlay({
         >
           <Icon name="chevRight" size={13} />
         </Button>
+        {onSeekPredicted && (
+          <div className={styles.predictedGroup}>
+            <Button
+              size="sm"
+              title="上一个有预测的帧"
+              data-testid="video-seek-prev-predicted"
+              onClick={() => onSeekPredicted(-1)}
+              className={cn(styles.controlButton, styles.controlButtonPredicted)}
+            >
+              <Icon name="chevLeft" size={13} />
+            </Button>
+            <Button
+              size="sm"
+              title="下一个有预测的帧"
+              data-testid="video-seek-next-predicted"
+              onClick={() => onSeekPredicted(1)}
+              className={cn(styles.controlButton, styles.controlButtonPredicted)}
+            >
+              <Icon name="chevRight" size={13} />
+            </Button>
+          </div>
+        )}
+        {isZoomed && (
+          <Button
+            size="sm"
+            title="适配全部帧 (退出时间轴缩放)"
+            aria-label="适配全部帧"
+            data-testid="video-timeline-zoom-reset"
+            onClick={resetTimelineWindow}
+            className={styles.controlButton}
+          >
+            <Icon name="scan" size={13} />
+          </Button>
+        )}
       </div>
 
       <div
@@ -299,32 +529,46 @@ export function VideoPlaybackOverlay({
           stepTimelineByKey(e, e.currentTarget);
         }}
         onPointerDownCapture={(e) => {
+          // 章节条 resize 把手自行处理 pointer, 不走 shell 的 seek/刷选。
+          if ((e.target as HTMLElement)?.closest?.("[data-chapter-resize]")) return;
           e.preventDefault();
           e.stopPropagation();
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
           focusTimelineShell(e.currentTarget);
-          if (!e.shiftKey || !onLoopRegionChange) {
+          const brushEnabled =
+            rangeSelectPurpose === "loop" ? Boolean(onLoopRegionChange) : Boolean(onRangeSelect);
+          // 手势区分: chapter-draft 有显式「圈选」按钮臂选, 普通拖即圈选; loop / propagate-range
+          // 保留普通拖 seek/scrub (传播对话框开着时仍能拖动预览帧), 用 Shift+拖 才圈选。
+          const plainDragBrushes = rangeSelectPurpose === "chapter-draft";
+          const wantsBrush = brushEnabled && (plainDragBrushes || e.shiftKey);
+          if (!wantsBrush) {
             seekDragRef.current = true;
             onSeek(frame);
             e.currentTarget.setPointerCapture?.(e.pointerId);
             return;
           }
-          const next = { startFrame: frame, endFrame: frame };
-          loopDraftRef.current = next;
-          setLoopDraft(next);
+          const next: TimelineRangeDraft = {
+            region: { startFrame: frame, endFrame: frame },
+            purpose: rangeSelectPurpose,
+          };
+          rangeDraftRef.current = next;
+          setRangeDraft(next);
           e.currentTarget.setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
           updateHoverFrame(frame);
-          const draft = loopDraftRef.current;
+          const draft = rangeDraftRef.current;
           if (draft) {
             e.preventDefault();
-            const next = normalizeLoop(draft.startFrame, frame);
-            loopDraftRef.current = next;
-            setLoopDraft(next);
+            const next: TimelineRangeDraft = {
+              region: normalizeLoop(draft.region.startFrame, frame),
+              purpose: draft.purpose,
+            };
+            rangeDraftRef.current = next;
+            setRangeDraft(next);
             return;
           }
           if (seekDragRef.current) {
@@ -333,12 +577,13 @@ export function VideoPlaybackOverlay({
           }
         }}
         onPointerUp={(e) => {
-          const draft = loopDraftRef.current;
-          if (draft && onLoopRegionChange) {
+          const draft = rangeDraftRef.current;
+          if (draft) {
             e.preventDefault();
-            onLoopRegionChange(draft);
-            loopDraftRef.current = null;
-            setLoopDraft(null);
+            if (draft.purpose === "loop") onLoopRegionChange?.(draft.region);
+            else onRangeSelect?.(draft.purpose, draft.region);
+            rangeDraftRef.current = null;
+            setRangeDraft(null);
             e.currentTarget.releasePointerCapture?.(e.pointerId);
             return;
           }
@@ -350,15 +595,19 @@ export function VideoPlaybackOverlay({
           }
         }}
         onPointerCancel={(e) => {
-          if (!loopDraftRef.current && !seekDragRef.current) return;
+          if (!rangeDraftRef.current && !seekDragRef.current) return;
           seekDragRef.current = false;
-          loopDraftRef.current = null;
-          setLoopDraft(null);
+          rangeDraftRef.current = null;
+          setRangeDraft(null);
           e.currentTarget.releasePointerCapture?.(e.pointerId);
         }}
         onPointerLeave={() => {
-          if (seekDragRef.current || loopDraftRef.current) return;
+          if (seekDragRef.current || rangeDraftRef.current) return;
           updateHoverFrame(null);
+        }}
+        onDoubleClick={() => {
+          // v0.21.15 WS2 · 双击时间轴复位到全窗口 (与控制条「适配全部」等价)。
+          if (isZoomed) resetTimelineWindow();
         }}
       >
         <input
@@ -366,10 +615,12 @@ export function VideoPlaybackOverlay({
           aria-label="视频帧时间轴"
           type="range"
           min={0}
-          max={maxFrame}
+          // v0.21.15 WS3 · range 映射到可见窗口 (0..10000 = 窗口 0..100%*100), 原生 accent 进度填充随缩放
+          // 正确落点。全窗口时 value=frameIndex/maxFrame*10000, 与旧 value/max 比例一致 → 零回归。
+          max={10000}
           tabIndex={-1}
-          value={frameIndex}
-          onChange={(e) => onSeek(Number(e.currentTarget.value))}
+          value={Math.round(frameToPct(frameIndex, timelineWindow) * 100)}
+          onChange={(e) => onSeek(pctToFrame(Number(e.currentTarget.value) / 10000, timelineWindow))}
           onFocus={(e) => focusTimelineShell(e.currentTarget)}
           onKeyDown={(e) => {
             stepTimelineByKey(e, e.currentTarget);
@@ -397,18 +648,36 @@ export function VideoPlaybackOverlay({
               ))}
             </div>
           )}
-          {currentFrameOffGrid && (
+          {currentFrameOffGrid && frameInWindow(frameIndex) && (
             <TimelineSpan
               data-testid="video-timeline-offgrid-marker"
               className={styles.offGridMarker}
               vars={{ "--timeline-left": frameLeft(frameIndex) }}
             />
           )}
-          {(loopRegion || loopDraft) && (
+          {loopRegion && rangeDraft?.purpose !== "loop" && (
             <TimelineSpan
-              data-testid={loopDraft ? "video-loop-region-preview" : "video-loop-region"}
-              className={cn(styles.loopRegion, loopDraft && styles.loopRegionDraft)}
-              vars={rangeStyle((loopDraft ?? loopRegion)!.startFrame, (loopDraft ?? loopRegion)!.endFrame)}
+              data-testid="video-loop-region"
+              className={styles.loopRegion}
+              vars={rangeStyle(loopRegion.startFrame, loopRegion.endFrame)}
+            />
+          )}
+          {propagateRange && (
+            <TimelineSpan
+              data-testid="video-propagate-range"
+              className={styles.propagateRegion}
+              vars={rangeStyle(propagateRange.startFrame, propagateRange.endFrame)}
+            />
+          )}
+          {rangeDraft && (
+            <TimelineSpan
+              data-testid={RANGE_DRAFT_TESTID[rangeDraft.purpose]}
+              className={cn(
+                rangeDraft.purpose === "loop" && cn(styles.loopRegion, styles.loopRegionDraft),
+                rangeDraft.purpose === "chapter-draft" && styles.chapterDraftRegion,
+                rangeDraft.purpose === "propagate-range" && styles.propagateDraftRegion,
+              )}
+              vars={rangeStyle(rangeDraft.region.startFrame, rangeDraft.region.endFrame)}
             />
           )}
           {chapters.length > 0 && (
@@ -417,33 +686,74 @@ export function VideoPlaybackOverlay({
               className={styles.chaptersTrack}
             >
               {chapters.map((chapter) => {
-                const span = Math.max(0, chapter.endFrame - chapter.startFrame);
-                const widthPct = maxFrame > 0 ? ((span + 1) / (maxFrame + 1)) * 100 : 100;
-                const leftPct = maxFrame > 0 ? (chapter.startFrame / maxFrame) * 100 : 0;
+                const preview =
+                  chapterResizePreview?.id === chapter.id ? chapterResizePreview : null;
+                const startFrame = preview ? preview.startFrame : chapter.startFrame;
+                const endFrame = preview ? preview.endFrame : chapter.endFrame;
+                // v0.21.15 WS3 · 章节条改走 rangeStyle (窗口映射 + 裁剪), 顺带修正既有 left/width 分母
+                // 不一致 (旧 left 用 /maxFrame、width 用 /(maxFrame+1))。把手按窗口定位, 窗口外则不渲染。
+                const leftPct = frameToPct(startFrame, timelineWindow);
+                const rightPct = frameToPct(endFrame, timelineWindow);
                 const chapterStyle: CSSVars = {
-                  "--timeline-left": `${leftPct}%`,
-                  "--timeline-width": `${Math.max(0.5, widthPct)}%`,
+                  ...rangeStyle(startFrame, endFrame),
                   "--chapter-color": chapter.color ?? "oklch(0.62 0.18 252)",
                 };
+                const resizable = Boolean(onChapterResize) && isInteractive;
                 return (
-                  <TimelineButton
-                    key={chapter.id}
-                    type="button"
-                    data-testid="video-timeline-chapter"
-                    title={`${chapter.title} · F${chapter.startFrame}-F${chapter.endFrame}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onSeekChapter?.(chapter.id, chapter.startFrame);
-                    }}
-                    className={cn(styles.chapterMarker, isInteractive && styles.interactive)}
-                    vars={chapterStyle}
-                  />
+                  <div key={chapter.id} className={styles.chapterEntry}>
+                    <TimelineButton
+                      type="button"
+                      data-testid="video-timeline-chapter"
+                      data-hovered={hoveredChapterId === chapter.id ? "true" : undefined}
+                      title={`${chapter.title} · F${startFrame}-F${endFrame}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSeekChapter?.(chapter.id, startFrame);
+                      }}
+                      onPointerEnter={() => onHoverChapter?.(chapter.id)}
+                      onPointerLeave={() => onHoverChapter?.(null)}
+                      className={cn(
+                        styles.chapterMarker,
+                        isInteractive && styles.interactive,
+                        hoveredChapterId === chapter.id && styles.chapterMarkerHovered,
+                      )}
+                      vars={chapterStyle}
+                    />
+                    {resizable && (
+                      <>
+                        {frameInWindow(startFrame) && (
+                          <TimelineSpan
+                            data-testid="video-chapter-resize-start"
+                            data-chapter-resize="start"
+                            className={styles.chapterResizeHandle}
+                            vars={{ "--timeline-left": `${leftPct}%` }}
+                            onPointerDown={(e) => beginChapterResize(e, chapter, "start")}
+                            onPointerMove={moveChapterResize}
+                            onPointerUp={endChapterResize}
+                            onPointerCancel={endChapterResize}
+                          />
+                        )}
+                        {frameInWindow(endFrame) && (
+                          <TimelineSpan
+                            data-testid="video-chapter-resize-end"
+                            data-chapter-resize="end"
+                            className={styles.chapterResizeHandle}
+                            vars={{ "--timeline-left": `${rightPct}%` }}
+                            onPointerDown={(e) => beginChapterResize(e, chapter, "end")}
+                            onPointerMove={moveChapterResize}
+                            onPointerUp={endChapterResize}
+                            onPointerCancel={endChapterResize}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
                 );
               })}
             </div>
           )}
-          {bookmarks.map((bookmark) => (
+          {bookmarks.filter((bookmark) => frameInWindow(bookmark.frameIndex)).map((bookmark) => (
             <TimelineButton
               key={bookmark.id}
               type="button"
@@ -458,7 +768,7 @@ export function VideoPlaybackOverlay({
               vars={{ "--timeline-left": frameLeft(bookmark.frameIndex) }}
             />
           ))}
-          {issueFrames.map((frame) => (
+          {issueFrames.filter((frame) => frameInWindow(frame)).map((frame) => (
             <TimelineButton
               key={`issue-${frame}`}
               type="button"
@@ -477,20 +787,41 @@ export function VideoPlaybackOverlay({
             <div data-testid="video-timeline-density" className={styles.densityTrack}>
               {globalTimelineDensity.map((bin) => {
                 if (bin.density <= 0) return null;
-                // 等宽分桶: 每个 bin 占 1/binCount 的等宽切片, 不按帧数比例算宽度
-                // —— 否则首末桶因 floor 取整只覆盖 1 帧而显著偏窄, 且与网格刻度 (frameLeft) 的
-                //    坐标系不一致 (此前 left 用 /maxFrame、width 用 /(maxFrame+1))。
-                const binCount = globalTimelineDensity.length;
+                // v0.21.15 WS3 · 按 bin 帧区间 [from, to] 经窗口映射 (替代 index/binCount 等宽), 与网格/
+                // 关键帧点回到同一坐标基准; 完全落在可见窗口外的 bin 跳过。
+                const pos = binWindowStyle(bin.from, bin.to);
+                if (!pos) return null;
                 const binStyle: CSSVars = {
-                  "--timeline-left": `${(bin.index / binCount) * 100}%`,
-                  "--timeline-width": `${(1 / binCount) * 100}%`,
-                  "--density-height": `${Math.max(3, (bin.density / maxDensity) * 8)}px`,
+                  ...pos,
+                  "--density-height": `${Math.max(2, (bin.density / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
                   "--density-gradient": densityBinGradient(bin, trackColorOverrides),
                 };
                 return (
                   <TimelineSpan
                     key={bin.index}
                     className={styles.densityBin}
+                    vars={binStyle}
+                  />
+                );
+              })}
+            </div>
+          )}
+          {/* v0.21.9 · AI 预测密度轨 (独立 violet lane, 始终显示; 与人工密度条不同层)。 */}
+          {predictionDensity.some((bin) => bin.count > 0) && (
+            <div data-testid="video-timeline-prediction-density" className={styles.predictionTrack}>
+              {predictionDensity.map((bin) => {
+                if (bin.count <= 0) return null;
+                // v0.21.15 WS3 · 同人工密度: 按 bin 帧区间经窗口映射, 与之逐桶对齐; 窗口外 bin 跳过。
+                const pos = binWindowStyle(bin.from, bin.to);
+                if (!pos) return null;
+                const binStyle: CSSVars = {
+                  ...pos,
+                  "--density-height": `${Math.max(2, (bin.count / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
+                };
+                return (
+                  <TimelineSpan
+                    key={bin.index}
+                    className={styles.predictionBin}
                     vars={binStyle}
                   />
                 );
@@ -519,7 +850,7 @@ export function VideoPlaybackOverlay({
                   vars={rangeStyle(segment.from, segment.to)}
                 />
               ))}
-              {selectedTrackTimeline.keyframes.map((keyframe) => (
+              {selectedTrackTimeline.keyframes.filter((keyframe) => frameInWindow(keyframe.frame)).map((keyframe) => (
                 <TimelineSpan
                   key={`track-keyframe-${keyframe.frame}`}
                   data-testid="video-timeline-track-keyframe"

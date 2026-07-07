@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
+import { useUserPreferences, userPreferencesQueryKey } from "./useUserPreferences";
 
 /**
  * v0.18.25 · 工作台交互工具「引擎(模型)选择」的用户级偏好。
@@ -14,40 +16,32 @@ import { useAuthStore } from "@/stores/authStore";
  *
  * 注: 后端 `ai` 子树为「深一层合并」(me.py update_preferences), 故本 hook 只提交
  * `{ai:{model_by_backend}}` 不会冲掉 `params_by_backend`。
+ *
+ * v0.21.17 · 拉取收敛到共享 {@link useUserPreferences} query; 本地态作乐观覆盖, 写回 600ms
+ * 节流 + 成功后 invalidate。
  */
 export function useAiToolModelPref(backendId: string | null | undefined) {
   const userId = useAuthStore((s) => s.user?.id);
+  const queryClient = useQueryClient();
+  const { prefs, loaded } = useUserPreferences();
+  const server = prefs?.ai?.model_by_backend;
   const [byBackend, setByBackend] = useState<Record<string, string>>({});
-  const [loaded, setLoaded] = useState(false);
   const pendingRef = useRef<Record<string, string> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    let active = true;
-    if (!userId) {
-      // 切账号/登出: 清掉上一个用户的 byBackend + 取消任何 pending 写 (issue claude[bot] P1)。
-      setByBackend({});
-      pendingRef.current = null;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      setLoaded(false);
-      return;
+    setByBackend(server ?? {});
+  }, [server]);
+
+  // 切账号/登出: 清掉上一个用户的 byBackend + 取消 pending 写 (issue claude[bot] P1)。
+  useEffect(() => {
+    if (userId) return;
+    setByBackend({});
+    pendingRef.current = null;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-    authApi
-      .getPreferences()
-      .then((res) => {
-        if (!active) return;
-        setByBackend(res.ai?.model_by_backend ?? {});
-        setLoaded(true);
-      })
-      .catch(() => {
-        if (active) setLoaded(true);
-      });
-    return () => {
-      active = false;
-    };
   }, [userId]);
 
   useEffect(() => {
@@ -84,10 +78,11 @@ export function useAiToolModelPref(backendId: string | null | undefined) {
         if (!payload) return;
         authApi
           .updatePreferences({ ai: { model_by_backend: payload } })
+          .then(() => queryClient.invalidateQueries({ queryKey: userPreferencesQueryKey(userId) }))
           .catch(() => {});
       }, 600);
     },
-    [backendId],
+    [backendId, queryClient, userId],
   );
 
   return { savedModelId, loaded, save };

@@ -11,6 +11,7 @@ import {
   type VideoTrackGapMode,
 } from "./VideoTrackComposeDialog";
 import type { VideoFrameEntry, VideoTrackAnnotation } from "./videoStageTypes";
+import type { VideoTrackKeyframe } from "@/types";
 import { firstVisibleTrackFrame, frameRange, sourceChipText, statusChipText } from "./videoTrackFormat";
 
 export type TrackFilter = "all" | "current";
@@ -40,9 +41,13 @@ interface VideoTrackPanelProps {
   onAggregateSelectedBboxes?: () => void;
   onMergeSelectedTracks?: () => void;
   canMergeSelectedTracks?: boolean;
+  /** v0.21.14 · 合并禁用时按当前选择态给出动态原因 (差在哪); 可用时为 null。 */
+  mergeDisabledReason?: string | null;
   // v0.10.30 · 2.5 Join: 选中两条同类且帧号不重叠的轨迹时跳连, gapMode 由 ComposeDialog 选定。
   onJoinSelectedTracks?: (gapMode: VideoTrackGapMode) => void;
   canJoinSelectedTracks?: boolean;
+  /** v0.21.14 · 跳连禁用时按当前选择态给出动态原因; 可用时为 null。 */
+  joinDisabledReason?: string | null;
   onShowSelectedTracks?: () => void;
   onHideSelectedTracks?: () => void;
   onLockSelectedTracks?: () => void;
@@ -51,6 +56,10 @@ interface VideoTrackPanelProps {
   // v0.10.30 · 1A 选色器: session 级覆盖 (trackId → oklch), 未接线时回落到 classColor。
   trackColorOverrides?: Record<string, string>;
   onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
+  /** 「轨迹」分组头折叠态 (受控, 走 workbench.layout 服务端持久)。缺省 = 展开;
+   *  未传 onToggleCollapsed 时不渲染折叠箭头, 退化为静态头。 */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -62,6 +71,45 @@ function sourceChipClass(source: VideoFrameEntry["source"] | null): string | nul
   if (source === "interpolated") return "text-status-caution border-amber-500/45";
   if (source === "manual" || source === "legacy") return "text-status-positive border-emerald-500/40";
   return null;
+}
+
+/**
+ * v0.21.9 · 轨迹关键帧来源迷你条: 沿帧区间 bucket 化 (最多 40 桶, 防大量关键帧撑爆 DOM),
+ * AI 追出的关键帧 (source==="prediction") 着 violet (对齐本面板 source chip 语言), 人工帧着中性。
+ * 全人工轨迹不渲染 (省视觉噪音, 只在有 AI 追帧时提示"哪几段是 AI 补的")。
+ */
+function KeyframeSourceStrip({ keyframes }: { keyframes: readonly VideoTrackKeyframe[] }) {
+  if (keyframes.length === 0 || !keyframes.some((kf) => kf.source === "prediction")) return null;
+  const frames = keyframes.map((kf) => kf.frame_index);
+  const min = Math.min(...frames);
+  const max = Math.max(...frames);
+  const span = max - min + 1;
+  const BUCKETS = 40;
+  // 每桶: 0=空, 1=人工, 2=AI 追 (AI 优先着色)。
+  const buckets = new Array<number>(BUCKETS).fill(0);
+  for (const kf of keyframes) {
+    const idx = Math.min(BUCKETS - 1, Math.floor(((kf.frame_index - min) / span) * BUCKETS));
+    const weight = kf.source === "prediction" ? 2 : 1;
+    if (weight > buckets[idx]) buckets[idx] = weight;
+  }
+  // 桶等宽且连续 → 用 flex 等分格渲染, 避免逐格内联定位 (本文件禁 inline style)。
+  return (
+    <div
+      data-testid="track-keyframe-source-strip"
+      title="关键帧来源: 紫=AI 追出 · 灰=人工"
+      className="col-start-2 flex h-1.5 mt-1 rounded-full bg-muted overflow-hidden"
+    >
+      {buckets.map((weight, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex-1",
+            weight === 2 ? "bg-violet-500" : weight === 1 ? "bg-muted-foreground" : "bg-transparent",
+          )}
+        />
+      ))}
+    </div>
+  );
 }
 
 function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: DiffMode): boolean {
@@ -100,8 +148,10 @@ export function VideoTrackPanel({
   onAggregateSelectedBboxes,
   onMergeSelectedTracks,
   canMergeSelectedTracks = false,
+  mergeDisabledReason = null,
   onJoinSelectedTracks,
   canJoinSelectedTracks = false,
+  joinDisabledReason = null,
   onShowSelectedTracks,
   onHideSelectedTracks,
   onLockSelectedTracks,
@@ -109,6 +159,8 @@ export function VideoTrackPanel({
   reviewDisplayMode,
   trackColorOverrides,
   onSetTrackColor,
+  collapsed = false,
+  onToggleCollapsed,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -131,29 +183,47 @@ export function VideoTrackPanel({
 
   return (
     <div className="grid gap-3 py-0.5 pb-2">
-      <div className="border border-border rounded-lg bg-card px-2.5 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <b className="text-sm">轨迹</b>
-            <Button
-              size="sm"
-              className="!w-7 !h-7 !p-0 !justify-center !rounded-lg"
-              disabled={readOnly || !onStartNewTrack}
-              title="清除当前轨迹选择，下一次画框会新建轨迹"
-              aria-label="新建轨迹"
-              onClick={onStartNewTrack}
-            >
-              <Icon name="plus" size={14} />
-            </Button>
-          </div>
-          <span className={cn("mono", "text-xs text-muted-foreground")}>
+      {/* 轨迹分组头:与「AI 待审 / 人工」分组头 (AIInspectorPanel SECTION_CARD_CLASS) 视觉对齐 + 可折叠。 */}
+      <div
+        className={cn(
+          "rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground",
+          "flex flex-wrap items-center justify-between gap-2",
+          onToggleCollapsed && "hover:bg-muted",
+        )}
+      >
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          disabled={!onToggleCollapsed}
+          aria-expanded={!collapsed}
+          title={collapsed ? "展开轨迹" : "折叠轨迹"}
+          data-testid="section-header-track"
+          className="flex items-center gap-1.5 min-w-0 appearance-none bg-transparent cursor-pointer text-left disabled:cursor-default"
+        >
+          {onToggleCollapsed && (
+            <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
+          )}
+          <span className="text-sm font-semibold">轨迹</span>
+        </button>
+        <div className="flex items-center gap-1.5">
+          <span className={cn("mono", "text-xs font-medium text-muted-foreground")}>
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
-        </div>
-        {selectedBboxCount > 1 && (
           <Button
             size="sm"
-            className="!w-full !justify-center !mt-2 !rounded-lg !py-1 !px-2"
+            className="!w-6 !h-6 !p-0 !justify-center !rounded-md"
+            disabled={readOnly || !onStartNewTrack}
+            title="清除当前轨迹选择，下一次画框会新建轨迹"
+            aria-label="新建轨迹"
+            onClick={onStartNewTrack}
+          >
+            <Icon name="plus" size={13} />
+          </Button>
+        </div>
+        {!collapsed && selectedBboxCount > 1 && (
+          <Button
+            size="sm"
+            className="!w-full !justify-center !rounded-lg !py-1 !px-2"
             disabled={!canAggregateBboxes}
             title="把已多选的单帧 video_bbox 聚合为一条 video_track"
             onClick={onAggregateSelectedBboxes}
@@ -162,6 +232,7 @@ export function VideoTrackPanel({
           </Button>
         )}
       </div>
+      {!collapsed && (
       <div className={cn("grid gap-2", selectedTrack && "order-2")}>
         {/* 批量操作仅在「当前帧」tab 下可用:全局视图下多选极易误删整条跨帧轨迹。 */}
         {batchCount > 1 && trackFilter !== "current" && (
@@ -209,7 +280,7 @@ export function VideoTrackPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
+                title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : (mergeDisabledReason ?? "只支持合并两条同类轨迹")}
                 aria-label="合并"
                 disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
                 onClick={onMergeSelectedTracks}
@@ -219,7 +290,7 @@ export function VideoTrackPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : "只支持跳连两条同类且帧号不重叠的轨迹"}
+                title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : (joinDisabledReason ?? "只支持跳连两条同类且帧号不重叠的轨迹")}
                 aria-label="跳连"
                 disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
                 onClick={() => setJoinOpen(true)}
@@ -320,6 +391,7 @@ export function VideoTrackPanel({
                   <div className={cn("mono", "text-xs text-muted-foreground min-w-0 overflow-hidden text-ellipsis whitespace-nowrap")}>
                     {track.keyframes.length} 关键帧 · {frameRange(frames)}
                   </div>
+                  <KeyframeSourceStrip keyframes={track.keyframes} />
                   <div className="col-start-2 flex flex-wrap gap-1 min-w-0 mt-0.5">
                     <span
                       className={cn(
@@ -428,6 +500,7 @@ export function VideoTrackPanel({
         )}
       </div>
       </div>
+      )}
       <VideoTrackComposeDialog
         open={joinOpen}
         onCancel={() => setJoinOpen(false)}

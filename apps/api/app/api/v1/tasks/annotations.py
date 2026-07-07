@@ -62,16 +62,17 @@ router = APIRouter()
 async def get_neighbor_annotations(
     task_id: uuid.UUID,
     k: int = Query(1, ge=1, le=20),
-    group_id: int | None = Query(
+    track_id: str | None = Query(
         None,
-        description="给定则服务端只回该 group(scope=selected);省略回全部(scope=all)",
+        description="给定则服务端只回该 track(scope=selected);省略回全部(scope=all)",
     ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。
 
-    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group_id 过滤」。
+    替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」。
+    v0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)过滤。
     非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。
 
     v0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态
@@ -114,7 +115,7 @@ async def get_neighbor_annotations(
 
     svc = AnnotationService(db)
     anns = (
-        await svc.list_by_tasks(list(visible_ids), group_id=group_id)
+        await svc.list_by_tasks(list(visible_ids), track_id=track_id)
         if visible_ids
         else []
     )
@@ -376,7 +377,7 @@ async def propagate_annotation_to_task(
     """v0.14.1 · 跨帧目标延续: 把源 annotation 复制到 target_task(同 project 同 scene)。
 
     源 task 需对当前用户可见; 目标 task 需可见且可写(未进 review/completed 锁态)。
-    复制 geometry/class/attributes + 共享 group_id; box_3d 的 convention_at_create
+    复制 geometry/class/attributes + 共享 track_id 跨帧链; box_3d 的 convention_at_create
     取目标 dataset 的 axis_convention(详 service.propagate)。
     """
     source_task = await _load_task_or_404(db, task_id)
@@ -414,7 +415,7 @@ async def propagate_annotation_to_task(
             "source_annotation_id": str(annotation_id),
             "propagated": True,
             "motion_compensated": motion_compensated,
-            "group_id": new_annotation.group_id,
+            "track_id": new_annotation.track_id,
             "class_name": new_annotation.class_name,
         },
     )
@@ -500,8 +501,9 @@ async def interpolate_annotations_range(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     """v0.15.1 · 关键帧区间插值: 路径 task = 区间起点帧,body.to_task_id =
-    终点帧;同 group_id 链两端各有一个 box_3d,中间帧自动生成插值框
-    (source="interpolated")。中间帧已有同 group 标注 → 幂等跳过。
+    终点帧;同 track_id 链两端各有一个 box_3d,中间帧自动生成插值框
+    (source="interpolated")。中间帧已有同 track 标注 → 幂等跳过。
+    v0.21.2 · ADR-0045 · 按 track_id 标识跨帧链。
     """
     from_task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, from_task, current_user)
@@ -511,7 +513,7 @@ async def interpolate_annotations_range(
 
     svc = AnnotationService(db)
     created, motion_compensated, skipped_frames = await svc.interpolate_range(
-        group_id=data.group_id,
+        track_id=data.track_id,
         from_task_id=task_id,
         to_task_id=data.to_task_id,
         user_id=current_user.id,
@@ -528,7 +530,7 @@ async def interpolate_annotations_range(
         status_code=201,
         detail={
             "interpolate_range": True,
-            "group_id": data.group_id,
+            "track_id": data.track_id,
             "to_task_id": str(data.to_task_id),
             "motion_compensated": motion_compensated,
             "created": len(created),

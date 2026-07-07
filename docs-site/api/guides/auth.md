@@ -109,5 +109,5 @@ Authorization: Bearer ak_xxxxxxxxxxxx
 
 ## 相关
 
-- [WebSocket token 续签](../../dev/adr/0011-websocket-token-reauth)
+- [WebSocket token 续签](../../dev/adr/archive/0011-websocket-token-reauth)
 - [安全模型](../../ops/security/)

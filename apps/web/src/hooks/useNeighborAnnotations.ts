@@ -1,11 +1,12 @@
 /**
  * v0.14.1 · 邻帧框叠加: 拉 prev/next task 的邻帧 annotations。
  * v0.15.17 · 改走批量端点 GET /tasks/{id}/neighbor-annotations(一条请求),
- *   替代旧版「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 group 过滤」。
+ *   替代旧版「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track 过滤」。
+ * v0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)服务端过滤。
  *
- * - scope=selected(groupId 非 null)→ 服务端只回该 group;groupId 为 null 时调用方传
+ * - scope=selected(trackId 非 null)→ 服务端只回该 track;trackId 为 null 时调用方传
  *   enabled=false 短路(不发请求)。
- * - scope=all(groupId=null 但 enabled=true)→ 服务端回区间全部框。
+ * - scope=all(trackId=null 但 enabled=true)→ 服务端回区间全部框。
  */
 import { useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
@@ -20,14 +21,14 @@ export interface NeighborAnnotationsResult {
 export function useNeighborAnnotations(
   taskId: string | null,
   k: number,
-  groupId: number | null,
+  trackId: string | null,
   enabled: boolean,
 ): NeighborAnnotationsResult {
   const active = enabled && taskId != null && k > 0;
   const query = useQuery({
-    queryKey: ["neighbor-annotations", taskId, k, groupId],
+    queryKey: ["neighbor-annotations", taskId, k, trackId],
     queryFn: () =>
-      tasksApi.getNeighborAnnotations(taskId as string, k, groupId),
+      tasksApi.getNeighborAnnotations(taskId as string, k, trackId),
     enabled: active,
     staleTime: 60 * 1000,
   });

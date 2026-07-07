@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VideoTrackGeometry } from "@/types";
 import {
   buildGlobalTimelineDensity,
+  buildPredictionDensity,
   buildSelectedTrackTimeline,
   firstAppearFrame,
   lastAppearFrame,
@@ -127,6 +128,17 @@ describe("videoTrackTimeline", () => {
       },
       { index: 3, from: 6, to: 7, density: 1, tracks: [] },
       { index: 4, from: 8, to: 9, density: 1, tracks: [{ trackId: "b", count: 1 }] },
+    ]);
+  });
+
+  it("buckets prediction density with same bin partition as global density", () => {
+    const bins = buildPredictionDensity([0, 5, 5, 9], 9, 5);
+    expect(bins).toEqual([
+      { index: 0, from: 0, to: 1, count: 1 },
+      { index: 1, from: 2, to: 3, count: 0 },
+      { index: 2, from: 4, to: 5, count: 2 },
+      { index: 3, from: 6, to: 7, count: 0 },
+      { index: 4, from: 8, to: 9, count: 1 },
     ]);
   });
 });
