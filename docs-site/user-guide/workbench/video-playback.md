@@ -77,15 +77,35 @@ J/K/L 播放支持 `0.25x / 0.5x / 1x / 2x / 4x` 档位。反向播放按帧步�
 
 off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污染 MOT / 共识计算与导出帧号。step=1（不采样）时 `←` / `→` 回到源帧逐帧导航，`Shift + ←` / `Shift + →` 不提供额外跳转。
 
+## 时间轴缩放与 AI 预测导航
+
+<!-- TODO IMAGE_CHECKLIST: images/video-timeline/horizontal-zoom.gif — Ctrl 滚动以指针帧为锚点缩放 + 双击复位 [manual] -->
+<!-- TODO IMAGE_CHECKLIST: images/video-timeline/prediction-density-track.png — AI 预测密度轨 + 跳预测帧导航 [manual] -->
+
+时间轴默认铺满整段视频。长视频里帧太密时可以**横向放大**只看一段：
+
+- **`Ctrl` / `⌘` + 滚轮**：以指针所在帧为锚点放大 / 缩小可见窗口。不按修饰键的普通滚轮（或横向滚动）在放大后**平移**窗口。
+- 放大后 seek 播放头、密度条、章节色带、关键帧点、刷选高亮**全部随可见窗口对齐**，缩放不会让它们错位。
+- **双击时间轴**，或点控制条上的**「适配全部帧」**按钮，退出缩放回到整段全窗口。
+
+审阅 AI 预测时，时间轴上还有一条独立的 **AI 预测密度轨**（violet 单色，按帧桶聚合）：
+
+- 它**始终显示**（不像人工密度条会在选中轨迹时清空），让预测在时间轴上的分布常驻可见。
+- 密度轨旁的**「上一个 / 下一个有预测的帧」**导航按钮在预测帧集合上跳转，方便逐个核对 AI 追出的帧；没有任何预测帧时这对按钮不出现。
+
 ## 章节
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/video-playback/chapter-sidebar.png — 章节侧栏含彩色色带 + 章节列表 [manual] -->
+<!-- TODO IMAGE_CHECKLIST: images/video-timeline/brush-create-chapter.gif — 时间轴刷选建章节 [manual] -->
+<!-- TODO IMAGE_CHECKLIST: images/video-timeline/chapter-resize-hover.gif — 章节条拖边界 resize + 双向 hover [manual] -->
 
 长视频可以通过「章节」侧栏（位于轨迹侧栏下方）划分场景：
 
 - 项目负责人 / 超级管理员可以新建、编辑、删除章节。
 - 表单支持「使用当前帧」按钮一键填入起止帧。
-- 时间轴上方有彩色色带，点击跳到章节起点。
+- 除表单外，还能在时间轴上**刷选建章节**：点章节侧栏的**「新建」**进入圈选态，再在时间轴上拖出一段，即以刷选范围为起止建成章节。
+- 时间轴上方有彩色色带，点击跳到章节起点；色带段**可拖边界改起止**——拖动某段的左 / 右缘调整范围，松手后自动保存。
+- 章节色带与侧栏章节行**双向 hover 联动**：悬停任一侧，另一侧对应项高亮，便于长列表里对位。
 - `PageDown` / `PageUp` 在章节之间跳转（如果当前帧在某章节内部，`PageUp` 先回到该章节起点）。
 
 章节是纯展示语义，不影响 `video_segments`（协作分片）的 claim/lock。

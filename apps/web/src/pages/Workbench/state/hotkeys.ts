@@ -76,7 +76,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Q / Slash"], desc: "选中轨迹时标记 / 恢复当前帧遮挡", group: "video", actionType: "videoToggleOccluded" },
   { keys: ["L"], desc: "选中轨迹时锁定 / 解锁轨迹", group: "video", actionType: "videoToggleLockedTrack" },
   { keys: ["H"], desc: "选中轨迹时隐藏 / 显示轨迹", group: "video", actionType: "videoToggleHiddenTrack" },
-  { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 传播", group: "video", actionType: "videoPropagateTrack" },
+  { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 追踪", group: "video", actionType: "videoPropagateTrack" },
   { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
   { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
   { keys: ["Delete / Backspace"], desc: "选中轨迹时删除当前关键帧；选中单帧框时删除该框", group: "video", actionType: "videoDeleteSelected" },
