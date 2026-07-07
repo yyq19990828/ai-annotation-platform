@@ -93,6 +93,9 @@ function annotationToolMeta(
   if (geometry.type === "point_mask_3d") {
     return { label: "点云掩码", detail: `${geometry.point_indices.length} 点` };
   }
+  if (geometry.type === "video_track_polygon") {
+    return { label: "轨迹(多边形)", detail: `${geometry.keyframes.length} 关键帧` };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,

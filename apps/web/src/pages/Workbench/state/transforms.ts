@@ -124,6 +124,14 @@ export function geometryToShape(g: Geometry): {
     const keyframe = g.keyframes.find((kf) => !isOutside(kf.frame_index)) ?? g.keyframes[0];
     return keyframe?.bbox ?? { x: 0, y: 0, w: 0, h: 0 };
   }
+  if (g.type === "video_track_polygon") {
+    // v0.21.20 · polygon track: 取首个可见关键帧的多边形外接盒 (供列表 / Minimap / 选中锚点)。
+    const outside = g.outside ?? [];
+    const isOutside = (frame: number) => outside.some((r) => frame >= r.from && frame <= r.to);
+    const keyframe = g.keyframes.find((kf) => !isOutside(kf.frame_index)) ?? g.keyframes[0];
+    const pts = keyframe?.points ?? [];
+    return pts.length >= 3 ? polygonBounds(pts) : { x: 0, y: 0, w: 0, h: 0 };
+  }
   if (g.type === "rotated_bbox") {
     // 旋转矩形四角旋转后的轴对齐包围盒（供列表 / Minimap / 选中浮条锚点）。
     const rad = (g.angle * Math.PI) / 180;

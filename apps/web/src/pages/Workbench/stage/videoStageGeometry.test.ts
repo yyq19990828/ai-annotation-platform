@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { nearestTrackKeyframe, resolveTrackAtFrame, sortedKeyframes, trackReferenceAtFrame, upsertKeyframe } from "./videoStageGeometry";
-import type { VideoTrackGeometry } from "@/types";
+import {
+  interpolatePolygon,
+  nearestTrackKeyframe,
+  resampleClosedPolygon,
+  resolveTrackAtFrame,
+  resolveVideoPolygonTrackAtFrame,
+  sortedKeyframes,
+  trackReferenceAtFrame,
+  upsertKeyframe,
+} from "./videoStageGeometry";
+import type { VideoTrackGeometry, VideoTrackPolygonGeometry } from "@/types";
 
 function track(keyframes: VideoTrackGeometry["keyframes"], patch?: Partial<VideoTrackGeometry>): VideoTrackGeometry {
   return {
@@ -108,5 +117,59 @@ describe("videoStageGeometry", () => {
       { from: 4, to: 4, source: "manual" },
     ]);
     expect(updated?.geom.x).toBe(0.3);
+  });
+});
+
+// ── v0.21.20 · polygon track 弧长参数化插值 (前端, 镜像后端 lerp_polygon) ──
+
+const SQUARE_A: [number, number][] = [[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]];
+const SQUARE_B: [number, number][] = [[0.4, 0], [0.6, 0], [0.6, 0.2], [0.4, 0.2]];
+
+function polygonTrack(
+  keyframes: VideoTrackPolygonGeometry["keyframes"],
+  patch?: Partial<VideoTrackPolygonGeometry>,
+): VideoTrackPolygonGeometry {
+  return { type: "video_track_polygon", track_id: "poly_1", keyframes, ...patch };
+}
+
+describe("videoStageGeometry · polygon track", () => {
+  it("resampleClosedPolygon 方块→4 点返回原顶点", () => {
+    expect(resampleClosedPolygon(SQUARE_A, 4)).toEqual(SQUARE_A);
+  });
+
+  it("resampleClosedPolygon 退化输入安全回退", () => {
+    expect(resampleClosedPolygon([[0.1, 0.1]], 4)).toEqual([[0.1, 0.1]]);
+  });
+
+  it("interpolatePolygon 等顶点同朝向中点 = x 平移一半", () => {
+    const a = { frame_index: 0, points: SQUARE_A, source: "manual" as const };
+    const b = { frame_index: 10, points: SQUARE_B, source: "manual" as const };
+    expect(interpolatePolygon(a, b, 5)).toEqual([[0.2, 0], [0.4, 0], [0.4, 0.2], [0.2, 0.2]]);
+  });
+
+  it("interpolatePolygon 顶点数不等时重采样到公共 n, 不抛异常", () => {
+    const tri = { frame_index: 0, points: [[0, 0], [0.4, 0], [0.2, 0.4]] as [number, number][], source: "manual" as const };
+    const sq = { frame_index: 10, points: SQUARE_B, source: "manual" as const };
+    expect(interpolatePolygon(tri, sq, 5)).toHaveLength(4);
+  });
+
+  it("resolveVideoPolygonTrackAtFrame: 精确关键帧 / 插值 / outside→null", () => {
+    const geom = polygonTrack([
+      { frame_index: 0, points: SQUARE_A, source: "manual" },
+      { frame_index: 10, points: SQUARE_B, source: "manual" },
+    ]);
+    expect(resolveVideoPolygonTrackAtFrame(geom, 0)?.points).toEqual(SQUARE_A);
+    const mid = resolveVideoPolygonTrackAtFrame(geom, 5);
+    expect(mid?.source).toBe("interpolated");
+    expect(mid?.points).toEqual([[0.2, 0], [0.4, 0], [0.4, 0.2], [0.2, 0.2]]);
+
+    const withOutside = polygonTrack(
+      [
+        { frame_index: 0, points: SQUARE_A, source: "manual" },
+        { frame_index: 10, points: SQUARE_B, source: "manual" },
+      ],
+      { outside: [{ from: 4, to: 6, source: "manual" }] },
+    );
+    expect(resolveVideoPolygonTrackAtFrame(withOutside, 5)).toBeNull();
   });
 });

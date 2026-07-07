@@ -3,6 +3,8 @@ import type {
   VideoBboxGeometry,
   VideoTrackGeometry,
   VideoTrackKeyframe,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolygonKeyframe,
 } from "@/types";
 import type { VideoFrameEntry, VideoStageGeom } from "./videoStageTypes";
 import { runReferenceKalman } from "./videoReferenceKalman";
@@ -10,6 +12,7 @@ import type { VideoReferenceMode, VideoReferencePreset } from "./videoReferenceP
 import {
   effectiveOutsideRanges,
   isFrameInOutsideRanges,
+  normalizeOutsideRanges,
   outsideRangesIntersect,
   removeOutsideFrame,
 } from "./videoTrackOutside";
@@ -44,6 +47,13 @@ export function isVideoBbox(ann: AnnotationResponse): ann is AnnotationResponse 
 
 export function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {
   return ann.geometry.type === "video_track_bbox";
+}
+
+/** v0.21.20 · polygon track 判定 (与 isVideoTrack 平行)。 */
+export function isVideoPolygonTrack(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoTrackPolygonGeometry } {
+  return ann.geometry.type === "video_track_polygon";
 }
 
 type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };
@@ -176,6 +186,119 @@ export function resolveTrackAtFrame(
   const resolved = { geom: interpolate(before, after, frameIndex), source: "interpolated" } satisfies ResolvedTrackFrame;
   setResolvedCache(track, frameIndex, resolved);
   return resolved;
+}
+
+// ── v0.21.20 · polygon track 弧长参数化插值 (镜像后端 video_tracks.lerp_polygon) ──
+
+type Point = [number, number];
+export type ResolvedPolygonFrame = {
+  points: Point[];
+  source: VideoFrameEntry["source"];
+  occluded?: boolean;
+};
+
+// round 到 6 位并把 -0 归一化为 0 (避免下游 toEqual / 序列化区分负零)。
+const round6 = (v: number) => {
+  const r = Math.round(v * 1e6) / 1e6;
+  return r === 0 ? 0 : r;
+};
+
+/** 把闭合多边形按弧长重采样为 n 个等距顶点 (从 index 0 起)。退化时安全回退。 */
+export function resampleClosedPolygon(points: Point[], n: number): Point[] {
+  const pts = points.filter((p) => p.length >= 2);
+  if (n <= 0 || pts.length < 2) return pts.map((p) => [p[0], p[1]] as Point);
+  const segLengths = pts.map((p, i) => {
+    const q = pts[(i + 1) % pts.length];
+    return Math.hypot(q[0] - p[0], q[1] - p[1]);
+  });
+  const perim = segLengths.reduce((a, b) => a + b, 0);
+  if (perim === 0) return Array.from({ length: n }, () => [pts[0][0], pts[0][1]] as Point);
+  const cum = [0];
+  for (const len of segLengths) cum.push(cum[cum.length - 1] + len);
+  const step = perim / n;
+  const out: Point[] = [];
+  for (let k = 0; k < n; k++) {
+    const target = k * step;
+    let seg = 0;
+    while (seg < segLengths.length - 1 && cum[seg + 1] < target) seg++;
+    const segLen = segLengths[seg];
+    const t = segLen === 0 ? 0 : (target - cum[seg]) / segLen;
+    const [x0, y0] = pts[seg];
+    const [x1, y1] = pts[(seg + 1) % pts.length];
+    out.push([round6(x0 + (x1 - x0) * t), round6(y0 + (y1 - y0) * t)]);
+  }
+  return out;
+}
+
+/** 选 b 的循环起点使与 a 逐点距离和最小, 减少插值中途扭曲。 */
+function bestRotationOffset(a: Point[], b: Point[]): number {
+  const n = a.length;
+  if (n === 0 || b.length !== n) return 0;
+  let bestOffset = 0;
+  let bestCost = Infinity;
+  for (let offset = 0; offset < n; offset++) {
+    let cost = 0;
+    for (let i = 0; i < n; i++) {
+      const [bx, by] = b[(i + offset) % n];
+      cost += (a[i][0] - bx) ** 2 + (a[i][1] - by) ** 2;
+    }
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestOffset = offset;
+    }
+  }
+  return bestOffset;
+}
+
+/** polygon 关键帧插值: 弧长重采样到公共顶点数 + 旋转对齐后逐点 lerp。 */
+export function interpolatePolygon(
+  a: VideoTrackPolygonKeyframe,
+  b: VideoTrackPolygonKeyframe,
+  frameIndex: number,
+): Point[] {
+  const pa = a.points.filter((p) => p.length >= 2);
+  const pb = b.points.filter((p) => p.length >= 2);
+  if (!pa.length) return pb.map((p) => [p[0], p[1]] as Point);
+  if (!pb.length) return pa.map((p) => [p[0], p[1]] as Point);
+  const span = Math.max(1, b.frame_index - a.frame_index);
+  const t = (frameIndex - a.frame_index) / span;
+  const n = Math.max(pa.length, pb.length);
+  const ra = resampleClosedPolygon(pa, n);
+  const rb = resampleClosedPolygon(pb, n);
+  const offset = bestRotationOffset(ra, rb);
+  return ra.map((p, i) => {
+    const q = rb[(i + offset) % n];
+    return [round6(p[0] + (q[0] - p[0]) * t), round6(p[1] + (q[1] - p[1]) * t)] as Point;
+  });
+}
+
+/** 解析 polygon track 在某帧的多边形 (精确关键帧 / 弧长插值 / outside → null)。 */
+export function resolveVideoPolygonTrackAtFrame(
+  track: VideoTrackPolygonGeometry,
+  frameIndex: number,
+): ResolvedPolygonFrame | null {
+  const outsideRanges = normalizeOutsideRanges(track.outside ?? []);
+  if (isFrameInOutsideRanges(outsideRanges, frameIndex)) return null;
+  const keyframes = [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
+  const visible = keyframes.filter((kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+
+  const exact = keyframes.find((kf) => kf.frame_index === frameIndex);
+  if (exact) {
+    return {
+      points: exact.points.map((p) => [p[0], p[1]] as Point),
+      source: exact.source === "prediction" ? "prediction" : "manual",
+      occluded: exact.occluded,
+    };
+  }
+
+  const afterIndex = lowerBound(visible, frameIndex, (kf) => kf.frame_index);
+  const before = visible[afterIndex - 1];
+  const after = visible[afterIndex];
+  if (!before || !after) return null;
+  if (outsideRangesIntersect(outsideRanges, before.frame_index + 1, after.frame_index - 1)) {
+    return null;
+  }
+  return { points: interpolatePolygon(before, after, frameIndex), source: "interpolated" };
 }
 
 export function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number): VideoStageGeom {
