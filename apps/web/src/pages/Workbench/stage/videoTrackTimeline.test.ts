@@ -131,6 +131,26 @@ describe("videoTrackTimeline", () => {
     ]);
   });
 
+  it("can build per-frame density bins when the bin count matches frame count", () => {
+    const bins = buildGlobalTimelineDensity([
+      track({
+        track_id: "a",
+        keyframes: [
+          { frame_index: 0, bbox, source: "manual" },
+          { frame_index: 4, bbox, source: "manual" },
+        ],
+      }),
+    ], 4, 5);
+
+    expect(bins.map((bin) => ({ from: bin.from, to: bin.to, density: bin.density }))).toEqual([
+      { from: 0, to: 0, density: 1 },
+      { from: 1, to: 1, density: 0 },
+      { from: 2, to: 2, density: 0 },
+      { from: 3, to: 3, density: 0 },
+      { from: 4, to: 4, density: 1 },
+    ]);
+  });
+
   it("buckets prediction density with same bin partition as global density", () => {
     const bins = buildPredictionDensity([0, 5, 5, 9], 9, 5);
     expect(bins).toEqual([

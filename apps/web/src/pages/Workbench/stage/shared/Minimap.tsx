@@ -10,6 +10,15 @@ interface MinimapProps {
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   thumbnailUrl: string | null;
   fileUrl: string | null;
+  /**
+   * 视频栈:当前帧的可绘制源(暂停态 ImageBitmap / 播放态 `<video>`)。提供时用 `<canvas>`
+   * 实时绘制当前帧, 取代静态 `<img>`——避免把 `.mp4` 地址塞进 `<img>` 导致的空白破图。
+   */
+  frameSource?: CanvasImageSource | null;
+  /** 帧内容版本(如 frameIndex):变化时重绘一次暂停帧。 */
+  frameVersion?: number;
+  /** 播放中:开 rAF 循环持续 blit `frameSource`。 */
+  isLive?: boolean;
   currentFrameIndex?: number;
   maxFrame?: number;
   cachedFrameRanges?: { from: number; to: number }[];
@@ -104,6 +113,9 @@ export function Minimap({
   setVp,
   thumbnailUrl,
   fileUrl,
+  frameSource,
+  frameVersion,
+  isLive = false,
   currentFrameIndex,
   maxFrame,
   cachedFrameRanges = [],
@@ -111,6 +123,7 @@ export function Minimap({
   bottom = 12,
 }: MinimapProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const pendingPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
@@ -183,6 +196,44 @@ export function Minimap({
     };
   }, []);
 
+  // 把 frameSource(bitmap/<video>)blit 进 minimap canvas。mw/mh 已按视频宽高比算好,
+  // 故直接拉伸铺满即可, 无需 letterbox。source 未就绪(readyState 低)时 drawImage 可能抛,吞掉。
+  const drawFrame = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !frameSource) return;
+    const w = Math.max(1, Math.round(mw));
+    const h = Math.max(1, Math.round(mh));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+    try {
+      ctx.drawImage(frameSource, 0, 0, w, h);
+    } catch {
+      /* 帧未解码就绪 / 跨域污染:显示用途忽略即可 */
+    }
+  }, [frameSource, mw, mh]);
+
+  // 暂停态 / 帧切换:重绘一次当前帧。needsMinimap 必须在依赖里——minimap 隐藏时组件仍挂载
+  // 但 canvas 未渲染(canvasRef 为空), 缩放触发 needsMinimap false→true 使 canvas 首次挂载时,
+  // 若 frameSource/frameVersion 未变则本 effect 不会重跑, canvas 永不被绘制(空白框根因)。
+  useEffect(() => {
+    drawFrame();
+  }, [drawFrame, frameVersion, needsMinimap]);
+
+  // 播放态:rAF 循环持续拾取 <video> 新解码帧(react 不会因 video 内容变化自动重绘)。
+  useEffect(() => {
+    if (!isLive || !frameSource || !needsMinimap) return;
+    let raf = 0;
+    const tick = () => {
+      drawFrame();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isLive, frameSource, drawFrame, needsMinimap]);
+
   if (!needsMinimap) return null;
 
   const src = thumbnailUrl || fileUrl;
@@ -209,13 +260,17 @@ export function Minimap({
       className={cn(styles.root, isDragging && styles.rootDragging)}
       title="缩略图导航：点击跳转视口"
     >
-      {src && (
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          className={styles.image}
-        />
+      {frameSource ? (
+        <canvas ref={canvasRef} className={styles.image} />
+      ) : (
+        src && (
+          <img
+            src={src}
+            alt=""
+            draggable={false}
+            className={styles.image}
+          />
+        )
       )}
       {cachedFrameRanges.length > 0 && typeof maxFrame === "number" && maxFrame > 0 && (
         <div data-testid="minimap-cached-frame-ranges" className={styles.cachedFrameRanges}>

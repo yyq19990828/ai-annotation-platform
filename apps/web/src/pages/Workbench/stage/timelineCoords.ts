@@ -32,8 +32,8 @@ export function pctToFrame(ratio: number, win: TimelineWindow): number {
 // —— v0.21.15 WS2 · 横向缩放/平移 ——
 // 缩放/平移的窗口可为分数帧 (避免反复缩放的整数取整漂移); 渲染与反解不受影响 (pctToFrame 末端取整)。
 
-/** 最小可见跨度 (帧): 放大到此即停, 保证单帧仍有可点像素宽度。 */
-export const MIN_VISIBLE_SPAN = 4;
+/** 最小可见跨度 (帧): 放大到此即停, 避免聚合密度桶在过小窗口里被误读成精确单帧。 */
+export const MIN_VISIBLE_SPAN = 48;
 /** 每次滚轮的缩放系数指数 k: factor = exp(deltaY * k)。deltaY<0 (上滚) → factor<1 放大。 */
 export const ZOOM_WHEEL_K = 0.0015;
 

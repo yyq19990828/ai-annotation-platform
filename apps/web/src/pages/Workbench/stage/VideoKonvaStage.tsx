@@ -13,7 +13,7 @@ import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import type { DiffMode } from "../modes/types";
 import { FloatingDock } from "../shell/FloatingDock";
 import { Minimap } from "./Minimap";
-import { VideoKonvaMediaLayer } from "./VideoKonvaMediaLayer";
+import { VideoKonvaMediaLayer, pickMediaImageSource } from "./VideoKonvaMediaLayer";
 import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
@@ -637,6 +637,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (!(e.ctrlKey || e.metaKey)) return;
       const el = containerRef.current;
       if (!el) return;
+      // 播放组件(时间轴/控制条/概览导航条)叠在 stage 容器内, 它自有 Ctrl/⌘+滚轮横向缩放;
+      // 指针落在整个播放组件上时别让画布抢事件一起缩放(两处 wheel 监听同触发条件的冲突根因)。
+      if (e.target instanceof Element && e.target.closest('[data-testid="video-playback-overlay"]')) return;
       const rect = el.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
       e.preventDefault();
@@ -962,7 +965,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           vp={vp}
           setVp={setVp}
           thumbnailUrl={manifest.poster_url ?? null}
-          fileUrl={manifest.video_url}
+          fileUrl={null}
+          frameSource={pickMediaImageSource(isPlaybackActive, videoEl, activeBitmap?.bitmap ?? null) ?? null}
+          frameVersion={frameIndex}
+          isLive={isPlaybackActive}
           currentFrameIndex={frameIndex}
           maxFrame={maxFrame}
           cachedFrameRanges={cachedRanges}

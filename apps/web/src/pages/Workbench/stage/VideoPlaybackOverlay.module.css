@@ -4,15 +4,12 @@
   left: 50%;
   bottom: 12px;
   z-index: 4;
-  display: grid;
-  /* v0.11.26 · 两行布局: 进度条与控件同行, status 独占第二行横跨整宽。
-     原 `auto 1fr auto` 单行中, status 列内容 (帧数位数/loop 标签) 变宽会挤压中间进度条。 */
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  column-gap: 12px;
-  row-gap: 4px;
-  align-items: center;
-  width: min(820px, calc(100% - 28px));
+  /* v0.21.16 · 竖排三段: 时间轴独占整宽一行 (不再与控件挤一行被压短) → 控件行 → 概览/status。
+     原 grid `auto 1fr` 把控件列宽从轨道里扣掉, 长视频精细定位时轨道太短。 */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(900px, calc(100% - 28px));
   padding: 8px 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
@@ -23,6 +20,22 @@
   transform: translateX(-50%) translateY(8px);
   transition: opacity 160ms ease, transform 160ms ease;
   backdrop-filter: blur(6px);
+}
+
+.overlayCollapsed {
+  display: grid;
+  grid-template-columns: auto auto minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: min(640px, calc(100% - 28px));
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(24, 26, 27, 0.78), rgba(12, 14, 15, 0.72));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 32px rgba(0, 0, 0, 0.34);
 }
 
 .overlayVisible {
@@ -40,10 +53,9 @@
 }
 
 .controls {
-  grid-column: 1;
-  grid-row: 1;
   display: flex;
   gap: 6px;
+  align-items: center;
   pointer-events: none;
 }
 
@@ -55,17 +67,22 @@
   pointer-events: auto;
 }
 
-/* Temporary bridge while Button still applies inline base color, border, and background. */
+/* v0.21.16 · overlay 内控件恒为暗底白字 (画布叠加层, 与主题无关)。CSS module 无 @layer,
+   胜过 Tailwind `@layer utilities` 的 variant 底色, 故无需 !important 桥接。 */
 .controlButton {
-  border-color: rgba(255, 255, 255, 0.18) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
-/* Temporary bridge while Button still applies inline base color, border, and background. */
+.controlButton:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.13);
+}
+
 .controlButtonActive {
-  border-color: rgba(255, 255, 255, 0.36) !important;
-  background: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 255, 255, 0.36);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* v0.21.9 · 跳预测帧按钮组: 与帧导航同形 (单 chevron), 仅以 violet 图标色区分 AI 预测语言,
@@ -80,19 +97,18 @@
 }
 
 .controlButtonPredicted {
-  color: oklch(0.72 0.17 293) !important;
+  color: oklch(0.72 0.17 293);
 }
 
 .controlButtonPredicted:hover {
-  border-color: rgba(139, 92, 246, 0.45) !important;
+  border-color: rgba(139, 92, 246, 0.45);
 }
 
 .timelineShell {
-  grid-column: 2;
-  grid-row: 1;
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
   height: 28px;
   outline: none;
   pointer-events: none;
@@ -101,6 +117,73 @@
 /* B-30 · 同 .controls.interactive: 用双类组合提优先级, 避免被 .interactive 单写覆盖失败 */
 .timelineShell.interactive {
   pointer-events: auto;
+}
+
+.collapsedPlayButton,
+.collapsedExpandButton {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 9px;
+  pointer-events: auto;
+}
+
+.collapsedStatus {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.collapsedStatus span + span {
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.collapsedTimelineShell {
+  height: 24px;
+  min-width: 160px;
+}
+
+.overlayCollapsed .timelineLayer {
+  opacity: 0.58;
+}
+
+.overlayCollapsed .chaptersTrack,
+.overlayCollapsed .bookmarkMarker,
+.overlayCollapsed .issueMarker,
+.overlayCollapsed .densityTrack,
+.overlayCollapsed .predictionTrack,
+.overlayCollapsed .trackTimeline,
+.overlayCollapsed .loopRegion,
+.overlayCollapsed .propagateRegion,
+.overlayCollapsed .chapterDraftRegion,
+.overlayCollapsed .propagateDraftRegion {
+  display: none;
+}
+
+/* v0.21.16 · 尺子刻度: 整宽帧号标签行, 贴在轨道上方 (与轨道同 2px 内缩对齐)。 */
+.ruler {
+  position: relative;
+  height: 11px;
+  margin: 0 2px -2px;
+  pointer-events: none;
+}
+
+.rulerTick {
+  position: absolute;
+  bottom: 0;
+  left: var(--timeline-left);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
 }
 
 .rangeInput {
@@ -489,15 +572,89 @@
   color: rgba(255, 255, 255, 0.58);
 }
 
+/* v0.21.16 · 底部段: 概览导航条 (仅缩放时) 叠在 status 之上, 整宽竖排。 */
+.bottomRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .status {
-  grid-column: 1 / -1;
-  grid-row: 2;
   display: flex;
   gap: 10px;
   align-items: center;
   color: rgba(255, 255, 255, 0.82);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* v0.21.16 · 缩放窗口读数: 与其它 status 项区分, 略提亮。 */
+.windowReadout {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* v0.21.16 · 缩放控件组 (−/+/复位): 与逐帧导航用细分隔线分组。 */
+.zoomGroup {
+  display: flex;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* v0.21.16 · 概览导航条: 代表整段 [0,maxFrame] 的细条; 窗口方块 = 当前可见 [from,to]。 */
+.navigator {
+  position: relative;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.navigator.interactive {
+  pointer-events: auto;
+}
+
+/* 全段密度缩影: 极淡, 只作 "标注都在哪" 的底纹参照。 */
+.navDensityBin {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  border-radius: 1px;
+  background: color-mix(in oklch, var(--sc-brand) 42%, transparent);
+}
+
+/* 当前可见窗口方块: 半透明填充 + 两侧可抓的高亮边界 (ew-resize 提示)。 */
+.navWindow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 2px 0 0 rgba(255, 255, 255, 0.85),
+    inset -2px 0 0 rgba(255, 255, 255, 0.85);
+  cursor: grab;
+}
+
+/* 概览条上的播放头位置点。 */
+.navPlayhead {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: var(--timeline-left);
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--sc-brand);
+  box-shadow: 0 0 4px color-mix(in oklch, var(--sc-brand) 70%, transparent);
+  transform: translateX(-50%);
 }
 
 .clearLoopButton {
@@ -512,4 +669,467 @@
 
 .clearLoopButton.interactive {
   pointer-events: auto;
+}
+
+/* ============================================================
+   v0.21.16 · 展开态：专业剪辑器式分行时间线面板
+   ============================================================ */
+.overlayExpanded {
+  --expanded-timeline-side: 28px;
+  z-index: 56;
+  bottom: 60px;
+  gap: 7px;
+  width: min(980px, calc(100% - 72px));
+  padding: 13px 16px 10px;
+  border-color: rgba(255, 255, 255, 0.22);
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(255, 255, 255, 0.07), transparent 36%),
+    linear-gradient(180deg, rgba(31, 34, 36, 0.8), rgba(11, 16, 17, 0.76));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 24px 70px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(14px) saturate(125%);
+}
+
+/* 每条 lane：左标签列 + 右内容列，所有内容列横向对齐（共享帧→百分比映射）。 */
+.laneRow {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  column-gap: 9px;
+  min-height: 22px;
+}
+
+.laneLabel {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 10px;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.laneBody {
+  position: relative;
+  height: 17px;
+  margin: 0 var(--expanded-timeline-side);
+}
+
+.laneEmpty {
+  display: none;
+}
+
+/* 标尺 */
+.rulerBody {
+  position: relative;
+  height: 24px;
+  margin: 0 var(--expanded-timeline-side);
+}
+
+.rulerMinorTrack {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  left: 0;
+  height: 9px;
+}
+
+.rulerMinorTick {
+  position: absolute;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: 1px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.48);
+  transform: translateX(-50%);
+}
+
+.rulerMinorTickMajor {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.rulerMajor {
+  position: absolute;
+  top: 1px;
+  left: var(--timeline-left);
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.rulerMajor::after {
+  content: none;
+}
+
+/* scrubber 行：可见 cyan 滑块 + 进度填充 */
+.scrubberBody {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  width: auto;
+  height: 24px;
+  margin: 0 var(--expanded-timeline-side);
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  outline: none;
+  pointer-events: none;
+}
+
+.scrubberBody.interactive {
+  pointer-events: auto;
+}
+
+.rangeInputLarge {
+  position: relative;
+  z-index: 3;
+  height: 18px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scrubberRail,
+.scrubberFill,
+.scrubberKnob {
+  position: absolute;
+  pointer-events: none;
+}
+
+.scrubberRail {
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+  transform: translateY(-50%);
+}
+
+.scrubberFill {
+  top: 50%;
+  left: 0;
+  width: calc(100% * var(--timeline-progress));
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(34 190 229);
+  box-shadow: 0 0 8px rgba(34, 190, 229, 0.45);
+  transform: translateY(-50%);
+}
+
+.scrubberKnob {
+  left: calc(100% * var(--timeline-progress));
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  background: rgb(34 190 229);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 10px rgba(34, 190, 229, 0.7);
+  transform: translate(-50%, -50%);
+}
+
+/* 章节条 */
+.chapterBar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 4px;
+  background: var(--chapter-color);
+  cursor: pointer;
+  pointer-events: none;
+}
+
+.chapterBar.interactive {
+  pointer-events: auto;
+}
+
+.chapterBarLabel {
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* 书签 / issue 在行内居中 */
+.bookmarkMarkerLane {
+  top: 3px;
+}
+
+.issueMarkerLane {
+  top: 3px;
+  bottom: auto;
+  border-top: 8px solid var(--sc-caution);
+  border-bottom: 0;
+}
+
+/* 密度行 */
+.densityLane {
+  height: 17px;
+}
+
+.densityBinLane {
+  position: absolute;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  height: var(--density-height);
+  border-radius: 2px 2px 0 0;
+  background: var(--density-gradient, color-mix(in oklch, var(--sc-brand) 68%, transparent));
+}
+
+.predictionBinLane {
+  position: absolute;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  height: var(--density-height);
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in oklch, oklch(0.62 0.21 293) 72%, transparent);
+}
+
+/* 轨迹行：虚线段 + 关键帧点在行内垂直居中 */
+.trackTimelineLane {
+  position: absolute;
+  inset: 0;
+}
+
+.trackTimelineLane .interpolatedSegment,
+.trackTimelineLane .outsideSegment {
+  top: 6px;
+}
+
+.trackTimelineLane .trackKeyframe {
+  top: 4px;
+}
+
+.trackTimelineLane .trackKeyframeOccluded {
+  top: 3px;
+}
+
+/* 采样网格行 */
+.gridTickLane {
+  position: absolute;
+  bottom: 2px;
+  left: var(--timeline-left);
+  width: 1px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--sc-muted-foreground);
+  opacity: 0.5;
+  transform: translateX(-50%);
+}
+
+/* 控件条（大号居中） */
+.expandedControls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.expandedControls.interactive {
+  pointer-events: auto;
+}
+
+.expandedGroup {
+  display: flex;
+  gap: 5px;
+  margin-left: 7px;
+  padding-left: 9px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.expandedControls .controlButton {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 6px 16px rgba(0, 0, 0, 0.24);
+}
+
+/* 圆形大播放键 */
+.playButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0 4px;
+  border: 1px solid rgba(34, 211, 238, 0.7);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(34, 211, 238, 0.25),
+    0 0 22px rgba(34, 211, 238, 0.22);
+  cursor: pointer;
+  transition: background-color 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.playButton:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.playButtonActive {
+  border-color: rgba(34, 211, 238, 0.8);
+  box-shadow:
+    0 0 0 2px rgba(34, 211, 238, 0.55),
+    0 0 28px rgba(34, 211, 238, 0.32);
+}
+
+/* 首/末帧跳转（chevron + 边缘竖条） */
+.skipButton {
+  position: relative;
+}
+
+.skipStart::before,
+.skipEnd::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 12px;
+  background: currentcolor;
+  transform: translateY(-50%);
+}
+
+.skipStart::before {
+  left: 8px;
+}
+
+.skipEnd::after {
+  right: 8px;
+}
+
+/* 状态条 */
+.expandedStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.statusSpacer {
+  flex: 1 1 auto;
+}
+
+.loopChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px 1px 8px;
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  border-radius: 6px;
+  color: rgb(94 234 212);
+}
+
+/* status 条内联概览导航条（波形式缩影 + 窗口括选） */
+.navigatorInline {
+  flex: none;
+  width: 210px;
+  height: 24px;
+  margin-left: 2px;
+  border-radius: 7px;
+}
+
+/* 分行堆叠容器 + 贯穿竖向网格线 (网格线在各行之下, 故 laneRow 提到 z-index:1)。 */
+.laneStack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-top: 0;
+}
+
+.laneRow {
+  position: relative;
+  z-index: 1;
+}
+
+.laneRow::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gridlines {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(81px + var(--expanded-timeline-side)); /* 72px 标签列 + 9px column-gap + 时间轴侧边缩进 */
+  right: var(--expanded-timeline-side);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gridlinePlayhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--timeline-left);
+  width: 1px;
+  background: rgba(34, 211, 238, 0.4);
 }

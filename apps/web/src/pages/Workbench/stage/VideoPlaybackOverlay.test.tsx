@@ -8,7 +8,7 @@ import {
 } from "./VideoPlaybackOverlay";
 import { getTrackColor } from "./colors";
 import { buildFrameTimebase } from "./frameTimebase";
-import type { VideoTimelineDensityBin } from "./videoTrackTimeline";
+import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 
 const timebase = buildFrameTimebase({
   duration_ms: 1000,
@@ -84,6 +84,43 @@ describe("VideoPlaybackOverlay", () => {
     const { getByTestId } = renderOverlay({ isPlaying: true, playbackRateLabel: "-2x" });
 
     expect(getByTestId("video-playback-rate")).toHaveTextContent("-2x");
+  });
+
+  it("starts collapsed and expands into the detailed timeline panel on demand", () => {
+    const { getByTestId, getByText, queryByText } = renderOverlay();
+
+    expect(getByTestId("video-timeline-expand")).toBeInTheDocument();
+    expect(queryByText("AI 预测密度")).toBeNull();
+
+    fireEvent.click(getByTestId("video-timeline-expand"));
+
+    expect(getByTestId("video-timeline-collapse")).toBeInTheDocument();
+    expect(getByText("AI 预测密度")).toBeInTheDocument();
+    expect(getByText("标注密度")).toBeInTheDocument();
+    expect(getByText("AI 传播")).toBeInTheDocument();
+    expect(getByText("Loop 区域")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口 F0–9");
+  });
+
+  it("keeps manual and prediction density visible when a track is selected", () => {
+    const selectedTrackTimeline: VideoTrackTimeline = {
+      trackId: "trk",
+      keyframes: [{ frame: 0, source: "manual", occluded: false }],
+      outside: [],
+      interpolated: [],
+    };
+    const { getByTestId } = renderOverlay({
+      selectedTrackTimeline,
+      globalTimelineDensity: [{ index: 0, from: 0, to: 0, density: 1, tracks: [] }],
+      predictionDensity: [{ index: 1, from: 1, to: 1, count: 1 }],
+    });
+
+    fireEvent.click(getByTestId("video-timeline-expand"));
+
+    expect(getByTestId("video-timeline-density").querySelector("span")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-prediction-density").querySelector("span")).toBeInTheDocument();
+    expect(getByTestId("video-track-timeline")).toBeInTheDocument();
   });
 
   it("keeps sampling grid markers away from timeline edges", () => {

@@ -312,17 +312,18 @@ export function useVideoPlaybackController({
     [annotations],
   );
 
+  const timelineDensityBins = Math.min(Math.max(maxFrame + 1, 1), 2000);
+
+  // 全局标注密度是独立上下文层; 选中轨迹时仍常驻显示, 轨迹行只额外渲染选中轨迹详情。
   const globalTimelineDensity = useMemo(
-    () => selectedTrack
-      ? []
-      : buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame, 80, manualBboxFrames),
-    [manualBboxFrames, maxFrame, selectedTrack, videoTracks],
+    () => buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame, timelineDensityBins, manualBboxFrames),
+    [manualBboxFrames, maxFrame, timelineDensityBins, videoTracks],
   );
 
-  // v0.21.9 · 预测密度轨: 始终计算 (不像人工密度条在选中轨迹时清空), 让审阅时预测分布常驻可见。
+  // v0.21.9 · 预测密度轨: 始终计算, 让审阅时预测分布常驻可见。
   const predictionDensity = useMemo(
-    () => buildPredictionDensity(predictedFrames, maxFrame, 80),
-    [predictedFrames, maxFrame],
+    () => buildPredictionDensity(predictedFrames, maxFrame, timelineDensityBins),
+    [predictedFrames, maxFrame, timelineDensityBins],
   );
   const hasPredictedFrames = predictedFrames.length > 0;
 

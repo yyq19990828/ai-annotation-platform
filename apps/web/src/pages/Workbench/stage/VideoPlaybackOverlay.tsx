@@ -15,6 +15,7 @@ import {
   isFullWindow,
   zoomWindow,
   panWindow,
+  clampWindow,
   MIN_VISIBLE_SPAN,
   ZOOM_WHEEL_K,
   type TimelineWindow,
@@ -31,6 +32,11 @@ type CSSVars = Record<`--${string}`, string | number>;
 // 柱高才能跨 lane 直接反映数量占比 (见 densityScaleMax)。
 const DENSITY_BAR_MAX_PX = 9;
 export type VideoLargeFrameStep = 5 | 10 | 30 | "grid";
+const DEFAULT_CHAPTER_COLORS = [
+  "rgba(116, 158, 87, 0.82)",
+  "rgba(173, 111, 44, 0.84)",
+  "rgba(78, 98, 174, 0.84)",
+];
 
 export interface VideoTimelineChapter {
   id: string;
@@ -132,6 +138,15 @@ function formatTime(seconds: number) {
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+// v0.21.16 · 尺子刻度步长: 选一个"整齐"帧步长 (1/2/2.5/5×10ⁿ), 使可见窗口内约 6 个标签。
+// 随缩放窗口跨度变化自动切档, 长视频缩放后不会挤成一坨或稀到没参照。
+function niceFrameStep(span: number): number {
+  const target = Math.max(1, span / 6);
+  const pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const candidate = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((c) => c >= target);
+  return Math.max(1, Math.round(candidate ?? 10 * pow));
 }
 
 // 密度条半透明色: 轨迹色 (oklch) 或 accent token 兑入透明, 避免密度条过抢眼。
@@ -238,6 +253,9 @@ export function VideoPlaybackOverlay({
   onChapterResize,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
+  // v0.21.16 · 播放组件折叠/展开。折叠 (默认) = 紧凑单轨浮层, 不长期挡视频; 展开 = 专业剪辑器式
+  // 分行面板 (标尺 + scrubber + 每类数据独占带标签的一行 + 大控件 + 状态条)。
+  const [expanded, setExpanded] = useState(false);
   const [rangeDraft, setRangeDraft] = useState<TimelineRangeDraft | null>(null);
   // v0.21.13 WS3 · 章节条边界 resize 的本地预览 (拖动中不落库, 松手才 onChapterResize → debounce PATCH)。
   const [chapterResizePreview, setChapterResizePreview] = useState<
@@ -254,6 +272,7 @@ export function VideoPlaybackOverlay({
   const timelineWindowRef = useRef(timelineWindow);
   timelineWindowRef.current = timelineWindow;
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
   const frameTooltip = useMemo(() => {
     if (hoverFrame === null) return null;
@@ -270,6 +289,14 @@ export function VideoPlaybackOverlay({
     ),
     [globalTimelineDensity, predictionDensity],
   );
+  const minTimelineSpan = useMemo(() => {
+    const densityBinSpan = Math.max(
+      1,
+      ...globalTimelineDensity.map((bin) => bin.to - bin.from + 1),
+      ...predictionDensity.map((bin) => bin.to - bin.from + 1),
+    );
+    return Math.max(MIN_VISIBLE_SPAN, densityBinSpan * 6);
+  }, [globalTimelineDensity, predictionDensity]);
   // v0.10.29 · 采样网格刻度：step>1 时在时间轴渲染网格帧 tick。
   // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
   const gridTicks = useMemo(() => {
@@ -290,9 +317,103 @@ export function VideoPlaybackOverlay({
     }
     return ticks;
   }, [maxFrame, samplingStep, timelineWindow]);
+  // v0.21.16 · 尺子刻度标签: 按"整齐"步长在可见窗口内取帧号标签 (随缩放重排)。首尾贴边的标签
+  // (pct<4 或 >96) 跳过, 避免文字溢出轨道两端。空视频 (maxFrame<=0) 不渲染。
+  const rulerTicks = useMemo(() => {
+    if (maxFrame <= 0) return [] as number[];
+    const span = timelineWindow.to - timelineWindow.from;
+    if (span <= 0) return [];
+    const step = niceFrameStep(span);
+    const first = Math.ceil(timelineWindow.from / step) * step;
+    const ticks: number[] = [];
+    for (let f = first; f <= timelineWindow.to; f += step) {
+      if (f < 0 || f > maxFrame) continue;
+      const pct = frameToPct(f, timelineWindow);
+      if (f !== 0 && f !== maxFrame && (pct < 4 || pct > 96)) continue;
+      ticks.push(f);
+    }
+    return ticks;
+  }, [maxFrame, timelineWindow]);
+  const rulerMinorTicks = useMemo(() => {
+    if (maxFrame <= 0) return [] as number[];
+    const span = timelineWindow.to - timelineWindow.from;
+    if (span <= 0) return [];
+    const step = Math.max(1, Math.round(niceFrameStep(span) / 5));
+    const first = Math.ceil(timelineWindow.from / step) * step;
+    const ticks: number[] = [];
+    const maxTicks = 72;
+    for (let f = first; f <= timelineWindow.to && ticks.length < maxTicks; f += step) {
+      if (f <= 0 || f >= maxFrame) continue;
+      ticks.push(f);
+    }
+    return ticks;
+  }, [maxFrame, timelineWindow]);
   const currentFrameOffGrid = !isPlaying && samplingStep > 1 && frameIndex % samplingStep !== 0;
   const isZoomed = !isFullWindow(timelineWindow, maxFrame);
   const resetTimelineWindow = () => setTimelineWindow({ from: 0, to: maxFrame });
+  // v0.21.16 · 可发现的缩放入口: 控制条 +/− 以窗口中心为锚缩放 (factor<1 放大, >1 缩小)。
+  const zoomTimeline = (factor: number) =>
+    setTimelineWindow((win) => zoomWindow(win, maxFrame, 0.5, factor, minTimelineSpan));
+
+  // v0.21.16 · 概览导航条: 始终代表整段 [0,maxFrame], 窗口方块标出可见 [from,to]。
+  // 拖窗口体=平移、拖左/右边=缩放该侧、点窗口外=把窗口挪过去 (再拖即平移)。仅 isZoomed 时渲染。
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const navDragRef = useRef<{ mode: "pan" | "left" | "right"; startX: number; startWin: TimelineWindow } | null>(null);
+  const navPct = (frame: number) => (maxFrame > 0 ? (frame / maxFrame) * 100 : 0);
+  const beginNavDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = navRef.current;
+    if (!el || maxFrame <= 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const px = e.clientX - rect.left;
+    const leftPx = (timelineWindow.from / maxFrame) * rect.width;
+    const rightPx = (timelineWindow.to / maxFrame) * rect.width;
+    const EDGE = 7;
+    let mode: "pan" | "left" | "right";
+    let startWin = timelineWindow;
+    if (Math.abs(px - leftPx) <= EDGE) mode = "left";
+    else if (Math.abs(px - rightPx) <= EDGE) mode = "right";
+    else if (px >= leftPx && px <= rightPx) mode = "pan";
+    else {
+      // 点窗口外: 保跨度把窗口居中到点击帧, 再切 pan 让本次拖动继续平移。
+      const span = timelineWindow.to - timelineWindow.from;
+      const clickedFrame = (px / rect.width) * maxFrame;
+      startWin = clampWindow(
+        { from: clickedFrame - span / 2, to: clickedFrame + span / 2 },
+        maxFrame,
+        minTimelineSpan,
+      );
+      setTimelineWindow(startWin);
+      mode = "pan";
+    }
+    navDragRef.current = { mode, startX: e.clientX, startWin };
+    el.setPointerCapture?.(e.pointerId);
+  };
+  const moveNavDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const st = navDragRef.current;
+    const el = navRef.current;
+    if (!st || !el) return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const deltaFrames = ((e.clientX - st.startX) / rect.width) * maxFrame;
+    if (st.mode === "pan") {
+      setTimelineWindow(panWindow(st.startWin, maxFrame, deltaFrames, minTimelineSpan));
+    } else if (st.mode === "left") {
+      const from = Math.max(0, Math.min(st.startWin.from + deltaFrames, st.startWin.to - minTimelineSpan));
+      setTimelineWindow({ from, to: st.startWin.to });
+    } else {
+      const to = Math.min(maxFrame, Math.max(st.startWin.to + deltaFrames, st.startWin.from + minTimelineSpan));
+      setTimelineWindow({ from: st.startWin.from, to });
+    }
+  };
+  const endNavDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!navDragRef.current) return;
+    navDragRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
   const frameLeft = (frame: number) => `${frameToPct(frame, timelineWindow)}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
@@ -420,6 +541,7 @@ export function VideoPlaybackOverlay({
   }, [interactive, largeFrameStep, onSeekByFrames, samplingStep, visible]);
   const hoverLeft = frameToPct(hoverFrame ?? 0, timelineWindow);
   const hoverPopoverLeft = `${Math.max(12, Math.min(88, hoverLeft))}%`;
+  const currentFramePct = Math.max(0, Math.min(100, frameToPct(frameIndex, timelineWindow)));
 
   const isInteractive = visible && interactive;
 
@@ -427,11 +549,102 @@ export function VideoPlaybackOverlay({
   useEffect(() => {
     setTimelineWindow({ from: 0, to: maxFrame });
   }, [maxFrame]);
+  // v0.21.16 · 时间轴交互 shell 的指针/键盘 handler 抽为具名函数, 供折叠态 (紧凑轨道) 与展开态
+  // (分行面板的 scrubber 行) 复用同一套 seek / 刷选 / scrub 逻辑。所有几何以 e.currentTarget 的
+  // rect 换算, 故挂到哪个元素都对。
+  const handleShellKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
+    stepTimelineByKey(e, e.currentTarget);
+  };
+  const handleShellPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // 章节条 resize 把手自行处理 pointer, 不走 shell 的 seek/刷选。
+    if ((e.target as HTMLElement)?.closest?.("[data-chapter-resize]")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frame = frameFromPointer(e.clientX, rect);
+    focusTimelineShell(e.currentTarget);
+    const brushEnabled =
+      rangeSelectPurpose === "loop" ? Boolean(onLoopRegionChange) : Boolean(onRangeSelect);
+    // 手势区分: chapter-draft 有显式「圈选」按钮臂选, 普通拖即圈选; loop / propagate-range
+    // 保留普通拖 seek/scrub (传播对话框开着时仍能拖动预览帧), 用 Shift+拖 才圈选。
+    const plainDragBrushes = rangeSelectPurpose === "chapter-draft";
+    const wantsBrush = brushEnabled && (plainDragBrushes || e.shiftKey);
+    if (!wantsBrush) {
+      seekDragRef.current = true;
+      onSeek(frame);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      return;
+    }
+    const next: TimelineRangeDraft = {
+      region: { startFrame: frame, endFrame: frame },
+      purpose: rangeSelectPurpose,
+    };
+    rangeDraftRef.current = next;
+    setRangeDraft(next);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const handleShellPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frame = frameFromPointer(e.clientX, rect);
+    updateHoverFrame(frame);
+    const draft = rangeDraftRef.current;
+    if (draft) {
+      e.preventDefault();
+      const next: TimelineRangeDraft = {
+        region: normalizeLoop(draft.region.startFrame, frame),
+        purpose: draft.purpose,
+      };
+      rangeDraftRef.current = next;
+      setRangeDraft(next);
+      return;
+    }
+    if (seekDragRef.current) {
+      e.preventDefault();
+      onSeek(frame);
+    }
+  };
+  const handleShellPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const draft = rangeDraftRef.current;
+    if (draft) {
+      e.preventDefault();
+      if (draft.purpose === "loop") onLoopRegionChange?.(draft.region);
+      else onRangeSelect?.(draft.purpose, draft.region);
+      rangeDraftRef.current = null;
+      setRangeDraft(null);
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+      return;
+    }
+    if (seekDragRef.current) {
+      e.preventDefault();
+      seekDragRef.current = false;
+      focusTimelineShell(e.currentTarget);
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+    }
+  };
+  const handleShellPointerCancel = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!rangeDraftRef.current && !seekDragRef.current) return;
+    seekDragRef.current = false;
+    rangeDraftRef.current = null;
+    setRangeDraft(null);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+  const handleShellPointerLeave = () => {
+    if (seekDragRef.current || rangeDraftRef.current) return;
+    updateHoverFrame(null);
+  };
+  const handleShellDoubleClick = () => {
+    // v0.21.15 WS2 · 双击时间轴复位到全窗口 (与控制条「适配全部」等价)。
+    if (isZoomed) resetTimelineWindow();
+  };
+
   // v0.21.15 WS2 · Ctrl/⌘+滚轮以指针帧为锚缩放; 已放大时普通滚轮横向平移 (全窗口放行页面滚动)。
+  // v0.21.16 · 监听挂在整个播放组件 (overlay) 而非仅时间轴 shell —— Ctrl+滚轮在控制条/status/导航条
+  // 任意处都能缩放时间轴; 缩放锚点仍以 shell (时间轴轨道) 的横向几何换算, 保证锚在指针所指帧。
   // 原生非被动监听才能 preventDefault (React onWheel 被动); 窗口从 ref 读, 避免每次缩放重挂监听。
   useEffect(() => {
+    const root = overlayRef.current;
     const shell = timelineShellRef.current;
-    if (!shell || !isInteractive || maxFrame <= 0) return;
+    if (!root || !shell || !isInteractive || maxFrame <= 0) return;
     const onWheel = (e: WheelEvent) => {
       const rect = shell.getBoundingClientRect();
       if (rect.width <= 0) return;
@@ -439,7 +652,7 @@ export function VideoPlaybackOverlay({
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const factor = Math.exp(e.deltaY * ZOOM_WHEEL_K);
-        setTimelineWindow((win) => zoomWindow(win, maxFrame, ratio, factor, MIN_VISIBLE_SPAN));
+        setTimelineWindow((win) => zoomWindow(win, maxFrame, ratio, factor, minTimelineSpan));
         return;
       }
       const win = timelineWindowRef.current;
@@ -448,167 +661,609 @@ export function VideoPlaybackOverlay({
       const span = win.to - win.from;
       const panPx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
       const deltaFrames = (panPx / rect.width) * span;
-      setTimelineWindow((prev) => panWindow(prev, maxFrame, deltaFrames, MIN_VISIBLE_SPAN));
+      setTimelineWindow((prev) => panWindow(prev, maxFrame, deltaFrames, minTimelineSpan));
     };
-    shell.addEventListener("wheel", onWheel, { passive: false });
-    return () => shell.removeEventListener("wheel", onWheel);
-  }, [isInteractive, maxFrame]);
+    root.addEventListener("wheel", onWheel, { passive: false });
+    return () => root.removeEventListener("wheel", onWheel);
+  }, [isInteractive, maxFrame, minTimelineSpan]);
+
+  const playbackRateText = playbackRateLabel ?? "1x";
+
+  // v0.21.16 · 展开态控件条 (折叠态复用其中一部分)。大号居中, 圆形播放键, 逐帧 / 预测 / 缩放分组。
+  const transportControls = (
+    <div className={cn(styles.expandedControls, isInteractive && styles.interactive)}>
+      <Button
+        size="sm"
+        title="回到首帧"
+        aria-label="回到首帧"
+        onClick={() => onSeek(0)}
+        className={cn(styles.controlButton, styles.skipButton, styles.skipStart)}
+      >
+        <Icon name="chevLeft" size={14} />
+      </Button>
+      <Button
+        size="sm"
+        title="上一帧"
+        onClick={() => onSeekByFrames(-1)}
+        className={cn(styles.controlButton, highlightAction === "prev" && styles.controlButtonActive)}
+      >
+        <Icon name="chevLeft" size={14} />
+      </Button>
+      <Button
+        size="sm"
+        title="播放 / 暂停 (Space)"
+        onClick={onTogglePlay}
+        className={cn(styles.playButton, highlightAction === "play" && styles.playButtonActive)}
+      >
+        <Icon name={isPlaying ? "pause" : "play"} size={20} />
+      </Button>
+      <Button
+        size="sm"
+        title="下一帧"
+        onClick={() => onSeekByFrames(1)}
+        className={cn(styles.controlButton, highlightAction === "next" && styles.controlButtonActive)}
+      >
+        <Icon name="chevRight" size={14} />
+      </Button>
+      <Button
+        size="sm"
+        title="跳到末帧"
+        aria-label="跳到末帧"
+        onClick={() => onSeek(maxFrame)}
+        className={cn(styles.controlButton, styles.skipButton, styles.skipEnd)}
+      >
+        <Icon name="chevRight" size={14} />
+      </Button>
+      {onSeekPredicted && (
+        <div className={styles.expandedGroup}>
+          <Button
+            size="sm"
+            title="上一个有预测的帧"
+            data-testid="video-seek-prev-predicted"
+            onClick={() => onSeekPredicted(-1)}
+            className={cn(styles.controlButton, styles.controlButtonPredicted)}
+          >
+            <Icon name="chevLeft" size={14} />
+          </Button>
+          <Button
+            size="sm"
+            title="下一个有预测的帧"
+            data-testid="video-seek-next-predicted"
+            onClick={() => onSeekPredicted(1)}
+            className={cn(styles.controlButton, styles.controlButtonPredicted)}
+          >
+            <Icon name="chevRight" size={14} />
+          </Button>
+        </div>
+      )}
+      <div className={styles.expandedGroup}>
+        <Button
+          size="sm"
+          title="缩小时间轴"
+          aria-label="缩小时间轴"
+          data-testid="video-timeline-zoom-out"
+          onClick={() => zoomTimeline(1.6)}
+          className={styles.controlButton}
+        >
+          <Icon name="zoomOut" size={14} />
+        </Button>
+        <Button
+          size="sm"
+          title="放大时间轴 (长视频精细定位)"
+          aria-label="放大时间轴"
+          data-testid="video-timeline-zoom-in"
+          onClick={() => zoomTimeline(0.6)}
+          className={styles.controlButton}
+        >
+          <Icon name="zoomIn" size={14} />
+        </Button>
+        <Button
+          size="sm"
+          title="适配全部帧 (退出时间轴缩放)"
+          aria-label="适配全部帧"
+          data-testid="video-timeline-zoom-reset"
+          onClick={resetTimelineWindow}
+          className={styles.controlButton}
+        >
+          <Icon name="scan" size={14} />
+        </Button>
+      </div>
+      <Button
+        size="sm"
+        title="折叠时间轴面板"
+        aria-label="折叠时间轴面板"
+        data-testid="video-timeline-collapse"
+        onClick={() => setExpanded(false)}
+        className={cn(styles.controlButton, styles.collapseButton)}
+      >
+        <Icon name="chevDown" size={14} />
+      </Button>
+    </div>
+  );
+
+  // v0.21.16 · 展开态状态条: 帧 / 时间 / 速率 / Loop / 窗口读数 + 右侧概览导航条。
+  const statusBar = (
+    <div className={cn("mono", styles.expandedStatus)}>
+      <Icon name={isPlaying ? "pause" : "play"} size={12} />
+      <span>F {frameIndex} / {maxFrame}</span>
+      <span>{formatTime(frameToTime(frameIndex, timebase))}</span>
+      <span data-testid="video-playback-rate">{playbackRateText}</span>
+      <span className={styles.statusSpacer} />
+      {loopRegion && (
+        <span className={styles.loopChip}>
+          <span data-testid="video-loop-region-label">Loop {loopRegion.startFrame}-{loopRegion.endFrame}</span>
+          <button
+            type="button"
+            title="清除播放范围 (Alt+L)"
+            onClick={onClearLoopRegion}
+            className={cn(styles.clearLoopButton, isInteractive && styles.interactive)}
+          >
+            清除
+          </button>
+        </span>
+      )}
+      <span data-testid="video-timeline-window-readout" className={styles.windowReadout}>
+        窗口 F{Math.round(timelineWindow.from)}–{Math.round(timelineWindow.to)}
+      </span>
+      {maxFrame > 0 && (
+        <div
+          data-testid="video-timeline-navigator"
+          ref={navRef}
+          className={cn(styles.navigator, styles.navigatorInline, isInteractive && styles.interactive)}
+          onPointerDown={beginNavDrag}
+          onPointerMove={moveNavDrag}
+          onPointerUp={endNavDrag}
+          onPointerCancel={endNavDrag}
+          title="概览导航：拖窗口平移 · 拖边缩放 · 点空白跳转"
+        >
+          {globalTimelineDensity.map((bin) =>
+            bin.density > 0 ? (
+              <TimelineSpan
+                key={`inav-density-${bin.index}`}
+                className={styles.navDensityBin}
+                vars={{
+                  "--timeline-left": `${navPct(bin.from)}%`,
+                  "--timeline-width": `${Math.max(0.4, navPct(bin.to - bin.from + 1))}%`,
+                }}
+              />
+            ) : null,
+          )}
+          <TimelineSpan
+            data-testid="video-timeline-navigator-window"
+            className={styles.navWindow}
+            vars={{
+              "--timeline-left": `${navPct(timelineWindow.from)}%`,
+              "--timeline-width": `${Math.max(1.5, navPct(timelineWindow.to - timelineWindow.from))}%`,
+            }}
+          />
+          <TimelineSpan
+            className={styles.navPlayhead}
+            vars={{ "--timeline-left": `${navPct(frameIndex)}%` }}
+          />
+        </div>
+      )}
+      <span>{currentFrameEntryCount} 框</span>
+    </div>
+  );
+
+  if (expanded) {
+    return (
+      <div
+        data-testid="video-playback-overlay"
+        ref={overlayRef}
+        className={cn(styles.overlay, styles.overlayExpanded, visible ? styles.overlayVisible : styles.overlayHidden)}
+      >
+        <div className={styles.laneStack}>
+        {/* 贯穿各行的竖向对齐网格线 (与标尺主刻度同帧位) */}
+        <div className={styles.gridlines} aria-hidden>
+          {rulerTicks.map((frame) => (
+            <TimelineSpan
+              key={`xgridline-${frame}`}
+              className={styles.gridline}
+              vars={{ "--timeline-left": frameLeft(frame) }}
+            />
+          ))}
+          <TimelineSpan
+            className={styles.gridlinePlayhead}
+            vars={{ "--timeline-left": frameLeft(frameIndex) }}
+          />
+        </div>
+        {/* 标尺 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel} />
+          <div className={styles.rulerBody}>
+            <div className={styles.rulerMinorTrack} aria-hidden>
+              {rulerMinorTicks.map((frame) => (
+                <TimelineSpan
+                  key={`xminor-${frame}`}
+                  className={cn(styles.rulerMinorTick, rulerTicks.includes(frame) && styles.rulerMinorTickMajor)}
+                  vars={{ "--timeline-left": frameLeft(frame) }}
+                />
+              ))}
+            </div>
+            {rulerTicks.map((frame) => (
+              <TimelineSpan
+                key={`xruler-${frame}`}
+                className={styles.rulerMajor}
+                vars={{ "--timeline-left": frameLeft(frame) }}
+              >
+                {frame}
+              </TimelineSpan>
+            ))}
+          </div>
+        </div>
+
+        {/* scrubber (交互 seek/刷选面) */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel} />
+          <div
+            data-testid="video-timeline-shell"
+            ref={timelineShellRef}
+            tabIndex={0}
+            className={cn(styles.scrubberBody, isInteractive && styles.interactive)}
+            onKeyDown={handleShellKeyDown}
+            onPointerDownCapture={handleShellPointerDown}
+            onPointerMove={handleShellPointerMove}
+            onPointerUp={handleShellPointerUp}
+            onPointerCancel={handleShellPointerCancel}
+            onPointerLeave={handleShellPointerLeave}
+            onDoubleClick={handleShellDoubleClick}
+          >
+            <span className={styles.scrubberRail} />
+            <TimelineSpan className={styles.scrubberFill} vars={{ "--timeline-progress": currentFramePct / 100 }} />
+            <TimelineSpan className={styles.scrubberKnob} vars={{ "--timeline-progress": currentFramePct / 100 }} />
+            <input
+              className={cn("video-timeline-range", styles.rangeInput, styles.rangeInputLarge)}
+              aria-label="视频帧时间轴"
+              type="range"
+              min={0}
+              max={10000}
+              tabIndex={-1}
+              value={Math.round(frameToPct(frameIndex, timelineWindow) * 100)}
+              onChange={(e) => onSeek(pctToFrame(Number(e.currentTarget.value) / 10000, timelineWindow))}
+              onFocus={(e) => focusTimelineShell(e.currentTarget)}
+              onKeyDown={handleShellKeyDown}
+            />
+            {frameTooltip && (
+              <TimelineDiv
+                data-testid={hoverPreview ? "video-frame-preview-popover" : "video-frame-tooltip"}
+                className={cn(styles.tooltip, hoverPreview ? styles.previewTooltip : styles.frameTooltip)}
+                vars={{ "--tooltip-left": hoverPreview ? hoverPopoverLeft : `${hoverLeft}%` }}
+              >
+                {hoverPreview ? (
+                  <div className={styles.previewContent}>
+                    <div data-testid="video-frame-preview-image-shell" className={styles.previewImageShell}>
+                      {hoverPreview.status === "ready" ? (
+                        <img data-testid="video-frame-preview-image" src={hoverPreview.url} alt="" className={styles.previewImage} />
+                      ) : hoverPreview.status === "pending" ? (
+                        <span>Loading F {hoverPreview.frameIndex}</span>
+                      ) : (
+                        <span>Preview unavailable</span>
+                      )}
+                    </div>
+                    <div className={styles.previewMeta}>
+                      <span>{frameTooltip}</span>
+                      <span className={styles.previewFormat}>
+                        {hoverPreview.status === "ready" ? hoverPreview.format.toUpperCase() : hoverPreview.status}
+                      </span>
+                    </div>
+                  </div>
+                ) : frameTooltip}
+              </TimelineDiv>
+            )}
+          </div>
+        </div>
+
+        {/* 章节 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>章节</span>
+          <div className={styles.laneBody}>
+            {chapters.length === 0 && <span className={styles.laneEmpty}>—</span>}
+            {rangeDraft?.purpose === "chapter-draft" && (
+              <TimelineSpan
+                data-testid={RANGE_DRAFT_TESTID[rangeDraft.purpose]}
+                className={styles.chapterDraftRegion}
+                vars={rangeStyle(rangeDraft.region.startFrame, rangeDraft.region.endFrame)}
+              />
+            )}
+            {chapters.map((chapter, chapterIndex) => {
+              const preview = chapterResizePreview?.id === chapter.id ? chapterResizePreview : null;
+              const startFrame = preview ? preview.startFrame : chapter.startFrame;
+              const endFrame = preview ? preview.endFrame : chapter.endFrame;
+              const leftPct = frameToPct(startFrame, timelineWindow);
+              const rightPct = frameToPct(endFrame, timelineWindow);
+              const chapterStyle: CSSVars = {
+                ...rangeStyle(startFrame, endFrame),
+                "--chapter-color": chapter.color ?? DEFAULT_CHAPTER_COLORS[chapterIndex % DEFAULT_CHAPTER_COLORS.length],
+              };
+              const resizable = Boolean(onChapterResize) && isInteractive;
+              return (
+                <div key={chapter.id} className={styles.chapterEntry}>
+                  <TimelineButton
+                    type="button"
+                    data-testid="video-timeline-chapter"
+                    data-hovered={hoveredChapterId === chapter.id ? "true" : undefined}
+                    title={`${chapter.title} · F${startFrame}-F${endFrame}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSeekChapter?.(chapter.id, startFrame);
+                    }}
+                    onPointerEnter={() => onHoverChapter?.(chapter.id)}
+                    onPointerLeave={() => onHoverChapter?.(null)}
+                    className={cn(
+                      styles.chapterBar,
+                      isInteractive && styles.interactive,
+                      hoveredChapterId === chapter.id && styles.chapterMarkerHovered,
+                    )}
+                    vars={chapterStyle}
+                  >
+                    <span className={styles.chapterBarLabel}>{chapter.title}</span>
+                  </TimelineButton>
+                  {resizable && (
+                    <>
+                      {frameInWindow(startFrame) && (
+                        <TimelineSpan
+                          data-testid="video-chapter-resize-start"
+                          data-chapter-resize="start"
+                          className={styles.chapterResizeHandle}
+                          vars={{ "--timeline-left": `${leftPct}%` }}
+                          onPointerDown={(e) => beginChapterResize(e, chapter, "start")}
+                          onPointerMove={moveChapterResize}
+                          onPointerUp={endChapterResize}
+                          onPointerCancel={endChapterResize}
+                        />
+                      )}
+                      {frameInWindow(endFrame) && (
+                        <TimelineSpan
+                          data-testid="video-chapter-resize-end"
+                          data-chapter-resize="end"
+                          className={styles.chapterResizeHandle}
+                          vars={{ "--timeline-left": `${rightPct}%` }}
+                          onPointerDown={(e) => beginChapterResize(e, chapter, "end")}
+                          onPointerMove={moveChapterResize}
+                          onPointerUp={endChapterResize}
+                          onPointerCancel={endChapterResize}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 书签 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>书签</span>
+          <div className={styles.laneBody}>
+            {bookmarks.length === 0 && <span className={styles.laneEmpty}>—</span>}
+            {bookmarks.filter((b) => frameInWindow(b.frameIndex)).map((bookmark) => (
+              <TimelineButton
+                key={bookmark.id}
+                type="button"
+                data-testid="video-bookmark-marker"
+                title={bookmark.label ?? `F ${bookmark.frameIndex}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSeekBookmark?.(bookmark.frameIndex);
+                }}
+                className={cn(styles.bookmarkMarker, styles.bookmarkMarkerLane, isInteractive && styles.interactive)}
+                vars={{ "--timeline-left": frameLeft(bookmark.frameIndex) }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Issues */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>Issues</span>
+          <div className={styles.laneBody}>
+            {issueFrames.length === 0 && <span className={styles.laneEmpty}>—</span>}
+            {issueFrames.filter((f) => frameInWindow(f)).map((frame) => (
+              <TimelineButton
+                key={`xissue-${frame}`}
+                type="button"
+                data-testid="video-issue-marker"
+                title={`Issue · F ${frame}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSeek(frame);
+                }}
+                className={cn(styles.issueMarker, styles.issueMarkerLane, isInteractive && styles.interactive)}
+                vars={{ "--timeline-left": frameLeft(frame) }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* AI 预测密度 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>AI 预测密度</span>
+          <div className={cn(styles.laneBody, styles.densityLane)} data-testid="video-timeline-prediction-density">
+            {predictionDensity.map((bin) => {
+              if (bin.count <= 0) return null;
+              const pos = binWindowStyle(bin.from, bin.to);
+              if (!pos) return null;
+              return (
+                <TimelineSpan
+                  key={`xpred-${bin.index}`}
+                  className={styles.predictionBinLane}
+                  vars={{ ...pos, "--density-height": `${Math.max(2, (bin.count / densityScaleMax) * DENSITY_BAR_MAX_PX)}px` }}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 标注密度 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>标注密度</span>
+          <div className={cn(styles.laneBody, styles.densityLane)} data-testid="video-timeline-density">
+            {globalTimelineDensity.map((bin) => {
+              if (bin.density <= 0) return null;
+              const pos = binWindowStyle(bin.from, bin.to);
+              if (!pos) return null;
+              return (
+                <TimelineSpan
+                  key={`xdens-${bin.index}`}
+                  className={styles.densityBinLane}
+                  vars={{
+                    ...pos,
+                    "--density-height": `${Math.max(2, (bin.density / densityScaleMax) * DENSITY_BAR_MAX_PX)}px`,
+                    "--density-gradient": densityBinGradient(bin, trackColorOverrides),
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 轨迹 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>轨迹</span>
+          <div className={styles.laneBody}>
+            {!selectedTrackTimeline && <span className={styles.laneEmpty}>未选中轨迹</span>}
+            {selectedTrackTimeline && (
+              <TimelineDiv
+                data-testid="video-track-timeline"
+                className={styles.trackTimelineLane}
+                vars={trackColor ? { "--track-keyframe-color": trackColor } : {}}
+              >
+                {selectedTrackTimeline.interpolated.map((segment) => (
+                  <TimelineSpan
+                    key={`xinterp-${segment.from}-${segment.to}`}
+                    data-testid="video-timeline-interpolated"
+                    className={cn(styles.trackSegment, styles.interpolatedSegment, segment.hasPrediction && styles.predictedSegment)}
+                    vars={rangeStyle(segment.from, segment.to)}
+                  />
+                ))}
+                {selectedTrackTimeline.outside.map((segment) => (
+                  <TimelineSpan
+                    key={`xoutside-${segment.from}-${segment.to}`}
+                    data-testid="video-timeline-outside"
+                    className={cn(styles.trackSegment, styles.outsideSegment, segment.source === "prediction" && styles.outsidePrediction)}
+                    vars={rangeStyle(segment.from, segment.to)}
+                  />
+                ))}
+                {selectedTrackTimeline.keyframes.filter((k) => frameInWindow(k.frame)).map((keyframe) => (
+                  <TimelineSpan
+                    key={`xkf-${keyframe.frame}`}
+                    data-testid="video-timeline-track-keyframe"
+                    className={cn(
+                      styles.trackKeyframe,
+                      keyframe.source === "prediction" && styles.trackKeyframePrediction,
+                      keyframe.occluded && styles.trackKeyframeOccluded,
+                    )}
+                    vars={{ "--timeline-left": frameLeft(keyframe.frame) }}
+                  />
+                ))}
+              </TimelineDiv>
+            )}
+          </div>
+        </div>
+
+        {/* 采样网格 */}
+        {gridTicks.length > 0 && (
+          <div className={styles.laneRow}>
+            <span className={styles.laneLabel}>采样网格</span>
+            <div className={styles.laneBody} data-testid="video-timeline-grid">
+              {gridTicks.map((frame) => (
+                <TimelineSpan
+                  key={`xgrid-${frame}`}
+                  data-testid="video-timeline-grid-tick"
+                  className={styles.gridTickLane}
+                  vars={{ "--timeline-left": frameLeft(frame) }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* AI 传播 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>AI 传播</span>
+          <div className={styles.laneBody}>
+            {propagateRange && (
+              <TimelineSpan
+                data-testid="video-propagate-range"
+                className={styles.propagateRegion}
+                vars={rangeStyle(propagateRange.startFrame, propagateRange.endFrame)}
+              />
+            )}
+            {rangeDraft?.purpose === "propagate-range" && (
+              <TimelineSpan
+                data-testid={RANGE_DRAFT_TESTID[rangeDraft.purpose]}
+                className={styles.propagateDraftRegion}
+                vars={rangeStyle(rangeDraft.region.startFrame, rangeDraft.region.endFrame)}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Loop 区域 */}
+        <div className={styles.laneRow}>
+          <span className={styles.laneLabel}>Loop 区域</span>
+          <div className={styles.laneBody}>
+            {loopRegion && rangeDraft?.purpose !== "loop" && (
+              <TimelineSpan
+                data-testid="video-loop-region"
+                className={styles.loopRegion}
+                vars={rangeStyle(loopRegion.startFrame, loopRegion.endFrame)}
+              />
+            )}
+            {rangeDraft?.purpose === "loop" && (
+              <TimelineSpan
+                data-testid={RANGE_DRAFT_TESTID[rangeDraft.purpose]}
+                className={cn(styles.loopRegion, styles.loopRegionDraft)}
+                vars={rangeStyle(rangeDraft.region.startFrame, rangeDraft.region.endFrame)}
+              />
+            )}
+          </div>
+        </div>
+        </div>
+
+        {transportControls}
+        {statusBar}
+      </div>
+    );
+  }
 
   return (
     <div
       data-testid="video-playback-overlay"
-      className={cn(styles.overlay, visible ? styles.overlayVisible : styles.overlayHidden)}
+      ref={overlayRef}
+      className={cn(styles.overlay, styles.overlayCollapsed, visible ? styles.overlayVisible : styles.overlayHidden)}
     >
-      <div className={cn(styles.controls, isInteractive && styles.interactive)}>
-        <Button
-          size="sm"
-          title="上一帧"
-          onClick={() => onSeekByFrames(-1)}
-          className={cn(styles.controlButton, highlightAction === "prev" && styles.controlButtonActive)}
-        >
-          <Icon name="chevLeft" size={13} />
-        </Button>
-        <Button
-          size="sm"
-          title="播放 / 暂停 (Space)"
-          onClick={onTogglePlay}
-          className={cn(styles.controlButton, highlightAction === "play" && styles.controlButtonActive)}
-        >
-          <Icon name={isPlaying ? "pause" : "play"} size={13} />
-        </Button>
-        <Button
-          size="sm"
-          title="下一帧"
-          onClick={() => onSeekByFrames(1)}
-          className={cn(styles.controlButton, highlightAction === "next" && styles.controlButtonActive)}
-        >
-          <Icon name="chevRight" size={13} />
-        </Button>
-        {onSeekPredicted && (
-          <div className={styles.predictedGroup}>
-            <Button
-              size="sm"
-              title="上一个有预测的帧"
-              data-testid="video-seek-prev-predicted"
-              onClick={() => onSeekPredicted(-1)}
-              className={cn(styles.controlButton, styles.controlButtonPredicted)}
-            >
-              <Icon name="chevLeft" size={13} />
-            </Button>
-            <Button
-              size="sm"
-              title="下一个有预测的帧"
-              data-testid="video-seek-next-predicted"
-              onClick={() => onSeekPredicted(1)}
-              className={cn(styles.controlButton, styles.controlButtonPredicted)}
-            >
-              <Icon name="chevRight" size={13} />
-            </Button>
-          </div>
-        )}
-        {isZoomed && (
-          <Button
-            size="sm"
-            title="适配全部帧 (退出时间轴缩放)"
-            aria-label="适配全部帧"
-            data-testid="video-timeline-zoom-reset"
-            onClick={resetTimelineWindow}
-            className={styles.controlButton}
-          >
-            <Icon name="scan" size={13} />
-          </Button>
-        )}
+      <Button
+        size="sm"
+        title="播放 / 暂停 (Space)"
+        onClick={onTogglePlay}
+        className={cn(styles.controlButton, styles.collapsedPlayButton, highlightAction === "play" && styles.controlButtonActive)}
+      >
+        <Icon name={isPlaying ? "pause" : "play"} size={13} />
+      </Button>
+      <div className={cn("mono", styles.collapsedStatus)}>
+        <span>F {frameIndex} / {maxFrame}</span>
+        <span>{formatTime(frameToTime(frameIndex, timebase))}</span>
+        <span data-testid="video-playback-rate">{playbackRateText}</span>
       </div>
 
       <div
         data-testid="video-timeline-shell"
         ref={timelineShellRef}
         tabIndex={0}
-        className={cn(styles.timelineShell, isInteractive && styles.interactive)}
-        onKeyDown={(e) => {
-          stepTimelineByKey(e, e.currentTarget);
-        }}
-        onPointerDownCapture={(e) => {
-          // 章节条 resize 把手自行处理 pointer, 不走 shell 的 seek/刷选。
-          if ((e.target as HTMLElement)?.closest?.("[data-chapter-resize]")) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const rect = e.currentTarget.getBoundingClientRect();
-          const frame = frameFromPointer(e.clientX, rect);
-          focusTimelineShell(e.currentTarget);
-          const brushEnabled =
-            rangeSelectPurpose === "loop" ? Boolean(onLoopRegionChange) : Boolean(onRangeSelect);
-          // 手势区分: chapter-draft 有显式「圈选」按钮臂选, 普通拖即圈选; loop / propagate-range
-          // 保留普通拖 seek/scrub (传播对话框开着时仍能拖动预览帧), 用 Shift+拖 才圈选。
-          const plainDragBrushes = rangeSelectPurpose === "chapter-draft";
-          const wantsBrush = brushEnabled && (plainDragBrushes || e.shiftKey);
-          if (!wantsBrush) {
-            seekDragRef.current = true;
-            onSeek(frame);
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            return;
-          }
-          const next: TimelineRangeDraft = {
-            region: { startFrame: frame, endFrame: frame },
-            purpose: rangeSelectPurpose,
-          };
-          rangeDraftRef.current = next;
-          setRangeDraft(next);
-          e.currentTarget.setPointerCapture?.(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const frame = frameFromPointer(e.clientX, rect);
-          updateHoverFrame(frame);
-          const draft = rangeDraftRef.current;
-          if (draft) {
-            e.preventDefault();
-            const next: TimelineRangeDraft = {
-              region: normalizeLoop(draft.region.startFrame, frame),
-              purpose: draft.purpose,
-            };
-            rangeDraftRef.current = next;
-            setRangeDraft(next);
-            return;
-          }
-          if (seekDragRef.current) {
-            e.preventDefault();
-            onSeek(frame);
-          }
-        }}
-        onPointerUp={(e) => {
-          const draft = rangeDraftRef.current;
-          if (draft) {
-            e.preventDefault();
-            if (draft.purpose === "loop") onLoopRegionChange?.(draft.region);
-            else onRangeSelect?.(draft.purpose, draft.region);
-            rangeDraftRef.current = null;
-            setRangeDraft(null);
-            e.currentTarget.releasePointerCapture?.(e.pointerId);
-            return;
-          }
-          if (seekDragRef.current) {
-            e.preventDefault();
-            seekDragRef.current = false;
-            focusTimelineShell(e.currentTarget);
-            e.currentTarget.releasePointerCapture?.(e.pointerId);
-          }
-        }}
-        onPointerCancel={(e) => {
-          if (!rangeDraftRef.current && !seekDragRef.current) return;
-          seekDragRef.current = false;
-          rangeDraftRef.current = null;
-          setRangeDraft(null);
-          e.currentTarget.releasePointerCapture?.(e.pointerId);
-        }}
-        onPointerLeave={() => {
-          if (seekDragRef.current || rangeDraftRef.current) return;
-          updateHoverFrame(null);
-        }}
-        onDoubleClick={() => {
-          // v0.21.15 WS2 · 双击时间轴复位到全窗口 (与控制条「适配全部」等价)。
-          if (isZoomed) resetTimelineWindow();
-        }}
+        className={cn(styles.timelineShell, styles.collapsedTimelineShell, isInteractive && styles.interactive)}
+        onKeyDown={handleShellKeyDown}
+        onPointerDownCapture={handleShellPointerDown}
+        onPointerMove={handleShellPointerMove}
+        onPointerUp={handleShellPointerUp}
+        onPointerCancel={handleShellPointerCancel}
+        onPointerLeave={handleShellPointerLeave}
+        onDoubleClick={handleShellDoubleClick}
       >
         <input
           className={cn("video-timeline-range", styles.rangeInput)}
@@ -901,26 +1556,16 @@ export function VideoPlaybackOverlay({
           </TimelineDiv>
         )}
       </div>
-
-      <div className={cn("mono", styles.status)}>
-        <span>F {frameIndex} / {maxFrame}</span>
-        <span>{formatTime(frameToTime(frameIndex, timebase))}</span>
-        {playbackRateLabel && <span data-testid="video-playback-rate">{playbackRateLabel}</span>}
-        {loopRegion && (
-          <>
-            <span data-testid="video-loop-region-label">Loop {loopRegion.startFrame}-{loopRegion.endFrame}</span>
-            <button
-              type="button"
-              title="清除播放范围 (Alt+L)"
-              onClick={onClearLoopRegion}
-              className={cn(styles.clearLoopButton, isInteractive && styles.interactive)}
-            >
-              清除
-            </button>
-          </>
-        )}
-        <span>{currentFrameEntryCount} 框</span>
-      </div>
+      <Button
+        size="sm"
+        title="展开时间轴面板 (分行详情)"
+        aria-label="展开时间轴面板"
+        data-testid="video-timeline-expand"
+        onClick={() => setExpanded(true)}
+        className={cn(styles.controlButton, styles.collapsedExpandButton)}
+      >
+        <Icon name="chevUp" size={13} />
+      </Button>
     </div>
   );
 }
