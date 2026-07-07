@@ -88,3 +88,4 @@
 - [0043](archive/0043-staged-preannotation-pipeline.md) — 多阶段预标注编排（路径 B：平台层跨 backend pipeline）
 - [0044](archive/0044-global-ml-backend-registry-and-project-enablement.md) — ML Backend 全局注册表 + 项目级启用（解耦能力声明与项目绑定）
 - [0045](0045-track-id-as-annotation-column.md) — 跨帧对象标识 track_id 提升为 annotation 表列（统一 group_id 高位段与 geometry 内 track_id）
+- [0046](0046-project-pipeline-library-and-scopes.md) — 全局 Pipeline 库：持久化命名编排模板 + 三档作用域（private/organization/public，apply copy-on-write）
