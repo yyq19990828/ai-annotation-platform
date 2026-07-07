@@ -34,6 +34,8 @@
 
 ## [Unreleased]
 
+## [0.21.20] - 2026-07-07
+
 ### Added
 - **视频追踪协议贯通 text-driven 维度（sam3_video 前哨）**：`tracks/{id}:propagate` 请求新增 `text`（文本 query）与
   `exemplars`（归一化视觉示例框，复用 sam3 图片侧 Exemplar 形状）显式字段，落库 prompt JSONB 后经 tracker 上下文显式透传
