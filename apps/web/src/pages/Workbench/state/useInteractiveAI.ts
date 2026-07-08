@@ -4,6 +4,7 @@ import { mlBackendsApi, type InteractiveAnnotateResponse } from "@/api/ml-backen
 import { useToastStore } from "@/components/ui/Toast";
 import { VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { recordPredictCacheHit } from "./sessionVariantCache";
+import { simplifyPolygon } from "../stage/shared/geometry/simplify";
 import { createSamCache, makeSamCacheKey } from "./useSamCache";
 
 /**
@@ -746,14 +747,43 @@ function normalizeResult(
   // 此前只读 value.points, 多环结果被静默丢弃 → "同位置时好时坏 / 没有候选区域"。
   const pts = pickPrimaryRing(r?.value);
   if (!Array.isArray(pts) || pts.length < 3) return null;
+  const ring = pts.map(([x, y]) => [x, y]) as [number, number][];
   return {
     id,
     type: "polygonlabels",
-    points: pts.map(([x, y]) => [x, y]) as [number, number][],
+    points: simplifyCandidateRing(ring),
     label: r.value?.polygonlabels?.[0] ?? "object",
     score,
     source,
   };
+}
+
+/**
+ * 候选多边形的简化容差 —— 顶点偏移不超过该候选**外接框对角线**的 0.3%。
+ *
+ * SAM 的 mask 轮廓是逐像素台阶: 大面积目标能吐出近千个顶点(实测一条占半屏的路面 965 个),
+ * 渲染成一片顶点句柄、编辑无从下手、落库也臃肿。用**相对**容差而非固定像素阈值, 因为后者
+ * 对大小目标一视同仁 —— 能压平路面的阈值(≈5px)会同时把一辆宽 40px 的车改形。
+ *
+ * 实测(该视频 1920×1080, 见 docs/research/13-simplify-tolerance-eval.md 的方法):
+ *   路面(965 顶点, 对角线 2629px) → 208 顶点, 面积保真 0.9999
+ *   车  (24 顶点,  对角线  122px) →  23 顶点, 面积保真 0.9995
+ */
+export const SAM_SIMPLIFY_RATIO = 0.003;
+
+/** 按候选自身尺度简化: epsilon = 外接框对角线 × SAM_SIMPLIFY_RATIO。 */
+export function simplifyCandidateRing(ring: [number, number][]): [number, number][] {
+  if (ring.length < 4) return ring;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  const diagonal = Math.hypot(maxX - minX, maxY - minY);
+  if (!(diagonal > 0)) return ring;
+  return simplifyPolygon(ring, diagonal * SAM_SIMPLIFY_RATIO) as [number, number][];
 }
 
 /** 多边形面积 (shoelace 绝对值; 归一化坐标, 仅用于比较取大). */

@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { ApiError } from "@/api/client";
-import { useInteractiveAI } from "./useInteractiveAI";
+import { useInteractiveAI, simplifyCandidateRing } from "./useInteractiveAI";
+import { simplifyPolygon } from "../stage/shared/geometry/simplify";
 
 const interactiveAnnotateMock = vi.fn();
 const pushToastMock = vi.fn();
@@ -616,5 +617,64 @@ describe("useInteractiveAI · transport 注入与 cacheScope", () => {
     rerender({ scope: 28 });
     await waitFor(() => expect(result.current.candidates).toEqual([]));
     expect(result.current.activeIdx).toBe(0);
+  });
+});
+
+describe("simplifyCandidateRing · 候选顶点简化", () => {
+  const area = (r: [number, number][]) => {
+    let a = 0;
+    for (let i = 0; i < r.length; i++) {
+      const [x1, y1] = r[i];
+      const [x2, y2] = r[(i + 1) % r.length];
+      a += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(a) / 2;
+  };
+
+  /** 逐像素台阶的锯齿圆环 —— 复刻 SAM mask 轮廓的形态。 */
+  const jaggedRing = (cx: number, cy: number, radius: number, n: number, jitter: number) => {
+    const ring: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      // 交替 ±jitter 制造台阶; 幅度远小于半径, 简化后应被抹平。
+      const r = radius + (i % 2 === 0 ? jitter : -jitter);
+      ring.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+    }
+    return ring;
+  };
+
+  it("大目标: 顶点大幅减少, 面积基本不变", () => {
+    const big = jaggedRing(0.5, 0.5, 0.35, 600, 0.0005);
+    const out = simplifyCandidateRing(big);
+    expect(out.length).toBeLessThan(big.length / 2);
+    expect(area(out) / area(big)).toBeGreaterThan(0.99);
+    expect(area(out) / area(big)).toBeLessThan(1.01);
+  });
+
+  it("小目标: 顶点几乎不动（容差随目标尺度缩小）", () => {
+    // 与大目标同形状、同锯齿相对幅度, 只是整体缩小 20 倍。
+    const small = jaggedRing(0.5, 0.5, 0.0175, 24, 0.000025);
+    const out = simplifyCandidateRing(small);
+    expect(out.length).toBeGreaterThanOrEqual(small.length - 2);
+    expect(area(out) / area(small)).toBeGreaterThan(0.99);
+  });
+
+  it("固定像素容差会毁掉小目标 —— 这正是用相对容差的理由", () => {
+    const small = jaggedRing(0.5, 0.5, 0.0175, 24, 0.000025);
+    // 5px / 1920 ≈ 0.0026, 足以压平路面, 但对这个半径 0.0175 的目标是灾难。
+    const absolute = simplifyPolygon(small, 5 / 1920);
+    expect(absolute.length).toBeLessThan(small.length / 2); // 24 → 8, 形状已面目全非
+    // 相对容差下同一目标保住了形状。
+    expect(simplifyCandidateRing(small).length).toBeGreaterThan(20);
+  });
+
+  it("三角形(顶点 < 4)原样返回, 不会退化", () => {
+    const tri: [number, number][] = [[0, 0], [0.1, 0], [0.05, 0.1]];
+    expect(simplifyCandidateRing(tri)).toEqual(tri);
+  });
+
+  it("退化环(对角线为 0)原样返回", () => {
+    const dot: [number, number][] = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.5], [0.5, 0.5]];
+    expect(simplifyCandidateRing(dot)).toEqual(dot);
   });
 });
