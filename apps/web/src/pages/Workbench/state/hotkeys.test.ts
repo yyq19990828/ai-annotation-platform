@@ -282,6 +282,7 @@ describe("dispatchKey · video mode", () => {
     // v0.21.23 · 视频交互式 SAM: S/D 直达 (图片侧 S 是「AI 工具循环」, 视频只有两个 AI 工具)。
     expect(dispatch({ key: "s" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-point" });
     expect(dispatch({ key: "D" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-box" });
+    expect(dispatch({ key: "e" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "exemplar" });
     expect(dispatch({ key: "p" }, videoCtx)).toBeNull();
   });
 

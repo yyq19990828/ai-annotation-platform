@@ -106,6 +106,7 @@ const VIDEO_TOOLS: Array<{
   // v0.21.23 · 交互式 SAM 单帧工具; requiredPrompt 决定后端能力门控 (不支持则置灰)。
   { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", altDigit: 9, group: "ai", requiredPrompt: "point" },
   { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", altDigit: 0, group: "ai", requiredPrompt: "interactive_box" },
+  { id: "exemplar", hotkey: "E", label: "示例框", icon: "sparkles", desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检", altDigit: 0, group: "ai", requiredPrompt: "exemplar" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。

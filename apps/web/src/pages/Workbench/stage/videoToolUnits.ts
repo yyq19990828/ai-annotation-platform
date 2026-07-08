@@ -29,6 +29,7 @@ export const VIDEO_TOOL_TARGET: Partial<
   // 会静默放行、绕过全部 tool_bindings 门控, 且 videoToolUnit 返回 null 会污染类选择器。
   "smart-point": { unit: "region", variant: "box" },
   "smart-box": { unit: "region", variant: "box" },
+  exemplar: { unit: "region", variant: "box" },
 };
 
 /** 该视频工具落在哪个工具单位; select 等非几何工具返回 null。 */

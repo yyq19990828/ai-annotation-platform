@@ -38,7 +38,7 @@ import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { buildVideoContextMenuItems } from "./videoContextMenuItems";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
-import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions } from "./videoStageTypes";
+import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions, VideoSamPrompt } from "./videoStageTypes";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
@@ -121,11 +121,7 @@ interface VideoKonvaStageProps {
   ) => void;
   onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
   /** v0.21.23 · 交互式 SAM 提示松手 (归一化坐标)；由 shell 取当前帧图请求候选。 */
-  onSamPrompt?: (
-    prompt:
-      | { mode: "point"; pt: [number, number]; alt: boolean }
-      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
-  ) => void;
+  onSamPrompt?: (prompt: VideoSamPrompt) => void;
   /** v0.21.23 · 交互式 SAM 的瞬态候选（不落库；采纳时才建标注）。 */
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;

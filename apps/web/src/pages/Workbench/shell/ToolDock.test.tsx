@@ -141,7 +141,7 @@ describe("ToolDock · AI 工具三层门控", () => {
 
 // v0.21.23 · 视频侧交互式 SAM 工具（此前视频分支完全没有 ML 能力门控）
 describe("ToolDock · 视频 AI 工具三层门控", () => {
-  const VIDEO_AI = ["smart-point", "smart-box"];
+  const VIDEO_AI = ["smart-point", "smart-box", "exemplar"];
 
   it("默认全开 → 视频 AI 工具显示", () => {
     render(
@@ -183,6 +183,24 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
     );
     expect(screen.getByTestId("video-tool-btn-smart-point")).toBeDisabled();
     expect(screen.getByTestId("video-tool-btn-smart-box")).not.toBeDisabled();
+    // exemplar 各按自己的 requiredPrompt 判定, 不受 point 不支持牵连。
+    expect(screen.getByTestId("video-tool-btn-exemplar")).not.toBeDisabled();
+  });
+
+  it("层 2 · 后端只支持 point → 仅 smart-point 可用, smart-box / exemplar 置灰", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        isPromptSupported={(p) => p === "point"}
+      />,
+    );
+    expect(screen.getByTestId("video-tool-btn-smart-point")).not.toBeDisabled();
+    expect(screen.getByTestId("video-tool-btn-smart-box")).toBeDisabled();
+    expect(screen.getByTestId("video-tool-btn-exemplar")).toBeDisabled();
   });
 
   it("层 2 · 置灰的工具点击不切换工具", () => {
@@ -215,6 +233,7 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
     );
     expect(screen.queryByTestId("video-tool-btn-smart-point")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-smart-box")).toBeNull();
+    expect(screen.queryByTestId("video-tool-btn-exemplar")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
     expect(screen.getByTestId("video-tool-btn-box")).toBeInTheDocument();
   });

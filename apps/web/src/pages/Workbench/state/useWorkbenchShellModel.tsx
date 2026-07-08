@@ -43,6 +43,8 @@ import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI, type InteractiveTransport, type TextOutputMode } from "./useInteractiveAI";
+import type { VideoSamPrompt } from "../stage/videoStageTypes";
+import { isSamProbeTool } from "../stage/videoKonvaInteraction";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -925,15 +927,15 @@ export function useWorkbenchShellModel({
 
   // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
   const onVideoSamPrompt = useCallback(
-    (
-      prompt:
-        | { mode: "point"; pt: [number, number]; alt: boolean }
-        | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
-    ) => {
-      if (prompt.mode === "point") sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
-      else sam.runBbox(prompt.bbox);
+    (prompt: VideoSamPrompt) => {
+      if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
+      // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
+      if (prompt.mode === "exemplar") {
+        return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode);
+      }
+      sam.runBbox(prompt.bbox);
     },
-    [sam],
+    [sam, s.exemplarOutputMode],
   );
   // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
   // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
@@ -1432,6 +1434,7 @@ export function useWorkbenchShellModel({
 
   const {
     handleVideoCreate,
+    handleVideoSingleFrameBboxCreate,
     handleVideoPointsTrackCreate,
     handleVideoPointsCreate,
     handleVideoPendingDraw,
@@ -1468,7 +1471,7 @@ export function useWorkbenchShellModel({
   // popover, 那是图片侧的 samPendingAccept), 故此处保持与视频绘制一致而非照搬图片流程。
   useEffect(() => {
     if (!isVideoTask) return;
-    if (s.videoTool !== "smart-point" && s.videoTool !== "smart-box") return;
+    if (!isSamProbeTool(s.videoTool)) return;
     if (sam.candidates.length === 0) return;
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -1481,8 +1484,14 @@ export function useWorkbenchShellModel({
       e.stopImmediatePropagation();
       if (e.key === "Enter") {
         const c = sam.candidates[sam.activeIdx];
-        // 交互式候选只产多边形; 少于 3 点无法成面 → 不落库。
-        if (c?.points && c.points.length >= 3) {
+        // 按候选几何分流 (与图片侧一致): exemplar 的 box 输出是矩形, 其余是多边形。
+        // consume 对 point/bbox 清空整个会话, 对 exemplar/text 只移除被采纳的那条 (多实例)。
+        if (c?.type === "rectanglelabels" && c.bbox) {
+          handleVideoSingleFrameBboxCreate(s.videoFrameIndex, {
+            x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height,
+          });
+          sam.consume(sam.activeIdx);
+        } else if (c?.points && c.points.length >= 3) {
           handleVideoPointsCreate("video_polygon", s.videoFrameIndex, c.points);
           sam.consume(sam.activeIdx);
         }
@@ -1496,7 +1505,7 @@ export function useWorkbenchShellModel({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isVideoTask, s.videoTool, s.videoFrameIndex, sam, handleVideoPointsCreate]);
+  }, [isVideoTask, s.videoTool, s.videoFrameIndex, sam, handleVideoPointsCreate, handleVideoSingleFrameBboxCreate]);
 
   const handlePickPendingClassAny = useCallback((cls: string) => {
     if (handlePickVideoPendingClass(cls)) return;

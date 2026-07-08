@@ -29,7 +29,7 @@ import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/videoStageControls";
 import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
-import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
+import type { VideoTrackAnnotation, VideoSamPrompt } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
 // v0.13.2 · 点云 3D 模块 lazy import：three(~600KB)只在打开 lidar 任务时加载，不进主 bundle。
@@ -108,11 +108,7 @@ interface WorkbenchStageHostVideoProps {
   videoTool: VideoTool;
   isVideoToolEnabled?: (t: VideoTool) => boolean;
   /** v0.21.23 · 视频交互式 SAM: 提示派发 + 瞬态候选 / 点会话。 */
-  onVideoSamPrompt?: (
-    prompt:
-      | { mode: "point"; pt: [number, number]; alt: boolean }
-      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
-  ) => void;
+  onVideoSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];

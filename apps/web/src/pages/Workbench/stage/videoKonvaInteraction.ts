@@ -29,6 +29,7 @@ import {
 import type {
   VideoDragState,
   VideoResizeDirection,
+  VideoSamPrompt,
   VideoStageGeom,
 } from "./videoStageTypes";
 
@@ -47,6 +48,17 @@ import type {
 export const VIDEO_MIN_BOX = 0.003;
 /** v0.21.23 · SAM 提示框的最小拖拽边长 (图幅比例)，与图片侧 ImageStage 同值。 */
 export const SAM_MIN_DRAG = 0.005;
+
+/** 交互式 SAM 提示工具 —— 不画几何, 松手派发 onSamPrompt 请求候选。 */
+export function isSamProbeTool(t: VideoTool): boolean {
+  return t === "smart-point" || t === "smart-box" || t === "exemplar";
+}
+
+/** 提示形态: point 是零位移点击; bbox(interactive_box) 与 exemplar(视觉示例框) 都是拖框。 */
+export function samProbeMode(t: VideoTool): "point" | "bbox" | "exemplar" {
+  if (t === "smart-point") return "point";
+  return t === "exemplar" ? "exemplar" : "bbox";
+}
 
 type DragModifiers = { shiftKey?: boolean; altKey?: boolean };
 
@@ -93,7 +105,8 @@ export type VideoDragCommit =
   // v0.21.23 · 交互式 SAM 提示: 不建标注, 交给 onSamPrompt 请求候选 (采纳时才落库)。
   // 坐标归一化 [0,1]; bbox 形如 [x1,y1,x2,y2] (与图片侧 onSamPrompt 同契约)。
   | { type: "samProbe"; mode: "point"; pt: [number, number]; alt: boolean }
-  | { type: "samProbe"; mode: "bbox"; bbox: [number, number, number, number]; alt: boolean };
+  // bbox = interactive_box 提示; exemplar = 视觉示例框 (同为拖框, 但派发到 runExemplar)。
+  | { type: "samProbe"; mode: "bbox" | "exemplar"; bbox: [number, number, number, number]; alt: boolean };
 
 export interface ResolveDragCommitCtx {
   annotations: readonly AnnotationResponse[];
@@ -124,7 +137,7 @@ export function resolveDragCommit(
     const y2 = Math.max(drag.start.y, finalPt.y);
     // 最小拖拽阈值 (图幅的 0.5%): 误点当框会让后端拿到退化 bbox。与图片侧同值。
     if (x2 - x1 <= SAM_MIN_DRAG || y2 - y1 <= SAM_MIN_DRAG) return { type: "none" };
-    return { type: "samProbe", mode: "bbox", bbox: [x1, y1, x2, y2], alt: drag.alt };
+    return { type: "samProbe", mode: drag.mode, bbox: [x1, y1, x2, y2], alt: drag.alt };
   }
 
   if (drag.kind === "draw") {
@@ -221,11 +234,7 @@ export interface UseVideoKonvaInteractionParams {
    * v0.21.23 · 交互式 SAM 提示松手回调 (smart-point / smart-box)。
    * 坐标归一化 [0,1]，与图片侧 onSamPrompt 同契约；由 shell 取当前帧图请求候选。
    */
-  onSamPrompt?: (
-    prompt:
-      | { mode: "point"; pt: [number, number]; alt: boolean }
-      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
-  ) => void;
+  onSamPrompt?: (prompt: VideoSamPrompt) => void;
   /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool / ExemplarTool 同语义)。 */
   samPolarity?: "positive" | "negative";
 }
@@ -274,13 +283,13 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     if (p.readOnly || p.isPlaybackActive) return;
     // v0.21.23 · 交互式 SAM 工具不画几何, 起 samProbe 拖拽 (point 零位移 / bbox 拖框)。
     // 放在 creationEnabled 之前: 提示不创建标注, 其可用性已由工具栏三层门控裁决。
-    if (p.videoTool === "smart-point" || p.videoTool === "smart-box") {
+    if (isSamProbeTool(p.videoTool)) {
       const probePt = pointFromClient(native.clientX, native.clientY);
       if (!probePt) return;
       p.onSelect(null);
       setDrag({
         kind: "samProbe",
-        mode: p.videoTool === "smart-point" ? "point" : "bbox",
+        mode: samProbeMode(p.videoTool),
         start: probePt,
         current: probePt,
         // 负点 = Alt 按住 或 工具条切到「负向」(与图片侧 SmartPointTool 同式)。
@@ -364,7 +373,7 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
     // v0.21.23 · AI 工具下不做命中拾取: 点在已有标注上也应发 SAM 提示 (对齐图片侧)。
-    if (p.videoTool === "smart-point" || p.videoTool === "smart-box") {
+    if (isSamProbeTool(p.videoTool)) {
       beginDraw(native);
       return;
     }
@@ -443,7 +452,7 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
       p.onSamPrompt?.(
         action.mode === "point"
           ? { mode: "point", pt: action.pt, alt: action.alt }
-          : { mode: "bbox", bbox: action.bbox, alt: action.alt },
+          : { mode: action.mode, bbox: action.bbox, alt: action.alt },
       );
       return;
     }

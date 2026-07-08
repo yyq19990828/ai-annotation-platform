@@ -18,7 +18,7 @@ import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../../stage/VideoPlaybackOverlay";
-import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
+import type { VideoTrackAnnotation, VideoSamPrompt } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
 import { resolveAnnotationVisual } from "../../stage/annotationVisual";
@@ -66,11 +66,7 @@ export interface VideoWorkbenchProps {
   ) => void;
   /** v0.21.21 · 由绘制顶点新建单帧 polygon/polyline。 */
   /** v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选 / 点会话 (透传给 VideoKonvaStage)。 */
-  onSamPrompt?: (
-    prompt:
-      | { mode: "point"; pt: [number, number]; alt: boolean }
-      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
-  ) => void;
+  onSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];

@@ -49,9 +49,17 @@ export type VideoDragState =
   | { kind: "polyMove"; id: string; start: { x: number; y: number }; origin: [number, number][]; current: [number, number][] }
   // v0.21.23 · 交互式 SAM 提示 (smart-point / smart-box)。point 是零位移「拖拽」,
   // bbox 拖出提示框; 松手派发到 onSamPrompt, 不直接建标注。坐标归一化 [0,1]。
-  | { kind: "samProbe"; mode: "point" | "bbox"; start: { x: number; y: number }; current: { x: number; y: number }; alt: boolean }
+  | { kind: "samProbe"; mode: "point" | "bbox" | "exemplar"; start: { x: number; y: number }; current: { x: number; y: number }; alt: boolean }
   | { kind: "pan"; sx: number; sy: number }
   | null;
+
+/**
+ * v0.21.23 · 交互式 SAM 提示 (画布 → shell)。坐标归一化 [0,1]。
+ * `alt` = 负点 / 负框 (Alt 按住 或 工具条切到负极性)。
+ */
+export type VideoSamPrompt =
+  | { mode: "point"; pt: [number, number]; alt: boolean }
+  | { mode: "bbox" | "exemplar"; bbox: [number, number, number, number]; alt: boolean };
 
 export type VideoTrackConversionOptions = {
   operation: "copy" | "split";

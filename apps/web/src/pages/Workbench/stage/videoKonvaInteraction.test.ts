@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
-import { advanceDrag, resolveDragCommit, type ResolveDragCommitCtx } from "./videoKonvaInteraction";
+import { advanceDrag, isSamProbeTool, resolveDragCommit, samProbeMode, type ResolveDragCommitCtx } from "./videoKonvaInteraction";
 import type { VideoDragState } from "./videoStageTypes";
 
 function bbox(id: string, frameIndex = 0): AnnotationResponse {
@@ -331,5 +331,59 @@ describe("samProbe · 交互式 SAM 提示", () => {
     expect(commit.type).toBe("samProbe");
     expect(commit).not.toHaveProperty("ann");
     expect(commit).not.toHaveProperty("geom");
+  });
+});
+
+// v0.21.23 PR2 · exemplar (视觉示例框): 同为拖框, 但派发到 runExemplar 而非 runBbox。
+describe("samProbe · exemplar", () => {
+  const probe = (
+    mode: "point" | "bbox" | "exemplar",
+    start: { x: number; y: number },
+    alt = false,
+  ): VideoDragState => ({ kind: "samProbe", mode, start, current: start, alt });
+
+  it("exemplar 提交 mode=exemplar, 不与 bbox 混淆", () => {
+    const commit = resolveDragCommit(
+      probe("exemplar", { x: 0.2, y: 0.2 }),
+      { x: 0.5, y: 0.5 },
+      { ...baseCtx, videoTool: "exemplar" },
+    );
+    expect(commit).toEqual({
+      type: "samProbe",
+      mode: "exemplar",
+      bbox: [0.2, 0.2, 0.5, 0.5],
+      alt: false,
+    });
+  });
+
+  it("exemplar 的 alt = 负框（排误检）", () => {
+    const commit = resolveDragCommit(
+      probe("exemplar", { x: 0.2, y: 0.2 }, true),
+      { x: 0.5, y: 0.5 },
+      { ...baseCtx, videoTool: "exemplar" },
+    );
+    expect(commit).toMatchObject({ mode: "exemplar", alt: true });
+  });
+
+  it("exemplar 同样受最小拖拽阈值约束", () => {
+    const commit = resolveDragCommit(
+      probe("exemplar", { x: 0.5, y: 0.5 }),
+      { x: 0.502, y: 0.502 },
+      { ...baseCtx, videoTool: "exemplar" },
+    );
+    expect(commit).toEqual({ type: "none" });
+  });
+
+  it("isSamProbeTool / samProbeMode 覆盖三个 AI 工具, 几何工具不误伤", () => {
+    expect(isSamProbeTool("smart-point")).toBe(true);
+    expect(isSamProbeTool("smart-box")).toBe(true);
+    expect(isSamProbeTool("exemplar")).toBe(true);
+    expect(isSamProbeTool("box")).toBe(false);
+    expect(isSamProbeTool("polygon")).toBe(false);
+    expect(isSamProbeTool("select")).toBe(false);
+
+    expect(samProbeMode("smart-point")).toBe("point");
+    expect(samProbeMode("smart-box")).toBe("bbox");
+    expect(samProbeMode("exemplar")).toBe("exemplar");
   });
 });
