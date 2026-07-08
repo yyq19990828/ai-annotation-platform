@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import type { Annotation, AnnotationResponse } from "@/types";
+import { filterBoxesByFrame, firstTrackFrame, type FrameFilter } from "./annotationFrameScope";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import {
@@ -16,8 +17,6 @@ import {
   type PredictionSourceVisibility,
 } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
-import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
-import { isFrameOutside } from "../stage/videoTrackOutside";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
 import {
@@ -750,35 +749,6 @@ type Row =
   | { kind: "videoTracks"; key: string }
   /** v0.20.9 · 父子标注: depth=1 的行是子框, 在其父框行下方缩进渲染。 */
   | { kind: "user"; box: Annotation; key: string; depth?: number };
-
-type FrameFilter = "all" | "current";
-
-function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number) {
-  const geometry = box.geometry;
-  if (!geometry) return true;
-  if (geometry.type === "video_bbox") return geometry.frame_index === frameIndex;
-  if (geometry.type === "video_track_bbox") return resolveTrackAtFrame(geometry, frameIndex) !== null;
-  return true;
-}
-
-function firstTrackFrame(box: Annotation | AiBox): number | null {
-  const geometry = box.geometry;
-  if (!geometry) return null;
-  if (geometry.type === "video_bbox") return geometry.frame_index;
-  if (geometry.type !== "video_track_bbox" || geometry.keyframes.length === 0) return null;
-  const visible = geometry.keyframes.filter((kf) => !isFrameOutside(geometry, kf.frame_index));
-  const frames = (visible.length > 0 ? visible : geometry.keyframes).map((kf) => kf.frame_index);
-  return Math.min(...frames);
-}
-
-function filterBoxesByFrame<T extends Annotation | AiBox>(
-  boxes: T[],
-  frameIndex: number | undefined,
-  filter: FrameFilter,
-) {
-  if (filter !== "current" || typeof frameIndex !== "number") return boxes;
-  return boxes.filter((box) => boxIsOnFrame(box, frameIndex));
-}
 
 function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (filter: FrameFilter) => void }) {
   const options: Array<{ value: FrameFilter; label: string }> = [

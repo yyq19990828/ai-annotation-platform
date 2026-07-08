@@ -1,0 +1,71 @@
+/**
+ * 「显示范围: 当前帧」的帧归属判定 —— 六种视频几何。
+ *
+ * 回归: 只认矩形框时, 多边形 / 折线走 `return true` 兜底 ——「当前帧」筛选静默失效
+ * (面板里跨帧的单帧多边形被全量列出), 且 firstTrackFrame 返回 null 导致点击无法跳转。
+ */
+import { describe, expect, it } from "vitest";
+import { boxIsOnFrame, filterBoxesByFrame, firstTrackFrame } from "./annotationFrameScope";
+describe("boxIsOnFrame / firstTrackFrame · 六种视频几何", () => {
+  const ann = (geometry: unknown) => ({ id: "a", geometry } as never);
+
+  const SINGLE = [
+    { type: "video_bbox", frame_index: 7, x: 0, y: 0, w: 0.1, h: 0.1 },
+    { type: "video_polygon", frame_index: 7, points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
+    { type: "video_polyline", frame_index: 7, points: [[0, 0], [0.1, 0.1]] },
+  ];
+
+  it.each(SINGLE)("单帧几何 $type: 只在所属帧显示, 跳转到该帧", (geometry) => {
+    expect(boxIsOnFrame(ann(geometry), 7)).toBe(true);
+    expect(boxIsOnFrame(ann(geometry), 8)).toBe(false);
+    expect(firstTrackFrame(ann(geometry))).toBe(7);
+  });
+
+  const TRACKS = [
+    {
+      type: "video_track_bbox",
+      track_id: "t",
+      keyframes: [
+        { frame_index: 2, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
+        { frame_index: 6, bbox: { x: 0.2, y: 0.2, w: 0.1, h: 0.1 }, source: "manual" },
+      ],
+    },
+    {
+      type: "video_track_polygon",
+      track_id: "t",
+      keyframes: [
+        { frame_index: 2, points: [[0, 0], [0.1, 0], [0.1, 0.1]], source: "manual" },
+        { frame_index: 6, points: [[0.2, 0.2], [0.3, 0.2], [0.3, 0.3]], source: "manual" },
+      ],
+    },
+    {
+      type: "video_track_polyline",
+      track_id: "t",
+      keyframes: [
+        { frame_index: 2, points: [[0, 0], [0.1, 0.1]], source: "manual" },
+        { frame_index: 6, points: [[0.2, 0.2], [0.3, 0.3]], source: "manual" },
+      ],
+    },
+  ];
+
+  it.each(TRACKS)("轨迹几何 $type: 关键帧区间内(含插值帧)显示, 跳转到首个关键帧", (geometry) => {
+    expect(boxIsOnFrame(ann(geometry), 2)).toBe(true);
+    expect(boxIsOnFrame(ann(geometry), 4)).toBe(true); // 插值帧
+    expect(boxIsOnFrame(ann(geometry), 9)).toBe(false); // 关键帧区间外
+    expect(firstTrackFrame(ann(geometry))).toBe(2);
+  });
+
+  // outside 区间不仅让该帧不可见, 还切断跨区间插值 —— 两侧只剩关键帧本身可见(既有语义)。
+  it.each(TRACKS)("轨迹几何 $type: outside 区间内不显示", (geometry) => {
+    const withOutside = { ...geometry, outside: [{ from: 4, to: 4 }] };
+    expect(boxIsOnFrame(ann(withOutside), 4)).toBe(false);
+    expect(boxIsOnFrame(ann(withOutside), 2)).toBe(true); // 关键帧本身
+    expect(boxIsOnFrame(ann(withOutside), 6)).toBe(true);
+  });
+
+  it("非视频几何(图片框)不受帧筛选影响", () => {
+    const rect = { type: "rectangle", x: 0, y: 0, width: 0.1, height: 0.1 };
+    expect(boxIsOnFrame(ann(rect), 3)).toBe(true);
+    expect(firstTrackFrame(ann(rect))).toBeNull();
+  });
+});

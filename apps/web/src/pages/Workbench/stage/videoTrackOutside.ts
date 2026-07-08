@@ -41,7 +41,13 @@ export function normalizeOutsideRanges(ranges: readonly OutsideInput[] | undefin
   return merged;
 }
 
-export function effectiveOutsideRanges(track: VideoTrackGeometry): VideoTrackOutsideRange[] {
+/**
+ * outside 区间只依赖 `outside` 字段, 故按结构取参 —— polygon / polyline 轨迹同样携带它,
+ * 收窄到 VideoTrackGeometry(bbox 轨迹) 会把它们挡在门外。
+ */
+export type OutsideRangeCarrier = { outside?: readonly VideoTrackOutsideRange[] | null };
+
+export function effectiveOutsideRanges(track: OutsideRangeCarrier): VideoTrackOutsideRange[] {
   return normalizeOutsideRanges(track.outside ?? []);
 }
 
@@ -49,7 +55,7 @@ export function isFrameInOutsideRanges(ranges: readonly VideoTrackOutsideRange[]
   return ranges.some((range) => frameIndex >= range.from && frameIndex <= range.to);
 }
 
-export function isFrameOutside(track: VideoTrackGeometry, frameIndex: number) {
+export function isFrameOutside(track: OutsideRangeCarrier, frameIndex: number) {
   return isFrameInOutsideRanges(effectiveOutsideRanges(track), frameIndex);
 }
 
