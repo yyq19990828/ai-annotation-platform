@@ -138,3 +138,84 @@ describe("ToolDock · AI 工具三层门控", () => {
     expect(screen.getByTestId("tool-btn-polygon")).toBeInTheDocument();
   });
 });
+
+// v0.21.23 · 视频侧交互式 SAM 工具（此前视频分支完全没有 ML 能力门控）
+describe("ToolDock · 视频 AI 工具三层门控", () => {
+  const VIDEO_AI = ["smart-point", "smart-box"];
+
+  it("默认全开 → 视频 AI 工具显示", () => {
+    render(
+      <ToolDock tool="select" onSetTool={vi.fn()} videoMode videoTool="select" onSetVideoTool={vi.fn()} />,
+    );
+    for (const id of VIDEO_AI) {
+      expect(screen.getByTestId(`video-tool-btn-${id}`)).toBeInTheDocument();
+    }
+  });
+
+  it("层 1 · 项目总开关关闭 → 视频 AI 工具隐藏, 几何工具不受影响", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        aiInteractiveEnabled={false}
+      />,
+    );
+    for (const id of VIDEO_AI) {
+      expect(screen.queryByTestId(`video-tool-btn-${id}`)).toBeNull();
+    }
+    expect(screen.getByTestId("video-tool-btn-box")).toBeInTheDocument();
+    expect(screen.getByTestId("video-tool-btn-polygon")).toBeInTheDocument();
+  });
+
+  it("层 2 · 后端不支持 point → smart-point 置灰, smart-box 仍可用", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        isPromptSupported={(p) => p !== "point"}
+      />,
+    );
+    expect(screen.getByTestId("video-tool-btn-smart-point")).toBeDisabled();
+    expect(screen.getByTestId("video-tool-btn-smart-box")).not.toBeDisabled();
+  });
+
+  it("层 2 · 置灰的工具点击不切换工具", () => {
+    const onSetVideoTool = vi.fn();
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={onSetVideoTool}
+        isPromptSupported={() => false}
+      />,
+    );
+    screen.getByTestId("video-tool-btn-smart-point").click();
+    expect(onSetVideoTool).not.toHaveBeenCalled();
+  });
+
+  it("层 3 · region 单位未启用 → smart-* 随多边形一起隐藏（产出几何归属）", () => {
+    // 模拟只启用 bbox 单位: polygon / smart-* 都归 region → 全隐藏。
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        isVideoToolEnabled={(t) => t === "box" || t === "track"}
+      />,
+    );
+    expect(screen.queryByTestId("video-tool-btn-smart-point")).toBeNull();
+    expect(screen.queryByTestId("video-tool-btn-smart-box")).toBeNull();
+    expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
+    expect(screen.getByTestId("video-tool-btn-box")).toBeInTheDocument();
+  });
+});

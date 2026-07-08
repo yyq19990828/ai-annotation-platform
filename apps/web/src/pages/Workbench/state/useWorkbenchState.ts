@@ -32,6 +32,8 @@ export type Tool =
 //   polygon / polyline        = 点击落点画单帧 video_polygon / video_polyline;
 //   polygon-track / polyline-track = 画 polygon/polyline 轨迹关键帧 (原 v0.21.20 的 polygon/polyline)。
 // 四者都走点击累加顶点绘制 (与 box/track 拖拽绘制正交)。
+// v0.21.23 · 交互式 SAM 单帧工具 (smart-point / smart-box): 在当前帧点/框提示后端,
+//   候选采纳后落单帧 video_polygon。与图片侧同名工具语义一致, 但底图走当前帧 JPEG。
 export type VideoTool =
   | "select"
   | "box"
@@ -39,7 +41,9 @@ export type VideoTool =
   | "polygon"
   | "polyline"
   | "polygon-track"
-  | "polyline-track";
+  | "polyline-track"
+  | "smart-point"
+  | "smart-box";
 // v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
 export type ThreeDTool = "select" | "box" | "point-mask";
 

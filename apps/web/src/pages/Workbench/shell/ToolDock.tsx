@@ -83,7 +83,17 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };
 
-const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number; group: "select" | "static" | "track" }> = [
+const VIDEO_TOOLS: Array<{
+  id: VideoTool;
+  hotkey: string;
+  label: string;
+  icon: IconName;
+  desc: string;
+  altDigit: number;
+  group: "select" | "static" | "track" | "ai";
+  /** 非空 = AI 工具: 受项目总开关(隐藏) + 后端能力(置灰) 双层管控, 对齐图片侧。 */
+  requiredPrompt?: string;
+}> = [
   { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
   { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
@@ -93,6 +103,9 @@ const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: I
   // v0.21.20 · polygon/polyline 轨迹关键帧 (原 polygon/polyline, 拆分后 -track 后缀)。
   { id: "polygon-track", hotkey: "Shift+G", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", altDigit: 7, group: "track" },
   { id: "polyline-track", hotkey: "Shift+L", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", altDigit: 8, group: "track" },
+  // v0.21.23 · 交互式 SAM 单帧工具; requiredPrompt 决定后端能力门控 (不支持则置灰)。
+  { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", altDigit: 9, group: "ai", requiredPrompt: "point" },
+  { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", altDigit: 0, group: "ai", requiredPrompt: "interactive_box" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
@@ -172,8 +185,12 @@ export function ToolDock({
   }
   if (videoMode) {
     // 视频显示选择 + 创建工具；平移走右键/Space 手势, 不占工具按钮。
+    // 三层门控与图片侧同构: 项目总开关(隐藏 AI 组) → 后端能力(置灰) → 产出几何单位(隐藏)。
     const visibleVideoTools = VIDEO_TOOLS.filter((t) => {
       if (t.id === "select") return true;
+      // 层 1: AI 工具受项目总开关控制 (undefined = 未加载, 不隐藏)。
+      if (t.requiredPrompt && aiInteractiveEnabled === false) return false;
+      // 层 3: 产出几何所属单位 / 变体未启用 → 隐藏 (AI 工具已登记进 VIDEO_TOOL_TARGET)。
       if (!isVideoToolEnabled) return true;
       return isVideoToolEnabled(t.id);
     });
@@ -183,23 +200,42 @@ export function ToolDock({
           const active = videoTool === t.id;
           const prevGroup = idx > 0 ? visibleVideoTools[idx - 1].group : null;
           const showDivider = prevGroup !== null && prevGroup !== t.group;
+          // 层 2: 后端不支持该交互模式 → 置灰 + tooltip (不隐藏, 让用户知道工具存在)。
+          const supported = t.requiredPrompt
+            ? (isPromptSupported ? isPromptSupported(t.requiredPrompt) : true)
+            : true;
+          const disabled = t.requiredPrompt ? capabilitiesLoading || !supported : false;
+          const disabledHint = t.requiredPrompt && !capabilitiesLoading && !supported
+            ? "当前后端不支持此交互模式"
+            : capabilitiesLoading && t.requiredPrompt
+            ? "正在协商后端能力…"
+            : null;
           return (
             <Fragment key={t.id}>
               {showDivider && <div aria-hidden className={DIVIDER_CLASS} />}
               <Tooltip
                 name={t.label}
-                desc={`${t.desc} · 备用 Alt+${t.altDigit}`}
+                desc={disabledHint ?? `${t.desc} · 备用 Alt+${t.altDigit}`}
                 hotkey={t.hotkey}
                 side="right"
                 delay={250}
               >
                 <button
                   type="button"
-                  onClick={() => onSetVideoTool?.(t.id)}
+                  onClick={() => {
+                    if (disabled) return;
+                    onSetVideoTool?.(t.id);
+                  }}
                   aria-label={t.label}
                   aria-pressed={active}
+                  aria-disabled={disabled || undefined}
+                  disabled={disabled}
                   data-testid={`video-tool-btn-${t.id}`}
-                  className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER))}
+                  className={cn(
+                    TOOL_BTN_CLASS,
+                    active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, !disabled && TOOL_BTN_HOVER),
+                    disabled && TOOL_BTN_DISABLED,
+                  )}
                 >
                   <Icon name={t.icon} size={17} />
                   <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>

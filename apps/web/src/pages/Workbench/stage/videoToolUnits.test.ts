@@ -41,3 +41,48 @@ describe("videoToolEnabled", () => {
     expect(videoToolEnabled("polyline-track", tb)).toBe(true);
   });
 });
+
+// v0.21.23 · 交互式 SAM 工具必须登记进 VIDEO_TOOL_TARGET，否则 videoToolEnabled 的
+// 「未知工具 → true」会静默放行、绕过全部 tool_bindings 门控（本 epic 头号陷阱）。
+describe("videoToolUnits · 交互式 SAM 工具", () => {
+  it("smart-point / smart-box 按产出几何归 region 单位", () => {
+    expect(videoToolUnit("smart-point")).toBe("region");
+    expect(videoToolUnit("smart-box")).toBe("region");
+  });
+
+  it("region 单位未启用 → smart-* 不可用（不得被当作未知工具放行）", () => {
+    const tb: ToolBindings = {
+      bbox: { enabled: true, classes: [], attribute_schema: { fields: [] } },
+      region: { enabled: false, classes: [], attribute_schema: { fields: [] } },
+    } as unknown as ToolBindings;
+    expect(videoToolEnabled("smart-point", tb)).toBe(false);
+    expect(videoToolEnabled("smart-box", tb)).toBe(false);
+    expect(videoToolEnabled("box", tb)).toBe(true);
+  });
+
+  it("region 启用但单帧变体关闭 → smart-* 不可用（它们产单帧几何）", () => {
+    const tb: ToolBindings = {
+      region: {
+        enabled: true,
+        classes: [],
+        attribute_schema: { fields: [] },
+        video_modes: { box: false, track: true },
+      },
+    } as unknown as ToolBindings;
+    expect(videoToolEnabled("smart-point", tb)).toBe(false);
+    expect(videoToolEnabled("polygon-track", tb)).toBe(true);
+  });
+
+  it("region 启用且单帧变体开启 → smart-* 可用", () => {
+    const tb: ToolBindings = {
+      region: {
+        enabled: true,
+        classes: [],
+        attribute_schema: { fields: [] },
+        video_modes: { box: true, track: false },
+      },
+    } as unknown as ToolBindings;
+    expect(videoToolEnabled("smart-point", tb)).toBe(true);
+    expect(videoToolEnabled("smart-box", tb)).toBe(true);
+  });
+});
