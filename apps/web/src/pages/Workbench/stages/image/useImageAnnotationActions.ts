@@ -15,11 +15,11 @@ import {
   emptyPredictionSourceCounts,
   geometryToShape,
   normalizePredictionSource,
-  polygonBounds,
   predictionsToBoxes,
   type AiBox,
   type PredictionSourceFilter,
 } from "../../state/transforms";
+import { samCandidateGeom } from "../../state/useWorkbenchShellModel.helpers";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
@@ -277,16 +277,11 @@ export function useImageAnnotationActions({
     return base ? { ...base, anchor: batchChangeAnchor } : null;
   }, [s.selectedIds, userBoxes, batchChangeAnchor]);
 
-  const samPendingGeom = useMemo<Geom | null>(() => {
-    if (!samPendingAccept) return null;
-    const cand = sam.candidates[samPendingAccept.idx];
-    if (!cand) return null;
-    if (cand.type === "rectanglelabels" && cand.bbox) {
-      return { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height };
-    }
-    if (cand.points && cand.points.length >= 3) return polygonBounds(cand.points);
-    return null;
-  }, [samPendingAccept, sam.candidates]);
+  const samPendingGeom = useMemo<Geom | null>(
+    // 与视频侧共用同一份几何解析 (见 useWorkbenchShellModel.helpers)。
+    () => (samPendingAccept ? samCandidateGeom(sam.candidates[samPendingAccept.idx]) : null),
+    [samPendingAccept, sam.candidates],
+  );
 
   const samDefaultClass = (
     samPendingAccept &&

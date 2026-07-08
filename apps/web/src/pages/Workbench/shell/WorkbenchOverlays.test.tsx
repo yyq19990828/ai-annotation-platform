@@ -182,3 +182,45 @@ describe("WorkbenchOverlays", () => {
     expect(onCommitChangeClass).toHaveBeenCalledWith("Bike");
   });
 });
+
+// v0.21.23 · 视频侧 SAM popover 走 fixed anchor (画布 vp 不在这层, 由画布换算好传下来)。
+describe("WorkbenchOverlays · SAM 候选类选择器的两种定位", () => {
+  it("给了 anchor → fixed 定位, 不依赖 imageOverlayEnabled / stageGeom", () => {
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        imageOverlayEnabled={false}
+        stageGeom={{ imgW: 0, imgH: 0 }}
+        samPendingGeom={{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }}
+        samPendingAnchor={{ left: 120, top: 240 }}
+        samDefaultClass="Car"
+      />,
+    );
+    expect(screen.getByText("接受 SAM 候选 → 选类别")).toBeTruthy();
+  });
+
+  it("无 anchor 且非图片舞台 → 不渲染（避免 popover 定位到 0,0）", () => {
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        imageOverlayEnabled={false}
+        stageGeom={{ imgW: 0, imgH: 0 }}
+        samPendingGeom={{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }}
+        samDefaultClass="Car"
+      />,
+    );
+    expect(screen.queryByText("接受 SAM 候选 → 选类别")).toBeNull();
+  });
+
+  it("没有候选几何 → 两条路径都不渲染", () => {
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        samPendingGeom={null}
+        samPendingAnchor={{ left: 10, top: 20 }}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+      />,
+    );
+    expect(screen.queryByText("接受 SAM 候选 → 选类别")).toBeNull();
+  });
+});

@@ -26,7 +26,7 @@ import {
 } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
-import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
+import { videoIntrinsicSize, clientToVideoNorm, videoNormToClient } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
 import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
@@ -805,13 +805,22 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
   // (captureCurrentFrameJpeg 由 controller.controls 提供, 见 useVideoPlaybackController。)
+  // v0.21.23 · 归一化 → 屏幕坐标; 类选择器 popover 的 fixed anchor 用它 (与 onPendingDraw 同式)。
+  const normToClient = useCallback((pt: { x: number; y: number }) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const p = videoNormToClient(pt, rect, vpRef.current, size);
+    return { left: p.x, top: p.y };
+  }, [size]);
+
   useImperativeHandle(ref, () => ({
     ...controls,
+    normToClient,
     deleteSelectedTrackKeyframe,
     cycleInCategory,
     stepCategory,
     focusObject,
-  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, stepCategory]);
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, normToClient, stepCategory]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;

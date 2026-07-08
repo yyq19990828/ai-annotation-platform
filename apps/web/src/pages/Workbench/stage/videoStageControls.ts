@@ -28,6 +28,12 @@ export interface VideoStageControls {
    * v0.21.11 · 当前帧「同类流转」(Tab/Shift+Tab): 按当前选中对象所属类别(AI 待审 / 人工 / 轨迹)
    * 在该类当前帧对象里环内循环, 共用 selectedId。无选中时落到当前帧第一个非空类首对象。
    */
+  /**
+   * v0.21.23 · 归一化画布坐标 → 屏幕坐标 (fixed 定位)。
+   * 视频侧的类选择器 popover 走 fixed anchor (图片侧走 geom + vp 换算, 见 WorkbenchOverlays),
+   * 而只有画布持有 containerRect / vp / 视频像素尺寸。返回 null 表示画布尚未挂载。
+   */
+  normToClient: (pt: { x: number; y: number }) => { left: number; top: number } | null;
   cycleInCategory: (dir: -1 | 1) => void;
   /**
    * v0.21.11 · 当前帧「跨类跳转」(` / Shift+`): 跳到下一/上一非空类的首对象

@@ -62,6 +62,7 @@ import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
+import { samCandidateGeom } from "./useWorkbenchShellModel.helpers";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
@@ -1434,9 +1435,11 @@ export function useWorkbenchShellModel({
 
   const {
     handleVideoCreate,
+    handleVideoCreateWithClass,
     handleVideoSingleFrameBboxCreate,
     handleVideoPointsTrackCreate,
     handleVideoPointsCreate,
+    handleVideoPointsCreateWithClass,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,
@@ -1467,12 +1470,18 @@ export function useWorkbenchShellModel({
   });
 
   // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
-  // 采纳直接用 activeClass 落单帧 video_polygon —— 视频侧的 polygon 绘制流本就如此(不弹类
-  // popover, 那是图片侧的 samPendingAccept), 故此处保持与视频绘制一致而非照搬图片流程。
+  // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
+  // fixed anchor (图片侧走 geom + vp 换算), 故需画布把候选外接框底边换算成屏幕坐标。
+  const [videoSamPendingAccept, setVideoSamPendingAccept] = useState<
+    { idx: number; anchor: { left: number; top: number } } | null
+  >(null);
+
   useEffect(() => {
     if (!isVideoTask) return;
     if (!isSamProbeTool(s.videoTool)) return;
     if (sam.candidates.length === 0) return;
+    // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
+    if (videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
@@ -1483,18 +1492,12 @@ export function useWorkbenchShellModel({
       // 否则视频侧 Tab 会在切候选的同时又触发「同类下一个」的选中循环。
       e.stopImmediatePropagation();
       if (e.key === "Enter") {
-        const c = sam.candidates[sam.activeIdx];
-        // 按候选几何分流 (与图片侧一致): exemplar 的 box 输出是矩形, 其余是多边形。
-        // consume 对 point/bbox 清空整个会话, 对 exemplar/text 只移除被采纳的那条 (多实例)。
-        if (c?.type === "rectanglelabels" && c.bbox) {
-          handleVideoSingleFrameBboxCreate(s.videoFrameIndex, {
-            x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height,
-          });
-          sam.consume(sam.activeIdx);
-        } else if (c?.points && c.points.length >= 3) {
-          handleVideoPointsCreate("video_polygon", s.videoFrameIndex, c.points);
-          sam.consume(sam.activeIdx);
-        }
+        const idx = sam.activeIdx;
+        const geom = samCandidateGeom(sam.candidates[idx]);
+        if (!geom) return;
+        // 锚到候选外接框底边中点下方, 与手绘 box 的 onPendingDraw 同式。
+        const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
+        setVideoSamPendingAccept({ idx, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
         return;
       }
       if (e.key === "Escape") {
@@ -1505,7 +1508,49 @@ export function useWorkbenchShellModel({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isVideoTask, s.videoTool, s.videoFrameIndex, sam, handleVideoPointsCreate, handleVideoSingleFrameBboxCreate]);
+  }, [isVideoTask, s.videoTool, sam, videoSamPendingAccept]);
+
+  // 候选被清空 / 切工具 / 切帧 → popover 一并收起, 避免它悬在一个已不存在的候选上。
+  useEffect(() => {
+    if (videoSamPendingAccept && !sam.candidates[videoSamPendingAccept.idx]) {
+      setVideoSamPendingAccept(null);
+    }
+  }, [sam.candidates, videoSamPendingAccept]);
+
+  // 选定类别 → 按候选几何分流落库 (与图片侧 handleSamCommitClass 一致)。
+  // consume 对 point/bbox 清空整个会话, 对 exemplar 只移除被采纳的那条 (多实例, 可继续采纳)。
+  const handleVideoSamCommitClass = useCallback((cls: string) => {
+    const pending = videoSamPendingAccept;
+    if (!pending) return;
+    setVideoSamPendingAccept(null);
+    const c = sam.candidates[pending.idx];
+    if (!c) return;
+    if (c.type === "rectanglelabels" && c.bbox) {
+      handleVideoCreateWithClass("video_bbox", s.videoFrameIndex, {
+        x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height,
+      }, cls);
+    } else if (c.points && c.points.length >= 3) {
+      handleVideoPointsCreateWithClass("video_polygon", s.videoFrameIndex, c.points, cls);
+    }
+    sam.consume(pending.idx);
+  }, [videoSamPendingAccept, sam, s.videoFrameIndex, handleVideoCreateWithClass, handleVideoPointsCreateWithClass]);
+
+  const handleVideoSamCancelClass = useCallback(() => {
+    setVideoSamPendingAccept(null);
+    // 注: 图片侧 magic-box 单候选时取消 = 放弃整个会话; 视频 magic-box 待 PR3 加入后同此处理。
+  }, []);
+
+  // popover 定位用的候选外接框 (归一化)。
+  const videoSamPendingGeom = useMemo(() => {
+    if (!videoSamPendingAccept) return null;
+    return samCandidateGeom(sam.candidates[videoSamPendingAccept.idx]);
+  }, [videoSamPendingAccept, sam.candidates]);
+
+  // 候选自带的模型类别若在项目类别里则作默认值, 否则回落当前类 (与图片侧 samDefaultClass 一致)。
+  const videoSamDefaultClass = useMemo(() => {
+    const label = videoSamPendingAccept ? sam.candidates[videoSamPendingAccept.idx]?.label : undefined;
+    return label && classes.includes(label) ? label : s.activeClass;
+  }, [videoSamPendingAccept, sam.candidates, classes, s.activeClass]);
 
   const handlePickPendingClassAny = useCallback((cls: string) => {
     if (handlePickVideoPendingClass(cls)) return;
@@ -2616,11 +2661,13 @@ export function useWorkbenchShellModel({
                   onEnsureAttributeFields={handleEnsureAttributeFields}
                 />
               )}
+            {/* SAM 候选的类选择器: 图片给 geom 走 vp 换算, 视频给 anchor 走 fixed 定位 (二者互斥)。 */}
             <WorkbenchOverlays
               pendingDrawing={s.pendingDrawing}
               editingClass={s.editingClass}
-              samPendingGeom={samPendingGeom}
-              samDefaultClass={samDefaultClass}
+              samPendingGeom={isVideoTask ? videoSamPendingGeom : samPendingGeom}
+              samPendingAnchor={isVideoTask ? videoSamPendingAccept?.anchor ?? null : null}
+              samDefaultClass={isVideoTask ? videoSamDefaultClass : samDefaultClass}
               batchChanging={batchChanging}
               batchChangeTarget={batchChangeTarget}
               imageOverlayEnabled={stageKind === "image"}
@@ -2636,8 +2683,8 @@ export function useWorkbenchShellModel({
               onChangeClassKeepOpen={handleChangeClassKeepOpen}
               changeClassAttrEditing={changeClassAttrEditing}
               onCancelChangeClass={handleCancelChangeClass}
-              onSamCommitClass={handleSamCommitClass}
-              onSamCancelClass={handleSamCancelClass}
+              onSamCommitClass={isVideoTask ? handleVideoSamCommitClass : handleSamCommitClass}
+              onSamCancelClass={isVideoTask ? handleVideoSamCancelClass : handleSamCancelClass}
               onCommitBatchChangeClass={handleCommitBatchChangeClass}
               onCancelBatchChange={handleCancelBatchChange}
             />

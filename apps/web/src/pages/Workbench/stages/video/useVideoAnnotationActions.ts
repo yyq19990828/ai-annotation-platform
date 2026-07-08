@@ -290,12 +290,13 @@ export function useVideoAnnotationActions({
   }, [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s]);
 
   // v0.21.21 · 单帧 polygon/polyline 创建 (非 track), 与 handleVideoPointsTrackCreate 平行。
-  const handleVideoPointsCreate = useCallback((
+  const handleVideoPointsCreateWithClass = useCallback((
     type: "video_polygon" | "video_polyline",
     frameIndex: number,
     points: [number, number][],
+    cls: string,
   ) => {
-    const payload = buildVideoPointsCreatePayload(type, frameIndex, points, s.activeClass || UNKNOWN_CLASS);
+    const payload = buildVideoPointsCreatePayload(type, frameIndex, points, cls);
     const className = payload.class_name;
     mutations.create.mutate(payload, {
       onSuccess: (created) => {
@@ -309,6 +310,14 @@ export function useVideoAnnotationActions({
       onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
     });
   }, [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s]);
+
+  const handleVideoPointsCreate = useCallback((
+    type: "video_polygon" | "video_polyline",
+    frameIndex: number,
+    points: [number, number][],
+  ) => {
+    handleVideoPointsCreateWithClass(type, frameIndex, points, s.activeClass || UNKNOWN_CLASS);
+  }, [handleVideoPointsCreateWithClass, s.activeClass]);
 
   const handleVideoPendingDraw = useCallback((
     kind: "video_bbox" | "video_track_bbox",
@@ -613,9 +622,11 @@ export function useVideoAnnotationActions({
 
   return {
     handleVideoCreate,
+    handleVideoCreateWithClass,
     handleVideoSingleFrameBboxCreate,
     handleVideoPointsTrackCreate,
     handleVideoPointsCreate,
+    handleVideoPointsCreateWithClass,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,

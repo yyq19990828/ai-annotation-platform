@@ -1,6 +1,7 @@
 // v0.16.10 · 从 useWorkbenchShellModel.tsx 抽出的模块级纯函数(无 React hook、无闭包),
 // 逐字搬运,行为零变化。主 hook 文件 import 回这些函数使用。
 import { VARIANT_FIELD_KEYS } from "../components/SchemaForm";
+import { polygonBounds } from "./transforms";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import type { InteractivePrompt } from "./useBackendRouting";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
@@ -205,4 +206,20 @@ export function resolvePinViewport(
     tx: vpSize.w / 2 - anchor.x * imgW * cur.scale,
     ty: vpSize.h / 2 - anchor.y * imgH * cur.scale,
   };
+}
+
+/**
+ * v0.21.23 · SAM 候选的外接框（归一化）—— 类选择器 popover 的定位依据。
+ * 矩形候选取其 bbox，多边形候选取顶点外接框；顶点不足以成面则返回 null（不该弹 popover）。
+ * 图片与视频两侧共用，避免各写一份而在几何类型上分叉。
+ */
+export function samCandidateGeom(
+  candidate: { type?: string; bbox?: { x: number; y: number; width: number; height: number }; points?: [number, number][] } | undefined,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!candidate) return null;
+  if (candidate.type === "rectanglelabels" && candidate.bbox) {
+    return { x: candidate.bbox.x, y: candidate.bbox.y, w: candidate.bbox.width, h: candidate.bbox.height };
+  }
+  if (candidate.points && candidate.points.length >= 3) return polygonBounds(candidate.points);
+  return null;
 }
