@@ -42,7 +42,7 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
-import { useInteractiveAI, type TextOutputMode } from "./useInteractiveAI";
+import { useInteractiveAI, type InteractiveTransport, type TextOutputMode } from "./useInteractiveAI";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -59,7 +59,7 @@ import { InteractiveToolBar } from "../shell/InteractiveToolBar";
 import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
-import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
+import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
@@ -889,14 +889,52 @@ export function useWorkbenchShellModel({
     onSaveInteractiveBackend: interactiveBackendPref.save,
   });
   // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
-  const activeInteractivePrompt = promptOfTool(s.tool);
+  // v0.21.23 · 视频侧按 videoTool 解析 (smart-point / smart-box 与图片工具同名, 共用 TOOL_REGISTRY)。
+  const activeInteractivePrompt = promptOfTool(
+    (isVideoTask ? s.videoTool : s.tool) as ToolId,
+  );
   const interactiveBackendId = routing.resolveInteractive(activeInteractivePrompt ?? "point");
+
+  // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
+  const videoControlsRef = useRef<VideoStageControls | null>(null);
+
+  // v0.21.23 · 视频交互式 SAM 的投递方式: 视频 task 的 file_path 是整段 mp4, 服务端取不到帧,
+  // 故把当前帧解成 JPEG 走 multipart。图片 task 传 undefined → hook 用默认 transport。
+  const samTransport = useMemo<InteractiveTransport | undefined>(() => {
+    if (!isVideoTask) return undefined;
+    return async ({ projectId: pid, mlBackendId: bid, taskId: tid, context, signal }) => {
+      const blob = await videoControlsRef.current?.captureCurrentFrameJpeg();
+      if (!blob) throw new Error("当前帧尚未就绪，请等待画面加载完成后重试");
+      return mlBackendsApi.interactiveAnnotateFrame(
+        pid,
+        bid,
+        { blob, taskId: tid, frameIndex: videoFrameIndex, context },
+        signal,
+      );
+    };
+  }, [isVideoTask, videoFrameIndex]);
 
   const sam = useInteractiveAI({
     projectId,
     taskId,
     mlBackendId: interactiveBackendId,
+    transport: samTransport,
+    // 候选缓存 / 点会话按帧隔离; 切帧即失效 (mask_input 的 logits 绑定具体图像)。
+    cacheScope: isVideoTask ? videoFrameIndex : undefined,
   });
+
+  // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
+  const onVideoSamPrompt = useCallback(
+    (
+      prompt:
+        | { mode: "point"; pt: [number, number]; alt: boolean }
+        | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
+    ) => {
+      if (prompt.mode === "point") sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
+      else sam.runBbox(prompt.bbox);
+    },
+    [sam],
+  );
   // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
   // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
   const modelPref = useAiToolModelPref(interactiveBackendId);
@@ -1495,7 +1533,6 @@ export function useWorkbenchShellModel({
     submitTaskMut,
   });
 
-  const videoControlsRef = useRef<VideoStageControls | null>(null);
 
   // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
   // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
@@ -2574,6 +2611,11 @@ export function useWorkbenchShellModel({
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
         isVideoToolEnabled,
+        // v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选/点会话渲染 (仅视频 task 有值)。
+        onVideoSamPrompt,
+        samCandidates: isVideoTask ? sam.candidates : undefined,
+        samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
+        samSessionPoints: isVideoTask ? sam.sessionPoints : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,

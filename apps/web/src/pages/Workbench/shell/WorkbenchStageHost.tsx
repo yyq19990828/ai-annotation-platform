@@ -35,6 +35,7 @@ import type { StageKind } from "../stages/types";
 // v0.13.2 · 点云 3D 模块 lazy import：three(~600KB)只在打开 lidar 任务时加载，不进主 bundle。
 const ThreeDWorkbench = lazy(() => import("../stages/three-d/ThreeDWorkbench"));
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
+import type { VideoSamCandidateShape } from "../stage/VideoSamCandidateOverlay";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
@@ -106,6 +107,15 @@ interface WorkbenchStageHostVideoProps {
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
   isVideoToolEnabled?: (t: VideoTool) => boolean;
+  /** v0.21.23 · 视频交互式 SAM: 提示派发 + 瞬态候选 / 点会话。 */
+  onVideoSamPrompt?: (
+    prompt:
+      | { mode: "point"; pt: [number, number]; alt: boolean }
+      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
+  ) => void;
+  samCandidates?: VideoSamCandidateShape[];
+  samActiveIdx?: number;
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
   spacePan: boolean;
   onSpacePanDragStart: () => void;
   videoFrameIndex: number;
@@ -313,6 +323,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoSampling,
       videoTool,
       isVideoToolEnabled,
+      onVideoSamPrompt,
+      // 别名: image 分支已有同名 samCandidates/samActiveIdx/samSessionPoints。
+      samCandidates: videoSamCandidates,
+      samActiveIdx: videoSamActiveIdx,
+      samSessionPoints: videoSamSessionPoints,
       spacePan: videoSpacePan,
       onSpacePanDragStart: onVideoSpacePanDragStart,
       videoFrameIndex,
@@ -460,6 +475,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             readOnly={readOnly}
             videoTool={videoTool}
             isVideoToolEnabled={isVideoToolEnabled}
+            onSamPrompt={onVideoSamPrompt}
+            samCandidates={videoSamCandidates}
+            samActiveIdx={videoSamActiveIdx}
+            samSessionPoints={videoSamSessionPoints}
             spacePan={videoSpacePan}
             onSpacePanDragStart={onVideoSpacePanDragStart}
             pendingDrawing={pendingDrawing}

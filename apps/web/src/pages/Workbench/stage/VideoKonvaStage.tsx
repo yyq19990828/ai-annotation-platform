@@ -47,6 +47,7 @@ import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
 import { collectFrameCategories, nextInCategory, nextCategory, type FrameObjectRef } from "./frameObjectCycle";
 import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
+import { VideoSamCandidateOverlay, type VideoSamCandidateShape } from "./VideoSamCandidateOverlay";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
 import type { AiBox } from "../state/transforms";
@@ -54,6 +55,8 @@ import styles from "./VideoKonvaStage.module.css";
 
 /** v0.21.23 · SAM 提示框描边色，与图片侧 SAM_CANDIDATE_STROKE 同值（canvas 数据域颜色）。 */
 const SAM_PROBE_STROKE = "#a855f7";
+const EMPTY_SAM_CANDIDATES: VideoSamCandidateShape[] = [];
+const EMPTY_SESSION_POINTS: { pt: [number, number]; polarity: 1 | 0 }[] = [];
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
 const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
@@ -123,6 +126,11 @@ interface VideoKonvaStageProps {
       | { mode: "point"; pt: [number, number]; alt: boolean }
       | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
   ) => void;
+  /** v0.21.23 · 交互式 SAM 的瞬态候选（不落库；采纳时才建标注）。 */
+  samCandidates?: VideoSamCandidateShape[];
+  samActiveIdx?: number;
+  /** 当前点会话已落的正/负点（多点精修可视化）。 */
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
   onChangeUserBoxClass?: (id: string) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
@@ -197,6 +205,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onPendingDraw,
   onUpdate,
   onSamPrompt,
+  samCandidates = EMPTY_SAM_CANDIDATES,
+  samActiveIdx = 0,
+  samSessionPoints = EMPTY_SESSION_POINTS,
   onChangeUserBoxClass,
   onComposeTracks,
   onConvertToBboxes,
@@ -1049,6 +1060,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               </Layer>
             );
           })()}
+          {/* v0.21.23 · 交互式 SAM 候选 + 点会话（瞬态，不落库；置顶且不吃事件）。 */}
+          {(samCandidates.length > 0 || samSessionPoints.length > 0) && (
+            <Layer name="sam-candidates" listening={false}>
+              <VideoSamCandidateOverlay
+                candidates={samCandidates}
+                activeIdx={samActiveIdx}
+                sessionPoints={samSessionPoints}
+                width={size.w}
+                height={size.h}
+                scale={vp.scale}
+              />
+            </Layer>
+          )}
         </Stage>
         {/* 跟踪当前帧屏幕矩形的不可见标记:改类/批量改类弹窗经 [data-video-overlay] 锚到画布上的框
             (Konva 栈无旧 SVG overlay,此 div 复刻其矩形,随 vp 平移/缩放同步)。 */}

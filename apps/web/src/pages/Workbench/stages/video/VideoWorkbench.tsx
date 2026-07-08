@@ -13,6 +13,7 @@ import type {
 } from "@/types";
 import type { VideoStageControls } from "../../stage/videoStageControls";
 import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
+import type { VideoSamCandidateShape } from "../../stage/VideoSamCandidateOverlay";
 import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -64,6 +65,15 @@ export interface VideoWorkbenchProps {
     points: [number, number][],
   ) => void;
   /** v0.21.21 · 由绘制顶点新建单帧 polygon/polyline。 */
+  /** v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选 / 点会话 (透传给 VideoKonvaStage)。 */
+  onSamPrompt?: (
+    prompt:
+      | { mode: "point"; pt: [number, number]; alt: boolean }
+      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
+  ) => void;
+  samCandidates?: VideoSamCandidateShape[];
+  samActiveIdx?: number;
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
   onCreatePoints?: (
     type: "video_polygon" | "video_polyline",
     frameIndex: number,
@@ -125,6 +135,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onCreate,
     onCreatePointsTrack,
     onCreatePoints,
+    onSamPrompt,
+    samCandidates,
+    samActiveIdx,
+    samSessionPoints,
     onPendingDraw,
     onUpdate,
     onChangeUserBoxClass,
@@ -185,6 +199,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onCursorMove={onCursorMove}
         onCreate={onCreate}
         onCreatePointsTrack={onCreatePointsTrack}
+        onSamPrompt={onSamPrompt}
+        samCandidates={samCandidates}
+        samActiveIdx={samActiveIdx}
+        samSessionPoints={samSessionPoints}
         onCreatePoints={onCreatePoints}
         onPendingDraw={onPendingDraw}
         onUpdate={onUpdate}
