@@ -42,7 +42,15 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   const { bindings, setBindings, activeUnit, setActiveUnit, dirty } =
     useProjectToolBindings(project);
   const dataType = projectDataType(project);
-  const isVideoBbox = dataType === "video" && activeUnit === "bbox";
+  // 视频几何单位 (矩形框/多边形/折线) 均带单帧/轨迹子开关; 各单位文案不同。
+  const isVideoGeoUnit =
+    dataType === "video" &&
+    (activeUnit === "bbox" || activeUnit === "region" || activeUnit === "polyline");
+  const videoModeLabels: Record<string, { box: string; track: string }> = {
+    bbox: { box: "单帧矩形框", track: "轨迹矩形框" },
+    region: { box: "单帧多边形", track: "多边形轨迹" },
+    polyline: { box: "单帧折线", track: "折线轨迹" },
+  };
   // v0.17.15 · 同名类跨工具单位批量重命名意图: 开启后重命名不传 tool_unit_id,
   // 后端在所有 enabled unit 内一起改同名类 (强隔离默认仍为单 unit, 默认=现状)。
   const [renameAllUnits, setRenameAllUnits] = useState(false);
@@ -236,19 +244,20 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     }));
   };
 
-  // v0.11.29 · 视频 bbox 单元: 单帧框 / 轨迹框独立开关 (至少保留一个可用)。
+  // 视频几何单位: 单帧 / 轨迹 独立开关, 作用于当前激活单位 (至少保留一个可用)。
   const onToggleVideoMode = (key: "box" | "track", next: boolean) => {
     setBindings((b) => {
-      const cur = b.bbox?.videoModes ?? { box: true, track: true };
+      const prev = b[activeUnit];
+      const cur = prev?.videoModes ?? { box: true, track: true };
       const updated = { ...cur, [key]: next };
       if (!updated.box && !updated.track) return b;
       return {
         ...b,
-        bbox: {
-          enabled: b.bbox?.enabled ?? true,
-          classRows: b.bbox?.classRows ?? [],
-          attributeFields: b.bbox?.attributeFields ?? [],
-          keypointSchema: b.bbox?.keypointSchema ?? null,
+        [activeUnit]: {
+          enabled: prev?.enabled ?? true,
+          classRows: prev?.classRows ?? [],
+          attributeFields: prev?.attributeFields ?? [],
+          keypointSchema: prev?.keypointSchema ?? null,
           videoModes: updated,
         },
       };
@@ -390,7 +399,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       <div className="flex flex-col gap-2.5 p-4">
         <p className="m-0 text-xs leading-normal text-muted-foreground">
           {dataType === "video"
-            ? "视频工作台的单帧框和轨迹框共用这一套类别、颜色、排序和属性 schema。"
+            ? "点击工具单位后，维护该几何的类别、颜色、排序和属性 schema；单帧与轨迹共用同一单位的 schema，不同工具单位（矩形框 / 多边形 / 折线）相互隔离。"
             : "点击工具单位后，直接维护该工具的类别、颜色、排序和属性 schema；同名类在不同工具单位下相互隔离。"}
         </p>
         <ToolUnitTabs
@@ -405,28 +414,29 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               <Switch
                 checked={activeBinding.enabled}
                 onChange={(next) => onToggle(activeUnit, next)}
-                label={unitSwitchLabel(activeBinding.enabled, isVideoBbox)}
+                label={unitSwitchLabel(activeBinding.enabled)}
                 data-testid="unit-enabled-switch"
               />
               {!activeBinding.enabled && (
                 <span className="text-xs leading-normal text-muted-foreground">
-                  {isVideoBbox
-                    ? "禁用后单帧框和轨迹框都不可新增；配置仍会保留，需要修改请先启用。"
+                  {isVideoGeoUnit
+                    ? "禁用后单帧与轨迹变体都不可新增；配置仍会保留，需要修改请先启用。"
                     : "禁用后配置仍会保留，但工作台不会使用；需要修改请先启用。"}
                 </span>
               )}
             </div>
-            {isVideoBbox && activeBinding.enabled && (() => {
+            {isVideoGeoUnit && activeBinding.enabled && (() => {
               const vm = activeBinding.videoModes ?? { box: true, track: true };
               const onlyBox = vm.box && !vm.track;
               const onlyTrack = !vm.box && vm.track;
+              const labels = videoModeLabels[activeUnit] ?? videoModeLabels.bbox;
               return (
                 <div className="mt-2 flex flex-wrap items-center gap-4">
                   <span className="text-sm text-muted-foreground">可用工具</span>
                   <Switch
                     checked={vm.box}
                     onChange={(next) => onToggleVideoMode("box", next)}
-                    label="单帧矩形框"
+                    label={labels.box}
                     disabled={onlyBox}
                     title={onlyBox ? "至少保留一个可用工具" : undefined}
                     data-testid="video-mode-box-switch"
@@ -434,7 +444,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                   <Switch
                     checked={vm.track}
                     onChange={(next) => onToggleVideoMode("track", next)}
-                    label="轨迹矩形框"
+                    label={labels.track}
                     disabled={onlyTrack}
                     title={onlyTrack ? "至少保留一个可用工具" : undefined}
                     data-testid="video-mode-track-switch"
@@ -535,7 +545,7 @@ function projectDataType(project: ProjectResponse): ProjectDataType {
   return dataTypeFromLegacy(project.type_key);
 }
 
-function unitSwitchLabel(enabled: boolean, videoBbox: boolean): string {
-  const state = enabled ? "已启用" : "已禁用";
-  return videoBbox ? `${state}矩形框 / 轨迹` : `${state}此工具单位`;
+function unitSwitchLabel(enabled: boolean): string {
+  // 各单位名由上方 tab 呈现, 这里措辞统一为「此工具单位」(视频几何单位含单帧+轨迹两变体)。
+  return `${enabled ? "已启用" : "已禁用"}此工具单位`;
 }

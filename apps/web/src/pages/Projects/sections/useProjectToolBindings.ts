@@ -29,7 +29,10 @@ export interface UnitBindingState {
   attributeFields: AttributeField[];
   /** v0.10.28 · 仅 keypoint 单元用：骨骼模板 (命名节点 + 连线)。 */
   keypointSchema?: import("@/types").KeypointSchema | null;
-  /** v0.11.29 · 仅视频 bbox 单元用：单帧框 / 轨迹框独立开关。null = 两者均可用。 */
+  /**
+   * 仅视频几何单位 (bbox/region/polyline) 用：单帧 / 轨迹变体独立开关。null = 两者均可用。
+   * box = 单帧几何, track = 轨迹几何 (跨帧关键帧)。每个视频几何单位各自持有一份。
+   */
   videoModes?: { box: boolean; track: boolean } | null;
 }
 
@@ -167,10 +170,8 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
       ...(k === "keypoint" && ub.keypointSchema
         ? { keypoint_schema: ub.keypointSchema }
         : {}),
-      // v0.11.29 · bbox 单元附带视频单帧/轨迹开关 (仅视频项目设置, null 不落库)。
-      ...(k === "bbox" && ub.videoModes
-        ? { video_modes: ub.videoModes }
-        : {}),
+      // 视频几何单位 (bbox/region/polyline) 附带单帧/轨迹开关 (仅视频项目设置, null 不落库)。
+      ...(ub.videoModes ? { video_modes: ub.videoModes } : {}),
     };
   }
   return out;

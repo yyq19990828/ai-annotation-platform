@@ -93,7 +93,7 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     hint: "开放折线;车道线 / 道路",
     icon: "polygon",
     tools: ["polyline"],
-    dataTypes: ["image"],
+    dataTypes: ["image", "video"],
     available: true,
   },
   {
@@ -120,7 +120,7 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     hint: "多边形与笔刷掩码打包;实例分割",
     icon: "polygon",
     tools: ["polygon", "mask"],
-    dataTypes: ["image"],
+    dataTypes: ["image", "video"],
     available: true,
   },
   {

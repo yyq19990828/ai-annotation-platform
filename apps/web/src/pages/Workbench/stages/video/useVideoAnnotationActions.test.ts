@@ -48,12 +48,14 @@ describe("video annotation actions helpers", () => {
     const poly = buildVideoPointsTrackCreatePayload("video_track_polygon", 4, pts, "Car");
     expect(poly.annotation_type).toBe("video_track_polygon");
     expect(poly.geometry.type).toBe("video_track_polygon");
+    expect(poly.tool_unit_id).toBe("region");
     const g = poly.geometry as { track_id: string; keyframes: { frame_index: number; points: number[][]; source: string }[] };
     expect(g.track_id).toMatch(/^trk_/);
     expect(g.keyframes).toEqual([{ frame_index: 4, points: pts, source: "manual", occluded: false }]);
 
     const line = buildVideoPointsTrackCreatePayload("video_track_polyline", 2, [[0, 0], [0.5, 0.5]], "");
     expect(line.annotation_type).toBe("video_track_polyline");
+    expect(line.tool_unit_id).toBe("polyline");
     expect(line.class_name).toBe("__unknown");
   });
 
@@ -63,11 +65,13 @@ describe("video annotation actions helpers", () => {
     expect(poly).toEqual({
       annotation_type: "video_polygon",
       class_name: "Car",
+      tool_unit_id: "region",
       geometry: { type: "video_polygon", frame_index: 3, points: pts },
     });
 
     const line = buildVideoPointsCreatePayload("video_polyline", 8, [[0.1, 0.1], [0.9, 0.9]], "");
     expect(line.annotation_type).toBe("video_polyline");
+    expect(line.tool_unit_id).toBe("polyline");
     expect(line.class_name).toBe("__unknown");
     expect((line.geometry as { frame_index: number }).frame_index).toBe(8);
   });

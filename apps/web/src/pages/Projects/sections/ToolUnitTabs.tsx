@@ -84,8 +84,11 @@ function toolUnitLabel(
   fallback: string,
   dataType?: ProjectDataType,
 ): string {
-  if (dataType === "video" && unit === "bbox") {
-    return "矩形框 / 轨迹";
+  if (dataType === "video") {
+    // 视频几何单位名简化 (单帧/轨迹变体由单位内子开关区分, 不进 tab 名)。
+    if (unit === "bbox") return "矩形框 / 轨迹";
+    if (unit === "region") return "多边形";
+    if (unit === "polyline") return "折线";
   }
   return fallback;
 }

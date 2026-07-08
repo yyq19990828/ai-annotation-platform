@@ -85,7 +85,8 @@ interface VideoKonvaStageProps {
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
   videoTool?: VideoTool;
-  videoModes?: { box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null;
+  /** 视频工具可用性谓词 (按几何单位 enabled + 单帧/轨迹子开关, 见 stage/videoToolUnits)。 */
+  isVideoToolEnabled?: (t: VideoTool) => boolean;
   spacePan?: boolean;
   onSpacePanDragStart?: () => void;
   readOnly?: boolean;
@@ -174,7 +175,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onIssuePinClick,
   visual = DEFAULT_ANNOTATION_VISUAL,
   videoTool = "select",
-  videoModes = null,
+  isVideoToolEnabled,
   spacePan = false,
   onSpacePanDragStart,
   readOnly = false,
@@ -463,7 +464,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     carryOverGhosts: frameViews.carryOverGhosts,
     selectedTrack,
     videoTool,
-    creationEnabled: (videoTool === "box" || videoTool === "track") && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track)),
+    creationEnabled: (videoTool === "box" || videoTool === "track") && (!isVideoToolEnabled || isVideoToolEnabled(videoTool)),
     readOnly,
     isPlaybackActive,
     lockedTrackIds,
@@ -482,13 +483,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   // 绘制中的光标归一化坐标(橡皮筋预览段 + 首点吸附高亮用),越界/未绘制时 null。
   const [pointsCursor, setPointsCursor] = useState<{ x: number; y: number } | null>(null);
   const isPointsClosedTool = videoTool === "polygon" || videoTool === "polygon-track";
-  const isPointsTrackTool = videoTool === "polygon-track" || videoTool === "polyline-track";
   const isPointsDrawTool = isPointsClosedTool || videoTool === "polyline" || videoTool === "polyline-track";
   const pointsDrawEnabled = isPointsDrawTool && !readOnly && !isPlaybackActive
-    && (!videoModes
-      || (isPointsTrackTool
-        ? videoModes.track
-        : videoTool === "polygon" ? videoModes.polygon : videoModes.polyline));
+    && (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
 
   const pointFromClientEvt = useCallback((clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -834,7 +831,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // 工具模式光标反馈:平移中 grabbing;按住 Space 可抓;创建工具十字,选择工具普通光标。
   // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
-  const creationEnabled = (videoTool === "box" || videoTool === "track") && (!videoModes || (videoTool === "box" ? videoModes.box : videoModes.track));
+  const creationEnabled = (videoTool === "box" || videoTool === "track") && (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
   const cursorClass = panning
     ? styles.rootPanning
     : spacePan

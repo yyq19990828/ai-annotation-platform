@@ -41,10 +41,10 @@ interface ToolDockProps {
    */
   enabledToolUnits?: Set<string> | null;
   /**
-   * 视频 bbox 单位的「单帧框 / 轨迹框」子开关 (来自 tool_bindings["bbox"].video_modes)。
-   * null / undefined = 两者均显示 (向后兼容老项目)。
+   * 视频工具可用性谓词 (按几何单位 enabled + 单帧/轨迹子开关判定, 见 stage/videoToolUnits)。
+   * undefined = 全部显示 (向后兼容 / 非视频)。
    */
-  videoModes?: { box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null;
+  isVideoToolEnabled?: (t: VideoTool) => boolean;
   /** v0.13.3-5 · 点云 3D 台:渲染 select / box 两个 3D 工具(双栈隔离,不走 2D ToolId)。 */
   threeDMode?: boolean;
   threeDTool?: ThreeDTool;
@@ -128,7 +128,7 @@ export function ToolDock({
   reviewMode = false,
   videoMode = false,
   enabledToolUnits = null,
-  videoModes = null,
+  isVideoToolEnabled,
   threeDMode = false,
   threeDTool = "select",
   onSetThreeDTool,
@@ -168,13 +168,8 @@ export function ToolDock({
     // 视频显示选择 + 创建工具；平移走右键/Space 手势, 不占工具按钮。
     const visibleVideoTools = VIDEO_TOOLS.filter((t) => {
       if (t.id === "select") return true;
-      if (!videoModes) return true;
-      if (t.id === "box") return videoModes.box;
-      if (t.id === "polygon") return videoModes.polygon;
-      if (t.id === "polyline") return videoModes.polyline;
-      // v0.21.20/21 · bbox 轨迹 + polygon/polyline 轨迹同属「轨迹」能力, 复用 track 开关。
-      if (t.id === "track" || t.id === "polygon-track" || t.id === "polyline-track") return videoModes.track;
-      return true;
+      if (!isVideoToolEnabled) return true;
+      return isVideoToolEnabled(t.id);
     });
     return (
       <div className={ROOT_CLASS}>

@@ -99,12 +99,26 @@ async def seed_video(db, *, owner_id: uuid.UUID) -> dict | None:
         data_type="video",
         owner_id=owner_id,
         ai_enabled=True,
+        # 视频几何单位独立 (对齐图片): bbox / region(多边形) / polyline(折线) 各自类别与属性 schema。
         tool_bindings={
             "bbox": {
                 "enabled": True,
                 "classes": [
                     {"name": "car", "order": 0},
                     {"name": "person", "order": 1},
+                ],
+            },
+            "region": {
+                "enabled": True,
+                "classes": [
+                    {"name": "car", "order": 0},
+                    {"name": "person", "order": 1},
+                ],
+            },
+            "polyline": {
+                "enabled": True,
+                "classes": [
+                    {"name": "lane", "order": 0},
                 ],
             },
         },

@@ -30,17 +30,23 @@ describe("buildUnitBindings", () => {
       },
     });
 
-    expect(Object.keys(bindings)).toEqual(["bbox"]);
+    // 纠偏后视频几何单位集 = bbox / polyline / region (对齐图片, 各自独立类别)。
+    expect(Object.keys(bindings).sort()).toEqual(["bbox", "polyline", "region"]);
     expect(bindings.bbox?.enabled).toBe(true);
     expect(bindings.bbox?.classRows).toEqual([
       { name: "car", color: "#0ea5e9" },
     ]);
-    expect(bindings.region).toBeUndefined();
+    // region 现属视频单位, 保留其独立类别。
+    expect(bindings.region?.enabled).toBe(true);
+    expect(bindings.region?.classRows).toEqual([
+      { name: "person", color: "#22c55e" },
+    ]);
+    // 非视频几何单位仍被过滤。
     expect(bindings.rotated_bbox).toBeUndefined();
     expect(bindings.ai_interactive).toBeUndefined();
   });
 
-  it("maps legacy video classes into bbox without adding image units", () => {
+  it("legacy 视频类别落入 bbox; 视频几何单位 (bbox/polyline/region) 均种子化, 非几何 image 单位不加", () => {
     const bindings = buildUnitBindings({
       data_type: "video",
       type_key: "video-track",
@@ -54,7 +60,14 @@ describe("buildUnitBindings", () => {
       tool_bindings: {},
     });
 
-    expect(Object.keys(bindings)).toEqual(["bbox"]);
+    // 纠偏后 polyline/region 对 video 可用 → 一并种子化 (默认 disabled), 供设置里作独立单位启用。
+    expect(Object.keys(bindings).sort()).toEqual(["bbox", "polyline", "region"]);
+    expect(bindings.polyline?.enabled).toBe(false);
+    expect(bindings.region?.enabled).toBe(false);
+    // keypoint / rotated_bbox / ai_interactive 仍仅 image, 不进视频。
+    expect(bindings.keypoint).toBeUndefined();
+    expect(bindings.ai_interactive).toBeUndefined();
+    // legacy 扁平类别落入 bbox 默认单位。
     expect(bindings.bbox?.enabled).toBe(true);
     expect(bindings.bbox?.classRows).toEqual([
       { name: "vehicle", color: "#0ea5e9", alias: "vehicle" },
@@ -127,6 +140,43 @@ describe("unitBindingsToPayload", () => {
     expect(out.bbox?.classes).toEqual([
       { name: "person", color: "#ff0000", order: 0, alias: "person" },
     ]);
+  });
+  it("视频几何单位 video_modes 往返 (每单位独立 box/track)", () => {
+    const out = unitBindingsToPayload({
+      bbox: {
+        enabled: true,
+        classRows: [{ name: "car", color: "#0ea5e9" }],
+        attributeFields: [],
+        videoModes: { box: true, track: false },
+      },
+      region: {
+        enabled: true,
+        classRows: [{ name: "car", color: "#0ea5e9" }],
+        attributeFields: [],
+        videoModes: { box: false, track: true },
+      },
+    });
+    expect(out.bbox?.video_modes).toEqual({ box: true, track: false });
+    // 序列化对所有视频几何单位透传, 不再仅 bbox。
+    expect(out.region?.video_modes).toEqual({ box: false, track: true });
+  });
+});
+
+describe("buildUnitBindings · video_modes", () => {
+  it("从 tool_bindings 读出各单位 video_modes (缺省补 true)", () => {
+    const bindings = buildUnitBindings({
+      data_type: "video",
+      type_key: "video-track",
+      tool_bindings: {
+        bbox: {
+          enabled: true,
+          classes: [{ name: "car", color: "#0ea5e9", order: 0 }],
+          video_modes: { box: true },
+        },
+      },
+    });
+    // box 显式给出, track 缺省 → 补 true。
+    expect(bindings.bbox?.videoModes).toEqual({ box: true, track: true });
   });
 });
 

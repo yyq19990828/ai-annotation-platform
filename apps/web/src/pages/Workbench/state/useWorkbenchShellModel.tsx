@@ -26,9 +26,10 @@ import { mlBackendsApi } from "@/api/ml-backends";
 import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
-import { useWorkbenchState } from "./useWorkbenchState";
+import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
 import { usePendingGeom } from "./usePendingGeom";
 import { useToolBindings, classesForUnit } from "./useToolBindings";
+import { videoToolUnit, videoToolEnabled } from "../stage/videoToolUnits";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
@@ -308,10 +309,16 @@ export function useWorkbenchShellModel({
     onConfirm: () => void;
   } | null>(null);
   const threeDToolUnit = s.threeDTool === "point-mask" ? "point_mask_3d" : "lidar_box_3d";
+  // 视频: 按当前 videoTool 解析其工具单位 (矩形框→bbox / 多边形→region / 折线→polyline),
+  // 让每个几何取各自单位的类别/属性 (对齐图片, 不再共用 bbox)。select 回退默认解析。
+  const videoOverrideUnit =
+    currentProject?.type_key === "video-track"
+      ? (videoToolUnit(s.videoTool) ?? undefined)
+      : undefined;
   const toolView = useToolBindings(
     currentProject ?? null,
     s.tool,
-    is3DProject ? threeDToolUnit : undefined,
+    is3DProject ? threeDToolUnit : videoOverrideUnit,
   );
   const enabledToolUnits = useMemo<Set<string> | null>(() => {
     const tb = currentProject?.tool_bindings;
@@ -322,13 +329,12 @@ export function useWorkbenchShellModel({
     }
     return set;
   }, [currentProject?.tool_bindings]);
-  // v0.11.29 · 视频 bbox 单位的单帧/轨迹子开关; null = 两者均可用 (兼容老项目)。
-  const videoModes = useMemo<{ box: boolean; track: boolean; polygon: boolean; polyline: boolean } | null>(() => {
-    const vm = currentProject?.tool_bindings?.bbox?.video_modes;
-    if (!vm) return null;
-    // v0.21.21 · polygon/polyline 单帧子开关, 缺省 (老配置) 按 true 补齐, 与后端默认一致。
-    return { box: vm.box ?? true, track: vm.track ?? true, polygon: vm.polygon ?? true, polyline: vm.polyline ?? true };
-  }, [currentProject?.tool_bindings]);
+  // 视频工具可用性谓词: 按几何单位 (bbox/region/polyline) 的 enabled + 单帧/轨迹子开关判定。
+  // 对齐图片工作台 —— 每个几何独立单位, 未启用单位则对应工具灰置。
+  const isVideoToolEnabled = useCallback(
+    (t: VideoTool) => videoToolEnabled(t, currentProject?.tool_bindings),
+    [currentProject?.tool_bindings],
+  );
   const classes = toolView.classes;
   const classesConfig = toolView.classesConfig;
   void toolView.toolUnitId;
@@ -506,12 +512,9 @@ export function useWorkbenchShellModel({
   }, []);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   useEffect(() => {
-    if (!isVideoTask || !videoModes) return;
-    if (videoTool === "box" && !videoModes.box) setVideoTool("select");
-    else if (videoTool === "polygon" && !videoModes.polygon) setVideoTool("select");
-    else if (videoTool === "polyline" && !videoModes.polyline) setVideoTool("select");
-    else if ((videoTool === "track" || videoTool === "polygon-track" || videoTool === "polyline-track") && !videoModes.track) setVideoTool("select");
-  }, [isVideoTask, videoModes, videoTool, setVideoTool]);
+    if (!isVideoTask) return;
+    if (videoTool !== "select" && !isVideoToolEnabled(videoTool)) setVideoTool("select");
+  }, [isVideoTask, isVideoToolEnabled, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
@@ -2375,7 +2378,7 @@ export function useWorkbenchShellModel({
       capabilitiesLoading: routing.isLoading,
       reviewMode: mode === "review", videoMode: isVideoTask,
       enabledToolUnits,
-      videoModes,
+      isVideoToolEnabled,
       threeDMode: stageKind === "3d",
       threeDTool: s.threeDTool,
       onSetThreeDTool: s.setThreeDTool,
@@ -2569,7 +2572,7 @@ export function useWorkbenchShellModel({
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
-        videoModes,
+        isVideoToolEnabled,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,

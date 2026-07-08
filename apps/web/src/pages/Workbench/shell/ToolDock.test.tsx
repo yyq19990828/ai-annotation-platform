@@ -29,7 +29,7 @@ describe("ToolDock · video tools", () => {
         videoMode
         videoTool="select"
         onSetVideoTool={vi.fn()}
-        videoModes={{ box: false, track: false, polygon: false, polyline: false }}
+        isVideoToolEnabled={() => false}
       />,
     );
 

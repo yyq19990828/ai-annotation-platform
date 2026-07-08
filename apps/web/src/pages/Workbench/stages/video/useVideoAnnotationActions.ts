@@ -129,6 +129,8 @@ export function buildVideoPointsCreatePayload(
   return {
     annotation_type: type,
     class_name: className,
+    // 多边形归 region 单位、折线归 polyline 单位 (对齐图片, 各自类别/属性隔离)。
+    tool_unit_id: type === "video_polyline" ? "polyline" : "region",
     geometry: { type, frame_index: frameIndex, points },
   };
 }
@@ -147,7 +149,13 @@ export function buildVideoPointsTrackCreatePayload(
     track_id: trackId,
     keyframes: [{ frame_index: frameIndex, points, source: "manual", occluded: false }],
   };
-  return { annotation_type: type, class_name: className, geometry };
+  return {
+    annotation_type: type,
+    class_name: className,
+    // 轨迹多边形归 region、轨迹折线归 polyline (与单帧同单位, 变体不同)。
+    tool_unit_id: type === "video_track_polyline" ? "polyline" : "region",
+    geometry,
+  };
 }
 
 export function buildVideoUpdateCommand(ann: AnnotationResponse, geometry: VideoGeometry): Command {
