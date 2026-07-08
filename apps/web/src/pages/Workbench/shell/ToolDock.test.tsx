@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ToolDock } from "./ToolDock";
+import { dispatchKey, type DispatchCtx } from "../state/hotkeys";
 
 describe("ToolDock · video tools", () => {
   it("renders video select and creation tools without the retired pan tool", () => {
@@ -238,5 +239,39 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
     expect(screen.getByTestId("video-tool-btn-box")).toBeInTheDocument();
     // magic-box 产矩形框 → 归 bbox 单位, 只启用 bbox 时它**仍在**（与 smart-* 分家）。
     expect(screen.getByTestId("video-tool-btn-magic-box")).toBeInTheDocument();
+  });
+});
+
+describe("ToolDock · 视频工具角标不撒谎", () => {
+  // 角标是给用户看的承诺: 按这个键就切到这个工具。历史上 polygon 标 G、polyline 标 L 都没绑定,
+  // 而视频 L 是播放 jog —— 按下去会快进。这条测试把角标与 hotkeys.ts 的真实绑定钉在一起。
+  it("每个渲染出的角标都真能 dispatch 到它标注的工具", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        isPromptSupported={() => true}
+      />,
+    );
+    const base: DispatchCtx = { isInputFocused: false, hasSelection: false, pendingActive: false, videoMode: true };
+    const buttons = [...document.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")];
+    expect(buttons.length).toBeGreaterThan(0);
+
+    let checked = 0;
+    for (const btn of buttons) {
+      const id = btn.dataset.testid!.replace("video-tool-btn-", "");
+      const badge = btn.querySelector("span[aria-hidden]")?.textContent?.trim();
+      if (!badge) continue; // 无角标 = 未承诺快捷键 (polyline / *-track), 合法
+      const action = dispatchKey(
+        { key: badge.toLowerCase(), ctrlKey: false, metaKey: false, shiftKey: false, altKey: false } as KeyboardEvent,
+        base,
+      );
+      expect(action, `角标 ${badge} 标在 ${id} 上，但按下去不是切到它`).toEqual({ type: "setVideoTool", tool: id });
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThanOrEqual(7); // V B T P S D E G
   });
 });

@@ -85,11 +85,16 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
 
 const VIDEO_TOOLS: Array<{
   id: VideoTool;
-  hotkey: string;
   label: string;
   icon: IconName;
   desc: string;
-  altDigit: number;
+  /**
+   * 角标与 tooltip 只写**真实绑定**的键(见 hotkeys.ts 的 videoMode 分支)。
+   * 之前 polygon 标 G、polyline 标 L 都没绑 —— 而视频 L 是播放 jog, 按下去会快进, 不是「没反应」。
+   */
+  hotkey?: string;
+  /** 视频侧 Alt+数字只绑到 3; 其余工具没有备用数字键, 故可选。 */
+  altDigit?: number;
   group: "select" | "static" | "track" | "ai";
   /** 非空 = AI 工具: 受项目总开关(隐藏) + 后端能力(置灰) 双层管控, 对齐图片侧。 */
   requiredPrompt?: string;
@@ -98,16 +103,16 @@ const VIDEO_TOOLS: Array<{
   { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
   // v0.21.21 · 单帧 polygon/polyline (点击落点, Enter/双击闭合, Esc 取消)。
-  { id: "polygon", hotkey: "G", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", altDigit: 5, group: "static" },
-  { id: "polyline", hotkey: "L", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", altDigit: 6, group: "static" },
+  { id: "polygon", hotkey: "P", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", group: "static" },
+  { id: "polyline", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", group: "static" },
   // v0.21.20 · polygon/polyline 轨迹关键帧 (原 polygon/polyline, 拆分后 -track 后缀)。
-  { id: "polygon-track", hotkey: "Shift+G", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", altDigit: 7, group: "track" },
-  { id: "polyline-track", hotkey: "Shift+L", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", altDigit: 8, group: "track" },
+  { id: "polygon-track", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", group: "track" },
+  { id: "polyline-track", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", group: "track" },
   // v0.21.23 · 交互式 SAM 单帧工具; requiredPrompt 决定后端能力门控 (不支持则置灰)。
-  { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", altDigit: 9, group: "ai", requiredPrompt: "point" },
-  { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", altDigit: 0, group: "ai", requiredPrompt: "interactive_box" },
-  { id: "exemplar", hotkey: "E", label: "示例框", icon: "sparkles", desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检", altDigit: 0, group: "ai", requiredPrompt: "exemplar" },
-  { id: "magic-box", hotkey: "F", label: "Magic Box", icon: "wandSparkles", desc: "粗框 → SAM 收紧 → 落矩形框", altDigit: 0, group: "ai", requiredPrompt: "interactive_box" },
+  { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", group: "ai", requiredPrompt: "point" },
+  { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", group: "ai", requiredPrompt: "interactive_box" },
+  { id: "exemplar", hotkey: "E", label: "示例框", icon: "sparkles", desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检", group: "ai", requiredPrompt: "exemplar" },
+  { id: "magic-box", hotkey: "G", label: "Magic Box", icon: "wandSparkles", desc: "粗框 → SAM 收紧 → 落矩形框", group: "ai", requiredPrompt: "interactive_box" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
@@ -217,7 +222,7 @@ export function ToolDock({
               {showDivider && <div aria-hidden className={DIVIDER_CLASS} />}
               <Tooltip
                 name={t.label}
-                desc={disabledHint ?? `${t.desc} · 备用 Alt+${t.altDigit}`}
+                desc={disabledHint ?? (t.altDigit ? `${t.desc} · 备用 Alt+${t.altDigit}` : t.desc)}
                 hotkey={t.hotkey}
                 side="right"
                 delay={250}

@@ -283,8 +283,13 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "s" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-point" });
     expect(dispatch({ key: "D" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-box" });
     expect(dispatch({ key: "e" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "exemplar" });
-    expect(dispatch({ key: "F" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "magic-box" });
-    expect(dispatch({ key: "p" }, videoCtx)).toBeNull();
+    // G / P 与图片侧同键 (图片: G=magic-box, P=polygon)。
+    expect(dispatch({ key: "G" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "magic-box" });
+    expect(dispatch({ key: "p" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "polygon" });
+    // 视频 L 是播放 jog, 不是折线工具 —— 工具栏角标曾谎称 L 能切折线。
+    expect(dispatch({ key: "l" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: 1 });
+    // 图片侧工具键不该漏进视频 (w = 图片 OBB 工具)。
+    expect(dispatch({ key: "w" }, videoCtx)).toBeNull();
   });
 
   it("pending popover owns video-mode keys except Esc cancel", () => {
