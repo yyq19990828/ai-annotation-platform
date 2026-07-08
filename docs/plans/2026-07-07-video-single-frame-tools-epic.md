@@ -46,14 +46,16 @@
 
 ## Epic 分期（四个独立版本，顺延 0.21.20）
 
-| 版本 | 范围 | 难度 | 独立计划 |
-|---|---|---|---|
-| **v0.21.21** | 单帧几何**地基** + polygon/polyline 端到端（含共享/复刻决策落地） | 中 | [链接](2026-07-07-v0.21.21-video-single-frame-geometry-foundation.md) |
-| **v0.21.22** | keypoint + rotated-box(OBB) + mask 笔刷（补齐其余非 AI 几何） | 中 | [链接](2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md) |
-| **v0.21.23** | 交互式 SAM 单帧工具：smart-point / smart-box / exemplar / magic-box | 大 | [链接](2026-07-07-v0.21.23-video-single-frame-interactive-sam.md) |
-| **v0.21.24** | 单帧几何导出：COCO-seg / keypoint / OBB（视频帧维度） | 中 | [链接](2026-07-07-v0.21.24-video-single-frame-export.md) |
+| 版本 | 范围 | 难度 | 状态 | 独立计划 |
+|---|---|---|---|---|
+| **v0.21.21** | 单帧几何**地基** + polygon/polyline 端到端（含共享/复刻决策落地） | 中 | **已发版** | [链接](2026-07-07-v0.21.21-video-single-frame-geometry-foundation.md) |
+| **v0.21.22** | keypoint + rotated-box(OBB) + mask 笔刷（补齐其余非 AI 几何） | 中 | **暂停**（使用少、回馈少） | [归档](archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md) |
+| **v0.21.23** | 交互式 SAM 单帧工具：smart-point / smart-box / exemplar / magic-box（+ 前置修 `ai_interactive` 建模错误） | 大 | 计划（已校准） | [链接](2026-07-07-v0.21.23-video-single-frame-interactive-sam.md) |
+| **v0.21.24** | 视频非 bbox 几何导出：打包层白名单修复 + `yolo-frames-seg`（单帧 + 轨迹） | 中 | 计划（已校准） | [链接](2026-07-07-v0.21.24-video-single-frame-export.md) |
 
-依赖链：v0.21.21（地基）是 22/23/24 的前置；23 额外依赖 21 建立的候选渲染管线；24 可与 22/23 并行。
+**依赖链（2026-07-07 校准）**：v0.21.21（地基）已发版。**v0.21.23 只依赖 v0.21.21**——交互式 SAM 产出 polygon/bbox，
+不产 keypoint/OBB/mask，故 **v0.21.22 暂停不阻塞它**。v0.21.24 只依赖已落库几何（v0.21.20 轨迹 + v0.21.21 单帧），
+可与 23 并行。**版本号跳过 22 不重编**（文件名 / 本表 / ROADMAP 三处已引用，跳号语义合法）。
 
 ## 全局红线（贯穿四版本）
 
@@ -67,24 +69,26 @@
 
 - **架构岔路未定阻塞地基**：共享 vs 复刻（见上）不先拍板，v0.21.21 的文件级改动面画不准。**首要前置。**
 - **平行栈的隐性差异**：视频栈有帧作用域 / bitmap 缓存 / 时间轴，图片栈没有；共享渲染器要吸收这些差异而不污染图片路径。
-- **交互式 SAM 逐帧成本（v0.21.23）**：每次 prompt 要取当前帧 `ImageBitmap`（`useVideoBitmapCache` 已有）送后端，延迟与
-  显存需评估；后端 `/predict` 零改，风险在前端接线与候选归一化。
-- **工具单位配置面**：视频 bbox 单位现只有 `video_modes.box/track` 双开关（`_jsonb_types.py:300-318`）；**✅ 已定沿用此单位扩
-  子开关**（见决策 2）——`VideoModesConfig` 加 `polygon/polyline/keypoint/rotated_box/mask` 布尔位，各几何共享 bbox 单位的
-  classes/attribute_schema。**keypoint 例外**：其 `keypoint_schema`（`ToolBinding.keypoint_schema:328`）挂在工具单位上，需让
-  bbox 单位携带 keypoint_schema，或 keypoint 作为唯一破例单位——v0.21.22 需专门处理。
+- **交互式 SAM 逐帧成本（v0.21.23）**：每次 prompt 要取当前帧图送后端，延迟需评估。
+  ~~后端 `/predict` 零改~~ **❌ 已推翻（2026-07-07 核实）**：交互式端点是 `interactive-annotating`（非 `/predict`），
+  且**只传 `task_id`、服务端自取图**；视频 task 的 `file_path` 是整段 mp4 → **必须新增 `interactive-annotating-frame` 端点**。
+  详见 v0.21.23 计划「核心决策 1」。
+- ~~**工具单位配置面**：沿用 bbox 单位扩子开关~~ **❌ 已推翻（v0.21.21 落地时用户二次拍板）**：改为**独立工具单位**——
+  折线→`polyline` 单位、多边形→`region` 单位，各自独立类别/属性 schema（对齐图片工作台）；每个视频几何单位内含
+  `video_modes:{box,track}`（单帧/轨迹）子开关。`VideoModesConfig` 的 `polygon/polyline/keypoint/rotated_box` 死字段
+  已于 v0.21.21 清理。详见 [视频几何工具单位对齐图片](2026-07-07-video-geometry-units-align-image.md)。
 
 ## 决策记录 + 开放问题
 
 **✅ 已定（2026-07-07）：**
 1. **共享 vs 复刻**：**路 B 务实切分**（复用 `tools/*` 工具单元 + 抽共享几何渲染器 + 视频栈薄封装 DragInit 派发，不统一整个
    ImageStage）。头号前置，v0.21.21 PR1 落地。
-2. **工具单位粒度**：**沿用 bbox 单位扩子开关**，不建每几何独立 `ToolBinding`。`VideoModesConfig`（`_jsonb_types.py:300-318`）
-   从 `{box, track}` 扩为含 `polygon/polyline/keypoint/rotated_box/mask` 的多开关，各几何共享 bbox 单位的类别/属性绑定。
-   **注意**：keypoint 的 `keypoint_schema` 需挂到 bbox 单位（唯一破例），v0.21.22 专门处理；`_at_least_one_enabled` 校验
-   （`:312-318`）同步放宽为「至少一个几何开关可用」。
+2. ~~**工具单位粒度**：沿用 bbox 单位扩子开关~~ → **❌ 已被 v0.21.21 推翻，改为独立工具单位**（见上「风险」条目与
+   [对齐计划](2026-07-07-video-geometry-units-align-image.md)）。原表述保留仅作决策沿革，**勿据此实施**。
 3. **单帧 mask 存储**：**先矢量化**——笔刷编辑 → `mask_to_multi_polygon` → 落 `video_polygon`/`video_multi_polygon`，不引 per-frame
-   栅格（与 v0.21.20 缺口 4 一致）。真·栅格 mask 单独立项。
-
-**待拍板：**
-4. **版本号最终编排**：21–24 若某版本体量超预期可再裂（如 23 的 exemplar/magic-box 单列）。
+   栅格（与 v0.21.20 缺口 4 一致）。真·栅格 mask 单独立项。（随 v0.21.22 一并暂停。）
+4. **版本号编排**：**跳过 v0.21.22 不重编号**——文件名 / 分期表 / ROADMAP 三处已引用，跳号语义合法，重命名成本大于收益。
+5. **`ai_interactive` 建模错误**（2026-07-07 用户提出 + 代码核实）：它被错误建模为几何单位，派生「死开关」与「伪类别域」
+   两个 bug。**定稿**：AI 交互开关移入项目设置「ML 模型」（新增 `project.ai_interactive_enabled` 列），
+   `ai_interactive` 单位退役，AI 工具按**产出几何**归属单位（smart-*→`region`、magic-box→`bbox`）。
+   **是 v0.21.23 的前置 PR0.5**，否则视频侧会复制同一错误。
