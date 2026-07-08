@@ -51,13 +51,23 @@ export const SAM_MIN_DRAG = 0.005;
 
 /** 交互式 SAM 提示工具 —— 不画几何, 松手派发 onSamPrompt 请求候选。 */
 export function isSamProbeTool(t: VideoTool): boolean {
-  return t === "smart-point" || t === "smart-box" || t === "exemplar";
+  return t === "smart-point" || t === "smart-box" || t === "exemplar" || t === "magic-box";
+}
+
+/**
+ * 候选需要用户逐个挑选 (Tab 切换 / Enter 采纳) 的 AI 工具。
+ * magic-box 例外: 单候选、候选一到就自动弹类选择器, 键盘导航对它无意义 (与图片侧一致)。
+ */
+export function isSamCandidateNavTool(t: VideoTool): boolean {
+  return isSamProbeTool(t) && t !== "magic-box";
 }
 
 /** 提示形态: point 是零位移点击; bbox(interactive_box) 与 exemplar(视觉示例框) 都是拖框。 */
 export function samProbeMode(t: VideoTool): "point" | "bbox" | "exemplar" {
   if (t === "smart-point") return "point";
-  return t === "exemplar" ? "exemplar" : "bbox";
+  if (t === "exemplar") return "exemplar";
+  // magic-box 骑 interactive_box prompt; 差异只在采纳时收紧成外接框。
+  return "bbox";
 }
 
 type DragModifiers = { shiftKey?: boolean; altKey?: boolean };

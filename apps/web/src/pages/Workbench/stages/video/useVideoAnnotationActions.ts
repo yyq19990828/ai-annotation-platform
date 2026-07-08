@@ -262,12 +262,6 @@ export function useVideoAnnotationActions({
     handleVideoCreateWithClass("video_track_bbox", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
   }, [handleVideoCreateWithClass, s.activeClass]);
 
-  // v0.21.23 · 采纳矩形候选 (exemplar 的 box 输出 / 后续 magic-box) → 单帧 video_bbox。
-  // 与 handleVideoPointsCreate 同式: 用 activeClass, 不弹类 popover (视频侧 AI 采纳的一贯做法)。
-  const handleVideoSingleFrameBboxCreate = useCallback((frameIndex: number, geo: Geom) => {
-    handleVideoCreateWithClass("video_bbox", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
-  }, [handleVideoCreateWithClass, s.activeClass]);
-
   // v0.21.20 · 由绘制顶点新建 polygon/polyline track (单关键帧于当前帧)。
   const handleVideoPointsTrackCreate = useCallback((
     type: "video_track_polygon" | "video_track_polyline",
@@ -623,7 +617,6 @@ export function useVideoAnnotationActions({
   return {
     handleVideoCreate,
     handleVideoCreateWithClass,
-    handleVideoSingleFrameBboxCreate,
     handleVideoPointsTrackCreate,
     handleVideoPointsCreate,
     handleVideoPointsCreateWithClass,

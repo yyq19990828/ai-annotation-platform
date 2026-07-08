@@ -1075,6 +1075,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               <VideoSamCandidateOverlay
                 candidates={samCandidates}
                 activeIdx={samActiveIdx}
+                previewAsBbox={videoTool === "magic-box"}
                 sessionPoints={samSessionPoints}
                 width={size.w}
                 height={size.h}

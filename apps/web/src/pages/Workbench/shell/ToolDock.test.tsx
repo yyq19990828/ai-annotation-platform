@@ -141,7 +141,7 @@ describe("ToolDock · AI 工具三层门控", () => {
 
 // v0.21.23 · 视频侧交互式 SAM 工具（此前视频分支完全没有 ML 能力门控）
 describe("ToolDock · 视频 AI 工具三层门控", () => {
-  const VIDEO_AI = ["smart-point", "smart-box", "exemplar"];
+  const VIDEO_AI = ["smart-point", "smart-box", "exemplar", "magic-box"];
 
   it("默认全开 → 视频 AI 工具显示", () => {
     render(
@@ -220,7 +220,7 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
   });
 
   it("层 3 · region 单位未启用 → smart-* 随多边形一起隐藏（产出几何归属）", () => {
-    // 模拟只启用 bbox 单位: polygon / smart-* 都归 region → 全隐藏。
+    // 模拟只启用 bbox 单位: box / track / magic-box 归 bbox, 其余归 region / polyline。
     render(
       <ToolDock
         tool="select"
@@ -228,7 +228,7 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
         videoMode
         videoTool="select"
         onSetVideoTool={vi.fn()}
-        isVideoToolEnabled={(t) => t === "box" || t === "track"}
+        isVideoToolEnabled={(t) => t === "box" || t === "track" || t === "magic-box"}
       />,
     );
     expect(screen.queryByTestId("video-tool-btn-smart-point")).toBeNull();
@@ -236,5 +236,7 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
     expect(screen.queryByTestId("video-tool-btn-exemplar")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
     expect(screen.getByTestId("video-tool-btn-box")).toBeInTheDocument();
+    // magic-box 产矩形框 → 归 bbox 单位, 只启用 bbox 时它**仍在**（与 smart-* 分家）。
+    expect(screen.getByTestId("video-tool-btn-magic-box")).toBeInTheDocument();
   });
 });

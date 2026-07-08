@@ -30,6 +30,8 @@ export const VIDEO_TOOL_TARGET: Partial<
   "smart-point": { unit: "region", variant: "box" },
   "smart-box": { unit: "region", variant: "box" },
   exemplar: { unit: "region", variant: "box" },
+  // magic-box 把候选收紧成外接矩形落 video_bbox, 故归 bbox 单位 (与 smart-* / exemplar 不同)。
+  "magic-box": { unit: "bbox", variant: "box" },
 };
 
 /** 该视频工具落在哪个工具单位; select 等非几何工具返回 null。 */

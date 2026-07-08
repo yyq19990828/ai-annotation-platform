@@ -283,6 +283,7 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "s" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-point" });
     expect(dispatch({ key: "D" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-box" });
     expect(dispatch({ key: "e" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "exemplar" });
+    expect(dispatch({ key: "F" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "magic-box" });
     expect(dispatch({ key: "p" }, videoCtx)).toBeNull();
   });
 

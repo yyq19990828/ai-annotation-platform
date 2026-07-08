@@ -51,6 +51,20 @@ describe("videoToolUnits · 交互式 SAM 工具", () => {
     expect(videoToolUnit("exemplar")).toBe("region");
   });
 
+  it("magic-box 归 bbox 单位（它收紧成矩形，不产多边形）", () => {
+    expect(videoToolUnit("magic-box")).toBe("bbox");
+  });
+
+  it("只启用 bbox 单位 → magic-box 可用而 smart-* / exemplar 不可用（按产出几何分家）", () => {
+    const tb: ToolBindings = {
+      bbox: { enabled: true, classes: [], attribute_schema: { fields: [] } },
+      region: { enabled: false, classes: [], attribute_schema: { fields: [] } },
+    } as unknown as ToolBindings;
+    expect(videoToolEnabled("magic-box", tb)).toBe(true);
+    expect(videoToolEnabled("smart-point", tb)).toBe(false);
+    expect(videoToolEnabled("exemplar", tb)).toBe(false);
+  });
+
   it("region 单位未启用 → smart-* 不可用（不得被当作未知工具放行）", () => {
     const tb: ToolBindings = {
       bbox: { enabled: true, classes: [], attribute_schema: { fields: [] } },

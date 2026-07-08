@@ -44,7 +44,8 @@ export type VideoTool =
   | "polyline-track"
   | "smart-point"
   | "smart-box"
-  | "exemplar";
+  | "exemplar"
+  | "magic-box";
 // v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
 export type ThreeDTool = "select" | "box" | "point-mask";
 

@@ -7,7 +7,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
-import { advanceDrag, isSamProbeTool, resolveDragCommit, samProbeMode, type ResolveDragCommitCtx } from "./videoKonvaInteraction";
+import {
+  advanceDrag,
+  isSamCandidateNavTool,
+  isSamProbeTool,
+  resolveDragCommit,
+  samProbeMode,
+  type ResolveDragCommitCtx,
+} from "./videoKonvaInteraction";
 import type { VideoDragState } from "./videoStageTypes";
 
 function bbox(id: string, frameIndex = 0): AnnotationResponse {
@@ -385,5 +392,18 @@ describe("samProbe · exemplar", () => {
     expect(samProbeMode("smart-point")).toBe("point");
     expect(samProbeMode("smart-box")).toBe("bbox");
     expect(samProbeMode("exemplar")).toBe("exemplar");
+  });
+
+  it("magic-box 骑 interactive_box prompt（提示形态与 smart-box 相同）", () => {
+    expect(isSamProbeTool("magic-box")).toBe(true);
+    expect(samProbeMode("magic-box")).toBe("bbox");
+  });
+
+  it("magic-box 不参与候选导航（单候选，自动弹 popover）", () => {
+    expect(isSamCandidateNavTool("smart-point")).toBe(true);
+    expect(isSamCandidateNavTool("smart-box")).toBe(true);
+    expect(isSamCandidateNavTool("exemplar")).toBe(true);
+    expect(isSamCandidateNavTool("magic-box")).toBe(false);
+    expect(isSamCandidateNavTool("box")).toBe(false);
   });
 });

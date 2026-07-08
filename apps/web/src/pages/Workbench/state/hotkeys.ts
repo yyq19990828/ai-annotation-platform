@@ -70,6 +70,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["S"], desc: "视频智能点工具（交互式 SAM 分割当前帧；Alt+点击落负点）", group: "video", actionType: "setVideoTool" },
   { keys: ["D"], desc: "视频智能框工具（框选目标，交互式 SAM 分割当前帧）", group: "video", actionType: "setVideoTool" },
   { keys: ["E"], desc: "视频示例框工具（框一个例子，找出当前帧所有同类；Alt+框排除误检）", group: "video", actionType: "setVideoTool" },
+  { keys: ["F"], desc: "视频 Magic Box 工具（粗框 → SAM 收紧 → 落矩形框）", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "上一帧 / 下一帧（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
   { keys: ["Shift", "← / →"], desc: "采样开启时源帧 ±1 微调", group: "video", actionType: "videoMicroStep" },
   { keys: [", / ."], desc: "选中轨迹时跳上 / 下关键帧", group: "video", actionType: "videoSeekKeyframe" },
@@ -163,7 +164,7 @@ export type HotkeyAction =
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
   | { type: "setTool"; tool: "select" | "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
-  | { type: "setVideoTool"; tool: "select" | "box" | "track" | "smart-point" | "smart-box" | "exemplar" }
+  | { type: "setVideoTool"; tool: "select" | "box" | "track" | "smart-point" | "smart-box" | "exemplar" | "magic-box" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -291,6 +292,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "s" || e.key === "S") return { type: "setVideoTool", tool: "smart-point" };
     if (e.key === "d" || e.key === "D") return { type: "setVideoTool", tool: "smart-box" };
     if (e.key === "e" || e.key === "E") return { type: "setVideoTool", tool: "exemplar" };
+    if (e.key === "f" || e.key === "F") return { type: "setVideoTool", tool: "magic-box" };
     // 视频导航只保留两类心智模型：箭头负责帧导航，,/. 负责选中轨迹的关键帧导航。
     if (ctx.samplingActive) {
       if (e.key === "ArrowRight") {

@@ -44,7 +44,8 @@ import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI, type InteractiveTransport, type TextOutputMode } from "./useInteractiveAI";
 import type { VideoSamPrompt } from "../stage/videoStageTypes";
-import { isSamProbeTool } from "../stage/videoKonvaInteraction";
+import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
+import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -1436,7 +1437,6 @@ export function useWorkbenchShellModel({
   const {
     handleVideoCreate,
     handleVideoCreateWithClass,
-    handleVideoSingleFrameBboxCreate,
     handleVideoPointsTrackCreate,
     handleVideoPointsCreate,
     handleVideoPointsCreateWithClass,
@@ -1478,7 +1478,8 @@ export function useWorkbenchShellModel({
 
   useEffect(() => {
     if (!isVideoTask) return;
-    if (!isSamProbeTool(s.videoTool)) return;
+    // magic-box 不参与候选导航 (单候选, 自动弹 popover) —— 与图片侧一致。
+    if (!isSamCandidateNavTool(s.videoTool)) return;
     if (sam.candidates.length === 0) return;
     // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
     if (videoSamPendingAccept) return;
@@ -1510,6 +1511,16 @@ export function useWorkbenchShellModel({
     return () => window.removeEventListener("keydown", handler, true);
   }, [isVideoTask, s.videoTool, sam, videoSamPendingAccept]);
 
+  // magic-box: 候选一到就自动弹类选择器 (无需 Enter), 选定类别后收紧成外接框 —— 与图片侧同式。
+  useEffect(() => {
+    if (!isVideoTask || s.videoTool !== "magic-box") return;
+    if (sam.isRunning || sam.candidates.length === 0 || videoSamPendingAccept) return;
+    const geom = samCandidateGeom(sam.candidates[0]);
+    if (!geom) return;
+    const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
+    setVideoSamPendingAccept({ idx: 0, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
+  }, [isVideoTask, s.videoTool, sam.isRunning, sam.candidates, videoSamPendingAccept]);
+
   // 候选被清空 / 切工具 / 切帧 → popover 一并收起, 避免它悬在一个已不存在的候选上。
   useEffect(() => {
     if (videoSamPendingAccept && !sam.candidates[videoSamPendingAccept.idx]) {
@@ -1525,6 +1536,17 @@ export function useWorkbenchShellModel({
     setVideoSamPendingAccept(null);
     const c = sam.candidates[pending.idx];
     if (!c) return;
+    // magic-box: 不论候选形态一律收紧成紧凑外接矩形落 video_bbox, 并结束整个会话 (单候选)。
+    if (s.videoTool === "magic-box") {
+      const tight = c.type === "rectanglelabels" && c.bbox
+        ? { x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height }
+        : c.points && c.points.length >= 3
+        ? tightenBboxFromPolygon(c.points)
+        : null;
+      sam.cancel();
+      if (tight) handleVideoCreateWithClass("video_bbox", s.videoFrameIndex, tight, cls);
+      return;
+    }
     if (c.type === "rectanglelabels" && c.bbox) {
       handleVideoCreateWithClass("video_bbox", s.videoFrameIndex, {
         x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height,
@@ -1533,12 +1555,13 @@ export function useWorkbenchShellModel({
       handleVideoPointsCreateWithClass("video_polygon", s.videoFrameIndex, c.points, cls);
     }
     sam.consume(pending.idx);
-  }, [videoSamPendingAccept, sam, s.videoFrameIndex, handleVideoCreateWithClass, handleVideoPointsCreateWithClass]);
+  }, [videoSamPendingAccept, sam, s.videoTool, s.videoFrameIndex, handleVideoCreateWithClass, handleVideoPointsCreateWithClass]);
 
   const handleVideoSamCancelClass = useCallback(() => {
     setVideoSamPendingAccept(null);
-    // 注: 图片侧 magic-box 单候选时取消 = 放弃整个会话; 视频 magic-box 待 PR3 加入后同此处理。
-  }, []);
+    // magic-box 只有单个候选: 取消 = 放弃整个会话, 否则 effect 会立刻把 popover 再弹出来。
+    if (s.videoTool === "magic-box") sam.cancel();
+  }, [s.videoTool, sam]);
 
   // popover 定位用的候选外接框 (归一化)。
   const videoSamPendingGeom = useMemo(() => {

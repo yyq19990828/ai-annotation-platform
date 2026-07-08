@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { Circle, Line, Rect } from "react-konva";
+import { tightenBboxFromPolygon } from "./shared/geometry/bbox";
 
 /** 与图片侧 SAM_CANDIDATE_STROKE 同值（canvas 数据域颜色，非 Tailwind token）。 */
 const SAM_STROKE = "#a855f7";
@@ -38,6 +39,11 @@ export type VideoSamCandidateShape = {
 export interface VideoSamCandidateOverlayProps {
   candidates: VideoSamCandidateShape[];
   activeIdx: number;
+  /**
+   * Magic Box: 候选多边形只作几何源, 采纳时收紧成外接矩形 —— 预览也画矩形, 否则用户看到
+   * 一个贴合轮廓的多边形、落库却是个框。与图片侧 SamCandidateOverlay 的同款特判对齐。
+   */
+  previewAsBbox?: boolean;
   /** 当前点会话已落的正/负点，供多点精修时可视化。 */
   sessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
   /** stage 尺寸（像素）。 */
@@ -49,6 +55,7 @@ export interface VideoSamCandidateOverlayProps {
 export function VideoSamCandidateOverlay({
   candidates,
   activeIdx,
+  previewAsBbox = false,
   sessionPoints,
   width,
   height,
@@ -104,6 +111,21 @@ export function VideoSamCandidateOverlay({
           );
         }
         if (!c.points || c.points.length < 3) return null;
+        // Magic Box: 多边形候选以其紧凑外接矩形预览 (采纳时也是这么收紧的)。
+        if (previewAsBbox) {
+          const tight = tightenBboxFromPolygon(c.points);
+          if (!tight) return null;
+          return (
+            <Rect
+              key={c.id}
+              x={tight.x * width}
+              y={tight.y * height}
+              width={tight.w * width}
+              height={tight.h * height}
+              {...common}
+            />
+          );
+        }
         const flat: number[] = [];
         for (const [x, y] of c.points) flat.push(x * width, y * height);
         return <Line key={c.id} points={flat} closed {...common} />;
