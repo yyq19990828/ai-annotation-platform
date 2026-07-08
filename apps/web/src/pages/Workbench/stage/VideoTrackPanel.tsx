@@ -331,7 +331,7 @@ export function VideoTrackPanel({
                 onSelect(ann.id, { toggle });
               }}
               className={cn(
-                "grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center p-2 px-2.5 border border-border rounded-lg bg-transparent cursor-pointer",
+                "grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center p-2 px-2.5 border border-border rounded-lg bg-transparent cursor-pointer select-none",
                 selected && "!border-brand bg-brand/10",
                 primarySelected && batchCount > 1 && "shadow-[inset_3px_0_0_var(--sc-brand)]",
               )}
