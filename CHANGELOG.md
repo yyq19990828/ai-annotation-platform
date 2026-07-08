@@ -34,6 +34,8 @@
 
 ## [Unreleased]
 
+## [0.21.21] - 2026-07-07
+
 ### Added
 - **视频工作台单帧 polygon / polyline 标注**：视频某一帧上可用「多边形」(G) / 「折线」(L) 工具逐点画单帧几何
   (`video_polygon` / `video_polyline`, 与图片工具集同款、非轨迹), 点击落点、Enter/双击提交、Esc 取消, 只在所属帧显示。

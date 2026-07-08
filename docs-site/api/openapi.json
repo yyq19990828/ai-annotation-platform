@@ -20960,7 +20960,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.21.20"
+    "version": "0.21.21"
   },
   "openapi": "3.1.0",
   "paths": {
