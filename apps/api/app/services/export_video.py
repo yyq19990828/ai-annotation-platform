@@ -146,6 +146,17 @@ def track_grid_rows(
 # ── YOLO frame detection dataset ──────────────────────────────────────
 
 
+def yolo_seg_line(class_id: int, ring: list) -> str:
+    """YOLO-seg label 行：``cls x1 y1 x2 y2 …``（归一化顶点展平，6 位小数）。
+
+    **图片与视频两条 YOLO-seg 导出链共用**（对应 ``export_packaging`` 的 ``yolo-seg``
+    与本模块的 ``build_yolo_frame_seg_labels``），避免各写一份逐渐漂移。放在本模块是因为
+    ``export_packaging`` 已依赖本模块，反向 import 会成环。
+    """
+    flat = " ".join(f"{coord:.6f}" for pt in ring for coord in pt[:2])
+    return f"{class_id} {flat}"
+
+
 def _yolo_det_line(class_id: int, bbox: dict) -> str:
     cx = float(bbox.get("x", 0)) + float(bbox.get("w", 0)) / 2
     cy = float(bbox.get("y", 0)) + float(bbox.get("h", 0)) / 2
@@ -199,6 +210,68 @@ def build_yolo_frame_det_labels(
             out_frame = grid_index + frame_start_number
             lines, attrs = labels[out_frame]
             lines.append(_yolo_det_line(class_id, _frame_bbox(frame)))
+            if include_attributes:
+                attrs.append(attributes or {})
+
+    return labels
+
+
+# ── YOLO frame segmentation dataset ──────────────────────────────────
+
+
+def build_yolo_frame_seg_labels(
+    tracks: list[tuple[str | None, dict, dict]],
+    bboxes: list[tuple[str | None, dict, dict]],
+    cat_map: dict[str, int],
+    *,
+    frame_count: int,
+    step: int,
+    frame_start_number: int,
+    include_attributes: bool,
+) -> dict[int, tuple[list[str], list[dict]]]:
+    """YOLO-seg labels：逐帧多边形（**保留顶点，不降级为外接框**）。
+
+    与 ``build_yolo_frame_det_labels`` 同构（同一采样网格 / 帧号基数 / 文件名约定，
+    所有采样帧都建 txt，含空文件），但只导**多边形**几何：单帧 ``video_polygon``
+    与 ``video_track_polygon``（后者按弧长插值展开到每帧）。
+
+    矩形框与折线不产出 seg 行 —— 对齐图片侧 ``yolo-seg``（``_seg_rings_norm`` 亦只认
+    polygon / multi_polygon）：折线不是闭合区域，矩形框请用 ``yolo-frames-det``。
+    """
+    grid = source_to_grid(frame_count, step)
+    labels: dict[int, tuple[list[str], list[dict]]] = {
+        grid_index + frame_start_number: ([], []) for grid_index in grid.values()
+    }
+
+    for class_name, geometry, attributes in bboxes:
+        if geometry.get("type") != "video_polygon":
+            continue
+        points = geometry.get("points") or []
+        if len(points) < 3:
+            continue
+        grid_index = grid.get(int(geometry.get("frame_index", 0)))
+        if grid_index is None:
+            continue
+        lines, attrs = labels[grid_index + frame_start_number]
+        lines.append(yolo_seg_line(cat_map.get(class_name or "", 0), points))
+        if include_attributes:
+            attrs.append(attributes or {})
+
+    for class_name, geometry, attributes in tracks:
+        if geometry.get("type") != "video_track_polygon":
+            continue
+        class_id = cat_map.get(class_name or "", 0)
+        for frame in resolved_track_frames(
+            geometry, frame_mode="all_frames", frame_count=frame_count
+        ):
+            points = frame.get("points") or []
+            if len(points) < 3:
+                continue
+            grid_index = grid.get(int(frame.get("frame_index", 0)))
+            if grid_index is None:
+                continue
+            lines, attrs = labels[grid_index + frame_start_number]
+            lines.append(yolo_seg_line(class_id, points))
             if include_attributes:
                 attrs.append(attributes or {})
 

@@ -426,3 +426,124 @@ async def test_polygon_track_reaches_mot_gt(monkeypatch):
         # outside 覆盖 frame 2 → 网格帧 2 无行；frame 4 → MOT 帧 3。
         assert any(r.startswith("3,1,") for r in rows)
         assert not any(r.startswith("2,1,") for r in rows)
+
+
+# ── yolo-frames-seg：保留多边形顶点（不降级为外接框）───────────────────────
+
+
+async def test_yolo_frames_seg_keeps_polygon_vertices(monkeypatch):
+    """seg 导出保留原始顶点；同一几何在 det 里是外接框，在 seg 里是多边形。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    single = _single_frame_polygon(task_id, project_id)  # frame 2, 4 顶点矩形
+
+    async def _chunks():
+        yield [task], {task_id: [single]}, {item_id: item}
+
+    data, _ = await _run_video_zip(project, _chunks(), ["yolo-frames-seg"])
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert "data.yaml" in zf.namelist()
+        assert "fetch_frames.py" in zf.namelist()
+        # 顶点原样展平，而非 det 版的 `1 0.3 0.4 0.2 0.4` 外接框中心宽高。
+        assert zf.read("labels/clip-a/000002.txt").decode() == (
+            "1 0.200000 0.200000 0.400000 0.200000 0.400000 0.600000 0.200000 0.600000"
+        )
+        # 其余采样帧建空 txt（YOLO 要求每张图都有 label 文件）。
+        assert zf.read("labels/clip-a/000001.txt").decode() == ""
+        assert zf.read("labels/clip-a/000003.txt").decode() == ""
+
+
+async def test_yolo_frames_seg_expands_polygon_track_per_frame(monkeypatch):
+    """polygon track 按帧展开为 seg 行；outside 帧不产出。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    track = _polygon_track(task_id, project_id)  # kf@0 与 kf@4，outside 覆盖 2
+
+    async def _chunks():
+        yield [task], {task_id: [track]}, {item_id: item}
+
+    data, _ = await _run_video_zip(project, _chunks(), ["yolo-frames-seg"])
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.read("labels/clip-a/000001.txt").decode() == (
+            "0 0.000000 0.000000 0.200000 0.000000 0.200000 0.200000"
+        )
+        assert zf.read("labels/clip-a/000002.txt").decode() == ""  # outside
+        assert zf.read("labels/clip-a/000003.txt").decode() == (
+            "0 0.600000 0.600000 0.800000 0.600000 0.800000 0.800000"
+        )
+
+
+async def test_yolo_frames_seg_skips_bbox_and_polyline(monkeypatch):
+    """对齐图片侧 yolo-seg：矩形框与折线不产出 seg 行（折线非闭合区域）。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    bbox = Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_bbox",
+        class_name="person",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 0.1,
+            "y": 0.1,
+            "w": 0.2,
+            "h": 0.2,
+        },
+        attributes={},
+    )
+    polyline = Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_polyline",
+        class_name="car",
+        geometry={
+            "type": "video_polyline",
+            "frame_index": 0,
+            "points": [[0.1, 0.1], [0.5, 0.3], [0.3, 0.5]],
+        },
+        attributes={},
+    )
+
+    async def _chunks():
+        yield [task], {task_id: [bbox, polyline]}, {item_id: item}
+
+    data, _ = await _run_video_zip(project, _chunks(), ["yolo-frames-seg"])
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.read("labels/clip-a/000001.txt").decode() == ""
+
+
+def test_clean_export_targets_accepts_video_yolo_frames_seg():
+    assert clean_export_targets(
+        ["yolo-frames-det", "yolo-frames-seg"], data_type="video"
+    ) == ["yolo-frames-det", "yolo-frames-seg"]
+
+
+def test_clean_export_targets_rejects_yolo_frames_seg_for_image_project():
+    with pytest.raises(ValueError, match="image project"):
+        clean_export_targets(["coco", "yolo-frames-seg"], data_type="image")

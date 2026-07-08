@@ -59,6 +59,8 @@ from app.services.export_video import (
     build_mot_gt,
     build_mot_seqinfo,
     build_yolo_frame_det_labels,
+    build_yolo_frame_seg_labels,
+    yolo_seg_line,
 )
 from app.services.project import (
     derive_attribute_schema,
@@ -68,7 +70,15 @@ from app.services.storage import storage_service
 from app.services.video_frame_service import derive_sampled_frames, derive_step
 from app.services.video_tracks import derive_track_number
 
-VIDEO_EXPORT_FORMATS = {"video_json", "aap_json", "mot", "kitti", "yolo-frames-det"}
+VIDEO_EXPORT_FORMATS = {
+    "video_json",
+    "aap_json",
+    "mot",
+    "kitti",
+    "yolo-frames-det",
+    # 逐帧 YOLO 分割：保留多边形顶点（bbox-only 的 det 只能给外接框）。
+    "yolo-frames-seg",
+}
 LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
@@ -344,9 +354,8 @@ def _yolo_target_lines(
             produced = 1
         elif target == "yolo-seg":
             rings = _seg_rings_norm(g)
-            for ring in rings:
-                flat = " ".join(f"{coord:.6f}" for pt in ring for coord in pt[:2])
-                lines.append(f"{cid} {flat}")
+            # 行格式与视频侧 yolo-frames-seg 共用 yolo_seg_line，避免两份实现漂移。
+            lines.extend(yolo_seg_line(cid, ring) for ring in rings)
             produced = len(rings)
         if produced and include_attributes:
             attrs.extend([ann.attributes or {}] * produced)
@@ -408,7 +417,9 @@ async def build_export_zip(
 
         # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
         if project.data_type == "video":
-            needs_ann = bool({"mot", "kitti", "yolo-frames-det"} & set(targets))
+            needs_ann = bool(
+                {"mot", "kitti", "yolo-frames-det", "yolo-frames-seg"} & set(targets)
+            )
             chunks = svc.iter_export_chunks(
                 project_id, batch_id, with_annotations=needs_ann
             )
@@ -1064,8 +1075,9 @@ async def _build_video_export_zip(
     has_mot = "mot" in targets
     has_kitti = "kitti" in targets
     has_yolo_frames = "yolo-frames-det" in targets
-    has_frame_sequences = has_mot or has_kitti or has_yolo_frames
-    frame_start_number = 1 if has_mot or has_yolo_frames else 0
+    has_yolo_frames_seg = "yolo-frames-seg" in targets
+    has_frame_sequences = has_mot or has_kitti or has_yolo_frames or has_yolo_frames_seg
+    frame_start_number = 1 if has_mot or has_yolo_frames or has_yolo_frames_seg else 0
 
     classes_list = derive_classes_list(project.tool_bindings)
     attribute_schema = derive_attribute_schema(project.tool_bindings)
@@ -1095,7 +1107,7 @@ async def _build_video_export_zip(
                     f"{prefix}annotations.json",
                     await svc.export_aap_json(project.id, batch_id=batch_id),
                 )
-            elif target == "yolo-frames-det":
+            elif target in ("yolo-frames-det", "yolo-frames-seg"):
                 zf.writestr(f"{prefix}classes.txt", "\n".join(classes_list))
                 if include_attributes:
                     zf.writestr(
@@ -1219,6 +1231,35 @@ async def _build_video_export_zip(
                                 ),
                             )
 
+                if has_yolo_frames_seg:
+                    yp = "yolo-frames-seg/" if multi else ""
+                    seg_labels = build_yolo_frame_seg_labels(
+                        [
+                            (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                            for ann in track_anns
+                        ],
+                        [
+                            (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                            for ann in bbox_anns
+                        ],
+                        cat_map,
+                        frame_count=frame_count,
+                        step=step,
+                        frame_start_number=frame_start_number,
+                        include_attributes=include_attributes,
+                    )
+                    for frame_no, (lines, attrs_per_line) in sorted(seg_labels.items()):
+                        base = f"{yp}labels/{seq}/{frame_no:06d}"
+                        zf.writestr(f"{base}.txt", "\n".join(lines))
+                        file_count += 1
+                        if include_attributes and attrs_per_line:
+                            zf.writestr(
+                                f"{base}.attrs.json",
+                                json.dumps(
+                                    {"attributes": attrs_per_line}, ensure_ascii=False
+                                ),
+                            )
+
                 # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
                 dataset_name = _dataset_name_for_task(t, item)
                 video_rel = relative_path_from_file_path(t.file_path, dataset_name)
@@ -1232,6 +1273,9 @@ async def _build_video_export_zip(
                     frame_output_dirs.append(f"{seq}/img1")
                 if has_yolo_frames:
                     yp = "yolo-frames-det/" if multi else ""
+                    frame_output_dirs.append(f"{yp}images/{seq}")
+                if has_yolo_frames_seg:
+                    yp = "yolo-frames-seg/" if multi else ""
                     frame_output_dirs.append(f"{yp}images/{seq}")
                 manifest_videos.append(
                     {
