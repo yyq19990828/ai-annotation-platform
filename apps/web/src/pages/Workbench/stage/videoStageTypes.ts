@@ -47,6 +47,9 @@ export type VideoDragState =
   // 单帧 polygon/polyline 提交后编辑: 拖单个顶点 / 整体平移。points 归一化 [0,1]。
   | { kind: "polyVertex"; id: string; vidx: number; start: { x: number; y: number }; origin: [number, number][]; current: [number, number][] }
   | { kind: "polyMove"; id: string; start: { x: number; y: number }; origin: [number, number][]; current: [number, number][] }
+  // v0.21.23 · 交互式 SAM 提示 (smart-point / smart-box)。point 是零位移「拖拽」,
+  // bbox 拖出提示框; 松手派发到 onSamPrompt, 不直接建标注。坐标归一化 [0,1]。
+  | { kind: "samProbe"; mode: "point" | "bbox"; start: { x: number; y: number }; current: { x: number; y: number }; alt: boolean }
   | { kind: "pan"; sx: number; sy: number }
   | null;
 

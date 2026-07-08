@@ -52,6 +52,8 @@ import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
 import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
 
+/** v0.21.23 · SAM 提示框描边色，与图片侧 SAM_CANDIDATE_STROKE 同值（canvas 数据域颜色）。 */
+const SAM_PROBE_STROKE = "#a855f7";
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
 const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
@@ -115,6 +117,12 @@ interface VideoKonvaStageProps {
     anchor: { left: number; top: number },
   ) => void;
   onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
+  /** v0.21.23 · 交互式 SAM 提示松手 (归一化坐标)；由 shell 取当前帧图请求候选。 */
+  onSamPrompt?: (
+    prompt:
+      | { mode: "point"; pt: [number, number]; alt: boolean }
+      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
+  ) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
@@ -188,6 +196,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onCreatePoints,
   onPendingDraw,
   onUpdate,
+  onSamPrompt,
   onChangeUserBoxClass,
   onComposeTracks,
   onConvertToBboxes,
@@ -474,6 +483,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     onCreate: onCreate ?? noopCreate,
     onPendingDraw,
     onUpdate: onUpdate ?? noopUpdate,
+    onSamPrompt,
   });
   const { drag } = interaction;
 
@@ -574,6 +584,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   const preview = useMemo<VideoPreviewBox | null>(() => {
     if (!drag) return null;
+    // v0.21.23 · smart-box 的提示框预览 (紫色, 与图片侧 SAM 候选同色); point 无框可画。
+    if (drag.kind === "samProbe") {
+      return drag.mode === "bbox"
+        ? { geom: normalizeGeom(drag.start, drag.current), color: SAM_PROBE_STROKE }
+        : null;
+    }
     if (drag.kind === "draw") {
       const drawColor = videoTool === "track" && selectedTrack
         ? getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides)
@@ -834,11 +850,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   // 工具模式光标反馈:平移中 grabbing;按住 Space 可抓;创建工具十字,选择工具普通光标。
   // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
   const creationEnabled = (videoTool === "box" || videoTool === "track") && (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
+  // v0.21.23 · 交互式 SAM 工具同样用十字光标 (提示落点即分割位置)。
+  const samProbeTool = videoTool === "smart-point" || videoTool === "smart-box";
   const cursorClass = panning
     ? styles.rootPanning
     : spacePan
       ? styles.toolGrab
-      : creationEnabled || pointsDrawEnabled
+      : creationEnabled || pointsDrawEnabled || samProbeTool
         ? styles.toolCrosshair
         : "";
 

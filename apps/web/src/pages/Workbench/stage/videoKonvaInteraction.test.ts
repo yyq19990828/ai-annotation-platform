@@ -263,3 +263,73 @@ describe("resolveDragCommit", () => {
     expect(resolveDragCommit(missing, { x: 0.2, y: 0.2 }, baseCtx).type).toBe("none");
   });
 });
+
+// v0.21.23 · 交互式 SAM 提示 (smart-point / smart-box)
+describe("samProbe · 交互式 SAM 提示", () => {
+  const probe = (
+    mode: "point" | "bbox",
+    start: { x: number; y: number },
+    current: { x: number; y: number },
+    alt = false,
+  ): VideoDragState => ({ kind: "samProbe", mode, start, current, alt });
+
+  it("advanceDrag 推进 current（bbox 拖框实时预览）", () => {
+    const next = advanceDrag(probe("bbox", { x: 0.1, y: 0.1 }, { x: 0.1, y: 0.1 }), {
+      x: 0.4,
+      y: 0.5,
+    });
+    expect(next).toMatchObject({ kind: "samProbe", current: { x: 0.4, y: 0.5 } });
+  });
+
+  it("point 模式提交起点坐标，与松手位置无关（零位移点击）", () => {
+    const commit = resolveDragCommit(
+      probe("point", { x: 0.3, y: 0.6 }, { x: 0.3, y: 0.6 }),
+      { x: 0.31, y: 0.61 },
+      { ...baseCtx, videoTool: "smart-point" },
+    );
+    expect(commit).toEqual({ type: "samProbe", mode: "point", pt: [0.3, 0.6], alt: false });
+  });
+
+  it("point 模式带 alt → 负点", () => {
+    const commit = resolveDragCommit(
+      probe("point", { x: 0.2, y: 0.2 }, { x: 0.2, y: 0.2 }, true),
+      { x: 0.2, y: 0.2 },
+      { ...baseCtx, videoTool: "smart-point" },
+    );
+    expect(commit).toMatchObject({ mode: "point", alt: true });
+  });
+
+  it("bbox 模式归一化为 [x1,y1,x2,y2]，反向拖拽也正序", () => {
+    const commit = resolveDragCommit(
+      probe("bbox", { x: 0.6, y: 0.7 }, { x: 0.6, y: 0.7 }),
+      { x: 0.2, y: 0.3 },
+      { ...baseCtx, videoTool: "smart-box" },
+    );
+    expect(commit).toEqual({
+      type: "samProbe",
+      mode: "bbox",
+      bbox: [0.2, 0.3, 0.6, 0.7],
+      alt: false,
+    });
+  });
+
+  it("bbox 拖拽小于最小阈值 → 不提交（误点不该喂退化框给后端）", () => {
+    const commit = resolveDragCommit(
+      probe("bbox", { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }),
+      { x: 0.502, y: 0.502 }, // 0.002 < SAM_MIN_DRAG(0.005)
+      { ...baseCtx, videoTool: "smart-box" },
+    );
+    expect(commit).toEqual({ type: "none" });
+  });
+
+  it("samProbe 不产生任何几何创建 / 更新提交", () => {
+    const commit = resolveDragCommit(
+      probe("bbox", { x: 0.1, y: 0.1 }, { x: 0.1, y: 0.1 }),
+      { x: 0.5, y: 0.5 },
+      { ...baseCtx, videoTool: "smart-box", annotations: [bbox("a1")] },
+    );
+    expect(commit.type).toBe("samProbe");
+    expect(commit).not.toHaveProperty("ann");
+    expect(commit).not.toHaveProperty("geom");
+  });
+});

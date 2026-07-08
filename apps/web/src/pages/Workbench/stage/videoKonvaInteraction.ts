@@ -45,6 +45,8 @@ import type {
 
 /** 画框/缩放的最小有效尺寸(归一化);与旧栈 finishDrag 的 0.003 阈值一致。 */
 export const VIDEO_MIN_BOX = 0.003;
+/** v0.21.23 · SAM 提示框的最小拖拽边长 (图幅比例)，与图片侧 ImageStage 同值。 */
+export const SAM_MIN_DRAG = 0.005;
 
 type DragModifiers = { shiftKey?: boolean; altKey?: boolean };
 
@@ -56,6 +58,8 @@ export function advanceDrag(
 ): VideoDragState {
   if (!drag || drag.kind === "pan") return drag;
   if (drag.kind === "draw") return { ...drag, current: { x: pt.x, y: pt.y } };
+  // SAM 提示框的实时预览 (point 模式下 current 恒等于 start)。
+  if (drag.kind === "samProbe") return { ...drag, current: { x: pt.x, y: pt.y } };
   // 单帧 polygon/polyline 编辑: 拖顶点 / 整体平移 (origin 是 points 数组)。
   if (drag.kind === "polyVertex") {
     return { ...drag, current: moveVertex(drag.origin, drag.vidx, [clamp01(pt.x), clamp01(pt.y)]) };
@@ -85,7 +89,11 @@ export type VideoDragCommit =
   | { type: "track"; ann: AnnotationResponse; geom: VideoStageGeom }
   | { type: "bbox"; ann: AnnotationResponse; geom: VideoStageGeom }
   // 单帧 polygon/polyline 顶点拖拽 / 整体平移的提交。
-  | { type: "poly"; ann: AnnotationResponse; points: [number, number][] };
+  | { type: "poly"; ann: AnnotationResponse; points: [number, number][] }
+  // v0.21.23 · 交互式 SAM 提示: 不建标注, 交给 onSamPrompt 请求候选 (采纳时才落库)。
+  // 坐标归一化 [0,1]; bbox 形如 [x1,y1,x2,y2] (与图片侧 onSamPrompt 同契约)。
+  | { type: "samProbe"; mode: "point"; pt: [number, number]; alt: boolean }
+  | { type: "samProbe"; mode: "bbox"; bbox: [number, number, number, number]; alt: boolean };
 
 export interface ResolveDragCommitCtx {
   annotations: readonly AnnotationResponse[];
@@ -104,6 +112,20 @@ export function resolveDragCommit(
 ): VideoDragCommit {
   if (!drag || drag.kind === "pan") return { type: "none" };
   const { annotations, videoTool, selectedTrack, lockedTrackIds, frameIndex } = ctx;
+
+  // v0.21.23 · 交互式 SAM 提示 (复刻图片侧 ImageStage 的 samProbe 派发)。
+  if (drag.kind === "samProbe") {
+    if (drag.mode === "point") {
+      return { type: "samProbe", mode: "point", pt: [drag.start.x, drag.start.y], alt: drag.alt };
+    }
+    const x1 = Math.min(drag.start.x, finalPt.x);
+    const y1 = Math.min(drag.start.y, finalPt.y);
+    const x2 = Math.max(drag.start.x, finalPt.x);
+    const y2 = Math.max(drag.start.y, finalPt.y);
+    // 最小拖拽阈值 (图幅的 0.5%): 误点当框会让后端拿到退化 bbox。与图片侧同值。
+    if (x2 - x1 <= SAM_MIN_DRAG || y2 - y1 <= SAM_MIN_DRAG) return { type: "none" };
+    return { type: "samProbe", mode: "bbox", bbox: [x1, y1, x2, y2], alt: drag.alt };
+  }
 
   if (drag.kind === "draw") {
     if (videoTool === "select") return { type: "none" };
@@ -195,6 +217,15 @@ export interface UseVideoKonvaInteractionParams {
     anchor: { left: number; top: number },
   ) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
+  /**
+   * v0.21.23 · 交互式 SAM 提示松手回调 (smart-point / smart-box)。
+   * 坐标归一化 [0,1]，与图片侧 onSamPrompt 同契约；由 shell 取当前帧图请求候选。
+   */
+  onSamPrompt?: (
+    prompt:
+      | { mode: "point"; pt: [number, number]; alt: boolean }
+      | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
+  ) => void;
 }
 
 export interface VideoKonvaInteraction {
@@ -239,6 +270,22 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
   const beginDraw = useCallback((native: PointerEvent) => {
     const p = paramsRef.current;
     if (p.readOnly || p.isPlaybackActive) return;
+    // v0.21.23 · 交互式 SAM 工具不画几何, 起 samProbe 拖拽 (point 零位移 / bbox 拖框)。
+    // 放在 creationEnabled 之前: 提示不创建标注, 其可用性已由工具栏三层门控裁决。
+    if (p.videoTool === "smart-point" || p.videoTool === "smart-box") {
+      const probePt = pointFromClient(native.clientX, native.clientY);
+      if (!probePt) return;
+      p.onSelect(null);
+      setDrag({
+        kind: "samProbe",
+        mode: p.videoTool === "smart-point" ? "point" : "bbox",
+        start: probePt,
+        current: probePt,
+        // Alt = 负点 (仅 point 语义有意义, 对齐图片侧 SmartPointTool)。
+        alt: !!native.altKey,
+      });
+      return;
+    }
     if (!p.creationEnabled) return;
     const trackLocked = p.selectedTrack ? p.lockedTrackIds.has(p.selectedTrack.geometry.track_id) : false;
     if (p.videoTool === "track" && trackLocked) return;
@@ -314,6 +361,11 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     const p = paramsRef.current;
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
+    // v0.21.23 · AI 工具下不做命中拾取: 点在已有标注上也应发 SAM 提示 (对齐图片侧)。
+    if (p.videoTool === "smart-point" || p.videoTool === "smart-box") {
+      beginDraw(native);
+      return;
+    }
     // z 序:carryOver(最低) → entries → 选中 ghost(最高);pickTop 逆序取「最后命中」为 top,
     // 故 carryOver 置首,让实框 / 选中 ghost 覆盖时优先。
     const pickables: VideoPickable[] = [
@@ -382,6 +434,15 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
       } else if (g.type === "video_track_polyline") {
         p.onUpdate(action.ann, upsertPointsKeyframe(g, p.frameIndex, action.points));
       }
+      return;
+    }
+    // v0.21.23 · 交互式 SAM 提示: 不建标注, 交给 shell 请求候选 (采纳时才落库)。
+    if (action.type === "samProbe") {
+      p.onSamPrompt?.(
+        action.mode === "point"
+          ? { mode: "point", pt: action.pt, alt: action.alt }
+          : { mode: "bbox", bbox: action.bbox, alt: action.alt },
+      );
       return;
     }
     // bbox:替换该帧几何。
