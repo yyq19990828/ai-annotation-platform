@@ -9,6 +9,7 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AttributeField, AttributeFieldType } from "@/api/projects";
+import { AttributeOptionsEditor } from "./AttributeOptionsEditor";
 import { LABEL_CLASS } from "./formClasses";
 
 // UA-safe 表单基线 + token 化(无全局 preflight)。
@@ -132,22 +133,10 @@ export function AttributeSchemaEditor({
           )}
 
           {(f.type === "select" || f.type === "multiselect") && (
-            <div>
-              <label className={LABEL_CLASS}>选项（逗号分隔，格式 value:label）</label>
-              <input
-                value={(f.options ?? []).map((o) => `${o.value}:${o.label}`).join(", ")}
-                onChange={(e) => {
-                  const parts = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                  const opts = parts.map((p) => {
-                    const [v, l] = p.split(":").map((x) => x.trim());
-                    return { value: v, label: l || v };
-                  });
-                  setField(i, { options: opts });
-                }}
-                placeholder="yes:是, no:否"
-                className={CONTROL_CLASS}
-              />
-            </div>
+            <AttributeOptionsEditor
+              value={f.options ?? []}
+              onChange={(options) => setField(i, { options })}
+            />
           )}
 
           {(f.type === "number" || f.type === "range") && (
@@ -215,8 +204,17 @@ export function validateAttributeFields(fields: AttributeField[]): string | null
     if (!f.key.trim()) return "属性 key 不能为空";
     if (seen.has(f.key)) return `属性 key 重复: ${f.key}`;
     seen.add(f.key);
-    if ((f.type === "select" || f.type === "multiselect") && (!f.options || f.options.length === 0)) {
-      return `${f.label || f.key} 需要至少 1 个选项`;
+    if (f.type === "select" || f.type === "multiselect") {
+      const opts = f.options ?? [];
+      if (opts.length === 0) return `${f.label || f.key} 需要至少 1 个选项`;
+      // 空 value 会渲染成 <option value="">（选了等于没选）；重复 value 让两个选项无法区分。
+      // 后端 AttributeFieldOption 两者都不拦，只能在此把关。
+      const seenValues = new Set<string>();
+      for (const o of opts) {
+        if (!o.value.trim()) return `${f.label || f.key}：选项 value 不能为空`;
+        if (seenValues.has(o.value)) return `${f.label || f.key}：选项 value 重复 ${o.value}`;
+        seenValues.add(o.value);
+      }
     }
     if (f.style_occluded && f.type !== "boolean") {
       return `${f.label || f.key}：遮挡样式仅支持开关（boolean）字段`;

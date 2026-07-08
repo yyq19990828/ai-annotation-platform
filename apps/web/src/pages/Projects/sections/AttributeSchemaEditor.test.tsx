@@ -47,6 +47,33 @@ describe("validateAttributeFields", () => {
     expect(validateAttributeFields(fields)).toContain("选项");
   });
 
+  it("选项 value 为空不合法", () => {
+    const fields: AttributeField[] = [
+      {
+        key: "color",
+        label: "颜色",
+        type: "select",
+        options: [{ value: "", label: "红" }],
+      },
+    ];
+    expect(validateAttributeFields(fields)).toContain("不能为空");
+  });
+
+  it("选项 value 重复不合法", () => {
+    const fields: AttributeField[] = [
+      {
+        key: "color",
+        label: "颜色",
+        type: "select",
+        options: [
+          { value: "r", label: "红" },
+          { value: "r", label: "赤" },
+        ],
+      },
+    ];
+    expect(validateAttributeFields(fields)).toContain("重复");
+  });
+
   it("完整字段全合法", () => {
     const fields: AttributeField[] = [
       { key: "occluded", label: "遮挡", type: "boolean" },
