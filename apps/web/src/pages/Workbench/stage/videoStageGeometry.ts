@@ -185,6 +185,25 @@ export function upsertKeyframe(
   return removeOutsideFrame(withKeyframes, frameIndex);
 }
 
+/**
+ * v0.21.2x · polygon/polyline track 在某帧 upsert 一个 points 关键帧(镜像 bbox 的 upsertKeyframe)。
+ *
+ * 编辑轨迹几何(拖顶点 / 整体平移)时把当前帧落成 manual 关键帧:精确关键帧→替换其 points;
+ * 插值帧→物化为新关键帧(与 bbox 拖插值帧生成关键帧同语义)。落新可见关键帧时清该帧 outside。
+ */
+export function upsertPointsKeyframe<
+  G extends VideoTrackPolygonGeometry | VideoTrackPolylineGeometry,
+>(track: G, frameIndex: number, points: [number, number][]): G {
+  const frame = Math.max(0, Math.floor(frameIndex));
+  const kept = (track.keyframes as (VideoTrackPolygonKeyframe | VideoTrackPolylineKeyframe)[])
+    .filter((kf) => kf.frame_index !== frame);
+  const keyframes = [
+    ...kept,
+    { frame_index: frame, points, source: "manual", occluded: false },
+  ].sort((a, b) => a.frame_index - b.frame_index);
+  return removeOutsideFrame({ ...track, keyframes } as G, frame);
+}
+
 function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: number): VideoStageGeom {
   const span = Math.max(1, b.frame_index - a.frame_index);
   const t = (frameIndex - a.frame_index) / span;

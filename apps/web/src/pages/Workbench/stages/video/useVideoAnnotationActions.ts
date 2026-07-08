@@ -26,7 +26,7 @@ import {
 import { nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 
 interface ToastInput {
   msg: string;

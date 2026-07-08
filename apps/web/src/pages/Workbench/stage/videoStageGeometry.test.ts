@@ -11,6 +11,7 @@ import {
   sortedKeyframes,
   trackReferenceAtFrame,
   upsertKeyframe,
+  upsertPointsKeyframe,
 } from "./videoStageGeometry";
 import type { VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
 
@@ -174,6 +175,34 @@ describe("videoStageGeometry · polygon track", () => {
       { outside: [{ from: 4, to: 6, source: "manual" }] },
     );
     expect(resolveVideoPolygonTrackAtFrame(withOutside, 5)).toBeNull();
+  });
+
+  it("upsertPointsKeyframe: 精确帧替换 points, 保持排序", () => {
+    const geom = polygonTrack([
+      { frame_index: 0, points: SQUARE_A, source: "manual" },
+      { frame_index: 10, points: SQUARE_B, source: "manual" },
+    ]);
+    const edited: [number, number][] = [[0.05, 0.05], [0.2, 0], [0.2, 0.2], [0, 0.2]];
+    const next = upsertPointsKeyframe(geom, 0, edited);
+    expect(next.keyframes).toHaveLength(2);
+    expect(next.keyframes[0]).toMatchObject({ frame_index: 0, points: edited, source: "manual" });
+    expect(next.keyframes[1].frame_index).toBe(10);
+  });
+
+  it("upsertPointsKeyframe: 插值帧物化为新 manual 关键帧 + 清该帧 outside", () => {
+    const geom = polygonTrack(
+      [
+        { frame_index: 0, points: SQUARE_A, source: "manual" },
+        { frame_index: 10, points: SQUARE_B, source: "manual" },
+      ],
+      { outside: [{ from: 4, to: 6, source: "manual" }] },
+    );
+    const materialized: [number, number][] = [[0.25, 0], [0.45, 0], [0.45, 0.2], [0.25, 0.2]];
+    const next = upsertPointsKeyframe(geom, 5, materialized);
+    expect(next.keyframes).toHaveLength(3);
+    expect(next.keyframes.find((kf) => kf.frame_index === 5)).toMatchObject({ points: materialized, source: "manual" });
+    // 落新可见关键帧 → outside [4,6] 被拆成 [4,4] 与 [6,6]。
+    expect(next.outside).toEqual([{ from: 4, to: 4, source: "manual" }, { from: 6, to: 6, source: "manual" }]);
   });
 });
 

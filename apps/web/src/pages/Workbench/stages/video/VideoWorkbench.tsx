@@ -8,6 +8,8 @@ import type {
   VideoPolylineGeometry,
   VideoSamplingConfig,
   VideoTrackGeometry,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolylineGeometry,
 } from "@/types";
 import type { VideoStageControls } from "../../stage/videoStageControls";
 import { VideoKonvaStage } from "../../stage/VideoKonvaStage";
@@ -23,7 +25,7 @@ import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
   manifest: TaskVideoManifestResponse | undefined;

@@ -38,6 +38,18 @@ function polygon(id: string, points: [number, number][], frameIndex = 0): Annota
   } as unknown as AnnotationResponse;
 }
 
+function polygonTrack(id: string, points: [number, number][], frameIndex = 0): AnnotationResponse {
+  return {
+    id,
+    class_name: "car",
+    geometry: {
+      type: "video_track_polygon",
+      track_id: "tp1",
+      keyframes: [{ frame_index: frameIndex, points, source: "manual", occluded: false }],
+    },
+  } as unknown as AnnotationResponse;
+}
+
 const baseCtx: ResolveDragCommitCtx = {
   annotations: [],
   videoTool: "box",
@@ -208,6 +220,15 @@ describe("resolveDragCommit", () => {
     const moved: [number, number][] = [[0.1, 0.1], [0.5, 0.15], [0.25, 0.4]];
     const drag: VideoDragState = { kind: "polyVertex", id: "p1", vidx: 1, start: { x: 0.4, y: 0.1 }, origin: ann.geometry.type === "video_polygon" ? ann.geometry.points : [], current: moved };
     const out = resolveDragCommit(drag, { x: 0.5, y: 0.15 }, { ...baseCtx, annotations: [ann] });
+    expect(out).toMatchObject({ type: "poly" });
+    if (out.type === "poly") expect(out.points).toEqual(moved);
+  });
+
+  it("polyVertex 命中 polygon track → poly 提交 (commit 再据类型 upsert 关键帧)", () => {
+    const ann = polygonTrack("tp1", [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]], 5);
+    const moved: [number, number][] = [[0.15, 0.12], [0.4, 0.1], [0.25, 0.4]];
+    const drag: VideoDragState = { kind: "polyVertex", id: "tp1", vidx: 0, start: { x: 0.1, y: 0.1 }, origin: [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]], current: moved };
+    const out = resolveDragCommit(drag, { x: 0.15, y: 0.12 }, { ...baseCtx, annotations: [ann] });
     expect(out).toMatchObject({ type: "poly" });
     if (out.type === "poly") expect(out.points).toEqual(moved);
   });

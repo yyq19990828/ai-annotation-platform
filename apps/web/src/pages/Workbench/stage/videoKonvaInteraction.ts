@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import type { AnnotationResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoTrackGeometry } from "@/types";
+import type { AnnotationResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
 import type { Viewport } from "../state/useViewportTransform";
 import type { VideoTool } from "../state/useWorkbenchState";
 import { applyResize } from "./ResizeHandles";
@@ -9,10 +9,15 @@ import {
   clampGeom,
   isVideoBbox,
   isVideoPolygon,
+  isVideoPolygonTrack,
   isVideoPolyline,
+  isVideoPolylineTrack,
   isVideoTrack,
   normalizeGeom,
+  resolveVideoPolygonTrackAtFrame,
+  resolveVideoPolylineTrackAtFrame,
   upsertKeyframe,
+  upsertPointsKeyframe,
 } from "./videoStageGeometry";
 import { moveVertex } from "./shared/geometry/polygon";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
@@ -116,10 +121,13 @@ export function resolveDragCommit(
     return { type: "draw", kind, geom };
   }
 
-  // 单帧 polygon/polyline 顶点/整体编辑: 落新 points (self-intersection 不阻断, 与图片侧一致仅作视觉提示)。
+  // polygon/polyline 顶点/整体编辑: 落新 points (self-intersection 不阻断, 与图片侧一致仅作视觉提示)。
+  // 单帧 → 替换 points; 轨迹 → 由 commit 在当前帧 upsert 关键帧 (据几何类型分流)。
   if (drag.kind === "polyVertex" || drag.kind === "polyMove") {
     const polyAnn = annotations.find((a) => a.id === drag.id);
-    if (!polyAnn || !(isVideoPolygon(polyAnn) || isVideoPolyline(polyAnn))) return { type: "none" };
+    const isPoly = polyAnn && (isVideoPolygon(polyAnn) || isVideoPolyline(polyAnn)
+      || isVideoPolygonTrack(polyAnn) || isVideoPolylineTrack(polyAnn));
+    if (!polyAnn || !isPoly) return { type: "none" };
     return { type: "poly", ann: polyAnn, points: drag.current };
   }
 
@@ -130,6 +138,26 @@ export function resolveDragCommit(
   if (isVideoTrack(ann)) return { type: "track", ann, geom };
   if (isVideoBbox(ann)) return { type: "bbox", ann, geom };
   return { type: "none" };
+}
+
+/** 任意视频轨迹几何(bbox / polygon / polyline)的 track_id;非轨迹返回 null。 */
+function trackIdOf(ann: AnnotationResponse): string | null {
+  if (isVideoTrack(ann) || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann)) {
+    return ann.geometry.track_id;
+  }
+  return null;
+}
+
+/**
+ * polygon/polyline 几何在某帧的可编辑顶点(整体平移的 origin);非点集几何返回 null。
+ * 单帧取几何自身 points;轨迹解析当前帧(精确关键帧 / 插值),outside 帧无解析 → null。
+ */
+function pointsAtFrame(ann: AnnotationResponse | undefined, frameIndex: number): [number, number][] | null {
+  if (!ann) return null;
+  if (isVideoPolygon(ann) || isVideoPolyline(ann)) return ann.geometry.points;
+  if (isVideoPolygonTrack(ann)) return resolveVideoPolygonTrackAtFrame(ann.geometry, frameIndex)?.points ?? null;
+  if (isVideoPolylineTrack(ann)) return resolveVideoPolylineTrackAtFrame(ann.geometry, frameIndex)?.points ?? null;
+  return null;
 }
 
 /** 命中候选(轻量视图,仅命中所需的 id + geom)。 */
@@ -166,7 +194,7 @@ export interface UseVideoKonvaInteractionParams {
     geom: VideoStageGeom,
     anchor: { left: number; top: number },
   ) => void;
-  onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry) => void;
+  onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
 }
 
 export interface VideoKonvaInteraction {
@@ -223,7 +251,7 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
   const beginMove = useCallback((hit: VideoPickable, native: PointerEvent) => {
     const p = paramsRef.current;
     const ann = p.annotations.find((a) => a.id === hit.id);
-    const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
+    const trackId = ann ? trackIdOf(ann) : null;
     const toggle = native.shiftKey || native.metaKey || native.ctrlKey;
     if (toggle) {
       p.onSelect(hit.id, { shift: true });
@@ -233,9 +261,9 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
-    // 单帧 polygon/polyline: 命中框内 → 整体平移 (origin 是 points, 非 bbox geom)。
-    const pts = ann && isVideoPolygon(ann) ? ann.geometry.points
-      : ann && isVideoPolyline(ann) ? ann.geometry.points : null;
+    // polygon/polyline: 命中框内 → 整体平移 (origin 是 points, 非 bbox geom)。
+    // 单帧取几何自身 points; 轨迹取当前帧解析后的多边形/折线 (插值帧也可整体移动 → 物化关键帧)。
+    const pts = pointsAtFrame(ann, p.frameIndex);
     if (pts) {
       setDrag({ kind: "polyMove", id: hit.id, start: pt, origin: pts, current: pts });
       return;
@@ -272,7 +300,9 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     if (e.evt.button !== 0) return;
     const p = paramsRef.current;
     p.onSelect(entryId);
-    if (p.readOnly || p.isPlaybackActive) return;
+    const ann = p.annotations.find((a) => a.id === entryId);
+    const trackId = ann ? trackIdOf(ann) : null;
+    if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
     const pt = pointFromClient(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
     setDrag({ kind: "polyVertex", id: entryId, vidx, start: pt, origin: points, current: points });
@@ -340,12 +370,17 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
       return;
     }
     if (action.type === "poly") {
-      // 单帧 polygon/polyline: 替换 points, 保留 frame_index / holes。
       const g = action.ann.geometry;
+      // 单帧: 替换 points, 保留 frame_index / holes。
       if (g.type === "video_polygon") {
         p.onUpdate(action.ann, { ...g, points: action.points });
       } else if (g.type === "video_polyline") {
         p.onUpdate(action.ann, { ...g, points: action.points });
+      // 轨迹: 在当前帧 upsert 一个 manual 关键帧 (精确帧替换 / 插值帧物化)。
+      } else if (g.type === "video_track_polygon") {
+        p.onUpdate(action.ann, upsertPointsKeyframe(g, p.frameIndex, action.points));
+      } else if (g.type === "video_track_polyline") {
+        p.onUpdate(action.ann, upsertPointsKeyframe(g, p.frameIndex, action.points));
       }
       return;
     }

@@ -73,7 +73,12 @@ export function addOutsideRange(
   };
 }
 
-export function removeOutsideFrame(track: VideoTrackGeometry, frameIndex: number): VideoTrackGeometry {
+// v0.21.2x · 泛型化: bbox track 与 polygon/polyline track 都只需读写 `outside`, 故约束到
+// 「带 outside 的对象」即可复用 (落新可见关键帧时清该帧 outside 标记)。
+export function removeOutsideFrame<T extends { outside?: VideoTrackOutsideRange[] }>(
+  track: T,
+  frameIndex: number,
+): T {
   const frame = Math.max(0, Math.floor(frameIndex));
   const next: VideoTrackOutsideRange[] = [];
 
@@ -89,5 +94,5 @@ export function removeOutsideFrame(track: VideoTrackGeometry, frameIndex: number
   return {
     ...track,
     outside: normalizeOutsideRanges(next),
-  };
+  } as T;
 }

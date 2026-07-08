@@ -5,7 +5,7 @@ import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoSamplingConfig, VideoTrackGeometry } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoSamplingConfig, VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
@@ -32,7 +32,7 @@ import { useVideoReferenceConfig } from "./videoReferencePredict";
 import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
-import { deriveTrackNumber, isVideoBbox, isVideoPolygon, isVideoPolyline, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { deriveTrackNumber, isVideoBbox, isVideoPolygon, isVideoPolygonTrack, isVideoPolyline, isVideoPolylineTrack, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -114,7 +114,7 @@ interface VideoKonvaStageProps {
     geom: { x: number; y: number; w: number; h: number },
     anchor: { left: number; top: number },
   ) => void;
-  onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry) => void;
+  onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
@@ -986,16 +986,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               </Layer>
             );
           })()}
-          {/* 单帧 polygon/polyline 选中 → 顶点句柄 (拖顶点改形); 命中框内拖拽整体平移由 Stage pickTop 处理。 */}
+          {/* polygon/polyline (单帧 + 轨迹) 选中 → 顶点句柄 (拖顶点改形); 命中框内拖拽整体平移由 Stage pickTop 处理。
+              轨迹在插值帧编辑会物化关键帧; OBB 暂只读 (entry.points 存在但非可编辑点集几何)。 */}
           {!readOnly && !isPlaybackActive && selectedId && (() => {
             const entry = frameViews.entries.find((e) => e.id === selectedId);
             if (!entry?.points) return null;
             const ann = annotations.find((a) => a.id === selectedId);
-            if (!ann || !(isVideoPolygon(ann) || isVideoPolyline(ann))) return null; // OBB/track 暂只读
+            const editablePoly = ann && (isVideoPolygon(ann) || isVideoPolyline(ann)
+              || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann));
+            if (!ann || !editablePoly) return null; // OBB 暂只读
             const editing = drag && (drag.kind === "polyVertex" || drag.kind === "polyMove") && drag.id === selectedId;
             const livePoints = editing ? drag.current : entry.points;
             const hex = colorToHex(entry.color);
-            const open = isVideoPolyline(ann);
+            const open = isVideoPolyline(ann) || isVideoPolylineTrack(ann);
             const flat = livePoints.flatMap(([px, py]) => [px * size.w, py * size.h]);
             return (
               <Layer name="poly-edit">

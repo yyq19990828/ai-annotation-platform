@@ -11,6 +11,8 @@ import type {
   VideoPolylineGeometry,
   VideoSamplingConfig,
   VideoTrackGeometry,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolylineGeometry,
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type {
@@ -39,7 +41,7 @@ import type { ImageContextMenuClipboardActions } from "../stage/imageStageContex
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 
 /**
  * v0.10.39 · WorkbenchStageHostProps 按语义嵌套:
