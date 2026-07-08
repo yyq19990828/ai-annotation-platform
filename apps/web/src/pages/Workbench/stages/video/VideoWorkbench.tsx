@@ -4,6 +4,8 @@ import type {
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   VideoBboxGeometry,
+  VideoPolygonGeometry,
+  VideoPolylineGeometry,
   VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
@@ -21,7 +23,7 @@ import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry;
 
 export interface VideoWorkbenchProps {
   manifest: TaskVideoManifestResponse | undefined;

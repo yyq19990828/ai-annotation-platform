@@ -44,6 +44,9 @@ export type VideoDragState =
   | { kind: "draw"; start: { x: number; y: number }; current: { x: number; y: number } }
   | { kind: "move"; id: string; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
   | { kind: "resize"; id: string; dir: VideoResizeDirection; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
+  // 单帧 polygon/polyline 提交后编辑: 拖单个顶点 / 整体平移。points 归一化 [0,1]。
+  | { kind: "polyVertex"; id: string; vidx: number; start: { x: number; y: number }; origin: [number, number][]; current: [number, number][] }
+  | { kind: "polyMove"; id: string; start: { x: number; y: number }; origin: [number, number][]; current: [number, number][] }
   | { kind: "pan"; sx: number; sy: number }
   | null;
 

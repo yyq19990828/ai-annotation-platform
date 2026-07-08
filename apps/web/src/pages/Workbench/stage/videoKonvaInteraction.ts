@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type { AnnotationResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoTrackGeometry } from "@/types";
 import type { Viewport } from "../state/useViewportTransform";
 import type { VideoTool } from "../state/useWorkbenchState";
 import { applyResize } from "./ResizeHandles";
 import {
+  clamp01,
   clampGeom,
   isVideoBbox,
+  isVideoPolygon,
+  isVideoPolyline,
   isVideoTrack,
   normalizeGeom,
   upsertKeyframe,
 } from "./videoStageGeometry";
+import { moveVertex } from "./shared/geometry/polygon";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import {
   clientToVideoNorm,
@@ -47,6 +51,18 @@ export function advanceDrag(
 ): VideoDragState {
   if (!drag || drag.kind === "pan") return drag;
   if (drag.kind === "draw") return { ...drag, current: { x: pt.x, y: pt.y } };
+  // 单帧 polygon/polyline 编辑: 拖顶点 / 整体平移 (origin 是 points 数组)。
+  if (drag.kind === "polyVertex") {
+    return { ...drag, current: moveVertex(drag.origin, drag.vidx, [clamp01(pt.x), clamp01(pt.y)]) };
+  }
+  if (drag.kind === "polyMove") {
+    const dx = pt.x - drag.start.x;
+    const dy = pt.y - drag.start.y;
+    return {
+      ...drag,
+      current: drag.origin.map(([px, py]) => [clamp01(px + dx), clamp01(py + dy)] as [number, number]),
+    };
+  }
   const next = drag.kind === "resize"
     ? applyResize(drag.origin, drag.start, pt, drag.dir, modifiers)
     : clampGeom({
@@ -62,7 +78,9 @@ export type VideoDragCommit =
   | { type: "none" }
   | { type: "draw"; kind: "video_bbox" | "video_track_bbox"; geom: VideoStageGeom }
   | { type: "track"; ann: AnnotationResponse; geom: VideoStageGeom }
-  | { type: "bbox"; ann: AnnotationResponse; geom: VideoStageGeom };
+  | { type: "bbox"; ann: AnnotationResponse; geom: VideoStageGeom }
+  // 单帧 polygon/polyline 顶点拖拽 / 整体平移的提交。
+  | { type: "poly"; ann: AnnotationResponse; points: [number, number][] };
 
 export interface ResolveDragCommitCtx {
   annotations: readonly AnnotationResponse[];
@@ -96,6 +114,13 @@ export function resolveDragCommit(
     }
     const kind = videoTool === "track" ? "video_track_bbox" : "video_bbox";
     return { type: "draw", kind, geom };
+  }
+
+  // 单帧 polygon/polyline 顶点/整体编辑: 落新 points (self-intersection 不阻断, 与图片侧一致仅作视觉提示)。
+  if (drag.kind === "polyVertex" || drag.kind === "polyMove") {
+    const polyAnn = annotations.find((a) => a.id === drag.id);
+    if (!polyAnn || !(isVideoPolygon(polyAnn) || isVideoPolyline(polyAnn))) return { type: "none" };
+    return { type: "poly", ann: polyAnn, points: drag.current };
   }
 
   const ann = annotations.find((a) => a.id === drag.id);
@@ -141,7 +166,7 @@ export interface UseVideoKonvaInteractionParams {
     geom: VideoStageGeom,
     anchor: { left: number; top: number },
   ) => void;
-  onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry) => void;
+  onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry) => void;
 }
 
 export interface VideoKonvaInteraction {
@@ -153,6 +178,13 @@ export interface VideoKonvaInteraction {
     dir: VideoResizeDirection,
     entryId: string,
     geom: VideoStageGeom,
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => void;
+  /** 接到 polygon/polyline 顶点句柄的 onPointerDown(拖顶点)。 */
+  onVertexPointerDown: (
+    entryId: string,
+    vidx: number,
+    points: [number, number][],
     e: Konva.KonvaEventObject<PointerEvent>,
   ) => void;
 }
@@ -201,6 +233,13 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
+    // 单帧 polygon/polyline: 命中框内 → 整体平移 (origin 是 points, 非 bbox geom)。
+    const pts = ann && isVideoPolygon(ann) ? ann.geometry.points
+      : ann && isVideoPolyline(ann) ? ann.geometry.points : null;
+    if (pts) {
+      setDrag({ kind: "polyMove", id: hit.id, start: pt, origin: pts, current: pts });
+      return;
+    }
     setDrag({ kind: "move", id: hit.id, start: pt, origin: hit.geom, current: hit.geom });
   }, [pointFromClient]);
 
@@ -220,6 +259,23 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     const pt = pointFromClient(native.clientX, native.clientY);
     if (!pt) return;
     setDrag({ kind: "resize", id: entryId, dir, start: pt, origin: geom, current: geom });
+  }, [pointFromClient]);
+
+  // 单帧 polygon/polyline 顶点句柄按下: 拖该顶点。cancelBubble 防冒泡到 Stage 触发平移/选择。
+  const onVertexPointerDown = useCallback((
+    entryId: string,
+    vidx: number,
+    points: [number, number][],
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => {
+    e.cancelBubble = true;
+    if (e.evt.button !== 0) return;
+    const p = paramsRef.current;
+    p.onSelect(entryId);
+    if (p.readOnly || p.isPlaybackActive) return;
+    const pt = pointFromClient(e.evt.clientX, e.evt.clientY);
+    if (!pt) return;
+    setDrag({ kind: "polyVertex", id: entryId, vidx, start: pt, origin: points, current: points });
   }, [pointFromClient]);
 
   const onStagePointerDown = useCallback((e: Konva.KonvaEventObject<PointerEvent>) => {
@@ -283,6 +339,16 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
       }
       return;
     }
+    if (action.type === "poly") {
+      // 单帧 polygon/polyline: 替换 points, 保留 frame_index / holes。
+      const g = action.ann.geometry;
+      if (g.type === "video_polygon") {
+        p.onUpdate(action.ann, { ...g, points: action.points });
+      } else if (g.type === "video_polyline") {
+        p.onUpdate(action.ann, { ...g, points: action.points });
+      }
+      return;
+    }
     // bbox:替换该帧几何。
     const bbox = action.ann.geometry as VideoBboxGeometry;
     p.onUpdate(action.ann, { type: "video_bbox", frame_index: bbox.frame_index, ...action.geom });
@@ -315,5 +381,5 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     };
   }, [interacting, pointFromClient, commit]);
 
-  return { drag, onStagePointerDown, onResizeHandlePointerDown };
+  return { drag, onStagePointerDown, onResizeHandlePointerDown, onVertexPointerDown };
 }

@@ -30,6 +30,14 @@ function track(id: string, trackId = "t1"): AnnotationResponse {
   } as unknown as AnnotationResponse;
 }
 
+function polygon(id: string, points: [number, number][], frameIndex = 0): AnnotationResponse {
+  return {
+    id,
+    class_name: "car",
+    geometry: { type: "video_polygon", frame_index: frameIndex, points },
+  } as unknown as AnnotationResponse;
+}
+
 const baseCtx: ResolveDragCommitCtx = {
   annotations: [],
   videoTool: "box",
@@ -44,6 +52,23 @@ describe("advanceDrag", () => {
     const drag: VideoDragState = { kind: "draw", start: { x: 0, y: 0 }, current: { x: 0, y: 0 } };
     const next = advanceDrag(drag, { x: 0.5, y: 0.4 });
     expect(next).toEqual({ kind: "draw", start: { x: 0, y: 0 }, current: { x: 0.5, y: 0.4 } });
+  });
+
+  it("polyVertex → 只移动被拖顶点 (clamp [0,1])", () => {
+    const origin: [number, number][] = [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]];
+    const drag: VideoDragState = { kind: "polyVertex", id: "p1", vidx: 1, start: { x: 0.4, y: 0.1 }, origin, current: origin };
+    const next = advanceDrag(drag, { x: 1.5, y: 0.2 });
+    if (next?.kind !== "polyVertex") throw new Error("expected polyVertex");
+    expect(next.current).toEqual([[0.1, 0.1], [1, 0.2], [0.25, 0.4]]); // 顶点 1 移动且 x clamp 到 1
+  });
+
+  it("polyMove → 整体平移所有顶点 (clamp [0,1])", () => {
+    const origin: [number, number][] = [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]];
+    const drag: VideoDragState = { kind: "polyMove", id: "p1", start: { x: 0.2, y: 0.2 }, origin, current: origin };
+    const next = advanceDrag(drag, { x: 0.3, y: 0.3 }); // dx=0.1, dy=0.1
+    if (next?.kind !== "polyMove") throw new Error("expected polyMove");
+    const rounded = next.current.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]);
+    expect(rounded).toEqual([[0.2, 0.2], [0.5, 0.2], [0.35, 0.5]]);
   });
 
   it("move → 平移 origin 并 clamp 到 [0,1]", () => {
@@ -176,6 +201,23 @@ describe("resolveDragCommit", () => {
     };
     const out = resolveDragCommit(drag, { x: 0.2, y: 0.2 }, { ...baseCtx, annotations: [ann] });
     expect(out).toMatchObject({ type: "track" });
+  });
+
+  it("polyVertex/polyMove → poly 提交带新 points", () => {
+    const ann = polygon("p1", [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]]);
+    const moved: [number, number][] = [[0.1, 0.1], [0.5, 0.15], [0.25, 0.4]];
+    const drag: VideoDragState = { kind: "polyVertex", id: "p1", vidx: 1, start: { x: 0.4, y: 0.1 }, origin: ann.geometry.type === "video_polygon" ? ann.geometry.points : [], current: moved };
+    const out = resolveDragCommit(drag, { x: 0.5, y: 0.15 }, { ...baseCtx, annotations: [ann] });
+    expect(out).toMatchObject({ type: "poly" });
+    if (out.type === "poly") expect(out.points).toEqual(moved);
+  });
+
+  it("poly 拖拽找不到 ann / 非多边形 → none", () => {
+    const drag: VideoDragState = { kind: "polyMove", id: "missing", start: { x: 0, y: 0 }, origin: [], current: [[0.2, 0.2]] };
+    expect(resolveDragCommit(drag, { x: 0, y: 0 }, baseCtx).type).toBe("none");
+    const bboxAnn = bbox("b1");
+    const drag2: VideoDragState = { kind: "polyMove", id: "b1", start: { x: 0, y: 0 }, origin: [], current: [[0.2, 0.2]] };
+    expect(resolveDragCommit(drag2, { x: 0, y: 0 }, { ...baseCtx, annotations: [bboxAnn] }).type).toBe("none");
   });
 
   it("resize 太小 → none;找不到 ann → none", () => {

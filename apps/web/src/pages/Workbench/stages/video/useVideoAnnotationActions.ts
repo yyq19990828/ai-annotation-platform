@@ -6,6 +6,8 @@ import type {
   AnnotationResponse,
   Geometry,
   VideoBboxGeometry,
+  VideoPolygonGeometry,
+  VideoPolylineGeometry,
   VideoTrackGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
@@ -24,7 +26,7 @@ import {
 import { nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry;
 
 interface ToastInput {
   msg: string;

@@ -7,6 +7,8 @@ import type {
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   VideoBboxGeometry,
+  VideoPolygonGeometry,
+  VideoPolylineGeometry,
   VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
@@ -37,7 +39,7 @@ import type { ImageContextMenuClipboardActions } from "../stage/imageStageContex
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry;
 
 /**
  * v0.10.39 · WorkbenchStageHostProps 按语义嵌套:
