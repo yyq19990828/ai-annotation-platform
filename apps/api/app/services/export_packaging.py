@@ -53,6 +53,8 @@ from app.services.export_lidar import (
 from app.services.export_video import (
     FALLBACK_H,
     FALLBACK_W,
+    VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_TRACK_GEOMETRY_TYPES,
     build_kitti_labels,
     build_mot_gt,
     build_mot_seqinfo,
@@ -1109,15 +1111,15 @@ async def _build_video_export_zip(
         total_tasks = 0
         async for tasks, ann_by_task, dataset_items in chunks:
             total_tasks += len(tasks)
-            # 本块内按 task 分组 video_track / video_bbox。
+            # 本块内按 task 分组：轨迹几何 → tracks，单帧几何 → bboxes。
             tracks_by_task: dict[uuid.UUID, list[Annotation]] = {}
             bboxes_by_task: dict[uuid.UUID, list[Annotation]] = {}
             for anns in ann_by_task.values():
                 for ann in anns:
                     geometry_type = (ann.geometry or {}).get("type")
-                    if geometry_type == "video_track_bbox":
+                    if geometry_type in VIDEO_TRACK_GEOMETRY_TYPES:
                         tracks_by_task.setdefault(ann.task_id, []).append(ann)
-                    elif geometry_type == "video_bbox":
+                    elif geometry_type in VIDEO_SINGLE_FRAME_GEOMETRY_TYPES:
                         bboxes_by_task.setdefault(ann.task_id, []).append(ann)
             for t in tasks:
                 item = (

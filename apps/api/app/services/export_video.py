@@ -23,6 +23,24 @@ from __future__ import annotations
 from app.services.video_frame_service import derive_sampled_frames
 from app.services.video_tracks import resolved_track_frames
 
+# 视频导出的几何白名单（唯一真源，export.py / export_packaging.py 共用）。
+#
+# 此前导出链路只认 ``video_track_bbox`` / ``video_bbox``，其余几何在打包层与 video_json
+# 的类型判别处被**静默丢弃**——连带使 v0.21.20 为 points track 写的外接框降级
+# （``points_to_bbox_norm`` / ``_frame_bbox``）在端到端链路上成了死代码，只被纯函数单测
+# 覆盖。放宽后 polygon / polyline 的单帧与轨迹几何都能进入导出：bbox-only 格式
+# （MOT / KITTI / YOLO-frames-det）降级为顶点外接框，保真格式（video_json / aap_json）
+# 保留 ``points``。真·segmentation 格式（保留多边形的 YOLO-seg 等）另行落地。
+#
+# ``video_rotated_bbox`` / ``video_keypoint`` 是 inert schema（前端不产出、库中无数据），
+# 故不在此列；待其真正落库后再接入导出。
+VIDEO_TRACK_GEOMETRY_TYPES = frozenset(
+    {"video_track_bbox", "video_track_polygon", "video_track_polyline"}
+)
+VIDEO_SINGLE_FRAME_GEOMETRY_TYPES = frozenset(
+    {"video_bbox", "video_polygon", "video_polyline"}
+)
+
 # DatasetItem.width/height 缺失时的回退（与 export.py IMG_W/IMG_H 一致）。
 FALLBACK_W, FALLBACK_H = 1920, 1280
 
@@ -72,6 +90,20 @@ def _frame_bbox(frame: dict) -> dict:
     if points is not None:
         return points_to_bbox_norm(points)
     return frame.get("bbox") or {}
+
+
+def single_frame_bbox(geometry: dict) -> dict:
+    """单帧几何 → 归一化 bbox ``{x,y,w,h}``。
+
+    单帧 bbox 的载荷是**扁平**的（``{type, frame_index, x, y, w, h}``），可直接当 bbox 用；
+    而单帧 polygon / polyline 是 ``{type, frame_index, points, ...}``，**没有 x/y/w/h**——
+    若直接喂给 ``_yolo_det_line``，``.get("x", 0)`` 会把它导成全 0 空框（比丢弃更坏：下游拿到
+    看似合法的空标注）。故此处与 track 侧 ``_frame_bbox`` 对称，降级为顶点外接框。
+    """
+    points = geometry.get("points")
+    if points is not None:
+        return points_to_bbox_norm(points)
+    return geometry
 
 
 def track_grid_rows(
@@ -150,7 +182,9 @@ def build_yolo_frame_det_labels(
             continue
         out_frame = grid_index + frame_start_number
         lines, attrs = labels[out_frame]
-        lines.append(_yolo_det_line(cat_map.get(class_name or "", 0), geometry))
+        lines.append(
+            _yolo_det_line(cat_map.get(class_name or "", 0), single_frame_bbox(geometry))
+        )
         if include_attributes:
             attrs.append(attributes or {})
 

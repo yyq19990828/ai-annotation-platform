@@ -210,3 +210,219 @@ async def test_video_yolo_frames_zip_writes_grid_labels_and_manifest(monkeypatch
         assert video["grid_source_frames"] == [0, 2, 4]
         assert video["frame_start_number"] == 1
         assert video["frame_output_dirs"] == ["images/clip-a"]
+
+
+# ── polygon / polyline 几何进入视频导出（打包层白名单）─────────────────────
+#
+# 打包层此前只把 video_track_bbox / video_bbox 分组进 tracks / bboxes，其余几何被
+# **静默丢弃**：polygon 标注了却一行都导不出。连带使 v0.21.20 为 points track 写的
+# 外接框降级成了端到端死代码（只有纯函数单测覆盖，故 bug 潜伏至今）。
+#
+# 下面两个用例的几何是 test_video_yolo_frames_zip_writes_grid_labels_and_manifest
+# 的 **points 版对偶**：外接框刻意取成与那里的 bbox 完全相同，故期望输出逐字节一致。
+
+
+def _video_project_and_task(project_id, item_id, dataset_id, task_id):
+    project = Project(
+        id=project_id,
+        display_id="P-2",
+        name="Video Polygon Project",
+        type_key="video-track",
+        type_label="Video Track",
+        data_type="video",
+        owner_id=uuid.uuid4(),
+        video_sampling={"mode": "step", "frame_step": 2},
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [
+                    {"name": "car", "order": 0},
+                    {"name": "person", "order": 1},
+                ],
+                "attribute_schema": {"fields": [{"key": "speed"}]},
+            }
+        },
+    )
+    item = DatasetItem(
+        id=item_id,
+        dataset_id=dataset_id,
+        file_name="clip-a.mp4",
+        file_path="videos/clip-a.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 10, "frame_count": 5, "width": 640, "height": 360}},
+    )
+    task = Task(
+        id=task_id,
+        project_id=project_id,
+        dataset_item_id=item_id,
+        display_id="T-1",
+        file_name="clip-a.mp4",
+        file_path="videos/clip-a.mp4",
+        file_type="video",
+    )
+    return project, item, task
+
+
+def _polygon_track(task_id, project_id):
+    """外接框等价于 bbox track 版：frame0 (0,0,.2,.2) / frame4 (.6,.6,.2,.2)。"""
+    return Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_track_polygon",
+        class_name="car",
+        geometry={
+            "type": "video_track_polygon",
+            "track_id": "trk-poly",
+            "keyframes": [
+                {"frame_index": 0, "points": [[0.0, 0.0], [0.2, 0.0], [0.2, 0.2]]},
+                {"frame_index": 4, "points": [[0.6, 0.6], [0.8, 0.6], [0.8, 0.8]]},
+            ],
+            "outside": [{"from": 2, "to": 2}],
+        },
+        attributes={"speed": 50},
+    )
+
+
+def _single_frame_polygon(task_id, project_id):
+    """外接框等价于单帧 bbox 版：frame2 (.2,.2,.2,.4)。"""
+    return Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_polygon",
+        class_name="person",
+        geometry={
+            "type": "video_polygon",
+            "frame_index": 2,
+            "points": [[0.2, 0.2], [0.4, 0.2], [0.4, 0.6], [0.2, 0.6]],
+        },
+        attributes={"speed": 3},
+    )
+
+
+async def _run_video_zip(project, chunks, targets):
+    fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    try:
+        _ret, file_count, _size = await _build_video_export_zip(
+            None,
+            project,
+            chunks,
+            tmp_path=tmp_path,
+            batch_id=None,
+            targets=targets,
+            include_attributes=True,
+            video_frame_mode="keyframes",
+        )
+        return open(tmp_path, "rb").read(), file_count
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+async def test_polygon_geometries_reach_yolo_frames_det_as_bounding_boxes(monkeypatch):
+    """单帧 polygon 与 polygon track 都要导出为顶点外接框，而非被丢弃 / 全 0 空框。
+
+    单帧 polygon 尤其凶险：它没有 x/y/w/h，若不降级就会被 ``_yolo_det_line`` 的
+    ``.get("x", 0)`` 导成 `1 0.000000 0.000000 0.000000 0.000000` —— 一条看似合法的
+    空标注，比直接丢弃更坏。
+    """
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    track = _polygon_track(task_id, project_id)
+    single = _single_frame_polygon(task_id, project_id)
+
+    async def _chunks():
+        yield [task], {task_id: [track, single]}, {item_id: item}
+
+    data, file_count = await _run_video_zip(project, _chunks(), ["yolo-frames-det"])
+
+    assert file_count == 3
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        # 与 bbox 版对偶用例逐字节一致 —— 证明外接框降级正确。
+        assert zf.read("labels/clip-a/000001.txt").decode() == (
+            "0 0.100000 0.100000 0.200000 0.200000"
+        )
+        assert zf.read("labels/clip-a/000002.txt").decode() == (
+            "1 0.300000 0.400000 0.200000 0.400000"
+        )
+        assert zf.read("labels/clip-a/000003.txt").decode() == (
+            "0 0.700000 0.700000 0.200000 0.200000"
+        )
+
+
+async def test_polyline_single_frame_reaches_yolo_frames_det(monkeypatch):
+    """开路径 polyline 同样降级为顶点外接框（不闭合不影响外接框）。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    polyline = Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_polyline",
+        class_name="car",
+        geometry={
+            "type": "video_polyline",
+            "frame_index": 0,
+            "points": [[0.1, 0.1], [0.5, 0.3], [0.3, 0.5]],
+        },
+        attributes={},
+    )
+
+    async def _chunks():
+        yield [task], {task_id: [polyline]}, {item_id: item}
+
+    data, _ = await _run_video_zip(project, _chunks(), ["yolo-frames-det"])
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        # 外接框 x∈[0.1,0.5] y∈[0.1,0.5] → cx=cy=0.3, w=h=0.4
+        assert zf.read("labels/clip-a/000001.txt").decode() == (
+            "0 0.300000 0.300000 0.400000 0.400000"
+        )
+        assert zf.read("labels/clip-a/000002.txt").decode() == ""
+
+
+async def test_polygon_track_reaches_mot_gt(monkeypatch):
+    """polygon track 也要进 MOT gt.txt（此前打包层丢弃 → gt.txt 空）。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    track = _polygon_track(task_id, project_id)
+
+    async def _chunks():
+        yield [task], {task_id: [track]}, {item_id: item}
+
+    data, _ = await _run_video_zip(project, _chunks(), ["mot"])
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        gt_name = next(n for n in zf.namelist() if n.endswith("gt/gt.txt"))
+        rows = [r for r in zf.read(gt_name).decode().splitlines() if r]
+        assert rows, "polygon track 必须出现在 MOT gt.txt 中"
+        # 640x360 上 frame0 外接框 (0,0,.2,.2) → 像素 (0,0,128,72)，MOT 帧号 1-based。
+        assert rows[0].startswith("1,1,0.0,0.0,128.0,72.0")
+        # outside 覆盖 frame 2 → 网格帧 2 无行；frame 4 → MOT 帧 3。
+        assert any(r.startswith("3,1,") for r in rows)
+        assert not any(r.startswith("2,1,") for r in rows)

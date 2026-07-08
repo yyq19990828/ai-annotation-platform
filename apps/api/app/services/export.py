@@ -38,6 +38,10 @@ from app.schemas.aap_json import (
     AAPTaskBlock,
     AAPTaskMatch,
 )
+from app.services.export_video import (
+    VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_TRACK_GEOMETRY_TYPES,
+)
 from app.services.video_tracks import (
     VIDEO_FRAME_MODES,
     clean_keyframe,
@@ -136,16 +140,27 @@ def _video_metadata(item: DatasetItem | None) -> dict:
     return video if isinstance(video, dict) else {}
 
 
-def _clean_video_bbox_geometry(geometry: dict) -> dict:
-    return {
+def _clean_video_single_frame_geometry(geometry: dict) -> dict:
+    """单帧视频几何 → video_json 行。与 track 侧 ``clean_keyframe`` 对称：
+    按存在的形状键保留 —— polygon/polyline 出 ``points``，bbox 出 ``bbox``。
+
+    ``video_json`` 是平台自有的保真格式，故这里不降级为外接框（bbox-only 的
+    MOT/KITTI/YOLO 才降级，见 ``export_video.single_frame_bbox``）。
+    """
+    row: dict = {
+        "type": geometry.get("type"),
         "frame_index": int(geometry.get("frame_index", 0)),
-        "bbox": {
+    }
+    if geometry.get("points") is not None:
+        row["points"] = [list(pt) for pt in (geometry.get("points") or [])]
+    else:
+        row["bbox"] = {
             "x": geometry.get("x", 0),
             "y": geometry.get("y", 0),
             "w": geometry.get("w", 0),
             "h": geometry.get("h", 0),
-        },
-    }
+        }
+    return row
 
 
 # ── v0.10.43 · 多几何 → COCO 写入 helper（坐标归一化 [0,1]，写入时去归一化到像素） ──
@@ -474,7 +489,7 @@ class ExportService:
             if not task:
                 continue
             geometry = ann.geometry or {}
-            if geometry.get("type") == "video_track_bbox":
+            if geometry.get("type") in VIDEO_TRACK_GEOMETRY_TYPES:
                 keyframes = [
                     clean_keyframe(kf, include_attributes=include_attributes)
                     for kf in sorted_keyframes(geometry)
@@ -520,14 +535,14 @@ class ExportService:
                             **kf,
                         }
                     )
-            elif geometry.get("type") == "video_bbox":
-                row = {
+            elif geometry.get("type") in VIDEO_SINGLE_FRAME_GEOMETRY_TYPES:
+                row: dict = {
                     "annotation_id": str(ann.id),
                     "task_id": str(ann.task_id),
                     "task_display_id": task.display_id,
                     "class_name": ann.class_name,
                     "source": ann.source,
-                    **_clean_video_bbox_geometry(geometry),
+                    **_clean_video_single_frame_geometry(geometry),
                 }
                 if include_attributes:
                     row["attributes"] = ann.attributes or {}
