@@ -25,6 +25,8 @@ export interface VideoPolygonDraft {
   draft: PointsDraft | null;
   /** 起草 / 落点: 归一化点入草稿 (草稿类型由 closed 决定, 中途不变)。 */
   addPoint: (pt: { x: number; y: number }, closed: boolean) => void;
+  /** 撤销最后一个落点 (Backspace); 撤空后草稿清为 null。 */
+  removeLastPoint: () => void;
   /** 提交并清空: 顶点足够时返回 points, 否则 null (不提交)。 */
   commit: () => [number, number][] | null;
   /** 取消并清空。 */
@@ -45,6 +47,14 @@ export function useVideoPolygonDraft(): VideoPolygonDraft {
     );
   }, []);
 
+  const removeLastPoint = useCallback(() => {
+    setDraft((cur) => {
+      if (!cur) return null;
+      const rest = cur.points.slice(0, -1);
+      return rest.length > 0 ? { closed: cur.closed, points: rest } : null;
+    });
+  }, []);
+
   const commit = useCallback((): [number, number][] | null => {
     const cur = draftRef.current;
     const out = draftCanCommit(cur) ? cur!.points : null;
@@ -54,5 +64,5 @@ export function useVideoPolygonDraft(): VideoPolygonDraft {
 
   const cancel = useCallback(() => setDraft(null), []);
 
-  return { draft, addPoint, commit, cancel };
+  return { draft, addPoint, removeLastPoint, commit, cancel };
 }

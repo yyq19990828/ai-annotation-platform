@@ -29,8 +29,9 @@ import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
-import { classColor, colorToHex, getTrackColor } from "./colors";
+import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
+import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { deriveTrackNumber, isVideoBbox, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
@@ -478,6 +479,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   // v0.21.20/21 · polygon/polyline 绘制 (点击落点, Enter/双击闭合)。与拖拽 bbox 正交。
   // 四工具: polygon/polyline = 单帧几何; polygon-track/polyline-track = 轨迹关键帧。
   const pointsDraft = useVideoPolygonDraft();
+  // 绘制中的光标归一化坐标(橡皮筋预览段 + 首点吸附高亮用),越界/未绘制时 null。
+  const [pointsCursor, setPointsCursor] = useState<{ x: number; y: number } | null>(null);
   const isPointsClosedTool = videoTool === "polygon" || videoTool === "polygon-track";
   const isPointsTrackTool = videoTool === "polygon-track" || videoTool === "polyline-track";
   const isPointsDrawTool = isPointsClosedTool || videoTool === "polyline" || videoTool === "polyline-track";
@@ -517,11 +520,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       const native = e.evt;
       if (native.button !== 0) return; // 右键/中键平移交容器层
       const pt = pointFromClientEvt(native.clientX, native.clientY);
-      if (pt) pointsDraft.addPoint(pt, isPointsClosedTool);
+      if (!pt) return;
+      // polygon: 点击落在首点吸附半径内 → 闭合提交(需 ≥3 点)。
+      const pts = pointsDraft.draft?.points;
+      if (isPointsClosedTool && pts && pts.length >= 3) {
+        const [fx, fy] = pts[0];
+        if (Math.hypot(pt.x - fx, pt.y - fy) <= CLOSE_DISTANCE) {
+          commitPointsDraft();
+          return;
+        }
+      }
+      pointsDraft.addPoint(pt, isPointsClosedTool);
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [pointsDrawEnabled, pointFromClientEvt, pointsDraft, isPointsClosedTool, interaction]);
+  }, [pointsDrawEnabled, pointFromClientEvt, pointsDraft, isPointsClosedTool, commitPointsDraft, interaction]);
 
   // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
   useEffect(() => {
@@ -532,6 +545,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Enter") { e.preventDefault(); commitPointsDraft(); }
       else if (e.key === "Escape") { e.preventDefault(); pointsDraft.cancel(); }
+      else if (e.key === "Backspace") { e.preventDefault(); pointsDraft.removeLastPoint(); }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -790,10 +804,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // 指针在画布上移动即唤出播放浮层(对齐旧 SVG 栈);离开后由 onPointerLeave 计时收起。
     showPlaybackOverlay();
     // 光标归一化坐标上报(状态栏读出),无论是否在平移;越界(letterbox 区)上报 null。
-    if (onCursorMove) {
+    if (onCursorMove || pointsDrawEnabled) {
       const rect = containerRef.current?.getBoundingClientRect();
       const pt = rect ? clientToVideoNorm(evt.clientX, evt.clientY, rect, vpRef.current, size) : null;
-      onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
+      const inFrame = pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null;
+      onCursorMove?.(inFrame);
+      // 橡皮筋预览: 仅绘制工具激活时跟踪, 用于「上一点 → 光标」预览段与首点吸附高亮。
+      if (pointsDrawEnabled) setPointsCursor(inFrame);
     }
     const start = panRef.current;
     if (!start) return;
@@ -801,7 +818,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const dy = evt.clientY - start.y;
     panRef.current = { x: evt.clientX, y: evt.clientY };
     setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
-  }, [onCursorMove, setVp, showPlaybackOverlay, size, vpRef]);
+  }, [onCursorMove, pointsDrawEnabled, setVp, showPlaybackOverlay, size, vpRef]);
 
   const endPan = useCallback(() => {
     panRef.current = null;
@@ -810,6 +827,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   const onPointerLeave = useCallback(() => {
     onCursorMove?.(null);
+    setPointsCursor(null);
     // 指针离开画布 2s 后收起播放浮层,避免其永久遮挡画布。
     schedulePlaybackOverlayHide();
   }, [onCursorMove, schedulePlaybackOverlayHide]);
@@ -821,7 +839,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     ? styles.rootPanning
     : spacePan
       ? styles.toolGrab
-      : creationEnabled
+      : creationEnabled || pointsDrawEnabled
         ? styles.toolCrosshair
         : "";
 
@@ -933,26 +951,36 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           />
           {pointsDraft.draft && pointsDraft.draft.points.length > 0 && (() => {
             const hex = colorToHex(classColor(activeClass));
-            const flat = pointsDraft.draft.points.flatMap(([px, py]) => [px * size.w, py * size.h]);
+            const isPolyline = !pointsDraft.draft.closed;
+            const ps = pointsDraft.draft.points;
+            const flat = ps.flatMap(([px, py]) => [px * size.w, py * size.h]);
+            // 橡皮筋: 追加「最后一点 → 当前光标」预览段。
+            if (pointsCursor) flat.push(pointsCursor.x * size.w, pointsCursor.y * size.h);
+            // 首点吸附高亮(仅 polygon, ≥3 点且光标进入闭合半径)。
+            const canClose = !isPolyline && ps.length >= 3 && !!pointsCursor
+              && Math.hypot(pointsCursor.x - ps[0][0], pointsCursor.y - ps[0][1]) <= CLOSE_DISTANCE;
             return (
               <Layer name="points-draft" listening={false}>
                 <Line
                   points={flat}
-                  closed={pointsDraft.draft.closed && pointsDraft.draft.points.length >= 3}
+                  closed={false}
                   stroke={hex}
                   strokeWidth={1.5 / vp.scale}
                   dash={[6 / vp.scale, 4 / vp.scale]}
                   lineCap="round"
                   lineJoin="round"
+                  fill={isPolyline ? undefined : hexToRgba(hex, 0.1)}
                   listening={false}
                 />
-                {pointsDraft.draft.points.map(([px, py], i) => (
+                {ps.map(([px, py], i) => (
                   <Circle
                     key={i}
                     x={px * size.w}
                     y={py * size.h}
-                    radius={3 / vp.scale}
-                    fill={hex}
+                    radius={(i === 0 ? 4.5 : 3) / vp.scale}
+                    fill={i === 0 && canClose ? hex : "white"}
+                    stroke={hex}
+                    strokeWidth={1.5 / vp.scale}
                     listening={false}
                   />
                 ))}
