@@ -276,4 +276,52 @@ describe("deriveVideoFrameViews", () => {
       expect(v.carryOverGhosts.map((g) => g.id)).toEqual(["t2"]);
     });
   });
+
+  describe("多选高亮 (selectedIds)", () => {
+    const kf = (f: number) => ({ frame_index: f, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } });
+    const t1 = trackAnn("a1", "trk1", [kf(0), kf(10)]);
+    const t2 = trackAnn("a2", "trk2", [kf(0), kf(10)]);
+    const t3 = trackAnn("a3", "trk3", [kf(0), kf(10)]);
+
+    it("多选 → 选中的轨迹都高亮, 未选中的不高亮", () => {
+      const v = deriveVideoFrameViews({
+        ...base,
+        annotations: [t1, t2, t3],
+        frameIndex: 5,
+        selectedId: "a1",
+        selectedIds: ["a1", "a2"],
+      });
+      const sel = Object.fromEntries(v.entries.map((e) => [e.id, e.selected]));
+      expect(sel).toEqual({ a1: true, a2: true, a3: false });
+    });
+
+    it("多选 → 轨迹路径线也一并高亮 (与 entry 同源)", () => {
+      const v = deriveVideoFrameViews({
+        ...base,
+        annotations: [t1, t2, t3],
+        frameIndex: 5,
+        selectedId: "a1",
+        selectedIds: ["a1", "a2"],
+      });
+      const sel = Object.fromEntries(v.previews.map((p) => [p.id, p.selected]));
+      expect(sel).toEqual({ a1: true, a2: true, a3: false });
+    });
+
+    it("不传 selectedIds → 回落 primary 单选 (老调用方语义不变)", () => {
+      const v = deriveVideoFrameViews({ ...base, annotations: [t1, t2], frameIndex: 5, selectedId: "a2" });
+      expect(Object.fromEntries(v.entries.map((e) => [e.id, e.selected]))).toEqual({ a1: false, a2: true });
+    });
+
+    it("ghost 参考框只跟 primary 走, 不随多选扩散", () => {
+      // 两条轨迹都选中, 但 frame 20 超出关键帧范围 → 只有 primary 那条画参考框。
+      const v = deriveVideoFrameViews({
+        ...base,
+        annotations: [t1, t2],
+        frameIndex: 20,
+        selectedId: "a2",
+        selectedIds: ["a1", "a2"],
+      });
+      expect(v.ghost?.id ?? null).toBe("a2");
+    });
+  });
 });

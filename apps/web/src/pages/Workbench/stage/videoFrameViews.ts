@@ -103,7 +103,13 @@ export interface VideoFrameViews {
 export interface DeriveVideoFrameViewsInput {
   annotations: AnnotationResponse[];
   frameIndex: number;
+  /**
+   * 编辑焦点(单数): 决定 ghost 参考框、track 工具往哪条轨迹落关键帧。多选时它是 primary。
+   * 只画高亮请用 selectedIds —— 二者语义不同, 别混用。
+   */
   selectedId: string | null;
+  /** 全部选中项(含 primary), 驱动画布高亮。缺省回落 [selectedId], 保持单选调用方不变。 */
+  selectedIds?: readonly string[];
   hiddenTrackIds?: Set<string>;
   /** 已锁定轨迹:锁定后不再显示参考框(视为已确认,不需逐帧提示)。 */
   lockedTrackIds?: Set<string>;
@@ -132,6 +138,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     annotations,
     frameIndex,
     selectedId,
+    selectedIds,
     hiddenTrackIds = EMPTY_SET,
     lockedTrackIds = EMPTY_SET,
     reviewDisplayMode,
@@ -141,6 +148,9 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     pendingDraft,
     samplingStep = 1,
   } = input;
+
+  // 高亮集合: 多选时含全部选中项; 未传时回落 primary(单选调用方语义不变)。
+  const selectedSet = new Set(selectedIds ?? (selectedId ? [selectedId] : []));
 
   const videoTracks = annotations.filter(isVideoTrack);
   const polygonTracks = annotations.filter(isVideoPolygonTrack);
@@ -155,41 +165,41 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   for (const ann of annotations) {
     if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      entries.push(buildEntryView(ann, ann.geometry, "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent));
+      entries.push(buildEntryView(ann, ann.geometry, "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent));
     } else if (isVideoPolygon(ann) && ann.geometry.frame_index === frameIndex) {
       // v0.21.21 · 单帧 polygon: 外接盒作 geom (标签/选中锚点) + points 供 <Line closed>。
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: ann.geometry.points });
     } else if (isVideoPolyline(ann) && ann.geometry.frame_index === frameIndex) {
       // v0.21.21 · 单帧 polyline: 同 polygon 但开路径 (Line 不闭合、不填充)。
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: ann.geometry.points, open: true });
     } else if (isVideoRotatedBbox(ann) && ann.geometry.frame_index === frameIndex) {
       // v0.21.22 · 单帧 OBB: 四角旋转顶点作闭合 Line (复用 polygon 渲染路径), 外接盒作 geom。
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
       const corners = rotatedBboxCorners(ann.geometry);
-      const entry = buildEntryView(ann, boundsOfPoints(corners), "legacy", false, undefined, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(ann, boundsOfPoints(corners), "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: corners });
     } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      entries.push(buildEntryView(ann, resolved.geom, resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent));
+      entries.push(buildEntryView(ann, resolved.geom, resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedSet, trackNumbers, trackColorOverrides, trackContent));
     } else if (isVideoPolygonTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       // v0.21.20 · polygon track: 解析当前帧多边形 → 外接盒作 geom (标签/选中锚点) + points 供 <Line>。
       const resolved = resolveVideoPolygonTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedSet, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: resolved.points });
     } else if (isVideoPolylineTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       // v0.21.20 · polyline track: 同 polygon 但开路径 (Line 不闭合)。
       const resolved = resolveVideoPolylineTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedId, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedSet, trackNumbers, trackColorOverrides, trackContent);
       entries.push({ ...entry, points: resolved.points, open: true });
     }
   }
@@ -217,7 +227,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
         key: annotationRenderKey(ann),
         id: ann.id,
         color: getTrackColor(ann.geometry.track_id, ann.class_name, trackColorOverrides),
-        selected: ann.id === selectedId,
+        selected: selectedSet.has(ann.id),
         points,
       };
     });
@@ -318,7 +328,7 @@ function buildEntryView(
   source: "manual" | "prediction" | "interpolated" | "legacy",
   occluded: boolean,
   trackId: string | undefined,
-  selectedId: string | null,
+  selectedSet: ReadonlySet<string>,
   trackNumbers: ReadonlyMap<string, number>,
   trackColorOverrides: Record<string, string> | undefined,
   trackContent: AnnotationVisualConfig["labelContent"]["track"],
@@ -335,7 +345,7 @@ function buildEntryView(
     id: ann.id,
     geom,
     color,
-    selected: ann.id === selectedId,
+    selected: selectedSet.has(ann.id),
     dashed: source === "interpolated" || occluded,
     occluded,
     predicted: source === "prediction",

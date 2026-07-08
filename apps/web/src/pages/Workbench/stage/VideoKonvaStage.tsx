@@ -60,6 +60,8 @@ const EMPTY_SESSION_POINTS: { pt: [number, number]; polarity: 1 | 0 }[] = [];
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
 const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
+// 解构默认值写 `= []` 会每次渲染产生新引用, 把 frameViews 的 memo 打穿(视频画布逐帧重算)。
+const EMPTY_SELECTED_IDS: string[] = [];
 
 interface VideoKonvaStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -194,7 +196,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onSpacePanDragStart,
   readOnly = false,
   lockedTrackIds = EMPTY_LOCKED,
-  selectedIds = [],
+  selectedIds = EMPTY_SELECTED_IDS,
   onSelect,
   onCursorMove,
   onCreate,
@@ -349,6 +351,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       annotations,
       frameIndex,
       selectedId,
+      selectedIds,
       hiddenTrackIds,
       lockedTrackIds,
       reviewDisplayMode,
@@ -358,7 +361,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       pendingDraft,
       samplingStep,
     }),
-    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, samplingStep, selectedId, trackColorOverrides, visual],
+    [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, samplingStep, selectedId, selectedIds, trackColorOverrides, visual],
   );
 
   // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
