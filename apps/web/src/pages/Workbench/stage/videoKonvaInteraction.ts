@@ -226,6 +226,8 @@ export interface UseVideoKonvaInteractionParams {
       | { mode: "point"; pt: [number, number]; alt: boolean }
       | { mode: "bbox"; bbox: [number, number, number, number]; alt: boolean },
   ) => void;
+  /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool / ExemplarTool 同语义)。 */
+  samPolarity?: "positive" | "negative";
 }
 
 export interface VideoKonvaInteraction {
@@ -281,8 +283,8 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
         mode: p.videoTool === "smart-point" ? "point" : "bbox",
         start: probePt,
         current: probePt,
-        // Alt = 负点 (仅 point 语义有意义, 对齐图片侧 SmartPointTool)。
-        alt: !!native.altKey,
+        // 负点 = Alt 按住 或 工具条切到「负向」(与图片侧 SmartPointTool 同式)。
+        alt: !!native.altKey || p.samPolarity === "negative",
       });
       return;
     }

@@ -131,6 +131,8 @@ interface VideoKonvaStageProps {
   samActiveIdx?: number;
   /** 当前点会话已落的正/负点（多点精修可视化）。 */
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  /** 工具条上的正/负切换; 与 Alt 等价。 */
+  samPolarity?: "positive" | "negative";
   onChangeUserBoxClass?: (id: string) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
@@ -208,6 +210,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   samCandidates = EMPTY_SAM_CANDIDATES,
   samActiveIdx = 0,
   samSessionPoints = EMPTY_SESSION_POINTS,
+  samPolarity,
   onChangeUserBoxClass,
   onComposeTracks,
   onConvertToBboxes,
@@ -495,6 +498,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     onPendingDraw,
     onUpdate: onUpdate ?? noopUpdate,
     onSamPrompt,
+    samPolarity,
   });
   const { drag } = interaction;
 

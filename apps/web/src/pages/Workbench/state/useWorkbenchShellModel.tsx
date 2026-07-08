@@ -888,11 +888,11 @@ export function useWorkbenchShellModel({
     savedInteractiveBackendId: interactiveBackendPref.savedBackendId ?? null,
     onSaveInteractiveBackend: interactiveBackendPref.save,
   });
+  // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
+  // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
+  const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
   // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
-  // v0.21.23 · 视频侧按 videoTool 解析 (smart-point / smart-box 与图片工具同名, 共用 TOOL_REGISTRY)。
-  const activeInteractivePrompt = promptOfTool(
-    (isVideoTask ? s.videoTool : s.tool) as ToolId,
-  );
+  const activeInteractivePrompt = promptOfTool(activeAiTool);
   const interactiveBackendId = routing.resolveInteractive(activeInteractivePrompt ?? "point");
 
   // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
@@ -2536,9 +2536,9 @@ export function useWorkbenchShellModel({
             )}
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。 */}
-            {isAIToolId(s.tool) && (
+            {isAIToolId(activeAiTool) && (
               <InteractiveToolBar
-                tool={s.tool}
+                tool={activeAiTool}
                 backendName={mlCapabilities.capability?.name}
                 capability={mlCapabilities.capability}
                 samPolarity={s.samPolarity}
@@ -2648,6 +2648,8 @@ export function useWorkbenchShellModel({
         isVideoToolEnabled,
         // v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选/点会话渲染 (仅视频 task 有值)。
         onVideoSamPrompt,
+        // 工具条上的正/负切换 (= / - 键) 与 Alt 等价, 与图片侧 SmartPointTool 同语义。
+        samPolarity: s.samPolarity,
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
         samSessionPoints: isVideoTask ? sam.sessionPoints : undefined,

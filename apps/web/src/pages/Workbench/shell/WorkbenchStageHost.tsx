@@ -116,6 +116,8 @@ interface WorkbenchStageHostVideoProps {
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool 同语义)。 */
+  samPolarity?: "positive" | "negative";
   spacePan: boolean;
   onSpacePanDragStart: () => void;
   videoFrameIndex: number;
@@ -328,6 +330,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       samCandidates: videoSamCandidates,
       samActiveIdx: videoSamActiveIdx,
       samSessionPoints: videoSamSessionPoints,
+      samPolarity: videoSamPolarity,
       spacePan: videoSpacePan,
       onSpacePanDragStart: onVideoSpacePanDragStart,
       videoFrameIndex,
@@ -479,6 +482,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             samCandidates={videoSamCandidates}
             samActiveIdx={videoSamActiveIdx}
             samSessionPoints={videoSamSessionPoints}
+            samPolarity={videoSamPolarity}
             spacePan={videoSpacePan}
             onSpacePanDragStart={onVideoSpacePanDragStart}
             pendingDrawing={pendingDrawing}

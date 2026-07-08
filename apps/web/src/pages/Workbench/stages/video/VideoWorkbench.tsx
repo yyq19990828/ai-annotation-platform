@@ -74,6 +74,7 @@ export interface VideoWorkbenchProps {
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  samPolarity?: "positive" | "negative";
   onCreatePoints?: (
     type: "video_polygon" | "video_polyline",
     frameIndex: number,
@@ -139,6 +140,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     samCandidates,
     samActiveIdx,
     samSessionPoints,
+    samPolarity,
     onPendingDraw,
     onUpdate,
     onChangeUserBoxClass,
@@ -203,6 +205,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         samCandidates={samCandidates}
         samActiveIdx={samActiveIdx}
         samSessionPoints={samSessionPoints}
+        samPolarity={samPolarity}
         onCreatePoints={onCreatePoints}
         onPendingDraw={onPendingDraw}
         onUpdate={onUpdate}
