@@ -2220,6 +2220,9 @@ export function useWorkbenchShellModel({
           videoBatchTracks.forEach((t) => {
             if (s.lockedVideoTrackIds.has(t.geometry.track_id) !== locked) s.toggleLockedVideoTrack(t.geometry.track_id);
           });
+        // 全选中才算「已隐藏 / 已锁定」→ 切换按钮翻转为反向动作; 部分选中时仍显示正向动作(与图片侧一致)。
+        const allTracksHidden = videoBatchTracks.every((t) => s.hiddenVideoTrackIds.has(t.geometry.track_id));
+        const allTracksLocked = videoBatchTracks.every((t) => s.lockedVideoTrackIds.has(t.geometry.track_id));
         children = (
           <VideoTrackBatchCardContent
             count={videoBatchTracks.length}
@@ -2229,11 +2232,11 @@ export function useWorkbenchShellModel({
             canJoin={canJoin}
             mergeDisabledReason={mergeReason}
             joinDisabledReason={joinReason}
+            allHidden={allTracksHidden}
+            allLocked={allTracksLocked}
             onChangeClass={(cls) => handleVideoBatchRename(videoBatchTracks, cls)}
-            onShow={() => setBatchHidden(false)}
-            onHide={() => setBatchHidden(true)}
-            onLock={() => setBatchLocked(true)}
-            onUnlock={() => setBatchLocked(false)}
+            onToggleHidden={() => setBatchHidden(!allTracksHidden)}
+            onToggleLock={() => setBatchLocked(!allTracksLocked)}
             onMerge={() => handleVideoComposeTracks({ operation: "merge_tracks", annotationIds: ids })}
             onJoin={(gapMode: VideoTrackGapMode) =>
               handleVideoComposeTracks({ operation: "join_tracks", annotationIds: ids, gapMode })

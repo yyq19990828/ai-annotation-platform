@@ -48,10 +48,11 @@ interface VideoTrackPanelProps {
   canJoinSelectedTracks?: boolean;
   /** v0.21.14 · 跳连禁用时按当前选择态给出动态原因; 可用时为 null。 */
   joinDisabledReason?: string | null;
-  onShowSelectedTracks?: () => void;
-  onHideSelectedTracks?: () => void;
-  onLockSelectedTracks?: () => void;
-  onUnlockSelectedTracks?: () => void;
+  /** 选中的轨迹是否全部已隐藏 / 已锁定 —— 决定切换按钮的图标与文案。 */
+  allSelectedTracksHidden?: boolean;
+  allSelectedTracksLocked?: boolean;
+  onToggleSelectedTracksHidden?: () => void;
+  onToggleSelectedTracksLocked?: () => void;
   reviewDisplayMode?: DiffMode;
   // v0.10.30 · 1A 选色器: session 级覆盖 (trackId → oklch), 未接线时回落到 classColor。
   trackColorOverrides?: Record<string, string>;
@@ -152,10 +153,10 @@ export function VideoTrackPanel({
   onJoinSelectedTracks,
   canJoinSelectedTracks = false,
   joinDisabledReason = null,
-  onShowSelectedTracks,
-  onHideSelectedTracks,
-  onLockSelectedTracks,
-  onUnlockSelectedTracks,
+  allSelectedTracksHidden = false,
+  allSelectedTracksLocked = false,
+  onToggleSelectedTracksHidden,
+  onToggleSelectedTracksLocked,
   reviewDisplayMode,
   trackColorOverrides,
   onSetTrackColor,
@@ -265,17 +266,27 @@ export function VideoTrackPanel({
               </select>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5">
-              <Button variant="ghost" size="sm" title="显示" aria-label="显示" disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>
-                <Icon name="eye" size={14} />
+              <Button
+                variant="ghost"
+                size="sm"
+                title={allSelectedTracksHidden ? "显示" : "隐藏"}
+                aria-label={allSelectedTracksHidden ? "显示" : "隐藏"}
+                aria-pressed={allSelectedTracksHidden}
+                disabled={!onToggleSelectedTracksHidden}
+                onClick={onToggleSelectedTracksHidden}
+              >
+                <Icon name={allSelectedTracksHidden ? "eyeOff" : "eye"} size={14} />
               </Button>
-              <Button variant="ghost" size="sm" title="隐藏" aria-label="隐藏" disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>
-                <Icon name="eyeOff" size={14} />
-              </Button>
-              <Button variant="ghost" size="sm" title="锁定" aria-label="锁定" disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>
-                <Icon name="lock" size={14} />
-              </Button>
-              <Button variant="ghost" size="sm" title="解锁" aria-label="解锁" disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>
-                <Icon name="unlock" size={14} />
+              <Button
+                variant="ghost"
+                size="sm"
+                title={allSelectedTracksLocked ? "解锁" : "锁定"}
+                aria-label={allSelectedTracksLocked ? "解锁" : "锁定"}
+                aria-pressed={allSelectedTracksLocked}
+                disabled={batchSelectionDisabled || !onToggleSelectedTracksLocked}
+                onClick={onToggleSelectedTracksLocked}
+              >
+                <Icon name={allSelectedTracksLocked ? "lock" : "unlock"} size={14} />
               </Button>
               <Button
                 variant="ghost"

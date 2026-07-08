@@ -22,11 +22,12 @@ export interface VideoTrackBatchCardContentProps {
   canJoin: boolean;
   mergeDisabledReason?: string | null;
   joinDisabledReason?: string | null;
+  /** 选中的轨迹是否全部已锁定 / 已隐藏 —— 决定切换按钮的图标与文案。 */
+  allLocked: boolean;
+  allHidden: boolean;
   onChangeClass: (className: string) => void;
-  onShow: () => void;
-  onHide: () => void;
-  onLock: () => void;
-  onUnlock: () => void;
+  onToggleHidden: () => void;
+  onToggleLock: () => void;
   onMerge: () => void;
   onJoin: (gapMode: VideoTrackGapMode) => void;
   onDelete: () => void;
@@ -38,6 +39,9 @@ export interface VideoTrackBatchCardContentProps {
  * 批量操作只能去右栏 roster —— 同一交互对象从 1 选到 2 选操作整片换位。此卡把 roster 批量条
  * (改类 / 显隐 / 锁 / 合并 / 跳连 / 删除)搬到浮卡, 与 roster 对等、同一批 shell handler。
  * 跳连沿用 VideoTrackComposeDialog 选 gap 模式。
+ *
+ * 显隐 / 锁定各占一个**切换**按钮 (图标与文案随 allHidden / allLocked 翻转), 与图片工作台
+ * 及视频单帧的批量卡一致 —— 而不是显示/隐藏/锁定/解锁四个并排按钮。
  */
 export function VideoTrackBatchCardContent({
   count,
@@ -47,11 +51,11 @@ export function VideoTrackBatchCardContent({
   canJoin,
   mergeDisabledReason,
   joinDisabledReason,
+  allLocked,
+  allHidden,
   onChangeClass,
-  onShow,
-  onHide,
-  onLock,
-  onUnlock,
+  onToggleHidden,
+  onToggleLock,
   onMerge,
   onJoin,
   onDelete,
@@ -85,17 +89,26 @@ export function VideoTrackBatchCardContent({
       </div>
 
       <ActionBar label="批量操作">
-        <Button variant="ghost" size="sm" title="批量显示" aria-label="批量显示" onClick={onShow}>
-          <Icon name="eye" size={14} />
+        <Button
+          variant="ghost"
+          size="sm"
+          title={allHidden ? "批量显示" : "批量隐藏"}
+          aria-label={allHidden ? "批量显示" : "批量隐藏"}
+          aria-pressed={allHidden}
+          onClick={onToggleHidden}
+        >
+          <Icon name={allHidden ? "eyeOff" : "eye"} size={14} />
         </Button>
-        <Button variant="ghost" size="sm" title="批量隐藏" aria-label="批量隐藏" onClick={onHide}>
-          <Icon name="eyeOff" size={14} />
-        </Button>
-        <Button variant="ghost" size="sm" title="批量锁定" aria-label="批量锁定" disabled={readOnly} onClick={onLock}>
-          <Icon name="lock" size={14} />
-        </Button>
-        <Button variant="ghost" size="sm" title="批量解锁" aria-label="批量解锁" disabled={readOnly} onClick={onUnlock}>
-          <Icon name="unlock" size={14} />
+        <Button
+          variant="ghost"
+          size="sm"
+          title={allLocked ? "批量解锁" : "批量锁定"}
+          aria-label={allLocked ? "批量解锁" : "批量锁定"}
+          aria-pressed={allLocked}
+          disabled={readOnly}
+          onClick={onToggleLock}
+        >
+          <Icon name={allLocked ? "lock" : "unlock"} size={14} />
         </Button>
         <Button
           variant="ghost"

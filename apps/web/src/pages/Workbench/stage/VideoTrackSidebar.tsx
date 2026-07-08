@@ -306,6 +306,14 @@ export function VideoTrackSidebar({
     }
   }, [hiddenTrackIds, onToggleHiddenTrack, selectedTracks]);
 
+  // 全选中才算「已隐藏 / 已锁定」→ 切换按钮翻转为反向动作; 部分选中时仍显示正向动作。
+  // 空选时 every 恒 true, 会让按钮显示成反向态 —— 故显式要求非空。
+  const allSelectedTracksHidden = selectedTracks.length > 0
+    && selectedTracks.every((ann) => hiddenTrackIds.has(ann.geometry.track_id));
+
+  const allSelectedTracksLocked = selectedTracks.length > 0
+    && selectedTracks.every((ann) => lockedTrackIds.has(ann.geometry.track_id));
+
   const setSelectedTracksLocked = useCallback((locked: boolean) => {
     for (const ann of selectedTracks) {
       const isLocked = lockedTrackIds.has(ann.geometry.track_id);
@@ -521,10 +529,10 @@ export function VideoTrackSidebar({
       onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
       canJoinSelectedTracks={canJoinSelectedTracks}
       joinDisabledReason={joinDisabledReason}
-      onShowSelectedTracks={() => setSelectedTracksHidden(false)}
-      onHideSelectedTracks={() => setSelectedTracksHidden(true)}
-      onLockSelectedTracks={() => setSelectedTracksLocked(true)}
-      onUnlockSelectedTracks={() => setSelectedTracksLocked(false)}
+      allSelectedTracksHidden={allSelectedTracksHidden}
+      allSelectedTracksLocked={allSelectedTracksLocked}
+      onToggleSelectedTracksHidden={() => setSelectedTracksHidden(!allSelectedTracksHidden)}
+      onToggleSelectedTracksLocked={() => setSelectedTracksLocked(!allSelectedTracksLocked)}
       reviewDisplayMode={reviewDisplayMode}
       trackColorOverrides={trackColorOverrides}
       onSetTrackColor={onSetTrackColor}
