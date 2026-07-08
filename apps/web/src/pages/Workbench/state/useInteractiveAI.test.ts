@@ -600,4 +600,21 @@ describe("useInteractiveAI · transport 注入与 cacheScope", () => {
     await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
     expect(transport.mock.calls[1][0].context.points).toEqual([[0.8, 0.8]]);
   });
+
+  // 回归: 候选跨帧存活会被采纳到新帧上 —— 提示发生在 F20、Enter 时画布已到 F28,
+  // 于是标注落在 F28 而当前帧看不见它。候选只属它被算出来的那一帧。
+  it("cacheScope 变化 → 候选清空（不得跨帧存活被采纳到新帧）", async () => {
+    const transport = vi.fn().mockResolvedValue(POLY_RESPONSE);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInteractiveAI({ ...ARGS, transport, cacheScope: scope }),
+      { initialProps: { scope: 20 } },
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates.length).toBeGreaterThan(0));
+
+    rerender({ scope: 28 });
+    await waitFor(() => expect(result.current.candidates).toEqual([]));
+    expect(result.current.activeIdx).toBe(0);
+  });
 });

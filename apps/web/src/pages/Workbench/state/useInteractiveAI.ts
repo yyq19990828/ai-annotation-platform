@@ -575,14 +575,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       });
   }, [projectId, taskId, mlBackendId, cacheScope, cache]);
 
-  // 切 task / backend / 帧 → 重置预热记忆 + 点会话 (含 mask_input 回灌 + 可视化点) + exemplar 会话。
-  // v0.21.23 · cacheScope (视频 frameIndex) 是第四个重置触发点: 上一帧的点会话不能喂给这一帧,
-  // 且 mask_input 的 low-res logits 绑定具体图像, 跨帧回传必错。
+  // 切 task / backend / 帧 → 重置预热记忆, 并 cancel 掉整个会话。
+  // v0.21.23 · cacheScope (视频 frameIndex) 是第四个重置触发点。这里必须走 cancel 而不是只
+  // reset 会话: 候选是**当前帧**的分割结果, 留着它跨帧会被采纳到新帧上 (提示发生在 F20、
+  // 采纳落到 F28, 于是标注在当前帧不可见)。cancel 一并 abort 在飞请求, 避免旧帧的响应回来
+  // 覆盖新帧候选。此外 mask_input 的 low-res logits 绑定具体图像, 跨帧回传必错。
   useEffect(() => {
     warmedRef.current = null;
-    resetPointSession();
-    resetExemplarSession();
-  }, [taskId, mlBackendId, cacheScope, resetPointSession, resetExemplarSession]);
+    cancel();
+  }, [taskId, mlBackendId, cacheScope, cancel]);
 
   return {
     candidates,

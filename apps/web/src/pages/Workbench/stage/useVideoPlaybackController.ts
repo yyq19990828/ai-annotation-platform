@@ -10,7 +10,7 @@ import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from ".
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
-import { imageBitmapToJpeg } from "@/utils/imageBitmapToJpeg";
+import { imageBitmapToJpeg, videoElementToJpeg } from "@/utils/imageBitmapToJpeg";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import type { VideoFramePreview } from "./useVideoFramePreview";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -841,11 +841,14 @@ export function useVideoPlaybackController({
     toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
     propagateSelectedTrack: trackActions.propagateSelectedTrack,
     deleteSelectedTrackKeyframe,
-    // v0.21.4 · 当前帧 → JPEG(视频单题 AI 供图), 经 ref 读最新位图故不入 deps。
+    // v0.21.4 · 当前帧 → JPEG(视频单题 AI / 交互式 SAM 供图), 经 ref 读最新位图故不入 deps。
     captureCurrentFrameJpeg: async (quality?: number) => {
       const bmp = activeBitmapRef.current?.bitmap;
-      if (!bmp) return null;
-      return imageBitmapToJpeg(bmp, quality);
+      if (bmp) return imageBitmapToJpeg(bmp, quality);
+      // v0.21.23 · 位图缓存未命中时画布画的是 <video> 本身(pickMediaImageSource 的回退),
+      // 只认 bitmap 会在画面明明可见时谎报「当前帧尚未就绪」。取帧与渲染取同一源。
+      const el = videoRef.current;
+      return el ? videoElementToJpeg(el, quality) : null;
     },
   }), [
     clearLoopRegion,
@@ -863,6 +866,7 @@ export function useVideoPlaybackController({
     trackActions.propagateSelectedTrack,
     trackActions.toggleSelectedTrackHidden,
     trackActions.toggleSelectedTrackLocked,
+    videoRef,
     trackActions.toggleSelectedTrackOccluded,
     trackActions.toggleSelectedTrackOutside,
   ]);
