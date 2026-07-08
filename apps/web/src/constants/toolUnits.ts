@@ -13,6 +13,13 @@ export type ToolUnitId =
   | "polyline"
   | "keypoint"
   | "region"
+  /**
+   * @deprecated 「AI 交互」不是几何单位, 而是能力维度: smart-* 产 polygon (归 region),
+   * magic-box / text-prompt 产 bbox (归 bbox)。已退役为项目级开关
+   * `project.ai_interactive_enabled`(项目设置「ML 模型」)。此 Literal 仅为兼容存量
+   * `tool_bindings` JSONB 中可能残留的 key 而保留, 不再出现在 TOOL_UNIT_GROUPS,
+   * 任何 UI 都不再读取它。新代码勿使用。
+   */
   | "ai_interactive"
   | "lidar_box_3d"
   | "point_mask_3d"
@@ -23,7 +30,6 @@ export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
   "polyline",
   "keypoint",
   "region",
-  "ai_interactive",
   "lidar_box_3d",
   "point_mask_3d",
   "rotated_bbox",
@@ -123,15 +129,9 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     dataTypes: ["image", "video"],
     available: true,
   },
-  {
-    id: "ai_interactive",
-    label: "AI 交互",
-    hint: "SAM 点 / 框 / 文本 / 示例 + Magic Box 打包",
-    icon: "brain",
-    tools: ["smart-point", "smart-box", "text-prompt", "exemplar", "magic-box"],
-    dataTypes: ["image"],
-    available: true,
-  },
+  // 「AI 交互」曾作为一个工具单位列在此处 (带类别 / 属性编辑器)。它不产出独有几何,
+  // 已退役为项目级开关 project.ai_interactive_enabled (项目设置「ML 模型」);
+  // AI 工具的类别随其产出几何归属 region / bbox 单位 (见 stage/tools/toolUnits.ts)。
   {
     id: "lidar_box_3d",
     label: "3D 立体框",
@@ -161,7 +161,8 @@ export function getToolUnitGroup(id: ToolUnitId): ToolUnitGroupSpec | undefined 
 export function defaultEnabledUnits(dt: ProjectDataType): ToolUnitId[] {
   if (dt === "video") return ["bbox"];
   if (dt === "lidar") return ["lidar_box_3d", "point_mask_3d"];
-  // image 默认: bbox + region 两个开 (覆盖检测 / 分割 90% 场景), AI 交互按 AI 开关再开
+  // image 默认: bbox + region 两个开 (覆盖检测 / 分割 90% 场景)。AI 工具无独立单位,
+  // 其类别随产出几何归 region / bbox, 可用性由 project.ai_interactive_enabled 决定。
   return ["bbox", "region"];
 }
 

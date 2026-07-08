@@ -72,6 +72,13 @@ class Project(Base):
     text_threshold: Mapped[float] = mapped_column(
         Float, nullable=False, server_default="0.25", default=0.25
     )
+    # 项目级「交互式 AI 工具」总开关 (工作台 smart-point / smart-box / exemplar /
+    # magic-box)。归属项目设置「ML 模型」——能否用 AI 工具取决于绑了什么 backend,
+    # 与几何类别无关。此前它被错误建模成 ai_interactive 工具单位塞在 tool_bindings 里,
+    # 既有 enabled 开关对工作台零作用, 又派生出一套与 region/bbox 割裂的伪类别域。
+    ai_interactive_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true", default=True
+    )
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict = 全部沿用用户级 preferences
     rendering_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict

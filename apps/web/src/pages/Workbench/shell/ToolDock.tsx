@@ -36,10 +36,15 @@ interface ToolDockProps {
   videoMode?: boolean;
   /**
    * 项目已启用的 tool_unit 集合 (来自 project.tool_bindings[unit].enabled)。
-   * 仅过滤普通绘制工具: 未启用的隐藏。AI 工具按后端能力置灰。
+   * 过滤所有持有几何的工具 (含 AI 工具, 按其产出几何归属的单位): 未启用的隐藏。
    * null = 老项目无 tool_bindings 配置 → 视为全部启用, 不隐藏任何工具 (向后兼容)。
    */
   enabledToolUnits?: Set<string> | null;
+  /**
+   * 项目级「交互式 AI 工具」总开关 (project.ai_interactive_enabled, 项目设置「ML 模型」)。
+   * false → AI 工具 (requiredPrompt) 整组隐藏。undefined = 未加载 → 不隐藏 (向后兼容)。
+   */
+  aiInteractiveEnabled?: boolean;
   /**
    * 视频工具可用性谓词 (按几何单位 enabled + 单帧/轨迹子开关判定, 见 stage/videoToolUnits)。
    * undefined = 全部显示 (向后兼容 / 非视频)。
@@ -128,6 +133,7 @@ export function ToolDock({
   reviewMode = false,
   videoMode = false,
   enabledToolUnits = null,
+  aiInteractiveEnabled,
   isVideoToolEnabled,
   threeDMode = false,
   threeDTool = "select",
@@ -208,12 +214,20 @@ export function ToolDock({
     );
   }
 
+  // 三层门控 (每层语义单一):
+  //   1. 项目总开关 project.ai_interactive_enabled 关 → AI 工具整组隐藏。
+  //   2. 后端能力 isPromptSupported 不支持 → 置灰 + tooltip (见下方 disabled 计算)。
+  //   3. 产出几何单位未启用 → 隐藏。AI 工具按产出几何归属单位 (smart-* → region,
+  //      magic-box → bbox), 故与手画工具同一套过滤: 项目没开 region 单位时,
+  //      smart-point 画出的 polygon 无类别可归, 本就该跟随 region 一起隐藏。
   const visibleTools = reviewMode
     ? ALL_TOOLS.filter((t) => t.id === "select")
     : ALL_TOOLS.filter((t) => {
-        // select (选择) 与 AI 工具 (requiredPrompt, 按后端能力置灰) 不受 tool_bindings 过滤。
-        if (t.id === "select" || t.requiredPrompt) return true;
-        // 老项目无 tool_bindings → enabledToolUnits 为 null → 全显示 (向后兼容)。
+        // select 是选择工具, 不持有几何, 恒显示。
+        if (t.id === "select") return true;
+        // 层 1: AI 工具受项目总开关控制 (undefined = 未加载, 不隐藏)。
+        if (t.requiredPrompt && aiInteractiveEnabled === false) return false;
+        // 层 3: 老项目无 tool_bindings → enabledToolUnits 为 null → 全显示 (向后兼容)。
         if (!enabledToolUnits) return true;
         return enabledToolUnits.has(toolUnitForTool(t.id));
       });

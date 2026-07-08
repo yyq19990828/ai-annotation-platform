@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
+import { Switch } from "@/components/ui/Switch";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   useAvailableMLBackends,
@@ -162,6 +163,23 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     );
   };
 
+  // 交互式 AI 工具总开关 (工作台 smart-point / smart-box / exemplar / magic-box)。
+  // 关闭后这些工具在工作台整组隐藏; 具体某个工具是否可用仍取决于后端 supported_prompts
+  // (不支持则置灰), 以及其产出几何所属工具单位 (region / bbox) 是否启用。
+  const commitAiInteractive = (next: boolean) => {
+    updateProject.mutate(
+      { ai_interactive_enabled: next },
+      {
+        onSuccess: () =>
+          pushToast({
+            msg: next ? "已启用交互式 AI 工具" : "已停用交互式 AI 工具",
+            kind: "success",
+          }),
+        onError: (e) => pushToast({ msg: "保存失败", sub: (e as Error).message }),
+      },
+    );
+  };
+
   // IoU 阈值滑块松手/失焦时提交一次(拖动中只更新本地,不逐帧发请求);无变化跳过。
   const commitIou = (value: number) => {
     if (Math.abs(value - (project.iou_dedup_threshold ?? 0.7)) < 0.001) return;
@@ -309,6 +327,32 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 {iouThreshold.toFixed(2)}
               </span>
             </div>
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>
+              交互式 AI 工具{" "}
+              <span className="font-normal text-muted-foreground">
+                工作台的 SAM 点 / 框 / 示例框 与 Magic Box
+              </span>
+            </label>
+            <div className="flex min-h-9 items-center">
+              <Switch
+                checked={project.ai_interactive_enabled ?? true}
+                onChange={commitAiInteractive}
+                disabled={!canManage || updateProject.isPending}
+                label={
+                  (project.ai_interactive_enabled ?? true)
+                    ? "标注员可在工作台使用交互式 AI 工具"
+                    : "已停用：工作台不显示交互式 AI 工具"
+                }
+                data-testid="ai-interactive-toggle"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              具体工具还需后端支持对应交互模式（不支持则置灰），且其产出几何所属的工具单位
+              （多边形归「区域」、矩形框归「矩形框」）已在「类别与属性」中启用。
+            </p>
           </div>
         </div>
       </div>

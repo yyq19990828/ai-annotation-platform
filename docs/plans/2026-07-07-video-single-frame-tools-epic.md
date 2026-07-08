@@ -76,7 +76,7 @@
 - ~~**工具单位配置面**：沿用 bbox 单位扩子开关~~ **❌ 已推翻（v0.21.21 落地时用户二次拍板）**：改为**独立工具单位**——
   折线→`polyline` 单位、多边形→`region` 单位，各自独立类别/属性 schema（对齐图片工作台）；每个视频几何单位内含
   `video_modes:{box,track}`（单帧/轨迹）子开关。`VideoModesConfig` 的 `polygon/polyline/keypoint/rotated_box` 死字段
-  已于 v0.21.21 清理。详见 [视频几何工具单位对齐图片](2026-07-07-video-geometry-units-align-image.md)。
+  已于 v0.21.21 清理。详见 [视频几何工具单位对齐图片](archive/2026-07-07-video-geometry-units-align-image.md)。
 
 ## 决策记录 + 开放问题
 
@@ -84,7 +84,7 @@
 1. **共享 vs 复刻**：**路 B 务实切分**（复用 `tools/*` 工具单元 + 抽共享几何渲染器 + 视频栈薄封装 DragInit 派发，不统一整个
    ImageStage）。头号前置，v0.21.21 PR1 落地。
 2. ~~**工具单位粒度**：沿用 bbox 单位扩子开关~~ → **❌ 已被 v0.21.21 推翻，改为独立工具单位**（见上「风险」条目与
-   [对齐计划](2026-07-07-video-geometry-units-align-image.md)）。原表述保留仅作决策沿革，**勿据此实施**。
+   [对齐计划](archive/2026-07-07-video-geometry-units-align-image.md)）。原表述保留仅作决策沿革，**勿据此实施**。
 3. **单帧 mask 存储**：**先矢量化**——笔刷编辑 → `mask_to_multi_polygon` → 落 `video_polygon`/`video_multi_polygon`，不引 per-frame
    栅格（与 v0.21.20 缺口 4 一致）。真·栅格 mask 单独立项。（随 v0.21.22 一并暂停。）
 4. **版本号编排**：**跳过 v0.21.22 不重编号**——文件名 / 分期表 / ROADMAP 三处已引用，跳号语义合法，重命名成本大于收益。

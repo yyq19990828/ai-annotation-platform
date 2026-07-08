@@ -11545,6 +11545,11 @@
             "title": "Ai Enabled",
             "type": "boolean"
           },
+          "ai_interactive_enabled": {
+            "default": true,
+            "title": "Ai Interactive Enabled",
+            "type": "boolean"
+          },
           "attribute_schema": {
             "anyOf": [
               {
@@ -11936,6 +11941,11 @@
           },
           "ai_enabled": {
             "title": "Ai Enabled",
+            "type": "boolean"
+          },
+          "ai_interactive_enabled": {
+            "default": true,
+            "title": "Ai Interactive Enabled",
             "type": "boolean"
           },
           "annotation_guide": {
@@ -13724,6 +13734,17 @@
               }
             ],
             "title": "Ai Enabled"
+          },
+          "ai_interactive_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Interactive Enabled"
           },
           "annotation_guide": {
             "anyOf": [

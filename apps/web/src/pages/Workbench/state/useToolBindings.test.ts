@@ -73,7 +73,9 @@ describe("useToolBindings · v0.10.17", () => {
     expect(result.current.classes).toEqual(["a", "c", "b"]);
   });
 
-  it("ai_interactive 单位空 → 回落到 bbox 单位的 classes (toolUnitId 仍为 ai_interactive)", () => {
+  // AI 工具按产出几何归属单位 (ai_interactive 伪单位已退役):
+  // smart-point / smart-box / exemplar 产 polygon → region; magic-box 产 bbox → bbox.
+  it("smart-point 归 region 单位 (SAM 产多边形, 与手画 polygon 同类别域)", () => {
     const proj = _proj({
       tool_bindings: {
         bbox: {
@@ -81,17 +83,61 @@ describe("useToolBindings · v0.10.17", () => {
           classes: [{ name: "person", order: 0 }],
           attribute_schema: { fields: [] },
         },
-        // ai_interactive 完全未配
+        region: {
+          enabled: true,
+          classes: [{ name: "car", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+      },
+    });
+    const { result } = renderHook(() =>
+      useToolBindings(proj, "smart-point" as ToolId),
+    );
+    expect(result.current.toolUnitId).toBe("region");
+    expect(result.current.classes).toEqual(["car"]);
+  });
+
+  it("magic-box 归 bbox 单位 (SAM 多边形收紧为外接矩形, 与手画 box 同类别域)", () => {
+    const proj = _proj({
+      tool_bindings: {
+        bbox: {
+          enabled: true,
+          classes: [{ name: "person", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+        region: {
+          enabled: true,
+          classes: [{ name: "car", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+      },
+    });
+    const { result } = renderHook(() =>
+      useToolBindings(proj, "magic-box" as ToolId),
+    );
+    expect(result.current.toolUnitId).toBe("bbox");
+    expect(result.current.classes).toEqual(["person"]);
+  });
+
+  it("smart-box 的 region 单位未配 → 回落 bbox 借类名 (toolUnitId 仍为 region)", () => {
+    const proj = _proj({
+      tool_bindings: {
+        bbox: {
+          enabled: true,
+          classes: [{ name: "person", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+        // region 完全未配
       },
     });
     const { result } = renderHook(() =>
       useToolBindings(proj, "smart-box" as ToolId),
     );
-    expect(result.current.toolUnitId).toBe("ai_interactive");
+    expect(result.current.toolUnitId).toBe("region");
     expect(result.current.classes).toEqual(["person"]);
   });
 
-  it("ai_interactive 单位 enabled 但 classes 为空 → 也回落", () => {
+  it("region 单位 enabled 但 classes 为空 → 也回落", () => {
     const proj = _proj({
       tool_bindings: {
         bbox: {
@@ -99,7 +145,7 @@ describe("useToolBindings · v0.10.17", () => {
           classes: [{ name: "person", order: 0 }],
           attribute_schema: { fields: [] },
         },
-        ai_interactive: {
+        region: {
           enabled: true,
           classes: [],
           attribute_schema: { fields: [] },
@@ -107,7 +153,7 @@ describe("useToolBindings · v0.10.17", () => {
       },
     });
     const { result } = renderHook(() =>
-      useToolBindings(proj, "magic-box" as ToolId),
+      useToolBindings(proj, "exemplar" as ToolId),
     );
     expect(result.current.classes).toEqual(["person"]);
   });

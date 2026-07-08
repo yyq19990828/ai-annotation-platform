@@ -74,6 +74,8 @@ class ProjectCreate(BaseModel):
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+    # 交互式 AI 工具总开关 (归 ML 模型设置项); 缺省开启。
+    ai_interactive_enabled: bool = True
     # v0.10.29 · 视频帧逻辑采样配置; None / 缺省 = 不采样 (空 dict).
     video_sampling: VideoSamplingConfig | None = None
     # v0.14.4 · 项目级 scene 模式声明;仅 image/lidar 项目可开启。
@@ -116,6 +118,8 @@ class ProjectUpdate(BaseModel):
     # v0.9.2 · DINO 阈值项目级 override
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+    # 交互式 AI 工具总开关 (归 ML 模型设置项)。
+    ai_interactive_enabled: bool | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
     rendering_config: ProjectRenderingConfig | None = None
     # v0.10.13 · E1 · 标注指引 Markdown 原文; 显式 None 仅在 owner 主动清空时出现.
@@ -172,6 +176,8 @@ class ProjectOut(BaseModel):
     iou_dedup_threshold: float = 0.7
     box_threshold: float = 0.35
     text_threshold: float = 0.25
+    # 交互式 AI 工具总开关 (归 ML 模型设置项)。
+    ai_interactive_enabled: bool = True
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.

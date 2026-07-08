@@ -23,9 +23,14 @@ vi.mock("@/api/auth", async () => {
   };
 });
 
+// zustand store 既是 hook 又带 getState 静态方法; useWorkbenchConfig 的 flush 回调
+// 走 useAuthStore.getState() 取 userId (无法在回调里调 hook), 故 mock 两者都要有。
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (selector: (s: { user: unknown }) => unknown) =>
-    selector({ user: mockAuthUser.current }),
+  useAuthStore: Object.assign(
+    (selector: (s: { user: unknown }) => unknown) =>
+      selector({ user: mockAuthUser.current }),
+    { getState: () => ({ user: mockAuthUser.current }) },
+  ),
 }));
 
 import { useWorkbenchConfig } from "./useWorkbenchConfig";

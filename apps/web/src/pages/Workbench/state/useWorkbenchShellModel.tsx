@@ -2378,6 +2378,7 @@ export function useWorkbenchShellModel({
       capabilitiesLoading: routing.isLoading,
       reviewMode: mode === "review", videoMode: isVideoTask,
       enabledToolUnits,
+      aiInteractiveEnabled: currentProject?.ai_interactive_enabled,
       isVideoToolEnabled,
       threeDMode: stageKind === "3d",
       threeDTool: s.threeDTool,
