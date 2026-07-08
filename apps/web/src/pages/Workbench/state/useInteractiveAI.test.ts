@@ -525,3 +525,79 @@ describe("useInteractiveAI", () => {
     expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// v0.21.23 · transport 注入 + cacheScope（视频当前帧交互式 SAM 复用本 hook）
+describe("useInteractiveAI · transport 注入与 cacheScope", () => {
+  beforeEach(() => {
+    interactiveAnnotateMock.mockReset();
+    pushToastMock.mockReset();
+  });
+
+  it("省略 transport → 走图片链路 interactiveAnnotate（默认行为不变）", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates.length).toBe(1));
+    expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("给了 transport → 全部请求改走它，interactiveAnnotate 不被调用", async () => {
+    const transport = vi.fn().mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() =>
+      useInteractiveAI({ ...ARGS, transport, cacheScope: 7 }),
+    );
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates.length).toBe(1));
+
+    expect(interactiveAnnotateMock).not.toHaveBeenCalled();
+    expect(transport).toHaveBeenCalledTimes(1);
+    const call = transport.mock.calls[0][0];
+    expect(call.projectId).toBe("p1");
+    expect(call.taskId).toBe("t1");
+    expect(call.mlBackendId).toBe("b1");
+    expect(call.context).toMatchObject({ type: "point", points: [[0.5, 0.5]] });
+    expect(call.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("同一 prompt 在不同 cacheScope 下不串候选（跨帧缓存隔离）", async () => {
+    const transport = vi.fn().mockResolvedValue(POLY_RESPONSE);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInteractiveAI({ ...ARGS, transport, cacheScope: scope }),
+      { initialProps: { scope: 1 } },
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+
+    // 同 scope 同 prompt → 命中前端缓存，不再打后端。
+    act(() => result.current.cancel());
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates.length).toBe(1));
+    expect(transport).toHaveBeenCalledTimes(1);
+
+    // 换帧（scope 变）→ 同样的 prompt 必须重新推理，不能复用上一帧候选。
+    rerender({ scope: 2 });
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+  });
+
+  it("cacheScope 变化 → 点会话重置（上一帧的点不喂给这一帧）", async () => {
+    const transport = vi.fn().mockResolvedValue(POLY_RESPONSE);
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInteractiveAI({ ...ARGS, transport, cacheScope: scope }),
+      { initialProps: { scope: 1 } },
+    );
+
+    act(() => result.current.runPoint([0.2, 0.2], 1));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+    expect(result.current.sessionPoints.length).toBe(1);
+
+    rerender({ scope: 2 });
+    await waitFor(() => expect(result.current.sessionPoints.length).toBe(0));
+
+    // 新帧首击 → 只带 1 个点（若会话未重置会带 2 个）。
+    act(() => result.current.runPoint([0.8, 0.8], 1));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+    expect(transport.mock.calls[1][0].context.points).toEqual([[0.8, 0.8]]);
+  });
+});

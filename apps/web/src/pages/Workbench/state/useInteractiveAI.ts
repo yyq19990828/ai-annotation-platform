@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
-import { mlBackendsApi } from "@/api/ml-backends";
+import { mlBackendsApi, type InteractiveAnnotateResponse } from "@/api/ml-backends";
 import { useToastStore } from "@/components/ui/Toast";
 import { VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { recordPredictCacheHit } from "./sessionVariantCache";
@@ -46,10 +46,34 @@ export interface PendingCandidate {
   source: "point" | "bbox" | "exemplar";
 }
 
+/**
+ * v0.21.23 · 交互式推理的**投递方式**。默认走图片链路（只传 task_id，服务端按 task URL 取图）。
+ *
+ * 视频当前帧要传入 transport：视频 task 的 file_path 是整段 mp4，服务端取不到帧，需前端把
+ * 当前帧解成 JPEG 走 multipart（见 `interactiveAnnotateFrame`）。抽成注入点是为了让整套
+ * abort 取代 / 候选缓存 / 点会话累加 / multimask / mask_input 回灌 / 防抖 / consume 语义
+ * 被两条链原样复用，而不是复刻一份。
+ */
+export type InteractiveTransport = (args: {
+  projectId: string;
+  mlBackendId: string;
+  taskId: string;
+  context: Record<string, unknown>;
+  signal: AbortSignal;
+}) => Promise<InteractiveAnnotateResponse>;
+
 export interface UseInteractiveAIArgs {
   projectId: string | undefined;
   taskId: string | undefined;
   mlBackendId: string | undefined | null;
+  /** 省略 = 图片链路（interactive-annotating，服务端自取图）。 */
+  transport?: InteractiveTransport;
+  /**
+   * v0.21.23 · 候选缓存 / 点会话的额外作用域（视频传当前 frameIndex）。
+   * 进 cacheKey 防跨帧串候选；变化时连同点会话与 mask_input 回灌一起失效——
+   * low-res logits 绑定具体图像，切帧后回传给下一帧是错的。
+   */
+  cacheScope?: string | number;
 }
 
 export interface UseInteractiveAIReturn {
@@ -105,8 +129,28 @@ const DEBOUNCE_MS = 80;
 // 生效一次 dispatch), 比 point 的 80ms 长, 因 exemplar 单次后端推理更重 (见 issue 0002)。
 const EXEMPLAR_DEBOUNCE_MS = 220;
 
+/** 默认投递：图片链路，只传 task_id，服务端按 task URL 取图。 */
+const defaultTransport: InteractiveTransport = ({
+  projectId,
+  mlBackendId,
+  taskId,
+  context,
+  signal,
+}) =>
+  mlBackendsApi.interactiveAnnotate(
+    projectId,
+    mlBackendId,
+    { task_id: taskId, context },
+    signal,
+  );
+
 export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIReturn {
-  const { projectId, taskId, mlBackendId } = args;
+  const { projectId, taskId, mlBackendId, cacheScope } = args;
+  const transport = args.transport ?? defaultTransport;
+  // transport 常是内联闭包（捕获 frameIndex / 取帧函数），放 ref 免得每次渲染都让
+  // dispatch 的 useCallback 失效、进而级联重建 runPoint/runBbox/... 的引用。
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
   const pushToast = useToastStore((s) => s.push);
 
   const [candidates, setCandidates] = useState<PendingCandidate[]>([]);
@@ -217,7 +261,13 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       // v0.18.18 · mask_input 是上一轮 logits 的不透明回灌, 不进缓存键 (同一点序的 mask_input
       // 是确定的, 排除它避免巨串塞键 / 误判 miss)。
       const { mask_input: _maskInput, ...ctxForKey } = requestContext;
-      const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx: ctxForKey });
+      const cacheKey = makeSamCacheKey({
+        taskId,
+        mlBackendId,
+        ctxKind,
+        ctx: ctxForKey,
+        scope: cacheScope,
+      });
       // 命中前端缓存：直接复用候选，跳过 HTTP。
       const cached = cache.get(cacheKey);
       if (cached) {
@@ -239,12 +289,13 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       abortRef.current = controller;
       setIsRunning(true);
       try {
-        const resp = await mlBackendsApi.interactiveAnnotate(
+        const resp = await transportRef.current({
           projectId,
           mlBackendId,
-          { task_id: taskId, context: requestContext },
-          controller.signal,
-        );
+          taskId,
+          context: requestContext,
+          signal: controller.signal,
+        });
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
         // v0.18.18 · 存本轮回灌 token: 单 mask 精修阶段非空, 多候选 / 框 / text / exemplar 为 null
@@ -300,7 +351,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         if (myInflight === inflightRef.current) setIsRunning(false);
       }
     },
-    [projectId, taskId, mlBackendId, pushToast, cache],
+    // transport 走 ref，不进依赖（内联闭包每渲染新建，会级联重建所有 run* 引用）。
+    [projectId, taskId, mlBackendId, cacheScope, pushToast, cache],
   );
 
   const runPoint = useCallback(
@@ -492,16 +544,26 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     if (warmedRef.current === key) return;
     warmedRef.current = key;
     // 静默发一个图中心 point，结果丢；只是为了让后端 image encoder 加载 + cache。
-    // 用直接 fetch (绕过 dispatch 的 setCandidates / inflightRef)，失败完全静默。
-    mlBackendsApi
-      .interactiveAnnotate(projectId, mlBackendId, {
-        task_id: taskId,
-        context: { type: "point", points: [[0.5, 0.5]], labels: [1] },
+    // 绕过 dispatch 的 setCandidates / inflightRef，失败完全静默。
+    // v0.21.23 · 走 transport：视频侧必须带当前帧图，直连图片端点会把整段 mp4 喂给 SAM。
+    const ctx = { type: "point", points: [[0.5, 0.5]], labels: [1] };
+    transportRef
+      .current({
+        projectId,
+        mlBackendId,
+        taskId,
+        context: ctx,
+        signal: new AbortController().signal,
       })
       .then((resp) => {
-        // 预热成功 → 写缓存，下次真实点击命中。
-        const ctx = { type: "point", points: [[0.5, 0.5]], labels: [1] };
-        const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind: "point", ctx });
+        // 预热成功 → 写缓存，下次真实点击命中（缓存键须与 dispatch 同作用域，否则视频侧必 miss）。
+        const cacheKey = makeSamCacheKey({
+          taskId,
+          mlBackendId,
+          ctxKind: "point",
+          ctx,
+          scope: cacheScope,
+        });
         const next: PendingCandidate[] = (resp.result ?? [])
           .map((r, i) => normalizeResult(r, i, "point"))
           .filter((c): c is PendingCandidate => c !== null);
@@ -511,14 +573,16 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         // backend 不支持 point (如 sam3 exemplar-only) 或其它失败 → 静默，下次真实点击会重试。
         warmedRef.current = null;
       });
-  }, [projectId, taskId, mlBackendId, cache]);
+  }, [projectId, taskId, mlBackendId, cacheScope, cache]);
 
-  // 切 task / backend → 重置预热记忆 + 点会话 (含 mask_input 回灌 + 可视化点) + exemplar 会话
+  // 切 task / backend / 帧 → 重置预热记忆 + 点会话 (含 mask_input 回灌 + 可视化点) + exemplar 会话。
+  // v0.21.23 · cacheScope (视频 frameIndex) 是第四个重置触发点: 上一帧的点会话不能喂给这一帧,
+  // 且 mask_input 的 low-res logits 绑定具体图像, 跨帧回传必错。
   useEffect(() => {
     warmedRef.current = null;
     resetPointSession();
     resetExemplarSession();
-  }, [taskId, mlBackendId, resetPointSession, resetExemplarSession]);
+  }, [taskId, mlBackendId, cacheScope, resetPointSession, resetExemplarSession]);
 
   return {
     candidates,

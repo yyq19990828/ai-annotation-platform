@@ -50,10 +50,22 @@ export interface SamCacheKeyArgs {
   mlBackendId: string;
   ctxKind: string;
   ctx: Record<string, unknown>;
+  /**
+   * v0.21.23 · 额外作用域，视频传当前 frameIndex。同一 task 的不同帧是不同底图，
+   * 同样的 prompt 必须命中不同缓存项，否则候选会跨帧串。省略 = 图片链路（无此维度）。
+   */
+  scope?: string | number;
 }
 
-export function makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx }: SamCacheKeyArgs): string {
-  return `${taskId}|${mlBackendId}|${ctxKind}|${normalizeCtx(ctx)}`;
+export function makeSamCacheKey({
+  taskId,
+  mlBackendId,
+  ctxKind,
+  ctx,
+  scope,
+}: SamCacheKeyArgs): string {
+  const base = `${taskId}|${mlBackendId}|${ctxKind}|${normalizeCtx(ctx)}`;
+  return scope === undefined ? base : `${base}|@${scope}`;
 }
 
 export interface SamCacheEntry {

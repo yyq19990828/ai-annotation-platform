@@ -23,6 +23,18 @@ export interface InteractiveRequest {
   context: Record<string, unknown>;
 }
 
+/** 交互式推理响应。图片走 interactiveAnnotate、视频当前帧走 interactiveAnnotateFrame，同形状。 */
+export interface InteractiveAnnotateResponse {
+  result: unknown[];
+  score: number | null;
+  inference_time_ms: number | null;
+  cache_hit?: boolean | null;
+  model_load_ms?: number | null;
+  // v0.18.18 · 交互精修 low-res logits 回灌 (base64, 不透明); 前端原样存储、
+  // 下次点击经 context.mask_input 回传。仅 multimask=False 的单 mask 精修阶段非空。
+  mask_input_next?: string | null;
+}
+
 export type MLBackendVariant = Record<string, string>;
 
 export interface MLBackendSupportedVariantOption {
@@ -242,16 +254,7 @@ export const mlBackendsApi = {
     payload: InteractiveRequest,
     signal?: AbortSignal,
   ) =>
-    apiClient.post<{
-      result: unknown[];
-      score: number | null;
-      inference_time_ms: number | null;
-      cache_hit?: boolean | null;
-      model_load_ms?: number | null;
-      // v0.18.18 · 交互精修 low-res logits 回灌 (base64, 不透明); 前端原样存储、
-      // 下次点击经 context.mask_input 回传。仅 multimask=False 的单 mask 精修阶段非空。
-      mask_input_next?: string | null;
-    }>(
+    apiClient.post<InteractiveAnnotateResponse>(
       `/projects/${projectId}/ml-backends/${backendId}/interactive-annotating`,
       payload,
       signal ? { signal } : undefined,
@@ -299,6 +302,43 @@ export const mlBackendsApi = {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
+      },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(body.detail ?? `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  // v0.21.23 · 视频当前帧的**交互式** SAM 提示 (point / interactive_box / exemplar)。
+  // 与 interactiveAnnotate 同 context 契约、同响应形状; 差别只在图从哪来 —— 视频 task 的
+  // file_path 是整段 mp4, 服务端取不到帧, 故前端把当前帧 JPEG 随 multipart 传入。
+  // 走 fetch 而非 apiClient (后者默认 Content-Type=application/json)。
+  interactiveAnnotateFrame: async (
+    projectId: string,
+    backendId: string,
+    params: {
+      blob: Blob;
+      taskId: string;
+      frameIndex: number;
+      context: Record<string, unknown>;
+    },
+    signal?: AbortSignal,
+  ): Promise<InteractiveAnnotateResponse> => {
+    const form = new FormData();
+    form.append("frame", params.blob, "frame.jpg");
+    form.append("task_id", params.taskId);
+    form.append("frame_index", String(params.frameIndex));
+    form.append("context", JSON.stringify(params.context));
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+      `/api/v1/projects/${projectId}/ml-backends/${backendId}/interactive-annotating-frame`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+        ...(signal ? { signal } : {}),
       },
     );
     if (!res.ok) {
