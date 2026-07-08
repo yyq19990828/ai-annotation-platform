@@ -298,32 +298,26 @@ class KeypointSchema(BaseModel):
 
 
 class VideoModesConfig(BaseModel):
-    """v0.11.29 · 仅视频项目的 bbox 单位消费：控制各单帧 / 轨迹几何是否各自可用。
+    """视频几何工具单位的「单帧 / 轨迹」变体开关（每个视频单位各自携带一份）。
 
-    单帧框 = video_bbox, 轨迹框 = video_track_bbox, 单帧 polygon/polyline = video_polygon/
-    video_polyline (v0.21.21), 共享同一套类别 / 属性绑定. 仅用于工具栏可用性过滤; 不强制校验
-    已存在的 annotation. None = 全部可用 (向后兼容老项目)。老配置只存 box/track, extra=forbid 下
-    pydantic 按默认值补齐新开关 (默认 True), 老项目升级后自动获得单帧 polygon/polyline 工具。
+    box = 单帧几何变体, track = 轨迹几何变体。按单位解释：bbox 单位 → video_bbox /
+    video_track_bbox；region 单位 → video_polygon / video_track_polygon；polyline 单位
+    → video_polyline / video_track_polyline。多边形 / 折线是独立工具单位（各自类别 / 属性
+    绑定），非 bbox 单位的子开关。仅用于工具栏可用性过滤; 不强制校验已存在的 annotation。
+    None = 单帧 / 轨迹均可用（向后兼容老项目）。
     """
 
     box: bool = True
     track: bool = True
-    # v0.21.21 · 单帧 polygon / polyline 子开关, 与 box 共享 bbox 单位的类别/属性绑定。
-    polygon: bool = True
-    polyline: bool = True
-    # v0.21.22 · 单帧 keypoint 子开关; 骨骼拓扑走 bbox 单位携带的 keypoint_schema。
-    keypoint: bool = True
-    # v0.21.22 · 单帧 rotated_bbox (OBB) 子开关。
-    rotated_box: bool = True
 
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
     def _at_least_one_enabled(self) -> "VideoModesConfig":
-        # 与前端 ClassesSection 语义一致：不允许全部几何开关都 false，
-        # 否则 bbox 单元 enabled=true 却什么都画不了。
-        if not (self.box or self.track or self.polygon or self.polyline or self.keypoint or self.rotated_box):
-            raise ValueError("video_modes 必须至少保留一个几何开关可用")
+        # 与前端 ClassesSection 语义一致：不允许单帧 / 轨迹都 false，
+        # 否则该几何单位 enabled=true 却什么都画不了。
+        if not (self.box or self.track):
+            raise ValueError("video_modes 必须至少保留单帧 / 轨迹之一可用")
         return self
 
 
@@ -335,7 +329,7 @@ class ToolBinding(BaseModel):
     attribute_schema: AttributeSchema = Field(default_factory=AttributeSchema)
     # v0.10.28 · 仅 keypoint 单元用：骨骼拓扑（节点名 / 连线）。其它单元留 None。
     keypoint_schema: KeypointSchema | None = None
-    # v0.11.29 · 仅视频 bbox 单位消费：单帧框 / 轨迹框独立开关。None = 两者均可用。
+    # 视频几何单位消费：该单位的单帧 / 轨迹变体独立开关。None = 两者均可用。
     video_modes: VideoModesConfig | None = None
 
     model_config = ConfigDict(extra="forbid")

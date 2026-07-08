@@ -19025,31 +19025,11 @@
       },
       "VideoModesConfig": {
         "additionalProperties": false,
-        "description": "v0.11.29 · 仅视频项目的 bbox 单位消费：控制各单帧 / 轨迹几何是否各自可用。\n\n单帧框 = video_bbox, 轨迹框 = video_track_bbox, 单帧 polygon/polyline = video_polygon/\nvideo_polyline (v0.21.21), 共享同一套类别 / 属性绑定. 仅用于工具栏可用性过滤; 不强制校验\n已存在的 annotation. None = 全部可用 (向后兼容老项目)。老配置只存 box/track, extra=forbid 下\npydantic 按默认值补齐新开关 (默认 True), 老项目升级后自动获得单帧 polygon/polyline 工具。",
+        "description": "视频几何工具单位的「单帧 / 轨迹」变体开关（每个视频单位各自携带一份）。\n\nbox = 单帧几何变体, track = 轨迹几何变体。按单位解释：bbox 单位 → video_bbox /\nvideo_track_bbox；region 单位 → video_polygon / video_track_polygon；polyline 单位\n→ video_polyline / video_track_polyline。多边形 / 折线是独立工具单位（各自类别 / 属性\n绑定），非 bbox 单位的子开关。仅用于工具栏可用性过滤; 不强制校验已存在的 annotation。\nNone = 单帧 / 轨迹均可用（向后兼容老项目）。",
         "properties": {
           "box": {
             "default": true,
             "title": "Box",
-            "type": "boolean"
-          },
-          "keypoint": {
-            "default": true,
-            "title": "Keypoint",
-            "type": "boolean"
-          },
-          "polygon": {
-            "default": true,
-            "title": "Polygon",
-            "type": "boolean"
-          },
-          "polyline": {
-            "default": true,
-            "title": "Polyline",
-            "type": "boolean"
-          },
-          "rotated_box": {
-            "default": true,
-            "title": "Rotated Box",
             "type": "boolean"
           },
           "track": {

@@ -178,20 +178,14 @@ def test_tool_binding_keypoint_schema_optional():
 
 
 def test_video_modes_config_at_least_one_enabled():
-    # 默认全部几何开关可用 (v0.21.21 起含 polygon/polyline)
-    assert VideoModesConfig() == VideoModesConfig(box=True, track=True, polygon=True, polyline=True)
+    # 默认单帧 / 轨迹变体均可用
+    assert VideoModesConfig() == VideoModesConfig(box=True, track=True)
     # 单独保留任一合法
     assert VideoModesConfig(box=True, track=False).box is True
     assert VideoModesConfig(box=False, track=True).track is True
-    # v0.21.21 · 老配置只给 box/track, polygon/polyline 按默认值 True 补齐
-    assert VideoModesConfig(box=False, track=False).polygon is True
-    # 仅 polygon 单开也合法
-    assert VideoModesConfig(box=False, track=False, polyline=False).polygon is True
-    # 全部几何开关 false 才非法：bbox 单元 enabled 却什么都画不了
+    # 单帧 / 轨迹都 false 才非法：该几何单位 enabled 却什么都画不了
     with pytest.raises(ValidationError):
-        VideoModesConfig(
-            box=False, track=False, polygon=False, polyline=False, keypoint=False, rotated_box=False,
-        )
+        VideoModesConfig(box=False, track=False)
 
 
 # ── Attribute schema ────────────────────────────────────────────────
