@@ -679,3 +679,77 @@ async def predict_frame(
         "candidate_count": len(video_shapes),
         "frame_index": frame_index,
     }
+
+
+@router.post("/{backend_id}/interactive-annotating-frame")
+async def interactive_annotating_frame(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    frame: UploadFile = File(...),
+    task_id: uuid.UUID = Form(...),
+    frame_index: int = Form(...),
+    context: str = Form("{}"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
+):
+    """视频当前帧的**交互式** SAM 提示 (point / interactive_box / exemplar)。
+
+    与 ``interactive-annotating`` 同一个 backend 契约 (``context`` 原样透传, 见
+    ``InteractiveRequest.context``), 唯一差别是**图从哪来**: 图片 task 由服务端
+    ``_resolve_task_url(task)`` 取, 而视频 task 的 ``file_path`` 是整段 mp4, SAM 吃不到帧。
+    故前端把当前帧解成 JPEG 随 multipart 传入 (复用 ``predict-frame`` 的 client 供图机制:
+    上传 import 桶换 presigned URL, 通用 http URL, 不走 ``data:`` 捷径)。
+
+    与 ``predict-frame`` 的区别: 那条走**批量 ``/predict`` 协议**(text prompt → box, 结果落
+    Prediction 待采纳); 本条走 ``predict_interactive``, 候选**瞬态返回不落库**, 由前端
+    state 持有, 采纳时直接建 Annotation (对齐图片侧交互链路)。
+
+    ``mask_input_next`` 原样回传, 支撑同一帧多次点击的 low-res logits 回灌精修。
+    """
+    svc = MLBackendService(db)
+    backend = await svc.get(backend_id)
+    if not backend or not await svc.is_enabled(project_id, backend_id):
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    if not backend.is_interactive:
+        raise HTTPException(
+            status_code=400,
+            detail="This backend does not support interactive annotation",
+        )
+
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    try:
+        ctx = json.loads(context) if context else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid context JSON")
+    if not isinstance(ctx, dict):
+        raise HTTPException(status_code=400, detail="context must be a JSON object")
+
+    jpeg_bytes = await frame.read()
+    if not jpeg_bytes:
+        raise HTTPException(status_code=400, detail="Empty frame image")
+
+    storage = StorageService()
+    frame_url = storage.upload_crop_bytes(
+        jpeg_bytes, f"frame-interactive/{task_id}/{frame_index}.jpg"
+    )
+
+    # 与 interactive_annotating 一致: 不注入项目级 DINO 阈值 (那是 gsam2 专属, 塞给 sam3
+    # 等后端会出错); 推理参数由前端按 /setup.params 渲染后随 context 透传。
+    client = ml_client_module.MLBackendClient(backend)
+    result = await client.predict_interactive(
+        task_data={"id": str(task.id), "file_path": frame_url},
+        context=ctx,
+    )
+    return {
+        "result": result.result,
+        "score": result.score,
+        "inference_time_ms": result.inference_time_ms,
+        "cache_hit": result.cache_hit,
+        "model_load_ms": result.model_load_ms,
+        "mask_input_next": result.mask_input_next,
+    }
