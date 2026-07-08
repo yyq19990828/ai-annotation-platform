@@ -1463,6 +1463,41 @@ export function useWorkbenchShellModel({
     },
   });
 
+  // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
+  // 采纳直接用 activeClass 落单帧 video_polygon —— 视频侧的 polygon 绘制流本就如此(不弹类
+  // popover, 那是图片侧的 samPendingAccept), 故此处保持与视频绘制一致而非照搬图片流程。
+  useEffect(() => {
+    if (!isVideoTask) return;
+    if (s.videoTool !== "smart-point" && s.videoTool !== "smart-box") return;
+    if (sam.candidates.length === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      if (e.key !== "Enter" && e.key !== "Escape" && e.key !== "Tab") return;
+      e.preventDefault();
+      // stopImmediatePropagation 而非 stopPropagation: 两个 handler 都挂在 window 的捕获阶段,
+      // stopPropagation 只拦跨节点传播, 拦不住同一 window 上后注册的 useWorkbenchHotkeys ——
+      // 否则视频侧 Tab 会在切候选的同时又触发「同类下一个」的选中循环。
+      e.stopImmediatePropagation();
+      if (e.key === "Enter") {
+        const c = sam.candidates[sam.activeIdx];
+        // 交互式候选只产多边形; 少于 3 点无法成面 → 不落库。
+        if (c?.points && c.points.length >= 3) {
+          handleVideoPointsCreate("video_polygon", s.videoFrameIndex, c.points);
+          sam.consume(sam.activeIdx);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        sam.cancel();
+        return;
+      }
+      sam.cycle(e.shiftKey ? -1 : 1);
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [isVideoTask, s.videoTool, s.videoFrameIndex, sam, handleVideoPointsCreate]);
+
   const handlePickPendingClassAny = useCallback((cls: string) => {
     if (handlePickVideoPendingClass(cls)) return;
     handlePickPendingClass(cls);
