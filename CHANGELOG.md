@@ -38,6 +38,7 @@
 - **多卡机器可为每个 GPU backend 指定物理显卡**：新增 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID`，替代原先由 Docker 自动挑卡的 `count: 1`；默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1，双卡机器可错开显存。**单卡机器需手动把 `SAM3_GPU_DEVICE_ID` 覆盖成 `0`**，否则容器会因找不到卡 1 而启动失败。
 
 ### Changed
+- **SAM 3 视频追踪权重默认随镜像一并下载**：`sam3-backend` 启动脚本 `SAM3_DOWNLOAD_VIDEO` 默认值由 `0` 改为 `1`，容器首次启动会一并拉取 `sam3.1_multiplex.pt`（~3.2GB，需额外接受 `facebook/sam3.1` license），下载失败仍只 warn 不影响图像交互路径；仅想用图像交互、不需要视频追踪的部署可设 `SAM3_DOWNLOAD_VIDEO=0` 保留旧行为。
 - **`ai_interactive` 工具单位彻底退役**：该值不再是合法 `ToolUnitId`——SAM 智能点 / 智能框 / Exemplar /
   Magic Box 按产出几何归 `region`（多边形系）或 `bbox`，「能否使用交互式 AI 工具」仍由项目开关
   `ai_interactive_enabled` 控制。存量数据由迁移一次性归位：`predictions.tool_unit_id` 分批回填，

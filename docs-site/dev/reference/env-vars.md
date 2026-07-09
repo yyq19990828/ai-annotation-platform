@@ -215,7 +215,8 @@ last_reviewed: 2026-07-09
 | `HF_TOKEN` | `hf_xxxxxxxxxxxx` | ⚠️ HF_TOKEN 必填: facebook/sam3 (图像 PCS + inst) 与 facebook/sam3.1 (视频权重, 预留) 均为 gated repo, 必须先分别在 HuggingFace 接受 license (https://huggingface.co/facebook/sam3 与 https://huggingface.co/facebook/sam3.1), 再创建 read-only token (https://huggingface.co/settings/tokens) 填到这里. |
 | `SAM3_IMAGE_HF_REPO_ID` | `facebook/sam3` | 图像模型 (实际 /predict 加载) 仓库与权重文件; 默认 sam3.pt (3.0, 官方 image+inst 路径). |
 | `SAM3_IMAGE_CHECKPOINT_FILE` | `sam3.pt` | — |
-| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | 视频 multiplex 仓库与权重文件 (一并落盘, 预留后续视频追踪). |
+| `SAM3_DOWNLOAD_VIDEO` | `1` | 视频 multiplex 仓库与权重文件; 容器启动时默认一并拉取 (~3.2GB, 需 facebook/sam3.1 license). 设为 0 可关闭 (仅用图像交互, 不需要 sam3.1 license). |
+| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | — |
 | `SAM3_CHECKPOINT_FILE` | `sam3.1_multiplex.pt` | — |
 | `SAM3_EMBEDDING_CACHE_SIZE` | `32` | Embedding cache LRU 容量; A100 充裕可调到 64, 4060 别部 sam3. |
 | `SAM3_SCORE_THRESHOLD` | `0.5` | SAM 3 PCS text / exemplar 路径 score 过滤阈值; 召回不足下调到 0.3, 误检多调到 0.6. |

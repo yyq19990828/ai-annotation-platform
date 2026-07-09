@@ -3,12 +3,12 @@
 
 启动容器时由 Dockerfile ENTRYPOINT 调用; 已下载则跳过, 缺失则从 HuggingFace 拉.
 图像模型 sam3.pt 下载失败 sys.exit(1) 让容器启动失败 (避免带半残模型上线);
-视频 multiplex 权重默认不下 (推理路径不依赖), 失败仅 warn 而非 exit, 避免把"未来可能用"
-的依赖变成线上故障。
+视频 multiplex 权重默认随镜像一并拉取, 失败仅 warn 而非 exit, 避免把"未来可能用"
+的依赖变成线上故障 (可用 SAM3_DOWNLOAD_VIDEO=0 关闭)。
 
 文件清单:
   - facebook/sam3/sam3.pt                 (~3 GB; 图像模型: PCS + inst 交互, 见下; 必拉)
-  - facebook/sam3.1/sam3.1_multiplex.pt   (~3.2 GB; 视频追踪权重, 默认不拉, 见 SAM3_DOWNLOAD_VIDEO)
+  - facebook/sam3.1/sam3.1_multiplex.pt   (~3.2 GB; 视频追踪权重, 默认拉, 见 SAM3_DOWNLOAD_VIDEO)
   - facebook/sam3.1/config.json           (视频模型配置, 与 multiplex 同步)
 
 为什么图像侧用 sam3.pt 而非 sam3.1_multiplex.pt (v0.18.17):
@@ -32,7 +32,7 @@ Env:
     CHECKPOINT_DIR              = /app/checkpoints (default)
     SAM3_IMAGE_HF_REPO_ID       = facebook/sam3 (default; 图像模型仓库)
     SAM3_IMAGE_CHECKPOINT_FILE  = sam3.pt (default; 图像 PCS + inst 权重)
-    SAM3_DOWNLOAD_VIDEO         = 0 (default; 1 → 启动时一并拉 multiplex + config 用于后续视频追踪)
+    SAM3_DOWNLOAD_VIDEO         = 1 (default; 0 → 关闭, 跳过 multiplex + config 下载)
     SAM3_HF_REPO_ID             = facebook/sam3.1 (default; 视频 multiplex 仓库, gated, 需独立 license)
     SAM3_CHECKPOINT_FILE        = sam3.1_multiplex.pt (default; 视频追踪权重)
 """
@@ -78,7 +78,7 @@ def _truthy(v: str | None) -> bool:
 
 def main() -> int:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    download_video = _truthy(os.environ.get("SAM3_DOWNLOAD_VIDEO"))
+    download_video = _truthy(os.environ.get("SAM3_DOWNLOAD_VIDEO", "1"))
 
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if not hf_token:
@@ -105,8 +105,8 @@ def main() -> int:
         )
         return 1
 
-    # 视频 multiplex + config: 当前推理路径不依赖, 默认不拉 (SAM3_DOWNLOAD_VIDEO=1 开启)。
-    # 即使开启, 失败也只 warn 不 exit —— 视频路径调用时会再校验, 避免 license 没勾就
+    # 视频 multiplex + config: 默认随镜像一并拉取 (SAM3_DOWNLOAD_VIDEO=0 可关闭)。
+    # 失败只 warn 不 exit —— 视频路径调用时会再校验, 避免 license 没勾就
     # 让整容器起不来 (issue claude[bot] P1)。
     if download_video:
         for target, repo_id, filename in [
@@ -123,8 +123,8 @@ def main() -> int:
                 )
     else:
         print(
-            "[skip] SAM3_DOWNLOAD_VIDEO!=1 → 跳过视频 multiplex 权重; "
-            "如需视频追踪请设 SAM3_DOWNLOAD_VIDEO=1 并接受 facebook/sam3.1 license"
+            "[skip] SAM3_DOWNLOAD_VIDEO=0 → 跳过视频 multiplex 权重; "
+            "如需视频追踪请去掉该变量 (或设为 1) 并接受 facebook/sam3.1 license"
         )
 
     print(f"[ok] sam3 image checkpoint ready in {CHECKPOINT_DIR}")
