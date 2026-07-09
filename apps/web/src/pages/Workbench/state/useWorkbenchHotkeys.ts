@@ -119,6 +119,8 @@ export interface UseWorkbenchHotkeysArgs {
   videoControlsRef?: React.RefObject<VideoStageControls | null>;
   /** v0.10.2 · 由 useMLCapabilities 透传; S 键循环 AI 工具时用来跳过置灰. */
   isPromptSupported?: (type: string) => boolean;
+  /** 项目级「交互式 AI 工具」总开关; false 时 AI 工具 hotkey no-op (与 ToolDock 隐藏一致)。 */
+  aiInteractiveEnabled?: boolean;
   /** v0.10.8 · mask 工具激活时的 B/E/Enter/Esc 上下文键由这组 callback 消费。 */
   maskEditor?: UseMaskEditorReturn;
   commitMaskAsPolygon?: () => void;
@@ -140,6 +142,9 @@ export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
 }
 
+/** AI 工具 (requiredPrompt) 的 hotkey 目标 id; 项目关闭交互式 AI 时这些 hotkey no-op。 */
+const AI_TOOL_HOTKEY_IDS = new Set(["smart-point", "smart-box", "magic-box", "exemplar"]);
+
 export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbenchHotkeysReturn {
   const {
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
@@ -150,7 +155,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     aiBoxes, autoAdvanceOnDecide = true, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
-    isPromptSupported,
+    isPromptSupported, aiInteractiveEnabled,
     maskEditor, commitMaskAsPolygon, cancelMaskEdit,
   } = args;
 
@@ -555,6 +560,13 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setTool": {
+          // 项目关闭交互式 AI 总开关时, AI 工具 hotkey 应 no-op (与 ToolDock 隐藏按钮契约一致)。
+          if (
+            aiInteractiveEnabled === false &&
+            (action.tool === "ai-cycle" || AI_TOOL_HOTKEY_IDS.has(action.tool))
+          ) {
+            return;
+          }
           // v0.10.2 · S / Alt+3 → "ai-cycle": 在 AI 工具中循环 (v0.10.17 含 magic-box),
           // 跳过置灰的; 末位再按退回 box. capabilities 通过 props 传入 isPromptSupported.
           // v0.14.18 · text-prompt 已归批量线 (从工具栏摘除), 不再进循环。
@@ -593,6 +605,12 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setVideoTool":
+          if (
+            aiInteractiveEnabled === false &&
+            AI_TOOL_HOTKEY_IDS.has(action.tool)
+          ) {
+            return;
+          }
           s.setVideoTool(action.tool);
           return;
 
@@ -701,7 +719,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
-    isPromptSupported,
+    isPromptSupported, aiInteractiveEnabled,
     aiBoxes, autoAdvanceOnDecide, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
     flushNudges,
   ]);

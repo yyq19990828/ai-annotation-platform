@@ -1840,6 +1840,7 @@ export function useWorkbenchShellModel({
     samplingActive,
     videoControlsRef,
     isPromptSupported: routing.isPromptSupported,
+    aiInteractiveEnabled: currentProject?.ai_interactive_enabled,
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,

@@ -165,6 +165,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         classRows: next,
         attributeFields: b[activeUnit]?.attributeFields ?? [],
         keypointSchema: b[activeUnit]?.keypointSchema ?? null,
+        videoModes: b[activeUnit]?.videoModes ?? null,
       },
     }));
   };
@@ -177,6 +178,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         classRows: b[activeUnit]?.classRows ?? [],
         attributeFields: next,
         keypointSchema: b[activeUnit]?.keypointSchema ?? null,
+        videoModes: b[activeUnit]?.videoModes ?? null,
       },
     }));
   };
