@@ -299,12 +299,12 @@ export function VariantPanel({
               // 通用单变体: 无 sam/dino 下拉, 单按钮预热默认变体 (= 顶部「预热默认」目标)。
               <div className={WARM_ROW_CLASS}>
                 <Button
-                  size="xs"
+                  size="sm"
                   onClick={() => onWarm({ variants: genericWarmVariants })}
                   disabled={isWarming || !canGenericWarm}
                   title={canGenericWarm ? "预热该变体载入显存" : "该 backend 未实现 warm 接口"}
                 >
-                  <Icon name="play" size={10} />
+                  <Icon name="play" size={11} />
                   预热
                 </Button>
                 {genericWarmLoaded && <Badge variant="success">已在显存</Badge>}
@@ -371,21 +371,6 @@ export function VariantPanel({
               </span>
             )}
           </div>
-          {/* 视频权重条目: sam3 等把视频权重 (sam3.1_multiplex) 挂在 tracker 上、不进图像
-              变体目录 (model_variant 只列图像权重 "SAM 3"), 这里单列 supported_trackers 作为
-              视频权重 / 能力条目, 避免看似「没暴露视频权重」。 */}
-          {supportedTrackers.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {supportedTrackers.map((tracker) => (
-                <span
-                  key={tracker}
-                  className="inline-flex items-center rounded-full border border-border bg-card px-2 py-px text-2xs text-muted-foreground"
-                >
-                  <span className="mono">{tracker}</span>
-                </span>
-              ))}
-            </div>
-          )}
           {!hasVideoMeta ? (
             <div className={NOTE_CLASS}>
               视频追踪模型按需加载，当前未常驻显存，暂无视频池观测（首次追踪时冷启）。
