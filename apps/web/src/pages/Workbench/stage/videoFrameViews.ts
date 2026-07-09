@@ -264,7 +264,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     }
   }
 
-  // v0.21.20 · 选中 polygon/polyline 轨迹当前帧无实框时的参考虚影(点集几何): 取最近关键帧的顶点,
+  // 选中 polygon/polyline 轨迹当前帧无实框时的参考虚影(点集几何): 取最近关键帧的顶点,
   // 渲染层据 points 画多边形轮廓 / 折线(不硬塞成外接框)。与上面 bbox ghost 互斥(只有点集轨迹被选时才走)。
   if (!ghost) {
     const selectedPointsTrack =
@@ -317,7 +317,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
         labelText: `${num !== undefined ? `#${num} · ` : ""}${ann.class_name}`,
       });
     }
-    // v0.21.20 · 点集轨迹(polygon/polyline)的跨网格帧续写虚影: 同 bbox 判据, 但参考顶点走
+    // 点集轨迹(polygon/polyline)的跨网格帧续写虚影: 同 bbox 判据, 但参考顶点走
     //   nearestPointsTrackKeyframe, 渲染层据 points 画轮廓/折线, 使 Tab 续写流对点集轨迹也生效。
     for (const ann of [...polygonTracks, ...polylineTracks]) {
       if (ann.id === selectedId) continue;
