@@ -32,12 +32,30 @@ const MANIFEST = {
   metadata: { fps: 30, frame_count: 100 },
 } as never;
 
-function setup() {
-  const videoRef = { current: null };
+/** 最小可用的 <video> 替身:满足 hook 各 effect 挂监听 / 读 readyState / 调 load()。 */
+function mockVideo(readyState = 0) {
+  return {
+    readyState,
+    isConnected: true,
+    videoWidth: 0,
+    videoHeight: 0,
+    error: null,
+    paused: true,
+    currentTime: 0,
+    duration: 0,
+    load: vi.fn(),
+    play: vi.fn(),
+    pause: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  };
+}
+
+function setup(videoRef: { current: unknown } = { current: null }) {
   return renderHook(() =>
     useVideoPlaybackController({
       manifest: MANIFEST,
-      videoRef,
+      videoRef: videoRef as never,
       annotations: [],
       selectedId: null,
       selectedTrack: null,
@@ -99,5 +117,28 @@ describe("useVideoPlaybackController", () => {
     expect(result.current.bookmarks).toHaveLength(1);
     act(() => result.current.toggleBookmark());
     expect(result.current.bookmarks).toHaveLength(0);
+  });
+
+  it("加载卡死看门狗:video 卡在 readyState 0 → 每 5s video.load() 重踢, 至多 3 次", () => {
+    const video = mockVideo(0);
+    setup({ current: video });
+    expect(video.load).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(5000));
+    expect(video.load).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(video.load).toHaveBeenCalledTimes(2);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(video.load).toHaveBeenCalledTimes(3);
+    // 达到 MAX_RETRIES 后不再重踢(避免无限重试)。
+    act(() => vi.advanceTimersByTime(15000));
+    expect(video.load).toHaveBeenCalledTimes(3);
+  });
+
+  it("加载卡死看门狗:期间拿到元数据(readyState≥HAVE_METADATA)则不再重踢", () => {
+    const video = mockVideo(0);
+    setup({ current: video });
+    video.readyState = HTMLMediaElement.HAVE_METADATA; // 加载恢复
+    act(() => vi.advanceTimersByTime(15000));
+    expect(video.load).not.toHaveBeenCalled();
   });
 });

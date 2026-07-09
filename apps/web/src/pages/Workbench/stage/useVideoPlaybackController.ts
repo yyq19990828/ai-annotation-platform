@@ -725,6 +725,39 @@ export function useVideoPlaybackController({
     };
   }, [manifest?.video_url, videoRef]);
 
+  // ---- 加载卡死看门狗 ----
+  // 隐藏 <video> 偶发卡在 readyState=HAVE_NOTHING(networkState=NETWORK_LOADING)永不
+  // 触发 loadedmetadata——mp4 的 range 请求 stall / 连接竞态所致, 表现为画布永久黑屏,
+  // 此前只能手动刷新恢复。hang 不抛 error 事件(error 只在真·加载失败时触发), 故无事件
+  // 可依赖, 靠轮询探测: src 就绪后若持续拿不到元数据, 定时 video.load() 重踢一次加载
+  // (重跑资源选择、中止卡住的请求, 等价于"局部刷新"), 有限次重试后仍不行才报错。
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !manifest?.video_url) return;
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return;
+    const STALL_MS = 5000;
+    const MAX_RETRIES = 3;
+    let retries = 0;
+    let timer: number | undefined = window.setTimeout(function check() {
+      // 期间已拿到元数据 → 加载已恢复, 停止看门狗。
+      if (!video.isConnected || video.readyState >= HTMLMediaElement.HAVE_METADATA) return;
+      if (retries >= MAX_RETRIES) {
+        setPlaybackError("视频加载超时,请刷新页面重试");
+        return;
+      }
+      retries += 1;
+      try {
+        video.load();
+      } catch {
+        // load() 极少抛错; 抛了也只是本次重踢失败, 下一轮继续。
+      }
+      timer = window.setTimeout(check, STALL_MS);
+    }, STALL_MS);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [manifest?.video_url, videoRef]);
+
   // ---- 暂停时持续抓位图 ----
   useEffect(() => {
     if (isPlaybackActive || frameClock.isSeeking) return;
