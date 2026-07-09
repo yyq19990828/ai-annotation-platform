@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import time
 
 import boto3
 from botocore.exceptions import ClientError
@@ -10,6 +11,24 @@ from botocore.exceptions import ClientError
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# presigned URL 的 Expires 对齐到 10 分钟网格, 使同一对象在一个窗口内签出的 URL 逐字节相同。
+# 不对齐时 Expires 逐秒递增, 签名随之改变: MinIO 不下发 Cache-Control, 浏览器只能按
+# 完整 URL (含签名) 做缓存 key, 于是每次 task 列表 refetch 都会让全部缩略图/原图缓存失效并重下。
+# 代价是实际有效期在 [expires_in, expires_in + _PRESIGN_ALIGN_WINDOW] 之间浮动。
+_PRESIGN_ALIGN_WINDOW = 600
+
+
+def _aligned_expires_in(expires_in: int) -> int:
+    """把相对有效期换算成能让绝对 Expires 落在窗口边界上的相对值。
+
+    botocore 取 ``Expires = int(time.time()) + ExpiresIn``, 它内部那次取时刻若恰好跨过秒
+    边界, 签出的 Expires 会比预期大 1 秒。这类抖动只让当次 URL 落单 (多下一次), 下个窗口
+    自愈, 不值得为它补一轮重签。
+    """
+    now = int(time.time())
+    deadline = ((now // _PRESIGN_ALIGN_WINDOW) + 1) * _PRESIGN_ALIGN_WINDOW + expires_in
+    return deadline - now
 
 
 class StorageService:
@@ -209,7 +228,7 @@ class StorageService:
         url = self.client.generate_presigned_url(
             "get_object",
             Params=params,
-            ExpiresIn=expires_in,
+            ExpiresIn=_aligned_expires_in(expires_in),
         )
         return self._public_url(url)
 
