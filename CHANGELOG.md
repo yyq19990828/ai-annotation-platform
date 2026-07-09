@@ -34,6 +34,9 @@
 
 ## [Unreleased]
 
+### Added
+- **MinIO 数据目录支持 bind 到宿主机指定路径**：新增可选环境变量 `MINIO_DATA_DIR`，用于测试不同磁盘的对象存储性能；留空时行为不变，继续使用 Docker 托管的 `miniodata` 命名卷。
+
 ### Changed
 - **`ai_interactive` 工具单位彻底退役**：该值不再是合法 `ToolUnitId`——SAM 智能点 / 智能框 / Exemplar /
   Magic Box 按产出几何归 `region`（多边形系）或 `bbox`，「能否使用交互式 AI 工具」仍由项目开关

@@ -81,6 +81,14 @@ docker compose up -d
 - Redis 7 — `localhost:6379`
 - MinIO — `localhost:9000` (控制台 `localhost:9001`, minioadmin/minioadmin)
 
+如需测试 MinIO 放在指定磁盘上的性能，可在 `.env` 设置：
+
+```bash
+MINIO_DATA_DIR=/mnt/fast-disk/ai-annotation-platform/minio
+```
+
+该变量只影响 MinIO 的 `/data` 挂载；留空时仍使用 Docker 托管的 `miniodata` 命名卷。切换前后数据不会自动迁移，已有对象需要先复制到新目录。
+
 > **GPU profile（可选，需要标注工作台 SAM 工具或 `/ai-pre` 文本批量预标）**：GPU backend 在叠加文件 `docker-compose.ml.yml`，须同时 `-f` 两个文件：
 > ```bash
 > docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
