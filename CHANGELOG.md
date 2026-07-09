@@ -35,7 +35,7 @@
 ## [Unreleased]
 
 ### Added
-- **MinIO 数据目录支持 bind 到宿主机指定路径**：新增可选环境变量 `MINIO_DATA_DIR`，用于测试不同磁盘的对象存储性能；留空时行为不变，继续使用 Docker 托管的 `miniodata` 命名卷。
+- **多卡机器可为每个 GPU backend 指定物理显卡**：新增 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID`，替代原先由 Docker 自动挑卡的 `count: 1`；默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1，双卡机器可错开显存。**单卡机器需手动把 `SAM3_GPU_DEVICE_ID` 覆盖成 `0`**，否则容器会因找不到卡 1 而启动失败。
 
 ### Changed
 - **`ai_interactive` 工具单位彻底退役**：该值不再是合法 `ToolUnitId`——SAM 智能点 / 智能框 / Exemplar /

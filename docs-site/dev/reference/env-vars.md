@@ -223,6 +223,16 @@ last_reviewed: 2026-07-09
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
 
+## ML Backend GPU 分卡 (多卡机器可选)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `GSAM2_GPU_DEVICE_ID` | `0` | 各 GPU profile backend 固定绑定的物理显卡号 (docker-compose.ml.yml 的 deploy.reservations.devices.device_ids, 同时作为容器内 NVIDIA_VISIBLE_DEVICES)。 默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 占卡 0、SAM3 占卡 1, 双卡机器可错开显存。 单卡机器必须把 SAM3_GPU_DEVICE_ID 覆盖成 0, 否则容器找不到卡 1 起不来。 |
+| `SAM3_GPU_DEVICE_ID` | `1` | — |
+| `YOLO_GPU_DEVICE_ID` | `0` | — |
+| `ONNXTOOLS_GPU_DEVICE_ID` | `0` | — |
+| `RAPIDOCR_GPU_DEVICE_ID` | `0` | — |
+
 ## DuckDB 离线分析视图
 
 | 变量 | 默认值 | 说明 |
