@@ -151,8 +151,8 @@ class SAM3MultiplexVideoTracker:
             for local_idx in sorted(per_frame, reverse=reverse):
                 if local_idx < 0 or local_idx >= local_count:
                     continue
-                mask = self._obj_mask(per_frame[local_idx], target_obj_id)
                 src_idx = local_idx + lo
+                mask = self._obj_mask(per_frame[local_idx], target_obj_id, frame_index=src_idx)
                 if mask is None or not mask.any():
                     results.append({
                         "frame_index": src_idx,
@@ -216,12 +216,13 @@ class SAM3MultiplexVideoTracker:
             cap.release()
 
     @staticmethod
-    def _obj_mask(outputs: dict, obj_id: int) -> np.ndarray | None:
+    def _obj_mask(outputs: dict, obj_id: int, *, frame_index: int) -> np.ndarray | None:
         """从某帧 multiplex 输出取指定 obj_id 的二值 mask (HxW bool); 无则 None。"""
         obj_ids = _to_numpy(outputs.get("out_obj_ids"))
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None:
             return None
+        _assert_masks_align(masks, obj_ids, frame_index=frame_index)
         for idx, oid in enumerate(obj_ids.tolist()):
             if int(oid) == obj_id:
                 return masks[idx] > 0
@@ -237,13 +238,7 @@ class SAM3MultiplexVideoTracker:
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None or len(obj_ids) == 0:
             return None
-        if len(masks) != len(obj_ids):
-            # vendor multiplex predictor 偶发返回 shape 不匹配的 masks / obj_ids;
-            # 显式报错带上下文, 避免下方按 obj_ids 索引 masks 时裸抛 IndexError → unhandled 500。
-            raise ValueError(
-                f"sam3_video seed frame shape mismatch: "
-                f"{len(obj_ids)} obj_ids vs {len(masks)} masks"
-            )
+        _assert_masks_align(masks, obj_ids)
         probs = _to_numpy(outputs.get("output_probs"))
         if seed_bbox is None or not any(seed_bbox.get(k) for k in ("w", "h")):
             # 无种子: 最高分 / 首个
@@ -315,6 +310,23 @@ def _patch_init_state_kwargs(predictor: Any) -> None:
 
 def output_geometry_type(output_geometry: str) -> str:
     return "polygon" if output_geometry == "polygon" else "bbox"
+
+
+def _assert_masks_align(
+    masks: np.ndarray, obj_ids: np.ndarray, *, frame_index: int | None = None
+) -> None:
+    """校验 vendor multiplex 输出的 masks 与 obj_ids 长度一致。
+
+    不一致时抛带上下文的 ValueError (经 main.py 的 ValueError handler → 400 + detail),
+    避免下游按 obj_ids 索引 masks 时裸抛 IndexError → unhandled 500。种子帧无帧号
+    (frame_index=None), 逐帧传播时带源帧号定位是哪一帧的 vendor 输出坏了。
+    """
+    if len(masks) != len(obj_ids):
+        where = "seed frame" if frame_index is None else f"frame {frame_index}"
+        raise ValueError(
+            f"sam3_video {where} shape mismatch: "
+            f"{len(obj_ids)} obj_ids vs {len(masks)} masks"
+        )
 
 
 def _to_numpy(x: Any) -> np.ndarray | None:
