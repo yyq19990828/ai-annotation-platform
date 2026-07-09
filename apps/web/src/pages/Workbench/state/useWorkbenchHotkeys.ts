@@ -526,16 +526,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
         }
 
-        case "cycleAi": {
-          // AI 待审框（悬空预测）循环：与 cycleUser 对称，但遍历 aiBoxes。空列表静默无操作。
-          if (aiBoxes.length === 0) return;
-          e.preventDefault();
-          const idxNow = s.selectedId ? aiBoxes.findIndex((b) => b.id === s.selectedId) : -1;
-          const next = (idxNow + action.dir + aiBoxes.length) % aiBoxes.length;
-          s.setSelectedId(aiBoxes[next].id);
-          return;
-        }
-
         // v0.21.11 · 图片「同类流转」(Tab) / 「跨类跳转」(`): 类别 = AI 待审(aiBoxes) + 人工(annotations),
         // 无轨迹。数组序循环(与 cycleUser 一致, 无需坐标)。焦点联动由 ImageWorkbench 的选中 effect 处理。
         case "imageCycleInCategory": {

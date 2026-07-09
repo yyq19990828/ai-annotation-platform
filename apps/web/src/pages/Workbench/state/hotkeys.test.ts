@@ -98,9 +98,11 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "j" })).toEqual({ type: "cycleUser", dir: 1, loop: false });
     expect(dispatch({ key: "k" })).toEqual({ type: "cycleUser", dir: -1, loop: false });
   });
-  it("X / Shift+X → cycleAi（AI 待审框，循环）", () => {
-    expect(dispatch({ key: "x" })).toEqual({ type: "cycleAi", dir: 1 });
-    expect(dispatch({ key: "X", shiftKey: true })).toEqual({ type: "cycleAi", dir: -1 });
+  it("X 不再是 cycleAi（AI 待审循环已并入 Tab 同类流转 + ` 跨类）；X 释放给按字母切类", () => {
+    expect(dispatch({ key: "x" })).toEqual({ type: "setClassByLetter", letter: "x" });
+    // 循环 AI 待审框现在: Tab 在同类内循环, ` 跨到 AI 待审类。
+    expect(dispatch({ key: "Tab" })).toEqual({ type: "imageCycleInCategory", dir: 1 });
+    expect(dispatch({ code: "Backquote" })).toEqual({ type: "imageStepCategory", dir: 1 });
   });
   it("[ / ] → 阈值微调", () => {
     expect(dispatch({ key: "[" })).toEqual({ type: "thresholdAdjust", delta: -0.05 });
