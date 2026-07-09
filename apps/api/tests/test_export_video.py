@@ -219,7 +219,9 @@ def test_polygon_track_grid_rows_use_vertex_bounds_not_zero():
 
 def test_polygon_track_mot_and_kitti_emit_bounding_box():
     geom = _polygon_track("a", [(0, [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]])])
-    mot = build_mot_gt([(1, "car", geom)], frame_count=1, step=1, img_w=1000, img_h=1000)
+    mot = build_mot_gt(
+        [(1, "car", geom)], frame_count=1, step=1, img_w=1000, img_h=1000
+    )
     # 正方形外接框 = 自身 → px 0,0,500,500。
     assert mot == "1,1,0.0,0.0,500.0,500.0,1,-1,-1,-1"
     kitti = build_kitti_labels(

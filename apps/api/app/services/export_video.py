@@ -194,7 +194,9 @@ def build_yolo_frame_det_labels(
         out_frame = grid_index + frame_start_number
         lines, attrs = labels[out_frame]
         lines.append(
-            _yolo_det_line(cat_map.get(class_name or "", 0), single_frame_bbox(geometry))
+            _yolo_det_line(
+                cat_map.get(class_name or "", 0), single_frame_bbox(geometry)
+            )
         )
         if include_attributes:
             attrs.append(attributes or {})

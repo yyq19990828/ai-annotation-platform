@@ -171,7 +171,11 @@ async def test_mask_input_next_passthrough(
     resp = await httpx_client_bound.post(
         _url(proj, backend),
         files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
-        data={"task_id": str(task.id), "frame_index": "3", "context": '{"type": "point"}'},
+        data={
+            "task_id": str(task.id),
+            "frame_index": "3",
+            "context": '{"type": "point"}',
+        },
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200, resp.text

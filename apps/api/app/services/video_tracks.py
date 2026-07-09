@@ -132,7 +132,10 @@ def _resample_closed_polygon(points: list, n: int) -> list[list[float]]:
     if n <= 0 or len(pts) < 2:
         return [list(p) for p in pts]
     seg_lengths = [
-        math.hypot(pts[(i + 1) % len(pts)][0] - pts[i][0], pts[(i + 1) % len(pts)][1] - pts[i][1])
+        math.hypot(
+            pts[(i + 1) % len(pts)][0] - pts[i][0],
+            pts[(i + 1) % len(pts)][1] - pts[i][1],
+        )
         for i in range(len(pts))
     ]
     perim = sum(seg_lengths)
