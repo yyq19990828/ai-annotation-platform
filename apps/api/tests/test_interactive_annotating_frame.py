@@ -266,3 +266,47 @@ async def test_unknown_task_rejected(
     assert resp.status_code == 404
     assert "upload_key" not in patched
     assert "task_data" not in patched
+
+
+async def test_cross_project_task_rejected(
+    httpx_client_bound, super_admin, db_session, patched
+):
+    """跨项目越权: 用 A 项目的 backend + B 项目的 task_id → 404, 不落对象存储。"""
+    user, token = super_admin
+    proj_a, backend_a, _ = await _seed(db_session, user.id)
+    _, _, task_b = await _seed(db_session, user.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        _url(proj_a, backend_a),
+        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        data={"task_id": str(task_b.id), "frame_index": "0", "context": "{}"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404
+    assert "upload_key" not in patched
+    assert "task_data" not in patched
+
+
+async def test_ai_interactive_disabled_rejected(
+    httpx_client_bound, super_admin, db_session, patched
+):
+    """项目关掉「交互式 AI 工具」总开关后, 直接调 API 也应 403 (开关不再是装饰)。"""
+    user, token = super_admin
+    proj, backend, task = await _seed(db_session, user.id)
+    proj.ai_interactive_enabled = False
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        _url(proj, backend),
+        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        data={
+            "task_id": str(task.id),
+            "frame_index": "0",
+            "context": '{"type": "point"}',
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+    assert "upload_key" not in patched
+    assert "task_data" not in patched

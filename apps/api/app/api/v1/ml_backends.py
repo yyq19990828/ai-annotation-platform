@@ -506,6 +506,29 @@ async def check_health(
     )
 
 
+async def _get_task_in_project(
+    db: AsyncSession, task_id: uuid.UUID, project_id: uuid.UUID
+) -> Task:
+    """取 task 并校验归属本项目 — 防跨项目越权 (只用主键取任务会让 A 项目成员用 A 的
+    backend + B 项目的 task_id 完成推理)。不存在 / 不属于本项目都回 404, 不暴露存在性。"""
+    task = await db.get(Task, task_id)
+    if task is None or task.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+async def _require_ai_interactive_enabled(
+    db: AsyncSession, project_id: uuid.UUID
+) -> None:
+    """项目级「交互式 AI 工具」总开关的后端守卫。语义与前端 (`?? true`) 一致 = 默认开:
+    仅当显式关闭 (ai_interactive_enabled is False) 才 403, None/True 放行。"""
+    project = await db.get(Project, project_id)
+    if project is not None and project.ai_interactive_enabled is False:
+        raise HTTPException(
+            status_code=403, detail="AI interactive is disabled for this project"
+        )
+
+
 @router.post("/{backend_id}/predict-test")
 async def predict_test(
     project_id: uuid.UUID,
@@ -519,9 +542,7 @@ async def predict_test(
     if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await _get_task_in_project(db, task_id, project_id)
 
     client = ml_client_module.MLBackendClient(backend)
     results = await client.predict(
@@ -555,9 +576,8 @@ async def interactive_annotating(
             detail="This backend does not support interactive annotation",
         )
 
-    task = await db.get(Task, body.task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    await _require_ai_interactive_enabled(db, project_id)
+    task = await _get_task_in_project(db, body.task_id, project_id)
 
     # AI 推理参数 (阈值 / 变体等) 已统一改走工作台 AI 面板: 前端按所绑定 backend 的
     # /setup.params 动态渲染、每用户独立调整, 并随 context 透传。平台不再注入项目级 DINO
@@ -610,9 +630,8 @@ async def predict_frame(
     if not backend or not await svc.is_enabled(project_id, backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    await _require_ai_interactive_enabled(db, project_id)
+    task = await _get_task_in_project(db, task_id, project_id)
 
     try:
         cfg = json.loads(config) if config else {}
@@ -718,9 +737,8 @@ async def interactive_annotating_frame(
             detail="This backend does not support interactive annotation",
         )
 
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    await _require_ai_interactive_enabled(db, project_id)
+    task = await _get_task_in_project(db, task_id, project_id)
 
     try:
         ctx = json.loads(context) if context else {}

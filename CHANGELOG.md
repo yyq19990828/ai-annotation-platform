@@ -110,6 +110,22 @@
 - **属性选项允许空 value / 重复 value 落库**：空 value 会渲染成 `<option value="">`（选了等于没选），重复 value
   让两个选项无法区分。保存前的 `validateAttributeFields` 现在拦截两者，编辑器也会实时把重复的 chip 标红。
 
+### Security
+- **交互 / 预测端点补齐跨项目 `task` 归属校验**：`interactive-annotating`、`interactive-annotating-frame`、
+  `predict-frame`、`predict-test` 此前只用主键取 `task`、从不校验它是否属于当前 `project_id`——A 项目成员用 A 的
+  backend + B 项目的 `task_id` 即可对 B 的数据发起推理（帧写入 `frame-interactive/<B-task-id>/*`、算力记到错误租户）。
+  现不属于本项目的 `task` 一律 404。
+- **项目级「交互式 AI 工具」开关现在后端也生效**：此前该开关只在前端隐藏工具按钮，任何 API client / 陈旧 tab 直连
+  `interactive-annotating` / `interactive-annotating-frame` / `predict-frame` 仍会返回结果。现这些端点在项目显式
+  关闭该开关时返回 403（默认开，语义与前端 `?? true` 一致）。
+
+### Migration Notes
+- **迁移 `0115` 会对 `annotations` 全表做一次无索引 `UPDATE`**（把 `tool_unit_id='ai_interactive'` 按几何类型改归
+  `region`/`bbox`）。`annotations.tool_unit_id` 未建索引，在**千万级大表**上这是一次全表顺扫 + 单事务行锁，可能阻塞
+  并发写者数分钟。大库升级请挑低峰窗口；必要时先 `CREATE INDEX CONCURRENTLY tmp_ai_interactive ON annotations (id)
+  WHERE tool_unit_id = 'ai_interactive'` 缩小扫描面、跑完再删。`downgrade` 仅删列、不还原 `tool_unit_id`
+  （归入 `region`/`bbox` 本就是语义正确的归属，无需回滚）。
+
 ## [0.21.21] - 2026-07-07
 
 ### Added
