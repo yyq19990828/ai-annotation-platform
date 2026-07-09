@@ -79,6 +79,8 @@ logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 
 MODEL_VERSION = MODEL_VARIANT  # "sam3" (图像模型即 facebook/sam3 单档)
+# v0.21.x · 视频追踪权重 (sam3.1_multiplex) 的展示名, 供前端「视频权重」条目 (与图像「SAM 3」对称)。
+_VIDEO_MODEL_VERSION = "SAM 3.1"
 # v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
 IMAGE_DOWNLOAD_TIMEOUT = float(os.getenv("IMAGE_DOWNLOAD_TIMEOUT", "30"))
@@ -411,6 +413,8 @@ def setup() -> dict:
         "name": "sam3-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
+        # v0.21.x · 视频追踪权重展示名 (sam3.1_multiplex → "SAM 3.1"), 前端「视频权重」条目用。
+        "video_model_version": _VIDEO_MODEL_VERSION,
         # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
         "warmup_endpoint": True,
         "labels": [],

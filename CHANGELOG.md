@@ -37,7 +37,8 @@
 ### Added
 - **SAM 3 视频追踪模型支持预热**：`sam3-backend` 的 `POST /warmup` 现接受 `task="tracker"`，把视频追踪权重
   （`sam3.1_multiplex`）提前载入显存；运行时观测「视频追踪变体」区对单档视频模型（无 SAM 变体）显示单个「预热」
-  按钮，`/health` 新增 `video_pool` 上报，视频追踪的已加载 / 预热状态与图像池并列可见。
+  按钮，`/health` 新增 `video_pool` 上报，视频追踪的已加载 / 预热状态与图像池并列可见。变体面板并列展示两份权重——
+  图像权重「SAM 3」（`model_version`）与视频权重「SAM 3.1」（`/setup.video_model_version`，即 `sam3.1_multiplex`）。
 - **多卡机器可为每个 GPU backend 指定物理显卡**：新增 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID`，替代原先由 Docker 自动挑卡的 `count: 1`；默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1，双卡机器可错开显存。**单卡机器需手动把 `SAM3_GPU_DEVICE_ID` 覆盖成 `0`**，否则容器会因找不到卡 1 而启动失败。
 
 ### Changed

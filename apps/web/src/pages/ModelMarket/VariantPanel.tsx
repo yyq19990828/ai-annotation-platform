@@ -126,6 +126,10 @@ export function VariantPanel({
   // v0.21.x · 单档视频模型 (sam3): 无 SAM 变体维度 (无 sam_variant enum), 视频预热是
   // 单按钮、无下拉; gsam2 等有 sam_variant.enum 的仍走 SAM 下拉。
   const videoSingleModel = supportsVideo && samEnum.length === 0;
+  // v0.21.x · 视频权重展示名: 优先 backend /setup.video_model_version ("SAM 3.1"),
+  // 回落已加载 key / tracker 名。用于「视频权重」条目 (与图像「模型版本: SAM 3」对称)。
+  const videoWeightLabel =
+    setup?.video_model_version ?? videoLoaded[0] ?? supportedTrackers[0] ?? "视频模型";
 
   const [sam, setSam] = useState("");
   const [dino, setDino] = useState("");
@@ -371,37 +375,52 @@ export function VariantPanel({
               </span>
             )}
           </div>
+          {/* 视频权重条目 (与图像「模型版本: SAM 3」对称): 单档视频模型始终显示其展示名
+              (sam3 → "SAM 3.1"), 无论是否已加载; 加载状态由上方池计数 + 下方「已在显存」体现。 */}
+          {videoSingleModel && (
+            <div className="flex flex-col gap-1.5">
+              <div className="text-2xs font-semibold text-muted-foreground">视频权重</div>
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center rounded-full border border-brand bg-brand/10 px-2 py-px text-2xs leading-relaxed text-brand">
+                  <span className="mono">{videoWeightLabel}</span>
+                </span>
+              </div>
+            </div>
+          )}
           {!hasVideoMeta ? (
             <div className={NOTE_CLASS}>
               视频追踪模型按需加载，当前未常驻显存，暂无视频池观测（首次追踪时冷启）。
             </div>
           ) : (
             <>
-              {videoLoaded.length === 0 ? (
-                <div className={NOTE_CLASS}>视频池暂无常驻变体（首次追踪自动冷启）</div>
-              ) : (
-                <div className="max-w-full overflow-x-auto">
-                  <table className={TABLE_CLASS}>
-                    <thead>
-                      <tr>
-                        <th>{videoSingleModel ? "视频权重" : "SAM 变体"}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {videoLoaded.map((v) => (
-                        <tr key={v}>
-                          <td
-                            className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
-                            title={v}
-                          >
-                            <span className="mono">{v}</span>
-                          </td>
+              {/* 单档视频模型的权重已在上方「视频权重」条目展示 + 已在显存徽标, 不再重复表格;
+                  gsam2 (多 SAM 变体) 仍用表格列出各已加载 SAM 变体。 */}
+              {!videoSingleModel &&
+                (videoLoaded.length === 0 ? (
+                  <div className={NOTE_CLASS}>视频池暂无常驻变体（首次追踪自动冷启）</div>
+                ) : (
+                  <div className="max-w-full overflow-x-auto">
+                    <table className={TABLE_CLASS}>
+                      <thead>
+                        <tr>
+                          <th>SAM 变体</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {videoLoaded.map((v) => (
+                          <tr key={v}>
+                            <td
+                              className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
+                              title={v}
+                            >
+                              <span className="mono">{v}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               <div className={WARM_ROW_CLASS}>
                 {/* 单档视频模型 (sam3): 无 SAM 变体, 单按钮预热; 否则 SAM 下拉 (gsam2)。 */}
                 {!videoSingleModel && (
