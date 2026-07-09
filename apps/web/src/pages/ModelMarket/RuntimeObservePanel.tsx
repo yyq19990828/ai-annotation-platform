@@ -476,6 +476,15 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
           ) : (
             <div className="py-3 text-xs text-muted-foreground">该容器不暴露变体目录</div>
           )}
+          {/* 视频追踪能力 (来自 /setup.supported_trackers): sam3 等只把视频权重挂在
+              tracker 上、不进 model_variant 目录, 若不单独展示这里, 未注册卡会只显示图像
+              权重、看似「没暴露视频权重」。注册卡的 VariantPanel 已有「视频追踪变体」区。 */}
+          {(target.supported_trackers?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Icon name="film" size={11} />
+              <span>支持视频追踪：{target.supported_trackers!.join(" · ")}</span>
+            </div>
+          )}
         </>
       )}
     </div>
