@@ -9,6 +9,37 @@
  * 工作台 data-testid: tool-btn-{id} / workbench-stage / workbench-submit。
  */
 import { test, expect } from "../fixtures/seed";
+import type { Page } from "@playwright/test";
+
+/**
+ * smart-point / smart-box / exemplar 现按产出几何归属到 region 单位 (ToolDock 三层门控之层3);
+ * 种子 E2E Demo Project 为 image-det, tool_bindings 仅启用 bbox, 故这些 AI 工具会被隐藏。
+ * 拦截项目详情响应, 注入一个启用的 region 单位, 让交互工具在工具栏可见 (仅影响调用它的用例)。
+ */
+async function enableRegionUnit(page: Page): Promise<void> {
+  await page.route(
+    (url) => /\/api\/v1\/projects\/[^/]+$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      const resp = await route.fetch();
+      const json = (await resp.json()) as {
+        tool_bindings?: Record<string, unknown>;
+      };
+      json.tool_bindings = {
+        ...(json.tool_bindings ?? {}),
+        region: { enabled: true, classes: [{ name: "object", order: 0 }] },
+      };
+      await route.fulfill({
+        status: resp.status(),
+        contentType: "application/json",
+        body: JSON.stringify(json),
+      });
+    },
+  );
+}
 
 test.describe("annotation workbench", () => {
   test("annotator 登录 → /annotate 路由可达（smoke）", async ({ page, seed }) => {
@@ -149,6 +180,8 @@ test.describe("annotation workbench", () => {
       },
     );
 
+    // 交互工具 (smart-*) 归 region 单位, 种子项目仅 bbox, 需启用 region 使其可见
+    await enableRegionUnit(page);
     await page.goto(`/projects/${data.project_id}/annotate`);
     await page.waitForLoadState("networkidle");
 
@@ -235,6 +268,8 @@ test.describe("annotation workbench", () => {
       },
     );
 
+    // 同上: exemplar / smart-point 归 region 单位, 需启用 region 使其在工具栏可见
+    await enableRegionUnit(page);
     await page.goto(`/projects/${data.project_id}/annotate`);
     await page.waitForLoadState("networkidle");
 
