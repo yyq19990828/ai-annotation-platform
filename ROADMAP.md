@@ -12,10 +12,9 @@
 
 ### 计划中
 
-- **[useWorkbenchConfig 接入共享 preferences query（v0.21.18）](../docs/plans/2026-07-07-v0.21.18-workbench-config-shared-preferences-query.md)**：§C.1 项 ① 遗留后续（纯前端，无 alembic）。v0.21.17 已把 `ai.*` 四偏好 hook 收敛到共享 react-query，本项把首屏冗余的真正大头 `useWorkbenchConfig`（首屏 3~4 实例各自裸 fetch `GET /me/preferences`）也接入同一共享 query，写后 `setQueryData` 整份回灌（PATCH 返回整份 preferences）。**只做项 ①**；项 ②（PipelineGraphCanvas 每 tick 无谓 re-render）低收益高回归，保留待触发。刷新语义沿用 5min staleTime。
 - **⚠ 待 >8GB 显存 GPU 回归验证：`sam3_video` 文本视频追踪**（随 **v0.21.20** 已发版）：v0.21.19（sam3 文本追踪 backend：协议 text 贯通 + 前端 text UI + 能力协商 + sam3-backend `sam3.1_multiplex` video predictor）与 v0.21.20（多几何 track：polygon/polyline schema·弧长插值·画布绘制工具·导出降级·SAM2 mask→polygon 回填）两 epic 均已交付。**未完成验证**：`sam3_video` 的 multiplex 逐帧输出解析（`out_obj_ids` / `out_binary_masks` 键名+shape）与真·文本追踪 E2E——本机 4060(8GB) 上该 multiplex 模型 FP16 加载即约 7GB、前向激活 OOM，代码已实测跑通到「模型前向」（含修掉 vendor `init_state` kwarg 真 bug），**需 >8GB 显存 GPU（3090/4090/A100）回归最后一环**，无需改码。本机图像侧 SAM3（PCS 文本检测/分割/交互分割）正常；视频追踪本机暂用 `sam2_video` seed-bbox（grounded-sam2，:8001）。
-- **多几何 track 后续切片（仍未建）**：真·segmentation 导出（`export_video.py` 扩 COCO-seg / YOLO-seg，现只做了 polygon/polyline→bbox 外接框降级）；真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建，单独立项）。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
-- **视频单帧工具 epic（v0.21.21 已发版；v0.21.22 起暂停）**：把图片全套单帧工具搬进视频单帧标注。**v0.21.21 已交付**——单帧 + 轨迹 polygon/polyline 全链（绘制 UX 对齐图片侧、提交后顶点/整体编辑、轨迹编辑 keyframe 感知）+ 视频几何工具单位对齐图片（多边形/折线独立类别·属性 schema，设置三 tab）。见 [epic](docs/plans/2026-07-07-video-single-frame-tools-epic.md) / [v0.21.21 计划](docs/plans/2026-07-07-v0.21.21-video-single-frame-geometry-foundation.md)。**v0.21.22（单帧 keypoint / rotated-box(OBB) / mask 笔刷）暂停**——使用少、回馈少，投入产出不划算；计划文件已归档至 [`docs/plans/archive/`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。已落的 inert 地基（keypoint / OBB 的 `video_*` 几何 schema + 只读渲染派生）保留无害；**未做**：绘制交互（尤其 OBB 旋转手柄）、keypoint 前端、mask。下游 [v0.21.23 交互式 SAM 单帧](docs/plans/2026-07-07-v0.21.23-video-single-frame-interactive-sam.md) / [v0.21.24 单帧几何导出](docs/plans/2026-07-07-v0.21.24-video-single-frame-export.md) 计划仍在但一并延后，待需求触发再重启。
+- **多几何 track 后续切片（部分已落）**：逐帧 YOLO-seg 导出已随 v0.21.24 `yolo-frames-seg` 落地（单帧多边形按帧、多边形轨迹按弧长插值展开）；**仍未建**：`export_video.py` 的 COCO-seg 导出、真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建，单独立项）。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
+- **视频单帧工具 epic（v0.21.21 已发版；v0.21.22 起暂停）**：把图片全套单帧工具搬进视频单帧标注。**v0.21.21 已交付**——单帧 + 轨迹 polygon/polyline 全链（绘制 UX 对齐图片侧、提交后顶点/整体编辑、轨迹编辑 keyframe 感知）+ 视频几何工具单位对齐图片（多边形/折线独立类别·属性 schema，设置三 tab）。见 [epic](docs/plans/2026-07-07-video-single-frame-tools-epic.md) / [v0.21.21 计划](docs/plans/2026-07-07-v0.21.21-video-single-frame-geometry-foundation.md)。**v0.21.22（单帧 keypoint / rotated-box(OBB) / mask 笔刷）暂停**——使用少、回馈少，投入产出不划算；计划文件已归档至 [`docs/plans/archive/`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。已落的 inert 地基（keypoint / OBB 的 `video_*` 几何 schema + 只读渲染派生）保留无害；**未做**：绘制交互（尤其 OBB 旋转手柄）、keypoint 前端、mask。下游 **v0.21.23（交互式 SAM 分割当前帧：智能点 / 框 / 示例框 + Magic Box）与 v0.21.24（单帧几何导出：`yolo-frames-seg` + `video_json` 加 `type` 字段 + 多边形 / 折线导出修复）均已交付**（见 [CHANGELOG](CHANGELOG.md) Unreleased）；仅 v0.21.22（keypoint / OBB / mask）一档仍暂停待触发。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：3D 旗舰独立 epic。读方向(3D 框投影到相机图)已落 v0.13.4；写方向(相机图 2D 框种 3D 框 frustum fit → 投影手柄微调 → 多相机一致性)Phase 1 已落 v0.15.24(视锥反算选点 + 3D 框初值拟合)，Phase 2-3(投影手柄微调 / 多相机一致性)待开工。配套 §C.8 拖影消除两版本(v0.15.22 剔除 / v0.15.23 逐目标补偿)构成「3D 前线深化」近期切片。
@@ -31,7 +30,7 @@
 
 ### 现在可做（无前置依赖，纯前端随手优化，可作为 `chip:maintenance` 穿插推进）
 
-- **前端随手优化批剩余项**（`ai.*` preference 去重已落 v0.21.17）：`ai.*` 四偏好 hook 首屏并发 GET 已收敛到共享 react-query。**仍可做**：① `useWorkbenchConfig` 首屏裸 fetch 同一 `GET /me/preferences`（实测每次加载 6 次，是首屏该端点冗余的真正大头，需单独评估其 layout 持久化副作用）；② PipelineGraphCanvas 运行态每 tick 无谓 `setNodes` re-render 微优化。详见 §C.1。均非 bug。
+- **前端随手优化批剩余项**（`ai.*` 去重已落 v0.21.17、`useWorkbenchConfig` 去重已落 v0.21.18）：首屏 `GET /me/preferences` 的并发重复拉取已全部收敛到共享 react-query。**仅剩** PipelineGraphCanvas 运行态每 tick 无谓 `setNodes` re-render 微优化（低收益、回归面广，保留待触发）。详见 §C.1。非 bug。
 - **视频侧折线 / 多边形轨迹 / 折线轨迹的快捷键**（暂缓分配）：单帧多边形已拿到 `P`、Magic Box 拿到 `G`（均与图片侧同键）。但折线、多边形轨迹、折线轨迹三者目前**无快捷键**——它们的工具栏角标已在 v0.21.23 收尾时清掉（此前 `L` / `Shift+G` / `Shift+L` 是死标签，其中视频 `L` 实为播放快进）。分配时须避开已占键：视频 `L`=播放 jog、`G`=Magic Box、`P`=多边形、`Shift+G`/`Shift+L` 在视频里当前为空但语义上应留给「轨迹版」。候选方案：折线给 `Shift+P`？轨迹版沿用图片侧的 `Shift+G`/`Shift+L`？需与图片侧键位表一起定，避免再造不一致。
 
 ### 等业务规模 / 监控触发（先观察、不做）
@@ -80,6 +79,14 @@
 - **编排源扩展：crops 源（方向 B）与 scene 源（方向 C）**（**P3**，各自触发）：**输入节点终态已落地**——v0.21.5/v0.21.6 把编排输入节点收敛为深度 0 的纯数据源（`source:{data_type,execution_unit}`，不配模型、不入后端 stage），源检测/追踪模型下沉为其子阶段；v0.21.7 又让 `execution_unit=frame`（视频逐帧检测，图像 backend 逐帧跑落 `VideoBboxGeometry`）落地。「输入 vs 第一模型」的解耦、「执行单位」作为输入节点字段的骨架都已成型，剩两种非平凡源仍待接入这套骨架：
   - **方向 B · 矩形标注框（crops）作为源**：以项目里已有的矩形标注为父框来源、**第一个算子不是模型**（零推理）。输入节点已是纯数据源，故只需让其 payload 表达「无模型输入」（无 `ml_backend_id`/`model_id`，换 `source: {kind:"annotations", annotation_type:"rectangle"}`），backend 源阶段增「读已有标注而非调 backend」分支。**触发**：crops 源诉求出现（rule-of-three：客户明确要「用已有框跑下游」）。不要退而在模型节点上挂「源种类下拉」（那是把已解耦的东西糊回去）。
   - **方向 C · 图片序列（scene 抽帧）作为源**：打破 pipeline per-task 独立执行、逼执行单位从 task/frame 再升到 **scene**（跨帧聚合），是执行单位维度**最贵的一块**。`execution_unit` 字段与 frame 单位已就位（v0.21.7），scene 是其上待补的值。**触发**：scene 跨帧聚合标注单独立项（计划已判「最贵、单独立项」）。
+
+### 交互式 AI / 视频单帧收尾遗留（源自 PR #51 代码审查，均已开 issue，合并后逐项跟进）
+
+> PR #51 是已上线代码的 re-PR，以下为审查暴露的存量隐患，逐项独立可修。
+
+- **视频传播对话框「到下一关键帧」预设忽略反向传播方向**（[#52](https://github.com/yyq19990828/ai-annotation-platform/issues/52)）：`VideoTrackerPropagateDialog.tsx` 的 `derivedRange` 在 `next-keyframe` 分支不分 `direction`（`"end"` 与数字预设都分了）。选「向后 + 到下一关键帧」时对话框按正向显示 `from→to`、提交却带 `direction=backward`，前后端区间 / 方向不一致。修法：backward 时找 `prevKeyframeBefore`（给对话框补 prop），或 backward 时禁用该预设。
+- **退役的 `ai_interactive` 仍是合法 `ToolUnitId` 字面量，可被客户端写回污染**（[#53](https://github.com/yyq19990828/ai-annotation-platform/issues/53)）：迁移 `0115` 只清了 `annotations` 存量行，但 `app/schemas/_jsonb_types.py` 的 `ToolUnitId` 仍列 `ai_interactive`；任何 client / 遗留 worker POST `tool_unit_id="ai_interactive"` 仍过校验，把库污染回退役前状态。修法：schema 层拒绝新写入（仅保留读路径向后兼容），或移除字面量 + 入口做迁移映射。与 #54 第 ⑤ 项（保存时静默丢弃残留 `ai_interactive` binding）同源，宜一并收。
+- **前端状态机 / 边界隐患 5 项**（[#54](https://github.com/yyq19990828/ai-annotation-platform/issues/54)）：① 时间轴 `Ctrl+滚轮`缩放切 expanded 后静默失效（`VideoPlaybackOverlay.tsx` wheel effect deps 缺 `expanded`，listener 绑在已卸载节点）；② 视频画布 polygon / polyline draft 不随 `frameIndex` 取消（`VideoKonvaStage.tsx`，F20 画 3 点拖到 F25 提交，顶点像素错帧）；③ carry-over ghost 只遍历 bbox 轨迹（`videoFrameViews.ts`，Tab「续写下一条待续轨迹」对点集轨迹失效）；④ sam3-backend 抽帧静默截断 + mask/obj_ids shape 不匹配以 unhandled 500 冒出（`video_predictor.py`）；⑤ 保存时静默丢弃残留 `ai_interactive` binding（`useProjectToolBindings.ts`，附着的 classes / attributes 无提示丢失）。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -141,7 +148,7 @@
 
 ### C.1 渲染性能 / 大图大量框
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
-- **交互工具 preference 重复拉取去重**（`ai.*` 部分已落 v0.21.17）：`ai.*` 四个偏好 hook（`useInteractiveBackendPref` / `useAiToolModelPref` / `useSecondaryParamPrefs` / `useAiToolParamPrefs`）首屏并发的相同 `getPreferences()` GET 已收敛到共享 react-query `["me","preferences",userId]`（浏览器实测：单次工作台加载共享 query 仅 fire 1 次）。**剩余后续（P3，未做）**：`useWorkbenchConfig`（`workbench.layout` 子树，独立 layout 持久化管道，v0.21.17 计划明确排除）仍在首屏裸 fetch 同一 `GET /me/preferences`，实测每次加载 **6 次**（StrictMode dev 放大，生产约 3 次）——才是首屏该端点冗余的真正大头。若要把首屏压到「1 次」，把它也接入共享 query 是最有价值的下一步；但它读 `.workbench`、写路径带 `mergeUser` / `writeLocalLayout` / 防抖 flush，且 `update` 后需 invalidate 共享 query 保一致，是有真实副作用面的改动，需单独评估（非 ai.* 去重的机械延伸）。
+- **交互工具 preference 重复拉取去重**（已全部落地：`ai.*` 四 hook v0.21.17 + `useWorkbenchConfig` v0.21.18）：`ai.*` 四个偏好 hook（`useInteractiveBackendPref` / `useAiToolModelPref` / `useSecondaryParamPrefs` / `useAiToolParamPrefs`）与 `useWorkbenchConfig` 的多个挂载实例（shell 主状态 / 画布 / 设置抽屉）首屏并发的相同 `GET /me/preferences` 均已收敛到共享 react-query `["me","preferences",userId]`——首屏该端点从 3~4 次并发降到单次，写回用 `setQueryData` 整份回灌，跨设备刷新沿用 5min staleTime。§C.1 该项已闭环，仅剩下条 PipelineGraphCanvas re-render 微优化待触发。
 - **PipelineGraphCanvas 运行态每 tick 无谓 re-render**（**P3**，可选，未做）：原「每 tick 重置/跳视口/闪烁」命题**已被前序优化修复**（`fitView` 改依赖 `topoFingerprint` 只在拓扑变时触发、measured 尺寸按 id 保留）。仅剩「运行态轮询每 1.5s 无条件 `setNodes` 一次无谓 re-render」微优化——低收益、回归面广（DAG 交互 + 运行进度实时性），原列为 v0.21.17 可选尾项、随 v0.21.17 放行时未做，保留待触发。
 
 ### C.3 标注体验（核心生产力杠杆）
