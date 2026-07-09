@@ -505,10 +505,26 @@ function ModelVariantWarmSection({
   const isLoaded = selectedKey ? loadedKeys.includes(selectedKey) : false;
 
   if (groups.length === 0) {
+    // 无变体轴 (如 onnxtools 各 model): 仍给单按钮预热该 model —— 之前只显示「无可选变体」、
+    // 没有预热键, 而这类 backend warmup_endpoint=true 本可预热。加载态按 model.id 命中判定。
+    const loaded = loadedKeys.includes(model.id);
     return (
       <div className={SECTION_CLASS}>
-        <div className={SECTION_TITLE_CLASS}>{model.display_name ?? model.id}</div>
-        <div className={NOTE_CLASS}>该 model 无可选变体</div>
+        <div className={SECTION_TITLE_CLASS}>
+          {model.task ?? model.id}
+          <span className={CAP_CLASS}>{model.display_name ?? model.id}</span>
+        </div>
+        <div className={WARM_ROW_CLASS}>
+          <Button
+            size="sm"
+            onClick={() => onWarm({ task: model.task, variants: {} })}
+            disabled={isWarming}
+          >
+            <Icon name="play" size={11} />
+            预热
+          </Button>
+          {loaded && <Badge variant="success">已在显存</Badge>}
+        </div>
       </div>
     );
   }

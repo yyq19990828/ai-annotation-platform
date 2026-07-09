@@ -116,6 +116,9 @@
   super_admin only 的全局 overview / observe 接口，能力目录也会硬阻塞在 overview 的 403 上——项目管理员进去看到的是
   统计卡归零、运行时观测整块「加载失败」、能力目录也「加载失败」。现按角色收敛：项目管理员只看到能力目录 + 只读注册管理，
   统计卡与运行时观测 tab 隐藏（不再无谓地每 60s 打一次 403），能力目录退到 `/instances` 单端点视图正常渲染。
+- **无变体模型（如 onnxtools 各 model）现在也能在变体面板预热**：这类 model 无可选变体轴，变体面板此前只显示
+  「该 model 无可选变体」、不给预热按钮，但其 backend `warmup_endpoint=true` 本可预热。现补单个「预热」按钮，与有变体
+  model 的预热行一致。
 
 ### Security
 - **项目级 ML Backend 端点收口跨项目越权**：`/projects/{id}/ml-backends/*` 各端点此前只校验调用者的全局角色、
