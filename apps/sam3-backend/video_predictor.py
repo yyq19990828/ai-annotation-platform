@@ -254,7 +254,7 @@ class SAM3MultiplexVideoTracker:
         if obj_ids is None or masks is None or len(obj_ids) == 0:
             return None
         _assert_masks_align(masks, obj_ids)
-        probs = _to_numpy(outputs.get("output_probs"))
+        probs = _to_numpy(outputs.get("out_probs"))
         if seed_bbox is None or not any(seed_bbox.get(k) for k in ("w", "h")):
             # 无种子: 最高分 / 首个
             if probs is not None and len(probs) == len(obj_ids):
