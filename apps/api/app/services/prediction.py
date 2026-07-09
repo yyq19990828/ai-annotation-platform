@@ -10,20 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.task import Task
+from app.schemas._jsonb_types import TOOL_UNIT_IDS as _SCHEMA_TOOL_UNIT_IDS
 from app.services.annotation_propagation import _new_track_id
 
 logger = logging.getLogger("app.services.prediction")
 
-# 'ai_interactive' 已退役 (见 app/schemas/_jsonb_types.py): 不再是合法工具单位。result item
-# 若显式带该值, derive_tool_unit_from_result 会绕过它、改按几何类型派生并记 warning。
-TOOL_UNIT_IDS = {
-    "bbox",
-    "polyline",
-    "region",
-    "lidar_box_3d",
-    "rotated_bbox",
-    "keypoint",
-}
+# 显式 tool_unit_id 的白名单, 单一来源取自 schema 的 ToolUnitId (此前本地手抄一份, 漏了
+# point_mask_3d 而漂移)。'ai_interactive' 已退役: result item 若显式带该值, 不在白名单内,
+# derive_tool_unit_from_result 会绕过它、改按几何类型派生并记 warning。
+TOOL_UNIT_IDS = frozenset(_SCHEMA_TOOL_UNIT_IDS)
 
 
 def derive_tool_unit_from_ls_type(

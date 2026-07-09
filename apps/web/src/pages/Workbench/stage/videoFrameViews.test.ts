@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { DEFAULT_ANNOTATION_VISUAL } from "./annotationVisual";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, VideoTrackOutsideRange } from "@/types";
 
 function trackAnn(id: string, trackId: string, keyframes: { frame_index: number; bbox: { x: number; y: number; w: number; h: number }; source?: string; occluded?: boolean }[], className = "car"): AnnotationResponse {
   return {
@@ -182,6 +182,22 @@ describe("deriveVideoFrameViews", () => {
     expect(sel.previews[0].points[0]).toMatchObject({ frame: 0, x: 0.1, y: 0.1 });
   });
 
+  // outside 区间落在两个关键帧之间: 无 outside 时该帧会插值出 entry, 有 outside 时不该有。
+  // (下面几条 ghost 用例的 outside 都在末关键帧之后, 无论 outside 是否生效都取不到 entry,
+  //  故测不出 outside 本身; 这条专测区间语义。)
+  it("outside 区间内的插值帧 → 无 entry", () => {
+    const keyframes = [
+      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+      { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
+    ];
+    const without = trackAnn("t1", "trk1", keyframes);
+    expect(deriveVideoFrameViews({ ...base, annotations: [without], frameIndex: 10 }).entries).toHaveLength(1);
+
+    const withOutside = trackAnn("t1", "trk1", keyframes);
+    (withOutside.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 5, to: 15 }];
+    expect(deriveVideoFrameViews({ ...base, annotations: [withOutside], frameIndex: 10 }).entries).toHaveLength(0);
+  });
+
   it("选中轨迹当前帧无框 → ghost 取最近关键帧", () => {
     const ann = trackAnn("t1", "trk1", [
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
@@ -189,7 +205,7 @@ describe("deriveVideoFrameViews", () => {
       { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
     ], "car");
     // outside 区间让第 50 帧无解析帧
-    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    (ann.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 21, to: 100 }];
     const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 50, selectedId: "t1" });
     expect(v.entries).toHaveLength(0);
     expect(v.ghost).not.toBeNull();
@@ -201,7 +217,7 @@ describe("deriveVideoFrameViews", () => {
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
       { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
     ]);
-    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    (ann.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 21, to: 100 }];
     const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 50, selectedId: "t1", lockedTrackIds: new Set(["trk1"]) });
     expect(v.ghost).toBeNull();
   });
@@ -212,7 +228,7 @@ describe("deriveVideoFrameViews", () => {
       { frame_index: 10, bbox: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, source: "manual" },
       { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
     ]);
-    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    (ann.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 21, to: 100 }];
     // F10→F20 vx=0.02/帧;F25 = 0.6 + 0.02*5 = 0.7。
     const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 25, selectedId: "t1", referenceConfig: { mode: "linear", preset: "stable" } });
     expect(v.ghost).not.toBeNull();
