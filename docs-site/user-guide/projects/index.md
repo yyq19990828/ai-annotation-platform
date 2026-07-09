@@ -34,7 +34,7 @@ last_reviewed: 2026-06-10
    - **工具集**：勾选本项目要用的工具单位
      - **矩形框 (bbox)**：拖框圈选,基础几何
      - **区域 (polygon + mask)** ⭐ 打包：实例分割,多边形与笔刷掩码一起启用
-     - **AI 交互** ⭐ 打包：SAM 点 / 框 / 文本 / 示例 + Magic Box 一起启用
+     - SAM 智能点 / 智能框 / Exemplar / Magic Box 等**交互式 AI 工具已不在工具集勾选**：其类别随产出几何归 region / bbox，能否使用由项目级开关（项目设置「[ML 模型](./ml-backends.md)」→「交互式 AI 工具」，默认开）控制
      - **折线 (polyline)** / **旋转框 (rotated_bbox)** / **关键点 (keypoint)**：图片项目可用的新几何工具
      - **3D 立体框 (lidar_box_3d)**：3D 点云项目可启用，对应 Three.js 工作台支持 3D 框绘制 / 选中 / 编辑（PSR + 朝向）与相机投影联动
    - **scene 模式**（图片 / 3D 点云项目可选）

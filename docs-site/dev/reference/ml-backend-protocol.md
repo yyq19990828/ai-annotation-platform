@@ -241,7 +241,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > - **跨窗续追（平台侧）**：`video_tracker_runner.py` 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 `source_geometry` 续追，避免每窗从首帧框重新起追导致目标漂移。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
 >
-> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。
+> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。**文本驱动的 tracker**（如 `sam3_video`，其 propagate 需 `text` / `exemplars` 而非仅 seed bbox）在此之外再声明 `text_driven_trackers`（`supported_trackers` 的子集）：前端仅在选中此类 tracker 时才显示「文本描述」输入框并强制填写；声明为文本驱动但未列入 `supported_trackers` 的项在传播对话框里灰置不可选。
+>
+> **视频单帧交互式（平台中继）**：视频工作台在**单帧**上用智能点 / 框时，走平台端点 `POST /projects/{pid}/ml-backends/{bid}/interactive-annotating-frame`（multipart：`frame` JPEG + `task_id` + `frame_index` + `context` JSON 串）——它先把当前帧上传对象存储，再以该帧图片 URL 调 backend 的 `predict_interactive`。**backend 无需为视频做任何特殊处理**，看到的就是一次普通的图片交互式预测；`frame_index` 仅用于存储 key 命名、不参与坐标变换，候选瞬态返回、不落库（区别于走批量 `/predict` 会落 Prediction 的 `predict-frame`）。
 >
 > **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（PoolStatus：`cap/current_size/loaded_keys/last_evict`，外加 `active_sessions/idle_seconds`）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类。
 

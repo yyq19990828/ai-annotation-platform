@@ -13,7 +13,7 @@ last_reviewed: 2026-06-10
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -29,7 +29,8 @@ last_reviewed: 2026-06-10
 | 图像 | YOLO 分割 | `yolo-seg` | 训练 YOLOv8 分割（polygon / mask） |
 | 图像 | AAP JSON | `aap_json` | 跨实例无损迁移 / 客户自训模型预测灌入 / 备份 |
 | **视频轨迹** | Video JSON | `video_json` | 轨迹备份 / 质检 / 继续编辑 |
-| 视频轨迹 | YOLO 逐帧 | `yolo-frames-det` | 视频逐帧检测训练 |
+| 视频轨迹 | YOLO 逐帧检测 | `yolo-frames-det` | 视频逐帧检测训练（polygon / polyline 降级为顶点外接框） |
+| 视频轨迹 | YOLO 逐帧分割 | `yolo-frames-seg` | 视频逐帧分割训练（保留多边形顶点；bbox / polyline 跳过） |
 | 视频轨迹 | AAP JSON | `aap_json` | 视频跨实例无损迁移 |
 | 视频轨迹 | MOT 16/17/20 | `mot` | 多目标跟踪评测（trackeval） |
 | 视频轨迹 | KITTI Tracking | `kitti` | KITTI 跟踪工具链 |
@@ -39,6 +40,8 @@ last_reviewed: 2026-06-10
 | 点云 | Point Mask | `pointmask` | 逐点语义分割训练前处理 |
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
+
+> **视频 polygon / polyline 几何的导出**：单帧与轨迹的多边形 / 折线现已在各视频格式正确导出（此前会被打包层静默丢弃、标了也导不出）。按格式分：**保真格式**（Video JSON / AAP JSON）保留顶点 `points` 不降级，其中 Video JSON 的单帧条目并带 `type` 字段（`video_bbox` / `video_polygon` / `video_polyline`）标明几何类型；**bbox-only 格式**（MOT / KITTI / YOLO 逐帧检测）把多边形 / 折线降级为**顶点外接框**（而非空框）；**YOLO 逐帧分割**（`yolo-frames-seg`）保留多边形顶点，bbox 与 polyline 跳过。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 
