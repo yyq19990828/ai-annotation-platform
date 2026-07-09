@@ -665,7 +665,9 @@ export function VideoPlaybackOverlay({
     };
     root.addEventListener("wheel", onWheel, { passive: false });
     return () => root.removeEventListener("wheel", onWheel);
-  }, [isInteractive, maxFrame, minTimelineSpan]);
+    // expanded: 展开/折叠切到不同的外层 div, overlayRef 指向新节点, 必须重挂监听
+    // (cleanup 用闭包捕获的旧 root 解绑旧节点, 不会解错)。
+  }, [expanded, isInteractive, maxFrame, minTimelineSpan]);
 
   const playbackRateText = playbackRateLabel ?? "1x";
 

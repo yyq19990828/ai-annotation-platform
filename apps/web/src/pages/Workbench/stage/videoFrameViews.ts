@@ -10,6 +10,7 @@ import {
   isVideoPolylineTrack,
   isVideoRotatedBbox,
   isVideoTrack,
+  nearestPointsTrackKeyframe,
   rotatedBboxCorners,
   resolveTrackAtFrame,
   resolveVideoPolygonTrackAtFrame,
@@ -70,6 +71,10 @@ export type VideoTrackPreviewView = {
 export type VideoGhostView = {
   id: string;
   geom: VideoStageGeom;
+  /** polygon/polyline track 的参考顶点(归一化); 存在时渲染层画 <Line> 而非外接框 <Rect>。 */
+  points?: [number, number][];
+  /** true = polyline(开路径, Line 不闭合); 缺省/false = polygon(闭合)。 */
+  open?: boolean;
   color: string;
   labelText: string;
   /** kalman 预测的位置不确定度(归一化标准差);存在时画淡色误差椭圆。其它模式 undefined。 */
@@ -259,6 +264,35 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     }
   }
 
+  // v0.21.20 · 选中 polygon/polyline 轨迹当前帧无实框时的参考虚影(点集几何): 取最近关键帧的顶点,
+  // 渲染层据 points 画多边形轮廓 / 折线(不硬塞成外接框)。与上面 bbox ghost 互斥(只有点集轨迹被选时才走)。
+  if (!ghost) {
+    const selectedPointsTrack =
+      polygonTracks.find((ann) => ann.id === selectedId)
+      ?? polylineTracks.find((ann) => ann.id === selectedId)
+      ?? null;
+    if (
+      selectedPointsTrack
+      && !hiddenTrackIds.has(selectedPointsTrack.geometry.track_id)
+      && !lockedTrackIds.has(selectedPointsTrack.geometry.track_id)
+      && visibleInReviewMode("manual", reviewDisplayMode)
+      && !entries.some((e) => e.id === selectedPointsTrack.id)
+    ) {
+      const reference = nearestPointsTrackKeyframe(selectedPointsTrack.geometry, frameIndex);
+      if (reference) {
+        const num = trackNumbers.get(selectedPointsTrack.id);
+        ghost = {
+          id: selectedPointsTrack.id,
+          geom: boundsOfPoints(reference.points),
+          points: reference.points,
+          open: isVideoPolylineTrack(selectedPointsTrack),
+          color: getTrackColor(selectedPointsTrack.geometry.track_id, selectedPointsTrack.class_name, trackColorOverrides),
+          labelText: `${num !== undefined ? `#${num} · ` : ""}${selectedPointsTrack.class_name} · 参考 F${reference.originFrame}`,
+        };
+      }
+    }
+  }
+
   // v0.21.12 · 跨网格帧续写参考框(集合 S 的非选中成员):恰好上一网格帧有关键帧、未锁定/未隐藏、
   // 当前帧还没画,且不在当前帧 entries(无插值实框)。选中那条已由上面的 `ghost` 承,这里排除。
   // gridPrev 用 frameIndex 当 maxFrame(上界钳位对「更早的帧」无影响),step=1 时退化为 frameIndex-1。
@@ -279,6 +313,28 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       carryOverGhosts.push({
         id: ann.id,
         geom: reference.bbox,
+        color: getTrackColor(tid, ann.class_name, trackColorOverrides),
+        labelText: `${num !== undefined ? `#${num} · ` : ""}${ann.class_name}`,
+      });
+    }
+    // v0.21.20 · 点集轨迹(polygon/polyline)的跨网格帧续写虚影: 同 bbox 判据, 但参考顶点走
+    //   nearestPointsTrackKeyframe, 渲染层据 points 画轮廓/折线, 使 Tab 续写流对点集轨迹也生效。
+    for (const ann of [...polygonTracks, ...polylineTracks]) {
+      if (ann.id === selectedId) continue;
+      const tid = ann.geometry.track_id;
+      if (hiddenTrackIds.has(tid) || lockedTrackIds.has(tid)) continue;
+      const keyframes = ann.geometry.keyframes;
+      if (!keyframes.some((kf) => kf.frame_index === prevGridFrame)) continue;
+      if (keyframes.some((kf) => kf.frame_index === frameIndex)) continue;
+      if (entries.some((e) => e.id === ann.id)) continue;
+      const reference = nearestPointsTrackKeyframe(ann.geometry, frameIndex);
+      if (!reference) continue;
+      const num = trackNumbers.get(ann.id);
+      carryOverGhosts.push({
+        id: ann.id,
+        geom: boundsOfPoints(reference.points),
+        points: reference.points,
+        open: isVideoPolylineTrack(ann),
         color: getTrackColor(tid, ann.class_name, trackColorOverrides),
         labelText: `${num !== undefined ? `#${num} · ` : ""}${ann.class_name}`,
       });
