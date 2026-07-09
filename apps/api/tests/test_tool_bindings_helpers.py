@@ -302,7 +302,7 @@ def test_derive_classes_list_missing_order_pushed_to_end():
 def test_derive_classes_list_skips_dup_across_units():
     tb = {
         "bbox": {"enabled": True, "classes": [{"name": "person", "order": 0}]},
-        "ai_interactive": {
+        "region": {
             "enabled": True,
             "classes": [{"name": "person", "order": 9}],
         },
@@ -367,13 +367,13 @@ def test_lookup_classes_for_tool_unit_returns_names():
             "enabled": True,
             "classes": [{"name": "a"}, {"name": "b"}],
         },
-        "ai_interactive": {
+        "region": {
             "enabled": True,
             "classes": [{"name": "c"}],
         },
     }
     assert lookup_classes_for_tool_unit(tb, "bbox") == ["a", "b"]
-    assert lookup_classes_for_tool_unit(tb, "ai_interactive") == ["c"]
+    assert lookup_classes_for_tool_unit(tb, "region") == ["c"]
 
 
 def test_lookup_classes_for_tool_unit_missing_unit():
@@ -439,16 +439,16 @@ def test_coalesce_image_seg_picks_region_unit():
 
 def test_coalesce_preserves_other_units_from_existing():
     existing = {
-        "ai_interactive": {
+        "keypoint": {
             "enabled": True,
-            "classes": [{"name": "ai_kept", "order": 0}],
+            "classes": [{"name": "kp_kept", "order": 0}],
         }
     }
     payload = {"classes": ["car"]}
     coalesce_legacy_into_tool_bindings(payload, existing, "image-det")
-    # bbox 被反向派生; ai_interactive 保留.
+    # bbox 被反向派生; 其它已配置单位 (keypoint) 保留.
     assert payload["tool_bindings"]["bbox"]["classes"][0]["name"] == "car"
-    assert payload["tool_bindings"]["ai_interactive"]["classes"][0]["name"] == "ai_kept"
+    assert payload["tool_bindings"]["keypoint"]["classes"][0]["name"] == "kp_kept"
 
 
 def test_coalesce_backfill_color_from_prev_when_cfg_missing():

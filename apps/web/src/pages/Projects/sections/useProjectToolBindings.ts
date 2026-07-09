@@ -80,6 +80,10 @@ export function buildUnitBindings(project: {
           : null,
       };
     }
+    // 退役的 ai_interactive 伪单位: 不在 TOOL_UNIT_GROUPS 里, 上面的循环会跳过它 (out[k]
+    // 不存在)。老项目 tool_bindings 里若仍有该 key, 直接跳过会在保存时静默丢掉它携带的
+    // classes/attributes。改为折叠进 geometry 单位 (region/bbox), 与后端迁移 0116 同规则。
+    foldRetiredAiInteractive(out, tb);
     return out;
   }
 
@@ -109,6 +113,51 @@ export function buildUnitBindings(project: {
     attributeFields: project.attribute_schema?.fields ?? [],
   };
   return out;
+}
+
+const AI_INTERACTIVE_KEY = "ai_interactive";
+
+/**
+ * 把退役的 ai_interactive 单位携带的 classes / attributes 折叠进已配置的 geometry 单位
+ * (region / bbox), 就地改写 `out`。与后端迁移 0116 `merge_ai_interactive_binding` 同规则:
+ * 目标 = tool_bindings 里已存在且当前 data_type 可用的 {region, bbox} 子集 (都没有则回落
+ * bbox); 同名 class / 同 key 属性冲突时保留目标单位的、跳过来源的。避免保存时静默丢配置。
+ */
+function foldRetiredAiInteractive(out: UnitBindingMap, tb: ToolBindings): void {
+  const src = (tb as Record<string, ToolBindings[ToolUnitId]>)[AI_INTERACTIVE_KEY];
+  if (!src) return;
+  const srcClasses = src.classes ?? [];
+  const srcFields =
+    (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+  if (srcClasses.length === 0 && srcFields.length === 0) return;
+
+  const tbAny = tb as Record<string, unknown>;
+  let targets = (["region", "bbox"] as ToolUnitId[]).filter(
+    (t) => tbAny[t] && out[t],
+  );
+  if (targets.length === 0 && out.bbox) targets = ["bbox"];
+
+  for (const t of targets) {
+    const ub = out[t];
+    if (!ub) continue;
+    const seenNames = new Set(ub.classRows.map((c) => c.name));
+    for (const c of srcClasses) {
+      if (seenNames.has(c.name)) continue;
+      ub.classRows.push({
+        name: c.name,
+        color: c.color ?? defaultColorFor(c.name),
+        ...(c.alias ? { alias: c.alias } : {}),
+        ...(c.alias_to ? { aliasTo: c.alias_to } : {}),
+      });
+      seenNames.add(c.name);
+    }
+    const seenKeys = new Set(ub.attributeFields.map((f) => f.key));
+    for (const f of srcFields) {
+      if (seenKeys.has(f.key)) continue;
+      ub.attributeFields.push(f);
+      seenKeys.add(f.key);
+    }
+  }
 }
 
 function projectDataType(project: {

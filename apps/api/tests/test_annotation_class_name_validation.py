@@ -98,7 +98,7 @@ async def test_create_empty_allowed_skips_validation(db_session, super_admin):
 
 @pytest.mark.asyncio
 async def test_create_wrong_unit_does_not_match(db_session, super_admin):
-    """tool_bindings 给的 bbox unit 配置, 但 create 传 tool_unit_id='ai_interactive':
+    """tool_bindings 给的 bbox unit 配置, 但 create 传 tool_unit_id='region':
     allowed=[] (该 unit 未配置) → 放行 (强隔离, 不跨 unit 借).
     """
     user, _ = super_admin
@@ -114,10 +114,10 @@ async def test_create_wrong_unit_does_not_match(db_session, super_admin):
         annotation_type="bbox",
         class_name="anything",  # 不在 bbox 的 allowed 内
         geometry={"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
-        tool_unit_id="ai_interactive",  # 但走的是 ai_interactive unit
+        tool_unit_id="region",  # 但走的是未配置的 region unit
     )
-    # ai_interactive 未配置, allowed=[], 放行.
-    assert ann.tool_unit_id == "ai_interactive"
+    # region 未配置, allowed=[], 放行.
+    assert ann.tool_unit_id == "region"
 
 
 # ── accept_prediction ──────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ async def test_accept_prediction_alias_scoped_to_prediction_unit(
     """
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
-    # bbox unit: person.alias = 'person_ext'; ai_interactive unit: person.alias = 'object'
+    # bbox unit: person.alias = 'person_ext'; region unit: person.alias = 'object'
     proj.tool_bindings = {
         "bbox": {
             "enabled": True,
@@ -158,7 +158,7 @@ async def test_accept_prediction_alias_scoped_to_prediction_unit(
             ],
             "attribute_schema": {"fields": []},
         },
-        "ai_interactive": {
+        "region": {
             "enabled": True,
             "classes": [
                 {"name": "person", "alias": "object", "order": 0},
@@ -169,18 +169,18 @@ async def test_accept_prediction_alias_scoped_to_prediction_unit(
     task = await create_task(db_session, project_id=proj.id)
     await db_session.flush()
 
-    # prediction 来自 ai_interactive (例如 SAM 候选), class_name="object" (alias) → 应回查到 person.
+    # prediction 来自 region (例如 SAM 候选), class_name="object" (alias) → 应回查到 person.
     pred = await _create_prediction(
         db_session,
         project_id=proj.id,
         task_id=task.id,
-        tool_unit_id="ai_interactive",
+        tool_unit_id="region",
         result=[
             {
                 "type": "rectanglelabels",
                 "geometry": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
-                "class_name": "object",  # ai_interactive unit 的 alias
-                "tool_unit_id": "ai_interactive",
+                "class_name": "object",  # region unit 的 alias
+                "tool_unit_id": "region",
             }
         ],
     )
@@ -191,7 +191,7 @@ async def test_accept_prediction_alias_scoped_to_prediction_unit(
     assert anns is not None and len(anns) == 1
     ann = anns[0]
     assert ann.class_name == "person"
-    assert ann.tool_unit_id == "ai_interactive"
+    assert ann.tool_unit_id == "region"
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,7 @@ last_reviewed: 2026-06-10
 
 工具单位枚举（可在向导 / 项目设置勾选，与后端 `ToolUnitId` 对齐）：`bbox`、`region`（polygon + mask 打包）、`polyline`、`rotated_bbox`、`keypoint`、`lidar_box_3d`、`point_mask_3d`。每个工具单位的具体含义见 [创建项目 · 工具集](./index.md)。
 
-> **SAM 智能点 / 智能框 / Exemplar / Magic Box 不再是独立工具单位**。它们按**产出几何**归入 `region`（多边形）或 `bbox`，类别随所属几何单位配置；「本项目能否使用这些交互式 AI 工具」由项目级开关 **`ai_interactive_enabled`**（项目设置「[ML 模型](./ml-backends.md)」，默认开）统一控制。历史 `ai_interactive` 单位仅为存量数据兼容保留，不再作为可勾选单位出现。
+> **SAM 智能点 / 智能框 / Exemplar / Magic Box 不再是独立工具单位**。它们按**产出几何**归入 `region`（多边形）或 `bbox`，类别随所属几何单位配置；「本项目能否使用这些交互式 AI 工具」由项目级开关 **`ai_interactive_enabled`**（项目设置「[ML 模型](./ml-backends.md)」，默认开）统一控制。`ai_interactive` 已彻底退役，不再是合法工具单位：存量标注 / 预测 / 项目配置里的该值均已归位到 `region` / `bbox`（多边形系归 `region`，其余归 `bbox`）；遗留客户端若仍上报该值，后端会按几何类型自动归位而非报错。
 
 ![项目设置「类别与属性」面板，按工具单位 tab 切换](../images/projects/tool-units-panel.png)
 

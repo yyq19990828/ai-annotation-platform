@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+import logging
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
 from typing import Literal
@@ -6,9 +8,13 @@ from typing import Literal
 from app.schemas._jsonb_types import (
     AnnotationAttributes,
     Geometry,
+    RETIRED_AI_INTERACTIVE,
     ToolUnitId,
+    map_retired_tool_unit,
     normalize_legacy_geometry,
 )
+
+logger = logging.getLogger("app.schemas.annotation")
 
 
 class AnnotationCreate(BaseModel):
@@ -24,6 +30,25 @@ class AnnotationCreate(BaseModel):
     parent_annotation_id: UUID | None = None
     lead_time: float | None = None
     attributes: AnnotationAttributes | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _remap_retired_ai_interactive(cls, data):
+        """遗留客户端 / 陈旧 worker 仍可能发 tool_unit_id='ai_interactive' (已退役)。
+        按几何类型归位到 region/bbox (与迁移 0115/0116 同规则) 并记 warning, 而非 422 拒绝,
+        既不让老调用方 400, 又不让退役值再污染库。"""
+        if isinstance(data, dict) and data.get("tool_unit_id") == RETIRED_AI_INTERACTIVE:
+            geom = data.get("geometry")
+            gtype = geom.get("type") if isinstance(geom, dict) else None
+            mapped = map_retired_tool_unit(gtype)
+            logger.warning(
+                "annotation create carries retired tool_unit_id 'ai_interactive'; "
+                "remapping to %r by geometry type %r",
+                mapped,
+                gtype,
+            )
+            data = {**data, "tool_unit_id": mapped}
+        return data
 
     @field_validator("geometry", mode="before")
     @classmethod

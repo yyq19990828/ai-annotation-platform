@@ -699,3 +699,86 @@ def test_dataset_item_metadata_calibration_typed_extra_preserved():
 def test_dataset_item_metadata_empty_calibration_none():
     m = DatasetItemMetadata()
     assert m.calibration is None
+
+
+# ── 退役 ai_interactive 工具单位 ─────────────────────────────────────
+
+
+def test_map_retired_tool_unit_by_geometry():
+    from app.schemas._jsonb_types import map_retired_tool_unit
+
+    for gtype in (
+        "polygon",
+        "multi_polygon",
+        "mask",
+        "video_polygon",
+        "video_track_polygon",
+    ):
+        assert map_retired_tool_unit(gtype) == "region"
+    for gtype in ("bbox", "rotated_bbox", "video_bbox", None, "keypoint"):
+        assert map_retired_tool_unit(gtype) == "bbox"
+
+
+def test_annotation_create_remaps_retired_ai_interactive_polygon_to_region():
+    from app.schemas.annotation import AnnotationCreate
+
+    m = AnnotationCreate.model_validate(
+        {
+            "tool_unit_id": "ai_interactive",
+            "class_name": "obj",
+            "geometry": {"type": "polygon", "points": [[0, 0], [1, 0], [1, 1]]},
+        }
+    )
+    # 遗留值按几何归位, 不 422。
+    assert m.tool_unit_id == "region"
+
+
+def test_annotation_create_remaps_retired_ai_interactive_bbox_to_bbox():
+    from app.schemas.annotation import AnnotationCreate
+
+    m = AnnotationCreate.model_validate(
+        {
+            "tool_unit_id": "ai_interactive",
+            "class_name": "obj",
+            "geometry": {"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+        }
+    )
+    assert m.tool_unit_id == "bbox"
+
+
+def test_tool_unit_id_literal_rejects_ai_interactive_on_response_models():
+    from app.schemas.annotation import AnnotationOut
+
+    # AnnotationOut (响应模型) 不套入口映射: 退役值直接被 Literal 拒绝。
+    with pytest.raises(ValidationError):
+        AnnotationOut.model_validate(
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "task_id": "00000000-0000-0000-0000-000000000002",
+                "source": "manual",
+                "annotation_type": "bbox",
+                "tool_unit_id": "ai_interactive",
+                "class_name": "obj",
+                "geometry": {"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1},
+                "is_active": True,
+                "created_at": "2026-01-01T00:00:00Z",
+            }
+        )
+
+
+def test_derive_tool_unit_ignores_retired_ai_interactive():
+    from app.services.prediction import derive_tool_unit_from_result
+
+    # result item 显式带退役值时, 按几何 type 派生, 不原样返回 'ai_interactive'。
+    assert (
+        derive_tool_unit_from_result(
+            [{"tool_unit_id": "ai_interactive", "type": "polygonlabels"}]
+        )
+        == "region"
+    )
+    assert (
+        derive_tool_unit_from_result(
+            [{"tool_unit_id": "ai_interactive", "type": "rectanglelabels"}]
+        )
+        == "bbox"
+    )
