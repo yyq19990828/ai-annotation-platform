@@ -84,6 +84,10 @@
 - **模型市场「运行时观测」对同一 backend 不再按项目重复显示**：backend 全局化后一个物理 backend 可被多个项目启用，
   「注册状态」接口会为每个（项目 × backend）各返回一行，运行时观测面板据此为同一个 backend（相同 URL）渲染了多张
   重复卡片。现按 backend URL 去重，每个物理 backend 只显示一张卡，启用它的多个项目名聚合到卡片上展示。
+- **运行时观测「未注册容器」不再对有变体的 backend 错显「该容器不暴露变体目录」**：`/observe` 抽取变体目录时只读
+  `/setup` 顶层 `supported_variants`，而 rapidocr 等 v2 backend 把变体挂在 `models[].supported_variants` 上（顶层为空），
+  于是被误判为无变体、显示「该容器不暴露变体目录」——实际它带 version / size / lang 等变体。现顶层为空时回落到各
+  model 的 `supported_variants`，按 axis key 去重合并，这类容器会正确展示其变体目录。
 - **能力目录卡片「输出属性」不再对只报旧版字段的 backend 空成「—」**：gsam2 / sam3 / yolo 等 backend 只上报旧版扁平
   `output_attribute_types`（如 `["class"]`）而不填结构化 `output_attribute_schema`，但未接入项目的 backend 走 `/instances`
   路径时，前端只从（空的）schema 投影属性、丢掉了 backend 直接上报的 `output_attribute_types`，导致这些卡的「输出属性」行
