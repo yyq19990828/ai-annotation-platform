@@ -32,6 +32,7 @@
 ### 现在可做（无前置依赖，纯前端随手优化，可作为 `chip:maintenance` 穿插推进）
 
 - **前端随手优化批剩余项**（`ai.*` preference 去重已落 v0.21.17）：`ai.*` 四偏好 hook 首屏并发 GET 已收敛到共享 react-query。**仍可做**：① `useWorkbenchConfig` 首屏裸 fetch 同一 `GET /me/preferences`（实测每次加载 6 次，是首屏该端点冗余的真正大头，需单独评估其 layout 持久化副作用）；② PipelineGraphCanvas 运行态每 tick 无谓 `setNodes` re-render 微优化。详见 §C.1。均非 bug。
+- **视频侧折线 / 多边形轨迹 / 折线轨迹的快捷键**（暂缓分配）：单帧多边形已拿到 `P`、Magic Box 拿到 `G`（均与图片侧同键）。但折线、多边形轨迹、折线轨迹三者目前**无快捷键**——它们的工具栏角标已在 v0.21.23 收尾时清掉（此前 `L` / `Shift+G` / `Shift+L` 是死标签，其中视频 `L` 实为播放快进）。分配时须避开已占键：视频 `L`=播放 jog、`G`=Magic Box、`P`=多边形、`Shift+G`/`Shift+L` 在视频里当前为空但语义上应留给「轨迹版」。候选方案：折线给 `Shift+P`？轨迹版沿用图片侧的 `Shift+G`/`Shift+L`？需与图片侧键位表一起定，避免再造不一致。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile）：极大图 > 50MP 才必要，等真有此规模图片触发再做。
