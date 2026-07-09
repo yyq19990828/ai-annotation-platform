@@ -92,6 +92,10 @@
   不进图像变体目录（`model_variant` 只列图像权重「SAM 3」），而未注册容器卡片此前只渲染图像变体、不展示
   `supported_trackers`，看起来像「没暴露视频权重」。现当 backend 声明视频 tracker 时，卡片补一行「支持视频追踪：
   &lt;tracker&gt;」（注册容器的变体面板早已有独立「视频追踪变体」区）。
+- **运行时观测（注册容器）变体面板把视频追踪权重单列为条目 + 澄清视频池措辞**：sam3 的视频权重（sam3.1_multiplex）
+  挂在 `supported_trackers` 上、不进图像变体目录（「模型版本」只列图像权重「SAM 3」），注册容器变体面板的视频区此前只在
+  没有视频池时显示「该 backend 未上报 video 观测」，看似「没暴露视频权重」。现视频区把 `supported_trackers` 单列为条目
+  （视频权重 / 能力），并把无视频池时的措辞改为「视频追踪模型按需加载，当前未常驻显存，暂无视频池观测（首次追踪时冷启）」。
 - **能力目录卡片「输出属性」不再对只报旧版字段的 backend 空成「—」**：gsam2 / sam3 / yolo 等 backend 只上报旧版扁平
   `output_attribute_types`（如 `["class"]`）而不填结构化 `output_attribute_schema`，但未接入项目的 backend 走 `/instances`
   路径时，前端只从（空的）schema 投影属性、丢掉了 backend 直接上报的 `output_attribute_types`，导致这些卡的「输出属性」行
