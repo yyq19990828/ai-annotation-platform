@@ -13,7 +13,7 @@
 ### 计划中
 
 - **⚠ 待 >8GB 显存 GPU 回归验证：`sam3_video` 文本视频追踪**（随 **v0.21.20** 已发版）：v0.21.19（sam3 文本追踪 backend：协议 text 贯通 + 前端 text UI + 能力协商 + sam3-backend `sam3.1_multiplex` video predictor）与 v0.21.20（多几何 track：polygon/polyline schema·弧长插值·画布绘制工具·导出降级·SAM2 mask→polygon 回填）两 epic 均已交付。**未完成验证**：`sam3_video` 的 multiplex 逐帧输出解析（`out_obj_ids` / `out_binary_masks` 键名+shape）与真·文本追踪 E2E——本机 4060(8GB) 上该 multiplex 模型 FP16 加载即约 7GB、前向激活 OOM，代码已实测跑通到「模型前向」（含修掉 vendor `init_state` kwarg 真 bug），**需 >8GB 显存 GPU（3090/4090/A100）回归最后一环**，无需改码。本机图像侧 SAM3（PCS 文本检测/分割/交互分割）正常；视频追踪本机暂用 `sam2_video` seed-bbox（grounded-sam2，:8001）。
-- **多几何 track 后续切片（部分已落）**：逐帧 YOLO-seg 导出已随 v0.21.24 `yolo-frames-seg` 落地（单帧多边形按帧、多边形轨迹按弧长插值展开）；**仍未建**：`export_video.py` 的 COCO-seg 导出、真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建，单独立项）。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
+- **多几何 track 后续切片（部分已落）**：逐帧 YOLO-seg 导出已随 v0.21.24 `yolo-frames-seg` 落地（单帧多边形按帧、多边形轨迹按弧长插值展开）；**仍未建**：`export_video.py` 的 COCO-seg 导出、真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建，单独立项）、**polyline 轨迹的 AI 传播回填**（v0.21.24 起明确 400 拒绝，见 §A [#56](https://github.com/yyq19990828/ai-annotation-platform/issues/56)）。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
 - **视频单帧工具 epic（v0.21.21 已发版；v0.21.22 起暂停）**：把图片全套单帧工具搬进视频单帧标注。**v0.21.21 已交付**——单帧 + 轨迹 polygon/polyline 全链（绘制 UX 对齐图片侧、提交后顶点/整体编辑、轨迹编辑 keyframe 感知）+ 视频几何工具单位对齐图片（多边形/折线独立类别·属性 schema，设置三 tab）。见 [epic](docs/plans/2026-07-07-video-single-frame-tools-epic.md) / [v0.21.21 计划](docs/plans/2026-07-07-v0.21.21-video-single-frame-geometry-foundation.md)。**v0.21.22（单帧 keypoint / rotated-box(OBB) / mask 笔刷）暂停**——使用少、回馈少，投入产出不划算；计划文件已归档至 [`docs/plans/archive/`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。已落的 inert 地基（keypoint / OBB 的 `video_*` 几何 schema + 只读渲染派生）保留无害；**未做**：绘制交互（尤其 OBB 旋转手柄）、keypoint 前端、mask。下游 **v0.21.23（交互式 SAM 分割当前帧：智能点 / 框 / 示例框 + Magic Box）与 v0.21.24（单帧几何导出：`yolo-frames-seg` + `video_json` 加 `type` 字段 + 多边形 / 折线导出修复）均已交付**（见 [CHANGELOG](CHANGELOG.md) Unreleased）；仅 v0.21.22（keypoint / OBB / mask）一档仍暂停待触发。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
@@ -80,13 +80,11 @@
   - **方向 B · 矩形标注框（crops）作为源**：以项目里已有的矩形标注为父框来源、**第一个算子不是模型**（零推理）。输入节点已是纯数据源，故只需让其 payload 表达「无模型输入」（无 `ml_backend_id`/`model_id`，换 `source: {kind:"annotations", annotation_type:"rectangle"}`），backend 源阶段增「读已有标注而非调 backend」分支。**触发**：crops 源诉求出现（rule-of-three：客户明确要「用已有框跑下游」）。不要退而在模型节点上挂「源种类下拉」（那是把已解耦的东西糊回去）。
   - **方向 C · 图片序列（scene 抽帧）作为源**：打破 pipeline per-task 独立执行、逼执行单位从 task/frame 再升到 **scene**（跨帧聚合），是执行单位维度**最贵的一块**。`execution_unit` 字段与 frame 单位已就位（v0.21.7），scene 是其上待补的值。**触发**：scene 跨帧聚合标注单独立项（计划已判「最贵、单独立项」）。
 
-### 交互式 AI / 视频单帧收尾遗留（源自 PR #51 代码审查，均已开 issue，合并后逐项跟进）
+### polyline 轨迹追踪回填链路（源自 PR #51 审查，[#56](https://github.com/yyq19990828/ai-annotation-platform/issues/56)）
 
-> PR #51 是已上线代码的 re-PR，以下为审查暴露的存量隐患，逐项独立可修。
+> PR #51 审查共提 13 条，其余 12 条均已修复并补回归测试（见 [CHANGELOG](CHANGELOG.md)）。仅此一条因需 ML backend 侧改动 + >8GB 显存回归而未做。
 
-- **视频传播对话框「到下一关键帧」预设忽略反向传播方向**（[#52](https://github.com/yyq19990828/ai-annotation-platform/issues/52)）：`VideoTrackerPropagateDialog.tsx` 的 `derivedRange` 在 `next-keyframe` 分支不分 `direction`（`"end"` 与数字预设都分了）。选「向后 + 到下一关键帧」时对话框按正向显示 `from→to`、提交却带 `direction=backward`，前后端区间 / 方向不一致。修法：backward 时找 `prevKeyframeBefore`（给对话框补 prop），或 backward 时禁用该预设。
-- **退役的 `ai_interactive` 仍是合法 `ToolUnitId` 字面量，可被客户端写回污染**（[#53](https://github.com/yyq19990828/ai-annotation-platform/issues/53)）：迁移 `0115` 只清了 `annotations` 存量行，但 `app/schemas/_jsonb_types.py` 的 `ToolUnitId` 仍列 `ai_interactive`；任何 client / 遗留 worker POST `tool_unit_id="ai_interactive"` 仍过校验，把库污染回退役前状态。修法：schema 层拒绝新写入（仅保留读路径向后兼容），或移除字面量 + 入口做迁移映射。与 #54 第 ⑤ 项（保存时静默丢弃残留 `ai_interactive` binding）同源，宜一并收。
-- **前端状态机 / 边界隐患 5 项**（[#54](https://github.com/yyq19990828/ai-annotation-platform/issues/54)）：① 时间轴 `Ctrl+滚轮`缩放切 expanded 后静默失效（`VideoPlaybackOverlay.tsx` wheel effect deps 缺 `expanded`，listener 绑在已卸载节点）；② 视频画布 polygon / polyline draft 不随 `frameIndex` 取消（`VideoKonvaStage.tsx`，F20 画 3 点拖到 F25 提交，顶点像素错帧）；③ carry-over ghost 只遍历 bbox 轨迹（`videoFrameViews.ts`，Tab「续写下一条待续轨迹」对点集轨迹失效）；④ sam3-backend 抽帧静默截断 + mask/obj_ids shape 不匹配以 unhandled 500 冒出（`video_predictor.py`）；⑤ 保存时静默丢弃残留 `ai_interactive` binding（`useProjectToolBindings.ts`，附着的 classes / attributes 无提示丢失）。
+- **polyline 轨迹追踪回填链路（P2，当前是「拒绝」不是「支持」）**：`reject polyline track propagation` 只做了短期止血——`video_tracker_runner.py` 的 `_coerce_video_track_geometry` 只认 `video_track_polygon` / `video_track_bbox`，polyline 原本会命中 bbox fallback 被压成 `{x:0,y:0,w:0,h:0}` 空框、`annotation_type` 被改写、原关键帧全丢，故 `video_tracker_job_service.py` 在 propagate 入口改为明确 400 拒绝。**中期仍需实现**：让 polyline 走真实追踪链路（`output_geometry` 传 `"polyline"`、SAM2 mask → 折线的骨架化 / 中心线提取，或退而用顶点集直接传播）。注意 API 侧**不做矢量化**——`video_tracker_runner.py` 只下发 `output_geometry` 让 backend 保留矢量输出，故本项真实工作量在 backend 镜像内。用户现在能画 polyline 轨迹、能按弧长插值、能导出，唯独**不能用 AI 传播**，是多几何 track 能力矩阵上唯一的洞。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -102,6 +100,8 @@
 ### 后续观察项（仍 open）
 
 - **getting-started 与 SoT 漂移**：文档站硬编码快捷键如再漂移可考虑给 .md 内联 `` `<键>` `` 建一份从 hotkeys.ts 推导的 ESLint/markdownlint 规则；优先级低，等漂移触发.
+- **`services/prediction.py` 的 `TOOL_UNIT_IDS` 白名单缺 `point_mask_3d`**（P3，当前无实际影响）：该 set 用于 `derive_tool_unit_from_result` 的显式值白名单（`if explicit in TOOL_UNIT_IDS`），与 `_jsonb_types.TOOL_UNIT_IDS` 元组早已漂移。若某个 backend 显式声明 `tool_unit_id="point_mask_3d"`，会被静默忽略并退回按几何推导。**当前无 3D 点云 ML backend，故零影响**；两处应收敛到单一来源（直接 import 元组）。触发：出现产出 3D 几何的 backend。
+- **`videoFrameViews.test.ts` 存在一条假绿测试**（P3）：bbox ghost 那条用例（约 line 192）把 `outside` 写成 `{start_frame, end_frame}`，而 `VideoTrackOutsideRange` 的真实字段是 `{from, to}` —— 即该测试的 `outside` 一直是无效空值，能通过只因查询帧本就超出末关键帧（不插值→null）。它没有真正测到「outside 区间内不产生 ghost」。修法：改字段名并确认断言仍成立。
 
 ---
 
@@ -187,6 +187,7 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
+| **P2** | polyline 轨迹追踪回填链路（[#56](https://github.com/yyq19990828/ai-annotation-platform/issues/56)） | v0.21.24 只做了 400 拒绝止血；polyline 能画 / 能插值 / 能导出，唯独不能 AI 传播 —— 多几何 track 能力矩阵唯一的洞。真实工作量在 backend 镜像内（API 侧不做矢量化），需 >8GB 显存回归 | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) |
 | **P2** | 图片工作台能力扩展剩余（I1 / I21） | 大图 tile / 快捷键自定义；详见 §C.7（I10 Skeleton 进阶 + I12 Object Group + I18 图片 pin + I14 Polygon Crop 已落） | [0004](docs/adr/archive/0004-canvas-stack-konva.md) [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md) |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/archive/0013-mask-to-polygon-server-side.md) |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
