@@ -120,13 +120,10 @@ class SAM3MultiplexVideoTracker:
         tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
         session_id = None
         try:
+            # _extract_window_jpegs 现在对不完整窗口显式抛错, 故 local_count == span > 0。
             _fw, _fh, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
-            if local_count == 0:
-                raise ValueError(
-                    f"no frames decoded from {video_path[:80]} for window [{lo},{hi}]"
-                )
             local_seed = max(0, min(seed_src_frame - lo, local_count - 1))
 
             session_id = self._predictor.handle_request(
@@ -203,7 +200,13 @@ class SAM3MultiplexVideoTracker:
             for src in range(lo, hi + 1):
                 ok, frame = cap.read()
                 if not ok:
-                    break
+                    # 中途解码失败 (损坏帧 / 视频实际帧数不足): 显式失败而非静默返回短窗口。
+                    # 静默截断会让用户拿到"追踪到一半就停"的结果却看不出原因。
+                    raise ValueError(
+                        f"video decode truncated at source frame {src}: requested "
+                        f"{hi - lo + 1} frames [{lo},{hi}] but only {written} decoded "
+                        f"from {video_path[:80]}"
+                    )
                 cv2.imwrite(os.path.join(out_dir, f"{src - lo}.jpg"), frame)
                 if frame_w == 0 or frame_h == 0:
                     frame_h, frame_w = frame.shape[:2]
@@ -234,6 +237,13 @@ class SAM3MultiplexVideoTracker:
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None or len(obj_ids) == 0:
             return None
+        if len(masks) != len(obj_ids):
+            # vendor multiplex predictor 偶发返回 shape 不匹配的 masks / obj_ids;
+            # 显式报错带上下文, 避免下方按 obj_ids 索引 masks 时裸抛 IndexError → unhandled 500。
+            raise ValueError(
+                f"sam3_video seed frame shape mismatch: "
+                f"{len(obj_ids)} obj_ids vs {len(masks)} masks"
+            )
         probs = _to_numpy(outputs.get("output_probs"))
         if seed_bbox is None or not any(seed_bbox.get(k) for k in ("w", "h")):
             # 无种子: 最高分 / 首个
