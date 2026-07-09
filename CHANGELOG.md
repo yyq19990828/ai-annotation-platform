@@ -34,7 +34,23 @@
 
 ## [Unreleased]
 
+### Changed
+- **`ai_interactive` 工具单位彻底退役**：该值不再是合法 `ToolUnitId`——SAM 智能点 / 智能框 / Exemplar /
+  Magic Box 按产出几何归 `region`（多边形系）或 `bbox`，「能否使用交互式 AI 工具」仍由项目开关
+  `ai_interactive_enabled` 控制。存量数据由迁移一次性归位：`predictions.tool_unit_id` 分批回填，
+  `projects` / `project_templates` 的 `tool_bindings` 里 `ai_interactive` 单位携带的类别 / 属性
+  合并进 `region` / `bbox`（同名冲突时保留目标单位、跳过来源），而非直接丢弃。
+
 ### Fixed
+- **迁移 0115 回填不再全表扫锁写**：`annotations.tool_unit_id` 无索引，原先一条裸 `UPDATE ... WHERE
+  tool_unit_id='ai_interactive'` 在生产大表上是单事务全表顺序扫 + 长时间持锁写。改为按主键游标分批
+  （`LIMIT ... FOR UPDATE`），单批只锁一批行，避免阻塞在线读写。
+- **老项目残留 `ai_interactive` 类别不再静默丢失**：项目设置「类别与属性」保存时，`tool_bindings` 里
+  遗留的 `ai_interactive` key 及其配置此前被直接跳过、保存后无声丢弃。现改为折叠进 `region` / `bbox`
+  单位（与后端迁移同规则），用户配的类别 / 属性得以保留。
+- **遗留客户端上报退役工具单位不再报错**：标注写入 / 预测入库时若仍收到 `tool_unit_id='ai_interactive'`，
+  后端按几何类型归位到 `region` / `bbox` 并记 warning 日志，而非 422 拒绝。
+
 - **标注时缩略图不再反复重下**：每次提交、跳过或增删标注都会刷新任务列表，此前刷新会给每个对象重新签发一个
   签名不同的存储 URL。浏览器按完整 URL 做缓存 key，于是列表里所有缩略图缓存集体失效、整批重新下载——画一个框
   就重下一轮。现在签发时把过期时刻对齐到 10 分钟网格，同一对象在窗口内拿到的 URL 逐字节相同，浏览器直接命中缓存。

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import uuid
 from typing import Any
@@ -11,11 +12,14 @@ from app.db.models.prediction import Prediction, PredictionMeta, FailedPredictio
 from app.db.models.task import Task
 from app.services.annotation_propagation import _new_track_id
 
+logger = logging.getLogger("app.services.prediction")
+
+# 'ai_interactive' 已退役 (见 app/schemas/_jsonb_types.py): 不再是合法工具单位。result item
+# 若显式带该值, derive_tool_unit_from_result 会绕过它、改按几何类型派生并记 warning。
 TOOL_UNIT_IDS = {
     "bbox",
     "polyline",
     "region",
-    "ai_interactive",
     "lidar_box_3d",
     "rotated_bbox",
     "keypoint",
@@ -52,6 +56,12 @@ def derive_tool_unit_from_result(result: list[dict] | None) -> str:
         return "bbox"
     first = result[0] if isinstance(result[0], dict) else {}
     explicit = first.get("tool_unit_id")
+    if explicit == "ai_interactive":
+        # 退役值: 忽略, 落到下方按几何/LS type 派生 (与迁移 0116 归位同规则)。
+        logger.warning(
+            "prediction result carries retired tool_unit_id 'ai_interactive'; "
+            "deriving unit from geometry/type instead"
+        )
     if explicit in TOOL_UNIT_IDS:
         return explicit
     value = first.get("value")
