@@ -845,8 +845,10 @@ cd ../.. && pnpm codegen
 {
   "instances": [
     {
-      "source": "env_only",                          // 或 "registered"
-      "name": "grounded-sam2",                       // env-only 取 /setup.name; registered 取 ml_backend.name
+      "backend_id": "9f1c…",                         // ml_backend_registry.id
+      "state": "connected",                          // 注册表状态; disconnected 已在服务层过滤
+      "source": "env",                               // ml_backend_registry.source: "env"(docker-compose/env 自动注册) | "manual"(superadmin 手动注册)
+      "name": "grounded-sam2",                       // ml_backend_registry.name
       "infra": "pytorch",
       "models": [
         {
@@ -869,7 +871,7 @@ cd ../.. && pnpm codegen
 }
 ```
 
-**前端消费**：`CapabilityCatalogPanel` 协议卡视图（默认 `groupBy=task`）按 `model.task` 把 instance.models 挂到 9 张协议卡上；子卡按 `source` 显示「自带」（env_only）或「已注册」（registered）徽标。
+**前端消费**：`CapabilityCatalogPanel` 协议卡视图（默认 `groupBy=task`）按 `model.task` 把 instance.models 挂到 9 张协议卡上；子卡的「自带 / 已注册」徽标按该 backend 是否已被某个项目启用（即是否出现在 admin overview）判定——已启用记「已注册」并挂项目名，未接入任何已启用项目的平台内置 backend 记「自带」——而非直接取本端点的 `source` 字段（`source` 只区分 backend 是 env 自动注册还是 superadmin 手动注册）。
 
 ---
 

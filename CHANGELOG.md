@@ -75,6 +75,35 @@
   就重下一轮。现在签发时把过期时刻对齐到 10 分钟网格，同一对象在窗口内拿到的 URL 逐字节相同，浏览器直接命中缓存。
   对象存储放在机械盘上时，这批本不该发生的小文件随机读尤其伤性能。原图、视频帧、点云等所有走签名 URL 的资源同样受益。
   副作用是 URL 实际有效期在标称值到标称值 + 10 分钟之间浮动（只会延长，不会提前失效）。
+- **模型市场「能力目录」按 backend / infra / 不分组查看时不再空白**：当某个 backend 没有被任何项目启用（例如
+  docker-compose 自带的平台内置 backend），切到「协议能力」以外的分组会显示「暂无可用模型条目」，而同一批 backend
+  在「协议能力」分组下却正常可见。根因是补全平台内置 backend 的兜底分支比对了一个后端从不返回的 `source` 值
+  （`/instances` 实际返回 `env` / `manual`，而前端比的是 `env_only`），整段成了死代码。现改为按注册表 backend id
+  去重补入，未接入任何已启用项目的平台内置 backend 也会出现在非协议分组里；顶部「N 个 backend」计数一并修正。
+- **模型市场「运行时观测」对同一 backend 不再按项目重复显示**：backend 全局化后一个物理 backend 可被多个项目启用，
+  「注册状态」接口会为每个（项目 × backend）各返回一行，运行时观测面板据此为同一个 backend（相同 URL）渲染了多张
+  重复卡片。现按 backend URL 去重，每个物理 backend 只显示一张卡，启用它的多个项目名聚合到卡片上展示。
+- **能力目录卡片「输出属性」不再对只报旧版字段的 backend 空成「—」**：gsam2 / sam3 / yolo 等 backend 只上报旧版扁平
+  `output_attribute_types`（如 `["class"]`）而不填结构化 `output_attribute_schema`，但未接入项目的 backend 走 `/instances`
+  路径时，前端只从（空的）schema 投影属性、丢掉了 backend 直接上报的 `output_attribute_types`，导致这些卡的「输出属性」行
+  显示「—」（项目已启用的同一 backend 却正常显示）。现把展示逻辑统一到卡片一处：`output_attribute_schema` 非空时取其
+  label（更友好，如 rapidocr 的「识别文本 / 语言」），否则回落到扁平 `output_attribute_types`，overview 与 instances 两条
+  路径一致。
+- **能力目录卡片不再显示恒为「—」的空「资源」行**：`device` / `batchable` 已升级为顶部徽标（GPU / 可批量），而现有
+  backend 的 `resource_profile` 通常只含这两项、不报 vram 等余项，导致「资源」行永远是「—」，看起来像资源信息缺失。现
+  backend 未上报任何余项时整行隐藏（设备 / 可批量信息仍在徽标上可见）。
+- **项目管理员打开模型市场不再半坏**：模型市场页对超管和项目管理员都开放，但顶部统计卡与「运行时观测」段依赖
+  super_admin only 的全局 overview / observe 接口，能力目录也会硬阻塞在 overview 的 403 上——项目管理员进去看到的是
+  统计卡归零、运行时观测整块「加载失败」、能力目录也「加载失败」。现按角色收敛：项目管理员只看到能力目录 + 只读注册管理，
+  统计卡与运行时观测 tab 隐藏（不再无谓地每 60s 打一次 403），能力目录退到 `/instances` 单端点视图正常渲染。
+
+### Security
+- **项目级 ML Backend 端点收口跨项目越权**：`/projects/{id}/ml-backends/*` 各端点此前只校验调用者的全局角色、
+  不校验其对 URL 中该项目的可见性 / 归属。这让全局角色为 annotator / reviewer 的用户可读取**任意项目**（含自己非成员
+  项目）的 backend 列表 / setup / 能力（并暴露 backend URL），也让任一 project_admin 可对**他人名下项目**增删改 backend、
+  触发 unload / reload / warmup。现读取类端点叠加「项目可见性」校验（super_admin / 项目成员 / owner 之外返回 404），
+  写入与运维类端点叠加「项目 owner」校验（非 super_admin 且非 owner 返回 403）。能力目录 `/ml-capabilities/instances`
+  维持对任意登录用户开放（字段裁剪后的只读公开视图）不变。
 
 ## [0.21.24] - 2026-07-08
 

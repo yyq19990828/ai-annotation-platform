@@ -29,6 +29,7 @@ import {
   type CapabilityInstance,
   type CapabilityInstanceModel,
 } from "@/api/mlCapabilities";
+import { usePermissions } from "@/hooks/usePermissions";
 import { ProtocolCapabilityCard } from "./ProtocolCapabilityCard";
 import { EmptyCatalogBanner } from "./EmptyCatalogBanner";
 import {
@@ -78,9 +79,12 @@ interface BackendResult {
 // 分组视图对齐)。instances 端点不带运行时池 (池大小 / 加载态在卡上显示占位); resource_profile
 // 自 v0.19.2 WS0 起已透传, 故「可批量 / 设备 / 资源」徽标可直接渲染。当 admin 的 flatModels
 // (来自 /capabilities) 有同名条目时, 上层会优先用富数据 (带运行时池)。
-function instanceModelToFlat(inst: CapabilityInstance, m: CapabilityInstanceModel): FlatModel {
+function instanceModelToFlat(
+  inst: CapabilityInstance,
+  m: CapabilityInstanceModel,
+  source: FlatModel["source"],
+): FlatModel {
   const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : undefined;
-  const source: FlatModel["source"] = inst.source === "env_only" ? "env_only" : "registered";
   return {
     model: {
       id: m.id,
@@ -94,9 +98,11 @@ function instanceModelToFlat(inst: CapabilityInstance, m: CapabilityInstanceMode
       supported_inputs: m.supported_inputs,
       resource_profile: m.resource_profile,
       supported_geometric_outputs: m.supported_geometric_outputs,
-      // instances 端点只带 schema (含 select options), ModelCard 的「输出属性」行读
-      // output_attribute_types, 这里用 schema 的 label/key 投影出展示用类型列表。
-      output_attribute_types: m.output_attribute_schema?.map((s) => s.label || s.key),
+      // 属性两字段都原样透传 (不在此投影): ModelCard「输出属性」行统一判定
+      // ——schema 非空取其 label/key, 否则回落扁平 output_attribute_types。此前这里只从 schema
+      // 投影, 丢掉了 gsam2 / sam3 / yolo 只报的 output_attribute_types (它们 schema 为空),
+      // 令未接入项目的 backend (instances 路径) 属性行空成「—」。
+      output_attribute_types: m.output_attribute_types,
       output_attribute_schema: m.output_attribute_schema,
       supported_trackers: m.supported_trackers,
       supported_variants: m.supported_variants,
@@ -143,6 +149,12 @@ export function CapabilityCatalogPanel() {
     setSearchParams(next, { replace: true });
   };
 
+  // overview (admin) 只有 super_admin 能读; project_admin 也能进本页, 但对其而言
+  // overview 是「可选的运行时富化」——拿不到就退到 /instances 单端点视图 (协议卡 + model 卡),
+  // 而不是整块报错。故按角色 enabled, 非超管不发请求、overviewError 不触发。
+  const { role } = usePermissions();
+  const isSuperAdmin = role === "super_admin";
+
   // 1) 枚举所有项目 + 已注册 backend.
   const {
     data: overview,
@@ -154,6 +166,7 @@ export function CapabilityCatalogPanel() {
     queryKey: ["admin", "ml-integrations", "overview"],
     queryFn: () => adminMlIntegrationsApi.overview(),
     refetchInterval: 60_000,
+    enabled: isSuperAdmin,
   });
 
   // v0.14.12 · 按 URL 合并跨项目注册. 同一 ML backend (相同 URL) 在 N 个项目下都
@@ -183,6 +196,13 @@ export function CapabilityCatalogPanel() {
     }
     return [...byUrl.values()];
   }, [overview]);
+
+  // overview 只含「项目已启用」的关联; 这里收敛出已启用 backend 的 registry id 集合,
+  // 供 ① flatModels env 兜底按 registry id 去重; ② 协议卡回落判定 source (registered / 平台内置)。
+  const registeredBackendIds = useMemo(
+    () => new Set(backendRefs.map((r) => r.backend.id)),
+    [backendRefs],
+  );
 
   // 2) 对每个 backend 拉 /capabilities (独立 query, 互不阻塞).
   const capabilityQueries = useQueries({
@@ -261,45 +281,15 @@ export function CapabilityCatalogPanel() {
         });
       }
     }
-    // env-only / 平台直观 backend (来自 /ml-capabilities/instances). 注册项已经在
-    // overview 这条线进来过, 这里只补 env_only; 避免重复展示。
+    // 平台已知但未接入任何「已启用」项目的 backend (来自 /ml-capabilities/instances)。
+    // overview 只含项目已启用的关联, 故项目未启用 backend 时这条兜底让 groupBy=backend /
+    // infra / none 视图仍能看到平台内置 backend, 不再空白。按 registry backend_id 去重,
+    // 避免与 overview 分支重复 (overview 分支已把注册 backend 的 registry id 记入 seenBackendIds)。
     for (const inst of instancesData?.instances ?? []) {
-      if (inst.source !== "env_only") continue;
-      const syntheticBackendId = `env-only:${inst.name}`;
-      if (seenBackendIds.has(syntheticBackendId)) continue;
-      seenBackendIds.add(syntheticBackendId);
-      const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : undefined;
+      if (seenBackendIds.has(inst.backend_id)) continue;
+      seenBackendIds.add(inst.backend_id);
       for (const m of inst.models) {
-        out.push({
-          model: {
-            id: m.id,
-            display_name: m.display_name,
-            task: m.task,
-            model_family: m.model_family ?? undefined,
-            infra: m.infra ?? infraFallback,
-            is_interactive: m.is_interactive,
-            supported_prompts: m.supported_prompts,
-            supported_inputs: m.supported_inputs,
-            resource_profile: m.resource_profile,
-            supported_geometric_outputs: m.supported_geometric_outputs,
-            supported_trackers: m.supported_trackers,
-            supported_variants: m.supported_variants,
-            variant_combinations: m.variant_combinations,
-            variants_shared_across_tasks: m.variants_shared_across_tasks,
-            modality: m.modality ?? undefined,
-          },
-          backendId: syntheticBackendId,
-          backendName: inst.name,
-          projectId: "",
-          projectName: "平台内置",
-          source: "env_only",
-          registeredProjects: [],
-          backendInfra: infraFallback,
-          backendModalities: m.modality ? [m.modality] : undefined,
-          healthMeta: undefined,
-          warmupEndpoint: false,
-          stale: false,
-        });
+        out.push(instanceModelToFlat(inst, m, "env_only"));
       }
     }
     return out;
@@ -394,7 +384,11 @@ export function CapabilityCatalogPanel() {
         }
         const taskId = m.task ?? "unknown";
         if (!byTask.has(taskId)) byTask.set(taskId, []);
-        const enriched = flatByKey.get(`${inst.name}::${m.id}`) ?? instanceModelToFlat(inst, m);
+        const source: FlatModel["source"] = registeredBackendIds.has(inst.backend_id)
+          ? "registered"
+          : "env_only";
+        const enriched =
+          flatByKey.get(`${inst.name}::${m.id}`) ?? instanceModelToFlat(inst, m, source);
         byTask.get(taskId)!.push(enriched);
       }
     }
@@ -412,7 +406,7 @@ export function CapabilityCatalogPanel() {
         return true;
       })
       .map((task) => ({ task, mounted: byTask.get(task.id) ?? [] }));
-  }, [protocol, instancesData, flatByKey, taskFilter, infraFilter, modalityFilter, search]);
+  }, [protocol, instancesData, flatByKey, registeredBackendIds, taskFilter, infraFilter, modalityFilter, search]);
 
   const hasActiveFilter =
     taskFilter.size > 0 ||
@@ -456,9 +450,10 @@ export function CapabilityCatalogPanel() {
   };
 
   const anyCapLoading = results.some((r) => r.isLoading);
-  // v0.14.12 · 合并 env-only 后, 统计与「项目级 backend 计数」分开。
+  // v0.14.12 · 合并 env 兜底后, 统计与「项目级 backend 计数」分开:
+  // 未接入任何已启用项目的平台内置 backend 数 (与 backendRefs 互斥, 不重复计)。
   const envOnlyCount = (instancesData?.instances ?? []).filter(
-    (i) => i.source === "env_only",
+    (i) => !registeredBackendIds.has(i.backend_id),
   ).length;
   const distinctBackendCount = backendRefs.length + envOnlyCount;
 

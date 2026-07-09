@@ -141,7 +141,8 @@ export interface CapabilityInstance {
   backend_id: string;
   /** v0.21.0 · connected/error 等注册表状态；error 可展示但应禁用选择动作。 */
   state: string;
-  source: "env_only" | "registered" | string;
+  /** ml_backend_registry.source: "env" = docker-compose/env 自动注册, "manual" = superadmin 手动注册。 */
+  source: "env" | "manual" | string;
   name: string;
   infra: string;
   // v0.14.14 · backend 自报是否支持 POST /warmup (协议 §4.4); 老 backend 缺字段 = false.

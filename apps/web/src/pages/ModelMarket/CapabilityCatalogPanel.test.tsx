@@ -43,6 +43,12 @@ vi.mock("@/api/mlCapabilities", async () => {
   };
 });
 
+// 默认以 super_admin 渲染 (现有用例依赖 admin overview 可用); 降级用例按需切 project_admin。
+const mockUsePermissions = vi.fn(() => ({ role: "super_admin" }));
+vi.mock("@/hooks/usePermissions", () => ({
+  usePermissions: () => mockUsePermissions(),
+}));
+
 const mockPushToast = vi.fn();
 vi.mock("@/components/ui/Toast", async () => {
   const actual = await vi.importActual<any>("@/components/ui/Toast");
@@ -99,6 +105,7 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     });
     mockGetProtocol.mockResolvedValue(makeProtocol());
     mockGetInstances.mockResolvedValue({ instances: [] });
+    mockUsePermissions.mockReturnValue({ role: "super_admin" });
   });
 
   it("0 backend + 默认 groupBy=task → 渲染 9 张协议卡 + onboarding 横幅", async () => {
@@ -148,7 +155,11 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     mockGetInstances.mockResolvedValue({
       instances: [
         {
-          source: "env_only",
+          backend_id: "gsam2-registry-id",
+          state: "connected",
+          // 后端 /instances 真实透传 ml_backend_registry.source = "env" | "manual"
+          // (不是 "env_only"); 目录侧「平台内置 vs 已注册」由是否进 overview 决定。
+          source: "env",
           name: "gsam2",
           infra: "pytorch",
           models: [
@@ -189,6 +200,84 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     expect(undeployedCount).toBe(7);
     // 0 backend 横幅不应再出现
     expect(screen.queryByText(/支持 9 类 AI 标注能力/)).not.toBeInTheDocument();
+  });
+
+  it("overview 为空但有 env 实例时, groupBy=backend 也能看到平台内置 backend (回归: 非协议分组不再空白)", async () => {
+    // BUG: overview 只含「项目已启用」的 backend; 项目未启用 backend 时非协议分组
+    // (backend/infra/none) 曾因 env 兜底分支比错 source 字段而变死代码, 显示「暂无可用模型条目」。
+    mockGetInstances.mockResolvedValue({
+      instances: [
+        {
+          backend_id: "yolo-registry-id",
+          state: "connected",
+          source: "env",
+          name: "yolo-backend",
+          infra: "pytorch",
+          models: [
+            {
+              id: "yolov8-det",
+              display_name: "YOLOv8 · 目标检测",
+              task: "detection",
+              infra: "pytorch",
+              is_interactive: false,
+              supported_prompts: [],
+              supported_geometric_outputs: ["bbox"],
+              supported_trackers: [],
+              // gsam2 / yolo 只报旧版扁平 output_attribute_types (schema 为空);
+              // instances 路径须透传它, 否则「输出属性」行空成「—」。
+              output_attribute_types: ["class"],
+              output_attribute_schema: [],
+              modality: "image",
+            },
+          ],
+        },
+      ],
+    });
+    renderUI();
+    const select = (await screen.findByRole("combobox")) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "backend" } });
+    // 非协议分组下 env backend 的 model 应渲染, 而非退回空态。
+    expect(await screen.findByText("YOLOv8 · 目标检测")).toBeInTheDocument();
+    expect(screen.queryByText("暂无可用模型条目")).not.toBeInTheDocument();
+    expect(screen.queryByText("尚无项目注册 ML Backend")).not.toBeInTheDocument();
+    // 「输出属性」行透传 backend 自报的 output_attribute_types (而非只看空 schema)。
+    expect(screen.getByText("class")).toBeInTheDocument();
+  });
+
+  it("非超管 (project_admin) 不调 admin overview, 能力目录退到 /instances 视图而非硬报错", async () => {
+    // 盲点4: overview (/admin/ml-integrations/overview) 是 super_admin only; project_admin
+    // 也能进本页, 目录应退到 /instances 单端点 (登录用户可访问), 而不是整块「加载失败」。
+    mockUsePermissions.mockReturnValue({ role: "project_admin" });
+    mockGetInstances.mockResolvedValue({
+      instances: [
+        {
+          backend_id: "yolo-registry-id",
+          state: "connected",
+          source: "env",
+          name: "yolo-backend",
+          infra: "pytorch",
+          models: [
+            {
+              id: "yolov8-det",
+              display_name: "YOLOv8 · 目标检测",
+              task: "detection",
+              infra: "pytorch",
+              is_interactive: false,
+              supported_prompts: [],
+              supported_geometric_outputs: ["bbox"],
+              supported_trackers: [],
+              modality: "image",
+            },
+          ],
+        },
+      ],
+    });
+    renderUI();
+    // 协议卡视图 (默认 task) 仍渲染, model 由 /instances 挂到 detection 卡。
+    expect(await screen.findByText("YOLOv8 · 目标检测")).toBeInTheDocument();
+    // admin overview 不应被调用 (super_admin only), 也不出现「加载失败」硬报错。
+    expect(mockOverview).not.toHaveBeenCalled();
+    expect(screen.queryByText(/加载失败/)).not.toBeInTheDocument();
   });
 
   it("同 URL 跨多项目注册时, groupBy=backend 只渲染一组 + 注册状态列聚合项目名", async () => {
