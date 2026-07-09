@@ -120,10 +120,23 @@ class SAM3MultiplexVideoTracker:
         tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
         session_id = None
         try:
-            # _extract_window_jpegs 现在对不完整窗口显式抛错, 故 local_count == span > 0。
+            # 窗口不完整只 warn (见 _extract_window_jpegs); 但下面两种截断必须硬失败:
             _fw, _fh, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
+            if local_count == 0:
+                raise ValueError(
+                    f"no frames decoded from {video_path[:80]} for window [{lo},{hi}]"
+                )
+            # 种子帧落进未解码区 (常见于 backward 追踪、种子在窗尾 hi): 若放行, 下面的
+            # clamp 会把它静默挪到实际最后一帧, 追踪从一个完全错误的种子帧开始且无提示。
+            if seed_src_frame - lo >= local_count:
+                raise ValueError(
+                    f"seed frame {seed_src_frame} not in decodable range "
+                    f"[{lo},{lo + local_count - 1}] (window [{lo},{hi}] decoded only "
+                    f"{local_count} frames) from {video_path[:80]}"
+                )
+            # 上面已校验 seed 在 [lo, lo+local_count-1] 内, clamp 对合法输入是无害的边界保护。
             local_seed = max(0, min(seed_src_frame - lo, local_count - 1))
 
             session_id = self._predictor.handle_request(
@@ -200,13 +213,15 @@ class SAM3MultiplexVideoTracker:
             for src in range(lo, hi + 1):
                 ok, frame = cap.read()
                 if not ok:
-                    # 中途解码失败 (损坏帧 / 视频实际帧数不足): 显式失败而非静默返回短窗口。
-                    # 静默截断会让用户拿到"追踪到一半就停"的结果却看不出原因。
-                    raise ValueError(
-                        f"video decode truncated at source frame {src}: requested "
-                        f"{hi - lo + 1} frames [{lo},{hi}] but only {written} decoded "
-                        f"from {video_path[:80]}"
+                    # 中途解码失败 (损坏帧 / 容器元数据帧数虚报 / VFR): 停在此处但不静默 —
+                    # 尾部少解码几帧通常无害 (forward 追踪的种子帧在窗首)。是否需硬失败
+                    # (种子帧落进未解码区 / 一帧都没解出) 由调用方 propagate 判定。
+                    logger.warning(
+                        "sam3_video window [%d,%d] decode truncated: requested %d frames "
+                        "but only %d decoded from %s",
+                        lo, hi, hi - lo + 1, written, video_path[:80],
                     )
+                    break
                 cv2.imwrite(os.path.join(out_dir, f"{src - lo}.jpg"), frame)
                 if frame_w == 0 or frame_h == 0:
                     frame_h, frame_w = frame.shape[:2]
