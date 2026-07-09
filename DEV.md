@@ -91,8 +91,16 @@ docker compose up -d
 
 ```bash
 pnpm install
+pnpm codegen
 pnpm dev:web
 ```
+
+> 首次 clone / 清空 `apps/web/src/api/generated/` 后，先跑 `pnpm codegen` 再跑
+> `pnpm dev:web`。`pnpm dev:web` 直接启动 Vite，不触发 `prebuild` 的生成检查；若缺
+> `src/api/generated/capabilityVocab.gen.ts`，页面会报
+> `Failed to resolve import "./generated/capabilityVocab.gen"`。如果
+> `apps/api/capability-registry.snapshot.json` 也缺失，先运行：
+> `cd apps/api && uv run python ../../scripts/export_capability_registry.py`。
 
 打开 http://localhost:3000
 
