@@ -100,8 +100,7 @@
 ### 后续观察项（仍 open）
 
 - **getting-started 与 SoT 漂移**：文档站硬编码快捷键如再漂移可考虑给 .md 内联 `` `<键>` `` 建一份从 hotkeys.ts 推导的 ESLint/markdownlint 规则；优先级低，等漂移触发.
-- **`services/prediction.py` 的 `TOOL_UNIT_IDS` 白名单缺 `point_mask_3d`**（P3，当前无实际影响）：该 set 用于 `derive_tool_unit_from_result` 的显式值白名单（`if explicit in TOOL_UNIT_IDS`），与 `_jsonb_types.TOOL_UNIT_IDS` 元组早已漂移。若某个 backend 显式声明 `tool_unit_id="point_mask_3d"`，会被静默忽略并退回按几何推导。**当前无 3D 点云 ML backend，故零影响**；两处应收敛到单一来源（直接 import 元组）。触发：出现产出 3D 几何的 backend。
-- **`videoFrameViews.test.ts` 存在一条假绿测试**（P3）：bbox ghost 那条用例（约 line 192）把 `outside` 写成 `{start_frame, end_frame}`，而 `VideoTrackOutsideRange` 的真实字段是 `{from, to}` —— 即该测试的 `outside` 一直是无效空值，能通过只因查询帧本就超出末关键帧（不插值→null）。它没有真正测到「outside 区间内不产生 ghost」。修法：改字段名并确认断言仍成立。
+- **ghost 参考虚影不消费查询帧的 `outside` 区间**（P3，待判定是 bug 还是设计）：`resolveTrackAtFrame` 在 `frameIndex ∈ outside` 时返回 null（不产生 entry），但 `nearestTrackKeyframe` 只过滤**关键帧**是否落在 outside，**不检查查询帧本身**。故轨迹被显式标记「目标离开画面」的帧上，仍会显示 ghost 参考框 / linear 外推预测框（`videoFrameViews.test.ts` 的 `referenceConfig=linear` 用例即在 outside 区间内断言 ghost 存在）。语义上 outside = 目标不在画面，给参考虚影可能诱导标注员画出不该存在的框；但也可解释为「帮助目标重新出现时续画」。**此前该行为被一条假绿测试掩盖**（outside 字段名写错致其从未生效），修正后才显形。需产品侧判定。
 
 ---
 
