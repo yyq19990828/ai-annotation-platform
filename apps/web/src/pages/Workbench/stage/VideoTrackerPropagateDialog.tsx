@@ -116,6 +116,8 @@ interface VideoTrackerPropagateDialogProps {
   frameIndex: number;
   maxFrame: number;
   nextKeyframeAfter: number | null;
+  /** 向前(backward)传播的「到上一关键帧」目标; 缺省 null 时回退到固定跨度。 */
+  prevKeyframeBefore?: number | null;
   userId?: string | null;
   /** 采样网格步长 (源帧). >1 时数字预设以网格格子为单位; 缺省 1 = 现状 (按源帧). */
   samplingStep?: number;
@@ -141,6 +143,7 @@ export function VideoTrackerPropagateDialog({
   frameIndex,
   maxFrame,
   nextKeyframeAfter,
+  prevKeyframeBefore = null,
   userId,
   samplingStep = 1,
   projectDefaultModel = null,
@@ -222,6 +225,13 @@ export function VideoTrackerPropagateDialog({
 
   const derivedRange = useMemo(() => {
     if (rangePreset === "next-keyframe") {
+      // 向前(backward): 传播到上一关键帧; 无上一关键帧时回退固定跨度。其余方向: 到下一关键帧。
+      if (direction === "backward") {
+        if (prevKeyframeBefore !== null && prevKeyframeBefore < frameIndex) {
+          return { from: prevKeyframeBefore, to: frameIndex };
+        }
+        return { from: Math.max(0, frameIndex - 30), to: frameIndex };
+      }
       if (nextKeyframeAfter !== null && nextKeyframeAfter > frameIndex) {
         return { from: frameIndex, to: nextKeyframeAfter };
       }
@@ -244,7 +254,7 @@ export function VideoTrackerPropagateDialog({
       };
     }
     return { from: frameIndex, to: Math.min(maxFrame, frameIndex + span) };
-  }, [direction, frameIndex, grid, maxFrame, nextKeyframeAfter, rangePreset]);
+  }, [direction, frameIndex, grid, maxFrame, nextKeyframeAfter, prevKeyframeBefore, rangePreset]);
 
   // 自定义范围 (来自时间轴刷选) 优先; 否则用预设/方向派生的范围。
   const range = customRange ?? derivedRange;

@@ -2489,6 +2489,12 @@ export function useWorkbenchShellModel({
         .filter((idx) => idx > s.videoFrameIndex)
         .sort((a, b) => a - b)[0] ?? null
     : null;
+  const propagateDialogPrevKeyframe = propagateDialogTrack
+    ? [...propagateDialogTrack.geometry.keyframes]
+        .map((kf) => kf.frame_index)
+        .filter((idx) => idx < s.videoFrameIndex)
+        .sort((a, b) => b - a)[0] ?? null
+    : null;
 
   // v0.21.10 · 「当前题 AI」header 待审数: 视频按**当前帧**过滤 (与下方候选列表口径一致), 图像取全部。
   //   aiBoxes 已在源头按 id 去重 (见 useImageAnnotationActions), 故此处只做帧作用域, 消除跨帧+分页
@@ -3081,6 +3087,7 @@ export function useWorkbenchShellModel({
     frameIndex: s.videoFrameIndex,
     maxFrame: Math.max(0, videoFrameCount - 1),
     nextKeyframeAfter: propagateDialogNextKeyframe,
+    prevKeyframeBefore: propagateDialogPrevKeyframe,
     userId: meUserId ?? null,
     samplingStep,
     projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,

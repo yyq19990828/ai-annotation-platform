@@ -561,6 +561,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   useEffect(() => {
     if (!pointsDrawEnabled && pointsDraft.draft) pointsDraft.cancel();
   }, [pointsDrawEnabled, pointsDraft]);
+  // 切帧时丢弃未提交的顶点草稿: 顶点是起草帧的像素坐标, 若带到新帧提交会错位落在新帧上。
+  // ref 守卫「帧真的变了」才取消 (pointsDraft 身份每渲染变, 不守卫会误伤同帧正常绘制)。
+  const draftFrameRef = useRef(frameIndex);
+  useEffect(() => {
+    if (draftFrameRef.current === frameIndex) return;
+    draftFrameRef.current = frameIndex;
+    if (pointsDraft.draft) pointsDraft.cancel();
+  }, [frameIndex, pointsDraft]);
   useEffect(() => {
     if (!pointsDrawEnabled) return;
     const onKey = (e: KeyboardEvent) => {
@@ -590,6 +598,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }
     const ghost = frameViews.ghost;
     if (ghost && ghost.id === selectedId) {
+      // 点集几何 ghost (polygon/polyline) 不画 8 向 resize 句柄 (与 entry.points 分支一致)。
+      if (ghost.points) return null;
       if (selectedTrack && lockedTrackIds.has(selectedTrack.geometry.track_id)) return null;
       return { id: ghost.id, geom: liveGeom ?? ghost.geom, color: ghost.color };
     }

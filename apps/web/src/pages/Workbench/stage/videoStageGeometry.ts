@@ -461,6 +461,31 @@ export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: numb
   return Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
 }
 
+/**
+ * polygon/polyline track 在某帧无实框时的「参考顶点」: 取最近可见关键帧的 points。
+ * 与 bbox 的 nearestTrackKeyframe 对齐, 供点集轨迹的 ghost / carry-over 参考虚影使用。
+ */
+export function nearestPointsTrackKeyframe(
+  track: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry,
+  frameIndex: number,
+): { points: Point[]; originFrame: number } | null {
+  const outsideRanges = normalizeOutsideRanges(track.outside ?? []);
+  const visible = [...track.keyframes]
+    .sort((a, b) => a.frame_index - b.frame_index)
+    .filter((kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+  if (visible.length === 0) return null;
+  const afterIndex = lowerBound(visible, frameIndex, (kf) => kf.frame_index);
+  let nearest: VideoTrackPolygonKeyframe | VideoTrackPolylineKeyframe;
+  if (afterIndex <= 0) nearest = visible[0];
+  else if (afterIndex >= visible.length) nearest = visible[visible.length - 1];
+  else {
+    const before = visible[afterIndex - 1];
+    const after = visible[afterIndex];
+    nearest = Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
+  }
+  return { points: nearest.points.map((p) => [p[0], p[1]] as Point), originFrame: nearest.frame_index };
+}
+
 export interface TrackReferenceResult {
   bbox: VideoStageGeom;
   /** true = 运动预测(linear / kalman);false = 直接取最近关键帧(回退或 mode=off)。 */
