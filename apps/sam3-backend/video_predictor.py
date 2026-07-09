@@ -120,6 +120,7 @@ class SAM3MultiplexVideoTracker:
         tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
         session_id = None
         try:
+            # 窗口不完整只 warn (见 _extract_window_jpegs); 但下面两种截断必须硬失败:
             _fw, _fh, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
@@ -127,6 +128,15 @@ class SAM3MultiplexVideoTracker:
                 raise ValueError(
                     f"no frames decoded from {video_path[:80]} for window [{lo},{hi}]"
                 )
+            # 种子帧落进未解码区 (常见于 backward 追踪、种子在窗尾 hi): 若放行, 下面的
+            # clamp 会把它静默挪到实际最后一帧, 追踪从一个完全错误的种子帧开始且无提示。
+            if seed_src_frame - lo >= local_count:
+                raise ValueError(
+                    f"seed frame {seed_src_frame} not in decodable range "
+                    f"[{lo},{lo + local_count - 1}] (window [{lo},{hi}] decoded only "
+                    f"{local_count} frames) from {video_path[:80]}"
+                )
+            # 上面已校验 seed 在 [lo, lo+local_count-1] 内, clamp 对合法输入是无害的边界保护。
             local_seed = max(0, min(seed_src_frame - lo, local_count - 1))
 
             session_id = self._predictor.handle_request(
@@ -154,8 +164,8 @@ class SAM3MultiplexVideoTracker:
             for local_idx in sorted(per_frame, reverse=reverse):
                 if local_idx < 0 or local_idx >= local_count:
                     continue
-                mask = self._obj_mask(per_frame[local_idx], target_obj_id)
                 src_idx = local_idx + lo
+                mask = self._obj_mask(per_frame[local_idx], target_obj_id, frame_index=src_idx)
                 if mask is None or not mask.any():
                     results.append({
                         "frame_index": src_idx,
@@ -203,6 +213,14 @@ class SAM3MultiplexVideoTracker:
             for src in range(lo, hi + 1):
                 ok, frame = cap.read()
                 if not ok:
+                    # 中途解码失败 (损坏帧 / 容器元数据帧数虚报 / VFR): 停在此处但不静默 —
+                    # 尾部少解码几帧通常无害 (forward 追踪的种子帧在窗首)。是否需硬失败
+                    # (种子帧落进未解码区 / 一帧都没解出) 由调用方 propagate 判定。
+                    logger.warning(
+                        "sam3_video window [%d,%d] decode truncated: requested %d frames "
+                        "but only %d decoded from %s",
+                        lo, hi, hi - lo + 1, written, video_path[:80],
+                    )
                     break
                 cv2.imwrite(os.path.join(out_dir, f"{src - lo}.jpg"), frame)
                 if frame_w == 0 or frame_h == 0:
@@ -213,12 +231,13 @@ class SAM3MultiplexVideoTracker:
             cap.release()
 
     @staticmethod
-    def _obj_mask(outputs: dict, obj_id: int) -> np.ndarray | None:
+    def _obj_mask(outputs: dict, obj_id: int, *, frame_index: int) -> np.ndarray | None:
         """从某帧 multiplex 输出取指定 obj_id 的二值 mask (HxW bool); 无则 None。"""
         obj_ids = _to_numpy(outputs.get("out_obj_ids"))
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None:
             return None
+        _assert_masks_align(masks, obj_ids, frame_index=frame_index)
         for idx, oid in enumerate(obj_ids.tolist()):
             if int(oid) == obj_id:
                 return masks[idx] > 0
@@ -234,6 +253,7 @@ class SAM3MultiplexVideoTracker:
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None or len(obj_ids) == 0:
             return None
+        _assert_masks_align(masks, obj_ids)
         probs = _to_numpy(outputs.get("output_probs"))
         if seed_bbox is None or not any(seed_bbox.get(k) for k in ("w", "h")):
             # 无种子: 最高分 / 首个
@@ -305,6 +325,23 @@ def _patch_init_state_kwargs(predictor: Any) -> None:
 
 def output_geometry_type(output_geometry: str) -> str:
     return "polygon" if output_geometry == "polygon" else "bbox"
+
+
+def _assert_masks_align(
+    masks: np.ndarray, obj_ids: np.ndarray, *, frame_index: int | None = None
+) -> None:
+    """校验 vendor multiplex 输出的 masks 与 obj_ids 长度一致。
+
+    不一致时抛带上下文的 ValueError (经 main.py 的 ValueError handler → 400 + detail),
+    避免下游按 obj_ids 索引 masks 时裸抛 IndexError → unhandled 500。种子帧无帧号
+    (frame_index=None), 逐帧传播时带源帧号定位是哪一帧的 vendor 输出坏了。
+    """
+    if len(masks) != len(obj_ids):
+        where = "seed frame" if frame_index is None else f"frame {frame_index}"
+        raise ValueError(
+            f"sam3_video {where} shape mismatch: "
+            f"{len(obj_ids)} obj_ids vs {len(masks)} masks"
+        )
 
 
 def _to_numpy(x: Any) -> np.ndarray | None:
