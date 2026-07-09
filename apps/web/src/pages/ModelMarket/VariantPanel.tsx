@@ -123,6 +123,9 @@ export function VariantPanel({
   }, [videoPool?.loaded_keys, videoPool?.loaded_variants]);
   // 视频 SAM 候选: 优先复用图片侧 enum, 否则用 SAM2 视频变体常量.
   const videoSamEnum = samEnum.length > 0 ? samEnum : SAM2_VIDEO_VARIANTS;
+  // v0.21.x · 单档视频模型 (sam3): 无 SAM 变体维度 (无 sam_variant enum), 视频预热是
+  // 单按钮、无下拉; gsam2 等有 sam_variant.enum 的仍走 SAM 下拉。
+  const videoSingleModel = supportsVideo && samEnum.length === 0;
 
   const [sam, setSam] = useState("");
   const [dino, setDino] = useState("");
@@ -152,7 +155,9 @@ export function VariantPanel({
   const isSelectedLoaded = loaded.some(
     (v) => v.sam_variant === sam && v.dino_variant === dino,
   );
-  const isVideoSelectedLoaded = videoLoaded.includes(videoSam);
+  const isVideoSelectedLoaded = videoSingleModel
+    ? videoLoaded.length > 0
+    : videoLoaded.includes(videoSam);
 
   // v0.18.17 · 通用单变体后端 (如 sam3): 有 generic variant 目录但无 gsam2 sam/dino 轴, 单池单变体。
   // pool key 原样即变体字符串 (如 "sam3"), 不走 gsam2 sam=X/dino=Y 解析 → 单独走 raw-key 展示/预热。
@@ -394,7 +399,7 @@ export function VariantPanel({
                   <table className={TABLE_CLASS}>
                     <thead>
                       <tr>
-                        <th>SAM 变体</th>
+                        <th>{videoSingleModel ? "视频权重" : "SAM 变体"}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -413,25 +418,28 @@ export function VariantPanel({
                 </div>
               )}
               <div className={WARM_ROW_CLASS}>
-                <label className={FIELD_CLASS}>
-                  <span className={FIELD_LABEL_CLASS}>SAM</span>
-                  <select
-                    value={videoSam}
-                    onChange={(e) => setVideoSam(e.target.value)}
-                    className={SELECT_CLASS}
-                  >
-                    {videoSamEnum.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {/* 单档视频模型 (sam3): 无 SAM 变体, 单按钮预热; 否则 SAM 下拉 (gsam2)。 */}
+                {!videoSingleModel && (
+                  <label className={FIELD_CLASS}>
+                    <span className={FIELD_LABEL_CLASS}>SAM</span>
+                    <select
+                      value={videoSam}
+                      onChange={(e) => setVideoSam(e.target.value)}
+                      className={SELECT_CLASS}
+                    >
+                      {videoSamEnum.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <Button
                   size="sm"
                   onClick={() => onWarm({
                     taskType: "video",
-                    variants: videoSam ? { sam_variant: videoSam } : {},
+                    variants: videoSingleModel || !videoSam ? {} : { sam_variant: videoSam },
                   })}
                   disabled={isWarming}
                 >

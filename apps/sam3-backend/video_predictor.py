@@ -16,8 +16,8 @@
     响应 result 每条: {frame_index(源帧号), geometry:{type:"polygon"|"bbox", ...},
                         confidence, outside}, 坐标归一化到 [0,1]。
 
-显存现实 (单卡 8GB): 图像 sam3.pt(~5.8GB) 与视频 multiplex(~3.2GB) 无法并存,
-main.py 采「互斥常驻」——加载视频前先卸载图像模型 (见 _ensure_video_tracker_loaded)。
+显存: 图像 sam3.pt(~5.8GB) + 视频 multiplex(~3.2GB) 约 9GB。v0.21.x 起取消二者互斥常驻
+(24GB 卡容得下并存), 各自独立懒加载 / idle 卸载; 小显存部署若不需视频设 SAM3_DOWNLOAD_VIDEO=0。
 """
 
 from __future__ import annotations

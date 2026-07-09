@@ -108,8 +108,10 @@ _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION
 _last_request_at: float = time.monotonic()
 _predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
-# v0.21.19 §PR3 · sam3.1_multiplex 视频追踪模型 (单档, 无变体)。与图像模型**互斥常驻**
-# (单卡 8GB 容不下二者): 加载视频前先卸图像, 反之亦然。见 _ensure_video_tracker_loaded。
+# v0.21.19 §PR3 · sam3.1_multiplex 视频追踪模型 (单档, 无变体)。
+# v0.21.x · 取消与图像模型的互斥常驻: 24GB 卡容得下 image(~5.8GB) + video(~3.2GB) 并存,
+# 二者各自独立懒加载 / idle 卸载, 加载其一不再卸另一。小显存部署若不需视频,
+# 设 SAM3_DOWNLOAD_VIDEO=0 不加载视频模型即可。
 _video_tracker: SAM3MultiplexVideoTracker | None = None
 _video_lock = asyncio.Lock()
 _video_last_request_at: float = time.monotonic()
@@ -143,8 +145,7 @@ async def _ensure_predictor_loaded(
         if count_as_hit:
             _pool_hit_count += 1
         return _predictor, True, None
-    # v0.21.19 §PR3 · 冷加载图像模型前先卸视频追踪模型 (互斥常驻)。锁外完成, 避免锁序反转。
-    await _unload_video_tracker(reason="swap to image model")
+    # v0.21.x · 取消互斥: 加载图像模型不再卸视频追踪模型, 二者可并存常驻。
     async with _predictor_lock:
         if _predictor is not None:
             # 锁内 double-check: 等锁期间别的协程可能已加载完.
@@ -217,17 +218,11 @@ async def _unload_video_tracker(reason: str) -> bool:
 
 
 async def _ensure_video_tracker_loaded() -> SAM3MultiplexVideoTracker:
-    """懒加载视频追踪模型。**先卸图像模型**腾显存 (单卡 8GB 二者互斥)。
-
-    互斥卸载在获取 _video_lock **之前**完成 (acquire+release _predictor_lock 全程结束),
-    与 _ensure_predictor_loaded 的对称卸载不嵌套加锁, 杜绝锁序反转死锁。
-    """
+    """懒加载视频追踪模型。v0.21.x 起与图像模型可并存常驻 (取消互斥), 加载视频不再卸图像。"""
     global _video_tracker, _video_last_request_at
     if _video_tracker is not None:
         _video_last_request_at = time.monotonic()
         return _video_tracker
-    # 互斥: 加载视频前先卸载图像模型 (释放 ~5.8GB)。锁外完成。
-    await _unload_predictor(reason="swap to video tracker")
     async with _video_lock:
         if _video_tracker is not None:
             _video_last_request_at = time.monotonic()
@@ -265,6 +260,19 @@ def _pool_status() -> dict[str, Any]:
         "current_size": 1 if _predictor is not None else 0,
         "loaded_keys": loaded_keys,
         "last_evict": last_evict,
+    }
+
+
+def _video_pool_status() -> dict[str, Any]:
+    """v0.21.x · 视频追踪池状态 (sam3.1_multiplex 单档, cap=1)。与图像池独立、可并存常驻;
+    前端「视频追踪变体」区据此显示已加载 / 预热。key 用 tracker 名 sam3_video。"""
+    loaded = _video_tracker is not None
+    return {
+        "cap": 1,
+        "current_size": 1 if loaded else 0,
+        "loaded_keys": [{"key": "sam3_video"}] if loaded else [],
+        "loaded_variants": ["sam3_video"] if loaded else [],
+        "active_sessions": _video_tracker.active_sessions if loaded else 0,
     }
 
 
@@ -384,6 +392,8 @@ def health() -> dict:
         "loaded": _predictor is not None,  # 老字段, 兼容前端 AdminDashboard
         # v0.14.14: 协议 §4.3 PoolStatus 统一格式; sam3 cap 永远 1.
         "pool": _pool_status(),
+        # v0.21.x · 视频追踪池 (与图像池并存常驻); 前端据此显示视频追踪已加载 / 预热。
+        "video_pool": _video_pool_status(),
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
@@ -631,17 +641,30 @@ async def reload() -> dict:
 
 
 class WarmupRequest(BaseModel):
-    """sam3 图像模型单档; variants 可选 {model_variant: "sam3"}, 仅校验."""
+    """图像: variants 可选 {model_variant: "sam3"}, 仅校验。
+    视频: task="tracker" 预热视频追踪模型 (sam3.1_multiplex, 单档无变体)。"""
 
     variants: dict[str, str] = {}
+    # v0.21.x · 平台按 taskType=video 下发 {task:"tracker"} → 预热视频追踪模型。
+    task: str | None = None
 
 
 @app.post("/warmup", response_model=WarmupResponse)
 async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
-    """v0.14.14: 加载 SAM 3 权重到 GPU 不跑 forward.
+    """v0.14.14: 加载权重到 GPU 不跑 forward。
 
-    sam3 单档, variants.model_variant 必须等于 sam3 (或缺省). 重复预热返回 cache_hit=true.
+    默认预热图像模型 (SAM 3 单档, variants.model_variant 必须等于 sam3 或缺省);
+    task="tracker" 预热视频追踪模型 (sam3.1_multiplex)。v0.21.x 起图像 / 视频并存,
+    预热其一不再卸另一。重复预热返回 cache_hit=true。
     """
+    if req is not None and req.task == "tracker":
+        loaded_before = _video_tracker is not None
+        t0 = time.monotonic()
+        await _ensure_video_tracker_loaded()
+        load_ms = None if loaded_before else int((time.monotonic() - t0) * 1000)
+        return WarmupResponse(
+            ok=True, model_load_ms=load_ms, cache_hit=loaded_before, evicted=None
+        )
     if req is not None and req.variants:
         mv = req.variants.get("model_variant")
         if mv is not None and mv != MODEL_VERSION:
