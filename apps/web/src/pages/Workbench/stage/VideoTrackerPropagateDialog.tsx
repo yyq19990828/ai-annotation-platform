@@ -125,6 +125,8 @@ interface VideoTrackerPropagateDialogProps {
   supportedTrackers?: string[];
   /** v0.21.19 · text-driven tracker 子集; 选中其中之一时显 text 框。缺省时 sam3_video 静态视为 text-driven。 */
   textDrivenTrackers?: string[];
+  /** polyline 轨迹传播暂不支持 (后端只识别 polygon/bbox track); 为真时灰置传播动作。 */
+  isPolylineTrack?: boolean;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
@@ -145,6 +147,7 @@ export function VideoTrackerPropagateDialog({
   preferNonMockModel = false,
   supportedTrackers,
   textDrivenTrackers,
+  isPolylineTrack = false,
   submitting,
   onCancel,
   onSubmit,
@@ -269,6 +272,10 @@ export function VideoTrackerPropagateDialog({
   if (!open) return null;
 
   const handleSubmit = async () => {
+    if (isPolylineTrack) {
+      setError("polyline 轨迹传播暂不支持");
+      return;
+    }
     if (range.from > range.to) {
       setError("起止帧无效");
       return;
@@ -322,6 +329,15 @@ export function VideoTrackerPropagateDialog({
             ✕
           </button>
         </div>
+
+        {isPolylineTrack && (
+          <div
+            data-testid="tracker-polyline-unsupported"
+            className="text-status-danger text-xs"
+          >
+            polyline 轨迹传播暂不支持
+          </div>
+        )}
 
         <label className="grid gap-1 text-muted-foreground text-xs">
           方向
@@ -455,7 +471,8 @@ export function VideoTrackerPropagateDialog({
           <Button
             size="sm"
             onClick={handleSubmit}
-            disabled={submitting || selectedModelDisabled}
+            disabled={submitting || selectedModelDisabled || isPolylineTrack}
+            title={isPolylineTrack ? "polyline 轨迹传播暂不支持" : undefined}
           >
             {submitting ? "发起中…" : "发起传播"}
           </Button>

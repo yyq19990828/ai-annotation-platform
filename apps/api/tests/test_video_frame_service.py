@@ -854,6 +854,73 @@ async def test_video_tracker_job_requires_current_segment_lock(
     assert resp.status_code == 409
 
 
+async def test_video_tracker_job_rejects_polyline_track(
+    db_session, httpx_client_bound, project_admin, annotator
+):
+    # polyline 轨迹传播暂不支持: runner 会把它静默改写成空 bbox 轨迹, 故入口必须 400 拒绝
+    # (且早于段锁校验, 无需 claim segment 即返回 400)。
+    owner, _ = project_admin
+    user, token = annotator
+    task, item = await _make_video_task(db_session, owner.id)
+    batch = TaskBatch(
+        project_id=task.project_id,
+        dataset_id=item.dataset_id,
+        display_id=f"B-VTP-{uuid.uuid4().hex[:6]}",
+        name="Video tracker batch",
+        status="active",
+        annotator_id=user.id,
+        assigned_user_ids=[str(user.id)],
+    )
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=task.project_id,
+                user_id=user.id,
+                role="annotator",
+                assigned_by=owner.id,
+            ),
+            batch,
+        ]
+    )
+    await db_session.flush()
+    task.batch_id = batch.id
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_track_polyline",
+        class_name="car",
+        geometry={
+            "type": "video_track_polyline",
+            "track_id": "poly-1",
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "points": [[0.1, 0.1], [0.3, 0.2], [0.5, 0.1]],
+                    "source": "manual",
+                }
+            ],
+            "outside": [],
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}:propagate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "from_frame": 0,
+            "to_frame": 12,
+            "model_key": "mock_bbox",
+            "direction": "forward",
+        },
+    )
+
+    assert resp.status_code == 400, resp.text
+    assert "polyline" in resp.json()["detail"]
+
+
 async def _make_committed_video_item(maker, *, frame_count: int = 90):
     """并发回归测试脚手架: 用独立连接建 user→dataset→item 并真实 commit, 返回
     (item_id, dataset_id, user_id)。共享的 db_session 是单连接 SAVEPOINT 隔离, 表达不了

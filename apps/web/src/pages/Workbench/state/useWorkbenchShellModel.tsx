@@ -79,7 +79,7 @@ import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSideba
 import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
-import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isVideoBbox, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
@@ -3088,6 +3088,8 @@ export function useWorkbenchShellModel({
     // v0.21.19 · 能力协商: backend 声明的 tracker 列表, 用于灰置未声明的 text-driven tracker (sam3_video)。
     supportedTrackers: mlCapabilities.capability?.supported_trackers,
     textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
+    // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
+    isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: () => setPropagateDialog(null),
     onSubmit: handlePropagateSubmit,

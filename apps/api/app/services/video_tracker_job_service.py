@@ -21,6 +21,7 @@ from app.schemas.video_tracker_job import (
 from app.services.scheduler import is_privileged_for_project
 from app.services.video_frame_service import VideoContext
 from app.services.video_segment_service import ensure_segments
+from app.services.video_tracks import is_polyline_track
 
 
 log = logging.getLogger(__name__)
@@ -147,7 +148,11 @@ async def create_tracker_job(
     user: User,
 ) -> VideoTrackerJobOut:
     _assert_frame_range(ctx, payload.from_frame, payload.to_frame)
-    await _load_annotation(db, task, annotation_id)
+    annotation = await _load_annotation(db, task, annotation_id)
+    # polyline 轨迹传播暂不支持: runner 只识别 polygon/bbox track, polyline 会命中 bbox
+    # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
+    if is_polyline_track(annotation.geometry or {}):
+        raise HTTPException(status_code=400, detail="polyline 轨迹传播暂不支持")
     privileged = await _is_privileged(db, task, user)
     segment_id = await _assert_segment_lock(
         db, ctx, payload, user, privileged=privileged
