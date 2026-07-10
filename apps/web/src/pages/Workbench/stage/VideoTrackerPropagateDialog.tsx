@@ -38,16 +38,18 @@ function presetLabel(value: RangePresetValue, step: number): string {
   return step > 1 ? `${n} 格 (≈${n * step} 帧)` : `${n} 帧`;
 }
 
+// v0.21.27 · U-pvs-3 · U3: label 用人类可读名 + 能力一句话 (原为裸 key, 对标注员无意义)。
+// value 保持不变 (提交/记忆/测试均按 value)。
 export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?: string }> = [
-  { value: "mock_bbox", label: "mock_bbox", note: "测试用 (不依赖 ML backend)" },
-  { value: "sam2_video", label: "sam2_video", note: "需项目绑定 ML backend" },
-  { value: "sam3_video", label: "sam3_video", note: "文本检测追踪 · 需项目绑定 ML backend" },
+  { value: "mock_bbox", label: "mock · 测试框", note: "测试用 (不依赖 ML backend)" },
+  { value: "sam2_video", label: "SAM2 · 框追踪", note: "种子框跨帧追踪 · 需项目绑定 ML backend" },
+  { value: "sam3_video", label: "SAM3 · 文本检测追踪", note: "按文本每帧检测 · 需项目绑定 ML backend" },
   // v0.21.26 · 阶段 B-pvs · SAM3 交互追踪 (点/框 seed + memory 跨帧, 非文本驱动)。与
   // sam2_video 同为种子传播 (不显 text 框); 需绑定声明该 tracker 的 sam3 backend。
   {
     value: "sam3_video_interactive",
-    label: "sam3_video_interactive",
-    note: "点/框交互追踪 · 需项目绑定 sam3 backend",
+    label: "SAM3 · 点框交互追踪",
+    note: "点/框种子 + memory 跨帧 · 需项目绑定 sam3 backend",
   },
 ];
 
@@ -59,6 +61,26 @@ const SAM_VARIANTS: Array<{ value: string; label: string }> = [
   { value: "base_plus", label: "base_plus" },
   { value: "large", label: "large" },
 ];
+
+// v0.21.27 · U-pvs-3 · U1: 方向标签消歧。forward/backward 用「更晚/更早帧」+ 箭头,
+// 避免「向后追踪」被误读成倒放; title 补全语义。
+const DIRECTION_META: Record<
+  VideoTrackerDirection,
+  { label: string; title: string }
+> = {
+  forward: { label: "更晚帧 →", title: "向后追踪: 传播到更晚 (时间轴更右) 的帧" },
+  backward: { label: "← 更早帧", title: "向前追踪: 传播到更早 (时间轴更左) 的帧" },
+  bidirectional: { label: "⇆ 双向", title: "双向: 同时向更早与更晚帧传播" },
+};
+
+// v0.21.27 · U-pvs-3 · U6: 分窗窗口数粗估。窗口尺寸镜像后端默认 (sam3 系 16 / 其余 300,
+// 见 VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES / VIDEO_TRACKER_WINDOW_SIZE_FRAMES); 后端 env
+// 可覆盖, 故仅作「会分多窗」的粗略提示, 不做精确耗时。
+function estimateWindowCount(frameSpan: number, modelKey: string): number {
+  const windowSize = modelKey.startsWith("sam3") ? 16 : 300;
+  const frames = Math.max(1, frameSpan + 1);
+  return Math.max(1, Math.ceil(frames / windowSize));
+}
 
 const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
   rangePreset: "30",
@@ -294,6 +316,9 @@ export function VideoTrackerPropagateDialog({
   // 自定义范围 (来自时间轴刷选) 优先; 否则用预设/方向派生的范围。
   const range = customRange ?? derivedRange;
 
+  // v0.21.27 · U-pvs-3 · U6: 当前范围粗估窗口数 (>1 时提示大范围将分多窗处理)。
+  const estimatedWindows = estimateWindowCount(range.to - range.from, modelKey);
+
   // v0.21.14 WS3 · 把当前影响范围上报给时间轴高亮; 关闭 / 卸载时清空。
   useEffect(() => {
     if (!open) {
@@ -385,18 +410,20 @@ export function VideoTrackerPropagateDialog({
               <button
                 key={d}
                 type="button"
+                data-testid={`tracker-direction-${d}`}
+                title={DIRECTION_META[d].title}
                 onClick={() => {
                   setDirection(d);
                   setCustomRange(null);
                 }}
                 className={cn(
-                  "cursor-pointer px-1.5 py-1 text-xs",
+                  "cursor-pointer whitespace-nowrap px-1.5 py-1 text-xs",
                   direction === d
                     ? "bg-status-info-soft text-foreground"
                     : "bg-muted text-muted-foreground",
                 )}
               >
-                {d === "forward" ? "向后" : d === "backward" ? "向前" : "双向"}
+                {DIRECTION_META[d].label}
               </button>
             ))}
           </div>
@@ -445,78 +472,6 @@ export function VideoTrackerPropagateDialog({
           </select>
         </div>
 
-        {/* 种子 (点) — 仅 PVS 交互追踪。在画布点目标落正点 (Alt 负点) → prompt.seeds。 */}
-        {modelKey === "sam3_video_interactive" && (
-          <>
-            {TOOLBAR_DIVIDER}
-            <div className="flex items-center gap-1.5">
-              <span className={TOOLBAR_FIELD_LABEL_CLASS}>种子</span>
-              <button
-                type="button"
-                onClick={onToggleSeedCollecting}
-                disabled={submitting}
-                data-testid="tracker-seed-toggle"
-                className={cn(
-                  "cursor-pointer rounded-sm border px-1.5 py-1 text-xs text-foreground",
-                  seedCollecting
-                    ? "border-violet-600 bg-status-info-soft dark:border-violet-400"
-                    : "border-border bg-muted",
-                )}
-              >
-                {seedCollecting ? "落点中…" : "落点选目标"}
-              </button>
-              {seedPointCount > 0 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={onNewSeedTarget}
-                    disabled={submitting}
-                    data-testid="tracker-seed-new-target"
-                    title="后续落点归入新目标 (各成一条轨迹)"
-                    className="cursor-pointer rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
-                  >
-                    + 新目标
-                  </button>
-                  <span
-                    data-testid="tracker-seed-count"
-                    className="text-2xs text-foreground"
-                  >
-                    已落 {seedPointCount} 点
-                    {seedTargetCount > 1 ? ` · ${seedTargetCount} 目标` : ""}
-                    {seedFrameCount > 1 ? ` · ${seedFrameCount} 帧` : ""}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={onClearSeeds}
-                    disabled={submitting}
-                    className="cursor-pointer border-0 bg-transparent text-2xs text-muted-foreground underline"
-                  >
-                    清空
-                  </button>
-                </>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* 文本 — text-driven tracker (sam3_video) */}
-        {textDrivenActive && (
-          <>
-            {TOOLBAR_DIVIDER}
-            <div className="flex items-center gap-1.5">
-              <span className={TOOLBAR_FIELD_LABEL_CLASS}>文本</span>
-              <input
-                type="text"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="如: the red car"
-                data-testid="tracker-text-input"
-                className="w-32 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground"
-              />
-            </div>
-          </>
-        )}
-
         {/* 模型尺寸 (combobox 2) — 非 mock */}
         {modelKey !== "mock_bbox" && (
           <>
@@ -564,6 +519,76 @@ export function VideoTrackerPropagateDialog({
         </div>
       </div>
 
+      {/* v0.21.27 · U-pvs-3 · #4 · 第二行: 种子/文本 (仅交互/文本驱动)。独立成行 →
+          宽度随落点计数/文本变化时不再挤动主行的「发起传播」等动作按钮; 跨 backend
+          行数可预测 (有此行 iff 交互或文本驱动)。二者互斥 (交互非 text-driven)。 */}
+      {(modelKey === "sam3_video_interactive" || textDrivenActive) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {modelKey === "sam3_video_interactive" && (
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>种子</span>
+              <button
+                type="button"
+                onClick={onToggleSeedCollecting}
+                disabled={submitting}
+                data-testid="tracker-seed-toggle"
+                className={cn(
+                  "cursor-pointer rounded-sm border px-1.5 py-1 text-xs text-foreground",
+                  seedCollecting
+                    ? "border-violet-600 bg-status-info-soft dark:border-violet-400"
+                    : "border-border bg-muted",
+                )}
+              >
+                {seedCollecting ? "落点中…" : "落点选目标"}
+              </button>
+              {seedPointCount > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onNewSeedTarget}
+                    disabled={submitting}
+                    data-testid="tracker-seed-new-target"
+                    title="后续落点归入新目标 (各成一条轨迹)"
+                    className="cursor-pointer rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
+                  >
+                    + 新目标
+                  </button>
+                  <span
+                    data-testid="tracker-seed-count"
+                    className="text-2xs text-foreground"
+                  >
+                    已落 {seedPointCount} 点
+                    {seedTargetCount > 1 ? ` · ${seedTargetCount} 目标` : ""}
+                    {seedFrameCount > 1 ? ` · ${seedFrameCount} 帧` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onClearSeeds}
+                    disabled={submitting}
+                    className="cursor-pointer border-0 bg-transparent text-2xs text-muted-foreground underline"
+                  >
+                    清空
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {textDrivenActive && (
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>文本</span>
+              <input
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="如: the red car"
+                data-testid="tracker-text-input"
+                className="w-32 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 次行: 范围预览 + 提示 + 警告 + 错误 (折行, 对齐 InteractiveToolBar 的次行) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-muted-foreground">
         <span className="mono">
@@ -584,13 +609,21 @@ export function VideoTrackerPropagateDialog({
           )}
         </span>
         <span>按住 Shift 在时间轴拖选可圈定范围</span>
-        {modelKey === "sam3_video_interactive" && (
-          <span>
-            点目标落正点 (Alt 负点); 「+新目标」一次追多个目标各成轨迹; 导航到别帧再落点 =
-            纠偏 (多帧累积); 有落点以点驱动 PVS, 否则用选中轨迹框
+        {/* v0.21.27 · U-pvs-3 · U6: 大范围分窗提示 (>1 窗)。 */}
+        {estimatedWindows > 1 && (
+          <span data-testid="tracker-window-estimate">
+            ≈{estimatedWindows} 窗 (大范围分窗处理 · 粗估)
           </span>
         )}
-        {textDrivenActive && <span>文本驱动: 按描述在每帧检测目标</span>}
+        {/* v0.21.27 · U-pvs-3 · U5 (+ #3 语义兜底): 多目标感知按模型分述。 */}
+        {modelKey === "sam3_video_interactive" && (
+          <span>
+            点目标落正点 (Alt 负点); obj1 回填选中轨迹, 「+新目标」各成新轨迹; 导航别帧再落点 =
+            多帧纠偏; 无落点则用选中轨迹框
+          </span>
+        )}
+        {modelKey === "sam2_video" && <span>框种子: 跟随所选轨迹的单个目标</span>}
+        {textDrivenActive && <span>文本驱动: 按描述在每帧自动发现并追踪多个目标</span>}
         {selectedModelDisabled && (
           <span className="text-status-caution">
             该 tracker 需项目绑定并由 backend 声明支持 (未声明, 暂不可用)

@@ -20,7 +20,7 @@ describe("VideoKeyframesPropagateDialog", () => {
   it("选 向前 + 勾选覆盖 + 改帧数 后提交", () => {
     const onSubmit = vi.fn();
     render(<VideoKeyframesPropagateDialog open frameIndex={20} onCancel={vi.fn()} onSubmit={onSubmit} />);
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("keyframes-direction-backward"));
     fireEvent.click(screen.getByText("5"));
     fireEvent.click(screen.getByLabelText("覆盖目标帧已有关键帧"));
     fireEvent.click(screen.getByText("复制"));
@@ -60,7 +60,7 @@ describe("VideoKeyframesPropagateDialog", () => {
     render(
       <VideoKeyframesPropagateDialog open frameIndex={100} samplingStep={5} onCancel={vi.fn()} onSubmit={onSubmit} />,
     );
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("keyframes-direction-backward"));
     fireEvent.click(screen.getByText("5"));
     // count=5 格 · step=5 → 源帧跨度 25, 向前: F100 → F75, G20 → G15
     expect(screen.getByText("G20 → G15 (F100 → F75)")).toBeTruthy();
@@ -79,7 +79,7 @@ describe("VideoKeyframesPropagateDialog", () => {
         onSubmit={onSubmit}
       />,
     );
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("keyframes-direction-backward"));
     fireEvent.click(screen.getByText("30"));
     fireEvent.click(screen.getByLabelText("覆盖目标帧已有关键帧"));
     fireEvent.click(screen.getByText("复制"));
@@ -161,7 +161,7 @@ describe("VideoKeyframesPropagateDialog", () => {
     );
 
     expect(screen.getByText("F5 → F15")).toBeTruthy();
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("keyframes-direction-backward"));
     fireEvent.click(screen.getByTestId("video-keyframes-propagate-dialog"));
 
     expect(onCancel).toHaveBeenCalled();

@@ -83,7 +83,7 @@ describe("VideoTrackerPropagateDialog", () => {
     // 默认 forward + 30 帧 → F50 → F80。
     expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 50, endFrame: 80 });
     // 切「向前」→ F20 → F50。
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 20, endFrame: 50 });
     // 关闭 → 清空。
     rerender(
@@ -180,7 +180,7 @@ describe("VideoTrackerPropagateDialog", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} frameIndex={500} samplingStep={10} onSubmit={onSubmit} />,
     );
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     // 30 格 · step=10 → 300 帧, backward: F200 → F500
     expect(screen.getByText("G20 → G50 (F200 → F500)")).toBeTruthy();
     fireEvent.click(screen.getByText("发起传播"));
@@ -209,7 +209,7 @@ describe("VideoTrackerPropagateDialog", () => {
     );
 
     fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "60" } });
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     fireEvent.change(screen.getAllByRole("combobox")[1], {
       target: { value: "sam2_video" },
     });
@@ -452,9 +452,33 @@ describe("VideoTrackerPropagateDialog", () => {
 
     expect(screen.getByText("F20 → F140")).toBeTruthy();
     expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("mock_bbox");
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     fireEvent.click(screen.getByTestId("video-tracker-propagate-dialog"));
 
     expect(window.localStorage.getItem(key)).toBe(JSON.stringify(remembered));
+  });
+
+  it("U1: 方向按钮用消歧标签 (更晚/更早帧) + testid", () => {
+    render(<VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId("tracker-direction-forward").textContent).toContain("更晚帧");
+    expect(screen.getByTestId("tracker-direction-backward").textContent).toContain("更早帧");
+    expect(screen.getByTestId("tracker-direction-bidirectional").textContent).toContain("双向");
+  });
+
+  it("U6: 大范围显示 ≈N 窗 (sam3 系 16 帧/窗), 小范围不显", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={0}
+        projectDefaultModel="sam3_video_interactive"
+        onSubmit={vi.fn()}
+        onToggleSeedCollecting={vi.fn()}
+      />,
+    );
+    // 默认 forward + 30 帧 → F0→F30 = 31 帧 → ceil(31/16) = 2 窗。
+    expect(screen.getByTestId("tracker-window-estimate").textContent).toContain("≈2 窗");
+    // 切到 10 帧 → F0→F10 = 11 帧 → ceil(11/16) = 1 窗 → 不显。
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "10" } });
+    expect(screen.queryByTestId("tracker-window-estimate")).toBeNull();
   });
 });
