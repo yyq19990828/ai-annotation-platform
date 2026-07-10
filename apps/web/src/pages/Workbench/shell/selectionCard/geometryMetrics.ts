@@ -218,6 +218,8 @@ export function geometryMetrics(
     case "video_bbox":
       return bboxMetrics(geometry.x, geometry.y, geometry.w, geometry.h, imgW, imgH);
     case "rotated_bbox":
+    // v0.21.26 · 视频单帧 OBB 与图片旋转框同指标 (cx/cy/w/h/angle 同形状)。
+    case "video_rotated_bbox":
       return rotatedMetrics(
         geometry.cx,
         geometry.cy,
@@ -228,10 +230,14 @@ export function geometryMetrics(
         imgH,
       );
     case "polygon":
+    // v0.21.26 · 视频单帧多边形复用图片多边形指标 (points + 可选 holes)。
+    case "video_polygon":
       return polygonMetrics(geometry.points, geometry.holes, imgW, imgH);
     case "multi_polygon":
       return multiPolygonMetrics(geometry.polygons, imgW, imgH);
     case "polyline":
+    // v0.21.26 · 视频单帧折线复用图片折线指标 (开路径, 不计闭合边)。
+    case "video_polyline":
       return polylineMetrics(geometry.points, imgW, imgH);
     case "keypoint":
       return keypointMetrics(geometry.points);

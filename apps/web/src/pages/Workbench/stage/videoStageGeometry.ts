@@ -101,6 +101,54 @@ export function isVideoPolylineTrack(
   return ann.geometry.type === "video_track_polyline";
 }
 
+/**
+ * v0.21.26 · 视频几何「联合」判定 helper —— 消除管理层(选中卡 / 右键菜单 / 删除)各处
+ * 散落的 bbox-only 硬编码。渲染层早已全类型覆盖(videoFrameViews),这些 helper 让选中后的
+ * 信息 / 操作也覆盖 polygon / polyline / 旋转框及其 track 变体。
+ */
+
+/** 任意视频单帧几何 (bbox / polygon / polyline / rotated_bbox), 非 track。 */
+export function isAnyVideoSingleFrame(ann: AnnotationResponse): boolean {
+  return isVideoBbox(ann) || isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
+}
+
+/** 单帧「点集 / 旋转」几何 (polygon / polyline / rotated_bbox), 排除 bbox (bbox 有专属交互)。 */
+export function isVideoPointsSingleFrame(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & {
+  geometry: VideoPolygonGeometry | VideoPolylineGeometry | VideoRotatedBboxGeometry;
+} {
+  return isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
+}
+
+/** 任意视频轨迹几何 (bbox / polygon / polyline track)。 */
+export function isAnyVideoTrack(ann: AnnotationResponse): boolean {
+  return isVideoTrack(ann) || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann);
+}
+
+/** 点集轨迹 (polygon / polyline track), 排除 bbox track (bbox track 有完整关键帧卡)。 */
+export function isVideoPointsTrack(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & {
+  geometry: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+} {
+  return isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann);
+}
+
+/** 点集轨迹在某帧的顶点 (精确关键帧 / 插值 / outside→最近关键帧兜底)。供简化点集轨迹卡指标。 */
+export function resolvePointsTrackAtFrame(
+  ann: AnnotationResponse & { geometry: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry },
+  frameIndex: number,
+): { points: [number, number][]; open: boolean } | null {
+  const open = ann.geometry.type === "video_track_polyline";
+  const resolved = open
+    ? resolveVideoPolylineTrackAtFrame(ann.geometry as VideoTrackPolylineGeometry, frameIndex)
+    : resolveVideoPolygonTrackAtFrame(ann.geometry as VideoTrackPolygonGeometry, frameIndex);
+  if (resolved) return { points: resolved.points, open };
+  const nearest = nearestPointsTrackKeyframe(ann.geometry, frameIndex);
+  return nearest ? { points: nearest.points, open } : null;
+}
+
 type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };
 type TrackIndex = {
   keyframes: VideoTrackKeyframe[];
