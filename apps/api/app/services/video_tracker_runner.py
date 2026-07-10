@@ -325,6 +325,113 @@ def _persist_tracker_results(
     return created
 
 
+# ---------- v0.21.28 · 候选/接受流: 暂存 + accept/discard ----------
+
+
+def _serialize_results(results: list[TrackerFrameResult]) -> list[dict]:
+    return [
+        {
+            "frame_index": r.frame_index,
+            "geometry": r.geometry,
+            "confidence": r.confidence,
+            "outside": r.outside,
+            "instance_id": r.instance_id,
+            "primary": r.primary,
+        }
+        for r in results
+    ]
+
+
+def _deserialize_results(rows: list[dict]) -> list[TrackerFrameResult]:
+    return [
+        TrackerFrameResult(
+            frame_index=int(row["frame_index"]),
+            geometry=row.get("geometry") or {},
+            confidence=row.get("confidence"),
+            outside=bool(row.get("outside", False)),
+            instance_id=row.get("instance_id"),
+            primary=bool(row.get("primary", False)),
+        )
+        for row in rows
+    ]
+
+
+def _stage_tracker_results(
+    job: VideoTrackerJob,
+    results: list[TrackerFrameResult],
+    grid_step: int,
+    output_geometry: str,
+) -> None:
+    """把逐帧结果暂存进 job.staged_result (候选), **不碰 annotation**。用户接受时反序列化后
+    走 _persist_tracker_results 落库。grid_step / output_geometry 一并存, 供 accept 复用同一
+    落库逻辑 (无需在 accept 时重新推导)。"""
+    job.staged_result = {
+        "results": _serialize_results(results),
+        "grid_step": grid_step,
+        "output_geometry": output_geometry,
+    }
+
+
+async def accept_tracker_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    publisher: TrackerEventPublisher = publish_tracker_event,
+) -> VideoTrackerJob | None:
+    """接受候选: 把 job.staged_result 应用到 annotation (主实例回填源 + 每个新 instance 各建
+    一条 track), status=ACCEPTED。幂等 (已 ACCEPTED 直接返回)。状态不符 / 无 staged → 原样返回。"""
+    job = await _load_job_for_update(db, job_id)
+    if job is None:
+        return None
+    if job.status == VideoTrackerJobStatus.ACCEPTED.value:
+        await db.commit()
+        return job
+    staged = job.staged_result or {}
+    rows = staged.get("results") or []
+    reviewable = job.status in (
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.CANCELLED.value,
+    )
+    if not reviewable or not rows:
+        await db.commit()
+        return job
+    annotation = await db.get(Annotation, job.annotation_id)
+    if annotation is None or not annotation.is_active:
+        raise ValueError("Annotation not found")
+    _persist_tracker_results(
+        db,
+        annotation,
+        job,
+        _deserialize_results(rows),
+        int(staged.get("grid_step", 1)),
+        staged.get("output_geometry", "bbox"),
+    )
+    job.status = VideoTrackerJobStatus.ACCEPTED.value
+    await db.commit()
+    await db.refresh(job)
+    await publisher(job.event_channel, _event(job, "job_accepted"))
+    return job
+
+
+async def discard_tracker_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    publisher: TrackerEventPublisher = publish_tracker_event,
+) -> VideoTrackerJob | None:
+    """丢弃候选: status=DISCARDED、清 staged_result, annotation 零改动。幂等。"""
+    job = await _load_job_for_update(db, job_id)
+    if job is None:
+        return None
+    if job.status != VideoTrackerJobStatus.DISCARDED.value:
+        job.status = VideoTrackerJobStatus.DISCARDED.value
+        job.staged_result = None
+    await db.commit()
+    await db.refresh(job)
+    await publisher(job.event_channel, _event(job, "job_discarded"))
+    return job
+
+
 async def _load_job_for_update(
     db: AsyncSession, job_id: uuid.UUID
 ) -> VideoTrackerJob | None:
@@ -472,10 +579,9 @@ async def run_tracker_job(
                     job.cancel_requested_at is not None
                     or job.status == VideoTrackerJobStatus.CANCELLED.value
                 ):
+                    # v0.21.28 · 取消也暂存部分结果 (候选), 用户可 accept 部分 / discard。
                     if results:
-                        _persist_tracker_results(
-                            db, annotation, job, results, grid_step, output_geometry
-                        )
+                        _stage_tracker_results(job, results, grid_step, output_geometry)
                     job.status = VideoTrackerJobStatus.CANCELLED.value
                     job.completed_at = job.completed_at or _now()
                     await db.commit()
@@ -517,20 +623,19 @@ async def run_tracker_job(
 
         await db.refresh(job)
         if job.cancel_requested_at is not None:
+            # v0.21.28 · 取消也暂存部分结果 (候选)。
             if results:
-                _persist_tracker_results(
-                    db, annotation, job, results, grid_step, output_geometry
-                )
+                _stage_tracker_results(job, results, grid_step, output_geometry)
             job.status = VideoTrackerJobStatus.CANCELLED.value
             job.completed_at = job.completed_at or _now()
             await db.commit()
             await publisher(job.event_channel, _event(job, "job_cancelled"))
             return job
 
-        _persist_tracker_results(
-            db, annotation, job, results, grid_step, output_geometry
-        )
-        job.status = VideoTrackerJobStatus.COMPLETED.value
+        # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
+        # PENDING_REVIEW = 追踪完、结果已暂存、committed annotations 未改。
+        _stage_tracker_results(job, results, grid_step, output_geometry)
+        job.status = VideoTrackerJobStatus.PENDING_REVIEW.value
         job.completed_at = _now()
         await db.commit()
         await db.refresh(job)

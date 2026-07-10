@@ -15,6 +15,12 @@ class VideoTrackerJobStatus(str, enum.Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # v0.21.28 · 候选/接受流: 追踪完成后结果暂存 (staged_result), 待用户接受/丢弃后才落库。
+    # PENDING_REVIEW = 追踪完、结果已暂存、annotation 未改; ACCEPTED = 已应用到 annotation;
+    # DISCARDED = 用户丢弃、annotation 零改动。CANCELLED 亦可携带 staged_result (部分结果可审)。
+    PENDING_REVIEW = "pending_review"
+    ACCEPTED = "accepted"
+    DISCARDED = "discarded"
 
 
 class VideoTrackerJob(Base):
@@ -61,6 +67,10 @@ class VideoTrackerJob(Base):
     from_frame: Mapped[int] = mapped_column(Integer, nullable=False)
     to_frame: Mapped[int] = mapped_column(Integer, nullable=False)
     prompt: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # v0.21.28 · 候选/接受流: 追踪完成后逐帧结果暂存于此 (list[{frame_index, geometry,
+    # confidence, outside, instance_id, primary}]), 用户接受时才 _persist_tracker_results
+    # 落库、丢弃时清空。缺省 None = 老直接落库路径 / 未产出结果。
+    staged_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     event_channel: Mapped[str] = mapped_column(String(160), nullable=False)
     celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cancel_requested_at: Mapped[datetime | None] = mapped_column(

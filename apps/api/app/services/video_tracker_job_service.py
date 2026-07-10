@@ -30,6 +30,10 @@ _TERMINAL_STATUSES = {
     VideoTrackerJobStatus.COMPLETED.value,
     VideoTrackerJobStatus.FAILED.value,
     VideoTrackerJobStatus.CANCELLED.value,
+    # v0.21.28 · 候选/接受: 追踪已完成 (待审/已接受/已丢弃) 均不可再「取消追踪」。
+    VideoTrackerJobStatus.PENDING_REVIEW.value,
+    VideoTrackerJobStatus.ACCEPTED.value,
+    VideoTrackerJobStatus.DISCARDED.value,
 }
 
 
@@ -227,6 +231,26 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
         row.completed_at = row.completed_at or now
     await db.commit()
     await db.refresh(row)
+    return _job_out(row)
+
+
+async def accept_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJobOut:
+    """v0.21.28 · 接受候选: 把 job.staged_result 应用到 annotation, status=ACCEPTED。"""
+    from app.services.video_tracker_runner import accept_tracker_job as _apply
+
+    row = await _apply(db, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    return _job_out(row)
+
+
+async def discard_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJobOut:
+    """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
+    from app.services.video_tracker_runner import discard_tracker_job as _discard
+
+    row = await _discard(db, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
     return _job_out(row)
 
 

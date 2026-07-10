@@ -82,7 +82,7 @@ async def _run_with_capture(db_session, super_admin, monkeypatch, *, direction: 
 
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
-    assert job.status == "completed"
+    assert job.status == "pending_review"
     return adapter, seeds
 
 
@@ -168,7 +168,7 @@ async def test_multi_instance_continuation_reseeds_each_instance(
 
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
-    assert job.status == "completed"
+    assert job.status == "pending_review"
 
     # 两窗 (0,1)(2,3); 首窗下发原始点种子。
     assert [(w[0], w[1]) for w in adapter.windows] == [(0, 1), (2, 3)]

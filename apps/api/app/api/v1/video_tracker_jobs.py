@@ -24,7 +24,9 @@ from app.schemas.video_tracker_job import TrackerJobStatus, VideoTrackerJobOut
 from app.services.audit import AuditAction, AuditService
 from app.services.scheduler import is_privileged_for_project
 from app.services.video_tracker_job_service import (
+    accept_tracker_job,
     cancel_tracker_job,
+    discard_tracker_job,
     get_tracker_job,
     tracker_job_out,
 )
@@ -59,12 +61,28 @@ class VideoTrackerJobCounts(BaseModel):
     completed: int = 0
     failed: int = 0
     cancelled: int = 0
+    # v0.21.28 · 候选/接受流状态计数。
+    pending_review: int = 0
+    accepted: int = 0
+    discarded: int = 0
 
 
 class VideoTrackerJobsResponse(BaseModel):
     items: list[VideoTrackerJobListItem]
     next_cursor: str | None = None
     counts: VideoTrackerJobCounts
+
+
+class VideoTrackerJobPreview(BaseModel):
+    """v0.21.28 · 候选预览: job 暂存的逐帧结果, 供前端在接受前渲染候选叠加。"""
+
+    job_id: uuid.UUID
+    status: TrackerJobStatus
+    annotation_id: uuid.UUID
+    # 每条 {frame_index, geometry, confidence, outside, instance_id, primary}。
+    results: list[dict] = []
+    grid_step: int = 1
+    output_geometry: str = "bbox"
 
 
 def _encode_cursor(created_at: datetime, job_id: uuid.UUID) -> str:
@@ -255,3 +273,76 @@ async def cancel_video_tracker_job(
     )
     await db.commit()
     return body
+
+
+@router.post("/{job_id}/accept", response_model=VideoTrackerJobOut)
+async def accept_video_tracker_job(
+    job_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.21.28 · 接受候选: 把 job 暂存结果落库 (主实例回填源轨迹 + 新轨迹建), status=ACCEPTED。"""
+    task, body = await _load_visible_job_task(db, job_id, current_user)
+    await _assert_can_cancel(db, task, body, current_user)
+    body = await accept_tracker_job(db, job_id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_TRACKER_JOB_ACCEPT,
+        target_type="video_tracker_job",
+        target_id=job_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "status": body.status},
+    )
+    await db.commit()
+    return body
+
+
+@router.post("/{job_id}/discard", response_model=VideoTrackerJobOut)
+async def discard_video_tracker_job(
+    job_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
+    task, body = await _load_visible_job_task(db, job_id, current_user)
+    await _assert_can_cancel(db, task, body, current_user)
+    body = await discard_tracker_job(db, job_id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_TRACKER_JOB_DISCARD,
+        target_type="video_tracker_job",
+        target_id=job_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "status": body.status},
+    )
+    await db.commit()
+    return body
+
+
+@router.get("/{job_id}/preview", response_model=VideoTrackerJobPreview)
+async def get_video_tracker_job_preview(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.21.28 · 候选预览: 返回 job 暂存的逐帧结果 (接受前渲染候选叠加用)。无 staged → 空。"""
+    row = await get_tracker_job(db, job_id)
+    task = await db.get(Task, row.task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    await _assert_task_visible(db, task, current_user)
+    staged = row.staged_result or {}
+    return VideoTrackerJobPreview(
+        job_id=row.id,
+        status=row.status,
+        annotation_id=row.annotation_id,
+        results=staged.get("results") or [],
+        grid_step=int(staged.get("grid_step", 1)),
+        output_geometry=staged.get("output_geometry", "bbox"),
+    )

@@ -19,6 +19,8 @@ from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStat
 from app.services.video_tracker_adapters import TrackerContext, TrackerFrameResult
 from app.services.video_tracker_runner import (
     _partition_results_by_instance,
+    accept_tracker_job,
+    discard_tracker_job,
     run_tracker_job,
 )
 
@@ -196,11 +198,35 @@ async def test_runner_lands_extra_instances_as_new_tracks(
     async def collect(_channel: str, _payload: dict) -> None:
         return None
 
+    from sqlalchemy import select
+
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
     await db_session.refresh(source)
 
-    assert job.status == "completed"
+    # v0.21.28 · 候选流: 完成 = 暂存待审, committed annotations 未改。
+    assert job.status == "pending_review"
+    assert job.staged_result and job.staged_result["results"]
+    assert source.annotation_type == "bbox"  # 源未回填 (仍原始单帧 bbox)
+    pre_extra = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id,
+                    Annotation.source == "ai_tracker",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert pre_extra == []  # 接受前无新轨迹
+
+    # 接受 → 落库。
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    await db_session.refresh(source)
+    assert job.status == "accepted"
 
     # 源 annotation: 主实例 obj0 回填, seed 帧 0 保留 manual, 1..3 prediction。
     assert source.annotation_type == "video_track_bbox"
@@ -211,8 +237,6 @@ async def test_runner_lands_extra_instances_as_new_tracks(
     assert source.geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(3.0)
 
     # 新发现的 obj1/obj2 各落一条 ai_tracker annotation。
-    from sqlalchemy import select
-
     rows = (
         (
             await db_session.execute(
@@ -275,12 +299,86 @@ async def test_runner_single_instance_no_extra_tracks(
     async def collect(_channel: str, _payload: dict) -> None:
         return None
 
+    from sqlalchemy import select
+
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
-    assert job.status == "completed"
+    assert job.status == "pending_review"
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "accepted"
+
+    extra = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id,
+                    Annotation.source == "ai_tracker",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert extra == []
+
+
+async def test_runner_discard_leaves_annotation_untouched(
+    db_session, super_admin, monkeypatch
+):
+    """v0.21.28 · 丢弃候选: 源 annotation 零改动, 无新轨迹, staged_result 清空。"""
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    source = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=source.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=3,
+        prompt={"text": "car"},
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    adapter = _MultiInstanceAdapter(extra_ids=["obj1"])
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter",
+        lambda _model_key: adapter,
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
 
     from sqlalchemy import select
 
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+
+    await discard_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    await db_session.refresh(source)
+
+    assert job.status == "discarded"
+    assert job.staged_result is None  # 清空
+    assert source.annotation_type == "bbox"  # 源零改动
     extra = (
         (
             await db_session.execute(

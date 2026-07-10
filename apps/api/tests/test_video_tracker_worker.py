@@ -11,7 +11,7 @@ from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.ml_client import PredictionResult
 from app.services.video_tracker_adapters import TrackerContext, TrackerFrameResult
-from app.services.video_tracker_runner import run_tracker_job
+from app.services.video_tracker_runner import accept_tracker_job, run_tracker_job
 
 
 async def _make_video_task(db_session, owner_id):
@@ -93,12 +93,10 @@ async def test_tracker_worker_completes_mock_bbox_job_and_writes_video_track(
     await db_session.refresh(job)
     await db_session.refresh(annotation)
 
-    assert job.status == "completed"
-    assert annotation.annotation_type == "video_track_bbox"
-    assert annotation.geometry["type"] == "video_track_bbox"
-    assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [0, 1, 2]
-    assert annotation.geometry["keyframes"][0]["source"] == "manual"
-    assert annotation.geometry["keyframes"][1]["source"] == "prediction"
+    # v0.21.28 · 候选流: 完成 = 暂存待审, annotation 未回填 (仍原始 bbox)。
+    assert job.status == "pending_review"
+    assert annotation.annotation_type == "bbox"
+    assert job.staged_result and job.staged_result["results"]
     assert [event["type"] for event in events] == [
         "job_started",
         "frame_result",
@@ -109,6 +107,20 @@ async def test_tracker_worker_completes_mock_bbox_job_and_writes_video_track(
         "job_progress",
         "job_completed",
     ]
+
+    # 接受 → 落库 (主实例回填源 annotation)。
+    async def _noop(_c: str, _p: dict) -> None:
+        return None
+
+    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await db_session.refresh(job)
+    await db_session.refresh(annotation)
+    assert job.status == "accepted"
+    assert annotation.annotation_type == "video_track_bbox"
+    assert annotation.geometry["type"] == "video_track_bbox"
+    assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [0, 1, 2]
+    assert annotation.geometry["keyframes"][0]["source"] == "manual"
+    assert annotation.geometry["keyframes"][1]["source"] == "prediction"
 
 
 async def test_tracker_worker_marks_unknown_model_failed(db_session, super_admin):
@@ -342,7 +354,16 @@ async def test_tracker_worker_preserves_partial_results_on_cancel(
     await db_session.refresh(job)
     await db_session.refresh(annotation)
 
+    # v0.21.28 · 候选流: 取消也**暂存**部分结果 (annotation 未回填), 可 accept 部分。
     assert job.status == "cancelled"
+    assert annotation.annotation_type == "video_bbox"  # 未回填 (仍原始类型)
+    assert job.staged_result and job.staged_result["results"]
+
+    async def _noop(_c: str, _p: dict) -> None:
+        return None
+
+    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await db_session.refresh(annotation)
     assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [0, 1]
     assert annotation.geometry["keyframes"][1]["source"] == "prediction"
 
@@ -433,10 +454,16 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     await db_session.refresh(job)
     await db_session.refresh(annotation)
 
-    assert job.status == "completed"
+    assert job.status == "pending_review"
     assert [(c["from_frame"], c["to_frame"]) for c in calls] == [(0, 1), (2, 3), (4, 4)]
     assert {c["type"] for c in calls} == {"video_tracker"}
     assert {c["model_key"] for c in calls} == {"sam2_video"}
+
+    async def _noop(_c: str, _p: dict) -> None:
+        return None
+
+    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await db_session.refresh(annotation)
     assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [
         0,
         1,
@@ -543,7 +570,13 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     await db_session.refresh(job)
     await db_session.refresh(annotation)
 
-    assert job.status == "completed"
+    assert job.status == "pending_review"
+
+    async def _noop(_c: str, _p: dict) -> None:
+        return None
+
+    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await db_session.refresh(annotation)
     assert annotation.geometry["outside"] == [
         {"from": 1, "to": 1, "source": "prediction"}
     ]
@@ -632,7 +665,8 @@ async def _run_seed_test(db_session, super_admin, monkeypatch, *, direction, out
 
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
-    assert job.status == "completed"
+    # v0.21.28 · 候选流: seed/续窗行为在 run 期间捕获 (adapter.seeds), 完成 = 暂存待审。
+    assert job.status == "pending_review"
     return adapter, annotation.geometry
 
 

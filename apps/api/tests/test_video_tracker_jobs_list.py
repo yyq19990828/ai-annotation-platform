@@ -110,6 +110,9 @@ async def test_list_empty(httpx_client, super_admin):
         "completed": 0,
         "failed": 0,
         "cancelled": 0,
+        "pending_review": 0,
+        "accepted": 0,
+        "discarded": 0,
     }
 
 
@@ -235,3 +238,96 @@ async def test_invalid_status_rejected(httpx_client, super_admin):
         "/api/v1/video-tracker-jobs?status=weird", headers=_bearer(token)
     )
     assert res.status_code == 422
+
+
+# ── v0.21.28 · 候选/接受端点 ──────────────────────────────────────────
+
+
+async def _make_staged_job(db, task, item, owner_id):
+    """建一个 PENDING_REVIEW 的 job + 源 annotation, 带 2 帧暂存结果。"""
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=owner_id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db.add(annotation)
+    await db.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=owner_id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
+        prompt={},
+        event_channel="video-tracker-job:test",
+        staged_result={
+            "results": [
+                {
+                    "frame_index": f,
+                    "geometry": {"type": "bbox", "x": float(f), "y": 0.0, "w": 5.0, "h": 5.0},
+                    "confidence": 1.0,
+                    "outside": False,
+                    "instance_id": None,
+                    "primary": False,
+                }
+                for f in (1, 2)
+            ],
+            "grid_step": 1,
+            "output_geometry": "bbox",
+        },
+    )
+    db.add(job)
+    await db.flush()
+    return job, annotation
+
+
+async def test_preview_and_accept_applies_staged(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job, annotation = await _make_staged_job(db_session, task, item, user.id)
+    await db_session.commit()
+
+    # preview → 返回暂存逐帧结果。
+    res = await httpx_client_bound.get(
+        f"/api/v1/video-tracker-jobs/{job.id}/preview", headers=_bearer(token)
+    )
+    assert res.status_code == 200, res.text
+    assert len(res.json()["results"]) == 2
+
+    # accept → 落库 + status accepted。
+    res = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/accept", headers=_bearer(token)
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "accepted"
+    await db_session.refresh(annotation)
+    assert annotation.annotation_type == "video_track_bbox"
+    frames = [kf["frame_index"] for kf in annotation.geometry["keyframes"]]
+    assert 1 in frames and 2 in frames
+
+
+async def test_discard_leaves_annotation_untouched(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job, annotation = await _make_staged_job(db_session, task, item, user.id)
+    await db_session.commit()
+
+    res = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/discard", headers=_bearer(token)
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "discarded"
+    await db_session.refresh(annotation)
+    assert annotation.annotation_type == "bbox"  # 源零改动
