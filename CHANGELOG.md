@@ -34,6 +34,8 @@
 
 ## [Unreleased]
 
+## [0.21.27] - 2026-07-11
+
 ### Added
 - **视频 AI 追踪改为「候选 → 接受 / 丢弃」流程（不再直接落库）**：此前发起 AI 追踪后结果直接写入标注，传错了（漂移 / 跟错目标）就污染了数据、只能手动回退。现在追踪结果先作为**候选**暂存——画布以候选框预览、顶部出现「AI 追踪候选 · N 帧」审阅条（含「接受」/「丢弃」），选中卡的 job 徽章显示「待接受」；**接受**才把结果落库（主实例回填选中轨迹、其余各成新轨迹）、**丢弃**则标注零改动。取消追踪也会把已跑的部分留作候选待审。底层：runner 完成 / 取消时把逐帧结果暂存到 `video_tracker_jobs.staged_result`（迁移 0117），新增 `POST /video-tracker-jobs/{id}/accept · /discard` 与 `GET /{id}/preview` 端点。**runner 改动需重启 celery worker 生效。**
 - **SAM 3 视频追踪模型支持预热**：`sam3-backend` 的 `POST /warmup` 现接受 `task="tracker"`，把视频追踪权重

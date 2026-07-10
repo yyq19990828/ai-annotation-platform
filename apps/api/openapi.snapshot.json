@@ -5629,7 +5629,7 @@
         "type": "object"
       },
       "CapabilityInstanceItem": {
-        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`backend_id` 是 ml_backend_registry.id, 供全局编排选择器落 pipeline_stages.ml_backend_id。\n`state` 保留 connected/error 等注册表状态; disconnected 已在 service 层过滤。\n`source` = \"env_only\" 表示 docker-compose 自带或运维 env 配的容器,\n          \"registered\" 表示项目级 ml_backends 表里有记录。\n`name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
+        "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`backend_id` 是 ml_backend_registry.id, 供全局编排选择器落 pipeline_stages.ml_backend_id。\n`state` 保留 connected/error 等注册表状态; disconnected 已在 service 层过滤。\n`source` 直接透传 ml_backend_registry.source: \"env\" = docker-compose/运维 env 配的容器\n          (启动钩子按 env URL 自动 upsert), \"manual\" = superadmin 在模型市场手动注册。\n`name` 是 backend 显示名 (ml_backend_registry.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
         "properties": {
           "backend_id": {
             "title": "Backend Id",
@@ -19933,6 +19933,11 @@
       },
       "VideoTrackerJobCounts": {
         "properties": {
+          "accepted": {
+            "default": 0,
+            "title": "Accepted",
+            "type": "integer"
+          },
           "cancelled": {
             "default": 0,
             "title": "Cancelled",
@@ -19943,9 +19948,19 @@
             "title": "Completed",
             "type": "integer"
           },
+          "discarded": {
+            "default": 0,
+            "title": "Discarded",
+            "type": "integer"
+          },
           "failed": {
             "default": 0,
             "title": "Failed",
+            "type": "integer"
+          },
+          "pending_review": {
+            "default": 0,
+            "title": "Pending Review",
             "type": "integer"
           },
           "queued": {
@@ -20088,7 +20103,10 @@
               "running",
               "completed",
               "failed",
-              "cancelled"
+              "cancelled",
+              "pending_review",
+              "accepted",
+              "discarded"
             ],
             "title": "Status",
             "type": "string"
@@ -20255,7 +20273,10 @@
               "running",
               "completed",
               "failed",
-              "cancelled"
+              "cancelled",
+              "pending_review",
+              "accepted",
+              "discarded"
             ],
             "title": "Status",
             "type": "string"
@@ -20298,13 +20319,71 @@
         "title": "VideoTrackerJobOut",
         "type": "object"
       },
+      "VideoTrackerJobPreview": {
+        "description": "v0.21.28 · 候选预览: job 暂存的逐帧结果, 供前端在接受前渲染候选叠加。",
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "grid_step": {
+            "default": 1,
+            "title": "Grid Step",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "output_geometry": {
+            "default": "bbox",
+            "title": "Output Geometry",
+            "type": "string"
+          },
+          "results": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "pending_review",
+              "accepted",
+              "discarded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "annotation_id"
+        ],
+        "title": "VideoTrackerJobPreview",
+        "type": "object"
+      },
       "VideoTrackerJobStatus": {
         "enum": [
           "queued",
           "running",
           "completed",
           "failed",
-          "cancelled"
+          "cancelled",
+          "pending_review",
+          "accepted",
+          "discarded"
         ],
         "title": "VideoTrackerJobStatus",
         "type": "string"
@@ -21008,7 +21087,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.21.24"
+    "version": "0.21.27"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -37247,6 +37326,153 @@
           }
         ],
         "summary": "Get Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}/accept": {
+      "post": {
+        "description": "v0.21.28 · 接受候选: 把 job 暂存结果落库 (主实例回填源轨迹 + 新轨迹建), status=ACCEPTED。",
+        "operationId": "accept_video_tracker_job_api_v1_video_tracker_jobs__job_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}/discard": {
+      "post": {
+        "description": "v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。",
+        "operationId": "discard_video_tracker_job_api_v1_video_tracker_jobs__job_id__discard_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discard Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}/preview": {
+      "get": {
+        "description": "v0.21.28 · 候选预览: 返回 job 暂存的逐帧结果 (接受前渲染候选叠加用)。无 staged → 空。",
+        "operationId": "get_video_tracker_job_preview_api_v1_video_tracker_jobs__job_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Tracker Job Preview",
         "tags": [
           "video-tracker-jobs"
         ]
