@@ -12,7 +12,12 @@ import {
 import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
 import { hasInput, INPUT_CROP_ID } from "@/api/capabilityInputs";
 import type { AttributeField } from "@/api/projects";
-import { tasksApi, type SecondaryInferenceRequest } from "@/api/tasks";
+import {
+  tasksApi,
+  type SecondaryInferenceRequest,
+  type SecondaryInferenceResponse,
+} from "@/api/tasks";
+import type { AnnotationResponse } from "@/types";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { isVariantField } from "../components/SchemaForm";
 
@@ -208,7 +213,30 @@ export function needsTextPrompt(cap: SecondaryCapability): boolean {
   return (cap.model.supported_prompts ?? []).includes("text");
 }
 
-/** 运行单框二次推理; 成功后刷新该 task 的标注列表 (画布 + 侧栏自动重渲染)。 */
+/**
+ * 把二次推理产物并进标注缓存: 原框只并入它实际会写的属性字段 (几何不动, 免覆盖用户
+ * in-flight 的乐观写), 新子框去重后追加。缓存未建立时原样返回 (下次读自然拉全量)。
+ */
+export function mergeSecondaryResult(
+  prev: AnnotationResponse[] | undefined,
+  data: SecondaryInferenceResponse,
+): AnnotationResponse[] | undefined {
+  if (!prev) return prev;
+  const known = new Set(prev.map((a) => a.id));
+  const merged = prev.map((a) =>
+    a.id === data.annotation.id
+      ? {
+          ...a,
+          attributes: data.annotation.attributes,
+          attributes_meta: data.annotation.attributes_meta,
+        }
+      : a,
+  );
+  const fresh = data.created_children.filter((c) => !known.has(c.id));
+  return fresh.length ? [...merged, ...fresh] : merged;
+}
+
+/** 运行单框二次推理; 成功后把产物直接写进标注缓存 (画布 + 侧栏立即重渲染)。 */
 export function useRunSecondaryInference(taskId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
@@ -224,17 +252,16 @@ export function useRunSecondaryInference(taskId: string | undefined) {
       if (!taskId) throw new Error("No task selected for secondary inference");
       return tasksApi.secondaryInference(taskId, annotationId, body);
     },
-    // refetchType: "none" — 不触发 in-flight refetch, 只标 stale; 下次读时才 fetch。
-    // 避免与并发 useUpdateAnnotation 乐观写竞态 (refetch 回来的服务端状态可能覆盖用户
-    // in-flight 修改)。二次推理落库后是"新 attributes / 新子框" — 用户视觉延迟到下次读
-    // (通常 <1s) 可接受。
-    onSuccess: () => {
-      if (taskId) {
-        qc.invalidateQueries({
-          queryKey: ["annotations", taskId],
-          refetchType: "none",
-        });
-      }
+    // 用响应体直接改写缓存, 不 refetch: 既避免与并发 useUpdateAnnotation 乐观写竞态
+    // (refetch 回来的服务端状态会覆盖用户 in-flight 修改), 又让产物立即可见 —— 此前
+    // invalidate(refetchType:"none") 只标 stale, 而工作台里这个 query 始终有活跃订阅者,
+    // 标 stale 不触发重读, 子框 / 属性要刷新页面才出现。
+    // 原框只并入二次推理实际会写的属性字段 (几何不动), 不整条替换。
+    onSuccess: (data) => {
+      if (!taskId) return;
+      qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) =>
+        mergeSecondaryResult(prev, data),
+      );
     },
   });
 }
