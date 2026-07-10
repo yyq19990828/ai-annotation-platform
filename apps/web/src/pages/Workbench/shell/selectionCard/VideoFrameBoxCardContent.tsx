@@ -17,7 +17,10 @@ const FRAME_CHIP_CLASS =
 const FRAME_TIME_CLASS = "text-brand/75";
 
 export interface VideoFrameBoxCardContentProps {
-  /** geometry.type 必为 video_bbox(视频单帧框,不属任何轨迹)。 */
+  /**
+   * 视频单帧标注(不属任何轨迹): video_bbox / video_polygon / video_polyline / video_rotated_bbox。
+   * v0.21.26 起承接全部单帧几何(此前仅 video_bbox);帧定位 + 指标 + 属性 + 改类 / 删除。
+   */
   annotation: AnnotationResponse;
   imageWidth: number | null;
   imageHeight: number | null;
@@ -40,9 +43,11 @@ function formatTimecode(sec: number): string {
 }
 
 /**
- * v0.16.14 · 选中视频「单帧框」(video_bbox)的浮动卡内容。
- * 单帧框不属任何轨迹,会被右栏轨迹面板过滤掉而「啥也不显示」;这里补齐帧定位
+ * v0.16.14 · 选中视频「单帧标注」的浮动卡内容。
+ * 单帧几何不属任何轨迹,会被右栏轨迹面板过滤掉而「啥也不显示」;这里补齐帧定位
  * (F{n} · 时间)+ 结构化指标 + 属性 + 跳到该帧 / 改类 / 删除。
+ * v0.21.26 起除 video_bbox 外, 也承接 video_polygon / video_polyline / video_rotated_bbox
+ * (指标由 geometryMetrics 按几何类型给出: 顶点数 / 面积 / 周长 / 旋转角等)。
  */
 export function VideoFrameBoxCardContent({
   annotation,
@@ -57,7 +62,13 @@ export function VideoFrameBoxCardContent({
   onUpdateAttributes,
 }: VideoFrameBoxCardContentProps) {
   const geom = annotation.geometry;
-  const frameIndex = geom.type === "video_bbox" ? geom.frame_index : null;
+  const frameIndex =
+    geom.type === "video_bbox"
+    || geom.type === "video_polygon"
+    || geom.type === "video_polyline"
+    || geom.type === "video_rotated_bbox"
+      ? geom.frame_index
+      : null;
   const metrics = geometryMetrics(geom, imageWidth, imageHeight);
   const hasAttributes = !!attributeSchema && (attributeSchema.fields ?? []).length > 0;
   const timeLabel = frameIndex !== null && fps ? formatTimecode(frameIndex / fps) : null;
@@ -102,7 +113,7 @@ export function VideoFrameBoxCardContent({
         zOrder={annotation.z_order}
       />
 
-      <ActionBar label="单帧框操作">
+      <ActionBar label="单帧标注操作">
         {frameIndex !== null && (
           <Button
             variant="ghost"

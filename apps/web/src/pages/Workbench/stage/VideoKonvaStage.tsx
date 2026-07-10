@@ -25,14 +25,14 @@ import {
   type VideoTimelineChapterControls,
 } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
-import { useVideoKonvaInteraction } from "./videoKonvaInteraction";
+import { useVideoKonvaInteraction, isSamProbeTool } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm, videoNormToClient } from "./videoKonvaCoordinates";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
 import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
-import { deriveTrackNumber, isVideoBbox, isVideoPolygon, isVideoPolygonTrack, isVideoPolyline, isVideoPolylineTrack, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { deriveTrackNumber, isAnyVideoSingleFrame, isAnyVideoTrack, isVideoBbox, isVideoPolygon, isVideoPolygonTrack, isVideoPolyline, isVideoPolylineTrack, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -608,9 +608,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   const preview = useMemo<VideoPreviewBox | null>(() => {
     if (!drag) return null;
-    // v0.21.23 · smart-box 的提示框预览 (紫色, 与图片侧 SAM 候选同色); point 无框可画。
+    // v0.21.23 · smart-box / exemplar 的提示框预览 (紫色, 与图片侧 SAM 候选同色); point 无框可画。
+    // v0.21.26 · exemplar 的 mode==="exemplar" 也画框 (此前只画 "bbox", 导致 exemplar 拖框全程无预览、体感像坏了)。
     if (drag.kind === "samProbe") {
-      return drag.mode === "bbox"
+      return drag.mode === "bbox" || drag.mode === "exemplar"
         ? { geom: normalizeGeom(drag.start, drag.current), color: SAM_PROBE_STROKE }
         : null;
     }
@@ -701,10 +702,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     onPropagateTrack,
     onToggleHiddenTrack,
     onToggleLockedTrack,
+    hiddenTrackIds,
+    lockedTrackIds,
   }), [
     canDeleteSelectedTrackKeyframe, contextMenuAnnotation, contextMenuTargetId, deleteSelectedTrackKeyframe,
     frameIndex, onChangeUserBoxClass, onComposeTracks, onConvertToBboxes, onDelete, onPropagateTrack,
     onToggleHiddenTrack, onToggleLockedTrack, readOnly, selectedAnnotation, selectedVideoBboxes, trackActions,
+    hiddenTrackIds, lockedTrackIds,
   ]);
 
   const handleContextMenu = useCallback((evt: ReactMouseEvent<HTMLDivElement>) => {
@@ -721,9 +725,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const pickables = frameViews.ghost ? [...frameViews.entries, frameViews.ghost] : frameViews.entries;
     const hit = pickTopVideoEntryAt(pickables, point);
     if (!hit) return;
-    setContextMenuTargetId(hit.id);
     const hitAnn = annotations.find((a) => a.id === hit.id);
-    if (hitAnn && isVideoBbox(hitAnn) && selectedIds.includes(hit.id) && selectedVideoBboxes.length > 1) {
+    // v0.21.26 · 命中的不是「可建菜单」的视频几何 → 只选中, 不弹空菜单
+    // (此前对 polygon/polyline 无条件 openAt 却给空 [], 表现为「弹一个没条目的菜单」)。
+    if (!hitAnn || (!isAnyVideoSingleFrame(hitAnn) && !isAnyVideoTrack(hitAnn))) {
+      if (hitAnn) onSelect?.(hit.id);
+      return;
+    }
+    setContextMenuTargetId(hit.id);
+    if (isVideoBbox(hitAnn) && selectedIds.includes(hit.id) && selectedVideoBboxes.length > 1) {
       contextMenu.openAt(evt.clientX, evt.clientY);
       return;
     }
@@ -884,7 +894,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
   const creationEnabled = (videoTool === "box" || videoTool === "track") && (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
   // v0.21.23 · 交互式 SAM 工具同样用十字光标 (提示落点即分割位置)。
-  const samProbeTool = videoTool === "smart-point" || videoTool === "smart-box";
+  // v0.21.26 · 复用交互层同一谓词 isSamProbeTool (含 exemplar / magic-box), 修此前漏登记这两个
+  // 工具 → 选中后无十字光标、体感像未进入工具的问题。
+  const samProbeTool = isSamProbeTool(videoTool);
   const cursorClass = panning
     ? styles.rootPanning
     : spacePan
@@ -921,7 +933,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       onPointerUp={endPan}
       onPointerCancel={endPan}
       onPointerLeave={onPointerLeave}
-      onDoubleClick={fitViewport}
+      onDoubleClick={isPointsDrawTool ? undefined : fitViewport}
     >
       <video
         ref={setVideoNode}

@@ -79,7 +79,7 @@ import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSideba
 import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
-import { isVideoBbox, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isAnyVideoSingleFrame, isVideoBbox, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
@@ -100,6 +100,7 @@ import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
 import { VideoTrackBatchCardContent } from "../shell/VideoTrackBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
+import { VideoPointsTrackCardContent } from "../shell/selectionCard/VideoPointsTrackCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -2190,8 +2191,9 @@ export function useWorkbenchShellModel({
         />
       );
     } else if (stageKind === "video") {
-      if (ann && ann.geometry.type === "video_bbox") {
-        // 视频单帧框:不属任何轨迹、会被轨迹面板过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。
+      if (ann && isAnyVideoSingleFrame(ann)) {
+        // 视频单帧标注 (bbox / polygon / polyline / rotated_bbox):不属任何轨迹、会被轨迹面板
+        // 过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。v0.21.26 起覆盖全部单帧几何。
         children = (
           <VideoFrameBoxCardContent
             annotation={ann}
@@ -2204,6 +2206,26 @@ export function useWorkbenchShellModel({
             onChangeClass={handleStartChangeClass}
             onDelete={handleDeleteBox}
             onUpdateAttributes={handleUpdateAttributes}
+          />
+        );
+      } else if (ann && isVideoPointsTrack(ann)) {
+        // v0.21.26 · 点集轨迹 (polygon / polyline track):简化卡(指标 + 改类 / 显隐 / 锁 / 删整条),
+        // 取代此前空白卡。完整关键帧编辑仍归 v0.21.20 多几何 track epic,不复用 bbox 轨迹卡。
+        children = (
+          <VideoPointsTrackCardContent
+            annotation={ann}
+            frameIndex={s.videoFrameIndex}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            fps={videoFps}
+            readOnly={isLocked}
+            hidden={s.hiddenVideoTrackIds.has(ann.geometry.track_id)}
+            locked={s.lockedVideoTrackIds.has(ann.geometry.track_id)}
+            onSeekFrame={setVideoFrameIndex}
+            onChangeClass={handleStartChangeClass}
+            onDelete={handleDeleteBox}
+            onToggleHidden={s.toggleHiddenVideoTrack}
+            onToggleLock={s.toggleLockedVideoTrack}
           />
         );
       } else if (videoBatchTracks.length >= 2) {
@@ -2258,10 +2280,18 @@ export function useWorkbenchShellModel({
             onClear={() => handleSelectBox(null)}
           />
         );
-      } else {
-        // 视频轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
+      } else if (ann && isVideoTrack(ann)) {
+        // 视频 bbox 轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
         // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
         children = renderVideoTrackSidebar("current", "card");
+      } else {
+        // v0.21.26 · 兜底:未被上面任何分支覆盖的视频几何也给占位摘要 (类别 + type),
+        // 不再落到 renderVideoTrackSidebar 的 null 空卡。
+        children = (
+          <SelectionCardPlaceholder
+            summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
+          />
+        );
       }
     } else if (ann && stageKind === "image") {
       children = (
