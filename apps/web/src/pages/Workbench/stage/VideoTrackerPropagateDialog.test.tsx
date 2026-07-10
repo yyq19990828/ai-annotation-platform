@@ -419,6 +419,17 @@ describe("VideoTrackerPropagateDialog", () => {
       <VideoTrackerPropagateDialog {...seedProps} seedPointCount={3} seedTargetCount={2} />,
     );
     expect(count()).toContain("2 目标");
+    // 纠偏多帧 (>1): 缀「K 帧」; 单目标时不缀「目标」。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...seedProps}
+        seedPointCount={2}
+        seedTargetCount={1}
+        seedFrameCount={2}
+      />,
+    );
+    expect(count()).toContain("2 帧");
+    expect(count()).not.toContain("目标");
   });
 
   it("取消不写记忆,且非法模型 / 变体安全回退", () => {

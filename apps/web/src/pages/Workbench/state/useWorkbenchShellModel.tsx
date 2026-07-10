@@ -519,10 +519,13 @@ export function useWorkbenchShellModel({
   // 「工具未启用即回收」守卫需读它: 采集态借 smart-point 落点, 不受回收。
   // 多目标: 每点带 obj (目标序号, 1-based; obj=1 为主实例, 回填选中轨迹, obj≥2 各成新轨迹);
   // seedObj = 当前正在落点的目标, 「新目标」递增。可视化仍复用 overlay ({pt,polarity})。
+  // v0.21.27 · U-pvs-2 纠偏: 每点还带 frame (落点时的帧), 提交按 obj+frame 分组成多帧
+  // prompts; seedAnchorFrame = 首个落点帧, 传播范围锚定于此 (导航到别帧加修正点不移动范围)。
   const [trackerSeeds, setTrackerSeeds] = useState<
-    { pt: [number, number]; polarity: 1 | 0; obj: number }[]
+    { pt: [number, number]; polarity: 1 | 0; obj: number; frame: number }[]
   >([]);
   const [seedObj, setSeedObj] = useState(1);
+  const [seedAnchorFrame, setSeedAnchorFrame] = useState<number | null>(null);
   const [seedCollecting, setSeedCollecting] = useState(false);
   const seedPrevToolRef = useRef<VideoTool | null>(null);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
@@ -590,6 +593,7 @@ export function useWorkbenchShellModel({
     setPropagateBrush(null);
     setTrackerSeeds([]);
     setSeedObj(1);
+    setSeedAnchorFrame(null);
     setSeedCollecting(false);
     seedPrevToolRef.current = null;
   }, []);
@@ -597,6 +601,7 @@ export function useWorkbenchShellModel({
     setPropagateDialog(null);
     setTrackerSeeds([]);
     setSeedObj(1);
+    setSeedAnchorFrame(null);
     stopSeedCollecting();
   }, [stopSeedCollecting]);
 
@@ -605,24 +610,32 @@ export function useWorkbenchShellModel({
       if (!propagateDialog || !taskId) return;
       setPropagateDialog((prev) => (prev ? { ...prev, submitting: true } : prev));
       try {
-        // v0.21.27 · U-pvs-1 · 有落点则注入 prompt.seeds: 按目标 obj 分组, 每组一条 seed
-        // (obj_id=目标序号, points=[[x,y,label],...], 正点 label=1 / Alt 负点 label=0)。
-        // obj=1 为主实例回填选中轨迹, obj≥2 各成新轨迹。runner 只在种子窗透传, 多目标跨窗
-        // 由 runner 逐实例续种; backend PVS 优先 seeds[] 于 source_geometry。
-        const seedByObj = new Map<number, [number, number, number][]>();
-        for (const { pt, polarity, obj } of trackerSeeds) {
-          const pts = seedByObj.get(obj) ?? [];
+        // v0.21.27 · U-pvs-1/2 · 有落点则注入 prompt.seeds: 按 obj → frame 双层分组成多帧
+        // prompts (obj_id=目标序号; prompts=[{frame_index, points:[[x,y,label],...]}], 正点
+        // label=1 / Alt 负点 label=0)。obj=1 主实例回填选中轨迹, obj≥2 各成新轨迹; 同一 obj
+        // 在多帧落点 = 纠偏 (原始帧 + 修正帧累积)。单帧时退化为一条 prompt。runner 只在种子窗
+        // 透传, 多目标跨窗由 runner 逐实例续种; backend PVS 优先 seeds[] 于 source_geometry。
+        const byObj = new Map<number, Map<number, [number, number, number][]>>();
+        for (const { pt, polarity, obj, frame } of trackerSeeds) {
+          const byFrame = byObj.get(obj) ?? new Map<number, [number, number, number][]>();
+          const pts = byFrame.get(frame) ?? [];
           pts.push([pt[0], pt[1], polarity]);
-          seedByObj.set(obj, pts);
+          byFrame.set(frame, pts);
+          byObj.set(obj, byFrame);
         }
         const withSeeds = trackerSeeds.length
           ? {
               ...payload,
               prompt: {
                 ...(payload.prompt ?? {}),
-                seeds: [...seedByObj.entries()]
+                seeds: [...byObj.entries()]
                   .sort((a, b) => a[0] - b[0])
-                  .map(([obj, points]) => ({ obj_id: obj, points })),
+                  .map(([obj, byFrame]) => ({
+                    obj_id: obj,
+                    prompts: [...byFrame.entries()]
+                      .sort((a, b) => a[0] - b[0])
+                      .map(([frame, points]) => ({ frame_index: frame, points })),
+                  })),
               },
             }
           : payload;
@@ -1014,11 +1027,14 @@ export function useWorkbenchShellModel({
     (prompt: VideoSamPrompt) => {
       // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
       // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
-      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹)。
+      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
+      // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
       if (seedCollecting && prompt.mode === "point") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
         setTrackerSeeds((prev) => [
           ...prev,
-          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj },
+          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
         ]);
         return;
       }
@@ -1029,7 +1045,7 @@ export function useWorkbenchShellModel({
       }
       sam.runBbox(prompt.bbox);
     },
-    [sam, s.exemplarOutputMode, seedCollecting, seedObj],
+    [sam, s.exemplarOutputMode, seedCollecting, seedObj, s.videoFrameIndex],
   );
   // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
   // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
@@ -2865,11 +2881,14 @@ export function useWorkbenchShellModel({
         samPolarity: s.samPolarity,
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
-        // v0.21.27 · U-pvs-1 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
-        // (归一化 {pt, polarity}, 剥去 obj); 否则仍画帧级 SAM 会话点。
+        // v0.21.27 · U-pvs-1/2 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
+        // (归一化 {pt, polarity}, 剥去 obj); 纠偏多帧下只画**当前帧**的点 (别帧的点坐标属其帧,
+        // 画到当前帧会错位)。否则仍画帧级 SAM 会话点。
         samSessionPoints: isVideoTask
           ? propagateDialog
-            ? trackerSeeds.map(({ pt, polarity }) => ({ pt, polarity }))
+            ? trackerSeeds
+                .filter((sd) => sd.frame === s.videoFrameIndex)
+                .map(({ pt, polarity }) => ({ pt, polarity }))
             : sam.sessionPoints
           : undefined,
         spacePan,
@@ -3214,7 +3233,9 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
-    frameIndex: s.videoFrameIndex,
+    // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
+    // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
+    frameIndex: seedAnchorFrame ?? s.videoFrameIndex,
     maxFrame: Math.max(0, videoFrameCount - 1),
     nextKeyframeAfter: propagateDialogNextKeyframe,
     prevKeyframeBefore: propagateDialogPrevKeyframe,
@@ -3233,15 +3254,18 @@ export function useWorkbenchShellModel({
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
     brushedRange: propagateBrush,
-    // v0.21.27 · U-pvs-1 · PVS 点种子采集 (仅 sam3_video_interactive 模型显示, 门控在对话框内)。
+    // v0.21.27 · U-pvs-1/2 · PVS 点种子采集 (仅 sam3_video_interactive 模型显示, 门控在对话框内)。
     seedCollecting,
     seedPointCount: trackerSeeds.length,
     seedTargetCount: new Set(trackerSeeds.map((s) => s.obj)).size,
+    // 纠偏: 落点跨的帧数 (>1 = 多帧累积 prompt)。
+    seedFrameCount: new Set(trackerSeeds.map((s) => s.frame)).size,
     onToggleSeedCollecting: toggleSeedCollecting,
     onNewSeedTarget: newSeedTarget,
     onClearSeeds: () => {
       setTrackerSeeds([]);
       setSeedObj(1);
+      setSeedAnchorFrame(null);
     },
   };
 

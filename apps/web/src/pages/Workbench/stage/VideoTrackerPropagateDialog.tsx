@@ -162,6 +162,8 @@ interface VideoTrackerPropagateDialogProps {
   seedTargetCount?: number;
   /** 新目标: 当前目标已落点后, 后续点归入下一目标 (各成一条轨迹)。 */
   onNewSeedTarget?: () => void;
+  /** 落点跨的帧数 (distinct frame); >1 = 纠偏多帧累积 prompt。 */
+  seedFrameCount?: number;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -188,6 +190,7 @@ export function VideoTrackerPropagateDialog({
   onClearSeeds,
   seedTargetCount = 0,
   onNewSeedTarget,
+  seedFrameCount = 0,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -480,6 +483,7 @@ export function VideoTrackerPropagateDialog({
                   >
                     已落 {seedPointCount} 点
                     {seedTargetCount > 1 ? ` · ${seedTargetCount} 目标` : ""}
+                    {seedFrameCount > 1 ? ` · ${seedFrameCount} 帧` : ""}
                   </span>
                   <button
                     type="button"
@@ -582,8 +586,8 @@ export function VideoTrackerPropagateDialog({
         <span>按住 Shift 在时间轴拖选可圈定范围</span>
         {modelKey === "sam3_video_interactive" && (
           <span>
-            点目标落正点 (Alt 负点); 「+新目标」可一次追多个目标各成一条轨迹; 有落点以点驱动
-            PVS, 否则用选中轨迹框
+            点目标落正点 (Alt 负点); 「+新目标」一次追多个目标各成轨迹; 导航到别帧再落点 =
+            纠偏 (多帧累积); 有落点以点驱动 PVS, 否则用选中轨迹框
           </span>
         )}
         {textDrivenActive && <span>文本驱动: 按描述在每帧检测目标</span>}
