@@ -20,11 +20,13 @@ import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
-
-// whitespace-nowrap + shrink-0: 标签不被 flex 挤压逐字竖排, 面板按内容自适应加宽。
-const FIELD_LABEL_CLASS = "shrink-0 whitespace-nowrap text-2xs text-muted-foreground";
-const SELECT_CLASS =
-  "appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground";
+// v0.21.27 · U-pvs-1 · 共享的悬浮工具条 chrome（与视频 tracker 传播工具条共用同款外观）。
+import {
+  TOOLBAR_CHROME_CLASS,
+  TOOLBAR_DIVIDER as DIVIDER,
+  TOOLBAR_FIELD_LABEL_CLASS as FIELD_LABEL_CLASS,
+  TOOLBAR_SELECT_CLASS as SELECT_CLASS,
+} from "./workbenchToolbarChrome";
 
 export interface InteractiveToolBarProps {
   tool: Tool;
@@ -130,8 +132,6 @@ function cn(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
 
-const DIVIDER = <span aria-hidden className="h-5 w-px bg-border" />;
-
 export function InteractiveToolBar({
   tool,
   backendName,
@@ -208,7 +208,10 @@ export function InteractiveToolBar({
   return (
     <div
       data-testid="interactive-toolbar"
-      className="absolute left-1/2 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col gap-1 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
+      className={cn(
+        "absolute left-1/2 top-3 z-local-5 max-w-[calc(100%-1.5rem)] -translate-x-1/2",
+        TOOLBAR_CHROME_CLASS,
+      )}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* 主行: 标题 + 引擎 + 工具控件 + 状态 (横排) */}

@@ -6,6 +6,13 @@ import type {
   VideoTrackerPropagatePayload,
 } from "@/api/videoTracker";
 import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
+// v0.21.27 · U-pvs-1 · 与 SAM 交互工具条 (InteractiveToolBar) 共用同款悬浮工具条 chrome。
+import {
+  TOOLBAR_CHROME_CLASS,
+  TOOLBAR_DIVIDER,
+  TOOLBAR_FIELD_LABEL_CLASS,
+  TOOLBAR_SELECT_CLASS,
+} from "../shell/workbenchToolbarChrome";
 
 const SPAN_PRESETS = ["10", "30", "60"] as const;
 const RANGE_PRESETS = [
@@ -340,37 +347,31 @@ export function VideoTrackerPropagateDialog({
   };
 
   return (
-    // v0.21.14 · 浮层化 (原全屏 modal 会遮住底部时间轴, 看不到传播范围高亮 / 无法刷选)。
-    // 定位在顶部居中, 不覆盖底部时间轴; 无遮罩, 时间轴保持可见可交互。Esc / ✕ / 取消 关闭。
+    // v0.21.27 · U-pvs-1 · 形式统一: 采用与 SAM 交互工具条 (InteractiveToolBar) 同款顶部居中
+    // 悬浮工具条 chrome (横排紧凑, 共享 workbenchToolbarChrome)。仍 fixed·top-16·让出底部
+    // 时间轴、无遮罩 (原全屏 modal 会遮住时间轴, 看不到范围高亮 / 无法刷选)。Esc / ✕ / 取消 关闭。
     <div
       role="dialog"
       aria-label="AI 追踪传播"
       data-testid="video-tracker-propagate-dialog"
-      className="fixed left-1/2 top-16 -translate-x-1/2 z-workbench-modal grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-2xl"
+      className={cn(
+        "fixed left-1/2 top-16 z-workbench-modal max-w-[calc(100%-1.5rem)] -translate-x-1/2",
+        TOOLBAR_CHROME_CLASS,
+      )}
     >
-        <div className="flex items-center justify-between">
-          <b className="text-sm">AI 追踪 (Ctrl+B)</b>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm"
-          >
-            ✕
-          </button>
+      {/* 主行: 标题 | 方向 | 范围 | 模型 | 种子/文本 | 尺寸 | 动作 (横排, 溢出折行) */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <b className="whitespace-nowrap text-xs">AI 追踪</b>
+          <span className="text-2xs text-muted-foreground">Ctrl+B</span>
         </div>
 
-        {isPolylineTrack && (
-          <div
-            data-testid="tracker-polyline-unsupported"
-            className="text-status-danger text-xs"
-          >
-            polyline 轨迹传播暂不支持
-          </div>
-        )}
+        {TOOLBAR_DIVIDER}
 
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          方向
-          <div className="grid grid-cols-3 gap-1">
+        {/* 方向 (分段按钮) */}
+        <div className="flex items-center gap-1.5">
+          <span className={TOOLBAR_FIELD_LABEL_CLASS}>方向</span>
+          <div className="flex divide-x divide-border overflow-hidden rounded-sm border border-border">
             {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map((d) => (
               <button
                 key={d}
@@ -380,27 +381,30 @@ export function VideoTrackerPropagateDialog({
                   setCustomRange(null);
                 }}
                 className={cn(
-                  "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  "cursor-pointer px-1.5 py-1 text-xs",
                   direction === d
-                    ? "border-violet-600 dark:border-violet-400 bg-status-info-soft"
-                    : "border-border",
+                    ? "bg-status-info-soft text-foreground"
+                    : "bg-muted text-muted-foreground",
                 )}
               >
                 {d === "forward" ? "向后" : d === "backward" ? "向前" : "双向"}
               </button>
             ))}
           </div>
-        </label>
+        </div>
 
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          范围
+        {TOOLBAR_DIVIDER}
+
+        {/* 范围 (combobox 0) */}
+        <div className="flex items-center gap-1.5">
+          <span className={TOOLBAR_FIELD_LABEL_CLASS}>范围</span>
           <select
             value={rangePreset}
             onChange={(e) => {
               setRangePreset(e.target.value as RangePresetValue);
               setCustomRange(null);
             }}
-            className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
+            className={cn(TOOLBAR_SELECT_CLASS, "cursor-pointer")}
           >
             {RANGE_PRESETS.map((preset) => (
               <option key={preset} value={preset}>
@@ -408,32 +412,17 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span className={cn("mono", "text-muted-foreground text-xs")}>
-            {grid > 1 ? (
-              <>
-                G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F
-                {range.from} → F{range.to})
-              </>
-            ) : (
-              <>
-                F{range.from} → F{range.to}
-              </>
-            )}
-            {customRange && (
-              <span data-testid="tracker-range-custom" className="ml-1.5 text-brand">· 自定义</span>
-            )}
-          </span>
-          <span className="text-muted-foreground text-2xs">
-            按住 Shift 在时间轴上拖选可直接圈定范围
-          </span>
-        </label>
+        </div>
 
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          模型
+        {TOOLBAR_DIVIDER}
+
+        {/* 模型 (combobox 1) */}
+        <div className="flex items-center gap-1.5">
+          <span className={TOOLBAR_FIELD_LABEL_CLASS}>模型</span>
           <select
             value={modelKey}
             onChange={(e) => setModelKey(e.target.value)}
-            className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
+            className={cn(TOOLBAR_SELECT_CLASS, "cursor-pointer")}
           >
             {modelOptions.map((m) => {
               const disabled = isModelDisabled(m.value);
@@ -445,97 +434,93 @@ export function VideoTrackerPropagateDialog({
               );
             })}
           </select>
-          <span className="text-muted-foreground text-xs">
-            {selectedModelDisabled
-              ? "该 tracker 需项目绑定并由 backend 声明支持 (未声明, 暂不可用)"
-              : modelOptions.find((m) => m.value === modelKey)?.note}
-          </span>
-        </label>
+        </div>
 
-        {/* v0.21.27 · U-pvs-1 · PVS 点种子: 在画布点目标落正点 (Alt 负点精修) → prompt.seeds。
-            有落点则以点驱动 PVS, 否则回退选中轨迹的框。仅 sam3_video_interactive 显示。 */}
+        {/* 种子 (点) — 仅 PVS 交互追踪。在画布点目标落正点 (Alt 负点) → prompt.seeds。 */}
         {modelKey === "sam3_video_interactive" && (
-          <div className="grid gap-1 text-muted-foreground text-xs">
-            种子 (点)
-            <div className="flex items-center gap-2">
+          <>
+            {TOOLBAR_DIVIDER}
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>种子</span>
               <button
                 type="button"
                 onClick={onToggleSeedCollecting}
                 disabled={submitting}
                 data-testid="tracker-seed-toggle"
                 className={cn(
-                  "py-1.5 px-2 border rounded-md cursor-pointer text-xs text-foreground",
+                  "cursor-pointer rounded-sm border px-1.5 py-1 text-xs text-foreground",
                   seedCollecting
-                    ? "border-violet-600 dark:border-violet-400 bg-status-info-soft"
-                    : "border-border bg-background",
+                    ? "border-violet-600 bg-status-info-soft dark:border-violet-400"
+                    : "border-border bg-muted",
                 )}
               >
-                {seedCollecting ? "落点中… 点画布 (再点结束)" : "落点选目标"}
+                {seedCollecting ? "落点中…" : "落点选目标"}
               </button>
               {seedPointCount > 0 && (
                 <>
-                  <span data-testid="tracker-seed-count" className="text-foreground">
+                  <span
+                    data-testid="tracker-seed-count"
+                    className="text-2xs text-foreground"
+                  >
                     已落 {seedPointCount} 点
                   </span>
                   <button
                     type="button"
                     onClick={onClearSeeds}
                     disabled={submitting}
-                    className="border-0 bg-transparent text-muted-foreground cursor-pointer text-xs underline"
+                    className="cursor-pointer border-0 bg-transparent text-2xs text-muted-foreground underline"
                   >
                     清空
                   </button>
                 </>
               )}
             </div>
-            <span className="text-muted-foreground text-2xs">
-              在画布点目标落正点 (Alt 落负点精修); 有落点以点驱动 PVS, 否则用选中轨迹的框。
-            </span>
-          </div>
+          </>
         )}
 
+        {/* 文本 — text-driven tracker (sam3_video) */}
         {textDrivenActive && (
-          <label className="grid gap-1 text-muted-foreground text-xs">
-            文本描述
-            <input
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="如: the red car / a person walking"
-              data-testid="tracker-text-input"
-              className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm"
-            />
-            <span className="text-muted-foreground text-xs">
-              文本驱动追踪: 按描述在每帧检测目标 (而非从种子框传播)。
-            </span>
-          </label>
+          <>
+            {TOOLBAR_DIVIDER}
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>文本</span>
+              <input
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="如: the red car"
+                data-testid="tracker-text-input"
+                className="w-32 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+          </>
         )}
 
+        {/* 模型尺寸 (combobox 2) — 非 mock */}
         {modelKey !== "mock_bbox" && (
-          <label className="grid gap-1 text-muted-foreground text-xs">
-            模型尺寸
-            <select
-              value={samVariant}
-              onChange={(e) => setSamVariant(e.target.value)}
-              className="py-1.5 px-2 border border-border rounded-md bg-background text-foreground text-sm cursor-pointer"
-            >
-              {SAM_VARIANTS.map((v) => (
-                <option key={v.value} value={v.value}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-            <span className="text-muted-foreground text-xs">
-              更大尺寸更准但更慢/更吃显存; 默认 tiny。
-            </span>
-          </label>
+          <>
+            {TOOLBAR_DIVIDER}
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>尺寸</span>
+              <select
+                value={samVariant}
+                onChange={(e) => setSamVariant(e.target.value)}
+                className={cn(TOOLBAR_SELECT_CLASS, "cursor-pointer")}
+              >
+                {SAM_VARIANTS.map((v) => (
+                  <option key={v.value} value={v.value}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
 
-        {error && (
-          <div className="text-status-danger text-xs">{error}</div>
-        )}
+        {TOOLBAR_DIVIDER}
 
-        <div className="flex gap-2 justify-end">
+        {/* 动作 */}
+        <div className="flex shrink-0 items-center gap-1.5">
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
             取消
           </Button>
@@ -547,7 +532,56 @@ export function VideoTrackerPropagateDialog({
           >
             {submitting ? "发起中…" : "发起传播"}
           </Button>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="关闭"
+            className="cursor-pointer border-0 bg-transparent text-sm text-muted-foreground"
+          >
+            ✕
+          </button>
         </div>
+      </div>
+
+      {/* 次行: 范围预览 + 提示 + 警告 + 错误 (折行, 对齐 InteractiveToolBar 的次行) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-muted-foreground">
+        <span className="mono">
+          {grid > 1 ? (
+            <>
+              G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F
+              {range.from} → F{range.to})
+            </>
+          ) : (
+            <>
+              F{range.from} → F{range.to}
+            </>
+          )}
+          {customRange && (
+            <span data-testid="tracker-range-custom" className="ml-1.5 text-brand">
+              · 自定义
+            </span>
+          )}
+        </span>
+        <span>按住 Shift 在时间轴拖选可圈定范围</span>
+        {modelKey === "sam3_video_interactive" && (
+          <span>点目标落正点 (Alt 负点); 有落点以点驱动 PVS, 否则用选中轨迹框</span>
+        )}
+        {textDrivenActive && <span>文本驱动: 按描述在每帧检测目标</span>}
+        {selectedModelDisabled && (
+          <span className="text-status-caution">
+            该 tracker 需项目绑定并由 backend 声明支持 (未声明, 暂不可用)
+          </span>
+        )}
+        {isPolylineTrack && (
+          <span
+            data-testid="tracker-polyline-unsupported"
+            className="text-status-danger"
+          >
+            polyline 轨迹传播暂不支持
+          </span>
+        )}
+        {error && <span className="text-status-danger">{error}</span>}
+      </div>
     </div>
   );
 }
