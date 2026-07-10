@@ -152,8 +152,19 @@ def _lang_axis() -> dict:
 
 
 _ATTR_TEXT = {"key": "text", "label": "识别文本", "type": "text"}
-_ATTR_ORIENT = {"key": "orientation", "label": "方向", "type": "select", "options": ["0", "180"]}
-_ATTR_LANG = {"key": "language", "label": "语言", "type": "select", "options": ["universal", "en"]}
+# select options 必须是 {value,label} 对象(协议 output_attribute_schema §3.x,后端
+# AttributeFieldOption 亦然)。value 与 /predict 实际写入的 attributes 值严格对齐:
+# orientation = cls 标签 "0"/"180";language = ResolvedEngine.lang "universal"/"en"。
+# 曾误写成纯字符串数组 ["0","180"],项目设置「从 ML Backend 预填」取 o.value 得 undefined,
+# 下拉选项对不上、且新版 validateAttributeFields 对 undefined.trim() 崩溃。
+_ATTR_ORIENT = {
+    "key": "orientation", "label": "方向", "type": "select",
+    "options": [{"value": "0", "label": "0°"}, {"value": "180", "label": "180°"}],
+}
+_ATTR_LANG = {
+    "key": "language", "label": "语言", "type": "select",
+    "options": [{"value": "universal", "label": "通用(中英)"}, {"value": "en", "label": "英文"}],
+}
 
 # ---- 运行时可调阈值（透传 RapidOCR __call__/update_params；缺省=引擎默认）。----
 # 平台据此渲染阈值滑块(model.params.properties)，/predict 从 context.params 读取并应用。

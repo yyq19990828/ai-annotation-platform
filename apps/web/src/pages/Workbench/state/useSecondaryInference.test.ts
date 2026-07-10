@@ -95,11 +95,30 @@ describe("buildSecondaryInferencePayload", () => {
     });
   });
 
-  it("variants: attributes 能力恒 null (不走 model_variants)", () => {
+  it("variants: 无变体轴的 attributes 能力 → null (走扁平路径)", () => {
     const c = cap({ id: "cls", task: "classification" }, "attributes");
     expect(
       buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
     ).toBeNull();
+  });
+
+  it("variants: 有变体轴的 OCR 属性能力 → 带 model_variants (协议 v2)", () => {
+    // rapidocr rec/e2e 是 attributes 写回, 但声明了 version/size/lang 轴, 也要能选档透传。
+    const c = cap(
+      {
+        id: "ocr-rec",
+        task: "ocr",
+        default_variants: { version: "v5", size: "mobile", lang: "universal" },
+        supported_variants: [
+          { key: "lang", variants: [{ value: "universal" }, { value: "en" }] },
+        ] as MLModelCapability["supported_variants"],
+      },
+      "attributes",
+    );
+    // 用户改 lang, version/size 保留默认。
+    expect(
+      buildSecondaryInferencePayload(c, undefined, { lang: "en" }).model_variants,
+    ).toEqual({ version: "v5", size: "mobile", lang: "en" });
   });
 
   it("prompt: 开集文本带进请求 (trim); 空/空白 → null", () => {

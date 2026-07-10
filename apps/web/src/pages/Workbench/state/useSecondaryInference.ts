@@ -166,8 +166,9 @@ function mergeVariants(
 /**
  * 把一个能力 + 目标框拼成 secondary-inference 请求。
  * `params` 为用户在参数面板 (SchemaForm) 调过的推理参数 (阈值等); 空则不带 (后端用模型默认)。
- * `variants` 为用户在变体下拉选过的模型档位 (series/size 等); 与模型默认档位合并 (用户所选覆盖),
- *   缺则回落模型 default_variants。仅几何能力走 model_variants (分类/OCR 扁平路径恒 null)。
+ * `variants` 为用户在变体下拉选过的模型档位 (series/size/lang 等); 与模型默认档位合并 (用户所选覆盖),
+ *   缺则回落模型 default_variants。几何能力 (yolo/onnxtools) 与声明了变体轴的属性能力 (rapidocr OCR)
+ *   走 model_variants (协议 v2 结构化); 无变体轴的属性能力 (onnxtools 纯分类) 恒 null (走老扁平路径)。
  * `prompt` 为开集(开放词表)检测/分割模型 (supported_prompts 含 text) 的文本查询; 空则不带。
  */
 export function buildSecondaryInferencePayload(
@@ -186,10 +187,12 @@ export function buildSecondaryInferencePayload(
     ml_backend_id: cap.backendId,
     write_target: cap.writeTarget,
     model_id: m.id,
-    // 几何 backend (yolo/onnxtools) 走协议 v2 需 model_variants (非 null); 分类/OCR 扁平路径 null。
-    // 用户所选档位覆盖模型默认 (缺轴回落默认), 与交互条 interactiveVariantSlice 同语义。
+    // 走协议 v2 结构化 (model_variants 非 null) 的两类: 几何能力 (yolo/onnxtools——即便无变体轴也须
+    // 走 v2 才能透传 class_filter, 见后端 _build_predict_context)、以及声明了变体轴的属性能力
+    // (rapidocr OCR 的 version/size/lang)。无变体轴的属性能力 (onnxtools 纯分类) 恒 null 留在老扁平路径,
+    // 行为不变。用户所选档位覆盖模型默认 (缺轴回落默认), 与交互条 interactiveVariantSlice 同语义。
     model_variants:
-      cap.writeTarget === "geometry"
+      cap.writeTarget === "geometry" || (m.supported_variants?.length ?? 0) > 0
         ? mergeVariants(m.default_variants, variants)
         : null,
     task_type: m.task ?? null,
