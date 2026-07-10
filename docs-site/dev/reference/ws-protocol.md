@@ -212,10 +212,14 @@ stateDiagram-v2
         step --> step: frame_result (每帧)
         step --> step: job_progress (窗口结束)
     }
-    processing --> job_completed: 全部窗口处理完
+    processing --> job_completed: 全部窗口处理完，候选待审
     processing --> job_failed: 出错（带 error）
     processing --> job_cancelled: DELETE / cancel_requested_at
-    job_completed --> [*]
+    job_completed --> review
+    review --> job_accepted
+    review --> job_discarded
+    job_accepted --> [*]
+    job_discarded --> [*]
     job_failed --> [*]
     job_cancelled --> [*]
 ```
@@ -227,19 +231,25 @@ job_started                            # 一次
   ↓
 (job_progress + frame_result)*         # 多次，frame_result 与 job_progress 并发
   ↓
-job_completed | job_failed | job_cancelled   # 一次，终止
+job_completed | job_failed | job_cancelled   # 推理阶段终止
+  ↓（completed / 有部分结果的 cancelled）
+job_accepted | job_discarded                  # 人工候选决策
 ```
 
 事件类型与触发点：
 
-| 事件 | 来源（行号） | 含义 |
+| 事件 | 来源 | 含义 |
 |---|---|---|
-| `job_started` | `video_tracker_runner.py:237` | tracker 进程已起，开始处理 |
-| `job_progress` | `video_tracker_runner.py:333` | 阶段性进度更新（窗口/帧/检查点） |
-| `frame_result` | `video_tracker_runner.py:327` | 单帧推理结果，包含框/掩码 payload |
-| `job_completed` | `video_tracker_runner.py:354` | 正常结束 |
-| `job_failed` | `video_tracker_runner.py:213` | 出错终止，带 `error` 字段 |
-| `job_cancelled` | `video_tracker_runner.py:308,346` | 用户取消或外部信号中止 |
+| `job_started` | `video_tracker_runner.py` | tracker 进程已起，开始处理 |
+| `job_progress` | `video_tracker_runner.py` | 阶段性进度更新（窗口/帧/检查点） |
+| `frame_result` | `video_tracker_runner.py` | 单帧推理结果，包含框/掩码 payload |
+| `job_completed` | `video_tracker_runner.py` | 正常结束，结果已暂存为待审候选，尚未写入 annotation |
+| `job_failed` | `video_tracker_runner.py` | 出错终止，带 `error` 字段 |
+| `job_cancelled` | `video_tracker_runner.py` | 用户取消或外部信号中止；若已有结果，可携带部分待审候选 |
+| `job_accepted` | `video_tracker_runner.py` | 用户接受候选，结果已写入源轨迹 / 新实例轨迹 |
+| `job_discarded` | `video_tracker_runner.py` | 用户丢弃候选，committed annotation 未改变 |
+
+`frame_result` 是运行期 live event，实例 id 可能仍是窗口内局部值；最终审阅必须以 `GET /video-tracker-jobs/{job_id}/preview` 返回的 staged result 为准。当前 Web 前端通过 HTTP accept / discard 主动完成决策，不依赖同一页面持续监听 `job_accepted / job_discarded`。
 
 > 旧版文档曾列出 `queued / window_progress / window_completed` 等事件，**这些事件在当前实现中不存在**；如有依赖需迁移到上表中的事件名。
 

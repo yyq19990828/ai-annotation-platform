@@ -141,7 +141,9 @@ async def list_video_tracker_jobs(
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+    current_admin: User = Depends(
+        require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)
+    ),
 ) -> VideoTrackerJobsResponse:
     """列 video_tracker_jobs 时间线 (created_at DESC + cursor 分页) + 按 status 聚合计数.
 
@@ -156,6 +158,15 @@ async def list_video_tracker_jobs(
     needs_task_join = project_id is not None
     if project_id is not None:
         base_conds.append(Task.project_id == project_id)
+    if current_admin.role == UserRole.PROJECT_ADMIN:
+        # 项目管理员的全局列表与计数只能覆盖自己拥有的项目；显式传入他人项目 id
+        # 也只会得到空交集，不能借列表或 counts 枚举跨项目任务。
+        base_conds.append(
+            Task.project_id.in_(
+                select(Project.id).where(Project.owner_id == current_admin.id)
+            )
+        )
+        needs_task_join = True
 
     # 聚合计数: select status, count(*) group by status (带 project/model_key 过滤).
     counts_stmt = select(VideoTrackerJob.status, func.count()).group_by(

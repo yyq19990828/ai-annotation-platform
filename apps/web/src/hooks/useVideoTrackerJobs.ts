@@ -35,12 +35,13 @@ export interface TrackerStoreState {
 
 type Listener = (state: TrackerStoreState) => void;
 
-class TrackerJobStore {
+export class TrackerJobStore {
   private jobs: Record<string, VideoTrackerJobState> = {};
   private candidates: Record<string, VideoTrackerJobPreview> = {};
   private listeners = new Set<Listener>();
   private sockets = new Map<string, WebSocket>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private hydrationTasks = new Map<string, Promise<void>>();
   private invalidateAnnotations: (taskId: string) => void = () => {};
 
   setAnnotationInvalidator(fn: (taskId: string) => void): void {
@@ -84,6 +85,60 @@ class TrackerJobStore {
       kind: "",
     });
     this.connect(job.id, token);
+  }
+
+  /** 从服务端恢复刷新前已进入候选审阅态的任务。并发调用按 task 去重。 */
+  restoreReviewable(taskId: string): Promise<void> {
+    const pending = this.hydrationTasks.get(taskId);
+    if (pending) return pending;
+    const hydration = this.loadReviewable(taskId).finally(() => {
+      this.hydrationTasks.delete(taskId);
+    });
+    this.hydrationTasks.set(taskId, hydration);
+    return hydration;
+  }
+
+  private async loadReviewable(taskId: string): Promise<void> {
+    let reviewable: VideoTrackerJob[];
+    try {
+      reviewable = await videoTrackerApi.reviewable(taskId);
+    } catch {
+      return;
+    }
+    const restored = await Promise.all(
+      reviewable.map(async (job) => {
+        try {
+          const preview = await videoTrackerApi.preview(job.id);
+          return preview.results?.length ? { job, preview } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    let jobs = this.jobs;
+    let candidates = this.candidates;
+    for (const entry of restored) {
+      if (!entry) continue;
+      const { job, preview } = entry;
+      jobs = {
+        ...jobs,
+        [job.id]: {
+          jobId: job.id,
+          taskId: job.task_id,
+          annotationId: job.annotation_id,
+          status: job.status,
+          fromFrame: job.from_frame,
+          toFrame: job.to_frame,
+          modelKey: job.model_key,
+          errorMessage: job.error_message,
+          receivedAt: Date.now(),
+        },
+      };
+      candidates = { ...candidates, [job.id]: preview };
+    }
+    this.jobs = jobs;
+    this.candidates = candidates;
+    this.emit();
   }
 
   private connect(jobId: string, token: string): void {
@@ -275,7 +330,7 @@ function mapEventToStatus(
 
 const trackerStore = new TrackerJobStore();
 
-export function useVideoTrackerJobs() {
+export function useVideoTrackerJobs(taskId?: string) {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
   const [state, setState] = useState<TrackerStoreState>({ jobs: {}, candidates: {} });
@@ -287,6 +342,10 @@ export function useVideoTrackerJobs() {
   }, [qc]);
 
   useEffect(() => trackerStore.subscribe(setState), []);
+
+  useEffect(() => {
+    if (taskId) void trackerStore.restoreReviewable(taskId);
+  }, [taskId]);
 
   const tokenRef = useRef(token);
   tokenRef.current = token;

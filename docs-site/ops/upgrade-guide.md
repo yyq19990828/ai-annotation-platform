@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-07-11
 ---
 
 # 版本升级指南
@@ -27,8 +27,10 @@ last_reviewed: 2026-05-11
 # 1. 拉取最新代码
 git pull origin main
 
-# 2. 检查是否有依赖变更
-git diff HEAD~1 apps/api/pyproject.toml apps/web/package.json
+# 2. 对比“当前部署 commit”到新 HEAD，检查依赖 / Dockerfile / compose 变化
+git diff <deployed-commit>..HEAD -- apps/api/pyproject.toml apps/api/uv.lock \
+  apps/web/package.json pnpm-lock.yaml infra/docker apps/*-backend/Dockerfile \
+  docker-compose*.yml
 
 # 3a. 若有依赖变更 → 重新构建镜像
 docker compose build api web celery-worker
@@ -47,10 +49,20 @@ curl -f http://localhost:5173
 ## 迁移相关说明
 
 - 数据库迁移通过 Alembic 自动管理，每次升级必须执行 `alembic upgrade head`
-- 若迁移失败，可回滚：`alembic downgrade -1`（回退一个版本）
+- 只有目标 migration 明确提供可逆 downgrade 时才能执行 `alembic downgrade`；数据归位、合并或候选暂存类迁移可能是 no-op downgrade 或会丢数据，回滚前必须先读 migration docstring
 - 前端静态资源由 Vite 构建，版本号在文件名中，无缓存问题
 
 ## 重点注意事项
+
+### 跨过工具单位退役与视频候选迁移
+
+从较旧环境直接升级、迁移链包含 `0115`–`0117` 时，必须安排维护窗口并先做数据库备份：
+
+- `0115` 新增项目级 `ai_interactive_enabled`，并把 annotation 中退役的 `ai_interactive` 按几何分批归位到 `region` / `bbox`。分批降低单事务持锁，但大表仍会产生读写压力。
+- `0116` 分批归位 prediction，并把项目 / 模板 `tool_bindings.ai_interactive` 中的类别与属性合并到真实几何单位。冲突时保留目标单位配置；downgrade 是 no-op，无法恢复退役单位。
+- `0117` 新增 `video_tracker_jobs.staged_result`。downgrade 会删除该列，所有尚未接受的视频追踪候选随之丢失；回滚前先处理 `pending_review` / 带候选的 `cancelled` job。
+
+升级后先核对 migration head，再验证：旧项目的 region / bbox 类别仍完整、交互式 AI 总开关符合预期、视频追踪完成后进入待审且接受 / 丢弃可用。
 
 ### 视频媒体处理
 

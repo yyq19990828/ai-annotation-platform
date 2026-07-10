@@ -1,11 +1,13 @@
 # 0026 — 类别与属性按工具单位 (tool_unit) 强隔离绑定
 
-- **Status:** Accepted
+- **Status:** Accepted (amended)
 - **Date:** 2026-05-19
 - **Deciders:** core team
 - **Supersedes:** —
 
 > **更新 (v0.10.22):** 完成派生列删除。`projects` / `project_templates` 的旧扁平列 `classes` / `classes_config` / `attribute_schema` 已 drop (migration 0078),写时双写 helper `apply_tool_bindings_legacy_sync` 移除 —— 至此 `tool_bindings` 是**唯一存储真值**,存储侧不再有第二份会漂移的数据。旧 `derive_legacy_*` 改名 `derive_*`,降级为**读时派生投影**(响应序列化 / COCO·YOLO·AAP 导出按需从 `tool_bindings` 拍平)。`ProjectOut` / `ProjectTemplateOut` 仍暴露三个扁平字段以兼容前端众多读端,但其值由 `model_validator` 从 `tool_bindings` 派生,非独立存储。旧客户端 / 旧 AAP JSON 的扁平**输入**仍由 `coalesce_legacy_into_tool_bindings` 反向折叠进 `tool_bindings`(保留输入兼容)。
+
+> **修订 (2026-07-09):** `ai_interactive` 被确认是能力维度而非几何工具单位，现已从 `ToolUnitId` 退役。smart-point / smart-box / exemplar 的多边形归 `region`，Magic Box 的矩形框归 `bbox`；能否使用交互式 AI 由项目级 `ai_interactive_enabled` 控制。迁移 0115/0116 把存量 annotation / prediction 与项目 / 模板 binding 按几何归位，遗留客户端输入也在 schema 边界映射，不再写回退役值。本修订不改变“真实几何工具单位之间类别强隔离”的原决策。
 
 ## Context
 
@@ -30,14 +32,13 @@ v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema 
 
 **工具单位枚举** (与后端 `app/schemas/_jsonb_types.ToolUnitId` Literal 严格对齐):
 
-> **更新 (2026-06):** 枚举随 polyline / rotated_bbox / keypoint / point_mask_3d 落地扩展到 8 个;`lidar_box_3d` 已于 v0.13.2 实装真实 Three.js 点云工作台。下表已对齐当前 Literal,不再有「占位/未实现」行。
+> **更新 (2026-07):** 枚举随 polyline / rotated_bbox / keypoint / point_mask_3d 落地扩展，并移除不产出独有几何的 `ai_interactive`。下表对齐当前 Literal。
 
 | tool_unit_id | 包含工具 (Workbench ToolId) | type 限制 |
 |---|---|---|
-| `bbox` | BboxTool | image, video |
-| `polyline` | PolylineTool | image |
-| `region` | PolygonTool + MaskTool **打包** | image |
-| `ai_interactive` | SmartPointTool + SmartBoxTool + TextPromptTool + ExemplarTool + MagicBoxTool **打包** | image |
+| `bbox` | BboxTool；Magic Box 产物 | image, video |
+| `polyline` | PolylineTool | image, video |
+| `region` | PolygonTool + MaskTool；smart-point / smart-box / exemplar 的多边形产物 | image, video |
 | `lidar_box_3d` | Lidar3DBoxTool | lidar |
 | `rotated_bbox` | RotatedBboxTool | image |
 | `keypoint` | KeypointTool | image |
@@ -55,6 +56,7 @@ v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema 
 - AAP JSON `schema_version` 升 `1.1`,envelope 加 `project.tool_bindings`,annotations / predictions 数组每条加 `tool_unit_id` (1.0 reader 走 `extra="ignore"` 仍兼容)。
 - 工作台 `useToolBindings(project, activeToolId)` 派生当前激活工具的 classes / classesConfig / attributeSchema;切工具时若 activeClass 不在新 unit 类别集自动切首个类。
 - ProjectTemplate 同步加 `tool_bindings` 字段 (alembic 0073) + `CLONEABLE_PROJECT_FIELDS` 收入。
+- 交互式 AI 工具由 `Project.ai_interactive_enabled` 控制可见性，类别与属性始终读取产出几何所属的 `region` / `bbox` binding。
 
 ## Consequences
 
@@ -97,7 +99,7 @@ v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema 
 
 - 实现代码位置:
   - 后端: `apps/api/app/db/models/project.py`、`annotation.py`、`prediction.py`、`project_template.py`;`apps/api/app/schemas/_jsonb_types.py`;`apps/api/app/schemas/project.py` / `annotation.py` / `prediction.py` / `project_template.py` / `aap_json.py`;`apps/api/app/services/project.py` (含 `derive_classes_config` / `coalesce_legacy_into_tool_bindings`;v0.10.22 删 `apply_tool_bindings_legacy_sync`,`derive_legacy_*` 改名 `derive_*`);`apps/api/app/services/annotation.py` (class_name 软校验);`apps/api/app/services/prediction.py` (`derive_tool_unit_from_ls_type` 派生);`apps/api/app/services/export.py` (COCO categories);`apps/api/app/api/v1/projects.py` (create/update/rename_class);`apps/api/app/api/v1/tasks.py` (create_annotation 透传)。
-  - 迁移: `alembic/versions/0072_project_tool_bindings.py`、`0073_template_tool_bindings.py`。
+  - 迁移: `alembic/versions/0072_project_tool_bindings.py`、`0073_template_tool_bindings.py`、`0115_project_ai_interactive_enabled.py`、`0116_retire_ai_interactive_tool_unit.py`。
   - 前端: `apps/web/src/constants/toolUnits.ts`、`apps/web/src/components/projects/CreateProjectWizard.tsx`、`apps/web/src/pages/Projects/sections/{ClassesSection,AttributesSection,ToolUnitTabs,useProjectToolBindings}.{tsx,ts}`、`apps/web/src/pages/Workbench/state/useToolBindings.ts`、`apps/web/src/pages/Workbench/stage/tools/{MagicBoxTool,toolUnits}.ts`、`apps/web/src/pages/Workbench/stage/shared/geometry/bbox.ts`、`apps/web/src/pages/ProjectTemplates/TemplateEditModal.tsx`。
 - 相关 ROADMAP / ADR: ROADMAP §A「新建项目向导」「项目模板」、§C.3「Magic Box」、ADR-0023 (ProjectTemplate)、ADR-0024 (AAP JSON)。
 - 触发后续工作: ROADMAP §A 加入 v0.10.18+ 「删除派生 classes_config / attribute_schema」「polyline / lidar_box_3d 工具实现」「跨 tool_unit 类别软关联 (alias_to)」「Snap-to-edge Canny/Sobel」「rendering_config 共享编辑器 (供 TemplateEditModal 复用)」等延伸项。

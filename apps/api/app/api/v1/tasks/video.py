@@ -56,7 +56,10 @@ from app.services.video_segment_service import (
     list_segments as list_video_segments,
     release_segment,
 )
-from app.services.video_tracker_job_service import create_tracker_job
+from app.services.video_tracker_job_service import (
+    create_tracker_job,
+    list_reviewable_tracker_jobs,
+)
 
 
 from app.api.v1.tasks._shared import (
@@ -70,6 +73,23 @@ from app.api.v1.tasks._shared import (
 )
 
 router = APIRouter()
+
+
+@router.get(
+    "/{task_id}/video/tracker-jobs/reviewable",
+    response_model=list[VideoTrackerJobOut],
+)
+async def get_reviewable_video_tracker_jobs(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """恢复当前任务仍待接受/丢弃的服务端候选。"""
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if task.file_type != "video":
+        raise HTTPException(status_code=400, detail="Task is not a video task")
+    return await list_reviewable_tracker_jobs(db, task=task, user=current_user)
 
 
 @router.get("/{task_id}/video/manifest", response_model=TaskVideoManifestResponse)

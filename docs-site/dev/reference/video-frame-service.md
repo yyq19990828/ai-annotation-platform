@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.25
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-11
 ---
 
 # 视频后端帧服务
@@ -19,7 +19,7 @@ last_reviewed: 2026-05-27
 - `VideoChunk` 保存 chunk 元数据和 MinIO key。
 - `VideoFrameCache` 保存单帧 WebP/JPEG 缓存元数据和 MinIO key。
 - `VideoSegment` 保存视频内可分配 frame range、assignee 和短 TTL lock。
-- `VideoTrackerJob` 保存交互式视频 tracker 的 job 状态、frame range、输入 prompt 和取消请求。
+- `VideoTrackerJob` 保存交互式视频 tracker 的 job 状态、frame range、输入 prompt、取消请求和待审 `staged_result`；接受前不修改 annotation。
 - `/api/v1/tasks/{task_id}/video/...` 是现有前端兼容入口。
 - `/api/v1/videos/{dataset_item_id}/...` 是长期 facade；服务端必须找到当前用户可见的 video task，否则返回 404。
 
@@ -219,17 +219,24 @@ POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:release
 
 ```http
 POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
+GET /api/v1/video-tracker-jobs?project_id=&status=&model_key=&cursor=&limit=
 GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
+GET /api/v1/video-tracker-jobs/{job_id}/preview
+POST /api/v1/video-tracker-jobs/{job_id}/accept
+POST /api/v1/video-tracker-jobs/{job_id}/discard
 ```
 
-创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。当前支持三类 `model_key`：
+创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。当前支持四类 `model_key`：
 
 | model_key | 用途 |
 |---|---|
 | `mock_bbox` | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。 |
-| `sam2_video` | 调项目绑定的 connected ML Backend，发送 `context.type="video_tracker"`。 |
-| `sam3_video` | 与 `sam2_video` 相同协议，供 SAM 3 backend 并存接入。 |
+| `sam2_video` | 种子驱动的 SAM2 视频追踪；可消费源轨迹框或 `prompt.seeds` 点 / 框、多目标、多帧提示。 |
+| `sam3_video` | 文本驱动的多目标自动发现；每窗检测后由平台在窗口边界做 IoU 身份关联。 |
+| `sam3_video_interactive` | 种子驱动的 SAM3 PVS 追踪；点 / 框提示通过视频 memory 跨帧传播。 |
+
+真实 tracker 不再固定调用 `project.ml_backend_id`。`MLBackendService.get_tracker_backend()` 会在项目所有已启用 backend 中按 `health_meta.capabilities.supported_trackers` 选择：项目主后端支持该 tracker 时优先，否则选择其它 connected 的匹配 backend。没有能力匹配时返回不支持；`mock_bbox` 不需要 backend。
 
 创建请求：
 
@@ -240,9 +247,22 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
   "model_key": "sam2_video",
   "direction": "forward",
   "segment_id": "optional-segment-uuid",
-  "prompt": { "type": "bbox", "geometry": {} }
+  "prompt": {
+    "seeds": [
+      {
+        "obj_id": 1,
+        "prompts": [
+          { "frame_index": 0, "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 } },
+          { "frame_index": 24, "points": [[0.45, 0.5, 1], [0.7, 0.5, 0]] }
+        ]
+      }
+    ]
+  },
+  "sam_variant": "small"
 }
 ```
+
+`prompt.seeds[]` 按目标组织：`obj_id=1` 是主目标，额外 obj 在接受后各创建一条新轨迹；`prompts[]` 按绝对源帧保存提示，点的第三位 `label` 为 `1` 正点 / `0` 负点。单帧提示也可使用顶层 `bbox` / `points` 简写。`sam3_video` 使用顶层 `text`（必填）和可选 `exemplars`，不消费交互种子。完整 backend wire contract 见 [ML Backend Protocol](./ml-backend-protocol#22-interactive-predict单图或短交互)。
 
 后端校验：
 
@@ -250,6 +270,7 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 - `annotation_id` 必须属于该 task 且未删除。
 - `from_frame/to_frame` 必须在视频帧范围内，且不能反向。
 - 非管理员用户必须先持有覆盖该 frame range 的有效 segment lock；跨 segment 请求会被拒绝。
+- polyline 轨迹不允许发起传播；当前 runner 只处理 bbox / polygon 轨迹输出。
 
 响应中的 `event_channel` 形如 `video-tracker-job:{job_id}`。前端可订阅：
 
@@ -265,6 +286,8 @@ WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
 - `job_completed`
 - `job_failed`
 - `job_cancelled`
+- `job_accepted`
+- `job_discarded`
 
 ```mermaid
 sequenceDiagram
@@ -275,15 +298,15 @@ sequenceDiagram
     participant ML as ML Backend (/predict)
     participant Pub as Redis Pub/Sub<br/>(video-tracker-job:{job_id})
 
-    FE->>API: POST /video-tracker-jobs (frame range + prompt)
+    FE->>API: POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate
     API->>W: enqueue runner
     API-->>FE: 201 { job_id, event_channel }
     FE->>API: WS /ws/video-tracker-jobs/{job_id}?token=...
     W->>Pub: publish job_started
     Pub-->>FE: job_started
 
-    loop 长区间按 VIDEO_TRACKER_WINDOW_SIZE_FRAMES 分窗
-        W->>ML: /predict (interactive video, source_geometry)
+    loop 长区间分窗
+        W->>ML: /predict (source_geometry + seeds/text)
         ML-->>W: stream frame_result[]
         loop 每帧
             W->>Pub: publish frame_result {idx, geometry, confidence}
@@ -294,22 +317,45 @@ sequenceDiagram
     end
 
     alt 正常结束
+        W->>W: staged_result 暂存候选
         W->>Pub: publish job_completed
         Pub-->>FE: job_completed
+        FE->>API: GET /video-tracker-jobs/{id}/preview
+        API-->>FE: 候选逐帧结果
+        alt 用户接受
+            FE->>API: POST /video-tracker-jobs/{id}/accept
+            API->>API: 主实例回填源轨迹，额外实例新建轨迹
+        else 用户丢弃
+            FE->>API: POST /video-tracker-jobs/{id}/discard
+            API->>API: 清 staged_result，annotation 不变
+        end
     else 出错
         W->>Pub: publish job_failed {error}
         Pub-->>FE: job_failed
     else 用户取消 (DELETE)
         FE->>API: DELETE /video-tracker-jobs/{job_id}
         API->>W: 写 cancel_requested_at
+        W->>W: 若已有结果则暂存部分候选
         W->>Pub: publish job_cancelled
         Pub-->>FE: job_cancelled
     end
 ```
 
-DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：`queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track_bbox` keyframe，不用 prediction keyframe 覆盖 manual 结果。
+DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：
 
-SAM video adapter 会调用项目绑定的 ML Backend `/predict`：
+```text
+queued -> running -> pending_review -> accepted | discarded
+                  -> failed
+                  -> cancelled -> accepted | discarded   # 有部分 staged_result 时
+```
+
+`completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；取消前已收集的结果会暂存为部分候选。待审 / 已接受 / 已丢弃属于终态，不能再取消。
+
+`video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。两个决策都写审计动作。
+
+接受时 `_partition_results_by_instance()` 把主实例回填到源 annotation，额外 `instance_id` 各创建一条同类轨迹；人工关键帧不会被 prediction 覆盖。丢弃会清空 `staged_result`，不修改 annotation。该数据边界与批量预标的 `Prediction` 不同，见[视频 AI 追踪架构](../concepts/video-ai-tracking)。
+
+SAM video adapter 会调用能力匹配的 ML Backend `/predict`：
 
 ```json
 {
@@ -331,8 +377,9 @@ SAM video adapter 会调用项目绑定的 ML Backend `/predict`：
     "from_frame": 0,
     "to_frame": 299,
     "direction": "forward",
-    "prompt": { "type": "bbox", "geometry": {} },
-    "source_geometry": {}
+    "prompt": {},
+    "source_geometry": {},
+    "seeds": []
   }
 }
 ```
@@ -344,15 +391,17 @@ Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数�
   "result": [
     {
       "frame_index": 1,
-      "geometry": { "type": "bbox", "x": 10, "y": 20, "w": 40, "h": 50 },
+      "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.4, "h": 0.5 },
       "confidence": 0.91,
-      "outside": false
+      "outside": false,
+      "instance_id": "1",
+      "primary": true
     }
   ]
 }
 ```
 
-长区间会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 分窗多次调用 backend；整体 job 仍只发布同一个事件流。`confidence` 低于 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` 的结果会按 outside prediction range 写回，不生成 prediction keyframe。
+长区间会分窗多次调用 backend；SAM3 系使用 `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`，其它 tracker 使用 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES`。种子驱动 tracker 在后续窗按每个实例的上一窗末帧几何续种；文本 multiplex tracker 在窗边界按 IoU 把局部 id 映射为全局 `instance_id`。整体 job 仍只发布同一个事件流。`confidence` 低于 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` 的结果标为 outside；结果先进入 staged candidate，接受时才写入轨迹。
 
 ## 配置与指标
 
@@ -366,6 +415,7 @@ Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数�
 | `VIDEO_SEGMENT_SIZE_FRAMES` | 18000 | 协作 segment 帧数 |
 | `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | 300 | segment lock 心跳 TTL |
 | `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | 300 | tracker 调 ML Backend 的单次 frame window 上限 |
+| `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES` | 16 | SAM3 文本 / PVS tracker 的单次 frame window 上限 |
 | `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | 0.15 | 低置信度 tracker 结果写 outside 的阈值 |
 
 Celery route：

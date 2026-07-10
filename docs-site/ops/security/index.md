@@ -290,7 +290,7 @@ production 收紧的目的：避免误把 dev regex 上线放任何 localhost �
 
 ### 7.2 文件存取
 
-MinIO presigned URL 默认 1 小时 TTL（`apps/api/app/services/storage.py`）。签发时把过期时刻对齐到 10 分钟网格，让同一对象在一个窗口内签出完全相同的 URL——浏览器据此缓存缩略图与原图，避免列表刷新后整批重下。代价是实际有效期在 1 小时到 1 小时 10 分之间浮动。每个 URL 单文件，不含目录列表能力。日志中可看到生成事件。
+MinIO 的 presigned **GET / download URL** 默认 1 小时 TTL（`apps/api/app/services/storage.py`）。下载签名会把过期时刻对齐到 10 分钟网格，让同一对象在一个窗口内签出完全相同的 URL——浏览器据此缓存缩略图与原图，避免列表刷新后整批重下。代价是实际有效期在 1 小时到 1 小时 10 分之间浮动。presigned PUT / upload URL 仍使用调用方传入的原始 `expires_in`，不做网格对齐。每个 URL 只授权单文件，不含目录列表能力。
 
 ### 7.3 Sentry 数据脱敏
 

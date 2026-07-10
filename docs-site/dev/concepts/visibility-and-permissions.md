@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-03
+last_reviewed: 2026-07-11
 ---
 
 # 可见性与权限
@@ -66,6 +66,15 @@ last_reviewed: 2026-06-03
 - reviewer 能看见 reviewing task，但不能激活 batch
 - owner 越权可见，不代表绕过所有 task 状态机约束
 
+### 项目作用域 ML Backend
+
+`/projects/{project_id}/ml-backends/*` 不能只依赖 `require_roles`。当前端点按动作分两组：
+
+- 可见成员读 / 推理：list、get、setup、capabilities 和交互推理使用 `require_project_visible`；指定 backend 还必须已对该项目启用。
+- owner 管理：创建、编辑、停用、enablement、health、capabilities refresh、warmup / reload / unload、predict-test 使用 `require_project_owner`。
+
+所有带 `task_id` 的推理入口还要校验 `task.project_id == project_id`。不存在与跨项目 task 都返回 404，不允许 A 项目成员拿 A 的 backend 处理 B 项目 task。该边界与“用户角色是 project_admin”不同：角色只决定动作类别，project dependency 决定具体资源范围。
+
 ## 项目级范围收敛（成员绩效端点）
 
 除了「看不看得见某条数据」，还有一类是「聚合数字按哪个项目口径切分」。
@@ -81,6 +90,8 @@ last_reviewed: 2026-06-03
 这把「越权读他人项目绩效」收成 IDOR 安全边界：role 门只放行 `super_admin + project_admin`，
 而 `project_admin` 被严格锁定在 **owner 自有项目** 范围，所有产能 / 质量 / 活跃聚合都按该 `project_id` 过滤
 （此前 `project` 仅过滤「返回哪些用户」，聚合仍是跨项目全局数字 → 误导且越权）。
+
+同一原则也适用于视频追踪任务聚合：`GET /video-tracker-jobs` 的 role 门只决定谁能进入管理列表；`project_admin` 的 items、counts 和显式 `project_id` 过滤还必须与 `Project.owner_id == current_user.id` 求交集。工作台恢复候选使用任务级 reviewable 端点：先校验 task 可见性，普通用户再按 `created_by` 收窄，项目 owner / 超级管理员才可恢复该 task 的全部候选。
 
 ## 现阶段最该注意的坑
 

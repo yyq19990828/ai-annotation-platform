@@ -84,7 +84,7 @@ services:
 
 | 场景 | 启动命令 | GPU 需求 | 显存预算 | 备注 |
 |---|---|---|---|---|
-| **dev (无 GPU 机)** | `docker compose up` | 0 | 0 | grounded-sam2-backend 不启动, ml_backends 行 state=stopped, 标注页前端走 disabled UI |
+| **dev (无 GPU 机)** | `docker compose up` | 0 | 0 | GPU backend 不启动，注册表实例不可用，标注页前端走 disabled UI |
 | **dev (有 GPU)** | `docker compose --profile gpu up` | 1 卡 | ~3GB (tiny) | 默认启动 grounded-sam2 主变体，额外变体按 prefetch / model pool 配置 |
 | **生产 (单租户)** | `docker compose --profile gpu up -d` | ≥ 1 卡 | 见 §1.2 | 按显存档位选 SAM_VARIANT |
 | **生产 (多变体并存)** | 拆 service: `gsam2-tiny` / `gsam2-large` (各自 profile) | ≥ 2 卡 (推荐) 或 1 张 ≥ 24GB | 累加 §1.2 | C → B 升级路径见 ROADMAP §A 注册 backend 选变体 |
@@ -233,7 +233,7 @@ histogram_quantile(0.95,
 
 ## 4.5 per-backend max_concurrency 限速
 
-`ml_backends.extra_params.max_concurrency` (JSONB 字段, 默认 4) 控制平台到该 backend 的并发 `/predict` 上限. 实现:
+`ml_backend_registry.extra_params.max_concurrency` (JSONB 字段, 默认 4) 控制平台到该 backend 的并发 `/predict` 上限. 实现:
 
 - `apps/api/app/services/ml_client.py` 模块级 `_semaphores: dict[backend_id, asyncio.Semaphore]` 缓存.
 - `MLBackendClient.__init__` 读 `extra_params.max_concurrency`, 通过 `_get_semaphore(backend_id, max_cc)` 拿到或创建信号量.
@@ -243,7 +243,7 @@ histogram_quantile(0.95,
 **配置示例** (DB JSONB):
 
 ```json
-// ml_backends 行
+// ml_backend_registry 行
 {
   "id": "abc-...",
   "url": "http://172.17.0.1:8001/",

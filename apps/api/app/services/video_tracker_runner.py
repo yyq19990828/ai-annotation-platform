@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 TrackerEventPublisher = Callable[[str, dict], Awaitable[None]]
 
 
+class TrackerJobStateConflict(ValueError):
+    """Requested review action is incompatible with the current job state."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -503,13 +507,26 @@ async def discard_tracker_job(
     *,
     publisher: TrackerEventPublisher = publish_tracker_event,
 ) -> VideoTrackerJob | None:
-    """丢弃候选: status=DISCARDED、清 staged_result, annotation 零改动。幂等。"""
+    """丢弃可审候选并保持 annotation 零改动；重复丢弃幂等。"""
     job = await _load_job_for_update(db, job_id)
     if job is None:
         return None
-    if job.status != VideoTrackerJobStatus.DISCARDED.value:
-        job.status = VideoTrackerJobStatus.DISCARDED.value
-        job.staged_result = None
+    if job.status == VideoTrackerJobStatus.DISCARDED.value:
+        await db.commit()
+        return job
+    staged_rows = (job.staged_result or {}).get("results") or []
+    reviewable = job.status in (
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.CANCELLED.value,
+    )
+    if not reviewable or not staged_rows:
+        current_status = job.status
+        await db.rollback()
+        raise TrackerJobStateConflict(
+            f"Video tracker job cannot be discarded from status {current_status}"
+        )
+    job.status = VideoTrackerJobStatus.DISCARDED.value
+    job.staged_result = None
     await db.commit()
     await db.refresh(job)
     await publisher(job.event_channel, _event(job, "job_discarded"))

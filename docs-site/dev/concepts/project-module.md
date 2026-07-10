@@ -69,7 +69,8 @@ graph TD
 | `maximum_annotations` | 多人重叠标注上限 |
 | `show_overlap_first` | 是否优先展示重叠任务 |
 | `task_lock_ttl_seconds` | task 锁 TTL |
-| `ml_backend_id` | 实际绑定的 ML backend |
+| `ml_backend_id` | 项目主后端指针，用于初始选择 / fallback；交互 prompt 与视频 tracker 可在其它已启用 backend 中按能力路由 |
+| `ai_interactive_enabled` | 工作台交互式 AI 工具的项目级总开关；不属于 `tool_bindings` 几何单位 |
 | `ai_model` | display hint，不再是行为真值 |
 | `box_threshold` / `text_threshold` | 项目级 AI 推理默认参数 |
 | `preannotate_pipeline` | nullable JSONB · 项目级「已保存的预标编排」（方案 A，一项目一条）；`null` / 缺省 = 未配编排，工作台 AI 预标 popover 按此跑当前题。单阶段配置也存成单元素数组，保留「一项目一编排」语义。详见 [预标注流水线 · 多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) |
@@ -82,7 +83,7 @@ graph TD
 设计要点：
 
 - Project 不只是“容器名”，它同时保存工作台策略、AI 行为默认值和统计缓存
-- `ai_model` 已不是主真值，真实驱动能力的是 `ml_backend_id`
+- `ai_model` 只是展示提示；实际能力由项目已启用 backend 的 `/setup` 快照、具体 prompt / tracker 路由与 `ml_backend_id` 优先级共同决定
 
 ## 项目状态
 
@@ -123,11 +124,11 @@ archived
     "attribute_schema": { "fields": [] }
   },
   "region": { ... },
-  "ai_interactive": { ... }
+  "polyline": { ... }
 }
 ```
 
-工具单位枚举 (与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐): `bbox` / `polyline` (留位) / `region` (polygon + mask 打包) / `ai_interactive` (smart-* + magic-box 打包) / `lidar_box_3d` (留位)。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)。
+工具单位枚举与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐：`bbox` / `polyline` / `region` / `lidar_box_3d` / `rotated_bbox` / `keypoint` / `point_mask_3d`。交互式 AI 不是几何工具单位：smart-point / smart-box / exemplar 的多边形归 `region`，Magic Box 的矩形框归 `bbox`；项目级 `ai_interactive_enabled` 只控制能力是否开放。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)。
 
 如果你改的是「标注长什么样」, 十有八九要从 project.tool_bindings 入手, 而不是 task。
 

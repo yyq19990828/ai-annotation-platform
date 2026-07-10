@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-11
 ---
 
 # ML Backend
@@ -66,6 +66,12 @@ PUT /api/v1/projects/:id/ml-backends/:registry_id/enablement
 - `available` 列出全部全局 backend + 本项目启用态 / 覆盖。
 - `enablement` 切换启用并写项目级覆盖（`box_threshold` / `text_threshold` / `default_variants` 均可选）。
 
+项目作用域端点同时执行角色门与项目范围门：
+
+- list / get / setup / capabilities / interactive inference：调用者必须能看见该项目；读指定 backend 时还要求它已对本项目启用。
+- create / update / delete(enablement disable) / health / capabilities refresh / warmup / reload / unload / predict-test：要求项目 owner（超级管理员仍按全局特权放行）。仅有 `project_admin` 角色但不是该项目 owner 不足以执行写操作。
+- 带 `task_id` 的测试 / 交互端点还会校验 task 确实属于 URL 中的 project；不属于时统一返回 404，避免跨项目 IDOR 与存在性泄露。
+
 设主后端 / AI 开关（走项目本体）：
 
 ```http
@@ -104,8 +110,8 @@ POST /api/v1/projects/:id/ml-backends/:bid/capabilities/refresh
 - 服务端探 backend `/setup`（复用 30s setup 缓存链路）后调 `extract_capabilities` 派生快照，返回 `models[]` / `infra` / `modalities` 与扁平并集字段（所有 model 的 prompts / geometry 去重合并）。
 - 老 backend（协议 v1，无 `models[]`）由平台合成隐式单 model（`id="default"`），返回结构一致，长度为 1。
 - `refresh` 对该 backend 强制重探并刷新缓存。
-- 权限同 `/setup`：项目管理员、超级管理员、审核员、标注员均可读。backend `/setup` 不可达时返回 502。
-- 能力快照同时落库到 `ml_backends.health_meta["capabilities"]`（健康检查时写入），无独立迁移。
+- `/setup` 与 capabilities 允许能看见该项目的项目管理员、超级管理员、审核员、标注员读取；`refresh` 只允许项目 owner / 超级管理员。backend `/setup` 不可达时返回 502。
+- 能力快照同时落库到 `ml_backend_registry.health_meta["capabilities"]`（健康检查时写入），无独立迁移。
 
 字段语义与受控词表见 [ML Backend 协议 §4.1](../../dev/reference/ml-backend-protocol)。
 

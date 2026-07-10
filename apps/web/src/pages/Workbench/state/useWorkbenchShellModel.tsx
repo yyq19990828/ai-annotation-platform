@@ -567,7 +567,7 @@ export function useWorkbenchShellModel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isVideoTask, videoChaptersData, videoFrameIndex, setVideoFrameIndex]);
 
-  const trackerJobs = useVideoTrackerJobs();
+  const trackerJobs = useVideoTrackerJobs(taskId);
   const [propagateDialog, setPropagateDialog] = useState<{
     annotation: VideoTrackAnnotation;
     submitting: boolean;

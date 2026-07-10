@@ -83,6 +83,10 @@ export const videoTrackerApi = {
     ),
   get: (jobId: string) =>
     apiClient.get<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
+  reviewable: (taskId: string) =>
+    apiClient.get<VideoTrackerJob[]>(
+      `/tasks/${taskId}/video/tracker-jobs/reviewable`,
+    ),
   cancel: (jobId: string) =>
     apiClient.delete<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   // v0.21.28 · 候选/接受流。

@@ -199,6 +199,48 @@ async def test_project_and_model_key_filter(
     assert body["items"][0]["model_key"] == "sam3_video"
 
 
+async def test_project_admin_list_is_scoped_to_owned_projects(
+    httpx_client_bound, project_admin, super_admin, db_session
+):
+    project_owner, token = project_admin
+    other_owner, _ = super_admin
+    own_task, own_item = await _make_video_task(db_session, project_owner.id)
+    other_task, other_item = await _make_video_task(db_session, other_owner.id)
+    await _make_job(
+        db_session,
+        own_task,
+        own_item,
+        project_owner.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+    )
+    await _make_job(
+        db_session,
+        other_task,
+        other_item,
+        other_owner.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+    )
+    await db_session.commit()
+
+    res = await httpx_client_bound.get(
+        "/api/v1/video-tracker-jobs", headers=_bearer(token)
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert [item["project_id"] for item in body["items"]] == [
+        str(own_task.project_id)
+    ]
+    assert body["counts"]["pending_review"] == 1
+
+    cross_project = await httpx_client_bound.get(
+        f"/api/v1/video-tracker-jobs?project_id={other_task.project_id}",
+        headers=_bearer(token),
+    )
+    assert cross_project.status_code == 200, cross_project.text
+    assert cross_project.json()["items"] == []
+    assert cross_project.json()["counts"]["pending_review"] == 0
+
+
 async def test_cursor_pagination(httpx_client_bound, super_admin, db_session):
     user, token = super_admin
     task, item = await _make_video_task(db_session, user.id)
@@ -331,3 +373,59 @@ async def test_discard_leaves_annotation_untouched(
     assert res.json()["status"] == "discarded"
     await db_session.refresh(annotation)
     assert annotation.annotation_type == "bbox"  # 源零改动
+
+    # 重复丢弃幂等，不会把已清空的 staged_result 当非法候选。
+    repeated = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/discard", headers=_bearer(token)
+    )
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["status"] == "discarded"
+
+
+async def test_discard_rejects_non_reviewable_status(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job = await _make_job(
+        db_session,
+        task,
+        item,
+        user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+    )
+    await db_session.commit()
+
+    res = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/discard", headers=_bearer(token)
+    )
+
+    assert res.status_code == 409, res.text
+    await db_session.refresh(job)
+    assert job.status == VideoTrackerJobStatus.QUEUED.value
+
+
+async def test_task_reviewable_jobs_supports_workbench_restore(
+    httpx_client_bound, annotator, db_session
+):
+    user, token = annotator
+    task, item = await _make_video_task(db_session, user.id)
+    staged_job, _ = await _make_staged_job(db_session, task, item, user.id)
+    await _make_job(
+        db_session,
+        task,
+        item,
+        user.id,
+        status=VideoTrackerJobStatus.RUNNING.value,
+    )
+    await db_session.commit()
+
+    res = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/tracker-jobs/reviewable",
+        headers=_bearer(token),
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert [row["id"] for row in body] == [str(staged_job.id)]
+    assert body[0]["status"] == "pending_review"

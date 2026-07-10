@@ -1,29 +1,29 @@
 ---
-audience: [super_admin]
+audience: [project_admin, super_admin]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 模型市场（/model-market）
 
-模型市场把 ML Backend 能力目录、运行时观测、注册管理集中到同一个超管页面。
+模型市场把 ML Backend 能力目录、运行时观测、注册管理集中到同一个页面；项目管理员使用只读能力视图，超级管理员负责全局运行时与注册管理。
 
 ## 目的
 
 跨项目纵览所有 ML Backend 与模型能力。从这里可以一站式：
 
 - 按 model 条目检索能力目录
-- 看注册 backend 与 env-only 容器的实时健康 / GPU / pool 状态
-- 对注册 backend 执行健康检查、卸载、预热
-- 全局新增 / 编辑 / 删除 backend，并查看各项目对它的启用状态
+- 超管查看注册 backend 与未注册容器的实时健康 / GPU / pool 状态
+- 超管对注册 backend 执行健康检查、卸载、预热
+- 超管全局新增 / 编辑 / 删除 backend，并查看各项目对它的启用状态
 
 ## 主要视图
 
 ![模型市场列表](../images/superadmin/model-market/list.png)
 
-页面顶部有三段切换：**能力目录 / 运行时观测 / 注册管理**。当前视图写入 `?tab=catalog|runtime|registry`，可直接分享深链。
+超级管理员看到三段切换：**能力目录 / 运行时观测 / 注册管理**；项目管理员只看到能力目录和只读注册管理。当前视图写入 `?tab=catalog|runtime|registry`，可直接分享深链。
 
 > **按角色可见范围**：本页对超管与项目管理员开放，但内容按角色收敛。超管看到顶部统计卡与全部三段（能力目录 / 运行时观测 / 注册管理）。项目管理员**只看到能力目录 + 只读的注册管理**——顶部统计卡与「运行时观测」段隐藏（二者依赖 super_admin only 的全局 overview / observe 接口），能力目录也退到 `/instances` 单端点视图（协议卡 + model 卡，不含各项目运行时池富化，不再因拿不到 overview 而整块报错）。项目管理员对自己项目的 backend 启用仍在项目设置里做。
 
@@ -68,7 +68,8 @@ last_reviewed: 2026-06-10
 - 每个全局注册 backend 一行（URL 全局唯一），实时指标取对应容器值。
 - 观测 URL 没有匹配任何注册 backend 时，会进入「未注册容器」分组，只支持直连 observe / smoke-test。
 - 已注册 backend 可执行健康检查、卸载、默认预热，并展示变体面板。
-- env-only 容器若只暴露通用 `supported_variants`，当前只读展示变体目录；「试启动」保持 disabled，等待 backend 实现通用 warm 接口。
+- 未注册容器会显示其自报的 `supported_trackers` 与变体目录；若只暴露通用 `supported_variants`，当前只读展示，「试启动」保持 disabled，等待 backend 实现通用 warm 接口。
+- 同一 backend URL 被多个项目启用时，运行时观测按 URL 聚合为一张卡，并列出所有启用项目，避免把同一物理容器重复计数。
 
 ### 3. 注册管理
 
@@ -103,7 +104,7 @@ last_reviewed: 2026-06-10
 backend 的变体面板拆成两组：
 
 - **图像推理变体**：SAM + DINO 双下拉，预热加载到图片池（grounded-sam2 图片 predictor）。预热走 `POST /{backend_id}/reload`（含 `task_type` 可选体）或 `POST /{backend_id}/warmup`（协议 v2 §4.4，backend 声明 `warmup_endpoint=true` 时启用）。
-- **视频追踪变体**：**仅 SAM 单下拉**（video tracker 不使用 DINO），预热加载到**独立 video 池**（`POST /reload` body 携带 `task_type=video`，`apps/api/app/services/ml_client.py:277`）。
+- **视频追踪权重**：video tracker 不使用 DINO，预热加载到**独立 video 池**（`POST /reload` body 携带 `task_type=video`）。有多档视频权重时显示 SAM 下拉；只有单一视频模型时显示独立权重条目和预热按钮，不制造无意义下拉。
 - 分组是否显示优先读取健康检查落库的 `health_meta.capabilities.modalities`；纯图像 backend 不显示视频组，纯视频 backend 不显示图像组。未健康检查过、没有 modalities 快照时，页面回落到 `/setup` enum / tracker 判断，避免把未知能力的 backend 误隐藏。
 
 > ⚠️ **常见误区**：视频 tracker 用的是独立 `_video_pool`，不能只预热图片池。视频组的预热会走 `POST /reload` 并传 `task_type=video`，正确加载 video 池。

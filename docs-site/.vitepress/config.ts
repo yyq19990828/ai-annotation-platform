@@ -292,6 +292,7 @@ export default withMermaid(defineConfig({
               text: "AI 与推理子系统",
               items: [
                 { text: "预标注流水线", link: "/dev/concepts/prediction-pipeline" },
+                { text: "视频 AI 追踪", link: "/dev/concepts/video-ai-tracking" },
                 { text: "AI 模型集成", link: "/dev/concepts/ai-models" },
               ],
             },
@@ -427,6 +428,7 @@ export default withMermaid(defineConfig({
             { text: "项目", link: "/api/guides/projects" },
             { text: "任务与标注", link: "/api/guides/tasks-and-annotations" },
             { text: "Predictions / Jobs", link: "/api/guides/predictions" },
+            { text: "Video Tracker Jobs", link: "/api/guides/video-tracker-jobs" },
             { text: "ML Backend", link: "/api/guides/ml-backend" },
             { text: "WebSocket", link: "/api/guides/websocket" },
             { text: "导出", link: "/api/guides/export" },
