@@ -56,7 +56,7 @@ import styles from "./VideoKonvaStage.module.css";
 /** v0.21.23 · SAM 提示框描边色，与图片侧 SAM_CANDIDATE_STROKE 同值（canvas 数据域颜色）。 */
 const SAM_PROBE_STROKE = "#a855f7";
 const EMPTY_SAM_CANDIDATES: VideoSamCandidateShape[] = [];
-const EMPTY_SESSION_POINTS: { pt: [number, number]; polarity: 1 | 0 }[] = [];
+const EMPTY_SESSION_POINTS: { pt: [number, number]; polarity: 1 | 0; obj?: number }[] = [];
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
 const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
@@ -128,7 +128,7 @@ interface VideoKonvaStageProps {
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
   /** 当前点会话已落的正/负点（多点精修可视化）。 */
-  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** 工具条上的正/负切换; 与 Alt 等价。 */
   samPolarity?: "positive" | "negative";
   onChangeUserBoxClass?: (id: string) => void;

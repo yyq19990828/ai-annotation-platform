@@ -2881,14 +2881,22 @@ export function useWorkbenchShellModel({
         samPolarity: s.samPolarity,
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
-        // v0.21.27 · U-pvs-1/2 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
-        // (归一化 {pt, polarity}, 剥去 obj); 纠偏多帧下只画**当前帧**的点 (别帧的点坐标属其帧,
-        // 画到当前帧会错位)。否则仍画帧级 SAM 会话点。
+        // v0.21.27 · U-pvs-1/2/3 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
+        // (归一化 {pt, polarity}); 纠偏多帧下只画**当前帧**的点 (别帧的点坐标属其帧, 画到当前帧
+        // 会错位)。多目标 (≥2 obj) 时带上 obj 供 overlay 逐目标描边环配色 + 标号, 单目标剥去 obj
+        // (白边、无标号, 与原视觉一致)。否则仍画帧级 SAM 会话点。
         samSessionPoints: isVideoTask
           ? propagateDialog
-            ? trackerSeeds
-                .filter((sd) => sd.frame === s.videoFrameIndex)
-                .map(({ pt, polarity }) => ({ pt, polarity }))
+            ? (() => {
+                const multiObj = new Set(trackerSeeds.map((sd) => sd.obj)).size > 1;
+                return trackerSeeds
+                  .filter((sd) => sd.frame === s.videoFrameIndex)
+                  .map(({ pt, polarity, obj }) => ({
+                    pt,
+                    polarity,
+                    obj: multiObj ? obj : undefined,
+                  }));
+              })()
             : sam.sessionPoints
           : undefined,
         spacePan,
