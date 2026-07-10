@@ -515,11 +515,21 @@ export function useWorkbenchShellModel({
       timers.clear();
     };
   }, []);
+  // v0.21.27 · U-pvs-1 · PVS 点种子采集态 (完整接线见传播对话框处)。此处先声明, 因下方
+  // 「工具未启用即回收」守卫需读它: 采集态借 smart-point 落点, 不受回收。
+  // trackerSeeds 形状与画布 overlay 的 sessionPoints 一致 ({pt, polarity}), 可视化零换算。
+  const [trackerSeeds, setTrackerSeeds] = useState<
+    { pt: [number, number]; polarity: 1 | 0 }[]
+  >([]);
+  const [seedCollecting, setSeedCollecting] = useState(false);
+  const seedPrevToolRef = useRef<VideoTool | null>(null);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
+  // v0.21.27 · U-pvs-1 · PVS 种子采集态会临时把工具切到 smart-point (画布 samProbe 只看
+  // 工具值、不看 enablement), 此时不受本守卫回收 —— 否则未绑交互工具的项目落不了种子。
   useEffect(() => {
-    if (!isVideoTask) return;
+    if (!isVideoTask || seedCollecting) return;
     if (videoTool !== "select" && !isVideoToolEnabled(videoTool)) setVideoTool("select");
-  }, [isVideoTask, isVideoToolEnabled, videoTool, setVideoTool]);
+  }, [isVideoTask, seedCollecting, isVideoToolEnabled, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
@@ -548,25 +558,77 @@ export function useWorkbenchShellModel({
     annotation: VideoTrackAnnotation;
     submitting: boolean;
   } | null>(null);
+  // v0.21.27 · U-pvs-1 · PVS 点种子采集接线 (state 已在上方声明): 用户在传播对话框点
+  // 「落点选目标」进入采集态, 画布点击落归一化种子点 (复用 smart-point 手势 →
+  // onVideoSamPrompt), 提交时进 prompt.seeds。seedPrevToolRef 记录进入前的工具, 退出时
+  // 仅在真进过采集态时复原 (避免误改工具)。
+  const startSeedCollecting = useCallback(() => {
+    seedPrevToolRef.current = s.videoTool;
+    setVideoTool("smart-point");
+    setSeedCollecting(true);
+  }, [s.videoTool, setVideoTool]);
+  const stopSeedCollecting = useCallback(() => {
+    if (seedPrevToolRef.current !== null) {
+      setVideoTool(seedPrevToolRef.current);
+      seedPrevToolRef.current = null;
+    }
+    setSeedCollecting(false);
+  }, [setVideoTool]);
+  const toggleSeedCollecting = useCallback(() => {
+    if (seedCollecting) stopSeedCollecting();
+    else startSeedCollecting();
+  }, [seedCollecting, startSeedCollecting, stopSeedCollecting]);
 
   const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
     setPropagateBrush(null);
+    setTrackerSeeds([]);
+    setSeedCollecting(false);
+    seedPrevToolRef.current = null;
   }, []);
+  const closePropagateDialog = useCallback(() => {
+    setPropagateDialog(null);
+    setTrackerSeeds([]);
+    stopSeedCollecting();
+  }, [stopSeedCollecting]);
 
   const handlePropagateSubmit = useCallback(
     async (payload: Parameters<typeof trackerJobs.propagate>[2]) => {
       if (!propagateDialog || !taskId) return;
       setPropagateDialog((prev) => (prev ? { ...prev, submitting: true } : prev));
       try {
-        await trackerJobs.propagate(taskId, propagateDialog.annotation.id, payload);
-        setPropagateDialog(null);
+        // v0.21.27 · U-pvs-1 · 有落点则注入 prompt.seeds (单目标 obj_id=1, 正点 label=1 /
+        // Alt 负点 label=0); runner 只在种子窗透传, backend PVS 优先 seeds[] 于 source_geometry。
+        const withSeeds = trackerSeeds.length
+          ? {
+              ...payload,
+              prompt: {
+                ...(payload.prompt ?? {}),
+                seeds: [
+                  {
+                    obj_id: 1,
+                    points: trackerSeeds.map(({ pt, polarity }) => [
+                      pt[0],
+                      pt[1],
+                      polarity,
+                    ]),
+                  },
+                ],
+              },
+            }
+          : payload;
+        await trackerJobs.propagate(
+          taskId,
+          propagateDialog.annotation.id,
+          withSeeds,
+        );
+        closePropagateDialog();
       } catch (e) {
         setPropagateDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
         throw e;
       }
     },
-    [propagateDialog, taskId, trackerJobs],
+    [propagateDialog, taskId, trackerJobs, trackerSeeds, closePropagateDialog],
   );
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
@@ -941,6 +1003,15 @@ export function useWorkbenchShellModel({
   // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
   const onVideoSamPrompt = useCallback(
     (prompt: VideoSamPrompt) => {
+      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
+      // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
+      if (seedCollecting && prompt.mode === "point") {
+        setTrackerSeeds((prev) => [
+          ...prev,
+          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1 },
+        ]);
+        return;
+      }
       if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
       // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
       if (prompt.mode === "exemplar") {
@@ -948,7 +1019,7 @@ export function useWorkbenchShellModel({
       }
       sam.runBbox(prompt.bbox);
     },
-    [sam, s.exemplarOutputMode],
+    [sam, s.exemplarOutputMode, seedCollecting],
   );
   // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
   // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
@@ -2663,8 +2734,10 @@ export function useWorkbenchShellModel({
               />
             )}
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
-                与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。 */}
-            {isAIToolId(activeAiTool) && (
+                与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
+                v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
+                (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
+            {isAIToolId(activeAiTool) && !seedCollecting && (
               <InteractiveToolBar
                 tool={activeAiTool}
                 backendName={mlCapabilities.capability?.name}
@@ -2782,7 +2855,13 @@ export function useWorkbenchShellModel({
         samPolarity: s.samPolarity,
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
-        samSessionPoints: isVideoTask ? sam.sessionPoints : undefined,
+        // v0.21.27 · U-pvs-1 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
+        // (归一化 {pt, polarity}, 与 sessionPoints 同形状); 否则仍画帧级 SAM 会话点。
+        samSessionPoints: isVideoTask
+          ? propagateDialog
+            ? trackerSeeds
+            : sam.sessionPoints
+          : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
@@ -3140,10 +3219,15 @@ export function useWorkbenchShellModel({
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
     submitting: Boolean(propagateDialog?.submitting),
-    onCancel: () => setPropagateDialog(null),
+    onCancel: closePropagateDialog,
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
     brushedRange: propagateBrush,
+    // v0.21.27 · U-pvs-1 · PVS 点种子采集 (仅 sam3_video_interactive 模型显示, 门控在对话框内)。
+    seedCollecting,
+    seedPointCount: trackerSeeds.length,
+    onToggleSeedCollecting: toggleSeedCollecting,
+    onClearSeeds: () => setTrackerSeeds([]),
   };
 
   const issueSection = projectId && taskId ? {

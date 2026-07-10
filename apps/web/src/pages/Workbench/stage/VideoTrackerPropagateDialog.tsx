@@ -143,6 +143,14 @@ interface VideoTrackerPropagateDialogProps {
   onRangeChange?: (range: { startFrame: number; endFrame: number } | null) => void;
   /** v0.21.14 · 时间轴 Shift+拖刷选回填的范围 (覆盖预设/方向派生的范围); 每次刷选传新对象。 */
   brushedRange?: { startFrame: number; endFrame: number } | null;
+  /** v0.21.27 · U-pvs-1 · PVS 点种子采集 (仅 sam3_video_interactive)。开启后画布点击落归一化种子点。 */
+  seedCollecting?: boolean;
+  /** 已落种子点数。 */
+  seedPointCount?: number;
+  /** 切换「落点选目标」采集态 (进入时画布切 smart-point、退出复原)。 */
+  onToggleSeedCollecting?: () => void;
+  /** 清空已落种子点。 */
+  onClearSeeds?: () => void;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -163,6 +171,10 @@ export function VideoTrackerPropagateDialog({
   onSubmit,
   onRangeChange,
   brushedRange = null,
+  seedCollecting = false,
+  seedPointCount = 0,
+  onToggleSeedCollecting,
+  onClearSeeds,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -439,6 +451,48 @@ export function VideoTrackerPropagateDialog({
               : modelOptions.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
+
+        {/* v0.21.27 · U-pvs-1 · PVS 点种子: 在画布点目标落正点 (Alt 负点精修) → prompt.seeds。
+            有落点则以点驱动 PVS, 否则回退选中轨迹的框。仅 sam3_video_interactive 显示。 */}
+        {modelKey === "sam3_video_interactive" && (
+          <div className="grid gap-1 text-muted-foreground text-xs">
+            种子 (点)
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onToggleSeedCollecting}
+                disabled={submitting}
+                data-testid="tracker-seed-toggle"
+                className={cn(
+                  "py-1.5 px-2 border rounded-md cursor-pointer text-xs text-foreground",
+                  seedCollecting
+                    ? "border-violet-600 dark:border-violet-400 bg-status-info-soft"
+                    : "border-border bg-background",
+                )}
+              >
+                {seedCollecting ? "落点中… 点画布 (再点结束)" : "落点选目标"}
+              </button>
+              {seedPointCount > 0 && (
+                <>
+                  <span data-testid="tracker-seed-count" className="text-foreground">
+                    已落 {seedPointCount} 点
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onClearSeeds}
+                    disabled={submitting}
+                    className="border-0 bg-transparent text-muted-foreground cursor-pointer text-xs underline"
+                  >
+                    清空
+                  </button>
+                </>
+              )}
+            </div>
+            <span className="text-muted-foreground text-2xs">
+              在画布点目标落正点 (Alt 落负点精修); 有落点以点驱动 PVS, 否则用选中轨迹的框。
+            </span>
+          </div>
+        )}
 
         {textDrivenActive && (
           <label className="grid gap-1 text-muted-foreground text-xs">

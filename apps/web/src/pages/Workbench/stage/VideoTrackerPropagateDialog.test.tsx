@@ -346,6 +346,55 @@ describe("VideoTrackerPropagateDialog", () => {
     );
   });
 
+  it("sam3_video_interactive 显示「落点选目标」种子入口, 其它模型不显示", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        onSubmit={vi.fn()}
+        onToggleSeedCollecting={vi.fn()}
+      />,
+    );
+    // 默认 mock_bbox → 无种子入口。
+    expect(screen.queryByTestId("tracker-seed-toggle")).toBeNull();
+    // 切 sam3_video_interactive → 出现。
+    fireEvent.change(screen.getAllByRole("combobox")[1], {
+      target: { value: "sam3_video_interactive" },
+    });
+    expect(screen.getByTestId("tracker-seed-toggle")).toBeTruthy();
+    // 切 sam2_video → 消失 (点种子仅 PVS)。
+    fireEvent.change(screen.getAllByRole("combobox")[1], {
+      target: { value: "sam2_video" },
+    });
+    expect(screen.queryByTestId("tracker-seed-toggle")).toBeNull();
+  });
+
+  it("点「落点选目标」调 onToggleSeedCollecting; 采集态改文案; 有落点显计数 + 清空", () => {
+    const onToggle = vi.fn();
+    const onClear = vi.fn();
+    const seedProps = {
+      ...baseProps,
+      frameIndex: 50,
+      projectDefaultModel: "sam3_video_interactive",
+      onSubmit: vi.fn(),
+      onToggleSeedCollecting: onToggle,
+      onClearSeeds: onClear,
+    };
+    const { rerender } = render(<VideoTrackerPropagateDialog {...seedProps} />);
+    const toggle = screen.getByTestId("tracker-seed-toggle");
+    expect(toggle.textContent).toContain("落点选目标");
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalled();
+    // 采集态 + 已落 2 点。
+    rerender(
+      <VideoTrackerPropagateDialog {...seedProps} seedCollecting seedPointCount={2} />,
+    );
+    expect(screen.getByTestId("tracker-seed-toggle").textContent).toContain("落点中");
+    expect(screen.getByTestId("tracker-seed-count").textContent).toContain("已落 2 点");
+    fireEvent.click(screen.getByText("清空"));
+    expect(onClear).toHaveBeenCalled();
+  });
+
   it("取消不写记忆,且非法模型 / 变体安全回退", () => {
     const key = videoDialogMemoryStorageKey("u1", "trackerPropagate");
     const remembered = {
