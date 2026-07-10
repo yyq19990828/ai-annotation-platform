@@ -2214,7 +2214,7 @@ export function useWorkbenchShellModel({
         children = (
           <VideoPointsTrackCardContent
             annotation={ann}
-            frameIndex={s.videoFrameIndex}
+            frameIndex={videoFrameIndex}
             imageWidth={imageWidth}
             imageHeight={imageHeight}
             fps={videoFps}
@@ -2340,6 +2340,7 @@ export function useWorkbenchShellModel({
     imageWidth,
     imageHeight,
     videoFps,
+    videoFrameIndex,
     setVideoFrameIndex,
     toolView.attributeSchema,
     isLocked,
