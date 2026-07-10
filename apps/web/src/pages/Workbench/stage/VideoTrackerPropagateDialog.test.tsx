@@ -481,4 +481,35 @@ describe("VideoTrackerPropagateDialog", () => {
     fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "10" } });
     expect(screen.queryByTestId("tracker-window-estimate")).toBeNull();
   });
+
+  it("框修正: 点/框模式切换调 onChangeSeedMode; 框计数并入「已落」文案", () => {
+    const onChangeMode = vi.fn();
+    const seedProps = {
+      ...baseProps,
+      frameIndex: 50,
+      projectDefaultModel: "sam3_video_interactive",
+      onSubmit: vi.fn(),
+      onToggleSeedCollecting: vi.fn(),
+      onChangeSeedMode: onChangeMode,
+    };
+    const { rerender } = render(<VideoTrackerPropagateDialog {...seedProps} seedMode="point" />);
+    // 点「框」→ onChangeSeedMode("box")。
+    fireEvent.click(screen.getByTestId("tracker-seed-mode-box"));
+    expect(onChangeMode).toHaveBeenCalledWith("box");
+    // box 模式 → toggle 文案变「画框选目标」。
+    rerender(<VideoTrackerPropagateDialog {...seedProps} seedMode="box" />);
+    expect(screen.getByTestId("tracker-seed-toggle").textContent).toContain("画框选目标");
+    // 点 1 + 框 2 → 计数含「1 点」与「2 框」。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...seedProps}
+        seedMode="box"
+        seedPointCount={1}
+        seedBoxCount={2}
+      />,
+    );
+    const count = screen.getByTestId("tracker-seed-count").textContent ?? "";
+    expect(count).toContain("1 点");
+    expect(count).toContain("2 框");
+  });
 });

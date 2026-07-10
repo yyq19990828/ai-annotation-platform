@@ -55,6 +55,11 @@ export interface VideoSamCandidateOverlayProps {
    * `obj`（PVS 多目标时才有）用于按 obj_id 给描边环上色 + 标号，单目标为 undefined（白边、无标号）。
    */
   sessionPoints: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
+  /**
+   * v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子（归一化 xyxy）。实线 + 按 obj 配色描边，
+   * 与虚线 AI 候选框区分；`obj` 多目标时标号。
+   */
+  sessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   /** stage 尺寸（像素）。 */
   width: number;
   height: number;
@@ -66,11 +71,13 @@ export function VideoSamCandidateOverlay({
   activeIdx,
   previewAsBbox = false,
   sessionPoints,
+  sessionBoxes,
   width,
   height,
   scale,
 }: VideoSamCandidateOverlayProps) {
   const hasCandidates = candidates.length > 0;
+  const boxes = sessionBoxes ?? [];
   const [dashOffset, setDashOffset] = useState(0);
 
   useEffect(() => {
@@ -87,7 +94,7 @@ export function VideoSamCandidateOverlay({
     return () => cancelAnimationFrame(raf);
   }, [hasCandidates]);
 
-  if (!hasCandidates && sessionPoints.length === 0) return null;
+  if (!hasCandidates && sessionPoints.length === 0 && boxes.length === 0) return null;
 
   const dash = [SAM_DASH[0] / scale, SAM_DASH[1] / scale];
   const offset = dashOffset / scale;
@@ -160,6 +167,41 @@ export function VideoSamCandidateOverlay({
                 x={sp.pt[0] * width + 6 / scale}
                 y={sp.pt[1] * height - 11 / scale}
                 text={String(sp.obj)}
+                fontSize={11 / scale}
+                fontStyle="bold"
+                fill={ring}
+                listening={false}
+              />
+            )}
+          </Fragment>
+        );
+      })}
+
+      {/* v0.21.27 · 框修正 · PVS 框种子: 实线 + 按 obj 配色 (区别虚线 AI 候选框)。 */}
+      {boxes.map((sb, i) => {
+        const [x1, y1, x2, y2] = sb.bbox;
+        const ring = sb.obj != null ? objRingColor(sb.obj) : SAM_STROKE;
+        const bx = Math.min(x1, x2) * width;
+        const by = Math.min(y1, y2) * height;
+        const bw = Math.abs(x2 - x1) * width;
+        const bh = Math.abs(y2 - y1) * height;
+        return (
+          <Fragment key={`sb-${i}`}>
+            <Rect
+              x={bx}
+              y={by}
+              width={bw}
+              height={bh}
+              stroke={ring}
+              strokeWidth={2 / scale}
+              fill={hexToRgba(ring, 0.12)}
+              listening={false}
+            />
+            {sb.obj != null && (
+              <Text
+                x={bx + 3 / scale}
+                y={by + 2 / scale}
+                text={String(sb.obj)}
                 fontSize={11 / scale}
                 fontStyle="bold"
                 fill={ring}

@@ -186,6 +186,12 @@ interface VideoTrackerPropagateDialogProps {
   onNewSeedTarget?: () => void;
   /** 落点跨的帧数 (distinct frame); >1 = 纠偏多帧累积 prompt。 */
   seedFrameCount?: number;
+  /** v0.21.27 · 框修正 · 采集模式: point 落点 / box 画修正框。 */
+  seedMode?: "point" | "box";
+  /** 切换采集模式 (采集中即时切 smart-point ↔ smart-box)。 */
+  onChangeSeedMode?: (mode: "point" | "box") => void;
+  /** 已落框种子数 (框修正)。 */
+  seedBoxCount?: number;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -213,6 +219,9 @@ export function VideoTrackerPropagateDialog({
   seedTargetCount = 0,
   onNewSeedTarget,
   seedFrameCount = 0,
+  seedMode = "point",
+  onChangeSeedMode,
+  seedBoxCount = 0,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -318,6 +327,16 @@ export function VideoTrackerPropagateDialog({
 
   // v0.21.27 · U-pvs-3 · U6: 当前范围粗估窗口数 (>1 时提示大范围将分多窗处理)。
   const estimatedWindows = estimateWindowCount(range.to - range.from, modelKey);
+
+  // v0.21.27 · 框修正 · 种子计数文案: 点/框/目标/帧 各段按需拼 (省略 0 段, >1 才显目标/帧)。
+  const seedCountText = [
+    seedPointCount > 0 ? `${seedPointCount} 点` : null,
+    seedBoxCount > 0 ? `${seedBoxCount} 框` : null,
+    seedTargetCount > 1 ? `${seedTargetCount} 目标` : null,
+    seedFrameCount > 1 ? `${seedFrameCount} 帧` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   // v0.21.14 WS3 · 把当前影响范围上报给时间轴高亮; 关闭 / 卸载时清空。
   useEffect(() => {
@@ -527,6 +546,26 @@ export function VideoTrackerPropagateDialog({
           {modelKey === "sam3_video_interactive" && (
             <div className="flex items-center gap-1.5">
               <span className={TOOLBAR_FIELD_LABEL_CLASS}>种子</span>
+              {/* 框修正 · 点/框模式切换: 点落正/负点, 框画修正框 (均归当前目标)。 */}
+              <div className="flex divide-x divide-border overflow-hidden rounded-sm border border-border">
+                {(["point", "box"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    data-testid={`tracker-seed-mode-${m}`}
+                    onClick={() => onChangeSeedMode?.(m)}
+                    disabled={submitting}
+                    className={cn(
+                      "cursor-pointer px-1.5 py-1 text-xs",
+                      seedMode === m
+                        ? "bg-status-info-soft text-foreground"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {m === "point" ? "点" : "框"}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={onToggleSeedCollecting}
@@ -539,16 +578,22 @@ export function VideoTrackerPropagateDialog({
                     : "border-border bg-muted",
                 )}
               >
-                {seedCollecting ? "落点中…" : "落点选目标"}
+                {seedCollecting
+                  ? seedMode === "box"
+                    ? "画框中…"
+                    : "落点中…"
+                  : seedMode === "box"
+                    ? "画框选目标"
+                    : "落点选目标"}
               </button>
-              {seedPointCount > 0 && (
+              {(seedPointCount > 0 || seedBoxCount > 0) && (
                 <>
                   <button
                     type="button"
                     onClick={onNewSeedTarget}
                     disabled={submitting}
                     data-testid="tracker-seed-new-target"
-                    title="后续落点归入新目标 (各成一条轨迹)"
+                    title="后续落点/框归入新目标 (各成一条轨迹)"
                     className="cursor-pointer rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
                   >
                     + 新目标
@@ -557,9 +602,7 @@ export function VideoTrackerPropagateDialog({
                     data-testid="tracker-seed-count"
                     className="text-2xs text-foreground"
                   >
-                    已落 {seedPointCount} 点
-                    {seedTargetCount > 1 ? ` · ${seedTargetCount} 目标` : ""}
-                    {seedFrameCount > 1 ? ` · ${seedFrameCount} 帧` : ""}
+                    已落 {seedCountText}
                   </span>
                   <button
                     type="button"
@@ -618,8 +661,8 @@ export function VideoTrackerPropagateDialog({
         {/* v0.21.27 · U-pvs-3 · U5 (+ #3 语义兜底): 多目标感知按模型分述。 */}
         {modelKey === "sam3_video_interactive" && (
           <span>
-            点目标落正点 (Alt 负点); obj1 回填选中轨迹, 「+新目标」各成新轨迹; 导航别帧再落点 =
-            多帧纠偏; 无落点则用选中轨迹框
+            点目标落正点 (Alt 负点), 或切「框」画修正框; obj1 回填选中轨迹, 「+新目标」各成新轨迹;
+            导航别帧再落 = 多帧纠偏; 无种子则用选中轨迹框
           </span>
         )}
         {modelKey === "sam2_video" && <span>框种子: 跟随所选轨迹的单个目标</span>}

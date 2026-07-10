@@ -111,7 +111,9 @@ interface WorkbenchStageHostVideoProps {
   onVideoSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
-  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
+  /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
+  samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool 同语义)。 */
   samPolarity?: "positive" | "negative";
   spacePan: boolean;
@@ -326,6 +328,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       samCandidates: videoSamCandidates,
       samActiveIdx: videoSamActiveIdx,
       samSessionPoints: videoSamSessionPoints,
+      samSessionBoxes: videoSamSessionBoxes,
       samPolarity: videoSamPolarity,
       spacePan: videoSpacePan,
       onSpacePanDragStart: onVideoSpacePanDragStart,
@@ -478,6 +481,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             samCandidates={videoSamCandidates}
             samActiveIdx={videoSamActiveIdx}
             samSessionPoints={videoSamSessionPoints}
+            samSessionBoxes={videoSamSessionBoxes}
             samPolarity={videoSamPolarity}
             spacePan={videoSpacePan}
             onSpacePanDragStart={onVideoSpacePanDragStart}

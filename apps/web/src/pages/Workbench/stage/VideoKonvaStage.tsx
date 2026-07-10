@@ -57,6 +57,7 @@ import styles from "./VideoKonvaStage.module.css";
 const SAM_PROBE_STROKE = "#a855f7";
 const EMPTY_SAM_CANDIDATES: VideoSamCandidateShape[] = [];
 const EMPTY_SESSION_POINTS: { pt: [number, number]; polarity: 1 | 0; obj?: number }[] = [];
+const EMPTY_SESSION_BOXES: { bbox: [number, number, number, number]; obj?: number }[] = [];
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
 const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
@@ -129,6 +130,8 @@ interface VideoKonvaStageProps {
   samActiveIdx?: number;
   /** 当前点会话已落的正/负点（多点精修可视化）。 */
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
+  /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子（归一化 xyxy）。 */
+  samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   /** 工具条上的正/负切换; 与 Alt 等价。 */
   samPolarity?: "positive" | "negative";
   onChangeUserBoxClass?: (id: string) => void;
@@ -208,6 +211,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   samCandidates = EMPTY_SAM_CANDIDATES,
   samActiveIdx = 0,
   samSessionPoints = EMPTY_SESSION_POINTS,
+  samSessionBoxes = EMPTY_SESSION_BOXES,
   samPolarity,
   onChangeUserBoxClass,
   onComposeTracks,
@@ -1095,13 +1099,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             );
           })()}
           {/* v0.21.23 · 交互式 SAM 候选 + 点会话（瞬态，不落库；置顶且不吃事件）。 */}
-          {(samCandidates.length > 0 || samSessionPoints.length > 0) && (
+          {(samCandidates.length > 0 ||
+            samSessionPoints.length > 0 ||
+            samSessionBoxes.length > 0) && (
             <Layer name="sam-candidates" listening={false}>
               <VideoSamCandidateOverlay
                 candidates={samCandidates}
                 activeIdx={samActiveIdx}
                 previewAsBbox={videoTool === "magic-box"}
                 sessionPoints={samSessionPoints}
+                sessionBoxes={samSessionBoxes}
                 width={size.w}
                 height={size.h}
                 scale={vp.scale}

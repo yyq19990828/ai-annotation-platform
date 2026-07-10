@@ -524,6 +524,13 @@ export function useWorkbenchShellModel({
   const [trackerSeeds, setTrackerSeeds] = useState<
     { pt: [number, number]; polarity: 1 | 0; obj: number; frame: number }[]
   >([]);
+  // v0.21.27 · 框修正 · PVS 框种子 (点种子的姊妹): 归一化 xyxy + obj + frame。与点种子一起
+  // 按 obj→frame 分组成 prompts (每帧可同时带 points 与 bbox), 供 SAM2 式 add_new_points_or_box。
+  const [trackerSeedBoxes, setTrackerSeedBoxes] = useState<
+    { bbox: [number, number, number, number]; obj: number; frame: number }[]
+  >([]);
+  // 落点/画框模式: point → smart-point 落点, box → smart-box 画修正框。
+  const [seedMode, setSeedMode] = useState<"point" | "box">("point");
   const [seedObj, setSeedObj] = useState(1);
   const [seedAnchorFrame, setSeedAnchorFrame] = useState<number | null>(null);
   const [seedCollecting, setSeedCollecting] = useState(false);
@@ -569,9 +576,17 @@ export function useWorkbenchShellModel({
   // 仅在真进过采集态时复原 (避免误改工具)。
   const startSeedCollecting = useCallback(() => {
     seedPrevToolRef.current = s.videoTool;
-    setVideoTool("smart-point");
+    setVideoTool(seedMode === "box" ? "smart-box" : "smart-point");
     setSeedCollecting(true);
-  }, [s.videoTool, setVideoTool]);
+  }, [s.videoTool, setVideoTool, seedMode]);
+  // 点/框模式切换: 采集中即时切工具 (smart-point ↔ smart-box), 未采集只记模式。
+  const changeSeedMode = useCallback(
+    (mode: "point" | "box") => {
+      setSeedMode(mode);
+      if (seedCollecting) setVideoTool(mode === "box" ? "smart-box" : "smart-point");
+    },
+    [seedCollecting, setVideoTool],
+  );
   const stopSeedCollecting = useCallback(() => {
     if (seedPrevToolRef.current !== null) {
       setVideoTool(seedPrevToolRef.current);
@@ -583,16 +598,21 @@ export function useWorkbenchShellModel({
     if (seedCollecting) stopSeedCollecting();
     else startSeedCollecting();
   }, [seedCollecting, startSeedCollecting, stopSeedCollecting]);
-  // 「新目标」: 当前目标已落 ≥1 点才递增 (不建空目标), 后续点归入下一目标。
+  // 「新目标」: 当前目标已落 ≥1 点或框才递增 (不建空目标), 后续点/框归入下一目标。
   const newSeedTarget = useCallback(() => {
-    if (trackerSeeds.some((s) => s.obj === seedObj)) setSeedObj(seedObj + 1);
-  }, [trackerSeeds, seedObj]);
+    const hasSeed =
+      trackerSeeds.some((s) => s.obj === seedObj) ||
+      trackerSeedBoxes.some((b) => b.obj === seedObj);
+    if (hasSeed) setSeedObj(seedObj + 1);
+  }, [trackerSeeds, trackerSeedBoxes, seedObj]);
 
   const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
     setPropagateBrush(null);
     setTrackerSeeds([]);
+    setTrackerSeedBoxes([]);
     setSeedObj(1);
+    setSeedMode("point");
     setSeedAnchorFrame(null);
     setSeedCollecting(false);
     seedPrevToolRef.current = null;
@@ -600,6 +620,7 @@ export function useWorkbenchShellModel({
   const closePropagateDialog = useCallback(() => {
     setPropagateDialog(null);
     setTrackerSeeds([]);
+    setTrackerSeedBoxes([]);
     setSeedObj(1);
     setSeedAnchorFrame(null);
     stopSeedCollecting();
@@ -615,15 +636,31 @@ export function useWorkbenchShellModel({
         // label=1 / Alt 负点 label=0)。obj=1 主实例回填选中轨迹, obj≥2 各成新轨迹; 同一 obj
         // 在多帧落点 = 纠偏 (原始帧 + 修正帧累积)。单帧时退化为一条 prompt。runner 只在种子窗
         // 透传, 多目标跨窗由 runner 逐实例续种; backend PVS 优先 seeds[] 于 source_geometry。
-        const byObj = new Map<number, Map<number, [number, number, number][]>>();
-        for (const { pt, polarity, obj, frame } of trackerSeeds) {
-          const byFrame = byObj.get(obj) ?? new Map<number, [number, number, number][]>();
-          const pts = byFrame.get(frame) ?? [];
-          pts.push([pt[0], pt[1], polarity]);
-          byFrame.set(frame, pts);
+        // v0.21.27 · 框修正 · 每 (obj, frame) 的 prompt 可同时带 points 与 bbox。点来自
+        // trackerSeeds, 框来自 trackerSeedBoxes (归一化 xyxy → 后端要的 {x,y,w,h})。
+        type SeedEntry = { points: [number, number, number][]; bbox?: Record<string, number> };
+        const byObj = new Map<number, Map<number, SeedEntry>>();
+        const ensureEntry = (obj: number, frame: number): SeedEntry => {
+          const byFrame = byObj.get(obj) ?? new Map<number, SeedEntry>();
+          const entry = byFrame.get(frame) ?? { points: [] };
+          byFrame.set(frame, entry);
           byObj.set(obj, byFrame);
+          return entry;
+        };
+        for (const { pt, polarity, obj, frame } of trackerSeeds) {
+          ensureEntry(obj, frame).points.push([pt[0], pt[1], polarity]);
         }
-        const withSeeds = trackerSeeds.length
+        for (const { bbox, obj, frame } of trackerSeedBoxes) {
+          const [x1, y1, x2, y2] = bbox;
+          ensureEntry(obj, frame).bbox = {
+            x: Math.min(x1, x2),
+            y: Math.min(y1, y2),
+            w: Math.abs(x2 - x1),
+            h: Math.abs(y2 - y1),
+          };
+        }
+        const hasSeeds = trackerSeeds.length > 0 || trackerSeedBoxes.length > 0;
+        const withSeeds = hasSeeds
           ? {
               ...payload,
               prompt: {
@@ -634,7 +671,11 @@ export function useWorkbenchShellModel({
                     obj_id: obj,
                     prompts: [...byFrame.entries()]
                       .sort((a, b) => a[0] - b[0])
-                      .map(([frame, points]) => ({ frame_index: frame, points })),
+                      .map(([frame, entry]) => ({
+                        frame_index: frame,
+                        ...(entry.points.length ? { points: entry.points } : {}),
+                        ...(entry.bbox ? { bbox: entry.bbox } : {}),
+                      })),
                   })),
               },
             }
@@ -650,7 +691,7 @@ export function useWorkbenchShellModel({
         throw e;
       }
     },
-    [propagateDialog, taskId, trackerJobs, trackerSeeds, closePropagateDialog],
+    [propagateDialog, taskId, trackerJobs, trackerSeeds, trackerSeedBoxes, closePropagateDialog],
   );
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
@@ -1035,6 +1076,16 @@ export function useWorkbenchShellModel({
         setTrackerSeeds((prev) => [
           ...prev,
           { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
+        ]);
+        return;
+      }
+      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
+      if (seedCollecting && prompt.mode === "bbox") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeedBoxes((prev) => [
+          ...prev,
+          { bbox: prompt.bbox, obj: seedObj, frame },
         ]);
         return;
       }
@@ -2621,6 +2672,12 @@ export function useWorkbenchShellModel({
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
+  // v0.21.27 · 框修正 · 是否多目标 (跨点种子与框种子统计 distinct obj); 决定 overlay 是否逐目标配色。
+  const seedMultiObj =
+    new Set([
+      ...trackerSeeds.map((sd) => sd.obj),
+      ...trackerSeedBoxes.map((sb) => sb.obj),
+    ]).size > 1;
   const propagateDialogNextKeyframe = propagateDialogTrack
     ? [...propagateDialogTrack.geometry.keyframes]
         .map((kf) => kf.frame_index)
@@ -2881,24 +2938,27 @@ export function useWorkbenchShellModel({
         samPolarity: s.samPolarity,
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
-        // v0.21.27 · U-pvs-1/2/3 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
-        // (归一化 {pt, polarity}); 纠偏多帧下只画**当前帧**的点 (别帧的点坐标属其帧, 画到当前帧
-        // 会错位)。多目标 (≥2 obj) 时带上 obj 供 overlay 逐目标描边环配色 + 标号, 单目标剥去 obj
+        // v0.21.27 · U-pvs-1/2/3 + 框修正 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS
+        // 种子点/框 (归一化); 纠偏多帧下只画**当前帧**的点/框 (别帧坐标属其帧, 画到当前帧会错位)。
+        // 多目标 (≥2 obj, 跨点与框统计) 时带 obj 供 overlay 逐目标配色 + 标号, 单目标剥去 obj
         // (白边、无标号, 与原视觉一致)。否则仍画帧级 SAM 会话点。
         samSessionPoints: isVideoTask
           ? propagateDialog
-            ? (() => {
-                const multiObj = new Set(trackerSeeds.map((sd) => sd.obj)).size > 1;
-                return trackerSeeds
-                  .filter((sd) => sd.frame === s.videoFrameIndex)
-                  .map(({ pt, polarity, obj }) => ({
-                    pt,
-                    polarity,
-                    obj: multiObj ? obj : undefined,
-                  }));
-              })()
+            ? trackerSeeds
+                .filter((sd) => sd.frame === s.videoFrameIndex)
+                .map(({ pt, polarity, obj }) => ({
+                  pt,
+                  polarity,
+                  obj: seedMultiObj ? obj : undefined,
+                }))
             : sam.sessionPoints
           : undefined,
+        samSessionBoxes:
+          isVideoTask && propagateDialog
+            ? trackerSeedBoxes
+                .filter((sb) => sb.frame === s.videoFrameIndex)
+                .map(({ bbox, obj }) => ({ bbox, obj: seedMultiObj ? obj : undefined }))
+            : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
@@ -3262,16 +3322,27 @@ export function useWorkbenchShellModel({
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
     brushedRange: propagateBrush,
-    // v0.21.27 · U-pvs-1/2 · PVS 点种子采集 (仅 sam3_video_interactive 模型显示, 门控在对话框内)。
+    // v0.21.27 · U-pvs-1/2 + 框修正 · PVS 点/框种子采集 (仅 sam3_video_interactive, 门控在对话框内)。
     seedCollecting,
     seedPointCount: trackerSeeds.length,
-    seedTargetCount: new Set(trackerSeeds.map((s) => s.obj)).size,
-    // 纠偏: 落点跨的帧数 (>1 = 多帧累积 prompt)。
-    seedFrameCount: new Set(trackerSeeds.map((s) => s.frame)).size,
+    // 框修正: 已落框数 + 点/框模式切换。
+    seedBoxCount: trackerSeedBoxes.length,
+    seedMode,
+    onChangeSeedMode: changeSeedMode,
+    // 目标/帧数跨点与框统计。
+    seedTargetCount: new Set([
+      ...trackerSeeds.map((s) => s.obj),
+      ...trackerSeedBoxes.map((b) => b.obj),
+    ]).size,
+    seedFrameCount: new Set([
+      ...trackerSeeds.map((s) => s.frame),
+      ...trackerSeedBoxes.map((b) => b.frame),
+    ]).size,
     onToggleSeedCollecting: toggleSeedCollecting,
     onNewSeedTarget: newSeedTarget,
     onClearSeeds: () => {
       setTrackerSeeds([]);
+      setTrackerSeedBoxes([]);
       setSeedObj(1);
       setSeedAnchorFrame(null);
     },
