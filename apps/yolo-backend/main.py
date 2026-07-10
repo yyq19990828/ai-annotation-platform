@@ -36,6 +36,7 @@ from aap_protocol_v2 import (
 )
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
+from pydantic import ValidationError
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 import class_names
@@ -821,7 +822,12 @@ async def predict(request: Request) -> dict[str, Any]:
     """
     body = await request.json()
     is_single = isinstance(body, dict) and "task" in body and "tasks" not in body
-    req = BatchPredictRequest.model_validate(body)
+    # 手工 model_validate 绕过了 FastAPI 的请求体校验, ValidationError 会冒成 500;
+    # 转 422 与 gsam2/sam3 的入参拒绝语义一致 (调用方据此知是 wire 错而非后端故障)。
+    try:
+        req = BatchPredictRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
     results = await _run_predict(req)
     if is_single:
         return results[0].model_dump(exclude_none=True)

@@ -28,9 +28,11 @@ class _FakeStorage:
         return f"http://fake-minio/{key}"
 
 
-def _fake_backend():
-    # run_secondary_inference 只用 backend.id (str) + 传给 (被 mock 的) MLBackendClient。
-    return types.SimpleNamespace(id="be-0001")
+def _fake_backend(models: list[dict] | None = None):
+    # run_secondary_inference 用 backend.id (str) + health_meta 的能力快照 (定 context.output),
+    # 其余传给 (被 mock 的) MLBackendClient。
+    health_meta = {"capabilities": {"models": models}} if models is not None else None
+    return types.SimpleNamespace(id="be-0001", health_meta=health_meta)
 
 
 @pytest.fixture
@@ -508,3 +510,140 @@ async def test_non_croppable_geometry_variants_raise_400(
         )
     assert exc.value.status_code == 400
     assert geo_type in exc.value.detail
+
+
+@pytest.mark.parametrize(
+    "text_outputs,expected",
+    [
+        # 检测型 (yolo detect-yoloe / gsam2-detection): 自报 ["box"] → 出子框。
+        (["box"], "box"),
+        # 分割型 (segment-yoloe / *-segmentation): 不支持 box → 取首个受支持值。
+        (["mask", "both"], "mask"),
+        # 模型未自报 → 协议默认 mask (老 backend 兼容路径)。
+        ([], "mask"),
+    ],
+)
+def test_text_output_mode_follows_model_capability(text_outputs, expected):
+    """context.output 必须落在协议受控词表 box|mask|both 内, 且随模型自报能力。
+
+    回归守卫: 曾硬编码 "polygon" (非法值), 令一切带 prompt 的二次推理必挂 —— yolo
+    backend 严格 pydantic 校验暴露成 500, gsam2/sam3 显式 422。
+    """
+    from app.services.secondary_inference import _resolve_text_output_mode
+
+    backend = _fake_backend(
+        [{"id": "m-1", "supported_text_outputs": text_outputs}]
+    )
+    mode = _resolve_text_output_mode(backend, "m-1")
+    assert mode == expected
+    assert mode in ("box", "mask", "both")
+
+
+def test_text_output_mode_defaults_without_capability_snapshot():
+    """能力快照缺失 / model_id 不匹配 → 回落协议默认, 而非发出非法值。"""
+    from app.services.secondary_inference import _resolve_text_output_mode
+
+    assert _resolve_text_output_mode(_fake_backend(), "m-1") == "mask"
+    assert (
+        _resolve_text_output_mode(
+            _fake_backend([{"id": "other", "supported_text_outputs": ["box"]}]), "m-1"
+        )
+        == "mask"
+    )
+
+
+@pytest.mark.asyncio
+async def test_prompt_path_sends_legal_output_in_context(
+    db_session, super_admin, monkeypatch, _patch_io
+):
+    """端到端: prompt 非空的开集文本检测, 发往 backend 的 context.output 是 "box"。"""
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+    box = await _mk_box(db_session, task.id, user.id)
+    await db_session.flush()
+
+    seen: dict = {}
+
+    class _FakeClient:
+        def __init__(self, backend):
+            pass
+
+        async def predict(self, inputs, context=None):
+            seen["context"] = context
+            return [PredictionResult(task_id="0", result=[])]
+
+    monkeypatch.setattr(ml_client_mod, "MLBackendClient", _FakeClient)
+
+    await run_secondary_inference(
+        db_session,
+        annotation=box,
+        task=task,
+        backend=_fake_backend(
+            [{"id": "detect-yoloe", "supported_text_outputs": ["box"]}]
+        ),
+        write_target="geometry",
+        write_keys=None,
+        label=None,
+        model_id="detect-yoloe",
+        model_variants={"series": "yoloe-26", "size": "xlarge"},
+        params=None,
+        task_type="detection",
+        prompt="hook",
+        class_filter=None,
+        pad=0.08,
+        user_id=user.id,
+    )
+
+    assert seen["context"]["type"] == "text"
+    assert seen["context"]["output"] == "box"
+
+
+@pytest.mark.asyncio
+async def test_backend_timeout_surfaces_as_504_not_500(
+    db_session, super_admin, monkeypatch, _patch_io
+):
+    """回归守卫: backend 空闲卸载后按需重载 (SAM 3 冷启动 ~160s) 会超过 ml_predict_timeout。
+
+    批量 wire 的 predict() 原样抛 httpx.ReadTimeout —— 同步的二次推理端点若不翻译, 用户
+    只看到含糊的 500。必须是 504 + 可操作文案 (重试即可), 与 predict_interactive 语义一致。
+    """
+    import httpx
+
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+    box = await _mk_box(db_session, task.id, user.id)
+    await db_session.flush()
+
+    class _TimingOutClient:
+        def __init__(self, backend):
+            pass
+
+        async def predict(self, inputs, context=None):
+            raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(ml_client_mod, "MLBackendClient", _TimingOutClient)
+
+    with pytest.raises(HTTPException) as exc:
+        await run_secondary_inference(
+            db_session,
+            annotation=box,
+            task=task,
+            backend=_fake_backend(),
+            write_target="geometry",
+            write_keys=None,
+            label=None,
+            model_id="sam3-detection",
+            model_variants=None,
+            params=None,
+            task_type="detection",
+            prompt="crane hook",
+            class_filter=None,
+            pad=0.08,
+            user_id=user.id,
+        )
+    assert exc.value.status_code == 504
+    assert "重试" in exc.value.detail

@@ -15,8 +15,10 @@ from __future__ import annotations
 import logging
 import uuid
 
+import httpx
 from fastapi import HTTPException
 
+from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.task import Task
@@ -84,6 +86,25 @@ async def _create_child_box(
             parent_annotation_id=parent.id,
             tool_unit_id=parent.tool_unit_id,
         )
+
+
+def _resolve_text_output_mode(backend: MLBackendRegistry, model_id: str | None) -> str:
+    """按所选模型自报的 `supported_text_outputs` 定 `context.output` (仅 prompt 路径生效)。
+
+    协议只认 box|mask|both。检测型模型自报 ["box"], 分割型自报 ["mask","both"] ——
+    优先 box (二次推理产子框), 否则取模型支持的首个; 无自报时按协议默认 "mask"。
+    """
+    caps = (backend.health_meta or {}).get("capabilities") or {}
+    for m in caps.get("models") or []:
+        if m.get("id") != model_id:
+            continue
+        outs = m.get("supported_text_outputs") or []
+        if "box" in outs:
+            return "box"
+        if outs:
+            return outs[0]
+        break
+    return "mask"
 
 
 async def run_secondary_inference(
@@ -170,7 +191,7 @@ async def run_secondary_inference(
     # 4. 构造发往 backend 的 context (与批量下游同一纯函数)。
     context = _build_predict_context(
         prompt=prompt,
-        output_mode="polygon",
+        output_mode=_resolve_text_output_mode(backend, model_id),
         params=params,
         model_id=model_id,
         task_type=task_type,
@@ -178,9 +199,28 @@ async def run_secondary_inference(
         class_filter=class_filter,
     )
 
-    # 5. 同步推理。
+    # 5. 同步推理。批量 wire 的 predict() 不翻译传输层异常 (worker 靠原始异常分类失败原因),
+    #    但二次推理是同步用户请求 —— 冒泡的 ReadTimeout 会变成含糊的 500。这里按
+    #    predict_interactive 的同款语义翻译成 504。
+    #    典型诱因: backend 空闲卸载后按需重载 (冷启动本身只需 ~10s), 但多个 GPU backend 同时
+    #    驻留模型挤爆显存时, 加载会退化一个数量级 (实测 8s → 160s) 而超时。故文案指向卸载
+    #    其它 backend, 而非调大 ML_PREDICT_TIMEOUT (后者只是盖住症状)。
     client = MLBackendClient(backend)
-    results = await client.predict(batch.inputs, context=context)
+    try:
+        results = await client.predict(batch.inputs, context=context)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"推理超时 (>{settings.ml_predict_timeout}s)。backend 可能正在加载模型; "
+                "若多个 GPU backend 同时驻留模型, 显存不足会让加载慢一个数量级。"
+                "可先卸载暂不使用的 backend 释放显存, 再重试。"
+            ),
+        ) from exc
+    except httpx.ConnectError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"ML backend unreachable: {exc}"
+        ) from exc
 
     model_ref = {"backend_id": str(backend.id), "model_id": model_id}
 

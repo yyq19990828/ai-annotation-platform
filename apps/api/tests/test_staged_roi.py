@@ -396,3 +396,78 @@ def test_collect_geometry_shapes_filters_bad_parent_idx():
     shapes = collect_geometry_shapes(seg, boxes)
     assert len(shapes) == 2
     assert shapes[0]["parent_box_idx"] == 0
+
+
+def test_remap_accepts_normalized_backend_coords():
+    """回归守卫: grounded-sam2 / sam3 的 /predict 返回归一化 [0,1] 几何 (yolo / onnxtools
+    返回百分比 [0,100])。两种口径反投影后必须落在同一原图位置——此前硬当百分比处理,
+    归一化口径的子框被缩小 100 倍并塌到 crop 左上角。"""
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+
+    pct = [{"type": "rectanglelabels", "value": {"x": 25, "y": 25, "width": 50, "height": 50}}]
+    norm = [{"type": "rectanglelabels", "value": {"x": 0.25, "y": 0.25, "width": 0.5, "height": 0.5}}]
+
+    [a] = remap_geometry_to_image(pct, transform)
+    [b] = remap_geometry_to_image(norm, transform)
+    for k in ("x", "y", "width", "height"):
+        assert a["value"][k] == pytest.approx(b["value"][k])
+    # crop 内居中半幅 → 原图 45~55 (父框 40~60 的中间一半)
+    assert b["value"]["x"] == pytest.approx(45)
+    assert b["value"]["width"] == pytest.approx(10)
+
+
+def test_remap_accepts_normalized_polygon_coords():
+    """polygon 路径同款口径自适应 (sam3-segmentation / segment-yoloe 的 mask→polygon 子框)。"""
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+
+    pct = [{"type": "polygonlabels", "value": {"points": [[0, 0], [100, 0], [100, 100]]}}]
+    norm = [{"type": "polygonlabels", "value": {"points": [[0, 0], [1.0, 0], [1.0, 1.0]]}}]
+
+    [a] = remap_geometry_to_image(pct, transform)
+    [b] = remap_geometry_to_image(norm, transform)
+    for pa, pb in zip(a["value"]["points"], b["value"]["points"]):
+        assert pa == pytest.approx(pb)
+    # 三角形顶点铺满 crop → 原图父框 (40~60) 的三个角
+    for got, want in zip(b["value"]["points"], [[40, 40], [60, 40], [60, 60]]):
+        assert got == pytest.approx(want)
+
+
+def test_remap_polygon_with_holes_and_multipolygon():
+    """回归守卫: 带洞 / 多连通 mask→polygon (grounded-sam2 / sam3 在 mask 有洞或多连通时输出)
+    在 ROI 反投影中曾被漏处理——holes 留在 crop 坐标系 (错位), polygons 形态因缺 points 被整条丢弃。"""
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+
+    # ② 单连通带洞: 外环铺满 crop, 洞在 crop 中心半幅。
+    holed = [
+        {
+            "type": "polygonlabels",
+            "value": {
+                "points": [[0, 0], [1.0, 0], [1.0, 1.0], [0, 1.0]],
+                "holes": [[[0.25, 0.25], [0.75, 0.25], [0.75, 0.75]]],
+            },
+        }
+    ]
+    [r] = remap_geometry_to_image(holed, transform)
+    for got, want in zip(r["value"]["points"], [[40, 40], [60, 40], [60, 60], [40, 60]]):
+        assert got == pytest.approx(want)
+    for got, want in zip(r["value"]["holes"][0], [[45, 45], [55, 45], [55, 55]]):
+        assert got == pytest.approx(want)
+
+    # ③ 多连通: 两个独立环, 均须反投影且整条 shape 不被丢弃。
+    multi = [
+        {
+            "type": "polygonlabels",
+            "value": {
+                "polygons": [
+                    {"points": [[0, 0], [0.5, 0], [0.5, 0.5]]},
+                    {"points": [[0.5, 0.5], [1.0, 0.5], [1.0, 1.0]]},
+                ]
+            },
+        }
+    ]
+    [m] = remap_geometry_to_image(multi, transform)
+    assert len(m["value"]["polygons"]) == 2
+    for got, want in zip(m["value"]["polygons"][0]["points"], [[40, 40], [50, 40], [50, 50]]):
+        assert got == pytest.approx(want)
+    for got, want in zip(m["value"]["polygons"][1]["points"], [[50, 50], [60, 50], [60, 60]]):
+        assert got == pytest.approx(want)
