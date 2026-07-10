@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -272,6 +274,88 @@ def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
     ]
 
 
+# ── v0.21.28 · B-mx · text-multiplex 跨窗 IoU 关联 ─────────────────────────
+# multiplex (sam3_video) 按 text 每窗独立会话重检测, 窗内 obj_id 稳定但**跨窗局部**
+# (窗 N 的 obj "1" 与窗 N-1 的 obj "1" 未必同物)。平台在窗边界帧按 IoU 关联, 把窗内
+# obj_id remap 成跨窗稳定的全局 instance_id (未匹配 → 新 track), 供阶段 0 分组落库。
+
+
+def _bbox_of_geometry(geom: dict) -> tuple[float, float, float, float]:
+    """任意 geometry → 归一化 (x, y, w, h) 外接框; 取不到 → 零框。"""
+    if not isinstance(geom, dict):
+        return (0.0, 0.0, 0.0, 0.0)
+    if geom.get("type") == "polygon":
+        pts = geom.get("points") or []
+        xs = [float(p[0]) for p in pts if len(p) >= 2]
+        ys = [float(p[1]) for p in pts if len(p) >= 2]
+        if not xs or not ys:
+            return (0.0, 0.0, 0.0, 0.0)
+        return (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+    return (
+        float(geom.get("x", 0.0)),
+        float(geom.get("y", 0.0)),
+        float(geom.get("w", geom.get("width", 0.0))),
+        float(geom.get("h", geom.get("height", 0.0))),
+    )
+
+
+def _geom_iou(g1: dict, g2: dict) -> float:
+    """两 geometry 外接框的 IoU (归一化坐标)。任一零框 → 0。"""
+    x1, y1, w1, h1 = _bbox_of_geometry(g1)
+    x2, y2, w2, h2 = _bbox_of_geometry(g2)
+    if w1 <= 0 or h1 <= 0 or w2 <= 0 or h2 <= 0:
+        return 0.0
+    ix1, iy1 = max(x1, x2), max(y1, y2)
+    ix2, iy2 = min(x1 + w1, x2 + w2), min(y1 + h1, y2 + h2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    union = w1 * h1 + w2 * h2 - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _associate_multiplex_window(
+    window_results: list[TrackerFrameResult],
+    prev_boundary: dict[str, dict],
+    next_global: list[int],
+    iou_threshold: float = 0.3,
+) -> list[TrackerFrameResult]:
+    """把一窗 text-multiplex 结果的窗内 instance_id remap 成跨窗稳定的全局 id。
+
+    每个窗内实例的**边界帧**(组内首个非 outside 结果 = 传播起点, 与上一窗相邻)几何与
+    ``prev_boundary``(上一窗每全局实例的末帧几何)按 IoU 贪心匹配; ≥阈值则复用该全局 id,
+    否则分配新全局 id。``prev_boundary`` 就地更新为本窗每全局实例的**末帧**几何(供下一窗
+    匹配)。primary 标记随结果保留(replace 只改 instance_id)。
+    """
+    by_local: dict[str, list[TrackerFrameResult]] = defaultdict(list)
+    for r in window_results:
+        by_local[r.instance_id or "0"].append(r)
+    remap: dict[str, str] = {}
+    used: set[str] = set()
+    for local_id, group in by_local.items():
+        head = next((r for r in group if not r.outside and r.geometry), None)
+        gid: str | None = None
+        if head is not None and prev_boundary:
+            best = iou_threshold
+            for cand_gid, geom in prev_boundary.items():
+                if cand_gid in used:
+                    continue
+                iou = _geom_iou(head.geometry, geom)
+                if iou >= best:
+                    best, gid = iou, cand_gid
+        if gid is None:
+            gid = str(next_global[0])
+            next_global[0] += 1
+        used.add(gid)
+        remap[local_id] = gid
+    remapped = [replace(r, instance_id=remap[r.instance_id or "0"]) for r in window_results]
+    new_boundary: dict[str, dict] = {}
+    for r in remapped:  # yield 序: 末帧最后写入 → 与下一窗相邻的边界
+        if not r.outside and r.geometry and r.instance_id:
+            new_boundary[r.instance_id] = r.geometry
+    prev_boundary.clear()
+    prev_boundary.update(new_boundary)
+    return remapped
+
+
 def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
     """为一个新发现的实例建一条空 video_track annotation (阶段 0)。
 
@@ -531,6 +615,12 @@ async def run_tracker_job(
         # 每个实例各用其上一窗末帧几何 + 同一 obj_id 重播种 (否则非主实例过一窗即丢)。仅当
         # 有多实例 (backend 发了 ≥2 个 instance_id) 时启用; 单目标 / None-instance 不触发。
         last_geom_by_instance: dict[str, dict] = {}
+        # v0.21.28 · B-mx · text-multiplex (sam3_video) 每窗独立会话重检测, 窗内 obj_id 局部;
+        # 平台在窗边界帧按 IoU 关联把窗内 id remap 成跨窗稳定的全局 instance_id (未匹配 → 新
+        # track)。mp_prev_boundary = 上一窗每全局实例的末帧几何; mp_next_global = 新全局 id 计数。
+        associate_multiplex = job.model_key == "sam3_video"
+        mp_prev_boundary: dict[str, dict] = {}
+        mp_next_global = [1]
         # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
         output_geometry = (
             "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
@@ -573,13 +663,21 @@ async def run_tracker_job(
                 # v0.21.27 · U-pvs-1 · 种子窗原始种子 / 后续窗多实例续种 (见上)。
                 seeds=window_seeds,
             )
+            # v0.21.28 · B-mx · 逐窗缓冲结果; 窗末对 text-multiplex 做跨窗 IoU 关联 (remap
+            # 窗内 obj_id → 全局 instance_id) 后再并入 results。非 multiplex 时缓冲即透传。
+            window_results: list[TrackerFrameResult] = []
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)
                 if (
                     job.cancel_requested_at is not None
                     or job.status == VideoTrackerJobStatus.CANCELLED.value
                 ):
-                    # v0.21.28 · 取消也暂存部分结果 (候选), 用户可 accept 部分 / discard。
+                    # v0.21.28 · 取消也暂存部分结果 (候选); multiplex 先关联本窗已收部分。
+                    if associate_multiplex and window_results:
+                        window_results = _associate_multiplex_window(
+                            window_results, mp_prev_boundary, mp_next_global
+                        )
+                    results.extend(window_results)
                     if results:
                         _stage_tracker_results(job, results, grid_step, output_geometry)
                     job.status = VideoTrackerJobStatus.CANCELLED.value
@@ -588,19 +686,9 @@ async def run_tracker_job(
                     await publisher(job.event_channel, _event(job, "job_cancelled"))
                     return job
 
-                results.append(result)
-                # Seed the next window with this window's latest non-outside
-                # geometry. The adapter yields in propagation order, so the
-                # last such result is the boundary frame adjacent to the next
-                # window (works for both forward and backward windows).
-                # v0.21.27 · U-pvs-1 · 逐实例记末帧几何 (供多实例续种); 主实例 (或单实例
-                # None) 另记 last_geometry 供 source_geometry 兜底 (与既有单 track 续追一致)。
-                if not result.outside and result.geometry:
-                    if result.instance_id is not None:
-                        last_geom_by_instance[result.instance_id] = result.geometry
-                    if result.instance_id is None or result.primary:
-                        last_geometry = result.geometry
+                window_results.append(result)
                 progress += 1
+                # live 预览事件用窗内 id (瞬态); 最终暂存的 results 用关联后的全局 id。
                 frame_payload = {
                     "frame_index": result.frame_index,
                     "geometry": result.geometry,
@@ -620,6 +708,21 @@ async def run_tracker_job(
                         total=total,
                     ),
                 )
+
+            # 窗末: text-multiplex 关联 remap 窗内 obj_id → 跨窗全局 instance_id。
+            if associate_multiplex:
+                window_results = _associate_multiplex_window(
+                    window_results, mp_prev_boundary, mp_next_global
+                )
+            results.extend(window_results)
+            # 续种状态 (关联后 id): 逐实例记末帧几何 (供多实例续种); 主实例 (或单实例 None)
+            # 另记 last_geometry 供 source_geometry 兜底 (与既有单 track 续追一致)。
+            for result in window_results:
+                if not result.outside and result.geometry:
+                    if result.instance_id is not None:
+                        last_geom_by_instance[result.instance_id] = result.geometry
+                    if result.instance_id is None or result.primary:
+                        last_geometry = result.geometry
 
         await db.refresh(job)
         if job.cancel_requested_at is not None:

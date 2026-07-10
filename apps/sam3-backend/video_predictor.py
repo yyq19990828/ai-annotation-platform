@@ -151,10 +151,11 @@ class SAM3MultiplexVideoTracker:
                 dict(type="add_prompt", session_id=session_id,
                      frame_index=local_seed, text=text.strip())
             )["outputs"]
-            target_obj_id = self._pick_target_obj(seed_out, seed_bbox)
-            if target_obj_id is None:
-                logger.info("sam3_video: text=%r matched no object at seed frame", text)
-                return []
+            # v0.21.28 · B-mx · 多目标批量吐: 不再 _pick_target_obj 收敛单目标, 逐帧把**全部**
+            # 检测对象各出一条结果 (instance_id = 窗内 obj_id)。仅在种子帧挑出与 seed_bbox /
+            # 最高分对应的**主实例** (primary), 供平台回填源轨迹; 其余各成新轨迹。窗内 obj_id
+            # 稳定, 跨窗身份由平台按边界帧 IoU 关联 (见 video_tracker_runner)。
+            primary_obj_id = self._pick_target_obj(seed_out, seed_bbox)
 
             # 收集逐帧输出 (含种子帧)。
             per_frame: dict[int, dict] = {local_seed: seed_out}
@@ -164,26 +165,38 @@ class SAM3MultiplexVideoTracker:
                 per_frame[int(response["frame_index"])] = response["outputs"]
 
             results: list[dict[str, Any]] = []
+            geom_empty = {"type": output_geometry_type(output_geometry)}
             for local_idx in sorted(per_frame, reverse=reverse):
                 if local_idx < 0 or local_idx >= local_count:
                     continue
                 src_idx = local_idx + lo
-                mask = self._obj_mask(per_frame[local_idx], target_obj_id, frame_index=src_idx)
-                if mask is None or not mask.any():
+                outputs = per_frame[local_idx]
+                obj_ids = _to_numpy(outputs.get("out_obj_ids"))
+                if obj_ids is None or len(obj_ids) == 0:
+                    continue  # 该帧无检测对象
+                for oid in obj_ids.tolist():
+                    oid = int(oid)
+                    is_primary = oid == primary_obj_id
+                    mask = self._obj_mask(outputs, oid, frame_index=src_idx)
+                    if mask is None or not mask.any():
+                        results.append({
+                            "frame_index": src_idx,
+                            "instance_id": str(oid),
+                            "geometry": dict(geom_empty),
+                            "confidence": 0.0,
+                            "outside": True,
+                            "primary": is_primary,
+                        })
+                        continue
+                    geometry, outside = self._mask_geometry(mask, output_geometry)
                     results.append({
                         "frame_index": src_idx,
-                        "geometry": {"type": output_geometry_type(output_geometry)},
-                        "confidence": 0.0,
-                        "outside": True,
+                        "instance_id": str(oid),
+                        "geometry": geometry,
+                        "confidence": 0.0 if outside else 1.0,
+                        "outside": outside,
+                        "primary": is_primary,
                     })
-                    continue
-                geometry, outside = self._mask_geometry(mask, output_geometry)
-                results.append({
-                    "frame_index": src_idx,
-                    "geometry": geometry,
-                    "confidence": 0.0 if outside else 1.0,
-                    "outside": outside,
-                })
             return results
         finally:
             if session_id is not None:

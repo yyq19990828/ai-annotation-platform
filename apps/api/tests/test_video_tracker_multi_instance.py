@@ -392,3 +392,121 @@ async def test_runner_discard_leaves_annotation_untouched(
         .all()
     )
     assert extra == []
+
+
+# ── v0.21.28 · B-mx · text-multiplex 跨窗 IoU 关联 ─────────────────────
+
+
+def _mr(frame: int, instance_id: str, x: float, *, primary: bool = False) -> TrackerFrameResult:
+    return TrackerFrameResult(
+        frame_index=frame,
+        geometry={"type": "bbox", "x": x, "y": 0.0, "w": 0.1, "h": 0.1},
+        confidence=1.0,
+        outside=False,
+        instance_id=instance_id,
+        primary=primary,
+    )
+
+
+def test_associate_multiplex_window_matches_by_iou_and_births_new():
+    from app.services.video_tracker_runner import _associate_multiplex_window
+
+    prev = {
+        "1": {"type": "bbox", "x": 0.10, "y": 0.0, "w": 0.1, "h": 0.1},
+        "2": {"type": "bbox", "x": 0.50, "y": 0.0, "w": 0.1, "h": 0.1},
+    }
+    nxt = [3]  # 下一个新全局 id
+    win = [
+        _mr(2, "a", 0.11),  # 与 global 1 边界高 IoU → 复用 "1"
+        _mr(2, "b", 0.51),  # 与 global 2 → "2"
+        _mr(2, "c", 0.90),  # 无匹配 → 新 global "3"
+    ]
+    out = _associate_multiplex_window(win, prev, nxt)
+    remap = {r.geometry["x"]: r.instance_id for r in out}
+    assert remap[0.11] == "1"
+    assert remap[0.51] == "2"
+    assert remap[0.90] == "3"
+    assert nxt == [4]  # 消耗了一个新全局 id
+    assert set(prev) == {"1", "2", "3"}  # prev 更新为本窗末帧几何
+
+
+class _WindowLocalMultiplexAdapter:
+    """模拟 text-multiplex: 窗内 obj_id **局部且跨窗重排**。两个物理目标 left(x≈0.1)/
+    right(x≈0.5); window 0: left=id"1"(primary)/right=id"2", window 1: left=id"2"/right=id"1"
+    (id 互换)。平台须按边界帧 IoU 关联成 2 条跨窗一致的轨迹 (left→源, right→新 track)。"""
+
+    model_key = "sam3_video"
+
+    async def propagate(self, ctx: TrackerContext):
+        first_window = min(ctx.from_frame, ctx.to_frame) == 0
+        for f in range(ctx.from_frame, ctx.to_frame + 1):
+            left_id = "1" if first_window else "2"
+            right_id = "2" if first_window else "1"
+            yield TrackerFrameResult(
+                frame_index=f,
+                geometry={"type": "bbox", "x": 0.10 + 0.005 * f, "y": 0.0, "w": 0.1, "h": 0.1},
+                confidence=1.0, outside=False, instance_id=left_id, primary=True,
+            )
+            yield TrackerFrameResult(
+                frame_index=f,
+                geometry={"type": "bbox", "x": 0.50 + 0.005 * f, "y": 0.0, "w": 0.1, "h": 0.1},
+                confidence=1.0, outside=False, instance_id=right_id, primary=False,
+            )
+
+
+async def test_runner_associates_window_local_ids_across_windows(
+    db_session, super_admin, monkeypatch
+):
+    """窗内 id 跨窗重排时, 平台 IoU 关联把同一物理目标的帧归到一条全局轨迹 (不因 id 互换分裂)。"""
+    from app.services.video_tracker_runner import accept_tracker_job
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    source = Annotation(
+        task_id=task.id, project_id=task.project_id, user_id=user.id,
+        annotation_type="bbox", class_name="car", tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 0.1, "y": 0.0, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id, dataset_item_id=item.id, annotation_id=source.id, created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value, model_key="sam3_video", direction="forward",
+        from_frame=0, to_frame=3, prompt={"text": "car"}, event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)  # 两窗 (0,1)(2,3)
+    adapter = _WindowLocalMultiplexAdapter()
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+    )
+
+    async def collect(_c: str, _p: dict) -> None:
+        return None
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(source)
+
+    # 源轨迹 (primary=left): 4 帧全为 left 几何 (x≈0.1), 不混入 right (x≈0.5)。
+    src_kfs = sorted(source.geometry["keyframes"], key=lambda k: k["frame_index"])
+    assert [k["frame_index"] for k in src_kfs] == [0, 1, 2, 3]
+    assert all(k["bbox"]["x"] < 0.3 for k in src_kfs if k.get("bbox")), \
+        "源轨迹应全是 left 目标, 关联把跨窗 id 互换的 left 帧归回一条"
+
+    # right → 恰 1 条新 ai_tracker 轨迹 (非 2 条: 证明未因 id 互换分裂), 4 帧全 right (x≈0.5)。
+    from sqlalchemy import select
+
+    rows = (
+        (await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id, Annotation.source == "ai_tracker"
+            )
+        )).scalars().all()
+    )
+    assert len(rows) == 1, f"应恰 1 条 right 轨迹, 实得 {len(rows)}"
+    right_kfs = sorted(rows[0].geometry["keyframes"], key=lambda k: k["frame_index"])
+    assert [k["frame_index"] for k in right_kfs] == [0, 1, 2, 3]
+    assert all(k["bbox"]["x"] > 0.3 for k in right_kfs if k.get("bbox"))
