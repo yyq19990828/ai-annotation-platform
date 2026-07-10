@@ -82,15 +82,31 @@ def test_first_obj_mask_thresholds_logits_and_takes_first_obj():
 
 
 class _FakePropagatePredictor:
-    """记录调用 + 按预设 mask 序列 yield (local_frame, obj_ids, masks)。"""
+    """记录调用 + 按预设 mask 序列 yield (local_frame, obj_ids, masks)。
 
-    def __init__(self, frame_masks: dict[int, np.ndarray]):
+    frame_score_logits: 可选 {local_idx: object_score_logit}, 模拟 vendor 在 yield 前
+    往 inference_state["output_dict_per_obj"] 写的每帧 object score (A1 真实置信度)。
+    不给则不写 → _object_score 取不到 → 回退 1.0。
+    """
+
+    def __init__(
+        self,
+        frame_masks: dict[int, np.ndarray],
+        frame_score_logits: dict[int, float] | None = None,
+    ):
         self._frame_masks = frame_masks
+        self._frame_score_logits = frame_score_logits or {}
         self.add_calls: list[dict] = []
         self.reset_called = False
 
     def init_state(self, video_path=None, **kw):
-        return {"video_path": video_path}
+        return {
+            "video_path": video_path,
+            "obj_id_to_idx": {1: 0},
+            "output_dict_per_obj": {
+                0: {"cond_frame_outputs": {}, "non_cond_frame_outputs": {}}
+            },
+        }
 
     def add_new_points_or_box(self, *, inference_state, frame_idx, obj_id, box, normalize_coords):
         self.add_calls.append(
@@ -103,6 +119,14 @@ class _FakePropagatePredictor:
             m = self._frame_masks[local_idx]
             # 模拟 vendor 输出 logits [num_obj=1, 1, H, W]: 前景=+10, 背景=-10。
             logits = torch.from_numpy(np.where(m, 10.0, -10.0)).float()[None, None]
+            if local_idx in self._frame_score_logits:
+                inference_state["output_dict_per_obj"][0]["non_cond_frame_outputs"][
+                    local_idx
+                ] = {
+                    "object_score_logits": torch.tensor(
+                        [[self._frame_score_logits[local_idx]]]
+                    )
+                }
             yield local_idx, [1], logits
 
     def reset_state(self, inference_state):
@@ -188,3 +212,76 @@ def test_propagate_rejects_oversized_window(monkeypatch):
             direction="forward",
             seed_bbox={"x": 0.0, "y": 0.0, "w": 0.1, "h": 0.1},
         )
+
+
+# ---------- A1 · 真实 object score 作 confidence ----------
+
+
+def test_object_score_reads_logit_and_sigmoids():
+    state = {
+        "obj_id_to_idx": {1: 0},
+        "output_dict_per_obj": {
+            0: {
+                "cond_frame_outputs": {},
+                # sigmoid(0)=0.5; helper 两个 storage 都查, 传播帧落 non_cond。
+                "non_cond_frame_outputs": {
+                    5: {"object_score_logits": torch.tensor([[0.0]])}
+                },
+            }
+        },
+    }
+    assert SAM2VideoTracker._object_score(state, 1, 5) == pytest.approx(0.5)
+
+
+def test_object_score_missing_structure_returns_none():
+    # 内部键缺失 (老 state / 未来 vendor sync 漂移) → None, 不崩。
+    assert SAM2VideoTracker._object_score({}, 1, 0) is None
+    assert SAM2VideoTracker._object_score({"obj_id_to_idx": {1: 0}}, 1, 0) is None
+
+
+def test_propagate_uses_object_score_as_confidence(monkeypatch):
+    # 两帧非空 mask; frame 0 高分 logit=4.0 (sigmoid≈0.982), frame 1 低分 -3.0 (≈0.047)。
+    fg = np.ones((10, 10), dtype=bool)
+    fake = _FakePropagatePredictor(
+        {0: fg, 1: fg}, frame_score_logits={0: 4.0, 1: -3.0}
+    )
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (10, 10, 2)),
+    )
+    results = tracker.propagate(
+        video_path="/tmp/x.mp4",
+        from_frame=0,
+        to_frame=1,
+        direction="forward",
+        seed_bbox={"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+    )
+    by_frame = {r["frame_index"]: r for r in results}
+    assert by_frame[0]["confidence"] == pytest.approx(0.982, abs=1e-2)
+    assert by_frame[1]["confidence"] == pytest.approx(0.047, abs=1e-2)
+    # backend 只报真实置信度、不改 outside; 是否 outside 交平台低置信阈值判。
+    assert by_frame[0]["outside"] is False
+    assert by_frame[1]["outside"] is False
+
+
+def test_propagate_falls_back_to_one_when_no_object_score(monkeypatch):
+    # 未提供分数 → 取不到 object_score → confidence 回退 1.0 (非空 mask)。
+    fg = np.ones((10, 10), dtype=bool)
+    fake = _FakePropagatePredictor({0: fg})
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (10, 10, 1)),
+    )
+    results = tracker.propagate(
+        video_path="/tmp/x.mp4",
+        from_frame=0,
+        to_frame=0,
+        direction="forward",
+        seed_bbox={"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+    )
+    assert results[0]["confidence"] == 1.0
+    assert results[0]["outside"] is False

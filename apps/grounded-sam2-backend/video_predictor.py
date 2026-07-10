@@ -179,11 +179,22 @@ class SAM2VideoTracker:
                 else:
                     bbox_norm, outside = self._mask_to_bbox_norm(mask, frame_w, frame_h)
                     geometry = {"type": "bbox", **bbox_norm}
+                # confidence 用 SAM2 自评的 object score (目标存在性 / 非遮挡置信度) 取代
+                # 写死的 0/1: 平台低置信阈值据此把「有 mask 但模型判为部分遮挡」的帧也标
+                # outside (旧的写死 1.0 只有全空 mask 才会 outside)。空 mask 仍记 0.0;
+                # vendor 内部结构取不到 (未来 sync 漂移) 时回退 1.0, 不丢结果。
+                if outside:
+                    confidence = 0.0
+                else:
+                    score = self._object_score(
+                        inference_state, _OBJ_ID, int(local_idx)
+                    )
+                    confidence = score if score is not None else 1.0
                 results.append(
                     {
                         "frame_index": src_idx,
                         "geometry": geometry,
-                        "confidence": 0.0 if outside else 1.0,
+                        "confidence": confidence,
                         "outside": outside,
                     }
                 )
@@ -271,6 +282,34 @@ class SAM2VideoTracker:
         if arr.ndim == 3:  # (num_obj, H, W)
             arr = arr[0]
         return arr > 0.0
+
+    @staticmethod
+    def _object_score(
+        inference_state: Any, obj_id: int, local_frame_idx: int
+    ) -> float | None:
+        """取该帧该对象的 object_score_logits → sigmoid 概率 [0,1]。
+
+        SAM2 传播时每帧自评一个 object score (目标是否存在 / 是否被遮挡), 存在
+        ``inference_state["output_dict_per_obj"][obj_idx][storage_key][frame_idx]``
+        (storage_key: 种子帧=cond_frame_outputs、传播帧=non_cond_frame_outputs),
+        由 vendor 在 yield 前的 _add_output_per_object 写入。vendor 是 pinned 版本、
+        结构稳定; 仍包一层兜底——键缺失 / 形状异常 (未来 sync 漂移) 时返回 None,
+        调用方回退旧的「有 mask=1.0」, 不因内部结构变动丢结果或崩。
+        """
+        try:
+            obj_idx = inference_state["obj_id_to_idx"][obj_id]
+            per_obj = inference_state["output_dict_per_obj"][obj_idx]
+            out = per_obj["cond_frame_outputs"].get(local_frame_idx) or per_obj[
+                "non_cond_frame_outputs"
+            ].get(local_frame_idx)
+            if out is None:
+                return None
+            logit = torch.as_tensor(out["object_score_logits"]).flatten()
+            if logit.numel() == 0:
+                return None
+            return float(torch.sigmoid(logit[0].float()).item())
+        except (KeyError, TypeError, IndexError, RuntimeError):
+            return None
 
     @staticmethod
     def _mask_to_bbox_norm(
