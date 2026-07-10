@@ -82,6 +82,12 @@ function estimateWindowCount(frameSpan: number, modelKey: string): number {
   return Math.max(1, Math.ceil(frames / windowSize));
 }
 
+// v0.21.27 · 支持画布点/框种子 + 多目标 + 纠偏的 tracker: SAM3 PVS 交互, 及阶段 A 起的
+// sam2_video(grounded-sam2 wrapper 解除单 obj 硬编码后同样吃 seeds[])。无种子则退选中轨迹框。
+function supportsSeedCapture(modelKey: string): boolean {
+  return modelKey === "sam3_video_interactive" || modelKey === "sam2_video";
+}
+
 const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
   rangePreset: "30",
   direction: "forward",
@@ -541,9 +547,9 @@ export function VideoTrackerPropagateDialog({
       {/* v0.21.27 · U-pvs-3 · #4 · 第二行: 种子/文本 (仅交互/文本驱动)。独立成行 →
           宽度随落点计数/文本变化时不再挤动主行的「发起传播」等动作按钮; 跨 backend
           行数可预测 (有此行 iff 交互或文本驱动)。二者互斥 (交互非 text-driven)。 */}
-      {(modelKey === "sam3_video_interactive" || textDrivenActive) && (
+      {(supportsSeedCapture(modelKey) || textDrivenActive) && (
         <div className="flex flex-wrap items-center gap-2">
-          {modelKey === "sam3_video_interactive" && (
+          {supportsSeedCapture(modelKey) && (
             <div className="flex items-center gap-1.5">
               <span className={TOOLBAR_FIELD_LABEL_CLASS}>种子</span>
               {/* 框修正 · 点/框模式切换: 点落正/负点, 框画修正框 (均归当前目标)。 */}
@@ -658,14 +664,13 @@ export function VideoTrackerPropagateDialog({
             ≈{estimatedWindows} 窗 (大范围分窗处理 · 粗估)
           </span>
         )}
-        {/* v0.21.27 · U-pvs-3 · U5 (+ #3 语义兜底): 多目标感知按模型分述。 */}
-        {modelKey === "sam3_video_interactive" && (
+        {/* v0.21.27 · U-pvs-3 · U5 (+ #3 语义兜底) + 阶段 A: 点/框种子的多目标感知 (sam2/sam3 同款)。 */}
+        {supportsSeedCapture(modelKey) && (
           <span>
             点目标落正点 (Alt 负点), 或切「框」画修正框; obj1 回填选中轨迹, 「+新目标」各成新轨迹;
             导航别帧再落 = 多帧纠偏; 无种子则用选中轨迹框
           </span>
         )}
-        {modelKey === "sam2_video" && <span>框种子: 跟随所选轨迹的单个目标</span>}
         {textDrivenActive && <span>文本驱动: 按描述在每帧自动发现并追踪多个目标</span>}
         {selectedModelDisabled && (
           <span className="text-status-caution">

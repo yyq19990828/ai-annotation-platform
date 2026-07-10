@@ -346,7 +346,7 @@ describe("VideoTrackerPropagateDialog", () => {
     );
   });
 
-  it("sam3_video_interactive 显示「落点选目标」种子入口, 其它模型不显示", () => {
+  it("种子入口: sam3_video_interactive 与 sam2_video 都显示, mock/文本驱动不显示", () => {
     render(
       <VideoTrackerPropagateDialog
         {...baseProps}
@@ -362,11 +362,11 @@ describe("VideoTrackerPropagateDialog", () => {
       target: { value: "sam3_video_interactive" },
     });
     expect(screen.getByTestId("tracker-seed-toggle")).toBeTruthy();
-    // 切 sam2_video → 消失 (点种子仅 PVS)。
+    // 切 sam2_video → 仍显示 (v0.21.27 阶段 A: grounded-sam2 也吃 seeds[] 多目标/点/框)。
     fireEvent.change(screen.getAllByRole("combobox")[1], {
       target: { value: "sam2_video" },
     });
-    expect(screen.queryByTestId("tracker-seed-toggle")).toBeNull();
+    expect(screen.getByTestId("tracker-seed-toggle")).toBeTruthy();
   });
 
   it("点「落点选目标」调 onToggleSeedCollecting; 采集态改文案; 有落点显计数 + 清空", () => {
