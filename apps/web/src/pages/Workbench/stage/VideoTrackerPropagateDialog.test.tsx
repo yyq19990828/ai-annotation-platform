@@ -395,6 +395,32 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(onClear).toHaveBeenCalled();
   });
 
+  it("多目标: 「+新目标」调 onNewSeedTarget; 计数在 >1 目标时才显示目标数", () => {
+    const onNewTarget = vi.fn();
+    const seedProps = {
+      ...baseProps,
+      frameIndex: 50,
+      projectDefaultModel: "sam3_video_interactive",
+      onSubmit: vi.fn(),
+      onToggleSeedCollecting: vi.fn(),
+      onNewSeedTarget: onNewTarget,
+      seedPointCount: 1,
+      seedTargetCount: 1,
+    };
+    const { rerender } = render(<VideoTrackerPropagateDialog {...seedProps} />);
+    // 单目标: 只显示点数, 不缀「目标」。
+    const count = () => screen.getByTestId("tracker-seed-count").textContent ?? "";
+    expect(count()).toContain("已落 1 点");
+    expect(count()).not.toContain("目标");
+    fireEvent.click(screen.getByTestId("tracker-seed-new-target"));
+    expect(onNewTarget).toHaveBeenCalled();
+    // 多目标 (>1): 缀「M 目标」。
+    rerender(
+      <VideoTrackerPropagateDialog {...seedProps} seedPointCount={3} seedTargetCount={2} />,
+    );
+    expect(count()).toContain("2 目标");
+  });
+
   it("取消不写记忆,且非法模型 / 变体安全回退", () => {
     const key = videoDialogMemoryStorageKey("u1", "trackerPropagate");
     const remembered = {

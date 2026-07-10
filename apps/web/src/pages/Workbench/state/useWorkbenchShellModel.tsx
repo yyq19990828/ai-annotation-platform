@@ -517,10 +517,12 @@ export function useWorkbenchShellModel({
   }, []);
   // v0.21.27 · U-pvs-1 · PVS 点种子采集态 (完整接线见传播对话框处)。此处先声明, 因下方
   // 「工具未启用即回收」守卫需读它: 采集态借 smart-point 落点, 不受回收。
-  // trackerSeeds 形状与画布 overlay 的 sessionPoints 一致 ({pt, polarity}), 可视化零换算。
+  // 多目标: 每点带 obj (目标序号, 1-based; obj=1 为主实例, 回填选中轨迹, obj≥2 各成新轨迹);
+  // seedObj = 当前正在落点的目标, 「新目标」递增。可视化仍复用 overlay ({pt,polarity})。
   const [trackerSeeds, setTrackerSeeds] = useState<
-    { pt: [number, number]; polarity: 1 | 0 }[]
+    { pt: [number, number]; polarity: 1 | 0; obj: number }[]
   >([]);
+  const [seedObj, setSeedObj] = useState(1);
   const [seedCollecting, setSeedCollecting] = useState(false);
   const seedPrevToolRef = useRef<VideoTool | null>(null);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
@@ -578,17 +580,23 @@ export function useWorkbenchShellModel({
     if (seedCollecting) stopSeedCollecting();
     else startSeedCollecting();
   }, [seedCollecting, startSeedCollecting, stopSeedCollecting]);
+  // 「新目标」: 当前目标已落 ≥1 点才递增 (不建空目标), 后续点归入下一目标。
+  const newSeedTarget = useCallback(() => {
+    if (trackerSeeds.some((s) => s.obj === seedObj)) setSeedObj(seedObj + 1);
+  }, [trackerSeeds, seedObj]);
 
   const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
     setPropagateBrush(null);
     setTrackerSeeds([]);
+    setSeedObj(1);
     setSeedCollecting(false);
     seedPrevToolRef.current = null;
   }, []);
   const closePropagateDialog = useCallback(() => {
     setPropagateDialog(null);
     setTrackerSeeds([]);
+    setSeedObj(1);
     stopSeedCollecting();
   }, [stopSeedCollecting]);
 
@@ -597,23 +605,24 @@ export function useWorkbenchShellModel({
       if (!propagateDialog || !taskId) return;
       setPropagateDialog((prev) => (prev ? { ...prev, submitting: true } : prev));
       try {
-        // v0.21.27 · U-pvs-1 · 有落点则注入 prompt.seeds (单目标 obj_id=1, 正点 label=1 /
-        // Alt 负点 label=0); runner 只在种子窗透传, backend PVS 优先 seeds[] 于 source_geometry。
+        // v0.21.27 · U-pvs-1 · 有落点则注入 prompt.seeds: 按目标 obj 分组, 每组一条 seed
+        // (obj_id=目标序号, points=[[x,y,label],...], 正点 label=1 / Alt 负点 label=0)。
+        // obj=1 为主实例回填选中轨迹, obj≥2 各成新轨迹。runner 只在种子窗透传, 多目标跨窗
+        // 由 runner 逐实例续种; backend PVS 优先 seeds[] 于 source_geometry。
+        const seedByObj = new Map<number, [number, number, number][]>();
+        for (const { pt, polarity, obj } of trackerSeeds) {
+          const pts = seedByObj.get(obj) ?? [];
+          pts.push([pt[0], pt[1], polarity]);
+          seedByObj.set(obj, pts);
+        }
         const withSeeds = trackerSeeds.length
           ? {
               ...payload,
               prompt: {
                 ...(payload.prompt ?? {}),
-                seeds: [
-                  {
-                    obj_id: 1,
-                    points: trackerSeeds.map(({ pt, polarity }) => [
-                      pt[0],
-                      pt[1],
-                      polarity,
-                    ]),
-                  },
-                ],
+                seeds: [...seedByObj.entries()]
+                  .sort((a, b) => a[0] - b[0])
+                  .map(([obj, points]) => ({ obj_id: obj, points })),
               },
             }
           : payload;
@@ -1005,10 +1014,11 @@ export function useWorkbenchShellModel({
     (prompt: VideoSamPrompt) => {
       // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
       // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
+      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹)。
       if (seedCollecting && prompt.mode === "point") {
         setTrackerSeeds((prev) => [
           ...prev,
-          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1 },
+          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj },
         ]);
         return;
       }
@@ -1019,7 +1029,7 @@ export function useWorkbenchShellModel({
       }
       sam.runBbox(prompt.bbox);
     },
-    [sam, s.exemplarOutputMode, seedCollecting],
+    [sam, s.exemplarOutputMode, seedCollecting, seedObj],
   );
   // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
   // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
@@ -2856,10 +2866,10 @@ export function useWorkbenchShellModel({
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
         // v0.21.27 · U-pvs-1 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS 种子点
-        // (归一化 {pt, polarity}, 与 sessionPoints 同形状); 否则仍画帧级 SAM 会话点。
+        // (归一化 {pt, polarity}, 剥去 obj); 否则仍画帧级 SAM 会话点。
         samSessionPoints: isVideoTask
           ? propagateDialog
-            ? trackerSeeds
+            ? trackerSeeds.map(({ pt, polarity }) => ({ pt, polarity }))
             : sam.sessionPoints
           : undefined,
         spacePan,
@@ -3226,8 +3236,13 @@ export function useWorkbenchShellModel({
     // v0.21.27 · U-pvs-1 · PVS 点种子采集 (仅 sam3_video_interactive 模型显示, 门控在对话框内)。
     seedCollecting,
     seedPointCount: trackerSeeds.length,
+    seedTargetCount: new Set(trackerSeeds.map((s) => s.obj)).size,
     onToggleSeedCollecting: toggleSeedCollecting,
-    onClearSeeds: () => setTrackerSeeds([]),
+    onNewSeedTarget: newSeedTarget,
+    onClearSeeds: () => {
+      setTrackerSeeds([]);
+      setSeedObj(1);
+    },
   };
 
   const issueSection = projectId && taskId ? {

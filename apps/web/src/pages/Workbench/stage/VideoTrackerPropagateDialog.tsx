@@ -158,6 +158,10 @@ interface VideoTrackerPropagateDialogProps {
   onToggleSeedCollecting?: () => void;
   /** 清空已落种子点。 */
   onClearSeeds?: () => void;
+  /** 已落目标数 (distinct obj); >1 时显示「M 目标」。 */
+  seedTargetCount?: number;
+  /** 新目标: 当前目标已落点后, 后续点归入下一目标 (各成一条轨迹)。 */
+  onNewSeedTarget?: () => void;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -182,6 +186,8 @@ export function VideoTrackerPropagateDialog({
   seedPointCount = 0,
   onToggleSeedCollecting,
   onClearSeeds,
+  seedTargetCount = 0,
+  onNewSeedTarget,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -458,11 +464,22 @@ export function VideoTrackerPropagateDialog({
               </button>
               {seedPointCount > 0 && (
                 <>
+                  <button
+                    type="button"
+                    onClick={onNewSeedTarget}
+                    disabled={submitting}
+                    data-testid="tracker-seed-new-target"
+                    title="后续落点归入新目标 (各成一条轨迹)"
+                    className="cursor-pointer rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
+                  >
+                    + 新目标
+                  </button>
                   <span
                     data-testid="tracker-seed-count"
                     className="text-2xs text-foreground"
                   >
                     已落 {seedPointCount} 点
+                    {seedTargetCount > 1 ? ` · ${seedTargetCount} 目标` : ""}
                   </span>
                   <button
                     type="button"
@@ -564,7 +581,10 @@ export function VideoTrackerPropagateDialog({
         </span>
         <span>按住 Shift 在时间轴拖选可圈定范围</span>
         {modelKey === "sam3_video_interactive" && (
-          <span>点目标落正点 (Alt 负点); 有落点以点驱动 PVS, 否则用选中轨迹框</span>
+          <span>
+            点目标落正点 (Alt 负点); 「+新目标」可一次追多个目标各成一条轨迹; 有落点以点驱动
+            PVS, 否则用选中轨迹框
+          </span>
         )}
         {textDrivenActive && <span>文本驱动: 按描述在每帧检测目标</span>}
         {selectedModelDisabled && (
