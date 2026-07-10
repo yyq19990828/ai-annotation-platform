@@ -6,7 +6,12 @@ export type VideoTrackerJobStatus =
   | "running"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  // v0.21.28 · 候选/接受流。pending_review = 追踪完、结果暂存待审; accepted = 已落库;
+  // discarded = 已丢弃。
+  | "pending_review"
+  | "accepted"
+  | "discarded";
 
 export interface VideoTrackerJob {
   id: string;
@@ -51,6 +56,25 @@ export interface VideoTrackerPropagatePayload {
   exemplars?: VideoTrackerExemplar[];
 }
 
+/** v0.21.28 · 候选预览: job 暂存的逐帧结果, 供接受前渲染候选叠加。 */
+export interface VideoTrackerPreviewResult {
+  frame_index: number;
+  geometry: Record<string, unknown>;
+  confidence?: number | null;
+  outside?: boolean;
+  instance_id?: string | null;
+  primary?: boolean;
+}
+
+export interface VideoTrackerJobPreview {
+  job_id: string;
+  status: VideoTrackerJobStatus;
+  annotation_id: string;
+  results: VideoTrackerPreviewResult[];
+  grid_step: number;
+  output_geometry: string;
+}
+
 export const videoTrackerApi = {
   propagate: (taskId: string, annotationId: string, payload: VideoTrackerPropagatePayload) =>
     apiClient.post<VideoTrackerJob>(
@@ -61,4 +85,11 @@ export const videoTrackerApi = {
     apiClient.get<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   cancel: (jobId: string) =>
     apiClient.delete<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
+  // v0.21.28 · 候选/接受流。
+  preview: (jobId: string) =>
+    apiClient.get<VideoTrackerJobPreview>(`/video-tracker-jobs/${jobId}/preview`),
+  accept: (jobId: string) =>
+    apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/accept`, {}),
+  discard: (jobId: string) =>
+    apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/discard`, {}),
 };

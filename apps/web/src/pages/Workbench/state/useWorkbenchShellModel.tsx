@@ -79,6 +79,7 @@ import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSideba
 import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
+import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
 import { isAnyVideoSingleFrame, isVideoBbox, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
@@ -163,6 +164,7 @@ interface WorkbenchShellReadyModel {
   kind: "ready";
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
+  trackerReview: ComponentProps<typeof VideoTrackerReviewBar>;
   issueSection?: WorkbenchShellIssueSection;
 }
 
@@ -2678,6 +2680,37 @@ export function useWorkbenchShellModel({
       ...trackerSeeds.map((sd) => sd.obj),
       ...trackerSeedBoxes.map((sb) => sb.obj),
     ]).size > 1;
+
+  // v0.21.28 · 候选/接受: 本任务的待审候选 (candidates 按 jobId, 用 jobs[jobId].taskId 过滤)。
+  // 普通计算 (非 hook): 位于早返回之后, 且计算便宜。
+  const trackerReviewEntry =
+    Object.entries(trackerJobs.candidates).find(
+      ([jobId]) => trackerJobs.jobs[jobId]?.taskId === taskId,
+    ) ?? null;
+  const trackerReviewCandidate = trackerReviewEntry
+    ? { jobId: trackerReviewEntry[0], preview: trackerReviewEntry[1] }
+    : null;
+  const trackerReviewMultiObj = trackerReviewCandidate
+    ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size > 1
+    : false;
+  // 候选当前帧的框 (bbox 几何) → overlay 预览 (复用 samSessionBoxes 通道, 多目标逐 obj 配色)。
+  const candidateBoxesThisFrame: { bbox: [number, number, number, number]; obj?: number }[] =
+    trackerReviewCandidate
+      ? trackerReviewCandidate.preview.results
+          .filter(
+            (r) =>
+              r.frame_index === s.videoFrameIndex &&
+              !r.outside &&
+              (r.geometry as { type?: string } | null)?.type === "bbox",
+          )
+          .map((r) => {
+            const g = r.geometry as { x: number; y: number; w: number; h: number };
+            return {
+              bbox: [g.x, g.y, g.x + g.w, g.y + g.h] as [number, number, number, number],
+              obj: trackerReviewMultiObj ? Number(r.instance_id ?? "1") : undefined,
+            };
+          })
+      : [];
   const propagateDialogNextKeyframe = propagateDialogTrack
     ? [...propagateDialogTrack.geometry.keyframes]
         .map((kf) => kf.frame_index)
@@ -2953,12 +2986,16 @@ export function useWorkbenchShellModel({
                 }))
             : sam.sessionPoints
           : undefined,
-        samSessionBoxes:
-          isVideoTask && propagateDialog
+        // 对话框开时画种子框; 否则若有待审候选, 画候选当前帧框 (预览); 都无则 undefined。
+        samSessionBoxes: !isVideoTask
+          ? undefined
+          : propagateDialog
             ? trackerSeedBoxes
                 .filter((sb) => sb.frame === s.videoFrameIndex)
                 .map(({ bbox, obj }) => ({ bbox, obj: seedMultiObj ? obj : undefined }))
-            : undefined,
+            : candidateBoxesThisFrame.length
+              ? candidateBoxesThisFrame
+              : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
@@ -3348,6 +3385,23 @@ export function useWorkbenchShellModel({
     },
   };
 
+  // v0.21.28 · 候选/接受审阅条 props。
+  const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
+    open: Boolean(trackerReviewCandidate),
+    frameCount: trackerReviewCandidate
+      ? new Set(trackerReviewCandidate.preview.results.map((r) => r.frame_index)).size
+      : 0,
+    targetCount: trackerReviewCandidate
+      ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size
+      : 0,
+    onAccept: () => {
+      if (trackerReviewCandidate) void trackerJobs.accept(trackerReviewCandidate.jobId);
+    },
+    onDiscard: () => {
+      if (trackerReviewCandidate) void trackerJobs.discard(trackerReviewCandidate.jobId);
+    },
+  };
+
   const issueSection = projectId && taskId ? {
     openIssueCount,
     stageKind,
@@ -3373,6 +3427,7 @@ export function useWorkbenchShellModel({
     kind: "ready",
     layout,
     propagateDialog: propagateDialogProps,
+    trackerReview: trackerReviewProps,
     issueSection,
   };
 }

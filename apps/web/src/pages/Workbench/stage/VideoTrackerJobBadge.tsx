@@ -32,6 +32,22 @@ const STATUS_STYLE: Record<
     className: "text-muted-foreground bg-card",
     cancelClassName: "!text-muted-foreground",
   },
+  // v0.21.28 · 候选/接受流。
+  pending_review: {
+    label: "待接受",
+    className: "text-status-info bg-status-info-soft",
+    cancelClassName: "!text-status-info",
+  },
+  accepted: {
+    label: "已接受",
+    className: "text-status-positive bg-status-positive-soft",
+    cancelClassName: "!text-status-positive",
+  },
+  discarded: {
+    label: "已丢弃",
+    className: "text-muted-foreground bg-card",
+    cancelClassName: "!text-muted-foreground",
+  },
 };
 
 interface VideoTrackerJobBadgeProps {
