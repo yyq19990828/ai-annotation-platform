@@ -113,9 +113,13 @@ class SAM3PVSVideoTracker:
     ) -> list[dict[str, Any]]:
         """在窗内按逐对象 seed(点/框)memory 传播, 返回逐帧逐对象几何。
 
-        seeds: [{obj_id, bbox:{x,y,w,h}} | {obj_id, points:[[x,y,label],...]}], 归一化 [0,1],
-               锚在窗首帧(forward=from_frame, backward=to_frame)。
-        output_geometry: "polygon"→mask 矢量化多边形; 否则 mask 外接框 bbox。
+        seeds 每条:
+          - 单帧: {obj_id, bbox:{x,y,w,h}} | {obj_id, points:[[x,y,label],...]}, 锚在窗种子帧
+            (forward=from_frame, backward=to_frame);
+          - 多帧 (纠偏, v0.21.27 U-pvs-2): {obj_id, prompts:[{frame_index, points?/bbox?}, ...]},
+            frame_index = 绝对源帧, 各 prompt 在其(局部)帧播种; PVS memory 逐帧累积, 后续帧的
+            修正点(含负点)改善该段追踪。仍从窗种子帧传播 (故 runner 须保证种子帧有基准 prompt)。
+        坐标归一化 [0,1]。output_geometry: "polygon"→mask 矢量化多边形; 否则外接框 bbox。
         """
         if not seeds:
             raise ValueError("sam3 PVS tracker requires at least one seed")
@@ -150,7 +154,7 @@ class SAM3PVSVideoTracker:
 
             state = self._predictor.init_state(video_path=tmp_dir)
             for seed in seeds:
-                self._add_seed(state, local_seed, seed)
+                self._add_seed(state, local_seed, seed, lo, local_count)
 
             results: list[dict[str, Any]] = []
             for out in self._predictor.propagate_in_video(
@@ -205,13 +209,15 @@ class SAM3PVSVideoTracker:
 
     # ---------- 内部工具 ----------
 
-    def _add_seed(self, state: Any, frame_idx: int, seed: dict[str, Any]) -> None:
-        """把一条 seed(框或点)按 obj_id 加到种子帧。框 = 归一化 xyxy; 点 = 归一化 [x,y]+label。"""
-        obj_id = int(seed["obj_id"])
-        bbox = seed.get("bbox")
-        pts = seed.get("points")
+    def _add_prompt(
+        self, state: Any, frame_idx: int, obj_id: int, prompt: dict[str, Any]
+    ) -> bool:
+        """在指定(局部)帧对 obj_id 加一条 prompt(框或点)。框 = 归一化 xyxy; 点 =
+        归一化 [x,y]+label(1 正 / 0 负)。无框无点返回 False(跳过)。"""
+        bbox = prompt.get("bbox")
+        pts = prompt.get("points")
         if not bbox and not pts:
-            raise ValueError(f"seed for obj_id={obj_id} has neither bbox nor points")
+            return False
 
         box_t = None
         if bbox:
@@ -240,3 +246,38 @@ class SAM3PVSVideoTracker:
             box=box_t,
             rel_coordinates=True,
         )
+        return True
+
+    def _add_seed(
+        self,
+        state: Any,
+        local_seed: int,
+        seed: dict[str, Any],
+        lo: int,
+        local_count: int,
+    ) -> None:
+        """把一条 seed 的 prompt(s) 按 obj_id 加进 state。
+
+        - 多帧 (纠偏): seed["prompts"]=[{frame_index?, points?/bbox?}], 各在其局部帧
+          (frame_index-lo, 越界钳到窗内) 播种; 缺 frame_index 的落窗种子帧。
+        - 单帧: seed 直接带 points/bbox, 落窗种子帧 local_seed。
+        """
+        obj_id = int(seed["obj_id"])
+        prompts = seed.get("prompts")
+        if isinstance(prompts, list) and prompts:
+            added = 0
+            for p in prompts:
+                if not isinstance(p, dict):
+                    continue
+                fi = p.get("frame_index")
+                local_f = (
+                    local_seed
+                    if fi is None
+                    else max(0, min(int(fi) - lo, local_count - 1))
+                )
+                if self._add_prompt(state, local_f, obj_id, p):
+                    added += 1
+            if added == 0:
+                raise ValueError(f"seed obj_id={obj_id} 的 prompts 无有效框/点")
+        elif not self._add_prompt(state, local_seed, obj_id, seed):
+            raise ValueError(f"seed for obj_id={obj_id} has neither bbox nor points")

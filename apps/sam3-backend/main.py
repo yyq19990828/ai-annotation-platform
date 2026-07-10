@@ -1008,8 +1008,10 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
     """PVS: 从 context 取逐对象 seed。优先 `seeds[]`(多目标 / 模式 b), 否则退单 seed
     = source_geometry/prompt.geometry(obj_id=1), 与 sam2_video 单目标种子等价。
 
-    seeds[] 每条: {obj_id?, bbox?/points?/geometry?}; geometry 走 _seed_bbox_from_video_ctx
-    取外接框。points 直接透传 [[x,y,label],...]。缺 obj_id 时按序补 1..N。
+    seeds[] 每条: {obj_id?, prompts?/bbox?/points?/geometry?}; geometry 走
+    _seed_bbox_from_video_ctx 取外接框。points 直接透传 [[x,y,label],...]。缺 obj_id 时按序补
+    1..N。prompts (v0.21.27 U-pvs-2 纠偏) = 多帧 [{frame_index, points?/bbox?}], 原样透传给
+    wrapper 逐帧播种; 优先于单帧 bbox/points。
     """
     raw = ctx.get("seeds")
     if isinstance(raw, list) and raw:
@@ -1018,7 +1020,9 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
             if not isinstance(s, dict):
                 continue
             entry: dict[str, Any] = {"obj_id": int(s.get("obj_id", i + 1))}
-            if isinstance(s.get("bbox"), dict):
+            if isinstance(s.get("prompts"), list) and s["prompts"]:
+                entry["prompts"] = s["prompts"]  # 多帧纠偏, 原样透传
+            elif isinstance(s.get("bbox"), dict):
                 entry["bbox"] = s["bbox"]
             elif isinstance(s.get("points"), list) and s["points"]:
                 entry["points"] = s["points"]
@@ -1026,7 +1030,7 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
                 b = _seed_bbox_from_video_ctx({"source_geometry": s["geometry"]})
                 if b is not None:
                     entry["bbox"] = b
-            if "bbox" in entry or "points" in entry:
+            if "prompts" in entry or "bbox" in entry or "points" in entry:
                 seeds.append(entry)
         if seeds:
             return seeds
