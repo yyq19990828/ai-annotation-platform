@@ -7,6 +7,8 @@ PVS backend 已支持 `context.seeds[]` (含 points), 缺口在平台侧: runner
 - 无 seeds 时行为与已发 B-pvs 框种子完全一致 (零回归)。
 """
 
+import pytest
+
 from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
@@ -102,6 +104,82 @@ async def test_seeds_only_on_seed_window_backward(db_session, super_admin, monke
     assert [(w[0], w[1]) for w in adapter.windows] == [(2, 3), (0, 1)]
     assert adapter.windows[0][2] == seeds  # 种子窗(含 to_frame)带 points
     assert adapter.windows[1][2] is None
+
+
+class _TwoInstanceCaptureAdapter:
+    """每窗每帧产 2 实例: "1"(primary) + "2"(extra); 记录每窗收到的 ctx.seeds。"""
+
+    model_key = "sam3_video_interactive"
+
+    def __init__(self) -> None:
+        self.windows: list[tuple[int, int, object]] = []
+
+    async def propagate(self, ctx: TrackerContext):
+        self.windows.append((ctx.from_frame, ctx.to_frame, ctx.seeds))
+        for f in range(ctx.from_frame, ctx.to_frame + 1):
+            yield TrackerFrameResult(
+                frame_index=f,
+                geometry={"type": "bbox", "x": float(f), "y": 0.0, "w": 5.0, "h": 5.0},
+                confidence=1.0, outside=False, instance_id="1", primary=True,
+            )
+            yield TrackerFrameResult(
+                frame_index=f,
+                geometry={"type": "bbox", "x": float(f) + 100.0, "y": 0.0, "w": 8.0, "h": 8.0},
+                confidence=1.0, outside=False, instance_id="2", primary=False,
+            )
+
+
+async def test_multi_instance_continuation_reseeds_each_instance(
+    db_session, super_admin, monkeypatch
+):
+    """多目标: 首窗下发原始 seeds, 后续窗对每个实例各用其末帧几何 + 对应 obj_id 续种。"""
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    source = Annotation(
+        task_id=task.id, project_id=task.project_id, user_id=user.id,
+        annotation_type="bbox", class_name="car",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    seeds = [
+        {"obj_id": 1, "points": [[0.5, 0.5, 1]]},
+        {"obj_id": 2, "points": [[0.8, 0.5, 1]]},
+    ]
+    job = VideoTrackerJob(
+        task_id=task.id, dataset_item_id=item.id, annotation_id=source.id,
+        created_by=user.id, status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video_interactive", direction="forward",
+        from_frame=0, to_frame=3, prompt={"seeds": seeds},
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    adapter = _TwoInstanceCaptureAdapter()
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter",
+        lambda _model_key: adapter,
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "completed"
+
+    # 两窗 (0,1)(2,3); 首窗下发原始点种子。
+    assert [(w[0], w[1]) for w in adapter.windows] == [(0, 1), (2, 3)]
+    assert adapter.windows[0][2] == seeds
+    # 后续窗对每个实例各续一条种子 (obj_id 1/2), 各带其上一窗末帧 (f1) 几何。
+    cont = adapter.windows[1][2]
+    assert cont is not None
+    by_obj = {s["obj_id"]: s for s in cont}
+    assert set(by_obj) == {1, 2}
+    assert by_obj[1]["geometry"]["x"] == pytest.approx(1.0)  # obj1 末帧 (f1) x=1
+    assert by_obj[2]["geometry"]["x"] == pytest.approx(101.0)  # obj2 末帧 x=101
 
 
 async def test_no_seeds_prompt_passes_none(db_session, super_admin, monkeypatch):

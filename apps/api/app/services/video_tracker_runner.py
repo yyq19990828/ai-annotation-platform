@@ -252,6 +252,26 @@ def _partition_results_by_instance(
     return primary, extras
 
 
+def _instance_seed_obj_id(instance_id: str, fallback: int) -> int:
+    """把 instance_id 还原成 backend 播种用的 obj_id。PVS 的 instance_id 就是 str(obj_id),
+    直接 int; 非数字 (老 backend 兜底) 按序补 fallback。"""
+    return int(instance_id) if instance_id.isdigit() else fallback
+
+
+def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
+    """多目标跨窗续追种子: 每个实例用其上一窗末帧几何 + 同一 obj_id 重播种下一窗。
+
+    v0.21.27 · U-pvs-1 · seed-驱动 tracker (PVS) 每窗是独立会话, 若只续主实例, 非主实例
+    过一窗即丢。这里对**每个**实例各下发一条 seed (obj_id 与其 instance_id 一致 → 跨窗身份
+    稳定); backend seeds 支持 geometry (自动取外接框)。text-驱动 (multiplex) backend 不读
+    seeds、按 text 每窗重检测, 收到本 seeds 无害忽略。
+    """
+    return [
+        {"obj_id": _instance_seed_obj_id(iid, idx + 1), "geometry": geom}
+        for idx, (iid, geom) in enumerate(sorted(last_geom_by_instance.items()))
+    ]
+
+
 def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
     """为一个新发现的实例建一条空 video_track annotation (阶段 0)。
 
@@ -400,6 +420,10 @@ async def run_tracker_job(
         # non-outside frame geometry so the tracker keeps following a moving
         # target instead of restarting from the original box every window.
         last_geometry = annotation.geometry or {}
+        # v0.21.27 · U-pvs-1 · 多目标跨窗续追: 记每个实例的末帧 (非 outside) 几何, 后续窗对
+        # 每个实例各用其上一窗末帧几何 + 同一 obj_id 重播种 (否则非主实例过一窗即丢)。仅当
+        # 有多实例 (backend 发了 ≥2 个 instance_id) 时启用; 单目标 / None-instance 不触发。
+        last_geom_by_instance: dict[str, dict] = {}
         # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
         output_geometry = (
             "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
@@ -412,6 +436,14 @@ async def run_tracker_job(
         prompt_seeds = (job.prompt or {}).get("seeds")
 
         for win_idx, (from_frame, to_frame) in enumerate(tracker_windows):
+            # 种子窗下发原始点/框种子; 后续窗若多实例则各自续种 (见 _continuation_seeds),
+            # 单实例则靠 source_geometry=last_geometry 兜底 (零回归)。
+            if win_idx == 0:
+                window_seeds = prompt_seeds or None
+            elif len(last_geom_by_instance) > 1:
+                window_seeds = _continuation_seeds(last_geom_by_instance)
+            else:
+                window_seeds = None
             ctx = TrackerContext(
                 job_id=job.id,
                 task_id=task.id,
@@ -431,8 +463,8 @@ async def run_tracker_job(
                 exemplars=(job.prompt or {}).get("exemplars"),
                 # v0.21.20 · polygon track 回填: 期望输出几何 (polygon/bbox)。
                 output_geometry=output_geometry,
-                # v0.21.27 · U-pvs-1 · 点/多目标种子仅种子窗下发 (见上)。
-                seeds=prompt_seeds if (win_idx == 0 and prompt_seeds) else None,
+                # v0.21.27 · U-pvs-1 · 种子窗原始种子 / 后续窗多实例续种 (见上)。
+                seeds=window_seeds,
             )
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)
@@ -455,14 +487,13 @@ async def run_tracker_job(
                 # geometry. The adapter yields in propagation order, so the
                 # last such result is the boundary frame adjacent to the next
                 # window (works for both forward and backward windows).
-                # v0.21.26 · 阶段 0 · 只用主实例的几何续种: 多目标时非主实例不参与源 track
-                # 的跨窗续追, 否则会把某个新发现目标的框喂给下一窗, 令主 track 种子漂移。
-                if (
-                    (result.instance_id is None or result.primary)
-                    and not result.outside
-                    and result.geometry
-                ):
-                    last_geometry = result.geometry
+                # v0.21.27 · U-pvs-1 · 逐实例记末帧几何 (供多实例续种); 主实例 (或单实例
+                # None) 另记 last_geometry 供 source_geometry 兜底 (与既有单 track 续追一致)。
+                if not result.outside and result.geometry:
+                    if result.instance_id is not None:
+                        last_geom_by_instance[result.instance_id] = result.geometry
+                    if result.instance_id is None or result.primary:
+                        last_geometry = result.geometry
                 progress += 1
                 frame_payload = {
                     "frame_index": result.frame_index,
