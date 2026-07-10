@@ -151,4 +151,5 @@ GET /api/v1/video-tracker-jobs?project_id=<uuid>&status=pending_review&model_key
 - 架构与数据边界：[视频 AI 追踪架构](../../dev/concepts/video-ai-tracking)
 - Worker / backend contract：[视频后端帧服务](../../dev/reference/video-frame-service#tracker-job)
 - WebSocket：[WS 协议](../../dev/reference/ws-protocol#6-wsvideo-tracker-jobsjob_id)
+- 运行时排障：[视频帧服务 Runbook](../../ops/runbooks/video-frame-service)
 - OpenAPI 路由索引：[自动生成路由](./_routes.generated)

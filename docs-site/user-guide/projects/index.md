@@ -15,6 +15,8 @@ last_reviewed: 2026-06-10
 ![创建项目入口](../images/projects/create-entry.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
 
+![创建项目入口（深色主题）](../images/projects/create-entry.dark.png)
+
 当当前筛选条件下没有项目时，列表会显示空状态。先确认筛选条件，再通过 **新建项目** 创建第一个项目，或先导入数据集后在向导中关联。
 
 ![项目列表空状态](../images/projects/empty-state.png)
@@ -40,7 +42,7 @@ last_reviewed: 2026-06-10
    - **scene 模式**（图片 / 3D 点云项目可选）
 3. **Step 2 类别**：每个启用的工具单位独立编辑类别（详见 [工具维度类别 / 属性](./tool-units.md)）
 4. **Step 3 属性**：每个启用的工具单位独立编辑属性 schema
-5. **Step 4 AI 接入**（可选）：启用 AI 预标注，并可复用其它项目已注册的 ML Backend
+5. **Step 4 AI 接入**（可选）：启用 AI 预标注，并可复用其它项目已注册的 ML Backend；项目启用、主后端和能力路由见[项目 ML 模型](./ml-backends)，完整 AI 任务入口见[AI 辅助标注](../ai/)
 6. **Step 5 数据**：上传初始数据集（多文件 / ZIP / 数据源连接器，详见 [图像数据集导入](../datasets/import-images.md) 与 [存储连接器导入](../datasets/storage-connections.md)）
 7. **Step 6 成员**：邀请标注员 / 审核员加入项目
 
@@ -114,6 +116,8 @@ banner 中的 **「同时复制标注指引」** 默认勾选：复制配置时�
 ## 导入 / 清理外部预测
 
 把客户自训模型、第三方推理服务的产物以 AAP JSON / COCO Detection / YOLO zip 形式导入为待采纳预测，或按来源（外部导入 / ML Backend 预标 / 全部）清理已有预测。入口、各格式最小 payload、YOLO 变体与替换 / 清理规则详见 [导入 / 导出外部预测](../datasets/prediction-import-export.md)。
+
+项目中的 AI 流程按任务分为交互式辅助、批量 / 多阶段预标、视频追踪、外部预测和候选审阅；从[AI 辅助标注](../ai/)进入可避免把项目配置页当作全部操作手册。
 
 ## 任务生成
 

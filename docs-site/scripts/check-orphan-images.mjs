@@ -29,7 +29,8 @@ const json   = process.argv.includes("--json");
 
 // 有意保留、暂不嵌入文档的图片（相对 IMAGES_ROOT，正斜杠）。需要时在此登记豁免。
 // 基线已归零：引入本检查时的 20 张存量孤儿已全部回填到对应 user-guide 页面。
-const IGNORE = new Set([]);
+// ai-tool-drawer 是已被顶部交互工具栏取代的历史截图，仅保留作视觉回归基线，不能再嵌入用户指南。
+const IGNORE = new Set(["sam/ai-tool-drawer.png"]);
 
 const IMG_EXT = /\.(png|gif|jpe?g|webp|svg)$/i;
 

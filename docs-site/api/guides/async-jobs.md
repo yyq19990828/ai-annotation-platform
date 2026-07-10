@@ -164,6 +164,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## 相关
 
+- [预标注流水线](../../dev/concepts/prediction-pipeline)
+- [Runbook：Celery Worker 卡死](../../ops/runbooks/celery-worker-stuck)
+- [Runbook：ML Backend 不可用](../../ops/runbooks/ml-backend-down)
 - [ROADMAP §1.7 async_jobs MVP](../../roadmap/2026-05-18-cvat-labelstudio-inspiration)
 - 模型：[`apps/api/app/db/models/async_job.py`](../../../apps/api/app/db/models/async_job.py)
 - service：[`apps/api/app/services/async_job.py`](../../../apps/api/app/services/async_job.py)

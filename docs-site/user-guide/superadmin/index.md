@@ -31,6 +31,8 @@ last_reviewed: 2026-06-10
 | 审计与合规 | [审计日志](./audit-logs) |
 | 系统监控 | [系统监控](./system-monitoring) |
 
+项目级 AI 操作（启用 backend、运行预标、审阅候选）统一从[AI 辅助标注](../ai/)进入；本章只保留超管独有的注册、运行时观测和跨项目排障入口。
+
 ## 与项目管理员的边界
 
 | 能力 | project_admin | super_admin |

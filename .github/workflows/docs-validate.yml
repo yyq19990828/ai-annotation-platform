@@ -6,7 +6,9 @@ on:
       - "docs-site/**"
       - "docs/**"
       - "apps/api/openapi.snapshot.json"
+      - "apps/web/e2e/screenshots/**"
       - "CHANGELOG.md"
+      - "scripts/check-dead-links.mjs"
       - ".github/workflows/docs-validate.yml"
       # 生成文档的真值来源:改了它们但忘了重新生成,本工作流的 check:codegen 拦住
       - "apps/web/src/pages/Workbench/state/hotkeys.ts"
@@ -18,7 +20,9 @@ on:
       - "docs-site/**"
       - "docs/**"
       - "apps/api/openapi.snapshot.json"
+      - "apps/web/e2e/screenshots/**"
       - "CHANGELOG.md"
+      - "scripts/check-dead-links.mjs"
       - "apps/web/src/pages/Workbench/state/hotkeys.ts"
       - "apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts"
       - "apps/web/src/api/auth.ts"
@@ -54,6 +58,21 @@ jobs:
 
       - name: Generated docs in sync with code (hotkeys + workbench settings)
         run: pnpm --filter @anno/docs-site check:codegen
+
+      - name: Frontmatter metadata
+        run: pnpm --filter @anno/docs-site check:frontmatter
+
+      - name: Freshness report (advisory)
+        run: pnpm --filter @anno/docs-site check:freshness
+
+      - name: Navigation coverage
+        run: pnpm --filter @anno/docs-site check:navigation -- --strict
+
+      - name: Internal Markdown links
+        run: node scripts/check-dead-links.mjs docs-site
+
+      - name: User-guide image coverage
+        run: node docs-site/scripts/check-image-manifest.mjs --strict && node docs-site/scripts/check-orphan-images.mjs --strict
 
       - name: Build docs site (catches broken links via VitePress)
         env:

@@ -1,74 +1,71 @@
 ---
-title: 失败预测恢复流程
-audience: [super_admin, project_admin]
+title: AI 任务与失败恢复
+audience: [project_admin, super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
-# 失败预测恢复流程
+# AI 任务与失败恢复
 
-本文描述当 AI 预标注 Job 失败时如何定位原因并恢复。
+本页说明项目管理员和超级管理员如何在应用内查看 AI 任务、取消不再需要的批量预标、恢复可重试的失败项，并在需要时把基础设施问题交给运维人员。图片批量预标、外部预测导入等长任务统一显示在 `/ai-pre/jobs`；视频追踪的候选审阅仍在视频工作台完成。
 
-## 失败场景
+## 先在 Jobs 页面定位
 
-| 场景 | 症状 |
-|---|---|
-| ML Backend 服务下线 | Job 停在 `running`，Celery 日志出现 `ConnectionError` |
-| Backend 返回非 200 | Job 变为 `failed`，超管页面显示错误详情 |
-| Celery Worker 崩溃 | Job 状态卡住，`docker ps` 显示 worker 容器已退出 |
-| 数据格式不兼容 | 部分 Task 无 Prediction，Backend 日志有 `ValidationError` |
-
-## Step 1：定位失败原因
+1. 主导航进入 **AI 预标**，打开 **Jobs**；失败任务可用 `?status=failed` 过滤。
+2. 按项目、状态、任务类型或关键词缩小范围，打开任务详情查看错误、时间线和结果摘要。
+3. 确认任务属于当前项目和当前操作；不要只看浏览器右上角的任务铃。任务铃可以隐藏终态记录，完整历史以 Jobs 页面为准。
 
 ![失败预测任务列表](../images/workflows/failed-prediction-recovery-jobs-list.png)
 
-**方式 A：AI 预标 Jobs 页面**
-1. 主导航 → **AI 预标** → **Jobs**（`/ai-pre/jobs?status=failed`）
-2. 查看 Job 状态、错误信息；打开 Job 详情可看 Task 级别的失败原因与 payload
+## 按状态处理
 
-**方式 B：日志**
-```bash
-# Celery Worker 日志
-docker logs ai-annotation-platform-celery-worker-1 --tail 100
+| 状态或现象 | 应用内处理 | 数据影响 |
+|---|---|---|
+| `pending` | 确认配置无误后等待 worker 领取；不再需要时取消 | 尚未写入预测 |
+| `running` | 需要停止时取消；批量预标会在下一条预测边界协作停止 | 已处理的候选不会回滚 |
+| `completed` | 打开对应批次或工作台审阅候选 | 未接受候选仍可拒绝或清理 |
+| `failed` | 查看错误和可重试项；修正配置或服务后重试 | 已成功写入的候选保留 |
+| `cancelled` | 查看结果摘要；保留部分候选或按来源清理后重跑 | 只停止后续处理，不自动删除已写入结果 |
 
-# ML Backend 日志（如 SAM）
-docker logs ai-annotation-platform-grounded-sam2-1 --tail 100
-```
+批量预标仅允许取消 `pending` 或 `running` 任务。取消不是强杀：worker 会在安全边界停止并保留成功、失败、跳过和取消位置的摘要。
 
-## Step 2：修复原因
+## 重试或重新运行
 
-### 场景：ML Backend 服务下线
+当任务详情包含可重试的失败项时，项目管理员或超级管理员可从详情页排队重试。旧任务没有可重试项时，转到失败列表逐条处理，或在修复前置条件后重新发起批量预标。
 
-```bash
-# 重启 Backend 容器（根据实际容器名调整）
-docker compose restart grounded-sam2-backend
+重新运行前，先决定怎样处理已有候选：
 
-# 验证服务正常
-curl http://localhost:8001/health
-```
+- **跳过已预标**：只补尚无预测的任务，适合恢复局部失败。
+- **覆盖**：先清除该范围的 AI 预测与 AI 标注，再重新预标；人工标注保留。
+- **追加**：在已有预测上再写一份，只适合明确需要并行比较结果的场景。
 
-再次触发 Job：主导航 → **AI 预标** → 选择项目 → 勾选批次 → 跑预标。
+这些模式和运行前置条件见[AI 预标](../projects/ai-preannotate)。需要按来源批量删除候选时，使用[外部预测导入 / 导出](../datasets/prediction-import-export#清理预测)。
 
-### 场景：Celery Worker 崩溃
+## 什么时候应升级给运维
 
-```bash
-docker compose restart celery-worker
-```
+以下情况不要在界面中反复重试：
 
-Worker 重启后，**状态为 `pending` 的 Job** 会自动被拾起重新执行。**但 `running` 状态的 Job 不会自动恢复**（本项目 Celery 配置未启用 `acks_late`，默认在任务出队时即 ACK；worker 崩溃后这些正在执行的任务不会被重新投递，Job 会卡在 `running` 状态）。需要手动在 `/ai-pre/jobs` 中将卡住的 Job 取消，再重新触发预标。详见 [Runbook: Celery Worker 卡死](/ops/runbooks/celery-worker-stuck)。
+- 多个项目或多个 backend 同时失败；
+- 错误提示连接失败、认证失败、超时或模型服务不可用；
+- 任务长期停留在 `pending` 或 `running`，且队列没有推进；
+- 视频追踪发生 GPU 内存不足、分窗或帧服务问题。
 
-### 场景：数据格式不兼容
+把 job ID、项目、出现时间和错误摘要提供给运维人员，并使用对应 runbook：
 
-1. 检查 Backend 日志中的 `ValidationError` 字段名
-2. 对照 [ML Backend 协议](/dev/reference/ml-backend-protocol) 核查 Backend 返回格式
-3. 修复 Backend 后重新注册并触发 Job
+- [ML Backend 不可用](/ops/runbooks/ml-backend-down)
+- [Celery Worker 卡死](/ops/runbooks/celery-worker-stuck)
+- [视频帧服务](/ops/runbooks/video-frame-service)
 
-## Step 3：清理残留数据（可选）
+## 与候选审阅的边界
 
-若希望用新 Prediction 替换旧的（包括部分成功的）：
-1. 项目设置 → **危险操作** → 或 Dashboard 项目卡片菜单 → **清除预测**，选择清除范围（按来源：外部导入 / ML Backend 预标 / 全部），确认操作（此操作不可逆）
-2. 重新触发预标
+恢复任务不会自动把模型结果变为正式标注。批量预标和外部导入产生的是候选，标注员仍需在工作台接受、拒绝或编辑；候选审阅的快捷键和数据边界见[审阅 AI 候选](../ai/candidate-review)。
 
-> **注意**：清除 Prediction 不影响已由标注员采用的 Annotation。
+视频 AI 追踪使用单独的 job 级审阅：即使取消后仍有部分结果，也要在视频工作台中整批接受或丢弃，见[视频关键帧传播与 AI 追踪](../workbench/video-propagate)。
+
+## 相关页面
+
+- [AI 辅助标注](../ai/) — 按任务选择其它 AI 流程。
+- [项目 ML 模型](../projects/ml-backends) — 检查项目是否启用了需要的 backend 和能力。
+- [失败预测排查](../superadmin/failed-predictions) — 超管视角的跨项目诊断与审计信息。

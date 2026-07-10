@@ -93,4 +93,7 @@ curl http://localhost:8001/health
 
 - [AI 预标注流水线](/user-guide/workflows/ai-preannotate-pipeline)
 - [失败预测恢复流程](/user-guide/workflows/failed-prediction-recovery)
+- [AI 模型集成](/dev/concepts/ai-models)
+- [ML Backend 协议](/dev/reference/ml-backend-protocol)
+- [ML Backend API](/api/guides/ml-backend)
 - [Runbook: Celery Worker 卡死](/ops/runbooks/celery-worker-stuck)

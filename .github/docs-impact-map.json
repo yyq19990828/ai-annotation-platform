@@ -104,6 +104,7 @@
         "docs-site/dev/concepts/counters-and-derived-fields.md",
         "docs-site/dev/concepts/audit-and-notifications.md",
         "docs-site/user-guide/workbench/",
+        "docs-site/user-guide/ai/",
         "docs-site/user-guide/review/",
         "docs/adr/"
       ]
@@ -188,7 +189,96 @@
         "docs-site/dev/concepts/ai-models.md",
         "docs-site/dev/concepts/batch-module.md",
         "docs-site/user-guide/projects/ai-preannotate.md",
+        "docs-site/user-guide/ai/",
+        "docs-site/user-guide/workflows/failed-prediction-recovery.md",
+        "docs-site/api/guides/async-jobs.md",
         "docs-site/user-guide/superadmin/failed-predictions.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "video-ai-tracking",
+      "name": "Video tracker jobs, staged candidates, and review",
+      "codeMatchers": [
+        "apps/api/app/api/v1/video_tracker_jobs.py",
+        "apps/api/app/db/models/video_tracker_job.py",
+        "apps/api/app/services/video_tracker_adapters.py",
+        "apps/api/app/services/video_tracker_job_service.py",
+        "apps/api/app/services/video_tracker_runner.py",
+        "apps/api/app/workers/video_tracker.py",
+        "apps/web/src/pages/Workbench/stage/",
+        "apps/web/src/pages/ModelMarket/VideoTrackerJobsPage.tsx"
+      ],
+      "recommendDocs": [
+        "docs-site/user-guide/workbench/video-propagate.md",
+        "docs-site/user-guide/ai/candidate-review.md",
+        "docs-site/dev/concepts/video-ai-tracking.md",
+        "docs-site/api/guides/video-tracker-jobs.md",
+        "docs-site/ops/runbooks/video-frame-service.md"
+      ],
+      "acceptDocs": [
+        "docs-site/user-guide/workbench/video-propagate.md",
+        "docs-site/user-guide/ai/",
+        "docs-site/dev/concepts/video-ai-tracking.md",
+        "docs-site/api/guides/video-tracker-jobs.md",
+        "docs-site/ops/runbooks/video-frame-service.md",
+        "docs-site/dev/reference/video-frame-service.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "async-jobs",
+      "name": "Async job lifecycle, cancellation, and notifications",
+      "codeMatchers": [
+        "apps/api/app/api/v1/async_jobs.py",
+        "apps/api/app/db/models/async_job.py",
+        "apps/api/app/services/async_job.py",
+        "apps/api/app/services/async_job_notify.py",
+        "apps/api/app/workers/async_jobs_cleanup.py",
+        "apps/web/src/components/shell/JobsBell.tsx"
+      ],
+      "recommendDocs": [
+        "docs-site/api/guides/async-jobs.md",
+        "docs-site/dev/concepts/prediction-pipeline.md",
+        "docs-site/user-guide/workflows/failed-prediction-recovery.md",
+        "docs-site/ops/runbooks/celery-worker-stuck.md"
+      ],
+      "acceptDocs": [
+        "docs-site/api/guides/async-jobs.md",
+        "docs-site/dev/concepts/prediction-pipeline.md",
+        "docs-site/user-guide/ai/",
+        "docs-site/user-guide/workflows/failed-prediction-recovery.md",
+        "docs-site/ops/runbooks/celery-worker-stuck.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "ml-capabilities-and-routing",
+      "name": "ML capability catalog, project routing, and model availability",
+      "codeMatchers": [
+        "apps/api/app/api/v1/ml_capabilities.py",
+        "apps/api/app/services/ml_capabilities.py",
+        "apps/api/app/services/ml_backend.py",
+        "apps/api/app/services/ml_backend_env_sync.py",
+        "apps/web/src/pages/ModelMarket/",
+        "apps/web/src/api/capabilityInputs.ts"
+      ],
+      "recommendDocs": [
+        "docs-site/user-guide/projects/ml-backends.md",
+        "docs-site/user-guide/superadmin/model-market.md",
+        "docs-site/dev/concepts/ai-models.md",
+        "docs-site/dev/reference/ml-backend-protocol.md",
+        "docs-site/api/guides/ml-backend.md",
+        "docs-site/ops/runbooks/ml-backend-down.md"
+      ],
+      "acceptDocs": [
+        "docs-site/user-guide/projects/ml-backends.md",
+        "docs-site/user-guide/superadmin/model-market.md",
+        "docs-site/user-guide/ai/",
+        "docs-site/dev/concepts/ai-models.md",
+        "docs-site/dev/reference/ml-backend-protocol.md",
+        "docs-site/api/guides/ml-backend.md",
+        "docs-site/ops/runbooks/ml-backend-down.md",
         "docs/adr/"
       ]
     },

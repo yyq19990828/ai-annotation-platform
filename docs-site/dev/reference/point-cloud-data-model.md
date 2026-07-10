@@ -1,3 +1,11 @@
+---
+title: 点云联合标注数据模型
+audience: [developer]
+type: reference
+status: stable
+last_reviewed: 2026-07-11
+---
+
 # 点云联合标注 · 后端数据模型
 
 > v0.13.0 落地的后端数据地基。本切片纯新增、无前端可见变化，为后续「LiDAR 点云 + 相机图像联合标注工作台」（Epic v0.13.x）打底。

@@ -382,5 +382,17 @@
     "scene": "getting-started/login",
     "lastRun": "2026-06-19T12:07:30.426Z",
     "project": "mobile"
+  },
+  "docs-site/user-guide/images/keypoint/human-pose.png": {
+    "auto": false,
+    "note": "manual reference illustration; no browser screenshot scene"
+  },
+  "docs-site/user-guide/images/keypoint/hand.png": {
+    "auto": false,
+    "note": "manual reference illustration; no browser screenshot scene"
+  },
+  "docs-site/user-guide/images/sam/text-three-modes.png": {
+    "auto": false,
+    "note": "legacy screenshot retained after the text-three-modes scene was removed"
   }
 }

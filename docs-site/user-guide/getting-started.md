@@ -17,6 +17,12 @@ last_reviewed: 2026-06-10
 ![登录页](./images/getting-started/login.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 登录页全屏；标注红框：邮箱输入、密码输入、登录按钮、「忘记密码」链接。1920×1080，浏览器框架可保留。 -->
 
+浅色、深色和窄屏视图的登录入口相同；部署的主题或浏览器宽度不同时可参考对应界面：
+
+![登录页（深色主题）](./images/getting-started/login.dark.png)
+
+![登录页（窄屏）](./images/getting-started/login.mobile.png)
+
 如果忘记了密码，点击登录页的「忘记密码」会跳到重置流程：
 
 ![忘记密码](./images/getting-started/forgot-password.png)

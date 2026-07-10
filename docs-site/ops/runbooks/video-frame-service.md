@@ -256,4 +256,6 @@ docker compose restart celery-worker
 ## 相关文档
 
 - [视频后端帧服务](/dev/reference/video-frame-service)
+- [视频 AI 追踪架构](/dev/concepts/video-ai-tracking)
+- [Video Tracker Jobs API](/api/guides/video-tracker-jobs)
 - [Runbook：Celery Worker 卡死](/ops/runbooks/celery-worker-stuck)

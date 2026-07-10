@@ -1,5 +1,9 @@
 ---
+title: Design System
+audience: [developer]
 type: reference
+status: stable
+last_reviewed: 2026-07-11
 ---
 
 # Design System

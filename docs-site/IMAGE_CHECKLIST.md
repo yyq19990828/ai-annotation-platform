@@ -182,7 +182,7 @@
 - [x] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线
 - [x] `images/keypoint/hand.png` — 21 点手部骨架
 - [x] `images/sam/subtoolbar.png` — SAM 子工具栏 [auto]
-- [x] `images/sam/text-three-modes.png` — 文字提示三种模式 [auto]
+- [x] `images/sam/text-three-modes.png` — 文字提示三种模式 `[manual]`（旧自动截图场景已移除，现作为保留参考图）
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]

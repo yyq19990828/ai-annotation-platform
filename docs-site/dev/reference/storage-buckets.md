@@ -1,3 +1,11 @@
+---
+title: MinIO 存储桶布局
+audience: [developer, ops]
+type: reference
+status: stable
+last_reviewed: 2026-07-11
+---
+
 # MinIO 存储桶布局
 
 平台所有对象存储数据按"生命周期 + 安全敏感度"分桶。共 5 个桶,职责互不重叠,迁移与备份策略各自独立。

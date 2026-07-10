@@ -1,3 +1,11 @@
+---
+title: 工作台设置
+audience: [annotator, reviewer]
+type: reference
+status: stable
+last_reviewed: 2026-07-11
+---
+
 # 工作台设置
 
 工作台的个人偏好按 **通用 / 图片 / 视频 / 点云** 四类组织,有两个入口:

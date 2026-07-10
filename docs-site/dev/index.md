@@ -28,6 +28,9 @@ docker compose up -d
 | 理解派题与锁 | [Scheduler 与派题](./concepts/scheduler-and-task-dispatch) · [Task Lock](./concepts/task-locking) |
 | 理解状态流 | [状态机总览](./concepts/state-machines) |
 | 理解横切机制 | [计数与派生字段](./concepts/counters-and-derived-fields) · [审计与通知](./concepts/audit-and-notifications) |
+| 修改批量或多阶段 AI 预标 | [预标注流水线](./concepts/prediction-pipeline) · [异步任务 API](/api/guides/async-jobs) |
+| 修改视频 AI 追踪 | [视频 AI 追踪](./concepts/video-ai-tracking) · [Video Tracker Jobs API](/api/guides/video-tracker-jobs) |
+| 修改 backend 能力声明或项目启用 | [AI 模型集成](./concepts/ai-models) · [ML Backend API](/api/guides/ml-backend) · [ML Backend 协议](./reference/ml-backend-protocol) |
 | 理解整体架构 | [概念：架构地图](./concepts/) |
 | 排查运行时问题 | [故障排查总览](./troubleshooting/) |
 | 查协议规范 | [ML Backend 协议](./reference/ml-backend-protocol) · [WebSocket 协议](./reference/ws-protocol) · [视频帧服务](./reference/video-frame-service) |

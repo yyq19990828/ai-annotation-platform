@@ -141,7 +141,7 @@ GET  /cache/stats   → {"size": N, "capacity": 16, "hits": ..., "misses": ..., 
 | 3090 24GB | 100-200 ms | < 30 ms |
 | A100 40GB | 50-100 ms | < 20 ms |
 
-**v0.9.1 已落 LRU embedding 缓存**：cache key = `sha1(url_path|sam_variant)`（剥掉 MinIO presigned 的 query string，跨 TTL 滚动稳定）。同图二次 point/bbox 点击直接 restore SAM 内部 `_features`/`_orig_hw` 而不再 `set_image()`，并跳过 `_fetch_image()`；text 路径仍需 DINO 走原图，但 SAM 端同样命中。详见 [`docs-site/dev/architecture/ai-models.md`](../../docs-site/dev/architecture/ai-models.md)。
+**v0.9.1 已落 LRU embedding 缓存**：cache key = `sha1(url_path|sam_variant)`（剥掉 MinIO presigned 的 query string，跨 TTL 滚动稳定）。同图二次 point/bbox 点击直接 restore SAM 内部 `_features`/`_orig_hw` 而不再 `set_image()`，并跳过 `_fetch_image()`；text 路径仍需 DINO 走原图，但 SAM 端同样命中。详见 [`docs-site/dev/concepts/ai-models.md`](../../docs-site/dev/concepts/ai-models.md)。
 
 ---
 

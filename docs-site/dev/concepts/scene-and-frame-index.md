@@ -1,6 +1,14 @@
-# Scene + frame_index(跨 task 帧序列地基)
+---
+title: Scene 与帧索引
+audience: [developer]
+type: explanation
+status: stable
+last_reviewed: 2026-07-11
+---
 
-> v0.14.0 引入。把"一段录像被切成多个 task"型场景(3D 点云逐帧 / 2D 抽帧图像序列 / 多段 mp4 拼接长录像)统一到同一数据基地。本期**不**含跨帧 UX——`Shift+→` propagate、邻帧框叠加等留 v0.14.1+。
+# Scene + frame_index（跨 task 帧序列地基）
+
+> 把“一段录像被切成多个 task”型场景（3D 点云逐帧 / 2D 抽帧图像序列 / 多段 mp4 拼接长录像）统一到同一数据地基。跨帧交互建立在这套 scene 与帧索引之上。
 
 ## 背景:为什么要 scene
 

@@ -163,7 +163,7 @@ runner 把结果序列化到：
 4. 检查 backend `/health` 的 `video_pool` 与模型权重状态。
 5. 对多目标漂移，区分 PVS 续种问题和 multiplex 窗边界 IoU 关联问题。
 
-具体命令见[视频帧服务 Runbook](/ops/runbooks/video-frame-service)。
+精确端点与状态码见 [Video Tracker Jobs API](/api/guides/video-tracker-jobs)；具体命令见[视频帧服务 Runbook](/ops/runbooks/video-frame-service)。
 
 ## 维护边界
 

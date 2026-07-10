@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * 检查 docs-site/ 下所有 .md 文件是否包含必填 frontmatter 字段。
- * 跳过：自动生成文件（*.generated.md）、redirect shim（layout: page + router.go）、
- *       adr/、changelog/、roadmap/（镜像生成目录）。
+ * 检查维护型正文页是否包含稳定的归属与复核 frontmatter。
+ * 标题由页面 H1 生成，`since` 仅作可选历史元数据，因此不强制要求。
+ * 跳过目录首页、自动生成文件、redirect shim、示例源码、已下线页面，以及
+ * adr/、changelog/、roadmap/ 等镜像或历史目录。
  *
  * 用法：node docs-site/scripts/check-doc-frontmatter.mjs [--fix]
  *   --fix  在缺失字段的文件顶部插入空骨架（仅补充缺失字段，不覆盖已有值）
@@ -11,16 +12,17 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, extname } from "node:path";
+import { join, relative, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 const __here = dirname(fileURLToPath(import.meta.url));
 const DOCS_ROOT = join(__here, "..");
 
-const REQUIRED_FIELDS = ["title", "audience", "type", "since", "status", "last_reviewed"];
-const SKIP_DIRS = new Set(["adr", "changelog", "roadmap", ".vitepress", "public", "scripts", "node_modules"]);
+const REQUIRED_FIELDS = ["audience", "type", "status", "last_reviewed"];
+const SKIP_DIRS = new Set(["adr", "changelog", "examples", "roadmap", ".vitepress", "public", "scripts", "node_modules"]);
 const SKIP_GENERATED = /\.generated\.md$/;
+const SKIP_PATHS = new Set(["IMAGE_CHECKLIST.md", "index.md", "user-guide/projects/annotation-guide.md"]);
 // redirect shims 包含 router.go，跳过检查
 const REDIRECT_MARKER = "router.go(";
 
@@ -46,10 +48,8 @@ function parseFrontmatter(content) {
 function buildSkeletonFrontmatter(existing = {}) {
   const today = new Date().toISOString().slice(0, 10);
   const lines = ["---"];
-  if (!existing.title) lines.push("title: ''");
   if (!existing.audience) lines.push("audience: []");
   if (!existing.type) lines.push("type: ''  # tutorial | how-to | reference | explanation");
-  if (!existing.since) lines.push("since: ''");
   if (!existing.status) lines.push("status: stable  # draft | stable | deprecated");
   if (!existing.last_reviewed) lines.push(`last_reviewed: ${today}`);
   lines.push("---");
@@ -72,11 +72,15 @@ function checkFile(filePath) {
   const rel = relative(DOCS_ROOT, filePath);
   const content = readFileSync(filePath, "utf8");
 
+  if (SKIP_PATHS.has(rel)) return;
   // Skip auto-generated files
   if (SKIP_GENERATED.test(filePath)) return;
 
   // Skip redirect shims
   if (content.includes(REDIRECT_MARKER)) return;
+
+  // Landing pages may rely on their visible H1 and do not need maintenance metadata.
+  if (basename(filePath) === "index.md" && !content.startsWith("---")) return;
 
   checked++;
 
