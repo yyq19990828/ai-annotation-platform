@@ -18,6 +18,14 @@ class TrackerFrameResult:
     geometry: dict
     confidence: float | None = None
     outside: bool = False
+    # v0.21.26 · 阶段 0 · 多目标: backend 一帧可返回多实例。instance_id 是该 job 内
+    # 全局稳定的对象标识 (backend 负责跨窗保持稳定, 见阶段 B); None = 单实例老 backend
+    # (归主实例, 回填源 annotation), 与既有单 track 行为等价。
+    instance_id: str | None = None
+    # primary=True 标记与用户种子对应的那个实例 (backend 按 IoU 挑定)。其逐帧结果回填源
+    # annotation; 非 primary 的每个 instance_id 各落一条新 annotation。老 backend 不发此
+    # 键 → runner 按「无 instance_id 即主实例」兜底。见 video_tracker_runner 分组落库。
+    primary: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,11 +199,17 @@ def _frame_result_from_payload(payload: dict) -> TrackerFrameResult:
     if not geometry:
         geometry = {"type": "bbox", "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
 
+    instance_id = payload.get("instance_id")
+    if instance_id is not None:
+        instance_id = str(instance_id)
+
     return TrackerFrameResult(
         frame_index=int(payload["frame_index"]),
         geometry=geometry,
         confidence=confidence,
         outside=outside,
+        instance_id=instance_id,
+        primary=bool(payload.get("primary", False)),
     )
 
 

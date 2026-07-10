@@ -40,6 +40,7 @@
   按钮，`/health` 新增 `video_pool` 上报，视频追踪的已加载 / 预热状态与图像池并列可见。变体面板并列展示两份权重——
   图像权重「SAM 3」（`model_version`）与视频权重「SAM 3.1」（`/setup.video_model_version`，即 `sam3.1_multiplex`）。
 - **多卡机器可为每个 GPU backend 指定物理显卡**：新增 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID`，替代原先由 Docker 自动挑卡的 `count: 1`；默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1，双卡机器可错开显存。**单卡机器需手动把 `SAM3_GPU_DEVICE_ID` 覆盖成 `0`**，否则容器会因找不到卡 1 而启动失败。
+- **视频 AI 追踪支持一次产出多条轨迹（多目标落库底座）**：追踪 backend 的每帧结果现可携带 `instance_id`（该次任务内跨窗稳定的对象标识）与 `primary`（标记与用户种子对应的实例）。平台按实例分组落库——主实例回填用户发起追踪的那条标注，其余每个新发现的目标各落成一条**独立轨迹**（继承源标注的类别、标 `source=ai_tracker`、各自独立 `track_id`），画布与时间轴据现有轨迹渲染直接可见、无需前端改动。不带 `instance_id` 的单目标 backend 走原有单轨迹路径、行为不变。此为平台侧底座，真正批量吐多目标的 backend（sam3.1_multiplex 多目标消费）随后续版本接通。
 
 ### Changed
 - **SAM 3 取消图像 / 视频模型的互斥常驻**：此前受单卡 8GB 限制，`sam3-backend` 加载视频追踪模型前会先卸载图像模型

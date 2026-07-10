@@ -359,6 +359,8 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
         state="connected",
         is_interactive=True,
         extra_params={},
+        # v0.21.25 阶段 R · runner 按 supported_trackers 路由, backend 须声明能力。
+        health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
     )
     db_session.add(backend)
     await db_session.flush()
@@ -456,6 +458,8 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
         state="connected",
         is_interactive=True,
         extra_params={},
+        # v0.21.25 阶段 R · runner 按 supported_trackers 路由, backend 须声明能力。
+        health_meta={"capabilities": {"supported_trackers": ["sam3_video"]}},
     )
     db_session.add(backend)
     await db_session.flush()
