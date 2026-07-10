@@ -34,7 +34,14 @@ function presetLabel(value: RangePresetValue, step: number): string {
 export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?: string }> = [
   { value: "mock_bbox", label: "mock_bbox", note: "测试用 (不依赖 ML backend)" },
   { value: "sam2_video", label: "sam2_video", note: "需项目绑定 ML backend" },
-  { value: "sam3_video", label: "sam3_video", note: "需项目绑定 ML backend" },
+  { value: "sam3_video", label: "sam3_video", note: "文本检测追踪 · 需项目绑定 ML backend" },
+  // v0.21.26 · 阶段 B-pvs · SAM3 交互追踪 (点/框 seed + memory 跨帧, 非文本驱动)。与
+  // sam2_video 同为种子传播 (不显 text 框); 需绑定声明该 tracker 的 sam3 backend。
+  {
+    value: "sam3_video_interactive",
+    label: "sam3_video_interactive",
+    note: "点/框交互追踪 · 需项目绑定 sam3 backend",
+  },
 ];
 
 // v0.10.36: SAM 模型尺寸 (tracker 不用 DINO, 只选 SAM 尺寸)。空 = 默认/tiny。
