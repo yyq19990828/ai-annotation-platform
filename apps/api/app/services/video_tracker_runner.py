@@ -77,9 +77,11 @@ def _normalize_points(geometry: dict) -> list[list[float]]:
 
 def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     size = max(1, int(settings.video_tracker_window_size_frames))
-    # sam3_video(sam3.1_multiplex)视频前向显存随窗口线性增长, 远重于 sam2 seed-bbox,
-    # 大窗会 OOM@24GB。给它单独更小的窗口, 不动 sam2 的窗口(避免回归其长程记忆)。
-    if job.model_key == "sam3_video":
+    # sam3 两档视频模型都用更小分窗(不动 sam2 的窗口, 避免回归其长程记忆):
+    # - sam3_video(multiplex): 视频前向显存随窗口线性增长, 大窗 OOM@24GB。
+    # - sam3_video_interactive(PVS): backend wrapper 上限 SAM3_PVS_MAX_WINDOW_FRAMES(默认 16),
+    #   超限会被 backend 拒; PVS 是 SAM2 式 memory 传播、显存轻于 multiplex, 但先与之齐。
+    if job.model_key in ("sam3_video", "sam3_video_interactive"):
         size = min(size, max(1, int(settings.video_tracker_sam3_window_size_frames)))
     windows = []
     start = job.from_frame
