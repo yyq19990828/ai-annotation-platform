@@ -169,6 +169,11 @@ class Settings(BaseSettings):
     video_segment_size_frames: int = 18000
     video_segment_lock_ttl_seconds: int = 300
     video_tracker_window_size_frames: int = 300
+    # sam3.1_multiplex 视频前向的显存随窗口帧数近似线性增长(实测 ~0.85GB/帧,
+    # 基线 ~5.4GB,16 帧 ~18.9GB,41 帧即 OOM@24GB),比 sam2_video 的 seed-bbox
+    # 传播重得多。给 sam3_video 单独的更小窗口,既防 OOM 又不拖累 sam2 的长程记忆
+    # (sam2 沿用上面的 300)。24GB 卡若与图像 sam3.pt 常驻并存,建议再降到 ~12。
+    video_tracker_sam3_window_size_frames: int = 16
     video_tracker_low_confidence_outside_threshold: float = 0.15
     # v0.21.6 · detect-then-track 批量预标注 soft 超时 (秒)。tracker 阶段整段跑帧、耗时远超逐帧
     #   检测; 与 YOLO_TRACKER_MAX_FRAMES 帧上限双保险, 防单 job 卡死 worker。到点抛

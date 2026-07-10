@@ -892,6 +892,16 @@ export function useWorkbenchShellModel({
     savedInteractiveBackendId: interactiveBackendPref.savedBackendId ?? null,
     onSaveInteractiveBackend: interactiveBackendPref.save,
   });
+  // v0.21.25 (阶段 R) · tracker 可用性看「项目所有 reachable backend 的 supported_trackers 并集」,
+  // 而非单个绑定/交互 backend——否则项目绑 grounded-sam2 时, sam3-backend 声明的 sam3_video 永远
+  // 被灰置「未绑定后端」。与后端 get_tracker_backend 的按能力路由对齐。
+  const allSupportedTrackers = useMemo(() => {
+    const set = new Set<string>();
+    for (const entry of Object.values(routing.capIndex)) {
+      if (entry.reachable) for (const t of entry.trackers) set.add(t);
+    }
+    return [...set];
+  }, [routing.capIndex]);
   // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
@@ -3093,7 +3103,8 @@ export function useWorkbenchShellModel({
     projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
     preferNonMockModel: Boolean(currentProject?.ml_backend_id),
     // v0.21.19 · 能力协商: backend 声明的 tracker 列表, 用于灰置未声明的 text-driven tracker (sam3_video)。
-    supportedTrackers: mlCapabilities.capability?.supported_trackers,
+    // v0.21.25 (阶段 R): 取所有已启用 backend 的并集 (allSupportedTrackers), 不再局限单个绑定/交互 backend。
+    supportedTrackers: allSupportedTrackers,
     textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,

@@ -9,7 +9,7 @@
 - [v0.21.20 多几何 track](2026-07-05-v0.21.20-multi-geometry-track.md)——**正交轴 B（轨迹几何）**。本 epic 是**轴 A
   （单帧几何）**，是轴 B 的地基：schema 变体 / 视频栈 `<Line>`·keypoint·mask 渲染 / 工具交互三者**两轴共享**，仅插值为
   轴 B 独占。见该计划「两条正交轴」节。
-- [视频追踪多目标化 epic](2026-07-07-video-multi-target-tracking-epic.md)——追踪链路多目标化，与本 epic 正交（那条改
+- [视频追踪多目标化 epic](2026-07-07-v0.21.25-video-multi-target-tracking-epic.md)——追踪链路多目标化，与本 epic 正交（那条改
   runner 落库，本 epic 改单帧几何工具）。
 
 ## 动机：视频只有 3 个工具，图片有 11 个（带证据）

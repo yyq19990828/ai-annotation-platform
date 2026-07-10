@@ -53,6 +53,24 @@
   合并进 `region` / `bbox`（同名冲突时保留目标单位、跳过来源），而非直接丢弃。
 
 ### Fixed
+- **SAM 3 视频文本追踪的框不再偶发被细长毛刺拉宽 / 拉高**：`sam3.1_multiplex` 偶发对目标输出「紧凑车身 + 沿细带
+  8-连通拉出去的毛刺」的掩码——像素数与正常帧相当，却让朴素 min/max 外接框虚高（实测个别帧归一化宽度从 ~0.03 飙到
+  0.26-0.31，把车和远处结构并进一个又宽又稀的框）。现在 mask→几何前先做 3×3 形态学开运算断掉 ≤2px 细带 + 取最大连通域，
+  恢复紧凑框，正常帧不受影响。
+- **AI 追踪的 `sam3_video` 现在真正路由到 sam3-backend（此前静默落到 sam2）**：视频 AI 追踪此前按「项目单一绑定
+  backend」选后端（`get_project_backend`），完全不看所选 tracker——项目绑定 grounded-sam2 时，`sam3_video` 任务也被发去
+  grounded-sam2、按 seed-bbox 追踪并忽略文本，前端则据此把 sam3_video 灰置「未绑定后端」，导致 sam3.1_multiplex 文本检测
+  追踪在平台链路里从未真正跑过。现改为**按能力路由**：runner 用新增的 `get_tracker_backend(project_id, model_key)` 在项目
+  **已启用**的 backend 里挑声明了该 tracker 的那个（`sam3_video`→sam3-backend、`sam2_video`→grounded-sam2；绑定优先、
+  否则首个 connected），前端 tracker 可用性也改看**所有已启用 backend 的 `supported_trackers` 并集**——启用 sam3-backend
+  的项目 sam3_video 不再灰置、可跑真正的 multiplex 文本检测追踪。挑不到支持该 tracker 的 backend 时显式报错，而非静默错投。
+- **sam3_video 文本视频追踪大窗口传播不再 GPU OOM（500）**：`sam3.1_multiplex` 视频前向的显存随窗口帧数近似线性增长
+  （实测 ~0.85GB/帧、16 帧 ~18.9GB、41 帧即在 24GB 卡上 OOM），而 tracker 分窗大小此前与 sam2_video 共用
+  `VIDEO_TRACKER_WINDOW_SIZE_FRAMES=300`——对 sam3_video 意味着单窗可达 300 帧、远超单张 24GB 卡能承受的量级
+  （~35 帧即触顶），长区间 propagate 会 500 OOM。现给 sam3_video 单独的更小分窗
+  `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`（默认 16），runner 按它把 sam3_video 请求切成小窗、由跨窗续追（relay）
+  拼成连续的长程轨迹；sam2_video 的窗口不变（不回归其长程记忆）。sam3-backend 侧兜底 `SAM3_VIDEO_MAX_WINDOW_FRAMES`
+  默认也由 300 降到 16。
 - **视频工作台画布偶发全黑（此前需手动刷新）现在会自动恢复**：标注视频时，作为解码源的隐藏 `<video>` 元素偶发卡在
   「已发起加载但一直拿不到元数据」的状态（`readyState` 停在 `HAVE_NOTHING`、`networkState` 为 `NETWORK_LOADING`），
   多因 mp4 的 HTTP range 请求 stall / 连接竞态所致，导致 Konva 背景层无帧可画、画布全黑——而这类 hang **不触发 `<video>`

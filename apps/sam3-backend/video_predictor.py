@@ -45,8 +45,11 @@ _VIDEO_CKPT = os.path.join(CHECKPOINT_DIR, "sam3.1_multiplex.pt")
 _BPE_PATH = os.path.join(_VENDOR_ROOT, "sam3/assets/bpe_simple_vocab_16e6.txt.gz")
 # FlashAttention-3 仅 Hopper(SM90) 优化; 消费级 Ada(4060, SM89) 默认关。可用 env 覆盖。
 _USE_FA3 = os.getenv("SAM3_VIDEO_USE_FA3", "0") == "1"
-# 单次窗口安全上限 (帧), 防超长窗口灌爆显存。
-DEFAULT_MAX_WINDOW_FRAMES = int(os.getenv("SAM3_VIDEO_MAX_WINDOW_FRAMES", "300"))
+# 单次窗口安全上限 (帧), 防超长窗口灌爆显存。视频前向显存随窗口近似线性增长
+# (实测 ~0.85GB/帧, 基线 ~5.4GB, 16 帧 ~18.9GB, 41 帧即 OOM@24GB), 故默认取 16
+# 作硬上限; runner 侧 video_tracker_sam3_window_size_frames 会先把请求切到该量级,
+# 本 env 是 backend 侧兜底 (直连 /predict 或配置漂移时拒绝超限窗口而非 OOM)。
+DEFAULT_MAX_WINDOW_FRAMES = int(os.getenv("SAM3_VIDEO_MAX_WINDOW_FRAMES", "16"))
 # mask→polygon 简化容差 (像素), 与图片栈同源默认。
 _POLYGON_TOLERANCE = 1.0
 
@@ -240,7 +243,8 @@ class SAM3MultiplexVideoTracker:
         _assert_masks_align(masks, obj_ids, frame_index=frame_index)
         for idx, oid in enumerate(obj_ids.tolist()):
             if int(oid) == obj_id:
-                return masks[idx] > 0
+                # 去掉 multiplex 偶发的细长毛刺 (见 _largest_blob), 避免外接框虚高。
+                return _largest_blob(masks[idx] > 0)
         return None
 
     @staticmethod
@@ -352,6 +356,29 @@ def _to_numpy(x: Any) -> np.ndarray | None:
     if hasattr(x, "cpu"):
         x = x.cpu()
     return np.asarray(x)
+
+
+_OPEN_KERNEL = np.ones((3, 3), np.uint8)
+
+
+def _largest_blob(mask: np.ndarray) -> np.ndarray:
+    """形态学开运算断细带 + 取最大连通域。
+
+    multiplex 偶发对目标输出「紧凑车身 + 沿细带 8-连通拉出去的毛刺」的 mask:
+    像素数与正常帧相当, 却令朴素 min/max 外接框虚高 (实测 frame 4/10/14 的归一化
+    宽度从 ~0.03 飙到 0.26-0.31, 把车 + 远处结构并进一个又宽又稀的框)。3x3 开运算
+    断掉 ≤2px 细带、再取最大连通域即恢复紧凑框, 正常帧不受影响。开运算把 mask 抹空
+    (极小目标) 或只剩一个域时保守退回原 mask。
+    """
+    u8 = mask.astype(np.uint8)
+    opened = cv2.morphologyEx(u8, cv2.MORPH_OPEN, _OPEN_KERNEL)
+    if not opened.any():
+        return mask
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+    if n_labels <= 1:
+        return mask
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    return labels == largest
 
 
 def _mask_bbox_norm(mask: np.ndarray) -> dict[str, float]:

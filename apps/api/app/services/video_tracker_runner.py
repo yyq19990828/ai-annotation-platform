@@ -76,6 +76,10 @@ def _normalize_points(geometry: dict) -> list[list[float]]:
 
 def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     size = max(1, int(settings.video_tracker_window_size_frames))
+    # sam3_video(sam3.1_multiplex)视频前向显存随窗口线性增长, 远重于 sam2 seed-bbox,
+    # 大窗会 OOM@24GB。给它单独更小的窗口, 不动 sam2 的窗口(避免回归其长程记忆)。
+    if job.model_key == "sam3_video":
+        size = min(size, max(1, int(settings.video_tracker_sam3_window_size_frames)))
     windows = []
     start = job.from_frame
     while start <= job.to_frame:
@@ -276,7 +280,11 @@ async def run_tracker_job(
             raise ValueError("Dataset item not found")
         from app.api.v1.ml_backends import _resolve_task_url
 
-        backend = await MLBackendService(db).get_project_backend(task.project_id)
+        # v0.21.25 (阶段 R) · 按 tracker 能力选后端而非项目单一绑定: sam3_video 挑声明了
+        # sam3_video 的 backend(sam3-backend), 而非静默落到项目绑定的 grounded-sam2。
+        backend = await MLBackendService(db).get_tracker_backend(
+            task.project_id, job.model_key
+        )
         adapter = get_tracker_adapter(job.model_key)
 
         # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
