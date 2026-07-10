@@ -52,6 +52,11 @@ class TrackerContext:
     # v0.21.20 · polygon track 回填: "polygon" 时 backend 每帧保留 mask 矢量化的多边形
     # 而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。由 runner 按源几何类型定。
     output_geometry: str = "bbox"
+    # v0.21.27 · U-pvs-1 · PVS 逐对象种子 (含 points / 多目标), 每条
+    # {obj_id?, bbox?/points?}。仅在种子窗 (首窗) 有值 —— points 锚在原始种子帧, 后续窗靠
+    # source_geometry 续追。缺省 None → backend 退 source_geometry 单框兜底 (与 sam2_video /
+    # 已发 B-pvs 框种子等价, 零回归)。其它 backend 无此键不受影响。
+    seeds: list[dict] | None = None
 
 
 class TrackerAdapter(Protocol):
@@ -172,6 +177,10 @@ class MLBackendVideoTrackerAdapter:
         # 矢量化的多边形; 缺省 bbox 不下发, 老 backend 无此键也不受影响。
         if ctx.output_geometry and ctx.output_geometry != "bbox":
             context["output_geometry"] = ctx.output_geometry
+        # v0.21.27 · U-pvs-1 · PVS 点/多目标种子: 仅种子窗有值。backend _seeds_from_video_ctx
+        # 优先 seeds[] (含 points) 于 source_geometry 兜底; 其它 backend 无此键不受影响。
+        if ctx.seeds:
+            context["seeds"] = ctx.seeds
         result = await client.predict_interactive(
             task_data=ctx.task_data,
             context=context,

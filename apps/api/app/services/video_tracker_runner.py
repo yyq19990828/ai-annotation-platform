@@ -405,7 +405,13 @@ async def run_tracker_job(
             "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
         )
 
-        for from_frame, to_frame in _tracker_windows(job):
+        tracker_windows = _tracker_windows(job)
+        # v0.21.27 · U-pvs-1 · PVS 点/多目标种子 (画布点 → PVS track) 从 prompt JSONB 读出。
+        # 只在种子窗 (首窗, 含原始种子帧) 下发: points 锚在种子帧, 后续窗靠 last_geometry
+        # (上一窗末帧框) 续追, 不重发点种子。缺省无 seeds 时行为与 B-pvs 框种子完全一致。
+        prompt_seeds = (job.prompt or {}).get("seeds")
+
+        for win_idx, (from_frame, to_frame) in enumerate(tracker_windows):
             ctx = TrackerContext(
                 job_id=job.id,
                 task_id=task.id,
@@ -425,6 +431,8 @@ async def run_tracker_job(
                 exemplars=(job.prompt or {}).get("exemplars"),
                 # v0.21.20 · polygon track 回填: 期望输出几何 (polygon/bbox)。
                 output_geometry=output_geometry,
+                # v0.21.27 · U-pvs-1 · 点/多目标种子仅种子窗下发 (见上)。
+                seeds=prompt_seeds if (win_idx == 0 and prompt_seeds) else None,
             )
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)
