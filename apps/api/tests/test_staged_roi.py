@@ -347,7 +347,9 @@ def test_remap_skips_shape_with_only_degenerate_polygons():
     shapes = [
         {
             "type": "polygonlabels",
-            "value": {"polygons": [{"points": [], "holes": [[[1, 1], [2, 1], [2, 2]]]}]},
+            "value": {
+                "polygons": [{"points": [], "holes": [[[1, 1], [2, 1], [2, 2]]]}]
+            },
         }
     ]
     assert remap_geometry_to_image(shapes, transform) == []
