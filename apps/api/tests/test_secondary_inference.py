@@ -519,6 +519,10 @@ async def test_non_croppable_geometry_variants_raise_400(
         (["box"], "box"),
         # 分割型 (segment-yoloe / *-segmentation): 不支持 box → 取首个受支持值。
         (["mask", "both"], "mask"),
+        # 错配 backend 自报非法值 (如 polygon): 过滤掉 → 回落协议默认 mask。
+        (["polygon"], "mask"),
+        # 非法值混在合法值前: 跳过非法, 取受支持的 both。
+        (["polygon", "both"], "both"),
         # 模型未自报 → 协议默认 mask (老 backend 兼容路径)。
         ([], "mask"),
     ],

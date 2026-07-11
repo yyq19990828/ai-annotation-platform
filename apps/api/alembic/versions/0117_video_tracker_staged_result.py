@@ -30,4 +30,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # v0.21.28 新增的 status (pending_review/accepted/discarded) 不在旧代码的
+    # TrackerJobStatus Literal 中, 回滚后读取现有行会在 Pydantic 层 422。先把它们归位到
+    # 旧枚举再删列: 已接受 → completed (结果已落库), 待审/丢弃 → cancelled (未落库)。
+    op.execute(
+        "UPDATE video_tracker_jobs SET status = 'completed' WHERE status = 'accepted'"
+    )
+    op.execute(
+        "UPDATE video_tracker_jobs SET status = 'cancelled' "
+        "WHERE status IN ('pending_review', 'discarded')"
+    )
     op.drop_column("video_tracker_jobs", "staged_result")

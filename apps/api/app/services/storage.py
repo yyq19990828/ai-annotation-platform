@@ -218,6 +218,7 @@ class StorageService:
         expires_in: int = 3600,
         bucket: str | None = None,
         download_name: str | None = None,
+        align: bool = True,
     ) -> str:
         # v0.10.43 · download_name 经 ResponseContentDisposition 给浏览器一个友好文件名。
         params: dict = {"Bucket": bucket or self.bucket, "Key": key}
@@ -225,10 +226,12 @@ class StorageService:
             params["ResponseContentDisposition"] = (
                 f'attachment; filename="{download_name}"'
             )
+        # align=True (默认) 把 Expires 对齐到 10 分钟网格以复用浏览器缓存 (缩略图/原图);
+        # 非缓存类、要求严格短有效期的调用者 (如评论附件私链) 传 align=False 走精确 expires_in。
         url = self.client.generate_presigned_url(
             "get_object",
             Params=params,
-            ExpiresIn=_aligned_expires_in(expires_in),
+            ExpiresIn=_aligned_expires_in(expires_in) if align else expires_in,
         )
         return self._public_url(url)
 

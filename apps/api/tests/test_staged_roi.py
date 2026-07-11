@@ -322,6 +322,37 @@ def test_remap_polygon_points():
     assert r["value"]["points"][2] == [pytest.approx(60), pytest.approx(60)]
 
 
+def test_remap_drops_degenerate_polygon_without_outer_ring():
+    # 退化多边形 (外环 points 空但 holes 非空) 应被丢弃, 不产出 points:[] 的鬼影 shape。
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+    shapes = [
+        {
+            "type": "polygonlabels",
+            "value": {
+                "polygons": [
+                    {"points": [[0, 0], [100, 0], [100, 100]]},
+                    {"points": [], "holes": [[[10, 10], [20, 10], [20, 20]]]},
+                ]
+            },
+        }
+    ]
+    [r] = remap_geometry_to_image(shapes, transform)
+    assert len(r["value"]["polygons"]) == 1  # 只保留有外环的 poly
+    assert r["value"]["polygons"][0]["points"]
+
+
+def test_remap_skips_shape_with_only_degenerate_polygons():
+    # 整个 shape 只有退化多边形 → 无有效环, 整条丢弃 (不进入下游)。
+    transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
+    shapes = [
+        {
+            "type": "polygonlabels",
+            "value": {"polygons": [{"points": [], "holes": [[[1, 1], [2, 1], [2, 2]]]}]},
+        }
+    ]
+    assert remap_geometry_to_image(shapes, transform) == []
+
+
 def test_remap_does_not_mutate_input():
     transform = {"ox": 0.5, "oy": 0.0, "sx": 0.5, "sy": 1.0}
     shapes = [

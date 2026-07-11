@@ -425,5 +425,6 @@ async def comment_attachment_download(
         raise HTTPException(status_code=404, detail="Annotation not found")
     if ann.project_id is not None:
         await assert_project_visible(ann.project_id, db, current_user)
-    url = storage_service.generate_download_url(key, expires_in=300)
+    # 评论附件私链要求严格 5 分钟有效期, 不走缓存对齐 (否则可能被拉长到 ~15 分钟)。
+    url = storage_service.generate_download_url(key, expires_in=300, align=False)
     return RedirectResponse(url, status_code=302)

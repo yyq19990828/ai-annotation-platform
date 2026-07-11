@@ -101,8 +101,11 @@ def _resolve_text_output_mode(backend: MLBackendRegistry, model_id: str | None) 
         outs = m.get("supported_text_outputs") or []
         if "box" in outs:
             return "box"
-        if outs:
-            return outs[0]
+        # 协议只认 box|mask|both: 错配 backend 自报 ["polygon"] 之类时不原样透传, 回落默认,
+        # 避免把非法 output 送进 context 重现最初的 output 非法值问题。
+        for candidate in outs:
+            if candidate in {"box", "mask", "both"}:
+                return candidate
         break
     return "mask"
 

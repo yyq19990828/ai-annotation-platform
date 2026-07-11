@@ -330,8 +330,11 @@ def _polygon_rings(value: dict) -> list[list]:
         rings: list[list] = []
         for poly in polys:
             pts = poly.get("points")
-            if isinstance(pts, list) and pts:
-                rings.append(pts)
+            # 外环空 = 退化多边形 (只有洞无外环): 整体跳过, 否则会产出 points:[] 的鬼影
+            # shape, 下游 ingest 422 或渲染出「只有洞」的异常几何。
+            if not (isinstance(pts, list) and pts):
+                continue
+            rings.append(pts)
             rings.extend(
                 h for h in (poly.get("holes") or []) if isinstance(h, list) and h
             )
@@ -412,7 +415,7 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
                 value["polygons"] = [
                     {
                         **poly,
-                        "points": _remap_ring(poly.get("points") or []),
+                        "points": _remap_ring(poly["points"]),
                         **(
                             {"holes": [_remap_ring(h) for h in poly["holes"]]}
                             if poly.get("holes")
@@ -420,6 +423,8 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
                         ),
                     }
                     for poly in value["polygons"]
+                    # 退化多边形 (外环空) 一并丢弃, 与 _polygon_rings 口径判定保持一致。
+                    if isinstance(poly.get("points"), list) and poly.get("points")
                 ]
             else:
                 value["points"] = _remap_ring(value["points"])
