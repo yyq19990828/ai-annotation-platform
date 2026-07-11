@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 超级管理员手册
@@ -38,8 +38,8 @@ last_reviewed: 2026-06-10
 | 能力 | project_admin | super_admin |
 |---|---|---|
 | 创建项目 | ✅（自己的） | ✅（任何） |
-| 注册 ML Backend | ✅（项目内） | ✅ + 全局 |
-| 删除 ML Backend | ✅（项目内） | ✅（任意） |
+| 启用 / 停用项目 ML Backend | ✅（自己项目中已注册的 backend） | ✅（任意项目） |
+| 注册 / 编辑 / 删除全局 ML Backend | ❌ | ✅ |
 | 模型市场页面 | ✅（可访问） | ✅ |
 | 全局 ML 观测 / Smoke Test | ❌ | ✅ |
 | 平台概览 dashboard | ❌ | ✅ |

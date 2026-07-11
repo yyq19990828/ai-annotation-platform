@@ -3,95 +3,48 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-11
 ---
 
 # WebSocket
 
-完整协议见 [WebSocket 协议](../../dev/reference/ws-protocol)，本页给出 API 视角的常见调用模式。
+完整协议见 [WebSocket 协议](../../dev/reference/ws-protocol)。每个 WebSocket URL 都是一个固定的 Redis Pub/Sub 订阅；当前服务**没有**通用 `/ws` 入口，也不支持在同一连接发送 `subscribe`、`unsubscribe` 或 `reauth` 消息。
 
-## 连接
+## 端点
 
-```
-ws://localhost:8000/ws?token=<access_token>
-```
-
-token 用 query string 传（浏览器 WS API 不支持自定义 header）。后端在 accept 后立刻校验 + 续签机制（[ADR 0011](../../dev/adr/archive/0011-websocket-token-reauth)）。
-
-## 订阅
-
-连接后发送：
-
-```json
-{ "type": "subscribe", "channel": "project:1:preannotate" }
-```
-
-可订阅多个 channel；取消：
-
-```json
-{ "type": "unsubscribe", "channel": "project:1:preannotate" }
-```
-
-## 通道列表
-
-| 通道 | 谁订阅 | 内容 |
+| URL | 鉴权 | 用途 |
 |---|---|---|
-| `project:{id}:preannotate` | 该项目工作台 / `/ai-pre` | 预标进度 / 错误 |
-| `project:{id}:annotation` | 工作台协作（多人同任务）| 谁在编辑 |
-| `task:{id}:lock` | 工作台 | 锁状态变更 |
-| `global:prediction-jobs` | admin（Topbar 徽章） | 全局 in-flight job |
-| `user:{uid}:notify` | 当前用户 | 系统通知 / 邀请 |
+| `/ws/notifications?token=<jwt>` | JWT | 当前用户的通知与异步任务事件。 |
+| `/ws/projects/{project_id}/preannotate` | 当前实现不校验 JWT | 单项目批量预标进度。 |
+| `/ws/batches/project/{project_id}` | 当前实现不校验 JWT | 项目 batch 状态变化。 |
+| `/ws/prediction-jobs?token=<jwt>` | `super_admin` / `project_admin` | 全局预标任务摘要。 |
+| `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT + job 所属 task 可见性 | 单条视频 tracker job 的运行与候选审阅事件。 |
+| `/ws/ml-backend-stats?token=<jwt-or-api-key>` | `super_admin` / `project_admin` | ML backend 运行时指标。 |
 
-`global:prediction-jobs` 仅 admin 角色订阅得到（服务端校验）。
+本地 API base 为 `ws://localhost:8000`；生产使用同源 `wss://<host>`。这些路径不在 `/api/v1` 下。
 
-## 消息体
+## 连接示例
 
-服务器 → 客户端：
+```js
+const token = "<access-token>";
+const socket = new WebSocket(
+  `ws://localhost:8000/ws/video-tracker-jobs/${jobId}?token=${encodeURIComponent(token)}`,
+);
 
-```json
-{
-  "channel": "project:1:preannotate",
-  "type": "progress",
-  "data": { "job_id": "...", "i": 3, "n": 10 }
-}
+socket.onmessage = ({ data }) => {
+  const event = JSON.parse(data);
+  if (event.type !== "ping") console.log(event);
+};
 ```
 
-通用字段 `channel` + `type`，`data` payload 按通道而异。
+有 JWT 的端点在握手时校验 token；失败会在 accept 前以 `1008 Policy Violation` 关闭。浏览器不能为 WebSocket 设置 `Authorization` header，因此 token 使用 query 参数。部署的 access log 必须脱敏 `token` 参数。
 
-## 心跳
+## 事件与恢复
 
-服务器每 25s 发 `{"type": "ping"}`，客户端回 `{"type": "pong"}`。60s 内无收发关闭连接。
+除单项目预标进度频道外，长生命周期频道每 30 秒发送 `{"type":"ping"}`，客户端无需回复。预标进度频道以 batch 进度消息为主。发布消息没有交付保证，断线后应从对应 REST API 重新读取状态：
 
-## Token 续签
+- 通知：`GET /api/v1/notifications`。
+- 批量预标：对应 job / prediction API。
+- 视频 tracker：`GET /api/v1/tasks/{task_id}/video/tracker-jobs/reviewable`，再读取每条 job 的 `/preview`；候选接受前不在 annotation 中。
 
-access token 默认 30min。WS 连接长寿命，到期前 5min 服务端推：
-
-```json
-{ "type": "token-expiring", "expires_in": 300 }
-```
-
-客户端调 `POST /api/v1/auth/refresh` 拿新 token，再发：
-
-```json
-{ "type": "reauth", "token": "<new_access_token>" }
-```
-
-不重连，复用 socket。详见 [ADR 0011](../../dev/adr/archive/0011-websocket-token-reauth)。
-
-## 专用端点
-
-```
-ws://localhost:8000/ws/prediction-jobs?token=...
-```
-
-仅 admin，等价于 `subscribe global:prediction-jobs`，但去掉了订阅 step（直接连即订阅）。前端 `useGlobalPreannotationJobs` hook 用此端点。
-
-## 错误处理
-
-服务器主动断开会发 close frame：
-
-| code | 含义 |
-|---|---|
-| 4001 | token 缺失 |
-| 4003 | token 无效 / 过期且未 reauth |
-| 4029 | 连接数超限（per-user 限流） |
+视频 tracker 的 `job_started`、`job_progress`、`frame_result`、`job_completed`、`job_failed`、`job_cancelled`、`job_accepted` 和 `job_discarded` 的完整语义见 [Video Tracker Jobs](./video-tracker-jobs) 与 [WebSocket 协议](../../dev/reference/ws-protocol#6-wsvideo-tracker-jobsjob_id)。

@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-11
 ---
 
 # Runbook：Celery Worker 卡死
@@ -12,7 +12,7 @@ last_reviewed: 2026-05-09
 ## 症状
 
 - AI 预标注 Job 长时间停在 `running` 状态（超过 15 分钟）
-- `docker ps` 中 celery-worker 容器状态为 `Exited` 或 `Restarting`
+- `docker ps` 中某个 celery worker 容器状态为 `Exited` 或 `Restarting`
 - 超管失败预测页面无新进展
 
 ## 快速诊断
@@ -23,9 +23,12 @@ docker ps -a | grep celery
 
 # 2. 查看最近日志
 docker logs ai-annotation-platform-celery-worker-1 --tail 100
+docker logs ai-annotation-platform-celery-worker-gpu-1 --tail 100
 
 # 3. 查看 Redis 队列积压
-docker exec ai-annotation-platform-redis-1 redis-cli llen celery
+docker exec ai-annotation-platform-redis-1 redis-cli llen default
+docker exec ai-annotation-platform-redis-1 redis-cli llen ml
+docker exec ai-annotation-platform-redis-1 redis-cli llen gpu
 ```
 
 ## 处理步骤
@@ -33,15 +36,15 @@ docker exec ai-annotation-platform-redis-1 redis-cli llen celery
 ### 情况 A：容器已退出
 
 ```bash
-docker compose up -d celery-worker
+docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export
 ```
 
-重启后 Worker 会自动认领 pending 任务。
+只启动实际消费该队列的 worker：默认队列组为 `celery-worker`（`default,media,cleanup,audit`），GPU 预标和视频追踪为 `celery-worker-gpu`（`ml,gpu`），CPU 预标为 `celery-worker-cpu`（`ml.cpu`），导出为 `celery-worker-export`（`export`）。重启后对应 worker 会自动认领 pending 任务。
 
 ### 情况 B：容器运行但无进展（Worker 卡死）
 
 ```bash
-# 强制重启
+# 默认队列组；视频追踪 / GPU 预标改为 celery-worker-gpu
 docker compose restart celery-worker
 
 # 观察日志确认 Worker 已就绪
@@ -51,13 +54,13 @@ docker logs -f ai-annotation-platform-celery-worker-1
 
 ### 情况 C：代码变更后 Worker 运行旧版本
 
-Celery Worker 无热重载，代码变更后必须手动重启：
+Celery worker 无热重载。改动后必须重启加载该模块的容器；改预标或 tracker 代码时通常需要重启 GPU worker：
 
 ```bash
-docker compose restart celery-worker
+docker compose restart celery-worker-gpu
 
 # 验证运行的是最新代码
-docker exec ai-annotation-platform-celery-worker-1 \
+docker exec ai-annotation-platform-celery-worker-gpu-1 \
   python -c "import inspect, app.workers.tasks as t; print(inspect.signature(t.batch_predict))"
 ```
 

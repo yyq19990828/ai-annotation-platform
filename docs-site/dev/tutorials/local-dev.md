@@ -3,7 +3,7 @@ audience: [dev]
 type: tutorial
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-11
 ---
 
 # 本地开发
@@ -22,7 +22,7 @@ last_reviewed: 2026-05-09
 ```bash
 # 仓库根
 pnpm install
-pre-commit install         # 启用 git hooks（ruff / eslint / tsc）
+# pnpm install 会运行 prepare；若提示缺 pre-commit，再安装后执行 pre-commit install
 
 # 后端
 cd apps/api
@@ -30,7 +30,7 @@ uv sync --extra test       # 安装 + dev 依赖
 
 # 起基础设施
 cd ../..
-docker compose up -d       # postgres / redis / minio
+docker compose up -d       # postgres / redis / minio / mailpit / workers / beat
 ```
 
 ## 日常启动
@@ -45,8 +45,8 @@ pnpm dev:api               # 等价于 cd apps/api && uvicorn app.main:app --rel
 # 3. 前端（终端 2）
 pnpm dev:web               # http://localhost:3000
 
-# 4. Celery worker（视需要，终端 3）
-cd apps/api && uv run celery -A app.workers worker -l info
+# 4. worker 已由 compose 拉起；按需查看队列消费者
+docker compose ps celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export celery-beat
 ```
 
 API 文档：
@@ -69,8 +69,8 @@ pnpm openapi:check         # 校验 snapshot 与运行时一致
 # Lint / Typecheck
 pnpm lint
 pnpm typecheck
-ruff check apps/api
-ruff format apps/api
+cd apps/api && uv run ruff check .
+cd apps/api && uv run ruff format --check .
 
 # 文档
 pnpm docs:dev              # VitePress 本地预览 :5173

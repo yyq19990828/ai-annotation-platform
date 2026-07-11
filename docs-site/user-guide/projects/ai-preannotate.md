@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # AI 预标

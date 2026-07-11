@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-29
+last_reviewed: 2026-07-11
 ---
 
 # WebSocket 协议
@@ -38,7 +38,7 @@ sequenceDiagram
 | 频道 | URL | 鉴权 | Redis 频道 | 用途 |
 |---|---|---|---|---|
 | 用户通知 | `/ws/notifications?token=<jwt>` | JWT (query param) | `notify:{user_id}` (`notification.py:27`) | 任务分配、AI 进度、导出完成、@提及 等 |
-| 预标注进度（单项目） | `/ws/projects/{project_id}/preannotate` | 无（依赖 cookie 会话） | `project:{project_id}:preannotate` (`ws.py:80`) | 工作台单次自动预标注的逐 batch progress |
+| 预标注进度（单项目） | `/ws/projects/{project_id}/preannotate` | 当前实现不校验 JWT | `project:{project_id}:preannotate` (`ws.py`) | 工作台单次自动预标注的逐 batch progress |
 | Batch 状态广播 | `/ws/batches/project/{project_id}` | 无（项目内非机密） | `project:{project_id}:batch` (`ws.py:112`) | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步 |
 | Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>` | JWT (query, `super_admin` / `project_admin`) | `global:prediction-jobs` (`ws.py:168`) | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条 |
 | 视频 tracker job | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验 | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `job_started / job_progress / frame_result / job_completed / job_failed / job_cancelled` 事件 |
@@ -60,7 +60,7 @@ ws://api.example.com/ws/notifications?token=eyJhbGciOi...
 
 服务端 `decode_access_token` 校验 sub 字段（`ws.py:80-88`）。失败立刻关闭 frame，code = `1008 Policy Violation`。
 
-> 为什么走 query 而不是 `Authorization` header：浏览器原生 `WebSocket` API 不允许设置自定义 header。如果前端用 `subprotocols` 走 token 也可以，但当前实现选 query 一致简单。HTTPS 下 query 字符串不进入 server access log（前端代理需配置脱敏）。
+> 为什么走 query 而不是 `Authorization` header：浏览器原生 `WebSocket` API 不允许设置自定义 header。如果前端用 `subprotocols` 走 token 也可以，但当前实现选 query 一致简单。query 参数可能进入反向代理或应用 access log，部署时必须对 `token` 脱敏。
 
 ### 2.2 消息格式
 
@@ -107,12 +107,9 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 ### 3.1 鉴权
 
-当前**没有**显式鉴权（`ws.py:48-67`）。依赖：
-- 浏览器自动带 cookie / origin（同源策略）
-- 反向代理层做 IP/origin 过滤
-- 这是项目级频道，泄露 project_id 的进度不算敏感
+当前**没有**显式鉴权。服务端不会读取 cookie、校验 Origin 或验证项目成员资格；只要能连到 WS 服务并知道 project UUID，就能订阅该频道。
 
-> 如果你的部署需要更严的鉴权（比如多租户隔离），后续会迁到 query JWT 模式与 `/ws/notifications` 对齐。
+> 这条兼容频道不应暴露在不可信网络。多租户或公网部署必须在反向代理层限制访问，或先把端点迁为与 `/ws/notifications` 一致的 JWT + 项目可见性校验。
 
 ### 3.2 消息格式
 
@@ -139,7 +136,7 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 ### 4.1 鉴权
 
-与 `/ws/projects/{id}/preannotate` 一致：**无显式 JWT**。Batch 状态不属于机密信息，且项目内成员（含标注员）都需要感知状态翻转 (B-15)；限超管会丢失多端同步语义。生产环境通过反向代理的 origin / 内网 IP 过滤兜底。
+与 `/ws/projects/{id}/preannotate` 一致：**当前无显式 JWT 或项目成员校验**。生产环境必须在反向代理层限制访问；不要把可猜测的 project UUID 当作访问控制。
 
 ### 4.2 消息格式
 
@@ -295,7 +292,7 @@ JWT query param，`role ∈ {super_admin, project_admin}`，否则 close `1008`�
 `apps/web/src/hooks/useReconnectingWebSocket.ts` 是所有 WS 用法的基础：
 
 - 初始重连间隔 **1s**，每次失败 ×2，上限 **30s**（`useReconnectingWebSocket.ts:18,31`）
-- 最多重试 **8 次**（`useReconnectingWebSocket.ts:80-82`），超过后 silent fail（用户重新登录或手动刷新页面恢复）
+- 最多重试 **8 次**，超过后状态为 `failed`；URL 或 `enabled` 变化才会开启新一轮连接。
 - onOpen 回调可用于 `invalidateQueries` 补齐断线期间的状态
 
 接入方实现自定义客户端时，建议遵循同样的 backoff，避免风暴。

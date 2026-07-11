@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { currentDocumentDate } from "./document-date.mjs";
 
 const __here = dirname(fileURLToPath(import.meta.url));
 const DOCS_ROOT = join(__here, "..");
@@ -46,7 +47,7 @@ function parseFrontmatter(content) {
 }
 
 function buildSkeletonFrontmatter(existing = {}) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = currentDocumentDate();
   const lines = ["---"];
   if (!existing.audience) lines.push("audience: []");
   if (!existing.type) lines.push("type: ''  # tutorial | how-to | reference | explanation");

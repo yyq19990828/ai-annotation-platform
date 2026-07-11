@@ -14,13 +14,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { currentDocumentDate } from "./document-date.mjs";
 
 const __here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__here, "../..");
 const ENV_EXAMPLE = join(REPO_ROOT, ".env.example");
 const OUTPUT = join(__here, "../dev/reference/env-vars.md");
 
-const today = new Date().toISOString().slice(0, 10);
+const today = currentDocumentDate();
 
 const HEADER = `---
 title: 环境变量参考

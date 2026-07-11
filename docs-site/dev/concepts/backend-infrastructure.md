@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-11
 ---
 
 # 后端基础设施（容器）
@@ -14,14 +14,23 @@ last_reviewed: 2026-05-27
 
 ```mermaid
 graph TB
-  subgraph Default[默认拉起 · 一直在线]
+  subgraph Default[默认 compose 服务]
     PG[(postgres<br/>5432)]
     RD[(redis<br/>6379)]
     MIO[(minio<br/>9000/9001)]
-    CW[celery-worker<br/>无端口]
+    MAIL[mailpit<br/>1025/8025]
+    CW[celery-worker<br/>default/media/cleanup/audit]
+    CWG[celery-worker-gpu<br/>ml/gpu]
+    CWC[celery-worker-cpu<br/>ml.cpu]
+    CWE[celery-worker-export<br/>export]
+    BEAT[celery-beat]
   end
-  subgraph GPU["profile: gpu"]
-    GSAM[grounded-sam2-backend<br/>8001]
+  subgraph GPU["可选 ML profiles"]
+    GSAM[grounded-sam2<br/>8001]
+    SAM3[sam3<br/>8002]
+    YOLO[yolo<br/>8003]
+    ONNX[onnxtools<br/>8004]
+    OCR[rapidocr<br/>8005]
   end
   subgraph Mon["profile: monitoring"]
     PROM[prometheus<br/>9090]
@@ -44,7 +53,7 @@ graph TB
 ## 启动 / 关停速查
 
 ```bash
-# 默认四件套（postgres / redis / minio / celery-worker）
+# 默认服务（postgres / redis / minio / mailpit / 四类 worker / beat）
 docker compose up -d
 
 # GPU 推理（需 NVIDIA Container Toolkit；backend 在叠加文件 docker-compose.ml.yml）
@@ -91,7 +100,7 @@ docker compose down -v
 
   | 用途 | key 形态 | 写入方 |
   |---|---|---|
-  | Celery broker（任务队列） | `celery / unacked / kombu.binding.*` | api 入队 / worker 消费 |
+  | Celery broker（任务队列） | `default / ml / ml.cpu / media / gpu / export / unacked / kombu.binding.*` | api 入队 / worker 消费 |
   | Celery result backend | `celery-task-meta-<task_id>` | worker 写结果 |
   | WebSocket pub/sub（多副本广播） | `notify:<user_id>`、`predict:<project_id>` | api / worker → 前端 ws |
   | 限流 / 失败计数 / 进度缓存 | `ratelimit:*`、`login_fail:<ip>`、`progress:*` | middleware / api |
@@ -100,9 +109,10 @@ docker compose down -v
 
   ```bash
   # 看队列堆积
-  docker exec ai-annotation-platform-redis-1 redis-cli llen celery
+  docker exec ai-annotation-platform-redis-1 redis-cli llen default
   docker exec ai-annotation-platform-redis-1 redis-cli llen ml
   docker exec ai-annotation-platform-redis-1 redis-cli llen media
+  docker exec ai-annotation-platform-redis-1 redis-cli llen gpu
   # 清空（仅限 dev！）
   docker exec ai-annotation-platform-redis-1 redis-cli flushall
   ```
@@ -126,7 +136,7 @@ docker compose down -v
 
 - **构建**：`infra/docker/Dockerfile.api`（与 api 同镜像，仅启动命令不同）
 - **端口**：无（不对外暴露）
-- **代码挂载**：`docker-compose.yml` 把 `./apps/api:/app` 整目录 bind mount 进 worker/beat（匿名卷 `/app/.venv` 屏蔽 host venv；依赖装在 `--system` site-packages 不在 `/app` 下故不被盖掉）。**改业务码 / 新增 alembic 迁移只需 `docker restart` worker，不必 rebuild**（Celery 没有 `--reload`，故仍须 restart，详见 [docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)）。
+- **代码挂载**：`docker-compose.yml` 把 `./apps/api:/app` 整目录 bind mount 进所有 worker 和 beat（匿名卷 `/app/.venv` 屏蔽 host venv；依赖装在 `--system` site-packages 不在 `/app` 下故不被盖掉）。**改业务码 / 新增 alembic 迁移只需重启实际消费该任务队列的 worker，不必 rebuild**（Celery 没有 `--reload`，故仍须 restart，详见 [docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)）。
 
 #### 队列与「订阅」模型
 
@@ -153,10 +163,10 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
   ```bash
   # 看实时日志
   docker logs -f ai-annotation-platform-celery-worker-1
-  # 改 task 签名后必须 restart（不会自动 reload）
-  docker restart ai-annotation-platform-celery-worker-1
+  # 改 task 签名后必须重启实际消费的 worker；视频 tracker / GPU 预标用 GPU worker。
+  docker restart ai-annotation-platform-celery-worker-gpu-1
   # 验证容器加载的是最新代码
-  docker exec ai-annotation-platform-celery-worker-1 \
+  docker exec ai-annotation-platform-celery-worker-gpu-1 \
     python -c "import inspect, app.workers.tasks as t; print(inspect.signature(t.batch_predict))"
   ```
 
@@ -205,6 +215,8 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 | `miniodata` | minio | 对象存储 | 所有图片 / 导出 / 附件丢失 |
 | `gsam2_checkpoints` | grounded-sam2-backend | 模型权重 | 下次启动重新下载 ~900MB |
 | `gsam2_hf_cache` | grounded-sam2-backend | HF 缓存 | 重新拉缓存 |
+| `sam3_checkpoints` / `sam3_hf_cache` | sam3-backend | SAM 3 图像与视频权重、HF 缓存 | 下次启动重新下载 / 拉取 |
+| `yolo_checkpoints` | yolo-backend | YOLO 权重缓存 | 下次按需下载 |
 | `prometheus_data` | prometheus | 历史指标 | 历史曲线丢失 |
 | `grafana_data` | grafana | 看板配置 | 自定义面板丢失（provisioned 看板会重建） |
 
@@ -212,7 +224,7 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 
 ## 健康检查与依赖关系
 
-`postgres / redis / minio / grounded-sam2-backend` 都配了 `healthcheck`；`celery-worker` 在 `depends_on.condition: service_healthy` 上等所有底层 ready 后才启。`grafana` 只 `depends_on: prometheus`（无健康门控）。
+`postgres / redis / minio`、各类 worker 和 GPU backend 都配了 `healthcheck`；四类 worker 在 `depends_on.condition: service_healthy` 上等底层服务 ready 后才启动。`celery-beat` 不是 consumer，没有 inspect healthcheck；`grafana` 只 `depends_on: prometheus`（无健康门控）。
 
 dev 上常见 race：刚 `docker compose up -d` 立刻起 api，会因为 postgres 还在 healthcheck 中而连不上 — 等 5–15 秒再起 host 上的 `uvicorn` 即可。
 

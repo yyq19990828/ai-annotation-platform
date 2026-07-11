@@ -3,14 +3,14 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 创建项目
 
 > 适用角色：项目管理员 / 超级管理员
 
-项目管理员从左侧 **项目总览** 进入项目管理页；超级管理员从左侧 **Dashboard** 进入同一类项目管理页。这里可以查看全部项目、按状态筛选、进入项目设置，也可以从右上角创建新项目。
+项目管理员从左侧 **项目总览** 进入项目管理页；超级管理员从左侧 **项目管理** 进入同一类项目管理页。这里可以查看全部项目、按状态筛选、进入项目设置，也可以从右上角创建新项目。
 
 ![创建项目入口](../images/projects/create-entry.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
@@ -29,7 +29,7 @@ last_reviewed: 2026-06-10
 
 向导共 6 步（类型 → 类别 → 属性 → AI 接入 → 数据 → 成员），提交后项目即创建完成。
 
-1. 顶部菜单 → 「Dashboard」 → 「新建项目」
+1. 进入项目总览 / 项目管理，在右上角点「新建项目」
 2. **Step 1 类型**：填写基本信息：
    - **项目名**
    - **数据类型**：图片 / 视频 / 3D 点云（三选一）
@@ -43,10 +43,10 @@ last_reviewed: 2026-06-10
 3. **Step 2 类别**：每个启用的工具单位独立编辑类别（详见 [工具维度类别 / 属性](./tool-units.md)）
 4. **Step 3 属性**：每个启用的工具单位独立编辑属性 schema
 5. **Step 4 AI 接入**（可选）：启用 AI 预标注，并可复用其它项目已注册的 ML Backend；项目启用、主后端和能力路由见[项目 ML 模型](./ml-backends)，完整 AI 任务入口见[AI 辅助标注](../ai/)
-6. **Step 5 数据**：上传初始数据集（多文件 / ZIP / 数据源连接器，详见 [图像数据集导入](../datasets/import-images.md) 与 [存储连接器导入](../datasets/storage-connections.md)）
-7. **Step 6 成员**：邀请标注员 / 审核员加入项目
+6. **Step 5 数据**：选择已导入的数据集并关联到项目；该步可跳过。要上传新数据集，请先从项目总览的「导入数据集」或[数据集页面](../datasets/)完成导入，再回到此处关联。
+7. **Step 6 成员**：从已有的标注员 / 审核员账号中选择项目成员；该步也可跳过，之后可在项目设置的「成员管理」补充。
 
-> **标注规范文档与审核策略**不在向导内配置，需创建后进入 **项目设置页** 分别在「标注指引」与「采样 / 审核」区块配置。
+> 审核相关设置不在向导内配置，需创建后进入 **项目设置页** 继续调整。标注指引界面当前由特性开关关闭，详见[标注指引](./annotation-guide.md)。
 
 ## 工具维度类别 / 属性
 
@@ -103,7 +103,7 @@ scene 模式适合“一个连续场景被拆成多个 task”的项目，例如
 
 1. 在 Dashboard 找到要复制的项目卡片 → 右下角 `⋮` → 「复制项目配置」。
 2. 自动跳到 Wizard，顶部出现 banner「已用源项目配置预填表单」；新项目名默认为 `{源项目名} (副本)`。
-3. 7 步流程正常往下走，任何字段都可以在某步覆盖（你的修改优先于源配置）。
+3. 依次完成 6 个配置步骤（随后显示创建完成页）；任何字段都可以在对应步骤覆盖（你的修改优先于源配置）。
 4. 提交后新项目就绪。**只复制配置**：`tool_bindings`（类别与属性 schema）/ `type_key` / `type_label` / `data_type` / `ai_enabled` / `label_config` / `sampling` / `rendering_config` / `show_overlap_first` / `iou_dedup_threshold` / `box_threshold` / `text_threshold` / `maximum_annotations`（完整列表见后端 `CLONEABLE_PROJECT_FIELDS`）。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
 
 > 需要跨项目共享 / 跨组织共享 / 模板治理？使用「项目模板库」独立资产形态，

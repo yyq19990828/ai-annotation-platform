@@ -3,12 +3,12 @@ audience: [dev]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-11
 ---
 
 # How-to：调试 WebSocket
 
-> v0.9.11 落地 PerfHud 时一并修了 4 处 WS hook 的历史 bug 与 dev 环境陷阱。本文档记录每一类问题的现象、根因、定位手法，让以后 WS 出问题时不再像 v0.6.9-v0.9.10 间通知 WS 静默 404 那样 14 个月没人发现。
+> 本文记录 WS 的现行端点、开发态直连规则与排障方法。协议字段见 [WebSocket 协议](../reference/ws-protocol)。
 
 ## WS 拓扑总览
 
@@ -19,9 +19,11 @@ last_reviewed: 2026-05-09
 | `/ws/notifications` | 单用户通知推送 | JWT token | `useNotificationSocket.ts` |
 | `/ws/prediction-jobs` | 全局预标 job 进度 (admin only) | JWT + role | `useGlobalPreannotationJobs.ts` |
 | `/ws/projects/{id}/preannotate` | 单项目预标进度条 | 无（路径绑项目） | `usePreannotation.ts` |
+| `/ws/batches/project/{project_id}` | 项目 batch 状态同步 | 当前实现无 JWT | `useBatchEventsSocket.ts` |
+| `/ws/video-tracker-jobs/{job_id}` | 视频 tracker 运行与候选审阅事件 | JWT + task 可见性 | `useVideoTrackerJobs.ts` |
 | `/ws/ml-backend-stats` | PerfHud GPU/容器实时指标 (admin only) | JWT + role | `useMLBackendStats.ts` |
 
-production：4 个端点都走 nginx `/ws/` location 反代到 `api:8000`（[infra/docker/nginx.conf](https://github.com/anthropics/ai-annotation-platform/blob/main/infra/docker/nginx.conf)）。
+production：6 个端点都走 nginx `/ws/` location 反代到 `api:8000`（[infra/docker/nginx.conf](https://github.com/anthropics/ai-annotation-platform/blob/main/infra/docker/nginx.conf)）。
 
 ## 常见问题
 
@@ -65,10 +67,10 @@ curl -s http://127.0.0.1:8000/health  # API 在线
 
 如果直连 :8000 能拿到 OPEN + msg，但通过 :3000 vite proxy 卡 CONNECTING，就是 vite proxy 问题。
 
-**修复**：4 处 WS hook 已 v0.9.11 改为 dev 模式直连 :8000：
+**修复**：前端统一通过 `buildWsUrl()` 在开发态直连 API；`VITE_WS_HOST` 可覆盖默认 `localhost:8000`，便于并行 worktree 使用不同 API 端口：
 
 ```ts
-const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
+const host = import.meta.env.VITE_WS_HOST || "localhost:8000";
 const url = `${proto}://${host}/ws/<name>?token=...`;
 ```
 
@@ -89,26 +91,28 @@ INFO:     Waiting for background tasks to complete. (CTRL+C to force quit)
 
 **根因**：uvicorn graceful shutdown 等所有 background tasks 完成。浏览器持有的 WS 长连接是 background task，永远不会"完成"。
 
-**修复**（临时绕法）：
+**修复**：开发命令已带 `--timeout-graceful-shutdown 3`，并在 shutdown 关闭 WS Redis pool。若仍被外部任务卡住，再重启开发 API 进程：
 
 ```bash
 ss -lntp | grep :8000           # 找老 uvicorn worker pid
 kill -9 <pid>                    # 强杀
-cd apps/api && uv run uvicorn app.main:app --reload --port 8000  # 重启
+pnpm dev:api
 ```
-
-**长期方案**（待 follow-up）：自定义 lifespan close-on-reload 主动断 WS，或起 uvicorn 时加 `--timeout-graceful-shutdown 5`。
 
 ### 4. 后端 WS 端点 def 改完了但调不到（404）
 
-**根因**：docker celery-worker / api 容器 image 用 `COPY` 而不是 volume mount 源码（`infra/docker/Dockerfile.api`），改代码必须 rebuild image：
+**根因**：开发态 FastAPI 跑宿主机，不是 compose 的 `api` service；生产叠加 compose 的 API 镜像才是冻结源码。开发 worker 的 `./apps/api:/app` 为 bind mount，但 Celery 没有自动重载。
 
 ```bash
-docker compose build api celery-worker celery-beat   # rebuild
-docker compose up -d                                  # restart
+# 开发：改 WS API 后让 uvicorn reload；改 worker 代码后重启实际消费队列的 worker。
+docker compose restart celery-worker-gpu
+
+# 生产：镜像内代码变更需要重建并重启。
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-**dev 推荐路径**：本地 uvicorn `--reload` 跑 api（前提：注意问题 3）+ celery worker 跑 docker（worker 路径不常改，改了再 build）。docker-compose.yml 里 `api` service 默认注释掉就是这个原因（仓库根 v0.9.11 之前没单独的 celery-beat service，v0.9.11 拆出独立 celery-beat 服务）。
+**开发路径**：本地 uvicorn `--reload` 跑 API，compose 跑基础设施与四类 worker。改默认 / media / cleanup / audit worker 代码重启 `celery-worker`；改 GPU 预标或视频 tracker 代码重启 `celery-worker-gpu`；CPU 预标和导出分别重启 `celery-worker-cpu`、`celery-worker-export`。
 
 详见 CLAUDE.md §7 Docker rebuild vs restart。
 
@@ -116,11 +120,9 @@ docker compose up -d                                  # restart
 
 **症状**：`docker logs celery-beat` 看到 `Sending due task ...` 每秒一次，但 `docker logs celery-worker` 没有 `received` / `succeeded`。Redis `LLEN celery` 很大，`LLEN default` 是 0。
 
-**根因**：task 没在 `task_routes` 显式声明，落到 `task_default_queue`；若该值仍是 Celery 内置默认 `celery`，而 worker 启动 `-Q default,ml,media,gpu,cleanup,audit` **不订阅 `celery`**，task 就永远卡在队列里静默堆积。
+**根因**：task 没在 `task_routes` 显式声明，落到 `task_default_queue`；若该值是 Celery 内置默认 `celery`，而当前 default worker 启动为 `-Q default,media,cleanup,audit`，就无人消费该队列。
 
-**这是复发型坑**：v0.9.x 曾因此堆积 65 条（只补了那两个 task 的 route），v0.10.25 又因新增 `worker-heartbeat` 等堆到 8127 条。逐个补 route 治标不治本。
-
-**修复（系统性，v0.10.25）**：把默认队列改成 worker 实际订阅的 `default`，未路由任务自动落到被消费的队列：
+**修复**：把默认队列设为 default worker 实际订阅的 `default`，未路由任务自动落到被消费的队列：
 
 ```python
 # apps/api/app/workers/celery_app.py · celery_app.conf.update(...)
@@ -156,14 +158,14 @@ async def _my_async_task():
 - [ ] 长连接里不持有全局 DB engine（per-task engine 或 NullPool）
 
 前端：
-- [ ] hook 用 `import.meta.env.DEV ? "localhost:8000" : window.location.host` 切换
+- [ ] hook 使用 `buildWsUrl()`；本地端口覆盖使用 `VITE_WS_HOST`
 - [ ] URL 是 `/ws/<name>` 不带 `/api/v1`
 - [ ] onclose code 1008 / 1006 区分鉴权失败 vs 网络断；不要静默兜底（v0.6.9 通知 bug 教训）
 - [ ] 加 e2e 或 hook 单测覆盖 URL 派发，避免 14 个月无人发现的二次重演
 
 运维：
 - [ ] nginx.conf 的 `location /ws/` 已含 Upgrade / Connection header（见 v0.9.11 nginx.conf）
-- [ ] 改完 docker COPY 的 .py 文件后 `docker compose build` 不只是 restart
+- [ ] 开发态 worker 代码重启实际消费队列的 worker；生产镜像代码变更用 production compose 重建
 
 ## 相关 ADR / 文档
 

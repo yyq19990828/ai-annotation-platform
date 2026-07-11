@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-11
 ---
 
 # AI 工具组

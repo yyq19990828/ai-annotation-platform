@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.21.0
 status: stable
-last_reviewed: 2026-07-06
+last_reviewed: 2026-07-11
 ---
 
 # 全局编排库（Pipeline 库）

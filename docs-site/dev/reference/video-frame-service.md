@@ -275,7 +275,7 @@ POST /api/v1/video-tracker-jobs/{job_id}/discard
 响应中的 `event_channel` 形如 `video-tracker-job:{job_id}`。前端可订阅：
 
 ```http
-WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
+WS /ws/video-tracker-jobs/{job_id}?token=<access-token>
 ```
 
 事件类型：

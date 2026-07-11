@@ -56,7 +56,25 @@ Content-Type: application/json
 }
 ```
 
-文本自动发现使用 `model_key="sam3_video"`，并在请求顶层传必填 `text`；`exemplars` 可选。`frame_index` 与范围字段始终使用绝对源帧。
+## 文本与视觉示例
+
+文本自动发现使用 `model_key="sam3_video"`，并在请求顶层传必填 `text`。API 客户端还可用可选的 `exemplars` 收紧或排除相似实例：`bbox` 是归一化的 `[x1, y1, x2, y2]`，`label: true` 表示正示例，`label: false` 表示负示例。
+
+```json
+{
+  "from_frame": 0,
+  "to_frame": 120,
+  "model_key": "sam3_video",
+  "direction": "forward",
+  "text": "the red car",
+  "exemplars": [
+    { "bbox": [0.10, 0.20, 0.32, 0.58], "label": true },
+    { "bbox": [0.62, 0.18, 0.81, 0.55], "label": false }
+  ]
+}
+```
+
+工作台的文本追踪工具条当前只收集 `text`；视觉示例适用于直接调用此 API 的客户端。`frame_index` 与范围字段始终使用绝对源帧。
 
 创建端点要求 task 对当前用户可见、annotation 属于该 task，并且普通标注员持有覆盖整个范围的有效 video segment lock。请求不能跨 segment。
 
