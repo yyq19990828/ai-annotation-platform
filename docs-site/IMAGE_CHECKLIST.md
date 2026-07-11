@@ -92,6 +92,44 @@
 - [ ] `images/pipeline-library/library-list.png` — `/pipelines` 全局 Pipeline 库列表：命名编排模板卡 + 私有/组织/公开三档作用域 chip；红框：作用域 chip、新建按钮 [manual]
 - [ ] `images/pipeline-library/apply-to-project.png` — 从库「应用到项目」copy-on-write 落地为项目「当前编排」；红框：应用按钮、落地后「已保存编排 · N 阶段」badge [manual]
 
+## Batch 3 · AI 任务入口 / 候选生命周期 / 运营恢复（新增于 2026-07-11）
+
+> 对应本轮 AI 文档分层和实现对齐后的新增缺口。优先表现“从哪里进入、结果落到哪里、失败后去哪里恢复”，避免再补只有静态全页、没有任务上下文的截图。建议先拍 **Tier A**，再补状态型或需要特殊种子数据的 **Tier B**。
+
+### AI 入口与当前题执行
+
+- [ ] `images/ai/task-entry-map.png` — AI 五类入口关系图：图片交互式 AI / 当前题 AI / 二次推理 / 批量预标 / 视频 AI 追踪；用箭头标出工作台、`/ai-pre`、模型市场三类页面边界，建议矢量图而非真截图 **[Tier A]** [manual]
+- [ ] `images/ai/current-task-image-panel.png` — 图片工作台顶部「当前题 AI」面板展开态；红框：模型选择、参数区、「运行当前题」、候选结果入口 **[Tier A]** [manual]
+- [ ] `images/ai/current-task-video-frame.png` — 视频工作台当前帧 AI：顶部 AI 面板 + 画布 violet `video_bbox` 候选 + 时间轴当前帧；强调“只处理当前帧” **[Tier A]** [manual]
+- [ ] `images/ai/secondary-inference-panel.png` — 已确认父 bbox / polygon 选中后打开「✦ 二次推理」；红框：父对象、可用模型、阈值 / 文本参数、运行按钮 **[Tier A]** [manual]
+- [ ] `images/ai/secondary-inference-result.png` — 二次推理完成后的父属性补写 + 子框结果；红框：属性旁 `✦ AI` 溯源徽标、父子关系、人工修改后徽标消失前后对比 **[Tier B]** [manual]
+- [ ] `images/ai/current-task-model-availability.png` — 当前题模型选择器的可用 / 置灰项对照；红框：能力不匹配原因、项目未启用提示、跳转 ML 模型设置入口 **[Tier B]** [manual]
+
+### 图片候选审阅与数据边界
+
+- [ ] `images/ai/candidate-review-overview.png` — 图片工作台 AI 待审候选总览；同时露出画布 violet 候选、右侧候选列表、接受 / 拒绝按钮与来源信息 **[Tier A]** [manual]
+- [ ] `images/ai/candidate-keyboard-review.gif` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** [manual]
+- [ ] `images/ai/prediction-to-annotation.png` — 同一对象“候选 Prediction → 接受后 Annotation”的前后对比；红框：颜色 / 来源标记变化、接受后仍可编辑 **[Tier A]** [manual]
+- [ ] `images/ai/candidate-source-badges.png` — 候选列表按来源展示 ML Backend / 外部导入 / 交互式结果；红框：来源徽标、模型版本与置信度 **[Tier B]** [manual]
+
+### 后台任务与失败恢复
+
+- [ ] `images/jobs/jobs-bell-active.png` — 顶栏「后台任务」展开态：进行中预标、导出、导入任务混排；红框：进度、取消、完成后下载入口 **[Tier A]** [manual]
+- [ ] `images/jobs/video-tab-pending-review.png` — `/ai-pre/jobs?tab=video` 视频标签：`running / pending_review / accepted / discarded` 状态对比；红框：项目筛选、状态徽标、返回视频工作台入口 **[Tier A]** [manual]
+- [ ] `images/jobs/retry-recovery-detail.png` — 失败任务详情展开：错误摘要、可恢复判断、重试 / 放弃按钮；与顶栏任务铃中的失败提示形成一组 **[Tier A]** [manual]
+- [ ] `images/jobs/notifications-vs-jobs.png` — 「通知中心」与「后台任务」双面板对照图；标注前者负责业务提醒，后者负责长任务进度 / 取消 / 下载，建议拼图 **[Tier B]** [manual]
+
+### 项目、数据与审核入口
+
+- [ ] `images/projects/project-actions-menu.png` — 项目行 / 卡片 `⋮` 菜单展开态；红框：「导入预测」「导出标注数据」「复制项目配置」三个高频入口 **[Tier A]** `[auto]`
+- [ ] `images/projects/wizard-data-members-steps.png` — 创建项目向导 Step 5「关联已有数据集」与 Step 6「选择已有成员」并排拼图；强调这两步可跳过、不是现场上传 / 邀请 **[Tier A]** [manual]
+- [ ] `images/datasets/list-filters-and-repair.png` — 数据集页类型筛选 + 数据集卡操作；红框：图像 / 视频 / 3D / 多模态筛选、缺失视频元数据补生成入口 **[Tier B]** [manual]
+- [ ] `images/datasets/prediction-match-preview.png` — 导入预测预览校验：匹配成功、未匹配、同名歧义三类结果；红框：实际匹配键与确认导入按钮 **[Tier B]** [manual]
+- [ ] `images/projects/ml-backends/project-routing.png` — 项目设置「ML 模型」中的 backend 启用 / 停用与能力路由；红框：主 backend、交互式 AI 开关、置灰原因 **[Tier A]** [manual]
+- [ ] `images/review/batch-card-grid.png` — 质检审核 landing 的批次卡片网格新布局；替换旧批次树截图，红框：待审数、进度条、进入批次按钮 **[Tier A]** `[auto]`
+- [ ] `images/review/bulk-review-toolbar.png` — 选中多条待审任务后的批量操作栏；红框：已选数量、批量通过 / 退回、跨页选择边界 **[Tier B]** [manual]
+- [ ] `images/superadmin/platform-overview.png` — 超级管理员「平台概览」全屏；红框：系统健康、近期活动、平台统计，并与「项目管理」入口区分 **[Tier A]** `[auto]`
+
 ## 综合截图清单（按区域维护）
 
 > 新截图统一在这里按区域维护；已废弃截图保留删除原因，避免后续重复补拍。
