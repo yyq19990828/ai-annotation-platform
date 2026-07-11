@@ -20345,8 +20345,7 @@
           "results": {
             "default": [],
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/VideoTrackerPreviewResult"
             },
             "title": "Results",
             "type": "array"
@@ -20417,6 +20416,64 @@
           "counts"
         ],
         "title": "VideoTrackerJobsResponse",
+        "type": "object"
+      },
+      "VideoTrackerPreviewResult": {
+        "description": "候选预览的逐帧结果。形状与 video_tracker_runner._serialize_results 一致\n(TrackerFrameResult → dict)。必需/默认刻意对齐 _deserialize_results 的容错读取\n(frame_index 必需, 其余可缺省), 避免 typed 响应对部分 staged 行过严而 500。",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "outside": {
+            "default": false,
+            "title": "Outside",
+            "type": "boolean"
+          },
+          "primary": {
+            "default": false,
+            "title": "Primary",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "frame_index"
+        ],
+        "title": "VideoTrackerPreviewResult",
         "type": "object"
       },
       "VideoTrackerPropagateRequest": {
