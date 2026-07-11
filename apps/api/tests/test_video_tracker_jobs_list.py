@@ -477,3 +477,30 @@ async def test_task_reviewable_jobs_supports_workbench_restore(
     body = res.json()
     assert [row["id"] for row in body] == [str(staged_job.id)]
     assert body[0]["status"] == "pending_review"
+
+
+async def test_task_active_jobs_supports_ws_reconnect(
+    httpx_client_bound, annotator, db_session
+):
+    """刷新后重连: /active 只返回运行中 (queued/running) 任务, 待审候选归 /reviewable。"""
+    user, token = annotator
+    task, item = await _make_video_task(db_session, user.id)
+    # 一个待审候选 (应被 /active 排除)。
+    await _make_staged_job(db_session, task, item, user.id)
+    running = await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.RUNNING.value
+    )
+    queued = await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.QUEUED.value
+    )
+    await db_session.commit()
+
+    res = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/tracker-jobs/active",
+        headers=_bearer(token),
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert {row["id"] for row in body} == {str(running.id), str(queued.id)}
+    assert all(row["status"] in ("running", "queued") for row in body)

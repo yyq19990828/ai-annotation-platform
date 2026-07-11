@@ -36530,6 +36530,59 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/video/tracker-jobs/active": {
+      "get": {
+        "description": "恢复当前任务仍在运行 (queued/running) 的追踪任务, 供刷新后重连 WebSocket。",
+        "operationId": "get_active_video_tracker_jobs_api_v1_tasks__task_id__video_tracker_jobs_active_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VideoTrackerJobOut"
+                  },
+                  "title": "Response Get Active Video Tracker Jobs Api V1 Tasks  Task Id  Video Tracker Jobs Active Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Active Video Tracker Jobs",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/video/tracker-jobs/reviewable": {
       "get": {
         "description": "恢复当前任务仍待接受/丢弃的服务端候选。",

@@ -45,6 +45,9 @@ export class TrackerJobStore {
   private sockets = new Map<string, WebSocket>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private hydrationTasks = new Map<string, Promise<void>>();
+  // 当前工作台聚焦的 task。切任务时用它把不属于当前 task 的 job/candidate/socket/timer
+  // 清掉 (见 scopeToTask), 并作为异步恢复的护栏 (恢复回来发现已切走就丢弃)。
+  private currentTaskId: string | null = null;
   private invalidateAnnotations: (taskId: string) => void = () => {};
 
   setAnnotationInvalidator(fn: (taskId: string) => void): void {
@@ -69,18 +72,8 @@ export class TrackerJobStore {
   }
 
   addJob(job: VideoTrackerJob, token: string): void {
-    const state: VideoTrackerJobState = {
-      jobId: job.id,
-      taskId: job.task_id,
-      annotationId: job.annotation_id,
-      status: job.status,
-      fromFrame: job.from_frame,
-      toFrame: job.to_frame,
-      modelKey: job.model_key,
-      errorMessage: job.error_message,
-      receivedAt: Date.now(),
-    };
-    this.jobs = { ...this.jobs, [job.id]: state };
+    this.currentTaskId = job.task_id;
+    this.jobs = { ...this.jobs, [job.id]: toJobState(job) };
     this.emit();
     useToastStore.getState().push({
       msg: "AI 追踪已开始",
@@ -90,23 +83,83 @@ export class TrackerJobStore {
     this.connect(job.id, token);
   }
 
-  /** 从服务端恢复刷新前已进入候选审阅态的任务。并发调用按 task 去重。 */
-  restoreReviewable(taskId: string): Promise<void> {
+  /**
+   * 从服务端恢复刷新前的会话态: 仍待审阅的候选 + 仍在运行的追踪任务 (重连 WS)。
+   * 单例 store 跨 task 复用, 切 task 时先把上一个 task 的残留清干净, 再按 task 去重恢复。
+   */
+  restoreReviewable(taskId: string, token?: string | null): Promise<void> {
+    // 切 task: 先 scope 清理 (关旧 socket / 清旧 timer), 避免旧任务的完成 Toast 或候选
+    // 借同名 annotation 浮到新任务上。
+    if (this.currentTaskId !== taskId) {
+      this.currentTaskId = taskId;
+      this.scopeToTask(taskId);
+    }
     const pending = this.hydrationTasks.get(taskId);
     if (pending) return pending;
-    const hydration = this.loadReviewable(taskId).finally(() => {
+    const hydration = this.loadReviewable(taskId, token).finally(() => {
       this.hydrationTasks.delete(taskId);
     });
     this.hydrationTasks.set(taskId, hydration);
     return hydration;
   }
 
-  private async loadReviewable(taskId: string): Promise<void> {
-    let reviewable: VideoTrackerJob[];
+  /** 关闭并清掉不属于 taskId 的 job/candidate/submitting/socket/timer。同 task 的活跃 job 保留。 */
+  private scopeToTask(taskId: string): void {
+    const keptJobs: Record<string, VideoTrackerJobState> = {};
+    for (const [jobId, job] of Object.entries(this.jobs)) {
+      if (job.taskId === taskId) keptJobs[jobId] = job;
+    }
+    // candidates / submitting 以 jobId 为键, 其归属经 jobs[jobId].taskId 反查 —— 只保留仍在 keptJobs 里的。
+    const keptCandidates: Record<string, VideoTrackerJobPreview> = {};
+    for (const [jobId, preview] of Object.entries(this.candidates)) {
+      if (keptJobs[jobId]) keptCandidates[jobId] = preview;
+    }
+    const keptSubmitting: Record<string, boolean> = {};
+    for (const [jobId, on] of Object.entries(this.submitting)) {
+      if (keptJobs[jobId]) keptSubmitting[jobId] = on;
+    }
+    // 关掉 / 清掉不再保留的 job 对应的 socket 与 timer, 避免泄漏与旧任务的迟到消息。
+    for (const [jobId, socket] of this.sockets) {
+      if (!keptJobs[jobId]) {
+        try {
+          socket.close();
+        } catch {
+          /* noop */
+        }
+        this.sockets.delete(jobId);
+      }
+    }
+    for (const [jobId, timer] of this.removeTimers) {
+      if (!keptJobs[jobId]) {
+        clearTimeout(timer);
+        this.removeTimers.delete(jobId);
+      }
+    }
+    const changed =
+      Object.keys(keptJobs).length !== Object.keys(this.jobs).length ||
+      Object.keys(keptCandidates).length !== Object.keys(this.candidates).length ||
+      Object.keys(keptSubmitting).length !== Object.keys(this.submitting).length;
+    if (!changed) return;
+    this.jobs = keptJobs;
+    this.candidates = keptCandidates;
+    this.submitting = keptSubmitting;
+    this.emit();
+  }
+
+  private async loadReviewable(taskId: string, token?: string | null): Promise<void> {
+    // 候选 (pending_review / cancelled+staged) 与运行中 (queued/running) 任务分别拉取;
+    // 任一失败都不阻断另一路。
+    let reviewable: VideoTrackerJob[] = [];
     try {
-      reviewable = await videoTrackerApi.reviewable(taskId);
+      reviewable = (await videoTrackerApi.reviewable(taskId)) ?? [];
     } catch {
-      return;
+      reviewable = [];
+    }
+    let active: VideoTrackerJob[] = [];
+    try {
+      active = (await videoTrackerApi.active(taskId)) ?? [];
+    } catch {
+      active = [];
     }
     const restored = await Promise.all(
       reviewable.map(async (job) => {
@@ -118,30 +171,26 @@ export class TrackerJobStore {
         }
       }),
     );
+    // 护栏: 恢复期间用户已切走 task → 丢弃这批结果, 别把旧任务塞回来 (scopeToTask 会用当前 task 兜底)。
+    if (this.currentTaskId !== taskId) return;
     let jobs = this.jobs;
     let candidates = this.candidates;
     for (const entry of restored) {
       if (!entry) continue;
       const { job, preview } = entry;
-      jobs = {
-        ...jobs,
-        [job.id]: {
-          jobId: job.id,
-          taskId: job.task_id,
-          annotationId: job.annotation_id,
-          status: job.status,
-          fromFrame: job.from_frame,
-          toFrame: job.to_frame,
-          modelKey: job.model_key,
-          errorMessage: job.error_message,
-          receivedAt: Date.now(),
-        },
-      };
+      jobs = { ...jobs, [job.id]: toJobState(job) };
       candidates = { ...candidates, [job.id]: preview };
+    }
+    // 运行中任务: 恢复到 UI 并重连 WS, 让刷新后仍能收进度 / 完成时冒候选。
+    for (const job of active) {
+      jobs = { ...jobs, [job.id]: toJobState(job) };
     }
     this.jobs = jobs;
     this.candidates = candidates;
     this.emit();
+    if (token) {
+      for (const job of active) this.connect(job.id, token);
+    }
   }
 
   private connect(jobId: string, token: string): void {
@@ -352,6 +401,20 @@ export class TrackerJobStore {
   }
 }
 
+function toJobState(job: VideoTrackerJob): VideoTrackerJobState {
+  return {
+    jobId: job.id,
+    taskId: job.task_id,
+    annotationId: job.annotation_id,
+    status: job.status,
+    fromFrame: job.from_frame,
+    toFrame: job.to_frame,
+    modelKey: job.model_key,
+    errorMessage: job.error_message,
+    receivedAt: Date.now(),
+  };
+}
+
 function mapEventToStatus(
   type: string | undefined,
   prev: VideoTrackerJobStatus,
@@ -388,12 +451,13 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
 
   useEffect(() => trackerStore.subscribe(setState), []);
 
-  useEffect(() => {
-    if (taskId && enabled) void trackerStore.restoreReviewable(taskId);
-  }, [taskId, enabled]);
-
   const tokenRef = useRef(token);
   tokenRef.current = token;
+
+  useEffect(() => {
+    // 传 token 让恢复顺带重连运行中任务的 WS (刷新后仍能收进度 / 完成时冒候选)。
+    if (taskId && enabled) void trackerStore.restoreReviewable(taskId, tokenRef.current);
+  }, [taskId, enabled]);
 
   const propagate = useCallback(
     async (
