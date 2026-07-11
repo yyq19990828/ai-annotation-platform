@@ -235,8 +235,9 @@ def _partition_results_by_instance(
     模式 a「自动发现」下 backend 一帧可返回多实例。主实例 = 与用户种子对应的那个,
     回填源 annotation; 其余每个 instance_id 各成一条新 track。
     - 无任何 instance_id (单实例老 backend): 全部归主, 与既有单 track 行为等价 (零回归)。
-    - 有 instance_id: primary 标记所属的 instance 归主; 若无一标 primary, 取字典序最小
-      的 instance_id 归主 (确定性兜底)。同一 instance_id 的所有帧整体归属同一去向。
+    - 有 instance_id: primary 标记所属的 instance 归主; 若无一标 primary, 取最小的
+      instance_id 归主 (数字 id 按数值比较, 否则字典序; 确定性兜底)。同一 instance_id 的
+      所有帧整体归属同一去向。
     """
     if all(r.instance_id is None for r in results):
         return list(results), {}
@@ -246,7 +247,12 @@ def _partition_results_by_instance(
         None,
     )
     if primary_id is None:
-        primary_id = min(r.instance_id for r in results if r.instance_id is not None)
+        # instance_id 契约上是 str(obj_id) (见 _instance_seed_obj_id), 但可能是非数字兜底。
+        # 纯数字按数值取 min ("2" < "10"), 否则字典序, 避免 "10" < "2" 挑错主实例。
+        primary_id = min(
+            (r.instance_id for r in results if r.instance_id is not None),
+            key=lambda s: (0, int(s)) if s.isdigit() else (1, s),
+        )
 
     primary: list[TrackerFrameResult] = []
     extras: dict[str, list[TrackerFrameResult]] = {}
@@ -357,8 +363,11 @@ def _associate_multiplex_window(
     for r in remapped:  # yield 序: 末帧最后写入 → 与下一窗相邻的边界
         if not r.outside and r.geometry and r.instance_id:
             new_boundary[r.instance_id] = r.geometry
-    prev_boundary.clear()
-    prev_boundary.update(new_boundary)
+    # 本窗全 outside / 空产出 (短暂遮挡 / backend 空窗) 时保留上一窗边界: 否则遮挡帧会把
+    # 跨窗身份抹掉, 下一窗所有实例被当作新发现 → 同一物体在遮挡后被拆成两条轨迹。
+    if new_boundary:
+        prev_boundary.clear()
+        prev_boundary.update(new_boundary)
     return remapped
 
 
@@ -483,11 +492,23 @@ async def accept_tracker_job(
         VideoTrackerJobStatus.CANCELLED.value,
     )
     if not reviewable or not rows:
-        await db.commit()
-        return job
+        current_status = job.status
+        await db.rollback()
+        raise TrackerJobStateConflict(
+            f"Video tracker job cannot be accepted from status {current_status}"
+        )
     annotation = await db.get(Annotation, job.annotation_id)
     if annotation is None or not annotation.is_active:
-        raise ValueError("Annotation not found")
+        # 源 annotation 已软删 (多标注员协作常见): 自动丢弃孤儿候选, 别让它一直挂在
+        # pending_review, 并以 409 告知前端清理审阅条。
+        job.status = VideoTrackerJobStatus.DISCARDED.value
+        job.staged_result = None
+        await db.commit()
+        await db.refresh(job)
+        await publisher(job.event_channel, _event(job, "job_discarded"))
+        raise TrackerJobStateConflict(
+            "Source annotation no longer exists; candidate discarded"
+        )
     _persist_tracker_results(
         db,
         annotation,

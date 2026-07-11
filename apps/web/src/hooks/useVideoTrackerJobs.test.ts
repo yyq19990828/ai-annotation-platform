@@ -55,7 +55,7 @@ describe("TrackerJobStore.restoreReviewable", () => {
       output_geometry: "bbox",
     });
     const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {} };
+    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -82,7 +82,7 @@ describe("TrackerJobStore.restoreReviewable", () => {
       output_geometry: "bbox",
     });
     const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {} };
+    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
     store.subscribe((next) => {
       snapshot = next;
     });

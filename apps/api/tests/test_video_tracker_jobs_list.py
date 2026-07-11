@@ -409,6 +409,50 @@ async def test_discard_rejects_non_reviewable_status(
     assert job.status == VideoTrackerJobStatus.QUEUED.value
 
 
+async def test_accept_rejects_non_reviewable_status(
+    httpx_client_bound, super_admin, db_session
+):
+    """accept 与 discard 对称: 非 reviewable (无暂存) 状态返回 409 而非静默 200, 避免
+    双击接受时第二次请求悄悄成功、审计记两次、UI 无从区分。"""
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job = await _make_job(
+        db_session,
+        task,
+        item,
+        user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+    )
+    await db_session.commit()
+
+    res = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/accept", headers=_bearer(token)
+    )
+
+    assert res.status_code == 409, res.text
+    await db_session.refresh(job)
+    assert job.status == VideoTrackerJobStatus.QUEUED.value
+
+
+async def test_cancel_rejects_pending_review_candidate(
+    httpx_client_bound, super_admin, db_session
+):
+    """候选待审 (pending_review) 不能 cancel: 返回 409 引导用户改用 discard, 而不是
+    静默返回 200 让人以为取消没生效。"""
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    staged_job, _ = await _make_staged_job(db_session, task, item, user.id)
+    await db_session.commit()
+
+    res = await httpx_client_bound.delete(
+        f"/api/v1/video-tracker-jobs/{staged_job.id}", headers=_bearer(token)
+    )
+
+    assert res.status_code == 409, res.text
+    await db_session.refresh(staged_job)
+    assert staged_job.status == VideoTrackerJobStatus.PENDING_REVIEW.value
+
+
 async def test_task_reviewable_jobs_supports_workbench_restore(
     httpx_client_bound, annotator, db_session
 ):

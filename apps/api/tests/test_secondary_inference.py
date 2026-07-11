@@ -645,3 +645,50 @@ async def test_backend_timeout_surfaces_as_504_not_500(
         )
     assert exc.value.status_code == 504
     assert "重试" in exc.value.detail
+
+
+async def test_backend_5xx_surfaces_as_502_not_500(
+    db_session, super_admin, monkeypatch, _patch_io
+):
+    """回归守卫: client.predict() 用裸 raise_for_status(), 上游 500 (权重 OOM / 模型内部错)
+    抛 httpx.HTTPStatusError。同步二次推理端点必须翻成 502 (backend 故障), 而非冒泡成含糊的
+    平台 500 —— 正是本轮修复的老症状, 与 predict_interactive 的 5xx→502 语义一致。"""
+    import httpx
+
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id, type_key="image-det")
+    task = await create_task(db_session, project_id=proj.id)
+    await db_session.flush()
+    box = await _mk_box(db_session, task.id, user.id)
+    await db_session.flush()
+
+    class _Failing5xxClient:
+        def __init__(self, backend):
+            pass
+
+        async def predict(self, inputs, context=None):
+            request = httpx.Request("POST", "http://backend/predict")
+            response = httpx.Response(500, request=request)
+            raise httpx.HTTPStatusError("boom", request=request, response=response)
+
+    monkeypatch.setattr(ml_client_mod, "MLBackendClient", _Failing5xxClient)
+
+    with pytest.raises(HTTPException) as exc:
+        await run_secondary_inference(
+            db_session,
+            annotation=box,
+            task=task,
+            backend=_fake_backend(),
+            write_target="geometry",
+            write_keys=None,
+            label=None,
+            model_id="sam3-detection",
+            model_variants=None,
+            params=None,
+            task_type="detection",
+            prompt="crane hook",
+            class_filter=None,
+            pad=0.08,
+            user_id=user.id,
+        )
+    assert exc.value.status_code == 502

@@ -8,6 +8,7 @@ import {
   type VideoTrackerJobPreview,
   type VideoTrackerJobStatus,
 } from "@/api/videoTracker";
+import { ApiError } from "@/api/client";
 import { useToastStore } from "@/components/ui";
 import { buildWsUrl } from "@/lib/wsHost";
 import { useAuthStore } from "@/stores/authStore";
@@ -31,6 +32,7 @@ export interface VideoTrackerJobState {
 export interface TrackerStoreState {
   jobs: Record<string, VideoTrackerJobState>;
   candidates: Record<string, VideoTrackerJobPreview>;
+  submitting: Record<string, boolean>;
 }
 
 type Listener = (state: TrackerStoreState) => void;
@@ -38,6 +40,7 @@ type Listener = (state: TrackerStoreState) => void;
 export class TrackerJobStore {
   private jobs: Record<string, VideoTrackerJobState> = {};
   private candidates: Record<string, VideoTrackerJobPreview> = {};
+  private submitting: Record<string, boolean> = {};
   private listeners = new Set<Listener>();
   private sockets = new Map<string, WebSocket>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -49,7 +52,7 @@ export class TrackerJobStore {
   }
 
   private snapshot(): TrackerStoreState {
-    return { jobs: this.jobs, candidates: this.candidates };
+    return { jobs: this.jobs, candidates: this.candidates, submitting: this.submitting };
   }
 
   subscribe(listener: Listener): () => void {
@@ -232,10 +235,44 @@ export class TrackerJobStore {
     }
   }
 
+  private setSubmitting(jobId: string, on: boolean): void {
+    if (on) {
+      this.submitting = { ...this.submitting, [jobId]: true };
+    } else {
+      const { [jobId]: _drop, ...rest } = this.submitting;
+      this.submitting = rest;
+    }
+    this.emit();
+  }
+
+  /** 接受/丢弃失败: 4xx (如 409 状态冲突) 全局拦截器不弹 toast, 这里显式提示并保留审阅条。 */
+  private pushActionError(action: string, err: unknown): void {
+    const status = err instanceof ApiError ? err.status : undefined;
+    const detail =
+      status === 409
+        ? "候选状态已变化 (可能已被处理, 或源标注被删)"
+        : err instanceof Error && err.message
+          ? err.message
+          : "请重试";
+    useToastStore.getState().push({
+      msg: `${action} AI 追踪候选失败: ${detail}`,
+      sub: status ? `HTTP ${status}` : undefined,
+      kind: "error",
+    });
+  }
+
   async accept(jobId: string): Promise<void> {
     const cur = this.jobs[jobId];
-    const updated = await videoTrackerApi.accept(jobId).catch(() => undefined);
-    if (!updated) return;
+    this.setSubmitting(jobId, true);
+    let updated: VideoTrackerJob;
+    try {
+      updated = await videoTrackerApi.accept(jobId);
+    } catch (err) {
+      this.pushActionError("接受", err);
+      return;
+    } finally {
+      this.setSubmitting(jobId, false);
+    }
     // 落库 → invalidate annotations 让结果可见; 清候选 + 清理。
     if (cur) this.invalidateAnnotations(cur.taskId);
     useToastStore.getState().push({ msg: "已接受 AI 追踪结果", kind: "success" });
@@ -243,8 +280,16 @@ export class TrackerJobStore {
   }
 
   async discard(jobId: string): Promise<void> {
-    const updated = await videoTrackerApi.discard(jobId).catch(() => undefined);
-    if (!updated) return;
+    this.setSubmitting(jobId, true);
+    let updated: VideoTrackerJob;
+    try {
+      updated = await videoTrackerApi.discard(jobId);
+    } catch (err) {
+      this.pushActionError("丢弃", err);
+      return;
+    } finally {
+      this.setSubmitting(jobId, false);
+    }
     useToastStore.getState().push({ msg: "已丢弃 AI 追踪候选", kind: "" });
     this.finishReview(jobId, updated.status);
   }
@@ -333,7 +378,7 @@ const trackerStore = new TrackerJobStore();
 export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
-  const [state, setState] = useState<TrackerStoreState>({ jobs: {}, candidates: {} });
+  const [state, setState] = useState<TrackerStoreState>({ jobs: {}, candidates: {}, submitting: {} });
 
   useEffect(() => {
     trackerStore.setAnnotationInvalidator((taskId: string) => {
@@ -369,6 +414,7 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
 
   const jobs = state.jobs;
   const candidates = state.candidates;
+  const submitting = state.submitting;
 
   const byAnnotation = useMemo(() => {
     const map: Record<string, VideoTrackerJobState> = {};
@@ -390,5 +436,5 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     return map;
   }, [candidates]);
 
-  return { jobs, byAnnotation, candidates, candidateByAnnotation, propagate, cancel, accept, discard };
+  return { jobs, byAnnotation, candidates, candidateByAnnotation, submitting, propagate, cancel, accept, discard };
 }

@@ -221,6 +221,15 @@ async def run_secondary_inference(
         raise HTTPException(
             status_code=502, detail=f"ML backend unreachable: {exc}"
         ) from exc
+    except httpx.HTTPStatusError as exc:
+        # client.predict() 用裸 raise_for_status() (worker 靠原始异常分类失败原因); 同步
+        # 二次推理这里对齐 predict_interactive 的 _raise_for_backend_status: 上游 4xx 透传、
+        # 5xx (权重加载 OOM / 模型内部错) → 502, 别让它冒泡成含糊 500。
+        status = exc.response.status_code
+        raise HTTPException(
+            status_code=status if (status < 500 or status == 503) else 502,
+            detail=f"ML backend error (HTTP {status})",
+        ) from exc
 
     model_ref = {"backend_id": str(backend.id), "model_id": model_id}
 

@@ -353,6 +353,27 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
     """
     ox, oy = transform["ox"], transform["oy"]
     sx, sy = transform["sx"], transform["sy"]
+    # 口径 (0-1 vs 0-100) 按整批 shape 一次判定: 同一 crop 的所有检出来自同一 backend、
+    # 口径一致。逐 shape 判会让"百分比口径下各分量恰好 <1 的近原点小目标"被误判成归一化
+    # (与 prediction.py:227 video_track_bbox 拒绝自动探测同因); 整批含任一 >1 分量即判
+    # 百分比, 显著降低单个小目标被带偏的概率。
+    batch_values: list[float] = []
+    for s in shapes:
+        if not isinstance(s, dict):
+            continue
+        value = s.get("value") or {}
+        btype = s.get("type")
+        if btype == "rectanglelabels":
+            batch_values.extend(
+                float(value[k])
+                for k in ("x", "y", "width", "height")
+                if value.get(k) is not None
+            )
+        elif btype == "polygonlabels":
+            batch_values.extend(
+                float(c) for ring in _polygon_rings(value) for p in ring for c in p
+            )
+    batch_scale = _crop_coord_scale(batch_values)
     out: list[dict] = []
     for s in shapes:
         if not isinstance(s, dict):
@@ -363,7 +384,7 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
             if any(value.get(k) is None for k in ("x", "y", "width", "height")):
                 continue
             xywh = [float(value[k]) for k in ("x", "y", "width", "height")]
-            scale = _crop_coord_scale(xywh)
+            scale = batch_scale
             x, y, w, h = (v / scale for v in xywh)
             value["x"] = (ox + x * sx) * 100.0
             value["y"] = (oy + y * sy) * 100.0
@@ -376,9 +397,7 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
             rings = _polygon_rings(value)
             if not rings:
                 continue
-            scale = _crop_coord_scale(
-                [float(c) for ring in rings for p in ring for c in p]
-            )
+            scale = batch_scale
 
             def _remap_ring(ring: list) -> list[list[float]]:
                 return [

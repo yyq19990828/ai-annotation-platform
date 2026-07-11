@@ -77,6 +77,14 @@ def test_partition_no_primary_flag_uses_smallest_instance_id():
     assert set(extras) == {"2"}
 
 
+def test_partition_no_primary_flag_numeric_ids_use_numeric_min():
+    # 数字 instance_id 按数值取 min, 而非字典序 (否则 "10" < "2" 会挑错主实例)。
+    results = [_r(0, "2"), _r(0, "10"), _r(1, "2"), _r(1, "10")]
+    primary, extras = _partition_results_by_instance(results)
+    assert all(x.instance_id == "2" for x in primary)
+    assert set(extras) == {"10"}
+
+
 # ── runner 端到端: 单 seed → 多实例 → 多 annotation ──────────────────
 
 
@@ -440,6 +448,42 @@ def test_associate_multiplex_window_matches_by_iou_and_births_new():
     assert remap[0.90] == "3"
     assert nxt == [4]  # 消耗了一个新全局 id
     assert set(prev) == {"1", "2", "3"}  # prev 更新为本窗末帧几何
+
+
+def test_associate_multiplex_window_empty_window_keeps_boundary():
+    # 空窗 (backend 空窗返回) 不应抹掉跨窗边界, 否则下一窗全部实例被当作新发现。
+    from app.services.video_tracker_runner import _associate_multiplex_window
+
+    prev = {
+        "1": {"type": "bbox", "x": 0.10, "y": 0.0, "w": 0.1, "h": 0.1},
+        "2": {"type": "bbox", "x": 0.50, "y": 0.0, "w": 0.1, "h": 0.1},
+    }
+    before = {k: dict(v) for k, v in prev.items()}
+    nxt = [3]
+    out = _associate_multiplex_window([], prev, nxt)
+    assert out == []
+    assert prev == before  # 边界保留
+    assert nxt == [3]  # 未消耗新全局 id
+
+
+def test_associate_multiplex_window_all_outside_keeps_boundary():
+    # 短暂遮挡 → 整窗全 outside (无几何) 时同样保留边界, 避免同物体遮挡后被拆两条轨迹。
+    from app.services.video_tracker_runner import _associate_multiplex_window
+
+    prev = {"1": {"type": "bbox", "x": 0.10, "y": 0.0, "w": 0.1, "h": 0.1}}
+    before = {k: dict(v) for k, v in prev.items()}
+    nxt = [2]
+    occluded = TrackerFrameResult(
+        frame_index=2,
+        geometry={},
+        confidence=0.0,
+        outside=True,
+        instance_id="1",
+        primary=False,
+    )
+    out = _associate_multiplex_window([occluded], prev, nxt)
+    assert len(out) == 1
+    assert prev == before  # 全 outside 窗不抹跨窗边界
 
 
 class _WindowLocalMultiplexAdapter:

@@ -173,6 +173,17 @@ export type UseWorkbenchShellModelResult =
   | WorkbenchShellEmptyState
   | WorkbenchShellReadyModel;
 
+// instance_id 契约上是 str(obj_id) (见后端 _frame_result_from_payload), 通常是数字串, 但
+// 允许非数字。用于候选叠加的配色索引 + 目标标号: 数字直取, 非数字稳定哈希成正整数,
+// 避免 Number("obj_a") → NaN 让 OBJ_PALETTE[NaN]=undefined (无描边) 且标号显示 "NaN"。
+function instanceObjNumber(instanceId: string | null | undefined): number {
+  const s = instanceId ?? "1";
+  if (/^\d+$/.test(s)) return Number(s);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return (Math.abs(h) % 999) + 1;
+}
+
 export function useWorkbenchShellModel({
   mode = "annotate",
 }: UseWorkbenchShellModelParams): UseWorkbenchShellModelResult {
@@ -2707,7 +2718,7 @@ export function useWorkbenchShellModel({
             const g = r.geometry as { x: number; y: number; w: number; h: number };
             return {
               bbox: [g.x, g.y, g.x + g.w, g.y + g.h] as [number, number, number, number],
-              obj: trackerReviewMultiObj ? Number(r.instance_id ?? "1") : undefined,
+              obj: trackerReviewMultiObj ? instanceObjNumber(r.instance_id) : undefined,
             };
           })
       : [];
@@ -3394,6 +3405,9 @@ export function useWorkbenchShellModel({
     targetCount: trackerReviewCandidate
       ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size
       : 0,
+    submitting: trackerReviewCandidate
+      ? Boolean(trackerJobs.submitting[trackerReviewCandidate.jobId])
+      : false,
     onAccept: () => {
       if (trackerReviewCandidate) void trackerJobs.accept(trackerReviewCandidate.jobId);
     },
