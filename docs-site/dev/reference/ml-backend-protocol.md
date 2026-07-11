@@ -69,7 +69,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
 - 周期健康检查可按 ROADMAP 的 ML Backend 健康检查方案扩展。
 
-> **`pool` 子对象**（三 backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台 `health_meta()` 一并缓存到 `ml_backends.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**未统一的老 backend**回的 `pool` 字段结构各家各异（早期格式），平台层向后兼容；新接入的 backend 必须按 §4.3 落地。<!-- since v0.14.14 (PoolStatus 统一) -->
+> **`pool` 子对象**（backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台把健康快照缓存到 `ml_backend_registry.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**未统一的老 backend**回的 `pool` 字段结构各家各异，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。<!-- since v0.14.14 (PoolStatus 统一) -->
 
 > **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`。
 
@@ -232,13 +232,16 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > `bbox`/`exemplars[].bbox` 与 `type=interactive_box` 的 `bbox` 语义靠 `type` 区分：exemplar=全图相似，interactive_box=单框单 mask。`/setup` 在 `exemplar_capabilities`（`multi_box` / `negative_box` / `text_combination` / `threshold_refilter`）声明该 refine 能力，前端据此启用会话控件：如 `negative_box=false` 时隐藏负极性并强制正框，`text_combination=false` 时隐藏叠加文本。缺字段按全支持处理，兼容旧 SAM 3 backend。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口在工作台 exemplar 工具拖框（Alt 拖框或负极性 = 负框）。
 
-> **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用，gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
+> **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用。平台按模型窗口配置拆分长区间，并从项目已启用 backend 中按 `/setup.supported_trackers` 选择能力匹配项；项目主后端支持该 tracker 时优先，否则选择其它 connected 匹配 backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video` / `sam3_video_interactive`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt`、`source_geometry` 和种子驱动模型使用的 `seeds`。其中 `sam3_video_interactive` 是 SAM3 的 **PVS 交互追踪**（点/框 seed + 跨帧 memory），与 `sam2_video` 同为 caller 指定 obj_id 的种子驱动多目标；`sam3_video` 则是 multiplex 文本开集检测。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside?, instance_id?, primary? }`；低于平台阈值的 `confidence` 标为 outside。`instance_id` / `primary` 用于 job 内多目标身份，单目标 backend 可整体省略。
 >
 > 落地细节：
 > - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/archive/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
 > - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
-> - **跨窗续追（平台侧）**：`video_tracker_runner.py` 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 `source_geometry` 续追，避免每窗从首帧框重新起追导致目标漂移。
+> - **种子输入 `context.seeds[]`（点 / 框 / 多目标）**：`sam2_video` 与 `sam3_video_interactive` 都接受 `context.seeds[]`——每条可用 `{obj_id?, bbox?, points?}` 单帧简写或 `{obj_id, prompts:[{frame_index, points?, bbox?}, ...]}` 多帧写法。坐标归一化到 [0,1]，点 `label` 1=正点 / 0=负点，缺 `obj_id` 按序补 1..N。backend 应优先显式 seeds，缺省时才用 `source_geometry` 单框兜底。平台从 `job.prompt.seeds` 读取并经 `TrackerContext.seeds` 透传；首窗下发原始提示，后续窗按各实例续种。
+>   - **多帧 prompt（中途纠偏）**：seed 还可写成 `{obj_id, prompts:[{frame_index, points?/bbox?}, ...]}`——`frame_index` 是**绝对源帧**，各 prompt 在其（局部）帧对该 obj 播种，PVS memory 逐帧累积，后续帧的修正点（含负点）改善该段追踪。仍从窗种子帧传播，故须保证种子帧有基准 prompt；`prompts` 优先于单帧 `bbox`/`points`。落在窗 `[lo,hi]` 外的 `frame_index` 被钳进窗内。多帧种子（f0 原始点 + f5 修正点）已真机验证。
+> - **跨窗续追（平台侧）**：首窗用原始 keyframe 或 `seeds[]`；后续窗为**每个实例**取上一窗最后一个非 outside geometry，并用相同 obj id 重新播种，避免非主实例过窗丢失。只有单实例时继续用 `source_geometry` 兜底。
+> - **多目标身份与落库（平台侧）**：每条结果可带 job 作用域的 `instance_id` 与 `primary`。种子驱动模型直接使用 caller 指定 obj id；文本 multiplex 每窗独立检测，平台在窗口边界帧按 IoU 把局部 id 映射为全局稳定 id。`instance_id` 不是数据库 `group_id`，也不等于最终 `track_id`。用户接受 job 后，主实例回填源 annotation（保留其 `track_id`），其余 `instance_id` 各创建一条继承源类别的新 annotation 与新 `track_id`；无 instance id 的老 backend 继续走单实例路径。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
 >
 > **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。**文本驱动的 tracker**（如 `sam3_video`，其 propagate 需 `text` / `exemplars` 而非仅 seed bbox）在此之外再声明 `text_driven_trackers`（`supported_trackers` 的子集）：前端仅在选中此类 tracker 时才显示「文本描述」输入框并强制填写；声明为文本驱动但未列入 `supported_trackers` 的项在传播对话框里灰置不可选。
@@ -394,7 +397,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 >
 > **`supported_variants`（可选）**：用于声明 model variant 轴并补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 是 `context.model_variants` 的 axis key；`value` 必须与 backend runtime 校验来源一致。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params` 中 `x-platform-role=modelVariant` 或 legacy `*_variant.enum` 字段，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
 >
-> v0.14.10 起，超管运行时观测端点 `GET /admin/ml-integrations/observe` 也会把 `/setup.supported_variants` 原样透传到每个 `ObserveTarget.supported_variants`，用于 env-only 容器的只读多轴变体展示。旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍会通过 `variant_catalog` 双发；仅声明通用 `supported_variants` 的容器暂不启用「试启动」，`POST /admin/ml-integrations/observe/smoke-test` 收到 `variant: {axis: value}` 时返回 `skipped=true`，直到 backend 实现通用 warm 接口。
+> 超管运行时观测端点 `GET /admin/ml-integrations/observe` 会把 `/setup.supported_variants` 透传到每个 `ObserveTarget.supported_variants`，用于未注册观测容器的只读多轴变体展示。顶层未声明时，平台合并 `models[].supported_variants` 并按 axis key 去重；旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍通过 `variant_catalog` 双发。仅声明通用变体目录的容器暂不启用「试启动」，直到 backend 实现通用 warm 接口。
 
 > **`supported_prompts`**：枚举 `point | interactive_box | text | exemplar | sketch | scribble | …`。**交互式用户 prompt**，前端 ToolDock 据此置灰不支持的工具。（`bbox` 已退出交互 prompt 命名空间，仅保留为几何形状名。）
 >
@@ -410,7 +413,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **前端兜底**：返回体缺 `supported_prompts` 时前端回落 `["point","interactive_box","text"]` 并 `console.warn` 提示升级 backend。`/setup` 502 时整套 AI 工具置灰。
 
-> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`models[]`、`supported_prompts`、`supported_inputs`、`supported_trackers`、`supported_text_outputs`、`supported_geometric_outputs`、`warnings` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
+> **能力快照持久化**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`models[]`、`supported_prompts`、`supported_inputs`、`supported_trackers`、`supported_text_outputs`、`supported_geometric_outputs`、`warnings` + 平台派生的 `modalities`）落进 `ml_backend_registry.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
 >
 > **`is_interactive` 改派生**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
 >
@@ -472,6 +475,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "supported_inputs": ["full_image", "crop"], // 可选. full_image/crop/bbox_prompt/point_prompt; 缺省由平台合成
   "supported_geometric_outputs": ["bbox"],   // 受控,复用现有字段名
   "output_attribute_types": [],         // 受控. OCR: ["text","language"]; cls: ["class"]
+  "output_attribute_schema": [],        // 可选. 属性 key/label/type/options 的结构化声明
   "supported_text_outputs": [],         // v1 已有,text 路径专用(box/mask/both)
   "supported_trackers": [],             // v1 已有,video tracker 专用
 
@@ -510,6 +514,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。平台消费：画布对 `text` / `language` / `orientation` 校验项目是否有承接位（缺则非阻断警告「采纳后该属性丢失」，`class` 因 taxonomy 几乎恒在而跳过）；编排分类下游阶段若模型自报此字段却不含 `class`，派发期 422（见 §2.1.1）。
 
+**`output_attribute_schema`（结构化属性输出）** —— 可选数组，每项至少含 `key / label / type`，`type` 取 `text / number / boolean / select / multiselect / range`。`select` / `multiselect` 的 `options` 必须是 `[{"value":"car","label":"小车"}]` 对象数组，不能写成字符串数组；`value` 必须与 `/predict` 实际写入 `attributes[key]` 的值一致。平台用该 schema 给项目设置“从 ML Backend 预填属性”、编排写回键选择器和工作台属性兼容性检查提供真值；缺失时回退 `output_attribute_types` 的扁平提示。
+
 **`infra`（基础设施，受控，v2 新增）** —— `pytorch` / `onnx` / `paddle` / `tensorrt` / `openvino` / `other`（兜底）：
 
 - **层级**：backend 顶层声明默认值；model 条目可覆盖（如 YOLO 仓里部分条目导出 onnx）。
@@ -529,7 +535,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ### 4.1.4 平台派生形态（health_meta）
 
-`extract_capabilities(setup)`（`services/ml_capabilities.py`）从「抽单层快照」升级为「遍历 `models[]` 派生 model 列表」，落进 `ml_backends.health_meta["capabilities"]`：
+`extract_capabilities(setup)`（`services/ml_capabilities.py`）遍历 `models[]` 派生 model 列表，落进 `ml_backend_registry.health_meta["capabilities"]`：
 
 ```jsonc
 {
@@ -816,18 +822,18 @@ cd ../.. && pnpm codegen
 | 端点 | 数据源 | 何时可用 | 视角 | 鉴权 |
 |------|--------|----------|------|------|
 | `GET /v1/ml-capabilities/protocol` | `capability_registry.py` SSOT | 启动即可（与注册无关） | 协议层「平台支持什么」 | 登录用户 |
-| `GET /v1/ml-capabilities/instances` | env-only 探测 + `ml_backends.health_meta` 合并 | docker-compose 起动或注册任一即可 | 实例层「现在跑着哪些 model 可用」 | 登录用户 |
-| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backends.health_meta["capabilities"]` | backend 注册并 health 探测后 | 实例层「该项目绑的 backend 暴露了什么」 | 项目成员 |
+| `GET /v1/ml-capabilities/instances` | 注册实例探测 + `ml_backend_registry.health_meta` 合并 | docker-compose 启动或手动注册任一即可 | 实例层「现在跑着哪些 model 可用」 | 登录用户 |
+| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backend_registry.health_meta["capabilities"]` | backend 注册并 health 探测后 | 实例层「该项目启用的 backend 暴露了什么」 | 项目成员 |
 
 ### 4.1.12 实例能力清单端点（v0.14.11）
 
-`GET /api/v1/ml-capabilities/instances` 解决「能力目录看不到 env-only 容器」的鸡生蛋问题——即使用户没有在任何项目里注册过 backend，只要 docker-compose 起了自带容器（如 gsam2 / sam3）或运维 env 配了 `ML_BACKEND_OBSERVE_URLS`，普通登录用户都能在能力目录看到这些 backend 实际能跑的 model 清单。
+`GET /api/v1/ml-capabilities/instances` 从全局 `ml_backend_registry` 返回 connected backend 的 model 清单。env 配置的 backend 在启动 / 初始化时自动 upsert 为 `source="env"` 的一等注册项；超管手动注册的是 `source="manual"`。因此实例能力不再维护“env-only 临时探测 + 项目内重复注册”两套来源。
 
 **数据源合并**：
 
-1. **env-only**：读 `settings.ml_backend_observe_urls`（CSV / JSON 数组），对每个 URL 探测 `/setup`，复用 `extract_capabilities()` 取协议 v2 的 `models[]`。
-2. **registered**：从 `ml_backends` 表查 `state="connected"` 的项，直接读 `health_meta["capabilities"]` 快照。
-3. 去重：env-only URL 与已注册 URL 命中时，跳过 env-only 探测（避免重复展示）。
+1. 从 `ml_backend_registry` 读取 `state="connected"` 的注册项（env 自动注册与 manual 手动注册同表）。
+2. 直接消费每项 `health_meta["capabilities"]` 的 `models[]` 快照，并带出 `backend_id / state / source / name`。
+3. URL 唯一性与 env upsert 在注册表层解决，instances 端点无需再做临时来源去重。
 
 **字段裁剪**（与项目级 `/capabilities` 的差别）：
 
@@ -845,8 +851,10 @@ cd ../.. && pnpm codegen
 {
   "instances": [
     {
-      "source": "env_only",                          // 或 "registered"
-      "name": "grounded-sam2",                       // env-only 取 /setup.name; registered 取 ml_backend.name
+      "backend_id": "9f1c…",                         // ml_backend_registry.id
+      "state": "connected",                          // 注册表状态; disconnected 已在服务层过滤
+      "source": "env",                               // ml_backend_registry.source: "env"(docker-compose/env 自动注册) | "manual"(superadmin 手动注册)
+      "name": "grounded-sam2",                       // ml_backend_registry.name
       "infra": "pytorch",
       "models": [
         {
@@ -869,7 +877,7 @@ cd ../.. && pnpm codegen
 }
 ```
 
-**前端消费**：`CapabilityCatalogPanel` 协议卡视图（默认 `groupBy=task`）按 `model.task` 把 instance.models 挂到 9 张协议卡上；子卡按 `source` 显示「自带」（env_only）或「已注册」（registered）徽标。
+**前端消费**：`CapabilityCatalogPanel` 协议卡视图（默认 `groupBy=task`）按 `model.task` 把 instance.models 挂到 9 张协议卡上；子卡的「自带 / 已注册」徽标按该 backend 是否已被某个项目启用（即是否出现在 admin overview）判定——已启用记「已注册」并挂项目名，未接入任何已启用项目的平台内置 backend 记「自带」——而非直接取本端点的 `source` 字段（`source` 只区分 backend 是 env 自动注册还是 superadmin 手动注册）。
 
 ---
 

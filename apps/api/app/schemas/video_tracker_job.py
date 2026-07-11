@@ -9,7 +9,17 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 TrackerDirection = Literal["forward", "backward", "bidirectional"]
-TrackerJobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
+TrackerJobStatus = Literal[
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    # v0.21.28 · 候选/接受流。
+    "pending_review",
+    "accepted",
+    "discarded",
+]
 
 
 class TrackerExemplar(BaseModel):

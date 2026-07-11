@@ -123,6 +123,13 @@ export function VariantPanel({
   }, [videoPool?.loaded_keys, videoPool?.loaded_variants]);
   // 视频 SAM 候选: 优先复用图片侧 enum, 否则用 SAM2 视频变体常量.
   const videoSamEnum = samEnum.length > 0 ? samEnum : SAM2_VIDEO_VARIANTS;
+  // v0.21.x · 单档视频模型 (sam3): 无 SAM 变体维度 (无 sam_variant enum), 视频预热是
+  // 单按钮、无下拉; gsam2 等有 sam_variant.enum 的仍走 SAM 下拉。
+  const videoSingleModel = supportsVideo && samEnum.length === 0;
+  // v0.21.x · 视频权重展示名: 优先 backend /setup.video_model_version ("SAM 3.1"),
+  // 回落已加载 key / tracker 名。用于「视频权重」条目 (与图像「模型版本: SAM 3」对称)。
+  const videoWeightLabel =
+    setup?.video_model_version ?? videoLoaded[0] ?? supportedTrackers[0] ?? "视频模型";
 
   const [sam, setSam] = useState("");
   const [dino, setDino] = useState("");
@@ -152,7 +159,9 @@ export function VariantPanel({
   const isSelectedLoaded = loaded.some(
     (v) => v.sam_variant === sam && v.dino_variant === dino,
   );
-  const isVideoSelectedLoaded = videoLoaded.includes(videoSam);
+  const isVideoSelectedLoaded = videoSingleModel
+    ? videoLoaded.length > 0
+    : videoLoaded.includes(videoSam);
 
   // v0.18.17 · 通用单变体后端 (如 sam3): 有 generic variant 目录但无 gsam2 sam/dino 轴, 单池单变体。
   // pool key 原样即变体字符串 (如 "sam3"), 不走 gsam2 sam=X/dino=Y 解析 → 单独走 raw-key 展示/预热。
@@ -294,12 +303,12 @@ export function VariantPanel({
               // 通用单变体: 无 sam/dino 下拉, 单按钮预热默认变体 (= 顶部「预热默认」目标)。
               <div className={WARM_ROW_CLASS}>
                 <Button
-                  size="xs"
+                  size="sm"
                   onClick={() => onWarm({ variants: genericWarmVariants })}
                   disabled={isWarming || !canGenericWarm}
                   title={canGenericWarm ? "预热该变体载入显存" : "该 backend 未实现 warm 接口"}
                 >
-                  <Icon name="play" size={10} />
+                  <Icon name="play" size={11} />
                   预热
                 </Button>
                 {genericWarmLoaded && <Badge variant="success">已在显存</Badge>}
@@ -366,55 +375,75 @@ export function VariantPanel({
               </span>
             )}
           </div>
+          {/* 视频权重条目 (与图像「模型版本: SAM 3」对称): 单档视频模型始终显示其展示名
+              (sam3 → "SAM 3.1"), 无论是否已加载; 加载状态由上方池计数 + 下方「已在显存」体现。 */}
+          {videoSingleModel && (
+            <div className="flex flex-col gap-1.5">
+              <div className="text-2xs font-semibold text-muted-foreground">视频权重</div>
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center rounded-full border border-brand bg-brand/10 px-2 py-px text-2xs leading-relaxed text-brand">
+                  <span className="mono">{videoWeightLabel}</span>
+                </span>
+              </div>
+            </div>
+          )}
           {!hasVideoMeta ? (
-            <div className={NOTE_CLASS}>该 backend 未上报 video 观测</div>
+            <div className={NOTE_CLASS}>
+              视频追踪模型按需加载，当前未常驻显存，暂无视频池观测（首次追踪时冷启）。
+            </div>
           ) : (
             <>
-              {videoLoaded.length === 0 ? (
-                <div className={NOTE_CLASS}>视频池暂无常驻变体（首次追踪自动冷启）</div>
-              ) : (
-                <div className="max-w-full overflow-x-auto">
-                  <table className={TABLE_CLASS}>
-                    <thead>
-                      <tr>
-                        <th>SAM 变体</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {videoLoaded.map((v) => (
-                        <tr key={v}>
-                          <td
-                            className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
-                            title={v}
-                          >
-                            <span className="mono">{v}</span>
-                          </td>
+              {/* 单档视频模型的权重已在上方「视频权重」条目展示 + 已在显存徽标, 不再重复表格;
+                  gsam2 (多 SAM 变体) 仍用表格列出各已加载 SAM 变体。 */}
+              {!videoSingleModel &&
+                (videoLoaded.length === 0 ? (
+                  <div className={NOTE_CLASS}>视频池暂无常驻变体（首次追踪自动冷启）</div>
+                ) : (
+                  <div className="max-w-full overflow-x-auto">
+                    <table className={TABLE_CLASS}>
+                      <thead>
+                        <tr>
+                          <th>SAM 变体</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {videoLoaded.map((v) => (
+                          <tr key={v}>
+                            <td
+                              className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap"
+                              title={v}
+                            >
+                              <span className="mono">{v}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               <div className={WARM_ROW_CLASS}>
-                <label className={FIELD_CLASS}>
-                  <span className={FIELD_LABEL_CLASS}>SAM</span>
-                  <select
-                    value={videoSam}
-                    onChange={(e) => setVideoSam(e.target.value)}
-                    className={SELECT_CLASS}
-                  >
-                    {videoSamEnum.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {/* 单档视频模型 (sam3): 无 SAM 变体, 单按钮预热; 否则 SAM 下拉 (gsam2)。 */}
+                {!videoSingleModel && (
+                  <label className={FIELD_CLASS}>
+                    <span className={FIELD_LABEL_CLASS}>SAM</span>
+                    <select
+                      value={videoSam}
+                      onChange={(e) => setVideoSam(e.target.value)}
+                      className={SELECT_CLASS}
+                    >
+                      {videoSamEnum.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <Button
                   size="sm"
                   onClick={() => onWarm({
                     taskType: "video",
-                    variants: videoSam ? { sam_variant: videoSam } : {},
+                    variants: videoSingleModel || !videoSam ? {} : { sam_variant: videoSam },
                   })}
                   disabled={isWarming}
                 >
@@ -476,10 +505,26 @@ function ModelVariantWarmSection({
   const isLoaded = selectedKey ? loadedKeys.includes(selectedKey) : false;
 
   if (groups.length === 0) {
+    // 无变体轴 (如 onnxtools 各 model): 仍给单按钮预热该 model —— 之前只显示「无可选变体」、
+    // 没有预热键, 而这类 backend warmup_endpoint=true 本可预热。加载态按 model.id 命中判定。
+    const loaded = loadedKeys.includes(model.id);
     return (
       <div className={SECTION_CLASS}>
-        <div className={SECTION_TITLE_CLASS}>{model.display_name ?? model.id}</div>
-        <div className={NOTE_CLASS}>该 model 无可选变体</div>
+        <div className={SECTION_TITLE_CLASS}>
+          {model.task ?? model.id}
+          <span className={CAP_CLASS}>{model.display_name ?? model.id}</span>
+        </div>
+        <div className={WARM_ROW_CLASS}>
+          <Button
+            size="sm"
+            onClick={() => onWarm({ task: model.task, variants: {} })}
+            disabled={isWarming}
+          >
+            <Icon name="play" size={11} />
+            预热
+          </Button>
+          {loaded && <Badge variant="success">已在显存</Badge>}
+        </div>
       </div>
     );
   }

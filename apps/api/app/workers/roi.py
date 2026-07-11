@@ -312,16 +312,71 @@ def compose_transforms(outer: dict, inner: dict) -> dict:
     }
 
 
+def _crop_coord_scale(values: list[float]) -> float:
+    """crop 上检出几何的坐标口径: 返回把它归一化到 [0,1] 的除数。
+
+    协议允许 backend 返回 [0,100] (yolo / onnxtools) 或 [0,1] (grounded-sam2 / sam3);
+    判据与 ``services.prediction._percent_scale`` 同款 (任一分量 >1 即视作百分比)。
+    早期只有百分比口径的 backend 走 ROI 下游, 此处曾硬当百分比, 归一化口径的 backend
+    检出框被缩小 100 倍并塌到 crop 左上角。
+    """
+    return 100.0 if any(abs(v) > 1.0 for v in values) else 1.0
+
+
+def _polygon_rings(value: dict) -> list[list]:
+    """取 polygonlabels 的全部环 (外环 + 洞), 供口径判定; 空 / 形态不认识时返回 []。"""
+    polys = value.get("polygons")
+    if polys:
+        rings: list[list] = []
+        for poly in polys:
+            pts = poly.get("points")
+            # 外环空 = 退化多边形 (只有洞无外环): 整体跳过, 否则会产出 points:[] 的鬼影
+            # shape, 下游 ingest 422 或渲染出「只有洞」的异常几何。
+            if not (isinstance(pts, list) and pts):
+                continue
+            rings.append(pts)
+            rings.extend(
+                h for h in (poly.get("holes") or []) if isinstance(h, list) and h
+            )
+        return rings
+    pts = value.get("points")
+    if not isinstance(pts, list) or not pts:
+        return []
+    return [pts] + [h for h in (value.get("holes") or []) if isinstance(h, list) and h]
+
+
 def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
-    """把下游在 crop 上检出的几何 (crop 百分比坐标) 反投影回原图百分比坐标。
+    """把下游在 crop 上检出的几何反投影回原图百分比坐标。
 
     v0.18.15 · ``transform={ox,oy,sx,sy}`` 为 crop 在原图的归一化偏移 + 缩放
     (见 :class:`CropBatch`)。rectanglelabels (x/y/width/height) 与 polygonlabels (points)
-    都按 ``img_pct = (offset + crop_pct/100 * scale) * 100`` 反投影。不改入参, 返回新列表;
+    都按 ``img_pct = (offset + crop_norm * scale) * 100`` 反投影, 其中 ``crop_norm`` 由
+    :func:`_crop_coord_scale` 按 backend 实际口径归一。不改入参, 返回新列表;
     非 bbox/polygon 或缺坐标的 shape 丢弃。
     """
     ox, oy = transform["ox"], transform["oy"]
     sx, sy = transform["sx"], transform["sy"]
+    # 口径 (0-1 vs 0-100) 按整批 shape 一次判定: 同一 crop 的所有检出来自同一 backend、
+    # 口径一致。逐 shape 判会让"百分比口径下各分量恰好 <1 的近原点小目标"被误判成归一化
+    # (与 prediction.py:227 video_track_bbox 拒绝自动探测同因); 整批含任一 >1 分量即判
+    # 百分比, 显著降低单个小目标被带偏的概率。
+    batch_values: list[float] = []
+    for s in shapes:
+        if not isinstance(s, dict):
+            continue
+        value = s.get("value") or {}
+        btype = s.get("type")
+        if btype == "rectanglelabels":
+            batch_values.extend(
+                float(value[k])
+                for k in ("x", "y", "width", "height")
+                if value.get(k) is not None
+            )
+        elif btype == "polygonlabels":
+            batch_values.extend(
+                float(c) for ring in _polygon_rings(value) for p in ring for c in p
+            )
+    batch_scale = _crop_coord_scale(batch_values)
     out: list[dict] = []
     for s in shapes:
         if not isinstance(s, dict):
@@ -331,21 +386,50 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
         if btype == "rectanglelabels":
             if any(value.get(k) is None for k in ("x", "y", "width", "height")):
                 continue
-            value["x"] = (ox + float(value["x"]) / 100.0 * sx) * 100.0
-            value["y"] = (oy + float(value["y"]) / 100.0 * sy) * 100.0
-            value["width"] = float(value["width"]) * sx
-            value["height"] = float(value["height"]) * sy
+            xywh = [float(value[k]) for k in ("x", "y", "width", "height")]
+            scale = batch_scale
+            x, y, w, h = (v / scale for v in xywh)
+            value["x"] = (ox + x * sx) * 100.0
+            value["y"] = (oy + y * sy) * 100.0
+            value["width"] = w * sx * 100.0
+            value["height"] = h * sy * 100.0
         elif btype == "polygonlabels":
-            pts = value.get("points")
-            if not isinstance(pts, list):
+            # LS polygon 三形态 (见 services.prediction.to_internal_shape):
+            #   ① {points}  ② {points, holes}  ③ {polygons: [{points, holes?}]} (多连通)
+            # 环坐标口径按整个 shape 一次判定 (逐环判会让小环误判成归一化)。
+            rings = _polygon_rings(value)
+            if not rings:
                 continue
-            value["points"] = [
-                [
-                    (ox + float(p[0]) / 100.0 * sx) * 100.0,
-                    (oy + float(p[1]) / 100.0 * sy) * 100.0,
+            scale = batch_scale
+
+            def _remap_ring(ring: list) -> list[list[float]]:
+                return [
+                    [
+                        (ox + float(p[0]) / scale * sx) * 100.0,
+                        (oy + float(p[1]) / scale * sy) * 100.0,
+                    ]
+                    for p in ring
                 ]
-                for p in pts
-            ]
+
+            if value.get("polygons"):
+                value["polygons"] = [
+                    {
+                        **poly,
+                        "points": _remap_ring(poly["points"]),
+                        **(
+                            {"holes": [_remap_ring(h) for h in poly["holes"]]}
+                            if poly.get("holes")
+                            else {}
+                        ),
+                    }
+                    for poly in value["polygons"]
+                    # 退化多边形 (外环空) 一并丢弃, 与 _polygon_rings 口径判定保持一致。
+                    if isinstance(poly.get("points"), list) and poly.get("points")
+                ]
+            else:
+                value["points"] = _remap_ring(value["points"])
+                if value.get("holes"):
+                    value["holes"] = [_remap_ring(h) for h in value["holes"]]
         else:
             continue
         out.append({**s, "value": value})

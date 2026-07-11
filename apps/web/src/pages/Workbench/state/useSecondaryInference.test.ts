@@ -1,8 +1,11 @@
 // v0.20.11 · buildSecondaryInferencePayload 能力→请求参数映射单测。
 import { describe, it, expect } from "vitest";
 import type { MLModelCapability } from "@/api/ml-backends";
+import type { SecondaryInferenceResponse } from "@/api/tasks";
+import type { AnnotationResponse } from "@/types";
 import {
   buildSecondaryInferencePayload,
+  mergeSecondaryResult,
   needsTextPrompt,
   type SecondaryCapability,
 } from "./useSecondaryInference";
@@ -95,11 +98,30 @@ describe("buildSecondaryInferencePayload", () => {
     });
   });
 
-  it("variants: attributes 能力恒 null (不走 model_variants)", () => {
+  it("variants: 无变体轴的 attributes 能力 → null (走扁平路径)", () => {
     const c = cap({ id: "cls", task: "classification" }, "attributes");
     expect(
       buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
     ).toBeNull();
+  });
+
+  it("variants: 有变体轴的 OCR 属性能力 → 带 model_variants (协议 v2)", () => {
+    // rapidocr rec/e2e 是 attributes 写回, 但声明了 version/size/lang 轴, 也要能选档透传。
+    const c = cap(
+      {
+        id: "ocr-rec",
+        task: "ocr",
+        default_variants: { version: "v5", size: "mobile", lang: "universal" },
+        supported_variants: [
+          { key: "lang", variants: [{ value: "universal" }, { value: "en" }] },
+        ] as MLModelCapability["supported_variants"],
+      },
+      "attributes",
+    );
+    // 用户改 lang, version/size 保留默认。
+    expect(
+      buildSecondaryInferencePayload(c, undefined, { lang: "en" }).model_variants,
+    ).toEqual({ version: "v5", size: "mobile", lang: "en" });
   });
 
   it("prompt: 开集文本带进请求 (trim); 空/空白 → null", () => {
@@ -120,5 +142,55 @@ describe("buildSecondaryInferencePayload", () => {
       needsTextPrompt(cap({ id: "y", supported_prompts: ["none"] }, "geometry")),
     ).toBe(false);
     expect(needsTextPrompt(cap({ id: "z" }, "geometry"))).toBe(false);
+  });
+});
+
+describe("mergeSecondaryResult", () => {
+  const box = (id: string, extra: Partial<AnnotationResponse> = {}) =>
+    ({
+      id,
+      task_id: "t-1",
+      annotation_type: "bbox",
+      class_name: "car",
+      geometry: { type: "bbox", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      ...extra,
+    }) as AnnotationResponse;
+
+  const resp = (
+    annotation: AnnotationResponse,
+    created_children: AnnotationResponse[] = [],
+  ): SecondaryInferenceResponse => ({ annotation, created_children });
+
+  it("子框直接追加进缓存 (无需 refetch, 画布/侧栏立即可见)", () => {
+    const prev = [box("a")];
+    const out = mergeSecondaryResult(
+      prev,
+      resp(box("a"), [box("c1"), box("c2")]),
+    );
+    expect(out?.map((a) => a.id)).toEqual(["a", "c1", "c2"]);
+  });
+
+  it("原框并入 AI 写的属性 + 溯源, 几何不动 (不覆盖 in-flight 乐观写)", () => {
+    const prev = [box("a", { geometry: { type: "bbox", x: 0.9, y: 0.9, w: 0.05, h: 0.05 } })];
+    const server = box("a", {
+      geometry: { type: "bbox", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      attributes: { color: "blue" },
+      attributes_meta: { color: { origin: "ai" } },
+    });
+    const [merged] = mergeSecondaryResult(prev, resp(server))!;
+    expect(merged.attributes).toEqual({ color: "blue" });
+    expect(merged.attributes_meta?.color?.origin).toBe("ai");
+    // 用户拖动中的几何保留, 未被服务端快照顶回。
+    expect(merged.geometry).toEqual({ type: "bbox", x: 0.9, y: 0.9, w: 0.05, h: 0.05 });
+  });
+
+  it("已在缓存里的子框不重复追加 (重复 onSuccess 幂等)", () => {
+    const prev = [box("a"), box("c1")];
+    const out = mergeSecondaryResult(prev, resp(box("a"), [box("c1")]));
+    expect(out?.map((a) => a.id)).toEqual(["a", "c1"]);
+  });
+
+  it("缓存未建立 → 原样返回, 不凭空造列表", () => {
+    expect(mergeSecondaryResult(undefined, resp(box("a"), [box("c1")]))).toBeUndefined();
   });
 });

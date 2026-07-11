@@ -3,15 +3,15 @@ audience: [project_admin, super_admin, developer]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-06-02
+last_reviewed: 2026-07-11
 ---
 
 # 异步任务（async_jobs）
 
 平台把所有用户可见的长任务统一进 `async_jobs` 表，做为前端任务铃铛
-（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入、数据集导入、导出）
+（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源；视频追踪记录在该页的「视频」标签（`?tab=video`）。底层各类长任务（预标、视频追踪、审计归档、预测导入、数据集导入、导出）
 按需保留各自专表作为 domain 真值（VideoTrackerJob 等），`async_jobs` 只记
-最小元数据作为汇总索引。这种"双写双轨"让前端只需 polling 一个端点就能看到全部进行中的任务。
+最小元数据作为汇总索引。视频追踪的候选预览、接受和丢弃以 VideoTrackerJob 为准，仍在视频工作台完成；这种"双写双轨"让前端只需 polling 一个端点就能看到全部进行中的任务。
 
 <!-- history: async_jobs started as a release slice and now describes the current long-job surface. -->
 
@@ -164,6 +164,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## 相关
 
+- [预标注流水线](../../dev/concepts/prediction-pipeline)
+- [Runbook：Celery Worker 卡死](../../ops/runbooks/celery-worker-stuck)
+- [Runbook：ML Backend 不可用](../../ops/runbooks/ml-backend-down)
 - [ROADMAP §1.7 async_jobs MVP](../../roadmap/2026-05-18-cvat-labelstudio-inspiration)
 - 模型：[`apps/api/app/db/models/async_job.py`](../../../apps/api/app/db/models/async_job.py)
 - service：[`apps/api/app/services/async_job.py`](../../../apps/api/app/services/async_job.py)

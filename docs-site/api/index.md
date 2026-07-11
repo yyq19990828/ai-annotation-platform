@@ -41,3 +41,13 @@ apps/api/openapi.snapshot.json
 ## 前端类型生成
 
 `pnpm codegen` 根据 snapshot 重新生成 `apps/web/src/api/generated/`。
+
+## 按任务进入
+
+| 任务 | 指南 |
+|---|---|
+| 触发、查询、取消或重试批量预标等长任务 | [异步任务](./guides/async-jobs) |
+| 发起、预览、接受、丢弃或取消视频追踪 | [Video Tracker Jobs](./guides/video-tracker-jobs) |
+| 接入 ML Backend、查询能力或配置项目启用 | [ML Backend](./guides/ml-backend) |
+| 导入外部预测 | [预测导入](./guides/import) |
+| 读写任务、候选与正式标注 | [任务与标注](./guides/tasks-and-annotations) · [Predictions / Jobs](./guides/predictions) |

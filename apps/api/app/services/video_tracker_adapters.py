@@ -18,6 +18,14 @@ class TrackerFrameResult:
     geometry: dict
     confidence: float | None = None
     outside: bool = False
+    # v0.21.26 · 阶段 0 · 多目标: backend 一帧可返回多实例。instance_id 是该 job 内
+    # 全局稳定的对象标识 (backend 负责跨窗保持稳定, 见阶段 B); None = 单实例老 backend
+    # (归主实例, 回填源 annotation), 与既有单 track 行为等价。
+    instance_id: str | None = None
+    # primary=True 标记与用户种子对应的那个实例 (backend 按 IoU 挑定)。其逐帧结果回填源
+    # annotation; 非 primary 的每个 instance_id 各落一条新 annotation。老 backend 不发此
+    # 键 → runner 按「无 instance_id 即主实例」兜底。见 video_tracker_runner 分组落库。
+    primary: bool = False
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,11 @@ class TrackerContext:
     # v0.21.20 · polygon track 回填: "polygon" 时 backend 每帧保留 mask 矢量化的多边形
     # 而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。由 runner 按源几何类型定。
     output_geometry: str = "bbox"
+    # v0.21.27 · U-pvs-1 · PVS 逐对象种子 (含 points / 多目标), 每条
+    # {obj_id?, bbox?/points?}。仅在种子窗 (首窗) 有值 —— points 锚在原始种子帧, 后续窗靠
+    # source_geometry 续追。缺省 None → backend 退 source_geometry 单框兜底 (与 sam2_video /
+    # 已发 B-pvs 框种子等价, 零回归)。其它 backend 无此键不受影响。
+    seeds: list[dict] | None = None
 
 
 class TrackerAdapter(Protocol):
@@ -164,6 +177,10 @@ class MLBackendVideoTrackerAdapter:
         # 矢量化的多边形; 缺省 bbox 不下发, 老 backend 无此键也不受影响。
         if ctx.output_geometry and ctx.output_geometry != "bbox":
             context["output_geometry"] = ctx.output_geometry
+        # v0.21.27 · U-pvs-1 · PVS 点/多目标种子: 仅种子窗有值。backend _seeds_from_video_ctx
+        # 优先 seeds[] (含 points) 于 source_geometry 兜底; 其它 backend 无此键不受影响。
+        if ctx.seeds:
+            context["seeds"] = ctx.seeds
         result = await client.predict_interactive(
             task_data=ctx.task_data,
             context=context,
@@ -191,11 +208,17 @@ def _frame_result_from_payload(payload: dict) -> TrackerFrameResult:
     if not geometry:
         geometry = {"type": "bbox", "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
 
+    instance_id = payload.get("instance_id")
+    if instance_id is not None:
+        instance_id = str(instance_id)
+
     return TrackerFrameResult(
         frame_index=int(payload["frame_index"]),
         geometry=geometry,
         confidence=confidence,
         outside=outside,
+        instance_id=instance_id,
+        primary=bool(payload.get("primary", False)),
     )
 
 
@@ -203,6 +226,9 @@ _REGISTRY: dict[str, TrackerAdapter] = {
     MockBboxTrackerAdapter.model_key: MockBboxTrackerAdapter(),
     "sam2_video": MLBackendVideoTrackerAdapter("sam2_video"),
     "sam3_video": MLBackendVideoTrackerAdapter("sam3_video"),
+    # v0.21.26 · 阶段 B-pvs · SAM3 PVS 交互追踪 (点/框 seed + memory 传播)。与 sam3_video
+    # (text 开集) 同后端不同模型; adapter 与 sam2_video 同为 seed 驱动 (透传 source_geometry)。
+    "sam3_video_interactive": MLBackendVideoTrackerAdapter("sam3_video_interactive"),
 }
 
 

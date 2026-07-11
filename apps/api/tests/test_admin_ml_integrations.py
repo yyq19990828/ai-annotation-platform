@@ -352,6 +352,79 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
 
 
 @pytest.mark.asyncio
+async def test_observe_collects_per_model_variants(
+    httpx_client, super_admin, monkeypatch
+):
+    """v2 backend (rapidocr 等) 把变体挂在 models[].supported_variants 而非顶层时,
+    observe 仍应收集到并置 supports_variants=True (否则前端错显「该容器不暴露变体目录」)。"""
+    _, token = super_admin
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ml_backend_observe_urls", ["http://ocr:8005"])
+
+    routes = {
+        ("get", "/health"): _FakeResp(200, {"ok": True, "loaded": False}),
+        ("get", "/setup"): _FakeResp(
+            200,
+            {
+                # 顶层无 supported_variants; 变体按 model 挂载, 跨 model 有重叠 (version/size)
+                # 与差异 (lang), 合并后按 key 去重。
+                "supported_variants": None,
+                "models": [
+                    {
+                        "id": "ocr-det",
+                        "supported_variants": [
+                            {
+                                "key": "version",
+                                "title": "版本",
+                                "variants": [{"value": "v5"}],
+                            },
+                            {
+                                "key": "size",
+                                "title": "尺寸",
+                                "variants": [{"value": "mobile"}],
+                            },
+                        ],
+                    },
+                    {
+                        "id": "ocr-rec",
+                        "supported_variants": [
+                            {
+                                "key": "version",
+                                "title": "版本",
+                                "variants": [{"value": "v5"}],
+                            },
+                            {
+                                "key": "size",
+                                "title": "尺寸",
+                                "variants": [{"value": "mobile"}],
+                            },
+                            {
+                                "key": "lang",
+                                "title": "语言",
+                                "variants": [{"value": "en"}],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ),
+    }
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
+        res = await httpx_client.get(
+            "/api/v1/admin/ml-integrations/observe",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200
+    t = res.json()["targets"][0]
+    assert t["supports_variants"] is True
+    keys = [g["key"] for g in t["supported_variants"]]
+    assert keys == ["version", "size", "lang"]  # 去重 + 保序
+
+
+@pytest.mark.asyncio
 async def test_smoke_test_skips_when_pool_already_loaded(httpx_client, super_admin):
     """冲突守护: 池子已有变体常驻时不预热/不卸载, 只确认可加载性。"""
     _, token = super_admin

@@ -3,12 +3,12 @@ audience: [project_admin, reviewer]
 type: how-to
 since: v0.14.8
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # Data Manager
 
-Data Manager 是项目内的只读任务运营表。它把任务状态、预测、反馈、scene 帧号和计数列放到一个表格里，适合项目管理员或审核员每天固定查看问题任务。
+Data Manager 是项目内的只读任务运营表。它把任务状态、预测、反馈、scene 帧号和计数列放到一个表格里，适合项目管理员或审核员每天固定查看问题任务。当前页面提供过滤条件、列显隐和保存视图；不提供表格内排序或批量写操作。
 
 ## 进入
 
@@ -38,32 +38,29 @@ Data Manager 是项目内的只读任务运营表。它把任务状态、预测�
 
 ## 保存视图
 
-保存视图包含：
+保存视图会记录：
 
 - 名称
-- 可见性：`private` 或 `project`
-- 过滤 JSON
-- 排序 JSON
+- 当前过滤条件
 - 列显隐列表
 
-私有视图只有创建者可见。项目共享视图对项目成员可见，但只有项目负责人或超级管理员可编辑。删除视图只删除保存的视图配置，不删除任务、标注、预测或反馈。
+从页面新建的视图为私有视图，只有创建者可见。已有的项目共享视图对项目成员可见，只有项目负责人或超级管理员能更新或删除它。删除视图只删除保存的视图配置，不删除任务、标注、预测或反馈。
 
 ## 过滤字段
 
 ![过滤条件行编辑器字段选择器展开](../images/projects/data-manager-filter-rules.png)
 
-过滤条件使用受控 DSL，前端当前提供 and-only 条件行。后端会拒绝未知字段、未知操作符和错误类型。
+过滤条件使用受控条件行，多个条件按 AND 组合。后端会拒绝未知字段、未知操作符和错误类型；当前页面不提供原始 JSON 编辑器或 OR 条件组。
 
-首版可用字段（字段名含命名空间前缀）：
+当前页面可选字段（字段名含命名空间前缀）：
 
 | 字段族 | 完整字段名 |
 |---|---|
-| task | `task.status`、`task.assignee`、`task.reviewer`、`task.batch_id`、`task.created_at`、`task.updated_at` |
+| task | `task.status`、`task.assignee`、`task.reviewer`、`task.batch_id` |
 | annotation | `annotation.annotation_count`、`annotation.class_name` |
 | prediction | `prediction.prediction_count`、`prediction.model_version`、`prediction.avg_confidence`、`prediction.source` |
 | feedback | `feedback.unresolved_count`、`feedback.kind`、`feedback.severity` |
-| scene | `scene.scene_name`、`scene.frame_index`、`scene.scene_id` |
-| dataset | `dataset.dataset_id`、`dataset.file_type` |
+| scene | `scene.scene_name`、`scene.frame_index` |
 
 常见例子：
 
@@ -77,10 +74,9 @@ Data Manager 是项目内的只读任务运营表。它把任务状态、预测�
 }
 ```
 
-后端同时支持 `"op": "or"` 的规则组；前端当前界面仅提供 `and` 条件行。如需 `or` 逻辑可直接粘贴手写 filter JSON 到 URL 参数或 API。
+页面一次显示 50 条任务；服务端 API 的单次查询上限为 200 条。
 
 **硬限制**：
-- 每页最多 **200** 条（`limit` 最大值）。
 - `in` 操作符值列表最多 **200** 项。
 - 保存视图名称长度 **1–120** 字符。
 

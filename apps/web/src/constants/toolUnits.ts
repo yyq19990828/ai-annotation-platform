@@ -8,19 +8,14 @@
 
 import type { IconName } from "@/components/ui/Icon";
 
+// 「AI 交互」曾作为伪工具单位 "ai_interactive" 列在此处。它不产出独有几何, 已退役为项目级
+// 开关 `project.ai_interactive_enabled`(项目设置「ML 模型」); 存量 tool_bindings 里的残留 key
+// 由后端迁移 0116 合并进 region/bbox, 字面量随之删除。AI 工具的类别随其产出几何归 region/bbox。
 export type ToolUnitId =
   | "bbox"
   | "polyline"
   | "keypoint"
   | "region"
-  /**
-   * @deprecated 「AI 交互」不是几何单位, 而是能力维度: smart-* 产 polygon (归 region),
-   * magic-box / text-prompt 产 bbox (归 bbox)。已退役为项目级开关
-   * `project.ai_interactive_enabled`(项目设置「ML 模型」)。此 Literal 仅为兼容存量
-   * `tool_bindings` JSONB 中可能残留的 key 而保留, 不再出现在 TOOL_UNIT_GROUPS,
-   * 任何 UI 都不再读取它。新代码勿使用。
-   */
-  | "ai_interactive"
   | "lidar_box_3d"
   | "point_mask_3d"
   | "rotated_bbox";

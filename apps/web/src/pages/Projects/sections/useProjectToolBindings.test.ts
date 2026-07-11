@@ -22,11 +22,6 @@ describe("buildUnitBindings", () => {
           classes: [{ name: "ship", color: "#f97316", order: 0 }],
           attribute_schema: { fields: [] },
         },
-        ai_interactive: {
-          enabled: true,
-          classes: [{ name: "prompt", color: "#a855f7", order: 0 }],
-          attribute_schema: { fields: [] },
-        },
       },
     });
 
@@ -43,7 +38,6 @@ describe("buildUnitBindings", () => {
     ]);
     // 非视频几何单位仍被过滤。
     expect(bindings.rotated_bbox).toBeUndefined();
-    expect(bindings.ai_interactive).toBeUndefined();
   });
 
   it("legacy 视频类别落入 bbox; 视频几何单位 (bbox/polyline/region) 均种子化, 非几何 image 单位不加", () => {
@@ -64,9 +58,8 @@ describe("buildUnitBindings", () => {
     expect(Object.keys(bindings).sort()).toEqual(["bbox", "polyline", "region"]);
     expect(bindings.polyline?.enabled).toBe(false);
     expect(bindings.region?.enabled).toBe(false);
-    // keypoint / rotated_bbox / ai_interactive 仍仅 image, 不进视频。
+    // keypoint / rotated_bbox 仍仅 image, 不进视频。
     expect(bindings.keypoint).toBeUndefined();
-    expect(bindings.ai_interactive).toBeUndefined();
     // legacy 扁平类别落入 bbox 默认单位。
     expect(bindings.bbox?.enabled).toBe(true);
     expect(bindings.bbox?.classRows).toEqual([
@@ -177,6 +170,51 @@ describe("buildUnitBindings · video_modes", () => {
     });
     // box 显式给出, track 缺省 → 补 true。
     expect(bindings.bbox?.videoModes).toEqual({ box: true, track: true });
+  });
+});
+
+describe("buildUnitBindings · 退役 ai_interactive 折叠", () => {
+  it("把残留 ai_interactive 的 classes 折叠进 region/bbox, 同名保留目标单位的", () => {
+    const bindings = buildUnitBindings({
+      data_type: "image",
+      type_key: "image-det",
+      // ai_interactive 已从 ToolUnitId 删除; 老项目 JSONB 里仍可能有该 key。
+      tool_bindings: {
+        bbox: {
+          enabled: true,
+          classes: [{ name: "car", color: "#0ea5e9", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+        region: {
+          enabled: true,
+          // region 也有 car (不同色) → 与来源冲突, 保留 region 的 #22c55e。
+          classes: [{ name: "car", color: "#22c55e", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+        ai_interactive: {
+          enabled: true,
+          // car 与 bbox / region 均同名 → 各自保留目标单位配色; prompt 新增 → 折进两者。
+          classes: [
+            { name: "car", color: "#a855f7", order: 0 },
+            { name: "prompt", color: "#a855f7", order: 1 },
+          ],
+          attribute_schema: { fields: [] },
+        },
+      } as never,
+    });
+
+    // 同名 car 保留目标单位配色, 来源被跳过; 新类 prompt 折进 bbox。
+    expect(bindings.bbox?.classRows).toEqual([
+      { name: "car", color: "#0ea5e9" },
+      { name: "prompt", color: "#a855f7" },
+    ]);
+    // 新类 prompt 也折进 region (退役前是共享调色板); car 保留 region 自己的配色。
+    expect(bindings.region?.classRows).toEqual([
+      { name: "car", color: "#22c55e" },
+      { name: "prompt", color: "#a855f7" },
+    ]);
+    // ai_interactive 不作为独立单位出现。
+    expect(Object.keys(bindings)).not.toContain("ai_interactive");
   });
 });
 

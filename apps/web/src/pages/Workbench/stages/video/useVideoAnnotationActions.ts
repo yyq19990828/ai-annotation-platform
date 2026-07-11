@@ -23,7 +23,7 @@ import {
   type VideoPropagateOptions,
   type VideoTrackKeyframeWithAttrs,
 } from "../../state/videoTrackCommands";
-import { nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
+import { isAnyVideoSingleFrame, isAnyVideoTrack, nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
@@ -447,7 +447,9 @@ export function useVideoAnnotationActions({
   const handleVideoSetSelectedClass = useCallback((className: string) => {
     if (!s.selectedId) return false;
     const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
-    if (!ann || (ann.geometry.type !== "video_bbox" && ann.geometry.type !== "video_track_bbox")) return false;
+    // v0.21.26 · 放宽到全部视频几何 (单帧 bbox/polygon/polyline/rotated + bbox/polygon/polyline track):
+    // 改类走 handleVideoRename (仅动 class_name, 类型无关), 快捷改类不再对点集几何静默失效。
+    if (!ann || !(isAnyVideoSingleFrame(ann) || isAnyVideoTrack(ann))) return false;
     if (ann.class_name === className) return true;
     handleVideoRename(ann, className);
     recordRecentClass(className);

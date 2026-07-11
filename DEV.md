@@ -11,14 +11,12 @@ ai-annotation-platform/
 ├── apps/
 │   ├── web/                     # React 前端
 │   │   ├── src/
-│   │   │   ├── components/
-│   │   │   │   ├── shell/       # TopBar, Sidebar
-│   │   │   │   └── ui/         # 设计系统组件
-│   │   │   ├── pages/           # Dashboard, Workbench, Users
-│   │   │   ├── stores/          # Zustand 状态管理
-│   │   │   ├── data/            # Mock 数据
-│   │   │   ├── types/           # TypeScript 类型定义
-│   │   │   └── styles/          # CSS 变量 (设计 tokens)
+│   │   │   ├── components/      # shell、业务组件与 shadcn 原语
+│   │   │   ├── pages/           # Dashboard、Workbench、项目与管理页面
+│   │   │   ├── api/             # API client、业务封装与 codegen 输出
+│   │   │   ├── stores/          # Zustand UI 状态
+│   │   │   ├── types/           # 手写的 UI / 领域类型
+│   │   │   └── styles/          # Tailwind / shadcn runtime tokens
 │   │   ├── e2e/                # Playwright E2E + screenshots 自动化
 │   │   ├── vite.config.ts
 │   │   └── tsconfig.json
@@ -33,11 +31,15 @@ ai-annotation-platform/
 │   │   │   └── utils/           # 工具函数
 │   │   └── pyproject.toml
 │   │
-│   ├── grounded-sam2-backend/   # v0.9.x · Grounded-SAM-2 ML Backend (GPU)
+│   ├── grounded-sam2-backend/   # Grounded-SAM-2 GPU backend
 │   │   ├── vendor/              # IDEA-Research/Grounded-SAM-2 镜像副本（sync_vendor.sh）
 │   │   ├── predictor.py         # 三种 prompt (point/bbox/text) 路由
 │   │   ├── main.py              # FastAPI 4 端点 + /metrics + /cache/stats
-│   │   └── Dockerfile           # build context 升到 apps/（v0.9.4 phase 3）
+│   │   └── Dockerfile           # build context 为 apps/，可复用共享包
+│   ├── sam3-backend/            # SAM 3 图像 / 视频 backend
+│   ├── yolo-backend/            # YOLO 批量推理 backend
+│   ├── onnxtools-backend/       # 检测与属性推理 backend
+│   ├── rapidocr-backend/        # OCR backend
 │   │
 │   └── _shared/                 # 跨子应用共享 Python 包
 │       └── mask_utils/          # mask→polygon (sam2-backend / sam3-backend 共用)
@@ -80,31 +82,49 @@ docker compose up -d
 - PostgreSQL 16 — `localhost:5432` (user/pass/annotation)
 - Redis 7 — `localhost:6379`
 - MinIO — `localhost:9000` (控制台 `localhost:9001`, minioadmin/minioadmin)
+- Mailpit — SMTP `localhost:1025`、收件箱 `localhost:8025`
+- Celery default / GPU / CPU / export worker 与 beat；按任务队列隔离并发
+
+如需测试 MinIO 放在指定磁盘上的性能，可在 `.env` 设置：
+
+```bash
+MINIO_DATA_DIR=/mnt/fast-disk/ai-annotation-platform/minio
+```
+
+该变量只影响 MinIO 的 `/data` 挂载；留空时仍使用 Docker 托管的 `miniodata` 命名卷。切换前后数据不会自动迁移，已有对象需要先复制到新目录。
 
 > **GPU profile（可选，需要标注工作台 SAM 工具或 `/ai-pre` 文本批量预标）**：GPU backend 在叠加文件 `docker-compose.ml.yml`，须同时 `-f` 两个文件：
 > ```bash
 > docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 > ```
 > 嫌麻烦可在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml`，之后省去 `-f`。首次启动自动下载 ~900MB checkpoints（cache 在 `gsam2_checkpoints` volume）；启动 health 探活周期 120s，`curl http://localhost:8001/health` 应返回 `{"ok":true,"loaded":true}`。需 NVIDIA driver ≥ 525 + nvidia-container-toolkit。
+>
+> **多卡机器指定 GPU backend 用哪张卡**：`docker-compose.ml.yml` 里各 GPU profile backend 固定绑定一张物理卡（`deploy.reservations.devices.device_ids`），不再是 `count: 1` 由 Docker 自动挑卡。默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1（双卡机器错开显存）；可在 `.env` 用 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID` 覆盖。**单卡机器必须把 `SAM3_GPU_DEVICE_ID=0`**，否则容器找不到卡 1 起不来。
 
 ### 2. 启动前端
 
 ```bash
 pnpm install
+pnpm codegen
 pnpm dev:web
 ```
+
+> 首次 clone / 清空 `apps/web/src/api/generated/` 后，先跑 `pnpm codegen` 再跑
+> `pnpm dev:web`。`pnpm dev:web` 直接启动 Vite，不触发 `prebuild` 的生成检查；若缺
+> `src/api/generated/capabilityVocab.gen.ts`，页面会报
+> `Failed to resolve import "./generated/capabilityVocab.gen"`。如果
+> `apps/api/capability-registry.snapshot.json` 也缺失，先运行：
+> `cd apps/api && uv run python ../../scripts/export_capability_registry.py`。
 
 打开 http://localhost:3000
 
 ### 3. 启动后端
 
 ```bash
-cd apps/api
-uv venv
-source .venv/bin/activate
-uv pip install fastapi "uvicorn[standard]" pydantic-settings sqlalchemy asyncpg python-jose passlib python-multipart httpx
-uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3
+pnpm dev:api
 ```
+
+等价命令为 `cd apps/api && uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3`；依赖由一次性 setup 中的 `uv sync --extra test` 安装，不要在本地手工拼装依赖列表。
 
 > `--timeout-graceful-shutdown 3`：代码改动触发 `--reload` 时，若有浏览器标签页还连着
 > WebSocket（工作台 / AI 预标页），uvicorn 默认会无限等待这些连接结束，卡在
@@ -125,7 +145,7 @@ API 文档：http://localhost:8000/docs
 | 数据库 | PostgreSQL 16 |
 | 缓存/队列 | Redis 7 |
 | 对象存储 | MinIO (开发) / 阿里云 OSS (生产) |
-| 任务队列 | Celery (待实现) |
+| 任务队列 | Celery（default / GPU / CPU / export worker + beat） |
 | 容器化 | Docker Compose |
 
 ## 前端开发
@@ -152,62 +172,35 @@ API 文档：http://localhost:8000/docs
 import { Button, Badge, Card, Avatar, StatCard, Icon } from "@/components/ui";
 ```
 
-### 页面路由
+### 页面路由与数据访问
 
-当前使用 Zustand store 管理页面切换 (`useAppStore.page`)，已实现的页面：
+页面路由由 React Router 定义在 `apps/web/src/App.tsx`，不是 Zustand page switch。`/projects/:id/annotate` 与 `/projects/:id/review` 使用全屏工作台；Dashboard、数据集、存储、`/ai-pre`、模型市场、项目设置、审核、用户与系统管理等页面通过 `AppShell` 路由承载。`/training` 仍是唯一明确的占位入口。
 
-- `dashboard` — 项目 Dashboard
-- `annotate` — 标注工作台
-- `users` — 用户与权限
+业务数据通过 `apps/web/src/api/` 的 API client 和 React Query 获取；Zustand 仅保存认证、界面偏好和短生命周期交互状态。测试 fixture 不能作为运行时数据来源。
 
-其他页面 (datasets/storage/ai-pre/model-market/training/audit/settings) 显示占位。
-
-### Mock 数据
-
-前端当前使用 `apps/web/src/data/mock.ts` 中的静态数据，后续联调时替换为 API 调用。
-
-### 前端 codegen（v0.10.10 文档化）
+### 前端 codegen
 
 OpenAPI → TypeScript 类型由 `@hey-api/openapi-ts` 生成，落到 `apps/web/src/api/generated/{types.gen.ts, sdk.gen.ts}`。**该目录在 `apps/web/.gitignore` 中，不入仓**（避免 PR diff 噪声与 git lfs 麻烦）。
 
 ```bash
-pnpm --filter web codegen          # 手动重新生成（OpenAPI 变动后）
+pnpm codegen                       # 手动重新生成（OpenAPI 或 capability snapshot 变动后）
 ```
 
 日常无需手动跑：
 
-- `pnpm dev:web` / `pnpm --filter web build` 通过 `prebuild` 钩子调用 `scripts/codegen-if-changed.mjs`，自动检测 OpenAPI snapshot 变化并增量重生；CI 同样走该钩子。
-- **首次 clone 仓库时**：在跑 `pnpm --filter web typecheck` 前应至少跑一次 `pnpm --filter web codegen`，否则 `src/api/generated/` 不存在会 typecheck 报错（导出的强类型 import 缺失）。
-- 改动 `apps/api/app/schemas/` 后，先 `pnpm openapi:export` 刷新 snapshot，再 `pnpm --filter web codegen`。
+- `pnpm dev:web` 只启动 Vite，不触发 codegen。`pnpm build:web` 的 `prebuild` hook 会在 snapshot 比生成输出新时增量生成。
+- **首次 clone 或清空生成目录后**：在跑 `pnpm typecheck` 前先运行 `pnpm codegen`，否则 `src/api/generated/` 不存在会令强类型 import 失败。
+- 改动路由或 Pydantic schema 后，先 `pnpm openapi:export` 刷新 snapshot，再 `pnpm codegen`；只改 capability registry 时，运行 `cd apps/api && uv run python ../../scripts/export_capability_registry.py` 后再执行同一 codegen 命令。
 
 如果 PR 改动了 ProjectUpdate / ProjectOut 等共享 schema，提交前手动 codegen + typecheck 确认无回归。
 
 ## 后端开发
 
-### API 端点
+### API 端点与数据模型
 
-所有端点挂载在 `/api/v1/` 前缀下，当前为 stub 实现：
+HTTP API 统一挂载在 `/api/v1`，而 WebSocket 单独挂载在 `/ws/...`。路由与 Pydantic schema 是完整实现，不维护手写的端点清单：以 [API 文档](docs-site/api/index.md)、FastAPI `/docs` 与 `apps/api/openapi.snapshot.json` 为准。路由聚合入口为 `apps/api/app/api/v1/router.py`，视频任务与 tracker job 等 task 子路由由 `apps/api/app/api/v1/tasks/` 管理。
 
-```
-GET  /health                      # 健康检查
-POST /api/v1/auth/login           # 登录
-GET  /api/v1/auth/me              # 当前用户
-GET  /api/v1/projects             # 项目列表
-GET  /api/v1/projects/stats       # 统计数据
-POST /api/v1/projects             # 创建项目
-GET  /api/v1/tasks/{id}           # 任务详情
-POST /api/v1/tasks/{id}/submit    # 提交质检
-GET  /api/v1/users                # 用户列表
-```
-
-### 数据模型
-
-4 个核心模型 (`apps/api/app/db/models/`)：
-
-- **User** — 用户 (email, name, role, group_name, status)
-- **Project** — 项目 (type_key, classes JSONB, ai_model, 任务统计计数)
-- **Task** — 任务 (file_path, tags, status, assignee_id)
-- **Annotation** — 标注 (source, geometry JSONB, confidence, class_name)
+数据模型位于 `apps/api/app/db/models/`。除用户、项目、任务和标注外，运行时还依赖数据集 / scene、batch、prediction、ML backend registry、视频 frame / segment / tracker job、审计与通知等模型；变更前先查对应 schema、service 与迁移，而不要假设只有四张核心表。
 
 ### 配置
 
@@ -297,8 +290,8 @@ docker compose --env-file .env.production \
 ```bash
 # 前端测试
 pnpm test                        # vitest 单测
-pnpm test:coverage               # 带覆盖率（v0.8.8 起 CI 阈值 25%）
-pnpm test:e2e                    # Playwright e2e/tests/**（需后端运行；v0.9.4 phase 3 加 SAM 工具用例 page.route mock）
+pnpm --filter @anno/web test:coverage  # 前端带覆盖率
+pnpm test:e2e                    # Playwright E2E（需后端运行）
 
 # 后端 / 共享包测试
 cd apps/api && uv run pytest                                            # FastAPI 平台后端
@@ -312,6 +305,7 @@ pnpm openapi:check               # CI 校验
 # 文档站
 pnpm docs:dev                    # http://localhost:5173
 pnpm docs:build
+pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物检查
 ```
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。

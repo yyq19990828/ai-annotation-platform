@@ -74,7 +74,7 @@ flowchart TD
 - 批次：`batch.*`
 - 标注：`annotation.*`
 - 任务审核：`task.submit / withdraw / approve / reject / reopen / skip`
-- AI 预标：`preannotate.bulk_clear`
+- AI 预标与视频追踪：`preannotate.bulk_clear`、`video_tracker_job.create / cancel / accept / discard`
 - 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移）
 - 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
 

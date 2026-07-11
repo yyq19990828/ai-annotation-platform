@@ -39,8 +39,8 @@ const SELECT_CLASS =
   "max-w-[180px] appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground";
 
 interface RegisteredRef {
-  projectId: string;
-  projectName: string;
+  projectId: string;        // 路由 unload/reload/warmup 用: 任一启用项目即可 (backend 全局, 操作作用于物理后端)
+  projectNames: string[];   // 启用了该 backend 的所有项目名 (去重聚合展示)
   backend: MLBackendItem;
   observe?: ObserveTarget;
 }
@@ -67,19 +67,30 @@ export function RuntimeObservePanel() {
     return map;
   }, [observeQ.data]);
 
+  // backend 全局化 (ADR-0044) 后, 同一物理 backend 可被 N 个项目启用, overview 会为
+  // 每个 (project, backend) 各返回一行。这里按 backend url 去重, 每个物理 backend 一张卡,
+  // 把启用它的项目名聚合进 projectNames, 避免重复显示。
   const registered = useMemo<RegisteredRef[]>(() => {
-    const refs: RegisteredRef[] = [];
+    const byUrl = new Map<string, RegisteredRef>();
     for (const project of overviewQ.data?.projects ?? []) {
       for (const backend of project.backends) {
-        refs.push({
-          projectId: project.project_id,
-          projectName: project.project_name,
-          backend,
-          observe: observedByUrl.get(normalizeUrl(backend.url)),
-        });
+        const key = normalizeUrl(backend.url);
+        const existing = byUrl.get(key);
+        if (existing) {
+          if (!existing.projectNames.includes(project.project_name)) {
+            existing.projectNames.push(project.project_name);
+          }
+        } else {
+          byUrl.set(key, {
+            projectId: project.project_id,
+            projectNames: [project.project_name],
+            backend,
+            observe: observedByUrl.get(key),
+          });
+        }
       }
     }
-    return refs;
+    return [...byUrl.values()];
   }, [observedByUrl, overviewQ.data]);
 
   const registeredUrls = useMemo(
@@ -128,9 +139,9 @@ export function RuntimeObservePanel() {
                 <div className="text-xs font-semibold text-muted-foreground">已注册 backend</div>
                 {registered.map((ref) => (
                   <RegisteredRuntimeCard
-                    key={`${ref.projectId}:${ref.backend.id}`}
+                    key={ref.backend.id}
                     projectId={ref.projectId}
-                    projectName={ref.projectName}
+                    projectNames={ref.projectNames}
                     backend={ref.backend}
                     observe={ref.observe}
                   />
@@ -163,12 +174,12 @@ export function RuntimeObservePanel() {
 
 function RegisteredRuntimeCard({
   projectId,
-  projectName,
+  projectNames,
   backend,
   observe,
 }: {
   projectId: string;
-  projectName: string;
+  projectNames: string[];
   backend: MLBackendItem;
   observe?: ObserveTarget;
 }) {
@@ -255,7 +266,11 @@ function RegisteredRuntimeCard({
           {ok ? "在线" : "离线"}
         </Badge>
         <span className="max-w-[220px] truncate text-sm font-semibold">{backend.name}</span>
-        <span className="text-xs text-muted-foreground">{projectName}</span>
+        <span className="text-xs text-muted-foreground" title={projectNames.join(" / ")}>
+          {projectNames.length > 1
+            ? `${projectNames[0]} +${projectNames.length - 1}`
+            : projectNames[0]}
+        </span>
         <span className={URL_CLASS}>{backend.url}</span>
         {observe ? (
           <span className={LATENCY_CLASS}>{observe.latency_ms}ms</span>
@@ -460,6 +475,15 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
             </div>
           ) : (
             <div className="py-3 text-xs text-muted-foreground">该容器不暴露变体目录</div>
+          )}
+          {/* 视频追踪能力 (来自 /setup.supported_trackers): sam3 等只把视频权重挂在
+              tracker 上、不进 model_variant 目录, 若不单独展示这里, 未注册卡会只显示图像
+              权重、看似「没暴露视频权重」。注册卡的 VariantPanel 已有「视频追踪变体」区。 */}
+          {(target.supported_trackers?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Icon name="film" size={11} />
+              <span>支持视频追踪：{target.supported_trackers!.join(" · ")}</span>
+            </div>
           )}
         </>
       )}

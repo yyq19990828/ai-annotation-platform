@@ -3,7 +3,7 @@ audience: [dev]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-11
 ---
 
 # Docker rebuild vs restart：Celery 不会热重载
@@ -12,7 +12,7 @@ last_reviewed: 2026-05-09
 
 改了 `apps/api/app/workers/tasks.py` 里的 task 代码（比如新增/重命名参数），重启浏览器、改 dispatcher 入参，结果运行时仍报 `TypeError: batch_predict() got an unexpected keyword argument 'xxx'`，磁盘上的源代码看起来明明已经更新。
 
-最早可见症状：B-1 反馈「AI 预标注点击后没反应/卡住」，根因即 worker 拉的是上一次 image 里的 stale code。
+这是 Celery 进程保留已导入代码的典型症状；开发态 bind mount 让文件更新可见，但不会重载进程内模块。
 
 ## 复现
 
@@ -20,7 +20,7 @@ last_reviewed: 2026-05-09
 # 修改 worker task 签名
 vi apps/api/app/workers/tasks.py
 
-# API 容器自动 reload（uvicorn --reload），看似一切正常
+# API 进程自动 reload（uvicorn --reload），看似一切正常
 curl http://localhost:8000/health  # OK
 
 # 触发预标注 → worker 执行 batch_predict 时报 TypeError
@@ -34,20 +34,25 @@ curl http://localhost:8000/health  # OK
 | 前端 vite | ✅ HMR |
 | **Celery worker** | ❌ **没有任何自动重载机制** |
 
-dev `docker-compose.yml` 把 `apps/api/app/**` 挂卷到 worker 容器里，所以源文件**看起来**是新的，但 Celery 进程已经把旧版 task 加载进解释器，挂载只影响下次进程启动后的导入。
+dev `docker-compose.yml` 把整个 `apps/api` 挂卷到所有 worker 容器里，所以源文件**看起来**是新的，但 Celery 进程已经把旧版 task 加载进解释器，挂载只影响下次进程启动后的导入。
 
 ## 修复 / 规避
 
-**业务代码改动 → 仅 restart：**
+**业务代码改动 → 仅重启实际消费队列的 worker：**
 
 ```bash
+# 视频 tracker 或 GPU 预标（ml / gpu）
+docker restart ai-annotation-platform-celery-worker-gpu-1
+
+# 默认 / media / cleanup / audit 任务
 docker restart ai-annotation-platform-celery-worker-1
 ```
 
 **依赖 / Dockerfile / 镜像层改动 → rebuild：**
 
 ```bash
-docker compose build celery-worker && docker compose up -d celery-worker
+docker compose build celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export
+docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export
 ```
 
 **rebuild 触发条件清单**（CLAUDE.md §7）：
@@ -64,14 +69,13 @@ docker exec ai-annotation-platform-celery-worker-1 \
   python -c "import inspect, app.workers.tasks as t; print(inspect.signature(t.batch_predict))"
 ```
 
-如果签名仍是旧的，再次 `docker restart`。
+如果签名仍是旧的，再重启对应容器。
 
 ## 长效防御
 
-`apps/api/app/workers/tasks.py` 里的 `_BatchPredictTask.on_failure` 现在会把任何未捕获异常推到 WS `project:{id}:preannotate` 频道，前端 `progress.error` 分支可见——避免再出现「已排队后无响应」的体感 BUG（commit `4bf5bf6`）。
+worker 异常会通过任务状态、通知与前端查询兜底暴露。修改 worker task 签名或路由时，先在真实消费队列上验证，并确认没有把任务投到无人订阅的 `celery` 队列。
 
 ## 相关
 
-- commit: `4bf5bf6` fix(B-1): 预标 worker 异常推 WS + Docker rebuild/restart 规则
-- 文档：[`CLAUDE.md` §7](https://github.com/yyq19990828/ai-annotation-platform/blob/main/CLAUDE.md)
+- 文档：[后端基础设施](../concepts/backend-infrastructure#队列与订阅模型)
 - How-to：[调试 Celery](../how-to/debug-celery)

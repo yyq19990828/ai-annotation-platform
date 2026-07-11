@@ -103,6 +103,8 @@ class AuditAction(str, Enum):
     VIDEO_SEGMENT_RELEASE = "video_segment.release"
     VIDEO_TRACKER_JOB_CREATE = "video_tracker_job.create"
     VIDEO_TRACKER_JOB_CANCEL = "video_tracker_job.cancel"
+    VIDEO_TRACKER_JOB_ACCEPT = "video_tracker_job.accept"
+    VIDEO_TRACKER_JOB_DISCARD = "video_tracker_job.discard"
     VIDEO_CHAPTER_CREATE = "video_chapter.create"
     VIDEO_CHAPTER_UPDATE = "video_chapter.update"
     VIDEO_CHAPTER_DELETE = "video_chapter.delete"

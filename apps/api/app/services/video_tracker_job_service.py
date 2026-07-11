@@ -30,6 +30,10 @@ _TERMINAL_STATUSES = {
     VideoTrackerJobStatus.COMPLETED.value,
     VideoTrackerJobStatus.FAILED.value,
     VideoTrackerJobStatus.CANCELLED.value,
+    # v0.21.28 · 候选/接受: 追踪已完成 (待审/已接受/已丢弃) 均不可再「取消追踪」。
+    VideoTrackerJobStatus.PENDING_REVIEW.value,
+    VideoTrackerJobStatus.ACCEPTED.value,
+    VideoTrackerJobStatus.DISCARDED.value,
 }
 
 
@@ -220,6 +224,14 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
+    if row.status == VideoTrackerJobStatus.PENDING_REVIEW.value:
+        # 候选待审不是"运行中"任务, 不能 cancel; 让前端据 409 引导用户改用 discard,
+        # 而不是静默返回 200 让人以为取消没生效。
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Candidate awaiting review cannot be cancelled; discard it instead",
+        )
     if row.status not in _TERMINAL_STATUSES:
         now = _now()
         row.status = VideoTrackerJobStatus.CANCELLED.value
@@ -228,6 +240,73 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     await db.commit()
     await db.refresh(row)
     return _job_out(row)
+
+
+async def accept_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJobOut:
+    """v0.21.28 · 接受候选: 把 job.staged_result 应用到 annotation, status=ACCEPTED。"""
+    from app.services.video_tracker_runner import (
+        TrackerJobStateConflict,
+        accept_tracker_job as _apply,
+    )
+
+    try:
+        row = await _apply(db, job_id)
+    except TrackerJobStateConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    return _job_out(row)
+
+
+async def discard_tracker_job(
+    db: AsyncSession, job_id: uuid.UUID
+) -> VideoTrackerJobOut:
+    """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
+    from app.services.video_tracker_runner import (
+        TrackerJobStateConflict,
+        discard_tracker_job as _discard,
+    )
+
+    try:
+        row = await _discard(db, job_id)
+    except TrackerJobStateConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    return _job_out(row)
+
+
+async def list_reviewable_tracker_jobs(
+    db: AsyncSession,
+    *,
+    task: Task,
+    user: User,
+) -> list[VideoTrackerJobOut]:
+    """Return server-side candidates that the current workbench user can resume."""
+    conditions = [
+        VideoTrackerJob.task_id == task.id,
+        VideoTrackerJob.status.in_(
+            [
+                VideoTrackerJobStatus.PENDING_REVIEW.value,
+                VideoTrackerJobStatus.CANCELLED.value,
+            ]
+        ),
+        VideoTrackerJob.staged_result.is_not(None),
+    ]
+    if not await _is_privileged(db, task, user):
+        conditions.append(VideoTrackerJob.created_by == user.id)
+    rows = (
+        (
+            await db.execute(
+                select(VideoTrackerJob)
+                .where(*conditions)
+                .order_by(VideoTrackerJob.created_at.desc(), VideoTrackerJob.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [_job_out(row) for row in rows]
 
 
 def tracker_job_out(row: VideoTrackerJob) -> VideoTrackerJobOut:

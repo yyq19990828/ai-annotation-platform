@@ -16,6 +16,7 @@
 
 - [监控与告警](/ops/observability/) — Prometheus / Grafana 集成、Celery 任务监控、性能 HUD
 - [Celery Worker 卡死](/ops/runbooks/celery-worker-stuck) — worker 卡住、队列堆积、任务无法消费
+- [ML Backend 不可用](/ops/runbooks/ml-backend-down) — 模型服务不可达、健康检查失败或 GPU 加载异常
 - [视频帧服务排障](/ops/runbooks/video-frame-service) — frame cache、chunk smart-copy、视频 tracker job
 
 ### 安全

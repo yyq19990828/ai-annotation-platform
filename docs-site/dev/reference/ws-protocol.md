@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-29
+last_reviewed: 2026-07-11
 ---
 
 # WebSocket 协议
@@ -38,7 +38,7 @@ sequenceDiagram
 | 频道 | URL | 鉴权 | Redis 频道 | 用途 |
 |---|---|---|---|---|
 | 用户通知 | `/ws/notifications?token=<jwt>` | JWT (query param) | `notify:{user_id}` (`notification.py:27`) | 任务分配、AI 进度、导出完成、@提及 等 |
-| 预标注进度（单项目） | `/ws/projects/{project_id}/preannotate` | 无（依赖 cookie 会话） | `project:{project_id}:preannotate` (`ws.py:80`) | 工作台单次自动预标注的逐 batch progress |
+| 预标注进度（单项目） | `/ws/projects/{project_id}/preannotate` | 当前实现不校验 JWT | `project:{project_id}:preannotate` (`ws.py`) | 工作台单次自动预标注的逐 batch progress |
 | Batch 状态广播 | `/ws/batches/project/{project_id}` | 无（项目内非机密） | `project:{project_id}:batch` (`ws.py:112`) | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步 |
 | Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>` | JWT (query, `super_admin` / `project_admin`) | `global:prediction-jobs` (`ws.py:168`) | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条 |
 | 视频 tracker job | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验 | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `job_started / job_progress / frame_result / job_completed / job_failed / job_cancelled` 事件 |
@@ -60,7 +60,7 @@ ws://api.example.com/ws/notifications?token=eyJhbGciOi...
 
 服务端 `decode_access_token` 校验 sub 字段（`ws.py:80-88`）。失败立刻关闭 frame，code = `1008 Policy Violation`。
 
-> 为什么走 query 而不是 `Authorization` header：浏览器原生 `WebSocket` API 不允许设置自定义 header。如果前端用 `subprotocols` 走 token 也可以，但当前实现选 query 一致简单。HTTPS 下 query 字符串不进入 server access log（前端代理需配置脱敏）。
+> 为什么走 query 而不是 `Authorization` header：浏览器原生 `WebSocket` API 不允许设置自定义 header。如果前端用 `subprotocols` 走 token 也可以，但当前实现选 query 一致简单。query 参数可能进入反向代理或应用 access log，部署时必须对 `token` 脱敏。
 
 ### 2.2 消息格式
 
@@ -107,12 +107,9 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 ### 3.1 鉴权
 
-当前**没有**显式鉴权（`ws.py:48-67`）。依赖：
-- 浏览器自动带 cookie / origin（同源策略）
-- 反向代理层做 IP/origin 过滤
-- 这是项目级频道，泄露 project_id 的进度不算敏感
+当前**没有**显式鉴权。服务端不会读取 cookie、校验 Origin 或验证项目成员资格；只要能连到 WS 服务并知道 project UUID，就能订阅该频道。
 
-> 如果你的部署需要更严的鉴权（比如多租户隔离），后续会迁到 query JWT 模式与 `/ws/notifications` 对齐。
+> 这条兼容频道不应暴露在不可信网络。多租户或公网部署必须在反向代理层限制访问，或先把端点迁为与 `/ws/notifications` 一致的 JWT + 项目可见性校验。
 
 ### 3.2 消息格式
 
@@ -139,7 +136,7 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 ### 4.1 鉴权
 
-与 `/ws/projects/{id}/preannotate` 一致：**无显式 JWT**。Batch 状态不属于机密信息，且项目内成员（含标注员）都需要感知状态翻转 (B-15)；限超管会丢失多端同步语义。生产环境通过反向代理的 origin / 内网 IP 过滤兜底。
+与 `/ws/projects/{id}/preannotate` 一致：**当前无显式 JWT 或项目成员校验**。生产环境必须在反向代理层限制访问；不要把可猜测的 project UUID 当作访问控制。
 
 ### 4.2 消息格式
 
@@ -212,10 +209,14 @@ stateDiagram-v2
         step --> step: frame_result (每帧)
         step --> step: job_progress (窗口结束)
     }
-    processing --> job_completed: 全部窗口处理完
+    processing --> job_completed: 全部窗口处理完，候选待审
     processing --> job_failed: 出错（带 error）
     processing --> job_cancelled: DELETE / cancel_requested_at
-    job_completed --> [*]
+    job_completed --> review
+    review --> job_accepted
+    review --> job_discarded
+    job_accepted --> [*]
+    job_discarded --> [*]
     job_failed --> [*]
     job_cancelled --> [*]
 ```
@@ -227,19 +228,25 @@ job_started                            # 一次
   ↓
 (job_progress + frame_result)*         # 多次，frame_result 与 job_progress 并发
   ↓
-job_completed | job_failed | job_cancelled   # 一次，终止
+job_completed | job_failed | job_cancelled   # 推理阶段终止
+  ↓（completed / 有部分结果的 cancelled）
+job_accepted | job_discarded                  # 人工候选决策
 ```
 
 事件类型与触发点：
 
-| 事件 | 来源（行号） | 含义 |
+| 事件 | 来源 | 含义 |
 |---|---|---|
-| `job_started` | `video_tracker_runner.py:237` | tracker 进程已起，开始处理 |
-| `job_progress` | `video_tracker_runner.py:333` | 阶段性进度更新（窗口/帧/检查点） |
-| `frame_result` | `video_tracker_runner.py:327` | 单帧推理结果，包含框/掩码 payload |
-| `job_completed` | `video_tracker_runner.py:354` | 正常结束 |
-| `job_failed` | `video_tracker_runner.py:213` | 出错终止，带 `error` 字段 |
-| `job_cancelled` | `video_tracker_runner.py:308,346` | 用户取消或外部信号中止 |
+| `job_started` | `video_tracker_runner.py` | tracker 进程已起，开始处理 |
+| `job_progress` | `video_tracker_runner.py` | 阶段性进度更新（窗口/帧/检查点） |
+| `frame_result` | `video_tracker_runner.py` | 单帧推理结果，包含框/掩码 payload |
+| `job_completed` | `video_tracker_runner.py` | 正常结束，结果已暂存为待审候选，尚未写入 annotation |
+| `job_failed` | `video_tracker_runner.py` | 出错终止，带 `error` 字段 |
+| `job_cancelled` | `video_tracker_runner.py` | 用户取消或外部信号中止；若已有结果，可携带部分待审候选 |
+| `job_accepted` | `video_tracker_runner.py` | 用户接受候选，结果已写入源轨迹 / 新实例轨迹 |
+| `job_discarded` | `video_tracker_runner.py` | 用户丢弃候选，committed annotation 未改变 |
+
+`frame_result` 是运行期 live event，实例 id 可能仍是窗口内局部值；最终审阅必须以 `GET /video-tracker-jobs/{job_id}/preview` 返回的 staged result 为准。当前 Web 前端通过 HTTP accept / discard 主动完成决策，不依赖同一页面持续监听 `job_accepted / job_discarded`。
 
 > 旧版文档曾列出 `queued / window_progress / window_completed` 等事件，**这些事件在当前实现中不存在**；如有依赖需迁移到上表中的事件名。
 
@@ -285,7 +292,7 @@ JWT query param，`role ∈ {super_admin, project_admin}`，否则 close `1008`�
 `apps/web/src/hooks/useReconnectingWebSocket.ts` 是所有 WS 用法的基础：
 
 - 初始重连间隔 **1s**，每次失败 ×2，上限 **30s**（`useReconnectingWebSocket.ts:18,31`）
-- 最多重试 **8 次**（`useReconnectingWebSocket.ts:80-82`），超过后 silent fail（用户重新登录或手动刷新页面恢复）
+- 最多重试 **8 次**，超过后状态为 `failed`；URL 或 `enabled` 变化才会开启新一轮连接。
 - onOpen 回调可用于 `invalidateQueries` 补齐断线期间的状态
 
 接入方实现自定义客户端时，建议遵循同样的 backoff，避免风暴。

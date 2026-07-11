@@ -17,7 +17,7 @@ import pytest
 
 
 async def _create_two_unit_project(client, token: str) -> dict:
-    """通过 API POST /projects 建带 bbox + ai_interactive 两 unit 的项目, 两 unit 各一个 person."""
+    """通过 API POST /projects 建带 bbox + region 两 unit 的项目, 两 unit 各一个 person."""
     body = {
         "name": "rename-isolation",
         "type_label": "图像-检测",
@@ -28,7 +28,7 @@ async def _create_two_unit_project(client, token: str) -> dict:
                 "classes": [{"name": "person", "color": "#aaaaaa", "order": 0}],
                 "attribute_schema": {"fields": []},
             },
-            "ai_interactive": {
+            "region": {
                 "enabled": True,
                 "classes": [{"name": "person", "color": "#bbbbbb", "order": 0}],
                 "attribute_schema": {"fields": []},
@@ -62,10 +62,10 @@ async def test_rename_class_scoped_to_one_unit_leaves_other_intact(
     assert res.status_code == 200, res.text
     out = res.json()
     bbox_names = [c["name"] for c in out["tool_bindings"]["bbox"]["classes"]]
-    ai_names = [c["name"] for c in out["tool_bindings"]["ai_interactive"]["classes"]]
+    region_names = [c["name"] for c in out["tool_bindings"]["region"]["classes"]]
     assert bbox_names == ["pedestrian"]
-    # ai_interactive unit 的 person 不受影响 (强隔离).
-    assert ai_names == ["person"]
+    # region unit 的 person 不受影响 (强隔离).
+    assert region_names == ["person"]
 
 
 @pytest.mark.asyncio
@@ -82,7 +82,7 @@ async def test_rename_class_without_unit_id_changes_all_units(
     assert res.status_code == 200
     out = res.json()
     assert out["tool_bindings"]["bbox"]["classes"][0]["name"] == "ped"
-    assert out["tool_bindings"]["ai_interactive"]["classes"][0]["name"] == "ped"
+    assert out["tool_bindings"]["region"]["classes"][0]["name"] == "ped"
 
 
 @pytest.mark.asyncio

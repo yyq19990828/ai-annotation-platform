@@ -28,7 +28,13 @@ export function ModelCard({ item }: { item: FlatModel }) {
   const infra = effectiveInfra(m, item.backendInfra);
   const modalities = effectiveModalities(m, item.backendModalities);
   const geom = m.supported_geometric_outputs ?? [];
-  const attrs = m.output_attribute_types ?? [];
+  // 输出属性: schema 非空优先取其 label/key (rapidocr 等报结构化 schema, label 更友好);
+  // 否则回落扁平 output_attribute_types (gsam2 / sam3 / yolo 只报这个, schema 为空)。
+  // overview (/capabilities) 与 instances 两条数据路径统一在此判定, 保持一致。
+  const attrs =
+    m.output_attribute_schema && m.output_attribute_schema.length > 0
+      ? m.output_attribute_schema.map((s) => s.label || s.key)
+      : m.output_attribute_types ?? [];
   const variantGroups = (m.supported_variants ?? []).filter(
     (g) => Array.isArray(g.variants) && g.variants.length > 0,
   );
@@ -165,17 +171,17 @@ export function ModelCard({ item }: { item: FlatModel }) {
         )}
       </Row>
 
-      <Row label="资源">
-        {resourceEntries.length > 0 ? (
-          resourceEntries.map(([k, v]) => (
+      {/* device / batchable 已升级为顶部徽标; 资源行只留余项 (vram 等)。backend 未上报
+          任何余项时整行隐藏, 而非显示恒为「—」的空行 (那会让人误以为资源信息缺失)。 */}
+      {resourceEntries.length > 0 && (
+        <Row label="资源">
+          {resourceEntries.map(([k, v]) => (
             <span key={k} className={TAG_CLASS}>
               {k}: {String(v)}
             </span>
-          ))
-        ) : (
-          <span className={TAG_CLASS}>—</span>
-        )}
-      </Row>
+          ))}
+        </Row>
+      )}
 
       {variantGroups.length > 0 && (
         <div className="flex flex-col gap-1.5 border-t border-dashed border-border pt-1">

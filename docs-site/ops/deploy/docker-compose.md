@@ -95,6 +95,7 @@ graph TB
 | `MINIO_BUCKET` | `annotations` | 主标注文件桶（图像 / 视频帧）。 |
 | `MINIO_DATASETS_BUCKET` | `datasets` | 上传 dataset 桶。 |
 | `MINIO_BUG_REPORTS_BUCKET` | `bug-reports` | bug 反馈附件桶。 |
+| `MINIO_DATA_DIR` | `miniodata` | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。 |
 | `MINIO_PUBLIC_URL` | 空 | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。 |
 | `MINIO_USE_SSL` | `false` | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。 |
 | `ML_BACKEND_STORAGE_HOST` | 空 | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
@@ -182,13 +183,15 @@ v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权�
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `HF_TOKEN` **必填** | 空 | sam3（图像）与 sam3.1（视频，预留）权重均为 gated repo（合计 ~6.6GB），首次启动下载必须带；`start_period=180s`。 |
+| `SAM3_DOWNLOAD_VIDEO` | `1` | 启动时是否下载 sam3.1 视频权重与 config；设 `0` 可只运行图像能力，但 `sam3_video*` 调用会不可用。 |
 | `SAM3_EMBEDDING_CACHE_SIZE` | `32` | 图像 embedding LRU 缓存条数。 |
 | `SAM3_SCORE_THRESHOLD` | `0.5` | 检测置信度阈值；召回不足下调、误检多上调。 |
 | `SAM3_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒自动卸载释放显存（sam3 ~7GB FP16，与 grounded-sam2 并存时强烈建议保留）；`<=0` 关闭。前缀与 grounded-sam2 的 `IDLE_*` 解耦，可独立调。 |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | 空闲判断轮询间隔（秒）。 |
+| `SAM3_GPU_DEVICE_ID` | `1` | Compose 绑定的物理 GPU。默认与其它 backend 错开到卡 1；单卡机器必须改为 `0`。 |
 
-> 镜像基础 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（比 grounded-sam2 的 2.3.1-cuda12.1 更新，注意宿主 nvidia 驱动需支持 CUDA 12.8）。
+> 镜像基础 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（比 grounded-sam2 的 2.3.1-cuda12.1 更新，注意宿主 nvidia 驱动需支持 CUDA 12.8）。`docker-compose.ml.yml` 会显式透传 `SAM3_DOWNLOAD_VIDEO`；修改 `.env` 后需 recreate `sam3-backend`。
 
 ### 2.9 部署环境
 
@@ -487,7 +490,7 @@ ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本�
 
 ### docker compose 启用 GPU service
 
-三个 backend 定义在叠加文件 `docker-compose.ml.yml`（从基础 `docker-compose.yml` 拆出，profile-gated 且与核心 infra 无 depends_on / 不共享数据卷），各有独立 profile，可单独启用也可并存。启用时须同时 `-f` 两个文件：
+五个 backend 定义在叠加文件 `docker-compose.ml.yml`（从基础 `docker-compose.yml` 拆出，profile-gated 且与核心 infra 无 depends_on），各有独立 profile，可单独启用也可并存。启用时须同时 `-f` 两个文件：
 
 ```bash
 # 默认不启任何 GPU service（基础栈不含 ML backend，节约本地资源）
@@ -501,6 +504,12 @@ docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3
 
 # 启 yolo（profile gpu-yolo，端口 8003）
 docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo up -d yolo-backend
+
+# 启 ONNXTools（profile gpu-onnxtools，端口 8004）
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-onnxtools up -d onnxtools-backend
+
+# 启 RapidOCR（profile gpu-rapidocr，端口 8005）
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapidocr up -d rapidocr-backend
 ```
 
 > 嫌每次敲两个 `-f` 麻烦，可在 shell 或 `.env` 固化 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml`，之后 `docker compose --profile gpu up -d grounded-sam2-backend` 即可（profile-gated 不影响默认 `docker compose up`）。
@@ -508,8 +517,8 @@ docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo
 要点：
 
 - 镜像基础：grounded-sam2 = `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`，sam3 = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（**devel 必需**：GroundingDINO 算子要 nvcc 现场编译；sam3 的 CUDA 12.8 要求宿主驱动够新）
-- nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit
-- healthcheck `start_period`：grounded-sam2 `120s`（冷启加载 ~80-100s）、sam3 `180s`（下载 ~3.2GB gated 权重）
+- nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit。默认 grounded-sam2 / yolo / onnxtools / rapidocr 用卡 0，sam3 用卡 1；单卡机器设置 `SAM3_GPU_DEVICE_ID=0`。
+- healthcheck `start_period`：grounded-sam2 `120s`（冷启加载 ~80-100s）、sam3 `180s`（首次启动默认下载图像 + 视频约 6.6GB gated 权重）
 - 显存 / 变体相关 env 见 §2.8（grounded-sam2）与 §2.8.1（sam3）；两者 `IDLE_*` / `MODEL_POOL_*` 前缀解耦，可独立调
 
 ### dev 跨容器存储访问（`ML_BACKEND_STORAGE_HOST`）
@@ -543,7 +552,7 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
 }
 ```
 
-两个 backend 的 `/metrics`（GPU 利用率/显存/温度/功耗、推理延迟、cache 命中、容器 CPU/内存）由 Prometheus 的 `ml-backends` job **自动发现并抓取**（v0.11.19）：该 job 用 `http_sd_config` 从 anno-api 的 `/api/v1/internal/metrics-targets` 拉 target，真相源是 `ml_backends` 表 —— **新 backend 在超管注册即被纳入，无需改 `prometheus.yml`**。指标统一为裸名 + `service` label 区分 backend，Grafana 的 `ML Backends` dashboard（v0.11.20）据此渲染。backend 在独立 GPU 机、prometheus 不在同网时，改用该 job 里注释好的 static 兜底。`/cache/stats` 仍单独提供更细的 LRU 内部状态。
+各 backend 的 `/metrics`（GPU 利用率/显存/温度/功耗、推理延迟、cache 命中、容器 CPU/内存）由 Prometheus 的 `ml-backends` job **自动发现并抓取**：该 job 用 `http_sd_config` 从 anno-api 的 `/api/v1/internal/metrics-targets` 拉 target，真相源是 `ml_backend_registry` —— **新 backend 在超管注册即被纳入，无需改 `prometheus.yml`**。指标统一为裸名 + `service` label 区分 backend，Grafana 的 `ML Backends` dashboard 据此渲染。backend 在独立 GPU 机、prometheus 不在同网时，改用该 job 里注释好的 static 兜底。`/cache/stats` 仍单独提供更细的 LRU 内部状态。
 
 > 这套 Prometheus/Grafana 与超管「模型市场」的实时 PerfHud 是**两套通道、同一数据源**（`/metrics` vs `/health` 共用同一次采样）：PerfHud 管"实时一眼看"，Prometheus 管"历史趋势 + 告警"。详见 [可观测性](/ops/observability/)。
 

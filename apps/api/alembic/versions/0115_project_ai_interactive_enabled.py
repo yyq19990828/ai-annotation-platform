@@ -18,15 +18,22 @@ projects.tool_bindings。它并不产出独有几何 —— smart-point / smart-
 - annotations.tool_unit_id 从 'ai_interactive' 按其几何类型改归正确单位
   (polygon 系 -> region, 其余 -> bbox)。
 
-不处理的两处 (刻意):
-- projects.tool_bindings 里可能残留的 'ai_interactive' key 保持原样。删除它会丢掉
-  该 binding 下已配的 classes/attribute_schema; 而 ai_interactive 移出前端
-  TOOL_UNIT_GROUPS 后, 该 key 不再被任何 UI 读取, 留着无害。
-- predictions.tool_unit_id: 交互式 AI 候选不落 Prediction (走前端 state, 采纳时直接
-  建 Annotation), 故该表不会出现 'ai_interactive'。
+本迁移不动 predictions.tool_unit_id 与 projects.tool_bindings 里可能残留的
+'ai_interactive' —— 那两处的存量清理 (predictions 分批回填 + tool_bindings 里
+ai_interactive 单位的 classes/attributes 合并进 region/bbox) 由后续迁移 0116
+`retire_ai_interactive_tool_unit` 承接, 与「从 ToolUnitId 字面量删除该值」同批落地。
 
 downgrade 仅删列。数据不可逆: 迁移后无法区分哪些 region/bbox 标注原本是 ai_interactive,
 且它们归入 region/bbox 本就是语义正确的归属, 无需回滚。
+
+annotations.tool_unit_id 回填分批 (RETIRE_BATCH_SQL) 而非一条裸 UPDATE 的原因:
+该列**全程无索引** (0072 建列时未建, 至今无迁移补过), 生产大表上一条
+`UPDATE ... WHERE tool_unit_id='ai_interactive'` 是一次全表 seq scan + 单事务持锁写,
+批量转换期间会长时间阻塞在线读写。改成按 PK 游标 `LIMIT :batch_size FOR UPDATE` 分批
+(照抄 0103_workbench_prefs_subtrees 的 _run_batches 写法): 每条 UPDATE 只锁至多
+一批行, 转换完的行不再命中 WHERE, 循环到某批 rowcount<1 收尾。CASE 归属语义与原裸
+UPDATE 完全一致 (polygon 系 -> region, 其余 -> bbox)。零 ai_interactive 行时首轮即
+rowcount=0 直接 break (dev 库 0115 已跑, 此处对 dev 是空跑)。
 """
 
 from __future__ import annotations
@@ -39,6 +46,36 @@ down_revision = "0114"
 branch_labels = None
 depends_on = None
 
+BATCH_SIZE = 5000
+
+# 与原裸 UPDATE 的 CASE 归属逐字一致; 只是包进 PK 游标分批, 限制单批持锁行数。
+RETIRE_BATCH_SQL = """
+WITH batch AS (
+    SELECT id FROM annotations
+    WHERE tool_unit_id = 'ai_interactive'
+    LIMIT :batch_size
+    FOR UPDATE
+)
+UPDATE annotations a
+SET tool_unit_id = CASE
+    WHEN a.geometry->>'type' IN (
+        'polygon', 'multi_polygon', 'mask',
+        'video_polygon', 'video_track_polygon'
+    ) THEN 'region'
+    ELSE 'bbox'
+END
+FROM batch b
+WHERE a.id = b.id
+"""
+
+
+def _run_batches(sql: str) -> None:
+    bind = op.get_bind()
+    while True:
+        result = bind.execute(sa.text(sql), {"batch_size": BATCH_SIZE})
+        if result.rowcount < 1:
+            break
+
 
 def upgrade() -> None:
     op.add_column(
@@ -50,20 +87,8 @@ def upgrade() -> None:
             server_default=sa.text("true"),
         ),
     )
-    # AI 采纳的标注按几何类型归回正确工具单位。
-    op.execute(
-        """
-        UPDATE annotations
-        SET tool_unit_id = CASE
-            WHEN geometry->>'type' IN (
-                'polygon', 'multi_polygon', 'mask',
-                'video_polygon', 'video_track_polygon'
-            ) THEN 'region'
-            ELSE 'bbox'
-        END
-        WHERE tool_unit_id = 'ai_interactive'
-        """
-    )
+    # AI 采纳的标注按几何类型归回正确工具单位 (无索引大表 -> 分批, 见模块 docstring)。
+    _run_batches(RETIRE_BATCH_SQL)
 
 
 def downgrade() -> None:

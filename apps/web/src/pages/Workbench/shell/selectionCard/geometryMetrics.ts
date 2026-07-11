@@ -214,10 +214,13 @@ export function geometryMetrics(
   imgH: number | null,
 ): Metric[] {
   switch (geometry.type) {
+    // v0.21.26 · 视频单帧几何 (video_bbox/rotated/polygon/polyline) 与图片同形状几何载荷一致,
+    // 直接直落到对应图片 case 复用同一套指标 (case 间无中间语句, 满足 no-fallthrough)。
     case "bbox":
     case "video_bbox":
       return bboxMetrics(geometry.x, geometry.y, geometry.w, geometry.h, imgW, imgH);
     case "rotated_bbox":
+    case "video_rotated_bbox":
       return rotatedMetrics(
         geometry.cx,
         geometry.cy,
@@ -228,10 +231,12 @@ export function geometryMetrics(
         imgH,
       );
     case "polygon":
+    case "video_polygon":
       return polygonMetrics(geometry.points, geometry.holes, imgW, imgH);
     case "multi_polygon":
       return multiPolygonMetrics(geometry.polygons, imgW, imgH);
     case "polyline":
+    case "video_polyline":
       return polylineMetrics(geometry.points, imgW, imgH);
     case "keypoint":
       return keypointMetrics(geometry.points);

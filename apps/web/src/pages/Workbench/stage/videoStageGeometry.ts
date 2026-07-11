@@ -101,6 +101,54 @@ export function isVideoPolylineTrack(
   return ann.geometry.type === "video_track_polyline";
 }
 
+/**
+ * v0.21.26 · 视频几何「联合」判定 helper —— 消除管理层(选中卡 / 右键菜单 / 删除)各处
+ * 散落的 bbox-only 硬编码。渲染层早已全类型覆盖(videoFrameViews),这些 helper 让选中后的
+ * 信息 / 操作也覆盖 polygon / polyline / 旋转框及其 track 变体。
+ */
+
+/** 任意视频单帧几何 (bbox / polygon / polyline / rotated_bbox), 非 track。 */
+export function isAnyVideoSingleFrame(ann: AnnotationResponse): boolean {
+  return isVideoBbox(ann) || isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
+}
+
+/** 单帧「点集 / 旋转」几何 (polygon / polyline / rotated_bbox), 排除 bbox (bbox 有专属交互)。 */
+export function isVideoPointsSingleFrame(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & {
+  geometry: VideoPolygonGeometry | VideoPolylineGeometry | VideoRotatedBboxGeometry;
+} {
+  return isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
+}
+
+/** 任意视频轨迹几何 (bbox / polygon / polyline track)。 */
+export function isAnyVideoTrack(ann: AnnotationResponse): boolean {
+  return isVideoTrack(ann) || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann);
+}
+
+/** 点集轨迹 (polygon / polyline track), 排除 bbox track (bbox track 有完整关键帧卡)。 */
+export function isVideoPointsTrack(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & {
+  geometry: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+} {
+  return isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann);
+}
+
+/** 点集轨迹在某帧的顶点 (精确关键帧 / 插值 / outside→最近关键帧兜底)。供简化点集轨迹卡指标。 */
+export function resolvePointsTrackAtFrame(
+  ann: AnnotationResponse & { geometry: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry },
+  frameIndex: number,
+): { points: [number, number][]; open: boolean } | null {
+  const open = ann.geometry.type === "video_track_polyline";
+  const resolved = open
+    ? resolveVideoPolylineTrackAtFrame(ann.geometry as VideoTrackPolylineGeometry, frameIndex)
+    : resolveVideoPolygonTrackAtFrame(ann.geometry as VideoTrackPolygonGeometry, frameIndex);
+  if (resolved) return { points: resolved.points, open };
+  const nearest = nearestPointsTrackKeyframe(ann.geometry, frameIndex);
+  return nearest ? { points: nearest.points, open } : null;
+}
+
 type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };
 type TrackIndex = {
   keyframes: VideoTrackKeyframe[];
@@ -459,6 +507,31 @@ export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: numb
   const before = keyframes[afterIndex - 1];
   const after = keyframes[afterIndex];
   return Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
+}
+
+/**
+ * polygon/polyline track 在某帧无实框时的「参考顶点」: 取最近可见关键帧的 points。
+ * 与 bbox 的 nearestTrackKeyframe 对齐, 供点集轨迹的 ghost / carry-over 参考虚影使用。
+ */
+export function nearestPointsTrackKeyframe(
+  track: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry,
+  frameIndex: number,
+): { points: Point[]; originFrame: number } | null {
+  const outsideRanges = normalizeOutsideRanges(track.outside ?? []);
+  const visible = [...track.keyframes]
+    .sort((a, b) => a.frame_index - b.frame_index)
+    .filter((kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+  if (visible.length === 0) return null;
+  const afterIndex = lowerBound(visible, frameIndex, (kf) => kf.frame_index);
+  let nearest: VideoTrackPolygonKeyframe | VideoTrackPolylineKeyframe;
+  if (afterIndex <= 0) nearest = visible[0];
+  else if (afterIndex >= visible.length) nearest = visible[visible.length - 1];
+  else {
+    const before = visible[afterIndex - 1];
+    const after = visible[afterIndex];
+    nearest = Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
+  }
+  return { points: nearest.points.map((p) => [p[0], p[1]] as Point), originFrame: nearest.frame_index };
 }
 
 export interface TrackReferenceResult {

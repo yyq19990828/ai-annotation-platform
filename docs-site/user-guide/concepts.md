@@ -1,3 +1,11 @@
+---
+title: 平台概念与术语
+audience: [annotator, reviewer, project_admin, super_admin]
+type: reference
+status: stable
+last_reviewed: 2026-07-11
+---
+
 # 平台概念与术语
 
 本页统一定义平台中常见的核心名词，避免在不同章节出现歧义。

@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-06
+last_reviewed: 2026-07-11
 ---
 
 # 环境变量参考
@@ -55,6 +55,7 @@ last_reviewed: 2026-07-06
 | `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
 | `MINIO_IMPORT_BUCKET` | `import` | 导入预标注产物桶（7 天 lifecycle，短生命周期） |
 | `MINIO_EXPORT_BUCKET` | `export` | 导出标注产物桶（7 天 lifecycle，短生命周期） |
+| `MINIO_DATA_DIR` | `/mnt/fast-disk/ai-annotation-platform/minio` | 可选：把 MinIO 数据目录 bind 到宿主机路径，用于测试不同磁盘的对象存储性能。 留空时继续使用 Docker 托管的 miniodata 命名卷。 |
 | `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
 
 ## ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
@@ -100,6 +101,7 @@ last_reviewed: 2026-07-06
 | `VIDEO_SEGMENT_SIZE_FRAMES` | `18000` | 每个协作 segment 包含的帧数。30fps 下默认 18000 帧约等于 10 分钟。 |
 | `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | `300` | segment claim/heartbeat 锁 TTL，单位秒。 |
 | `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | `300` | AI tracker 调 ML Backend 时单次请求最多覆盖的帧数；长区间会由 worker 自动分窗，降低 GPU OOM 风险。 |
+| `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES` | `16` | SAM3 视频 tracker（sam3_video 文本 multiplex / sam3_video_interactive PVS）专用的更小分窗；视频前向显存随窗口近似线性增长（文本 multiplex 实测 ~0.85GB/帧、16 帧 ~18.9GB、41 帧即 OOM@24GB）。仅对 SAM3 系生效；不动 sam2 的窗口。24GB 卡若与图像 sam3.pt 常驻并存建议再降到 ~12。 |
 | `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | `0.15` | AI tracker 返回 confidence 低于该阈值时，后端按 outside prediction range 写回而不是生成 keyframe。 |
 | `TRACKER_SOFT_TIME_LIMIT_SECONDS` | `1800` | detect-then-track 批量预标注 tracker 阶段的 soft 超时（秒）。tracker 整段跑帧耗时远超逐帧检测，与 YOLO_TRACKER_MAX_FRAMES 帧上限双保险，防单个追踪 job 长时间占住 worker；仅对含 tracker 阶段的 job 施加。 |
 | `FRAME_PREANNOTATE_MAX_FRAMES` | `900` | 单帧分支批量逐帧预标注（execution_unit=frame）：每个视频 task 逐帧的帧数上限（对齐 YOLO_TRACKER_MAX_FRAMES），超限截断，防长视频 × 全帧 × 多框砸库。 |
@@ -214,13 +216,24 @@ last_reviewed: 2026-07-06
 | `HF_TOKEN` | `hf_xxxxxxxxxxxx` | ⚠️ HF_TOKEN 必填: facebook/sam3 (图像 PCS + inst) 与 facebook/sam3.1 (视频权重, 预留) 均为 gated repo, 必须先分别在 HuggingFace 接受 license (https://huggingface.co/facebook/sam3 与 https://huggingface.co/facebook/sam3.1), 再创建 read-only token (https://huggingface.co/settings/tokens) 填到这里. |
 | `SAM3_IMAGE_HF_REPO_ID` | `facebook/sam3` | 图像模型 (实际 /predict 加载) 仓库与权重文件; 默认 sam3.pt (3.0, 官方 image+inst 路径). |
 | `SAM3_IMAGE_CHECKPOINT_FILE` | `sam3.pt` | — |
-| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | 视频 multiplex 仓库与权重文件 (一并落盘, 预留后续视频追踪). |
+| `SAM3_DOWNLOAD_VIDEO` | `1` | 视频 multiplex 仓库与权重文件; 容器启动时默认一并拉取 (~3.2GB, 需 facebook/sam3.1 license). 设为 0 可关闭 (仅用图像交互, 不需要 sam3.1 license). |
+| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | — |
 | `SAM3_CHECKPOINT_FILE` | `sam3.1_multiplex.pt` | — |
 | `SAM3_EMBEDDING_CACHE_SIZE` | `32` | Embedding cache LRU 容量; A100 充裕可调到 64, 4060 别部 sam3. |
 | `SAM3_SCORE_THRESHOLD` | `0.5` | SAM 3 PCS text / exemplar 路径 score 过滤阈值; 召回不足下调到 0.3, 误检多调到 0.6. |
 | `SAM3_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
+
+## ML Backend GPU 分卡 (多卡机器可选)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `GSAM2_GPU_DEVICE_ID` | `0` | 各 GPU profile backend 固定绑定的物理显卡号 (docker-compose.ml.yml 的 deploy.reservations.devices.device_ids, 同时作为容器内 NVIDIA_VISIBLE_DEVICES)。 默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 占卡 0、SAM3 占卡 1, 双卡机器可错开显存。 单卡机器必须把 SAM3_GPU_DEVICE_ID 覆盖成 0, 否则容器找不到卡 1 起不来。 |
+| `SAM3_GPU_DEVICE_ID` | `1` | — |
+| `YOLO_GPU_DEVICE_ID` | `0` | — |
+| `ONNXTOOLS_GPU_DEVICE_ID` | `0` | — |
+| `RAPIDOCR_GPU_DEVICE_ID` | `0` | — |
 
 ## DuckDB 离线分析视图
 

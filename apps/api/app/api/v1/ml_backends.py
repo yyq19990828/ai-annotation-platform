@@ -6,7 +6,12 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, require_roles
+from app.deps import (
+    get_db,
+    require_roles,
+    require_project_visible,
+    require_project_owner,
+)
 from app.db.enums import UserRole
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.user import User
@@ -61,7 +66,12 @@ def _resolve_task_url(task: Task) -> str:
     return storage.rewrite_host_for_ml_backend(url)
 
 
-@router.post("", response_model=MLBackendOut, status_code=201)
+@router.post(
+    "",
+    response_model=MLBackendOut,
+    status_code=201,
+    dependencies=[Depends(require_project_owner)],
+)
 async def create_ml_backend(
     project_id: uuid.UUID,
     data: MLBackendCreate,
@@ -105,7 +115,11 @@ async def create_ml_backend(
     return _out(backend, project_id)
 
 
-@router.get("", response_model=list[MLBackendOut])
+@router.get(
+    "",
+    response_model=list[MLBackendOut],
+    dependencies=[Depends(require_project_visible)],
+)
 async def list_ml_backends(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -118,7 +132,11 @@ async def list_ml_backends(
     return [_out(b, project_id) for b in backends]
 
 
-@router.get("/available", response_model=ProjectMLBackendList)
+@router.get(
+    "/available",
+    response_model=ProjectMLBackendList,
+    dependencies=[Depends(require_project_visible)],
+)
 async def list_available_ml_backends(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -142,7 +160,11 @@ async def list_available_ml_backends(
     return ProjectMLBackendList(items=items)
 
 
-@router.put("/{backend_id}/enablement", response_model=ProjectMLBackendItem)
+@router.put(
+    "/{backend_id}/enablement",
+    response_model=ProjectMLBackendItem,
+    dependencies=[Depends(require_project_owner)],
+)
 async def set_ml_backend_enablement(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -190,7 +212,11 @@ async def set_ml_backend_enablement(
     )
 
 
-@router.get("/{backend_id}", response_model=MLBackendOut)
+@router.get(
+    "/{backend_id}",
+    response_model=MLBackendOut,
+    dependencies=[Depends(require_project_visible)],
+)
 async def get_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -206,7 +232,11 @@ async def get_ml_backend(
     return _out(backend, project_id)
 
 
-@router.put("/{backend_id}", response_model=MLBackendOut)
+@router.put(
+    "/{backend_id}",
+    response_model=MLBackendOut,
+    dependencies=[Depends(require_project_owner)],
+)
 async def update_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -239,7 +269,11 @@ async def update_ml_backend(
     return _out(backend, project_id)
 
 
-@router.delete("/{backend_id}", status_code=204)
+@router.delete(
+    "/{backend_id}",
+    status_code=204,
+    dependencies=[Depends(require_project_owner)],
+)
 async def delete_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -267,7 +301,10 @@ async def delete_ml_backend(
     await db.commit()
 
 
-@router.post("/{backend_id}/unload")
+@router.post(
+    "/{backend_id}/unload",
+    dependencies=[Depends(require_project_owner)],
+)
 async def unload_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -297,7 +334,10 @@ async def unload_ml_backend(
     return result
 
 
-@router.post("/{backend_id}/reload")
+@router.post(
+    "/{backend_id}/reload",
+    dependencies=[Depends(require_project_owner)],
+)
 async def reload_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -345,7 +385,10 @@ async def reload_ml_backend(
     return result
 
 
-@router.post("/{backend_id}/warmup")
+@router.post(
+    "/{backend_id}/warmup",
+    dependencies=[Depends(require_project_owner)],
+)
 async def warmup_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -421,7 +464,10 @@ async def _fetch_setup_cached(backend, backend_id: uuid.UUID) -> dict:
     return data
 
 
-@router.get("/{backend_id}/setup")
+@router.get(
+    "/{backend_id}/setup",
+    dependencies=[Depends(require_project_visible)],
+)
 async def get_ml_backend_setup(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -442,7 +488,11 @@ async def get_ml_backend_setup(
     return await _fetch_setup_cached(backend, backend_id)
 
 
-@router.get("/{backend_id}/capabilities", response_model=BackendCapabilities)
+@router.get(
+    "/{backend_id}/capabilities",
+    response_model=BackendCapabilities,
+    dependencies=[Depends(require_project_visible)],
+)
 async def get_ml_backend_capabilities(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -465,7 +515,11 @@ async def get_ml_backend_capabilities(
     return extract_capabilities(setup) or {}
 
 
-@router.post("/{backend_id}/capabilities/refresh", response_model=BackendCapabilities)
+@router.post(
+    "/{backend_id}/capabilities/refresh",
+    response_model=BackendCapabilities,
+    dependencies=[Depends(require_project_owner)],
+)
 async def refresh_ml_backend_capabilities(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -486,7 +540,11 @@ async def refresh_ml_backend_capabilities(
     return extract_capabilities(setup) or {}
 
 
-@router.post("/{backend_id}/health", response_model=MLBackendHealthResponse)
+@router.post(
+    "/{backend_id}/health",
+    response_model=MLBackendHealthResponse,
+    dependencies=[Depends(require_project_owner)],
+)
 async def check_health(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -529,7 +587,10 @@ async def _require_ai_interactive_enabled(
         )
 
 
-@router.post("/{backend_id}/predict-test")
+@router.post(
+    "/{backend_id}/predict-test",
+    dependencies=[Depends(require_project_owner)],
+)
 async def predict_test(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -556,7 +617,10 @@ async def predict_test(
     }
 
 
-@router.post("/{backend_id}/interactive-annotating")
+@router.post(
+    "/{backend_id}/interactive-annotating",
+    dependencies=[Depends(require_project_visible)],
+)
 async def interactive_annotating(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -600,7 +664,10 @@ async def interactive_annotating(
     }
 
 
-@router.post("/{backend_id}/predict-frame")
+@router.post(
+    "/{backend_id}/predict-frame",
+    dependencies=[Depends(require_project_visible)],
+)
 async def predict_frame(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
@@ -700,7 +767,10 @@ async def predict_frame(
     }
 
 
-@router.post("/{backend_id}/interactive-annotating-frame")
+@router.post(
+    "/{backend_id}/interactive-annotating-frame",
+    dependencies=[Depends(require_project_visible)],
+)
 async def interactive_annotating_frame(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,

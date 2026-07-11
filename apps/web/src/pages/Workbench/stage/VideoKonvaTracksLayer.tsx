@@ -101,7 +101,22 @@ export function VideoKonvaTracksLayer({
           visual={visual}
         />
       ))}
-      {ghost && (() => {
+      {ghost && ghost.points && (
+        <Line
+          name="video-track-ghost"
+          points={ghost.points.flatMap(([px, py]) => [px * size.w, py * size.h])}
+          closed={!ghost.open}
+          stroke={colorToHex(ghost.color)}
+          strokeWidth={screenToWorld(strokeWidthFor(false, visual), scale)}
+          dash={[6 / scale, 4 / scale]}
+          lineCap="round"
+          lineJoin="round"
+          fill={ghost.open ? undefined : hexToRgba(colorToHex(ghost.color), 0.05)}
+          opacity={0.6}
+          listening={false}
+        />
+      )}
+      {ghost && !ghost.points && (() => {
         const hex = colorToHex(ghost.color);
         const stroke = screenToWorld(strokeWidthFor(false, visual), scale);
         // kalman 模式:在参考框外画一圈淡色误差椭圆——半轴 = 框半宽高 + 2σ(≈95% 置信),
@@ -144,6 +159,24 @@ export function VideoKonvaTracksLayer({
       {(carryOverGhosts ?? []).map((g) => {
         const hex = colorToHex(g.color);
         const stroke = screenToWorld(strokeWidthFor(false, visual), scale);
+        // 点集轨迹的续写虚影按各自几何画轮廓/折线; bbox 轨迹画外接框(现状)。
+        if (g.points) {
+          return (
+            <Line
+              key={`carryover-${g.id}`}
+              name="video-track-carryover-ghost"
+              points={g.points.flatMap(([px, py]) => [px * size.w, py * size.h])}
+              closed={!g.open}
+              stroke={hex}
+              strokeWidth={stroke}
+              dash={[3 / scale, 5 / scale]}
+              lineCap="round"
+              lineJoin="round"
+              opacity={0.34}
+              listening={false}
+            />
+          );
+        }
         return (
           <Rect
             key={`carryover-${g.id}`}

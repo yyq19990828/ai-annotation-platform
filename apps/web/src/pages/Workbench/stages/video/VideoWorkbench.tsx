@@ -69,7 +69,9 @@ export interface VideoWorkbenchProps {
   onSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
   samActiveIdx?: number;
-  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
+  /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
+  samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   samPolarity?: "positive" | "negative";
   onCreatePoints?: (
     type: "video_polygon" | "video_polyline",
@@ -136,6 +138,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     samCandidates,
     samActiveIdx,
     samSessionPoints,
+    samSessionBoxes,
     samPolarity,
     onPendingDraw,
     onUpdate,
@@ -201,6 +204,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         samCandidates={samCandidates}
         samActiveIdx={samActiveIdx}
         samSessionPoints={samSessionPoints}
+        samSessionBoxes={samSessionBoxes}
         samPolarity={samPolarity}
         onCreatePoints={onCreatePoints}
         onPendingDraw={onPendingDraw}

@@ -3,7 +3,7 @@ audience: [annotator, project_admin, reviewer, super_admin]
 type: tutorial
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 快速开始
@@ -16,6 +16,12 @@ last_reviewed: 2026-06-10
 
 ![登录页](./images/getting-started/login.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 登录页全屏；标注红框：邮箱输入、密码输入、登录按钮、「忘记密码」链接。1920×1080，浏览器框架可保留。 -->
+
+浅色、深色和窄屏视图的登录入口相同；部署的主题或浏览器宽度不同时可参考对应界面：
+
+![登录页（深色主题）](./images/getting-started/login.dark.png)
+
+![登录页（窄屏）](./images/getting-started/login.mobile.png)
 
 如果忘记了密码，点击登录页的「忘记密码」会跳到重置流程：
 
@@ -31,7 +37,7 @@ last_reviewed: 2026-06-10
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/getting-started/annotator-dashboard.png — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮 -->
 
-登录后默认进入 Dashboard，根据角色展示不同面板。以下为**标注员视角**的主要区块：
+登录后会按角色进入对应的首页面板；超级管理员默认进入「平台概览」，其他角色进入各自的 Dashboard。以下为**标注员视角**的主要区块：
 
 | 区块 | 内容 |
 |---|---|
@@ -47,7 +53,7 @@ last_reviewed: 2026-06-10
 
 ## 3. 接受第一个任务
 
-1. Dashboard 左侧导航点「标注」，或在项目卡片右下角点「**打开**」
+1. 左侧导航点「标注工作」，或在项目卡片右下角点「**打开**」
 2. 系统按队列分配一条未处理任务，进入「标注工作台」
 3. 完成后点「提交」→ 自动加载下一条
 

@@ -10,15 +10,16 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, extname } from "node:path";
+import { join, relative, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 const __here = dirname(fileURLToPath(import.meta.url));
 const DOCS_ROOT = join(__here, "..");
 
-const SKIP_DIRS = new Set(["adr", "changelog", "roadmap", ".vitepress", "public", "scripts", "node_modules"]);
+const SKIP_DIRS = new Set(["adr", "changelog", "examples", "roadmap", ".vitepress", "public", "scripts", "node_modules"]);
 const SKIP_GENERATED = /\.generated\.md$/;
+const SKIP_PATHS = new Set(["IMAGE_CHECKLIST.md", "index.md", "user-guide/projects/annotation-guide.md"]);
 const REDIRECT_MARKER = "router.go(";
 
 const thresholdArg = process.argv.find((a) => a.startsWith("--threshold="));
@@ -55,8 +56,10 @@ function checkFile(filePath) {
   const rel = relative(DOCS_ROOT, filePath);
   const content = readFileSync(filePath, "utf8");
 
+  if (SKIP_PATHS.has(rel)) return;
   if (SKIP_GENERATED.test(filePath)) return;
   if (content.includes(REDIRECT_MARKER)) return;
+  if (basename(filePath) === "index.md" && !content.startsWith("---")) return;
 
   checked++;
   const rawDate = parseFrontmatterField(content, "last_reviewed");

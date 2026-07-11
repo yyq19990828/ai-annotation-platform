@@ -33,9 +33,9 @@
 - [标注模块](./annotation-module)：
   Annotation 的数据模型、采纳、版本控制与 task / batch 回写
 - [视频标注工作台](./video-annotation-workbench)：
-  视频元数据、manifest、`video_bbox` schema 与前端 Stage 边界
+  视频元数据、多几何 annotation schema、Konva Stage 与编辑边界
 - [Scene + frame_index 跨 task 帧序列地基](./scene-and-frame-index)：
-  把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象,v0.14.0 引入
+  把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象
 - [审核模块](./review-module)：
   Task review、batch review、角色矩阵与通知审计联动
 
@@ -67,6 +67,8 @@
 
 - [预标注流水线](./prediction-pipeline)：
   Job 生命周期、Celery 任务链、错误处理
+- [视频 AI 追踪](./video-ai-tracking)：
+  tracker 能力路由、分窗身份、候选暂存与接受 / 丢弃边界
 - [AI 模型集成](./ai-models)：
   GroundingDINO / SAM 怎么接入，预测怎么存
 

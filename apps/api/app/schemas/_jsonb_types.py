@@ -184,11 +184,13 @@ ClassesConfig = dict[str, ClassConfigEntry]
 # 旧 classes_config + attribute_schema 在 v0.10.17 期间仍由 service 层
 # 从 tool_bindings 派生, 供未迁移的导出 / 聚合查询继续读, v0.10.18 删.
 
+# 'ai_interactive' 曾作为一个伪工具单位存在 (AI 采纳候选落库时的 tool_unit_id)。它不产出
+# 独有几何, 已退役: 存量由迁移 0115/0116 归位到 region/bbox, 字面量随之从这里删除。遗留
+# 客户端仍可能发来该值 —— 写入 schema 的 map_retired_tool_unit 入口映射把它按几何归位, 不 422。
 ToolUnitId = Literal[
     "bbox",
     "polyline",
     "region",
-    "ai_interactive",
     "lidar_box_3d",
     "rotated_bbox",
     "keypoint",
@@ -198,12 +200,23 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
     "bbox",
     "polyline",
     "region",
-    "ai_interactive",
     "lidar_box_3d",
     "rotated_bbox",
     "keypoint",
     "point_mask_3d",
 )
+
+# 退役的 ai_interactive 值按几何类型归位, 与迁移 0115/0116 的 CASE 逐字一致:
+# polygon 系几何 -> region, 其余 -> bbox。写入 schema 入口映射与 prediction 派生共用。
+RETIRED_AI_INTERACTIVE = "ai_interactive"
+_REGION_GEOMETRY_TYPES = frozenset(
+    {"polygon", "multi_polygon", "mask", "video_polygon", "video_track_polygon"}
+)
+
+
+def map_retired_tool_unit(geometry_type: str | None) -> str:
+    """把退役的 ai_interactive 按几何类型归位到 region / bbox。"""
+    return "region" if geometry_type in _REGION_GEOMETRY_TYPES else "bbox"
 
 
 class ClassRef(BaseModel):

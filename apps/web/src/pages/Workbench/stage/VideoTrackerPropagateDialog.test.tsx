@@ -83,7 +83,7 @@ describe("VideoTrackerPropagateDialog", () => {
     // 默认 forward + 30 帧 → F50 → F80。
     expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 50, endFrame: 80 });
     // 切「向前」→ F20 → F50。
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 20, endFrame: 50 });
     // 关闭 → 清空。
     rerender(
@@ -180,7 +180,7 @@ describe("VideoTrackerPropagateDialog", () => {
     render(
       <VideoTrackerPropagateDialog {...baseProps} frameIndex={500} samplingStep={10} onSubmit={onSubmit} />,
     );
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     // 30 格 · step=10 → 300 帧, backward: F200 → F500
     expect(screen.getByText("G20 → G50 (F200 → F500)")).toBeTruthy();
     fireEvent.click(screen.getByText("发起传播"));
@@ -209,7 +209,7 @@ describe("VideoTrackerPropagateDialog", () => {
     );
 
     fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "60" } });
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     fireEvent.change(screen.getAllByRole("combobox")[1], {
       target: { value: "sam2_video" },
     });
@@ -346,6 +346,92 @@ describe("VideoTrackerPropagateDialog", () => {
     );
   });
 
+  it("种子入口: sam3_video_interactive 与 sam2_video 都显示, mock/文本驱动不显示", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        onSubmit={vi.fn()}
+        onToggleSeedCollecting={vi.fn()}
+      />,
+    );
+    // 默认 mock_bbox → 无种子入口。
+    expect(screen.queryByTestId("tracker-seed-toggle")).toBeNull();
+    // 切 sam3_video_interactive → 出现。
+    fireEvent.change(screen.getAllByRole("combobox")[1], {
+      target: { value: "sam3_video_interactive" },
+    });
+    expect(screen.getByTestId("tracker-seed-toggle")).toBeTruthy();
+    // 切 sam2_video → 仍显示 (v0.21.27 阶段 A: grounded-sam2 也吃 seeds[] 多目标/点/框)。
+    fireEvent.change(screen.getAllByRole("combobox")[1], {
+      target: { value: "sam2_video" },
+    });
+    expect(screen.getByTestId("tracker-seed-toggle")).toBeTruthy();
+  });
+
+  it("点「落点选目标」调 onToggleSeedCollecting; 采集态改文案; 有落点显计数 + 清空", () => {
+    const onToggle = vi.fn();
+    const onClear = vi.fn();
+    const seedProps = {
+      ...baseProps,
+      frameIndex: 50,
+      projectDefaultModel: "sam3_video_interactive",
+      onSubmit: vi.fn(),
+      onToggleSeedCollecting: onToggle,
+      onClearSeeds: onClear,
+    };
+    const { rerender } = render(<VideoTrackerPropagateDialog {...seedProps} />);
+    const toggle = screen.getByTestId("tracker-seed-toggle");
+    expect(toggle.textContent).toContain("落点选目标");
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalled();
+    // 采集态 + 已落 2 点。
+    rerender(
+      <VideoTrackerPropagateDialog {...seedProps} seedCollecting seedPointCount={2} />,
+    );
+    expect(screen.getByTestId("tracker-seed-toggle").textContent).toContain("落点中");
+    expect(screen.getByTestId("tracker-seed-count").textContent).toContain("已落 2 点");
+    fireEvent.click(screen.getByText("清空"));
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("多目标: 「+新目标」调 onNewSeedTarget; 计数在 >1 目标时才显示目标数", () => {
+    const onNewTarget = vi.fn();
+    const seedProps = {
+      ...baseProps,
+      frameIndex: 50,
+      projectDefaultModel: "sam3_video_interactive",
+      onSubmit: vi.fn(),
+      onToggleSeedCollecting: vi.fn(),
+      onNewSeedTarget: onNewTarget,
+      seedPointCount: 1,
+      seedTargetCount: 1,
+    };
+    const { rerender } = render(<VideoTrackerPropagateDialog {...seedProps} />);
+    // 单目标: 只显示点数, 不缀「目标」。
+    const count = () => screen.getByTestId("tracker-seed-count").textContent ?? "";
+    expect(count()).toContain("已落 1 点");
+    expect(count()).not.toContain("目标");
+    fireEvent.click(screen.getByTestId("tracker-seed-new-target"));
+    expect(onNewTarget).toHaveBeenCalled();
+    // 多目标 (>1): 缀「M 目标」。
+    rerender(
+      <VideoTrackerPropagateDialog {...seedProps} seedPointCount={3} seedTargetCount={2} />,
+    );
+    expect(count()).toContain("2 目标");
+    // 纠偏多帧 (>1): 缀「K 帧」; 单目标时不缀「目标」。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...seedProps}
+        seedPointCount={2}
+        seedTargetCount={1}
+        seedFrameCount={2}
+      />,
+    );
+    expect(count()).toContain("2 帧");
+    expect(count()).not.toContain("目标");
+  });
+
   it("取消不写记忆,且非法模型 / 变体安全回退", () => {
     const key = videoDialogMemoryStorageKey("u1", "trackerPropagate");
     const remembered = {
@@ -366,9 +452,64 @@ describe("VideoTrackerPropagateDialog", () => {
 
     expect(screen.getByText("F20 → F140")).toBeTruthy();
     expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("mock_bbox");
-    fireEvent.click(screen.getByText("向前"));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     fireEvent.click(screen.getByTestId("video-tracker-propagate-dialog"));
 
     expect(window.localStorage.getItem(key)).toBe(JSON.stringify(remembered));
+  });
+
+  it("U1: 方向按钮用消歧标签 (更晚/更早帧) + testid", () => {
+    render(<VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId("tracker-direction-forward").textContent).toContain("更晚帧");
+    expect(screen.getByTestId("tracker-direction-backward").textContent).toContain("更早帧");
+    expect(screen.getByTestId("tracker-direction-bidirectional").textContent).toContain("双向");
+  });
+
+  it("U6: 大范围显示 ≈N 窗 (sam3 系 16 帧/窗), 小范围不显", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={0}
+        projectDefaultModel="sam3_video_interactive"
+        onSubmit={vi.fn()}
+        onToggleSeedCollecting={vi.fn()}
+      />,
+    );
+    // 默认 forward + 30 帧 → F0→F30 = 31 帧 → ceil(31/16) = 2 窗。
+    expect(screen.getByTestId("tracker-window-estimate").textContent).toContain("≈2 窗");
+    // 切到 10 帧 → F0→F10 = 11 帧 → ceil(11/16) = 1 窗 → 不显。
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "10" } });
+    expect(screen.queryByTestId("tracker-window-estimate")).toBeNull();
+  });
+
+  it("框修正: 点/框模式切换调 onChangeSeedMode; 框计数并入「已落」文案", () => {
+    const onChangeMode = vi.fn();
+    const seedProps = {
+      ...baseProps,
+      frameIndex: 50,
+      projectDefaultModel: "sam3_video_interactive",
+      onSubmit: vi.fn(),
+      onToggleSeedCollecting: vi.fn(),
+      onChangeSeedMode: onChangeMode,
+    };
+    const { rerender } = render(<VideoTrackerPropagateDialog {...seedProps} seedMode="point" />);
+    // 点「框」→ onChangeSeedMode("box")。
+    fireEvent.click(screen.getByTestId("tracker-seed-mode-box"));
+    expect(onChangeMode).toHaveBeenCalledWith("box");
+    // box 模式 → toggle 文案变「画框选目标」。
+    rerender(<VideoTrackerPropagateDialog {...seedProps} seedMode="box" />);
+    expect(screen.getByTestId("tracker-seed-toggle").textContent).toContain("画框选目标");
+    // 点 1 + 框 2 → 计数含「1 点」与「2 框」。
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...seedProps}
+        seedMode="box"
+        seedPointCount={1}
+        seedBoxCount={2}
+      />,
+    );
+    const count = screen.getByTestId("tracker-seed-count").textContent ?? "";
+    expect(count).toContain("1 点");
+    expect(count).toContain("2 框");
   });
 });

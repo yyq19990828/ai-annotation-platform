@@ -138,9 +138,9 @@ class CapabilityInstanceItem(BaseModel):
 
     `backend_id` 是 ml_backend_registry.id, 供全局编排选择器落 pipeline_stages.ml_backend_id。
     `state` 保留 connected/error 等注册表状态; disconnected 已在 service 层过滤。
-    `source` = "env_only" 表示 docker-compose 自带或运维 env 配的容器,
-              "registered" 表示项目级 ml_backends 表里有记录。
-    `name` 是 backend 显示名 (env-only 取 /setup.name, registered 取 ml_backend.name)。
+    `source` 直接透传 ml_backend_registry.source: "env" = docker-compose/运维 env 配的容器
+              (启动钩子按 env URL 自动 upsert), "manual" = superadmin 在模型市场手动注册。
+    `name` 是 backend 显示名 (ml_backend_registry.name)。
     不暴露 url / project_id / health 指标, 让普通登录用户安全消费。
     """
 

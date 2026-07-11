@@ -15,7 +15,7 @@
 - [快速开始](./getting-started) — 第一次登录怎么做
 - [工作台概览](./workbench/) — 界面布局与基本操作
 - [Bbox 标注](./workbench/bbox) · [Polygon 标注](./workbench/polygon) · [关键点标注](./workbench/keypoint)
-- [SAM 智能工具](./workbench/sam-tool) — AI 辅助勾边
+- [AI 辅助标注](./ai/) — 图片交互、候选审阅与视频 AI 追踪
 - [视频追踪标注](./workbench/video-track) · [3D 点云标注](./workbench/pointcloud-view)
 
 ### 📋 项目管理员
@@ -24,7 +24,7 @@
 
 - [项目管理](./projects/) — 创建项目、配置标注类型
 - [批次与分配](./projects/batch) — 切批次、分配给标注员
-- [AI 预标注](./projects/ai-preannotate) — 让模型先跑一遍
+- [AI 辅助标注](./ai/) — 启用模型、批量预标、编排复用与失败恢复
 - [数据集管理](./datasets/) · [工作流配置](./workflows/new-project-end-to-end)
 
 ### ✅ 审核员（质检员）
@@ -60,6 +60,7 @@
 | 导入数据 | [导入图像数据集](./datasets/import-images) · [数据集总览](./datasets/) |
 | 配置存储连接器 | [存储连接器导入](./datasets/storage-connections) |
 | 视频 / 点云标注 | [视频追踪标注](./workbench/video-track) · [3D 点云标注](./workbench/pointcloud-view) |
+| 使用 AI 辅助标注或管理 AI 任务 | [AI 辅助标注](./ai/) |
 | 端到端创建项目 | [新项目端到端流程](./workflows/new-project-end-to-end) |
 | 导出标注数据 | [数据导出格式](./reference/export-formats) |
 | 修改密码 / 通知偏好 / 标注偏好 | [设置页](./reference/settings) |

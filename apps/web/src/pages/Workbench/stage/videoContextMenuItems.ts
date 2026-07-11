@@ -1,6 +1,6 @@
 import type { AnnotationResponse } from "@/types";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
-import { isVideoBbox, isVideoTrack } from "./videoStageGeometry";
+import { isVideoBbox, isVideoPointsSingleFrame, isVideoPointsTrack, isVideoTrack } from "./videoStageGeometry";
 import type { VideoTrackActions } from "./useVideoTrackActions";
 import type {
   VideoTrackAnnotation,
@@ -36,6 +36,9 @@ export interface VideoContextMenuCtx {
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
+  /** v0.21.26 · 点集轨迹显隐/锁定标签需当前状态翻转 (bbox 轨迹走 trackActions, 点集轨迹走这两个集合)。 */
+  hiddenTrackIds?: Set<string>;
+  lockedTrackIds?: Set<string>;
 }
 
 export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownItem[] {
@@ -56,6 +59,8 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
     onPropagateTrack,
     onToggleHiddenTrack,
     onToggleLockedTrack,
+    hiddenTrackIds,
+    lockedTrackIds,
   } = ctx;
 
   if (contextMenuAnnotation && isVideoBbox(contextMenuAnnotation)) {
@@ -97,6 +102,71 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
         icon: "trash",
         kbd: "Del",
         disabled: readOnly || !onDelete,
+        onSelect: () => onDelete?.(contextMenuAnnotation),
+      },
+    ];
+  }
+
+  // v0.21.26 · 单帧点集/旋转几何 (polygon / polyline / rotated_bbox): 改类 + 删除
+  // (此前落到空菜单)。键于 contextMenuAnnotation (命中即建, 不依赖异步选中态)。
+  if (contextMenuAnnotation && isVideoPointsSingleFrame(contextMenuAnnotation)) {
+    return [
+      {
+        id: "points-class",
+        label: "改类别",
+        icon: "tag",
+        disabled: readOnly || !onChangeUserBoxClass,
+        onSelect: () => onChangeUserBoxClass?.(contextMenuAnnotation.id),
+      },
+      { id: "points-delete-divider", divider: true, label: "" },
+      {
+        id: "points-delete",
+        label: "删除",
+        icon: "trash",
+        kbd: "Del",
+        disabled: readOnly || !onDelete,
+        onSelect: () => onDelete?.(contextMenuAnnotation),
+      },
+    ];
+  }
+
+  // v0.21.26 · 点集轨迹 (polygon / polyline track): 改类 + 显隐 + 锁定 + 删整条
+  // (此前落到空菜单)。关键帧级操作/AI 追踪归 v0.21.20 epic, 此处不列。
+  if (contextMenuAnnotation && isVideoPointsTrack(contextMenuAnnotation)) {
+    const trackId = contextMenuAnnotation.geometry.track_id;
+    const locked = lockedTrackIds?.has(trackId) ?? false;
+    const hidden = hiddenTrackIds?.has(trackId) ?? false;
+    return [
+      {
+        id: "points-track-locked",
+        label: locked ? "解锁轨迹" : "锁定轨迹",
+        icon: locked ? "unlock" : "lock",
+        kbd: "L",
+        disabled: readOnly || !onToggleLockedTrack,
+        onSelect: () => onToggleLockedTrack?.(trackId),
+      },
+      {
+        id: "points-track-hidden",
+        label: hidden ? "显示轨迹" : "隐藏轨迹",
+        icon: hidden ? "eyeOff" : "eye",
+        kbd: "H",
+        disabled: readOnly || !onToggleHiddenTrack,
+        onSelect: () => onToggleHiddenTrack?.(trackId),
+      },
+      { id: "points-track-edit-divider", divider: true, label: "" },
+      {
+        id: "points-track-class",
+        label: "改类别",
+        icon: "tag",
+        disabled: readOnly || locked || !onChangeUserBoxClass,
+        onSelect: () => onChangeUserBoxClass?.(contextMenuAnnotation.id),
+      },
+      {
+        id: "points-track-delete",
+        label: "删除整条轨迹",
+        icon: "trash",
+        kbd: "Del",
+        disabled: readOnly || locked || !onDelete,
         onSelect: () => onDelete?.(contextMenuAnnotation),
       },
     ];

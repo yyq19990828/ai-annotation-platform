@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: explanation
 since: v0.11.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 工具维度类别 / 属性
@@ -24,7 +24,7 @@ last_reviewed: 2026-06-10
 
 工具单位枚举（可在向导 / 项目设置勾选，与后端 `ToolUnitId` 对齐）：`bbox`、`region`（polygon + mask 打包）、`polyline`、`rotated_bbox`、`keypoint`、`lidar_box_3d`、`point_mask_3d`。每个工具单位的具体含义见 [创建项目 · 工具集](./index.md)。
 
-> **SAM 智能点 / 智能框 / Exemplar / Magic Box 不再是独立工具单位**。它们按**产出几何**归入 `region`（多边形）或 `bbox`，类别随所属几何单位配置；「本项目能否使用这些交互式 AI 工具」由项目级开关 **`ai_interactive_enabled`**（项目设置「[ML 模型](./ml-backends.md)」，默认开）统一控制。历史 `ai_interactive` 单位仅为存量数据兼容保留，不再作为可勾选单位出现。
+> **SAM 智能点 / 智能框 / Exemplar / Magic Box 不再是独立工具单位**。它们按**产出几何**归入 `region`（多边形）或 `bbox`，类别随所属几何单位配置；「本项目能否使用这些交互式 AI 工具」由项目级开关 **`ai_interactive_enabled`**（项目设置「[ML 模型](./ml-backends.md)」，默认开）统一控制。`ai_interactive` 已彻底退役，不再是合法工具单位：存量标注 / 预测 / 项目配置里的该值均已归位到 `region` / `bbox`（多边形系归 `region`，其余归 `bbox`）；遗留客户端若仍上报该值，后端会按几何类型自动归位而非报错。
 
 ![项目设置「类别与属性」面板，按工具单位 tab 切换](../images/projects/tool-units-panel.png)
 
@@ -54,16 +54,20 @@ last_reviewed: 2026-06-10
 - 因为它本质就是一个普通属性，遮挡值会随属性一起进导出（COCO `annotations[].attributes` / YOLO `attribute_schema.json`），无需额外配置；勾「遮挡样式」只影响画布渲染，不改变导出内容。
 - **仅图片任务消费**这个渲染开关。视频任务的遮挡是另一套机制（轨迹关键帧自带 `occluded` 字段，工作台用 `Q` 键逐帧切换），与本开关无关。
 
-## 视频 bbox ·「单帧框 / 轨迹框」独立开关
+## 视频几何 ·「单帧 / 轨迹」独立开关
 
-> 起始版本：v0.11.29
+视频项目的 bbox、region 和 polyline 工具单位都可以分别控制单帧形态与轨迹形态（底层为 `video_modes.box` / `video_modes.track`）：
 
-视频项目启用 bbox 工具单元后，「类别与属性」面板会多出一行**可用工具**，含「单帧矩形框」与「轨迹矩形框」两个独立开关（对应底层的 `video_modes.box` / `video_modes.track`）。
+| 工具单位 | 单帧 | 轨迹 |
+|---|---|---|
+| bbox | 矩形框 | 矩形框轨迹 |
+| region | 多边形 | 多边形轨迹 |
+| polyline | 折线 | 折线轨迹 |
 
-- 两者**共用同一套类别、颜色、排序与属性 schema**；开关只控制工作台允许新增哪种标注。
-- **至少保留一个可用**：当只剩一个开着时，该开关会被禁用（提示「至少保留一个可用工具」），无法关到两个都关。
+- 同一工具单位的单帧 / 轨迹形态**共用该单位的类别、颜色、排序与属性 schema**；开关只控制工作台允许新增哪种标注。
+- **至少保留一个可用**：当某单位只剩一个形态开着时，无法继续关到两个都关。
 - 关闭某一种后，工作台不再提供对应的新增工具；**已有标注与配置仍保留**，重新开启即可继续新增。
-- 该开关只做工具栏可用性过滤，不会强制校验或删除已存在的 annotation。老项目未设置时两者默认均可用。
+- 该开关只做工具栏可用性过滤，不会强制校验或删除已存在的 annotation。老项目未设置时两种形态默认均可用。
 
 ## 后续修改类别 / 属性
 

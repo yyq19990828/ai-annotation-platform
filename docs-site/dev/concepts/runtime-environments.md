@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: explanation
 since: v0.11.13
 status: stable
-last_reviewed: 2026-05-26
+last_reviewed: 2026-07-11
 ---
 
 # 运行环境形态：开发态 / staging / 生产态
@@ -17,7 +17,7 @@ last_reviewed: 2026-05-26
 `docker-compose.yml` 只定义**基础设施 + Celery**（api/web 不在内）。开发态与生产态的差异由三件事决定：
 
 1. **谁进容器** —— 开发态 API/Web 跑宿主机进程；生产态用叠加文件 `docker-compose.prod.yml` 把 api/web 以容器拉起
-2. **哪些 profile 启用** —— `gpu` / `gpu-sam3` / `monitoring` 默认不启动
+2. **哪些 profile 启用** —— `gpu`、`gpu-sam3`、`gpu-yolo`、`gpu-onnxtools`、`gpu-rapidocr` 与 `monitoring` 默认不启动
 3. **`ENVIRONMENT` 变量取值** —— 驱动 `config.py` / `main.py` 的启动断言和测试后门开关
 
 ```bash
@@ -40,7 +40,7 @@ docker compose --env-file .env.production \
 | API / Web | 宿主机进程（`uvicorn --reload` + `pnpm dev:web`）；不在任何 compose 文件 | 同生产：`docker-compose.prod.yml` 容器 + nginx 反代 | `docker-compose.prod.yml` 容器 + 外层 nginx/Caddy 终结 TLS |
 | 基础设施（PG/Redis/MinIO） | compose 拉起，本地默认值 | 独立实例，贴近生产 | 托管 RDS、Redis 挂 AOF、MinIO 换 S3/OSS |
 | Celery worker/beat | 容器内 + 源码热挂载（`./apps/api:/app`），改码 `docker restart` 即可 | 镜像冻结源码 | 镜像冻结源码 |
-| GPU ML Backend | `profile: gpu` 默认不启动 | 按需 | 按需，调显存预算 |
+| GPU ML Backend | `gpu` / `gpu-sam3` / `gpu-yolo` / `gpu-onnxtools` / `gpu-rapidocr` 默认不启动 | 按需 | 按需，调显存预算 |
 | 监控（Prometheus/Grafana） | `profile: monitoring` 默认不启动 | 按需 | 按需 |
 | 邮件 | mailpit 假收件箱（`:8025`），不外发 | 真实 SMTP | 真实 SMTP |
 

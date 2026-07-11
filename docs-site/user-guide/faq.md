@@ -3,7 +3,7 @@ audience: [annotator, project_admin, reviewer, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # FAQ
@@ -31,8 +31,8 @@ last_reviewed: 2026-06-10
 ## 标注
 
 **Q: 提交后能否撤回？**
-- 状态 `submitted` 但还没被审核 → 可在「我的任务」撤回
-- 已审核完成 → 不可撤回，需要联系管理员
+- 任务处于 `review`（待审核）且审核员尚未领取时，任务指派人可在工作台点「撤回提交」，任务回到 `in_progress` 继续编辑。
+- 审核员已领取后不能撤回；已通过的任务不能撤回，但任务指派人、项目管理员或超级管理员可「重开任务」后修改并重新提交。
 
 **Q: 浏览器卡顿？**
 - 单图标注 > 200 个对象时卡顿正常，可关闭「显示标注列表」侧栏
@@ -73,24 +73,24 @@ AI 候选框与已有人工框的重叠度（IoU）超过项目设置的去重�
 ## 数据导入导出
 
 **Q: 支持哪些数据导入格式？**
-图片 / 视频支持 ZIP（含媒体 + 可选的 JSON 标注）、直接上传单文件、或通过「存储连接器」（AWS S3 / Azure Blob / GCS / 本地挂载）批量导入。点云支持 nuScenes 格式（有转换脚本）和原生目录结构（`scenes/` + `cameras/` + `calibration/`）。详见 [数据导入](./datasets/import-images)。
+图片 / 视频支持浏览器多文件上传、ZIP 和存储连接器批量导入；连接器支持 S3 兼容对象存储（包括 OSS / MinIO 等）与 SFTP。外部标注 / 预测是独立导入链路，不随原始媒体 ZIP 一起导入。点云可用 nuScenes 转换脚本，或按原生目录结构 `lidar/`、`camera/`、`calib/` 导入。详见[数据集导入](./datasets/)。
 
 **Q: 支持哪些导出格式？**
 导出目标包括：`coco`、`yolo-det`、`yolo-obb`、`yolo-seg`、`aap_json`（原生格式，含所有几何类型）。旋转框不进 COCO，导出时跳过；关键点走 COCO `keypoints` 扁平数组格式。详见 [导出格式](./reference/export-formats)。
 
 **Q: 如何导入 AI 预测结果作为候选？**
-在「数据集」页面的「预测导入」入口，选择格式（YOLO / COCO / AAP JSON）和对应变体（det / obb / seg），上传文件后系统异步处理，处理完成后预测出现在工作台 AI 候选列表。YOLO OBB 格式需选 `yolo_variant=obb`。详见 [预测导入与导出](./datasets/prediction-import-export)。
+在项目总览的项目行或卡片打开 `⋮`，选择「导入预测」；也可在 AI 预标注的项目详情页使用同一向导。选择格式（YOLO / COCO / AAP JSON）和对应变体（det / obb / seg），先预览校验再确认导入。完成后预测出现在工作台 AI 候选列表。YOLO OBB 格式需选 `yolo_variant=obb`。详见 [预测导入与导出](./datasets/prediction-import-export)。
 
 **Q: 导入时如何关联到正确的任务？**
-系统按文件名 stem（去扩展名）匹配数据集 item。确保预测文件名（如 `frame_001.txt`）与媒体文件名（`frame_001.jpg`）的 stem 一致。点云多 scene 场景请使用全局唯一的文件名 stem（加 scene 前缀）。
+不同格式的匹配键不同：AAP JSON 优先用 task `display_id`，其次是项目内 `file_path`；COCO 用 `images[].file_name`；YOLO 才按 label 文件 stem 匹配。使用路径或 stem 时要保留子目录，避免同名文件歧义。详见[预测导入与导出](./datasets/prediction-import-export)。
 
 ## 任务分派
 
 **Q: 任务是自动分派还是手动分派？**
-支持两种模式：项目设置可开启「自动分派」（标注员进入工作台时按队列自动拿下一条）；也可由管理员手动在「数据管理」页面批量指定标注员和审核员。
+项目管理员在批次中指定 1 名标注员和 1 名审核员；批次激活后，标注员进入工作台时由队列领取该批次中的任务。多个批次可用「按项目分派批次」均分给多人。Data Manager 是只读运营表，不提供批量指派。
 
 **Q: 批次是什么？**
-批次（Batch）是项目内的任务分组单元，用于分阶段推进和权限隔离。一个批次对应一批任务，可设截止日期、指派标注员/审核员、独立管控进度。详见 [批次管理](./projects/)。
+批次（Batch）是项目内的任务分组单元，用于分阶段推进和权限隔离。一个批次对应一批任务，可指派标注员 / 审核员，并独立管控状态与进度。详见[批次与分配](./projects/batch)。
 
 ## AI 预标注
 
@@ -110,7 +110,7 @@ AI 候选框与已有人工框的重叠度（IoU）超过项目设置的去重�
 视频任务进入「视频时间轴」工作台：标注会关联到帧，支持创建跨帧轨迹（Track）。工具按 `T` 切轨迹工具，`B` 切单帧框工具。详见 [视频追踪标注](./workbench/video-track)。
 
 **Q: 如何快速给视频里同一目标跨帧补全轨迹？**
-先在关键帧标注 bbox，然后用 AI 传播（`Ctrl + B`）让系统自动向后帧预测轨迹；或手动在各关键帧添加关键帧，系统对中间帧线性插值。详见 [AI 视频传播](./workbench/video-propagate)。
+先在关键帧标注 bbox，然后用 AI 追踪（`Ctrl + B`）选择更晚帧 / 更早帧 / 双向范围；也可以为 SAM2 / SAM3 交互追踪添加点、框和多帧纠偏提示。追踪结束后先预览候选，选择「接受」才写入轨迹；选择「丢弃」则标注零改动。或手动在各关键帧添加关键帧，系统对中间帧线性插值。详见 [AI 视频传播](./workbench/video-propagate)。
 
 **Q: 视频轨迹和单帧框有什么区别？**
 轨迹（Track）是同一目标跨多帧的关联标注，存储为 `video_track_bbox` 几何；单帧框（Frame Box）仅属于当前帧，存储为 `video_bbox` 几何。多个单帧框可在右键菜单「聚合为轨迹」合并。

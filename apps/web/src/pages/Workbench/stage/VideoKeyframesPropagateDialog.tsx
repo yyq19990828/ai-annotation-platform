@@ -118,15 +118,22 @@ export function VideoKeyframesPropagateDialog({
               <button
                 key={d}
                 type="button"
+                data-testid={`keyframes-direction-${d}`}
+                title={
+                  d === "forward"
+                    ? "向后: 复制框到更晚 (时间轴更右) 的帧"
+                    : "向前: 复制框到更早 (时间轴更左) 的帧"
+                }
                 onClick={() => setDirection(d)}
                 className={cn(
-                  "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
+                  "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs whitespace-nowrap",
                   direction === d
                     ? "border-brand bg-brand/10"
                     : "border-border",
                 )}
               >
-                {d === "forward" ? "向后" : "向前"}
+                {/* v0.21.27 · U-pvs-3 · U1 消歧, 与 AI 追踪对话框方向标签统一 */}
+                {d === "forward" ? "更晚帧 →" : "← 更早帧"}
               </button>
             ))}
           </div>

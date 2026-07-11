@@ -131,6 +131,8 @@ export interface MLBackendCapability {
   protocol_version?: string;
   compat_protocol_versions?: string[];
   model_version?: string;
+  // v0.21.x · 视频追踪权重展示名 (sam3.1_multiplex → "SAM 3.1"); 前端「视频权重」条目用。
+  video_model_version?: string;
   is_interactive?: boolean;
   labels?: string[];
   supported_prompts: string[];

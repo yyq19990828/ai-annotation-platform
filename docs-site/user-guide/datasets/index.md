@@ -36,6 +36,7 @@ last_reviewed: 2026-06-10
 | 我要做的事 | 去哪里 |
 |---|---|
 | 导入外部模型预测 / 按来源清理预测 | [导入 / 导出外部预测](./prediction-import-export) |
+| 使用平台启用的 ML Backend 批量生成预测 | [AI 预标](../projects/ai-preannotate) |
 | 导出标注成果（COCO / YOLO / nuScenes / KITTI / AAP JSON） | [数据导出格式](../reference/export-formats) |
 
 ## 几个关键概念
@@ -44,3 +45,4 @@ last_reviewed: 2026-06-10
 - **导入即建任务**：数据集关联项目后自动建任务；条目数超过阈值（默认 2000）转后台异步建任务，建完前工作台暂时看不到，属正常现象。详见 [导入图像数据集](./import-images)。
 - **scene（时序数据集）**：含 scene 的数据集才能关联 scene 模式项目（逐帧图片序列 / 逐帧点云）。如何在导入时产生 scene 见 [导入点云 / 多模态数据集格式](./import-formats)。
 - **两条不同链路**：「导入数据集」灌的是**原始文件**；「导入预测」往**已有 task** 上写候选标注。先有数据，才谈得上导预测。
+- **外部预测 vs 平台预标**：外部预测是上传结果文件，不要求绑定 ML Backend；平台预标由项目已启用的 backend 运行。两者都先作为候选，审阅方式见[审阅 AI 候选](../ai/candidate-review)。

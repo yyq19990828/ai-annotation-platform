@@ -71,6 +71,7 @@ from predictor import (
     SAM3Predictor,
 )
 from video_predictor import SAM3MultiplexVideoTracker
+from pvs_video_predictor import SAM3PVSVideoTracker
 from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
 
 UTC = timezone.utc
@@ -79,6 +80,8 @@ logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 
 MODEL_VERSION = MODEL_VARIANT  # "sam3" (图像模型即 facebook/sam3 单档)
+# v0.21.x · 视频追踪权重 (sam3.1_multiplex) 的展示名, 供前端「视频权重」条目 (与图像「SAM 3」对称)。
+_VIDEO_MODEL_VERSION = "SAM 3.1"
 # v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
 IMAGE_DOWNLOAD_TIMEOUT = float(os.getenv("IMAGE_DOWNLOAD_TIMEOUT", "30"))
@@ -108,11 +111,18 @@ _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION
 _last_request_at: float = time.monotonic()
 _predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
-# v0.21.19 §PR3 · sam3.1_multiplex 视频追踪模型 (单档, 无变体)。与图像模型**互斥常驻**
-# (单卡 8GB 容不下二者): 加载视频前先卸图像, 反之亦然。见 _ensure_video_tracker_loaded。
+# v0.21.19 §PR3 · sam3.1_multiplex 视频追踪模型 (单档, 无变体)。
+# v0.21.x · 取消与图像模型的互斥常驻: 24GB 卡容得下 image(~5.8GB) + video(~3.2GB) 并存,
+# 二者各自独立懒加载 / idle 卸载, 加载其一不再卸另一。小显存部署若不需视频,
+# 设 SAM3_DOWNLOAD_VIDEO=0 不加载视频模型即可。
 _video_tracker: SAM3MultiplexVideoTracker | None = None
 _video_lock = asyncio.Lock()
 _video_last_request_at: float = time.monotonic()
+# v0.21.26 · 阶段 B-pvs · SAM3 PVS 交互追踪模型 (点/框 seed + memory 传播, 与 multiplex
+# 独立懒加载 / idle 卸载; 权重同 sam3.pt, 见 pvs_video_predictor.py)。
+_pvs_tracker: SAM3PVSVideoTracker | None = None
+_pvs_lock = asyncio.Lock()
+_pvs_last_request_at: float = time.monotonic()
 # v0.14.14: PoolStatus 元数据 (sam3 图像模型单档, cap 永远 1).
 _pool_loaded_at: datetime | None = None
 _pool_last_used_at: datetime | None = None
@@ -143,8 +153,7 @@ async def _ensure_predictor_loaded(
         if count_as_hit:
             _pool_hit_count += 1
         return _predictor, True, None
-    # v0.21.19 §PR3 · 冷加载图像模型前先卸视频追踪模型 (互斥常驻)。锁外完成, 避免锁序反转。
-    await _unload_video_tracker(reason="swap to image model")
+    # v0.21.x · 取消互斥: 加载图像模型不再卸视频追踪模型, 二者可并存常驻。
     async with _predictor_lock:
         if _predictor is not None:
             # 锁内 double-check: 等锁期间别的协程可能已加载完.
@@ -217,17 +226,11 @@ async def _unload_video_tracker(reason: str) -> bool:
 
 
 async def _ensure_video_tracker_loaded() -> SAM3MultiplexVideoTracker:
-    """懒加载视频追踪模型。**先卸图像模型**腾显存 (单卡 8GB 二者互斥)。
-
-    互斥卸载在获取 _video_lock **之前**完成 (acquire+release _predictor_lock 全程结束),
-    与 _ensure_predictor_loaded 的对称卸载不嵌套加锁, 杜绝锁序反转死锁。
-    """
+    """懒加载视频追踪模型。v0.21.x 起与图像模型可并存常驻 (取消互斥), 加载视频不再卸图像。"""
     global _video_tracker, _video_last_request_at
     if _video_tracker is not None:
         _video_last_request_at = time.monotonic()
         return _video_tracker
-    # 互斥: 加载视频前先卸载图像模型 (释放 ~5.8GB)。锁外完成。
-    await _unload_predictor(reason="swap to video tracker")
     async with _video_lock:
         if _video_tracker is not None:
             _video_last_request_at = time.monotonic()
@@ -238,6 +241,40 @@ async def _ensure_video_tracker_loaded() -> SAM3MultiplexVideoTracker:
         _video_last_request_at = time.monotonic()
         logger.info("sam3 video tracker built; device=%s", _video_tracker.device)
         return _video_tracker
+
+
+def _build_pvs_tracker() -> SAM3PVSVideoTracker:
+    return SAM3PVSVideoTracker()
+
+
+async def _unload_pvs_tracker(reason: str) -> bool:
+    """卸载 PVS 交互追踪模型释放显存。返回是否真的卸载。"""
+    global _pvs_tracker
+    async with _pvs_lock:
+        if _pvs_tracker is None:
+            return False
+        logger.info("unloading sam3 PVS tracker: reason=%s", reason)
+        _pvs_tracker = None
+        free_gpu_memory()
+        return True
+
+
+async def _ensure_pvs_tracker_loaded() -> SAM3PVSVideoTracker:
+    """懒加载 PVS 交互追踪模型 (与 multiplex / 图像模型各自独立常驻)。"""
+    global _pvs_tracker, _pvs_last_request_at
+    if _pvs_tracker is not None:
+        _pvs_last_request_at = time.monotonic()
+        return _pvs_tracker
+    async with _pvs_lock:
+        if _pvs_tracker is not None:
+            _pvs_last_request_at = time.monotonic()
+            return _pvs_tracker
+        logger.info("building sam3 PVS tracker on demand")
+        loop = asyncio.get_running_loop()
+        _pvs_tracker = await loop.run_in_executor(None, _build_pvs_tracker)
+        _pvs_last_request_at = time.monotonic()
+        logger.info("sam3 PVS tracker built; device=%s", _pvs_tracker.device)
+        return _pvs_tracker
 
 
 def _pool_status() -> dict[str, Any]:
@@ -265,6 +302,30 @@ def _pool_status() -> dict[str, Any]:
         "current_size": 1 if _predictor is not None else 0,
         "loaded_keys": loaded_keys,
         "last_evict": last_evict,
+    }
+
+
+def _video_pool_status() -> dict[str, Any]:
+    """v0.21.x · 视频追踪池状态。含两档独立视频模型 (multiplex 文本 `sam3_video` +
+    PVS 交互 `sam3_video_interactive`), 各自懒加载 / idle 卸载、可并存常驻; 与图像池独立。
+    前端「视频追踪变体」区据此显示已加载 / 预热。"""
+    loaded_keys: list[dict[str, Any]] = []
+    loaded_variants: list[str] = []
+    active = 0
+    if _video_tracker is not None:
+        loaded_keys.append({"key": "sam3_video"})
+        loaded_variants.append("sam3_video")
+        active += _video_tracker.active_sessions
+    if _pvs_tracker is not None:
+        loaded_keys.append({"key": "sam3_video_interactive"})
+        loaded_variants.append("sam3_video_interactive")
+        active += _pvs_tracker.active_sessions
+    return {
+        "cap": 2,
+        "current_size": len(loaded_keys),
+        "loaded_keys": loaded_keys,
+        "loaded_variants": loaded_variants,
+        "active_sessions": active,
     }
 
 
@@ -297,6 +358,11 @@ async def _idle_watcher() -> None:
                 v_idle = time.monotonic() - _video_last_request_at
                 if v_idle >= IDLE_UNLOAD_SECONDS:
                     await _unload_video_tracker(reason=f"idle {v_idle:.0f}s")
+            # v0.21.26 · PVS 交互追踪模型同样 idle 卸载。
+            if _pvs_tracker is not None and _pvs_tracker.active_sessions == 0:
+                p_idle = time.monotonic() - _pvs_last_request_at
+                if p_idle >= IDLE_UNLOAD_SECONDS:
+                    await _unload_pvs_tracker(reason=f"idle {p_idle:.0f}s")
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -384,6 +450,8 @@ def health() -> dict:
         "loaded": _predictor is not None,  # 老字段, 兼容前端 AdminDashboard
         # v0.14.14: 协议 §4.3 PoolStatus 统一格式; sam3 cap 永远 1.
         "pool": _pool_status(),
+        # v0.21.x · 视频追踪池 (与图像池并存常驻); 前端据此显示视频追踪已加载 / 预热。
+        "video_pool": _video_pool_status(),
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
@@ -401,6 +469,8 @@ def setup() -> dict:
         "name": "sam3-backend",
         "version": BACKEND_VERSION,
         "model_version": MODEL_VERSION,
+        # v0.21.x · 视频追踪权重展示名 (sam3.1_multiplex → "SAM 3.1"), 前端「视频权重」条目用。
+        "video_model_version": _VIDEO_MODEL_VERSION,
         # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4).
         "warmup_endpoint": True,
         "labels": [],
@@ -423,7 +493,7 @@ def setup() -> dict:
         # v0.21.19 §PR3 · sam3.1_multiplex 视频文本追踪 (text-driven, 每帧按文本检测目标)。
         # 平台据 supported_trackers 判 backend 支持视频追踪; text_driven_trackers 让其区分
         # seed-bbox tracker(sam2) 与文本驱动 tracker(sam3, 需 text)。
-        "supported_trackers": ["sam3_video"],
+        "supported_trackers": ["sam3_video", "sam3_video_interactive"],
         "text_driven_trackers": ["sam3_video"],
         # v0.14.12 · 显式暴露单档 variant, 让模型市场能展示该具体权重 (此前 [] 导致
         # 卡片/列表无法显示「该 backend 加载的是 sam3」). 三个 task 共享同一份权重,
@@ -579,7 +649,7 @@ def setup() -> dict:
             "supported_geometric_outputs": ["polygon"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": False},
-            "supported_trackers": ["sam3_video"],
+            "supported_trackers": ["sam3_video", "sam3_video_interactive"],
             "text_driven_trackers": ["sam3_video"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
@@ -611,11 +681,12 @@ async def unload() -> dict:
     """主动卸载模型释放显存 (图像 + 视频). 已为空闲状态时返回 ok=true, unloaded=false."""
     unloaded_img = await _unload_predictor(reason="manual")
     unloaded_vid = await _unload_video_tracker(reason="manual")
+    unloaded_pvs = await _unload_pvs_tracker(reason="manual")
     return {
         "ok": True,
-        "unloaded": unloaded_img or unloaded_vid,
+        "unloaded": unloaded_img or unloaded_vid or unloaded_pvs,
         "loaded": _predictor is not None,
-        "video_loaded": _video_tracker is not None,
+        "video_loaded": _video_tracker is not None or _pvs_tracker is not None,
     }
 
 
@@ -631,17 +702,40 @@ async def reload() -> dict:
 
 
 class WarmupRequest(BaseModel):
-    """sam3 图像模型单档; variants 可选 {model_variant: "sam3"}, 仅校验."""
+    """图像: variants 可选 {model_variant: "sam3"}, 仅校验。
+    视频: task="tracker" 预热视频追踪模型 (sam3.1_multiplex, 单档无变体)。"""
 
     variants: dict[str, str] = {}
+    # v0.21.x · 平台按 taskType=video 下发 {task:"tracker"} → 预热 multiplex 文本追踪;
+    # v0.21.26 · {task:"interactive"} → 预热 PVS 交互 (点/框) 追踪。
+    task: str | None = None
 
 
 @app.post("/warmup", response_model=WarmupResponse)
 async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
-    """v0.14.14: 加载 SAM 3 权重到 GPU 不跑 forward.
+    """v0.14.14: 加载权重到 GPU 不跑 forward。
 
-    sam3 单档, variants.model_variant 必须等于 sam3 (或缺省). 重复预热返回 cache_hit=true.
+    默认预热图像模型 (SAM 3 单档, variants.model_variant 必须等于 sam3 或缺省);
+    task="tracker" 预热视频追踪模型 (sam3.1_multiplex)。v0.21.x 起图像 / 视频并存,
+    预热其一不再卸另一。重复预热返回 cache_hit=true。
     """
+    if req is not None and req.task == "tracker":
+        loaded_before = _video_tracker is not None
+        t0 = time.monotonic()
+        await _ensure_video_tracker_loaded()
+        load_ms = None if loaded_before else int((time.monotonic() - t0) * 1000)
+        return WarmupResponse(
+            ok=True, model_load_ms=load_ms, cache_hit=loaded_before, evicted=None
+        )
+    # v0.21.26 · task="interactive" 预热 PVS 交互追踪模型 (sam3_video_interactive)。
+    if req is not None and req.task == "interactive":
+        loaded_before = _pvs_tracker is not None
+        t0 = time.monotonic()
+        await _ensure_pvs_tracker_loaded()
+        load_ms = None if loaded_before else int((time.monotonic() - t0) * 1000)
+        return WarmupResponse(
+            ok=True, model_load_ms=load_ms, cache_hit=loaded_before, evicted=None
+        )
     if req is not None and req.variants:
         mv = req.variants.get("model_variant")
         if mv is not None and mv != MODEL_VERSION:
@@ -910,6 +1004,85 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
     return result
 
 
+def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
+    """PVS: 从 context 取逐对象 seed。优先 `seeds[]`(多目标 / 模式 b), 否则退单 seed
+    = source_geometry/prompt.geometry(obj_id=1), 与 sam2_video 单目标种子等价。
+
+    seeds[] 每条: {obj_id?, prompts?/bbox?/points?/geometry?}; geometry 走
+    _seed_bbox_from_video_ctx 取外接框。points 直接透传 [[x,y,label],...]。缺 obj_id 时按序补
+    1..N。prompts (v0.21.27 U-pvs-2 纠偏) = 多帧 [{frame_index, points?/bbox?}], 原样透传给
+    wrapper 逐帧播种; 优先于单帧 bbox/points。
+    """
+    raw = ctx.get("seeds")
+    if isinstance(raw, list) and raw:
+        seeds: list[dict] = []
+        for i, s in enumerate(raw):
+            if not isinstance(s, dict):
+                continue
+            entry: dict[str, Any] = {"obj_id": int(s.get("obj_id", i + 1))}
+            if isinstance(s.get("prompts"), list) and s["prompts"]:
+                entry["prompts"] = s["prompts"]  # 多帧纠偏, 原样透传
+            elif isinstance(s.get("bbox"), dict):
+                entry["bbox"] = s["bbox"]
+            elif isinstance(s.get("points"), list) and s["points"]:
+                entry["points"] = s["points"]
+            elif s.get("geometry") is not None:
+                b = _seed_bbox_from_video_ctx({"source_geometry": s["geometry"]})
+                if b is not None:
+                    entry["bbox"] = b
+            if "prompts" in entry or "bbox" in entry or "points" in entry:
+                seeds.append(entry)
+        if seeds:
+            return seeds
+    seed = _seed_bbox_from_video_ctx(ctx)
+    if seed is None:
+        return []
+    return [{"obj_id": 1, "bbox": seed}]
+
+
+async def _run_pvs_video_tracker(file_path: str, ctx: dict) -> list[dict]:
+    """sam3_video_interactive: 点/框 seed + memory 逐对象跨帧追踪, 返回逐帧逐对象几何。"""
+    try:
+        from_frame = int(ctx["from_frame"])
+        to_frame = int(ctx["to_frame"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422,
+                            detail="video_tracker requires integer from_frame / to_frame") from exc
+    direction = ctx.get("direction") or "forward"
+    if direction not in ("forward", "backward"):
+        raise HTTPException(status_code=422,
+                            detail=f"video_tracker direction must be forward|backward, got {direction!r}")
+    output_geometry = ctx.get("output_geometry") or "bbox"
+    if output_geometry not in ("bbox", "polygon"):
+        raise HTTPException(status_code=422,
+                            detail=f"output_geometry must be bbox|polygon, got {output_geometry!r}")
+    seeds = _seeds_from_video_ctx(ctx)
+    if not seeds:
+        raise HTTPException(
+            status_code=422,
+            detail="sam3_video_interactive tracker requires a seed (source_geometry / seeds[])")
+
+    tracker = await _ensure_pvs_tracker_loaded()
+    local_path = _video_local_path(file_path)
+    cleanup = local_path != file_path
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            functools.partial(
+                tracker.propagate, local_path, from_frame, to_frame, direction,
+                seeds, output_geometry,
+            ),
+        )
+    finally:
+        if cleanup:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+    return result
+
+
 @app.post("/predict")
 async def predict(request: Request):
     body = await request.json()
@@ -919,8 +1092,13 @@ async def predict(request: Request):
         task = body["task"]
         ctx = _normalize_predict_context(body.get("context") or {})
         # v0.21.19 §PR3 · video_tracker 走独立视频模型分支 (与图像 prompt 路径分流)。
+        # v0.21.26 · 按 model_key 分派: sam3_video_interactive → PVS 点/框 memory 追踪,
+        # 否则 (sam3_video) → multiplex 文本追踪。
         if ctx.get("type") == "video_tracker":
-            result = await _run_video_tracker(task["file_path"], ctx)
+            if ctx.get("model_key") == "sam3_video_interactive":
+                result = await _run_pvs_video_tracker(task["file_path"], ctx)
+            else:
+                result = await _run_video_tracker(task["file_path"], ctx)
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return PredictionResult(
                 result=result,

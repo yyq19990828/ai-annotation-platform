@@ -40,7 +40,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     volumes:
-      - miniodata:/data
+      - ${MINIO_DATA_DIR:-miniodata}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -128,6 +128,9 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+      # SAM3 文本 multiplex / PVS 的单窗上限。显式透传 .env，避免 dev compose
+      # 只改宿主机变量但 GPU worker 仍使用镜像内默认值。
+      VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES: ${VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES:-16}
     volumes:
       - ./data/duckdb:/var/lib/duckdb
       - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro

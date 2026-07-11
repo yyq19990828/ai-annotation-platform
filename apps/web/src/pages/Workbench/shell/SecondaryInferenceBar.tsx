@@ -267,9 +267,10 @@ export function SecondaryInferenceBar({
             ))}
           </select>
           <span className={FIELD_LABEL_CLASS}>{TARGET_HINT[selected.writeTarget]}</span>
-          {/* v0.20.17 · 几何能力的模型档位下拉 (复用交互条同款紧凑变体选择器);
-              无变体轴时 VariantSelector 自返 null 不占位。 */}
-          {selected.writeTarget === "geometry" && (
+          {/* 模型档位下拉 (复用交互条同款紧凑变体选择器)。门开在「模型声明了变体轴」而非
+              「写几何」——OCR 等属性能力 (如 rapidocr rec/e2e 的 version/size/lang 轴) 同样要能选档;
+              无变体轴的能力 (onnxtools 分类) 不渲染。 */}
+          {(selected.model.supported_variants?.length ?? 0) > 0 && (
             <VariantSelector
               compact
               supportedVariants={selected.model.supported_variants}

@@ -1,12 +1,20 @@
+---
+title: 迁移内联样式到 CSS Modules
+audience: [developer]
+type: how-to
+status: stable
+last_reviewed: 2026-07-11
+---
+
 # 把页面级 inline style 迁到 CSS modules
 
-::: tip Since v0.10.11
-首个试点：`apps/web/src/pages/Projects/sections/BatchesSection.tsx`（17 处 inline → CSS modules）。v0.10.12 已清空 `apps/web/src/**/*.tsx` 的 JSX `style=` / `<style>`，lint guard 已覆盖全站 TSX，CSP 头也已移除 `style-src 'unsafe-inline'`。
+::: tip
+现有 TSX 已由 lint guard 约束，新增样式使用 CSS modules 或语义 class；不要重新引入 JSX `style=` / `<style>`。
 :::
 
 ## 为什么要迁
 
-[`CSP style-src nonce 收紧`](../../ops/security/) 的前置依赖是全站 ~2900 处 <code v-pre>style={{...}}</code> 重构。迁移完成后，生产 CSP 已收窄为只接受同源样式表和带 nonce 的 HTML `<style>` 标签（与 v0.9.11 收紧 script-src 同模式）。
+[`CSP style-src nonce 收紧`](../../ops/security/) 的前置依赖是全站 <code v-pre>style={{...}}</code> 重构。生产 CSP 只接受同源样式表和带 nonce 的 HTML `<style>` 标签。
 
 后续新增/回归样式必须继续遵守这个约束：用 CSS modules / class 切换；真正动态值用 ref 同步 CSS custom properties，不能重新引入 JSX `style=`。
 
@@ -77,6 +85,6 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 ## 试点参考
 
 完整对照：
-- 前：v0.10.10 [`BatchesSection.tsx`](https://github.com/.../blob/v0.10.10/apps/web/src/pages/Projects/sections/BatchesSection.tsx)（17 处 inline）
-- 后：v0.10.11 [`BatchesSection.tsx`](../../../apps/web/src/pages/Projects/sections/BatchesSection.tsx) + [`BatchesSection.module.css`](../../../apps/web/src/pages/Projects/sections/BatchesSection.module.css)（1 处 CSS variable）
-- 续推：v0.10.12 `pages/Projects/sections/*.tsx` 同名 CSS modules（0 处 inline，guard 已收口为 glob）
+
+- 现行示例：[`AIPreAnnotatePage.tsx`](../../../apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx) + [`AIPreAnnotatePage.module.css`](../../../apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.module.css)。
+- 同目录组件继续采用同名 `.module.css`；批量修改后用前端 lint 的 inline-style guard 确认没有重新引入内联样式。

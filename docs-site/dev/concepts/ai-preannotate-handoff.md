@@ -193,7 +193,7 @@ annotator 可选择：
 1. `accept prediction`(候选层 → annotation)
 2. 在 prediction 基础上继续改
 3. 完全忽略 prediction，手工新建 annotation
-4. **Magic Box**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。归 `ai_interactive` 工具单位, 详见 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)
+4. **Magic Box**: 拖一个粗框 → SAM bbox prompt → 返回 polygon → 自动取紧凑外接矩形 → **直接**落 bbox(不经候选层 UI 确认)。产出按几何归 `bbox` 工具单位；交互式 AI 由项目级 `ai_interactive_enabled` 控制, 详见 [ADR-0026](../adr/archive/0026-tool-unit-class-and-attribute-binding)
 
 ### 采纳前候选属性预览 + 分步采纳
 

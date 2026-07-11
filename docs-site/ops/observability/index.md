@@ -61,7 +61,7 @@ production 不建议把 prometheus / grafana 跟应用塞同一 docker-compose�
 
 ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metrics` 由 Prometheus 的 `ml-backends` job 自动抓取，**无需手改 `prometheus.yml`**：
 
-- 该 job 用 `http_sd_config` 定期拉 anno-api 的 `/api/v1/internal/metrics-targets`，端点从 `ml_backends` 表（`state != disconnected`）生成 target 列表并按 host:port 去重。**新 backend 在超管「模型市场」注册即被纳入抓取**，与 PerfHud 共用同一真相源。响应即 Prometheus http_sd 原生格式（`include_in_schema=False`，不入 OpenAPI；实现 `apps/api/app/api/v1/internal.py`）：
+- 该 job 用 `http_sd_config` 定期拉 anno-api 的 `/api/v1/internal/metrics-targets`，端点从 `ml_backend_registry`（`state != disconnected`）生成 target 列表并按 host:port 去重。**新 backend 在超管「模型市场」注册即被纳入抓取**，与 PerfHud 共用同一真相源。响应即 Prometheus http_sd 原生格式（`include_in_schema=False`，不入 OpenAPI；实现 `apps/api/app/api/v1/internal.py`）：
 
   ```json
   [
@@ -116,7 +116,7 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 
 ## 5. ML Backend pool 观测口径 (v0.14.14)
 
-v0.14.14 把三个 backend 的 `/health.pool` 统一成 `PoolStatus`（协议 §4.3），运维 / 模型市场都从同一结构读：
+各 backend 的 `/health.pool` 统一为 `PoolStatus`（协议 §4.3），运维 / 模型市场都从同一结构读：
 
 ```jsonc
 {

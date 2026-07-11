@@ -3,14 +3,14 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-06-17
+last_reviewed: 2026-07-11
 ---
 
 # 视频标注工作台
 
-视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、`video_bbox` 当前帧框、`video_track_bbox` compact 轨迹、outside / occluded 语义、track split / merge / join / bbox 转换、时间轴关键帧与 prediction 分布、bitmap cache、minimap、评论锚点和工作台诊断快照。
+视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、单帧 bbox / polygon / polyline / rotated bbox、bbox / polygon / polyline compact 轨迹、outside / occluded 语义、矩形轨迹 split / merge / join / bbox 转换、交互式单帧 AI、异步视频 tracker 候选审阅、时间轴关键帧与 prediction 分布、bitmap cache、minimap、评论锚点和工作台诊断快照。
 
-`video_track_bbox` 一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与线性插值结果；`video_bbox` 仍是一等逐帧框，可由矩形框工具直接创建，也可从 track 转换得到。视频 stage 复用 Workbench 外壳、任务锁、离线队列、评论、审核与导出入口。
+`video_track_*` 一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与插值结果；单帧 `video_*` geometry 仍是一等标注。矩形框轨迹拥有完整关键帧编辑、组合、转换与 AI 追踪；polygon / polyline 轨迹当前提供渲染、顶点变形与基础管理。视频 stage 复用 Workbench 外壳、任务锁、离线队列、评论、审核与导出入口。
 
 <!-- history: the original version-by-version video workbench notes are merged into this current capability overview. -->
 
@@ -134,12 +134,17 @@ pnpm --filter @anno/web video:bench
 
 ## Annotation Schema
 
-视频工作台支持两种视频 geometry：
+视频工作台 UI 当前消费这些视频 geometry：
 
-- `video_bbox`：当前帧独立矩形框。
-- `video_track_bbox`：跨帧对象轨迹。
+| 类型 | 时间语义 | 当前管理能力 |
+|---|---|---|
+| `video_bbox` | 单帧矩形框 | 选择、移动、缩放、改类、删除，可聚合成轨迹 |
+| `video_polygon` / `video_polyline` | 单帧点集 | 绘制、顶点变形、改类、删除 |
+| `video_rotated_bbox` | 单帧旋转框 | 渲染、选择、改类、删除 |
+| `video_track_bbox` | bbox compact 轨迹 | 完整关键帧编辑、outside / occluded、组合、转换、AI 追踪 |
+| `video_track_polygon` / `video_track_polyline` | 点集 compact 轨迹 | 渲染 / 插值、指标、首帧定位、显隐、锁定、改类、整条删除 |
 
-前端通过 `videoTool` 决定新拖框落库类型：矩形框工具写 `video_bbox`，轨迹工具写 `video_track_bbox` 或追加 keyframe。
+后端 `Geometry` union 还包含 `video_keypoint`，但当前视频工具栏没有对应创建入口。前端通过 `videoTool` 与工具单位的 `video_modes` 决定写单帧 geometry 还是 compact track keyframe。
 
 `video_track_bbox` 示例：
 
@@ -195,6 +200,8 @@ pnpm --filter @anno/web video:bench
 - `x/y/w/h` 与图片 bbox 一样使用归一化坐标。
 - `annotation_type` 写 `video_bbox`。
 - `video_bbox` 可由视频矩形框工具直接创建，也可由 track 转换 API 生成。
+
+点集轨迹与 bbox 轨迹使用相同的 `track_id / outside / keyframes[]` 外壳，但关键帧保存 `points` 而非 `bbox`；polygon 闭合，polyline 不闭合。点集插值要求相邻关键帧顶点可对应，当前工作台先开放渲染与管理层，关键帧表和完整逐帧编辑仍只属于 bbox 轨迹。
 
 ## Track 转独立框 API
 
@@ -272,6 +279,12 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 - 当前帧 bbox 极小。
 - 当前帧同类别 bbox 高度重叠。
 
+## 视频 AI 追踪候选
+
+视频传播不直接把 worker 结果混入 annotation cache。`useVideoTrackerJobs` 维护运行 job 和 `staged_result` preview：`job_completed` 或带部分结果的 `job_cancelled` 到达后拉取 preview，`useWorkbenchShellModel` 把当前帧 bbox candidate 映射到 `VideoSamCandidateOverlay`，`VideoTrackerReviewBar` 提供整批接受 / 丢弃。
+
+accept 成功后才 invalidate annotation query；discard 只清前端候选和后端 staged result。该 job 级候选与 `usePredictions` 管理的单 shape Prediction 候选是两条独立状态。完整状态机、能力路由与多目标落库见[视频 AI 追踪架构](./video-ai-tracking)。
+
 ## Video Tracks JSON 导出
 
 `video-track` 项目可通过现有导出入口拿到专用 JSON：
@@ -334,6 +347,8 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Space` 播放 / 暂停；按住并拖拽画布时平移视图
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
 - `V` / `B` / `T` 切换视频选择 / 矩形框 / 轨迹工具
+- `P` 进入视频多边形绘制；智能点 / 智能框 / Exemplar / Magic Box 使用视频侧各自直达键
+- `Ctrl+B` 选中 bbox 轨迹时打开 AI 追踪工具条
 - `←` / `→` 上一帧 / 下一帧；采样开启时按网格跳
 - `Shift + ←/→` 采样开启时源帧 ±1 微调
 - `,` / `.` 选中 `video_track_bbox` 时跳上 / 下可见关键帧
@@ -341,13 +356,13 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Ctrl+M` 当前帧添加 / 移除书签
 - `Ctrl+[` / `Ctrl+]` 跳转历史后退 / 前进
 - `Alt+L` 清除本地 loop region
-- `Delete` / `Backspace` 选中 `video_track_bbox` 时删除当前帧关键帧；选中 `video_bbox` 时删除该框
+- `Delete` / `Backspace` 选中 bbox 轨迹时删除当前帧关键帧；选中单帧视频几何时删除该标注
 - `Ctrl+Delete` / `Ctrl+Backspace` 删除整条选中轨迹
 - `Tab` / `Shift+Tab` 循环轨迹
 - `Esc` 取消选择
 - `1-9` 有选中视频对象时改其 `class_name`；无选中时切 active class
 
-图片工作台的 SAM、polygon、canvas 工具在视频任务中不展示；左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
+视频任务使用自己的 polygon / polyline 与交互式 AI 工具入口：智能点、智能框、Exemplar 在当前帧生成 `video_polygon`，Magic Box 生成 `video_bbox`；切帧会清理帧绑定的瞬态候选。图片专用 canvas 工具不会直接挂进视频 Stage。左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
 
 视频创建、追加关键帧、重命名、改类、track 转 bbox 等动作由 `useVideoAnnotationActions` 维护。跨 Stage 的 class picker / 改类 / SAM 接受 / 批量改类弹窗由 `WorkbenchOverlays` 渲染，不再挂在 `ImageStage.overlay` 上。
 
@@ -358,14 +373,14 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 | 层 | 文件 | 职责 |
 |---|---|---|
 | media | `VideoKonvaMediaLayer.tsx` | `Konva.Image` 以隐藏 `<video>` 为 source；播放态逐帧重绘视频层，暂停态贴 `ImageBitmap` LRU 缓存帧 |
-| track | `VideoKonvaTracksLayer.tsx` / `VideoKonvaTrackShape.tsx` | committed bbox、track 轨迹预览线、关键帧圆点 |
+| track | `VideoKonvaTracksLayer.tsx` / `VideoKonvaTrackShape.tsx` | committed bbox / 点集几何、track 轨迹预览线、关键帧圆点 |
 | overlay | `VideoKonvaOverlayLayer.tsx` | 标签（Konva `Label`/`Tag`/`Text`）与 pending draft 草稿 |
 | issue | `VideoKonvaIssueLayer.tsx` | pixel-anchored issue 图钉（按当前帧显隐，可点击跳到讨论面板） |
-| interaction | `VideoKonvaInteractionLayer.tsx` | 选中框 8 向 resize 句柄与画框/移动/缩放的 live 预览 |
+| interaction | `VideoKonvaInteractionLayer.tsx` | bbox 的 8 向 resize、点集顶点编辑，以及画框 / 移动 / 缩放 live 预览 |
 
 `VideoKonvaStage` 负责 Stage 容器、视口 transform、播放，以及各 chrome 浮层（时间轴 `VideoPlaybackOverlay`、minimap、QC 警告、关键帧快跳）。命中由 `videoKonvaCoordinates.ts` 把 client 坐标映射到像素空间，再用 `videoStagePicking.ts` 选择顶层框；画框/移动/缩放/选中由 `videoKonvaInteraction.ts` 分流。当前帧应显示哪些框 / 轨迹预览 / ghost / 标签由纯函数 `videoFrameViews.ts` 派生。视觉规格（线宽 / 填充 / 字号 / 标签）经 `annotationVisual.ts` 与图片栈共用同一组纯函数。
 
-画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。这套外壳同时服务于视频 `video_track_bbox` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
+画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。视频侧 `buildVideoContextMenuItems` 分三层：bbox / bbox track 保留完整动作，单帧 polygon / polyline / rotated bbox 提供改类与删除，polygon / polyline track 提供显隐、锁定、改类和整条删除。图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
 
 视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽或 `Space`+拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 

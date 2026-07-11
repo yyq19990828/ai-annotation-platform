@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.10.3
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 启用 ML 后端
@@ -57,12 +57,22 @@ last_reviewed: 2026-06-10
 清单的「能力」列展示每个 backend 的 `supported_prompts` 与 `supported_trackers`（视频追踪），例如：
 
 - `grounded-sam2`：`point` `interactive_box` `text` `sam2_video`（最后一项为视频追踪能力徽标）
-- `sam3-backend`：`point` `interactive_box` `text` `exemplar`
+- `sam3-backend`：`point` `interactive_box` `text` `exemplar`，以及 `sam3_video` / `sam3_video_interactive` 视频追踪能力
 - `yolo-backend`：`none` `text` `exemplar`（闭集检测/分割/关键点/旋转框走批量线；YOLOE 视觉提示走 Exemplar）
 
 数据来自后端 `GET /setup`（详见 [开发文档 § ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)）。后端如返回 `—`，说明 `/setup` 不可达或协议信息不完整。
 
 模型市场会展示更完整的 model 粒度能力，包括「可接受输入」（整图 / 裁剪图 / 框提示 / 点提示）、「输出几何」、「输出属性」、资源画像和变体轴。多阶段预标会用「可接受输入」判断下游阶段能否消费上游框：分类器通常吃裁剪图，框提示分割模型通常吃框提示。
+
+## 视频 tracker 如何选择 backend
+
+视频工作台不是把所有 tracker 都发送给项目主后端。发起追踪时，平台会从本项目**所有已启用 backend** 中查找 `supported_trackers` 包含所选 `model_key` 的实例：
+
+1. 项目主后端支持该 tracker 时优先使用。
+2. 主后端不支持时，改用其它声明该 tracker 的 connected backend。
+3. 没有任何已启用 backend 声明该 tracker 时，模型在追踪工具条中置灰或提交时报不支持。
+
+因此 SAM2 框追踪、SAM3 文本检测追踪和 SAM3 点框交互追踪可以由不同 backend 承载。项目主后端只是初始选择与同能力优先项，不是视频 tracker 的唯一执行后端。排查置灰模型时，先确认对应 backend 已对项目启用，再做一次健康检查刷新 `supported_trackers` 能力快照。
 
 ## 停用与切换
 

@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.25
 status: stable
-last_reviewed: 2026-05-12
+last_reviewed: 2026-07-11
 ---
 
 # Runbook：视频帧服务
@@ -22,6 +22,7 @@ last_reviewed: 2026-05-12
 
 ```bash
 docker logs ai-annotation-platform-celery-worker-1 --tail 100
+docker logs ai-annotation-platform-celery-worker-gpu-1 --tail 100
 docker exec ai-annotation-platform-redis-1 redis-cli llen media
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_chunks GROUP BY status;"
@@ -42,7 +43,7 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 docker exec ai-annotation-platform-celery-worker-1 ffmpeg -version
 ```
 
-3. 如果刚改过 `apps/api/app/workers/media.py`，重启 worker：
+3. 如果刚改过 `apps/api/app/workers/media.py`，重启消费 `media` 队列的默认 worker：
 
 ```bash
 docker compose restart celery-worker
@@ -116,15 +117,15 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 旧视频可在 API/Celery 镜像内重建：
 
 ```bash
-docker exec ai-annotation-platform-api-1 \
-  python -m app.cli.video.rebuild_timetable --dataset-item-id <dataset_item_id>
+cd apps/api
+uv run python -m app.cli.video.rebuild_timetable --dataset-item-id <dataset_item_id>
 ```
 
 批量数据集重建建议加 `--keep-going`，避免单个损坏视频阻断整批：
 
 ```bash
-docker exec ai-annotation-platform-api-1 \
-  python -m app.cli.video.rebuild_timetable --dataset-id <dataset_id> --keep-going
+cd apps/api
+uv run python -m app.cli.video.rebuild_timetable --dataset-id <dataset_id> --keep-going
 ```
 
 ## MinIO 空间增长
@@ -163,26 +164,29 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - 用户异常退出后锁未过期：等待 TTL 到期，或由项目管理员调用 release 接口释放。
 - segment 切分过粗：降低 `VIDEO_SEGMENT_SIZE_FRAMES` 后，新视频会按更小粒度生成；已有 segment 需人工迁移或重建。
 
-## Tracker Job 无法创建或取消
+## Tracker Job 无法创建、审阅或取消
 
 查看最近 job：
 
 ```bash
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
-  "SELECT id, task_id, annotation_id, segment_id, status, from_frame, to_frame, cancel_requested_at FROM video_tracker_jobs ORDER BY created_at DESC LIMIT 20;"
+  "SELECT id, task_id, annotation_id, segment_id, status, from_frame, to_frame, cancel_requested_at, staged_result IS NOT NULL AS has_candidate FROM video_tracker_jobs ORDER BY created_at DESC LIMIT 20;"
 ```
 
 常见原因：
 
 - 返回 409：当前用户没有持有覆盖 frame range 的有效 segment lock。先调用 segment claim，再发起 tracker job。
 - 返回 400：frame range 越界、反向，或跨越多个 segment。第一版要求单 job 在一个 segment 内。
-- job 长时间停留 `queued`：确认 worker 订阅了 `gpu` 队列。compose 默认命令是 `-Q default,ml,media,gpu,cleanup,audit`（必须含 `gpu`）。
-- job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示前端传了后端 registry 尚未支持的 `model_key`；`sam2_video` / `sam3_video` 需要项目绑定的 ML Backend 处于 `connected`。
-- 取消后仍看到部分结果：worker 会保留已发布或已写回的 prediction keyframes，未完成区间不落库。
+- job 长时间停留 `queued`：确认 `celery-worker-gpu` 正在运行并订阅 `gpu` 队列。默认 worker 只消费 `default,media,cleanup,audit`；GPU worker 消费 `ml,gpu`。
+- job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示项目已启用 backend 中没有任何实例在能力快照里声明该 `model_key`；先健康检查并核对 `supported_trackers`。
+- job 长时间停在 `pending_review`：推理已结束，但 staged candidate 还没有被接受 / 丢弃；annotation 此时尚未改变。用 preview 端点确认候选是否存在。
+- 用户刷新后审阅条没有恢复：工作台会按当前 task 调 reviewable 端点并拉 preview。检查 task 可见性、job 是否属于当前普通用户（项目 owner / 超级管理员可看该 task 全部候选）、`staged_result.results` 是否非空，以及浏览器请求是否返回 401 / 404；不要盲目重跑。
+- 取消后仍看到部分候选：worker 会把停止前已收集的结果写入 `staged_result`，不是已落库 annotation。接受可保留部分结果，丢弃则 annotation 零改动。
+- accept 后看不到新轨迹：检查 job 是否真的进入 `accepted`、源 annotation 是否仍 active，并查看 accept 审计日志；主实例回填源轨迹，额外 `instance_id` 才新建轨迹。
 
 ## Tracker GPU OOM / 长视频分窗
 
-`sam2_video` / `sam3_video` 不在平台 API 进程内加载模型，而是由 GPU Celery worker 调项目绑定 ML Backend。worker 会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间拆成多个 `/predict context.type=video_tracker` 请求。
+`sam2_video` / `sam3_video` / `sam3_video_interactive` 不在平台 API 进程内加载模型，而是由 GPU Celery worker 调能力匹配的 ML Backend。SAM3 系按 `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES` 分窗，其它 tracker 按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 分窗。
 
 常见现象：
 
@@ -199,21 +203,25 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 ```bash
 docker logs ai-annotation-platform-grounded-sam2-backend-1 --tail 200
-docker compose ps celery-worker grounded-sam2-backend
+docker compose ps celery-worker-gpu
+docker compose -f docker-compose.yml -f docker-compose.ml.yml ps grounded-sam2-backend sam3-backend
 ```
 
 缓解：
 
-1. 降低单次分窗，例如：
+1. 按模型降低单次分窗，例如：
 
 ```env
 VIDEO_TRACKER_WINDOW_SIZE_FRAMES=120
+VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES=8
 ```
+
+基础 dev compose 会把 `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES` 显式传给 `celery-worker-gpu`。修改 `.env` 后需要 recreate GPU worker，并检查容器内实际值。
 
 2. 重启 worker 让配置生效：
 
 ```bash
-docker compose restart celery-worker
+docker compose restart celery-worker-gpu
 ```
 
 3. 如果 OOM 发生在 backend 容器，降低 `SAM_VARIANT` 或减少该 backend 的 `extra_params.max_concurrency`，再重启 GPU backend。
@@ -224,7 +232,7 @@ docker compose restart celery-worker
 前端订阅：
 
 ```bash
-ws "$API_WS/api/v1/ws/video-tracker-jobs/$JOB_ID?token=$TOKEN"
+ws "$API_WS/ws/video-tracker-jobs/$JOB_ID?token=$TOKEN"
 ```
 
 排查：
@@ -232,10 +240,10 @@ ws "$API_WS/api/v1/ws/video-tracker-jobs/$JOB_ID?token=$TOKEN"
 1. 确认 Redis 可用，worker 和 API 使用同一个 `REDIS_URL`。
 2. 查看 job 是否有 `event_channel=video-tracker-job:<job_id>`。
 3. worker 日志里查 `video tracker event publish failed`。
-4. 如果刚改过 `apps/api/app/workers/video_tracker.py` 或 adapter 代码，重启 worker：
+4. 如果刚改过 `apps/api/app/workers/video_tracker.py` 或 adapter 代码，重启 GPU worker：
 
 ```bash
-docker compose restart celery-worker
+docker compose restart celery-worker-gpu
 ```
 
 ## 指标
@@ -250,4 +258,6 @@ docker compose restart celery-worker
 ## 相关文档
 
 - [视频后端帧服务](/dev/reference/video-frame-service)
+- [视频 AI 追踪架构](/dev/concepts/video-ai-tracking)
+- [Video Tracker Jobs API](/api/guides/video-tracker-jobs)
 - [Runbook：Celery Worker 卡死](/ops/runbooks/celery-worker-stuck)

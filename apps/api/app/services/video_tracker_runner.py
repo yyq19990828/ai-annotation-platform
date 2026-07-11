@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -15,6 +17,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.services.annotation_propagation import _new_track_id
 from app.services.ml_backend import MLBackendService
 from app.services.video_tracker_adapters import (
     TrackerContext,
@@ -26,6 +29,10 @@ from app.services.video_tracks import is_polygon_track
 log = logging.getLogger(__name__)
 
 TrackerEventPublisher = Callable[[str, dict], Awaitable[None]]
+
+
+class TrackerJobStateConflict(ValueError):
+    """Requested review action is incompatible with the current job state."""
 
 
 def _now() -> datetime:
@@ -76,6 +83,12 @@ def _normalize_points(geometry: dict) -> list[list[float]]:
 
 def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     size = max(1, int(settings.video_tracker_window_size_frames))
+    # sam3 两档视频模型都用更小分窗(不动 sam2 的窗口, 避免回归其长程记忆):
+    # - sam3_video(multiplex): 视频前向显存随窗口线性增长, 大窗 OOM@24GB。
+    # - sam3_video_interactive(PVS): backend wrapper 上限 SAM3_PVS_MAX_WINDOW_FRAMES(默认 16),
+    #   超限会被 backend 拒; PVS 是 SAM2 式 memory 传播、显存轻于 multiplex, 但先与之齐。
+    if job.model_key in ("sam3_video", "sam3_video_interactive"):
+        size = min(size, max(1, int(settings.video_tracker_sam3_window_size_frames)))
     windows = []
     start = job.from_frame
     while start <= job.to_frame:
@@ -214,6 +227,335 @@ def apply_tracker_results(
     annotation.version = int(annotation.version or 1) + 1
 
 
+def _partition_results_by_instance(
+    results: list[TrackerFrameResult],
+) -> tuple[list[TrackerFrameResult], dict[str, list[TrackerFrameResult]]]:
+    """把逐帧结果拆成 (主实例结果, {instance_id: 非主实例结果}) —— 阶段 0 多目标落库。
+
+    模式 a「自动发现」下 backend 一帧可返回多实例。主实例 = 与用户种子对应的那个,
+    回填源 annotation; 其余每个 instance_id 各成一条新 track。
+    - 无任何 instance_id (单实例老 backend): 全部归主, 与既有单 track 行为等价 (零回归)。
+    - 有 instance_id: primary 标记所属的 instance 归主; 若无一标 primary, 取最小的
+      instance_id 归主 (数字 id 按数值比较, 否则字典序; 确定性兜底)。同一 instance_id 的
+      所有帧整体归属同一去向。
+    """
+    if all(r.instance_id is None for r in results):
+        return list(results), {}
+
+    primary_id = next(
+        (r.instance_id for r in results if r.primary and r.instance_id is not None),
+        None,
+    )
+    if primary_id is None:
+        # instance_id 契约上是 str(obj_id) (见 _instance_seed_obj_id), 但可能是非数字兜底。
+        # 纯数字按数值取 min ("2" < "10"), 否则字典序, 避免 "10" < "2" 挑错主实例。
+        primary_id = min(
+            (r.instance_id for r in results if r.instance_id is not None),
+            key=lambda s: (0, int(s)) if s.isdigit() else (1, s),
+        )
+
+    primary: list[TrackerFrameResult] = []
+    extras: dict[str, list[TrackerFrameResult]] = {}
+    for result in results:
+        if result.instance_id is None or result.instance_id == primary_id:
+            primary.append(result)
+        else:
+            extras.setdefault(result.instance_id, []).append(result)
+    return primary, extras
+
+
+def _instance_seed_obj_id(instance_id: str, fallback: int) -> int:
+    """把 instance_id 还原成 backend 播种用的 obj_id。PVS 的 instance_id 就是 str(obj_id),
+    直接 int; 非数字 (老 backend 兜底) 按序补 fallback。"""
+    return int(instance_id) if instance_id.isdigit() else fallback
+
+
+def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
+    """多目标跨窗续追种子: 每个实例用其上一窗末帧几何 + 同一 obj_id 重播种下一窗。
+
+    v0.21.27 · U-pvs-1 · seed-驱动 tracker (PVS) 每窗是独立会话, 若只续主实例, 非主实例
+    过一窗即丢。这里对**每个**实例各下发一条 seed (obj_id 与其 instance_id 一致 → 跨窗身份
+    稳定); backend seeds 支持 geometry (自动取外接框)。text-驱动 (multiplex) backend 不读
+    seeds、按 text 每窗重检测, 收到本 seeds 无害忽略。
+    """
+    return [
+        {"obj_id": _instance_seed_obj_id(iid, idx + 1), "geometry": geom}
+        for idx, (iid, geom) in enumerate(sorted(last_geom_by_instance.items()))
+    ]
+
+
+# ── v0.21.28 · B-mx · text-multiplex 跨窗 IoU 关联 ─────────────────────────
+# multiplex (sam3_video) 按 text 每窗独立会话重检测, 窗内 obj_id 稳定但**跨窗局部**
+# (窗 N 的 obj "1" 与窗 N-1 的 obj "1" 未必同物)。平台在窗边界帧按 IoU 关联, 把窗内
+# obj_id remap 成跨窗稳定的全局 instance_id (未匹配 → 新 track), 供阶段 0 分组落库。
+
+
+def _bbox_of_geometry(geom: dict) -> tuple[float, float, float, float]:
+    """任意 geometry → 归一化 (x, y, w, h) 外接框; 取不到 → 零框。"""
+    if not isinstance(geom, dict):
+        return (0.0, 0.0, 0.0, 0.0)
+    if geom.get("type") == "polygon":
+        pts = geom.get("points") or []
+        xs = [float(p[0]) for p in pts if len(p) >= 2]
+        ys = [float(p[1]) for p in pts if len(p) >= 2]
+        if not xs or not ys:
+            return (0.0, 0.0, 0.0, 0.0)
+        return (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+    return (
+        float(geom.get("x", 0.0)),
+        float(geom.get("y", 0.0)),
+        float(geom.get("w", geom.get("width", 0.0))),
+        float(geom.get("h", geom.get("height", 0.0))),
+    )
+
+
+def _geom_iou(g1: dict, g2: dict) -> float:
+    """两 geometry 外接框的 IoU (归一化坐标)。任一零框 → 0。"""
+    x1, y1, w1, h1 = _bbox_of_geometry(g1)
+    x2, y2, w2, h2 = _bbox_of_geometry(g2)
+    if w1 <= 0 or h1 <= 0 or w2 <= 0 or h2 <= 0:
+        return 0.0
+    ix1, iy1 = max(x1, x2), max(y1, y2)
+    ix2, iy2 = min(x1 + w1, x2 + w2), min(y1 + h1, y2 + h2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    union = w1 * h1 + w2 * h2 - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _associate_multiplex_window(
+    window_results: list[TrackerFrameResult],
+    prev_boundary: dict[str, dict],
+    next_global: list[int],
+    iou_threshold: float = 0.3,
+) -> list[TrackerFrameResult]:
+    """把一窗 text-multiplex 结果的窗内 instance_id remap 成跨窗稳定的全局 id。
+
+    每个窗内实例的**边界帧**(组内首个非 outside 结果 = 传播起点, 与上一窗相邻)几何与
+    ``prev_boundary``(上一窗每全局实例的末帧几何)按 IoU 贪心匹配; ≥阈值则复用该全局 id,
+    否则分配新全局 id。``prev_boundary`` 就地更新为本窗每全局实例的**末帧**几何(供下一窗
+    匹配)。primary 标记随结果保留(replace 只改 instance_id)。
+    """
+    by_local: dict[str, list[TrackerFrameResult]] = defaultdict(list)
+    for r in window_results:
+        by_local[r.instance_id or "0"].append(r)
+    remap: dict[str, str] = {}
+    used: set[str] = set()
+    for local_id, group in by_local.items():
+        head = next((r for r in group if not r.outside and r.geometry), None)
+        gid: str | None = None
+        if head is not None and prev_boundary:
+            best = iou_threshold
+            for cand_gid, geom in prev_boundary.items():
+                if cand_gid in used:
+                    continue
+                iou = _geom_iou(head.geometry, geom)
+                if iou >= best:
+                    best, gid = iou, cand_gid
+        if gid is None:
+            gid = str(next_global[0])
+            next_global[0] += 1
+        used.add(gid)
+        remap[local_id] = gid
+    remapped = [
+        replace(r, instance_id=remap[r.instance_id or "0"]) for r in window_results
+    ]
+    new_boundary: dict[str, dict] = {}
+    for r in remapped:  # yield 序: 末帧最后写入 → 与下一窗相邻的边界
+        if not r.outside and r.geometry and r.instance_id:
+            new_boundary[r.instance_id] = r.geometry
+    # 本窗全 outside / 空产出 (短暂遮挡 / backend 空窗) 时保留上一窗边界: 否则遮挡帧会把
+    # 跨窗身份抹掉, 下一窗所有实例被当作新发现 → 同一物体在遮挡后被拆成两条轨迹。
+    if new_boundary:
+        prev_boundary.clear()
+        prev_boundary.update(new_boundary)
+    return remapped
+
+
+def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
+    """为一个新发现的实例建一条空 video_track annotation (阶段 0)。
+
+    归属策略 (epic 已定): 继承 source 的 label (class_name/tool_unit_id) 与项目/任务/
+    归属人, 标 source="ai_tracker" (与批量预标 prediction_based 区分, 不被批量清理误删),
+    新 track_id 走统一工厂 _new_track_id()。几何先空, 由 apply_tracker_results 填预测帧。
+    """
+    track_id = _new_track_id()
+    geom_type = "video_track_polygon" if is_polygon else "video_track_bbox"
+    return Annotation(
+        id=uuid.uuid4(),
+        task_id=source.task_id,
+        project_id=source.project_id,
+        user_id=source.user_id,
+        source="ai_tracker",
+        annotation_type=geom_type,
+        tool_unit_id=source.tool_unit_id,
+        class_name=source.class_name,
+        geometry={
+            "type": geom_type,
+            "track_id": track_id,
+            "keyframes": [],
+            "outside": [],
+        },
+        track_id=track_id,
+    )
+
+
+def _persist_tracker_results(
+    db: AsyncSession,
+    source: Annotation,
+    job: VideoTrackerJob,
+    results: list[TrackerFrameResult],
+    grid_step: int,
+    output_geometry: str,
+) -> list[Annotation]:
+    """落库逐帧结果: 主实例回填源 annotation, 每个新 instance 各建并回填一条 track。
+
+    返回新建的 annotation 列表 (调用方负责 commit)。单实例时 extras 为空, 退化为对源
+    annotation 调一次 apply_tracker_results —— 与阶段 0 之前完全一致。
+    """
+    primary, extras = _partition_results_by_instance(results)
+    apply_tracker_results(source, job, primary, grid_step)
+    is_polygon = output_geometry == "polygon"
+    created: list[Annotation] = []
+    for instance_id in sorted(extras):
+        new_ann = _new_discovered_track(source, is_polygon)
+        db.add(new_ann)
+        apply_tracker_results(new_ann, job, extras[instance_id], grid_step)
+        created.append(new_ann)
+    return created
+
+
+# ---------- v0.21.28 · 候选/接受流: 暂存 + accept/discard ----------
+
+
+def _serialize_results(results: list[TrackerFrameResult]) -> list[dict]:
+    return [
+        {
+            "frame_index": r.frame_index,
+            "geometry": r.geometry,
+            "confidence": r.confidence,
+            "outside": r.outside,
+            "instance_id": r.instance_id,
+            "primary": r.primary,
+        }
+        for r in results
+    ]
+
+
+def _deserialize_results(rows: list[dict]) -> list[TrackerFrameResult]:
+    return [
+        TrackerFrameResult(
+            frame_index=int(row["frame_index"]),
+            geometry=row.get("geometry") or {},
+            confidence=row.get("confidence"),
+            outside=bool(row.get("outside", False)),
+            instance_id=row.get("instance_id"),
+            primary=bool(row.get("primary", False)),
+        )
+        for row in rows
+    ]
+
+
+def _stage_tracker_results(
+    job: VideoTrackerJob,
+    results: list[TrackerFrameResult],
+    grid_step: int,
+    output_geometry: str,
+) -> None:
+    """把逐帧结果暂存进 job.staged_result (候选), **不碰 annotation**。用户接受时反序列化后
+    走 _persist_tracker_results 落库。grid_step / output_geometry 一并存, 供 accept 复用同一
+    落库逻辑 (无需在 accept 时重新推导)。"""
+    job.staged_result = {
+        "results": _serialize_results(results),
+        "grid_step": grid_step,
+        "output_geometry": output_geometry,
+    }
+
+
+async def accept_tracker_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    publisher: TrackerEventPublisher = publish_tracker_event,
+) -> VideoTrackerJob | None:
+    """接受候选: 把 job.staged_result 应用到 annotation (主实例回填源 + 每个新 instance 各建
+    一条 track), status=ACCEPTED。幂等 (已 ACCEPTED 直接返回)。状态不符 / 无 staged → 原样返回。"""
+    job = await _load_job_for_update(db, job_id)
+    if job is None:
+        return None
+    if job.status == VideoTrackerJobStatus.ACCEPTED.value:
+        await db.commit()
+        return job
+    staged = job.staged_result or {}
+    rows = staged.get("results") or []
+    reviewable = job.status in (
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.CANCELLED.value,
+    )
+    if not reviewable or not rows:
+        current_status = job.status
+        await db.rollback()
+        raise TrackerJobStateConflict(
+            f"Video tracker job cannot be accepted from status {current_status}"
+        )
+    annotation = await db.get(Annotation, job.annotation_id)
+    if annotation is None or not annotation.is_active:
+        # 源 annotation 已软删 (多标注员协作常见): 自动丢弃孤儿候选, 别让它一直挂在
+        # pending_review, 并以 409 告知前端清理审阅条。
+        job.status = VideoTrackerJobStatus.DISCARDED.value
+        job.staged_result = None
+        await db.commit()
+        await db.refresh(job)
+        await publisher(job.event_channel, _event(job, "job_discarded"))
+        raise TrackerJobStateConflict(
+            "Source annotation no longer exists; candidate discarded"
+        )
+    _persist_tracker_results(
+        db,
+        annotation,
+        job,
+        _deserialize_results(rows),
+        int(staged.get("grid_step", 1)),
+        staged.get("output_geometry", "bbox"),
+    )
+    job.status = VideoTrackerJobStatus.ACCEPTED.value
+    await db.commit()
+    await db.refresh(job)
+    await publisher(job.event_channel, _event(job, "job_accepted"))
+    return job
+
+
+async def discard_tracker_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    publisher: TrackerEventPublisher = publish_tracker_event,
+) -> VideoTrackerJob | None:
+    """丢弃可审候选并保持 annotation 零改动；重复丢弃幂等。"""
+    job = await _load_job_for_update(db, job_id)
+    if job is None:
+        return None
+    if job.status == VideoTrackerJobStatus.DISCARDED.value:
+        await db.commit()
+        return job
+    staged_rows = (job.staged_result or {}).get("results") or []
+    reviewable = job.status in (
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.CANCELLED.value,
+    )
+    if not reviewable or not staged_rows:
+        current_status = job.status
+        await db.rollback()
+        raise TrackerJobStateConflict(
+            f"Video tracker job cannot be discarded from status {current_status}"
+        )
+    job.status = VideoTrackerJobStatus.DISCARDED.value
+    job.staged_result = None
+    await db.commit()
+    await db.refresh(job)
+    await publisher(job.event_channel, _event(job, "job_discarded"))
+    return job
+
+
 async def _load_job_for_update(
     db: AsyncSession, job_id: uuid.UUID
 ) -> VideoTrackerJob | None:
@@ -276,7 +618,11 @@ async def run_tracker_job(
             raise ValueError("Dataset item not found")
         from app.api.v1.ml_backends import _resolve_task_url
 
-        backend = await MLBackendService(db).get_project_backend(task.project_id)
+        # v0.21.25 (阶段 R) · 按 tracker 能力选后端而非项目单一绑定: sam3_video 挑声明了
+        # sam3_video 的 backend(sam3-backend), 而非静默落到项目绑定的 grounded-sam2。
+        backend = await MLBackendService(db).get_tracker_backend(
+            task.project_id, job.model_key
+        )
         adapter = get_tracker_adapter(job.model_key)
 
         # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
@@ -305,12 +651,36 @@ async def run_tracker_job(
         # non-outside frame geometry so the tracker keeps following a moving
         # target instead of restarting from the original box every window.
         last_geometry = annotation.geometry or {}
+        # v0.21.27 · U-pvs-1 · 多目标跨窗续追: 记每个实例的末帧 (非 outside) 几何, 后续窗对
+        # 每个实例各用其上一窗末帧几何 + 同一 obj_id 重播种 (否则非主实例过一窗即丢)。仅当
+        # 有多实例 (backend 发了 ≥2 个 instance_id) 时启用; 单目标 / None-instance 不触发。
+        last_geom_by_instance: dict[str, dict] = {}
+        # v0.21.28 · B-mx · text-multiplex (sam3_video) 每窗独立会话重检测, 窗内 obj_id 局部;
+        # 平台在窗边界帧按 IoU 关联把窗内 id remap 成跨窗稳定的全局 instance_id (未匹配 → 新
+        # track)。mp_prev_boundary = 上一窗每全局实例的末帧几何; mp_next_global = 新全局 id 计数。
+        associate_multiplex = job.model_key == "sam3_video"
+        mp_prev_boundary: dict[str, dict] = {}
+        mp_next_global = [1]
         # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
         output_geometry = (
             "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
         )
 
-        for from_frame, to_frame in _tracker_windows(job):
+        tracker_windows = _tracker_windows(job)
+        # v0.21.27 · U-pvs-1 · PVS 点/多目标种子 (画布点 → PVS track) 从 prompt JSONB 读出。
+        # 只在种子窗 (首窗, 含原始种子帧) 下发: points 锚在种子帧, 后续窗靠 last_geometry
+        # (上一窗末帧框) 续追, 不重发点种子。缺省无 seeds 时行为与 B-pvs 框种子完全一致。
+        prompt_seeds = (job.prompt or {}).get("seeds")
+
+        for win_idx, (from_frame, to_frame) in enumerate(tracker_windows):
+            # 种子窗下发原始点/框种子; 后续窗若多实例则各自续种 (见 _continuation_seeds),
+            # 单实例则靠 source_geometry=last_geometry 兜底 (零回归)。
+            if win_idx == 0:
+                window_seeds = prompt_seeds or None
+            elif len(last_geom_by_instance) > 1:
+                window_seeds = _continuation_seeds(last_geom_by_instance)
+            else:
+                window_seeds = None
             ctx = TrackerContext(
                 job_id=job.id,
                 task_id=task.id,
@@ -330,29 +700,35 @@ async def run_tracker_job(
                 exemplars=(job.prompt or {}).get("exemplars"),
                 # v0.21.20 · polygon track 回填: 期望输出几何 (polygon/bbox)。
                 output_geometry=output_geometry,
+                # v0.21.27 · U-pvs-1 · 种子窗原始种子 / 后续窗多实例续种 (见上)。
+                seeds=window_seeds,
             )
+            # v0.21.28 · B-mx · 逐窗缓冲结果; 窗末对 text-multiplex 做跨窗 IoU 关联 (remap
+            # 窗内 obj_id → 全局 instance_id) 后再并入 results。非 multiplex 时缓冲即透传。
+            window_results: list[TrackerFrameResult] = []
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)
                 if (
                     job.cancel_requested_at is not None
                     or job.status == VideoTrackerJobStatus.CANCELLED.value
                 ):
+                    # v0.21.28 · 取消也暂存部分结果 (候选); multiplex 先关联本窗已收部分。
+                    if associate_multiplex and window_results:
+                        window_results = _associate_multiplex_window(
+                            window_results, mp_prev_boundary, mp_next_global
+                        )
+                    results.extend(window_results)
                     if results:
-                        apply_tracker_results(annotation, job, results, grid_step)
+                        _stage_tracker_results(job, results, grid_step, output_geometry)
                     job.status = VideoTrackerJobStatus.CANCELLED.value
                     job.completed_at = job.completed_at or _now()
                     await db.commit()
                     await publisher(job.event_channel, _event(job, "job_cancelled"))
                     return job
 
-                results.append(result)
-                # Seed the next window with this window's latest non-outside
-                # geometry. The adapter yields in propagation order, so the
-                # last such result is the boundary frame adjacent to the next
-                # window (works for both forward and backward windows).
-                if not result.outside and result.geometry:
-                    last_geometry = result.geometry
+                window_results.append(result)
                 progress += 1
+                # live 预览事件用窗内 id (瞬态); 最终暂存的 results 用关联后的全局 id。
                 frame_payload = {
                     "frame_index": result.frame_index,
                     "geometry": result.geometry,
@@ -373,18 +749,36 @@ async def run_tracker_job(
                     ),
                 )
 
+            # 窗末: text-multiplex 关联 remap 窗内 obj_id → 跨窗全局 instance_id。
+            if associate_multiplex:
+                window_results = _associate_multiplex_window(
+                    window_results, mp_prev_boundary, mp_next_global
+                )
+            results.extend(window_results)
+            # 续种状态 (关联后 id): 逐实例记末帧几何 (供多实例续种); 主实例 (或单实例 None)
+            # 另记 last_geometry 供 source_geometry 兜底 (与既有单 track 续追一致)。
+            for result in window_results:
+                if not result.outside and result.geometry:
+                    if result.instance_id is not None:
+                        last_geom_by_instance[result.instance_id] = result.geometry
+                    if result.instance_id is None or result.primary:
+                        last_geometry = result.geometry
+
         await db.refresh(job)
         if job.cancel_requested_at is not None:
+            # v0.21.28 · 取消也暂存部分结果 (候选)。
             if results:
-                apply_tracker_results(annotation, job, results, grid_step)
+                _stage_tracker_results(job, results, grid_step, output_geometry)
             job.status = VideoTrackerJobStatus.CANCELLED.value
             job.completed_at = job.completed_at or _now()
             await db.commit()
             await publisher(job.event_channel, _event(job, "job_cancelled"))
             return job
 
-        apply_tracker_results(annotation, job, results, grid_step)
-        job.status = VideoTrackerJobStatus.COMPLETED.value
+        # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
+        # PENDING_REVIEW = 追踪完、结果已暂存、committed annotations 未改。
+        _stage_tracker_results(job, results, grid_step, output_geometry)
+        job.status = VideoTrackerJobStatus.PENDING_REVIEW.value
         job.completed_at = _now()
         await db.commit()
         await db.refresh(job)

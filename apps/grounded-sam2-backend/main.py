@@ -1040,6 +1040,39 @@ def _seed_bbox_from_ctx(ctx: dict) -> dict:
     )
 
 
+def _seeds_from_ctx(ctx: dict) -> list[dict]:
+    """v0.21.27 阶段 A · 从 context 取逐对象 seed(多目标)。
+
+    与 sam3 PVS `_seeds_from_video_ctx` 同款: `seeds[]` 每条
+    {obj_id?, prompts?/bbox?/points?/geometry?}——prompts(多帧纠偏)/bbox/points 原样透传;
+    geometry(跨窗续种, runner `_continuation_seeds` 下发)取外接框。缺 obj_id 按序补 1..N。
+    无 `seeds[]` 时回退单 seed = source_geometry/prompt.geometry(obj_id=1), 与旧 seed-bbox 等价。
+    """
+    raw = ctx.get("seeds")
+    if isinstance(raw, list) and raw:
+        seeds: list[dict] = []
+        for i, s in enumerate(raw):
+            if not isinstance(s, dict):
+                continue
+            entry: dict = {"obj_id": int(s.get("obj_id", i + 1))}
+            if isinstance(s.get("prompts"), list) and s["prompts"]:
+                entry["prompts"] = s["prompts"]  # 多帧纠偏, 原样透传
+            elif isinstance(s.get("bbox"), dict):
+                entry["bbox"] = s["bbox"]
+            elif isinstance(s.get("points"), list) and s["points"]:
+                entry["points"] = s["points"]
+            elif s.get("geometry") is not None:
+                try:
+                    entry["bbox"] = _seed_bbox_from_ctx({"source_geometry": s["geometry"]})
+                except HTTPException:
+                    pass
+            if "prompts" in entry or "bbox" in entry or "points" in entry:
+                seeds.append(entry)
+        if seeds:
+            return seeds
+    return [{"obj_id": 1, "bbox": _seed_bbox_from_ctx(ctx)}]
+
+
 def _video_local_path(file_path: str) -> str:
     """video_tracker 的 file_path → OpenCV 可打开的源.
 
@@ -1095,7 +1128,8 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
             status_code=422,
             detail=f"video_tracker direction must be forward|backward, got {direction!r}",
         )
-    seed_bbox = _seed_bbox_from_ctx(ctx)
+    # v0.21.27 阶段 A · 多目标: 优先 seeds[] (逐对象点/框/多帧 prompt), 回退单 seed_bbox。
+    seeds = _seeds_from_ctx(ctx)
     # v0.21.20 · polygon track 回填: 平台按源几何类型下发 output_geometry, "polygon" 时
     # 每帧保留 mask 矢量化为多边形而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。
     output_geometry = ctx.get("output_geometry") or "bbox"
@@ -1126,7 +1160,7 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
                 from_frame,
                 to_frame,
                 direction,
-                seed_bbox,
+                seeds,
                 output_geometry=output_geometry,
             ),
         )

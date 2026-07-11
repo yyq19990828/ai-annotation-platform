@@ -416,8 +416,13 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (action.scope === "keyframe") {
             const selected = annotationsRef.current.find((ann) => ann.id === s.selectedId);
             if (selected?.geometry.type === "video_track_bbox") {
-              videoControlsRef?.current?.deleteSelectedTrackKeyframe();
-              return;
+              // v0.21.26 · 关键帧级删除是 no-op 时不再「静默什么都不发生」:
+              // 只剩 1 个关键帧 → 删它 = 删整条, 回退到整条删; 多关键帧但当前帧无关键帧 →
+              // 保持不动(避免在非关键帧上误删整条)。
+              const deleted = videoControlsRef?.current?.deleteSelectedTrackKeyframe();
+              if (deleted) return;
+              if (selected.geometry.keyframes.length > 1) return;
+              // 落到下方 handleDeleteBox 删整条
             }
           }
           handleDeleteBox(s.selectedId);

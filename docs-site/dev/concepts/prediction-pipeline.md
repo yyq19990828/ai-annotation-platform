@@ -114,7 +114,7 @@ sequenceDiagram
 
 ### 能力快照落库
 
-`check_health`（`apps/api/app/services/ml_backend.py`）在拉完 `/health` 后 best-effort 探一次 backend `/setup`，调 `extract_capabilities`（`apps/api/app/services/ml_capabilities.py`）把能力快照写进 `ml_backends.health_meta["capabilities"]`：
+`check_health`（`apps/api/app/services/ml_backend.py`）在拉完 `/health` 后 best-effort 探一次 backend `/setup`，调 `extract_capabilities`（`apps/api/app/services/ml_capabilities.py`）把能力快照写进 `ml_backend_registry.health_meta["capabilities"]`：
 
 | 字段 | 来源 | 含义 |
 |---|---|---|
@@ -142,6 +142,8 @@ sequenceDiagram
 | `lidar` | 显示占位提示，批量预标注入口暂不执行 |
 
 视频项目的 AI 标注通过工作台 video tracker 发起，运行态保留 `video_tracker_jobs` 专表；历史汇总在 `/ai-pre/jobs?tab=video`，由 `async_jobs(kind=video_tracker)` 提供。
+
+**数据边界**：本页的批量预标流水线以 `Prediction` 为候选存储，按 shape 采纳；交互视频 tracker 则把逐帧、多目标结果暂存在 `VideoTrackerJob.staged_result`，按 job 接受 / 丢弃，接受后才写入轨迹 annotation。两者共享 ML Backend 能力协议，但不共享候选表、计数或状态机。视频链路详见[视频 AI 追踪架构](./video-ai-tracking)。
 
 ## 按后端动态参数透传
 

@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-11
 ---
 
 # Runbook：PG 连接池耗尽
@@ -52,10 +52,11 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 ### 根因：连接泄漏
 
-重启 API 容器可以强制释放所有池中连接：
+开发态 API 跑在宿主机，重启 `pnpm dev:api` 的进程即可释放所有池中连接。生产叠加 compose 时可以重启 API 容器：
 
 ```bash
-docker compose restart api
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml restart api
 ```
 
 > 此操作会短暂中断服务（约 5–10 秒），适合低流量时段。
@@ -71,7 +72,7 @@ DB_MAX_OVERFLOW=20     # 允许超出池大小的最大连接数
 DB_POOL_TIMEOUT=30     # 等待连接的超时秒数
 ```
 
-调整后重启 API 容器使配置生效。
+调整后重启开发态 API 进程，或按上面的生产 compose 命令重启 API 容器使配置生效。
 
 ### 根因：PG 自身连接数限制（`max_connections`）
 

@@ -79,7 +79,8 @@ import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSideba
 import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
-import { isVideoBbox, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
+import { isAnyVideoSingleFrame, isVideoBbox, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
@@ -100,6 +101,7 @@ import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
 import { VideoTrackBatchCardContent } from "../shell/VideoTrackBatchCardContent";
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
+import { VideoPointsTrackCardContent } from "../shell/selectionCard/VideoPointsTrackCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -162,6 +164,7 @@ interface WorkbenchShellReadyModel {
   kind: "ready";
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
+  trackerReview: ComponentProps<typeof VideoTrackerReviewBar>;
   issueSection?: WorkbenchShellIssueSection;
 }
 
@@ -169,6 +172,17 @@ export type UseWorkbenchShellModelResult =
   | { kind: "loading" }
   | WorkbenchShellEmptyState
   | WorkbenchShellReadyModel;
+
+// instance_id 契约上是 str(obj_id) (见后端 _frame_result_from_payload), 通常是数字串, 但
+// 允许非数字。用于候选叠加的配色索引 + 目标标号: 数字直取, 非数字稳定哈希成正整数,
+// 避免 Number("obj_a") → NaN 让 OBJ_PALETTE[NaN]=undefined (无描边) 且标号显示 "NaN"。
+function instanceObjNumber(instanceId: string | null | undefined): number {
+  const s = instanceId ?? "1";
+  if (/^\d+$/.test(s)) return Number(s);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return (Math.abs(h) % 999) + 1;
+}
 
 export function useWorkbenchShellModel({
   mode = "annotate",
@@ -514,11 +528,33 @@ export function useWorkbenchShellModel({
       timers.clear();
     };
   }, []);
+  // v0.21.27 · U-pvs-1 · PVS 点种子采集态 (完整接线见传播对话框处)。此处先声明, 因下方
+  // 「工具未启用即回收」守卫需读它: 采集态借 smart-point 落点, 不受回收。
+  // 多目标: 每点带 obj (目标序号, 1-based; obj=1 为主实例, 回填选中轨迹, obj≥2 各成新轨迹);
+  // seedObj = 当前正在落点的目标, 「新目标」递增。可视化仍复用 overlay ({pt,polarity})。
+  // v0.21.27 · U-pvs-2 纠偏: 每点还带 frame (落点时的帧), 提交按 obj+frame 分组成多帧
+  // prompts; seedAnchorFrame = 首个落点帧, 传播范围锚定于此 (导航到别帧加修正点不移动范围)。
+  const [trackerSeeds, setTrackerSeeds] = useState<
+    { pt: [number, number]; polarity: 1 | 0; obj: number; frame: number }[]
+  >([]);
+  // v0.21.27 · 框修正 · PVS 框种子 (点种子的姊妹): 归一化 xyxy + obj + frame。与点种子一起
+  // 按 obj→frame 分组成 prompts (每帧可同时带 points 与 bbox), 供 SAM2 式 add_new_points_or_box。
+  const [trackerSeedBoxes, setTrackerSeedBoxes] = useState<
+    { bbox: [number, number, number, number]; obj: number; frame: number }[]
+  >([]);
+  // 落点/画框模式: point → smart-point 落点, box → smart-box 画修正框。
+  const [seedMode, setSeedMode] = useState<"point" | "box">("point");
+  const [seedObj, setSeedObj] = useState(1);
+  const [seedAnchorFrame, setSeedAnchorFrame] = useState<number | null>(null);
+  const [seedCollecting, setSeedCollecting] = useState(false);
+  const seedPrevToolRef = useRef<VideoTool | null>(null);
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
+  // v0.21.27 · U-pvs-1 · PVS 种子采集态会临时把工具切到 smart-point (画布 samProbe 只看
+  // 工具值、不看 enablement), 此时不受本守卫回收 —— 否则未绑交互工具的项目落不了种子。
   useEffect(() => {
-    if (!isVideoTask) return;
+    if (!isVideoTask || seedCollecting) return;
     if (videoTool !== "select" && !isVideoToolEnabled(videoTool)) setVideoTool("select");
-  }, [isVideoTask, isVideoToolEnabled, videoTool, setVideoTool]);
+  }, [isVideoTask, seedCollecting, isVideoToolEnabled, videoTool, setVideoTool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
@@ -542,30 +578,133 @@ export function useWorkbenchShellModel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isVideoTask, videoChaptersData, videoFrameIndex, setVideoFrameIndex]);
 
-  const trackerJobs = useVideoTrackerJobs();
+  const trackerJobs = useVideoTrackerJobs(taskId, isVideoTask);
   const [propagateDialog, setPropagateDialog] = useState<{
     annotation: VideoTrackAnnotation;
     submitting: boolean;
   } | null>(null);
+  // v0.21.27 · U-pvs-1 · PVS 点种子采集接线 (state 已在上方声明): 用户在传播对话框点
+  // 「落点选目标」进入采集态, 画布点击落归一化种子点 (复用 smart-point 手势 →
+  // onVideoSamPrompt), 提交时进 prompt.seeds。seedPrevToolRef 记录进入前的工具, 退出时
+  // 仅在真进过采集态时复原 (避免误改工具)。
+  const startSeedCollecting = useCallback(() => {
+    seedPrevToolRef.current = s.videoTool;
+    setVideoTool(seedMode === "box" ? "smart-box" : "smart-point");
+    setSeedCollecting(true);
+  }, [s.videoTool, setVideoTool, seedMode]);
+  // 点/框模式切换: 采集中即时切工具 (smart-point ↔ smart-box), 未采集只记模式。
+  const changeSeedMode = useCallback(
+    (mode: "point" | "box") => {
+      setSeedMode(mode);
+      if (seedCollecting) setVideoTool(mode === "box" ? "smart-box" : "smart-point");
+    },
+    [seedCollecting, setVideoTool],
+  );
+  const stopSeedCollecting = useCallback(() => {
+    if (seedPrevToolRef.current !== null) {
+      setVideoTool(seedPrevToolRef.current);
+      seedPrevToolRef.current = null;
+    }
+    setSeedCollecting(false);
+  }, [setVideoTool]);
+  const toggleSeedCollecting = useCallback(() => {
+    if (seedCollecting) stopSeedCollecting();
+    else startSeedCollecting();
+  }, [seedCollecting, startSeedCollecting, stopSeedCollecting]);
+  // 「新目标」: 当前目标已落 ≥1 点或框才递增 (不建空目标), 后续点/框归入下一目标。
+  const newSeedTarget = useCallback(() => {
+    const hasSeed =
+      trackerSeeds.some((s) => s.obj === seedObj) ||
+      trackerSeedBoxes.some((b) => b.obj === seedObj);
+    if (hasSeed) setSeedObj(seedObj + 1);
+  }, [trackerSeeds, trackerSeedBoxes, seedObj]);
 
   const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
     setPropagateBrush(null);
+    setTrackerSeeds([]);
+    setTrackerSeedBoxes([]);
+    setSeedObj(1);
+    setSeedMode("point");
+    setSeedAnchorFrame(null);
+    setSeedCollecting(false);
+    seedPrevToolRef.current = null;
   }, []);
+  const closePropagateDialog = useCallback(() => {
+    setPropagateDialog(null);
+    setTrackerSeeds([]);
+    setTrackerSeedBoxes([]);
+    setSeedObj(1);
+    setSeedAnchorFrame(null);
+    stopSeedCollecting();
+  }, [stopSeedCollecting]);
 
   const handlePropagateSubmit = useCallback(
     async (payload: Parameters<typeof trackerJobs.propagate>[2]) => {
       if (!propagateDialog || !taskId) return;
       setPropagateDialog((prev) => (prev ? { ...prev, submitting: true } : prev));
       try {
-        await trackerJobs.propagate(taskId, propagateDialog.annotation.id, payload);
-        setPropagateDialog(null);
+        // v0.21.27 · U-pvs-1/2 · 有落点则注入 prompt.seeds: 按 obj → frame 双层分组成多帧
+        // prompts (obj_id=目标序号; prompts=[{frame_index, points:[[x,y,label],...]}], 正点
+        // label=1 / Alt 负点 label=0)。obj=1 主实例回填选中轨迹, obj≥2 各成新轨迹; 同一 obj
+        // 在多帧落点 = 纠偏 (原始帧 + 修正帧累积)。单帧时退化为一条 prompt。runner 只在种子窗
+        // 透传, 多目标跨窗由 runner 逐实例续种; backend PVS 优先 seeds[] 于 source_geometry。
+        // v0.21.27 · 框修正 · 每 (obj, frame) 的 prompt 可同时带 points 与 bbox。点来自
+        // trackerSeeds, 框来自 trackerSeedBoxes (归一化 xyxy → 后端要的 {x,y,w,h})。
+        type SeedEntry = { points: [number, number, number][]; bbox?: Record<string, number> };
+        const byObj = new Map<number, Map<number, SeedEntry>>();
+        const ensureEntry = (obj: number, frame: number): SeedEntry => {
+          const byFrame = byObj.get(obj) ?? new Map<number, SeedEntry>();
+          const entry = byFrame.get(frame) ?? { points: [] };
+          byFrame.set(frame, entry);
+          byObj.set(obj, byFrame);
+          return entry;
+        };
+        for (const { pt, polarity, obj, frame } of trackerSeeds) {
+          ensureEntry(obj, frame).points.push([pt[0], pt[1], polarity]);
+        }
+        for (const { bbox, obj, frame } of trackerSeedBoxes) {
+          const [x1, y1, x2, y2] = bbox;
+          ensureEntry(obj, frame).bbox = {
+            x: Math.min(x1, x2),
+            y: Math.min(y1, y2),
+            w: Math.abs(x2 - x1),
+            h: Math.abs(y2 - y1),
+          };
+        }
+        const hasSeeds = trackerSeeds.length > 0 || trackerSeedBoxes.length > 0;
+        const withSeeds = hasSeeds
+          ? {
+              ...payload,
+              prompt: {
+                ...(payload.prompt ?? {}),
+                seeds: [...byObj.entries()]
+                  .sort((a, b) => a[0] - b[0])
+                  .map(([obj, byFrame]) => ({
+                    obj_id: obj,
+                    prompts: [...byFrame.entries()]
+                      .sort((a, b) => a[0] - b[0])
+                      .map(([frame, entry]) => ({
+                        frame_index: frame,
+                        ...(entry.points.length ? { points: entry.points } : {}),
+                        ...(entry.bbox ? { bbox: entry.bbox } : {}),
+                      })),
+                  })),
+              },
+            }
+          : payload;
+        await trackerJobs.propagate(
+          taskId,
+          propagateDialog.annotation.id,
+          withSeeds,
+        );
+        closePropagateDialog();
       } catch (e) {
         setPropagateDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
         throw e;
       }
     },
-    [propagateDialog, taskId, trackerJobs],
+    [propagateDialog, taskId, trackerJobs, trackerSeeds, trackerSeedBoxes, closePropagateDialog],
   );
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
@@ -892,6 +1031,16 @@ export function useWorkbenchShellModel({
     savedInteractiveBackendId: interactiveBackendPref.savedBackendId ?? null,
     onSaveInteractiveBackend: interactiveBackendPref.save,
   });
+  // v0.21.25 (阶段 R) · tracker 可用性看「项目所有 reachable backend 的 supported_trackers 并集」,
+  // 而非单个绑定/交互 backend——否则项目绑 grounded-sam2 时, sam3-backend 声明的 sam3_video 永远
+  // 被灰置「未绑定后端」。与后端 get_tracker_backend 的按能力路由对齐。
+  const allSupportedTrackers = useMemo(() => {
+    const set = new Set<string>();
+    for (const entry of Object.values(routing.capIndex)) {
+      if (entry.reachable) for (const t of entry.trackers) set.add(t);
+    }
+    return [...set];
+  }, [routing.capIndex]);
   // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
@@ -930,6 +1079,29 @@ export function useWorkbenchShellModel({
   // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
   const onVideoSamPrompt = useCallback(
     (prompt: VideoSamPrompt) => {
+      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
+      // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
+      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
+      // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
+      if (seedCollecting && prompt.mode === "point") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeeds((prev) => [
+          ...prev,
+          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
+        ]);
+        return;
+      }
+      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
+      if (seedCollecting && prompt.mode === "bbox") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeedBoxes((prev) => [
+          ...prev,
+          { bbox: prompt.bbox, obj: seedObj, frame },
+        ]);
+        return;
+      }
       if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
       // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
       if (prompt.mode === "exemplar") {
@@ -937,7 +1109,7 @@ export function useWorkbenchShellModel({
       }
       sam.runBbox(prompt.bbox);
     },
-    [sam, s.exemplarOutputMode],
+    [sam, s.exemplarOutputMode, seedCollecting, seedObj, s.videoFrameIndex],
   );
   // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
   // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
@@ -2180,8 +2352,9 @@ export function useWorkbenchShellModel({
         />
       );
     } else if (stageKind === "video") {
-      if (ann && ann.geometry.type === "video_bbox") {
-        // 视频单帧框:不属任何轨迹、会被轨迹面板过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。
+      if (ann && isAnyVideoSingleFrame(ann)) {
+        // 视频单帧标注 (bbox / polygon / polyline / rotated_bbox):不属任何轨迹、会被轨迹面板
+        // 过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。v0.21.26 起覆盖全部单帧几何。
         children = (
           <VideoFrameBoxCardContent
             annotation={ann}
@@ -2194,6 +2367,26 @@ export function useWorkbenchShellModel({
             onChangeClass={handleStartChangeClass}
             onDelete={handleDeleteBox}
             onUpdateAttributes={handleUpdateAttributes}
+          />
+        );
+      } else if (ann && isVideoPointsTrack(ann)) {
+        // v0.21.26 · 点集轨迹 (polygon / polyline track):简化卡(指标 + 改类 / 显隐 / 锁 / 删整条),
+        // 取代此前空白卡。完整关键帧编辑仍归 v0.21.20 多几何 track epic,不复用 bbox 轨迹卡。
+        children = (
+          <VideoPointsTrackCardContent
+            annotation={ann}
+            frameIndex={videoFrameIndex}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            fps={videoFps}
+            readOnly={isLocked}
+            hidden={s.hiddenVideoTrackIds.has(ann.geometry.track_id)}
+            locked={s.lockedVideoTrackIds.has(ann.geometry.track_id)}
+            onSeekFrame={setVideoFrameIndex}
+            onChangeClass={handleStartChangeClass}
+            onDelete={handleDeleteBox}
+            onToggleHidden={s.toggleHiddenVideoTrack}
+            onToggleLock={s.toggleLockedVideoTrack}
           />
         );
       } else if (videoBatchTracks.length >= 2) {
@@ -2248,10 +2441,18 @@ export function useWorkbenchShellModel({
             onClear={() => handleSelectBox(null)}
           />
         );
-      } else {
-        // 视频轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
+      } else if (ann && isVideoTrack(ann)) {
+        // 视频 bbox 轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
         // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
         children = renderVideoTrackSidebar("current", "card");
+      } else {
+        // v0.21.26 · 兜底:未被上面任何分支覆盖的视频几何也给占位摘要 (类别 + type),
+        // 不再落到 renderVideoTrackSidebar 的 null 空卡。
+        children = (
+          <SelectionCardPlaceholder
+            summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
+          />
+        );
       }
     } else if (ann && stageKind === "image") {
       children = (
@@ -2300,6 +2501,7 @@ export function useWorkbenchShellModel({
     imageWidth,
     imageHeight,
     videoFps,
+    videoFrameIndex,
     setVideoFrameIndex,
     toolView.attributeSchema,
     isLocked,
@@ -2483,11 +2685,54 @@ export function useWorkbenchShellModel({
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
+  // v0.21.27 · 框修正 · 是否多目标 (跨点种子与框种子统计 distinct obj); 决定 overlay 是否逐目标配色。
+  const seedMultiObj =
+    new Set([
+      ...trackerSeeds.map((sd) => sd.obj),
+      ...trackerSeedBoxes.map((sb) => sb.obj),
+    ]).size > 1;
+
+  // v0.21.28 · 候选/接受: 本任务的待审候选 (candidates 按 jobId, 用 jobs[jobId].taskId 过滤)。
+  // 普通计算 (非 hook): 位于早返回之后, 且计算便宜。
+  const trackerReviewEntry =
+    Object.entries(trackerJobs.candidates).find(
+      ([jobId]) => trackerJobs.jobs[jobId]?.taskId === taskId,
+    ) ?? null;
+  const trackerReviewCandidate = trackerReviewEntry
+    ? { jobId: trackerReviewEntry[0], preview: trackerReviewEntry[1] }
+    : null;
+  const trackerReviewMultiObj = trackerReviewCandidate
+    ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size > 1
+    : false;
+  // 候选当前帧的框 (bbox 几何) → overlay 预览 (复用 samSessionBoxes 通道, 多目标逐 obj 配色)。
+  const candidateBoxesThisFrame: { bbox: [number, number, number, number]; obj?: number }[] =
+    trackerReviewCandidate
+      ? trackerReviewCandidate.preview.results
+          .filter(
+            (r) =>
+              r.frame_index === s.videoFrameIndex &&
+              !r.outside &&
+              (r.geometry as { type?: string } | null)?.type === "bbox",
+          )
+          .map((r) => {
+            const g = r.geometry as { x: number; y: number; w: number; h: number };
+            return {
+              bbox: [g.x, g.y, g.x + g.w, g.y + g.h] as [number, number, number, number],
+              obj: trackerReviewMultiObj ? instanceObjNumber(r.instance_id) : undefined,
+            };
+          })
+      : [];
   const propagateDialogNextKeyframe = propagateDialogTrack
     ? [...propagateDialogTrack.geometry.keyframes]
         .map((kf) => kf.frame_index)
         .filter((idx) => idx > s.videoFrameIndex)
         .sort((a, b) => a - b)[0] ?? null
+    : null;
+  const propagateDialogPrevKeyframe = propagateDialogTrack
+    ? [...propagateDialogTrack.geometry.keyframes]
+        .map((kf) => kf.frame_index)
+        .filter((idx) => idx < s.videoFrameIndex)
+        .sort((a, b) => b - a)[0] ?? null
     : null;
 
   // v0.21.10 · 「当前题 AI」header 待审数: 视频按**当前帧**过滤 (与下方候选列表口径一致), 图像取全部。
@@ -2616,8 +2861,10 @@ export function useWorkbenchShellModel({
               />
             )}
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
-                与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。 */}
-            {isAIToolId(activeAiTool) && (
+                与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
+                v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
+                (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
+            {isAIToolId(activeAiTool) && !seedCollecting && (
               <InteractiveToolBar
                 tool={activeAiTool}
                 backendName={mlCapabilities.capability?.name}
@@ -2735,7 +2982,31 @@ export function useWorkbenchShellModel({
         samPolarity: s.samPolarity,
         samCandidates: isVideoTask ? sam.candidates : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
-        samSessionPoints: isVideoTask ? sam.sessionPoints : undefined,
+        // v0.21.27 · U-pvs-1/2/3 + 框修正 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS
+        // 种子点/框 (归一化); 纠偏多帧下只画**当前帧**的点/框 (别帧坐标属其帧, 画到当前帧会错位)。
+        // 多目标 (≥2 obj, 跨点与框统计) 时带 obj 供 overlay 逐目标配色 + 标号, 单目标剥去 obj
+        // (白边、无标号, 与原视觉一致)。否则仍画帧级 SAM 会话点。
+        samSessionPoints: isVideoTask
+          ? propagateDialog
+            ? trackerSeeds
+                .filter((sd) => sd.frame === s.videoFrameIndex)
+                .map(({ pt, polarity, obj }) => ({
+                  pt,
+                  polarity,
+                  obj: seedMultiObj ? obj : undefined,
+                }))
+            : sam.sessionPoints
+          : undefined,
+        // 对话框开时画种子框; 否则若有待审候选, 画候选当前帧框 (预览); 都无则 undefined。
+        samSessionBoxes: !isVideoTask
+          ? undefined
+          : propagateDialog
+            ? trackerSeedBoxes
+                .filter((sb) => sb.frame === s.videoFrameIndex)
+                .map(({ bbox, obj }) => ({ bbox, obj: seedMultiObj ? obj : undefined }))
+            : candidateBoxesThisFrame.length
+              ? candidateBoxesThisFrame
+              : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
@@ -3078,23 +3349,71 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
-    frameIndex: s.videoFrameIndex,
+    // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
+    // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
+    frameIndex: seedAnchorFrame ?? s.videoFrameIndex,
     maxFrame: Math.max(0, videoFrameCount - 1),
     nextKeyframeAfter: propagateDialogNextKeyframe,
+    prevKeyframeBefore: propagateDialogPrevKeyframe,
     userId: meUserId ?? null,
     samplingStep,
     projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
     preferNonMockModel: Boolean(currentProject?.ml_backend_id),
     // v0.21.19 · 能力协商: backend 声明的 tracker 列表, 用于灰置未声明的 text-driven tracker (sam3_video)。
-    supportedTrackers: mlCapabilities.capability?.supported_trackers,
+    // v0.21.25 (阶段 R): 取所有已启用 backend 的并集 (allSupportedTrackers), 不再局限单个绑定/交互 backend。
+    supportedTrackers: allSupportedTrackers,
     textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
     submitting: Boolean(propagateDialog?.submitting),
-    onCancel: () => setPropagateDialog(null),
+    onCancel: closePropagateDialog,
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
     brushedRange: propagateBrush,
+    // v0.21.27 · U-pvs-1/2 + 框修正 · PVS 点/框种子采集 (仅 sam3_video_interactive, 门控在对话框内)。
+    seedCollecting,
+    seedPointCount: trackerSeeds.length,
+    // 框修正: 已落框数 + 点/框模式切换。
+    seedBoxCount: trackerSeedBoxes.length,
+    seedMode,
+    onChangeSeedMode: changeSeedMode,
+    // 目标/帧数跨点与框统计。
+    seedTargetCount: new Set([
+      ...trackerSeeds.map((s) => s.obj),
+      ...trackerSeedBoxes.map((b) => b.obj),
+    ]).size,
+    seedFrameCount: new Set([
+      ...trackerSeeds.map((s) => s.frame),
+      ...trackerSeedBoxes.map((b) => b.frame),
+    ]).size,
+    onToggleSeedCollecting: toggleSeedCollecting,
+    onNewSeedTarget: newSeedTarget,
+    onClearSeeds: () => {
+      setTrackerSeeds([]);
+      setTrackerSeedBoxes([]);
+      setSeedObj(1);
+      setSeedAnchorFrame(null);
+    },
+  };
+
+  // v0.21.28 · 候选/接受审阅条 props。
+  const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
+    open: Boolean(trackerReviewCandidate),
+    frameCount: trackerReviewCandidate
+      ? new Set(trackerReviewCandidate.preview.results.map((r) => r.frame_index)).size
+      : 0,
+    targetCount: trackerReviewCandidate
+      ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size
+      : 0,
+    submitting: trackerReviewCandidate
+      ? Boolean(trackerJobs.submitting[trackerReviewCandidate.jobId])
+      : false,
+    onAccept: () => {
+      if (trackerReviewCandidate) void trackerJobs.accept(trackerReviewCandidate.jobId);
+    },
+    onDiscard: () => {
+      if (trackerReviewCandidate) void trackerJobs.discard(trackerReviewCandidate.jobId);
+    },
   };
 
   const issueSection = projectId && taskId ? {
@@ -3122,6 +3441,7 @@ export function useWorkbenchShellModel({
     kind: "ready",
     layout,
     propagateDialog: propagateDialogProps,
+    trackerReview: trackerReviewProps,
     issueSection,
   };
 }

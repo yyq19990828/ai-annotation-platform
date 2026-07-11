@@ -282,6 +282,7 @@
 | POST | `/{backend_id}/predict-test` |
 | POST | `/{backend_id}/interactive-annotating` |
 | POST | `/{backend_id}/predict-frame` |
+| POST | `/{backend_id}/interactive-annotating-frame` |
 
 ## `ml_capabilities.py`
 
@@ -465,6 +466,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/{task_id}/video/tracker-jobs/reviewable` |
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/point-cloud/manifest` |
 | GET | `/{task_id}/video/frame-timetable` |
@@ -499,6 +501,9 @@
 |---|---|
 | GET | `/{job_id}` |
 | DELETE | `/{job_id}` |
+| POST | `/{job_id}/accept` |
+| POST | `/{job_id}/discard` |
+| GET | `/{job_id}/preview` |
 
 ## `videos.py`
 
@@ -520,4 +525,4 @@
 
 ---
 
-_共 51 模块 / 278 路由_
+_共 51 模块 / 283 路由_

@@ -291,7 +291,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 - 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
 - `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
 - `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`），不嵌套 LabelStudio shape。预测导入端也接受可选 `shapes[]`，用于把多个 shape 合并到同一条 prediction；`video_bbox` / `video_track_bbox` 暂不导入。
-- `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `keypoint` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline, keypointlabels→keypoint)。
+- `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `keypoint` / `lidar_box_3d` / `point_mask_3d`)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline, keypointlabels→keypoint)。遗留文件中的 `ai_interactive` 会按几何归位到 `region` / `bbox`，新导出不再产生该值。
 
 详见 [ADR-0024](../../dev/adr/archive/0024-aap-json-format) · [ADR-0026](../../dev/adr/archive/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
 

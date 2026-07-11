@@ -492,11 +492,27 @@ def _extract_variant_catalog(setup: dict | None) -> VariantCatalog | None:
 
 
 def _extract_supported_variants(setup: dict | None) -> list[dict]:
-    """Extract v2 generic variant axes from /setup without changing their shape."""
+    """Extract v2 generic variant axes from /setup without changing their shape.
+
+    优先顶层 supported_variants (gsam2 等把变体挂在顶层); 顶层为空时回落到各 model 的
+    supported_variants (rapidocr 等 v2 backend 把变体挂在 models[].supported_variants 上),
+    按 axis key 去重合并。否则 supports_variants 会误判为 False, 运行时观测面板对这类
+    容器错显「该容器不暴露变体目录」。
+    """
     if not setup:
         return []
     groups = setup.get("supported_variants") or []
-    return list(groups) if isinstance(groups, list) else []
+    if isinstance(groups, list) and groups:
+        return list(groups)
+    merged: dict[str, dict] = {}
+    for model in setup.get("models") or []:
+        if not isinstance(model, dict):
+            continue
+        for group in model.get("supported_variants") or []:
+            key = group.get("key") if isinstance(group, dict) else None
+            if key and key not in merged:
+                merged[key] = group
+    return list(merged.values())
 
 
 async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:

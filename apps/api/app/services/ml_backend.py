@@ -256,3 +256,37 @@ class MLBackendService:
                 if backend is not None:
                     return backend
         return await self.get_interactive_backend(project_id)
+
+    async def get_tracker_backend(
+        self, project_id: uuid.UUID, model_key: str
+    ) -> MLBackendRegistry | None:
+        """按 tracker 能力选后端：项目已启用的 backend 里挑 `supported_trackers` 含 model_key 的。
+
+        绑定优先（项目显式绑定的 backend 若支持该 tracker 则用它），否则取首个 connected 的。
+        与 `get_project_backend` 的区别：后者只按「单一绑定 / 交互 fallback」选、不看 tracker——
+        一项目同时启用多个 tracker-capable backend 时（如 grounded-sam2[sam2_video] +
+        sam3-backend[sam3_video]），会把所有 tracker（含 sam3_video）都发给绑定那个，导致
+        sam3_video 静默落到 sam2。本方法按 `health_meta.capabilities.supported_trackers`
+        路由，消除该错配。
+
+        返回 None：没有已启用 backend 声明该 tracker（如 mock_bbox 不由任何 backend 声明，
+        或项目未启用对应 backend）——交由 adapter 侧处理（mock 无需 backend；真 tracker 报错）。
+        """
+
+        def _supports(backend: MLBackendRegistry) -> bool:
+            caps = (backend.health_meta or {}).get("capabilities") or {}
+            return model_key in (caps.get("supported_trackers") or [])
+
+        supporting = [
+            b for b in await self.list_enabled_for_project(project_id) if _supports(b)
+        ]
+        if not supporting:
+            return None
+        proj = await self.db.get(Project, project_id)
+        bound_id = proj.ml_backend_id if proj is not None else None
+        if bound_id is not None:
+            for b in supporting:
+                if b.id == bound_id:
+                    return b
+        connected = [b for b in supporting if b.state == "connected"]
+        return (connected or supporting)[0]

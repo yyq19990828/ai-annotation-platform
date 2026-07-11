@@ -16,8 +16,8 @@
     响应 result 每条: {frame_index(源帧号), geometry:{type:"polygon"|"bbox", ...},
                         confidence, outside}, 坐标归一化到 [0,1]。
 
-显存现实 (单卡 8GB): 图像 sam3.pt(~5.8GB) 与视频 multiplex(~3.2GB) 无法并存,
-main.py 采「互斥常驻」——加载视频前先卸载图像模型 (见 _ensure_video_tracker_loaded)。
+显存: 图像 sam3.pt(~5.8GB) + 视频 multiplex(~3.2GB) 约 9GB。v0.21.x 起取消二者互斥常驻
+(24GB 卡容得下并存), 各自独立懒加载 / idle 卸载; 小显存部署若不需视频设 SAM3_DOWNLOAD_VIDEO=0。
 """
 
 from __future__ import annotations
@@ -45,8 +45,11 @@ _VIDEO_CKPT = os.path.join(CHECKPOINT_DIR, "sam3.1_multiplex.pt")
 _BPE_PATH = os.path.join(_VENDOR_ROOT, "sam3/assets/bpe_simple_vocab_16e6.txt.gz")
 # FlashAttention-3 仅 Hopper(SM90) 优化; 消费级 Ada(4060, SM89) 默认关。可用 env 覆盖。
 _USE_FA3 = os.getenv("SAM3_VIDEO_USE_FA3", "0") == "1"
-# 单次窗口安全上限 (帧), 防超长窗口灌爆显存。
-DEFAULT_MAX_WINDOW_FRAMES = int(os.getenv("SAM3_VIDEO_MAX_WINDOW_FRAMES", "300"))
+# 单次窗口安全上限 (帧), 防超长窗口灌爆显存。视频前向显存随窗口近似线性增长
+# (实测 ~0.85GB/帧, 基线 ~5.4GB, 16 帧 ~18.9GB, 41 帧即 OOM@24GB), 故默认取 16
+# 作硬上限; runner 侧 video_tracker_sam3_window_size_frames 会先把请求切到该量级,
+# 本 env 是 backend 侧兜底 (直连 /predict 或配置漂移时拒绝超限窗口而非 OOM)。
+DEFAULT_MAX_WINDOW_FRAMES = int(os.getenv("SAM3_VIDEO_MAX_WINDOW_FRAMES", "16"))
 # mask→polygon 简化容差 (像素), 与图片栈同源默认。
 _POLYGON_TOLERANCE = 1.0
 
@@ -120,6 +123,7 @@ class SAM3MultiplexVideoTracker:
         tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
         session_id = None
         try:
+            # 窗口不完整只 warn (见 _extract_window_jpegs); 但下面两种截断必须硬失败:
             _fw, _fh, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
@@ -127,6 +131,15 @@ class SAM3MultiplexVideoTracker:
                 raise ValueError(
                     f"no frames decoded from {video_path[:80]} for window [{lo},{hi}]"
                 )
+            # 种子帧落进未解码区 (常见于 backward 追踪、种子在窗尾 hi): 若放行, 下面的
+            # clamp 会把它静默挪到实际最后一帧, 追踪从一个完全错误的种子帧开始且无提示。
+            if seed_src_frame - lo >= local_count:
+                raise ValueError(
+                    f"seed frame {seed_src_frame} not in decodable range "
+                    f"[{lo},{lo + local_count - 1}] (window [{lo},{hi}] decoded only "
+                    f"{local_count} frames) from {video_path[:80]}"
+                )
+            # 上面已校验 seed 在 [lo, lo+local_count-1] 内, clamp 对合法输入是无害的边界保护。
             local_seed = max(0, min(seed_src_frame - lo, local_count - 1))
 
             session_id = self._predictor.handle_request(
@@ -138,10 +151,11 @@ class SAM3MultiplexVideoTracker:
                 dict(type="add_prompt", session_id=session_id,
                      frame_index=local_seed, text=text.strip())
             )["outputs"]
-            target_obj_id = self._pick_target_obj(seed_out, seed_bbox)
-            if target_obj_id is None:
-                logger.info("sam3_video: text=%r matched no object at seed frame", text)
-                return []
+            # v0.21.28 · B-mx · 多目标批量吐: 不再 _pick_target_obj 收敛单目标, 逐帧把**全部**
+            # 检测对象各出一条结果 (instance_id = 窗内 obj_id)。仅在种子帧挑出与 seed_bbox /
+            # 最高分对应的**主实例** (primary), 供平台回填源轨迹; 其余各成新轨迹。窗内 obj_id
+            # 稳定, 跨窗身份由平台按边界帧 IoU 关联 (见 video_tracker_runner)。
+            primary_obj_id = self._pick_target_obj(seed_out, seed_bbox)
 
             # 收集逐帧输出 (含种子帧)。
             per_frame: dict[int, dict] = {local_seed: seed_out}
@@ -151,26 +165,38 @@ class SAM3MultiplexVideoTracker:
                 per_frame[int(response["frame_index"])] = response["outputs"]
 
             results: list[dict[str, Any]] = []
+            geom_empty = {"type": output_geometry_type(output_geometry)}
             for local_idx in sorted(per_frame, reverse=reverse):
                 if local_idx < 0 or local_idx >= local_count:
                     continue
-                mask = self._obj_mask(per_frame[local_idx], target_obj_id)
                 src_idx = local_idx + lo
-                if mask is None or not mask.any():
+                outputs = per_frame[local_idx]
+                obj_ids = _to_numpy(outputs.get("out_obj_ids"))
+                if obj_ids is None or len(obj_ids) == 0:
+                    continue  # 该帧无检测对象
+                for oid in obj_ids.tolist():
+                    oid = int(oid)
+                    is_primary = oid == primary_obj_id
+                    mask = self._obj_mask(outputs, oid, frame_index=src_idx)
+                    if mask is None or not mask.any():
+                        results.append({
+                            "frame_index": src_idx,
+                            "instance_id": str(oid),
+                            "geometry": dict(geom_empty),
+                            "confidence": 0.0,
+                            "outside": True,
+                            "primary": is_primary,
+                        })
+                        continue
+                    geometry, outside = self._mask_geometry(mask, output_geometry)
                     results.append({
                         "frame_index": src_idx,
-                        "geometry": {"type": output_geometry_type(output_geometry)},
-                        "confidence": 0.0,
-                        "outside": True,
+                        "instance_id": str(oid),
+                        "geometry": geometry,
+                        "confidence": 0.0 if outside else 1.0,
+                        "outside": outside,
+                        "primary": is_primary,
                     })
-                    continue
-                geometry, outside = self._mask_geometry(mask, output_geometry)
-                results.append({
-                    "frame_index": src_idx,
-                    "geometry": geometry,
-                    "confidence": 0.0 if outside else 1.0,
-                    "outside": outside,
-                })
             return results
         finally:
             if session_id is not None:
@@ -203,6 +229,14 @@ class SAM3MultiplexVideoTracker:
             for src in range(lo, hi + 1):
                 ok, frame = cap.read()
                 if not ok:
+                    # 中途解码失败 (损坏帧 / 容器元数据帧数虚报 / VFR): 停在此处但不静默 —
+                    # 尾部少解码几帧通常无害 (forward 追踪的种子帧在窗首)。是否需硬失败
+                    # (种子帧落进未解码区 / 一帧都没解出) 由调用方 propagate 判定。
+                    logger.warning(
+                        "sam3_video window [%d,%d] decode truncated: requested %d frames "
+                        "but only %d decoded from %s",
+                        lo, hi, hi - lo + 1, written, video_path[:80],
+                    )
                     break
                 cv2.imwrite(os.path.join(out_dir, f"{src - lo}.jpg"), frame)
                 if frame_w == 0 or frame_h == 0:
@@ -213,15 +247,17 @@ class SAM3MultiplexVideoTracker:
             cap.release()
 
     @staticmethod
-    def _obj_mask(outputs: dict, obj_id: int) -> np.ndarray | None:
+    def _obj_mask(outputs: dict, obj_id: int, *, frame_index: int) -> np.ndarray | None:
         """从某帧 multiplex 输出取指定 obj_id 的二值 mask (HxW bool); 无则 None。"""
         obj_ids = _to_numpy(outputs.get("out_obj_ids"))
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None:
             return None
+        _assert_masks_align(masks, obj_ids, frame_index=frame_index)
         for idx, oid in enumerate(obj_ids.tolist()):
             if int(oid) == obj_id:
-                return masks[idx] > 0
+                # 去掉 multiplex 偶发的细长毛刺 (见 _largest_blob), 避免外接框虚高。
+                return _largest_blob(masks[idx] > 0)
         return None
 
     @staticmethod
@@ -234,7 +270,8 @@ class SAM3MultiplexVideoTracker:
         masks = _to_numpy(outputs.get("out_binary_masks"))
         if obj_ids is None or masks is None or len(obj_ids) == 0:
             return None
-        probs = _to_numpy(outputs.get("output_probs"))
+        _assert_masks_align(masks, obj_ids)
+        probs = _to_numpy(outputs.get("out_probs"))
         if seed_bbox is None or not any(seed_bbox.get(k) for k in ("w", "h")):
             # 无种子: 最高分 / 首个
             if probs is not None and len(probs) == len(obj_ids):
@@ -307,6 +344,23 @@ def output_geometry_type(output_geometry: str) -> str:
     return "polygon" if output_geometry == "polygon" else "bbox"
 
 
+def _assert_masks_align(
+    masks: np.ndarray, obj_ids: np.ndarray, *, frame_index: int | None = None
+) -> None:
+    """校验 vendor multiplex 输出的 masks 与 obj_ids 长度一致。
+
+    不一致时抛带上下文的 ValueError (经 main.py 的 ValueError handler → 400 + detail),
+    避免下游按 obj_ids 索引 masks 时裸抛 IndexError → unhandled 500。种子帧无帧号
+    (frame_index=None), 逐帧传播时带源帧号定位是哪一帧的 vendor 输出坏了。
+    """
+    if len(masks) != len(obj_ids):
+        where = "seed frame" if frame_index is None else f"frame {frame_index}"
+        raise ValueError(
+            f"sam3_video {where} shape mismatch: "
+            f"{len(obj_ids)} obj_ids vs {len(masks)} masks"
+        )
+
+
 def _to_numpy(x: Any) -> np.ndarray | None:
     if x is None:
         return None
@@ -315,6 +369,29 @@ def _to_numpy(x: Any) -> np.ndarray | None:
     if hasattr(x, "cpu"):
         x = x.cpu()
     return np.asarray(x)
+
+
+_OPEN_KERNEL = np.ones((3, 3), np.uint8)
+
+
+def _largest_blob(mask: np.ndarray) -> np.ndarray:
+    """形态学开运算断细带 + 取最大连通域。
+
+    multiplex 偶发对目标输出「紧凑车身 + 沿细带 8-连通拉出去的毛刺」的 mask:
+    像素数与正常帧相当, 却令朴素 min/max 外接框虚高 (实测 frame 4/10/14 的归一化
+    宽度从 ~0.03 飙到 0.26-0.31, 把车 + 远处结构并进一个又宽又稀的框)。3x3 开运算
+    断掉 ≤2px 细带、再取最大连通域即恢复紧凑框, 正常帧不受影响。开运算把 mask 抹空
+    (极小目标) 或只剩一个域时保守退回原 mask。
+    """
+    u8 = mask.astype(np.uint8)
+    opened = cv2.morphologyEx(u8, cv2.MORPH_OPEN, _OPEN_KERNEL)
+    if not opened.any():
+        return mask
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+    if n_labels <= 1:
+        return mask
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    return labels == largest
 
 
 def _mask_bbox_norm(mask: np.ndarray) -> dict[str, float]:

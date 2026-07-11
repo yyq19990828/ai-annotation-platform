@@ -170,6 +170,9 @@ export function VideoTrackPanel({
   const [joinOpen, setJoinOpen] = useState(false);
   // 当前打开取色器的 trackId; null 表示关闭。
   const [colorPickerTrackId, setColorPickerTrackId] = useState<string | null>(null);
+  // v0.21.26 · 点击「更多操作 ⋮」钉住该行操作条(此前 ⋮ 是死按钮, onClick 仅 stopPropagation);
+  // hover 仍可临时浮出, 点击则常驻(便于触屏 / 无 hover 环境)。
+  const [actionsPinnedId, setActionsPinnedId] = useState<string | null>(null);
   const canEditColor = !readOnly && Boolean(onSetTrackColor);
   const filteredVideoTracks = useMemo(
     () => videoTracks.filter((ann) => {
@@ -431,6 +434,7 @@ export function VideoTrackPanel({
                         "absolute right-full top-1/2 z-base flex -translate-y-1/2 items-center gap-1 rounded-lg border border-border bg-card py-0.5 pl-1.5 pr-1 shadow-md",
                         "pointer-events-none translate-x-1.5 opacity-0 transition-all duration-200 ease-out",
                         "group-hover/act:pointer-events-auto group-hover/act:translate-x-0 group-hover/act:opacity-100",
+                        actionsPinnedId === ann.id && "!pointer-events-auto !translate-x-0 !opacity-100",
                       )}
                     >
                       <Button
@@ -489,7 +493,11 @@ export function VideoTrackPanel({
                       size="sm"
                       title="更多操作"
                       aria-label="更多操作"
-                      onClick={(e) => e.stopPropagation()}
+                      aria-expanded={actionsPinnedId === ann.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActionsPinnedId((prev) => (prev === ann.id ? null : ann.id));
+                      }}
                       className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3 text-muted-foreground"
                     >
                       <Icon name="more" size={13} />

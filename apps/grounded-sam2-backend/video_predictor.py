@@ -106,22 +106,25 @@ class SAM2VideoTracker:
         from_frame: int,
         to_frame: int,
         direction: str,
-        seed_bbox: dict[str, float],
+        seeds: list[dict[str, Any]],
         output_geometry: str = "bbox",
     ) -> list[dict[str, Any]]:
-        """在 [from_frame, to_frame] 窗内传播 seed bbox, 返回逐帧几何结果。
+        """在 [from_frame, to_frame] 窗内按逐对象 seed(点/框)传播, 返回逐帧逐对象几何。
 
-        seed_bbox: 归一化 {x, y, w, h} (0-1), 锚在窗首帧 (forward=from_frame,
-        backward=to_frame; 与平台 _tracker_windows 的窗口方向一致)。
+        seeds 每条 (与 sam3 PVS 同款协议, 多目标 = 多条 seed):
+          - 单帧: {obj_id, bbox:{x,y,w,h}} | {obj_id, points:[[x,y,label],...]}, 锚在窗种子帧
+            (forward=from_frame, backward=to_frame; 与平台 _tracker_windows 窗口方向一致);
+          - 多帧 (纠偏): {obj_id, prompts:[{frame_index, points?/bbox?}, ...]}, frame_index=绝对源帧。
+        坐标归一化 [0,1]。单目标(平台单 annotation 追踪)= 长度 1 的 seeds, instance_id="1"
+        → 平台回填源 annotation, 与旧 seed-bbox 行为等价。vendor SAM2VideoPredictor 原生支持
+        任意 obj_id + points/box, 此前 wrapper 硬编码 _OBJ_ID=1 只跟单目标 (v0.21.27 阶段 A 解除)。
 
-        output_geometry: "bbox"(默认) 每帧把 mask 降级为外接框, 返回
-        ``{type:"bbox",x,y,w,h}``; "polygon" 则把 mask 矢量化为归一化多边形顶点,
-        返回 ``{type:"polygon", points:[[x,y],...]}`` (v0.21.20 · polygon track 回填,
-        复用图片栈 mask_to_polygon; SAM2 传播本就逐帧算 mask, 此前一律降 bbox 丢弃)。
-
-        返回: [{frame_index(源帧号), geometry, confidence, outside}], 含 seed 帧在内的
-        整个窗。空 mask / 退化多边形(顶点<3) → outside=True。
+        output_geometry: "bbox"(默认) 每帧降外接框; "polygon" 矢量化为多边形顶点 (v0.21.20)。
+        返回: [{frame_index(源帧号), instance_id, geometry, confidence, outside}], 含 seed 帧在内。
+        空 mask / 退化多边形(顶点<3) → outside=True。
         """
+        if not seeds:
+            raise ValueError("video tracker requires at least one seed")
         lo, hi = int(min(from_frame, to_frame)), int(max(from_frame, to_frame))
         span = hi - lo + 1
         if span > self.max_window_frames:
@@ -153,41 +156,52 @@ class SAM2VideoTracker:
             # 2) init_state 加载该窗 JPEG 目录。
             inference_state = self._predictor.init_state(video_path=tmp_dir)
 
-            # 3) 窗首帧加 seed prompt (归一化 → 像素 xyxy)。
-            box_px = self._seed_to_pixel_xyxy(seed_bbox, frame_w, frame_h)
-            self._predictor.add_new_points_or_box(
-                inference_state=inference_state,
-                frame_idx=local_seed,
-                obj_id=_OBJ_ID,
-                box=box_px,
-                normalize_coords=True,
-            )
+            # 3) 逐对象播种 (点/框, 多帧 prompt); 归一化 → 像素 + normalize_coords=True。
+            for seed in seeds:
+                self._add_seed(
+                    inference_state, local_seed, seed, lo, local_count, frame_w, frame_h
+                )
 
-            # 4) 逐帧传播拿 mask → bbox。
+            # 4) 逐帧传播: video_res_masks 是 [num_obj,1,H,W] logits, 逐对象各出一条结果
+            #    (instance_id = 该 obj_id, 平台按 instance_id 分组落库)。
             results: list[dict[str, Any]] = []
-            for local_idx, _obj_ids, video_res_masks in self._predictor.propagate_in_video(
+            for local_idx, obj_ids, video_res_masks in self._predictor.propagate_in_video(
                 inference_state,
                 start_frame_idx=local_seed,
                 reverse=reverse,
             ):
                 src_idx = int(local_idx) + lo
-                mask = self._first_obj_mask(video_res_masks)
-                if output_geometry == "polygon":
-                    geometry, outside = self._mask_to_polygon_geometry(
-                        mask, frame_w, frame_h
+                masks = self._masks_to_bool(video_res_masks)  # [num_obj, H, W]
+                id_list = self._obj_ids_to_list(obj_ids)
+                for i, oid in enumerate(id_list):
+                    mask = masks[i] if i < masks.shape[0] else masks[0]
+                    if output_geometry == "polygon":
+                        geometry, outside = self._mask_to_polygon_geometry(
+                            mask, frame_w, frame_h
+                        )
+                    else:
+                        bbox_norm, outside = self._mask_to_bbox_norm(mask, frame_w, frame_h)
+                        geometry = {"type": "bbox", **bbox_norm}
+                    # confidence 用 SAM2 每帧每对象自评的 object score 取代写死 0/1: 平台低置信
+                    # 阈值据此把「有 mask 但模型判为部分遮挡」的帧也标 outside。空 mask 记 0.0;
+                    # vendor 内部结构取不到 (未来 sync 漂移) 时回退 1.0, 不丢结果。
+                    if outside:
+                        confidence = 0.0
+                    else:
+                        score = self._object_score(inference_state, int(oid), int(local_idx))
+                        confidence = score if score is not None else 1.0
+                    results.append(
+                        {
+                            "frame_index": src_idx,
+                            "instance_id": str(int(oid)),
+                            "geometry": geometry,
+                            "confidence": confidence,
+                            "outside": outside,
+                        }
                     )
-                else:
-                    bbox_norm, outside = self._mask_to_bbox_norm(mask, frame_w, frame_h)
-                    geometry = {"type": "bbox", **bbox_norm}
-                results.append(
-                    {
-                        "frame_index": src_idx,
-                        "geometry": geometry,
-                        "confidence": 0.0 if outside else 1.0,
-                        "outside": outside,
-                    }
-                )
-            results.sort(key=lambda r: r["frame_index"], reverse=reverse)
+            results.sort(
+                key=lambda r: (r["frame_index"], r["instance_id"]), reverse=reverse
+            )
             return results
         finally:
             # 会话状态反向清理 + 释放显存; 模型权重保留供下个 job。
@@ -253,24 +267,133 @@ class SAM2VideoTracker:
         y2 = (y + bh) * h
         return [x1, y1, x2, y2]
 
-    @staticmethod
-    def _first_obj_mask(video_res_masks: Any) -> np.ndarray:
-        """propagate_in_video 的 video_res_masks: tensor [num_obj, 1, H, W] (logits)。
+    # ---------- 多目标逐对象播种 (v0.21.27 阶段 A; 与 sam3 PVS wrapper 同款) ----------
 
-        单目标传播取第 0 个 obj, 阈值 >0 为前景, 返回 bool HxW numpy。
+    def _add_prompt(
+        self,
+        state: Any,
+        frame_idx: int,
+        obj_id: int,
+        prompt: dict[str, Any],
+        frame_w: int,
+        frame_h: int,
+    ) -> bool:
+        """在指定(局部)帧对 obj_id 加一条 prompt(框/点)。归一化输入 → 像素
+        (normalize_coords=True 时 vendor 内部再按 video 宽高归一化)。无框无点返回 False。"""
+        bbox = prompt.get("bbox")
+        pts = prompt.get("points")
+        if not bbox and not pts:
+            return False
+        box_px = self._seed_to_pixel_xyxy(bbox, frame_w, frame_h) if bbox else None
+        points_px = None
+        labels = None
+        if pts:
+            points_px = np.array(
+                [[float(p[0]) * frame_w, float(p[1]) * frame_h] for p in pts],
+                dtype=np.float32,
+            )
+            labels = np.array(
+                [int(p[2]) if len(p) > 2 else 1 for p in pts], dtype=np.int32
+            )
+        self._predictor.add_new_points_or_box(
+            inference_state=state,
+            frame_idx=frame_idx,
+            obj_id=obj_id,
+            points=points_px,
+            labels=labels,
+            box=box_px,
+            normalize_coords=True,
+        )
+        return True
+
+    def _add_seed(
+        self,
+        state: Any,
+        local_seed: int,
+        seed: dict[str, Any],
+        lo: int,
+        local_count: int,
+        frame_w: int,
+        frame_h: int,
+    ) -> None:
+        """把一条 seed 的 prompt(s) 按 obj_id 加进 state。
+
+        - 多帧 (纠偏): seed["prompts"]=[{frame_index?, points?/bbox?}], 各在其局部帧
+          (frame_index-lo, 越界钳到窗内) 播种; 缺 frame_index 的落窗种子帧。
+        - 单帧: seed 直接带 points/bbox, 落窗种子帧 local_seed。
         """
+        obj_id = int(seed["obj_id"])
+        prompts = seed.get("prompts")
+        if isinstance(prompts, list) and prompts:
+            added = 0
+            for p in prompts:
+                if not isinstance(p, dict):
+                    continue
+                fi = p.get("frame_index")
+                local_f = (
+                    local_seed
+                    if fi is None
+                    else max(0, min(int(fi) - lo, local_count - 1))
+                )
+                if self._add_prompt(state, local_f, obj_id, p, frame_w, frame_h):
+                    added += 1
+            if added == 0:
+                raise ValueError(f"seed obj_id={obj_id} 的 prompts 无有效框/点")
+        elif not self._add_prompt(state, local_seed, obj_id, seed, frame_w, frame_h):
+            raise ValueError(f"seed for obj_id={obj_id} has neither bbox nor points")
+
+    @staticmethod
+    def _masks_to_bool(video_res_masks: Any) -> np.ndarray:
+        """propagate_in_video 的 video_res_masks: [num_obj, 1, H, W] logits →
+        [num_obj, H, W] bool (>0 前景)。单对象无 num_obj 维时补上。"""
         m = video_res_masks
         if hasattr(m, "detach"):
             m = m.detach()
         if hasattr(m, "cpu"):
             m = m.cpu()
         arr = np.asarray(m)
-        # 展平到 (H, W)
         if arr.ndim == 4:  # (num_obj, 1, H, W)
             arr = arr[:, 0]
-        if arr.ndim == 3:  # (num_obj, H, W)
-            arr = arr[0]
+        if arr.ndim == 2:  # (H, W) — 单对象无 num_obj 维
+            arr = arr[None]
         return arr > 0.0
+
+    @staticmethod
+    def _obj_ids_to_list(obj_ids: Any) -> list[int]:
+        """propagate_in_video 的 obj_ids (list / tensor) → [int, ...]。缺省回退 [_OBJ_ID]。"""
+        if obj_ids is None:
+            return [_OBJ_ID]
+        if hasattr(obj_ids, "tolist"):
+            return [int(x) for x in obj_ids.tolist()]
+        return [int(x) for x in obj_ids]
+
+    @staticmethod
+    def _object_score(
+        inference_state: Any, obj_id: int, local_frame_idx: int
+    ) -> float | None:
+        """取该帧该对象的 object_score_logits → sigmoid 概率 [0,1]。
+
+        SAM2 传播时每帧自评一个 object score (目标是否存在 / 是否被遮挡), 存在
+        ``inference_state["output_dict_per_obj"][obj_idx][storage_key][frame_idx]``
+        (storage_key: 种子帧=cond_frame_outputs、传播帧=non_cond_frame_outputs),
+        由 vendor 在 yield 前的 _add_output_per_object 写入。vendor 是 pinned 版本、
+        结构稳定; 仍包一层兜底——键缺失 / 形状异常 (未来 sync 漂移) 时返回 None,
+        调用方回退旧的「有 mask=1.0」, 不因内部结构变动丢结果或崩。
+        """
+        try:
+            obj_idx = inference_state["obj_id_to_idx"][obj_id]
+            per_obj = inference_state["output_dict_per_obj"][obj_idx]
+            out = per_obj["cond_frame_outputs"].get(local_frame_idx) or per_obj[
+                "non_cond_frame_outputs"
+            ].get(local_frame_idx)
+            if out is None:
+                return None
+            logit = torch.as_tensor(out["object_score_logits"]).flatten()
+            if logit.numel() == 0:
+                return None
+            return float(torch.sigmoid(logit[0].float()).item())
+        except (KeyError, TypeError, IndexError, RuntimeError):
+            return None
 
     @staticmethod
     def _mask_to_bbox_norm(

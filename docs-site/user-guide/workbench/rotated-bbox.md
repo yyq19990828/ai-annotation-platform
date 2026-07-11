@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.28
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-11
 ---
 
 # 旋转框标注（OBB）
@@ -56,7 +56,7 @@ last_reviewed: 2026-06-10
 
 ### 导入预测（YOLO OBB）
 
-在「数据集 → 预测导入」时选 YOLO 格式并指定 `yolo_variant=obb`，平台会将四角坐标反解回 `{cx, cy, w, h, angle}` 落入 `rotated_bbox` 几何。详见 [预测导入与导出](../datasets/prediction-import-export)。
+在项目总览的项目行或卡片打开 `⋮`，选择「导入预测」；在向导中选 YOLO 格式并指定 `yolo_variant=obb`，平台会将四角坐标反解回 `{cx, cy, w, h, angle}` 落入 `rotated_bbox` 几何。详见[预测导入与导出](../datasets/prediction-import-export)。
 
 ## 常见问题
 

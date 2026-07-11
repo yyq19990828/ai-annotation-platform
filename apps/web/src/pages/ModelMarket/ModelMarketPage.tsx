@@ -5,6 +5,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { Icon } from "@/components/ui/Icon";
 import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
 import { mlBackendsApi } from "@/api/ml-backends";
+import { usePermissions } from "@/hooks/usePermissions";
 import { RegisteredBackendsTab } from "./RegisteredBackendsTab";
 import { RuntimeObservePanel } from "./RuntimeObservePanel";
 import { CapabilityCatalogPanel } from "./CapabilityCatalogPanel";
@@ -22,12 +23,21 @@ const TABS: { key: MarketTab; label: string; icon: "layers" | "activity" | "bot"
 export function ModelMarketPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const activeTab = parseTab(params.get("tab"));
+  // 页面对 super_admin + project_admin 开放, 但顶部 StatCards 与「运行时观测」tab 走的
+  // /overview·/observe 是 super_admin only。故 project_admin 只看能力目录 + (只读) 注册管理:
+  // StatCards / 运行时观测隐藏, overview 不发请求 (否则每 60s 打一次 403)。
+  const { role } = usePermissions();
+  const isSuperAdmin = role === "super_admin";
+  const rawTab = parseTab(params.get("tab"));
+  // 非超管深链到 ?tab=runtime → 回落到能力目录 (该 tab 对其不可见)。
+  const activeTab: MarketTab =
+    !isSuperAdmin && rawTab === "runtime" ? "catalog" : rawTab;
 
   const overviewQ = useQuery({
     queryKey: ["admin", "ml-integrations", "overview"],
     queryFn: () => adminMlIntegrationsApi.overview(),
     refetchInterval: 60_000,
+    enabled: isSuperAdmin,
   });
   const backendRefs = useMemo(() => {
     const refs: { projectId: string; backendId: string }[] = [];
@@ -81,35 +91,38 @@ export function ModelMarketPage() {
         </p>
       </div>
 
-      <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-        <StatCard
-          icon="bot"
-          label="ML Backend"
-          value={`${overviewQ.data?.connected_backends ?? 0} / ${overviewQ.data?.total_backends ?? 0}`}
-          hint="已连接 / 总数"
-        />
-        <StatCard
-          icon="folder"
-          label="使用项目"
-          value={String(overviewQ.data?.projects.length ?? 0)}
-          hint="AI 已启用或已注册 backend 的项目"
-        />
-        <StatCard
-          icon="layers"
-          label="模型条目"
-          value={
-            !capabilityEnabled ? "—" : modelCountLoading ? "探测中" : String(modelCount)
-          }
-          hint={capabilityEnabled ? "能力目录 models[] 汇总" : "切换到能力目录查看"}
-        />
-      </div>
+      {/* StatCards 全部来自全局 /overview (super_admin only); project_admin 隐藏。 */}
+      {isSuperAdmin && (
+        <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <StatCard
+            icon="bot"
+            label="ML Backend"
+            value={`${overviewQ.data?.connected_backends ?? 0} / ${overviewQ.data?.total_backends ?? 0}`}
+            hint="已连接 / 总数"
+          />
+          <StatCard
+            icon="folder"
+            label="使用项目"
+            value={String(overviewQ.data?.projects.length ?? 0)}
+            hint="AI 已启用或已注册 backend 的项目"
+          />
+          <StatCard
+            icon="layers"
+            label="模型条目"
+            value={
+              !capabilityEnabled ? "—" : modelCountLoading ? "探测中" : String(modelCount)
+            }
+            hint={capabilityEnabled ? "能力目录 models[] 汇总" : "切换到能力目录查看"}
+          />
+        </div>
+      )}
 
       <div
         className="mb-4 inline-flex gap-1 rounded-md border border-border bg-muted p-1 max-md:grid max-md:w-full max-md:grid-cols-3"
         role="tablist"
         aria-label="模型市场视图"
       >
-        {TABS.map((tab) => (
+        {TABS.filter((tab) => isSuperAdmin || tab.key !== "runtime").map((tab) => (
           <button
             key={tab.key}
             type="button"

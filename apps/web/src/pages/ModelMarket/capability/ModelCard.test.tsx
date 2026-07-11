@@ -62,4 +62,38 @@ describe("ModelCard 能力徽标 (v0.19.4)", () => {
     renderCard({ supported_inputs: ["video"] });
     expect(screen.getByText("视频")).toBeInTheDocument();
   });
+
+  it("resource_profile 仅含 device/batchable (均为徽标) → 隐藏「资源」行, 不显示空「—」", () => {
+    // gsam2 / sam3 / yolo 的 resource_profile 就是 {device, batchable}; 二者已是顶部徽标,
+    // 资源行无余项时应整行隐藏, 而非恒显示「—」。
+    renderCard({ resource_profile: { device: "gpu", batchable: true } });
+    expect(screen.queryByText("资源")).not.toBeInTheDocument();
+  });
+
+  it("resource_profile 含余项 (vram 等) → 「资源」行渲染余项", () => {
+    renderCard({ resource_profile: { device: "gpu", batchable: true, vram_gb: 8 } });
+    expect(screen.getByText("资源")).toBeInTheDocument();
+    expect(screen.getByText("vram_gb: 8")).toBeInTheDocument();
+  });
+
+  it("只报扁平 output_attribute_types (无 schema) → 输出属性显示扁平值", () => {
+    // gsam2 / sam3 / yolo 只报 output_attribute_types, schema 为空。
+    renderCard({ output_attribute_types: ["class"], output_attribute_schema: [] });
+    expect(screen.getByText("class")).toBeInTheDocument();
+  });
+
+  it("output_attribute_schema 非空 → 输出属性优先显示 schema 的 label", () => {
+    // rapidocr 等同时报扁平 keys 与结构化 schema; 展示优先取更友好的 label。
+    renderCard({
+      output_attribute_types: ["text", "language"],
+      output_attribute_schema: [
+        { key: "text", label: "识别文本", type: "text" },
+        { key: "language", label: "语言", type: "select", options: [] },
+      ],
+    });
+    expect(screen.getByText("识别文本")).toBeInTheDocument();
+    expect(screen.getByText("语言")).toBeInTheDocument();
+    // 不显示扁平 key
+    expect(screen.queryByText("text")).not.toBeInTheDocument();
+  });
 });

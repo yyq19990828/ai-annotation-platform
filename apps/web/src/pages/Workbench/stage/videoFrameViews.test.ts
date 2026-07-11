@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deriveVideoFrameViews } from "./videoFrameViews";
 import { DEFAULT_ANNOTATION_VISUAL } from "./annotationVisual";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, VideoTrackOutsideRange } from "@/types";
 
 function trackAnn(id: string, trackId: string, keyframes: { frame_index: number; bbox: { x: number; y: number; w: number; h: number }; source?: string; occluded?: boolean }[], className = "car"): AnnotationResponse {
   return {
@@ -182,6 +182,22 @@ describe("deriveVideoFrameViews", () => {
     expect(sel.previews[0].points[0]).toMatchObject({ frame: 0, x: 0.1, y: 0.1 });
   });
 
+  // outside 区间落在两个关键帧之间: 无 outside 时该帧会插值出 entry, 有 outside 时不该有。
+  // (下面几条 ghost 用例的 outside 都在末关键帧之后, 无论 outside 是否生效都取不到 entry,
+  //  故测不出 outside 本身; 这条专测区间语义。)
+  it("outside 区间内的插值帧 → 无 entry", () => {
+    const keyframes = [
+      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+      { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
+    ];
+    const without = trackAnn("t1", "trk1", keyframes);
+    expect(deriveVideoFrameViews({ ...base, annotations: [without], frameIndex: 10 }).entries).toHaveLength(1);
+
+    const withOutside = trackAnn("t1", "trk1", keyframes);
+    (withOutside.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 5, to: 15 }];
+    expect(deriveVideoFrameViews({ ...base, annotations: [withOutside], frameIndex: 10 }).entries).toHaveLength(0);
+  });
+
   it("选中轨迹当前帧无框 → ghost 取最近关键帧", () => {
     const ann = trackAnn("t1", "trk1", [
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
@@ -189,7 +205,7 @@ describe("deriveVideoFrameViews", () => {
       { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
     ], "car");
     // outside 区间让第 50 帧无解析帧
-    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    (ann.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 21, to: 100 }];
     const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 50, selectedId: "t1" });
     expect(v.entries).toHaveLength(0);
     expect(v.ghost).not.toBeNull();
@@ -201,7 +217,7 @@ describe("deriveVideoFrameViews", () => {
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
       { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
     ]);
-    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    (ann.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 21, to: 100 }];
     const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 50, selectedId: "t1", lockedTrackIds: new Set(["trk1"]) });
     expect(v.ghost).toBeNull();
   });
@@ -212,7 +228,7 @@ describe("deriveVideoFrameViews", () => {
       { frame_index: 10, bbox: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, source: "manual" },
       { frame_index: 20, bbox: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, source: "manual" },
     ]);
-    (ann.geometry as { outside?: unknown[] }).outside = [{ start_frame: 21, end_frame: 100 }];
+    (ann.geometry as { outside?: VideoTrackOutsideRange[] }).outside = [{ from: 21, to: 100 }];
     // F10→F20 vx=0.02/帧;F25 = 0.6 + 0.02*5 = 0.7。
     const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 25, selectedId: "t1", referenceConfig: { mode: "linear", preset: "stable" } });
     expect(v.ghost).not.toBeNull();
@@ -322,6 +338,90 @@ describe("deriveVideoFrameViews", () => {
         selectedIds: ["a1", "a2"],
       });
       expect(v.ghost?.id ?? null).toBe("a2");
+    });
+  });
+
+  describe("点集轨迹 ghost / carry-over (issue #54③)", () => {
+    // outside 覆盖 F20 (VideoTrackOutsideRange 字段是 from/to), 使 F10/F30 之间不插值
+    // → 该帧无实框、无插值 entry, 才走 ghost 路径。
+    const OUTSIDE_20 = [{ from: 11, to: 29 }];
+    const polyKfs = [
+      { frame_index: 10, points: [[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]] as [number, number][], source: "manual" },
+      { frame_index: 30, points: [[0.5, 0.5], [0.7, 0.5], [0.7, 0.7], [0.5, 0.7]] as [number, number][], source: "manual" },
+    ];
+    const lineKfs = [
+      { frame_index: 10, points: [[0.1, 0.1], [0.5, 0.5]] as [number, number][], source: "manual" },
+      { frame_index: 30, points: [[0.2, 0.2], [0.6, 0.6]] as [number, number][], source: "manual" },
+    ];
+
+    it("选中 polygon 轨迹当前帧无实框 → ghost 带 points (就近取 F10), open=false, geom 为外接框", () => {
+      const ann = polygonTrackAnn("pt1", "ptrk1", polyKfs);
+      (ann.geometry as { outside?: unknown[] }).outside = OUTSIDE_20;
+      const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 20, selectedId: "pt1" });
+      expect(v.entries).toHaveLength(0); // outside 覆盖 → 无插值实框
+      expect(v.ghost).not.toBeNull();
+      // |20-10| == |20-30| 平局 → nearestPointsTrackKeyframe 的 <= 取靠前的 F10。
+      expect(v.ghost!.points).toEqual([[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]]);
+      expect(v.ghost!.open).toBe(false);
+      // 外接框 = 顶点 bounds (w/h 有浮点误差, 逐分量 close 比较)。
+      expect(v.ghost!.geom.x).toBeCloseTo(0.1);
+      expect(v.ghost!.geom.y).toBeCloseTo(0.1);
+      expect(v.ghost!.geom.w).toBeCloseTo(0.2);
+      expect(v.ghost!.geom.h).toBeCloseTo(0.2);
+      expect(v.ghost!.labelText).toContain("参考 F10");
+    });
+
+    it("选中 polyline 轨迹 → ghost.open=true, points 就近取 F10", () => {
+      const ann = polylineTrackAnn("lt1", "ltrk1", lineKfs);
+      (ann.geometry as { outside?: unknown[] }).outside = OUTSIDE_20;
+      const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 20, selectedId: "lt1" });
+      expect(v.ghost).not.toBeNull();
+      expect(v.ghost!.open).toBe(true);
+      expect(v.ghost!.points).toEqual([[0.1, 0.1], [0.5, 0.5]]);
+    });
+
+    it("点集轨迹被 hidden / locked → 不出 ghost", () => {
+      const ann = polygonTrackAnn("pt1", "ptrk1", polyKfs);
+      (ann.geometry as { outside?: unknown[] }).outside = OUTSIDE_20;
+      const hidden = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 20, selectedId: "pt1", hiddenTrackIds: new Set(["ptrk1"]) });
+      expect(hidden.ghost).toBeNull();
+      const locked = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 20, selectedId: "pt1", lockedTrackIds: new Set(["ptrk1"]) });
+      expect(locked.ghost).toBeNull();
+    });
+
+    it("非选中 polygon 轨迹也纳入 carry-over ghost (回归 #54③: 此前只遍历 bbox 轨迹, 点集轨迹在此静默缺席)", () => {
+      // 单关键帧在上一网格帧 F0, 当前帧 F1 无关键帧、无插值 (only before, no after) → 应作续写虚影出现。
+      const ann = polygonTrackAnn("pt1", "ptrk1", [
+        { frame_index: 0, points: [[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]], source: "manual" },
+      ]);
+      const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1 });
+      expect(v.entries).toHaveLength(0);
+      expect(v.carryOverGhosts).toHaveLength(1);
+      expect(v.carryOverGhosts[0].id).toBe("pt1");
+      expect(v.carryOverGhosts[0].points).toEqual([[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]]);
+      expect(v.carryOverGhosts[0].open).toBe(false);
+      expect(v.carryOverGhosts[0].geom.x).toBeCloseTo(0.1);
+      expect(v.carryOverGhosts[0].geom.y).toBeCloseTo(0.1);
+      expect(v.carryOverGhosts[0].geom.w).toBeCloseTo(0.2);
+      expect(v.carryOverGhosts[0].geom.h).toBeCloseTo(0.2);
+    });
+
+    it("非选中 polyline 轨迹的 carry-over ghost: open=true", () => {
+      const ann = polylineTrackAnn("lt1", "ltrk1", [
+        { frame_index: 0, points: [[0.1, 0.1], [0.5, 0.5]], source: "manual" },
+      ]);
+      const v = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1 });
+      expect(v.carryOverGhosts).toHaveLength(1);
+      expect(v.carryOverGhosts[0].open).toBe(true);
+      expect(v.carryOverGhosts[0].points).toEqual([[0.1, 0.1], [0.5, 0.5]]);
+    });
+
+    it("点集 carry-over: hidden / locked → 排除", () => {
+      const ann = polygonTrackAnn("pt1", "ptrk1", [
+        { frame_index: 0, points: [[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]], source: "manual" },
+      ]);
+      expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1, lockedTrackIds: new Set(["ptrk1"]) }).carryOverGhosts).toHaveLength(0);
+      expect(deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 1, hiddenTrackIds: new Set(["ptrk1"]) }).carryOverGhosts).toHaveLength(0);
     });
   });
 });

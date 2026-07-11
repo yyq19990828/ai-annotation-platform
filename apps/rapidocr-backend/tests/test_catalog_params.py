@@ -35,3 +35,28 @@ def test_threshold_schema_has_range_and_default():
     assert text_score["type"] == "number"
     assert text_score["minimum"] == 0.0 and text_score["maximum"] == 1.0
     assert 0.0 <= text_score["default"] <= 1.0
+
+
+def _schema(model_id: str) -> list[dict]:
+    ent = {e["id"]: e for e in catalog.model_entries()}
+    return ent[model_id].get("output_attribute_schema") or []
+
+
+def test_output_attribute_select_options_are_value_label_objects():
+    # 协议 output_attribute_schema 的 select options 必须是 {value,label} 对象
+    # (纯字符串会让平台预填取 o.value 得 undefined,下拉选项对不上)。
+    for model_id in (catalog.REC_MODEL_ID, catalog.E2E_MODEL_ID):
+        for field in _schema(model_id):
+            if field["type"] not in ("select", "multiselect"):
+                continue
+            assert field["options"], f"{model_id}.{field['key']} select 缺 options"
+            for opt in field["options"]:
+                assert isinstance(opt, dict), f"{model_id}.{field['key']} 选项须为 dict,非纯字符串"
+                assert opt.get("value") and opt.get("label"), "选项 value/label 不能为空"
+
+
+def test_orientation_language_options_match_predict_values():
+    # 声明的 option value 必须等于 /predict 实际写入 attributes 的值,否则工作台回填对不上。
+    rec = {f["key"]: f for f in _schema(catalog.REC_MODEL_ID)}
+    assert {o["value"] for o in rec["orientation"]["options"]} == {"0", "180"}
+    assert {o["value"] for o in rec["language"]["options"]} == {"universal", "en"}
