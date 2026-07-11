@@ -362,6 +362,86 @@ async def test_preview_and_accept_applies_staged(
     assert 1 in frames and 2 in frames
 
 
+async def test_preview_typed_results_roundtrip_rich_shape(
+    httpx_client_bound, super_admin, db_session
+):
+    """typed VideoTrackerJobPreview.results 忠实回传多实例 staged 形状 (instance_id 非空 /
+    primary / confidence=None), 且对缺失可选键容错 —— 不因收紧类型而 500。"""
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=1,
+        prompt={},
+        event_channel="video-tracker-job:test",
+        staged_result={
+            "results": [
+                {
+                    "frame_index": 0,
+                    "geometry": {"type": "bbox", "x": 0.0, "y": 0.0, "w": 5.0, "h": 5.0},
+                    "confidence": None,
+                    "outside": False,
+                    "instance_id": "2",
+                    "primary": True,
+                },
+                # 缺失全部可选键的极简行 (只有 frame_index + geometry): 验证 typed 容错。
+                {
+                    "frame_index": 1,
+                    "geometry": {"type": "bbox", "x": 1.0, "y": 0.0, "w": 5.0, "h": 5.0},
+                },
+            ],
+            "grid_step": 2,
+            "output_geometry": "polygon",
+        },
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    res = await httpx_client_bound.get(
+        f"/api/v1/video-tracker-jobs/{job.id}/preview", headers=_bearer(token)
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["grid_step"] == 2
+    assert body["output_geometry"] == "polygon"
+    rows = body["results"]
+    assert len(rows) == 2
+
+    first = rows[0]
+    assert first["frame_index"] == 0
+    assert first["geometry"]["type"] == "bbox"
+    assert first["confidence"] is None
+    assert first["outside"] is False
+    assert first["instance_id"] == "2"
+    assert first["primary"] is True
+
+    # 缺失可选键 → 默认值填充, 而非 500。
+    second = rows[1]
+    assert second["frame_index"] == 1
+    assert second["confidence"] is None
+    assert second["outside"] is False
+    assert second["instance_id"] is None
+    assert second["primary"] is False
+
+
 async def test_discard_leaves_annotation_untouched(
     httpx_client_bound, super_admin, db_session
 ):

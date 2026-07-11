@@ -73,14 +73,26 @@ class VideoTrackerJobsResponse(BaseModel):
     counts: VideoTrackerJobCounts
 
 
+class VideoTrackerPreviewResult(BaseModel):
+    """候选预览的逐帧结果。形状与 video_tracker_runner._serialize_results 一致
+    (TrackerFrameResult → dict)。必需/默认刻意对齐 _deserialize_results 的容错读取
+    (frame_index 必需, 其余可缺省), 避免 typed 响应对部分 staged 行过严而 500。"""
+
+    frame_index: int
+    geometry: dict | None = None
+    confidence: float | None = None
+    outside: bool = False
+    instance_id: str | None = None
+    primary: bool = False
+
+
 class VideoTrackerJobPreview(BaseModel):
     """v0.21.28 · 候选预览: job 暂存的逐帧结果, 供前端在接受前渲染候选叠加。"""
 
     job_id: uuid.UUID
     status: TrackerJobStatus
     annotation_id: uuid.UUID
-    # 每条 {frame_index, geometry, confidence, outside, instance_id, primary}。
-    results: list[dict] = []
+    results: list[VideoTrackerPreviewResult] = []
     grid_step: int = 1
     output_geometry: str = "bbox"
 
