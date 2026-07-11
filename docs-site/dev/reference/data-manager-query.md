@@ -2,7 +2,7 @@
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-12
 ---
 
 # Data Manager 查询与聚合
@@ -69,7 +69,8 @@ summary 同时返回：
 - 任务状态；
 - active annotation 总量及 source/class/tool unit/geometry 分布；
 - single-frame、tracked annotation 与 distinct track；
-- AI 检测候选待审、AI 追踪结果待审；
+- AI 检测候选待审、低置信候选待审、AI 追踪结果待审；
+- 当前待审检测候选的模型版本与置信度区间分布；
 - 未解决 feedback；
 - 项目 schema 中属性的 eligible/present/missing 与有限枚举值分布。
 - capability 驱动的 image 分辨率、video 时长/帧/关键帧、lidar 相机/标定与 Scene 摘要。
@@ -84,6 +85,8 @@ task-centric summary 聚合的是“匹配任务中的全部对象”。object /
 
 前端 URL 保存 `lens/view/q/filter/sort/columns/selected`。filter、sort 与 columns 使用带版本号的 JSON envelope；解析失败时回退当前视图，不执行未校验输入。切换 grain 时清空不兼容状态，存在未保存修改时先要求确认。
 
+前端壳层使用单视口布局，只有结果表和右侧抽屉承担纵向滚动。grain tabs 是唯一的一级页签；桌面端保存视图使用侧栏，窄屏使用下拉。任务、对象与轨迹共用可搜索字段选择器和条件芯片，字段分组及编辑控件完全由各自 `schema.filter_fields` 驱动。这些布局差异不改变 Filter DSL、URL envelope 或保存视图契约。
+
 ## AI 待审
 
 检测候选按 prediction 内的 shape 计算：
@@ -95,6 +98,8 @@ task-centric summary 聚合的是“匹配任务中的全部对象”。object /
 ```
 
 不能使用 `Task.total_predictions`，它只是 prediction 行数。
+
+低置信待审使用相同集合，读取每个 shape 自身的 `score`，兼容 `confidence`；缺失或非数字按 `0` 处理。固定阈值为 `< 0.5`，任务列与 `ai.low_confidence_prediction_shape_count` 过滤器都返回候选数量。summary 的 `by_model_version` 和 `confidence_buckets` 也只聚合这个当前待审集合，不混入已接受、已拒绝或仅存在于历史运行中的候选。历史 `prediction.model_version` 仍可用于任务追溯筛选，但 Task 表不展示跨运行拼接的模型版本或 prediction 行级平均分。
 
 追踪候选只统计带非空 `staged_result.results` 且状态为 `pending_review` 或可审阅 `cancelled` 的 job。非特权用户还需满足 tracker job 的 `created_by` 限制，避免列表显示其无法恢复审阅的候选。
 

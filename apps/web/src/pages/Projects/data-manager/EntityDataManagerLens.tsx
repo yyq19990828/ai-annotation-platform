@@ -65,7 +65,11 @@ import {
   useUpdateTaskView,
 } from "@/hooks/useTaskViews";
 import { cn } from "@/lib/utils";
-import { DataManagerCharts } from "./DataManagerCharts";
+import { DataManagerAnalyticsSheet } from "./DataManagerAnalyticsSheet";
+import {
+  DataManagerFilterBar,
+  type DataManagerFilterChip,
+} from "./DataManagerFilterBar";
 import { DataManagerLensTabs } from "./DataManagerLensTabs";
 import { EntityDetailSheet } from "./EntityDetailSheet";
 import styles from "./EntityDataManagerLens.module.css";
@@ -161,6 +165,32 @@ function normalizeValue(
 
 function displayValue(value: unknown) {
   return Array.isArray(value) ? value.join(", ") : String(value ?? "");
+}
+
+const OPERATOR_LABELS: Partial<Record<TaskFilterOp, string>> = {
+  eq: "=",
+  ne: "!=",
+  in: "属于",
+  gt: ">",
+  gte: ">=",
+  lt: "<",
+  lte: "<=",
+  exists: "已填写",
+  missing: "缺失",
+  contains: "包含",
+  between: "区间",
+  contains_any: "包含任一",
+  contains_all: "包含全部",
+};
+
+function entityRuleSummary(
+  rule: FilterNode & { field: string; op: TaskFilterOp },
+  field: DataManagerFilterField | undefined,
+) {
+  if (rule.op === "exists" || rule.op === "missing") return OPERATOR_LABELS[rule.op] ?? rule.op;
+  const raw = displayValue(rule.value);
+  const option = field?.options.find((item) => item.value === raw);
+  return `${OPERATOR_LABELS[rule.op] ?? rule.op} ${(option?.label ?? raw) || "未填写"}`;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -514,9 +544,69 @@ export function EntityDataManagerLens({
     rules[index] = { ...rules[index], ...patch };
     setFilter({ op: "and", rules });
   };
+  const removeRule = (index: number) => {
+    const rules = Array.isArray(filter.rules) ? [...(filter.rules as FilterNode[])] : [];
+    rules.splice(index, 1);
+    setFilter(rules.length ? { op: "and", rules } : {});
+  };
+  const filterChips: DataManagerFilterChip[] = topRules.map(({ index, rule }) => {
+    const field = fields.find((item) => item.key === rule.field);
+    const rawValue = displayValue(rule.value);
+    return {
+      id: `${index}:${rule.field}`,
+      label: field?.label ?? rule.field,
+      value: entityRuleSummary(rule, field),
+      editor: (
+        <div className="flex flex-col gap-2">
+          <select
+            className={FIELD_CLASS}
+            value={rule.op}
+            onChange={(event) => updateRule(index, { op: event.target.value })}
+          >
+            {(field?.operators ?? [rule.op]).map((op) => (
+              <option key={op} value={op}>{OPERATOR_LABELS[op] ?? op}</option>
+            ))}
+          </select>
+          {rule.op === "exists" || rule.op === "missing" ? (
+            <input className={FIELD_CLASS} value="无需填写" readOnly disabled />
+          ) : field?.value_type === "boolean" ? (
+            <select
+              className={FIELD_CLASS}
+              value={rawValue || "true"}
+              onChange={(event) => updateRule(index, { value: event.target.value === "true" })}
+            >
+              <option value="true">是</option>
+              <option value="false">否</option>
+            </select>
+          ) : field?.options.length && rule.op === "eq" ? (
+            <select
+              className={FIELD_CLASS}
+              value={rawValue}
+              onChange={(event) => updateRule(index, { value: event.target.value })}
+            >
+              <option value="">请选择</option>
+              {field.options.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={FIELD_CLASS}
+              value={rawValue}
+              onChange={(event) => updateRule(index, { value: normalizeValue(event.target.value, rule.op, field) })}
+              placeholder={["in", "between", "contains_any", "contains_all"].includes(rule.op) ? "多个值用逗号分隔" : undefined}
+            />
+          )}
+          <Button variant="ghost" size="sm" onClick={() => removeRule(index)}>
+            <Icon name="trash" size={12} />移除条件
+          </Button>
+        </div>
+      ),
+    };
+  });
 
   return (
-    <div className="mx-auto max-w-[1800px] px-4 pt-4 pb-8 text-foreground md:px-7">
+    <div className="mx-auto h-full min-h-0 max-w-[1800px] overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
       <DataManagerLensTabs
         scope={scope}
         availableScopes={availableScopes}
@@ -526,15 +616,21 @@ export function EntityDataManagerLens({
           else onScopeChange(nextScope);
         }}
       >
-        <header className="mb-4 flex items-start justify-between gap-4 max-md:flex-col">
-          <div>
-            <h1 className="text-xl font-semibold">{projectName} / Data Manager</h1>
+        <div className="flex h-full min-h-0 flex-col gap-2">
+        <header className="flex shrink-0 items-center justify-between gap-4 max-md:flex-col max-md:items-start">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold tracking-tight">{projectName} · Data Manager</h1>
             <p className="mt-1 text-xs text-muted-foreground">
               <span className="font-mono">{projectDisplayId}</span>
               {` / ${facets?.task_total ?? 0} 个可见任务 / ${total} 条${scope === "objects" ? "对象" : "轨迹"}`}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
+            <DataManagerAnalyticsSheet
+              scope={scope}
+              facets={facets}
+              isLoading={activeQ.isLoading}
+            />
             <Button onClick={() => activeQ.refetch()} disabled={activeQ.isFetching}>
               <Icon name="refresh" size={12} />刷新
             </Button>
@@ -544,16 +640,8 @@ export function EntityDataManagerLens({
           </div>
         </header>
 
-        <div className="mb-5 border-y border-border py-4">
-          <DataManagerCharts
-            scope={scope}
-            facets={facets}
-            isLoading={activeQ.isLoading}
-          />
-        </div>
-
-        <div className="grid grid-cols-[210px_minmax(0,1fr)] gap-4 max-lg:grid-cols-1">
-          <aside className="self-start rounded-md border border-border bg-card p-2 lg:sticky lg:top-4">
+        <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+          <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
             <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">{scope === "objects" ? "对象视图" : "轨迹视图"}</div>
             <div className="flex flex-col gap-0.5 max-lg:grid max-lg:grid-cols-2 max-sm:grid-cols-1">
               {views.map((view) => {
@@ -591,8 +679,8 @@ export function EntityDataManagerLens({
             </Button>
           </aside>
 
-          <main className="min-w-0">
-            <section className="mb-3 flex flex-col gap-3 rounded-md border border-border bg-card p-3">
+          <main className="flex min-h-0 min-w-0 flex-col gap-2">
+            <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-sm font-semibold">{selectedView?.name ?? "视图"}</h2>
@@ -605,6 +693,26 @@ export function EntityDataManagerLens({
                 </Badge>
               </div>
               <div className="flex gap-2 max-md:flex-col">
+                <Select
+                  value={selectedKey}
+                  onValueChange={(key) => {
+                    if (key === selectedKey) return;
+                    if (isDirty) setPendingViewKey(key);
+                    else setSelectedKey(key);
+                  }}
+                >
+                  <SelectTrigger className="hidden w-44 max-lg:flex">
+                    <SelectValue placeholder="选择视图" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {views.map((view) => {
+                        const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                        return <SelectItem key={key} value={key}>{view.name}</SelectItem>;
+                      })}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                 <div className="relative min-w-0 flex-1">
                   <Icon name="search" size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -658,86 +766,30 @@ export function EntityDataManagerLens({
                   </PopoverContent>
                 </Popover>
               </div>
-
-              {topRules.map(({ index, rule }) => {
-                const field = fields.find((item) => item.key === rule.field);
-                const rawValue = displayValue(rule.value);
-                return (
-                  <div key={`${index}:${rule.field}`} className="grid grid-cols-[minmax(180px,1fr)_100px_minmax(180px,1fr)_32px] gap-2 max-md:grid-cols-1">
-                    <select
-                      className={FIELD_CLASS}
-                      value={rule.field}
-                      onChange={(event) => {
-                        const nextField = fields.find((item) => item.key === event.target.value);
-                        updateRule(index, { field: event.target.value, op: nextField?.operators[0] ?? "eq", value: "" });
-                      }}
-                    >
-                      {!field && <option value={rule.field}>字段已失效：{rule.field}</option>}
-                      {fields.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-                    </select>
-                    <select
-                      className={FIELD_CLASS}
-                      value={rule.op}
-                      onChange={(event) => updateRule(index, { op: event.target.value })}
-                    >
-                      {(field?.operators ?? [rule.op]).map((op) => <option key={op} value={op}>{op}</option>)}
-                    </select>
-                    {rule.op === "exists" || rule.op === "missing" ? (
-                      <input className={FIELD_CLASS} value="无需填写" readOnly disabled />
-                    ) : field?.value_type === "boolean" ? (
-                      <select className={FIELD_CLASS} value={rawValue || "true"} onChange={(event) => updateRule(index, { value: event.target.value === "true" })}>
-                        <option value="true">是</option><option value="false">否</option>
-                      </select>
-                    ) : (
-                      <input
-                        className={FIELD_CLASS}
-                        value={rawValue}
-                        onChange={(event) => updateRule(index, { value: normalizeValue(event.target.value, rule.op, field) })}
-                        placeholder={["in", "between", "contains_any", "contains_all"].includes(rule.op) ? "多个值用逗号分隔" : undefined}
-                      />
-                    )}
-                    <button
-                      type="button"
-                      aria-label="移除筛选条件"
-                      className="flex size-8 items-center justify-center rounded-sm border border-border text-muted-foreground hover:bg-muted max-md:w-full"
-                      onClick={() => {
-                        const rules = Array.isArray(filter.rules) ? [...(filter.rules as FilterNode[])] : [];
-                        rules.splice(index, 1);
-                        setFilter(rules.length ? { op: "and", rules } : {});
-                      }}
-                    >
-                      <Icon name="x" size={14} />
-                    </button>
-                  </div>
-                );
-              })}
               {hasNestedRules && (
                 <div className="text-xs text-muted-foreground">
                   当前视图包含高级组合条件。系统会原样保留，未在这里静默改写。
                 </div>
               )}
-              <Button
-                size="sm"
-                className="w-fit"
-                disabled={!fields.length}
-                onClick={() => {
-                  const field = fields[0];
+              <DataManagerFilterBar
+                fields={fields}
+                chips={filterChips}
+                onAdd={(field) => {
                   const nextRule = { field: field.key, op: field.operators[0] ?? "eq", value: "" };
                   const rules = Array.isArray(filter.rules)
                     ? [...(filter.rules as FilterNode[]), nextRule]
                     : Object.keys(filter).length ? [filter, nextRule] : [nextRule];
                   setFilter({ op: "and", rules });
                 }}
-              >
-                <Icon name="plus" size={12} />添加筛选
-              </Button>
+                onClear={() => setFilter({})}
+              />
             </section>
 
             <div
               ref={tableRef}
               role="table"
               aria-rowcount={total}
-              className="relative h-[60dvh] min-h-[420px] overflow-auto rounded-md border border-border bg-card"
+              className="relative min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card"
             >
               <div
                 role="row"
@@ -837,6 +889,7 @@ export function EntityDataManagerLens({
               )}
             </div>
           </main>
+        </div>
         </div>
       </DataManagerLensTabs>
 

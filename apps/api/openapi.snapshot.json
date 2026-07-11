@@ -6057,6 +6057,30 @@
       },
       "DataManagerAiReviewSummary": {
         "properties": {
+          "by_model_version": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Model Version",
+            "type": "object"
+          },
+          "confidence_buckets": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Confidence Buckets",
+            "type": "object"
+          },
+          "confidence_threshold": {
+            "default": 0.5,
+            "title": "Confidence Threshold",
+            "type": "number"
+          },
+          "low_confidence_prediction_shapes": {
+            "default": 0,
+            "title": "Low Confidence Prediction Shapes",
+            "type": "integer"
+          },
           "prediction_shapes": {
             "default": 0,
             "title": "Prediction Shapes",
@@ -7354,6 +7378,11 @@
               }
             ],
             "title": "Last Reopened At"
+          },
+          "low_confidence_prediction_shape_count": {
+            "default": 0,
+            "title": "Low Confidence Prediction Shape Count",
+            "type": "integer"
           },
           "model_versions": {
             "items": {

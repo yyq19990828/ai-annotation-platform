@@ -26,8 +26,19 @@ import { useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/shadcn/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/shadcn/ui/popover";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
-import { DataManagerOverview } from "./data-manager/DataManagerOverview";
+import { DataManagerAnalyticsSheet } from "./data-manager/DataManagerAnalyticsSheet";
+import {
+  DataManagerFilterBar,
+  type DataManagerFilterChip,
+  type DataManagerQuickFilter,
+} from "./data-manager/DataManagerFilterBar";
+import { DataManagerSummaryStrip } from "./data-manager/DataManagerOverview";
 import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
 import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
@@ -81,6 +92,7 @@ const COLUMN_OPTIONS = [
   { key: "status", label: "状态" },
   { key: "annotation_count", label: "标注" },
   { key: "pending_prediction_shape_count", label: "AI 检测待审" },
+  { key: "low_confidence_prediction_shape_count", label: "低置信 AI 待审 (<50%)" },
   { key: "pending_tracker_job_count", label: "AI 追踪待审" },
   { key: "unresolved_feedback_count", label: "反馈" },
   { key: "annotation_source_counts", label: "来源" },
@@ -90,9 +102,7 @@ const COLUMN_OPTIONS = [
   { key: "reviewer", label: "审核员" },
 ] as const;
 
-const DEFAULT_COLUMNS = COLUMN_OPTIONS.slice(0, 10).map((item) => item.key);
-const EMPTY_RULE: EditableRule = { field: "task.status", op: "in", value: "pending" };
-
+const DEFAULT_COLUMNS = COLUMN_OPTIONS.slice(0, 11).map((item) => item.key);
 interface EditableRule {
   field: string;
   op: TaskFilterOp;
@@ -204,6 +214,14 @@ function operatorLabel(operator: TaskFilterOp) {
     contains_all: "包含全部",
   };
   return labels[operator] ?? operator;
+}
+
+function ruleValueLabel(rule: EditableRule, fields: DataManagerFilterField[]) {
+  if (rule.op === "exists" || rule.op === "missing") return operatorLabel(rule.op);
+  const field = fields.find((item) => item.key === rule.field);
+  const option = field?.options.find((item) => item.value === rule.value);
+  const value = option?.label ?? rule.value.trim();
+  return `${operatorLabel(rule.op)} ${value || "未填写"}`;
 }
 
 function renderRuleValueControl(
@@ -547,9 +565,61 @@ function TaskDataManagerPage({
   };
 
   const visibleColumnSet = new Set(columns);
+  const toggleQuickRule = (rule: EditableRule) => {
+    const index = rules.findIndex((item) => (
+      item.field === rule.field && item.op === rule.op && item.value === rule.value
+    ));
+    setRules(index >= 0 ? rules.filter((_, itemIndex) => itemIndex !== index) : [...rules, rule]);
+  };
+  const quickFilters: DataManagerQuickFilter[] = [
+    {
+      key: "low-confidence",
+      label: "低置信",
+      active: rules.some((rule) => rule.field === "ai.low_confidence_prediction_shape_count" && rule.op === "gt" && rule.value === "0"),
+      onClick: () => toggleQuickRule({ field: "ai.low_confidence_prediction_shape_count", op: "gt", value: "0" }),
+    },
+    {
+      key: "feedback",
+      label: "有反馈",
+      active: rules.some((rule) => rule.field === "feedback.unresolved_count" && rule.op === "gt" && rule.value === "0"),
+      onClick: () => toggleQuickRule({ field: "feedback.unresolved_count", op: "gt", value: "0" }),
+    },
+    {
+      key: "manual",
+      label: "人工标注",
+      active: rules.some((rule) => rule.field === "annotation.source" && rule.op === "eq" && rule.value === "manual"),
+      onClick: () => toggleQuickRule({ field: "annotation.source", op: "eq", value: "manual" }),
+    },
+  ];
+  const filterChips: DataManagerFilterChip[] = rules.map((rule, index) => ({
+    id: `${index}:${rule.field}`,
+    label: fieldLabel.get(rule.field) ?? rule.field,
+    value: ruleValueLabel(rule, filterFields),
+    editor: (
+      <div className="flex flex-col gap-2">
+        <select
+          className={FIELD_CLASS}
+          value={rule.op}
+          onChange={(event) => {
+            const next = [...rules];
+            next[index] = { ...rule, op: event.target.value as TaskFilterOp };
+            setRules(next);
+          }}
+        >
+          {(filterFields.find((field) => field.key === rule.field)?.operators ?? [rule.op]).map((operator) => (
+            <option key={operator} value={operator}>{operatorLabel(operator)}</option>
+          ))}
+        </select>
+        {renderRuleValueControl(rule, index, rules, setRules, filterFields)}
+        <Button variant="ghost" size="sm" onClick={() => setRules(rules.filter((_, itemIndex) => itemIndex !== index))}>
+          <Icon name="trash" size={12} />移除条件
+        </Button>
+      </div>
+    ),
+  }));
 
   return (
-    <div className="mx-auto max-w-[1680px] px-4 pt-4 pb-8 text-foreground md:px-7">
+    <div className="mx-auto h-full min-h-0 max-w-[1800px] overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
       <DataManagerLensTabs
         scope="tasks"
         availableScopes={availableScopes}
@@ -559,25 +629,30 @@ function TaskDataManagerPage({
           else onScopeChange(nextScope);
         }}
       >
-      <header className="mb-3.5">
+      <div className="flex h-full min-h-0 flex-col gap-2">
+      <header className="flex shrink-0 items-center justify-between gap-4 max-md:flex-col max-md:items-start">
+        <div className="min-w-0">
         <button
           type="button"
-          className="mb-2 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
+          className="mb-1 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
           onClick={() => navigate(`/projects/${id}/settings`)}
         >
           <Icon name="chevLeft" size={12} />返回项目设置
         </button>
-        <div className="flex items-center justify-between gap-4 max-md:flex-col max-md:items-start">
-          <div>
-            <h1 className="mb-1 text-xl font-semibold">{project.name} · Data Manager</h1>
+            <h1 className="truncate text-lg font-semibold tracking-tight">{project.name} · Data Manager</h1>
             <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
               <span className="mono">{project.display_id}</span>
               <span>{visibleTotal.toLocaleString()} 可见任务</span>
               <span>{total.toLocaleString()} 当前匹配</span>
               <span>{views.length.toLocaleString()} 视图</span>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
+        </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <DataManagerAnalyticsSheet
+              scope="tasks"
+              summary={summaryQ.data}
+              isLoading={summaryQ.isLoading}
+            />
             <Button
               onClick={() => {
                 tasksQ.refetch();
@@ -592,15 +667,12 @@ function TaskDataManagerPage({
               <Icon name="save" size={12} />保存视图
             </Button>
           </div>
-        </div>
       </header>
 
-      <div className="mb-3.5">
-        <DataManagerOverview summary={summaryQ.data} isLoading={summaryQ.isLoading} />
-      </div>
+      <DataManagerSummaryStrip summary={summaryQ.data} isLoading={summaryQ.isLoading} />
 
-      <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-3.5 max-md:grid-cols-1">
-        <aside className="self-start rounded-md border border-border bg-card p-2 max-md:static md:sticky md:top-4">
+      <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+        <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
           <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">视图</div>
           <div className="mb-2 flex flex-col gap-0.5 max-md:grid max-md:grid-cols-2 max-sm:grid-cols-1">
             {views.map((view) => {
@@ -639,8 +711,8 @@ function TaskDataManagerPage({
           </Button>
         </aside>
 
-        <main className="min-w-0">
-          <section className="mb-2.5 flex flex-col gap-2.5 rounded-md border border-border bg-card p-2.5">
+        <main className="flex min-h-0 min-w-0 flex-col gap-2">
+          <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
             <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
               <div>
                 <div className="text-sm font-semibold">{selectedView?.name ?? "任务视图"}</div>
@@ -655,6 +727,26 @@ function TaskDataManagerPage({
               </Badge>
             </div>
             <div className="flex gap-2 max-sm:flex-col">
+              <Select
+                value={selectedKey}
+                onValueChange={(key) => {
+                  if (key === selectedKey) return;
+                  if (isDirty) setPendingViewKey(key);
+                  else setSelectedKey(key);
+                }}
+              >
+                <SelectTrigger className="hidden w-44 max-lg:flex">
+                  <SelectValue placeholder="选择视图" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {views.map((view) => {
+                      const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                      return <SelectItem key={key} value={key}>{view.name}</SelectItem>;
+                    })}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
               <div className="relative min-w-0 flex-1">
                 <Icon name="search" size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -692,94 +784,45 @@ function TaskDataManagerPage({
               >
                 {sort[0]?.direction === "desc" ? "降序" : "升序"}
               </Button>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {rules.map((rule, index) => (
-                <div
-                  key={`${index}-${rule.field}`}
-                  className="grid grid-cols-[minmax(180px,1fr)_90px_minmax(220px,1.2fr)_32px] items-center gap-2 max-sm:grid-cols-1"
-                >
-                  <select
-                    className={FIELD_CLASS}
-                    value={rule.field}
-                    onChange={(event) => {
-                      const next = [...rules];
-                      const nextField = filterFields.find((field) => field.key === event.target.value);
-                      next[index] = {
-                        field: event.target.value,
-                        op: nextField?.operators[0] ?? "eq",
-                        value: "",
-                      };
-                      setRules(next);
-                    }}
-                  >
-                    {!filterFields.some((field) => field.key === rule.field) && (
-                      <option value={rule.field}>字段已失效：{rule.field}</option>
-                    )}
-                    {filterFields.map((field) => (
-                      <option key={field.key} value={field.key}>{field.label}</option>
+              <Popover>
+                <PopoverTrigger asChild><Button>列设置</Button></PopoverTrigger>
+                <PopoverContent align="end" className="w-72">
+                  <div className="mb-2 text-sm font-medium">显示列</div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {columnOptions.map((column) => (
+                      <label key={column.key} className="flex min-h-8 items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={visibleColumnSet.has(column.key)}
+                          disabled={column.key === "display_id"}
+                          onChange={(event) => setColumns(
+                            event.target.checked
+                              ? [...columns, column.key]
+                              : columns.filter((item) => item !== column.key),
+                          )}
+                        />
+                        <span>{column.label}</span>
+                      </label>
                     ))}
-                  </select>
-                  <select
-                    className={FIELD_CLASS}
-                    value={rule.op}
-                    onChange={(event) => {
-                      const next = [...rules];
-                      next[index] = { ...rule, op: event.target.value as TaskFilterOp };
-                      setRules(next);
-                    }}
-                  >
-                    {(filterFields.find((field) => field.key === rule.field)?.operators ?? [rule.op]).map((operator) => (
-                      <option key={operator} value={operator}>{operatorLabel(operator)}</option>
-                    ))}
-                  </select>
-                  {renderRuleValueControl(rule, index, rules, setRules, filterFields)}
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 cursor-pointer appearance-none items-center justify-center rounded-sm border border-border bg-transparent text-muted-foreground disabled:cursor-default disabled:bg-muted disabled:text-muted-foreground max-sm:w-full"
-                    onClick={() => setRules(rules.filter((_, i) => i !== index))}
-                    title="移除"
-                  >
-                    <Icon name="x" size={14} />
-                  </button>
-                </div>
-              ))}
-              <Button size="sm" className="w-fit min-w-[112px] justify-start" onClick={() => {
-                const field = filterFields[0];
-                setRules([...rules, field ? { field: field.key, op: field.operators[0] ?? "eq", value: "" } : { ...EMPTY_RULE }]);
-              }}>
-                <Icon name="plus" size={12} />条件
-              </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-2">
-              <div className="mr-1 text-xs font-semibold text-muted-foreground">显示列</div>
-              {columnOptions.map((column) => (
-                <label
-                  key={column.key}
-                  className="flex min-h-7 min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground hover:border-border hover:text-foreground"
-                >
-                  <input
-                    type="checkbox"
-                    className="cursor-pointer"
-                    checked={visibleColumnSet.has(column.key)}
-                    disabled={column.key === "display_id"}
-                    onChange={(event) => {
-                      if (event.target.checked) {
-                        setColumns([...columns, column.key]);
-                      } else {
-                        setColumns(columns.filter((item) => item !== column.key));
-                      }
-                    }}
-                  />
-                  {column.label}
-                </label>
-              ))}
-            </div>
+            <DataManagerFilterBar
+              fields={filterFields}
+              chips={filterChips}
+              quickFilters={quickFilters}
+              onAdd={(field) => setRules([
+                ...rules,
+                { field: field.key, op: field.operators[0] ?? "eq", value: "" },
+              ])}
+              onClear={() => setRules([])}
+            />
           </section>
 
-          <div className="overflow-x-auto rounded-md border border-border bg-card shadow-sm">
+          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm">
             <table className="w-full min-w-[980px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_td:first-child]:w-[140px] [&_th:first-child]:w-[140px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
-              <thead>
+              <thead className="sticky top-0 z-base">
                 <tr>
                   {columns.map((column) => (
                     <th key={column}>{columnOptions.find((item) => item.key === column)?.label ?? column}</th>
@@ -828,7 +871,7 @@ function TaskDataManagerPage({
             </table>
           </div>
 
-          <footer className="flex items-center justify-between gap-3 px-0.5 pt-2.5 text-xs text-muted-foreground max-sm:flex-col max-sm:items-start">
+          <footer className="flex shrink-0 items-center justify-between gap-3 px-0.5 text-xs text-muted-foreground max-sm:flex-col max-sm:items-start">
             <div>
               {[
                 ...(debouncedKeyword ? [`关键词 “${debouncedKeyword}”`] : []),
@@ -848,6 +891,7 @@ function TaskDataManagerPage({
             </div>
           </footer>
         </main>
+      </div>
       </div>
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
         <DialogContent>
@@ -958,6 +1002,10 @@ function renderCell(task: DataManagerTask, column: string) {
       return task.pending_prediction_shape_count
         ? <Badge variant="warning">{task.pending_prediction_shape_count}</Badge>
         : "0";
+    case "low_confidence_prediction_shape_count":
+      return task.low_confidence_prediction_shape_count
+        ? <Badge variant="warning">{task.low_confidence_prediction_shape_count}</Badge>
+        : "0";
     case "pending_tracker_job_count":
       return task.pending_tracker_job_count
         ? <Badge variant="warning">{task.pending_tracker_job_count}</Badge>
@@ -975,12 +1023,8 @@ function renderCell(task: DataManagerTask, column: string) {
       return task.track_count.toLocaleString();
     case "prediction_count":
       return task.prediction_count.toLocaleString();
-    case "avg_prediction_confidence":
-      return task.avg_prediction_confidence === null ? "—" : task.avg_prediction_confidence.toFixed(3);
     case "unresolved_feedback_count":
       return task.unresolved_feedback_count ? <Badge variant="warning">{task.unresolved_feedback_count}</Badge> : "0";
-    case "model_versions":
-      return task.model_versions.length ? task.model_versions.join(", ") : "—";
     case "scene_name":
       return task.scene_name ?? "—";
     case "frame_index":

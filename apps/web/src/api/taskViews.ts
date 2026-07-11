@@ -82,6 +82,7 @@ export interface DataManagerTask extends TaskResponse {
   annotation_source_counts: Record<string, number>;
   track_count: number;
   pending_prediction_shape_count: number;
+  low_confidence_prediction_shape_count: number;
   pending_tracker_job_count: number;
   keyframe_count: number;
   outside_range_count: number;
@@ -144,7 +145,14 @@ export interface DataManagerSummary {
     by_tool_unit: Record<string, number>;
     by_type: Record<string, number>;
   };
-  ai_review: { prediction_shapes: number; tracker_jobs: number };
+  ai_review: {
+    prediction_shapes: number;
+    low_confidence_prediction_shapes: number;
+    tracker_jobs: number;
+    confidence_threshold: number;
+    by_model_version: Record<string, number>;
+    confidence_buckets: Record<string, number>;
+  };
   unresolved_feedback: number;
   attributes: Array<{
     tool_unit_id: string;

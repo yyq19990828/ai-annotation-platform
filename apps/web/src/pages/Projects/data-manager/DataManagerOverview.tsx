@@ -1,11 +1,4 @@
 import type { DataManagerSummary } from "@/api/taskViews";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/shadcn/ui/card";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { DataManagerCharts } from "./DataManagerCharts";
@@ -32,6 +25,13 @@ const SOURCE_LABELS: Record<string, string> = {
   prediction_based: "接受 AI",
   ai_tracker: "AI 追踪",
   interpolated: "插值",
+};
+
+const CONFIDENCE_BUCKET_LABELS: Record<string, string> = {
+  lt_025: "0–24%",
+  "025_049": "25–49%",
+  "050_074": "50–74%",
+  gte_075: "75–100%",
 };
 
 const KIND_METRIC_LABELS: Record<string, string> = {
@@ -75,60 +75,75 @@ function Distribution({
   );
 }
 
-export function DataManagerOverview({ summary, isLoading }: DataManagerOverviewProps) {
-  const cards = [
+function overviewItems(summary: DataManagerSummary | undefined) {
+  return [
     {
       label: "当前匹配",
       value: summary?.scope.matched_task_total,
-      detail: `可见范围 ${metric(summary?.scope.visible_task_total)}`,
+      detail: `可见 ${metric(summary?.scope.visible_task_total)}`,
     },
     {
       label: "标注对象",
       value: summary?.annotations.total,
-      detail: `人工 ${metric(summary?.annotations.by_source.manual)} · 接受 AI ${metric(summary?.annotations.by_source.prediction_based)}`,
+      detail: `人工 ${metric(summary?.annotations.by_source.manual)} · AI ${metric(summary?.annotations.by_source.prediction_based)}`,
     },
     {
       label: "AI 待审",
       value: (summary?.ai_review.prediction_shapes ?? 0) + (summary?.ai_review.tracker_jobs ?? 0),
-      detail: `检测 ${metric(summary?.ai_review.prediction_shapes)} · 追踪 ${metric(summary?.ai_review.tracker_jobs)}`,
+      detail: `低置信 ${metric(summary?.ai_review.low_confidence_prediction_shapes)}`,
     },
     {
       label: "逻辑轨迹",
       value: summary?.annotations.distinct_tracks,
-      detail: `含轨迹标注 ${metric(summary?.annotations.tracked)}`,
+      detail: `轨迹标注 ${metric(summary?.annotations.tracked)}`,
     },
     {
       label: "未解决反馈",
       value: summary?.unresolved_feedback,
-      detail: summary?.unresolved_feedback ? "需要回到任务处理" : "当前视图无未解决项",
+      detail: summary?.unresolved_feedback ? "需要处理" : "当前无反馈",
     },
   ];
+}
 
+export function DataManagerSummaryStrip({ summary, isLoading }: DataManagerOverviewProps) {
+  const items = overviewItems(summary);
   return (
-    <section aria-label="数据概览">
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-        {cards.map((card) => (
-          <Card key={card.label} className="gap-3 rounded-lg py-3 shadow-none">
-            <CardHeader className="gap-1 px-3">
-              <CardDescription className="text-xs">{card.label}</CardDescription>
-              <CardTitle className="font-mono text-2xl font-semibold tabular-nums">
-                {isLoading ? <Skeleton className="h-7 w-20" /> : metric(card.value)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 text-xs text-muted-foreground">
-              {isLoading ? <Skeleton className="h-3 w-full" /> : card.detail}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <div className="mt-4 border-y border-border py-4">
+    <section
+      aria-label="数据概览"
+      className="grid shrink-0 grid-cols-5 gap-px overflow-hidden rounded-md border border-border bg-border max-md:flex max-md:overflow-x-auto"
+    >
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0 bg-card px-3 py-2 max-md:min-w-36">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-xs text-muted-foreground">{item.label}</span>
+            {isLoading ? (
+              <Skeleton className="h-5 w-10" />
+            ) : (
+              <strong className="font-mono text-base font-semibold tabular-nums text-foreground">
+                {metric(item.value)}
+              </strong>
+            )}
+          </div>
+          <div className="mt-0.5 truncate text-2xs text-muted-foreground">
+            {isLoading ? <Skeleton className="h-3 w-full" /> : item.detail}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export function DataManagerAnalyticsContent({ summary, isLoading }: DataManagerOverviewProps) {
+  return (
+    <section aria-label="详细统计" className="flex flex-col gap-4">
+      <div>
         <DataManagerCharts
           scope="tasks"
           summary={summary}
           isLoading={isLoading}
         />
       </div>
-      <details className="mt-2 rounded-lg border border-border bg-card">
+      <details className="rounded-lg border border-border bg-card" open>
         <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground marker:text-muted-foreground">
           查看状态、来源、类别与属性聚合
         </summary>
@@ -142,6 +157,8 @@ export function DataManagerOverview({ summary, isLoading }: DataManagerOverviewP
               <Distribution title="类别" values={summary.annotations.by_class} />
               <Distribution title="几何类型" values={summary.annotations.by_type} />
               <Distribution title="工具单位" values={summary.annotations.by_tool_unit} />
+              <Distribution title="待审模型版本" values={summary.ai_review.by_model_version} />
+              <Distribution title="待审置信度" values={summary.ai_review.confidence_buckets} labels={CONFIDENCE_BUCKET_LABELS} />
               <Distribution title="当前模态" values={summary.kind_metrics} labels={KIND_METRIC_LABELS} />
               <div className="min-w-0 md:col-span-2 xl:col-span-2">
                 <div className="mb-2 text-xs font-semibold text-muted-foreground">属性完整度和值分布</div>
@@ -175,5 +192,14 @@ export function DataManagerOverview({ summary, isLoading }: DataManagerOverviewP
         </div>
       </details>
     </section>
+  );
+}
+
+export function DataManagerOverview(props: DataManagerOverviewProps) {
+  return (
+    <div className="flex flex-col gap-4">
+      <DataManagerSummaryStrip {...props} />
+      <DataManagerAnalyticsContent {...props} />
+    </div>
   );
 }

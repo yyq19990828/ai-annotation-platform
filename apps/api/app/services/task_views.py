@@ -44,6 +44,7 @@ DEFAULT_COLUMNS = [
     "status",
     "annotation_count",
     "pending_prediction_shape_count",
+    "low_confidence_prediction_shape_count",
     "pending_tracker_job_count",
     "unresolved_feedback_count",
     "annotation_source_counts",
@@ -299,6 +300,7 @@ def validate_sort(sort_json: list[dict[str, Any]] | None) -> None:
             "scene_name",
             "scene.frame_index",
             "last_activity_at",
+            "low_confidence_prediction_shape_count",
         }:
             raise HTTPException(
                 status_code=422, detail=f"Unsupported sort field: {field}"
@@ -502,6 +504,17 @@ def _compile_rule(
 
         return _compare_scalar(
             pending_prediction_shapes_expr(), op, value, _NUMERIC_OPS
+        )
+    if field == "ai.low_confidence_prediction_shape_count":
+        from app.services.data_manager import (
+            low_confidence_pending_prediction_shapes_expr,
+        )
+
+        return _compare_scalar(
+            low_confidence_pending_prediction_shapes_expr(),
+            op,
+            value,
+            _NUMERIC_OPS,
         )
     if field == "ai.pending_tracker_job_count":
         if project is None:
@@ -1273,6 +1286,12 @@ def _sort_expr(field: str) -> ColumnElement[Any]:
         return _last_activity_at_expr()
     if field == "model_versions":
         return _model_versions_sq()
+    if field == "low_confidence_prediction_shape_count":
+        from app.services.data_manager import (
+            low_confidence_pending_prediction_shapes_expr,
+        )
+
+        return low_confidence_pending_prediction_shapes_expr()
     raise HTTPException(status_code=422, detail=f"Unsupported sort field: {field}")
 
 
@@ -1518,6 +1537,16 @@ class TaskViewService:
 
             projection.append(
                 pending_prediction_shapes_expr().label("pending_prediction_shape_count")
+            )
+        if "low_confidence_prediction_shape_count" in requested:
+            from app.services.data_manager import (
+                low_confidence_pending_prediction_shapes_expr,
+            )
+
+            projection.append(
+                low_confidence_pending_prediction_shapes_expr().label(
+                    "low_confidence_prediction_shape_count"
+                )
             )
         if "pending_tracker_job_count" in requested:
             from app.services.data_manager import pending_tracker_jobs_expr

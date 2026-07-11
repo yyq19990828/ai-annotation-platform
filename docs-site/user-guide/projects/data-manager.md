@@ -3,7 +3,7 @@ audience: [project_admin, reviewer]
 type: how-to
 since: v0.14.8
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-12
 ---
 
 # Data Manager
@@ -20,7 +20,19 @@ Data Manager 是项目内的只读数据探索入口。它在同一页面提供�
 /projects/<project_id>/data-manager
 ```
 
-页面顶部可在 **任务 / 对象 / 轨迹** 之间切换。左侧是当前粒度的视图列表，右侧是统计图表、搜索、过滤条件、列显隐和结果表。任务行会打开“匹配对象”抽屉；对象或轨迹行会打开实体详情，并可精确跳到对应工作台、任务与帧。
+页面顶部只保留 **任务 / 对象 / 轨迹** 这一层粒度切换。桌面端左侧是当前粒度的视图列表，右侧是搜索、筛选、排序、列设置和结果表；窄屏会把视图列表收进下拉框。任务行会打开“匹配对象”抽屉；对象或轨迹行会打开实体详情，并可精确跳到对应工作台、任务与帧。
+
+## 页面布局与滚动
+
+Data Manager 使用单视口工作台布局：项目标题、当前范围摘要和查询工具栏保持在结果上方，长结果只在表格区域内部滚动，表头固定；打开统计或实体详情时，抽屉内容独立滚动。这样在大项目中切换条件、调整列或翻查结果时，不需要反复滚回页面顶部。
+
+结果工具栏把常用动作集中在一起：
+
+- 关键词搜索、排序方向和列设置；
+- “低置信”“有反馈”“人工标注”等一键筛选；
+- 当前条件以可编辑芯片显示，点击芯片即可修改操作符和值；
+- 点击 **筛选** 后可按中文名称或字段标识搜索字段；
+- 点击 **清除全部** 一次移除当前临时条件。
 
 ## 概览与统计范围
 
@@ -29,7 +41,7 @@ Data Manager 同时显示两种数量：
 - **可见任务**：当前用户在项目内有权访问的全部任务。项目负责人通常看到整个项目；标注员和审核员只统计其批次可见范围。
 - **当前匹配**：应用保存视图、关键词和临时过滤条件后的任务数量。
 
-概览卡展示当前匹配范围内的标注对象、AI 待审、逻辑轨迹和未解决反馈。图表展示任务状态、标注来源、类别、几何类型或轨迹质量异常；它们使用服务端对完整匹配集合计算的聚合，不是当前页抽样。展开详情后还可查看属性完整度和值分布，以及当前项目形态的分辨率、视频帧或点云标定摘要。聚合与结果表使用相同的权限和过滤范围，不会通过统计数字暴露不可见批次。
+紧凑摘要条展示当前匹配范围内的标注对象、AI 待审、低置信 AI 待审、逻辑轨迹和未解决反馈。点击右上角 **统计** 打开完整聚合：图表展示任务状态、标注来源、类别、待审候选模型版本、候选置信度区间、几何类型或轨迹质量异常；详情还包含属性完整度和值分布，以及当前项目形态的分辨率、视频帧或点云标定摘要。它们使用服务端对完整匹配集合计算的聚合，不是当前页抽样。聚合与结果表使用相同的权限和过滤范围，不会通过统计数字暴露不可见批次。
 
 ## 三种查看粒度
 
@@ -76,7 +88,7 @@ Data Manager 同时显示两种数量：
 
 ![过滤条件行编辑器字段选择器展开](../images/projects/data-manager-filter-rules.png)
 
-页面顶部可按任务编号、文件名或 Scene 搜索，输入停止后自动刷新结果。过滤条件使用受控条件行；字段、操作符、选项和类型来自当前项目与当前粒度的 Data Manager schema。后端会拒绝未知字段、项目未启用的工具/属性、未知操作符和错误类型；页面不提供原始 JSON 编辑器。
+页面可按任务编号、文件名或 Scene 搜索，输入停止后自动刷新结果。过滤条件使用受控条件芯片；字段、操作符、选项和类型来自当前项目与当前粒度的 Data Manager schema。字段选择器支持按显示名称、完整字段名和分组搜索。后端会拒绝未知字段、项目未启用的工具/属性、未知操作符和错误类型；页面不提供原始 JSON 编辑器。
 
 当前页面可选字段（字段名含命名空间前缀）：
 
@@ -85,7 +97,8 @@ Data Manager 同时显示两种数量：
 | task | `task.keyword`、`task.status`、`task.assignee`、`task.reviewer`、`task.batch_id` |
 | annotation | `annotation.annotation_count`、`annotation.source`、`annotation.imported`、`annotation.annotation_type`、`annotation.tool_unit_id`、`annotation.class_name`、`annotation.has_track`、`annotation.track_id` |
 | attribute | `annotation.attribute.<tool_unit>.<key>`、`annotation.attribute_origin.<tool_unit>.<key>` |
-| AI review | `ai.pending_prediction_shape_count`、`ai.pending_tracker_job_count` |
+| AI review | `ai.pending_prediction_shape_count`、`ai.low_confidence_prediction_shape_count`、`ai.pending_tracker_job_count` |
+| AI trace | `prediction.model_version`（历史预测追溯） |
 | feedback | `feedback.unresolved_count`、`feedback.status` |
 | video track | `keyframe.source`（启用视频轨迹能力时） |
 | scene | `scene.scene_name`、`scene.frame_index`（仅 scene 项目） |
@@ -112,12 +125,15 @@ Data Manager 同时显示两种数量：
 
 “AI 待审”不是 prediction 行数：检测候选按 prediction 内剩余 shape 计算，排除已拒绝和已接受的 shape；视频 AI 追踪候选按仍带暂存结果、允许继续审阅的 tracker job 计算。
 
+“低置信 AI 待审”使用相同的剩余 shape 范围，只统计候选自身 `score` 或 `confidence` 低于 50% 的项。没有候选分数时按 0 处理并进入低置信范围。Task 表不展示历史模型版本拼接或 prediction 平均分，因为它们混合多次运行后不能表达任务的当前质量；模型版本保留为历史追溯筛选，并在聚合图表中只按当前待审候选分布。
+
 ## 列与项目类型
 
 任务表可显示：
 
 - `annotation_count`
 - AI 检测候选待审数
+- 低置信 AI 候选待审数（低于 50%）
 - AI 追踪结果待审数
 - `unresolved_feedback_count`
 - 人工 / 接受 AI / AI 追踪 / 插值来源摘要

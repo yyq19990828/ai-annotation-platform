@@ -65,15 +65,19 @@ async def test_schema_is_capability_driven_for_video_and_attributes(
     assert "scene.frame_index" not in field_keys
     assert "annotation.attribute.bbox.color" in field_keys
     assert "keyframe.source" in field_keys
+    assert "prediction.model_version" in field_keys
+    assert "ai.low_confidence_prediction_shape_count" in field_keys
     color = next(
         field
         for field in body["filter_fields"]
         if field["key"] == "annotation.attribute.bbox.color"
     )
     assert color["operators"] == ["eq", "in", "exists", "missing"]
-    assert {column["key"] for column in body["columns"]}.issuperset(
-        {"duration", "fps", "frame_count", "keyframe_count"}
-    )
+    column_keys = {column["key"] for column in body["columns"]}
+    assert column_keys.issuperset({"duration", "fps", "frame_count", "keyframe_count"})
+    assert "low_confidence_prediction_shape_count" in column_keys
+    assert "model_versions" not in column_keys
+    assert "avg_prediction_confidence" not in column_keys
     assert {"tracker-review", "with-tracks"}.issubset(body["builtin_views"])
 
 
@@ -140,9 +144,7 @@ async def test_scene_task_query_returns_name_frame_and_total(
     ]
     db_session.add_all(items)
     await db_session.flush()
-    task = await create_task(
-        db_session, project_id=project.id, display_id="T-DM-SCENE"
-    )
+    task = await create_task(db_session, project_id=project.id, display_id="T-DM-SCENE")
     task.dataset_item_id = items[1].id
     task.file_type = "lidar"
     await db_session.flush()
@@ -185,13 +187,22 @@ async def test_summary_uses_real_annotation_and_pending_shape_counts(
         project_id=project.id,
         model_version="detector-v1",
         result=[
-            {"type": "rectanglelabels", "value": {}},
-            {"type": "rectanglelabels", "value": {}},
-            {"type": "rectanglelabels", "value": {}},
+            {"type": "rectanglelabels", "value": {}, "score": 0.9},
+            {"type": "rectanglelabels", "value": {}, "score": 0.8},
+            {"type": "rectanglelabels", "value": {}, "score": 0.4},
         ],
         rejected_shape_indexes=[1],
     )
-    db_session.add(prediction)
+    second_prediction = Prediction(
+        task_id=task_b.id,
+        project_id=project.id,
+        model_version="detector-v2",
+        result=[
+            {"type": "rectanglelabels", "value": {}, "score": 0.8},
+            {"type": "rectanglelabels", "value": {}, "score": 0.2},
+        ],
+    )
+    db_session.add_all([prediction, second_prediction])
     await db_session.flush()
     db_session.add_all(
         [
@@ -241,7 +252,18 @@ async def test_summary_uses_real_annotation_and_pending_shape_counts(
         "manual": 1,
         "prediction_based": 1,
     }
-    assert body["ai_review"]["prediction_shapes"] == 1
+    assert body["ai_review"] == {
+        "prediction_shapes": 3,
+        "low_confidence_prediction_shapes": 2,
+        "tracker_jobs": 0,
+        "confidence_threshold": 0.5,
+        "by_model_version": {"detector-v1": 1, "detector-v2": 2},
+        "confidence_buckets": {
+            "lt_025": 1,
+            "025_049": 1,
+            "gte_075": 1,
+        },
+    }
 
     query_response = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
@@ -253,14 +275,36 @@ async def test_summary_uses_real_annotation_and_pending_shape_counts(
                 "annotation_source_counts",
                 "track_count",
                 "pending_prediction_shape_count",
+                "low_confidence_prediction_shape_count",
             ],
         },
     )
     assert query_response.status_code == 200, query_response.text
     by_id = {item["id"]: item for item in query_response.json()["items"]}
     assert by_id[str(task_a.id)]["pending_prediction_shape_count"] == 1
+    assert by_id[str(task_a.id)]["low_confidence_prediction_shape_count"] == 1
+    assert by_id[str(task_b.id)]["pending_prediction_shape_count"] == 2
+    assert by_id[str(task_b.id)]["low_confidence_prediction_shape_count"] == 1
     assert by_id[str(task_a.id)]["annotation_source_counts"]["prediction_based"] == 1
     assert by_id[str(task_b.id)]["track_count"] == 1
+
+    low_confidence_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "field": "ai.low_confidence_prediction_shape_count",
+                "op": "gt",
+                "value": 0,
+            },
+            "columns_json": [
+                "display_id",
+                "low_confidence_prediction_shape_count",
+            ],
+        },
+    )
+    assert low_confidence_response.status_code == 200, low_confidence_response.text
+    assert low_confidence_response.json()["total"] == 2
 
 
 async def test_keyword_search_matches_task_id_and_file_name(
@@ -375,9 +419,7 @@ async def test_attribute_value_and_origin_filters_use_project_schema(
         },
     )
     assert value_response.status_code == 200, value_response.text
-    assert [item["id"] for item in value_response.json()["items"]] == [
-        str(task_red.id)
-    ]
+    assert [item["id"] for item in value_response.json()["items"]] == [str(task_red.id)]
 
     origin_response = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
@@ -490,9 +532,7 @@ async def test_annotation_conditions_in_same_and_group_match_one_object(
     )
 
     assert response.status_code == 200, response.text
-    assert [item["id"] for item in response.json()["items"]] == [
-        str(same_object.id)
-    ]
+    assert [item["id"] for item in response.json()["items"]] == [str(same_object.id)]
 
 
 async def test_saved_view_with_removed_attribute_is_listed_as_invalid_and_repairable(
@@ -657,9 +697,7 @@ async def test_tracker_candidates_share_task_visibility_and_owner_scope(
 
     filter_json = {
         "op": "and",
-        "rules": [
-            {"field": "ai.pending_tracker_job_count", "op": "gt", "value": 0}
-        ],
+        "rules": [{"field": "ai.pending_tracker_job_count", "op": "gt", "value": 0}],
     }
     owner_summary = await httpx_client.post(
         f"/api/v1/projects/{project.id}/data-manager/summary",

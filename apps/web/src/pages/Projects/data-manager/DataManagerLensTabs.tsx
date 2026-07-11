@@ -29,15 +29,16 @@ export function DataManagerLensTabs({
     <Tabs
       value={scope}
       onValueChange={(value) => onScopeChange(value as DataManagerEntityScope)}
+      className="h-full min-h-0"
     >
-      <TabsList variant="line" aria-label="Data Manager 数据粒度">
+      <TabsList variant="line" aria-label="Data Manager 数据粒度" className="shrink-0">
         {availableScopes.map((item) => (
           <TabsTrigger key={item} value={item}>
             {LABELS[item]}
           </TabsTrigger>
         ))}
       </TabsList>
-      <TabsContent value={scope}>{children}</TabsContent>
+      <TabsContent value={scope} className="min-h-0 overflow-hidden">{children}</TabsContent>
     </Tabs>
   );
 }

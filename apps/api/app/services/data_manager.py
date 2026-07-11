@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 from sqlalchemy import (
+    Float,
     Integer,
     String,
     and_,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     literal,
     not_,
     select,
+    true,
     union_all,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -59,6 +61,7 @@ from app.services.task_views import (
 _TEXT_OPS = ["eq", "ne", "in"]
 _NUMBER_OPS = ["eq", "ne", "gt", "gte", "lt", "lte", "in"]
 _EXISTS_OPS = ["exists", "eq", "in"]
+LOW_CONFIDENCE_THRESHOLD = 0.5
 
 _BASE_COLUMNS = [
     ("display_id", "任务", "任务", True, False),
@@ -66,6 +69,13 @@ _BASE_COLUMNS = [
     ("status", "状态", "工作流", True, False),
     ("annotation_count", "标注", "标注", True, False),
     ("pending_prediction_shape_count", "AI 检测待审", "AI 待审", True, True),
+    (
+        "low_confidence_prediction_shape_count",
+        "低置信 AI 待审 (<50%)",
+        "AI 待审",
+        True,
+        True,
+    ),
     ("pending_tracker_job_count", "AI 追踪待审", "AI 待审", True, True),
     ("unresolved_feedback_count", "反馈", "质量", True, True),
     ("annotation_source_counts", "来源", "标注", True, True),
@@ -74,8 +84,6 @@ _BASE_COLUMNS = [
     ("assignee", "标注员", "人员", False, False),
     ("reviewer", "审核员", "人员", False, False),
     ("batch_id", "批次", "工作流", False, False),
-    ("model_versions", "模型版本", "AI 待审", False, True),
-    ("avg_prediction_confidence", "置信度", "AI 待审", False, True),
 ]
 
 
@@ -234,6 +242,22 @@ def build_data_manager_schema(
             group="AI 待审",
             value_type="number",
             operators=_NUMBER_OPS,
+            expensive=True,
+        ),
+        DataManagerFilterFieldOut(
+            key="ai.low_confidence_prediction_shape_count",
+            label="低置信 AI 候选待审 (<50%)",
+            group="AI 待审",
+            value_type="number",
+            operators=_NUMBER_OPS,
+            expensive=True,
+        ),
+        DataManagerFilterFieldOut(
+            key="prediction.model_version",
+            label="历史预测模型版本",
+            group="AI 追溯",
+            value_type="text",
+            operators=_TEXT_OPS,
             expensive=True,
         ),
         DataManagerFilterFieldOut(
@@ -463,6 +487,10 @@ def build_data_manager_schema(
         _option("task.updated_at", "更新时间"),
         _option("task.display_id", "任务编号"),
         _option("annotation_count", "标注数"),
+        _option(
+            "low_confidence_prediction_shape_count",
+            "低置信 AI 待审 (<50%)",
+        ),
         _option("unresolved_feedback_count", "未解决反馈"),
         _option("last_activity_at", "最近活动"),
     ]
@@ -483,6 +511,7 @@ def build_data_manager_schema(
         excluded = {
             "annotation.annotation_count",
             "ai.pending_prediction_shape_count",
+            "ai.low_confidence_prediction_shape_count",
             "ai.pending_tracker_job_count",
         }
         fields = [field for field in fields if field.key not in excluded]
@@ -652,6 +681,86 @@ def pending_prediction_shapes_expr():
     )
 
 
+def _pending_prediction_shape_rows(
+    task_clause: Callable[[Any], Any],
+    *,
+    alias_name: str,
+):
+    prediction = aliased(Prediction)
+    guarded_result = case(
+        (func.jsonb_typeof(prediction.result) == "array", prediction.result),
+        else_=literal([], type_=JSONB),
+    )
+    shape = (
+        func.jsonb_array_elements(guarded_result)
+        .table_valued("value", with_ordinality="ordinality")
+        .lateral(f"{alias_name}_shape")
+    )
+    shape_value = cast(shape.c.value, JSONB)
+    shape_index = cast(shape.c.ordinality, Integer) - 1
+    raw_confidence = func.coalesce(
+        shape_value["score"].astext,
+        shape_value["confidence"].astext,
+        "0",
+    )
+    numeric_confidence = raw_confidence.op("~")(
+        r"^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$"
+    )
+    confidence = case(
+        (numeric_confidence, cast(raw_confidence, Float)),
+        else_=0.0,
+    )
+    rejected = case(
+        (
+            func.jsonb_typeof(prediction.rejected_shape_indexes) == "array",
+            prediction.rejected_shape_indexes,
+        ),
+        else_=literal([], type_=JSONB),
+    )
+    accepted = (
+        select(Annotation.id)
+        .where(
+            Annotation.parent_prediction_id == prediction.id,
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
+            Annotation.attributes.has_key("_shape_index"),  # noqa: W601
+            cast(Annotation.attributes["_shape_index"].astext, Integer) == shape_index,
+        )
+        .correlate(prediction, shape)
+        .exists()
+    )
+    return (
+        select(
+            prediction.task_id.label("task_id"),
+            prediction.model_version.label("model_version"),
+            shape_index.label("shape_index"),
+            confidence.label("confidence"),
+        )
+        .select_from(prediction)
+        .join(shape, true())
+        .where(
+            task_clause(prediction),
+            not_(rejected.op("@>")(func.jsonb_build_array(shape_index))),
+            not_(accepted),
+        )
+    )
+
+
+def low_confidence_pending_prediction_shapes_expr():
+    pending = _pending_prediction_shape_rows(
+        lambda prediction: prediction.task_id == Task.id,
+        alias_name="dm_task_pending",
+    ).correlate(Task)
+    pending_rows = pending.subquery("dm_task_pending_rows")
+    return (
+        select(func.count())
+        .select_from(pending_rows)
+        .where(pending_rows.c.confidence < LOW_CONFIDENCE_THRESHOLD)
+        .correlate(Task)
+        .scalar_subquery()
+    )
+
+
 def pending_tracker_jobs_expr(user: User | None, project: Project):
     results = VideoTrackerJob.staged_result["results"]
     reviewable = and_(
@@ -804,14 +913,42 @@ class DataManagerService:
         by_tool_unit = distributions["tool_unit"]
         by_type = distributions["type"]
 
-        pending_shapes = int(
-            await self.db.scalar(
-                select(func.coalesce(func.sum(pending_prediction_shapes_expr()), 0))
-                .select_from(Task)
-                .join(matched_ids, matched_ids.c.id == Task.id)
-            )
-            or 0
+        pending_shape_rows = _pending_prediction_shape_rows(
+            lambda prediction: prediction.task_id.in_(select(matched_ids.c.id)),
+            alias_name="dm_summary_pending",
+        ).subquery("dm_summary_pending_rows")
+        confidence_bucket = case(
+            (pending_shape_rows.c.confidence < 0.25, "lt_025"),
+            (pending_shape_rows.c.confidence < 0.5, "025_049"),
+            (pending_shape_rows.c.confidence < 0.75, "050_074"),
+            else_="gte_075",
         )
+        pending_review_rows = await self.db.execute(
+            select(
+                func.coalesce(pending_shape_rows.c.model_version, "未标记").label(
+                    "model_version"
+                ),
+                confidence_bucket.label("bucket"),
+                func.count().label("count"),
+            )
+            .select_from(pending_shape_rows)
+            .group_by(pending_shape_rows.c.model_version, confidence_bucket)
+        )
+        pending_shapes = 0
+        low_confidence_shapes = 0
+        by_model_version: dict[str, int] = {}
+        confidence_buckets: dict[str, int] = {}
+        for model_version, bucket, count in pending_review_rows:
+            model_key = str(model_version)
+            bucket_key = str(bucket)
+            value = int(count)
+            pending_shapes += value
+            by_model_version[model_key] = by_model_version.get(model_key, 0) + value
+            confidence_buckets[bucket_key] = (
+                confidence_buckets.get(bucket_key, 0) + value
+            )
+            if bucket_key in {"lt_025", "025_049"}:
+                low_confidence_shapes += value
         pending_tracker_jobs = int(
             await self.db.scalar(
                 select(
@@ -1054,7 +1191,11 @@ class DataManagerService:
             ),
             ai_review=DataManagerAiReviewSummary(
                 prediction_shapes=pending_shapes,
+                low_confidence_prediction_shapes=low_confidence_shapes,
                 tracker_jobs=pending_tracker_jobs,
+                confidence_threshold=LOW_CONFIDENCE_THRESHOLD,
+                by_model_version=by_model_version,
+                confidence_buckets=confidence_buckets,
             ),
             unresolved_feedback=unresolved_feedback,
             attributes=attribute_summaries,

@@ -89,7 +89,14 @@ describe("DataManagerOverview", () => {
         by_tool_unit: { bbox: 8 },
         by_type: { bbox: 8 },
       },
-      ai_review: { prediction_shapes: 2, tracker_jobs: 1 },
+      ai_review: {
+        prediction_shapes: 2,
+        low_confidence_prediction_shapes: 1,
+        tracker_jobs: 1,
+        confidence_threshold: 0.5,
+        by_model_version: { "detector-v2": 2 },
+        confidence_buckets: { "025_049": 1, gte_075: 1 },
+      },
       unresolved_feedback: 1,
       attributes: [{
         tool_unit_id: "bbox",
@@ -106,12 +113,15 @@ describe("DataManagerOverview", () => {
     render(<DataManagerOverview summary={summary} isLoading={false} />);
 
     expect(screen.getByText("当前匹配")).toBeInTheDocument();
-    expect(screen.getByText("可见范围 12")).toBeInTheDocument();
+    expect(screen.getByText("可见 12")).toBeInTheDocument();
     expect(screen.getByText("查看状态、来源、类别与属性聚合")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务状态" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "标注来源" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "标注类别" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待审模型版本" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待审置信度" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /任务状态：待标注 2，待审核 1/ })).toBeInTheDocument();
+    expect(screen.getByText("低置信 1")).toBeInTheDocument();
     expect(screen.getByText("颜色")).toBeInTheDocument();
     expect(screen.getByText("6/8")).toBeInTheDocument();
   });

@@ -101,7 +101,11 @@ class DataManagerAnnotationSummary(BaseModel):
 
 class DataManagerAiReviewSummary(BaseModel):
     prediction_shapes: int = 0
+    low_confidence_prediction_shapes: int = 0
     tracker_jobs: int = 0
+    confidence_threshold: float = 0.5
+    by_model_version: dict[str, int] = Field(default_factory=dict)
+    confidence_buckets: dict[str, int] = Field(default_factory=dict)
 
 
 class DataManagerAttributeSummary(BaseModel):

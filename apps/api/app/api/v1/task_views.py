@@ -435,6 +435,9 @@ async def query_project_tasks(
                 "pending_prediction_shape_count": int(
                     _row_value(row, "pending_prediction_shape_count", 0) or 0
                 ),
+                "low_confidence_prediction_shape_count": int(
+                    _row_value(row, "low_confidence_prediction_shape_count", 0) or 0
+                ),
                 "pending_tracker_job_count": int(
                     _row_value(row, "pending_tracker_job_count", 0) or 0
                 ),

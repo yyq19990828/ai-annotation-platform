@@ -42,15 +42,28 @@ const QUALITY_LABELS: Record<string, string> = {
   duplicate_keyframe: "关键帧重复",
 };
 
+const CONFIDENCE_BUCKET_LABELS: Record<string, string> = {
+  lt_025: "0–24%",
+  "025_049": "25–49%",
+  "050_074": "50–74%",
+  gte_075: "75–100%",
+};
+
 function cssVar(name: string) {
   if (typeof window === "undefined") return "";
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function rows(values: Record<string, number>, labels: Record<string, string> = {}) {
+function rows(
+  values: Record<string, number>,
+  labels: Record<string, string> = {},
+  order?: string[],
+) {
   return Object.entries(values)
     .filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => order
+      ? order.indexOf(a[0]) - order.indexOf(b[0])
+      : b[1] - a[1])
     .slice(0, 8)
     .map(([key, value]) => ({ key, name: labels[key] ?? key, value }));
 }
@@ -109,6 +122,20 @@ export function DataManagerCharts({
           description: "数量最多的前 8 个类别",
           data: rows(summary.annotations.by_class),
         },
+        {
+          title: "待审模型版本",
+          description: "仅统计当前仍待审的 AI 检测候选",
+          data: rows(summary.ai_review.by_model_version),
+        },
+        {
+          title: "待审置信度",
+          description: "候选级分布，低于 50% 计为低置信",
+          data: rows(
+            summary.ai_review.confidence_buckets,
+            CONFIDENCE_BUCKET_LABELS,
+            ["lt_025", "025_049", "050_074", "gte_075"],
+          ),
+        },
       ];
     }
     if (!facets) return [];
@@ -137,7 +164,7 @@ export function DataManagerCharts({
 
   return (
     <section aria-label="标注统计图表" className="grid gap-4 lg:grid-cols-3">
-      {(isLoading ? [0, 1, 2] : specs).map((spec, index) => (
+      {(isLoading ? Array.from({ length: scope === "tasks" ? 5 : 3 }, (_, index) => index) : specs).map((spec, index) => (
         <div key={typeof spec === "number" ? spec : spec.title} className="min-w-0">
           {typeof spec === "number" ? (
             <Skeleton className="h-44 w-full" />
@@ -180,7 +207,7 @@ export function DataManagerCharts({
                         itemStyle={{ color: "var(--sc-muted-foreground)" }}
                         formatter={(value) => [Number(value).toLocaleString(), "数量"]}
                       />
-                      <Bar dataKey="value" fill={series[index]} radius={[0, 3, 3, 0]} />
+                      <Bar dataKey="value" fill={series[index % series.length]} radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

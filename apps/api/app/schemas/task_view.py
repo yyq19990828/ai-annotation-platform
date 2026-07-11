@@ -111,6 +111,7 @@ class DataManagerTaskOut(TaskOut):
     annotation_source_counts: dict[str, int] = Field(default_factory=dict)
     track_count: int = 0
     pending_prediction_shape_count: int = 0
+    low_confidence_prediction_shape_count: int = 0
     pending_tracker_job_count: int = 0
     keyframe_count: int = 0
     outside_range_count: int = 0
