@@ -301,18 +301,21 @@ async def delete_ml_backend(
     await db.commit()
 
 
-@router.post(
-    "/{backend_id}/unload",
-    dependencies=[Depends(require_project_owner)],
-)
+@router.post("/{backend_id}/unload")
 async def unload_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    """B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502."""
+    """B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502.
+
+    鉴权 super_admin only · /unload 作用于「全局 backend 显存驻留」(一物理 backend 被多个
+    项目共用), 项目 owner 也能借此驱逐其他项目正在用的权重。故这类破坏性的驻留操作收口到
+    平台管理员, 与前端「运行时观测」面板 (super_admin only) 及 admin observe/smoke-test 的
+    运维基线一致; 不叠加 require_project_owner —— 全局操作按 backend_id 定位, 与 path 里的
+    project 无归属关系。构造性的 /warmup 仍保留在 project_owner (见该端点注释)。"""
     svc = MLBackendService(db)
     try:
         result = await svc.unload(backend_id)
@@ -334,23 +337,23 @@ async def unload_ml_backend(
     return result
 
 
-@router.post(
-    "/{backend_id}/reload",
-    dependencies=[Depends(require_project_owner)],
-)
+@router.post("/{backend_id}/reload")
 async def reload_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     request: Request,
     body: MLBackendReloadRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     """B-28+ · 触发 backend 重新加载模型. 已加载则 noop.
 
     v0.10.26 · 可选 body {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);
     缺省回退 backend 默认变体.
-    """
+
+    鉴权 super_admin only · /reload 会改写「全局 backend 常驻变体」(同 backend 被多项目共用),
+    切变体等于换掉其他项目正在用的权重, 属破坏性驻留操作, 与 /unload 同基线收口到平台管理员
+    (对齐 super_admin only 的「运行时观测」面板)。"""
     svc = MLBackendService(db)
     sam_variant = body.sam_variant if body else None
     dino_variant = body.dino_variant if body else None
@@ -402,7 +405,13 @@ async def warmup_ml_backend(
     body 原样转发 (各 backend schema 不同). backend 未声明 warmup_endpoint=True 时仍
     转发, 收到 404/405 由上游 502 反馈; 前端 ⚡ 按钮应已通过 health_meta.capabilities.
     warmup_endpoint 提前置灰.
-    """
+
+    鉴权 project_owner (刻意不随 /unload·/reload 收口到 super_admin) · warmup 是「构造性」
+    预热, 是项目自身预标/交互推理的前置: AIPreAnnotate 预热加载类别表 (model.names)、能力目录
+    对项目管理员可见的预热按钮, 都是项目负责人的日常流程。共享态权衡: 预热可能驱逐同 backend
+    上其他项目常驻的模型, 属可接受代价 —— 它是本项目用模型的必要前提, 且 backend 侧有
+    max_concurrency / idle 淘汰兜底。只有会直接驱逐/换掉他人在用权重的 unload/reload 才收口
+    到平台管理员。"""
     svc = MLBackendService(db)
     try:
         result = await svc.warmup(backend_id, body or {})
