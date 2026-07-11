@@ -52,6 +52,9 @@
 - **视频追踪任务管理接口补齐项目范围与状态保护**：项目管理员的任务列表、聚合计数和项目过滤现在严格限制在自己拥有的项目；`discard` 只接受确有暂存结果的待审 / 已取消任务，其它状态返回冲突，不再能把运行中或已接受任务直接改成 discarded。
 - **视频追踪的 Compose 配置会传入实际运行容器**：基础 GPU worker 现在接收 `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`，SAM3 backend 接收 `SAM3_DOWNLOAD_VIDEO`，避免只修改 `.env` 但容器仍使用默认值。
 
+### Security
+- **模型卸载 / 重载端点收口到超级管理员**：`POST /projects/{id}/ml-backends/{bid}/reload · /unload` 此前只要求项目 owner，但二者改写的是「全局 backend 显存驻留 / 常驻变体」——同一物理 backend 被多个项目共用，某项目 owner 触发卸载 / 换变体会驱逐或换掉其他项目正在用的权重、互相干扰。现收紧为**仅超级管理员**（与「运行时观测」面板 super_admin only、admin `observe/smoke-test` 运维基线一致），对现有前端流程零影响（运行时观测 tab 本就仅超管可见）。构造性的 `warmup` 是项目自身预标 / 交互推理的前置，刻意保留在项目 owner。补齐正 / 反鉴权回归测试。
+
 ## [0.21.27] - 2026-07-11
 
 ### Added

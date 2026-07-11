@@ -69,7 +69,8 @@ PUT /api/v1/projects/:id/ml-backends/:registry_id/enablement
 项目作用域端点同时执行角色门与项目范围门：
 
 - list / get / setup / capabilities / interactive inference：调用者必须能看见该项目；读指定 backend 时还要求它已对本项目启用。
-- create / update / delete(enablement disable) / health / capabilities refresh / warmup / reload / unload / predict-test：要求项目 owner（超级管理员仍按全局特权放行）。仅有 `project_admin` 角色但不是该项目 owner 不足以执行写操作。
+- create / update / delete(enablement disable) / health / capabilities refresh / warmup / predict-test：要求项目 owner（超级管理员仍按全局特权放行）。仅有 `project_admin` 角色但不是该项目 owner 不足以执行写操作。
+- reload / unload：**仅超级管理员**。二者改写的是「全局 backend 显存驻留 / 常驻变体」——同一物理 backend 被多个项目共用，项目 owner 若能触发就会驱逐 / 换掉其他项目正在用的权重。故这类破坏性驻留操作收口到平台管理员，与「运行时观测」面板（super_admin only）及 admin `observe/smoke-test` 运维基线一致。构造性的 warmup 是项目自身预标 / 交互推理的前置（如预热加载类别表），刻意保留在项目 owner。
 - 带 `task_id` 的测试 / 交互端点还会校验 task 确实属于 URL 中的 project；不属于时统一返回 404，避免跨项目 IDOR 与存在性泄露。
 
 设主后端 / AI 开关（走项目本体）：

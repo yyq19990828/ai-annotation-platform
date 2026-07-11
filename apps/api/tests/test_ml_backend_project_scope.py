@@ -129,3 +129,134 @@ async def test_create_backend_ok_for_owning_project_admin(
         headers={"Authorization": f"Bearer {pm_token}"},
     )
     assert resp.status_code == 201, resp.text
+
+
+# ── 共享全局态运维端点: unload/reload 收口到 super_admin ────────────────────
+#
+# 评审 #17 · unload/reload 操作的是「全局 backend 显存驻留」(一物理 backend 被多项目共用),
+# 项目 owner 也能借此驱逐/换掉其他项目正在用的权重。故这类破坏性驻留操作从 project_owner
+# 收口到 super_admin; 构造性的 warmup 刻意保留在 project_owner (项目预标/交互推理前置)。
+# 正 (授权角色通过闸) / 反 (未授权角色被拒) 各一。授权方向 monkeypatch 掉 service 的
+# backend HTTP 调用, 只锁鉴权闸, 不打真实网络。
+
+
+async def test_unload_denied_for_owning_project_admin(
+    httpx_client_bound, project_admin, db_session
+):
+    """卸载作用于全局显存驻留 → 即便是项目 owner 的 project_admin 也 403 (仅 super_admin)。"""
+    pm, pm_token = project_admin
+    proj = await _seed_project(db_session, pm.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_unload_allowed_for_super_admin(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    """super_admin 通过鉴权闸 (service 已 mock, backend HTTP 不打真网) → 200。"""
+    owner, admin_token = super_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def _fake_unload(self, registry_id):
+        return {"ok": True, "unloaded": True, "loaded": False}
+
+    monkeypatch.setattr(
+        "app.services.ml_backend.MLBackendService.unload", _fake_unload
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_reload_denied_for_owning_project_admin(
+    httpx_client_bound, project_admin, db_session
+):
+    """重载会改写全局常驻变体 → 项目 owner 的 project_admin 也 403 (仅 super_admin)。"""
+    pm, pm_token = project_admin
+    proj = await _seed_project(db_session, pm.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/reload",
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_reload_allowed_for_super_admin(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    """super_admin 通过鉴权闸 → 200。"""
+    owner, admin_token = super_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def _fake_reload(
+        self, registry_id, sam_variant=None, dino_variant=None, task_type=None
+    ):
+        return {"ok": True, "reloaded": True}
+
+    monkeypatch.setattr(
+        "app.services.ml_backend.MLBackendService.reload", _fake_reload
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/reload",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ── warmup: 刻意保留 project_owner (未随 unload/reload 收口) ─────────────────
+
+
+async def test_warmup_denied_for_non_owner_project_admin(
+    httpx_client_bound, super_admin, project_admin, db_session
+):
+    """非 owner 的 project_admin 预热他人项目 backend → 403 (owner 闸仍生效)。"""
+    owner, _ = super_admin
+    _, pm_token = project_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/warmup",
+        json={},
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_warmup_allowed_for_owning_project_admin(
+    httpx_client_bound, project_admin, db_session, monkeypatch
+):
+    """owner project_admin 可预热自己项目的 backend → 200 (证明未被收口到 super_admin)。"""
+    pm, pm_token = project_admin
+    proj = await _seed_project(db_session, pm.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def _fake_warmup(self, registry_id, body):
+        return {"ok": True, "cache_hit": False}
+
+    monkeypatch.setattr(
+        "app.services.ml_backend.MLBackendService.warmup", _fake_warmup
+    )
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/warmup",
+        json={},
+        headers={"Authorization": f"Bearer {pm_token}"},
+    )
+    assert resp.status_code == 200, resp.text

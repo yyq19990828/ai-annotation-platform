@@ -31744,7 +31744,7 @@
     },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}/reload": {
       "post": {
-        "description": "B-28+ · 触发 backend 重新加载模型. 已加载则 noop.\n\nv0.10.26 · 可选 body {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);\n缺省回退 backend 默认变体.",
+        "description": "B-28+ · 触发 backend 重新加载模型. 已加载则 noop.\n\nv0.10.26 · 可选 body {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);\n缺省回退 backend 默认变体.\n\n鉴权 super_admin only · /reload 会改写「全局 backend 常驻变体」(同 backend 被多项目共用),\n切变体等于换掉其他项目正在用的权重, 属破坏性驻留操作, 与 /unload 同基线收口到平台管理员\n(对齐 super_admin only 的「运行时观测」面板)。",
         "operationId": "reload_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__reload_post",
         "parameters": [
           {
@@ -31875,7 +31875,7 @@
     },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}/unload": {
       "post": {
-        "description": "B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502.",
+        "description": "B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502.\n\n鉴权 super_admin only · /unload 作用于「全局 backend 显存驻留」(一物理 backend 被多个\n项目共用), 项目 owner 也能借此驱逐其他项目正在用的权重。故这类破坏性的驻留操作收口到\n平台管理员, 与前端「运行时观测」面板 (super_admin only) 及 admin observe/smoke-test 的\n运维基线一致; 不叠加 require_project_owner —— 全局操作按 backend_id 定位, 与 path 里的\nproject 无归属关系。构造性的 /warmup 仍保留在 project_owner (见该端点注释)。",
         "operationId": "unload_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__unload_post",
         "parameters": [
           {
@@ -31932,7 +31932,7 @@
     },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}/warmup": {
       "post": {
-        "description": "v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.\n\nbody 原样转发 (各 backend schema 不同). backend 未声明 warmup_endpoint=True 时仍\n转发, 收到 404/405 由上游 502 反馈; 前端 ⚡ 按钮应已通过 health_meta.capabilities.\nwarmup_endpoint 提前置灰.",
+        "description": "v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.\n\nbody 原样转发 (各 backend schema 不同). backend 未声明 warmup_endpoint=True 时仍\n转发, 收到 404/405 由上游 502 反馈; 前端 ⚡ 按钮应已通过 health_meta.capabilities.\nwarmup_endpoint 提前置灰.\n\n鉴权 project_owner (刻意不随 /unload·/reload 收口到 super_admin) · warmup 是「构造性」\n预热, 是项目自身预标/交互推理的前置: AIPreAnnotate 预热加载类别表 (model.names)、能力目录\n对项目管理员可见的预热按钮, 都是项目负责人的日常流程。共享态权衡: 预热可能驱逐同 backend\n上其他项目常驻的模型, 属可接受代价 —— 它是本项目用模型的必要前提, 且 backend 侧有\nmax_concurrency / idle 淘汰兜底。只有会直接驱逐/换掉他人在用权重的 unload/reload 才收口\n到平台管理员。",
         "operationId": "warmup_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__warmup_post",
         "parameters": [
           {

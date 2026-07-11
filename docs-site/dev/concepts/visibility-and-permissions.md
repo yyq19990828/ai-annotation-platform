@@ -68,10 +68,11 @@ last_reviewed: 2026-07-11
 
 ### 项目作用域 ML Backend
 
-`/projects/{project_id}/ml-backends/*` 不能只依赖 `require_roles`。当前端点按动作分两组：
+`/projects/{project_id}/ml-backends/*` 不能只依赖 `require_roles`。当前端点按动作分三组：
 
 - 可见成员读 / 推理：list、get、setup、capabilities 和交互推理使用 `require_project_visible`；指定 backend 还必须已对该项目启用。
-- owner 管理：创建、编辑、停用、enablement、health、capabilities refresh、warmup / reload / unload、predict-test 使用 `require_project_owner`。
+- owner 管理：创建、编辑、停用、enablement、health、capabilities refresh、warmup、predict-test 使用 `require_project_owner`。
+- 平台运维（全局共享态）：reload、unload 使用 `require_roles(super_admin)`。二者改写的是「全局 backend 显存驻留 / 常驻变体」——同一物理 backend 被多个项目共用，若允许项目 owner 触发就会驱逐 / 换掉其他项目正在用的权重。故这类破坏性驻留操作收口到超级管理员，且不叠加 `require_project_owner`（全局操作按 backend 定位、与 path 里的 project 无归属关系）。构造性的 warmup 是项目自身预标 / 交互推理前置，仍留在 owner 组。
 
 所有带 `task_id` 的推理入口还要校验 `task.project_id == project_id`。不存在与跨项目 task 都返回 404，不允许 A 项目成员拿 A 的 backend 处理 B 项目 task。该边界与“用户角色是 project_admin”不同：角色只决定动作类别，project dependency 决定具体资源范围。
 
