@@ -68,6 +68,14 @@ jobs:
       - name: Navigation coverage
         run: pnpm --filter @anno/docs-site check:navigation -- --strict
 
+      # 死链检查前先物化 build 期生成的链接目标（public/openapi.json 由 sync-openapi
+      # 生成、docs-site/dev/adr/ 由 mirror-adr 从 docs/adr/ 镜像），否则指向这些生成物的
+      # 合法链接（api/index.md 的 openapi 下载、dev/index.md 的 ADR 列表）会被误报为死链。
+      - name: Materialize generated link targets (openapi + ADR mirror)
+        run: |
+          node docs-site/scripts/sync-openapi.mjs
+          node docs-site/scripts/mirror-adr.mjs
+
       - name: Internal Markdown links
         run: node scripts/check-dead-links.mjs docs-site
 

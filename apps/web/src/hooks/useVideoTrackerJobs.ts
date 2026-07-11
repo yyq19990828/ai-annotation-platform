@@ -330,7 +330,7 @@ function mapEventToStatus(
 
 const trackerStore = new TrackerJobStore();
 
-export function useVideoTrackerJobs(taskId?: string) {
+export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
   const [state, setState] = useState<TrackerStoreState>({ jobs: {}, candidates: {} });
@@ -344,8 +344,8 @@ export function useVideoTrackerJobs(taskId?: string) {
   useEffect(() => trackerStore.subscribe(setState), []);
 
   useEffect(() => {
-    if (taskId) void trackerStore.restoreReviewable(taskId);
-  }, [taskId]);
+    if (taskId && enabled) void trackerStore.restoreReviewable(taskId);
+  }, [taskId, enabled]);
 
   const tokenRef = useRef(token);
   tokenRef.current = token;
