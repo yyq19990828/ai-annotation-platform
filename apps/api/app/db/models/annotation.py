@@ -7,6 +7,8 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
+    text,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -16,6 +18,17 @@ from app.db.base import Base
 
 class Annotation(Base):
     __tablename__ = "annotations"
+    __table_args__ = (
+        Index(
+            "ix_annotations_project_track_active",
+            "project_id",
+            "track_id",
+            "task_id",
+            postgresql_where=text(
+                "is_active = true AND was_cancelled = false AND track_id IS NOT NULL"
+            ),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

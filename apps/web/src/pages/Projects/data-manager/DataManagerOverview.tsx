@@ -1,0 +1,171 @@
+import type { DataManagerSummary } from "@/api/taskViews";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/shadcn/ui/card";
+import { Skeleton } from "@/components/shadcn/ui/skeleton";
+import { Badge } from "@/components/ui/Badge";
+
+interface DataManagerOverviewProps {
+  summary: DataManagerSummary | undefined;
+  isLoading: boolean;
+}
+
+function metric(value: number | undefined) {
+  return value === undefined ? "—" : value.toLocaleString();
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "待标注",
+  in_progress: "标注中",
+  review: "待审核",
+  rejected: "已退回",
+  completed: "已完成",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "人工",
+  prediction_based: "接受 AI",
+  ai_tracker: "AI 追踪",
+  interpolated: "插值",
+};
+
+const KIND_METRIC_LABELS: Record<string, string> = {
+  images_with_dimensions: "已有尺寸",
+  distinct_resolutions: "分辨率种类",
+  duration_ms: "总时长（毫秒）",
+  frame_count: "总帧数",
+  keyframes: "关键帧",
+  outside_ranges: "不可见区间",
+  box_3d: "3D 框",
+  point_mask_3d: "点云 Mask",
+  camera_links: "相机路数合计",
+  calibration_issues: "标定异常",
+  scenes: "Scene",
+  interpolated_annotations: "插值标注",
+};
+
+function Distribution({
+  title,
+  values,
+  labels = {},
+}: {
+  title: string;
+  values: Record<string, number | null>;
+  labels?: Record<string, string>;
+}) {
+  const items = Object.entries(values).filter(
+    (entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > 0,
+  );
+  return (
+    <div className="min-w-0">
+      <div className="mb-2 text-xs font-semibold text-muted-foreground">{title}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {items.length ? items.map(([key, value]) => (
+          <Badge key={key} variant="outline">
+            {labels[key] ?? key} · {value.toLocaleString()}
+          </Badge>
+        )) : <span className="text-xs text-muted-foreground">当前范围无数据</span>}
+      </div>
+    </div>
+  );
+}
+
+export function DataManagerOverview({ summary, isLoading }: DataManagerOverviewProps) {
+  const cards = [
+    {
+      label: "当前匹配",
+      value: summary?.scope.matched_task_total,
+      detail: `可见范围 ${metric(summary?.scope.visible_task_total)}`,
+    },
+    {
+      label: "标注对象",
+      value: summary?.annotations.total,
+      detail: `人工 ${metric(summary?.annotations.by_source.manual)} · 接受 AI ${metric(summary?.annotations.by_source.prediction_based)}`,
+    },
+    {
+      label: "AI 待审",
+      value: (summary?.ai_review.prediction_shapes ?? 0) + (summary?.ai_review.tracker_jobs ?? 0),
+      detail: `检测 ${metric(summary?.ai_review.prediction_shapes)} · 追踪 ${metric(summary?.ai_review.tracker_jobs)}`,
+    },
+    {
+      label: "逻辑轨迹",
+      value: summary?.annotations.distinct_tracks,
+      detail: `含轨迹标注 ${metric(summary?.annotations.tracked)}`,
+    },
+    {
+      label: "未解决反馈",
+      value: summary?.unresolved_feedback,
+      detail: summary?.unresolved_feedback ? "需要回到任务处理" : "当前视图无未解决项",
+    },
+  ];
+
+  return (
+    <section aria-label="数据概览">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+        {cards.map((card) => (
+          <Card key={card.label} className="gap-3 rounded-lg py-3 shadow-none">
+            <CardHeader className="gap-1 px-3">
+              <CardDescription className="text-xs">{card.label}</CardDescription>
+              <CardTitle className="font-mono text-2xl font-semibold tabular-nums">
+                {isLoading ? <Skeleton className="h-7 w-20" /> : metric(card.value)}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 text-xs text-muted-foreground">
+              {isLoading ? <Skeleton className="h-3 w-full" /> : card.detail}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <details className="mt-2 rounded-lg border border-border bg-card">
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground marker:text-muted-foreground">
+          查看状态、来源、类别与属性聚合
+        </summary>
+        <div className="grid gap-5 border-t border-border p-3 md:grid-cols-2 xl:grid-cols-4">
+          {isLoading || !summary ? (
+            Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-16 w-full" />)
+          ) : (
+            <>
+              <Distribution title="任务状态" values={summary.task_status} labels={STATUS_LABELS} />
+              <Distribution title="标注来源" values={summary.annotations.by_source} labels={SOURCE_LABELS} />
+              <Distribution title="类别" values={summary.annotations.by_class} />
+              <Distribution title="几何类型" values={summary.annotations.by_type} />
+              <Distribution title="工具单位" values={summary.annotations.by_tool_unit} />
+              <Distribution title="当前模态" values={summary.kind_metrics} labels={KIND_METRIC_LABELS} />
+              <div className="min-w-0 md:col-span-2 xl:col-span-2">
+                <div className="mb-2 text-xs font-semibold text-muted-foreground">属性完整度和值分布</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {summary.attributes.length ? summary.attributes.map((attribute) => (
+                    <div key={`${attribute.tool_unit_id}.${attribute.key}`} className="rounded-md border border-border bg-background p-2">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-medium">{attribute.label}</span>
+                        <span className="font-mono text-muted-foreground">
+                          {attribute.present}/{attribute.eligible}
+                        </span>
+                      </div>
+                      <progress
+                        className="mt-1.5 h-1.5 w-full accent-primary"
+                        value={attribute.present}
+                        max={Math.max(attribute.eligible, 1)}
+                        aria-label={`${attribute.label}完整度`}
+                      />
+                      <div className="mt-1.5 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                        <span>缺失 {attribute.missing}</span>
+                        {Object.entries(attribute.values).slice(0, 5).map(([value, count]) => (
+                          <span key={value}>· {value} {count}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )) : <span className="text-xs text-muted-foreground">项目未配置属性字段</span>}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </details>
+    </section>
+  );
+}

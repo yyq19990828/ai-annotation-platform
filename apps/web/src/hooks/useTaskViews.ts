@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   taskViewsApi,
   type ProjectTaskQueryPayload,
@@ -17,11 +17,48 @@ export function useTaskViews(projectId: string | undefined) {
 export function useProjectTaskQuery(
   projectId: string | undefined,
   payload: ProjectTaskQueryPayload,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ["project-task-query", projectId, payload],
     queryFn: () => taskViewsApi.query(projectId!, payload),
+    enabled: !!projectId && enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useDataManagerSchema(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ["data-manager-schema", projectId],
+    queryFn: () => taskViewsApi.schema(projectId!),
     enabled: !!projectId,
+    staleTime: 60_000,
+  });
+}
+
+export function useDataManagerSummary(
+  projectId: string | undefined,
+  filterJson: Record<string, unknown>,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["data-manager-summary", projectId, filterJson],
+    queryFn: () => taskViewsApi.summary(projectId!, filterJson),
+    enabled: !!projectId && enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useDataManagerMatches(
+  projectId: string | undefined,
+  taskId: string | null,
+  filterJson: Record<string, unknown>,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["data-manager-matches", projectId, taskId, filterJson],
+    queryFn: () => taskViewsApi.matches(projectId!, taskId!, filterJson),
+    enabled: !!projectId && !!taskId && enabled,
   });
 }
 

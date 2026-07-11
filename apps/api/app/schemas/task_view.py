@@ -78,6 +78,7 @@ class ProjectTaskViewOut(ProjectTaskViewBase):
     task_count: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    invalid_fields: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -104,6 +105,15 @@ class DataManagerTaskOut(TaskOut):
     scene_name: str | None = None
     frame_index: int | None = None
     last_activity_at: datetime | None = None
+    annotation_source_counts: dict[str, int] = Field(default_factory=dict)
+    track_count: int = 0
+    pending_prediction_shape_count: int = 0
+    pending_tracker_job_count: int = 0
+    keyframe_count: int = 0
+    outside_range_count: int = 0
+    camera_count: int = 0
+    calibration_issue_count: int = 0
+    scene_total_frames: int | None = None
 
 
 class ProjectTaskQueryResponse(BaseModel):

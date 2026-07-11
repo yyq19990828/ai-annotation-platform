@@ -26,6 +26,7 @@ from app.schemas.aap_json import (
     AAPJsonV1Envelope,
     check_schema_major,
 )
+from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.task_matcher import resolve_task
 
 logger = logging.getLogger(__name__)
@@ -204,6 +205,7 @@ async def import_aap_json_annotations(
 
             # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
             #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）
+            geometry, track_id = prepare_compact_track_identity(entry.geometry)
             ann_kwargs: dict[str, Any] = dict(
                 id=uuid.uuid4(),
                 task_id=task.id,
@@ -213,7 +215,8 @@ async def import_aap_json_annotations(
                 annotation_type=entry.geometry["type"],
                 tool_unit_id=tool_unit_id,
                 class_name=entry.class_name,
-                geometry=entry.geometry,  # geometry 透传内部格式，无需 LS 转换
+                geometry=geometry,  # geometry 透传内部格式，无需 LS 转换
+                track_id=track_id,
                 confidence=entry.confidence,
                 was_cancelled=False,  # D5
                 ground_truth=False,  # D5
