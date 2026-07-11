@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -14,6 +15,7 @@ DataManagerValueType = Literal[
     "multiselect",
     "datetime",
 ]
+DataManagerEntityScope = Literal["tasks", "objects", "tracks"]
 
 
 class DataManagerProjectKindOut(BaseModel):
@@ -45,6 +47,8 @@ class DataManagerColumnOut(BaseModel):
     group: str
     default: bool = False
     expensive: bool = False
+    sortable: bool = False
+    sort_field: str | None = None
 
 
 class DataManagerMetricOut(BaseModel):
@@ -59,6 +63,10 @@ class DataManagerToolUnitOut(BaseModel):
 
 
 class DataManagerSchemaResponse(BaseModel):
+    entity_scope: DataManagerEntityScope = "tasks"
+    available_entity_scopes: list[DataManagerEntityScope] = Field(
+        default_factory=lambda: ["tasks", "objects"]
+    )
     project_kind: DataManagerProjectKindOut
     tool_units: list[DataManagerToolUnitOut] = Field(default_factory=list)
     filter_fields: list[DataManagerFilterFieldOut] = Field(default_factory=list)
@@ -141,3 +149,137 @@ class DataManagerMatchesResponse(BaseModel):
     total: int = 0
     limit: int
     offset: int
+
+
+class DataManagerEntityQueryRequest(BaseModel):
+    filter_json: dict[str, Any] = Field(default_factory=dict)
+    sort_json: list[dict[str, Any]] = Field(default_factory=list)
+    columns_json: list[str] = Field(default_factory=list)
+    limit: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=2048)
+
+
+class DataManagerEntityLocation(BaseModel):
+    project_id: UUID
+    task_id: UUID
+    task_display_id: str
+    batch_id: UUID | None = None
+    dataset_item_id: UUID | None = None
+    data_type: str
+    focus_kind: Literal["annotation", "track"]
+    annotation_id: UUID | None = None
+    track_id: str | None = None
+    scene_id: UUID | None = None
+    scene_name: str | None = None
+    scene_frame_index: int | None = None
+    video_frame_index: int | None = None
+
+
+class DataManagerObjectOut(BaseModel):
+    entity_key: str
+    annotation_id: UUID
+    task_id: UUID
+    task_display_id: str
+    file_name: str | None = None
+    batch_id: UUID | None = None
+    class_name: str
+    tool_unit_id: str
+    annotation_type: str
+    source: str
+    imported: bool = False
+    confidence: float | None = None
+    track_id: str | None = None
+    parent_prediction_id: UUID | None = None
+    parent_annotation_id: UUID | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    attribute_origins: dict[str, str] = Field(default_factory=dict)
+    created_by_id: UUID | None = None
+    created_by_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    unresolved_feedback_count: int = 0
+    location: DataManagerEntityLocation
+
+
+class DataManagerEntityFacets(BaseModel):
+    matched_total: int = 0
+    task_total: int = 0
+    by_class: dict[str, int] = Field(default_factory=dict)
+    by_source: dict[str, int] = Field(default_factory=dict)
+    by_tool_unit: dict[str, int] = Field(default_factory=dict)
+    by_type: dict[str, int] = Field(default_factory=dict)
+    by_quality: dict[str, int] = Field(default_factory=dict)
+
+
+class DataManagerObjectQueryResponse(BaseModel):
+    items: list[DataManagerObjectOut] = Field(default_factory=list)
+    total: int
+    limit: int
+    next_cursor: str | None = None
+    facets: DataManagerEntityFacets = Field(default_factory=DataManagerEntityFacets)
+
+
+class DataManagerObjectDetailResponse(BaseModel):
+    item: DataManagerObjectOut
+
+
+class DataManagerTrackSourceSummary(BaseModel):
+    annotation_sources: dict[str, int] = Field(default_factory=dict)
+    keyframe_sources: dict[str, int] = Field(default_factory=dict)
+
+
+class DataManagerTrackOut(BaseModel):
+    entity_key: str
+    track_ref: str
+    track_kind: Literal["compact_video", "scene"]
+    track_id: str
+    compact_annotation_id: UUID | None = None
+    class_name: str | None = None
+    tool_unit_id: str | None = None
+    annotation_type: str | None = None
+    start_frame: int | None = None
+    end_frame: int | None = None
+    span: int | None = None
+    occurrence_count: int = 0
+    distinct_task_count: int = 0
+    distinct_frame_count: int = 0
+    missing_frame_count: int = 0
+    duplicate_frame_count: int = 0
+    keyframe_count: int = 0
+    outside_range_count: int = 0
+    occluded_count: int = 0
+    sources: DataManagerTrackSourceSummary = Field(
+        default_factory=DataManagerTrackSourceSummary
+    )
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    attribute_origins: dict[str, str] = Field(default_factory=dict)
+    quality_issues: list[str] = Field(default_factory=list)
+    location: DataManagerEntityLocation
+
+
+class DataManagerTrackQueryResponse(BaseModel):
+    items: list[DataManagerTrackOut] = Field(default_factory=list)
+    total: int
+    limit: int
+    next_cursor: str | None = None
+    facets: DataManagerEntityFacets = Field(default_factory=DataManagerEntityFacets)
+
+
+class DataManagerTrackMemberOut(BaseModel):
+    annotation_id: UUID
+    task_id: UUID
+    task_display_id: str
+    class_name: str
+    source: str
+    frame_index: int | None = None
+    keyframe_source: str | None = None
+    occluded: bool = False
+    outside: bool = False
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    attribute_origins: dict[str, str] = Field(default_factory=dict)
+    location: DataManagerEntityLocation
+
+
+class DataManagerTrackDetailResponse(BaseModel):
+    track: DataManagerTrackOut
+    members: list[DataManagerTrackMemberOut] = Field(default_factory=list)

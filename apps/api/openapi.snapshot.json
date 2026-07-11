@@ -6198,6 +6198,22 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "sort_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Field"
+          },
+          "sortable": {
+            "default": false,
+            "title": "Sortable",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6206,6 +6222,233 @@
           "group"
         ],
         "title": "DataManagerColumnOut",
+        "type": "object"
+      },
+      "DataManagerEntityFacets": {
+        "properties": {
+          "by_class": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Class",
+            "type": "object"
+          },
+          "by_quality": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Quality",
+            "type": "object"
+          },
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Source",
+            "type": "object"
+          },
+          "by_tool_unit": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Tool Unit",
+            "type": "object"
+          },
+          "by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Type",
+            "type": "object"
+          },
+          "matched_total": {
+            "default": 0,
+            "title": "Matched Total",
+            "type": "integer"
+          },
+          "task_total": {
+            "default": 0,
+            "title": "Task Total",
+            "type": "integer"
+          }
+        },
+        "title": "DataManagerEntityFacets",
+        "type": "object"
+      },
+      "DataManagerEntityLocation": {
+        "properties": {
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "data_type": {
+            "title": "Data Type",
+            "type": "string"
+          },
+          "dataset_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Item Id"
+          },
+          "focus_kind": {
+            "enum": [
+              "annotation",
+              "track"
+            ],
+            "title": "Focus Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "scene_frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Frame Index"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "task_display_id": {
+            "title": "Task Display Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "video_frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Frame Index"
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id",
+          "task_display_id",
+          "data_type",
+          "focus_kind"
+        ],
+        "title": "DataManagerEntityLocation",
+        "type": "object"
+      },
+      "DataManagerEntityQueryRequest": {
+        "properties": {
+          "columns_json": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns Json",
+            "type": "array"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "filter_json": {
+            "additionalProperties": true,
+            "title": "Filter Json",
+            "type": "object"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "sort_json": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sort Json",
+            "type": "array"
+          }
+        },
+        "title": "DataManagerEntityQueryRequest",
         "type": "object"
       },
       "DataManagerFilterFieldOut": {
@@ -6475,6 +6718,249 @@
         "title": "DataManagerMetricOut",
         "type": "object"
       },
+      "DataManagerObjectDetailResponse": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/DataManagerObjectOut"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "DataManagerObjectDetailResponse",
+        "type": "object"
+      },
+      "DataManagerObjectOut": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "annotation_type": {
+            "title": "Annotation Type",
+            "type": "string"
+          },
+          "attribute_origins": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Attribute Origins",
+            "type": "object"
+          },
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Name"
+          },
+          "entity_key": {
+            "title": "Entity Key",
+            "type": "string"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name"
+          },
+          "imported": {
+            "default": false,
+            "title": "Imported",
+            "type": "boolean"
+          },
+          "location": {
+            "$ref": "#/components/schemas/DataManagerEntityLocation"
+          },
+          "parent_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Annotation Id"
+          },
+          "parent_prediction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Prediction Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "task_display_id": {
+            "title": "Task Display Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "tool_unit_id": {
+            "title": "Tool Unit Id",
+            "type": "string"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "unresolved_feedback_count": {
+            "default": 0,
+            "title": "Unresolved Feedback Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "entity_key",
+          "annotation_id",
+          "task_id",
+          "task_display_id",
+          "class_name",
+          "tool_unit_id",
+          "annotation_type",
+          "source",
+          "location"
+        ],
+        "title": "DataManagerObjectOut",
+        "type": "object"
+      },
+      "DataManagerObjectQueryResponse": {
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/DataManagerEntityFacets"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataManagerObjectOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit"
+        ],
+        "title": "DataManagerObjectQueryResponse",
+        "type": "object"
+      },
       "DataManagerOptionOut": {
         "properties": {
           "label": {
@@ -6518,6 +7004,18 @@
       },
       "DataManagerSchemaResponse": {
         "properties": {
+          "available_entity_scopes": {
+            "items": {
+              "enum": [
+                "tasks",
+                "objects",
+                "tracks"
+              ],
+              "type": "string"
+            },
+            "title": "Available Entity Scopes",
+            "type": "array"
+          },
           "builtin_views": {
             "items": {
               "type": "string"
@@ -6538,6 +7036,16 @@
             },
             "title": "Default Columns",
             "type": "array"
+          },
+          "entity_scope": {
+            "default": "tasks",
+            "enum": [
+              "tasks",
+              "objects",
+              "tracks"
+            ],
+            "title": "Entity Scope",
+            "type": "string"
           },
           "filter_fields": {
             "items": {
@@ -7119,6 +7627,343 @@
           "id"
         ],
         "title": "DataManagerToolUnitOut",
+        "type": "object"
+      },
+      "DataManagerTrackDetailResponse": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/DataManagerTrackMemberOut"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "track": {
+            "$ref": "#/components/schemas/DataManagerTrackOut"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "title": "DataManagerTrackDetailResponse",
+        "type": "object"
+      },
+      "DataManagerTrackMemberOut": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "attribute_origins": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Attribute Origins",
+            "type": "object"
+          },
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "keyframe_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyframe Source"
+          },
+          "location": {
+            "$ref": "#/components/schemas/DataManagerEntityLocation"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          },
+          "outside": {
+            "default": false,
+            "title": "Outside",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "task_display_id": {
+            "title": "Task Display Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "task_id",
+          "task_display_id",
+          "class_name",
+          "source",
+          "location"
+        ],
+        "title": "DataManagerTrackMemberOut",
+        "type": "object"
+      },
+      "DataManagerTrackOut": {
+        "properties": {
+          "annotation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Type"
+          },
+          "attribute_origins": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Attribute Origins",
+            "type": "object"
+          },
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "compact_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compact Annotation Id"
+          },
+          "distinct_frame_count": {
+            "default": 0,
+            "title": "Distinct Frame Count",
+            "type": "integer"
+          },
+          "distinct_task_count": {
+            "default": 0,
+            "title": "Distinct Task Count",
+            "type": "integer"
+          },
+          "duplicate_frame_count": {
+            "default": 0,
+            "title": "Duplicate Frame Count",
+            "type": "integer"
+          },
+          "end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frame"
+          },
+          "entity_key": {
+            "title": "Entity Key",
+            "type": "string"
+          },
+          "keyframe_count": {
+            "default": 0,
+            "title": "Keyframe Count",
+            "type": "integer"
+          },
+          "location": {
+            "$ref": "#/components/schemas/DataManagerEntityLocation"
+          },
+          "missing_frame_count": {
+            "default": 0,
+            "title": "Missing Frame Count",
+            "type": "integer"
+          },
+          "occluded_count": {
+            "default": 0,
+            "title": "Occluded Count",
+            "type": "integer"
+          },
+          "occurrence_count": {
+            "default": 0,
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "outside_range_count": {
+            "default": 0,
+            "title": "Outside Range Count",
+            "type": "integer"
+          },
+          "quality_issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Quality Issues",
+            "type": "array"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/DataManagerTrackSourceSummary"
+          },
+          "span": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span"
+          },
+          "start_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Frame"
+          },
+          "tool_unit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Unit Id"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          },
+          "track_kind": {
+            "enum": [
+              "compact_video",
+              "scene"
+            ],
+            "title": "Track Kind",
+            "type": "string"
+          },
+          "track_ref": {
+            "title": "Track Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_key",
+          "track_ref",
+          "track_kind",
+          "track_id",
+          "location"
+        ],
+        "title": "DataManagerTrackOut",
+        "type": "object"
+      },
+      "DataManagerTrackQueryResponse": {
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/DataManagerEntityFacets"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataManagerTrackOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit"
+        ],
+        "title": "DataManagerTrackQueryResponse",
+        "type": "object"
+      },
+      "DataManagerTrackSourceSummary": {
+        "properties": {
+          "annotation_sources": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Annotation Sources",
+            "type": "object"
+          },
+          "keyframe_sources": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Keyframe Sources",
+            "type": "object"
+          }
+        },
+        "title": "DataManagerTrackSourceSummary",
         "type": "object"
       },
       "DatasetCreate": {
@@ -13509,6 +14354,16 @@
             "title": "Columns Json",
             "type": "array"
           },
+          "entity_scope": {
+            "default": "tasks",
+            "enum": [
+              "tasks",
+              "objects",
+              "tracks"
+            ],
+            "title": "Entity Scope",
+            "type": "string"
+          },
           "filter_json": {
             "additionalProperties": true,
             "title": "Filter Json",
@@ -13585,6 +14440,16 @@
             ],
             "title": "Created At"
           },
+          "entity_scope": {
+            "default": "tasks",
+            "enum": [
+              "tasks",
+              "objects",
+              "tracks"
+            ],
+            "title": "Entity Scope",
+            "type": "string"
+          },
           "filter_json": {
             "additionalProperties": true,
             "title": "Filter Json",
@@ -13642,6 +14507,17 @@
             "format": "uuid",
             "title": "Project Id",
             "type": "string"
+          },
+          "result_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Count"
           },
           "sort_json": {
             "items": {
@@ -21839,7 +22715,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.21.27"
+    "version": "0.21.30"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -31059,6 +31935,180 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/data-manager/objects/query": {
+      "post": {
+        "operationId": "query_data_manager_objects_api_v1_projects__project_id__data_manager_objects_query_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataManagerEntityQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerObjectQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Data Manager Objects",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/data-manager/objects/{annotation_id}/detail": {
+      "get": {
+        "operationId": "get_data_manager_object_detail_api_v1_projects__project_id__data_manager_objects__annotation_id__detail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerObjectDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Data Manager Object Detail",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/data-manager/objects/{annotation_id}/location": {
+      "get": {
+        "operationId": "get_data_manager_object_location_api_v1_projects__project_id__data_manager_objects__annotation_id__location_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerEntityLocation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Data Manager Object Location",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/data-manager/schema": {
       "get": {
         "operationId": "get_data_manager_schema_api_v1_projects__project_id__data_manager_schema_get",
@@ -31070,6 +32120,21 @@
             "schema": {
               "format": "uuid",
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_scope",
+            "required": false,
+            "schema": {
+              "default": "tasks",
+              "enum": [
+                "tasks",
+                "objects",
+                "tracks"
+              ],
+              "title": "Entity Scope",
               "type": "string"
             }
           }
@@ -31160,6 +32225,121 @@
           }
         ],
         "summary": "Get Data Manager Summary",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/data-manager/tracks/query": {
+      "post": {
+        "operationId": "query_data_manager_tracks_api_v1_projects__project_id__data_manager_tracks_query_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataManagerEntityQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerTrackQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Data Manager Tracks",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/data-manager/tracks/{track_ref}/detail": {
+      "get": {
+        "operationId": "get_data_manager_track_detail_api_v1_projects__project_id__data_manager_tracks__track_ref__detail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "track_ref",
+            "required": true,
+            "schema": {
+              "title": "Track Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerTrackDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Data Manager Track Detail",
         "tags": [
           "data-manager"
         ]
@@ -33175,6 +34355,21 @@
             "schema": {
               "format": "uuid",
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_scope",
+            "required": false,
+            "schema": {
+              "default": "tasks",
+              "enum": [
+                "tasks",
+                "objects",
+                "tracks"
+              ],
+              "title": "Entity Scope",
               "type": "string"
             }
           }

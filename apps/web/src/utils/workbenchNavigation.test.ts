@@ -46,6 +46,20 @@ describe("workbenchNavigation", () => {
     );
   });
 
+  it("builds workbench URLs with exact entity and frame focus", () => {
+    const url = buildWorkbenchUrl("project-1", {
+      taskId: "task-2",
+      annotationId: "annotation / 中文",
+      trackId: "track / 中文",
+      frameIndex: 42,
+      returnTo: "/projects/project-1/data-manager?lens=tracks",
+    });
+    const parsed = new URL(url, "http://app.local");
+    expect(parsed.searchParams.get("focus")).toBe("annotation / 中文");
+    expect(parsed.searchParams.get("track")).toBe("track / 中文");
+    expect(parsed.searchParams.get("frame")).toBe("42");
+  });
+
   it("builds review workbench URLs with batch, task, and return target", () => {
     expect(
       buildReviewWorkbenchUrl("project-1", {
@@ -90,5 +104,17 @@ describe("workbenchNavigation", () => {
         { batchId: null, taskId: null },
       ),
     ).toBe("/projects/project-1/review?returnTo=%2Freview");
+  });
+
+  it("clears stale entity focus when switching tasks", () => {
+    expect(
+      updateWorkbenchUrlSearch(
+        {
+          pathname: "/projects/project-1/annotate",
+          search: "?task=old&focus=a&track=t&frame=8&returnTo=%2Fdashboard",
+        },
+        { taskId: "next" },
+      ),
+    ).toBe("/projects/project-1/annotate?task=next&returnTo=%2Fdashboard");
   });
 });

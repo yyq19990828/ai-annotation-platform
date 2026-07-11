@@ -156,9 +156,13 @@ def builtin_views(
         for unit, binding in (project.tool_bindings or {}).items():
             if not isinstance(binding, dict) or not binding.get("enabled", True):
                 continue
-            fields = ((binding.get("attribute_schema") or {}).get("fields") or [])
+            fields = (binding.get("attribute_schema") or {}).get("fields") or []
             for field in fields:
-                if not isinstance(field, dict) or not field.get("required") or not field.get("key"):
+                if (
+                    not isinstance(field, dict)
+                    or not field.get("required")
+                    or not field.get("key")
+                ):
                     continue
                 object_rules: list[dict[str, Any]] = [
                     {
@@ -213,7 +217,9 @@ def builtin_views(
                                 }
                             ],
                         },
-                        "sort_json": [{"field": "last_activity_at", "direction": "desc"}],
+                        "sort_json": [
+                            {"field": "last_activity_at", "direction": "desc"}
+                        ],
                         "columns_json": DEFAULT_COLUMNS,
                     },
                     {
@@ -222,10 +228,16 @@ def builtin_views(
                         "filter_json": {
                             "op": "and",
                             "rules": [
-                                {"field": "annotation.has_track", "op": "eq", "value": True}
+                                {
+                                    "field": "annotation.has_track",
+                                    "op": "eq",
+                                    "value": True,
+                                }
                             ],
                         },
-                        "sort_json": [{"field": "last_activity_at", "direction": "desc"}],
+                        "sort_json": [
+                            {"field": "last_activity_at", "direction": "desc"}
+                        ],
                         "columns_json": DEFAULT_COLUMNS,
                     },
                 ]
@@ -324,9 +336,7 @@ def validate_columns(columns_json: list[str] | None) -> None:
         raise HTTPException(status_code=422, detail=f"Unsupported columns: {unknown}")
 
 
-def invalid_filter_fields(
-    filter_json: dict[str, Any], project: Project
-) -> list[str]:
+def invalid_filter_fields(filter_json: dict[str, Any], project: Project) -> list[str]:
     invalid: list[str] = []
 
     def visit(node: dict[str, Any]) -> None:
@@ -376,11 +386,15 @@ def _compile_node(
             raise HTTPException(
                 status_code=422, detail="Filter group rules must be a list"
             )
-        annotation_rules = [
-            rule
-            for rule in rules
-            if isinstance(rule, dict) and _is_annotation_object_rule(rule)
-        ] if op == "and" else []
+        annotation_rules = (
+            [
+                rule
+                for rule in rules
+                if isinstance(rule, dict) and _is_annotation_object_rule(rule)
+            ]
+            if op == "and"
+            else []
+        )
         other_rules = [rule for rule in rules if rule not in annotation_rules]
         clauses = [
             _compile_node(rule, project=project, user=user) for rule in other_rules
@@ -535,9 +549,7 @@ def _compile_annotation_object_condition(
     if field in scalar_fields:
         if op == "exists":
             return scalar_fields[field].is_not(None)
-        return _compare_column(
-            scalar_fields[field], op, value, {"eq", "ne", "in"}
-        )
+        return _compare_column(scalar_fields[field], op, value, {"eq", "ne", "in"})
     track_id = func.coalesce(
         annotation.track_id, annotation.geometry["track_id"].astext
     )
@@ -557,8 +569,7 @@ def _compile_annotation_object_condition(
                 detail="annotation.imported only supports boolean eq",
             )
         imported = (
-            func.coalesce(annotation.attributes["_imported"].astext, "false")
-            == "true"
+            func.coalesce(annotation.attributes["_imported"].astext, "false") == "true"
         )
         return imported if value else not_(imported)
     if field.startswith("annotation.attribute_origin."):
@@ -604,9 +615,7 @@ def _compile_annotation_object_condition(
                         )
                     condition = and_(number >= value[0], number <= value[1])
                 else:
-                    condition = _compare_column(
-                        number, op, value, _NUMERIC_OPS
-                    )
+                    condition = _compare_column(number, op, value, _NUMERIC_OPS)
             elif attr_type == "boolean":
                 if op != "eq" or not isinstance(value, bool):
                     raise HTTPException(
@@ -628,9 +637,7 @@ def _compile_annotation_object_condition(
                     )
                     for item in value
                 ]
-                condition = (
-                    or_(*contains) if op == "contains_any" else and_(*contains)
-                )
+                condition = or_(*contains) if op == "contains_any" else and_(*contains)
             elif op == "contains" and attr_type == "text":
                 if not isinstance(value, str):
                     raise HTTPException(
@@ -708,9 +715,7 @@ def _compare_task_keyword(
         raise HTTPException(
             status_code=422, detail="task.keyword length must be between 1 and 200"
         )
-    escaped = (
-        value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    )
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     pattern = f"%{escaped}%"
     clauses = [
         Task.display_id.ilike(pattern, escape="\\"),
@@ -747,8 +752,12 @@ def _compare_annotation_imported(op: str, value: Any) -> ColumnElement[bool]:
         raise HTTPException(
             status_code=422, detail="annotation.imported only supports boolean eq"
         )
-    imported = func.coalesce(Annotation.attributes["_imported"].astext, "false") == "true"
-    return exists().where(_active_annotation_clause(), imported if value else not_(imported))
+    imported = (
+        func.coalesce(Annotation.attributes["_imported"].astext, "false") == "true"
+    )
+    return exists().where(
+        _active_annotation_clause(), imported if value else not_(imported)
+    )
 
 
 def _compare_annotation_has_track(op: str, value: Any) -> ColumnElement[bool]:
@@ -757,12 +766,16 @@ def _compare_annotation_has_track(op: str, value: Any) -> ColumnElement[bool]:
             status_code=422, detail="annotation.has_track only supports boolean eq"
         )
     has_track = _track_id_expr().is_not(None)
-    return exists().where(_active_annotation_clause(), has_track if value else not_(has_track))
+    return exists().where(
+        _active_annotation_clause(), has_track if value else not_(has_track)
+    )
 
 
 def _compare_annotation_track_id(op: str, value: Any) -> ColumnElement[bool]:
     if op not in {"eq", "in"}:
-        raise HTTPException(status_code=422, detail="Unsupported annotation.track_id op")
+        raise HTTPException(
+            status_code=422, detail="Unsupported annotation.track_id op"
+        )
     track_id = _track_id_expr()
     if op == "eq":
         return exists().where(_active_annotation_clause(), track_id == value)
@@ -794,7 +807,11 @@ def _resolve_attribute_field(
         ),
         None,
     )
-    if not isinstance(binding, dict) or not binding.get("enabled", True) or not schema_field:
+    if (
+        not isinstance(binding, dict)
+        or not binding.get("enabled", True)
+        or not schema_field
+    ):
         raise HTTPException(
             status_code=422, detail=f"Unsupported attribute field: {field}"
         )
@@ -822,19 +839,27 @@ def _compare_annotation_attribute(
         number = cast(text_value, Float)
         if op == "between":
             if not isinstance(value, list) or len(value) != 2:
-                raise HTTPException(status_code=422, detail="between value must have two items")
+                raise HTTPException(
+                    status_code=422, detail="between value must have two items"
+                )
             condition = and_(number >= value[0], number <= value[1])
         else:
             condition = _compare_column(number, op, value, _NUMERIC_OPS)
     elif attr_type == "boolean":
         if op != "eq" or not isinstance(value, bool):
-            raise HTTPException(status_code=422, detail="boolean attribute only supports eq")
+            raise HTTPException(
+                status_code=422, detail="boolean attribute only supports eq"
+            )
         condition = text_value == ("true" if value else "false")
     elif attr_type == "multiselect":
         if op not in {"contains_any", "contains_all"} or not isinstance(value, list):
-            raise HTTPException(status_code=422, detail="Invalid multiselect attribute op")
+            raise HTTPException(
+                status_code=422, detail="Invalid multiselect attribute op"
+            )
         contains = [
-            Annotation.attributes[key].op("@>")(literal([item], type_=Annotation.attributes.type))
+            Annotation.attributes[key].op("@>")(
+                literal([item], type_=Annotation.attributes.type)
+            )
             for item in value
         ]
         condition = or_(*contains) if op == "contains_any" else and_(*contains)
@@ -1279,11 +1304,13 @@ class TaskViewService:
         self,
         project_id: uuid.UUID,
         user_id: uuid.UUID,
+        entity_scope: str = "tasks",
     ) -> list[ProjectTaskView]:
         rows = await self.db.execute(
             select(ProjectTaskView)
             .where(
                 ProjectTaskView.project_id == project_id,
+                ProjectTaskView.entity_scope == entity_scope,
                 or_(
                     ProjectTaskView.visibility == "project",
                     ProjectTaskView.owner_id == user_id,
@@ -1318,14 +1345,22 @@ class TaskViewService:
         filter_json: dict[str, Any],
         sort_json: list[dict[str, Any]],
         columns_json: list[str],
+        entity_scope: str = "tasks",
         project: Project | None = None,
     ) -> ProjectTaskView:
-        _validate_payload(filter_json, sort_json, columns_json, project=project)
+        _validate_payload(
+            filter_json,
+            sort_json,
+            columns_json,
+            entity_scope=entity_scope,
+            project=project,
+        )
         view = ProjectTaskView(
             project_id=project_id,
             owner_id=owner_id,
             name=name,
             visibility=visibility,
+            entity_scope=entity_scope,
             filter_json=filter_json,
             sort_json=sort_json,
             columns_json=columns_json,
@@ -1349,7 +1384,13 @@ class TaskViewService:
         next_filter = view.filter_json if filter_json is None else filter_json
         next_sort = view.sort_json if sort_json is None else sort_json
         next_columns = view.columns_json if columns_json is None else columns_json
-        _validate_payload(next_filter, next_sort, next_columns, project=project)
+        _validate_payload(
+            next_filter,
+            next_sort,
+            next_columns,
+            entity_scope=view.entity_scope,
+            project=project,
+        )
         if name is not None:
             view.name = name
         if visibility is not None:
@@ -1482,7 +1523,9 @@ class TaskViewService:
             from app.services.data_manager import pending_tracker_jobs_expr
 
             projection.append(
-                pending_tracker_jobs_expr(user, project).label("pending_tracker_job_count")
+                pending_tracker_jobs_expr(user, project).label(
+                    "pending_tracker_job_count"
+                )
             )
         if "keyframe_count" in requested:
             projection.append(
@@ -1490,9 +1533,7 @@ class TaskViewService:
             )
         if "outside_range_count" in requested:
             projection.append(
-                _annotation_json_array_total_sq("outside").label(
-                    "outside_range_count"
-                )
+                _annotation_json_array_total_sq("outside").label("outside_range_count")
             )
         if "camera_count" in requested:
             projection.append(_camera_count_sq().label("camera_count"))
@@ -1501,9 +1542,7 @@ class TaskViewService:
                 _calibration_issue_count_sq().label("calibration_issue_count")
             )
         if "scene_total_frames" in requested:
-            projection.append(
-                _scene_total_frames_sq().label("scene_total_frames")
-            )
+            projection.append(_scene_total_frames_sq().label("scene_total_frames"))
         q = select(*projection).where(base, clause)
         q = self._apply_visibility(q, user, project)
         q = apply_sort(q, sort_json).limit(limit).offset(offset)
@@ -1516,8 +1555,25 @@ def _validate_payload(
     sort_json: list[dict[str, Any]],
     columns_json: list[str],
     *,
+    entity_scope: str = "tasks",
     project: Project | None = None,
 ) -> None:
+    if entity_scope != "tasks":
+        if project is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Project context is required for entity views",
+            )
+        from app.services.data_manager_entity_filter import validate_entity_view
+
+        validate_entity_view(
+            entity_scope=entity_scope,
+            filter_json=filter_json,
+            sort_json=sort_json,
+            columns_json=columns_json,
+            project=project,
+        )
+        return
     validate_filter(filter_json, project=project)
     validate_sort(sort_json)
     validate_columns(columns_json)

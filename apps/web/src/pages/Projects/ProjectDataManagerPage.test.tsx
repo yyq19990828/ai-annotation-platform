@@ -13,11 +13,13 @@ function view(filterJson: Record<string, unknown>): ProjectTaskView {
     owner_id: null,
     name: "全部任务",
     visibility: "project",
+    entity_scope: "tasks",
     filter_json: filterJson,
     sort_json: [],
     columns_json: [],
     builtin: true,
     task_count: 12,
+    result_count: 12,
     created_at: null,
     updated_at: null,
     invalid_fields: [],
@@ -106,6 +108,10 @@ describe("DataManagerOverview", () => {
     expect(screen.getByText("当前匹配")).toBeInTheDocument();
     expect(screen.getByText("可见范围 12")).toBeInTheDocument();
     expect(screen.getByText("查看状态、来源、类别与属性聚合")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务状态" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "标注来源" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "标注类别" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /任务状态：待标注 2，待审核 1/ })).toBeInTheDocument();
     expect(screen.getByText("颜色")).toBeInTheDocument();
     expect(screen.getByText("6/8")).toBeInTheDocument();
   });

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.data_manager import DataManagerEntityScope
 from app.schemas.task import TaskOut
 
 
@@ -33,6 +34,7 @@ class TaskSortItem(BaseModel):
 
 
 class ProjectTaskViewBase(BaseModel):
+    entity_scope: DataManagerEntityScope = "tasks"
     name: str = Field(min_length=1, max_length=120)
     visibility: TaskViewVisibility = "private"
     filter_json: dict[str, Any] = Field(default_factory=dict)
@@ -76,6 +78,7 @@ class ProjectTaskViewOut(ProjectTaskViewBase):
     owner_id: UUID | None = None
     builtin: bool = False
     task_count: int | None = None
+    result_count: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     invalid_fields: list[str] = Field(default_factory=list)

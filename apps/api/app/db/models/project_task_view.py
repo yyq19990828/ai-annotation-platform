@@ -39,6 +39,9 @@ class ProjectTaskView(Base):
     visibility: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="private", default="private"
     )
+    entity_scope: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="tasks", default="tasks"
+    )
     filter_json: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
@@ -59,12 +62,14 @@ class ProjectTaskView(Base):
         UniqueConstraint(
             "project_id",
             "owner_id",
+            "entity_scope",
             "name",
             name="uq_project_task_views_private_owner_name",
         ),
         Index(
             "uq_project_task_views_project_name",
             "project_id",
+            "entity_scope",
             "name",
             unique=True,
             postgresql_where=text("visibility = 'project'"),
@@ -77,5 +82,9 @@ class ProjectTaskView(Base):
         CheckConstraint(
             "visibility IN ('private', 'project')",
             "ck_project_task_views_visibility",
+        ),
+        CheckConstraint(
+            "entity_scope IN ('tasks', 'objects', 'tracks')",
+            "ck_project_task_views_entity_scope",
         ),
     )

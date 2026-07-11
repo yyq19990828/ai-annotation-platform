@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useTaskViews";
 import type {
   DataManagerFilterField,
+  DataManagerEntityScope,
   DataManagerTask,
   ProjectTaskView,
   TaskFilterOp,
@@ -27,7 +28,13 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/shadcn/ui/input";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
 import { DataManagerOverview } from "./data-manager/DataManagerOverview";
+import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
+import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
+import {
+  parseDataManagerUrl,
+  updateDataManagerUrl,
+} from "./data-manager/dataManagerUrlState";
 import {
   Dialog,
   DialogContent,
@@ -96,8 +103,7 @@ function isFilterRule(value: unknown): value is TaskFilterRule {
   return Boolean(value && typeof value === "object" && "field" in value && "op" in value);
 }
 
-export function editableRulesFromView(view: ProjectTaskView | null): EditableRule[] {
-  const raw = view?.filter_json;
+function editableRulesFromFilter(raw: Record<string, unknown> | null | undefined): EditableRule[] {
   if (!raw || !("rules" in raw) || !Array.isArray(raw.rules)) return [];
   const rules = raw.rules
     .filter(isFilterRule)
@@ -107,6 +113,10 @@ export function editableRulesFromView(view: ProjectTaskView | null): EditableRul
       value: Array.isArray(rule.value) ? rule.value.join(", ") : String(rule.value ?? ""),
     }));
   return rules;
+}
+
+export function editableRulesFromView(view: ProjectTaskView | null): EditableRule[] {
+  return editableRulesFromFilter(view?.filter_json);
 }
 
 function normalizeRuleValue(rule: EditableRule, fields: DataManagerFilterField[]): unknown {
@@ -243,6 +253,77 @@ function renderRuleValueControl(
 
 export function ProjectDataManagerPage() {
   const { id = "" } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { data: project, isLoading, error } = useProject(id);
+  const schemaQ = useDataManagerSchema(id, "tasks");
+  const requestedScope = parseDataManagerUrl(searchParams).lens;
+  const availableScopes = schemaQ.data?.available_entity_scopes ?? ["tasks"];
+  const scope = availableScopes.includes(requestedScope) ? requestedScope : "tasks";
+
+  useEffect(() => {
+    if (!schemaQ.data || requestedScope === scope) return;
+    const next = updateDataManagerUrl(searchParams, {
+      lens: scope,
+      view: null,
+      query: "",
+      filter: null,
+      sort: null,
+      columns: null,
+      selected: null,
+    });
+    setSearchParams(next, { replace: true });
+  }, [requestedScope, schemaQ.data, scope, searchParams, setSearchParams]);
+
+  if (isLoading || schemaQ.isLoading) {
+    return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
+  }
+  if (error || !project) return <Navigate to="/unauthorized" replace />;
+
+  const changeScope = (nextScope: DataManagerEntityScope) => {
+    const next = updateDataManagerUrl(searchParams, {
+      lens: nextScope,
+      view: null,
+      query: "",
+      filter: null,
+      sort: null,
+      columns: null,
+      selected: null,
+    });
+    setSearchParams(next);
+  };
+
+  if (scope === "objects" || scope === "tracks") {
+    return (
+      <EntityDataManagerLens
+        projectId={id}
+        projectName={project.name}
+        projectDisplayId={project.display_id}
+        projectOwnerId={project.owner_id}
+        scope={scope}
+        availableScopes={availableScopes}
+        onScopeChange={changeScope}
+      />
+    );
+  }
+
+  return (
+    <TaskDataManagerPage
+      availableScopes={availableScopes}
+      onScopeChange={changeScope}
+    />
+  );
+}
+
+function TaskDataManagerPage({
+  availableScopes,
+  onScopeChange,
+}: {
+  availableScopes: DataManagerEntityScope[];
+  onScopeChange: (scope: DataManagerEntityScope) => void;
+}) {
+  const { id = "" } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [initialUrl] = useState(() => parseDataManagerUrl(searchParams));
   const navigate = useNavigate();
   const { role } = usePermissions();
   const user = useAuthStore((s) => s.user);
@@ -253,7 +334,9 @@ export function ProjectDataManagerPage() {
   const createView = useCreateTaskView(id);
   const updateView = useUpdateTaskView(id);
   const deleteView = useDeleteTaskView(id);
-  const [selectedKey, setSelectedKey] = useState<string>("builtin:all");
+  const [selectedKey, setSelectedKey] = useState<string>(
+    initialUrl.lens === "tasks" && initialUrl.view ? initialUrl.view : "builtin:all",
+  );
   const [rules, setRules] = useState<EditableRule[]>([]);
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
@@ -266,7 +349,9 @@ export function ProjectDataManagerPage() {
   const [selectedTask, setSelectedTask] = useState<DataManagerTask | null>(null);
   const [baselineSignature, setBaselineSignature] = useState("");
   const [pendingViewKey, setPendingViewKey] = useState<string | null>(null);
+  const [pendingScope, setPendingScope] = useState<DataManagerEntityScope | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const urlHydratedRef = useRef(false);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const filterFields = useMemo(
@@ -274,7 +359,14 @@ export function ProjectDataManagerPage() {
     [schemaQ.data?.filter_fields],
   );
   const columnOptions = useMemo(
-    () => schemaQ.data?.columns ?? COLUMN_OPTIONS.map((column) => ({ ...column, group: "任务", default: DEFAULT_COLUMNS.includes(column.key), expensive: false })),
+    () => schemaQ.data?.columns ?? COLUMN_OPTIONS.map((column) => ({
+      ...column,
+      group: "任务",
+      default: DEFAULT_COLUMNS.includes(column.key),
+      expensive: false,
+      sortable: false,
+      sort_field: null,
+    })),
     [schemaQ.data?.columns],
   );
   const defaultColumns = useMemo(
@@ -299,29 +391,42 @@ export function ProjectDataManagerPage() {
 
   useEffect(() => {
     if (!selectedView) return;
-    const hydrated = editableRulesFromView(selectedView);
+    const useUrl = !urlHydratedRef.current
+      && initialUrl.lens === "tasks"
+      && (!initialUrl.view || initialUrl.view === selectedKey);
+    const hydrated = editableRulesFromFilter(
+      useUrl && initialUrl.filter ? initialUrl.filter : selectedView.filter_json,
+    );
     const keywordRule = hydrated.find((rule) => rule.field === "task.keyword");
-    setKeyword(keywordRule?.value ?? "");
-    setDebouncedKeyword(keywordRule?.value ?? "");
+    const nextKeyword = useUrl ? initialUrl.query : keywordRule?.value ?? "";
+    setKeyword(nextKeyword);
+    setDebouncedKeyword(nextKeyword);
     setRules(hydrated.filter((rule) => rule.field !== "task.keyword"));
     const allowedColumns = new Set(columnOptions.map((column) => column.key));
-    const restoredColumns = (selectedView.columns_json?.length ? selectedView.columns_json : defaultColumns)
+    const restoredColumns = (
+      useUrl && initialUrl.columns?.length
+        ? initialUrl.columns
+        : selectedView.columns_json?.length ? selectedView.columns_json : defaultColumns
+    )
       .filter((column) => allowedColumns.has(column));
     const nextColumns = restoredColumns.length ? restoredColumns : defaultColumns;
-    const nextSort = defaultSortForView(selectedView);
+    const nextSort = useUrl && initialUrl.sort?.length
+      ? initialUrl.sort
+      : defaultSortForView(selectedView);
     setColumns(nextColumns);
     setSort(nextSort);
     setBaselineSignature(JSON.stringify({
       filter_json: buildFilterJson(
         hydrated.filter((rule) => rule.field !== "task.keyword"),
         filterFields,
-        keywordRule?.value ?? "",
+        nextKeyword,
       ),
       sort_json: nextSort,
       columns_json: nextColumns,
     }));
+    urlHydratedRef.current = true;
     setPage(0);
-  }, [columnOptions, defaultColumns, filterFields, selectedView]);
+  }, [columnOptions, defaultColumns, filterFields, initialUrl, selectedKey, selectedView]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedKeyword(keyword), 250);
@@ -361,6 +466,28 @@ export function ProjectDataManagerPage() {
         : canManageProject),
   );
 
+  useEffect(() => {
+    if (!urlHydratedRef.current) return;
+    const next = updateDataManagerUrl(searchParams, {
+      lens: "tasks",
+      view: selectedKey,
+      query: keyword,
+      filter: buildFilterJson(rules, filterFields, ""),
+      sort,
+      columns,
+      selected: selectedTask?.id ?? null,
+    });
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [columns, filterFields, keyword, rules, searchParams, selectedKey, selectedTask?.id, setSearchParams, sort]);
+
+  useEffect(() => {
+    if (!initialUrl.selected || selectedTask || !tasksQ.data?.items.length) return;
+    const restored = tasksQ.data.items.find((task) => task.id === initialUrl.selected);
+    if (restored) setSelectedTask(restored);
+  }, [initialUrl.selected, selectedTask, tasksQ.data?.items]);
+
   if (projectLoading) return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
 
@@ -394,6 +521,7 @@ export function ProjectDataManagerPage() {
       const created = await createView.mutateAsync({
         name,
         visibility: saveVisibility,
+        entity_scope: "tasks",
         filter_json: filterJson,
         sort_json: sort,
         columns_json: columns,
@@ -422,6 +550,15 @@ export function ProjectDataManagerPage() {
 
   return (
     <div className="mx-auto max-w-[1680px] px-4 pt-4 pb-8 text-foreground md:px-7">
+      <DataManagerLensTabs
+        scope="tasks"
+        availableScopes={availableScopes}
+        onScopeChange={(nextScope) => {
+          if (nextScope === "tasks") return;
+          if (isDirty) setPendingScope(nextScope);
+          else onScopeChange(nextScope);
+        }}
+      >
       <header className="mb-3.5">
         <button
           type="button"
@@ -750,7 +887,15 @@ export function ProjectDataManagerPage() {
         open={Boolean(selectedTask)}
         onOpenChange={(open) => !open && setSelectedTask(null)}
       />
-      <AlertDialog open={Boolean(pendingViewKey)} onOpenChange={(open) => !open && setPendingViewKey(null)}>
+      <AlertDialog
+        open={Boolean(pendingViewKey || pendingScope)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingViewKey(null);
+            setPendingScope(null);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>放弃未保存的视图修改？</AlertDialogTitle>
@@ -763,7 +908,9 @@ export function ProjectDataManagerPage() {
             <AlertDialogAction
               onClick={() => {
                 if (pendingViewKey) setSelectedKey(pendingViewKey);
+                if (pendingScope) onScopeChange(pendingScope);
                 setPendingViewKey(null);
+                setPendingScope(null);
               }}
             >
               放弃并切换
@@ -792,6 +939,7 @@ export function ProjectDataManagerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </DataManagerLensTabs>
     </div>
   );
 }

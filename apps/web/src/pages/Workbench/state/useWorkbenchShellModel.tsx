@@ -195,6 +195,14 @@ export function useWorkbenchShellModel({
   const returnTo = searchParams.get("returnTo");
   const requestedBatchId = searchParams.get("batch");
   const requestedTaskId = searchParams.get("task");
+  const requestedFocusId = searchParams.get("focus");
+  const requestedTrackId = searchParams.get("track");
+  const requestedFrameIndex = (() => {
+    const raw = searchParams.get("frame");
+    if (raw === null) return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+  })();
   const backTarget = useMemo(
     () => resolveWorkbenchReturnTo(returnTo, currentPath),
     [returnTo, currentPath],
@@ -877,6 +885,32 @@ export function useWorkbenchShellModel({
     // 同上:pendingCrossFrameSelectRef 为稳定 useRef,不入依赖(入则 TDZ),行为不变。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsData, currentTaskId, setSelectedId]);
+
+  useEffect(() => {
+    if (!taskId || (requestedTaskId && taskId !== requestedTaskId)) return;
+    if (isVideoTask && requestedFrameIndex !== null) {
+      const maxFrame = Math.max(0, videoFrameCount - 1);
+      setVideoFrameIndex(Math.min(requestedFrameIndex, maxFrame));
+    }
+    if (!requestedFocusId && !requestedTrackId) return;
+    const target = (annotationsData ?? []).find(
+      (annotation) =>
+        annotation.id === requestedFocusId
+        || (requestedTrackId && annotation.track_id === requestedTrackId),
+    );
+    if (target) setSelectedId(target.id);
+  }, [
+    annotationsData,
+    isVideoTask,
+    requestedFocusId,
+    requestedFrameIndex,
+    requestedTaskId,
+    requestedTrackId,
+    setSelectedId,
+    setVideoFrameIndex,
+    taskId,
+    videoFrameCount,
+  ]);
 
   useEffect(() => {
     if (!isVideoTask) return;

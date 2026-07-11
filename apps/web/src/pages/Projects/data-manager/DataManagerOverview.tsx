@@ -8,6 +8,7 @@ import {
 } from "@/components/shadcn/ui/card";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
 import { Badge } from "@/components/ui/Badge";
+import { DataManagerCharts } from "./DataManagerCharts";
 
 interface DataManagerOverviewProps {
   summary: DataManagerSummary | undefined;
@@ -119,6 +120,13 @@ export function DataManagerOverview({ summary, isLoading }: DataManagerOverviewP
             </CardContent>
           </Card>
         ))}
+      </div>
+      <div className="mt-4 border-y border-border py-4">
+        <DataManagerCharts
+          scope="tasks"
+          summary={summary}
+          isLoading={isLoading}
+        />
       </div>
       <details className="mt-2 rounded-lg border border-border bg-card">
         <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground marker:text-muted-foreground">

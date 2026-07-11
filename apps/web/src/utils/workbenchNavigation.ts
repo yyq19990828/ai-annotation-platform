@@ -75,11 +75,23 @@ export function resolveWorkbenchReturnTo(
 
 export function buildWorkbenchUrl(
   projectId: string,
-  opts: { batchId?: string | null; taskId?: string | null; returnTo?: string | null } = {},
+  opts: {
+    batchId?: string | null;
+    taskId?: string | null;
+    annotationId?: string | null;
+    trackId?: string | null;
+    frameIndex?: number | null;
+    returnTo?: string | null;
+  } = {},
 ) {
   const q = new URLSearchParams();
   if (opts.batchId) q.set("batch", opts.batchId);
   if (opts.taskId) q.set("task", opts.taskId);
+  if (opts.annotationId) q.set("focus", opts.annotationId);
+  if (opts.trackId) q.set("track", opts.trackId);
+  if (opts.frameIndex !== null && opts.frameIndex !== undefined) {
+    q.set("frame", String(opts.frameIndex));
+  }
   if (opts.returnTo) q.set("returnTo", opts.returnTo);
   const qs = q.toString();
   return `/projects/${projectId}/annotate${qs ? `?${qs}` : ""}`;
@@ -99,7 +111,13 @@ export function buildReviewWorkbenchUrl(
 
 export function updateWorkbenchUrlSearch(
   location: { pathname: string; search?: string; hash?: string },
-  opts: { batchId?: string | null; taskId?: string | null } = {},
+  opts: {
+    batchId?: string | null;
+    taskId?: string | null;
+    annotationId?: string | null;
+    trackId?: string | null;
+    frameIndex?: number | null;
+  } = {},
 ) {
   const q = new URLSearchParams(location.search ?? "");
   if ("batchId" in opts) {
@@ -109,6 +127,24 @@ export function updateWorkbenchUrlSearch(
   if ("taskId" in opts) {
     if (opts.taskId) q.set("task", opts.taskId);
     else q.delete("task");
+    if (!("annotationId" in opts)) q.delete("focus");
+    if (!("trackId" in opts)) q.delete("track");
+    if (!("frameIndex" in opts)) q.delete("frame");
+  }
+  if ("annotationId" in opts) {
+    if (opts.annotationId) q.set("focus", opts.annotationId);
+    else q.delete("focus");
+  }
+  if ("trackId" in opts) {
+    if (opts.trackId) q.set("track", opts.trackId);
+    else q.delete("track");
+  }
+  if ("frameIndex" in opts) {
+    if (opts.frameIndex !== null && opts.frameIndex !== undefined) {
+      q.set("frame", String(opts.frameIndex));
+    } else {
+      q.delete("frame");
+    }
   }
   const qs = q.toString();
   return `${location.pathname}${qs ? `?${qs}` : ""}${location.hash ?? ""}`;

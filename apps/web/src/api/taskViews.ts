@@ -2,6 +2,7 @@ import { apiClient } from "./client";
 import type { TaskResponse } from "@/types";
 
 export type TaskViewVisibility = "private" | "project";
+export type DataManagerEntityScope = "tasks" | "objects" | "tracks";
 export type TaskFilterOp =
   | "eq"
   | "ne"
@@ -25,7 +26,7 @@ export interface TaskFilterRule {
 
 export interface TaskFilterGroup {
   op: "and" | "or";
-  rules: TaskFilterRule[];
+  rules: Array<TaskFilterRule | TaskFilterGroup>;
 }
 
 export interface TaskSortItem {
@@ -40,11 +41,13 @@ export interface ProjectTaskView {
   owner_id: string | null;
   name: string;
   visibility: TaskViewVisibility;
+  entity_scope: DataManagerEntityScope;
   filter_json: Record<string, unknown>;
   sort_json: TaskSortItem[];
   columns_json: string[];
   builtin: boolean;
   task_count: number | null;
+  result_count: number | null;
   created_at: string | null;
   updated_at: string | null;
   invalid_fields: string[];
@@ -53,6 +56,7 @@ export interface ProjectTaskView {
 export interface ProjectTaskViewPayload {
   name: string;
   visibility: TaskViewVisibility;
+  entity_scope: DataManagerEntityScope;
   filter_json: Record<string, unknown>;
   sort_json: TaskSortItem[];
   columns_json: string[];
@@ -109,9 +113,13 @@ export interface DataManagerColumn {
   group: string;
   default: boolean;
   expensive: boolean;
+  sortable: boolean;
+  sort_field: string | null;
 }
 
 export interface DataManagerSchema {
+  entity_scope: DataManagerEntityScope;
+  available_entity_scopes: DataManagerEntityScope[];
   project_kind: { data_type: string; type_key: string; scene_mode: boolean };
   tool_units: Array<{ id: string; classes: string[] }>;
   filter_fields: DataManagerFilterField[];
@@ -186,9 +194,139 @@ export interface ProjectTaskQueryResponse {
   offset: number;
 }
 
+export interface DataManagerEntityLocation {
+  project_id: string;
+  task_id: string;
+  task_display_id: string;
+  batch_id: string | null;
+  dataset_item_id: string | null;
+  data_type: string;
+  focus_kind: "annotation" | "track";
+  annotation_id: string | null;
+  track_id: string | null;
+  scene_id: string | null;
+  scene_name: string | null;
+  scene_frame_index: number | null;
+  video_frame_index: number | null;
+}
+
+export interface DataManagerEntityFacets {
+  matched_total: number;
+  task_total: number;
+  by_class: Record<string, number>;
+  by_source: Record<string, number>;
+  by_tool_unit: Record<string, number>;
+  by_type: Record<string, number>;
+  by_quality: Record<string, number>;
+}
+
+export interface DataManagerObject {
+  entity_key: string;
+  annotation_id: string;
+  task_id: string;
+  task_display_id: string;
+  file_name: string | null;
+  batch_id: string | null;
+  class_name: string;
+  tool_unit_id: string;
+  annotation_type: string;
+  source: string;
+  imported: boolean;
+  confidence: number | null;
+  track_id: string | null;
+  parent_prediction_id: string | null;
+  parent_annotation_id: string | null;
+  attributes: Record<string, unknown>;
+  attribute_origins: Record<string, "ai" | "human">;
+  created_by_id: string | null;
+  created_by_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  unresolved_feedback_count: number;
+  location: DataManagerEntityLocation;
+}
+
+export interface DataManagerTrackSources {
+  annotation_sources: Record<string, number>;
+  keyframe_sources: Record<string, number>;
+}
+
+export interface DataManagerTrack {
+  entity_key: string;
+  track_ref: string;
+  track_kind: "compact_video" | "scene";
+  track_id: string;
+  compact_annotation_id: string | null;
+  class_name: string | null;
+  tool_unit_id: string | null;
+  annotation_type: string | null;
+  start_frame: number | null;
+  end_frame: number | null;
+  span: number | null;
+  occurrence_count: number;
+  distinct_task_count: number;
+  distinct_frame_count: number;
+  missing_frame_count: number;
+  duplicate_frame_count: number;
+  keyframe_count: number;
+  outside_range_count: number;
+  occluded_count: number;
+  sources: DataManagerTrackSources;
+  attributes: Record<string, unknown>;
+  attribute_origins: Record<string, "ai" | "human">;
+  quality_issues: string[];
+  location: DataManagerEntityLocation;
+}
+
+export interface DataManagerTrackMember {
+  annotation_id: string;
+  task_id: string;
+  task_display_id: string;
+  class_name: string;
+  source: string;
+  frame_index: number | null;
+  keyframe_source: string | null;
+  occluded: boolean;
+  outside: boolean;
+  attributes: Record<string, unknown>;
+  attribute_origins: Record<string, "ai" | "human">;
+  location: DataManagerEntityLocation;
+}
+
+export interface DataManagerEntityQueryPayload {
+  filter_json: Record<string, unknown>;
+  sort_json: TaskSortItem[];
+  columns_json: string[];
+  limit: number;
+  cursor?: string | null;
+}
+
+export interface DataManagerObjectQueryResponse {
+  items: DataManagerObject[];
+  total: number;
+  limit: number;
+  next_cursor: string | null;
+  facets: DataManagerEntityFacets;
+}
+
+export interface DataManagerTrackQueryResponse {
+  items: DataManagerTrack[];
+  total: number;
+  limit: number;
+  next_cursor: string | null;
+  facets: DataManagerEntityFacets;
+}
+
+export interface DataManagerTrackDetail {
+  track: DataManagerTrack;
+  members: DataManagerTrackMember[];
+}
+
 export const taskViewsApi = {
-  list: (projectId: string) =>
-    apiClient.get<{ items: ProjectTaskView[] }>(`/projects/${projectId}/task-views`),
+  list: (projectId: string, entityScope: DataManagerEntityScope = "tasks") =>
+    apiClient.get<{ items: ProjectTaskView[] }>(
+      `/projects/${projectId}/task-views?entity_scope=${entityScope}`,
+    ),
 
   create: (projectId: string, payload: ProjectTaskViewPayload) =>
     apiClient.post<ProjectTaskView>(`/projects/${projectId}/task-views`, payload),
@@ -205,8 +343,10 @@ export const taskViewsApi = {
   query: (projectId: string, payload: ProjectTaskQueryPayload) =>
     apiClient.post<ProjectTaskQueryResponse>(`/projects/${projectId}/tasks/query`, payload),
 
-  schema: (projectId: string) =>
-    apiClient.get<DataManagerSchema>(`/projects/${projectId}/data-manager/schema`),
+  schema: (projectId: string, entityScope: DataManagerEntityScope = "tasks") =>
+    apiClient.get<DataManagerSchema>(
+      `/projects/${projectId}/data-manager/schema?entity_scope=${entityScope}`,
+    ),
 
   summary: (projectId: string, filterJson: Record<string, unknown>) =>
     apiClient.post<DataManagerSummary>(`/projects/${projectId}/data-manager/summary`, {
@@ -217,6 +357,33 @@ export const taskViewsApi = {
     apiClient.post<DataManagerMatchesResponse>(
       `/projects/${projectId}/tasks/${taskId}/data-manager/matches`,
       { filter_json: filterJson, limit: 100, offset: 0 },
+    ),
+
+  queryObjects: (projectId: string, payload: DataManagerEntityQueryPayload) =>
+    apiClient.post<DataManagerObjectQueryResponse>(
+      `/projects/${projectId}/data-manager/objects/query`,
+      payload,
+    ),
+
+  objectDetail: (projectId: string, annotationId: string) =>
+    apiClient.get<{ item: DataManagerObject }>(
+      `/projects/${projectId}/data-manager/objects/${annotationId}/detail`,
+    ),
+
+  objectLocation: (projectId: string, annotationId: string) =>
+    apiClient.get<DataManagerEntityLocation>(
+      `/projects/${projectId}/data-manager/objects/${annotationId}/location`,
+    ),
+
+  queryTracks: (projectId: string, payload: DataManagerEntityQueryPayload) =>
+    apiClient.post<DataManagerTrackQueryResponse>(
+      `/projects/${projectId}/data-manager/tracks/query`,
+      payload,
+    ),
+
+  trackDetail: (projectId: string, trackRef: string) =>
+    apiClient.get<DataManagerTrackDetail>(
+      `/projects/${projectId}/data-manager/tracks/${encodeURIComponent(trackRef)}/detail`,
     ),
 
   queryView: (projectId: string, viewId: string, limit: number, offset: number) => {

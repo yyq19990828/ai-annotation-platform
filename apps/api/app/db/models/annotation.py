@@ -28,6 +28,35 @@ class Annotation(Base):
                 "is_active = true AND was_cancelled = false AND track_id IS NOT NULL"
             ),
         ),
+        Index(
+            "ix_annotations_project_updated_active",
+            "project_id",
+            "updated_at",
+            "id",
+            postgresql_where=text("is_active = true AND was_cancelled = false"),
+        ),
+        Index(
+            "ix_annotations_project_class_active",
+            "project_id",
+            "class_name",
+            "id",
+            postgresql_where=text("is_active = true AND was_cancelled = false"),
+        ),
+        Index(
+            "ix_annotations_project_source_active",
+            "project_id",
+            "source",
+            "id",
+            postgresql_where=text("is_active = true AND was_cancelled = false"),
+        ),
+        Index(
+            "ix_annotations_project_tool_type_active",
+            "project_id",
+            "tool_unit_id",
+            "annotation_type",
+            "id",
+            postgresql_where=text("is_active = true AND was_cancelled = false"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
