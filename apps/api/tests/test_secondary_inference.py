@@ -531,9 +531,7 @@ def test_text_output_mode_follows_model_capability(text_outputs, expected):
     """
     from app.services.secondary_inference import _resolve_text_output_mode
 
-    backend = _fake_backend(
-        [{"id": "m-1", "supported_text_outputs": text_outputs}]
-    )
+    backend = _fake_backend([{"id": "m-1", "supported_text_outputs": text_outputs}])
     mode = _resolve_text_output_mode(backend, "m-1")
     assert mode == expected
     assert mode in ("box", "mask", "both")

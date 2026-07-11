@@ -118,7 +118,11 @@ def test_merge_noop_without_ai_interactive_key():
 def test_merge_does_not_mutate_input():
     mod = _load_migration_0116()
     tb = {
-        "bbox": {"enabled": True, "classes": [{"name": "car"}], "attribute_schema": {"fields": []}},
+        "bbox": {
+            "enabled": True,
+            "classes": [{"name": "car"}],
+            "attribute_schema": {"fields": []},
+        },
         "ai_interactive": {
             "enabled": True,
             "classes": [{"name": "prompt"}],

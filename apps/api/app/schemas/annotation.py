@@ -37,7 +37,10 @@ class AnnotationCreate(BaseModel):
         """遗留客户端 / 陈旧 worker 仍可能发 tool_unit_id='ai_interactive' (已退役)。
         按几何类型归位到 region/bbox (与迁移 0115/0116 同规则) 并记 warning, 而非 422 拒绝,
         既不让老调用方 400, 又不让退役值再污染库。"""
-        if isinstance(data, dict) and data.get("tool_unit_id") == RETIRED_AI_INTERACTIVE:
+        if (
+            isinstance(data, dict)
+            and data.get("tool_unit_id") == RETIRED_AI_INTERACTIVE
+        ):
             geom = data.get("geometry")
             gtype = geom.get("type") if isinstance(geom, dict) else None
             mapped = map_retired_tool_unit(gtype)

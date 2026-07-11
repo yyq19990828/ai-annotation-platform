@@ -332,7 +332,9 @@ def _polygon_rings(value: dict) -> list[list]:
             pts = poly.get("points")
             if isinstance(pts, list) and pts:
                 rings.append(pts)
-            rings.extend(h for h in (poly.get("holes") or []) if isinstance(h, list) and h)
+            rings.extend(
+                h for h in (poly.get("holes") or []) if isinstance(h, list) and h
+            )
         return rings
     pts = value.get("points")
     if not isinstance(pts, list) or not pts:
@@ -374,7 +376,9 @@ def remap_geometry_to_image(shapes: list[dict], transform: dict) -> list[dict]:
             rings = _polygon_rings(value)
             if not rings:
                 continue
-            scale = _crop_coord_scale([float(c) for ring in rings for p in ring for c in p])
+            scale = _crop_coord_scale(
+                [float(c) for ring in rings for p in ring for c in p]
+            )
 
             def _remap_ring(ring: list) -> list[list[float]]:
                 return [

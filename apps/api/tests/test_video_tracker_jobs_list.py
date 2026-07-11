@@ -227,9 +227,7 @@ async def test_project_admin_list_is_scoped_to_owned_projects(
     )
     assert res.status_code == 200, res.text
     body = res.json()
-    assert [item["project_id"] for item in body["items"]] == [
-        str(own_task.project_id)
-    ]
+    assert [item["project_id"] for item in body["items"]] == [str(own_task.project_id)]
     assert body["counts"]["pending_review"] == 1
 
     cross_project = await httpx_client_bound.get(
@@ -314,7 +312,13 @@ async def _make_staged_job(db, task, item, owner_id):
             "results": [
                 {
                     "frame_index": f,
-                    "geometry": {"type": "bbox", "x": float(f), "y": 0.0, "w": 5.0, "h": 5.0},
+                    "geometry": {
+                        "type": "bbox",
+                        "x": float(f),
+                        "y": 0.0,
+                        "w": 5.0,
+                        "h": 5.0,
+                    },
                     "confidence": 1.0,
                     "outside": False,
                     "instance_id": None,

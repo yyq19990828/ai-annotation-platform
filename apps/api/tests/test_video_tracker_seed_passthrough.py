@@ -32,8 +32,13 @@ class _CaptureAdapter:
         for frame_index in range(ctx.from_frame, ctx.to_frame + 1):
             yield TrackerFrameResult(
                 frame_index=frame_index,
-                geometry={"type": "bbox", "x": float(frame_index),
-                          "y": 0.0, "w": 5.0, "h": 5.0},
+                geometry={
+                    "type": "bbox",
+                    "x": float(frame_index),
+                    "y": 0.0,
+                    "w": 5.0,
+                    "h": 5.0,
+                },
                 confidence=1.0,
                 outside=False,
             )
@@ -120,12 +125,24 @@ class _TwoInstanceCaptureAdapter:
             yield TrackerFrameResult(
                 frame_index=f,
                 geometry={"type": "bbox", "x": float(f), "y": 0.0, "w": 5.0, "h": 5.0},
-                confidence=1.0, outside=False, instance_id="1", primary=True,
+                confidence=1.0,
+                outside=False,
+                instance_id="1",
+                primary=True,
             )
             yield TrackerFrameResult(
                 frame_index=f,
-                geometry={"type": "bbox", "x": float(f) + 100.0, "y": 0.0, "w": 8.0, "h": 8.0},
-                confidence=1.0, outside=False, instance_id="2", primary=False,
+                geometry={
+                    "type": "bbox",
+                    "x": float(f) + 100.0,
+                    "y": 0.0,
+                    "w": 8.0,
+                    "h": 8.0,
+                },
+                confidence=1.0,
+                outside=False,
+                instance_id="2",
+                primary=False,
             )
 
 
@@ -136,8 +153,11 @@ async def test_multi_instance_continuation_reseeds_each_instance(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     source = Annotation(
-        task_id=task.id, project_id=task.project_id, user_id=user.id,
-        annotation_type="bbox", class_name="car",
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
         geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
     )
     db_session.add(source)
@@ -147,10 +167,16 @@ async def test_multi_instance_continuation_reseeds_each_instance(
         {"obj_id": 2, "points": [[0.8, 0.5, 1]]},
     ]
     job = VideoTrackerJob(
-        task_id=task.id, dataset_item_id=item.id, annotation_id=source.id,
-        created_by=user.id, status=VideoTrackerJobStatus.QUEUED.value,
-        model_key="sam3_video_interactive", direction="forward",
-        from_frame=0, to_frame=3, prompt={"seeds": seeds},
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=source.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video_interactive",
+        direction="forward",
+        from_frame=0,
+        to_frame=3,
+        prompt={"seeds": seeds},
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)

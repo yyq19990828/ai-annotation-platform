@@ -244,7 +244,9 @@ async def accept_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     return _job_out(row)
 
 
-async def discard_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJobOut:
+async def discard_tracker_job(
+    db: AsyncSession, job_id: uuid.UUID
+) -> VideoTrackerJobOut:
     """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
     from app.services.video_tracker_runner import (
         TrackerJobStateConflict,
@@ -284,9 +286,7 @@ async def list_reviewable_tracker_jobs(
             await db.execute(
                 select(VideoTrackerJob)
                 .where(*conditions)
-                .order_by(
-                    VideoTrackerJob.created_at.desc(), VideoTrackerJob.id.desc()
-                )
+                .order_by(VideoTrackerJob.created_at.desc(), VideoTrackerJob.id.desc())
             )
         )
         .scalars()

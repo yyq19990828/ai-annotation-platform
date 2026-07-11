@@ -404,8 +404,18 @@ def test_remap_accepts_normalized_backend_coords():
     归一化口径的子框被缩小 100 倍并塌到 crop 左上角。"""
     transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
 
-    pct = [{"type": "rectanglelabels", "value": {"x": 25, "y": 25, "width": 50, "height": 50}}]
-    norm = [{"type": "rectanglelabels", "value": {"x": 0.25, "y": 0.25, "width": 0.5, "height": 0.5}}]
+    pct = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 25, "y": 25, "width": 50, "height": 50},
+        }
+    ]
+    norm = [
+        {
+            "type": "rectanglelabels",
+            "value": {"x": 0.25, "y": 0.25, "width": 0.5, "height": 0.5},
+        }
+    ]
 
     [a] = remap_geometry_to_image(pct, transform)
     [b] = remap_geometry_to_image(norm, transform)
@@ -420,8 +430,12 @@ def test_remap_accepts_normalized_polygon_coords():
     """polygon 路径同款口径自适应 (sam3-segmentation / segment-yoloe 的 mask→polygon 子框)。"""
     transform = {"ox": 0.4, "oy": 0.4, "sx": 0.2, "sy": 0.2}
 
-    pct = [{"type": "polygonlabels", "value": {"points": [[0, 0], [100, 0], [100, 100]]}}]
-    norm = [{"type": "polygonlabels", "value": {"points": [[0, 0], [1.0, 0], [1.0, 1.0]]}}]
+    pct = [
+        {"type": "polygonlabels", "value": {"points": [[0, 0], [100, 0], [100, 100]]}}
+    ]
+    norm = [
+        {"type": "polygonlabels", "value": {"points": [[0, 0], [1.0, 0], [1.0, 1.0]]}}
+    ]
 
     [a] = remap_geometry_to_image(pct, transform)
     [b] = remap_geometry_to_image(norm, transform)
@@ -448,7 +462,9 @@ def test_remap_polygon_with_holes_and_multipolygon():
         }
     ]
     [r] = remap_geometry_to_image(holed, transform)
-    for got, want in zip(r["value"]["points"], [[40, 40], [60, 40], [60, 60], [40, 60]]):
+    for got, want in zip(
+        r["value"]["points"], [[40, 40], [60, 40], [60, 60], [40, 60]]
+    ):
         assert got == pytest.approx(want)
     for got, want in zip(r["value"]["holes"][0], [[45, 45], [55, 45], [55, 55]]):
         assert got == pytest.approx(want)
@@ -467,7 +483,11 @@ def test_remap_polygon_with_holes_and_multipolygon():
     ]
     [m] = remap_geometry_to_image(multi, transform)
     assert len(m["value"]["polygons"]) == 2
-    for got, want in zip(m["value"]["polygons"][0]["points"], [[40, 40], [50, 40], [50, 50]]):
+    for got, want in zip(
+        m["value"]["polygons"][0]["points"], [[40, 40], [50, 40], [50, 50]]
+    ):
         assert got == pytest.approx(want)
-    for got, want in zip(m["value"]["polygons"][1]["points"], [[50, 50], [60, 50], [60, 60]]):
+    for got, want in zip(
+        m["value"]["polygons"][1]["points"], [[50, 50], [60, 50], [60, 60]]
+    ):
         assert got == pytest.approx(want)

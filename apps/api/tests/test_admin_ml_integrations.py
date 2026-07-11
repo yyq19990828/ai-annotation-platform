@@ -374,16 +374,36 @@ async def test_observe_collects_per_model_variants(
                     {
                         "id": "ocr-det",
                         "supported_variants": [
-                            {"key": "version", "title": "版本", "variants": [{"value": "v5"}]},
-                            {"key": "size", "title": "尺寸", "variants": [{"value": "mobile"}]},
+                            {
+                                "key": "version",
+                                "title": "版本",
+                                "variants": [{"value": "v5"}],
+                            },
+                            {
+                                "key": "size",
+                                "title": "尺寸",
+                                "variants": [{"value": "mobile"}],
+                            },
                         ],
                     },
                     {
                         "id": "ocr-rec",
                         "supported_variants": [
-                            {"key": "version", "title": "版本", "variants": [{"value": "v5"}]},
-                            {"key": "size", "title": "尺寸", "variants": [{"value": "mobile"}]},
-                            {"key": "lang", "title": "语言", "variants": [{"value": "en"}]},
+                            {
+                                "key": "version",
+                                "title": "版本",
+                                "variants": [{"value": "v5"}],
+                            },
+                            {
+                                "key": "size",
+                                "title": "尺寸",
+                                "variants": [{"value": "mobile"}],
+                            },
+                            {
+                                "key": "lang",
+                                "title": "语言",
+                                "variants": [{"value": "en"}],
+                            },
                         ],
                     },
                 ],

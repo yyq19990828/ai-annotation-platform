@@ -350,7 +350,9 @@ def _associate_multiplex_window(
             next_global[0] += 1
         used.add(gid)
         remap[local_id] = gid
-    remapped = [replace(r, instance_id=remap[r.instance_id or "0"]) for r in window_results]
+    remapped = [
+        replace(r, instance_id=remap[r.instance_id or "0"]) for r in window_results
+    ]
     new_boundary: dict[str, dict] = {}
     for r in remapped:  # yield 序: 末帧最后写入 → 与下一窗相邻的边界
         if not r.outside and r.geometry and r.instance_id:

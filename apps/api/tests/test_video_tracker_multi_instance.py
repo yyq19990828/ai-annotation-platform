@@ -134,8 +134,13 @@ class _MultiInstanceAdapter:
         for frame_index in frames:
             yield TrackerFrameResult(
                 frame_index=frame_index,
-                geometry={"type": "bbox", "x": float(frame_index),
-                          "y": 0.0, "w": 10.0, "h": 10.0},
+                geometry={
+                    "type": "bbox",
+                    "x": float(frame_index),
+                    "y": 0.0,
+                    "w": 10.0,
+                    "h": 10.0,
+                },
                 confidence=1.0,
                 outside=False,
                 instance_id="obj0",
@@ -144,8 +149,13 @@ class _MultiInstanceAdapter:
             for oid in self.extra_ids:
                 yield TrackerFrameResult(
                     frame_index=frame_index,
-                    geometry={"type": "bbox", "x": float(frame_index) + 100.0,
-                              "y": 0.0, "w": 8.0, "h": 8.0},
+                    geometry={
+                        "type": "bbox",
+                        "x": float(frame_index) + 100.0,
+                        "y": 0.0,
+                        "w": 8.0,
+                        "h": 8.0,
+                    },
                     confidence=0.95,
                     outside=False,
                     instance_id=oid,
@@ -397,7 +407,9 @@ async def test_runner_discard_leaves_annotation_untouched(
 # ── v0.21.28 · B-mx · text-multiplex 跨窗 IoU 关联 ─────────────────────
 
 
-def _mr(frame: int, instance_id: str, x: float, *, primary: bool = False) -> TrackerFrameResult:
+def _mr(
+    frame: int, instance_id: str, x: float, *, primary: bool = False
+) -> TrackerFrameResult:
     return TrackerFrameResult(
         frame_index=frame,
         geometry={"type": "bbox", "x": x, "y": 0.0, "w": 0.1, "h": 0.1},
@@ -444,13 +456,31 @@ class _WindowLocalMultiplexAdapter:
             right_id = "2" if first_window else "1"
             yield TrackerFrameResult(
                 frame_index=f,
-                geometry={"type": "bbox", "x": 0.10 + 0.005 * f, "y": 0.0, "w": 0.1, "h": 0.1},
-                confidence=1.0, outside=False, instance_id=left_id, primary=True,
+                geometry={
+                    "type": "bbox",
+                    "x": 0.10 + 0.005 * f,
+                    "y": 0.0,
+                    "w": 0.1,
+                    "h": 0.1,
+                },
+                confidence=1.0,
+                outside=False,
+                instance_id=left_id,
+                primary=True,
             )
             yield TrackerFrameResult(
                 frame_index=f,
-                geometry={"type": "bbox", "x": 0.50 + 0.005 * f, "y": 0.0, "w": 0.1, "h": 0.1},
-                confidence=1.0, outside=False, instance_id=right_id, primary=False,
+                geometry={
+                    "type": "bbox",
+                    "x": 0.50 + 0.005 * f,
+                    "y": 0.0,
+                    "w": 0.1,
+                    "h": 0.1,
+                },
+                confidence=1.0,
+                outside=False,
+                instance_id=right_id,
+                primary=False,
             )
 
 
@@ -463,21 +493,35 @@ async def test_runner_associates_window_local_ids_across_windows(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     source = Annotation(
-        task_id=task.id, project_id=task.project_id, user_id=user.id,
-        annotation_type="bbox", class_name="car", tool_unit_id="bbox",
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
         geometry={"type": "bbox", "x": 0.1, "y": 0.0, "w": 0.1, "h": 0.1},
     )
     db_session.add(source)
     await db_session.flush()
     job = VideoTrackerJob(
-        task_id=task.id, dataset_item_id=item.id, annotation_id=source.id, created_by=user.id,
-        status=VideoTrackerJobStatus.QUEUED.value, model_key="sam3_video", direction="forward",
-        from_frame=0, to_frame=3, prompt={"text": "car"}, event_channel="video-tracker-job:test",
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=source.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=3,
+        prompt={"text": "car"},
+        event_channel="video-tracker-job:test",
     )
     db_session.add(job)
     await db_session.commit()
 
-    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)  # 两窗 (0,1)(2,3)
+    monkeypatch.setattr(
+        settings, "video_tracker_sam3_window_size_frames", 2
+    )  # 两窗 (0,1)(2,3)
     adapter = _WindowLocalMultiplexAdapter()
     monkeypatch.setattr(
         "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
@@ -493,18 +537,23 @@ async def test_runner_associates_window_local_ids_across_windows(
     # 源轨迹 (primary=left): 4 帧全为 left 几何 (x≈0.1), 不混入 right (x≈0.5)。
     src_kfs = sorted(source.geometry["keyframes"], key=lambda k: k["frame_index"])
     assert [k["frame_index"] for k in src_kfs] == [0, 1, 2, 3]
-    assert all(k["bbox"]["x"] < 0.3 for k in src_kfs if k.get("bbox")), \
+    assert all(k["bbox"]["x"] < 0.3 for k in src_kfs if k.get("bbox")), (
         "源轨迹应全是 left 目标, 关联把跨窗 id 互换的 left 帧归回一条"
+    )
 
     # right → 恰 1 条新 ai_tracker 轨迹 (非 2 条: 证明未因 id 互换分裂), 4 帧全 right (x≈0.5)。
     from sqlalchemy import select
 
     rows = (
-        (await db_session.execute(
-            select(Annotation).where(
-                Annotation.task_id == task.id, Annotation.source == "ai_tracker"
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id, Annotation.source == "ai_tracker"
+                )
             )
-        )).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     assert len(rows) == 1, f"应恰 1 条 right 轨迹, 实得 {len(rows)}"
     right_kfs = sorted(rows[0].geometry["keyframes"], key=lambda k: k["frame_index"])
