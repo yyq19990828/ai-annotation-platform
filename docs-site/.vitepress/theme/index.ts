@@ -1,20 +1,28 @@
 /**
  * VitePress 自定义主题入口。
- * 继承默认主题，注册全局组件。
+ * 继承默认主题，注册全局组件，加载文档站视觉基线。
  */
 import DefaultTheme from "vitepress/theme";
 import AutoImage from "./components/AutoImage.vue";
-import CyberHome from "./components/CyberHome.vue";
+import DocsHome from "./components/DocsHome.vue";
+import DocLinkCard from "./components/DocLinkCard.vue";
+import ApiReferenceFrame from "./components/ApiReferenceFrame.vue";
 import { setupMermaidZoom } from "./mermaid-zoom";
+import { setupImageZoom } from "./image-zoom";
+// 全局阅读基线优先于其他样式加载：先建立正文阅读 token，再叠加首页品牌 token
+import "./docs-theme.css";
+import "./docs-home.css";
 import "./mermaid-zoom.css";
-import "./cyber-home.css";
 import type { Theme } from "vitepress";
 
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
     app.component("AutoImage", AutoImage);
-    app.component("CyberHome", CyberHome);
+    app.component("DocsHome", DocsHome);
+    app.component("DocLinkCard", DocLinkCard);
+    app.component("ApiReferenceFrame", ApiReferenceFrame);
     setupMermaidZoom();
+    setupImageZoom();
   },
 } satisfies Theme;

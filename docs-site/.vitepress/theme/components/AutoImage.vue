@@ -7,6 +7,8 @@
  *
  * 行为：
  *   - 从 manifest.json 读取该图片的元数据
+ *   - 相对 src 与仓库路径 src 都映射到站点的 /user-guide/images/ 目录
+ *   - 绝对路径与 http(s) URL 保持原样
  *   - auto:true  → 显示「自动产出」badge + 最后更新日期 + scene 源码链接
  *   - auto:false → 显示「手动维护」badge
  *   - 不在 manifest → 普通 <img>（无 badge）
@@ -38,13 +40,19 @@ const props = defineProps<{
   src: string;
   alt?: string;
   width?: string | number;
+  /** 可选：图片说明文字，显示在 badge 行左侧 */
+  caption?: string;
 }>();
 
-// 标准化 key：src 可能是 "bbox/toolbar.png"，manifest key 是完整路径
+const REPO_IMAGE_PREFIX = "docs-site/user-guide/images/";
+const PUBLIC_IMAGE_PREFIX = "/user-guide/images/";
+
+// 标准化 key：src 可能是相对图片路径、站点绝对路径或仓库完整路径
 const manifestKey = computed(() => {
   const s = props.src;
   if (s.startsWith("docs-site/")) return s;
-  return `docs-site/user-guide/images/${s}`;
+  if (s.startsWith(PUBLIC_IMAGE_PREFIX)) return `docs-site${s}`;
+  return `${REPO_IMAGE_PREFIX}${s}`;
 });
 
 const entry = computed(() => manifest[manifestKey.value]);
@@ -54,36 +62,41 @@ const lastRunDate = computed(() => {
   return r ? r.slice(0, 10) : null;
 });
 
-// 图片实际路径（相对于文档站 /images/...）
+// 图片实际路径：仓库路径和相对路径都归一到站点的 /user-guide/images/ 目录
 const imgSrc = computed(() => {
   const s = props.src;
-  // 已经是 /images/ 开头或 http
+  // 绝对站点路径和远端 URL 保持原样
   if (s.startsWith("/") || s.startsWith("http")) return s;
-  // 去掉 docs-site/user-guide/images/ 前缀（VitePress public 目录）
-  return s.replace(/^docs-site\/user-guide\/images\//, "/images/");
+  if (s.startsWith(REPO_IMAGE_PREFIX)) {
+    return `${PUBLIC_IMAGE_PREFIX}${s.slice(REPO_IMAGE_PREFIX.length)}`;
+  }
+  return `${PUBLIC_IMAGE_PREFIX}${s}`;
 });
 </script>
 
 <template>
   <figure class="auto-image">
     <img :src="imgSrc" :alt="alt ?? src" :width="width" />
-    <figcaption v-if="entry">
-      <span v-if="entry.auto" class="badge badge-auto">
-        ⚡ 自动产出
-        <span v-if="lastRunDate"> · {{ lastRunDate }}</span>
-      </span>
-      <span v-else class="badge badge-manual">✏ 手动维护</span>
-      <span v-if="entry.auto && entry.scene" class="scene-link">
-        <a
-          :href="`https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/web/e2e/screenshots/scenes/${entry.scene.split('/')[0]}.ts`"
-          target="_blank"
-          rel="noopener"
-        >
-          场景源码 ↗
-        </a>
-      </span>
-      <span v-if="!entry.auto && entry.note" class="manual-note">
-        {{ entry.note }}
+    <figcaption v-if="caption || entry">
+      <span v-if="caption" class="ai-caption">{{ caption }}</span>
+      <span v-if="entry" class="ai-meta">
+        <span v-if="entry.auto" class="badge badge-auto">
+          ⚡ 自动产出
+          <span v-if="lastRunDate"> · {{ lastRunDate }}</span>
+        </span>
+        <span v-else class="badge badge-manual">✏ 手动维护</span>
+        <span v-if="entry.auto && entry.scene" class="scene-link">
+          <a
+            :href="`https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/web/e2e/screenshots/scenes/${entry.scene.split('/')[0]}.ts`"
+            target="_blank"
+            rel="noopener"
+          >
+            场景源码 ↗
+          </a>
+        </span>
+        <span v-if="!entry.auto && entry.note" class="manual-note">
+          {{ entry.note }}
+        </span>
       </span>
     </figcaption>
   </figure>
@@ -91,20 +104,33 @@ const imgSrc = computed(() => {
 
 <style scoped>
 .auto-image {
-  margin: 1.5rem 0;
+  margin: 1.75rem 0;
 }
 .auto-image img {
-  border-radius: 6px;
-  border: 1px solid var(--vp-c-divider);
+  display: block;
+  border-radius: 8px;
+  border: 1px solid var(--vp-c-border);
   max-width: 100%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 figcaption {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
-  font-size: 0.78rem;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-top: 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
   color: var(--vp-c-text-2);
+}
+.ai-caption {
+  color: var(--vp-c-text-2);
+}
+.ai-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 .badge {
   padding: 1px 6px;

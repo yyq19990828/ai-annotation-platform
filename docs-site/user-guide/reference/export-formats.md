@@ -13,7 +13,7 @@ last_reviewed: 2026-06-10
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -31,6 +31,7 @@ last_reviewed: 2026-06-10
 | **视频轨迹** | Video JSON | `video_json` | 轨迹备份 / 质检 / 继续编辑 |
 | 视频轨迹 | YOLO 逐帧检测 | `yolo-frames-det` | 视频逐帧检测训练（polygon / polyline 降级为顶点外接框） |
 | 视频轨迹 | YOLO 逐帧分割 | `yolo-frames-seg` | 视频逐帧分割训练（保留多边形顶点；bbox / polyline 跳过） |
+| 视频轨迹 | COCO 逐帧分割 | `coco-frames-seg` | 视频逐帧分割训练（标准 COCO；保留多边形顶点；bbox / polyline 跳过） |
 | 视频轨迹 | AAP JSON | `aap_json` | 视频跨实例无损迁移 |
 | 视频轨迹 | MOT 16/17/20 | `mot` | 多目标跟踪评测（trackeval） |
 | 视频轨迹 | KITTI Tracking | `kitti` | KITTI 跟踪工具链 |
@@ -41,7 +42,7 @@ last_reviewed: 2026-06-10
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
 
-> **视频 polygon / polyline 几何的导出**：单帧与轨迹的多边形 / 折线现已在各视频格式正确导出（此前会被打包层静默丢弃、标了也导不出）。按格式分：**保真格式**（Video JSON / AAP JSON）保留顶点 `points` 不降级，其中 Video JSON 的单帧条目并带 `type` 字段（`video_bbox` / `video_polygon` / `video_polyline`）标明几何类型；**bbox-only 格式**（MOT / KITTI / YOLO 逐帧检测）把多边形 / 折线降级为**顶点外接框**（而非空框）；**YOLO 逐帧分割**（`yolo-frames-seg`）保留多边形顶点，bbox 与 polyline 跳过。
+> **视频 polygon / polyline 几何的导出**：单帧与轨迹的多边形 / 折线现已在各视频格式正确导出（此前会被打包层静默丢弃、标了也导不出）。按格式分：**保真格式**（Video JSON / AAP JSON）保留顶点 `points` 不降级，其中 Video JSON 的单帧条目并带 `type` 字段（`video_bbox` / `video_polygon` / `video_polyline`）标明几何类型；**bbox-only 格式**（MOT / KITTI / YOLO 逐帧检测）把多边形 / 折线降级为**顶点外接框**（而非空框）；**YOLO 逐帧分割**（`yolo-frames-seg`）保留多边形顶点，bbox 与 polyline 跳过。**COCO 逐帧分割**（`coco-frames-seg`）同样保留多边形顶点、跳过 bbox / polyline，但编码为标准 COCO `segmentation` 单文档。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 
@@ -354,7 +355,7 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 
 ## 视频轨迹
 
-`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT / KITTI / YOLO 逐帧另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽帧，遵循「不物理打包帧」）。
+`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT / KITTI / YOLO 逐帧另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽帧，遵循「不物理打包帧」）。
 
 **Video JSON**（帧模式二选一）：
 
@@ -368,6 +369,10 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 - `video_track_bbox`：按相邻有效关键帧线性插值摊平成逐帧框，再只取采样网格帧；`outside` 区间不输出框。
 
 `fetch_frames.py` 会把对应帧抽到 `images/{sequence}/{frame:06d}.jpg`，与 `labels/{sequence}` 对齐；ZIP 不直接包含帧图。每个采样帧都会有一个 label 文件，空帧写空 `.txt`。
+
+**YOLO 逐帧（分割）**：目标名 `yolo-frames-seg`。抽帧与目录布局同上（`labels/{sequence}/{frame:06d}.txt` + `fetch_frames.py`），但行格式与图片 `yolo-seg` 同构——每行 `<cls>` 后跟归一化多边形顶点。来源：单帧 `video_polygon` 的 `frame_index` 落网格才输出，`video_track_polygon` 按弧长插值展开到采样网格；bbox / polyline 几何跳过（矩形请用 `yolo-frames-det`）。
+
+**COCO 逐帧（分割）**：目标名 `coco-frames-seg`。产出单个 `annotations.json`（标准 COCO instance segmentation）。`images[]` 每个采样帧一条（含空帧），带真实尺寸与扩展 `source_frame_index`；`annotations[]` 的 `segmentation` 为多边形顶点像素坐标，`bbox` 取顶点外接框，`area` 为外接框面积，`iscrowd=0`，`include_attributes` 时 `attributes` 带跨帧 `__track_id`。来源：单帧 `video_polygon` 落网格帧，`video_track_polygon` 按弧长展开到每帧；bbox / polyline 跳过（矩形请用 `yolo-frames-det`）。帧由 `fetch_frames.py` 抽到 `images/{sequence}/`，ZIP 不含帧图。
 
 **MOT 16/17/20**：每个视频 = 一个 sequence，落 `{sequence}/gt/gt.txt`（`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）+ `{sequence}/seqinfo.ini`，可直接喂 trackeval。轨迹整数 `id` 自动派生；帧号按采样网格重排 1..N（如 60fps 采 10fps 则 `frameRate=10`）。
 

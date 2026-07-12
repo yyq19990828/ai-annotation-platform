@@ -183,6 +183,19 @@
 | GET | `/reviewer/today-mini` |
 | GET | `/me/recent-reviews` |
 
+## `data_manager.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/data-manager/schema` |
+| POST | `/projects/{project_id}/data-manager/summary` |
+| POST | `/projects/{project_id}/tasks/{task_id}/data-manager/matches` |
+| POST | `/projects/{project_id}/data-manager/objects/query` |
+| GET | `/projects/{project_id}/data-manager/objects/{annotation_id}/location` |
+| GET | `/projects/{project_id}/data-manager/objects/{annotation_id}/detail` |
+| POST | `/projects/{project_id}/data-manager/tracks/query` |
+| GET | `/projects/{project_id}/data-manager/tracks/{track_ref}/detail` |
+
 ## `datasets.py`
 
 | Method | Path |
@@ -467,6 +480,7 @@
 | Method | Path |
 |---|---|
 | GET | `/{task_id}/video/tracker-jobs/reviewable` |
+| GET | `/{task_id}/video/tracker-jobs/active` |
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/point-cloud/manifest` |
 | GET | `/{task_id}/video/frame-timetable` |
@@ -525,4 +539,4 @@
 
 ---
 
-_共 51 模块 / 283 路由_
+_共 52 模块 / 292 路由_

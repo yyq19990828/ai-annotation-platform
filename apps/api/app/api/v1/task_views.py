@@ -22,8 +22,19 @@ from app.schemas.task_view import (
     ProjectTaskViewOut,
     ProjectTaskViewUpdate,
 )
+from app.schemas.data_manager import DataManagerEntityScope
+from app.services.data_manager_entity_filter import (
+    builtin_entity_views,
+    count_entity_filters,
+    invalid_entity_filter_fields,
+)
 from app.services.audit import AuditAction, AuditService
-from app.services.task_views import TaskViewService, builtin_views
+from app.services.data_manager import build_data_manager_schema
+from app.services.task_views import (
+    TaskViewService,
+    builtin_views,
+    invalid_filter_fields,
+)
 from app.services.user_brief import resolve_briefs
 
 router = APIRouter()
@@ -63,11 +74,19 @@ async def _commit_or_duplicate(db: AsyncSession) -> None:
 
 
 def _view_out(
-    view: ProjectTaskView, task_count: int | None = None
+    view: ProjectTaskView,
+    task_count: int | None = None,
+    invalid_fields: list[str] | None = None,
 ) -> ProjectTaskViewOut:
     out = ProjectTaskViewOut.model_validate(view, from_attributes=True)
-    out.task_count = task_count
+    out.result_count = task_count
+    out.task_count = task_count if view.entity_scope == "tasks" else None
+    out.invalid_fields = invalid_fields or []
     return out
+
+
+def _row_value(row, key: str, default=None):
+    return row._mapping.get(key, default)
 
 
 @router.get(
@@ -75,25 +94,84 @@ def _view_out(
 )
 async def list_task_views(
     project_id: uuid.UUID,
+    entity_scope: DataManagerEntityScope = Query(default="tasks"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    build_data_manager_schema(project, entity_scope)
     svc = TaskViewService(db)
-    builtins = builtin_views(project_id)
-    saved = await svc.list_views(project_id, user.id)
-    # 单条聚合查询算出全部视图计数，避免每个视图一次往返 (N+1)。
-    counts = await svc.count_for_filters(
-        project_id,
-        [b["filter_json"] for b in builtins] + [v.filter_json for v in saved],
-        user=user,
-        project=project,
+    builtins = (
+        builtin_views(project_id, project=project)
+        if entity_scope == "tasks"
+        else builtin_entity_views(project_id, entity_scope)
     )
+    saved = await svc.list_views(project_id, user.id, entity_scope)
+    # 单条聚合查询算出全部视图计数，避免每个视图一次往返 (N+1)。
+    entries = [*builtins, *saved]
+    invalid_by_index = [
+        (
+            invalid_filter_fields(
+                entry["filter_json"] if isinstance(entry, dict) else entry.filter_json,
+                project,
+            )
+            if entity_scope == "tasks"
+            else invalid_entity_filter_fields(
+                entry["filter_json"] if isinstance(entry, dict) else entry.filter_json,
+                entity_scope,
+                project,
+            )
+        )
+        for entry in entries
+    ]
+    valid_filters = [
+        entry["filter_json"] if isinstance(entry, dict) else entry.filter_json
+        for entry, invalid in zip(entries, invalid_by_index)
+        if not invalid
+    ]
+    valid_counts = (
+        await svc.count_for_filters(
+            project_id,
+            valid_filters,
+            user=user,
+            project=project,
+        )
+        if entity_scope == "tasks"
+        else await count_entity_filters(
+            db,
+            project_id=project_id,
+            entity_scope=entity_scope,
+            filters=valid_filters,
+            user=user,
+            project=project,
+        )
+    )
+    counts: list[int | None] = []
+    count_index = 0
+    for invalid in invalid_by_index:
+        if invalid:
+            counts.append(None)
+        else:
+            counts.append(valid_counts[count_index])
+            count_index += 1
     items: list[ProjectTaskViewOut] = []
-    for builtin, count in zip(builtins, counts):
-        items.append(ProjectTaskViewOut(**builtin, task_count=count))
-    for view, count in zip(saved, counts[len(builtins) :]):
-        items.append(_view_out(view, task_count=count))
+    for i, (builtin, count) in enumerate(zip(builtins, counts)):
+        items.append(
+            ProjectTaskViewOut(
+                **builtin,
+                task_count=count if entity_scope == "tasks" else None,
+                result_count=count,
+                invalid_fields=invalid_by_index[i],
+            )
+        )
+    for index, (view, count) in enumerate(zip(saved, counts[len(builtins) :])):
+        items.append(
+            _view_out(
+                view,
+                task_count=count,
+                invalid_fields=invalid_by_index[len(builtins) + index],
+            )
+        )
     return ProjectTaskViewListResponse(items=items)
 
 
@@ -120,9 +198,11 @@ async def create_task_view(
         owner_id=user.id,
         name=payload.name,
         visibility=payload.visibility,
+        entity_scope=payload.entity_scope,
         filter_json=payload.filter_json,
         sort_json=_sort_to_json(payload.sort_json),
         columns_json=payload.columns_json,
+        project=project,
     )
     await AuditService.log(
         db,
@@ -150,10 +230,29 @@ async def get_task_view(
     project = await assert_project_visible(project_id, db, user)
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
-    count = await svc.count_for_filter(
-        project_id, view.filter_json, user=user, project=project
+    invalid = (
+        invalid_filter_fields(view.filter_json, project)
+        if view.entity_scope == "tasks"
+        else invalid_entity_filter_fields(view.filter_json, view.entity_scope, project)
     )
-    return _view_out(view, task_count=count)
+    count = None
+    if not invalid:
+        if view.entity_scope == "tasks":
+            count = await svc.count_for_filter(
+                project_id, view.filter_json, user=user, project=project
+            )
+        else:
+            count = (
+                await count_entity_filters(
+                    db,
+                    project_id=project_id,
+                    entity_scope=view.entity_scope,
+                    filters=[view.filter_json],
+                    user=user,
+                    project=project,
+                )
+            )[0]
+    return _view_out(view, task_count=count, invalid_fields=invalid)
 
 
 @router.patch(
@@ -185,6 +284,7 @@ async def update_task_view(
         if payload.sort_json is not None
         else None,
         columns_json=payload.columns_json,
+        project=project,
     )
     await AuditService.log(
         db,
@@ -253,9 +353,11 @@ async def copy_task_view(
         owner_id=user.id,
         name=payload.name or f"{source.name} 副本",
         visibility=visibility,
+        entity_scope=source.entity_scope,
         filter_json=source.filter_json,
         sort_json=source.sort_json,
         columns_json=source.columns_json,
+        project=project,
     )
     await AuditService.log(
         db,
@@ -286,6 +388,7 @@ async def query_project_tasks(
         project_id=project_id,
         filter_json=payload.filter_json,
         sort_json=_sort_to_json(payload.sort_json),
+        columns_json=payload.columns_json,
         limit=payload.limit,
         offset=payload.offset,
         user=user,
@@ -309,12 +412,45 @@ async def query_project_tasks(
             {
                 "annotation_count": task.total_annotations,
                 "prediction_count": task.total_predictions,
-                "avg_prediction_confidence": row.avg_prediction_confidence,
-                "unresolved_feedback_count": row.unresolved_feedback_count or 0,
-                "model_versions": list(row.model_versions or []),
-                "scene_name": row.scene_name,
-                "frame_index": row.frame_index,
-                "last_activity_at": row.last_activity_at,
+                "avg_prediction_confidence": _row_value(
+                    row, "avg_prediction_confidence"
+                ),
+                "unresolved_feedback_count": _row_value(
+                    row, "unresolved_feedback_count", 0
+                )
+                or 0,
+                "model_versions": list(_row_value(row, "model_versions", []) or []),
+                "scene_name": _row_value(row, "scene_name"),
+                "frame_index": _row_value(row, "frame_index"),
+                "last_activity_at": _row_value(row, "last_activity_at"),
+                "annotation_source_counts": {
+                    source: int(_row_value(row, f"source_{source}_count", 0) or 0)
+                    for source in (
+                        "manual",
+                        "prediction_based",
+                        "ai_tracker",
+                        "interpolated",
+                    )
+                },
+                "track_count": int(_row_value(row, "track_count", 0) or 0),
+                "pending_prediction_shape_count": int(
+                    _row_value(row, "pending_prediction_shape_count", 0) or 0
+                ),
+                "low_confidence_prediction_shape_count": int(
+                    _row_value(row, "low_confidence_prediction_shape_count", 0) or 0
+                ),
+                "pending_tracker_job_count": int(
+                    _row_value(row, "pending_tracker_job_count", 0) or 0
+                ),
+                "keyframe_count": int(_row_value(row, "keyframe_count", 0) or 0),
+                "outside_range_count": int(
+                    _row_value(row, "outside_range_count", 0) or 0
+                ),
+                "camera_count": int(_row_value(row, "camera_count", 0) or 0),
+                "calibration_issue_count": int(
+                    _row_value(row, "calibration_issue_count", 0) or 0
+                ),
+                "scene_total_frames": _row_value(row, "scene_total_frames"),
             }
         )
         items.append(DataManagerTaskOut(**base))
@@ -341,6 +477,8 @@ async def query_task_view_tasks(
     await assert_project_visible(project_id, db, user)
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
+    if view.entity_scope != "tasks":
+        raise HTTPException(status_code=422, detail="Saved view is not a task view")
     return await query_project_tasks(
         project_id,
         ProjectTaskQueryRequest(

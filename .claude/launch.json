@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "--directory", "apps/api", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
       "port": 8000,
       "autoPort": false
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@anno/docs-site", "dev", "--port", "5199"],
+      "port": 5199,
+      "autoPort": true
     }
   ]
 }

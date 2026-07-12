@@ -7,38 +7,50 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rewrites } from "../.vitepress/content.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const docsRoot = path.resolve(here, "..");
 const strict = process.argv.includes("--strict");
 
-const SKIP_DIRS = new Set([".vitepress", "adr", "changelog", "examples", "node_modules", "public", "roadmap", "scripts"]);
-const SKIP_FILES = new Set(["IMAGE_CHECKLIST.md"]);
-
+const SKIP_ROOTS = new Set([
+  ".vitepress",
+  "changelog",
+  "dev/adr",
+  "dev/examples",
+  "maintainers",
+  "node_modules",
+  "public",
+  "roadmap",
+  "scripts",
+]);
 // Pages that deliberately remain directly addressable but are not discoverable
 // in navigation. Add a reason here instead of silently accepting an orphan.
 const EXEMPT_ROUTES = new Map([
-  ["/user-guide/projects/annotation-guide", "the feature is disabled; retained as a direct historical reference"],
+  ["/user-guide/projects/annotation-guide", "legacy URL redirects to the current projects guide"],
 ]);
+
+function relativeToDocs(file) {
+  return path.relative(docsRoot, file).replace(/\\/g, "/");
+}
 
 function walk(dir, files = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) walk(path.join(dir, entry.name), files);
-    } else if (
-      entry.isFile() &&
-      entry.name.endsWith(".md") &&
-      !entry.name.endsWith(".generated.md") &&
-      !SKIP_FILES.has(entry.name)
-    ) {
-      files.push(path.join(dir, entry.name));
+      const child = path.join(dir, entry.name);
+      if (!SKIP_ROOTS.has(relativeToDocs(child))) walk(child, files);
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      const file = path.join(dir, entry.name);
+      const rel = relativeToDocs(file);
+      if (!entry.name.endsWith(".generated.md")) files.push(file);
     }
   }
   return files;
 }
 
 function routeForFile(file) {
-  const rel = path.relative(docsRoot, file).replace(/\\/g, "/");
+  const sourceRel = relativeToDocs(file);
+  const rel = rewrites[sourceRel] ?? sourceRel;
   if (rel === "index.md") return "/";
   if (rel.endsWith("/index.md")) return `/${rel.slice(0, -"index.md".length)}`;
   return `/${rel.slice(0, -".md".length)}`;
@@ -77,12 +89,25 @@ const discovered = new Set(["/"]);
 
 for (const page of pages) recordLinks(fs.readFileSync(page, "utf8"), page, discovered);
 
-const config = fs.readFileSync(path.join(docsRoot, ".vitepress", "config.ts"), "utf8");
+const navigationRoot = path.join(docsRoot, ".vitepress", "navigation");
+const navigationSources = [path.join(docsRoot, ".vitepress", "config.ts")];
+if (fs.existsSync(navigationRoot)) {
+  for (const entry of fs.readdirSync(navigationRoot, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".ts")) {
+      navigationSources.push(path.join(navigationRoot, entry.name));
+    }
+  }
+}
+
 const configLink = /\blink:\s*["']([^"']+)["']/g;
-let match;
-while ((match = configLink.exec(config)) !== null) {
-  const route = routeForTarget(match[1], path.join(docsRoot, "index.md"));
-  if (route) discovered.add(route);
+for (const navigationSource of navigationSources) {
+  const config = fs.readFileSync(navigationSource, "utf8");
+  configLink.lastIndex = 0;
+  let match;
+  while ((match = configLink.exec(config)) !== null) {
+    const route = routeForTarget(match[1], path.join(docsRoot, "index.md"));
+    if (route) discovered.add(route);
+  }
 }
 
 const missing = [...pageRoutes.keys()]

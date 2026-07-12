@@ -215,7 +215,7 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 | 数据类型 | 可选导出格式 |
 |---|---|
 | 图片 | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载） |
-| 视频 | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det` |
+| 视频 | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`（逐帧分割）、`coco-frames-seg`（逐帧分割 COCO） |
 | 3D 点云 | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask` |
 
 点云 `aap_json` / `kitti` 导出支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。
@@ -225,7 +225,7 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 - **关键帧**：默认模式，只导出人工 / 预测关键帧。
 - **所有帧**：按关键帧插值展开逐帧 bbox。
 
-如果要把视频标注导成传统检测训练集，选择 **YOLO 逐帧**：系统会按项目采样网格生成 label，并附 `fetch_frames.py` 用本地 ffmpeg 抽出对应帧图。
+如果要把视频标注导成传统检测训练集，选择 **YOLO 逐帧**：系统会按项目采样网格生成 label，并附 `fetch_frames.py` 用本地 ffmpeg 抽出对应帧图。要导成分割训练集则选 **YOLO 逐帧分割**：同样按采样网格抽帧，但保留多边形顶点（bbox / polyline 跳过）。若下游用 COCO 工具链（pycocotools / Detectron2 / MMDetection），选 **COCO 逐帧分割**：同样按采样网格抽帧、保留多边形顶点，但产出标准 COCO `annotations.json`。
 
 如果关闭“包含属性”，导出文件不会包含项目属性 schema，也不会包含标注属性。
 

@@ -544,7 +544,7 @@ class VideoTrackGeometry(BaseModel):
     """
 
     type: Literal["video_track_bbox"] = "video_track_bbox"
-    track_id: str = Field(min_length=1)
+    track_id: str = Field(min_length=1, max_length=64)
     # v0.10.30 · 2.1 用户可编辑的语义标签 (如 "car_3"), 仅作跨任务 Re-ID 心智,
     # 不参与主键、不强制唯一。track_number 由 derive_track_number 确定性派生, 不持久化。
     semantic_label: str | None = None
@@ -588,7 +588,7 @@ class VideoTrackPolygonGeometry(BaseModel):
     """
 
     type: Literal["video_track_polygon"] = "video_track_polygon"
-    track_id: str = Field(min_length=1)
+    track_id: str = Field(min_length=1, max_length=64)
     semantic_label: str | None = None
     keyframes: list[VideoTrackPolygonKeyframe] = Field(min_length=1)
     outside: list[VideoTrackOutsideRange] = Field(default_factory=list)
@@ -628,7 +628,7 @@ class VideoTrackPolylineGeometry(BaseModel):
     """
 
     type: Literal["video_track_polyline"] = "video_track_polyline"
-    track_id: str = Field(min_length=1)
+    track_id: str = Field(min_length=1, max_length=64)
     semantic_label: str | None = None
     keyframes: list[VideoTrackPolylineKeyframe] = Field(min_length=1)
     outside: list[VideoTrackOutsideRange] = Field(default_factory=list)

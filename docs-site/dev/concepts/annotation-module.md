@@ -260,6 +260,10 @@ graph TD
 
 `Annotation.track_id`（见上表）是跨帧延续的链键：同一物体在各帧的框共享同一个 `track_id` 形成一条链。源框无 `track_id` 时由 `_new_track_id()`（`services/annotation_propagation.py`）分配一个 `trk_<uuid.hex>` 并写回源框。区间插值据此找到链两端的关键帧。此前跨帧链借 `group_id` 高位段表达，随标注编组下线，`group_id` 列已删、跨帧语义统一到独立的 `track_id` 列。
 
+<!-- migration 0118 · 紧凑视频轨迹 track_id 列/geometry 双写同步，Data Manager 跨 task track 检索依赖 -->
+
+紧凑视频轨迹（`video_track_bbox` / `video_track_polygon` / `video_track_polyline`）的身份历史上有两处表示：`Annotation.track_id` 列与内嵌的 `geometry.track_id`。为让二者不再漂移，写入时由 `prepare_compact_track_identity()`（`services/annotation_track_identity.py`）收口——列一旦存在即权威，新轨迹沿用 geometry 值或分配平台 id，并把解析结果同时写回列与 `geometry.track_id`（互为镜像）。通用 `PATCH` 更新几何时拒绝改动身份（抛 `track_id cannot be changed through geometry update`），避免误换链键。迁移 `0118` 对存量数据做一次幂等回填对齐两处表示，并建偏索引 `ix_annotations_project_track_active (project_id, track_id, task_id)`——数据管理（Data Manager）跨 task 的 track 检索走这条索引。
+
 ### 单条 / 批量 propagate（运动补偿延续）
 
 | 端点 | service | 语义 |

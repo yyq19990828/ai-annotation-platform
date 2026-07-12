@@ -110,7 +110,7 @@
 **长期目标**：从"一个项目 1-5 人"扩展到"一个项目 50-200 人"，包括众包外发场景。
 
 **子方向**：
-- **L5.1 Segment 级协同**：见 `[archived]2026-05-12-video-backend-frame-service.md` B4。
+- **L5.1 Segment 级协同**：见 `archive/2026-05-12-video-backend-frame-service.md` B4。
 - **L5.2 任务自动分发策略**：按熟练度 / 历史质量 / 类别经验自动分配（已部分由 batch scheduler 实现，需要细化）。
 - **L5.3 共识合并算法**：多人对同一 task 的标注，取交集 / 投票 / 加权融合（已列 §A 批次延伸）。
 - **L5.4 众包平台对接**：MTurk / Scale 外发，结果回流到本平台 review 流。
@@ -323,7 +323,7 @@
 ## 关联文档
 
 - 当前焦点：[`ROADMAP.md`](../ROADMAP.md)
-- 视频工作台综合：[`ROADMAP/[archived]2026-05-12-video-workbench-rendering-optimization.md`]([archived]2026-05-12-video-workbench-rendering-optimization.md)（已合并原 2026-05-11-video-workbench.md 功能线）
-- 后端帧服务：[`ROADMAP/[archived]2026-05-12-video-backend-frame-service.md`]([archived]2026-05-12-video-backend-frame-service.md)
-- 图片工作台优化：[`ROADMAP/[archived]2026-05-12-image-workbench-optimization.md`]([archived]2026-05-12-image-workbench-optimization.md)
-- 当前发布周期：[`ROADMAP/[archived]0.10.x.md`]([archived]0.10.x.md)
+- 视频工作台综合：[`ROADMAP/archive/2026-05-12-video-workbench-rendering-optimization.md`](archive/2026-05-12-video-workbench-rendering-optimization.md)（已合并原 2026-05-11-video-workbench.md 功能线）
+- 后端帧服务：[`ROADMAP/archive/2026-05-12-video-backend-frame-service.md`](archive/2026-05-12-video-backend-frame-service.md)
+- 图片工作台优化：[`ROADMAP/archive/2026-05-12-image-workbench-optimization.md`](archive/2026-05-12-image-workbench-optimization.md)
+- 当前发布周期：[`ROADMAP/archive/0.10.x.md`](archive/0.10.x.md)

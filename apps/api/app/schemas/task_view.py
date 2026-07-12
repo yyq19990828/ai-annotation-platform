@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.data_manager import DataManagerEntityScope
 from app.schemas.task import TaskOut
 
 
@@ -33,6 +34,7 @@ class TaskSortItem(BaseModel):
 
 
 class ProjectTaskViewBase(BaseModel):
+    entity_scope: DataManagerEntityScope = "tasks"
     name: str = Field(min_length=1, max_length=120)
     visibility: TaskViewVisibility = "private"
     filter_json: dict[str, Any] = Field(default_factory=dict)
@@ -76,8 +78,10 @@ class ProjectTaskViewOut(ProjectTaskViewBase):
     owner_id: UUID | None = None
     builtin: bool = False
     task_count: int | None = None
+    result_count: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    invalid_fields: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -104,6 +108,16 @@ class DataManagerTaskOut(TaskOut):
     scene_name: str | None = None
     frame_index: int | None = None
     last_activity_at: datetime | None = None
+    annotation_source_counts: dict[str, int] = Field(default_factory=dict)
+    track_count: int = 0
+    pending_prediction_shape_count: int = 0
+    low_confidence_prediction_shape_count: int = 0
+    pending_tracker_job_count: int = 0
+    keyframe_count: int = 0
+    outside_range_count: int = 0
+    camera_count: int = 0
+    calibration_issue_count: int = 0
+    scene_total_frames: int | None = None
 
 
 class ProjectTaskQueryResponse(BaseModel):

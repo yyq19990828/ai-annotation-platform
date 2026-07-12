@@ -53,5 +53,5 @@ v0.9.x 时工作台只有 1 个 ML backend（grounded-sam2），SAM 工具栏把
   - 前端工作台：`apps/web/src/pages/Workbench/state/useMLCapabilities.ts`、四个工具 `apps/web/src/pages/Workbench/tools/*Tool.tsx`
   - 前端设置：`apps/web/src/pages/Projects/sections/MlBackendsSection.tsx`、`apps/web/src/components/projects/MlBackendLimitModal.tsx`
 - 相关 ADR：[0020](./0020-ml-backend-capability-negotiation.md)（capability 协商协议）
-- 相关 ROADMAP：[`ROADMAP/[archived]0.10.x.md`](../../ROADMAP/[archived]0.10.x.md) §3.1 / §3.3 / §3.4
+- 相关 ROADMAP：[`ROADMAP/archive/0.10.x.md`](../../ROADMAP/archive/0.10.x.md) §3.1 / §3.3 / §3.4
 - 后续触发条件：v0.11+ 需要双 backend 真实并存时，新建 ADR 描述 routing 层 + fallback 策略。

@@ -195,6 +195,14 @@ export function useWorkbenchShellModel({
   const returnTo = searchParams.get("returnTo");
   const requestedBatchId = searchParams.get("batch");
   const requestedTaskId = searchParams.get("task");
+  const requestedFocusId = searchParams.get("focus");
+  const requestedTrackId = searchParams.get("track");
+  const requestedFrameIndex = (() => {
+    const raw = searchParams.get("frame");
+    if (raw === null) return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+  })();
   const backTarget = useMemo(
     () => resolveWorkbenchReturnTo(returnTo, currentPath),
     [returnTo, currentPath],
@@ -877,6 +885,44 @@ export function useWorkbenchShellModel({
     // 同上:pendingCrossFrameSelectRef 为稳定 useRef,不入依赖(入则 TDZ),行为不变。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsData, currentTaskId, setSelectedId]);
+
+  // Data Manager 带 ?focus=/?track=/?frame= 深链进入工作台时一次性生效;成功 hydrate 后置位,
+  // 避免之后每次 annotation refetch(annotationsData 引用变化)重跑下方 effect 把用户已改选的
+  // 帧/标注强行拉回 URL 值。
+  const urlFocusHydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (urlFocusHydratedRef.current) return;
+    if (!taskId || (requestedTaskId && taskId !== requestedTaskId)) return;
+    if (isVideoTask && requestedFrameIndex !== null) {
+      const maxFrame = Math.max(0, videoFrameCount - 1);
+      setVideoFrameIndex(Math.min(requestedFrameIndex, maxFrame));
+    }
+    if (!requestedFocusId && !requestedTrackId) {
+      urlFocusHydratedRef.current = true;
+      return;
+    }
+    const target = (annotationsData ?? []).find(
+      (annotation) =>
+        annotation.id === requestedFocusId
+        || (requestedTrackId && annotation.track_id === requestedTrackId),
+    );
+    if (target) {
+      setSelectedId(target.id);
+      urlFocusHydratedRef.current = true;
+    }
+  }, [
+    annotationsData,
+    isVideoTask,
+    requestedFocusId,
+    requestedFrameIndex,
+    requestedTaskId,
+    requestedTrackId,
+    setSelectedId,
+    setVideoFrameIndex,
+    taskId,
+    videoFrameCount,
+  ]);
 
   useEffect(() => {
     if (!isVideoTask) return;

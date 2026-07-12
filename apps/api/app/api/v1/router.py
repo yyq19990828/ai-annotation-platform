@@ -17,6 +17,7 @@ from app.api.v1 import (
     batches,
     bug_reports,
     dashboard,
+    data_manager,
     datasets,
     files,
     groups,
@@ -70,6 +71,7 @@ api_router.include_router(
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(task_views.router, tags=["task-views"])
+api_router.include_router(data_manager.router, tags=["data-manager"])
 # v0.10.13 · E1 · 项目标注指引图片资源端点 (与 datasets items upload 独立, 不污染 dataset_items 表)
 api_router.include_router(
     guide_assets.router, prefix="/projects", tags=["guide-assets"]

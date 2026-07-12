@@ -3,7 +3,7 @@ audience: [annotator, project_admin, reviewer, super_admin]
 type: tutorial
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-12
 ---
 
 # 快速开始
@@ -28,10 +28,9 @@ last_reviewed: 2026-07-11
 ![忘记密码](./images/getting-started/forgot-password.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 忘记密码页；输入邮箱后的成功 toast 截图。 -->
 
-第一次完整体验建议跟随这段端到端 GIF（登录 → 进入第一个项目 → 标第一个任务 → 提交）：
+第一次完整体验可以按下方步骤完成登录、打开项目、标注和提交。
 
-![端到端流程](./images/getting-started/e2e.gif)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 录屏 GIF，30-60 秒，覆盖登录→Dashboard→打开项目→工作台标 1 个 bbox→提交→看到下一题的整段链路。1280×720。 -->
+<!-- TODO IMAGE_CHECKLIST: 补录 30-60 秒端到端 GIF，覆盖登录→Dashboard→打开项目→工作台标 1 个 bbox→提交→看到下一题的整段链路。1280×720。 -->
 
 ## 2. 首页一览
 

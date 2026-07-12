@@ -53,6 +53,11 @@
 > 仅目录名回归功能语义。重命名后清理了角色目录与原功能目录的所有 redirect shim（双轨残留），
 > 不再保留 `for-*` shim。
 
+> **后续修订（2026-07-12）**：网站逻辑导航与物理目录明确解耦。Sidebar 按角色和任务组织，
+> 正文仍按稳定产品归属保存；例如「AI 辅助」可以同时链接 `workbench/`、`projects/`、
+> `datasets/`、`workflows/` 与 `superadmin/` 的 canonical 页面，不复制或搬迁正文。只有当维护责任、
+> 文档类型或生命周期边界变化时才调整物理路径；源文件搬迁通过 VitePress rewrites 保持公开 URL。
+
 ### 3. dev/ 按 Diátaxis 重排，独立 ops/ 板块
 
 ```
@@ -89,6 +94,15 @@ CI 校验脚本：`docs-site/scripts/check-doc-frontmatter.mjs`（退出码 1 �
 
 6 张卡片分别对应：标注员 / 项目管理员 / 审核员 / 部署 / 贡献代码 / API 集成。
 
+### 6. 明确可发布内容与生成边界
+
+- `docs-site/user-guide/`、`dev/`、`api/`、`ops/` 是主要可发布内容域。
+- `docs-site/maintainers/**` 与 `docs-site/dev/examples/**` 就近保存维护材料与可执行示例，但通过 `srcExclude` 排除在站点渲染、搜索与 sitemap 之外。
+- ADR、Changelog 与 Roadmap 分别以 `docs/adr/**`、`CHANGELOG.md` + `docs/changelogs/**`、`ROADMAP.md` + `ROADMAP/**` 为真值，构建期镜像不直接编辑或提交。
+- `ROADMAP/archive/**` 表达源文件生命周期，生成器继续输出稳定的 `/roadmap/archived-*` URL。
+- 公开 OpenAPI 只保留 `apps/api/openapi.snapshot.json` 一份受版本控制的契约，构建前复制到 `public/openapi.json`。
+- Pages 和文档验证的触发路径必须覆盖所有镜像真值源，避免源文件已更新但站点未重建。
+
 ---
 
 ## 替代方案
@@ -115,7 +129,7 @@ CI 校验脚本：`docs-site/scripts/check-doc-frontmatter.mjs`（退出码 1 �
 
 | 风险 | 缓解 |
 |---|---|
-| 旧 URL 在外部书签失效 | 每个旧路径均创建 client-side redirect shim（JS `router.go()`） |
+| 旧 URL 在外部书签失效 | 源文件搬迁优先使用 VitePress rewrites 保留原 URL；真正下线的页面才使用有 `sitemap: false` 的 redirect shim |
 | frontmatter 维护负担 | CI 脚本自动检查，`--fix` 可插入空骨架 |
 | generate-hotkeys.mjs 输出路径变化 | 已同步更新输出路径为 `for-annotators/` |
 
@@ -124,5 +138,5 @@ CI 校验脚本：`docs-site/scripts/check-doc-frontmatter.mjs`（退出码 1 �
 ## 参考
 
 - [Diátaxis 框架](https://diataxis.fr/)
-- [ROADMAP/[archived]2026-05-09-docs-ia-redesign.md](/roadmap/archived-2026-05-09-docs-ia-redesign)
+- [ROADMAP/archive/2026-05-09-docs-ia-redesign.md](/roadmap/archived-2026-05-09-docs-ia-redesign)
 - Label Studio、CVAT、Encord、Roboflow 文档 IA 对比（见 Roadmap 文档 §1.3）

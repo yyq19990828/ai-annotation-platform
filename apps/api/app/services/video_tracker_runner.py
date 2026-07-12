@@ -113,25 +113,26 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
 
 def _coerce_video_track_geometry(annotation: Annotation, job: VideoTrackerJob) -> dict:
     geometry = annotation.geometry or {}
+    track_id = str(annotation.track_id or geometry.get("track_id") or _new_track_id())
     # v0.21.20 · polygon track: 保留 points 关键帧 + 类型, 回填走多边形路径。
     if geometry.get("type") == "video_track_polygon":
         return {
             "type": "video_track_polygon",
-            "track_id": str(geometry.get("track_id") or annotation.id),
+            "track_id": track_id,
             "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
             "outside": [dict(item) for item in geometry.get("outside") or []],
         }
     if geometry.get("type") == "video_track_bbox":
         return {
             "type": "video_track_bbox",
-            "track_id": str(geometry.get("track_id") or annotation.id),
+            "track_id": track_id,
             "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
             "outside": [dict(item) for item in geometry.get("outside") or []],
         }
 
     return {
         "type": "video_track_bbox",
-        "track_id": str(annotation.id),
+        "track_id": track_id,
         "keyframes": [_source_keyframe(annotation, job)],
         "outside": [],
     }
@@ -221,6 +222,7 @@ def apply_tracker_results(
     )
 
     annotation.geometry = geometry
+    annotation.track_id = str(geometry["track_id"])
     annotation.annotation_type = (
         "video_track_polygon" if is_polygon else "video_track_bbox"
     )

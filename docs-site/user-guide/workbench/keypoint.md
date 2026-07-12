@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.28
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-12
 ---
 
 # 关键点标注
@@ -90,8 +90,8 @@ last_reviewed: 2026-06-10
 
 ## 模板示例
 
-![人体姿态](../images/keypoint/human-pose.png)
-<!-- TODO IMAGE_CHECKLIST: COCO 17 点人体姿态标注示例；点 + 骨架连线可见。 -->
+常用模板包括 COCO 17 点人体姿态和 21 点手部骨架；配置方法与自定义模板一致。
 
-![手部关键点](../images/keypoint/hand.png)
-<!-- TODO IMAGE_CHECKLIST: 21 点手部骨架标注示例。 -->
+<!-- TODO IMAGE_CHECKLIST: 补充 COCO 17 点人体姿态标注示例；点 + 骨架连线可见。 -->
+
+<!-- TODO IMAGE_CHECKLIST: 补充 21 点手部骨架标注示例。 -->

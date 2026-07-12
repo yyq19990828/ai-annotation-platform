@@ -1,0 +1,13 @@
+.entityGrid {
+  display: grid;
+  grid-template-columns: var(--dm-grid-columns);
+}
+
+.virtualCanvas {
+  height: var(--dm-virtual-height);
+}
+
+.virtualRow {
+  grid-template-columns: var(--dm-grid-columns);
+  transform: translateY(var(--dm-row-offset));
+}

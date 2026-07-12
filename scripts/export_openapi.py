@@ -5,8 +5,10 @@
     cd apps/api && uv run python ../../scripts/export_openapi.py --check    # CI 用，不一致即 fail
 
 输出：
-    apps/api/openapi.snapshot.json    # 仓库内的版本化契约
-    docs-site/api/openapi.json        # 文档站构建源（若 docs-site 存在）
+    apps/api/openapi.snapshot.json    # 仓库内的唯一版本化契约
+
+文档站在构建前由 docs-site/scripts/sync-openapi.mjs 将该 snapshot
+复制到 public/openapi.json，不再维护第二份跟踪副本。
 """
 
 from __future__ import annotations
@@ -40,7 +42,6 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[1]
     snapshot_path = repo_root / "apps" / "api" / "openapi.snapshot.json"
-    docs_target = repo_root / "docs-site" / "api" / "openapi.json"
 
     if args.check:
         if not snapshot_path.exists():
@@ -58,10 +59,6 @@ def main() -> int:
 
     snapshot_path.write_text(schema_str, encoding="utf-8")
     print(f"✓ wrote {snapshot_path.relative_to(repo_root)}")
-
-    if docs_target.parent.exists():
-        docs_target.write_text(schema_str, encoding="utf-8")
-        print(f"✓ wrote {docs_target.relative_to(repo_root)}")
 
     return 0
 

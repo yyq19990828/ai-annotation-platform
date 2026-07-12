@@ -67,7 +67,8 @@ ai-annotation-platform/
 ```bash
 pnpm install               # 自动跑 scripts/install-git-hooks.sh，已装 pre-commit 即启用 hooks
 cd apps/api && uv sync --extra test && cd ../..
-# 若上面提示 "pre-commit 未安装"：pip install pre-commit && pre-commit install
+# 若上面提示 "pre-commit 未安装"：uv tool install pre-commit && pre-commit install
+# （用 uv tool 独立安装 pre-commit，勿 pip 装进项目 venv；否则 uv sync 会把它卸载）
 ```
 
 ## 快速开始

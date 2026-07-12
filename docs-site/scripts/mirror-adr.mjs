@@ -141,7 +141,9 @@ function rewriteBody(text, { isReadme } = {}) {
   body = body.replace(
     /\]\((?:\.\/)?\.\.\/(?:\.\.\/)?(?:\.\.\/)?ROADMAP\/([^)#\s]+?)\.md(#[^)\s]*)?\)/g,
     (_m, stem, hash = "") => {
-      const encoded = stem.replace(/^\[archived\]/, "archived-").replace(/\[/g, "").replace(/\]/g, "");
+      const encoded = stem.startsWith("archive/")
+        ? `archived-${stem.slice("archive/".length)}`
+        : stem.replace(/^\[archived\]/, "archived-").replace(/\[/g, "").replace(/\]/g, "");
       return `](/roadmap/${encoded}${hash})`;
     },
   );

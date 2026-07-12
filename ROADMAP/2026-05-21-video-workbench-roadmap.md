@@ -36,9 +36,9 @@
 
 > **2.1–2.8（v0.10.30）+ 2.10 侧栏外操作入口（v0.10.32）已落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.30 plan](../docs/plans/archive/2026-05-21-v0.10.30-phase2-tracks-plan.md) / [v0.10.32 plan](../docs/plans/archive/2026-05-22-v0.10.32-track-ops-out-of-sidebar.md)。建立的轨迹模型是 Phase 5/6 底座：`semantic_label` + `track_number` 确定性派生（`track_id` uuid 只读）、`outside`/`occluded` 两态（对齐 CVAT）、track/帧级属性、split/merge/join/propagate、关键帧导航、`O`/`Q`/`H`/`L`/`Ctrl+B` track 快捷键（侧栏/快捷键/浮动条共享同组 actions）。
 
-### 2.9 多几何 track（polygon / polyline / mask）（**延后**；原 R9）
-- 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
-- **体量大、依赖点对应插值**，排在轨迹基础能力之后；DAVIS mask 导出（Phase 4.5）依赖此项。
+### 2.9 多几何 track（polygon / polyline / mask）（**polygon / polyline 已落地，mask 待独立 epic**；原 R9）
+- polygon / polyline 已采用平行 `video_track_polygon` / `video_track_polyline` geometry，完成绘制、按周长 / 弧长参数化插值、渲染、编辑与普通导出。polyline AI 因现有模型不原生追踪开放折线、mask 骨架化启发式价值不足而取消；保留明确 400，不再作为缺口。
+- 真·栅格 mask track 仍无 schema / 存储 / 渲染占位，DAVIS mask 导出（Phase 4.5）依赖它。剩余顺序与四份独立版本草案见 [多几何 track 剩余切片索引](../docs/plans/2026-07-12-multi-geometry-track-remaining-slices.md)。
 
 ### 2.11 采样下 propagate「N 帧」单位对齐导航网格（**v0.10.35 落地**）
 - 已落地（设计前提保留供后续 Phase 参考）：采样开启时 propagate 对话框「N」改以网格格子为单位、tracker 只回填 `frame_index % step == 0` 的网格帧（底层仍逐源帧算、`frame_index` 存源帧，D2）。详见 [CHANGELOG v0.10.35](../CHANGELOG.md) / [v0.10.35 计划](../docs/plans/archive/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §A。
@@ -56,11 +56,11 @@
 - **跨窗有状态续追**：当前是无状态近似（上一窗末帧 geometry 作下一窗 seed，边界略漂）；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
 
 ### 3.2 Tracker 选择 / 展示（原 R23「Tracker Registry UI」）
-- **关键决策——不做 tracker 注册表 UI，勿走回头路**：原 R23 设想管理员手工「注册 / 启停 tracker adapter」（对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)）；[能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 改为 backend `/setup` 自报能力、平台动态发现，无需人工注册表，「启停」即 backend 暂停/恢复。
+- **关键决策——不做 tracker 注册表 UI，勿走回头路**：原 R23 设想管理员手工「注册 / 启停 tracker adapter」（对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)）；[能力协商 epic](archive/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 改为 backend `/setup` 自报能力、平台动态发现，无需人工注册表，「启停」即 backend 暂停/恢复。
 - **已落地**：能力只读展示（v0.10.37，`supported_trackers` 列）+ sam_variant 尺寸选择（v0.10.36，propagate 对话框 → adapter context → video 池）。视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）；图片工作台悬浮 AI 面板对视频任务**显式禁用 by design**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`）。
 
 ### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态）
-- 已抽为 [能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 并落地阶段 1（v0.10.37）：能力快照落 `health_meta["capabilities"]`、按 `data_type` 校验、`is_interactive`/modality 派生，动态读取替代写死 `_REGISTRY`。
+- 已抽为 [能力协商 epic](archive/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 并落地阶段 1（v0.10.37）：能力快照落 `health_meta["capabilities"]`、按 `data_type` 校验、`is_interactive`/modality 派生，动态读取替代写死 `_REGISTRY`。
 
 ---
 
@@ -74,7 +74,7 @@
 - `internal_geometry_to_ls_shape`（[`predictions_import.py`](../apps/api/app/services/predictions_import.py)）当前仅 bbox/polygon/multi_polygon，`video_bbox`/`video_track`/`skeleton` 进 errors[]；接通 video_track 导入需新增 tool_unit 实现端，跟 §A「predictions import / AAP JSON 适配新几何」同窗口做。
 
 ### 4.5 DAVIS mask 序列（原 R22 + C.6 P2，**依赖 Phase 2.9**）
-- 逐帧 PNG mask 序列，依赖多几何 mask track（Phase 2.9 / R9）；mask track 未落地前不做。
+- 逐帧 palette PNG mask 序列，依赖真·栅格 mask track（Phase 2.9 / R9）；与 mask schema、tracker 原始 mask 回填一起提升为独立 `v0.22.0` epic，mask track 未落地前不做。
 
 ### 4.6 Segment 导出聚合（后端，原 C.6 P1）
 - `Annotation` 查询 / 导出按 `segment_id` 或 frame range 聚合；跨 segment 合并按 `frame_index` 排序，outside / prediction keyframe 不丢；overlap 区间元数据为 Phase 5 / IAA / IDF1 预留。

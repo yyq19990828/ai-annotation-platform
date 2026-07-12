@@ -135,9 +135,12 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 
 ```http
 GET /api/v1/tasks/{task_id}/video/tracker-jobs/reviewable
+GET /api/v1/tasks/{task_id}/video/tracker-jobs/active
 ```
 
-该端点返回当前任务中仍可审阅的 `pending_review`，以及带有 staged result 的 `cancelled` job，按创建时间倒序排列。它先执行 task 可见性校验：普通用户只能恢复自己创建的候选，项目 owner / 超级管理员可恢复该任务下全部候选。客户端拿到 job 后继续调用 preview 端点加载逐帧候选；不要从 annotation 推导未接受结果。
+`reviewable` 返回当前任务中仍可审阅的 `pending_review`，以及带有 staged result 的 `cancelled` job，按创建时间倒序排列。客户端拿到 job 后继续调用 preview 端点加载逐帧候选；不要从 annotation 推导未接受结果。
+
+`active` 返回当前任务下仍在运行的 `queued` / `running` job，供刷新后重连 WebSocket——这样运行中的追踪任务不会因整页刷新从界面消失，完成时仍能进入候选审阅。二者共享同一套 task 可见性与归属规则：先执行 task 可见性校验，普通用户只恢复自己创建的 job，项目 owner / 超级管理员可恢复该任务下全部 job。
 
 ## 状态语义
 

@@ -146,7 +146,8 @@ runner 把结果序列化到：
 `useVideoTrackerJobs` 维护当前会话的运行 job 与候选预览：
 
 - `job_completed` 与带部分结果的 `job_cancelled` 触发 `GET .../preview`。
-- 工作台进入视频任务时调用任务级 reviewable 端点，以服务端 `VideoTrackerJob` 为真值恢复刷新前的候选；普通用户只恢复自己创建的任务，项目 owner / 超级管理员可恢复该任务下全部候选。
+- 工作台进入视频任务时调用任务级 reviewable 端点，以服务端 `VideoTrackerJob` 为真值恢复刷新前的候选；同时调用 active 端点拉取仍在 `queued` / `running` 的 job 并重连各自的 WebSocket，使运行中的追踪任务不会因整页刷新从界面消失。普通用户只恢复自己创建的任务，项目 owner / 超级管理员可恢复该任务下全部 job。
+- `TrackerJobStore` 是跨任务复用的模块级单例。恢复某任务前会先按当前任务 scope 一次：关闭并清掉不属于该任务的 job / 候选 / WebSocket / 清理定时器，避免旧任务的完成提示或候选串到新任务；异步恢复以当前任务为护栏，若恢复途中已切走任务，迟到的旧任务结果会被丢弃。
 - `VideoTrackerReviewBar` 提供 job 级接受 / 丢弃。
 - 画布候选层只展示暂存结果，不把它们混入 annotation query cache。
 - accept 成功后才 invalidate annotation query；discard 不需要刷新 committed annotation。

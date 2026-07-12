@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import json
+
 from app.services.export_video import (
+    build_coco_frames_seg,
     build_yolo_frame_det_labels,
     build_kitti_labels,
     build_mot_gt,
@@ -245,3 +248,409 @@ def test_polygon_track_yolo_det_emits_bounding_box_center():
     )
     # 外接框 x0=0,y0=0,w=0.4,h=0.4 → YOLO cx=cy=0.2, bw=bh=0.4。
     assert labels[1][0] == ["0 0.200000 0.200000 0.400000 0.400000"]
+
+
+# ── COCO frame segmentation（纯函数）──────────────────────────────────
+
+
+def _single_polygon(frame_index: int, points: list[list[float]]) -> dict:
+    return {"type": "video_polygon", "frame_index": frame_index, "points": points}
+
+
+def test_coco_frames_seg_builds_images_and_annotations():
+    """单帧 polygon + polygon track：像素 segmentation / 外接框 bbox / 稳定 id / 空帧 image。"""
+    track = _polygon_track(
+        "trk",
+        [
+            (0, [[0.0, 0.0], [0.2, 0.0], [0.2, 0.2]]),
+            (4, [[0.6, 0.6], [0.8, 0.6], [0.8, 0.8]]),
+        ],
+        outside=[{"from": 2, "to": 2}],
+    )
+    single = _single_polygon(2, [[0.2, 0.2], [0.4, 0.2], [0.4, 0.6], [0.2, 0.6]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "clip-a",
+                "tracks": [("car", track, {"speed": 50}, None)],
+                "bboxes": [("person", single, {"speed": 3}, None)],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 640,
+                "img_h": 360,
+            }
+        ],
+        {"car": 0, "person": 1},
+        frame_start_number=1,
+        include_attributes=True,
+        description="Video Polygon Project",
+    )
+
+    # 采样网格 [0,2,4] → 3 image（含无标注空帧），1-based 文件名 + 源帧号。
+    assert [im["file_name"] for im in doc["images"]] == [
+        "images/clip-a/000001.jpg",
+        "images/clip-a/000002.jpg",
+        "images/clip-a/000003.jpg",
+    ]
+    assert [im["source_frame_index"] for im in doc["images"]] == [0, 2, 4]
+    assert all(im["width"] == 640 and im["height"] == 360 for im in doc["images"])
+
+    anns = doc["annotations"]
+    # bboxes 先（person@frame2），tracks 后（car@frame0 / car@frame4，outside frame2 省略）。
+    assert len(anns) == 3
+    person = anns[0]
+    assert person["category_id"] == 1
+    assert person["image_id"] == 1  # frame_no 2
+    assert person["segmentation"] == [
+        [128.0, 72.0, 256.0, 72.0, 256.0, 216.0, 128.0, 216.0]
+    ]
+    assert person["bbox"] == [128.0, 72.0, 128.0, 144.0]
+    assert person["area"] == 18432.0
+    assert person["iscrowd"] == 0
+    assert person["attributes"] == {"speed": 3}
+    assert anns[1]["category_id"] == 0 and anns[1]["image_id"] == 0  # car@frame0
+    assert anns[2]["image_id"] == 2  # car@frame4
+
+    assert doc["categories"] == [
+        {"id": 0, "name": "car"},
+        {"id": 1, "name": "person"},
+    ]
+    # 结构契约：image_id / category_id 引用完整（等价 pycocotools createIndex 可成功）。
+    img_ids = {im["id"] for im in doc["images"]}
+    cat_ids = {c["id"] for c in doc["categories"]}
+    for a in anns:
+        assert a["image_id"] in img_ids
+        assert a["category_id"] in cat_ids
+
+
+def test_coco_frames_seg_empty_frames_keep_image_records():
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=False,
+    )
+    assert len(doc["images"]) == 3
+    assert doc["annotations"] == []
+
+
+def test_coco_frames_seg_skips_bbox_and_polyline():
+    bbox = {
+        "type": "video_bbox",
+        "frame_index": 0,
+        "x": 0.1,
+        "y": 0.1,
+        "w": 0.2,
+        "h": 0.2,
+    }
+    polyline = {
+        "type": "video_polyline",
+        "frame_index": 0,
+        "points": [[0.1, 0.1], [0.5, 0.3], [0.3, 0.5]],
+    }
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", bbox, {}, None), ("car", polyline, {}, None)],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["annotations"] == []
+
+
+def test_coco_frames_seg_skips_off_grid_single_frame():
+    single = _single_polygon(1, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", single, {}, None)],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    # frame1 不在网格 [0,2,4] → 无 annotation，但仍有 3 张 image。
+    assert doc["annotations"] == []
+    assert len(doc["images"]) == 3
+
+
+def test_coco_frames_seg_track_id_written_to_attributes():
+    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", single, {"speed": 5}, "trk-7")],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["annotations"][0]["attributes"] == {"speed": 5, "__track_id": "trk-7"}
+
+
+def test_coco_frames_seg_omits_attributes_when_disabled():
+    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", single, {"speed": 5}, "trk-7")],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=False,
+    )
+    assert "attributes" not in doc["annotations"][0]
+
+
+def test_coco_frames_seg_unknown_class_is_skipped_not_zeroed():
+    """未知/已删除类名的 annotation 整条跳过，不再静默落到 category_id=0（旧类撞车 footgun）。"""
+    known = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    unknown = _single_polygon(0, [[0.3, 0.3], [0.4, 0.3], [0.4, 0.4]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", known, {}, None), ("ghost", unknown, {}, None)],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    # 已知类正常导出；未知类（比如项目已删除的类）不落 category_id=0，直接跳过。
+    assert len(doc["annotations"]) == 1
+    assert doc["annotations"][0]["category_id"] == 0
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["ghost"]
+
+    from pycocotools.coco import COCO
+
+    coco = COCO()
+    coco.dataset = doc  # type: ignore[attr-defined]
+    coco.createIndex()  # 引用不完整会在此抛 KeyError
+    assert len(coco.getAnnIds()) == 1
+
+
+def test_coco_frames_seg_none_class_name_is_skipped():
+    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [(None, single, {}, None)],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["annotations"] == []
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["(empty)"]
+
+
+def test_coco_frames_seg_unknown_class_track_is_skipped():
+    """track polygon 同款：整条 track 用未知类名时跳过所有帧,不落 category_id=0。"""
+    track = _polygon_track(
+        "trk",
+        [
+            (0, [[0.0, 0.0], [0.2, 0.0], [0.2, 0.2]]),
+            (4, [[0.6, 0.6], [0.8, 0.6], [0.8, 0.8]]),
+        ],
+    )
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [("ghost", track, {}, None)],
+                "bboxes": [],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["annotations"] == []
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["ghost"]
+
+
+def test_coco_frames_seg_empty_classes_list_produces_loadable_coco():
+    """classes_list 为空（cat_map={}）时 polygon 标注全部跳过，不产生指向不存在
+    category 的悬空 category_id=0——此前的组合会让 pycocotools ``createIndex`` KeyError。
+    """
+    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", single, {}, None)],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["categories"] == []
+    assert doc["annotations"] == []
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["car"]
+
+    from pycocotools.coco import COCO
+
+    coco = COCO()
+    coco.dataset = doc  # type: ignore[attr-defined]
+    coco.createIndex()  # 此前 categories=[] + category_id=0 组合会在此 KeyError
+
+
+def test_coco_frames_seg_deterministic_and_unique_ids_across_sequences():
+    single_a = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    single_b = _single_polygon(0, [[0.3, 0.3], [0.4, 0.3], [0.4, 0.4]])
+    seqs = [
+        {
+            "seq": "a",
+            "tracks": [],
+            "bboxes": [("car", single_a, {}, None)],
+            "frame_count": 3,
+            "step": 1,
+            "img_w": 100,
+            "img_h": 100,
+        },
+        {
+            "seq": "b",
+            "tracks": [],
+            "bboxes": [("car", single_b, {}, None)],
+            "frame_count": 3,
+            "step": 2,
+            "img_w": 100,
+            "img_h": 100,
+        },
+    ]
+    doc1 = build_coco_frames_seg(
+        seqs, {"car": 0}, frame_start_number=1, include_attributes=True
+    )
+    doc2 = build_coco_frames_seg(
+        seqs, {"car": 0}, frame_start_number=1, include_attributes=True
+    )
+    # 相同输入 → 字节稳定（cache 友好 + 下游 diff 稳定）。
+    assert json.dumps(doc1) == json.dumps(doc2)
+    # image / annotation id 从 0 连续自增、全局唯一。
+    assert [im["id"] for im in doc1["images"]] == list(range(len(doc1["images"])))
+    assert [a["id"] for a in doc1["annotations"]] == list(
+        range(len(doc1["annotations"]))
+    )
+    # 两 sequence 同名叶子帧靠 seq 前缀区分，不冲突。
+    names = {im["file_name"] for im in doc1["images"]}
+    assert "images/a/000001.jpg" in names and "images/b/000001.jpg" in names
+
+
+def test_coco_frames_seg_loads_with_pycocotools_and_decodes_mask():
+    """真实消费方验证：官方 pycocotools 能加载产物并把 segmentation 解码成掩码。
+
+    比结构契约更强——``createIndex`` 建索引成功证明引用完整，``annToMask`` 用官方
+    ``maskUtils.frPyObjects`` 解码多边形，证明我们写的 flat-ring segmentation 是合法 COCO。
+    """
+    from pycocotools.coco import COCO
+
+    track = _polygon_track(
+        "trk",
+        [
+            (0, [[0.0, 0.0], [0.2, 0.0], [0.2, 0.2]]),
+            (4, [[0.6, 0.6], [0.8, 0.6], [0.8, 0.8]]),
+        ],
+        outside=[{"from": 2, "to": 2}],
+    )
+    single = _single_polygon(2, [[0.2, 0.2], [0.4, 0.2], [0.4, 0.6], [0.2, 0.6]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "clip-a",
+                "tracks": [("car", track, {"speed": 50}, None)],
+                "bboxes": [("person", single, {"speed": 3}, None)],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 640,
+                "img_h": 360,
+            }
+        ],
+        {"car": 0, "person": 1},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+
+    coco = COCO()
+    coco.dataset = doc  # type: ignore[attr-defined]  # 官方 in-memory 加载路径
+    coco.createIndex()  # 引用不完整会在此抛 KeyError
+
+    ann_ids = coco.getAnnIds()
+    assert len(ann_ids) == 3
+    assert set(coco.getCatIds()) == {0, 1}
+
+    # 每条 annotation 的 segmentation 都能被官方 annToMask 解码成该帧尺寸的非空掩码。
+    for ann in coco.loadAnns(ann_ids):
+        mask = coco.annToMask(ann)
+        assert mask.shape == (360, 640)
+        assert int(mask.sum()) > 0
+
+    # person 是像素 [128,72]–[256,216] 的方形多边形，掩码面积应落在其外接框内且非空。
+    person = next(a for a in coco.loadAnns(ann_ids) if a["category_id"] == 1)
+    assert 0 < int(coco.annToMask(person).sum()) <= 128 * 144

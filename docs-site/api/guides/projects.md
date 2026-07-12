@@ -88,9 +88,15 @@ POST   /api/v1/projects/:id/task-views/:view_id/copy
 
 POST   /api/v1/projects/:id/tasks/query
 GET    /api/v1/projects/:id/task-views/:view_id/tasks
+GET    /api/v1/projects/:id/data-manager/schema?entity_scope=objects
+POST   /api/v1/projects/:id/data-manager/objects/query
+GET    /api/v1/projects/:id/data-manager/objects/:annotation_id/detail
+GET    /api/v1/projects/:id/data-manager/objects/:annotation_id/location
+POST   /api/v1/projects/:id/data-manager/tracks/query
+GET    /api/v1/projects/:id/data-manager/tracks/:track_ref/detail
 ```
 
-`task-views` 保存项目内 Data Manager 视图，包含 `filter_json`、`sort_json`、`columns_json` 和 `visibility`。`private` 视图只有创建者可见；`project` 视图对项目成员可见，但只有项目负责人或超级管理员可编辑。
+`task-views` 保存项目内 Data Manager 视图，包含 `entity_scope`（`tasks | objects | tracks`）、`filter_json`、`sort_json`、`columns_json` 和 `visibility`。不同 scope 的名称和字段白名单相互隔离。`private` 视图只有创建者可见；`project` 视图对项目成员可见，但只有项目负责人或超级管理员可编辑。
 
 `tasks/query` 接受临时过滤条件，不保存视图：
 
@@ -110,7 +116,7 @@ GET    /api/v1/projects/:id/task-views/:view_id/tasks
 }
 ```
 
-过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 查询只读，不提供批量写操作。
+对象查询使用 annotation grain 的 keyset cursor；轨迹查询按 compact annotation 或 Scene 共享 track ID 的逻辑 grain 返回。两者的 total、facet、详情和定位都先与当前用户的 visible-task scope 连接，不返回 raw geometry。过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 查询只读，不提供批量写操作。
 
 ## Alias 频率
 

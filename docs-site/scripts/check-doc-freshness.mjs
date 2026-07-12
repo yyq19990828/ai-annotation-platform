@@ -2,6 +2,7 @@
 /**
  * 检查 docs-site/ 下所有 .md 文件的 last_reviewed 字段，
  * 超过 THRESHOLD_DAYS 天未审阅则输出 warning（不退出，不阻断构建）。
+ * maintainers/ 维护材料、构建期镜像、示例源码和生成页不纳入正文 freshness 统计。
  *
  * 用法：node docs-site/scripts/check-doc-freshness.mjs [--threshold=<days>]
  *   默认 threshold = 180 天
@@ -17,10 +18,20 @@ import { dirname } from "node:path";
 const __here = dirname(fileURLToPath(import.meta.url));
 const DOCS_ROOT = join(__here, "..");
 
-const SKIP_DIRS = new Set(["adr", "changelog", "examples", "roadmap", ".vitepress", "public", "scripts", "node_modules"]);
+const SKIP_ROOTS = new Set([
+  ".vitepress",
+  "changelog",
+  "dev/adr",
+  "dev/examples",
+  "maintainers",
+  "node_modules",
+  "public",
+  "redirects",
+  "roadmap",
+  "scripts",
+]);
 const SKIP_GENERATED = /\.generated\.md$/;
-const SKIP_PATHS = new Set(["IMAGE_CHECKLIST.md", "index.md", "user-guide/projects/annotation-guide.md"]);
-const REDIRECT_MARKER = "router.go(";
+const SKIP_PATHS = new Set(["index.md"]);
 
 const thresholdArg = process.argv.find((a) => a.startsWith("--threshold="));
 const THRESHOLD_DAYS = thresholdArg ? parseInt(thresholdArg.split("=")[1], 10) : 180;
@@ -44,8 +55,9 @@ function walk(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
     if (e.isDirectory()) {
-      if (SKIP_DIRS.has(e.name)) continue;
-      walk(join(dir, e.name));
+      const child = join(dir, e.name);
+      const rel = relative(DOCS_ROOT, child).replace(/\\/g, "/");
+      if (!SKIP_ROOTS.has(rel)) walk(child);
     } else if (e.isFile() && extname(e.name) === ".md") {
       checkFile(join(dir, e.name));
     }
@@ -58,7 +70,6 @@ function checkFile(filePath) {
 
   if (SKIP_PATHS.has(rel)) return;
   if (SKIP_GENERATED.test(filePath)) return;
-  if (content.includes(REDIRECT_MARKER)) return;
   if (basename(filePath) === "index.md" && !content.startsWith("---")) return;
 
   checked++;

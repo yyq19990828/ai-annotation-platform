@@ -309,5 +309,37 @@ async def list_reviewable_tracker_jobs(
     return [_job_out(row) for row in rows]
 
 
+async def list_active_tracker_jobs(
+    db: AsyncSession,
+    *,
+    task: Task,
+    user: User,
+) -> list[VideoTrackerJobOut]:
+    """Return in-flight (queued/running) jobs so the workbench can reconnect their WS after reload."""
+    conditions = [
+        VideoTrackerJob.task_id == task.id,
+        VideoTrackerJob.status.in_(
+            [
+                VideoTrackerJobStatus.QUEUED.value,
+                VideoTrackerJobStatus.RUNNING.value,
+            ]
+        ),
+    ]
+    if not await _is_privileged(db, task, user):
+        conditions.append(VideoTrackerJob.created_by == user.id)
+    rows = (
+        (
+            await db.execute(
+                select(VideoTrackerJob)
+                .where(*conditions)
+                .order_by(VideoTrackerJob.created_at.desc(), VideoTrackerJob.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [_job_out(row) for row in rows]
+
+
 def tracker_job_out(row: VideoTrackerJob) -> VideoTrackerJobOut:
     return _job_out(row)

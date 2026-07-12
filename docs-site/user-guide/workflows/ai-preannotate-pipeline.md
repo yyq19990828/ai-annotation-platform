@@ -4,7 +4,7 @@ audience: [project_admin, super_admin]
 type: tutorial
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-12
 ---
 
 # AI 预标注流水线
@@ -38,7 +38,7 @@ last_reviewed: 2026-06-10
 
 ## Step 3：触发批量预标注
 
-![AI 预标注项目详情面板](../images/workflows/ai-pre-project-detail-panel.png)
+![AI 预标注项目详情面板](../images/projects/ai-pre-config-panel.png)
 
 1. 主导航 → **AI 预标**（`/ai-pre`）→ 选择项目卡片，进入 ProjectDetailPanel
 2. 勾选一个或多个 `active` 批次

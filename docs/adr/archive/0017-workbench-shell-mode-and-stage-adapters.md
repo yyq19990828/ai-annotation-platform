@@ -57,4 +57,4 @@ Shell 负责路由、数据、mutation、history、offline、hotkeys 等编排�
 - Stage Host：`apps/web/src/pages/Workbench/shell/WorkbenchStageHost.tsx`
 - Stage 类型：`apps/web/src/pages/Workbench/stages/types.ts`
 - 架构文档：`docs-site/dev/concepts/workbench-shell.md`
-- 相关 Roadmap：`ROADMAP/[archived]2026-05-11-workbench-shell-decomposition.md`
+- 相关 Roadmap：`ROADMAP/archive/2026-05-11-workbench-shell-decomposition.md`

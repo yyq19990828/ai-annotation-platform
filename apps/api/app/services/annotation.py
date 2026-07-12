@@ -29,6 +29,7 @@ from app.services.annotation_propagation import (
     _new_track_id as _new_track_id,
     _track_visible_keyframes as _track_visible_keyframes,
 )
+from app.services.annotation_track_identity import prepare_compact_track_identity
 
 logger = logging.getLogger("app.services.annotation")
 
@@ -167,6 +168,7 @@ class AnnotationService:
         if parent_annotation_id is not None:
             await self._validate_parent_annotation(task_id, parent_annotation_id)
 
+        geometry, track_id = prepare_compact_track_identity(geometry)
         annotation = Annotation(
             id=uuid.uuid4(),
             task_id=task_id,
@@ -177,6 +179,7 @@ class AnnotationService:
             tool_unit_id=tool_unit_id,
             class_name=class_name,
             geometry=geometry,
+            track_id=track_id,
             confidence=confidence,
             parent_prediction_id=parent_prediction_id,
             parent_annotation_id=parent_annotation_id,
@@ -362,6 +365,9 @@ class AnnotationService:
                 _mref = ai_key_model.get(_akey)
                 if _mref is not None:
                     attributes_meta[_akey] = {"origin": "ai", "model_ref": _mref}
+            geometry, track_id = prepare_compact_track_identity(
+                shape.get("geometry", {})
+            )
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -373,7 +379,8 @@ class AnnotationService:
                 # shape.type 也可派生 unit (polygon → region), 但优先 prediction 行已落实.
                 tool_unit_id=prediction_unit,
                 class_name=mapped_class,
-                geometry=shape.get("geometry", {}),
+                geometry=geometry,
+                track_id=track_id,
                 confidence=shape.get("confidence"),
                 parent_prediction_id=prediction_id,
                 attributes=attributes,
@@ -1077,7 +1084,18 @@ class AnnotationService:
                 annotation.project_id, annotation.tool_unit_id, class_name
             )
         if geometry is not None:
+            try:
+                geometry, track_id = prepare_compact_track_identity(
+                    geometry,
+                    annotation.track_id,
+                    reject_identity_change=True,
+                )
+            except ValueError as exc:
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
             annotation.geometry = geometry
+            annotation.track_id = track_id
         if class_name is not None:
             annotation.class_name = class_name
         if confidence is not None:
@@ -1289,6 +1307,7 @@ class AnnotationService:
             )
             for ann in ordered
         ]
+        created_track_id = _new_track_id()
         created = Annotation(
             id=uuid.uuid4(),
             task_id=task.id,
@@ -1299,10 +1318,11 @@ class AnnotationService:
             class_name=ordered[0].class_name,
             geometry={
                 "type": "video_track_bbox",
-                "track_id": _new_track_id(),
+                "track_id": created_track_id,
                 "keyframes": keyframes,
                 "outside": [],
             },
+            track_id=created_track_id,
             confidence=ordered[0].confidence,
             attributes=dict(ordered[0].attributes or {}),
         )
@@ -1373,6 +1393,7 @@ class AnnotationService:
         }
         source.version += 1
 
+        tail_track_id = _new_track_id()
         tail = Annotation(
             id=uuid.uuid4(),
             task_id=task.id,
@@ -1383,11 +1404,12 @@ class AnnotationService:
             class_name=source.class_name,
             geometry={
                 "type": "video_track_bbox",
-                "track_id": _new_track_id(),
+                "track_id": tail_track_id,
                 "semantic_label": geometry.get("semantic_label"),
                 "keyframes": after_keyframes,
                 "outside": _clip_outside_ranges(geometry, start=next_frame, end=None),
             },
+            track_id=tail_track_id,
             confidence=source.confidence,
             parent_annotation_id=source.id,
             attributes=dict(source.attributes or {}),
@@ -1497,6 +1519,7 @@ class AnnotationService:
             "keyframes": keyframes,
             "outside": normalize_outside_ranges(outside),
         }
+        survivor.track_id = survivor.geometry["track_id"]
         survivor.version += 1
         removed.is_active = False
         return [survivor], [], [removed.id]

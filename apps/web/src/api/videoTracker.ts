@@ -87,6 +87,11 @@ export const videoTrackerApi = {
     apiClient.get<VideoTrackerJob[]>(
       `/tasks/${taskId}/video/tracker-jobs/reviewable`,
     ),
+  // v0.21.28 · 刷新后重连: 该 task 下仍在运行 (queued/running) 的追踪任务。
+  active: (taskId: string) =>
+    apiClient.get<VideoTrackerJob[]>(
+      `/tasks/${taskId}/video/tracker-jobs/active`,
+    ),
   cancel: (jobId: string) =>
     apiClient.delete<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   // v0.21.28 · 候选/接受流。
