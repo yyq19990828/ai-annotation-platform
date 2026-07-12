@@ -122,7 +122,8 @@ export type ExportFormat =
   | "kitti"
   | "nuscenes"
   | "pointmask"
-  | "yolo-frames-det";
+  | "yolo-frames-det"
+  | "yolo-frames-seg";
 // v0.10.43 · 多目标导出：YOLO 拆 det/obb/seg；一次导出可多选目标（voc 仅可单选）。
 export type ExportTarget =
   | "coco"
@@ -136,6 +137,7 @@ export type ExportTarget =
   | "nuscenes"
   | "pointmask"
   | "yolo-frames-det"
+  | "yolo-frames-seg"
   | "voc";
 export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {
