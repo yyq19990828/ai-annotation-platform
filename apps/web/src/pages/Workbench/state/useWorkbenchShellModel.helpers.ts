@@ -17,11 +17,27 @@ import type {
   PipelineStagePayload,
   TriggerPreannotationPayload,
 } from "@/hooks/usePreannotation";
+import { videoIntrinsicSize } from "../stage/videoKonvaCoordinates";
 
 export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 
 export const clamp = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, v));
+
+export function resolveMaskEditorSize(
+  isVideoTask: boolean,
+  imageSize: { imgW: number; imgH: number },
+  videoSize?: { width?: number | null; height?: number | null } | null,
+): { width: number; height: number } {
+  if (isVideoTask) {
+    const size = videoIntrinsicSize(videoSize?.width, videoSize?.height);
+    return { width: size.w, height: size.h };
+  }
+  return {
+    width: imageSize.imgW || 1,
+    height: imageSize.imgH || 1,
+  };
+}
 
 export function omitVariantFields(value: Record<string, unknown> | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {};

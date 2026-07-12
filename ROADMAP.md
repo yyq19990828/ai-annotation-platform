@@ -13,6 +13,7 @@
 ### 计划中
 
 - **视频单帧工具暂停项**：keypoint / rotated-box（OBB）的绘制交互尚未实现，其中 OBB 还需旋转手柄。栅格 mask 已按轨迹模型落地，不再规划单帧 `video_mask`。其余暂停项等明确需求触发；计划归档见 [`v0.21.22`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。
+- **视频栅格 Mask AI 补验**：当前本地视频项目未绑定可用的 ML Backend，SAM2 / SAM3 栅格 Mask 传播尚未完成浏览器端到端验证。后续接入模型后补验“选择栅格 Mask 输出 → 运行传播 → 候选预览 → 接受落库 → 刷新可读 → DAVIS 导出”。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：待开工 Phase 2-3——投影手柄微调与多相机一致性。

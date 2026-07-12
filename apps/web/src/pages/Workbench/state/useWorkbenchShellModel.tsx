@@ -129,6 +129,7 @@ import {
   selectProjectPipelineStages,
   buildPredictParams,
   promptOfTool,
+  resolveMaskEditorSize,
   resolveFloatingClassPaletteRect,
   resolveFloatingDiscussionRect,
   resolveFloatingInspectorRect,
@@ -1425,10 +1426,12 @@ export function useWorkbenchShellModel({
   const isLockedForActions = mode === "review"
     ? task?.status === "completed"
     : task?.status === "review" || task?.status === "completed";
-  const maskEditor = useMaskEditor({
-    width: stageGeom.imgW || 1,
-    height: stageGeom.imgH || 1,
-  });
+  const maskEditorSize = resolveMaskEditorSize(
+    isVideoTask,
+    stageGeom,
+    videoManifest.data?.metadata,
+  );
+  const maskEditor = useMaskEditor(maskEditorSize);
 
   const imageActions = useImageAnnotationActions({
     taskId,

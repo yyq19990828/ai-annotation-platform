@@ -37,7 +37,7 @@ async def validate_mask_geometry_for_task(
     expected_size = [int(height), int(width)]
     for keyframe in geometry.get("keyframes") or []:
         mask = keyframe.get("mask") or {}
-        if mask.get("size") != expected_size:
+        if list(mask.get("size") or []) != expected_size:
             raise ValueError(f"mask size must match source video {expected_size}")
         frame_index = keyframe.get("frame_index")
         if frame_count is not None and int(frame_index) >= int(frame_count):

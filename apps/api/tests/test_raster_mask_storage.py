@@ -83,6 +83,9 @@ async def test_mask_geometry_context_matches_video_size_and_frame_count():
     }
     await validate_mask_geometry_for_task(db, task, geometry)
 
+    geometry["keyframes"][0]["mask"]["size"] = (1080, 1920)
+    await validate_mask_geometry_for_task(db, task, geometry)
+
     geometry["keyframes"][0]["frame_index"] = 10
     with pytest.raises(ValueError, match="frame_index"):
         await validate_mask_geometry_for_task(db, task, geometry)

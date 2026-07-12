@@ -1,6 +1,27 @@
 // v0.16.x 第 2 批 · useWorkbenchShellModel 纯函数测试守护(伴随逻辑提炼,锁定坐标公式行为)。
 import { describe, it, expect } from "vitest";
-import { resolvePinViewport } from "../useWorkbenchShellModel.helpers";
+import {
+  resolveMaskEditorSize,
+  resolvePinViewport,
+} from "../useWorkbenchShellModel.helpers";
+
+describe("resolveMaskEditorSize", () => {
+  it("视频任务使用 manifest 的固有尺寸而不是未初始化的图片舞台尺寸", () => {
+    expect(resolveMaskEditorSize(
+      true,
+      { imgW: 0, imgH: 0 },
+      { width: 1920, height: 1080 },
+    )).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it("图片任务继续使用图片舞台尺寸", () => {
+    expect(resolveMaskEditorSize(
+      false,
+      { imgW: 640, imgH: 480 },
+      { width: 1920, height: 1080 },
+    )).toEqual({ width: 640, height: 480 });
+  });
+});
 
 describe("resolvePinViewport", () => {
   it("把归一 anchor 对应像素点平移到视口中心,保留 scale", () => {
