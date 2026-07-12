@@ -547,3 +547,100 @@ def test_clean_export_targets_accepts_video_yolo_frames_seg():
 def test_clean_export_targets_rejects_yolo_frames_seg_for_image_project():
     with pytest.raises(ValueError, match="image project"):
         clean_export_targets(["coco", "yolo-frames-seg"], data_type="image")
+
+
+# ── coco-frames-seg：视频逐帧 COCO instance segmentation 单文档 ───────────────
+
+
+async def test_coco_frames_seg_writes_single_coco_doc(monkeypatch):
+    """单 target 时 annotations.json 落包根：像素 segmentation、空帧 image、结构契约完整。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    track = _polygon_track(task_id, project_id)  # car，outside 覆盖 frame2
+    single = _single_frame_polygon(task_id, project_id)  # person@frame2
+
+    async def _chunks():
+        yield [task], {task_id: [track, single]}, {item_id: item}
+
+    data, _ = await _run_video_zip(project, _chunks(), ["coco-frames-seg"])
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = zf.namelist()
+        assert "annotations.json" in names  # 单 target 落包根
+        assert "fetch_frames.py" in names
+        doc = json.loads(zf.read("annotations.json"))
+
+    assert [im["file_name"] for im in doc["images"]] == [
+        "images/clip-a/000001.jpg",
+        "images/clip-a/000002.jpg",
+        "images/clip-a/000003.jpg",
+    ]
+    assert [im["source_frame_index"] for im in doc["images"]] == [0, 2, 4]
+
+    # 结构契约：引用完整 + 字段齐全（等价 pycocotools createIndex 可成功）。
+    img_ids = {im["id"] for im in doc["images"]}
+    cat_ids = {c["id"] for c in doc["categories"]}
+    for a in doc["annotations"]:
+        assert a["image_id"] in img_ids
+        assert a["category_id"] in cat_ids
+        assert a["iscrowd"] == 0
+        assert len(a["bbox"]) == 4
+        assert isinstance(a["segmentation"], list) and a["segmentation"]
+        assert isinstance(a["segmentation"][0], list)
+
+    # person 单帧 polygon → 像素坐标 segmentation（640×360）。
+    person = next(a for a in doc["annotations"] if a["category_id"] == 1)
+    assert person["segmentation"] == [
+        [128.0, 72.0, 256.0, 72.0, 256.0, 216.0, 128.0, 216.0]
+    ]
+    assert person["bbox"] == [128.0, 72.0, 128.0, 144.0]
+    # car track 展开：outside frame2 省略 → 落 image_id 0（frame0）与 2（frame4）。
+    car_imgs = sorted(a["image_id"] for a in doc["annotations"] if a["category_id"] == 0)
+    assert car_imgs == [0, 2]
+
+
+async def test_coco_frames_seg_multi_target_subdir_and_frame_dirs(monkeypatch):
+    """多 target 时落 coco-frames-seg/ 子目录，且 manifest 带 images 抽帧目录。"""
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    single = _single_frame_polygon(task_id, project_id)
+
+    async def _chunks():
+        yield [task], {task_id: [single]}, {item_id: item}
+
+    data, _ = await _run_video_zip(
+        project, _chunks(), ["yolo-frames-seg", "coco-frames-seg"]
+    )
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = zf.namelist()
+        assert "coco-frames-seg/annotations.json" in names
+        assert "yolo-frames-seg/labels/clip-a/000002.txt" in names
+        manifest = json.loads(zf.read("manifest.json"))
+
+    dirs = manifest["videos"][0]["frame_output_dirs"]
+    assert "coco-frames-seg/images/clip-a" in dirs
+    assert "yolo-frames-seg/images/clip-a" in dirs
+
+
+def test_clean_export_targets_accepts_video_coco_frames_seg():
+    assert clean_export_targets(
+        ["yolo-frames-seg", "coco-frames-seg"], data_type="video"
+    ) == ["yolo-frames-seg", "coco-frames-seg"]
+
+
+def test_clean_export_targets_rejects_coco_frames_seg_for_image_project():
+    with pytest.raises(ValueError, match="image project"):
+        clean_export_targets(["coco", "coco-frames-seg"], data_type="image")

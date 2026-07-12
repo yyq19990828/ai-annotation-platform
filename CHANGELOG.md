@@ -34,6 +34,9 @@
 
 ## [Unreleased]
 
+### Added
+- **视频项目新增「COCO 逐帧分割」导出（`coco-frames-seg`）**：把视频逐帧多边形导成标准 COCO instance segmentation 单文档（每个采样帧一条 image 记录含空帧、segmentation 为顶点像素坐标、bbox 取外接框、iscrowd=0、可选 `attributes.__track_id`），按项目采样网格抽帧并复用 `fetch_frames.py`；可直接喂 pycocotools / Detectron2 / MMDetection。bbox / polyline 跳过。
+
 ### Fixed
 - **视频「YOLO 逐帧分割」现在可从导出弹窗发起**：`yolo-frames-seg` 的后端序列化、打包与格式对照表此前已交付，但导出弹窗缺该选项、前端类型合同也缺字面量，导致用户无法从正常 UI 发起。现视频项目导出目标新增「YOLO 逐帧分割」（保留多边形顶点，bbox / polyline 跳过；按项目采样网格抽帧），图片 / 点云项目不显示该视频专属项。
 

@@ -854,7 +854,8 @@ async def export_batch(
     targets: list[str] = Query(
         default=["coco"],
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
-        " / video_json / yolo-frames-det / yolo-frames-seg / mot / kitti / nuscenes / pointmask"
+        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti"
+        " / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
     include_attributes: bool = Query(True),

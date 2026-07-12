@@ -39,6 +39,8 @@ test = [
     "pytest-asyncio>=0.24.0",
     "pytest-mock>=3.14.0",
     "pytest-cov>=6.0.0",
+    # 官方 COCO reader：用真实消费方加载 coco-frames-seg 产物并解码 segmentation。
+    "pycocotools>=2.0.7",
 ]
 
 [tool.pytest.ini_options]

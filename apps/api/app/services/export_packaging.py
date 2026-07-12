@@ -55,6 +55,7 @@ from app.services.export_video import (
     FALLBACK_W,
     VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
+    build_coco_frames_seg,
     build_kitti_labels,
     build_mot_gt,
     build_mot_seqinfo,
@@ -78,6 +79,8 @@ VIDEO_EXPORT_FORMATS = {
     "yolo-frames-det",
     # 逐帧 YOLO 分割：保留多边形顶点（bbox-only 的 det 只能给外接框）。
     "yolo-frames-seg",
+    # 逐帧 COCO 分割：同源多边形，编码为标准 COCO instance segmentation 单文档。
+    "coco-frames-seg",
 }
 LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
 
@@ -418,7 +421,8 @@ async def build_export_zip(
         # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
         if project.data_type == "video":
             needs_ann = bool(
-                {"mot", "kitti", "yolo-frames-det", "yolo-frames-seg"} & set(targets)
+                {"mot", "kitti", "yolo-frames-det", "yolo-frames-seg", "coco-frames-seg"}
+                & set(targets)
             )
             chunks = svc.iter_export_chunks(
                 project_id, batch_id, with_annotations=needs_ann
@@ -1076,12 +1080,25 @@ async def _build_video_export_zip(
     has_kitti = "kitti" in targets
     has_yolo_frames = "yolo-frames-det" in targets
     has_yolo_frames_seg = "yolo-frames-seg" in targets
-    has_frame_sequences = has_mot or has_kitti or has_yolo_frames or has_yolo_frames_seg
-    frame_start_number = 1 if has_mot or has_yolo_frames or has_yolo_frames_seg else 0
+    has_coco_frames_seg = "coco-frames-seg" in targets
+    has_frame_sequences = (
+        has_mot
+        or has_kitti
+        or has_yolo_frames
+        or has_yolo_frames_seg
+        or has_coco_frames_seg
+    )
+    frame_start_number = (
+        1
+        if has_mot or has_yolo_frames or has_yolo_frames_seg or has_coco_frames_seg
+        else 0
+    )
 
     classes_list = derive_classes_list(project.tool_bindings)
     attribute_schema = derive_attribute_schema(project.tool_bindings)
     cat_map = {name: i for i, name in enumerate(classes_list)}
+    # coco-frames-seg 是单文档：跨 task 累积每序列的帧/几何，chunk 循环后一次性写 annotations.json。
+    coco_seq_records: list[dict] = []
 
     manifest_videos: list[dict] = []
     now = datetime.now(timezone.utc)
@@ -1260,6 +1277,35 @@ async def _build_video_export_zip(
                                 ),
                             )
 
+                if has_coco_frames_seg:
+                    coco_seq_records.append(
+                        {
+                            "seq": seq,
+                            "tracks": [
+                                (
+                                    ann.class_name,
+                                    ann.geometry or {},
+                                    ann.attributes or {},
+                                    getattr(ann, "track_id", None),
+                                )
+                                for ann in track_anns
+                            ],
+                            "bboxes": [
+                                (
+                                    ann.class_name,
+                                    ann.geometry or {},
+                                    ann.attributes or {},
+                                    getattr(ann, "track_id", None),
+                                )
+                                for ann in bbox_anns
+                            ],
+                            "frame_count": frame_count,
+                            "step": step,
+                            "img_w": img_w,
+                            "img_h": img_h,
+                        }
+                    )
+
                 # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
                 dataset_name = _dataset_name_for_task(t, item)
                 video_rel = relative_path_from_file_path(t.file_path, dataset_name)
@@ -1277,6 +1323,9 @@ async def _build_video_export_zip(
                 if has_yolo_frames_seg:
                     yp = "yolo-frames-seg/" if multi else ""
                     frame_output_dirs.append(f"{yp}images/{seq}")
+                if has_coco_frames_seg:
+                    cp = "coco-frames-seg/" if multi else ""
+                    frame_output_dirs.append(f"{cp}images/{seq}")
                 manifest_videos.append(
                     {
                         "sequence": seq,
@@ -1293,6 +1342,24 @@ async def _build_video_export_zip(
                         "frame_output_dirs": frame_output_dirs,
                     }
                 )
+
+        if has_coco_frames_seg:
+            cp = "coco-frames-seg/" if multi else ""
+            zf.writestr(
+                f"{cp}annotations.json",
+                json.dumps(
+                    build_coco_frames_seg(
+                        coco_seq_records,
+                        cat_map,
+                        frame_start_number=frame_start_number,
+                        include_attributes=include_attributes,
+                        description=project.name,
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+            file_count += 1
 
         zf.writestr(
             "manifest.json",

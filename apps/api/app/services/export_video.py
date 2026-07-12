@@ -280,6 +280,176 @@ def build_yolo_frame_seg_labels(
     return labels
 
 
+# ── COCO frame segmentation dataset ──────────────────────────────────
+
+
+def _coco_ring_px(points: list, w: int, h: int) -> list[float]:
+    """归一化多边形顶点 → COCO segmentation 像素坐标 flat ring（``[x1,y1,x2,y2,…]``，2 位小数）。
+
+    内联于本模块（不 import ``export.py`` 的 ``_flatten_ring``）：``export_packaging`` 已依赖本
+    模块，反向 import 会成环。
+    """
+    out: list[float] = []
+    for pt in points:
+        if len(pt) >= 2:
+            out.append(round(float(pt[0]) * w, 2))
+            out.append(round(float(pt[1]) * h, 2))
+    return out
+
+
+def _coco_seg_annotation(
+    ann_id: int,
+    image_id: int,
+    category_id: int,
+    points: list,
+    img_w: int,
+    img_h: int,
+    attributes: dict,
+    track_id,
+    include_attributes: bool,
+) -> dict:
+    """单个多边形 → COCO annotation 行。
+
+    ``bbox`` = 顶点外接框（像素），``area`` = 外接框面积（对齐图片 ``export_coco``，**不**引入
+    shoelace 第二套 area 语义），``segmentation`` = 单外环像素坐标，``iscrowd=0``。
+    """
+    bbox_norm = points_to_bbox_norm(points)
+    x_px = round(bbox_norm["x"] * img_w, 2)
+    y_px = round(bbox_norm["y"] * img_h, 2)
+    w_px = round(bbox_norm["w"] * img_w, 2)
+    h_px = round(bbox_norm["h"] * img_h, 2)
+    row: dict = {
+        "id": ann_id,
+        "image_id": image_id,
+        "category_id": category_id,
+        "bbox": [x_px, y_px, w_px, h_px],
+        "area": round(w_px * h_px, 2),
+        "iscrowd": 0,
+        "segmentation": [_coco_ring_px(points, img_w, img_h)],
+    }
+    if include_attributes:
+        attrs = dict(attributes or {})
+        if track_id is not None:
+            attrs["__track_id"] = track_id
+        row["attributes"] = attrs
+    return row
+
+
+def build_coco_frames_seg(
+    sequences: list[dict],
+    cat_map: dict[str, int],
+    *,
+    frame_start_number: int,
+    include_attributes: bool,
+    description: str = "",
+) -> dict:
+    """视频逐帧 COCO instance segmentation 单文档（纯函数，无时间戳，确定性）。
+
+    ``sequences`` 为有序列表，每项 ``{seq, tracks, bboxes, frame_count, step, img_w, img_h}``；
+    ``tracks`` / ``bboxes`` 元素为 ``(class_name, geometry, attributes, track_id)``。image id /
+    annotation id 按 sequence 顺序 × 网格帧升序稳定自增（不依赖 ``hash`` / 未排序 DB 结果），
+    相同输入两次调用输出字节相等。
+
+    每个采样帧建一条 ``images[]``（含无标注空帧），保证 negative frame 与 ``fetch_frames.py``
+    抽帧结果一一对应。只导多边形（单帧 ``video_polygon`` / 轨迹 ``video_track_polygon``，后者按
+    弧长插值展开到每帧）；bbox / polyline / ``points < 3`` 跳过，与图片侧 ``_coco_segmentation``
+    一致（折线不是闭合区域，矩形请用 ``yolo-frames-det``）。
+    """
+    images: list[dict] = []
+    annotations: list[dict] = []
+    image_id_by_key: dict[tuple[str, int], int] = {}
+    next_image_id = 0
+    next_ann_id = 0
+
+    for record in sequences:
+        seq = record["seq"]
+        frame_count = int(record["frame_count"])
+        step = max(1, int(record["step"]))
+        img_w = int(record["img_w"])
+        img_h = int(record["img_h"])
+        sampled = derive_sampled_frames(frame_count, step)
+        grid = {source: idx for idx, source in enumerate(sampled)}
+
+        for grid_index, source_frame in enumerate(sampled):
+            frame_no = grid_index + frame_start_number
+            image_id_by_key[(seq, frame_no)] = next_image_id
+            images.append(
+                {
+                    "id": next_image_id,
+                    "file_name": f"images/{seq}/{frame_no:06d}.jpg",
+                    "width": img_w,
+                    "height": img_h,
+                    "source_frame_index": source_frame,
+                }
+            )
+            next_image_id += 1
+
+        for class_name, geometry, attributes, track_id in record["bboxes"]:
+            if geometry.get("type") != "video_polygon":
+                continue
+            points = geometry.get("points") or []
+            if len(points) < 3:
+                continue
+            grid_index = grid.get(int(geometry.get("frame_index", 0)))
+            if grid_index is None:
+                continue
+            image_id = image_id_by_key[(seq, grid_index + frame_start_number)]
+            annotations.append(
+                _coco_seg_annotation(
+                    next_ann_id,
+                    image_id,
+                    cat_map.get(class_name or "", 0),
+                    points,
+                    img_w,
+                    img_h,
+                    attributes,
+                    track_id,
+                    include_attributes,
+                )
+            )
+            next_ann_id += 1
+
+        for class_name, geometry, attributes, track_id in record["tracks"]:
+            if geometry.get("type") != "video_track_polygon":
+                continue
+            category_id = cat_map.get(class_name or "", 0)
+            for frame in resolved_track_frames(
+                geometry, frame_mode="all_frames", frame_count=frame_count
+            ):
+                points = frame.get("points") or []
+                if len(points) < 3:
+                    continue
+                grid_index = grid.get(int(frame.get("frame_index", 0)))
+                if grid_index is None:
+                    continue
+                image_id = image_id_by_key[(seq, grid_index + frame_start_number)]
+                annotations.append(
+                    _coco_seg_annotation(
+                        next_ann_id,
+                        image_id,
+                        category_id,
+                        points,
+                        img_w,
+                        img_h,
+                        attributes,
+                        track_id,
+                        include_attributes,
+                    )
+                )
+                next_ann_id += 1
+
+    categories = [
+        {"id": cid, "name": name}
+        for name, cid in sorted(cat_map.items(), key=lambda kv: kv[1])
+    ]
+    return {
+        "info": {"description": description},
+        "images": images,
+        "annotations": annotations,
+        "categories": categories,
+    }
+
+
 # ── MOT 16/17/20 ─────────────────────────────────────────────────────
 
 

@@ -153,6 +153,35 @@ describe("ExportModal", () => {
     );
   });
 
+  it("视频项目可单独导出 COCO 逐帧分割集", async () => {
+    render(<ExportModalHarness projectId="p6" projectTypeKey="video-track" />);
+
+    expect(screen.getByText("COCO 逐帧分割")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Video JSON")); // 取消默认 video_json
+    fireEvent.click(screen.getByText("COCO 逐帧分割"));
+    submitExport();
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p6", ["coco-frames-seg"], {
+      includeAttributes: true,
+    });
+  });
+
+  it("视频项目可同选 YOLO 逐帧分割 + COCO 逐帧分割，互不覆盖", async () => {
+    render(<ExportModalHarness projectId="p7" projectTypeKey="video-track" />);
+
+    fireEvent.click(screen.getByText("Video JSON")); // 取消默认 video_json
+    fireEvent.click(screen.getByText("YOLO 逐帧分割"));
+    fireEvent.click(screen.getByText("COCO 逐帧分割"));
+    submitExport();
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.exportProject).toHaveBeenCalledWith(
+      "p7",
+      ["yolo-frames-seg", "coco-frames-seg"],
+      { includeAttributes: true },
+    );
+  });
+
   it("点云项目展示标准 3D 目标并默认导出 AAP JSON", async () => {
     render(<ExportModalHarness projectId="p5" projectTypeKey="lidar" />);
 
