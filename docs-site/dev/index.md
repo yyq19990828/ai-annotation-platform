@@ -69,3 +69,4 @@ docker compose up -d
 - 版本历史与 roadmap：`/CHANGELOG.md`
 - 架构决策：`/docs/adr/` · [ADR 列表](./adr/)（侧边栏）
 - 部署 / 运维：[部署与运维](/ops/)
+- 面向 AI / Coding Agent：[llms.txt](https://yyq19990828.github.io/ai-annotation-platform/llms.txt)（文档索引）· [llms-full.txt](https://yyq19990828.github.io/ai-annotation-platform/llms-full.txt)（全文语料）· [openapi.json](../openapi.json)（API 契约）

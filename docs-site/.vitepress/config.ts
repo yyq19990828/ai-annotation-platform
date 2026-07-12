@@ -25,6 +25,11 @@ export default withMermaid(defineConfig({
   base: process.env.DOCS_BASE ?? "/",
   cleanUrls: true,
   lastUpdated: true,
+  // 站点地图：hostname 用源站，路径前缀由 base 处理。部署地址
+  // https://yyq19990828.github.io/ai-annotation-platform/ 。提交给 Search Console 用完整 URL。
+  sitemap: {
+    hostname: "https://yyq19990828.github.io/ai-annotation-platform/",
+  },
   // 允许指向本地开发服务器的链接，构建期不当 dead link
   ignoreDeadLinks: [
     /^https?:\/\/localhost(:\d+)?(\/|$)/,
