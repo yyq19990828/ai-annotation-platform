@@ -155,12 +155,13 @@ async def list_task_views(
             counts.append(valid_counts[count_index])
             count_index += 1
     items: list[ProjectTaskViewOut] = []
-    for builtin, count in zip(builtins, counts):
+    for i, (builtin, count) in enumerate(zip(builtins, counts)):
         items.append(
             ProjectTaskViewOut(
                 **builtin,
                 task_count=count if entity_scope == "tasks" else None,
                 result_count=count,
+                invalid_fields=invalid_by_index[i],
             )
         )
     for index, (view, count) in enumerate(zip(saved, counts[len(builtins) :])):

@@ -79,6 +79,12 @@ class ProjectTaskView(Base):
             "project_id",
             "visibility",
         ),
+        Index(
+            "ix_project_task_views_scope_visibility",
+            "project_id",
+            "entity_scope",
+            "visibility",
+        ),
         CheckConstraint(
             "visibility IN ('private', 'project')",
             "ck_project_task_views_visibility",
