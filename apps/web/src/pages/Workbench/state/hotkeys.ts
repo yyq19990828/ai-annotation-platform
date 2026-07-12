@@ -67,6 +67,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["V"], desc: "视频选择工具", group: "video", actionType: "setVideoTool" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
+  { keys: ["M"], desc: "视频 Mask 轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["S"], desc: "视频智能点工具（交互式 SAM 分割当前帧；Alt+点击落负点）", group: "video", actionType: "setVideoTool" },
   { keys: ["D"], desc: "视频智能框工具（框选目标，交互式 SAM 分割当前帧）", group: "video", actionType: "setVideoTool" },
   { keys: ["E"], desc: "视频示例框工具（框一个例子，找出当前帧所有同类；Alt+框排除误检）", group: "video", actionType: "setVideoTool" },
@@ -162,7 +163,7 @@ export type HotkeyAction =
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
   | { type: "setTool"; tool: "select" | "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
-  | { type: "setVideoTool"; tool: "select" | "box" | "track" | "smart-point" | "smart-box" | "exemplar" | "magic-box" | "polygon" }
+  | { type: "setVideoTool"; tool: "select" | "box" | "track" | "mask" | "smart-point" | "smart-box" | "exemplar" | "magic-box" | "polygon" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -286,6 +287,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "select" };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
+    if (e.key === "m" || e.key === "M") return { type: "setVideoTool", tool: "mask" };
     // v0.21.23 · 视频交互式 SAM。图片侧 S 是「AI 工具循环」, 视频只有两个 AI 工具, 故直接直达。
     if (e.key === "s" || e.key === "S") return { type: "setVideoTool", tool: "smart-point" };
     if (e.key === "d" || e.key === "D") return { type: "setVideoTool", tool: "smart-box" };

@@ -19,16 +19,24 @@ from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.annotation_propagation import _new_track_id
 from app.services.ml_backend import MLBackendService
+from app.services.raster_mask_storage import (
+    load_coco_rle,
+    store_coco_rle,
+    validate_mask_geometry_for_task,
+)
 from app.services.video_tracker_adapters import (
     TrackerContext,
     TrackerFrameResult,
     get_tracker_adapter,
 )
 from app.services.video_tracks import is_polygon_track
+from app.services.video_tracks import is_mask_track, resolve_track_at_frame
+from app.utils.raster_mask_rle import coco_rle_bbox_norm
 
 log = logging.getLogger(__name__)
 
 TrackerEventPublisher = Callable[[str, dict], Awaitable[None]]
+MAX_TRACKER_STAGED_BYTES = 64 * 1024 * 1024
 
 
 class TrackerJobStateConflict(ValueError):
@@ -81,6 +89,37 @@ def _normalize_points(geometry: dict) -> list[list[float]]:
     return [[float(p[0]), float(p[1])] for p in points if len(p) >= 2]
 
 
+def _materialize_tracker_mask_result(result: TrackerFrameResult) -> TrackerFrameResult:
+    geometry = result.geometry or {}
+    if geometry.get("type") != "mask":
+        return result
+    rle = geometry.get("rle")
+    if not isinstance(rle, dict):
+        raise ValueError("tracker mask result requires geometry.rle")
+    reference = store_coco_rle(rle)
+    bbox = coco_rle_bbox_norm(rle)
+    return replace(
+        result,
+        geometry={"type": "mask", "mask": reference, "bbox": bbox},
+        outside=result.outside or not bbox,
+    )
+
+
+def _tracker_result_json_bytes(result: TrackerFrameResult) -> int:
+    return len(
+        json.dumps(_serialize_results([result])[0], separators=(",", ":")).encode()
+    )
+
+
+def _mask_track_seed_geometry(geometry: dict, frame_index: int) -> dict:
+    resolved = resolve_track_at_frame(geometry, frame_index)
+    if resolved is None:
+        return geometry
+    rle = load_coco_rle(resolved.get("mask") or {})
+    bbox = coco_rle_bbox_norm(rle)
+    return {"type": "bbox", **bbox} if bbox else geometry
+
+
 def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     size = max(1, int(settings.video_tracker_window_size_frames))
     # sam3 两档视频模型都用更小分窗(不动 sam2 的窗口, 避免回归其长程记忆):
@@ -111,25 +150,24 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
     }
 
 
-def _coerce_video_track_geometry(annotation: Annotation, job: VideoTrackerJob) -> dict:
+def _coerce_video_track_geometry(
+    annotation: Annotation, job: VideoTrackerJob, target_kind: str
+) -> dict:
     geometry = annotation.geometry or {}
     track_id = str(annotation.track_id or geometry.get("track_id") or _new_track_id())
-    # v0.21.20 · polygon track: 保留 points 关键帧 + 类型, 回填走多边形路径。
-    if geometry.get("type") == "video_track_polygon":
+    target_type = {
+        "polygon": "video_track_polygon",
+        "mask": "video_track_mask",
+    }.get(target_kind, "video_track_bbox")
+    if geometry.get("type") == target_type:
         return {
-            "type": "video_track_polygon",
+            "type": target_type,
             "track_id": track_id,
             "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
             "outside": [dict(item) for item in geometry.get("outside") or []],
         }
-    if geometry.get("type") == "video_track_bbox":
-        return {
-            "type": "video_track_bbox",
-            "track_id": track_id,
-            "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
-            "outside": [dict(item) for item in geometry.get("outside") or []],
-        }
-
+    if target_kind in {"polygon", "mask"}:
+        return {"type": target_type, "track_id": track_id, "keyframes": [], "outside": []}
     return {
         "type": "video_track_bbox",
         "track_id": track_id,
@@ -159,9 +197,29 @@ def apply_tracker_results(
     job: VideoTrackerJob,
     results: list[TrackerFrameResult],
     grid_step: int = 1,
+    output_geometry: str | None = None,
 ) -> None:
-    geometry = _coerce_video_track_geometry(annotation, job)
-    is_polygon = geometry.get("type") == "video_track_polygon"
+    result_kind = next(
+        (
+            result.geometry.get("type")
+            for result in results
+            if not result.outside and isinstance(result.geometry, dict)
+        ),
+        None,
+    )
+    if output_geometry in {"bbox", "polygon", "mask"}:
+        target_kind = output_geometry
+    else:
+        target_kind = (
+            "mask"
+            if result_kind == "mask"
+            else "polygon"
+            if result_kind == "polygon"
+            else "bbox"
+        )
+    geometry = _coerce_video_track_geometry(annotation, job, target_kind)
+    is_polygon = target_kind == "polygon"
+    is_mask = target_kind == "mask"
     keyframes = geometry["keyframes"]
     manual_frames = {
         int(item.get("frame_index", 0))
@@ -186,7 +244,15 @@ def apply_tracker_results(
             continue
         if result.frame_index in manual_frames:
             continue
-        if is_polygon:
+        if is_mask:
+            reference = result.geometry.get("mask")
+            bbox = result.geometry.get("bbox") or {}
+            if not isinstance(reference, dict) or float(bbox.get("w", 0)) <= 0:
+                outside_frames.append(result.frame_index)
+                prediction_by_frame.pop(result.frame_index, None)
+                continue
+            shape_field = {"mask": dict(reference)}
+        elif is_polygon:
             points = _normalize_points(result.geometry)
             if len(points) < 3:
                 # 退化多边形(顶点<3)当 outside 处理, 避免写坏 schema。
@@ -223,9 +289,9 @@ def apply_tracker_results(
 
     annotation.geometry = geometry
     annotation.track_id = str(geometry["track_id"])
-    annotation.annotation_type = (
-        "video_track_polygon" if is_polygon else "video_track_bbox"
-    )
+    annotation.annotation_type = geometry["type"]
+    if is_mask:
+        annotation.tool_unit_id = "region"
     annotation.version = int(annotation.version or 1) + 1
 
 
@@ -303,6 +369,14 @@ def _bbox_of_geometry(geom: dict) -> tuple[float, float, float, float]:
         if not xs or not ys:
             return (0.0, 0.0, 0.0, 0.0)
         return (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+    if geom.get("type") == "mask":
+        bbox = geom.get("bbox") or {}
+        return (
+            float(bbox.get("x", 0.0)),
+            float(bbox.get("y", 0.0)),
+            float(bbox.get("w", 0.0)),
+            float(bbox.get("h", 0.0)),
+        )
     return (
         float(geom.get("x", 0.0)),
         float(geom.get("y", 0.0)),
@@ -373,7 +447,7 @@ def _associate_multiplex_window(
     return remapped
 
 
-def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
+def _new_discovered_track(source: Annotation, output_geometry: str) -> Annotation:
     """为一个新发现的实例建一条空 video_track annotation (阶段 0)。
 
     归属策略 (epic 已定): 继承 source 的 label (class_name/tool_unit_id) 与项目/任务/
@@ -381,7 +455,10 @@ def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
     新 track_id 走统一工厂 _new_track_id()。几何先空, 由 apply_tracker_results 填预测帧。
     """
     track_id = _new_track_id()
-    geom_type = "video_track_polygon" if is_polygon else "video_track_bbox"
+    geom_type = {
+        "polygon": "video_track_polygon",
+        "mask": "video_track_mask",
+    }.get(output_geometry, "video_track_bbox")
     return Annotation(
         id=uuid.uuid4(),
         task_id=source.task_id,
@@ -389,7 +466,7 @@ def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
         user_id=source.user_id,
         source="ai_tracker",
         annotation_type=geom_type,
-        tool_unit_id=source.tool_unit_id,
+        tool_unit_id="region" if output_geometry == "mask" else source.tool_unit_id,
         class_name=source.class_name,
         geometry={
             "type": geom_type,
@@ -415,13 +492,12 @@ def _persist_tracker_results(
     annotation 调一次 apply_tracker_results —— 与阶段 0 之前完全一致。
     """
     primary, extras = _partition_results_by_instance(results)
-    apply_tracker_results(source, job, primary, grid_step)
-    is_polygon = output_geometry == "polygon"
+    apply_tracker_results(source, job, primary, grid_step, output_geometry)
     created: list[Annotation] = []
     for instance_id in sorted(extras):
-        new_ann = _new_discovered_track(source, is_polygon)
+        new_ann = _new_discovered_track(source, output_geometry)
         db.add(new_ann)
-        apply_tracker_results(new_ann, job, extras[instance_id], grid_step)
+        apply_tracker_results(new_ann, job, extras[instance_id], grid_step, output_geometry)
         created.append(new_ann)
     return created
 
@@ -466,11 +542,14 @@ def _stage_tracker_results(
     """把逐帧结果暂存进 job.staged_result (候选), **不碰 annotation**。用户接受时反序列化后
     走 _persist_tracker_results 落库。grid_step / output_geometry 一并存, 供 accept 复用同一
     落库逻辑 (无需在 accept 时重新推导)。"""
-    job.staged_result = {
+    staged = {
         "results": _serialize_results(results),
         "grid_step": grid_step,
         "output_geometry": output_geometry,
     }
+    if len(json.dumps(staged, separators=(",", ":")).encode()) > MAX_TRACKER_STAGED_BYTES:
+        raise ValueError("tracker_candidate_too_large: staged payload exceeds 64 MiB")
+    job.staged_result = staged
 
 
 async def accept_tracker_job(
@@ -511,7 +590,7 @@ async def accept_tracker_job(
         raise TrackerJobStateConflict(
             "Source annotation no longer exists; candidate discarded"
         )
-    _persist_tracker_results(
+    created = _persist_tracker_results(
         db,
         annotation,
         job,
@@ -519,6 +598,19 @@ async def accept_tracker_job(
         int(staged.get("grid_step", 1)),
         staged.get("output_geometry", "bbox"),
     )
+    task = await db.get(Task, job.task_id)
+    if task is None:
+        await db.rollback()
+        raise ValueError("Task not found")
+    try:
+        await validate_mask_geometry_for_task(db, task, annotation.geometry or {})
+        for created_annotation in created:
+            await validate_mask_geometry_for_task(
+                db, task, created_annotation.geometry or {}
+            )
+    except ValueError:
+        await db.rollback()
+        raise
     job.status = VideoTrackerJobStatus.ACCEPTED.value
     await db.commit()
     await db.refresh(job)
@@ -580,6 +672,7 @@ async def _mark_failed(
     if job.status != VideoTrackerJobStatus.CANCELLED.value:
         job.status = VideoTrackerJobStatus.FAILED.value
         job.error_message = message[:2000]
+        job.staged_result = None
         job.completed_at = _now()
     await db.commit()
     await publisher(job.event_channel, _event(job, "job_failed", error=message))
@@ -638,6 +731,7 @@ async def run_tracker_job(
         )
 
         results: list[TrackerFrameResult] = []
+        staged_bytes = 0
         total = max(1, job.to_frame - job.from_frame + 1)
         progress = 0
         task_data = {
@@ -652,7 +746,12 @@ async def run_tracker_job(
         # each subsequent window seeds from the previous window's last
         # non-outside frame geometry so the tracker keeps following a moving
         # target instead of restarting from the original box every window.
-        last_geometry = annotation.geometry or {}
+        source_geometry = annotation.geometry or {}
+        last_geometry = (
+            _mask_track_seed_geometry(source_geometry, job.from_frame)
+            if is_mask_track(source_geometry)
+            else source_geometry
+        )
         # v0.21.27 · U-pvs-1 · 多目标跨窗续追: 记每个实例的末帧 (非 outside) 几何, 后续窗对
         # 每个实例各用其上一窗末帧几何 + 同一 obj_id 重播种 (否则非主实例过一窗即丢)。仅当
         # 有多实例 (backend 发了 ≥2 个 instance_id) 时启用; 单目标 / None-instance 不触发。
@@ -664,8 +763,12 @@ async def run_tracker_job(
         mp_prev_boundary: dict[str, dict] = {}
         mp_next_global = [1]
         # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
-        output_geometry = (
-            "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
+        output_geometry = (job.prompt or {}).get("output_geometry") or (
+            "mask"
+            if is_mask_track(annotation.geometry or {})
+            else "polygon"
+            if is_polygon_track(annotation.geometry or {})
+            else "bbox"
         )
 
         tracker_windows = _tracker_windows(job)
@@ -709,6 +812,12 @@ async def run_tracker_job(
             # 窗内 obj_id → 全局 instance_id) 后再并入 results。非 multiplex 时缓冲即透传。
             window_results: list[TrackerFrameResult] = []
             async for result in adapter.propagate(ctx):
+                result = _materialize_tracker_mask_result(result)
+                staged_bytes += _tracker_result_json_bytes(result)
+                if staged_bytes > MAX_TRACKER_STAGED_BYTES:
+                    raise ValueError(
+                        "tracker_candidate_too_large: staged payload exceeds 64 MiB"
+                    )
                 await db.refresh(job)
                 if (
                     job.cancel_requested_at is not None

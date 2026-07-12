@@ -602,7 +602,7 @@ def setup() -> dict:
             "supported_prompts": ["text"],
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 内置流程)。
             "supported_inputs": ["full_image", "crop"],
-            "supported_geometric_outputs": ["polygon"],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
@@ -978,9 +978,9 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
         raise HTTPException(status_code=422,
                             detail="sam3_video tracker requires context.text (text-driven detection)")
     output_geometry = ctx.get("output_geometry") or "bbox"
-    if output_geometry not in ("bbox", "polygon"):
+    if output_geometry not in ("bbox", "polygon", "mask"):
         raise HTTPException(status_code=422,
-                            detail=f"output_geometry must be bbox|polygon, got {output_geometry!r}")
+                            detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}")
     seed_bbox = _seed_bbox_from_video_ctx(ctx)
 
     tracker = await _ensure_video_tracker_loaded()
@@ -1053,9 +1053,9 @@ async def _run_pvs_video_tracker(file_path: str, ctx: dict) -> list[dict]:
         raise HTTPException(status_code=422,
                             detail=f"video_tracker direction must be forward|backward, got {direction!r}")
     output_geometry = ctx.get("output_geometry") or "bbox"
-    if output_geometry not in ("bbox", "polygon"):
+    if output_geometry not in ("bbox", "polygon", "mask"):
         raise HTTPException(status_code=422,
-                            detail=f"output_geometry must be bbox|polygon, got {output_geometry!r}")
+                            detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}")
     seeds = _seeds_from_video_ctx(ctx)
     if not seeds:
         raise HTTPException(

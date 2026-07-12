@@ -206,6 +206,28 @@ def test_propagate_forward_maps_local_to_source_frames(monkeypatch):
     assert tracker.active_sessions == 0
 
 
+def test_propagate_mask_output_preserves_raw_pixels(monkeypatch):
+    mask = np.array([[False, True, False], [True, False, True]], dtype=bool)
+    fake = _FakePropagatePredictor({0: mask})
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (3, 2, 1))
+    )
+    result = tracker.propagate(
+        video_path="/tmp/x.mp4",
+        from_frame=0,
+        to_frame=0,
+        direction="forward",
+        seeds=[_seed(1, {"x": 0, "y": 0, "w": 1, "h": 1})],
+        output_geometry="mask",
+    )[0]
+    assert result["outside"] is False
+    assert result["geometry"] == {
+        "type": "mask",
+        "rle": {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]},
+    }
+
+
 def test_propagate_backward_anchors_seed_at_window_end(monkeypatch):
     fg = np.ones((10, 10), dtype=bool)
     frame_masks = {0: fg, 1: fg, 2: fg}

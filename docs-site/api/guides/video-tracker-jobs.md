@@ -2,7 +2,7 @@
 audience: [dev]
 type: how-to
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-13
 ---
 
 # Video Tracker Jobs
@@ -24,7 +24,8 @@ Content-Type: application/json
   "from_frame": 0,
   "to_frame": 120,
   "model_key": "sam2_video",
-  "direction": "forward"
+  "direction": "forward",
+  "output_geometry": "mask"
 }
 ```
 
@@ -114,6 +115,12 @@ GET /api/v1/video-tracker-jobs/{job_id}/preview
 ```
 
 preview 只表示暂存候选，不代表 annotation 已经改变。没有 staged result 时 `results` 为空数组。
+
+Mask preview 的 geometry 为 `{type:"mask", mask:coco_rle_ref, bbox?}`。内容通过下列鉴权端点读取，客户端应以 job id + instance id + frame + SHA-256 作为 staged cache identity：
+
+```http
+GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
+```
 
 ## 接受、丢弃与取消
 

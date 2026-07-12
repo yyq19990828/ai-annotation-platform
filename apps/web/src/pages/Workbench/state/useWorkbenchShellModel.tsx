@@ -17,13 +17,15 @@ import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import { rasterMasksApi } from "@/api/rasterMasks";
+import { ApiError } from "@/api/client";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import { mlBackendsApi } from "@/api/ml-backends";
-import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
+import type { Annotation, TaskResponse, AnnotationResponse, VideoTrackGeometry, VideoTrackMaskGeometry } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
@@ -80,7 +82,7 @@ import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
-import { isAnyVideoSingleFrame, isVideoBbox, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isAnyVideoSingleFrame, isVideoBbox, isVideoMaskTrack, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
@@ -150,6 +152,10 @@ interface WorkbenchShellIssueSection {
   onToggleIssuePinDrop: () => void;
   createModal: ComponentProps<typeof IssueCreateModal>;
 }
+
+type TrackerSourceAnnotation = AnnotationResponse & {
+  geometry: VideoTrackGeometry | VideoTrackMaskGeometry;
+};
 
 interface WorkbenchShellEmptyState {
   kind: "empty";
@@ -588,7 +594,7 @@ export function useWorkbenchShellModel({
 
   const trackerJobs = useVideoTrackerJobs(taskId, isVideoTask);
   const [propagateDialog, setPropagateDialog] = useState<{
-    annotation: VideoTrackAnnotation;
+    annotation: TrackerSourceAnnotation;
     submitting: boolean;
   } | null>(null);
   // v0.21.27 · U-pvs-1 · PVS 点种子采集接线 (state 已在上方声明): 用户在传播对话框点
@@ -627,7 +633,7 @@ export function useWorkbenchShellModel({
     if (hasSeed) setSeedObj(seedObj + 1);
   }, [trackerSeeds, trackerSeedBoxes, seedObj]);
 
-  const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
+  const openPropagateDialog = useCallback((annotation: TrackerSourceAnnotation) => {
     setPropagateDialog({ annotation, submitting: false });
     setPropagateBrush(null);
     setTrackerSeeds([]);
@@ -934,9 +940,9 @@ export function useWorkbenchShellModel({
         if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
       }
       const sel = annotationsRef.current.find((ann) => ann.id === s.selectedId);
-      if (!sel || !isVideoTrack(sel)) return;
+      if (!sel || (!isVideoTrack(sel) && !isVideoMaskTrack(sel))) return;
       e.preventDefault();
-      openPropagateDialog(sel as VideoTrackAnnotation);
+      openPropagateDialog(sel);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1661,6 +1667,7 @@ export function useWorkbenchShellModel({
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,
+    handleVideoMaskCommit,
     handleVideoRename,
     handleVideoBatchRename,
     handleVideoBatchDelete,
@@ -1686,6 +1693,63 @@ export function useWorkbenchShellModel({
       delete: { mutate: (id, opts) => deleteAnnotationMut.mutate(id, opts) },
     },
   });
+
+  const selectedVideoMask = useMemo(() => {
+    const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
+    return annotation && isVideoMaskTrack(annotation) ? annotation : null;
+  }, [s.selectedId, visibleAnnotationsData]);
+  const selectedVideoMaskFingerprint = selectedVideoMask
+    ? `${selectedVideoMask.id}:${selectedVideoMask.version ?? 0}:${selectedVideoMask.updated_at ?? ""}:${s.videoFrameIndex}`
+    : "";
+  const maskInitFromRle = maskEditor.initFromRle;
+  const maskBeginBlank = maskEditor.beginBlank;
+  const maskCancel = maskEditor.cancel;
+  useEffect(() => {
+    if (!isVideoTask) return;
+    if (s.videoTool !== "mask") {
+      maskCancel();
+      return;
+    }
+    if (!selectedVideoMask) {
+      maskCancel();
+      return;
+    }
+    let cancelled = false;
+    void rasterMasksApi.annotationContent(selectedVideoMask.id, s.videoFrameIndex)
+      .then((rle) => {
+        if (!cancelled) maskInitFromRle(rle);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 404) {
+          maskBeginBlank();
+          return;
+        }
+        maskCancel();
+        pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
+      });
+    return () => { cancelled = true; };
+  }, [isVideoTask, maskBeginBlank, maskCancel, maskInitFromRle, pushToast, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
+
+  const cancelVideoMaskEdit = useCallback(() => {
+    maskEditor.cancel();
+    s.setVideoTool("select");
+  }, [maskEditor, s]);
+  const commitVideoMask = useCallback(() => {
+    const rle = maskEditor.commitToRle();
+    if (!rle || !maskEditor.buffer || maskEditor.buffer.countSet() === 0) {
+      pushToast({ msg: "Mask 为空，未提交", kind: "warning" });
+      return;
+    }
+    void handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask)
+      .then(() => {
+        maskEditor.cancel();
+        s.setVideoTool("select");
+      })
+      .catch((error: unknown) => {
+        pushToast({ msg: "Mask 保存失败", sub: String(error), kind: "error" });
+      });
+  }, [handleVideoMaskCommit, maskEditor, pushToast, s, selectedVideoMask]);
 
   // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
   // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
@@ -2415,7 +2479,7 @@ export function useWorkbenchShellModel({
             onUpdateAttributes={handleUpdateAttributes}
           />
         );
-      } else if (ann && isVideoPointsTrack(ann)) {
+      } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
         // v0.21.26 · 点集轨迹 (polygon / polyline track):简化卡(指标 + 改类 / 显隐 / 锁 / 删整条),
         // 取代此前空白卡。完整关键帧编辑仍归 v0.21.20 多几何 track epic,不复用 bbox 轨迹卡。
         children = (
@@ -2433,6 +2497,8 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onToggleHidden={s.toggleHiddenVideoTrack}
             onToggleLock={s.toggleLockedVideoTrack}
+            onEditMask={isVideoMaskTrack(ann) ? () => s.setVideoTool("mask") : undefined}
+            onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
           />
         );
       } else if (videoBatchTracks.length >= 2) {
@@ -2569,6 +2635,8 @@ export function useWorkbenchShellModel({
     s.lockedVideoTrackIds,
     s.toggleHiddenVideoTrack,
     s.toggleLockedVideoTrack,
+    s.setVideoTool,
+    openPropagateDialog,
     handleStartChangeClass,
     handlePatchShapeFlag,
     handleDeleteBox,
@@ -2768,6 +2836,15 @@ export function useWorkbenchShellModel({
             };
           })
       : [];
+  const candidateMasksThisFrame = trackerReviewCandidate
+    ? trackerReviewCandidate.preview.results
+        .filter(
+          (result) => result.frame_index === s.videoFrameIndex
+            && !result.outside
+            && result.geometry.type === "mask",
+        )
+        .map((result) => ({ jobId: trackerReviewCandidate.jobId, result }))
+    : [];
   const propagateDialogNextKeyframe = propagateDialogTrack
     ? [...propagateDialogTrack.geometry.keyframes]
         .map((kf) => kf.frame_index)
@@ -2894,7 +2971,7 @@ export function useWorkbenchShellModel({
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
-            {s.tool === "mask" && (
+            {(isVideoTask ? s.videoTool === "mask" : s.tool === "mask") && (
               <MaskToolbar
                 active={maskEditor.active}
                 mode={maskEditor.mode}
@@ -2902,8 +2979,8 @@ export function useWorkbenchShellModel({
                 dirty={maskEditor.dirty}
                 onSetMode={maskEditor.setMode}
                 onSetRadius={maskEditor.setRadius}
-                onCommit={commitMaskAsPolygon}
-                onCancel={cancelMaskEdit}
+                onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}
+                onCancel={isVideoTask ? cancelVideoMaskEdit : cancelMaskEdit}
               />
             )}
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
@@ -3053,6 +3130,10 @@ export function useWorkbenchShellModel({
             : candidateBoxesThisFrame.length
               ? candidateBoxesThisFrame
               : undefined,
+        videoMaskCandidates: isVideoTask ? candidateMasksThisFrame : undefined,
+        videoMaskEditor: isVideoTask ? maskEditor : undefined,
+        onVideoMaskCommit: isVideoTask ? commitVideoMask : undefined,
+        onVideoMaskCancel: isVideoTask ? cancelVideoMaskEdit : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,

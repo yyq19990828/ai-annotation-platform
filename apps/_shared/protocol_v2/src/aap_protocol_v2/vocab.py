@@ -42,6 +42,7 @@ GEOMETRY_VALUES: tuple[str, ...] = (
     "keypoint",
     "lidar_box_3d",
     "point_mask_3d",
+    "mask",
     "none",
 )
 

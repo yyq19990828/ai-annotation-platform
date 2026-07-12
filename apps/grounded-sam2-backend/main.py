@@ -641,7 +641,7 @@ def setup() -> dict:
             "supported_prompts": ["bbox"],
             # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
             "supported_inputs": ["bbox_prompt", "full_image"],
-            "supported_geometric_outputs": ["bbox"],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             # 有状态视频追踪, 跨帧串行不可批量。output_attribute_types 留空。
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam2_video"],
@@ -1133,10 +1133,10 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
     # v0.21.20 · polygon track 回填: 平台按源几何类型下发 output_geometry, "polygon" 时
     # 每帧保留 mask 矢量化为多边形而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。
     output_geometry = ctx.get("output_geometry") or "bbox"
-    if output_geometry not in ("bbox", "polygon"):
+    if output_geometry not in ("bbox", "polygon", "mask"):
         raise HTTPException(
             status_code=422,
-            detail=f"video_tracker output_geometry must be bbox|polygon, got {output_geometry!r}",
+            detail=f"video_tracker output_geometry must be bbox|polygon|mask, got {output_geometry!r}",
         )
 
     try:

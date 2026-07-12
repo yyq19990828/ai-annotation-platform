@@ -235,7 +235,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用。平台按模型窗口配置拆分长区间，并从项目已启用 backend 中按 `/setup.supported_trackers` 选择能力匹配项；项目主后端支持该 tracker 时优先，否则选择其它 connected 匹配 backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video` / `sam3_video_interactive`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt`、`source_geometry` 和种子驱动模型使用的 `seeds`。其中 `sam3_video_interactive` 是 SAM3 的 **PVS 交互追踪**（点/框 seed + 跨帧 memory），与 `sam2_video` 同为 caller 指定 obj_id 的种子驱动多目标；`sam3_video` 则是 multiplex 文本开集检测。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside?, instance_id?, primary? }`；低于平台阈值的 `confidence` 标为 outside。`instance_id` / `primary` 用于 job 内多目标身份，单目标 backend 可整体省略。
 >
 > 落地细节：
-> - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
+> - **输出几何**：`context.output_geometry` 受控取 `bbox / polygon / mask`。`mask` 返回 `{type:"mask", rle:{encoding:"coco_rle", size:[h,w], counts:[...]}}`；counts 使用 COCO column-major runs，平台会校验并转换为内容寻址引用。空 mask 用 `outside=true`，不能返回全零 bbox 冒充对象。
+> - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），按 `output_geometry` 直接返回 mask、polygon 或外接 bbox。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/archive/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
 > - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
 > - **种子输入 `context.seeds[]`（点 / 框 / 多目标）**：`sam2_video` 与 `sam3_video_interactive` 都接受 `context.seeds[]`——每条可用 `{obj_id?, bbox?, points?}` 单帧简写或 `{obj_id, prompts:[{frame_index, points?, bbox?}, ...]}` 多帧写法。坐标归一化到 [0,1]，点 `label` 1=正点 / 0=负点，缺 `obj_id` 按序补 1..N。backend 应优先显式 seeds，缺省时才用 `source_geometry` 单框兜底。平台从 `job.prompt.seeds` 读取并经 `TrackerContext.seeds` 透传；首窗下发原始提示，后续窗按各实例续种。
@@ -509,7 +510,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **`supported_geometric_outputs`（几何输出，复用现有字段）** —— 枚举与 `TOOL_UNIT_IDS` 对齐：
 
-`bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `none`。
+`bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `mask` / `none`。
 （3D 的 `lidar_box_3d` / `point_mask_3d` 暂不在本版 backend 范围，留位。）
 
 **`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。平台消费：画布对 `text` / `language` / `orientation` 校验项目是否有承接位（缺则非阻断警告「采纳后该属性丢失」，`class` 因 taxonomy 几乎恒在而跳过）；编排分类下游阶段若模型自报此字段却不含 `class`，派发期 422（见 §2.1.1）。

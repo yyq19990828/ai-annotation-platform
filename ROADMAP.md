@@ -12,12 +12,11 @@
 
 ### 计划中
 
-- **[多几何 track 剩余切片](docs/plans/2026-07-12-multi-geometry-track-remaining-slices.md)**：[`v0.21.31`](docs/plans/2026-07-12-v0.21.31-yolo-frames-seg-ui-reachability.md) 补 `yolo-frames-seg` UI 可达；[`v0.21.33`](docs/plans/2026-07-12-v0.21.33-coco-frames-seg.md) 在明确消费方后新增 COCO；[`v0.22.0`](docs/plans/2026-07-12-v0.22.0-raster-mask-track-davis.md) 独立建设真·栅格 mask track + DAVIS。polyline AI 因无通用原生模型、启发式中心线价值不足已[取消](docs/plans/2026-07-12-v0.21.32-polyline-track-ai-propagation.md)，继续保留 400 安全拒绝，不再列为待办。历史母计划见 [v0.21.20](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
-- **视频单帧工具暂停项**：keypoint / rotated-box（OBB）/ mask 笔刷的绘制交互尚未实现，其中 OBB 还需旋转手柄。因使用少、反馈少，保持暂停，等明确需求触发；计划归档见 [`v0.21.22`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。
+- **视频单帧工具暂停项**：keypoint / rotated-box（OBB）的绘制交互尚未实现，其中 OBB 还需旋转手柄。栅格 mask 已按轨迹模型落地，不再规划单帧 `video_mask`。其余暂停项等明确需求触发；计划归档见 [`v0.21.22`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：待开工 Phase 2-3——投影手柄微调与多相机一致性。
-- **[视频工作台剩余路线（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：WebCodecs demux、AAP JSON `video_track` 导入、segment 导出聚合、长视频协同 / overlap、Track 级质量评估，以及上方多几何 track 尾项。
+- **[视频工作台剩余路线（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：WebCodecs demux、segment 导出聚合、长视频协同 / overlap 与 Track 级质量评估。
 
 
 ---

@@ -7,7 +7,7 @@ from app.services.annotation_track_identity import prepare_compact_track_identit
 
 @pytest.mark.parametrize(
     "geometry_type",
-    ["video_track_bbox", "video_track_polygon", "video_track_polyline"],
+        ["video_track_bbox", "video_track_polygon", "video_track_polyline", "video_track_mask"],
 )
 def test_compact_track_identity_is_written_to_geometry_and_column(geometry_type):
     geometry, track_id = prepare_compact_track_identity(

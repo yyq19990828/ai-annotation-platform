@@ -468,6 +468,16 @@
   border-top: 3px dashed color-mix(in oklch, var(--track-keyframe-color, var(--sc-brand)) 80%, transparent);
 }
 
+.heldSegment {
+  top: 3px;
+  height: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sc-brand) 32%, transparent) 0 4px,
+    color-mix(in srgb, var(--sc-brand) 12%, transparent) 4px 8px
+  );
+}
+
 .predictedSegment {
   border-top-color: rgba(139, 92, 246, 0.82);
 }

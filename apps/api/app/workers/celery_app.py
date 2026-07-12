@@ -74,6 +74,7 @@ celery_app.conf.update(
         "app.workers.media.cleanup_video_frame_assets": {"queue": "media"},
         "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
+        "app.workers.cleanup.purge_unreferenced_raster_masks": {"queue": "cleanup"},
         # v0.10.16 · DuckDB 同步 + async_jobs 清理走 cleanup 队列
         "app.workers.analytics.sync_to_duckdb": {"queue": "cleanup"},
         "app.workers.async_jobs_cleanup.purge_old_async_jobs": {"queue": "cleanup"},
@@ -102,6 +103,10 @@ celery_app.conf.update(
         "purge-soft-deleted-attachments": {
             "task": "app.workers.cleanup.purge_soft_deleted_attachments",
             "schedule": crontab(hour=3, minute=0),  # 每日 03:00 UTC
+        },
+        "purge-unreferenced-raster-masks": {
+            "task": "app.workers.cleanup.purge_unreferenced_raster_masks",
+            "schedule": crontab(hour=3, minute=20),
         },
         # v0.8.1 · 自助注销冷静期到期处理（每日 04:00 UTC）
         "process-deactivation-requests": {

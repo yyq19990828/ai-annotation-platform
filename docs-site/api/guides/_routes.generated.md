@@ -74,6 +74,8 @@
 
 | Method | Path |
 |---|---|
+| GET | `/annotations/{annotation_id}/mask-content/{frame_index}` |
+| POST | `/tasks/{task_id}/mask-content` |
 | POST | `/annotations/bulk-update` |
 | POST | `/projects/{project_id}/annotations/import` |
 
@@ -518,6 +520,7 @@
 | POST | `/{job_id}/accept` |
 | POST | `/{job_id}/discard` |
 | GET | `/{job_id}/preview` |
+| GET | `/{job_id}/mask-content/{sha256}` |
 
 ## `videos.py`
 
@@ -539,4 +542,4 @@
 
 ---
 
-_共 52 模块 / 292 路由_
+_共 52 模块 / 295 路由_

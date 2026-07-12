@@ -1,4 +1,4 @@
-"""AAP JSON v1.0 — 平台原生无损中间格式 (v0.10.15).
+"""AAP JSON — 平台原生无损中间格式。
 
 为「跨实例迁移 / SDK / Plugin / dataset snapshot」服务的稳定锚点。与 COCO/YOLO/VOC
 并列, 但**包含**它们丢失的字段: attribute_schema 值、prediction.confidence、
@@ -13,8 +13,8 @@ annotation.source、annotation_guide、classes_config 等。
   不走 LabelStudio shape 的 {type, value: {...}} 嵌套.
 - task_match oneof: display_id 优先 (全局唯一最稳); 都给则 display_id 胜出.
 
-本期 (v0.10.15) 实际**只消费 predictions[]**; annotations[] 字段在导入端只警告
-日志不入库 (annotations import 留后续 epic).
+预测导入消费 predictions[]；标注导入消费 annotations[]。schema 1.3 的
+mask_objects 让 video_track_mask 的内容寻址 RLE 可跨实例迁移。
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ AAP_SCHEMA_MAJOR = 1
 # 与 annotations/predictions 数组每条 tool_unit_id. 1.0 reader 仍能读 (extra=ignore).
 # v0.10.31 · 升 1.2: task 层增加 media_type + video 子块 (视频采样/fps/帧元数据).
 # 1.x reader 走 extra=ignore 容忍, media_type 缺失时默认 "image".
-AAP_SCHEMA_VERSION = "1.2"
+# v0.22.0 · 升 1.3: envelope 增 mask_objects，令 coco_rle_ref 跨实例可移植。
+AAP_SCHEMA_VERSION = "1.3"
 
 
 # ── task_match (oneof) ───────────────────────────────────────────────
@@ -51,10 +52,7 @@ class AAPTaskMatch(BaseModel):
 
 
 class AAPAnnotationEntry(BaseModel):
-    """导出严格写满 null; 导入 lenient.
-
-    本期不消费导入侧 (annotations import 留后续 epic), 字段保留供导出用.
-    """
+    """导出严格写满 null；标注导入保持 lenient。"""
 
     geometry: dict[str, Any]
     class_name: str | None = None
@@ -142,6 +140,7 @@ class AAPJsonV1Envelope(BaseModel):
     exported_at: datetime | None = None
     exported_from: AAPExportedFrom = Field(default_factory=AAPExportedFrom)
     project: AAPProjectMeta = Field(default_factory=AAPProjectMeta)
+    mask_objects: dict[str, dict[str, Any]] = Field(default_factory=dict)
     tasks: list[AAPTaskBlock] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="ignore")

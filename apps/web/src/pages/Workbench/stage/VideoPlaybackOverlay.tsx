@@ -1139,7 +1139,8 @@ export function VideoPlaybackOverlay({
                   <TimelineSpan
                     key={`xinterp-${segment.from}-${segment.to}`}
                     data-testid="video-timeline-interpolated"
-                    className={cn(styles.trackSegment, styles.interpolatedSegment, segment.hasPrediction && styles.predictedSegment)}
+                    className={cn(styles.trackSegment, segment.kind === "held" ? styles.heldSegment : styles.interpolatedSegment, segment.hasPrediction && styles.predictedSegment)}
+                    title={segment.kind === "held" ? "关键帧之间保持上一/最近 Mask" : "关键帧之间插值"}
                     vars={rangeStyle(segment.from, segment.to)}
                   />
                 ))}
@@ -1495,7 +1496,8 @@ export function VideoPlaybackOverlay({
                 <TimelineSpan
                   key={`interpolated-${segment.from}-${segment.to}`}
                   data-testid="video-timeline-interpolated"
-                  className={cn(styles.trackSegment, styles.interpolatedSegment, segment.hasPrediction && styles.predictedSegment)}
+                  className={cn(styles.trackSegment, segment.kind === "held" ? styles.heldSegment : styles.interpolatedSegment, segment.hasPrediction && styles.predictedSegment)}
+                  title={segment.kind === "held" ? "关键帧之间保持上一/最近 Mask" : "关键帧之间插值"}
                   vars={rangeStyle(segment.from, segment.to)}
                 />
               ))}

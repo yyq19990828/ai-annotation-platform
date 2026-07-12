@@ -100,6 +100,9 @@ def _bbox_from_geometry(geometry: dict) -> dict:
     if geometry.get("type") == "polygon":
         return _bbox_from_points(geometry.get("points") or [])
 
+    if geometry.get("type") == "mask":
+        return dict(geometry.get("bbox") or {})
+
     if geometry.get("type") in {"bbox", "video_bbox"}:
         return {
             "x": float(geometry.get("x", 0)),

@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.40
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-13
 ---
 
 # 视频关键帧传播与 AI 追踪
@@ -31,9 +31,9 @@ last_reviewed: 2026-07-11
 <!-- TODO IMAGE_CHECKLIST: images/video-propagate/track-vs-copy-buttons.png — 选中卡「AI 追踪」vs「复制后续」两按钮对比 [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/video-propagate/ai-propagate-toolbar.png — AI 追踪顶部工具条（方向/范围/模型/种子/尺寸） [manual] -->
 
-1. 选中一条矩形框轨迹 `video_track_bbox`。
+1. 选中一条矩形框轨迹 `video_track_bbox` 或 Mask 轨迹 `video_track_mask`。
 2. 点击选中卡上的 **AI 追踪**，或按 `Ctrl+B`。
-3. 在画布顶部的追踪工具条里选择方向、范围和模型。
+3. 在画布顶部的追踪工具条里选择方向、范围、模型与输出几何。「跟随当前轨迹」会保持 bbox / mask 类型，也可以显式选择 Mask、多边形或矩形框。
 4. 按模型需要填写文本或采集点 / 框种子，然后点击「发起传播」。
 
 方向使用时间轴语义，避免“向前 / 向后”歧义：
@@ -93,6 +93,7 @@ SAM2 和 SAM3 点框交互追踪支持在发起前采集种子：
 - **模型置灰**：项目没有启用声明该 `model_key` 的 backend，或 backend 最近一次能力快照没有该 tracker。
 - **文本模型无法开始**：文本检测追踪必须填写目标描述。
 - **追踪范围被拒绝**：普通标注员需要持有覆盖该范围的视频 segment lock；范围也不能跨越多个 segment。
-- **多边形 / 折线轨迹没有 AI 追踪按钮**：当前工作台入口只对矩形框轨迹开放。多边形 / 折线轨迹可以手工管理，但折线追踪尚不支持。
+- **多边形 / 折线轨迹没有 AI 追踪按钮**：当前工作台入口对矩形框与 Mask 轨迹开放。多边形 / 折线轨迹可以手工管理，但折线追踪尚不支持。
+- **Mask 候选显示为紫色半透明区域**：候选接受前按真实像素预览；接受后仍保持同一 RLE，不会改成预览外接框。
 - **取消后仍出现候选**：这是已经算出的部分结果；选择接受可保留，选择丢弃可完全放弃。
 - **刷新页面后仍有待审任务**：工作台重新进入当前视频任务时会从服务端恢复尚未处理的 `pending_review` 候选，以及带有部分结果的已取消任务。若审阅条没有恢复，先检查当前账号是否仍能看见该任务、候选是否已被其他有权限用户处理，再到 `/ai-pre/jobs?tab=video` 核对任务状态。

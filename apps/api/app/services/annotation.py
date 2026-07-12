@@ -30,6 +30,7 @@ from app.services.annotation_propagation import (
     _track_visible_keyframes as _track_visible_keyframes,
 )
 from app.services.annotation_track_identity import prepare_compact_track_identity
+from app.services.raster_mask_storage import validate_mask_geometry_for_task
 
 logger = logging.getLogger("app.services.annotation")
 
@@ -168,6 +169,8 @@ class AnnotationService:
         if parent_annotation_id is not None:
             await self._validate_parent_annotation(task_id, parent_annotation_id)
 
+        if task is not None:
+            await validate_mask_geometry_for_task(self.db, task, geometry)
         geometry, track_id = prepare_compact_track_identity(geometry)
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -1084,6 +1087,9 @@ class AnnotationService:
                 annotation.project_id, annotation.tool_unit_id, class_name
             )
         if geometry is not None:
+            task = await self.db.get(Task, annotation.task_id)
+            if task is not None:
+                await validate_mask_geometry_for_task(self.db, task, geometry)
             try:
                 geometry, track_id = prepare_compact_track_identity(
                     geometry,

@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-13
 ---
 
 # 数据导出格式
@@ -13,7 +13,7 @@ last_reviewed: 2026-06-10
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -32,6 +32,7 @@ last_reviewed: 2026-06-10
 | 视频轨迹 | YOLO 逐帧检测 | `yolo-frames-det` | 视频逐帧检测训练（polygon / polyline 降级为顶点外接框） |
 | 视频轨迹 | YOLO 逐帧分割 | `yolo-frames-seg` | 视频逐帧分割训练（保留多边形顶点；bbox / polyline 跳过） |
 | 视频轨迹 | COCO 逐帧分割 | `coco-frames-seg` | 视频逐帧分割训练（标准 COCO；保留多边形顶点；bbox / polyline 跳过） |
+| 视频轨迹 | DAVIS Mask | `davis` | 视频对象分割训练 / 评测（序列级 palette PNG） |
 | 视频轨迹 | AAP JSON | `aap_json` | 视频跨实例无损迁移 |
 | 视频轨迹 | MOT 16/17/20 | `mot` | 多目标跟踪评测（trackeval） |
 | 视频轨迹 | KITTI Tracking | `kitti` | KITTI 跟踪工具链 |
@@ -42,7 +43,7 @@ last_reviewed: 2026-06-10
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
 
-> **视频 polygon / polyline 几何的导出**：单帧与轨迹的多边形 / 折线现已在各视频格式正确导出（此前会被打包层静默丢弃、标了也导不出）。按格式分：**保真格式**（Video JSON / AAP JSON）保留顶点 `points` 不降级，其中 Video JSON 的单帧条目并带 `type` 字段（`video_bbox` / `video_polygon` / `video_polyline`）标明几何类型；**bbox-only 格式**（MOT / KITTI / YOLO 逐帧检测）把多边形 / 折线降级为**顶点外接框**（而非空框）；**YOLO 逐帧分割**（`yolo-frames-seg`）保留多边形顶点，bbox 与 polyline 跳过。**COCO 逐帧分割**（`coco-frames-seg`）同样保留多边形顶点、跳过 bbox / polyline，但编码为标准 COCO `segmentation` 单文档。
+> **视频几何的导出边界**：Video JSON / AAP JSON 保真保存 bbox、polygon、polyline 与 Mask 轨迹；MOT / KITTI / YOLO 逐帧检测把 polygon / polyline 按顶点外接框、Mask 按非空像素外接框降级；YOLO 逐帧分割只收 polygon；COCO 逐帧分割同时收 polygon 与标准 COCO RLE Mask；DAVIS 只收 Mask 轨迹。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 
@@ -212,10 +213,10 @@ names:
 
 > 单目标且只选 COCO / AAP JSON（无 YOLO）时，包根仍补一份 `data.yaml`（兼容旧布局），COCO/AAP 的标注落包根 `annotations.json`。
 
-## AAP JSON v1.2（无损）
+## AAP JSON 1.3（无损）
 
-> AAP JSON 是平台原生无损中间格式。当前 schema 1.2 在 task 层包含 `media_type`（image/video/lidar）与 `video` 子块（采样配置 / fps / 帧数 / 分辨率），并可无损透传视频 `video_track_bbox` geometry。与 COCO / YOLO 并列，但**包含**它们丢失的所有字段：`tool_bindings`(工具维度类别/属性绑定) / `attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
-<!-- history: AAP JSON schema moved from 1.0 to 1.1 for tool_unit_id/tool_bindings, then to 1.2 for media_type/video. -->
+> AAP JSON 是平台原生无损中间格式。当前 schema 1.3 在 task 层包含 `media_type` 与视频元数据，并可无损透传 `video_track_mask`。`mask_objects` 携带内容寻址 RLE 对象，使引用在导出后仍可移植并校验哈希。与 COCO / YOLO 并列，但**包含**它们丢失的项目、来源、属性与渲染配置。
+<!-- history: 1.1 added tool bindings, 1.2 added media blocks, 1.3 added portable raster mask objects. -->
 
 适合场景：
 
@@ -229,7 +230,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "exported_at": "2026-05-19T10:00:00Z",
   "exported_from": {
     "platform": "aap",
@@ -355,7 +356,7 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 
 ## 视频轨迹
 
-`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT / KITTI / YOLO 逐帧另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽帧，遵循「不物理打包帧」）。
+`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`；需要图像序列的目标另带 `fetch_frames.py`，按每个输出目录自己的起始编号、位数与扩展名抽帧。
 
 **Video JSON**（帧模式二选一）：
 
@@ -372,13 +373,15 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 
 **YOLO 逐帧（分割）**：目标名 `yolo-frames-seg`。抽帧与目录布局同上（`labels/{sequence}/{frame:06d}.txt` + `fetch_frames.py`），但行格式与图片 `yolo-seg` 同构——每行 `<cls>` 后跟归一化多边形顶点。来源：单帧 `video_polygon` 的 `frame_index` 落网格才输出，`video_track_polygon` 按弧长插值展开到采样网格；bbox / polyline 几何跳过（矩形请用 `yolo-frames-det`）。
 
-**COCO 逐帧（分割）**：目标名 `coco-frames-seg`。产出单个 `annotations.json`（标准 COCO instance segmentation）。`images[]` 每个采样帧一条（含空帧），带真实尺寸与扩展 `source_frame_index`；`annotations[]` 的 `segmentation` 为多边形顶点像素坐标，`bbox` 取顶点外接框，`area` 为外接框面积，`iscrowd=0`，`include_attributes` 时 `attributes` 带跨帧 `__track_id`。来源：单帧 `video_polygon` 落网格帧，`video_track_polygon` 按弧长展开到每帧；bbox / polyline 跳过（矩形请用 `yolo-frames-det`）。帧由 `fetch_frames.py` 抽到 `images/{sequence}/`，ZIP 不含帧图。
+**COCO 逐帧（分割）**：目标名 `coco-frames-seg`。产出单个标准 COCO `annotations.json`。polygon 使用顶点数组与 `iscrowd=0`；Mask 轨迹使用标准 RLE、像素面积、紧致 bbox 与 `iscrowd=1`。bbox / polyline 跳过。帧由 `fetch_frames.py` 抽到 `images/{sequence}/`，ZIP 不含帧图。
+
+**DAVIS Mask**：目标名 `davis`。每个采样帧写 `Annotations/Full-Resolution/{sequence}/{frame:05d}.png`，PNG 模式为 `P`，背景为 0，对象 ID 在整个 sequence 内稳定分配为 1–254，255 保留为 void。重叠时较高 `z_order` 后写并获胜；`outside` 帧不写该对象，`occluded` 对象仍按当前 mask 写出。`fetch_frames.py` 把对应图像抽到 `JPEGImages/Full-Resolution/{sequence}/{frame:05d}.jpg`。多目标导出时 DAVIS 与 YOLO / COCO 可在同一 ZIP 中保持各自编号规则。
 
 **MOT 16/17/20**：每个视频 = 一个 sequence，落 `{sequence}/gt/gt.txt`（`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）+ `{sequence}/seqinfo.ini`，可直接喂 trackeval。轨迹整数 `id` 自动派生；帧号按采样网格重排 1..N（如 60fps 采 10fps 则 `frameRate=10`）。
 
 **KITTI Tracking 2D**：每视频落 `labels/{sequence}.txt`，**17 列**空格分隔，列顺序为 `frame track_id type truncated occluded alpha x1 y1 x2 y2 h w l x y z rotation_y`。2D 版本里 `truncated=0`、`occluded∈{0,1}`、`alpha` 与全部 3D 字段（`h w l x y z rotation_y`）占位 `-1`，只有 `x1 y1 x2 y2` 是真实 2D 框（像素）。帧号取采样网格序号 0-based。
 
-**AAP JSON**：单文档无损中间格式，`video_track_bbox` geometry 原样保留；详见上节（schema 1.2 的 task 层带 `media_type` + `video` 子块）。
+**AAP JSON**：单文档无损中间格式，所有视频轨迹 geometry 原样保留；Mask 内容通过 `mask_objects` 随包迁移。详见上节。
 
 ### 视频 ZIP 包目录树（多目标 MOT + YOLO 逐帧示例）
 

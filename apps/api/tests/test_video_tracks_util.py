@@ -198,3 +198,47 @@ def test_bbox_track_resolve_unchanged_regression():
     mid = resolve_track_at_frame(geom, 5)
     assert mid is not None and "points" not in mid
     assert mid["bbox"] == {"x": 0.2, "y": 0.0, "w": 0.2, "h": 0.2}
+
+
+def _mask_ref(seed: str) -> dict:
+    sha = seed * 64
+    return {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": f"raster-masks/sha256/{sha[:2]}/{sha[2:4]}/{sha}.json",
+        "sha256": sha,
+        "runs": 4,
+        "bytes": 64,
+    }
+
+
+def test_mask_track_uses_nearest_hold_with_earlier_tie_and_endpoint_hold():
+    geometry = {
+        "type": "video_track_mask",
+        "track_id": "m1",
+        "keyframes": [
+            {"frame_index": 4, "mask": _mask_ref("a"), "source": "manual", "attributes": {"state": "a"}},
+            {"frame_index": 8, "mask": _mask_ref("b"), "source": "prediction", "occluded": True},
+        ],
+        "outside": [],
+    }
+    assert resolve_track_at_frame(geometry, 0)["mask"]["sha256"] == "a" * 64
+    tie = resolve_track_at_frame(geometry, 6)
+    assert tie["mask"]["sha256"] == "a" * 64
+    assert tie["attributes"] == {"state": "a"}
+    assert resolve_track_at_frame(geometry, 20)["mask"]["sha256"] == "b" * 64
+
+
+def test_mask_track_outside_wins_and_keyframes_mode_preserves_mask():
+    geometry = {
+        "type": "video_track_mask",
+        "track_id": "m1",
+        "keyframes": [
+            {"frame_index": 4, "mask": _mask_ref("a"), "source": "manual"},
+            {"frame_index": 8, "mask": _mask_ref("b"), "source": "prediction"},
+        ],
+        "outside": [{"from": 5, "to": 7}],
+    }
+    assert resolve_track_at_frame(geometry, 6) is None
+    rows = resolved_track_frames(geometry, frame_mode="keyframes")
+    assert [row["mask"]["sha256"] for row in rows] == ["a" * 64, "b" * 64]

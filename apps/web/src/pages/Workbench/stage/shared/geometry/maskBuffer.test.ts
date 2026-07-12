@@ -4,6 +4,17 @@ import { describe, expect, it } from "vitest";
 import { MaskBuffer } from "./maskBuffer";
 
 describe("MaskBuffer · 构造与基础", () => {
+  it("COCO RLE 与 row-major alpha buffer 无损往返", () => {
+    const rle = {
+      encoding: "coco_rle" as const,
+      size: [2, 3] as [number, number],
+      counts: [1, 2, 2, 1],
+    };
+    const buffer = MaskBuffer.fromRle(rle);
+    expect(Array.from(buffer.data)).toEqual([0, 255, 0, 255, 0, 255]);
+    expect(buffer.toRle()).toEqual(rle);
+  });
+
   it("拒绝非正整数尺寸", () => {
     expect(() => new MaskBuffer({ width: 0, height: 10 })).toThrow();
     expect(() => new MaskBuffer({ width: 10, height: -1 })).toThrow();

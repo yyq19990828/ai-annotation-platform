@@ -69,14 +69,14 @@ export function outsideRangesIntersect(
   return ranges.some((range) => range.from <= to && range.to >= from);
 }
 
-export function addOutsideRange(
-  track: VideoTrackGeometry,
+export function addOutsideRange<T extends VideoTrackGeometry | { outside?: VideoTrackOutsideRange[] }>(
+  track: T,
   range: VideoTrackOutsideRange,
-): VideoTrackGeometry {
+): T {
   return {
     ...track,
     outside: normalizeOutsideRanges([...(track.outside ?? []), range]),
-  };
+  } as T;
 }
 
 // v0.21.2x · 泛型化: bbox track 与 polygon/polyline track 都只需读写 `outside`, 故约束到

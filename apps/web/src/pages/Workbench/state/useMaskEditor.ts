@@ -15,6 +15,7 @@
 import { useCallback, useRef, useState } from "react";
 import { MaskBuffer } from "../stage/shared/geometry/maskBuffer";
 import { maskToPolygon } from "../stage/shared/geometry/maskToPolygon";
+import type { CocoRle } from "../stage/shared/geometry/maskRle";
 
 export type MaskMode = "brush" | "erase";
 
@@ -47,12 +48,21 @@ export interface UseMaskEditorReturn {
    * 把它放进 useEffect 依赖来触发 putImageData 重画；不直接代表 buffer 引用变化。
    */
   revision: number;
+  canUndo: boolean;
+  canRedo: boolean;
   /** 从空白 buffer 开始（独立 mask 工具入口）。 */
   beginBlank: () => void;
   /** 从 polygon 顶点初始化（AI 候选精修入口）。 */
   initFromPolygon: (points: ReadonlyArray<readonly [number, number]>) => void;
+  /** 从视频持久化 RLE 初始化。RLE 尺寸必须与 editor 尺寸一致。 */
+  initFromRle: (rle: CocoRle) => void;
   /** 在像素坐标 (x, y) 处按当前 mode + radius 画一下；越界静默。 */
   paintAt: (x: number, y: number) => void;
+  /** 一次 pointer stroke 的历史边界。 */
+  beginStroke: () => void;
+  endStroke: () => void;
+  undo: () => void;
+  redo: () => void;
   /** 切换模式。 */
   setMode: (m: MaskMode) => void;
   /** 设置笔刷半径，自动 clamp。 */
@@ -67,6 +77,8 @@ export interface UseMaskEditorReturn {
    * - 调用 commitToPolygon 不会自动退出 active；调用方在拿到 polygon 后自行 cancel。
    */
   commitToPolygon: () => { points: [number, number][]; multipleComponents: boolean } | null;
+  /** 视频路径收尾：保持逐像素 RLE，不做 polygon 矢量化。 */
+  commitToRle: () => CocoRle | null;
 }
 
 function clampRadius(r: number): number {
@@ -82,12 +94,17 @@ function clampRadius(r: number): number {
  */
 export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAULT_PX }: UseMaskEditorOptions): UseMaskEditorReturn {
   const bufferRef = useRef<MaskBuffer | null>(null);
+  const strokeBeforeRef = useRef<CocoRle | null>(null);
+  const undoRef = useRef<CocoRle[]>([]);
+  const redoRef = useRef<CocoRle[]>([]);
   const [active, setActive] = useState(false);
   const [mode, setMode] = useState<MaskMode>("brush");
   const [radius, _setRadius] = useState<number>(clampRadius(initialRadius));
   const [dirty, setDirty] = useState(false);
   // 引用计数用 revision 让 mask 写入触发 buffer-getter 的消费者 rerender（如 Konva.Image）
   const [revision, setRev] = useState(0);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  void historyRevision;
   const bump = useCallback(() => setRev((n) => n + 1), []);
 
   const setRadius = useCallback((r: number) => {
@@ -98,6 +115,10 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     bufferRef.current = new MaskBuffer({ width, height });
     setActive(true);
     setDirty(false);
+    undoRef.current = [];
+    redoRef.current = [];
+    strokeBeforeRef.current = null;
+    setHistoryRevision((n) => n + 1);
     bump();
   }, [width, height, bump]);
 
@@ -107,6 +128,25 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     bufferRef.current = b;
     setActive(true);
     setDirty(false);
+    undoRef.current = [];
+    redoRef.current = [];
+    strokeBeforeRef.current = null;
+    setHistoryRevision((n) => n + 1);
+    bump();
+  }, [width, height, bump]);
+
+  const initFromRle = useCallback((rle: CocoRle) => {
+    const [rleHeight, rleWidth] = rle.size;
+    if (rleWidth !== width || rleHeight !== height) {
+      throw new Error(`mask RLE size ${rleWidth}x${rleHeight} does not match editor ${width}x${height}`);
+    }
+    bufferRef.current = MaskBuffer.fromRle(rle);
+    setActive(true);
+    setDirty(false);
+    undoRef.current = [];
+    redoRef.current = [];
+    strokeBeforeRef.current = null;
+    setHistoryRevision((n) => n + 1);
     bump();
   }, [width, height, bump]);
 
@@ -119,10 +159,56 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     bump();
   }, [mode, radius, dirty, bump]);
 
+  const beginStroke = useCallback(() => {
+    if (!bufferRef.current || strokeBeforeRef.current) return;
+    strokeBeforeRef.current = bufferRef.current.toRle();
+  }, []);
+
+  const endStroke = useCallback(() => {
+    const before = strokeBeforeRef.current;
+    const current = bufferRef.current;
+    strokeBeforeRef.current = null;
+    if (!before || !current) return;
+    const after = current.toRle();
+    if (before.counts.length === after.counts.length
+      && before.counts.every((count, index) => count === after.counts[index])) return;
+    undoRef.current = [...undoRef.current.slice(-19), before];
+    redoRef.current = [];
+    setHistoryRevision((n) => n + 1);
+  }, []);
+
+  const restore = useCallback((rle: CocoRle) => {
+    bufferRef.current = MaskBuffer.fromRle(rle);
+    setDirty(true);
+    bump();
+  }, [bump]);
+
+  const undo = useCallback(() => {
+    const current = bufferRef.current;
+    const previous = undoRef.current.pop();
+    if (!current || !previous) return;
+    redoRef.current.push(current.toRle());
+    restore(previous);
+    setHistoryRevision((n) => n + 1);
+  }, [restore]);
+
+  const redo = useCallback(() => {
+    const current = bufferRef.current;
+    const next = redoRef.current.pop();
+    if (!current || !next) return;
+    undoRef.current.push(current.toRle());
+    restore(next);
+    setHistoryRevision((n) => n + 1);
+  }, [restore]);
+
   const cancel = useCallback(() => {
     bufferRef.current = null;
     setActive(false);
     setDirty(false);
+    undoRef.current = [];
+    redoRef.current = [];
+    strokeBeforeRef.current = null;
+    setHistoryRevision((n) => n + 1);
     bump();
   }, [bump]);
 
@@ -134,6 +220,10 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     return out;
   }, []);
 
+  const commitToRle = useCallback((): CocoRle | null => {
+    return bufferRef.current?.toRle() ?? null;
+  }, []);
+
   return {
     active,
     mode,
@@ -141,12 +231,20 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     dirty,
     buffer: bufferRef.current,
     revision,
+    canUndo: undoRef.current.length > 0,
+    canRedo: redoRef.current.length > 0,
     beginBlank,
     initFromPolygon,
+    initFromRle,
     paintAt,
+    beginStroke,
+    endStroke,
+    undo,
+    redo,
     setMode,
     setRadius,
     cancel,
     commitToPolygon,
+    commitToRle,
   };
 }

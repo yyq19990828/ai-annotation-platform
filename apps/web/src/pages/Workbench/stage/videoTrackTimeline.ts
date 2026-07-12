@@ -1,4 +1,4 @@
-import type { VideoTrackGeometry, VideoTrackKeyframe, VideoTrackOutsideRange } from "@/types";
+import type { VideoTrackGeometry, VideoTrackMaskGeometry, VideoTrackOutsideRange } from "@/types";
 import {
   effectiveOutsideRanges,
   isFrameInOutsideRanges,
@@ -15,6 +15,7 @@ export interface VideoTrackTimelineSegment {
   from: number;
   to: number;
   hasPrediction: boolean;
+  kind?: "interpolated" | "held";
 }
 
 export interface VideoTrackTimelineOutsideSegment {
@@ -42,22 +43,28 @@ export interface VideoTimelineDensityBin {
   tracks: { trackId: string; count: number }[];
 }
 
-function sortedLatestKeyframes(track: VideoTrackGeometry): VideoTrackKeyframe[] {
-  const latestByFrame = new Map<number, VideoTrackKeyframe>();
+type TimelineTrack = VideoTrackGeometry | VideoTrackMaskGeometry;
+type TimelineKeyframe = TimelineTrack["keyframes"][number];
+
+function sortedLatestKeyframes(track: TimelineTrack): TimelineKeyframe[] {
+  const latestByFrame = new Map<number, TimelineKeyframe>();
   for (const keyframe of track.keyframes) {
     latestByFrame.set(keyframe.frame_index, keyframe);
   }
   return [...latestByFrame.values()].sort((a, b) => a.frame_index - b.frame_index);
 }
 
-export function visibleKeyframesForTimeline(track: VideoTrackGeometry): VideoTrackKeyframe[] {
+export function visibleKeyframesForTimeline(track: TimelineTrack): TimelineKeyframe[] {
   const outsideRanges = effectiveOutsideRanges(track);
   return sortedLatestKeyframes(track).filter(
     (keyframe) => !isFrameInOutsideRanges(outsideRanges, keyframe.frame_index),
   );
 }
 
-export function buildSelectedTrackTimeline(track: VideoTrackGeometry): VideoTrackTimeline {
+export function buildSelectedTrackTimeline(
+  track: TimelineTrack,
+  segmentKind: "interpolated" | "held" = "interpolated",
+): VideoTrackTimeline {
   const outsideRanges = effectiveOutsideRanges(track);
   const visibleKeyframes = visibleKeyframesForTimeline(track);
   const interpolated: VideoTrackTimelineSegment[] = [];
@@ -71,6 +78,7 @@ export function buildSelectedTrackTimeline(track: VideoTrackGeometry): VideoTrac
       from: before.frame_index,
       to: after.frame_index,
       hasPrediction: before.source === "prediction" || after.source === "prediction",
+      ...(segmentKind === "held" ? { kind: "held" as const } : {}),
     });
   }
 

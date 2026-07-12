@@ -962,6 +962,7 @@
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
+                "video_track_mask": "#/components/schemas/VideoTrackMaskGeometry",
                 "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                 "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
               },
@@ -994,6 +995,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackMaskGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1656,6 +1660,7 @@
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
+                "video_track_mask": "#/components/schemas/VideoTrackMaskGeometry",
                 "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                 "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
               },
@@ -1688,6 +1693,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackMaskGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1945,6 +1953,7 @@
                     "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                     "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                     "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
+                    "video_track_mask": "#/components/schemas/VideoTrackMaskGeometry",
                     "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                     "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
                   },
@@ -1977,6 +1986,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoTrackMaskGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/PolygonGeometry"
@@ -5928,6 +5940,65 @@
           "new_name"
         ],
         "title": "ClassRenameRequest",
+        "type": "object"
+      },
+      "CocoRleMaskRef": {
+        "additionalProperties": false,
+        "description": "Immutable content-addressed COCO uncompressed RLE object reference.",
+        "properties": {
+          "bytes": {
+            "maximum": 4194304.0,
+            "minimum": 1.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "encoding": {
+            "const": "coco_rle_ref",
+            "default": "coco_rle_ref",
+            "title": "Encoding",
+            "type": "string"
+          },
+          "object_key": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\\.json$",
+            "title": "Object Key",
+            "type": "string"
+          },
+          "runs": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Runs",
+            "type": "integer"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Size",
+            "type": "array"
+          }
+        },
+        "required": [
+          "size",
+          "object_key",
+          "sha256",
+          "runs",
+          "bytes"
+        ],
+        "title": "CocoRleMaskRef",
         "type": "object"
       },
       "CommentAnchor": {
@@ -21291,6 +21362,102 @@
         "title": "VideoTrackKeyframe",
         "type": "object"
       },
+      "VideoTrackMaskGeometry": {
+        "additionalProperties": false,
+        "description": "Video raster-mask track; keyframes reference immutable COCO RLE objects.",
+        "properties": {
+          "keyframes": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackMaskKeyframe"
+            },
+            "maxItems": 3000,
+            "minItems": 1,
+            "title": "Keyframes",
+            "type": "array"
+          },
+          "outside": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackOutsideRange"
+            },
+            "title": "Outside",
+            "type": "array"
+          },
+          "semantic_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Label"
+          },
+          "track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "video_track_mask",
+            "default": "video_track_mask",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "keyframes"
+        ],
+        "title": "VideoTrackMaskGeometry",
+        "type": "object"
+      },
+      "VideoTrackMaskKeyframe": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "mask": {
+            "$ref": "#/components/schemas/CocoRleMaskRef"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "mask"
+        ],
+        "title": "VideoTrackMaskKeyframe",
+        "type": "object"
+      },
       "VideoTrackOutsideRange": {
         "additionalProperties": false,
         "properties": {
@@ -22113,6 +22280,22 @@
             "minLength": 1,
             "title": "Model Key",
             "type": "string"
+          },
+          "output_geometry": {
+            "anyOf": [
+              {
+                "enum": [
+                  "bbox",
+                  "polygon",
+                  "mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Geometry"
           },
           "prompt": {
             "additionalProperties": true,
@@ -24023,6 +24206,61 @@
         "summary": "Get Annotation History",
         "tags": [
           "annotation-history"
+        ]
+      }
+    },
+    "/api/v1/annotations/{annotation_id}/mask-content/{frame_index}": {
+      "get": {
+        "operationId": "get_annotation_mask_content_api_v1_annotations__annotation_id__mask_content__frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Annotation Mask Content",
+        "tags": [
+          "annotations"
         ]
       }
     },
@@ -31507,7 +31745,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -31515,7 +31753,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -32436,7 +32674,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -32444,7 +32682,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -37151,6 +37389,68 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/mask-content": {
+      "post": {
+        "operationId": "upload_task_mask_content_api_v1_tasks__task_id__mask_content_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Task Mask Content Api V1 Tasks  Task Id  Mask Content Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Task Mask Content",
+        "tags": [
+          "annotations"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/neighbor-annotations": {
       "get": {
         "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」。\nv0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)过滤。\n非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。\n\nv0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态\n(`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)\n仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。",
@@ -39680,6 +39980,61 @@
           }
         ],
         "summary": "Discard Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}": {
+      "get": {
+        "operationId": "get_video_tracker_mask_content_api_v1_video_tracker_jobs__job_id__mask_content__sha256__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Tracker Mask Content",
         "tags": [
           "video-tracker-jobs"
         ]

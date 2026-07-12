@@ -14,7 +14,7 @@ import logging
 import uuid
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,10 @@ from app.schemas.aap_json import (
     AAPJsonV1Envelope,
     check_schema_major,
 )
+from app.schemas._jsonb_types import Geometry
 from app.services.annotation_track_identity import prepare_compact_track_identity
+from app.services.raster_mask_storage import validate_mask_geometry_for_task
+from app.services.raster_mask_storage import build_rle_reference, store_coco_rle
 from app.services.task_matcher import resolve_task
 
 logger = logging.getLogger(__name__)
@@ -41,7 +44,29 @@ _GEOMETRY_TO_TOOL_UNIT: dict[str, str] = {
     "keypoint": "keypoint",
     "polygon": "region",
     "multi_polygon": "region",
+    "video_track_mask": "region",
 }
+
+_GEOMETRY_ADAPTER = TypeAdapter(Geometry)
+
+
+def _validate_aap_mask_objects(
+    geometry: dict[str, Any],
+    mask_objects: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if geometry.get("type") != "video_track_mask":
+        return []
+    objects: list[dict[str, Any]] = []
+    for keyframe in geometry.get("keyframes") or []:
+        reference = keyframe.get("mask") or {}
+        digest = reference.get("sha256")
+        rle = mask_objects.get(str(digest))
+        if rle is None:
+            raise ValueError(f"AAP mask_objects missing sha256 {digest}")
+        if build_rle_reference(rle) != reference:
+            raise ValueError(f"AAP mask object metadata mismatch for sha256 {digest}")
+        objects.append(rle)
+    return objects
 
 
 def _derive_tool_unit(geometry_type: str | None) -> str:
@@ -165,6 +190,29 @@ async def import_aap_json_annotations(
                 result.skipped += 1
                 continue
 
+            try:
+                validated_geometry = _GEOMETRY_ADAPTER.validate_python(entry.geometry)
+                entry.geometry = validated_geometry.model_dump(by_alias=True, exclude_unset=True)
+                mask_objects = _validate_aap_mask_objects(
+                    entry.geometry, envelope.mask_objects
+                )
+                await validate_mask_geometry_for_task(db, task, entry.geometry)
+            except ValidationError as exc:
+                result.errors.append(
+                    AAPImportErrorEntry(
+                        task_match=match_dict,
+                        reason=f"invalid geometry: {exc.errors()[:2]}",
+                    )
+                )
+                result.skipped += 1
+                continue
+            except ValueError as exc:
+                result.errors.append(
+                    AAPImportErrorEntry(task_match=match_dict, reason=f"invalid geometry: {exc}")
+                )
+                result.skipped += 1
+                continue
+
             # 3. tool_unit_id 派生
             tool_unit_id = entry.tool_unit_id or _derive_tool_unit(
                 entry.geometry.get("type")
@@ -197,6 +245,10 @@ async def import_aap_json_annotations(
             attributes["_imported"] = True
             if entry.user_id is not None:
                 attributes["_imported_user_id"] = str(entry.user_id)
+
+            if not dry_run:
+                for mask_object in mask_objects:
+                    store_coco_rle(mask_object)
 
             # 7. dry_run: 只计数不入库
             if dry_run:

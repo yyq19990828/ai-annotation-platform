@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
+  isVideoMaskTrack,
   isVideoTrack,
   trackReferenceAtFrame,
   resolveTrackAtFrame,
   shortTrackId,
   sortedKeyframes,
   upsertKeyframe,
+  resolveVideoMaskTrackAtFrame,
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside } from "./videoTrackOutside";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
@@ -162,6 +166,12 @@ export function VideoTrackSidebar({
   onToggleTrackSection,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
+  const maskTracks = useMemo(
+    () => annotations.filter(isVideoMaskTrack).filter((annotation) => (
+      trackFilter === "all" || resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex) !== null
+    )),
+    [annotations, frameIndex, trackFilter],
+  );
   const selectedBboxes = useMemo(
     () => annotations.filter((ann) => isVideoBbox(ann) && selectedIds.includes(ann.id)),
     [annotations, selectedIds],
@@ -270,10 +280,16 @@ export function VideoTrackSidebar({
     readOnly,
     hiddenTrackIds,
     lockedTrackIds,
-    onUpdate,
+    onUpdate: (annotation, geometry) => {
+      if (geometry.type === "video_track_bbox") onUpdate(annotation, geometry);
+    },
     onToggleHiddenTrack,
     onToggleLockedTrack,
-    onPropagateTrack,
+    onPropagateTrack: onPropagateTrack
+      ? (annotation) => {
+          if (annotation.geometry.type === "video_track_bbox") onPropagateTrack(annotation as VideoTrackAnnotation);
+        }
+      : undefined,
   });
 
   const selectTrack = useCallback((id: string, opts?: { toggle?: boolean }) => {
@@ -501,7 +517,8 @@ export function VideoTrackSidebar({
   }
 
   return (
-    <VideoTrackPanel
+    <Fragment>
+      <VideoTrackPanel
       videoTracks={videoTracks}
       selectedId={selectedId}
       selectedTrackIds={selectedTrackIds}
@@ -538,6 +555,56 @@ export function VideoTrackSidebar({
       onSetTrackColor={onSetTrackColor}
       collapsed={trackSectionCollapsed}
       onToggleCollapsed={onToggleTrackSection}
-    />
+      />
+      {maskTracks.length > 0 && (
+        <section className="border-t border-border px-2 py-2" aria-label="Mask 轨迹">
+          <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
+            <span>Mask 轨迹</span>
+            <span className="text-2xs font-normal text-muted-foreground">{maskTracks.length} 条 · 帧间保持</span>
+          </div>
+          <div className="space-y-1">
+            {maskTracks.map((annotation) => {
+              const hidden = hiddenTrackIds.has(annotation.geometry.track_id);
+              const locked = lockedTrackIds.has(annotation.geometry.track_id);
+              const resolved = resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex);
+              return (
+                <div
+                  key={annotation.id}
+                  className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${selectedId === annotation.id ? "border-brand/40 bg-brand/10" : "border-border bg-card"}`}
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => onSelect(annotation.id)}
+                  >
+                    <span className="block truncate text-xs font-medium text-foreground">{annotation.class_name}</span>
+                    <span className="block text-2xs text-muted-foreground">
+                      {annotation.geometry.keyframes.length} 关键帧 · {resolved ? `保持 F${resolved.keyframeFrame}` : "当前 outside"}
+                    </span>
+                  </button>
+                  <Button variant="ghost" size="sm" title={hidden ? "显示轨迹" : "隐藏轨迹"} onClick={() => onToggleHiddenTrack(annotation.geometry.track_id)}>
+                    <Icon name={hidden ? "eyeOff" : "eye"} size={13} />
+                  </Button>
+                  <Button variant="ghost" size="sm" title={locked ? "解锁轨迹" : "锁定轨迹"} onClick={() => onToggleLockedTrack(annotation.geometry.track_id)}>
+                    <Icon name={locked ? "lock" : "unlock"} size={13} />
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    title="删除 Mask 轨迹"
+                    disabled={readOnly || locked || !onDeleteTracks}
+                    onClick={() => {
+                      if (window.confirm("确定删除这条 Mask 轨迹？")) onDeleteTracks?.([annotation]);
+                    }}
+                  >
+                    <Icon name="trash" size={13} />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </Fragment>
   );
 }

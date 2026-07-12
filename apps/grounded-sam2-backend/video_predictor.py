@@ -48,6 +48,7 @@ import numpy as np
 import torch
 
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
+from mask_utils.rle import encode_coco_rle
 
 logger = logging.getLogger("grounded-sam2-backend.video")
 
@@ -175,7 +176,13 @@ class SAM2VideoTracker:
                 id_list = self._obj_ids_to_list(obj_ids)
                 for i, oid in enumerate(id_list):
                     mask = masks[i] if i < masks.shape[0] else masks[0]
-                    if output_geometry == "polygon":
+                    if output_geometry == "mask":
+                        outside = not bool(mask.any())
+                        geometry = {
+                            "type": "mask",
+                            "rle": encode_coco_rle(mask.reshape(-1), frame_w, frame_h),
+                        }
+                    elif output_geometry == "polygon":
                         geometry, outside = self._mask_to_polygon_geometry(
                             mask, frame_w, frame_h
                         )

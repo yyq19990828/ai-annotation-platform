@@ -38,6 +38,7 @@ export type VideoTool =
   | "select"
   | "box"
   | "track"
+  | "mask"
   | "polygon"
   | "polyline"
   | "polygon-track"

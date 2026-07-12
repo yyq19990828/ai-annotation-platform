@@ -102,6 +102,7 @@ const VIDEO_TOOLS: Array<{
   { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
   { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
+  { id: "mask", hotkey: "M", label: "Mask 轨迹", icon: "scissors", desc: "当前帧绘制或编辑逐像素 Mask 关键帧", group: "track" },
   // v0.21.21 · 单帧 polygon/polyline (点击落点, Enter/双击闭合, Esc 取消)。
   { id: "polygon", hotkey: "P", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", group: "static" },
   { id: "polyline", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", group: "static" },

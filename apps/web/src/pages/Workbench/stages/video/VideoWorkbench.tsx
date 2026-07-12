@@ -8,6 +8,7 @@ import type {
   VideoPolylineGeometry,
   VideoSamplingConfig,
   VideoTrackGeometry,
+  VideoTrackMaskGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
 } from "@/types";
@@ -18,7 +19,9 @@ import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../../stage/VideoPlaybackOverlay";
-import type { VideoTrackAnnotation, VideoSamPrompt } from "../../stage/videoStageTypes";
+import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../../stage/videoStageTypes";
+import type { VideoMaskCandidate } from "../../stage/videoMaskFrames";
+import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
 import { resolveAnnotationVisual } from "../../stage/annotationVisual";
@@ -26,7 +29,7 @@ import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -72,6 +75,10 @@ export interface VideoWorkbenchProps {
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
+  maskCandidates?: VideoMaskCandidate[];
+  maskEditor?: UseMaskEditorReturn;
+  onMaskCommit?: () => void;
+  onMaskCancel?: () => void;
   samPolarity?: "positive" | "negative";
   onCreatePoints?: (
     type: "video_polygon" | "video_polyline",
@@ -94,7 +101,7 @@ export interface VideoWorkbenchProps {
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
-  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onPropagateTrack?: (annotation: VideoManagedTrackAnnotation) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   // v0.11.7 · pixel-anchored issue 图钉 (按当前帧显隐 + 时间轴标记)。
   issuePixelFeedbacks?: AnnotationFeedback[];
@@ -139,6 +146,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     samActiveIdx,
     samSessionPoints,
     samSessionBoxes,
+    maskCandidates,
+    maskEditor,
+    onMaskCommit,
+    onMaskCancel,
     samPolarity,
     onPendingDraw,
     onUpdate,
@@ -205,6 +216,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         samActiveIdx={samActiveIdx}
         samSessionPoints={samSessionPoints}
         samSessionBoxes={samSessionBoxes}
+        maskCandidates={maskCandidates}
+        maskEditor={maskEditor}
+        onMaskCommit={onMaskCommit}
+        onMaskCancel={onMaskCancel}
         samPolarity={samPolarity}
         onCreatePoints={onCreatePoints}
         onPendingDraw={onPendingDraw}

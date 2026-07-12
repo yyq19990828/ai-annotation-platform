@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { CocoRleMaskRef } from "@/types";
 
 export type VideoTrackerDirection = "forward" | "backward" | "bidirectional";
 export type VideoTrackerJobStatus =
@@ -54,12 +55,22 @@ export interface VideoTrackerPropagatePayload {
   // v0.21.19: text-driven 追踪 (sam3_video) 的文本 query + 可选视觉示例框。
   text?: string;
   exemplars?: VideoTrackerExemplar[];
+  output_geometry?: "bbox" | "polygon" | "mask";
 }
 
 /** v0.21.28 · 候选预览: job 暂存的逐帧结果, 供接受前渲染候选叠加。 */
+export type VideoTrackerPreviewGeometry =
+  | { type: "bbox"; x: number; y: number; w: number; h: number }
+  | { type: "polygon"; points: [number, number][] }
+  | {
+      type: "mask";
+      mask: CocoRleMaskRef;
+      bbox?: { x: number; y: number; w: number; h: number };
+    };
+
 export interface VideoTrackerPreviewResult {
   frame_index: number;
-  geometry: Record<string, unknown>;
+  geometry: VideoTrackerPreviewGeometry;
   confidence?: number | null;
   outside?: boolean;
   instance_id?: string | null;
@@ -97,6 +108,10 @@ export const videoTrackerApi = {
   // v0.21.28 · 候选/接受流。
   preview: (jobId: string) =>
     apiClient.get<VideoTrackerJobPreview>(`/video-tracker-jobs/${jobId}/preview`),
+  maskContent: (jobId: string, sha256: string) =>
+    apiClient.get<import("@/pages/Workbench/stage/shared/geometry/maskRle").CocoRle>(
+      `/video-tracker-jobs/${jobId}/mask-content/${sha256}`,
+    ),
   accept: (jobId: string) =>
     apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/accept`, {}),
   discard: (jobId: string) =>

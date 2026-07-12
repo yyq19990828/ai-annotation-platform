@@ -36,7 +36,9 @@ async def _make_video_task(db_session, owner_id):
         file_name="clip.mp4",
         file_path="videos/clip.mp4",
         file_type="video",
-        metadata_={"video": {"duration_ms": 3000, "fps": 30, "frame_count": 90}},
+        width=3,
+        height=2,
+        metadata_={"video": {"duration_ms": 3000, "fps": 30, "frame_count": 90, "width": 3, "height": 2}},
     )
     db_session.add(item)
     await db_session.flush()
@@ -868,3 +870,190 @@ async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeyp
         db_session, super_admin, monkeypatch, VideoTrackerJobStatus.COMPLETED.value
     )
     assert aj.status == "completed"
+
+
+def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
+    from app.services.video_tracker_runner import _materialize_tracker_mask_result
+
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.store_coco_rle", lambda rle: reference
+    )
+    result = _materialize_tracker_mask_result(
+        TrackerFrameResult(
+            frame_index=3,
+            geometry={
+                "type": "mask",
+                "rle": {"encoding": "coco_rle", "size": [2, 3], "counts": [2, 2, 2]},
+            },
+        )
+    )
+    assert result.geometry["mask"] == reference
+    assert result.geometry["bbox"] == {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1}
+
+
+def test_apply_tracker_results_converts_source_to_mask_track():
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    annotation = Annotation(
+        id=uuid.uuid4(),
+        task_id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        annotation_type="video_track_bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        track_id="track-1",
+        geometry={
+            "type": "video_track_bbox",
+            "track_id": "track-1",
+            "keyframes": [{"frame_index": 0, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}, "source": "manual"}],
+            "outside": [],
+        },
+    )
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    apply_tracker_results(
+        annotation,
+        _job(),
+        [TrackerFrameResult(
+            frame_index=0,
+            geometry={"type": "mask", "mask": reference, "bbox": {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1}},
+        )],
+    )
+    assert annotation.annotation_type == "video_track_mask"
+    assert annotation.tool_unit_id == "region"
+    assert annotation.geometry["keyframes"] == [
+        {"frame_index": 0, "mask": reference, "source": "prediction", "occluded": False}
+    ]
+
+
+def test_apply_tracker_results_preserves_mask_type_when_all_results_are_outside():
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    annotation = Annotation(
+        annotation_type="video_track_mask",
+        tool_unit_id="region",
+        class_name="car",
+        geometry={
+            "type": "video_track_mask",
+            "track_id": "track-1",
+            "keyframes": [
+                {"frame_index": 0, "mask": reference, "source": "manual"}
+            ],
+            "outside": [],
+        },
+    )
+    apply_tracker_results(
+        annotation,
+        _job(),
+        [TrackerFrameResult(frame_index=1, geometry={}, outside=True)],
+        output_geometry="mask",
+    )
+
+    assert annotation.annotation_type == "video_track_mask"
+    assert annotation.geometry["type"] == "video_track_mask"
+    assert annotation.geometry["keyframes"][0]["mask"] == reference
+    assert annotation.geometry["outside"] == [
+        {"from": 1, "to": 1, "source": "prediction"}
+    ]
+
+
+def test_stage_tracker_results_rejects_oversized_payload_atomically(monkeypatch):
+    from app.services import video_tracker_runner as runner
+
+    job = _job()
+    job.staged_result = None
+    monkeypatch.setattr(runner, "MAX_TRACKER_STAGED_BYTES", 32)
+    with pytest.raises(ValueError, match="tracker_candidate_too_large"):
+        runner._stage_tracker_results(
+            job,
+            [TrackerFrameResult(frame_index=0, geometry={"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1})],
+            1,
+            "bbox",
+        )
+    assert job.staged_result is None
+
+
+async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_track_bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={
+            "type": "video_track_bbox",
+            "track_id": "track-1",
+            "keyframes": [{"frame_index": 0, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}, "source": "manual"}],
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    bad_ref = {
+        "encoding": "coco_rle_ref",
+        "size": [9, 9],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=1,
+        prompt={"output_geometry": "mask"},
+        event_channel="video-tracker-job:test",
+        staged_result={
+            "grid_step": 1,
+            "output_geometry": "mask",
+            "results": [{
+                "frame_index": 1,
+                "geometry": {"type": "mask", "mask": bad_ref, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}},
+                "outside": False,
+            }],
+        },
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    async def _noop(_channel: str, _payload: dict) -> None:
+        return None
+
+    with pytest.raises(ValueError, match="mask size must match source video"):
+        await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await db_session.refresh(annotation)
+    await db_session.refresh(job)
+    assert annotation.geometry["type"] == "video_track_bbox"
+    assert job.status == VideoTrackerJobStatus.PENDING_REVIEW.value

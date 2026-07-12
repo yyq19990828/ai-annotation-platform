@@ -70,7 +70,7 @@ const runningJob: VideoTrackerJob = {
   annotation_id: "annotation-2",
 };
 
-const stagedPreview = {
+const stagedPreview: import("@/api/videoTracker").VideoTrackerJobPreview = {
   job_id: reviewableJob.id,
   status: reviewableJob.status,
   annotation_id: reviewableJob.annotation_id,

@@ -127,7 +127,7 @@ def test_tracker_model_sam2_video():
     data = setup()
     tracker = next(m for m in data["models"] if m["task"] == "tracker")
     assert tracker["supported_trackers"] == ["sam2_video"]
-    assert tracker["supported_geometric_outputs"] == ["bbox"]
+    assert tracker["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
 
 
 def test_top_level_back_compat_fields_unchanged():

@@ -2,7 +2,7 @@
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-13
 ---
 
 # 视频 AI 追踪架构
@@ -122,6 +122,8 @@ runner 把结果序列化到：
 }
 ```
 
+`geometry` 是 typed union：bbox、polygon，或 `{type:"mask", mask:coco_rle_ref, bbox?}`。`output_geometry` 可显式选择 `bbox / polygon / mask`；省略时跟随源轨迹。runner 在发布帧事件和追加候选前校验并把 inline tracker RLE 写成内容寻址引用。单 mask 限制 4096×4096、1,000,000 runs、4 MiB canonical object；annotation geometry 限 8 MiB，整个 staged payload 限 64 MiB。超限 job 以 `tracker_candidate_too_large` 失败并保持 `staged_result=NULL`。
+
 正常完成进入 `pending_review`。取消时 worker 在停止前暂存已收集的部分结果，状态保持 `cancelled`；若候选非空，前端仍可进入审阅。失败不生成可审候选。
 
 接受与丢弃都需要 task 可见性，并限制为 job 创建者或项目特权角色。accept 对已接受 job 幂等；discard 清空 `staged_result`。API 记录 `VIDEO_TRACKER_JOB_ACCEPT` / `VIDEO_TRACKER_JOB_DISCARD` 审计动作。
@@ -139,6 +141,7 @@ runner 把结果序列化到：
 - 人工关键帧优先，预测不得覆盖 manual frame。
 - outside 结果合并为 prediction outside ranges。
 - polygon 输出少于三个顶点时按 outside 处理，避免写入非法几何。
+- mask 输出保存 RLE 引用；accept 提交前再次按源视频 width / height / frame_count 校验，不能把错误尺寸写进 annotation。
 - 新轨迹继承源类别和工具单位，分配新 `track_id`，source 标记为 `ai_tracker`。
 
 ## 前端审阅边界

@@ -53,6 +53,11 @@ const VIDEO_OPTIONS: TargetOption[] = [
     label: "COCO 逐帧分割",
     description: "按采样网格抽帧，导出 COCO 分割数据集（保留多边形顶点；bbox / polyline 跳过）。",
   },
+  {
+    value: "davis",
+    label: "DAVIS Mask",
+    description: "按采样网格导出 Full-Resolution palette PNG；对象 ID 在序列内稳定。",
+  },
   { value: "aap_json", label: "AAP JSON", description: "无损保留 video_track geometry 与项目配置。" },
   { value: "mot", label: "MOT", description: "MOT 16/17/20 跟踪评测格式，按采样网格重排帧号。" },
   { value: "kitti", label: "KITTI", description: "KITTI Tracking 2D labels，适配 KITTI 工具链。" },

@@ -48,6 +48,20 @@ describe("videoTrackTimeline", () => {
     ]);
   });
 
+  it("labels mask keyframe gaps as held instead of interpolated", () => {
+    const timeline = buildSelectedTrackTimeline({
+      type: "video_track_mask",
+      track_id: "trk_mask",
+      keyframes: [
+        { frame_index: 0, mask: { encoding: "coco_rle_ref", size: [2, 2], object_key: "a", sha256: "a".repeat(64), runs: 1, bytes: 1 }, source: "manual" },
+        { frame_index: 4, mask: { encoding: "coco_rle_ref", size: [2, 2], object_key: "b", sha256: "b".repeat(64), runs: 1, bytes: 1 }, source: "prediction" },
+      ],
+    }, "held");
+    expect(timeline.interpolated).toEqual([
+      { from: 0, to: 4, hasPrediction: true, kind: "held" },
+    ]);
+  });
+
   it("filters outside keyframes from keyframe navigation", () => {
     const geometry = track({
       outside: [{ from: 5, to: 6 }, { from: 8, to: 8 }],

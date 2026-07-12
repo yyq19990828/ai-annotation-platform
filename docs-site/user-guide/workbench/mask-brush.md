@@ -3,12 +3,12 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-13
 ---
 
 # Mask 笔刷编辑器
 
-> 用笔刷 / 橡皮把粗略的 polygon 精修到像素级，或从空白开始画一块 mask 直接落库为 polygon。
+> 图片任务把笔刷结果转回 polygon；视频任务把逐像素结果保存为可跨帧保持的 Mask 轨迹关键帧。
 
 Mask 笔刷工具使用 `M` 键进入。常见用法：
 
@@ -16,9 +16,10 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 - **已落库 polygon 局部修正** —— 不想重画整个轮廓，只想把右上角凸出去的几个像素擦掉
 - **从零开始** —— 当 AI 没合适候选、polygon 工具又嫌点位太繁琐时，直接刷个 mask
 
-mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，提交时转回 polygon 落库，schema 不变。
+图片工作台走「polygon 中转」：mask 在前端临时态编辑，提交时转回 polygon。视频工作台则保存标准 RLE，创建或更新
+`video_track_mask`，不会为了落库把像素边界矢量化。
 
-## 四种进入方式
+## 图片任务的四种进入方式
 
 ![Mask 笔刷工具栏](../images/mask-brush/toolbar-overview.png)
 
@@ -43,6 +44,16 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
    - 选中右侧侧栏的 polygon 行 → 点该行「精修」按钮（用户行 / AI 行都有）
    - mask 编辑 → `Enter` 提交：直接 **update** 原 annotation 的 geometry（不新建，可 undo 回原状）
 
+## 视频 Mask 轨迹
+
+在视频任务中按 `M` 或点击「Mask 轨迹」工具：
+
+1. 没有选中 Mask 轨迹时，在当前帧落笔会从空白画布开始；确认后创建一条只有当前帧关键帧的 Mask 轨迹。
+2. 选中已有 Mask 轨迹再进入工具，会加载当前帧解析到的 mask。若当前帧只是关键帧之间的保持帧，提交会在当前帧物化一个人工关键帧，不会覆盖来源关键帧。
+3. 时间轴把 Mask 关键帧之间显示为「保持」，不会标成 bbox 的线性插值。`outside` 帧不显示 mask；`occluded` 仍表示对象存在。
+4. 每次按下到松开是一条独立的笔刷历史；`Ctrl/⌘+Z` 撤销一笔，`Ctrl/⌘+Shift+Z` 或 `Ctrl/⌘+Y` 重做。
+5. 选中卡支持编辑、AI 追踪、显隐、锁定、改类、删除和关键帧导航。Mask 不支持 bbox 专属的轨迹合并、拆框或转换操作。
+
 ## 快捷键
 
 | 键 | 作用 |
@@ -53,6 +64,8 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 | `Shift + 滚轮` | 调笔刷半径 ±2px（clamp [1, 200]） |
 | `Enter` | 提交 mask → polygon 落库 / 更新 |
 | `Esc` | 取消，丢弃当前 mask buffer |
+| `Ctrl/⌘ + Z` | 视频 Mask 编辑时撤销上一笔 |
+| `Ctrl/⌘ + Shift + Z` / `Ctrl/⌘ + Y` | 视频 Mask 编辑时重做 |
 | `R` | SAM 候选存在时启动「精修」（同浮按钮） |
 
 完整快捷键索引见 [hotkeys.generated.md](./hotkeys.generated.md)。
@@ -70,7 +83,7 @@ mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，�
 
 - **bbox 候选不支持初始化**：AI 给的是 bbox 时「精修」按钮不显示。
 - **多连通区只保留最大外环**：mask 包含多块互不相连的区域时，只把最大连通块转回 polygon 入库，其它区域丢弃 + toast 提示
-- **不支持 RLE 持久化**：mask 不入库；提交即转 polygon。跨任务连续编辑同一 mask 不可行
+- **图片任务不持久化 RLE**：图片提交仍转 polygon；视频 Mask 轨迹会持久化 RLE。
 - **大画布性能**：MaskBuffer 使用 dirtyRect 增量重绘；极大图仍建议降低笔刷半径并分段精修。
 
 ## 故障排查

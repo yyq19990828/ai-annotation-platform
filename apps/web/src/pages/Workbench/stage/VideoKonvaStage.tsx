@@ -5,7 +5,7 @@ import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoSamplingConfig, VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoSamplingConfig, VideoTrackGeometry, VideoTrackMaskGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
@@ -15,6 +15,9 @@ import { FloatingDock } from "../shell/FloatingDock";
 import { Minimap } from "./Minimap";
 import { VideoKonvaMediaLayer, pickMediaImageSource } from "./VideoKonvaMediaLayer";
 import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
+import { VideoKonvaMaskLayer } from "./VideoKonvaMaskLayer";
+import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
+import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
@@ -33,12 +36,13 @@ import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { deriveTrackNumber, isAnyVideoSingleFrame, isAnyVideoTrack, isVideoBbox, isVideoPolygon, isVideoPolygonTrack, isVideoPolyline, isVideoPolylineTrack, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
-import { firstAppearFrame, lastAppearFrame } from "./videoTrackTimeline";
-import { pickTopVideoEntryAt } from "./videoStagePicking";
+import { buildSelectedTrackTimeline } from "./videoTrackTimeline";
+import { pickTopVideoEntryAt, pickTopVideoMaskAt } from "./videoStagePicking";
+import { useVideoMaskFrames, type VideoMaskCandidate } from "./videoMaskFrames";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { buildVideoContextMenuItems } from "./videoContextMenuItems";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
-import type { VideoTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions, VideoSamPrompt } from "./videoStageTypes";
+import type { VideoManagedTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions, VideoSamPrompt } from "./videoStageTypes";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
@@ -63,6 +67,7 @@ const EMPTY_AI_BOXES: AiBox[] = [];
 const EMPTY_LOCKED = new Set<string>();
 // 解构默认值写 `= []` 会每次渲染产生新引用, 把 frameViews 的 memo 打穿(视频画布逐帧重算)。
 const EMPTY_SELECTED_IDS: string[] = [];
+const EMPTY_MASK_CANDIDATES: VideoMaskCandidate[] = [];
 
 interface VideoKonvaStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -122,7 +127,7 @@ interface VideoKonvaStageProps {
     geom: { x: number; y: number; w: number; h: number },
     anchor: { left: number; top: number },
   ) => void;
-  onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
+  onUpdate?: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
   /** v0.21.23 · 交互式 SAM 提示松手 (归一化坐标)；由 shell 取当前帧图请求候选。 */
   onSamPrompt?: (prompt: VideoSamPrompt) => void;
   /** v0.21.23 · 交互式 SAM 的瞬态候选（不落库；采纳时才建标注）。 */
@@ -132,6 +137,11 @@ interface VideoKonvaStageProps {
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子（归一化 xyxy）。 */
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
+  /** 追踪任务尚未接受的 mask 候选；使用 job 级内容端点解码。 */
+  maskCandidates?: VideoMaskCandidate[];
+  maskEditor?: UseMaskEditorReturn;
+  onMaskCommit?: () => void;
+  onMaskCancel?: () => void;
   /** 工具条上的正/负切换; 与 Alt 等价。 */
   samPolarity?: "positive" | "negative";
   onChangeUserBoxClass?: (id: string) => void;
@@ -141,7 +151,7 @@ interface VideoKonvaStageProps {
   /** v0.21.4 · AI 候选采纳 / 驳回(贴框快捷条, 复用图片工作台的 handleAcceptPrediction/Reject)。 */
   onAcceptPrediction?: (b: AiBox) => void;
   onRejectPrediction?: (b: AiBox) => void;
-  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onPropagateTrack?: (annotation: VideoManagedTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
   /** 时间轴章节(从工作台 shell 透传)。 */
@@ -212,6 +222,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   samActiveIdx = 0,
   samSessionPoints = EMPTY_SESSION_POINTS,
   samSessionBoxes = EMPTY_SESSION_BOXES,
+  maskCandidates = EMPTY_MASK_CANDIDATES,
+  maskEditor,
+  onMaskCommit,
+  onMaskCancel,
   samPolarity,
   onChangeUserBoxClass,
   onComposeTracks,
@@ -243,11 +257,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   const [panning, setPanning] = useState(false);
   const panRef = useRef<{ x: number; y: number } | null>(null);
+  const maskStrokeRef = useRef<{ lastX: number; lastY: number } | null>(null);
+  const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
 
   // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
   const selectedTrack = useMemo(() => {
     const a = annotations.find((x) => x.id === selectedId);
     return a && isVideoTrack(a) ? a : null;
+  }, [annotations, selectedId]);
+  const selectedManagedTrack = useMemo<VideoManagedTrackAnnotation | null>(() => {
+    const annotation = annotations.find((item) => item.id === selectedId);
+    return annotation && (isVideoTrack(annotation) || annotation.geometry.type === "video_track_mask")
+      ? annotation as VideoManagedTrackAnnotation
+      : null;
   }, [annotations, selectedId]);
 
   const noopSelect = useCallback(() => {}, []);
@@ -336,6 +358,23 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     controls,
   } = controller;
 
+  const effectiveSelectedTrackTimeline = useMemo(
+    () => selectedManagedTrack?.geometry.type === "video_track_mask"
+      ? buildSelectedTrackTimeline(selectedManagedTrack.geometry, "held")
+      : selectedTrackTimeline,
+    [selectedManagedTrack, selectedTrackTimeline],
+  );
+  const effectiveSelectedTrackColor = useMemo(
+    () => selectedManagedTrack?.geometry.type === "video_track_mask"
+      ? getTrackColor(
+          selectedManagedTrack.geometry.track_id,
+          selectedManagedTrack.class_name,
+          trackColorOverrides,
+        )
+      : selectedTrackColor,
+    [selectedManagedTrack, selectedTrackColor, trackColorOverrides],
+  );
+
   // 当前帧的 pending draft(仅本帧的 video_bbox/video_track_bbox 草稿)。
   const pendingDraft = useMemo(() => {
     if (
@@ -368,6 +407,43 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     [annotations, frameIndex, hiddenTrackIds, lockedTrackIds, pendingDraft, referenceConfig, reviewDisplayMode, samplingStep, selectedId, selectedIds, trackColorOverrides, visual],
   );
 
+  const visibleMaskAnnotations = useMemo(
+    () => annotations.filter((annotation) => {
+      if (annotation.geometry.type !== "video_track_mask") return false;
+      return !hiddenTrackIds?.has(annotation.geometry.track_id);
+    }),
+    [annotations, hiddenTrackIds],
+  );
+  const maskColorForAnnotation = useCallback(
+    (annotation: AnnotationResponse) => {
+      if (annotation.geometry.type !== "video_track_mask") return "#a855f7";
+      return colorToHex(getTrackColor(
+        annotation.geometry.track_id,
+        annotation.class_name,
+        trackColorOverrides,
+      ));
+    },
+    [trackColorOverrides],
+  );
+  const maskRecords = useVideoMaskFrames({
+    taskId: manifest?.task_id ?? null,
+    annotations: visibleMaskAnnotations,
+    candidates: maskCandidates,
+    frameIndex,
+    selectedId,
+    colorForAnnotation: maskColorForAnnotation,
+  });
+  const committedMaskRecords = useMemo(
+    () => maskRecords.filter((record) => record.source === "annotation"),
+    [maskRecords],
+  );
+  const displayedMaskRecords = useMemo(
+    () => maskEditor?.active && selectedId
+      ? maskRecords.filter((record) => record.source === "tracker" || record.id !== selectedId)
+      : maskRecords,
+    [maskEditor?.active, maskRecords, selectedId],
+  );
+
   // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
   // v0.21.9 WS2 · 检测式轨迹候选(video_track_bbox)也纳入: 用 resolveTrackAtFrame 解出当前帧框,
   //   与逐帧 video_bbox 候选同层渲染(此前只在侧栏可见、画布不画)。
@@ -394,12 +470,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       const ann = annotations.find((a) => a.id === entry.id);
       return { id: entry.id, x: entry.geom.x, y: entry.geom.y, isTrack: Boolean(ann && isVideoTrack(ann)) };
     });
+    for (const mask of committedMaskRecords) {
+      entries.push({ id: mask.id, x: mask.geom.x, y: mask.geom.y, isTrack: true });
+    }
     const carryOverGhosts = frameViews.carryOverGhosts.map((g) => ({ id: g.id, x: g.geom.x, y: g.geom.y }));
     const selectedTrackGhost = frameViews.ghost
       ? { id: frameViews.ghost.id, x: frameViews.ghost.geom.x, y: frameViews.ghost.geom.y }
       : null;
     return collectFrameCategories({ ai, entries, carryOverGhosts, selectedTrackGhost });
-  }, [annotations, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, frameViews.ghost]);
+  }, [annotations, committedMaskRecords, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, frameViews.ghost]);
 
   const cycleInCategory = useCallback((dir: -1 | 1) => {
     const next = nextInCategory(frameCategories, selectedId, dir);
@@ -419,6 +498,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       ? { x: ai.x, y: ai.y, w: ai.w, h: ai.h }
       : frameViews.entries.find((e) => e.id === id)?.geom
         ?? frameViews.carryOverGhosts.find((g) => g.id === id)?.geom
+        ?? committedMaskRecords.find((mask) => mask.id === id)?.geom
         ?? null;
     if (!geom) return;
     const cur = vpRef.current;
@@ -437,7 +517,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // 已在视口内且无需变焦 → 不动(避免每次选中都重排, 保留上下文)。
     if (!outOfView && scale === cur.scale) return;
     setVp({ scale, tx: viewportSize.w / 2 - cx * scale, ty: viewportSize.h / 2 - cy * scale });
-  }, [frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, setVp, size.h, size.w, viewportSize.h, viewportSize.w, vpRef]);
+  }, [committedMaskRecords, frameAiBoxes, frameViews.carryOverGhosts, frameViews.entries, setVp, size.h, size.w, viewportSize.h, viewportSize.w, vpRef]);
 
   // 选中变化即触发焦点联动(键盘两级循环 / 侧栏点选 / 画布点选统一走此)。用 ref 读最新 focusObject,
   // 使 effect 只在 selectedId 变化时跑 —— 否则 focusObject 逐帧变身份会让播放中每帧重排。
@@ -486,6 +566,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     size,
     annotations,
     entries: frameViews.entries,
+    maskEntries: committedMaskRecords,
     ghost: frameViews.ghost,
     carryOverGhosts: frameViews.carryOverGhosts,
     selectedTrack,
@@ -541,6 +622,22 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
   const handleStagePointerDown = useCallback((e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
+    if (videoTool === "mask" && maskEditor && !readOnly && !isPlaybackActive) {
+      const native = e.evt;
+      if (native.button !== 0) return;
+      const point = pointFromClientEvt(native.clientX, native.clientY);
+      if (!point) return;
+      e.cancelBubble = true;
+      containerRef.current?.setPointerCapture?.(native.pointerId);
+      if (!maskEditor.active) maskEditor.beginBlank();
+      maskEditor.beginStroke();
+      const x = point.x * size.w;
+      const y = point.y * size.h;
+      maskEditor.paintAt(x, y);
+      maskStrokeRef.current = { lastX: x, lastY: y };
+      setMaskCursor(point);
+      return;
+    }
     if (pointsDrawEnabled) {
       const native = e.evt;
       if (native.button !== 0) return; // 右键/中键平移交容器层
@@ -559,7 +656,48 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [pointsDrawEnabled, pointFromClientEvt, pointsDraft, isPointsClosedTool, commitPointsDraft, interaction]);
+  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, maskEditor, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, size.h, size.w, videoTool]);
+
+  useEffect(() => {
+    if (videoTool !== "mask" || !maskEditor) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      const command = event.ctrlKey || event.metaKey;
+      if (command && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (event.shiftKey) maskEditor.redo();
+        else maskEditor.undo();
+        return;
+      }
+      if (command && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        maskEditor.redo();
+        return;
+      }
+      if (event.key === "b" || event.key === "B") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        maskEditor.setMode("brush");
+      } else if (event.key === "e" || event.key === "E") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        maskEditor.setMode("erase");
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onMaskCommit?.();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onMaskCancel?.();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [maskEditor, onMaskCancel, onMaskCommit, videoTool]);
 
   // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
   useEffect(() => {
@@ -648,7 +786,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     [annotations, selectedIds],
   );
   const trackActions = useVideoTrackActions({
-    selectedTrack,
+    selectedTrack: selectedManagedTrack,
     frameIndex,
     readOnly,
     hiddenTrackIds: hiddenTrackIds ?? EMPTY_LOCKED,
@@ -662,6 +800,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
     [frameIndex, selectedTrack],
   );
+  const selectedManagedCurrentKeyframe = useMemo(
+    () => selectedManagedTrack?.geometry.keyframes.find((keyframe) => keyframe.frame_index === frameIndex) ?? null,
+    [frameIndex, selectedManagedTrack],
+  );
 
   // v0.21.12 · 粘轨迹态提示数据: 轨迹显示编号 + 当前帧是否已有关键帧(切「延展 / 同帧新建」措辞)。
   // 仅轨迹工具 + 有选中轨迹时非空 → 显式化「下一次画框归属选中轨迹」这一隐式模型。
@@ -674,20 +816,27 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return { label, hasKeyframeAtFrame: selectedTrackCurrentKeyframe != null };
   }, [videoTool, selectedTrack, videoTracks, selectedTrackCurrentKeyframe]);
   const canDeleteSelectedTrackKeyframe = Boolean(
-    selectedTrack
-    && selectedTrackCurrentKeyframe
+    selectedManagedTrack
+    && selectedManagedCurrentKeyframe
     && !readOnly
     && !trackActions.selectedTrackLocked
-    && selectedTrack.geometry.keyframes.length > 1,
+    && selectedManagedTrack.geometry.keyframes.length > 1,
   );
   const deleteSelectedTrackKeyframe = useCallback(() => {
-    if (!selectedTrack || !selectedTrackCurrentKeyframe || !canDeleteSelectedTrackKeyframe) return false;
-    (onUpdate ?? noopUpdate)(selectedTrack, {
-      ...selectedTrack.geometry,
-      keyframes: sortedKeyframes(selectedTrack.geometry).filter((kf) => kf.frame_index !== frameIndex),
-    });
+    if (!selectedManagedTrack || !selectedManagedCurrentKeyframe || !canDeleteSelectedTrackKeyframe) return false;
+    if (selectedManagedTrack.geometry.type === "video_track_mask") {
+      (onUpdate ?? noopUpdate)(selectedManagedTrack, {
+        ...selectedManagedTrack.geometry,
+        keyframes: selectedManagedTrack.geometry.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
+      });
+    } else {
+      (onUpdate ?? noopUpdate)(selectedManagedTrack, {
+        ...selectedManagedTrack.geometry,
+        keyframes: sortedKeyframes(selectedManagedTrack.geometry).filter((keyframe) => keyframe.frame_index !== frameIndex),
+      });
+    }
     return true;
-  }, [canDeleteSelectedTrackKeyframe, frameIndex, noopUpdate, onUpdate, selectedTrack, selectedTrackCurrentKeyframe]);
+  }, [canDeleteSelectedTrackKeyframe, frameIndex, noopUpdate, onUpdate, selectedManagedCurrentKeyframe, selectedManagedTrack]);
 
   const contextMenuItems = useMemo<DropdownItem[]>(() => buildVideoContextMenuItems({
     contextMenuAnnotation,
@@ -727,7 +876,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const point = clientToVideoNorm(evt.clientX, evt.clientY, rect, vpRef.current, size);
     if (!point) return;
     const pickables = frameViews.ghost ? [...frameViews.entries, frameViews.ghost] : frameViews.entries;
-    const hit = pickTopVideoEntryAt(pickables, point);
+    const hit = pickTopVideoMaskAt(committedMaskRecords, point) ?? pickTopVideoEntryAt(pickables, point);
     if (!hit) return;
     const hitAnn = annotations.find((a) => a.id === hit.id);
     // v0.21.26 · 命中的不是「可建菜单」的视频几何 → 只选中, 不弹空菜单
@@ -743,7 +892,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }
     onSelect?.(hit.id);
     contextMenu.openAt(evt.clientX, evt.clientY);
-  }, [annotations, closeContextMenu, contextMenu, frameViews.entries, frameViews.ghost, onSelect, readOnly, selectedIds, selectedVideoBboxes.length, size, vpRef]);
+  }, [annotations, closeContextMenu, committedMaskRecords, contextMenu, frameViews.entries, frameViews.ghost, onSelect, readOnly, selectedIds, selectedVideoBboxes.length, size, vpRef]);
 
   const fitViewport = useCallback(() => {
     fit(viewportSize.w, viewportSize.h, size.w, size.h);
@@ -776,6 +925,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   // ctrl/⌘+滚轮围绕光标缩放(几何边界判断,对齐旧栈 onWheel)。
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
+      if (videoTool === "mask" && maskEditor && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        maskEditor.setRadius(maskEditor.radius + (e.deltaY < 0 ? 2 : -2));
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       const el = containerRef.current;
       if (!el) return;
@@ -790,7 +944,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     };
     window.addEventListener("wheel", onWheel, { capture: true, passive: false });
     return () => window.removeEventListener("wheel", onWheel, { capture: true });
-  }, [vpRef, zoomAt]);
+  }, [maskEditor, videoTool, vpRef, zoomAt]);
 
   // 本地视口/导航快捷键(对齐旧 SVG 栈 VideoStage 本地 keydown):
   // F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧(,/. 跳关键帧由中央 hotkeys 分发器处理)。
@@ -810,25 +964,40 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const track = selectedTrack;
+      const track = selectedManagedTrack;
       if (!track) return;
+      const frames = track.geometry.keyframes.map((keyframe) => keyframe.frame_index);
       if (e.key === "Home") {
-        const frame = firstAppearFrame(track.geometry);
-        if (frame === null) return;
+        const frame = frames.length > 0 ? Math.min(...frames) : null;
+        if (frame == null) return;
         e.preventDefault();
         seekToFrame(frame, { recordHistory: true });
         return;
       }
       if (e.key === "End") {
-        const frame = lastAppearFrame(track.geometry);
-        if (frame === null) return;
+        const frame = frames.length > 0 ? Math.max(...frames) : null;
+        if (frame == null) return;
         e.preventDefault();
         seekToFrame(frame, { recordHistory: true });
       }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [fitViewport, seekToFrame, selectedTrack, setActualSize]);
+  }, [fitViewport, seekToFrame, selectedManagedTrack, setActualSize]);
+
+  const seekManagedKeyframe = useCallback((dir: -1 | 1, options?: { recordHistory?: boolean }) => {
+    if (selectedManagedTrack?.geometry.type !== "video_track_mask") {
+      controls.seekToKeyframe(dir, options);
+      return;
+    }
+    const frames = selectedManagedTrack.geometry.keyframes
+      .map((keyframe) => keyframe.frame_index)
+      .sort((a, b) => a - b);
+    const next = dir > 0
+      ? frames.find((candidate) => candidate > frameIndex)
+      : [...frames].reverse().find((candidate) => candidate < frameIndex);
+    if (next != null) seekToFrame(next, options);
+  }, [controls, frameIndex, seekToFrame, selectedManagedTrack]);
 
   // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
   // (captureCurrentFrameJpeg 由 controller.controls 提供, 见 useVideoPlaybackController。)
@@ -838,16 +1007,22 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     if (!rect) return null;
     const p = videoNormToClient(pt, rect, vpRef.current, size);
     return { left: p.x, top: p.y };
-  }, [size]);
+  }, [size, vpRef]);
 
   useImperativeHandle(ref, () => ({
     ...controls,
+    seekToKeyframe: seekManagedKeyframe,
+    toggleSelectedTrackOutside: trackActions.toggleSelectedTrackOutside,
+    toggleSelectedTrackOccluded: trackActions.toggleSelectedTrackOccluded,
+    toggleSelectedTrackHidden: trackActions.toggleSelectedTrackHidden,
+    toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
+    propagateSelectedTrack: trackActions.propagateSelectedTrack,
     normToClient,
     deleteSelectedTrackKeyframe,
     cycleInCategory,
     stepCategory,
     focusObject,
-  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, normToClient, stepCategory]);
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, normToClient, seekManagedKeyframe, stepCategory, trackActions]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;
@@ -866,13 +1041,31 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // 指针在画布上移动即唤出播放浮层(对齐旧 SVG 栈);离开后由 onPointerLeave 计时收起。
     showPlaybackOverlay();
     // 光标归一化坐标上报(状态栏读出),无论是否在平移;越界(letterbox 区)上报 null。
-    if (onCursorMove || pointsDrawEnabled) {
+    if (onCursorMove || pointsDrawEnabled || videoTool === "mask") {
       const rect = containerRef.current?.getBoundingClientRect();
       const pt = rect ? clientToVideoNorm(evt.clientX, evt.clientY, rect, vpRef.current, size) : null;
       const inFrame = pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null;
       onCursorMove?.(inFrame);
       // 橡皮筋预览: 仅绘制工具激活时跟踪, 用于「上一点 → 光标」预览段与首点吸附高亮。
       if (pointsDrawEnabled) setPointsCursor(inFrame);
+      if (videoTool === "mask") setMaskCursor(inFrame);
+    }
+    const maskStroke = maskStrokeRef.current;
+    if (maskStroke && maskEditor) {
+      const point = pointFromClientEvt(evt.clientX, evt.clientY);
+      if (point) {
+        const x = point.x * size.w;
+        const y = point.y * size.h;
+        const dx = x - maskStroke.lastX;
+        const dy = y - maskStroke.lastY;
+        const distance = Math.hypot(dx, dy);
+        const count = Math.max(1, Math.floor(distance / Math.max(1, maskEditor.radius / 2)));
+        for (let index = 1; index <= count; index += 1) {
+          const ratio = index / count;
+          maskEditor.paintAt(maskStroke.lastX + dx * ratio, maskStroke.lastY + dy * ratio);
+        }
+        maskStrokeRef.current = { lastX: x, lastY: y };
+      }
     }
     const start = panRef.current;
     if (!start) return;
@@ -880,16 +1073,21 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const dy = evt.clientY - start.y;
     panRef.current = { x: evt.clientX, y: evt.clientY };
     setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
-  }, [onCursorMove, pointsDrawEnabled, setVp, showPlaybackOverlay, size, vpRef]);
+  }, [maskEditor, onCursorMove, pointFromClientEvt, pointsDrawEnabled, setVp, showPlaybackOverlay, size, videoTool, vpRef]);
 
   const endPan = useCallback(() => {
+    if (maskStrokeRef.current) {
+      maskStrokeRef.current = null;
+      maskEditor?.endStroke();
+    }
     panRef.current = null;
     setPanning(false);
-  }, []);
+  }, [maskEditor]);
 
   const onPointerLeave = useCallback(() => {
     onCursorMove?.(null);
     setPointsCursor(null);
+    setMaskCursor(null);
     // 指针离开画布 2s 后收起播放浮层,避免其永久遮挡画布。
     schedulePlaybackOverlayHide();
   }, [onCursorMove, schedulePlaybackOverlayHide]);
@@ -978,6 +1176,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             scale={vp.scale}
             visual={visual}
           />
+          <VideoKonvaMaskLayer records={displayedMaskRecords} size={size} />
+          {videoTool === "mask" && maskEditor?.active && maskEditor.buffer && (
+            <MaskOverlayLayer
+              buffer={maskEditor.buffer}
+              revision={maskEditor.revision}
+              imgW={size.w}
+              imgH={size.h}
+              visible
+            />
+          )}
           <VideoKonvaOverlayLayer
             pendingDraft={pendingDraft}
             labels={frameViews.labels}
@@ -1015,6 +1223,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             preview={preview}
             onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
           />
+          {videoTool === "mask" && maskCursor && maskEditor && (
+            <Layer name="video-mask-cursor" listening={false}>
+              <Circle
+                x={maskCursor.x * size.w}
+                y={maskCursor.y * size.h}
+                radius={maskEditor.radius}
+                stroke={maskEditor.mode === "erase" ? "#64748b" : "#dc2626"}
+                strokeWidth={1.5 / vp.scale}
+                dash={[4 / vp.scale, 3 / vp.scale]}
+                listening={false}
+              />
+            </Layer>
+          )}
           {pointsDraft.draft && pointsDraft.draft.points.length > 0 && (() => {
             const hex = colorToHex(classColor(activeClass));
             const isPolyline = !pointsDraft.draft.closed;
@@ -1165,8 +1386,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         timebase={timebase}
         isPlaying={isPlaybackActive}
         playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}
-        selectedTrackTimeline={selectedTrackTimeline}
-        trackColor={selectedTrackColor}
+        selectedTrackTimeline={effectiveSelectedTrackTimeline}
+        trackColor={effectiveSelectedTrackColor}
         globalTimelineDensity={globalTimelineDensity}
         predictionDensity={predictionDensity}
         onSeekPredicted={hasPredictedFrames ? seekToAdjacentPredictedFrame : undefined}

@@ -360,7 +360,7 @@ MODALITIES: tuple[ModalitySpec, ...] = (
 )
 
 
-# ── 8 个 geometry (复用 supported_geometric_outputs 字段值) ───────────────────
+# ── geometry (复用 supported_geometric_outputs 字段值) ────────────────────────
 GEOMETRIES: tuple[GeometrySpec, ...] = (
     GeometrySpec(id="bbox", label="bbox", summary="2D 轴对齐矩形。"),
     GeometrySpec(
@@ -375,6 +375,7 @@ GEOMETRIES: tuple[GeometrySpec, ...] = (
         id="lidar_box_3d", label="3D box", summary="3D 立体框, 用于点云标注。"
     ),
     GeometrySpec(id="point_mask_3d", label="point mask 3D", summary="点云逐点 mask。"),
+    GeometrySpec(id="mask", label="raster mask", summary="2D 逐像素二值掩码。"),
     GeometrySpec(id="none", label="none", summary="纯分类等无几何输出。"),
 )
 

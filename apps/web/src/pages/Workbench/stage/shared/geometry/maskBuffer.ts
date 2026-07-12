@@ -9,6 +9,8 @@
 // - polygon → mask 用扫描线填充（ray casting），与浏览器 canvas2d 的 fill 等价；
 //   v1 不引入 d3-contour / scanline 库依赖。
 
+import { decodeCocoRle, encodeCocoRle, type CocoRle } from "./maskRle";
+
 export interface MaskBufferOptions {
   width: number;
   height: number;
@@ -44,6 +46,18 @@ export class MaskBuffer {
     this.width = width;
     this.height = height;
     this.data = new Uint8Array(width * height);
+  }
+
+  static fromRle(rle: CocoRle): MaskBuffer {
+    const [height, width] = rle.size;
+    const buffer = new MaskBuffer({ width, height });
+    buffer.data.set(decodeCocoRle(rle));
+    buffer.markDirty(0, 0, width, height);
+    return buffer;
+  }
+
+  toRle(): CocoRle {
+    return encodeCocoRle(this.data, this.width, this.height);
   }
 
   /** 把 [x0, x1) × [y0, y1) 与当前脏区 union；空区间静默忽略。坐标会 clamp 到画布。 */

@@ -8,12 +8,13 @@ import {
   resolveTrackAtFrame,
   resolveVideoPolygonTrackAtFrame,
   resolveVideoPolylineTrackAtFrame,
+  resolveVideoMaskTrackAtFrame,
   sortedKeyframes,
   trackReferenceAtFrame,
   upsertKeyframe,
   upsertPointsKeyframe,
 } from "./videoStageGeometry";
-import type { VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
+import type { VideoTrackGeometry, VideoTrackMaskGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
 
 function track(keyframes: VideoTrackGeometry["keyframes"], patch?: Partial<VideoTrackGeometry>): VideoTrackGeometry {
   return {
@@ -241,5 +242,32 @@ describe("videoStageGeometry · polyline track", () => {
     expect(resolveVideoPolylineTrackAtFrame(geom, 0)?.points).toEqual(LINE_A);
     expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.source).toBe("interpolated");
     expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.points).toEqual([[0, 0.1], [0.2, 0.1], [0.4, 0.1]]);
+  });
+});
+
+describe("videoStageGeometry · raster mask nearest hold", () => {
+  const ref = (seed: string) => ({
+    encoding: "coco_rle_ref" as const,
+    size: [2, 3] as [number, number],
+    object_key: `raster-masks/sha256/${seed}${seed}/${seed}${seed}/${seed.repeat(64)}.json`,
+    sha256: seed.repeat(64),
+    runs: 4,
+    bytes: 64,
+  });
+  const geometry: VideoTrackMaskGeometry = {
+    type: "video_track_mask",
+    track_id: "mask-1",
+    keyframes: [
+      { frame_index: 4, mask: ref("a"), source: "manual" },
+      { frame_index: 8, mask: ref("b"), source: "prediction", occluded: true },
+    ],
+    outside: [{ from: 5, to: 5 }],
+  };
+
+  it("holds endpoints, chooses earlier on ties, and lets outside win", () => {
+    expect(resolveVideoMaskTrackAtFrame(geometry, 0)?.keyframeFrame).toBe(4);
+    expect(resolveVideoMaskTrackAtFrame(geometry, 5)).toBeNull();
+    expect(resolveVideoMaskTrackAtFrame(geometry, 6)?.keyframeFrame).toBe(4);
+    expect(resolveVideoMaskTrackAtFrame(geometry, 20)?.keyframeFrame).toBe(8);
   });
 });

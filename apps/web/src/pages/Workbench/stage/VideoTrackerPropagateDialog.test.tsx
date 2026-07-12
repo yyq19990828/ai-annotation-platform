@@ -161,6 +161,21 @@ describe("VideoTrackerPropagateDialog", () => {
     );
   });
 
+  it("submits the explicitly selected mask geometry", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={20}
+        preferNonMockModel
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("tracker-output-geometry"), { target: { value: "mask" } });
+    fireEvent.click(screen.getByText("发起传播"));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ output_geometry: "mask" }));
+  });
+
   it("step>1 (采样开启): 预设语义为网格格子, span 乘 step, range 显示网格序号", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(

@@ -10,7 +10,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from app.db.models.annotation_comment import AnnotationComment
 from app.workers._db import task_session
@@ -75,6 +75,80 @@ async def _purge_async() -> dict:
         deleted_objects,
     )
     return {"comments": processed_comments, "objects": deleted_objects}
+
+
+_MASK_REFERENCE_QUERIES = (
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM annotations, LATERAL jsonb_path_query(geometry, '$.**.object_key') value
+    WHERE is_active IS TRUE AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM predictions, LATERAL jsonb_path_query(result, '$.**.object_key') value
+    WHERE value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM video_tracker_jobs, LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
+    WHERE staged_result IS NOT NULL AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
+)
+
+
+async def _referenced_raster_mask_keys(db) -> set[str]:
+    referenced: set[str] = set()
+    for query in _MASK_REFERENCE_QUERIES:
+        rows = (await db.execute(text(query))).scalars().all()
+        referenced.update(str(key) for key in rows if key)
+    return referenced
+
+
+def _eligible_raster_mask_objects(
+    candidates: list[dict], referenced: set[str], cutoff: datetime
+) -> list[dict]:
+    return [
+        item
+        for item in candidates
+        if item["key"] not in referenced
+        and item.get("last_modified") is not None
+        and item["last_modified"] < cutoff
+    ][:1000]
+
+
+@celery_app.task(name="app.workers.cleanup.purge_unreferenced_raster_masks")
+def purge_unreferenced_raster_masks(dry_run: bool = False) -> dict:
+    """Delete unreferenced content-addressed mask objects after a 24-hour grace."""
+    return asyncio.run(_purge_unreferenced_raster_masks_async(dry_run=dry_run))
+
+
+async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    async with task_session() as db:
+        referenced = await _referenced_raster_mask_keys(db)
+
+    candidates = storage_service.list_objects("raster-masks/sha256/")
+    deletable = _eligible_raster_mask_objects(candidates, referenced, cutoff)
+    deleted = 0
+    errors = 0
+    if not dry_run:
+        for item in deletable:
+            try:
+                storage_service.delete_object(item["key"])
+                deleted += 1
+            except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure
+                errors += 1
+                log.warning("delete unreferenced raster mask %s failed: %s", item["key"], exc)
+    result = {
+        "dry_run": dry_run,
+        "referenced": len(referenced),
+        "scanned": len(candidates),
+        "eligible": len(deletable),
+        "deleted": deleted,
+        "errors": errors,
+    }
+    log.info("purge_unreferenced_raster_masks done: %s", result)
+    return result
 
 
 @celery_app.task(name="app.workers.cleanup.refresh_user_perf_mv")

@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ from app.deps import get_current_user, get_db, require_roles
 from app.schemas.video_tracker_job import TrackerJobStatus, VideoTrackerJobOut
 from app.services.audit import AuditAction, AuditService
 from app.services.scheduler import is_privileged_for_project
+from app.services.raster_mask_storage import load_coco_rle
 from app.services.video_tracker_job_service import (
     accept_tracker_job,
     cancel_tracker_job,
@@ -368,4 +370,37 @@ async def get_video_tracker_job_preview(
         results=staged.get("results") or [],
         grid_step=int(staged.get("grid_step", 1)),
         output_geometry=staged.get("output_geometry", "bbox"),
+    )
+
+
+@router.get("/{job_id}/mask-content/{sha256}")
+async def get_video_tracker_mask_content(
+    job_id: uuid.UUID,
+    sha256: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> JSONResponse:
+    row = await get_tracker_job(db, job_id)
+    task = await db.get(Task, row.task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    await _assert_task_visible(db, task, current_user)
+    reference = next(
+        (
+            (result.get("geometry") or {}).get("mask")
+            for result in ((row.staged_result or {}).get("results") or [])
+            if ((result.get("geometry") or {}).get("mask") or {}).get("sha256")
+            == sha256
+        ),
+        None,
+    )
+    if reference is None:
+        raise HTTPException(status_code=404, detail="mask candidate not found")
+    try:
+        payload = load_coco_rle(reference)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=f"mask object is invalid: {exc}") from exc
+    return JSONResponse(
+        payload,
+        headers={"Cache-Control": "private, max-age=300", "ETag": f'"{sha256}"'},
     )

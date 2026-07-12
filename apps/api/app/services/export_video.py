@@ -39,7 +39,7 @@ logger = logging.getLogger("app.services.export_video")
 # ``video_rotated_bbox`` / ``video_keypoint`` 是 inert schema（前端不产出、库中无数据），
 # 故不在此列；待其真正落库后再接入导出。
 VIDEO_TRACK_GEOMETRY_TYPES = frozenset(
-    {"video_track_bbox", "video_track_polygon", "video_track_polyline"}
+    {"video_track_bbox", "video_track_polygon", "video_track_polyline", "video_track_mask"}
 )
 VIDEO_SINGLE_FRAME_GEOMETRY_TYPES = frozenset(
     {"video_bbox", "video_polygon", "video_polyline"}
@@ -132,7 +132,10 @@ def track_grid_rows(
         fi = int(frame.get("frame_index", 0))
         if fi % step != 0:
             continue
-        left, top, w, h = _bbox_px(_frame_bbox(frame), img_w, img_h)
+        bbox = _frame_bbox(frame)
+        if float(bbox.get("w", 0)) <= 0 or float(bbox.get("h", 0)) <= 0:
+            continue
+        left, top, w, h = _bbox_px(bbox, img_w, img_h)
         rows.append(
             {
                 "grid_index": fi // step,
@@ -215,7 +218,10 @@ def build_yolo_frame_det_labels(
                 continue
             out_frame = grid_index + frame_start_number
             lines, attrs = labels[out_frame]
-            lines.append(_yolo_det_line(class_id, _frame_bbox(frame)))
+            bbox = _frame_bbox(frame)
+            if float(bbox.get("w", 0)) <= 0 or float(bbox.get("h", 0)) <= 0:
+                continue
+            lines.append(_yolo_det_line(class_id, bbox))
             if include_attributes:
                 attrs.append(attributes or {})
 
@@ -427,7 +433,7 @@ def build_coco_frames_seg(
             next_ann_id += 1
 
         for class_name, geometry, attributes, track_id in record["tracks"]:
-            if geometry.get("type") != "video_track_polygon":
+            if geometry.get("type") not in {"video_track_polygon", "video_track_mask"}:
                 continue
             category_id = cat_map.get(class_name or "")
             if category_id is None:
@@ -437,13 +443,42 @@ def build_coco_frames_seg(
             for frame in resolved_track_frames(
                 geometry, frame_mode="all_frames", frame_count=frame_count
             ):
-                points = frame.get("points") or []
-                if len(points) < 3:
-                    continue
                 grid_index = grid.get(int(frame.get("frame_index", 0)))
                 if grid_index is None:
                     continue
                 image_id = image_id_by_key[(seq, grid_index + frame_start_number)]
+                if geometry.get("type") == "video_track_mask":
+                    rle = frame.get("mask_rle") or {}
+                    counts = rle.get("counts") or []
+                    bbox_norm = frame.get("bbox") or {}
+                    if not counts or float(bbox_norm.get("w", 0)) <= 0:
+                        continue
+                    bbox = [
+                        round(float(bbox_norm["x"]) * img_w, 2),
+                        round(float(bbox_norm["y"]) * img_h, 2),
+                        round(float(bbox_norm["w"]) * img_w, 2),
+                        round(float(bbox_norm["h"]) * img_h, 2),
+                    ]
+                    row = {
+                        "id": next_ann_id,
+                        "image_id": image_id,
+                        "category_id": category_id,
+                        "bbox": bbox,
+                        "area": int(sum(int(value) for value in counts[1::2])),
+                        "iscrowd": 1,
+                        "segmentation": {"size": list(rle["size"]), "counts": list(counts)},
+                    }
+                    if include_attributes:
+                        attrs = dict(attributes or {})
+                        if track_id is not None:
+                            attrs["__track_id"] = track_id
+                        row["attributes"] = attrs
+                    annotations.append(row)
+                    next_ann_id += 1
+                    continue
+                points = frame.get("points") or []
+                if len(points) < 3:
+                    continue
                 annotations.append(
                     _coco_seg_annotation(
                         next_ann_id,

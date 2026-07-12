@@ -234,6 +234,7 @@ export function VideoTrackerPropagateDialog({
   const [modelKey, setModelKey] = useState<string>("mock_bbox");
   // v0.10.36: SAM 模型尺寸; 空 = 默认 (tiny)。
   const [samVariant, setSamVariant] = useState<string>("");
+  const [outputGeometry, setOutputGeometry] = useState<"" | "bbox" | "polygon" | "mask">("");
   // v0.21.19: text-driven 追踪 (sam3_video) 的文本 query; 每次打开重置 (非持久化)。
   const [text, setText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -393,6 +394,7 @@ export function VideoTrackerPropagateDialog({
         direction,
         sam_variant: samVariant || undefined,
         text: textDrivenActive ? trimmedText : undefined,
+        output_geometry: outputGeometry || undefined,
       });
       writeDialogMemory(userId, "trackerPropagate", {
         rangePreset,
@@ -513,6 +515,26 @@ export function VideoTrackerPropagateDialog({
                     {v.label}
                   </option>
                 ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        {modelKey !== "mock_bbox" && (
+          <>
+            {TOOLBAR_DIVIDER}
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>输出</span>
+              <select
+                data-testid="tracker-output-geometry"
+                value={outputGeometry}
+                onChange={(event) => setOutputGeometry(event.target.value as typeof outputGeometry)}
+                className={cn(TOOLBAR_SELECT_CLASS, "cursor-pointer")}
+              >
+                <option value="">跟随当前轨迹</option>
+                <option value="mask">栅格 mask</option>
+                <option value="polygon">多边形</option>
+                <option value="bbox">矩形框</option>
               </select>
             </div>
           </>

@@ -16,6 +16,10 @@ def is_polyline_track(geometry: dict) -> bool:
     return geometry.get("type") == "video_track_polyline"
 
 
+def is_mask_track(geometry: dict) -> bool:
+    return geometry.get("type") == "video_track_mask"
+
+
 def _is_points_track(geometry: dict) -> bool:
     """polygon / polyline track: 关键帧存 points; 二者共享 points 形状分派。"""
     return is_polygon_track(geometry) or is_polyline_track(geometry)
@@ -46,7 +50,9 @@ def clean_keyframe(kf: dict, *, include_attributes: bool = True) -> dict:
         "source": kf.get("source", "manual"),
         "occluded": bool(kf.get("occluded", False)),
     }
-    if kf.get("points") is not None:
+    if kf.get("mask") is not None:
+        row["mask"] = dict(kf["mask"])
+    elif kf.get("points") is not None:
         row["points"] = [list(pt) for pt in (kf.get("points") or [])]
     else:
         row["bbox"] = kf.get("bbox") or {}
@@ -280,6 +286,39 @@ def resolve_track_at_frame(
     if range_intersects_outside(outside_ranges, frame_index, frame_index):
         return None
 
+    if is_mask_track(geometry):
+        candidates = [
+            keyframe
+            for keyframe in keyframes
+            if not range_intersects_outside(
+                outside_ranges,
+                int(keyframe.get("frame_index", 0)),
+                int(keyframe.get("frame_index", 0)),
+            )
+        ]
+        if not candidates:
+            return None
+        selected = min(
+            candidates,
+            key=lambda keyframe: (
+                abs(int(keyframe.get("frame_index", 0)) - frame_index),
+                int(keyframe.get("frame_index", 0)),
+            ),
+        )
+        resolved = {
+            "frame_index": frame_index,
+            "mask": dict(selected.get("mask") or {}),
+            "source": selected.get("source", "manual"),
+            "occluded": bool(selected.get("occluded", False)),
+        }
+        if isinstance(selected.get("bbox"), dict):
+            resolved["bbox"] = dict(selected["bbox"])
+        if isinstance(selected.get("mask_rle"), dict):
+            resolved["mask_rle"] = dict(selected["mask_rle"])
+        if isinstance(selected.get("attributes"), dict):
+            resolved["attributes"] = selected["attributes"]
+        return resolved
+
     exact = next(
         (kf for kf in keyframes if int(kf.get("frame_index", 0)) == frame_index),
         None,
@@ -354,6 +393,22 @@ def resolved_track_frames(
     keyframes = sorted_keyframes(geometry)
     outside_ranges = effective_outside_ranges(geometry)
     if frame_mode == "keyframes":
+        if is_mask_track(geometry):
+            return [
+                {
+                    "frame_index": int(kf.get("frame_index", 0)),
+                    "mask": dict(kf.get("mask") or {}),
+                    "source": kf.get("source", "manual"),
+                    "occluded": bool(kf.get("occluded", False)),
+                    **({"attributes": kf["attributes"]} if isinstance(kf.get("attributes"), dict) else {}),
+                }
+                for kf in keyframes
+                if not range_intersects_outside(
+                    outside_ranges,
+                    int(kf.get("frame_index", 0)),
+                    int(kf.get("frame_index", 0)),
+                )
+            ]
         return [
             {
                 "frame_index": int(kf.get("frame_index", 0)),

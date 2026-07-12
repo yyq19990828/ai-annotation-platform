@@ -34,6 +34,9 @@
 
 ## [Unreleased]
 
+### Added
+- **视频工作台新增原生栅格 Mask 轨迹与 DAVIS 导出**：标注员可用 `M` 在当前帧创建或编辑逐像素 Mask 关键帧，笔刷 / 橡皮支持逐 stroke 撤销重做，帧间按 hold 语义显示并以 alpha 精确选择；SAM2 / SAM3 tracker 可直接产出 Mask 候选，接受前后保持同一 RLE。Mask 使用内容寻址存储并支持 AAP JSON 无损迁移、Video JSON、COCO RLE、bbox-only 外接框降级及标准 DAVIS Full-Resolution palette PNG；导出包内不同 target 可保留各自帧编号规则。
+
 ### Fixed
 - **视频追踪任务刷新后不再卡在「运行中」**：页面刷新时若登录态尚未恢复，运行中的追踪任务不会重连进度通道，UI 会一直显示 running、不冒出「完成待接受」，直到用户手动切走再切回。现登录态到位后会自动补连尚未连接的运行中任务。
 - **跨任务切换不再把上一个任务的 AI 候选挂到新任务画布**：在追踪候选预览请求在途时切到新任务，回来的候选此前会写成孤儿，并可能因视频项目跨任务共用 track / annotation id 而渲染到新任务、令接受 / 丢弃按钮打到旧任务的作业。现按任务归属校验后再写入。

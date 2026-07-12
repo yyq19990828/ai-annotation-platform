@@ -13,6 +13,7 @@ import uuid
 import zipfile
 
 import pytest
+from PIL import Image
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
@@ -646,3 +647,128 @@ def test_clean_export_targets_accepts_video_coco_frames_seg():
 def test_clean_export_targets_rejects_coco_frames_seg_for_image_project():
     with pytest.raises(ValueError, match="image project"):
         clean_export_targets(["coco", "coco-frames-seg"], data_type="image")
+
+
+async def test_davis_zip_writes_full_resolution_palette_png_and_independent_frame_spec(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    item.width = 3
+    item.height = 2
+    item.metadata_ = {
+        "video": {"fps": 10, "frame_count": 5, "width": 3, "height": 2}
+    }
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/bb/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 50,
+    }
+    rle = {
+        "encoding": "coco_rle",
+        "size": [2, 3],
+        "counts": [0, 1, 5],
+    }
+    monkeypatch.setattr(
+        "app.services.export_packaging.load_coco_rle", lambda _reference: rle
+    )
+    mask = Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_track_mask",
+        tool_unit_id="region",
+        class_name="car",
+        geometry={
+            "type": "video_track_mask",
+            "track_id": "trk-mask",
+            "keyframes": [
+                {"frame_index": 0, "mask": reference, "source": "manual"}
+            ],
+            "outside": [{"from": 2, "to": 2, "source": "manual"}],
+        },
+        z_order=3,
+    )
+
+    async def _chunks():
+        yield [task], {task_id: [mask]}, {item_id: item}
+
+    data, _ = await _run_video_zip(
+        project, _chunks(), ["yolo-frames-det", "davis"]
+    )
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.read("davis/ImageSets/2017/val.txt").decode() == "clip-a\n"
+        names = zf.namelist()
+        assert "davis/Annotations/Full-Resolution/clip-a/00000.png" in names
+        assert "davis/Annotations/Full-Resolution/clip-a/00001.png" in names
+        assert "davis/Annotations/Full-Resolution/clip-a/00002.png" in names
+        first = Image.open(io.BytesIO(zf.read("davis/Annotations/Full-Resolution/clip-a/00000.png")))
+        middle = Image.open(io.BytesIO(zf.read("davis/Annotations/Full-Resolution/clip-a/00001.png")))
+        assert first.mode == "P"
+        assert list(first.getdata()) == [1, 0, 0, 0, 0, 0]
+        assert list(middle.getdata()) == [0, 0, 0, 0, 0, 0]
+        manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["videos"][0]["frame_outputs"] == [
+        {
+            "dir": "yolo-frames-det/images/clip-a",
+            "start_number": 1,
+            "padding": 6,
+            "extension": "jpg",
+        },
+        {
+            "dir": "davis/JPEGImages/Full-Resolution/clip-a",
+            "start_number": 0,
+            "padding": 5,
+            "extension": "jpg",
+        }
+    ]
+
+
+async def test_davis_zip_rejects_sequence_name_collisions(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
+    project, item, task = _video_project_and_task(
+        project_id, item_id, dataset_id, task_id
+    )
+    second_item = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        file_name="clip-a.mov",
+        file_path="videos/clip-a.mov",
+        file_type="video",
+        metadata_=item.metadata_,
+    )
+    second_task = Task(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        dataset_item_id=second_item.id,
+        display_id="T-2",
+        file_name="clip-a.mov",
+        file_path="videos/clip-a.mov",
+        file_type="video",
+    )
+
+    async def _chunks():
+        yield [task, second_task], {}, {item.id: item, second_item.id: second_item}
+
+    with pytest.raises(ValueError, match="DAVIS sequence name collision"):
+        await _run_video_zip(project, _chunks(), ["davis"])
+
+
+def test_clean_export_targets_accepts_davis_only_for_video():
+    assert clean_export_targets(["davis"], data_type="video") == ["davis"]
+    with pytest.raises(ValueError, match="image project"):
+        clean_export_targets(["davis"], data_type="image")

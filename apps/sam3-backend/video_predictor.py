@@ -37,6 +37,7 @@ import numpy as np
 import torch
 
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
+from mask_utils.rle import encode_coco_rle
 
 logger = logging.getLogger("sam3-backend.video")
 
@@ -295,6 +296,11 @@ class SAM3MultiplexVideoTracker:
     def _mask_geometry(mask: np.ndarray, output_geometry: str) -> tuple[dict, bool]:
         """mask → geometry; 空/退化 → outside。"""
         h, w = mask.shape[:2]
+        if output_geometry == "mask":
+            return {
+                "type": "mask",
+                "rle": encode_coco_rle(mask.reshape(-1), w, h),
+            }, not bool(mask.any())
         if output_geometry == "polygon":
             points = mask_to_polygon(mask, _POLYGON_TOLERANCE, normalize_to=(w, h))
             if len(points) < 3:

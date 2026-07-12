@@ -60,6 +60,7 @@ class VideoTrackerPropagateRequest(BaseModel):
     # 由 create_tracker_job 写进 prompt JSONB、adapter 透传到 backend /predict context。
     text: str | None = Field(default=None, max_length=500)
     exemplars: list[TrackerExemplar] | None = None
+    output_geometry: Literal["bbox", "polygon", "mask"] | None = None
 
     @field_validator("prompt")
     @classmethod
