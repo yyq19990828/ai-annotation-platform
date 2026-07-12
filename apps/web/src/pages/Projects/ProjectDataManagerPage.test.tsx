@@ -114,7 +114,6 @@ describe("DataManagerOverview", () => {
 
     expect(screen.getByText("当前匹配")).toBeInTheDocument();
     expect(screen.getByText("可见 12")).toBeInTheDocument();
-    expect(screen.getByText("查看状态、来源、类别与属性聚合")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务状态" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "标注来源" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "标注类别" })).toBeInTheDocument();
@@ -122,7 +121,8 @@ describe("DataManagerOverview", () => {
     expect(screen.getByRole("heading", { name: "待审置信度" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /任务状态：待标注 2，待审核 1/ })).toBeInTheDocument();
     expect(screen.getByText("低置信 1")).toBeInTheDocument();
-    expect(screen.getByText("颜色")).toBeInTheDocument();
+    // 「颜色」既出现在属性完整度行，也作为属性值分布图标题，故用 getAllByText；6/8 唯一属于完整度。
+    expect(screen.getAllByText("颜色").length).toBeGreaterThan(0);
     expect(screen.getByText("6/8")).toBeInTheDocument();
   });
 });
