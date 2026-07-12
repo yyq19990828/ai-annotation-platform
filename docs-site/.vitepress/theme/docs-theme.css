@@ -1,0 +1,352 @@
+/**
+ * 文档站正文阅读层（L1）视觉基线 —— 单一来源。
+ *
+ * 这里定义文档站的“正文阅读 token”：字体、雾白/墨黑中性表面、皇家蓝链接、
+ * 边框、焦点与中文排版节奏，作用于用户手册 / 开发 / 运维 / API 的全部正文页。
+ * 首页的强品牌 token（皇家蓝大面积铺陈、荧光绿、展示 serif）只在品牌层使用，
+ * 见 docs-home.css，不通过本文件泄漏进正文阅读层。
+ *
+ * 两层共享同一个品牌来源：皇家蓝 #172cff。首页把它用作主视觉底色，正文页把它
+ * 收敛为链接色与 active 状态色，从而在“首页 → 正文”之间保持品牌连续性。
+ *
+ * 注意：docs-site 使用 VitePress 默认主题，暗色由 `html.dark` 驱动（VitePress
+ * 机制，与 apps/web 的 data-theme 约定不同），因此本文件的暗色覆盖使用 `.dark`。
+ */
+
+:root {
+  /* —— 共享字体栈（纯本地，无运行时网络字体请求）—— */
+  --docs-font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial,
+    sans-serif;
+  --docs-font-mono:
+    "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  /* 展示 serif：英文高对比 serif + 中文宋体 fallback，全部本地可用、无网络请求 */
+  --docs-font-serif:
+    "Bodoni 72", "Didot", "Playfair Display", "Songti SC", "STSong",
+    "Noto Serif SC", Georgia, "Times New Roman", serif;
+
+  /* —— 皇家蓝品牌链接色（与首页 --home-blue 同源）—— */
+  --docs-royal: #172cff;
+  --docs-royal-deep: #0d18b9;
+  --docs-royal-soft: rgba(23, 44, 255, 0.08);
+
+  /* —— 焦点 —— */
+  --docs-focus: var(--docs-royal);
+
+  /* —— 正文中性表面：雾白（微暖，桥接首页纸张白），不使用强纸张色打长文 —— */
+  --docs-bg: #fdfcfa;
+  --docs-bg-alt: #f4f2ec;
+  --docs-bg-elv: #ffffff;
+  --docs-bg-soft: #f4f2ec;
+  --docs-text-1: #1c1d22;
+  --docs-text-2: #55565d;
+  --docs-text-3: #8a8b92;
+  --docs-border: #e4dfd3;
+  --docs-divider: #ece8dd;
+  --docs-code-bg: #f6f4ee;
+
+  /* —— 映射到 VitePress 变量 —— */
+  --vp-font-family-base: var(--docs-font-sans);
+  --vp-font-family-mono: var(--docs-font-mono);
+
+  --vp-c-bg: var(--docs-bg);
+  --vp-c-bg-alt: var(--docs-bg-alt);
+  --vp-c-bg-elv: var(--docs-bg-elv);
+  --vp-c-bg-soft: var(--docs-bg-soft);
+
+  --vp-c-text-1: var(--docs-text-1);
+  --vp-c-text-2: var(--docs-text-2);
+  --vp-c-text-3: var(--docs-text-3);
+
+  --vp-c-border: var(--docs-border);
+  --vp-c-divider: var(--docs-divider);
+  --vp-c-gutter: var(--docs-divider);
+
+  /* 皇家蓝品牌梯度：brand-1 链接色 / brand-2 hover / brand-3 实心 / soft 低饱和背景 */
+  --vp-c-brand-1: var(--docs-royal);
+  --vp-c-brand-2: var(--docs-royal-deep);
+  --vp-c-brand-3: var(--docs-royal);
+  --vp-c-brand-soft: var(--docs-royal-soft);
+  --vp-c-brand: var(--docs-royal);
+
+  /* 正文实心品牌按钮（首页 Hero CTA 之外的普通按钮）*/
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-bg: var(--docs-royal);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-hover-bg: var(--docs-royal-deep);
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: #ffffff;
+  --vp-button-brand-active-bg: var(--docs-royal-deep);
+
+  /* 代码块表面与页面背景做温和区分 */
+  --vp-code-block-bg: var(--docs-code-bg);
+}
+
+.dark {
+  --docs-bg: #111217; /* 与首页墨黑章节同源 */
+  --docs-bg-alt: #17181d;
+  --docs-bg-elv: #1c1d23;
+  --docs-bg-soft: #1a1b21;
+  --docs-text-1: #eceadf; /* 柔化的纸张色作为暗色正文，延续品牌调性 */
+  --docs-text-2: #a7a79e;
+  --docs-text-3: #74747b;
+  --docs-border: #2a2b32;
+  --docs-divider: #24252b;
+  --docs-code-bg: #16171c;
+
+  /* 暗色下皇家蓝提亮，保证链接在墨黑背景上的可读性 */
+  --docs-royal: #93a0ff;
+  --docs-royal-deep: #b3bcff;
+  --docs-royal-soft: rgba(147, 160, 255, 0.12);
+
+  --vp-c-bg: var(--docs-bg);
+  --vp-c-bg-alt: var(--docs-bg-alt);
+  --vp-c-bg-elv: var(--docs-bg-elv);
+  --vp-c-bg-soft: var(--docs-bg-soft);
+
+  --vp-c-text-1: var(--docs-text-1);
+  --vp-c-text-2: var(--docs-text-2);
+  --vp-c-text-3: var(--docs-text-3);
+
+  --vp-c-border: var(--docs-border);
+  --vp-c-divider: var(--docs-divider);
+  --vp-c-gutter: #0b0c10;
+
+  --vp-c-brand-1: var(--docs-royal);
+  --vp-c-brand-2: var(--docs-royal-deep);
+  --vp-c-brand-3: #3a4cff; /* 实心按钮在暗色下略提亮以读作蓝色 */
+  --vp-c-brand-soft: var(--docs-royal-soft);
+  --vp-c-brand: var(--docs-royal);
+
+  --vp-button-brand-bg: #3a4cff;
+  --vp-button-brand-hover-bg: #2536e6;
+  --vp-button-brand-active-bg: #2536e6;
+
+  --vp-code-block-bg: var(--docs-code-bg);
+}
+
+/* ————————————————————————————————————————————————
+ * 中文正文阅读节奏
+ * ———————————————————————————————————————————————— */
+
+/* 略放宽正文测量宽度，适配中文行长（默认 688px 对中文偏窄）*/
+.VPDoc.has-aside .content-container,
+.VPDoc .content-container {
+  max-width: 748px;
+}
+
+.vp-doc {
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.78;
+}
+
+/* 标题：更紧行高 + 适度负字距，与宽松正文形成节奏对比。
+   H1/H2 有限使用展示 serif 建立品牌调性；H3 及以下、正文、列表、表格、代码、
+   导航仍用 Sans/Mono，避免宋体长文降低扫描效率。 */
+.vp-doc h1 {
+  font-family: var(--docs-font-serif);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.vp-doc h2 {
+  font-family: var(--docs-font-serif);
+  letter-spacing: -0.012em;
+}
+.vp-doc h3 {
+  letter-spacing: -0.006em;
+}
+
+/* ————————————————————————————————————————————————
+ * 图片统一：细边框 + 适度圆角，避免白底截图在深色页无边界漂浮。
+ * （AutoImage 的 frame / caption / badge 由 Task 5 进一步细化）
+ * ———————————————————————————————————————————————— */
+.vp-doc img {
+  border: 1px solid var(--vp-c-border);
+  border-radius: 8px;
+}
+
+/* ————————————————————————————————————————————————
+ * 表格：表头用 alt 表面，强化行列扫描
+ * ———————————————————————————————————————————————— */
+.vp-doc th {
+  background: var(--vp-c-bg-alt);
+}
+
+/* ————————————————————————————————————————————————
+ * 侧栏：active item 用皇家蓝文字 + 低饱和蓝背景 pill（不用荧光绿/glow）
+ * ———————————————————————————————————————————————— */
+.VPSidebarItem.is-link.is-active > .item {
+  border-radius: 7px;
+  background: var(--vp-c-brand-soft);
+}
+.VPSidebarItem.is-link.is-active > .item .link .text {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+.VPSidebarItem .link:hover .text {
+  color: var(--vp-c-brand-1);
+}
+/* 一级分组标题更克制的字重与字距 */
+.VPSidebarItem.level-0 > .item > .text {
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+/* ————————————————————————————————————————————————
+ * 右侧页内目录：当前标题指示线用皇家蓝（窄屏由 VitePress 自动隐藏）
+ * ———————————————————————————————————————————————— */
+.VPDocAsideOutline .outline-marker {
+  background-color: var(--vp-c-brand-1);
+  width: 2px;
+}
+.VPDocAsideOutline .outline-link.active {
+  color: var(--vp-c-brand-1);
+}
+
+/* ————————————————————————————————————————————————
+ * 顶栏「快速开始」CTA：末位导航项做成皇家蓝药丸，高于普通导航同权
+ * ———————————————————————————————————————————————— */
+.VPNavBarMenu > .VPNavBarMenuLink:last-child {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  margin: auto 0 auto 10px;
+  padding: 0 15px;
+  border-radius: 999px;
+  background: var(--vp-c-brand-3);
+  color: #fff;
+  font-weight: 600;
+  transition: background-color 0.2s ease;
+}
+.VPNavBarMenu > .VPNavBarMenuLink:last-child:hover {
+  background: var(--vp-c-brand-2);
+  color: #fff;
+}
+
+/* ————————————————————————————————————————————————
+ * Hub 入口页：决策卡片网格（移动单列 / 平板双列 / 桌面 2–3 列）
+ * ———————————————————————————————————————————————— */
+.doc-card-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+  margin: 24px 0;
+}
+@media (min-width: 640px) {
+  .doc-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1160px) {
+  .doc-card-grid.cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ————————————————————————————————————————————————
+ * Hub 页编辑感（仅 pageClass: docs-hub-page）：
+ * serif H2 + mono 自动序号 + 细线分区。不影响普通正文页。
+ * ———————————————————————————————————————————————— */
+.docs-hub-page .vp-doc {
+  counter-reset: hub-section;
+}
+/* H2 的 serif 已由全局 .vp-doc h2 提供，这里只补 mono 自动序号 */
+.docs-hub-page .vp-doc h2::before {
+  counter-increment: hub-section;
+  content: counter(hub-section, decimal-leading-zero);
+  display: block;
+  font-family: var(--docs-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--vp-c-brand-1);
+  margin-bottom: 6px;
+}
+
+/* ————————————————————————————————————————————————
+ * 长文阅读节奏：列表间距、代码块边框与语言标签、页尾 pager
+ * ———————————————————————————————————————————————— */
+.vp-doc li + li {
+  margin-top: 0.4rem;
+}
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-border);
+}
+.vp-doc div[class*="language-"] .lang {
+  opacity: 0.7;
+}
+.VPDocFooter .pager-link {
+  border-radius: 10px;
+  transition: border-color 0.2s ease;
+}
+.VPDocFooter .pager-link:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+/* ————————————————————————————————————————————————
+ * 图片点击放大：正文图片给 zoom-in 提示，lightbox 全屏预览
+ * （行为见 image-zoom.ts）
+ * ———————————————————————————————————————————————— */
+.vp-doc img {
+  cursor: zoom-in;
+}
+.vp-doc a img,
+.vp-doc img.no-zoom {
+  cursor: default;
+}
+.docs-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: none;
+  place-items: center;
+  padding: 4vmin;
+  background: rgba(10, 11, 15, 0.9);
+  cursor: zoom-out;
+}
+.docs-image-lightbox.open {
+  display: grid;
+}
+.docs-image-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+/* ————————————————————————————————————————————————
+ * 可访问性：focus-visible、高对比、reduced-motion
+ * ———————————————————————————————————————————————— */
+.vp-doc a:focus-visible,
+.VPSidebarItem .link:focus-visible,
+.doc-link-card:focus-visible,
+.VPNavBarMenuLink:focus-visible {
+  outline: 2px solid var(--docs-focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+@media (prefers-contrast: more) {
+  :root {
+    --docs-border: #b3ad9c;
+  }
+  .dark {
+    --docs-border: #4c4d55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .doc-link-card,
+  .doc-link-card .dlc-arrow,
+  .VPDocFooter .pager-link {
+    transition: none !important;
+  }
+}

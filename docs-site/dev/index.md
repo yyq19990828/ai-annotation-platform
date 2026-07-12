@@ -1,3 +1,11 @@
+---
+pageClass: docs-hub-page
+audience: [dev]
+type: explanation
+status: stable
+last_reviewed: 2026-07-12
+---
+
 # 开发文档
 
 面向贡献者和团队工程师。文档按 [Diátaxis](https://diataxis.fr/) 四象限组织：**起步**（跑通） / **概念**（理解） / **How-to**（任务） / **故障排查**（问题）。
@@ -13,6 +21,15 @@ docker compose up -d
 ```
 
 详见 [本地开发](./tutorials/local-dev)。
+
+## 四个主入口
+
+<div class="doc-card-grid">
+  <DocLinkCard icon="📐" title="概念 · 架构" desc="理解模块、状态机、派题与整体架构" href="/dev/concepts/" />
+  <DocLinkCard icon="🔧" title="How-to" desc="新增端点 / 页面、Alembic 迁移、调试 Celery / WebSocket" href="/dev/how-to/add-api-endpoint" />
+  <DocLinkCard icon="🧰" title="SDK 与 CLI" desc="Python SDK、CLI 参考、TUI 监控面板、Cookbook" href="/dev/sdk/quickstart" />
+  <DocLinkCard icon="🩺" title="故障排查" desc="运行时问题速查表与常见坑" href="/dev/troubleshooting/" />
+</div>
 
 ## 我该改哪里？
 

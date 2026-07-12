@@ -1,22 +1,53 @@
+---
+pageClass: docs-hub-page
+audience: [dev]
+type: explanation
+status: stable
+last_reviewed: 2026-07-12
+---
+
 # API 文档
 
-完整可交互的 OpenAPI 文档：[**打开 API Reference →**](../api-reference.html){target="_blank"}
+后端基于 FastAPI，自动遵循 OpenAPI 3.1。下面是完整可交互的 OpenAPI 文档，或按分区进入任务指南。
 
-<iframe
-  src="../api-reference.html"
-  style="width: 100%; height: 80vh; border: 1px solid var(--vp-c-divider); border-radius: 8px; margin-top: 1rem;"
-  title="API Reference"
-></iframe>
+<ApiReferenceFrame />
 
 ## 概览
-
-后端基于 FastAPI，自动遵循 OpenAPI 3.1。
 
 - **基础 URL（本地）**：`http://localhost:8000`
 - **路由前缀**：`/api/v1`
 - **认证**：JWT Bearer Token（`POST /api/v1/auth/login`）
 - **错误格式**：`{"detail": "<message>"}` 或 Pydantic 校验数组
 - **限流**：用户级，超出返回 `429 Too Many Requests`
+
+## 按分区进入
+
+### 认证
+
+- [认证](./guides/auth) — 登录、Token 刷新与鉴权
+
+### 核心资源
+
+- [项目](./guides/projects) — 项目的创建与配置
+- [任务与标注](./guides/tasks-and-annotations) — 读写任务、候选与正式标注
+- [Predictions / Jobs](./guides/predictions) — 预测与任务对象模型
+
+### 异步任务
+
+- [异步任务](./guides/async-jobs) — 触发、查询、取消或重试批量预标等长任务
+- [Video Tracker Jobs](./guides/video-tracker-jobs) — 发起、预览、接受、丢弃或取消视频追踪
+
+### ML Backend
+
+- [ML Backend](./guides/ml-backend) — 接入 ML Backend、查询能力或配置项目启用
+- [预测导入](./guides/import) — 导入外部预测
+
+### WebSocket 与导出
+
+- [WebSocket](./guides/websocket) — 实时事件与推送
+- [导出](./guides/export) — 导出标注结果
+- [存储连接器](./guides/storage-connections) — S3 / OSS / SFTP 连接器
+- [路由索引（自动生成）](./guides/_routes.generated) — 全部路由清单
 
 ## 静态契约
 
@@ -41,13 +72,3 @@ apps/api/openapi.snapshot.json
 ## 前端类型生成
 
 `pnpm codegen` 根据 snapshot 重新生成 `apps/web/src/api/generated/`。
-
-## 按任务进入
-
-| 任务 | 指南 |
-|---|---|
-| 触发、查询、取消或重试批量预标等长任务 | [异步任务](./guides/async-jobs) |
-| 发起、预览、接受、丢弃或取消视频追踪 | [Video Tracker Jobs](./guides/video-tracker-jobs) |
-| 接入 ML Backend、查询能力或配置项目启用 | [ML Backend](./guides/ml-backend) |
-| 导入外部预测 | [预测导入](./guides/import) |
-| 读写任务、候选与正式标注 | [任务与标注](./guides/tasks-and-annotations) · [Predictions / Jobs](./guides/predictions) |

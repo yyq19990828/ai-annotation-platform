@@ -1,0 +1,923 @@
+/**
+ * 文档站首页品牌层（Editorial Data Atlas）—— token + 完整样式，单一来源。
+ *
+ * 上半部分是首页“品牌 token”：皇家蓝 / 纸张白 / 墨黑 / 荧光绿与展示 serif。
+ * 这些强品牌 token 仅供首页品牌组件消费，不覆盖普通正文的阅读 token
+ * （正文阅读层见 docs-theme.css）。荧光绿 (--home-acid) 只用于 AI / 标注节点
+ * 和极少量状态强调，不进入正文。
+ *
+ * 下半部分是首页布局与动效样式，全部作用域收敛在 `.docs-home`（内容根）与
+ * `.docs-home-page`（VitePress 页面壳层），避免泄漏到其他文档页。
+ *
+ * 视觉合同：.hermes/prototypes/docs-premium-demo-v2/index.html
+ */
+
+:root {
+  --home-blue: #172cff;
+  --home-blue-deep: #0d18b9;
+  --home-paper: #f4f1e8;
+  --home-ink: #111217;
+  --home-acid: #b8ff5a;
+  --home-line: rgba(244, 241, 232, 0.38);
+
+  /* 首页字体复用共享字体栈（定义于 docs-theme.css），保持两层字体同源 */
+  --home-font-serif: var(--docs-font-serif);
+  --home-font-sans: var(--docs-font-sans);
+  --home-font-mono: var(--docs-font-mono);
+}
+
+/* ============================================================
+ * 一、VitePress 页面壳层：首页全宽铺满 + 隐藏页脚 + 墨黑半透导航
+ * ============================================================ */
+
+.docs-home-page .VPPage,
+.docs-home-page .VPContent,
+.docs-home-page .VPContent.is-home {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+}
+.docs-home-page .vp-doc,
+.docs-home-page .vp-doc > div,
+.docs-home-page .container {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.docs-home-page .vp-doc {
+  font-size: initial;
+  line-height: initial;
+}
+.docs-home-page {
+  overflow-x: hidden;
+}
+
+/* 组件自带品牌收尾 wordmark，隐藏 VitePress 页脚 */
+.docs-home-page .VPFooter {
+  display: none;
+}
+
+/* 首页导航：墨黑半透磨砂，悬浮在皇家蓝 Hero 上方，滚动到任何章节都可读。
+   Task 2 会把它进一步统一为 V2 编辑式透明导航；此处先做稳定可读的过渡态。 */
+.docs-home-page .VPNav {
+  --vp-c-text-1: var(--home-paper);
+  --vp-c-text-2: rgba(244, 241, 232, 0.72);
+}
+.docs-home-page .VPNavBar {
+  /* 默认实心墨黑半透底：no-JS / reduced-motion / 已滚动到 paper 章节时都可读。
+     （不用 backdrop-filter：sticky 元素上的实时模糊每帧重算，拖累低端设备。）
+     只有 useHomeMotion 确认位于 Hero 顶部时才叠加 .home-nav-transparent 透明态。 */
+  background-color: rgba(17, 18, 23, 0.9) !important;
+  border-bottom: 1px solid rgba(244, 241, 232, 0.14) !important;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+.docs-home-page.home-nav-transparent .VPNavBar {
+  background-color: transparent !important;
+  border-bottom-color: transparent !important;
+}
+/* 首页「快速开始」CTA 改纸张白底 + 皇家蓝字：皇家蓝 Hero 上的蓝药丸会融进背景，
+   纸张药丸与 Hero 主 CTA「打开使用文档」同款，在透明/墨黑两种 nav 态下都醒目。 */
+.docs-home-page .VPNavBarMenu > .VPNavBarMenuLink:last-child {
+  background: var(--home-paper);
+  color: var(--home-blue) !important;
+}
+.docs-home-page .VPNavBarMenu > .VPNavBarMenuLink:last-child:hover {
+  background: var(--home-acid);
+  color: var(--home-ink) !important;
+}
+.docs-home-page .VPNavBar.has-sidebar .content,
+.docs-home-page .VPNavBar .wrapper,
+.docs-home-page .VPNavBar .content-body {
+  background: transparent !important;
+}
+.docs-home-page .VPNavBar .title {
+  color: var(--home-paper) !important;
+}
+.docs-home-page .VPNavBarMenuLink,
+.docs-home-page .VPNavBarMenuGroup .text {
+  color: rgba(244, 241, 232, 0.78) !important;
+}
+.docs-home-page .VPNavBarMenuLink:hover,
+.docs-home-page .VPNavBarMenuLink.active {
+  color: var(--home-paper) !important;
+}
+/* 搜索按钮：改为半透明纸张色药丸，贴合墨黑导航 */
+.docs-home-page .DocSearch-Button {
+  background: rgba(244, 241, 232, 0.1) !important;
+  border: 1px solid rgba(244, 241, 232, 0.18) !important;
+}
+.docs-home-page .DocSearch-Button:hover {
+  background: rgba(244, 241, 232, 0.16) !important;
+}
+.docs-home-page .DocSearch-Button .DocSearch-Button-Placeholder,
+.docs-home-page .DocSearch-Button .DocSearch-Search-Icon {
+  color: rgba(244, 241, 232, 0.72) !important;
+}
+
+/* ============================================================
+ * 二、首页内容层（.docs-home）—— 全部作用域收敛于此
+ * ============================================================ */
+
+.docs-home {
+  --home-pad: clamp(22px, 5vw, 78px);
+  position: relative;
+  width: 100%;
+  background: var(--home-blue);
+  color: var(--home-paper);
+  font-family: var(--home-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+.docs-home ::selection {
+  background: var(--home-acid);
+  color: var(--home-ink);
+}
+.docs-home a {
+  color: inherit;
+  text-decoration: none;
+}
+.docs-home button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* —— 材质与全局装饰 —— */
+.docs-home .grain {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  /* 不用 mix-blend-mode：fixed 全屏混合层在连续滚动时每帧主线程重绘、造成掉帧。
+     改用普通低透明度噪点叠加，保留纸张材质感但把滚动开销降为一次合成。 */
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+}
+.docs-home .home-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  z-index: 200;
+  background: rgba(255, 255, 255, 0.18);
+}
+.docs-home .home-progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--home-acid);
+}
+
+/* —— Hero —— */
+.docs-home .hero {
+  min-height: 100svh;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.02fr 0.98fr;
+  align-items: center;
+  padding: 130px var(--home-pad) 68px;
+  isolation: isolate;
+}
+.docs-home .hero-grid {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: clamp(38px, 5vw, 72px) clamp(38px, 5vw, 72px);
+  mask-image: linear-gradient(to bottom, #000, transparent 92%);
+}
+.docs-home .hero-copy {
+  position: relative;
+  z-index: 5;
+  max-width: 760px;
+}
+.docs-home .overline {
+  font: 10px/1 var(--home-font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.docs-home .overline::before {
+  content: "";
+  width: 34px;
+  height: 1px;
+  background: currentColor;
+}
+.docs-home .hero h1 {
+  font-family: var(--home-font-serif);
+  font-weight: 400;
+  font-size: clamp(58px, 7.8vw, 126px);
+  line-height: 0.83;
+  letter-spacing: -0.055em;
+  margin: 0;
+  text-wrap: balance;
+}
+.docs-home .hero h1 em {
+  font-style: italic;
+  color: var(--home-acid);
+}
+.docs-home .hero-desc {
+  max-width: 540px;
+  font-size: clamp(15px, 1.2vw, 18px);
+  line-height: 1.7;
+  margin: 34px 0 0;
+  color: rgba(244, 241, 232, 0.72);
+}
+.docs-home .hero-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 38px;
+  margin-top: 38px;
+}
+.docs-home .hero-btn {
+  height: 47px;
+  background: var(--home-paper);
+  color: var(--home-blue);
+  padding: 0 22px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  font: 600 11px var(--home-font-mono);
+  letter-spacing: 0.08em;
+  transition: transform 0.25s, background 0.25s;
+}
+.docs-home .hero-btn:hover {
+  transform: translateY(-3px);
+  background: var(--home-acid);
+}
+.docs-home .search-line {
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 0 0 9px;
+  font: 10px var(--home-font-mono);
+  min-width: 260px;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  transition: color 0.25s, border-color 0.25s;
+}
+.docs-home .search-line:hover {
+  color: var(--home-paper);
+  border-color: var(--home-paper);
+}
+.docs-home .hero-art {
+  position: relative;
+  height: min(72vh, 760px);
+  min-height: 510px;
+}
+.docs-home .hero-atlas {
+  position: absolute;
+  inset: -8% -16% -8% -18%;
+  overflow: visible;
+}
+.docs-home .hero-atlas .orbit {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.66);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1800;
+  stroke-dashoffset: 1800;
+  animation: home-draw 3.2s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.docs-home .hero-atlas .orbit:nth-child(2) {
+  animation-delay: 0.25s;
+}
+.docs-home .hero-atlas .orbit:nth-child(3) {
+  animation-delay: 0.5s;
+}
+.docs-home .hero-atlas .ray {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 0.5;
+  transform-origin: center;
+  animation: home-pulse 5s ease-in-out infinite;
+}
+.docs-home .hero-atlas .node {
+  fill: var(--home-acid);
+  filter: drop-shadow(0 0 8px var(--home-acid));
+  animation: home-node 2.6s ease-in-out infinite;
+}
+.docs-home .hero-atlas .frame {
+  fill: none;
+  stroke: var(--home-paper);
+  stroke-width: 1;
+  animation: home-float 6s ease-in-out infinite;
+}
+.docs-home .art-label {
+  position: absolute;
+  right: 1%;
+  top: 10%;
+  font: 9px/1.5 var(--home-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}
+.docs-home .hero-figure {
+  position: absolute;
+  left: 8%;
+  right: 2%;
+  top: 24%;
+  height: 48%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(13, 24, 185, 0.34);
+  overflow: hidden;
+  box-shadow: 28px 28px 0 rgba(244, 241, 232, 0.12);
+  transform: rotate(-2.2deg);
+  transition: transform 0.2s linear;
+}
+.docs-home .hero-figure::before {
+  content: "LIVE WORKSPACE / 01";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--home-paper);
+  color: var(--home-blue);
+  font: 9px var(--home-font-mono);
+  letter-spacing: 0.08em;
+  z-index: 2;
+}
+.docs-home .hero-figure img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  filter: saturate(0.25) contrast(1.08) sepia(0.1);
+  mix-blend-mode: screen;
+  opacity: 0.9;
+  transform: scale(1.05);
+  border: 0;
+  border-radius: 0;
+}
+.docs-home .bbox {
+  position: absolute;
+  border: 1px solid var(--home-acid);
+  z-index: 4;
+  box-shadow: 0 0 16px rgba(184, 255, 90, 0.3);
+}
+.docs-home .bbox::before {
+  content: attr(data-label);
+  position: absolute;
+  left: -1px;
+  top: -18px;
+  background: var(--home-acid);
+  color: var(--home-ink);
+  padding: 4px 6px;
+  font: 8px var(--home-font-mono);
+}
+.docs-home .bbox.a {
+  left: 24%;
+  top: 24%;
+  width: 28%;
+  height: 22%;
+}
+.docs-home .bbox.b {
+  right: 8%;
+  bottom: 17%;
+  width: 24%;
+  height: 25%;
+  border-color: var(--home-paper);
+}
+.docs-home .bbox.b::before {
+  background: var(--home-paper);
+}
+.docs-home .hero-index {
+  position: absolute;
+  bottom: 24px;
+  right: var(--home-pad);
+  font: 9px var(--home-font-mono);
+  letter-spacing: 0.16em;
+}
+
+/* —— 能力 Marquee —— */
+.docs-home .marquee {
+  height: 54px;
+  background: var(--home-paper);
+  color: var(--home-blue);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--home-paper);
+  border-bottom: 1px solid var(--home-paper);
+}
+.docs-home .marquee-track {
+  display: flex;
+  white-space: nowrap;
+  animation: home-marquee 24s linear infinite;
+  font: 10px var(--home-font-mono);
+  letter-spacing: 0.16em;
+}
+.docs-home .marquee-track span {
+  padding-right: 46px;
+}
+.docs-home .marquee-track b {
+  color: var(--home-ink);
+  padding: 0 18px;
+}
+
+/* —— Product Proof（墨黑）—— */
+.docs-home .proof {
+  background: var(--home-ink);
+  position: relative;
+  padding: 110px var(--home-pad) 150px;
+}
+.docs-home .section-no {
+  font: 9px var(--home-font-mono);
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.docs-home .proof-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: end;
+  margin-top: 18px;
+}
+.docs-home .proof h2,
+.docs-home .paper h2,
+.docs-home .flow h2 {
+  font: 400 clamp(52px, 7vw, 104px) / 0.9 var(--home-font-serif);
+  letter-spacing: -0.045em;
+  margin: 0;
+}
+.docs-home .proof-intro {
+  font-size: 16px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.58);
+  max-width: 520px;
+}
+.docs-home .screen-stage {
+  position: relative;
+  margin-top: 100px;
+  perspective: 1400px;
+}
+.docs-home .proof-screen {
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  padding: 14px;
+  background: #17181d;
+  box-shadow: 0 70px 160px rgba(0, 0, 0, 0.6);
+  transform: rotateX(3deg) scale(0.96);
+  transform-origin: center top;
+  transition: transform 0.2s linear;
+}
+.docs-home .proof-screen img {
+  width: 100%;
+  filter: saturate(0.82) contrast(1.02);
+  border: 0;
+  border-radius: 0;
+  display: block;
+}
+.docs-home .screen-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font: 8px var(--home-font-mono);
+  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.docs-home .screen-stamp {
+  position: absolute;
+  right: -18px;
+  top: -33px;
+  width: 116px;
+  height: 116px;
+  border: 1px solid var(--home-acid);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--home-acid);
+  font: 9px/1.4 var(--home-font-mono);
+  text-align: center;
+  transform: rotate(12deg);
+  animation: home-spin 18s linear infinite;
+}
+
+/* —— Documentation Paths（纸张白）—— */
+.docs-home .paper {
+  background: var(--home-paper);
+  color: var(--home-blue);
+  padding: 110px var(--home-pad) 140px;
+  position: relative;
+}
+.docs-home .paper-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 40px;
+}
+.docs-home .paper .section-no {
+  color: rgba(23, 44, 255, 0.5);
+}
+.docs-home .paper h2 {
+  max-width: 900px;
+  margin-top: 22px;
+}
+.docs-home .paper-note {
+  max-width: 280px;
+  color: rgba(17, 18, 23, 0.65);
+  font: 11px/1.65 var(--home-font-mono);
+}
+.docs-home .paths {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  margin-top: 82px;
+  border-top: 1px solid rgba(23, 44, 255, 0.35);
+  border-bottom: 1px solid rgba(23, 44, 255, 0.35);
+}
+.docs-home .path {
+  padding: 36px 28px 42px;
+  border-right: 1px solid rgba(23, 44, 255, 0.28);
+  min-height: 410px;
+  position: relative;
+  overflow: hidden;
+}
+.docs-home .path:last-child {
+  border-right: 0;
+}
+.docs-home .path small {
+  font: 9px var(--home-font-mono);
+  letter-spacing: 0.14em;
+}
+.docs-home .path h3 {
+  font: 400 clamp(32px, 3.2vw, 54px) / 0.95 var(--home-font-serif);
+  letter-spacing: -0.035em;
+  margin: 42px 0 18px;
+}
+.docs-home .path p {
+  font: 12px/1.7 var(--home-font-mono);
+  color: rgba(17, 18, 23, 0.66);
+  max-width: 330px;
+}
+.docs-home .path-link {
+  position: absolute;
+  left: 28px;
+  bottom: 34px;
+  font: 10px var(--home-font-mono);
+  border-bottom: 1px solid;
+  padding-bottom: 4px;
+}
+.docs-home .path-visual {
+  position: absolute;
+  right: -45px;
+  bottom: -70px;
+  width: 240px;
+  height: 240px;
+  border: 1px solid rgba(23, 44, 255, 0.28);
+  border-radius: 50%;
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.4s;
+}
+.docs-home .path:hover .path-visual {
+  transform: scale(1.3);
+  background: var(--home-blue);
+}
+.docs-home .path-visual::before,
+.docs-home .path-visual::after {
+  content: "";
+  position: absolute;
+  inset: 32%;
+  border: 1px solid var(--home-blue);
+  transform: rotate(45deg);
+}
+.docs-home .path:hover .path-visual::before,
+.docs-home .path:hover .path-visual::after {
+  border-color: var(--home-paper);
+}
+.docs-home .path-visual::after {
+  inset: 45%;
+  transform: rotate(0);
+}
+
+/* —— Data Production Loop（皇家蓝）—— */
+.docs-home .flow {
+  background: var(--home-blue);
+  padding: 110px var(--home-pad) 150px;
+  position: relative;
+}
+.docs-home .flow-layout {
+  display: grid;
+  grid-template-columns: 0.82fr 1.18fr;
+  gap: 8vw;
+  margin-top: 70px;
+}
+.docs-home .flow-sticky {
+  position: sticky;
+  top: 120px;
+  align-self: start;
+}
+.docs-home .flow-sticky p {
+  max-width: 420px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 15px;
+  line-height: 1.75;
+  margin-top: 28px;
+}
+.docs-home .steps {
+  border-top: 1px solid var(--home-line);
+}
+.docs-home .step {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 20px;
+  padding: 34px 0;
+  border-bottom: 1px solid var(--home-line);
+  position: relative;
+  transition: padding 0.35s;
+}
+.docs-home .step:hover {
+  padding-left: 14px;
+}
+.docs-home .step-no {
+  font: 9px var(--home-font-mono);
+  color: var(--home-acid);
+}
+.docs-home .step h3 {
+  font: 400 clamp(28px, 3vw, 48px) / 1 var(--home-font-serif);
+  margin: 0 0 12px;
+}
+.docs-home .step p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font: 11px/1.7 var(--home-font-mono);
+  max-width: 490px;
+}
+
+/* —— Final CTA + wordmark（纸张白收尾）—— */
+.docs-home .final {
+  background: var(--home-paper);
+  color: var(--home-ink);
+  min-height: 94vh;
+  padding: 100px var(--home-pad) 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+.docs-home .final-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+}
+.docs-home .final h2 {
+  font: 400 clamp(62px, 9vw, 142px) / 0.82 var(--home-font-serif);
+  letter-spacing: -0.06em;
+  margin: 0;
+  color: var(--home-blue);
+}
+.docs-home .final-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.docs-home .final-link {
+  height: 58px;
+  border-top: 1px solid rgba(17, 18, 23, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  font: 11px var(--home-font-mono);
+  transition: padding 0.25s, color 0.25s;
+}
+.docs-home .final-link:hover {
+  padding: 0 12px;
+  color: var(--home-blue);
+}
+.docs-home .final-word {
+  font: 400 29vw/0.67 var(--home-font-serif);
+  letter-spacing: -0.09em;
+  color: var(--home-blue);
+  white-space: nowrap;
+  margin-left: -1.7vw;
+  transform: translateY(9%);
+}
+
+/* ============================================================
+ * 三、Reveal —— 渐进增强：无 JS / reduced-motion 时默认可见，
+ *     只有 useHomeMotion 确认动效可用后加 .home-motion-ready，
+ *     才把未进入视口的 .reveal 切到隐藏待显态。
+ * ============================================================ */
+.docs-home .reveal {
+  opacity: 1;
+  transform: none;
+}
+.docs-home.home-motion-ready .reveal {
+  opacity: 0;
+  transform: translateY(36px);
+  transition: opacity 0.85s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.85s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.docs-home.home-motion-ready .reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ============================================================
+ * 四、关键帧
+ * ============================================================ */
+@keyframes home-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes home-pulse {
+  50% {
+    opacity: 0.28;
+    transform: scale(0.985);
+  }
+}
+@keyframes home-node {
+  50% {
+    opacity: 0.4;
+    transform: scale(0.75);
+  }
+}
+@keyframes home-float {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes home-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes home-spin {
+  to {
+    transform: rotate(372deg);
+  }
+}
+
+/* ============================================================
+ * 五、响应式
+ * ============================================================ */
+@media (max-width: 900px) {
+  .docs-home .hero {
+    grid-template-columns: 1fr;
+    padding-top: 120px;
+  }
+  .docs-home .hero-copy {
+    max-width: none;
+  }
+  .docs-home .hero-art {
+    height: 560px;
+    margin-top: -20px;
+  }
+  .docs-home .hero-figure {
+    left: 3%;
+    right: 3%;
+  }
+  .docs-home .proof-head,
+  .docs-home .final-top {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .docs-home .paths {
+    grid-template-columns: 1fr;
+  }
+  .docs-home .path {
+    border-right: 0;
+    border-bottom: 1px solid rgba(23, 44, 255, 0.28);
+    min-height: 300px;
+  }
+  .docs-home .path:last-child {
+    border-bottom: 0;
+  }
+  .docs-home .flow-layout {
+    grid-template-columns: 1fr;
+  }
+  .docs-home .flow-sticky {
+    position: relative;
+    top: auto;
+  }
+  .docs-home .screen-stamp {
+    right: 2px;
+  }
+  .docs-home .final-word {
+    font-size: 28vw;
+  }
+}
+@media (max-width: 600px) {
+  .docs-home .hero {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .docs-home .hero h1 {
+    font-size: 58px;
+  }
+  .docs-home .hero-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .docs-home .search-line {
+    min-width: 0;
+  }
+  .docs-home .hero-art {
+    height: 440px;
+    min-height: 0;
+  }
+  /* 移动端取消 Hero 数据图谱越界，避免横向溢出 */
+  .docs-home .hero-atlas {
+    inset: -4% -28%;
+  }
+  /* 移动端取消截图容器透视/倾斜，避免缩放后不可读（JS 侧同步不再施加 transform） */
+  .docs-home .hero-figure {
+    top: 25%;
+    height: 58%;
+    box-shadow: 13px 13px 0 rgba(244, 241, 232, 0.12);
+    transform: none;
+  }
+  .docs-home .proof-screen {
+    transform: none;
+  }
+  .docs-home .proof,
+  .docs-home .paper,
+  .docs-home .flow,
+  .docs-home .final {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .docs-home .proof {
+    padding-top: 78px;
+  }
+  .docs-home .proof-head {
+    margin-top: 22px;
+  }
+  .docs-home .screen-stage {
+    margin-top: 62px;
+  }
+  .docs-home .proof-screen {
+    padding: 6px;
+  }
+  .docs-home .screen-stamp {
+    width: 82px;
+    height: 82px;
+    font-size: 7px;
+  }
+  .docs-home .paper-top {
+    display: block;
+  }
+  .docs-home .paper h2 {
+    font-size: 44px;
+  }
+  .docs-home .paper-note {
+    margin-top: 30px;
+  }
+  .docs-home .paths {
+    margin-top: 52px;
+  }
+  .docs-home .path {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .docs-home .path-link {
+    left: 0;
+  }
+  .docs-home .flow {
+    padding-top: 78px;
+  }
+  .docs-home .step {
+    grid-template-columns: 42px 1fr;
+  }
+  .docs-home .final {
+    min-height: 82vh;
+  }
+  .docs-home .final h2 {
+    font-size: 64px;
+  }
+  .docs-home .final-word {
+    font-size: 30vw;
+  }
+  .docs-home .grain {
+    opacity: 0.08;
+  }
+}
+
+/* ============================================================
+ * 六、reduced-motion：停止所有品牌动效，内容静态完整呈现
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .docs-home .hero-atlas *,
+  .docs-home .marquee-track,
+  .docs-home .screen-stamp {
+    animation: none !important;
+  }
+  .docs-home .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .docs-home .hero-figure,
+  .docs-home .proof-screen {
+    transform: none !important;
+  }
+}

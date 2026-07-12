@@ -8,6 +8,8 @@ last_reviewed: 2026-07-11
 
 # Design System
 
+This page covers two related but separate systems: the **web app** (`apps/web`, Tailwind + shadcn — most of this page) and the **documentation site** (`docs-site`, VitePress — see [Documentation Site Tokens](#documentation-site-tokens-vitepress) at the end). They do not share a stylesheet.
+
 The web app uses Tailwind CSS with shadcn/ui primitives. Runtime theme values live in `apps/web/src/styles/shadcn.css`; component styling should consume Tailwind semantic classes or `--sc-*` CSS variables.
 
 ## Theme Tokens
@@ -101,3 +103,20 @@ rtk pnpm --filter @anno/web lint
 ```
 
 The token gate checks Tailwind class names for bare colors and dark-mode pairing, warns when status colors, arbitrary text sizes, or raw z-index classes are not using semantic utilities, and fails if CSS reads old `--color-*` variables.
+
+## Documentation Site Tokens (VitePress)
+
+The documentation site (`docs-site`) runs VitePress with the default theme and does **not** import the web app's `shadcn.css`. It has its own two-layer token system so the brand landing page and the reading pages can share one brand source while using different intensities of color, type, and motion.
+
+| Layer | File | Scope | Character |
+|---|---|---|---|
+| Reading layer (L1) | `.vitepress/theme/docs-theme.css` | All content pages (user-guide / dev / ops / api) | Neutral fog-white / ink-black surfaces, royal-blue links, Chinese reading rhythm. Maps `--docs-*` onto VitePress `--vp-*`. |
+| Brand layer | `.vitepress/theme/docs-home.css` | Home page brand components only | Strong royal blue / paper / ink / acid green + display serif (`--home-*`). Never overrides body reading tokens. |
+
+**Shared brand source.** Both layers derive from royal blue `#172cff`. The home page uses it as a full-bleed background; body pages collapse it to `--vp-c-brand-1` (link + active state). Keep this the single brand hue for the docs — do not introduce a second accent for body pages. Acid green `--home-acid` is home-only (AI / annotation nodes); it must not enter body reading pages.
+
+**Dark mode.** VitePress toggles `html.dark` (not the app's `data-theme`). Dark overrides in `docs-theme.css` therefore use the `.dark` selector, and royal blue is lifted to `#93a0ff` for link contrast on the ink background.
+
+**Fonts are local-only.** `--docs-font-sans` / `--docs-font-mono` / `--docs-font-serif` are pure system/local stacks. The docs site must not inject runtime web fonts (e.g. Google Fonts).
+
+**Sync principle.** When the brand hue changes, update `--home-blue` in `docs-home.css` and `--docs-royal` (light) plus its dark lift in `docs-theme.css` together. When adding a body-reading token, add it under `--docs-*` in `docs-theme.css` rather than inline in a component.

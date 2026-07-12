@@ -38,6 +38,8 @@ const props = defineProps<{
   src: string;
   alt?: string;
   width?: string | number;
+  /** 可选：图片说明文字，显示在 badge 行左侧 */
+  caption?: string;
 }>();
 
 // 标准化 key：src 可能是 "bbox/toolbar.png"，manifest key 是完整路径
@@ -67,23 +69,26 @@ const imgSrc = computed(() => {
 <template>
   <figure class="auto-image">
     <img :src="imgSrc" :alt="alt ?? src" :width="width" />
-    <figcaption v-if="entry">
-      <span v-if="entry.auto" class="badge badge-auto">
-        ⚡ 自动产出
-        <span v-if="lastRunDate"> · {{ lastRunDate }}</span>
-      </span>
-      <span v-else class="badge badge-manual">✏ 手动维护</span>
-      <span v-if="entry.auto && entry.scene" class="scene-link">
-        <a
-          :href="`https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/web/e2e/screenshots/scenes/${entry.scene.split('/')[0]}.ts`"
-          target="_blank"
-          rel="noopener"
-        >
-          场景源码 ↗
-        </a>
-      </span>
-      <span v-if="!entry.auto && entry.note" class="manual-note">
-        {{ entry.note }}
+    <figcaption v-if="caption || entry">
+      <span v-if="caption" class="ai-caption">{{ caption }}</span>
+      <span v-if="entry" class="ai-meta">
+        <span v-if="entry.auto" class="badge badge-auto">
+          ⚡ 自动产出
+          <span v-if="lastRunDate"> · {{ lastRunDate }}</span>
+        </span>
+        <span v-else class="badge badge-manual">✏ 手动维护</span>
+        <span v-if="entry.auto && entry.scene" class="scene-link">
+          <a
+            :href="`https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/web/e2e/screenshots/scenes/${entry.scene.split('/')[0]}.ts`"
+            target="_blank"
+            rel="noopener"
+          >
+            场景源码 ↗
+          </a>
+        </span>
+        <span v-if="!entry.auto && entry.note" class="manual-note">
+          {{ entry.note }}
+        </span>
       </span>
     </figcaption>
   </figure>
@@ -91,20 +96,33 @@ const imgSrc = computed(() => {
 
 <style scoped>
 .auto-image {
-  margin: 1.5rem 0;
+  margin: 1.75rem 0;
 }
 .auto-image img {
-  border-radius: 6px;
-  border: 1px solid var(--vp-c-divider);
+  display: block;
+  border-radius: 8px;
+  border: 1px solid var(--vp-c-border);
   max-width: 100%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 figcaption {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
-  font-size: 0.78rem;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-top: 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
   color: var(--vp-c-text-2);
+}
+.ai-caption {
+  color: var(--vp-c-text-2);
+}
+.ai-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 .badge {
   padding: 1px 6px;
