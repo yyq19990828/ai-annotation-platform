@@ -12,9 +12,9 @@
 
 - **议题 A · Task 退回态**：当前 `POST /tasks/{id}/review/reject` 只把 `task.status` 落回 `in_progress` + 写 `reject_reason` + audit log，**不发通知**；标注员只有打开任务才看见 banner。批次级有 `batch.rejected` 通知，task 级缺失。
   - 推荐方案：**新增 `rejected` 终态状态** + 补 `task.rejected` 通知 + 队列/Dashboard 可见徽章 + 标注员"接受退回"动作让 `rejected → in_progress`。比"沿用 in_progress + reject_reason 当哨兵"更干净，迁移成本可控（单 enum 调整 + 一处状态机分支）。
-- **议题 B · 审核工作台**：[ReviewWorkbench.tsx](../apps/web/src/pages/Review/ReviewWorkbench.tsx)（268 行）只复用了 ImageStage，缺 ToolDock / Topbar / TaskQueuePanel / Hotkey / StatusBar / Comments / Skip 全套。
+- **议题 B · 审核工作台**：[ReviewWorkbench.tsx](../../apps/web/src/pages/Review/ReviewWorkbench.tsx)（268 行）只复用了 ImageStage，缺 ToolDock / Topbar / TaskQueuePanel / Hotkey / StatusBar / Comments / Skip 全套。
   - 推荐方案：**复用 `WorkbenchShell` + `mode: "review" | "annotate"` prop**，把现有简化页的 diff / approve / reject / claim / ReviewerMiniPanel 当作 review 模式专属附加层注入；不新建独立工作台。比"造一个简化版工作台"省一半代码，且天然继承未来工作台所有性能优化（瓦片 / Hotkey 改造 / 等）。
-- 两个议题切两个里程碑：**M1 退回态**（~2-3 天）→ **M2 工作台合并**（~5-6 天）。M2 收尾后 [ReviewWorkbench.tsx](../apps/web/src/pages/Review/ReviewWorkbench.tsx) 删除。
+- 两个议题切两个里程碑：**M1 退回态**（~2-3 天）→ **M2 工作台合并**（~5-6 天）。M2 收尾后 [ReviewWorkbench.tsx](../../apps/web/src/pages/Review/ReviewWorkbench.tsx) 删除。
 
 ---
 
@@ -24,13 +24,13 @@
 
 | 层 | 现状 | 文件 / 行号 |
 |---|---|---|
-| 后端 reject 接口 | `task.status = "in_progress"` + `task.reject_reason = reason` + audit log；**无 notification fan-out** | [apps/api/app/api/v1/tasks.py:894-948](../apps/api/app/api/v1/tasks.py#L894-L948) |
-| 后端 approve 接口（对照） | 写 audit log + `notify_many(type="task.approved")` 给 assignee | [apps/api/app/api/v1/tasks.py:872-888](../apps/api/app/api/v1/tasks.py#L872-L888) |
-| 后端 reopen 接口 | `task.reject_reason = None` 清空（即标注员重做就抹掉痕迹） | [apps/api/app/api/v1/tasks.py:981](../apps/api/app/api/v1/tasks.py#L981) |
-| 前端工作台横幅 | `status==="in_progress" && reject_reason` 时渲染审核员退回横幅 | [apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx:995](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx#L995) |
-| 前端任务队列 | 与普通 `in_progress` 无视觉差异，标注员需要逐个点开才知道哪个被退回 | [TaskQueuePanel.tsx](../apps/web/src/pages/Workbench/shell/TaskQueuePanel.tsx) |
-| 标注员 Dashboard | 仅 KPI"被退回率"百分比，无"待重做退回"清单 | [AnnotatorDashboard.tsx:85-90](../apps/web/src/pages/Dashboard/AnnotatorDashboard.tsx#L85) |
-| 批次级类比 | `batch.rejected` 已发通知 + Kanban 有"已退回"列 + Audit `BATCH_REJECTED` | [audit.py:39](../apps/api/app/services/audit.py#L39) / [BatchesKanbanView.tsx](../apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx) |
+| 后端 reject 接口 | `task.status = "in_progress"` + `task.reject_reason = reason` + audit log；**无 notification fan-out** | [apps/api/app/api/v1/tasks.py:894-948](../../apps/api/app/api/v1/tasks.py#L894-L948) |
+| 后端 approve 接口（对照） | 写 audit log + `notify_many(type="task.approved")` 给 assignee | [apps/api/app/api/v1/tasks.py:872-888](../../apps/api/app/api/v1/tasks.py#L872-L888) |
+| 后端 reopen 接口 | `task.reject_reason = None` 清空（即标注员重做就抹掉痕迹） | [apps/api/app/api/v1/tasks.py:981](../../apps/api/app/api/v1/tasks.py#L981) |
+| 前端工作台横幅 | `status==="in_progress" && reject_reason` 时渲染审核员退回横幅 | [apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx:995](../../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx#L995) |
+| 前端任务队列 | 与普通 `in_progress` 无视觉差异，标注员需要逐个点开才知道哪个被退回 | [TaskQueuePanel.tsx](../../apps/web/src/pages/Workbench/shell/TaskQueuePanel.tsx) |
+| 标注员 Dashboard | 仅 KPI"被退回率"百分比，无"待重做退回"清单 | [AnnotatorDashboard.tsx:85-90](../../apps/web/src/pages/Dashboard/AnnotatorDashboard.tsx#L85) |
+| 批次级类比 | `batch.rejected` 已发通知 + Kanban 有"已退回"列 + Audit `BATCH_REJECTED` | [audit.py:39](../../apps/api/app/services/audit.py#L39) / [BatchesKanbanView.tsx](../../apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx) |
 
 **核心痛点**：task 级退回是"沉默事件"——除非标注员主动点开队列里的特定 task，否则察觉不到。这与批次级"红色 Kanban 列 + WS 通知 + 邮件"形成强烈反差。
 
@@ -39,7 +39,7 @@
 **方案 A：哨兵字段路线（最小改动）**
 
 只补通知 + 前端可见性，不改状态枚举。
-- 后端：reject 接口加 `notify_many(type="task.rejected")`，类型注册到 [notifications.py](../apps/api/app/api/v1/notifications.py)。
+- 后端：reject 接口加 `notify_many(type="task.rejected")`，类型注册到 [notifications.py](../../apps/api/app/api/v1/notifications.py)。
 - 前端：`TaskQueuePanel` / `AnnotatorDashboard` 在 `status==="in_progress" && reject_reason` 时显示"已退回"徽章 / 单独分组。
 
 ✅ 改动小（~150 行）；✅ 不动 DB；❌ 状态机仍隐式（"in_progress + reject_reason" 是元组哨兵），后续过滤 / 分组都要带这个三元判断；❌ 标注员"开始重做"和"刚被退回"无法区分（前者要不要清 reject_reason？现在是开新 PATCH 才清）。
@@ -163,7 +163,7 @@
 2. `ToolDock`：mode="review" 时只显 Hand / Select / Edit，hide 新建框 / Polygon / SAM。
 3. `Topbar`：mode="review" 右侧渲染 `<ReviewActionBar onApprove onReject />`（替代"提交质检"），加载 ReviewerMiniPanel 数字。
 4. `TaskQueuePanel`：mode="review" 时数据源从"我的 task"切到"待我审 task"（已存在 reviewer queue API 复用）。
-5. 新增 hotkey `A` (approve) / `R` (reject prompt) / `J/K` (queue prev/next)；与现有 hotkey 冲突检查（`A` 当前是？需 grep [hotkeys.ts](../apps/web/src/pages/Workbench/state/hotkeys.test.ts) 复审）。
+5. 新增 hotkey `A` (approve) / `R` (reject prompt) / `J/K` (queue prev/next)；与现有 hotkey 冲突检查（`A` 当前是？需 grep [hotkeys.ts](../../apps/web/src/pages/Workbench/state/hotkeys.test.ts) 复审）。
 6. 标注微调 → save 时检查 `mode==="review"`，PATCH 走同一 `/annotations/:id` 接口；后端审计 action 用 `TASK_REVIEWER_EDIT`（新枚举）便于回溯"是审核员改的"。
 7. `ReviewWorkbench.tsx` + `RejectReasonModal.tsx` 的 review 专属 UI 组件抽到 `apps/web/src/pages/Workbench/review-mode/`，然后从 `ReviewWorkbench.tsx` 删源文件 + 删旧路由组件。
 8. ReviewerMiniPanel 保留为 chip 组件，挂到 Topbar。

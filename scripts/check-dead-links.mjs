@@ -26,9 +26,13 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, resolve, relative, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { rewrites } from "../docs-site/.vitepress/content.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "..");
+const REWRITE_SOURCE_BY_ROUTE = new Map(
+  Object.entries(rewrites).map(([source, target]) => [target.replace(/\.md$/, ""), source]),
+);
 
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -301,7 +305,8 @@ function main() {
   // 同时识别 docs-site/ 下的自动镜像约定：
   //   docs-site/dev/adr/<X>     ↔ docs/adr/<X>
   //   docs-site/changelog/<X>   ↔ docs/changelogs/<X> 或根 CHANGELOG.md
-  //   docs-site/roadmap/<X>     ↔ ROADMAP/<X>（前缀 `archived-` 还原为 `[archived]`）
+  //   docs-site/roadmap/<X>     ↔ ROADMAP/<X>（前缀 `archived-` 对应 archive/）
+  //   rewrites 的公开路由       ↔ docs-site/ 下的实际源文件
   //   /api-reference.html 等    ↔ docs-site/public/...（VitePress public/ 挂载到站根）
   function existsAny(...paths) {
     return paths.some((p) => existsSync(p));
@@ -311,6 +316,12 @@ function main() {
     if (existsAny(abs, abs + ".md", resolve(abs, "index.md"))) return true;
 
     const rel = relative(REPO, abs).split(sep).join("/");
+
+    if (rel.startsWith("docs-site/")) {
+      const route = rel.slice("docs-site/".length).replace(/\/$/, "");
+      const source = REWRITE_SOURCE_BY_ROUTE.get(route);
+      if (source && existsSync(resolve(REPO, "docs-site", source))) return true;
+    }
 
     // ADR 镜像
     if (rel.startsWith("docs-site/dev/adr/")) {
@@ -327,9 +338,12 @@ function main() {
         if (existsSync(resolve(REPO, "CHANGELOG.md"))) return true;
       }
     }
-    // ROADMAP 镜像（`archived-` → `[archived]`）
+    // ROADMAP 镜像（`archived-` → `archive/`）
     if (rel.startsWith("docs-site/roadmap/")) {
-      const sub = rel.slice("docs-site/roadmap/".length).replace(/^archived-/, "[archived]");
+      const rawSub = rel.slice("docs-site/roadmap/".length);
+      const sub = rawSub.startsWith("archived-")
+        ? `archive/${rawSub.slice("archived-".length)}`
+        : rawSub;
       const srcBase = resolve(REPO, "ROADMAP", sub);
       if (existsAny(srcBase, srcBase + ".md")) return true;
       if (sub === "" || sub === "index") {

@@ -41,12 +41,12 @@ repos:
 
       # v0.8.8 · 修改 schema/路由/auth 时自动重新生成 OpenAPI snapshot 并 git add，
       # 避免 CI test_openapi_contract.py 红灯 + 让 PR 作者忘记 export 的事变成
-      # 提交即修复。脚本会同步更新 docs-site/api/openapi.json 供 docs-site build。
+      # 提交即修复唯一版本化 snapshot；docs build 再复制到 public/openapi.json。
       # config.py 也纳入 files: openapi info.version/title 源自 app_version 等 config 字段,
       # 纯版本 bump(只改 config.py)若不触发, snapshot info.version 会滞后 → test_openapi_contract 红灯。
       - id: regen-openapi-snapshot
         name: Regenerate OpenAPI snapshot (apps/api)
-        entry: bash -c 'cd apps/api && uv run python ../../scripts/export_openapi.py && cd ../.. && git add apps/api/openapi.snapshot.json docs-site/api/openapi.json 2>/dev/null || true'
+        entry: bash -c 'cd apps/api && uv run python ../../scripts/export_openapi.py && cd ../.. && git add apps/api/openapi.snapshot.json 2>/dev/null || true'
         language: system
         files: ^apps/api/app/(config\.py|(api|schemas)/.*\.py)$
         pass_filenames: false

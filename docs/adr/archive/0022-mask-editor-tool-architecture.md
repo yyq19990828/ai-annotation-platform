@@ -95,7 +95,7 @@ SAM（grounded-sam2 / sam3）的候选 mask 一直走「polygon 化 → 用户�
   - `apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts`（+ `.test.ts`，12 例）
   - `apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts`（+ `.test.ts`，7 例）
 - 相关 ROADMAP / ADR：
-  - `ROADMAP/[archived]2026-05-12-image-workbench-optimization.md` I11 Mask 编辑器
+  - `ROADMAP/archive/2026-05-12-image-workbench-optimization.md` I11 Mask 编辑器
   - ADR-0013 mask-to-polygon-server-side（后端把 SAM mask 转 polygon 的服务侧决策，本文是其前端对偶面）
   - ADR-0021 polygon-lod-and-spatial-index（本文借用了 `simplifyPolygon`）
 - 后续可能演进 / 触发条件：

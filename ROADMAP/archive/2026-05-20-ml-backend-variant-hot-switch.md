@@ -2,7 +2,7 @@
 
 > 状态：**已归档**。ModelPool 请求级变体热切换、AI 面板会话级变体选择、文本输入下沉子工具面板已在 v0.10.23 落地；相关变体观测 / 单变体预热扩展已在 v0.10.26 收口。
 >
-> 从 [ROADMAP.md](../ROADMAP.md) §A「注册 backend 时选模型变体 · C → B 两阶段」抽离。
+> 从 [ROADMAP.md](../../ROADMAP.md) §A「注册 backend 时选模型变体 · C → B 两阶段」抽离。
 > **当前需求 = 阶段二（B · 单容器 model pool 运行期热切换）**，阶段一（C · 注册时声明 + 一变体一容器）在 pool 形态下退化为可选，见 §3。
 >
 > 性质：已完成 epic 归档，保留实现背景与设计细节供后续扩展参考。主战场在 `grounded-sam2-backend`，前端 / API 转发链路已贯通。
@@ -160,7 +160,7 @@
 - **不做**自动 pool sizing（按工作集自动调 cap）—— cap 由 env 显式配，留 v0.11+。
 - **不做**跨容器 pool 共享（k8s sidecar）—— 留 v0.11+。
 - **不做** sam3-backend 的 pool（单变体，无意义）。
-- **不把 predictor 加进 `apps/api`**（遵循 [ADR-0012](../docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)，pool 全在 GPU 容器内）。
+- **不把 predictor 加进 `apps/api`**（遵循 [ADR-0012](../../docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)，pool 全在 GPU 容器内）。
 - **不引入注册时变体声明的强校验**（阶段一 C 的产物），pool 形态下用请求级参数即可。
 
 ---

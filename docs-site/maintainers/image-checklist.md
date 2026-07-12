@@ -1,16 +1,16 @@
 # 截图清单（用户手册）
 
-> 这个文件**不上侧边栏**，仅作为 maintainer 的工作清单。
+> 这个文件位于 `docs-site/maintainers/image-checklist.md`，不参与文档站发布，仅作为 maintainer 的工作清单。
 >
-> 标 `[auto]` 的图由 `pnpm --filter web screenshots` 自动生成（脚本：`apps/web/e2e/screenshots/`），输出到 `docs-site/user-guide/images/`。
+> 标 `[auto]` 的图由 `pnpm --filter @anno/web screenshots` 自动生成（脚本：`apps/web/e2e/screenshots/`），输出到 `docs-site/user-guide/images/`。
 >
-> 标 `[auto-gif]` 的动图由 `pnpm --filter web screenshots:flows` 录制（流程脚本：`apps/web/e2e/screenshots/flows/`），webm→GIF（需 ffmpeg），多步交互用，直接落到 `docs-site/user-guide/images/<page>/<name>.gif`。
+> 标 `[auto-gif]` 的动图由 `pnpm --filter @anno/web screenshots:flows` 录制（流程脚本：`apps/web/e2e/screenshots/flows/`），webm→GIF（需 ffmpeg），多步交互用，直接落到 `docs-site/user-guide/images/<page>/<name>.gif`。
 > 更新流程：
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
-> 2. `pnpm --filter web screenshots`
+> 2. `pnpm --filter @anno/web screenshots`
 > 3. `git diff docs-site/user-guide/images/` 人眼审阅
-> 4. 满意即 commit；如需调整可编辑 `apps/web/e2e/screenshots/scenes.ts` 里的 `prepare` 钩子后再跑
+> 4. 满意即 commit；如需调整可编辑 `apps/web/e2e/screenshots/scenes/` 中对应场景的 `prepare` 钩子后再跑
 
 ## 拍摄约定
 
@@ -136,8 +136,7 @@
 ### 入口
 - [x] `images/getting-started/login.png` — 登录页全屏 [auto]
 - [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast [auto]
-- [x] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交
-- [x] `images/concepts/role-permission-matrix.png` — /users 权限矩阵 5 角色行，标注红框：viewer 行 [auto]
+- [ ] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交；旧 1×1 PNG 伪 GIF 已删除，待真实重录
 - [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮 **[Tier B]** 截图 driver 把所有角色 token 收敛为 super_admin，role=annotator 仍渲染 AdminDashboard，需真实标注员 seed token
 - [x] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
 - [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
@@ -217,8 +216,8 @@
 - [x] `images/bbox/draw-in-progress.gif` — 选矩形工具 → 画布拖出轴对齐矩形 `[auto-gif]`（flows/bbox-draw，P-COCO8）
 - [x] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标 [auto]
 - [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 [auto]
-- [x] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线
-- [x] `images/keypoint/hand.png` — 21 点手部骨架
+- [ ] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线；旧 1×1 占位图已删除，待重拍
+- [ ] `images/keypoint/hand.png` — 21 点手部骨架；旧 1×1 占位图已删除，待重拍
 - [x] `images/sam/subtoolbar.png` — SAM 子工具栏 [auto]
 - [x] `images/sam/text-three-modes.png` — 文字提示三种模式 `[manual]`（旧自动截图场景已移除，现作为保留参考图）
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
@@ -259,9 +258,9 @@
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]
 
 ### 工作流
-- [x] `images/workflows/ai-pre-project-detail-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
+- [x] 复用 `images/projects/ai-pre-config-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
 - [x] `images/workflows/failed-prediction-recovery-jobs-list.png` — /ai-pre/jobs?status=failed 列表 [auto]
-- [x] `images/workflows/project-wizard-type-select.png` — 向导类型选择（7 种项目类型卡） [auto]
+- [x] 复用 `images/projects/wizard-steps.png` — 向导类型选择（7 种项目类型卡） [auto]
 - [ ] `images/workflows/batch-assign-dialog.png` — 批次分配对话框（标注员/审核员选择）
 
 ### Dev / 协议图

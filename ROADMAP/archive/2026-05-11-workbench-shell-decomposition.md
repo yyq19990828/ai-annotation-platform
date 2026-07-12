@@ -1,6 +1,6 @@
 # WorkbenchShell 拆分路线图 · Image / Video / 3D 与标注 / 审核模式
 
-> 状态：**已归档（2026-05-11）**。M6.0–M6.4 已落地：Overlay 外提、Mode controller、Stage-specific action hooks、StageHost 收口、文档与 ADR 收尾均完成。本文件保留作历史切片和架构决策背景；后续优化项已迁入 [../ROADMAP.md](../ROADMAP.md)。
+> 状态：**已归档（2026-05-11）**。M6.0–M6.4 已落地：Overlay 外提、Mode controller、Stage-specific action hooks、StageHost 收口、文档与 ADR 收尾均完成。本文件保留作历史切片和架构决策背景；后续优化项已迁入 [../ROADMAP.md](../../ROADMAP.md)。
 >
 > 类型：P0 架构优化路线图（**not yet a milestone plan**）
 >

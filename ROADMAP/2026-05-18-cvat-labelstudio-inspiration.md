@@ -80,7 +80,7 @@
 
 ### 2.4 Tracker / Auto-Annotation 协议层抽象 ✅ 已完成 v0.10.37（结论已演进）
 
-> 已由 [能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 落地，但**结论与原设想不同**：原提议「R23 前置 capabilities 协议、保留 Tracker Registry UI」，实际**取消了注册表 UI**，改为 backend `/setup` 自报能力 + 平台动态发现（`health_meta["capabilities"]` + `ml_capabilities.derive_modalities` 派生 image/video modality），「启停」即 backend 暂停/恢复。CVAT `FunctionKind` enum 未照搬，改用 capabilities 快照 + modality 派生。SoT：视频 roadmap [§3.2/§3.3](2026-05-21-video-workbench-roadmap.md)、[`ml_backend.py`](../apps/api/app/services/ml_backend.py)、CHANGELOG v0.10.37。
+> 已由 [能力协商 epic](archive/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 落地，但**结论与原设想不同**：原提议「R23 前置 capabilities 协议、保留 Tracker Registry UI」，实际**取消了注册表 UI**，改为 backend `/setup` 自报能力 + 平台动态发现（`health_meta["capabilities"]` + `ml_capabilities.derive_modalities` 派生 image/video modality），「启停」即 backend 暂停/恢复。CVAT `FunctionKind` enum 未照搬，改用 capabilities 快照 + modality 派生。SoT：视频 roadmap [§3.2/§3.3](2026-05-21-video-workbench-roadmap.md)、[`ml_backend.py`](../apps/api/app/services/ml_backend.py)、CHANGELOG v0.10.37。
 
 - **来源**：CVAT `FunctionKind` enum (`DETECTOR / INTERACTOR / REID / TRACKER`)。
 

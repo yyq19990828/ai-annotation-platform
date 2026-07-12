@@ -299,28 +299,10 @@
     "lastRun": "2026-06-19T12:04:56.970Z",
     "project": "desktop-light"
   },
-  "docs-site/user-guide/images/concepts/role-permission-matrix.png": {
-    "auto": true,
-    "scene": "platform/role-permission-matrix",
-    "lastRun": "2026-06-19T12:04:59.003Z",
-    "project": "desktop-light"
-  },
   "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
     "auto": true,
     "scene": "workflows/failed-prediction-recovery-jobs-list",
     "lastRun": "2026-06-19T12:05:01.107Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/workflows/project-wizard-type-select.png": {
-    "auto": true,
-    "scene": "workflows/project-wizard-type-select",
-    "lastRun": "2026-06-19T12:05:03.223Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/workflows/ai-pre-project-detail-panel.png": {
-    "auto": true,
-    "scene": "workflows/ai-pre-project-detail-panel",
-    "lastRun": "2026-06-19T12:05:05.445Z",
     "project": "desktop-light"
   },
   "docs-site/user-guide/images/workbench/layout-overview.png": {
@@ -371,25 +353,11 @@
     "lastRun": "2026-06-19T12:04:02.808Z",
     "project": "desktop-light"
   },
-  "docs-site/user-guide/images/sam/ai-tool-drawer.png": {
-    "auto": true,
-    "scene": "sam/ai-tool-drawer",
-    "lastRun": "2026-06-19T12:05:14.353Z",
-    "project": "desktop-light"
-  },
   "docs-site/user-guide/images/getting-started/login.mobile.png": {
     "auto": true,
     "scene": "getting-started/login",
     "lastRun": "2026-06-19T12:07:30.426Z",
     "project": "mobile"
-  },
-  "docs-site/user-guide/images/keypoint/human-pose.png": {
-    "auto": false,
-    "note": "manual reference illustration; no browser screenshot scene"
-  },
-  "docs-site/user-guide/images/keypoint/hand.png": {
-    "auto": false,
-    "note": "manual reference illustration; no browser screenshot scene"
   },
   "docs-site/user-guide/images/sam/text-three-modes.png": {
     "auto": false,

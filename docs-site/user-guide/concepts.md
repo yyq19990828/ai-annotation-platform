@@ -3,7 +3,7 @@ title: 平台概念与术语
 audience: [annotator, reviewer, project_admin, super_admin]
 type: reference
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-12
 ---
 
 # 平台概念与术语
@@ -33,7 +33,7 @@ last_reviewed: 2026-07-11
 
 ## 角色
 
-![角色权限矩阵](./images/concepts/role-permission-matrix.png)
+![角色权限矩阵](./images/superadmin/users/permission-matrix.png)
 
 | 角色 | 英文 | 权限范围 |
 |---|---|---|

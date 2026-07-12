@@ -1,6 +1,6 @@
 import type { ScreenshotScene } from "./_types";
 
-// 工作流类截图：失败预测恢复 jobs 列表 / 项目向导类型选择。
+// 工作流类截图：失败预测恢复 jobs 列表。
 // failed-jobs 用 page.route mock 后端响应，不污染真实 DB（同 ai-pre.ts 思路）。
 
 interface MockJob {
@@ -68,39 +68,5 @@ export const WORKFLOW_SCENES: ScreenshotScene[] = [
     },
     capture: { kind: "fullPage" },
     target: "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png",
-  },
-  {
-    name: "workflows/project-wizard-type-select",
-    role: "admin",
-    route: () => "/projects",
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      const newBtn = page.getByRole("button", { name: /新建项目|新建/ }).first();
-      if (await newBtn.count()) {
-        await newBtn.click();
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[data-testid="project-wizard"]', { timeout: 3000 }).catch(() => {});
-    },
-    capture: { kind: "locator", selector: '[data-testid="project-wizard"]', padding: 0 },
-    target: "docs-site/user-guide/images/workflows/project-wizard-type-select.png",
-  },
-  {
-    name: "workflows/ai-pre-project-detail-panel",
-    role: "admin",
-    route: () => "/ai-pre",
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      // 点首个项目卡片打开 ProjectDetailPanel（批次列表 + predict_mode tab + 跑预标按钮）
-      const card = page.getByText(/2D图片标注测试|P-0001/).first();
-      if (await card.count()) {
-        await card.click();
-        await page.waitForTimeout(400);
-      }
-      await page.getByText(/待预标批次|批跑预标|跑预标/).first().waitFor({ timeout: 3000 }).catch(() => {});
-      await page.waitForLoadState("networkidle");
-    },
-    capture: { kind: "fullPage" },
-    target: "docs-site/user-guide/images/workflows/ai-pre-project-detail-panel.png",
   },
 ];

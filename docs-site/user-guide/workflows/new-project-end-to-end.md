@@ -4,7 +4,7 @@ audience: [project_admin, annotator, reviewer]
 type: tutorial
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-12
 ---
 
 # 新项目端到端流程
@@ -26,7 +26,7 @@ last_reviewed: 2026-07-11
 
 ## Step 1：创建项目
 
-![项目类型选择](../images/workflows/project-wizard-type-select.png)
+![项目类型选择](../images/projects/wizard-steps.png)
 
 1. 左侧菜单进入 **项目总览**（超级管理员为 **项目管理**）→ **新建项目**
 2. 填写基本信息（向导 6 步）：

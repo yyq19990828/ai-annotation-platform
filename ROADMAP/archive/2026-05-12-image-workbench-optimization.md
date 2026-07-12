@@ -1,8 +1,8 @@
 # P2 · 图片工作台渲染体系 + 能力扩展
 
-> 状态：**Wave α 已落地 v0.9.41（2026-05-13）**；Wave β/γ/δ/ε proposal。与视频工作台优化（`[archived]2026-05-12-video-workbench-rendering-optimization.md`）并行。
+> 状态：**Wave α 已落地 v0.9.41（2026-05-13）**；Wave β/γ/δ/ε proposal。与视频工作台优化（`2026-05-12-video-workbench-rendering-optimization.md`）并行。
 >
-> v0.9.41 落地清单（详见 [docs/plans/archive/2026-05-13-v0.9.41-image-workbench-wave-alpha.md](../docs/plans/archive/2026-05-13-v0.9.41-image-workbench-wave-alpha.md)）：
+> v0.9.41 落地清单（详见 [docs/plans/archive/2026-05-13-v0.9.41-image-workbench-wave-alpha.md](../../docs/plans/archive/2026-05-13-v0.9.41-image-workbench-wave-alpha.md)）：
 > - ✅ **I3** selectedIds 签名稳定 + user 层按工具 listening
 > - ✅ **I7** `stage/shared/` 抽取（useViewportTransform / Minimap / geometry/polygon / useRafThrottle）
 > - ✅ **I8** `useWorkbenchPerf` + BugReport `[workbench-perf]` 快照
@@ -49,7 +49,7 @@
 > 对标：地图栅格 tile 服务。CVAT 用 chunk 处理视频帧，图片侧可借鉴同思路处理大尺寸单图。
 
 - **I1.1 后端 tile 服务**：上传 >4K 图时 Celery 生成 IIIF 或自定义 tile 金字塔（zoom 0/1/2/...，每级切 512×512 PNG/WebP）。元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`。
-  - 这块写入 backend epic（与视频 chunk 共用一套切片服务基础设施，可放在 `[archived]2026-05-12-video-backend-frame-service.md` 同一服务下，或单独 minor epic）。
+  - 这块写入 backend epic（与视频 chunk 共用一套切片服务基础设施，可放在 `2026-05-12-video-backend-frame-service.md` 同一服务下，或单独 minor epic）。
 - **I1.2 前端 tile 加载器**：抽 `useTileSource(imageUrl, pyramid)` hook，按当前 viewport 计算可视 tile 集合，LRU 缓存解码后的 ImageBitmap。
   - 触发条件：图片尺寸 ≥ 4096 像素任一边时启用，否则继续走原 `use-image`。
 - **I1.3 Konva 适配**：背景 bg 层从单一 `<Image>` 换成 `<Group>` 内多张 `<Image>` tile，按 viewport 动态挂载。Konva 原生支持，不需要换框架。
@@ -62,7 +62,7 @@
 ### I2 · 多边形 LOD 与命中测试优化（**必做**）
 
 > 对标 CVAT 的几何库 + 离屏 canvas 命中测试。
-> **现状校准（2026-05-14）**：`polygon-clipping@0.15.7` 已在依赖，iou.ts 用作 IoU 求交；`rbush` R-tree 已在 [iou-index.ts](../apps/web/src/pages/Workbench/stage/iou-index.ts) 用于 IoU 排除；`isSelfIntersecting` 仍是 O(n²)；顶点拖拽已经在 pointerup 时单次 commit，但缺 history batch kind。
+> **现状校准（2026-05-14）**：`polygon-clipping@0.15.7` 已在依赖，iou.ts 用作 IoU 求交；`rbush` R-tree 已在 [iou-index.ts](../../apps/web/src/pages/Workbench/stage/iou-index.ts) 用于 IoU 排除；`isSelfIntersecting` 仍是 O(n²)；顶点拖拽已经在 pointerup 时单次 commit，但缺 history batch kind。
 
 - **I2.1 顶点 LOD**：渲染层根据当前 viewport scale，多边形顶点按 Douglas-Peucker 简化（保持视觉等价）。原始顶点存原表，渲染前过一次简化缓存。
   - 简化阈值 = 1px / scale，保证看不出差异。
@@ -169,13 +169,13 @@
 > CVAT 对 mask 标注用单独的 `masksHandler.ts`：圆/方笔刷、橡皮、polygon-plus/polygon-minus、Shift+滚轮调笔刷大小，最后 RLE 压缩。
 
 - 我们当前 SAM 出的 mask 是"接受 → polygon"流程，不可二次精修。要实现"AI 出粗结果 → 笔刷细修"必须有 mask 编辑器。
-- ✅ **v0.10.7 v1 算法核已落地**（[ADR-0022](../docs/adr/archive/0022-mask-editor-tool-architecture.md)）：
-  - 数据层 [`stage/shared/geometry/maskBuffer.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts)：纯 TS Uint8Array alpha 缓冲，brush / erase / clear / fromPolygon / toAlphaImageData / clone（12 例单测）；
-  - 算法层 [`stage/shared/geometry/maskToPolygon.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts)：marching-squares + Moore-Neighborhood tracing + polygon-clipping union 去自相交 + RDP 简化（7 例单测）；
+- ✅ **v0.10.7 v1 算法核已落地**（[ADR-0022](../../docs/adr/archive/0022-mask-editor-tool-architecture.md)）：
+  - 数据层 [`stage/shared/geometry/maskBuffer.ts`](../../apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts)：纯 TS Uint8Array alpha 缓冲，brush / erase / clear / fromPolygon / toAlphaImageData / clone（12 例单测）；
+  - 算法层 [`stage/shared/geometry/maskToPolygon.ts`](../../apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts)：marching-squares + Moore-Neighborhood tracing + polygon-clipping union 去自相交 + RDP 简化（7 例单测）；
   - 不引入 RLE schema：v1 走「mask 临时态 → polygon 入库」单向，与 polygon 等价落库；RLE 留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一。
-- ✅ **v0.10.7.1 状态层** [`useMaskEditor`](../apps/web/src/pages/Workbench/state/useMaskEditor.ts)：buffer (useRef) + active/mode/radius/dirty (useState) + beginBlank/initFromPolygon/paintAt/setMode/setRadius/cancel/commitToPolygon（12 例单测）。
-- ✅ **v0.10.8 UI 集成**：`MaskTool` ([MaskTool.ts](../apps/web/src/pages/Workbench/stage/tools/MaskTool.ts)) + `MaskOverlayLayer` ([MaskOverlayLayer.tsx](../apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx)) + `MaskToolbar` ([MaskToolbar.tsx](../apps/web/src/pages/Workbench/shell/MaskToolbar.tsx)) + ToolDock mask 按钮 + `BoxListItem` polygon 候选「精修」按钮 → `handleRefinePrediction` (自动 reject + 候选 label) / `commitMaskAsPolygon` (像素→归一化) / `cancelMaskEdit`；hotkey `M / B-mask / E-mask / Enter-mask / Esc-mask / Shift+wheel`。
-- ✅ **v0.10.10 收尾**：① e2e（mask-editor.spec.ts：空白 mask / AI prediction 精修 / B-E-Shift+wheel-Esc hotkey 三用例 + seed.injectPrediction helper）；② MaskBuffer dirtyRect 增量重绘（`_dirty` 半开矩形 + `consumeDirty()` + `toAlphaImageDataRect(rect)`，MaskOverlayLayer 改为只 putImageData 脏区，首次激活仍走全图，新增 9 例单测）；③ 用户文档 [`mask-brush.md`](../docs-site/user-guide/workbench/mask-brush.md)（三入口 + hotkey + 已知限制）；④ I17.3 项目级渲染配置覆盖（与 Wave β 收尾打包）。
+- ✅ **v0.10.7.1 状态层** [`useMaskEditor`](../../apps/web/src/pages/Workbench/state/useMaskEditor.ts)：buffer (useRef) + active/mode/radius/dirty (useState) + beginBlank/initFromPolygon/paintAt/setMode/setRadius/cancel/commitToPolygon（12 例单测）。
+- ✅ **v0.10.8 UI 集成**：`MaskTool` ([MaskTool.ts](../../apps/web/src/pages/Workbench/stage/tools/MaskTool.ts)) + `MaskOverlayLayer` ([MaskOverlayLayer.tsx](../../apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx)) + `MaskToolbar` ([MaskToolbar.tsx](../../apps/web/src/pages/Workbench/shell/MaskToolbar.tsx)) + ToolDock mask 按钮 + `BoxListItem` polygon 候选「精修」按钮 → `handleRefinePrediction` (自动 reject + 候选 label) / `commitMaskAsPolygon` (像素→归一化) / `cancelMaskEdit`；hotkey `M / B-mask / E-mask / Enter-mask / Esc-mask / Shift+wheel`。
+- ✅ **v0.10.10 收尾**：① e2e（mask-editor.spec.ts：空白 mask / AI prediction 精修 / B-E-Shift+wheel-Esc hotkey 三用例 + seed.injectPrediction helper）；② MaskBuffer dirtyRect 增量重绘（`_dirty` 半开矩形 + `consumeDirty()` + `toAlphaImageDataRect(rect)`，MaskOverlayLayer 改为只 putImageData 脏区，首次激活仍走全图，新增 9 例单测）；③ 用户文档 [`mask-brush.md`](../../docs-site/user-guide/workbench/mask-brush.md)（三入口 + hotkey + 已知限制）；④ I17.3 项目级渲染配置覆盖（与 Wave β 收尾打包）。
 - ✅ **v0.10.9 入口补齐 + 光标可视化**：`handleRefineSamCandidate(idx)` (SAM 交互候选未 Enter 时走 R 键 / 画布浮按钮启动精修, commit 调 `sam.consume` 移除候选并新建 polygon) + `handleRefineUserPolygon(id)` (已落库 polygon 走 update mutation 替换 geometry, 不新建 annotation, history 可 undo); `pendingRefineRef` 扩 discriminated union (prediction/sam/user) 按 kind 分流; ImageStage overlay 加 `Konva.Circle` 跟随鼠标显示笔触半径 (brush 红/erase 灰, container cursor: none); BoxListItem `onRefine` 在 user polygon 行也启用。
 - 与 I1 大图 tile 共存：mask 编辑时仅在当前 viewport 范围内做像素操作，全图导出时合并。
 - 来源：`cvat-canvas/src/typescript/masksHandler.ts`。
@@ -197,11 +197,11 @@
 > CVAT 给每个 label 配 attribute schema（select / radio / checkbox / number / text），区分 `mutable`（每帧可变）与 `immutable`（轨迹级）。前端按 schema 自动生成 form。
 
 - **现状校准（2026-05-14）**：v0.7.6 起 attribute schema 已基本完整：
-  - ✅ **I13.1 input_type**：已支持 text / number / boolean / select / multiselect / range 六种（[AttributeForm.tsx:123](../apps/web/src/pages/Workbench/shell/AttributeForm.tsx:123)）。
-  - ✅ **I13.3 自动 Form 渲染**：[AttributeForm.tsx:47](../apps/web/src/pages/Workbench/shell/AttributeForm.tsx:47) 已按 schema 自动生成。
-  - ✅ **I13.4 必填校验**：[AttributeForm.tsx:28](../apps/web/src/pages/Workbench/shell/AttributeForm.tsx:28) `getMissingRequired` + 高亮红框；条件级联 `visible_if` 也支持。
+  - ✅ **I13.1 input_type**：已支持 text / number / boolean / select / multiselect / range 六种（[AttributeForm.tsx:123](../../apps/web/src/pages/Workbench/shell/AttributeForm.tsx:123)）。
+  - ✅ **I13.3 自动 Form 渲染**：[AttributeForm.tsx:47](../../apps/web/src/pages/Workbench/shell/AttributeForm.tsx:47) 已按 schema 自动生成。
+  - ✅ **I13.4 必填校验**：[AttributeForm.tsx:28](../../apps/web/src/pages/Workbench/shell/AttributeForm.tsx:28) `getMissingRequired` + 高亮红框；条件级联 `visible_if` 也支持。
 - **残留（本 epic 收口）**：
-  - **I13.2 mutable / immutable 区分**：[`AttributeField`](../apps/api/app/schemas/_jsonb_types.py:29) 需加 `mutable: bool = False` 字段；视频侧 track 属性按帧覆盖 UI 未实现，沿用到 R9 polygon track。
+  - **I13.2 mutable / immutable 区分**：[`AttributeField`](../../apps/api/app/schemas/_jsonb_types.py:29) 需加 `mutable: bool = False` 字段；视频侧 track 属性按帧覆盖 UI 未实现，沿用到 R9 polygon track。
 - 来源：`cvat-core/src/server-response-types.ts` L172-180 + `cvat-ui/.../object-item-attribute.tsx`。
 
 #### I14 · 多边形高级编辑（自动贴边 / 智能裁切）（**M，纯前端**）
@@ -218,7 +218,7 @@
 
 > CVAT 每个 shape 有 `z_order` / `lock` / `hidden` / `outside` / `occluded` 五个独立状态位，可通过快捷键或右键菜单切换。
 
-- **现状校准（2026-05-14）**：annotation 表（[apps/api/app/db/models/annotation.py](../apps/api/app/db/models/annotation.py)）**字段全空白**；只有前端 transient 显示状态。需 alembic 加四个列 + UI + 快捷键。
+- **现状校准（2026-05-14）**：annotation 表（[apps/api/app/db/models/annotation.py](../../apps/api/app/db/models/annotation.py)）**字段全空白**；只有前端 transient 显示状态。需 alembic 加四个列 + UI + 快捷键。
 - **I15.1 z_order**：右键 / `[`、`]` 调整层级，影响渲染顺序与 hit-test 优先级。需持久化字段。
 - **I15.2 occluded**：表示"被遮挡但仍存在"，视觉上变虚线 / 半透。视频 track 已有，图片侧也补上。
 - **I15.3 lock / hidden**：与 occluded 同步持久化为 `is_locked` / `is_hidden`，按 `L` / `H` 快捷键切换。
@@ -273,9 +273,9 @@
 
 > CVAT 的 Lambda Manager 把"Interactor（SAM 类）"、"Tracker（跟踪类）"、"Auto Annotation（批量预标）"抽成统一协议。后端写一个 Lambda，前端自动支持。
 
-- **现状校准（2026-05-14）**：Interactor 类型的协议收口已经在 v0.10.1-v0.10.3 完成（参 [ADR-0020](../docs/adr/archive/0020-ml-backend-capability-negotiation.md) Capability 协商 + [ADR-0019](../docs/adr/archive/0019-prompt-first-tooldock-1n-arch.md) Prompt-first ToolDock + 1:N）。
+- **现状校准（2026-05-14）**：Interactor 类型的协议收口已经在 v0.10.1-v0.10.3 完成（参 [ADR-0020](../../docs/adr/archive/0020-ml-backend-capability-negotiation.md) Capability 协商 + [ADR-0019](../../docs/adr/archive/0019-prompt-first-tooldock-1n-arch.md) Prompt-first ToolDock + 1:N）。
 - ✅ **I20.1 Interactor 协议**：`GET /setup` 返回 JSON Schema Draft-07 子集 `{ name, version, model_version, supported_prompts, params }`；`POST /interactive-annotating` 携带 `context.type` 路由 backend。
-- ✅ **I20.2 注册式工具**：`useMLCapabilities` hook（[useMLCapabilities.ts](../apps/web/src/pages/Workbench/state/useMLCapabilities.ts)）作为单一事实源；4 个 prompt-first 工具 (SmartPoint / SmartBox / TextPrompt / Exemplar) 按 `supported_prompts` 自动置灰。
+- ✅ **I20.2 注册式工具**：`useMLCapabilities` hook（[useMLCapabilities.ts](../../apps/web/src/pages/Workbench/state/useMLCapabilities.ts)）作为单一事实源；4 个 prompt-first 工具 (SmartPoint / SmartBox / TextPrompt / Exemplar) 按 `supported_prompts` 自动置灰。
 - ✅ **I20.3 协议向后兼容**：`supported_prompts` 缺失时回落 `["point","bbox","text"]`，console.warn。
 - **残留（挪 v0.11+）**：Tracker / Auto-Annotation 类型走相同 setup 协议。视频侧 R10 已有 `/video-tracker-jobs` 类似协议，但未与图片 setup 收口为同一 `supported_capabilities` 数组；v0.11.0 做协议统一收口。
 - 来源：`cvat-core/src/lambda-manager.ts`。
@@ -383,7 +383,7 @@ Wave ε · 能力扩张
 
 - **I10 Skeleton / I11 Mask 编辑器** → 应在后端 schema epic 中加协议扩展条目（与 R9 视频 geometry kind 一并设计）。
 - **I19 GT / Consensus / IAA** → 与长期 L15「标注质量 AI 审计」合并为独立 epic，体量过大不适合塞本文。
-- **I20 Interactor 协议** → 与 [v0.10.x SAM 3 接入]([archived]0.10.x.md) 同窗口推进，避免协议二次破窗。
+- **I20 Interactor 协议** → 与 [v0.10.x SAM 3 接入](0.10.x.md) 同窗口推进，避免协议二次破窗。
 - **I13 Attribute Schema** → 检查 v0.7.6 已有 attribute 实现，本条是「在已有 schema 上加 input_type / mutable / 必填 / 自动 form」。
 
 ---
@@ -400,10 +400,10 @@ Wave ε · 能力扩张
 
 ## 8. 关联文档
 
-- [`[archived]2026-05-12-video-workbench-rendering-optimization.md`]([archived]2026-05-12-video-workbench-rendering-optimization.md) — 视频侧渲染优化，I7 共享 hooks 双向消费；I9 / I15 与 R9 几何 kind 同期设计
-- [`[archived]2026-05-12-video-backend-frame-service.md`]([archived]2026-05-12-video-backend-frame-service.md) — 大图 tile 后端切片服务建议合并到此 epic 下，或独立 minor epic
-- [`2026-05-12-long-term-strategy.md`](2026-05-12-long-term-strategy.md) — L15 标注质量 AI 审计 = I19 的下一步演进
-- [`[archived]0.10.x.md`]([archived]0.10.x.md) — SAM 3 接入；I11 mask 编辑器 + I20 Interactor 协议同窗口
+- [`2026-05-12-video-workbench-rendering-optimization.md`](2026-05-12-video-workbench-rendering-optimization.md) — 视频侧渲染优化，I7 共享 hooks 双向消费；I9 / I15 与 R9 几何 kind 同期设计
+- [`2026-05-12-video-backend-frame-service.md`](2026-05-12-video-backend-frame-service.md) — 大图 tile 后端切片服务建议合并到此 epic 下，或独立 minor epic
+- [`2026-05-12-long-term-strategy.md`](../2026-05-12-long-term-strategy.md) — L15 标注质量 AI 审计 = I19 的下一步演进
+- [`0.10.x.md`](0.10.x.md) — SAM 3 接入；I11 mask 编辑器 + I20 Interactor 协议同窗口
 - 关键 CVAT 参考路径：
   - `cvat/cvat-canvas/src/typescript/canvasView.ts` — 离屏 canvas 命中、Ellipse、z_order
   - `cvat/cvat-canvas/src/typescript/masksHandler.ts` — Mask 笔刷 / 橡皮 / polygon-plus/minus

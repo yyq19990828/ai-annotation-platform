@@ -1,17 +1,23 @@
-import { defineConfig } from "vitepress";
+import { defineConfig, type DefaultTheme } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { rewrites, srcExclude } from "./content.mjs";
+import { apiSidebar } from "./navigation/api";
+import { createDevSidebar } from "./navigation/dev";
+import { nav } from "./navigation/nav";
+import { opsSidebar } from "./navigation/ops";
+import { userGuideSidebar } from "./navigation/user-guide";
 
 // ADR 侧边栏由 docs-site/scripts/mirror-adr.mjs 在 prebuild/predev 阶段生成。
 // 若文件缺失（例如刚 clone 还未跑 prebuild），降级为空数组让 VitePress 仍能启动。
 const __here = dirname(fileURLToPath(import.meta.url));
-type SidebarItem = { text: string; link: string };
-
-function loadSidebar(rel: string): SidebarItem[] {
+function loadSidebar(rel: string): DefaultTheme.SidebarItem[] {
   const p = resolve(__here, rel);
-  return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as SidebarItem[]) : [];
+  return existsSync(p)
+    ? (JSON.parse(readFileSync(p, "utf8")) as DefaultTheme.SidebarItem[])
+    : [];
 }
 
 const adrSidebarItems = loadSidebar("../dev/adr/sidebar.generated.json");
@@ -25,10 +31,14 @@ export default withMermaid(defineConfig({
   base: process.env.DOCS_BASE ?? "/",
   cleanUrls: true,
   lastUpdated: true,
+  rewrites,
+  srcExclude,
   // 站点地图：hostname 用源站，路径前缀由 base 处理。部署地址
   // https://yyq19990828.github.io/ai-annotation-platform/ 。提交给 Search Console 用完整 URL。
   sitemap: {
     hostname: "https://yyq19990828.github.io/ai-annotation-platform/",
+    transformItems: (items) =>
+      items.filter((item) => !item.url.includes("user-guide/projects/annotation-guide")),
   },
   // 允许指向本地开发服务器的链接，构建期不当 dead link
   ignoreDeadLinks: [
@@ -41,7 +51,6 @@ export default withMermaid(defineConfig({
     (url) =>
       /(^|\/)\.\.\/plans\/(archive\/)?\d{4}-/.test(url) ||
       /\/plans\/(archive\/)?\d{4}-/.test(url),
-    (url) => /IMAGE_CHECKLIST/.test(url),
     // ROADMAP/inspiration 文档引用本地 clone 的 CVAT 源码（`../../cvat/...`），
     // 这些不是站点页面，构建期不应判为 dead。
     (url) => /\/cvat\//.test(url) || /\/cvat-(sdk|cli)(\/|$)/.test(url),
@@ -98,369 +107,14 @@ export default withMermaid(defineConfig({
   },
 
   themeConfig: {
-    // 顶栏收敛为四个主域 + 高优先级「快速开始」CTA（末位，样式见 docs-theme.css）。
-    // Changelog / Roadmap 收进「更多」次级组；GitHub 由下方 socialLinks 承载。
-    nav: [
-      { text: "使用平台", link: "/user-guide/", activeMatch: "^/user-guide/" },
-      { text: "开发者", link: "/dev/", activeMatch: "^/dev/" },
-      { text: "API", link: "/api/", activeMatch: "^/api/" },
-      { text: "部署运维", link: "/ops/", activeMatch: "^/ops/" },
-      {
-        text: "更多",
-        items: [
-          { text: "更新日志", link: "/changelog/" },
-          { text: "Roadmap", link: "/roadmap/" },
-        ],
-      },
-      { text: "快速开始 ↗", link: "/user-guide/getting-started" },
-    ],
-
+    nav,
     sidebar: {
-      // 侧栏按「任务流程」重组为 8 个一级组（开始 → 数据 → 项目 → 工作台 → AI →
-      // 审核 → 管理 → 场景）。图片 / 视频 / 点云下沉为「标注工作台」的二级组。
-      // 大组默认折叠以降低首屏噪声；VitePress 会自动展开当前页所在的组。
-      "/user-guide/": [
-        {
-          text: "开始使用",
-          items: [
-            { text: "概述", link: "/user-guide/" },
-            { text: "平台概念与术语", link: "/user-guide/concepts" },
-            { text: "快速开始", link: "/user-guide/getting-started" },
-            { text: "常见问题 FAQ", link: "/user-guide/faq" },
-          ],
-        },
-        {
-          text: "数据准备",
-          collapsed: true,
-          items: [
-            { text: "数据集总览", link: "/user-guide/datasets/" },
-            { text: "导入图像数据集", link: "/user-guide/datasets/import-images" },
-            { text: "导入点云 / 多模态", link: "/user-guide/datasets/import-formats" },
-            { text: "存储连接器导入", link: "/user-guide/datasets/storage-connections" },
-            { text: "点云坐标系约定", link: "/user-guide/datasets/lidar-axis-convention" },
-            { text: "导入 / 导出外部预测", link: "/user-guide/datasets/prediction-import-export" },
-            { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
-          ],
-        },
-        {
-          text: "项目与任务",
-          collapsed: true,
-          items: [
-            { text: "项目管理", link: "/user-guide/projects/" },
-            { text: "工具维度类别 / 属性", link: "/user-guide/projects/tool-units" },
-            { text: "Data Manager", link: "/user-guide/projects/data-manager" },
-            { text: "批次与分配", link: "/user-guide/projects/batch" },
-            { text: "AI 预标注", link: "/user-guide/projects/ai-preannotate" },
-            { text: "全局编排库", link: "/user-guide/projects/pipeline-library" },
-            { text: "ML 后端绑定", link: "/user-guide/projects/ml-backends" },
-            { text: "项目模板", link: "/user-guide/projects/project-templates" },
-          ],
-        },
-        {
-          text: "标注工作台",
-          items: [
-            { text: "工作台概览与快捷键", link: "/user-guide/workbench/" },
-            { text: "工作台设置", link: "/user-guide/workbench/settings" },
-            {
-              text: "图片标注",
-              collapsed: true,
-              items: [
-                { text: "Bbox 标注", link: "/user-guide/workbench/bbox" },
-                { text: "旋转框标注 (OBB)", link: "/user-guide/workbench/rotated-bbox" },
-                { text: "Polygon 标注", link: "/user-guide/workbench/polygon" },
-                { text: "折线标注", link: "/user-guide/workbench/polyline" },
-                { text: "关键点标注", link: "/user-guide/workbench/keypoint" },
-                { text: "Mask 笔刷编辑器", link: "/user-guide/workbench/mask-brush" },
-                { text: "SAM 智能工具", link: "/user-guide/workbench/sam-tool" },
-              ],
-            },
-            {
-              text: "视频标注",
-              collapsed: true,
-              items: [
-                { text: "视频追踪标注", link: "/user-guide/workbench/video-track" },
-                { text: "播放、帧导航与采样", link: "/user-guide/workbench/video-playback" },
-                { text: "关键帧传播与 AI", link: "/user-guide/workbench/video-propagate" },
-              ],
-            },
-            {
-              text: "点云标注",
-              collapsed: true,
-              items: [
-                { text: "点云视图与上色", link: "/user-guide/workbench/pointcloud-view" },
-                { text: "3D 立体框标注", link: "/user-guide/workbench/3d-box" },
-                { text: "点云跨模态联动", link: "/user-guide/workbench/pointcloud-projection" },
-                { text: "点云跨帧标注", link: "/user-guide/workbench/pointcloud-crossframe" },
-              ],
-            },
-          ],
-        },
-        {
-          text: "AI 辅助",
-          collapsed: true,
-          items: [
-            { text: "AI 能力总览", link: "/user-guide/ai/" },
-            { text: "图片交互式 AI", link: "/user-guide/workbench/sam-tool" },
-            { text: "当前题 AI 与二次推理", link: "/user-guide/ai/current-task-inference" },
-            { text: "审阅 AI 候选", link: "/user-guide/ai/candidate-review" },
-            { text: "批量与多阶段预标", link: "/user-guide/projects/ai-preannotate" },
-            { text: "视频 AI 追踪", link: "/user-guide/workbench/video-propagate" },
-            { text: "外部预测导入 / 导出", link: "/user-guide/datasets/prediction-import-export" },
-            { text: "项目 ML 模型", link: "/user-guide/projects/ml-backends" },
-            { text: "全局编排库", link: "/user-guide/projects/pipeline-library" },
-            { text: "AI 任务与失败恢复", link: "/user-guide/workflows/failed-prediction-recovery" },
-            { text: "模型市场", link: "/user-guide/superadmin/model-market" },
-          ],
-        },
-        {
-          text: "审核与质量",
-          items: [
-            { text: "审核流程", link: "/user-guide/review/" },
-          ],
-        },
-        {
-          text: "管理与设置",
-          collapsed: true,
-          items: [
-            { text: "平台管理概览", link: "/user-guide/superadmin/" },
-            { text: "用户与权限", link: "/user-guide/superadmin/user-management" },
-            { text: "ML Backend 注册", link: "/user-guide/superadmin/ml-backend-registry" },
-            { text: "模型市场", link: "/user-guide/superadmin/model-market" },
-            { text: "失败预测排查", link: "/user-guide/superadmin/failed-predictions" },
-            { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
-            { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },
-            { text: "BUG 反馈管理", link: "/user-guide/superadmin/bug-management" },
-            { text: "离线分析", link: "/user-guide/superadmin/analytics" },
-            { text: "公共模板治理", link: "/user-guide/superadmin/public-templates" },
-            { text: "通知中心", link: "/user-guide/reference/notifications" },
-            { text: "设置页", link: "/user-guide/reference/settings" },
-          ],
-        },
-        {
-          text: "场景方案",
-          collapsed: true,
-          items: [
-            { text: "新项目端到端", link: "/user-guide/workflows/new-project-end-to-end" },
-            { text: "AI 预标注流水线", link: "/user-guide/workflows/ai-preannotate-pipeline" },
-            { text: "失败预测恢复", link: "/user-guide/workflows/failed-prediction-recovery" },
-          ],
-        },
-      ],
-
-      "/dev/": [
-        {
-          text: "起步",
-          items: [
-            { text: "概览", link: "/dev/" },
-            { text: "测试指南", link: "/dev/testing" },
-            { text: "发布流程", link: "/dev/release" },
-          ],
-        },
-        {
-          text: "教程",
-          collapsed: true,
-          items: [
-            { text: "本地开发", link: "/dev/tutorials/local-dev" },
-            { text: "第一个贡献", link: "/dev/tutorials/first-contribution" },
-          ],
-        },
-        {
-          text: "概念（架构）",
-          collapsed: true,
-          items: [
-            {
-              text: "总览",
-              items: [
-                { text: "架构地图", link: "/dev/concepts/" },
-                { text: "系统全景", link: "/dev/concepts/overview" },
-              ],
-            },
-            {
-              text: "业务域模型",
-              items: [
-                { text: "项目模块", link: "/dev/concepts/project-module" },
-                { text: "批次模块", link: "/dev/concepts/batch-module" },
-                { text: "任务模块", link: "/dev/concepts/task-module" },
-                { text: "标注模块", link: "/dev/concepts/annotation-module" },
-                { text: "视频标注工作台", link: "/dev/concepts/video-annotation-workbench" },
-                { text: "Scene 与帧索引", link: "/dev/concepts/scene-and-frame-index" },
-                { text: "审核模块", link: "/dev/concepts/review-module" },
-              ],
-            },
-            {
-              text: "工作流与协作机制",
-              items: [
-                { text: "状态机总览", link: "/dev/concepts/state-machines" },
-                { text: "Scheduler 与派题", link: "/dev/concepts/scheduler-and-task-dispatch" },
-                { text: "Task Lock", link: "/dev/concepts/task-locking" },
-                { text: "可见性与权限", link: "/dev/concepts/visibility-and-permissions" },
-                { text: "计数与派生字段", link: "/dev/concepts/counters-and-derived-fields" },
-                { text: "审计与通知", link: "/dev/concepts/audit-and-notifications" },
-                { text: "反馈收敛与双写对账", link: "/dev/concepts/feedback-convergence" },
-              ],
-            },
-            {
-              text: "端到端业务流程",
-              items: [
-                { text: "批次生命周期（端到端）", link: "/dev/concepts/batch-lifecycle-end-to-end" },
-                { text: "AI 预标注接管", link: "/dev/concepts/ai-preannotate-handoff" },
-                { text: "数据流", link: "/dev/concepts/data-flow" },
-                { text: "存储连接器", link: "/dev/concepts/storage-connections" },
-              ],
-            },
-            {
-              text: "AI 与推理子系统",
-              items: [
-                { text: "预标注流水线", link: "/dev/concepts/prediction-pipeline" },
-                { text: "视频 AI 追踪", link: "/dev/concepts/video-ai-tracking" },
-                { text: "AI 模型集成", link: "/dev/concepts/ai-models" },
-              ],
-            },
-            {
-              text: "平台实现架构",
-              items: [
-                { text: "后端分层", link: "/dev/concepts/backend-layers" },
-                { text: "前端分层", link: "/dev/concepts/frontend-layers" },
-                { text: "工作台 Shell 架构", link: "/dev/concepts/workbench-shell" },
-                { text: "API Schema 边界", link: "/dev/concepts/api-schema-boundary" },
-                { text: "后端基础设施（容器）", link: "/dev/concepts/backend-infrastructure" },
-                { text: "部署拓扑", link: "/dev/concepts/deployment-topology" },
-                { text: "运行环境形态（dev/staging/prod）", link: "/dev/concepts/runtime-environments" },
-                { text: "性能 HUD", link: "/dev/concepts/perfhud" },
-              ],
-            },
-          ],
-        },
-        {
-          text: "How-to",
-          items: [
-            { text: "新增 API 端点", link: "/dev/how-to/add-api-endpoint" },
-            { text: "新增前端页面", link: "/dev/how-to/add-page" },
-            { text: "Alembic 迁移", link: "/dev/how-to/add-migration" },
-            { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
-            { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
-            { text: "更新截图", link: "/dev/how-to/update-screenshots" },
-            { text: "迁移内联样式到 CSS Modules", link: "/dev/how-to/migrate-inline-style-to-css-modules" },
-            { text: "视频工作台性能回归", link: "/dev/how-to/video-workbench-performance-regression" },
-          ],
-        },
-        {
-          text: "SDK 与 CLI",
-          collapsed: true,
-          items: [
-            { text: "快速上手", link: "/dev/sdk/quickstart" },
-            { text: "Python SDK 参考", link: "/dev/sdk/python-client" },
-            { text: "CLI 参考", link: "/dev/sdk/cli" },
-            { text: "TUI 监控面板", link: "/dev/sdk/tui" },
-            { text: "Cookbook", link: "/dev/sdk/cookbook" },
-          ],
-        },
-        {
-          text: "协议与规范",
-          collapsed: true,
-          items: [
-            { text: "ML Backend 协议", link: "/dev/reference/ml-backend-protocol" },
-            { text: "ML Backend 接入教程", link: "/dev/ml-backend/starter" },
-            { text: "YOLO 导入适配", link: "/dev/reference/yolo-import" },
-            { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
-            { text: "视频帧服务", link: "/dev/reference/video-frame-service" },
-            { text: "点云联合标注数据模型", link: "/dev/reference/point-cloud-data-model" },
-            { text: "点云导出格式", link: "/dev/reference/lidar-export-formats" },
-            { text: "Data Manager 查询与聚合", link: "/dev/reference/data-manager-query" },
-            { text: "设计系统", link: "/dev/reference/design-system" },
-            { text: "代码规范", link: "/dev/reference/conventions" },
-            { text: "图标约定", link: "/dev/reference/icon-conventions" },
-            { text: "环境变量", link: "/dev/reference/env-vars" },
-            { text: "存储桶布局", link: "/dev/reference/storage-buckets" },
-            { text: "连接器安全", link: "/dev/reference/connector-security" },
-            { text: "内部 API 端点", link: "/dev/reference/internal-api-endpoints" },
-          ],
-        },
-        {
-          text: "故障排查",
-          collapsed: true,
-          items: [
-            { text: "总览与速查表", link: "/dev/troubleshooting/" },
-            { text: "Docker rebuild vs restart", link: "/dev/troubleshooting/docker-rebuild-vs-restart" },
-            { text: "容器网络与 loopback", link: "/dev/troubleshooting/container-networking" },
-            { text: "Prediction Schema 适配器", link: "/dev/troubleshooting/schema-adapter-pitfalls" },
-            { text: "Dev 数据保护", link: "/dev/troubleshooting/dev-data-preservation" },
-            { text: "React useState TDZ", link: "/dev/troubleshooting/react-tdz-trap" },
-            { text: "环境变量与 config 路径", link: "/dev/troubleshooting/env-and-config-paths" },
-            { text: "CI 服务依赖踩坑", link: "/dev/troubleshooting/ci-flaky-services" },
-          ],
-        },
-        {
-          text: "ADR（架构决策）",
-          collapsed: true,
-          items: adrSidebarItems,
-        },
-      ],
-
-      "/ops/": [
-        {
-          text: "部署与运维",
-          items: [
-            { text: "概览", link: "/ops/" },
-            { text: "升级指南", link: "/ops/upgrade-guide" },
-          ],
-        },
-        {
-          text: "部署",
-          items: [
-            { text: "部署总览", link: "/ops/deploy/" },
-            { text: "开发部署（本地）", link: "/ops/deploy/development" },
-            { text: "生产部署（Docker Compose）", link: "/ops/deploy/docker-compose" },
-            { text: "端口暴露与网络安全", link: "/ops/deploy/network-security" },
-          ],
-        },
-        {
-          text: "可观测性",
-          items: [
-            { text: "监控与告警", link: "/ops/observability/" },
-          ],
-        },
-        {
-          text: "安全",
-          items: [
-            { text: "安全模型", link: "/ops/security/" },
-          ],
-        },
-        {
-          text: "Runbooks",
-          collapsed: true,
-          items: [
-            { text: "Celery Worker 卡死", link: "/ops/runbooks/celery-worker-stuck" },
-            { text: "ML Backend 不可用", link: "/ops/runbooks/ml-backend-down" },
-            { text: "视频帧服务", link: "/ops/runbooks/video-frame-service" },
-            { text: "PG 连接池耗尽", link: "/ops/runbooks/postgres-connection-pool-exhausted" },
-          ],
-        },
-      ],
-
+      "/user-guide/": userGuideSidebar,
+      "/dev/": createDevSidebar(adrSidebarItems),
+      "/ops/": opsSidebar,
       "/changelog/": changelogSidebarItems,
       "/roadmap/": roadmapSidebarItems,
-
-      "/api/": [
-        { text: "API 总览", link: "/api/" },
-        {
-          text: "指南",
-          items: [
-            { text: "认证", link: "/api/guides/auth" },
-            { text: "项目", link: "/api/guides/projects" },
-            { text: "任务与标注", link: "/api/guides/tasks-and-annotations" },
-            { text: "Predictions / Jobs", link: "/api/guides/predictions" },
-            { text: "异步任务", link: "/api/guides/async-jobs" },
-            { text: "Video Tracker Jobs", link: "/api/guides/video-tracker-jobs" },
-            { text: "ML Backend", link: "/api/guides/ml-backend" },
-            { text: "预测导入", link: "/api/guides/import" },
-            { text: "WebSocket", link: "/api/guides/websocket" },
-            { text: "导出", link: "/api/guides/export" },
-            { text: "存储连接器", link: "/api/guides/storage-connections" },
-            { text: "路由索引（自动生成）", link: "/api/guides/_routes.generated" },
-          ],
-        },
-      ],
+      "/api/": apiSidebar,
     },
 
     socialLinks: [
@@ -475,8 +129,24 @@ export default withMermaid(defineConfig({
     },
 
     editLink: {
-      pattern:
-        "https://github.com/yyq19990828/ai-annotation-platform/edit/main/docs-site/:path",
+      // VitePress serializes this callback into the client bundle, so keep it
+      // self-contained instead of closing over helpers from config.ts.
+      pattern: ({ filePath }) => {
+        let sourcePath = `docs-site/${filePath}`;
+        if (filePath === "changelog/index.md") sourcePath = "CHANGELOG.md";
+        else if (filePath.startsWith("changelog/")) {
+          sourcePath = `docs/changelogs/${filePath.slice("changelog/".length)}`;
+        } else if (filePath === "roadmap/index.md") sourcePath = "ROADMAP.md";
+        else if (filePath.startsWith("roadmap/archived-")) {
+          sourcePath = `ROADMAP/archive/${filePath.slice("roadmap/archived-".length)}`;
+        } else if (filePath.startsWith("roadmap/")) {
+          sourcePath = `ROADMAP/${filePath.slice("roadmap/".length)}`;
+        } else if (filePath === "dev/adr/index.md") sourcePath = "docs/adr/README.md";
+        else if (filePath.startsWith("dev/adr/")) {
+          sourcePath = `docs/adr/${filePath.slice("dev/adr/".length)}`;
+        }
+        return `https://github.com/yyq19990828/ai-annotation-platform/edit/main/${sourcePath}`;
+      },
       text: "在 GitHub 编辑此页",
     },
   },

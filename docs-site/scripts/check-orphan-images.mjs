@@ -4,9 +4,10 @@
  *
  * 与 check-image-manifest.mjs **反向**：那个查「文档引用的图是否产出」，这个查
  * 「产出的图是否被文档引用」。扫描 docs-site/user-guide/images/ 下所有图片文件，
- * 找出**没有任何 Markdown 页面 `![]()` / <img> 引用**的孤儿图（产出了却忘记回填）。
+ * 找出**没有任何 Markdown 页面 `![]()` / <img> 引用**的孤儿图（产出了却忘记回填），
+ * 并按文件内容 hash 检查由不同路径保存的重复图片。
  *
- * 背景：截图/GIF 自动落到 images/ 并登记 IMAGE_CHECKLIST，但嵌入文档页是独立一步，
+ * 背景：截图/GIF 自动落到 images/ 并登记 maintainers/image-checklist.md，但嵌入文档页是独立一步，
  * 容易漏。漏了就成孤儿资源——本检查在 CI 拦住它。
  *
  * 用法：
@@ -17,6 +18,7 @@
  */
 import fs from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,12 +29,15 @@ const IMAGES_ROOT = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const strict = process.argv.includes("--strict");
 const json   = process.argv.includes("--json");
 
-// 有意保留、暂不嵌入文档的图片（相对 IMAGES_ROOT，正斜杠）。需要时在此登记豁免。
-// 基线已归零：引入本检查时的 20 张存量孤儿已全部回填到对应 user-guide 页面。
-// ai-tool-drawer 是已被顶部交互工具栏取代的历史截图，仅保留作视觉回归基线，不能再嵌入用户指南。
-const IGNORE = new Set(["sam/ai-tool-drawer.png"]);
-
 const IMG_EXT = /\.(png|gif|jpe?g|webp|svg)$/i;
+
+// 仅允许路径集合完全一致的已知重复组；新增豁免必须写清不同语义和清理条件。
+const DUPLICATE_ALLOWLIST = new Map([
+  [
+    ["polygon/close-hint.png", "polygon/vertex-edit.png"].join("\n"),
+    "两个场景分别表达闭合提示和顶点编辑；当前截图尚未捕获交互差异，待重拍后移除此豁免。",
+  ],
+]);
 
 // ── 收集 images/ 下所有图片文件（绝对路径）─────────────────────────
 function* walk(dir, test) {
@@ -46,6 +51,28 @@ function* walk(dir, test) {
 
 const imageFiles = [...walk(IMAGES_ROOT, (n) => IMG_EXT.test(n))];
 const imageFileSet = new Set(imageFiles);
+
+// ── 重复内容：不同路径的图片文件具有相同 SHA-256 ──────────────────
+const filesByHash = new Map();
+for (const abs of imageFiles) {
+  const hash = createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
+  const rel = path.relative(IMAGES_ROOT, abs).replace(/\\/g, "/");
+  const group = filesByHash.get(hash) ?? [];
+  group.push(rel);
+  filesByHash.set(hash, group);
+}
+
+const duplicateGroups = [];
+const allowedDuplicateGroups = [];
+for (const [hash, files] of filesByHash) {
+  if (files.length < 2) continue;
+  files.sort();
+  const reason = DUPLICATE_ALLOWLIST.get(files.join("\n"));
+  const group = { hash, files, ...(reason ? { reason } : {}) };
+  (reason ? allowedDuplicateGroups : duplicateGroups).push(group);
+}
+duplicateGroups.sort((a, b) => a.files[0].localeCompare(b.files[0]));
+allowedDuplicateGroups.sort((a, b) => a.files[0].localeCompare(b.files[0]));
 
 // ── 收集所有 Markdown 引用并解析为绝对路径（记来源 md）──────────────
 const referenced = new Map(); // 绝对路径 → 来源 md（相对仓库根）
@@ -68,7 +95,6 @@ for (const mdPath of walk(DOCS_ROOT, (n) => n.endsWith(".md"))) {
 // ── 孤儿：磁盘有图但无任何文档引用 ────────────────────────────────
 const orphans = imageFiles
   .map((abs) => path.relative(IMAGES_ROOT, abs).replace(/\\/g, "/"))
-  .filter((rel) => !IGNORE.has(rel))
   .filter((rel) => !referenced.has(path.join(IMAGES_ROOT, rel)))
   .sort();
 
@@ -80,15 +106,21 @@ const brokenGifRefs = [...referenced.entries()]
   .map(([abs, md]) => ({ rel: path.relative(IMAGES_ROOT, abs).replace(/\\/g, "/"), md }))
   .sort((a, b) => a.rel.localeCompare(b.rel));
 
-const failed = orphans.length + brokenGifRefs.length;
+const failed = orphans.length + brokenGifRefs.length + duplicateGroups.length;
 
 if (json) {
-  console.log(JSON.stringify({ total: imageFiles.length, orphans, brokenGifRefs }, null, 2));
+  console.log(JSON.stringify({
+    total: imageFiles.length,
+    orphans,
+    brokenGifRefs,
+    duplicateGroups,
+    allowedDuplicateGroups,
+  }, null, 2));
   process.exit(strict && failed > 0 ? 1 : 0);
 }
 
 // ── 人类可读输出 ─────────────────────────────────────────────────
-console.log(`\n孤儿图检查 — images/ 下 ${imageFiles.length} 张图\n${"─".repeat(64)}`);
+console.log(`\n图片资源检查 — images/ 下 ${imageFiles.length} 张图\n${"─".repeat(64)}`);
 if (orphans.length === 0) {
   console.log("✓  全部图片都已被文档页面引用，无孤儿。");
 } else {
@@ -101,6 +133,21 @@ if (brokenGifRefs.length > 0) {
     console.log(`✗  失链 GIF(引用但文件不存在): images/${rel}`);
     console.log(`   引用自：${md} → 跑 pnpm screenshots:flows 录制，或修正引用路径。`);
   }
+}
+if (duplicateGroups.length > 0) {
+  for (const { hash, files } of duplicateGroups) {
+    console.log(`✗  重复内容(SHA-256 ${hash.slice(0, 12)}…):`);
+    for (const rel of files) console.log(`   images/${rel}`);
+  }
+  console.log(`   发现 ${duplicateGroups.length} 组未豁免的重复图片。`);
+  console.log("   → 让文档复用同一个 canonical 图片并删除副本，或修正尚未捕获语义差异的截图。");
+} else {
+  console.log("✓  未发现未豁免的重复图片。");
+}
+for (const { hash, files, reason } of allowedDuplicateGroups) {
+  const paths = files.map((rel) => `images/${rel}`).join(" ↔ ");
+  console.log(`○  已知重复(SHA-256 ${hash.slice(0, 12)}…): ${paths}`);
+  console.log(`   理由：${reason}`);
 }
 console.log("");
 

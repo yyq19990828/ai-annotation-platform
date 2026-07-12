@@ -7,6 +7,8 @@
  *
  * 行为：
  *   - 从 manifest.json 读取该图片的元数据
+ *   - 相对 src 与仓库路径 src 都映射到站点的 /user-guide/images/ 目录
+ *   - 绝对路径与 http(s) URL 保持原样
  *   - auto:true  → 显示「自动产出」badge + 最后更新日期 + scene 源码链接
  *   - auto:false → 显示「手动维护」badge
  *   - 不在 manifest → 普通 <img>（无 badge）
@@ -42,11 +44,15 @@ const props = defineProps<{
   caption?: string;
 }>();
 
-// 标准化 key：src 可能是 "bbox/toolbar.png"，manifest key 是完整路径
+const REPO_IMAGE_PREFIX = "docs-site/user-guide/images/";
+const PUBLIC_IMAGE_PREFIX = "/user-guide/images/";
+
+// 标准化 key：src 可能是相对图片路径、站点绝对路径或仓库完整路径
 const manifestKey = computed(() => {
   const s = props.src;
   if (s.startsWith("docs-site/")) return s;
-  return `docs-site/user-guide/images/${s}`;
+  if (s.startsWith(PUBLIC_IMAGE_PREFIX)) return `docs-site${s}`;
+  return `${REPO_IMAGE_PREFIX}${s}`;
 });
 
 const entry = computed(() => manifest[manifestKey.value]);
@@ -56,13 +62,15 @@ const lastRunDate = computed(() => {
   return r ? r.slice(0, 10) : null;
 });
 
-// 图片实际路径（相对于文档站 /images/...）
+// 图片实际路径：仓库路径和相对路径都归一到站点的 /user-guide/images/ 目录
 const imgSrc = computed(() => {
   const s = props.src;
-  // 已经是 /images/ 开头或 http
+  // 绝对站点路径和远端 URL 保持原样
   if (s.startsWith("/") || s.startsWith("http")) return s;
-  // 去掉 docs-site/user-guide/images/ 前缀（VitePress public 目录）
-  return s.replace(/^docs-site\/user-guide\/images\//, "/images/");
+  if (s.startsWith(REPO_IMAGE_PREFIX)) {
+    return `${PUBLIC_IMAGE_PREFIX}${s.slice(REPO_IMAGE_PREFIX.length)}`;
+  }
+  return `${PUBLIC_IMAGE_PREFIX}${s}`;
 });
 </script>
 

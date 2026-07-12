@@ -132,7 +132,6 @@
         "docs-site/api/guides/export.md",
         "docs-site/ops/upgrade-guide.md",
         "apps/api/openapi.snapshot.json",
-        "docs-site/api/openapi.json",
         "CHANGELOG.md",
         "ROADMAP/"
       ]

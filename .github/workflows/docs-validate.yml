@@ -8,6 +8,8 @@ on:
       - "apps/api/openapi.snapshot.json"
       - "apps/web/e2e/screenshots/**"
       - "CHANGELOG.md"
+      - "ROADMAP.md"
+      - "ROADMAP/**"
       - "scripts/check-dead-links.mjs"
       - ".github/workflows/docs-validate.yml"
       # 生成文档的真值来源:改了它们但忘了重新生成,本工作流的 check:codegen 拦住
@@ -22,6 +24,8 @@ on:
       - "apps/api/openapi.snapshot.json"
       - "apps/web/e2e/screenshots/**"
       - "CHANGELOG.md"
+      - "ROADMAP.md"
+      - "ROADMAP/**"
       - "scripts/check-dead-links.mjs"
       - "apps/web/src/pages/Workbench/state/hotkeys.ts"
       - "apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts"

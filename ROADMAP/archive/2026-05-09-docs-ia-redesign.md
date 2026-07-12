@@ -324,4 +324,4 @@ VitePress 主题在 sidebar / 搜索结果旁渲染 audience badge；CI 校验 `
 - Roboflow Docs：https://docs.roboflow.com/
 - Encord Docs：https://docs.encord.com/
 - VitePress rewrites / sidebar：https://vitepress.dev/reference/site-config
-- 内部参考：CLAUDE.md 文档索引、[docs-site/.vitepress/config.ts](../docs-site/.vitepress/config.ts)、[ROADMAP/[archived]0.10.x.md](./[archived]0.10.x.md)
+- 内部参考：CLAUDE.md 文档索引、[docs-site/.vitepress/config.ts](../../docs-site/.vitepress/config.ts)、[ROADMAP/archive/0.10.x.md](./0.10.x.md)
