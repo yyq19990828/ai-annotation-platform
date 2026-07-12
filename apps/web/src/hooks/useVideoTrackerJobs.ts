@@ -48,6 +48,10 @@ export class TrackerJobStore {
   // 当前工作台聚焦的 task。切任务时用它把不属于当前 task 的 job/candidate/socket/timer
   // 清掉 (见 scopeToTask), 并作为异步恢复的护栏 (恢复回来发现已切走就丢弃)。
   private currentTaskId: string | null = null;
+  // restoreReviewable 已成功拉取过 reviewable/active 数据的 task id。切任务时清空 (见
+  // restoreReviewable 顶部); 同一 task 内重复调用 (例如 token 从 null 变为有值后 effect 重跑)
+  // 靠它跳过重复拉数据, 只补连尚未连接的 socket。
+  private hydratedTaskId: string | null = null;
   private invalidateAnnotations: (taskId: string) => void = () => {};
 
   setAnnotationInvalidator(fn: (taskId: string) => void): void {
@@ -93,11 +97,23 @@ export class TrackerJobStore {
     if (this.currentTaskId !== taskId) {
       this.currentTaskId = taskId;
       this.scopeToTask(taskId);
+      this.hydratedTaskId = null;
     }
     const pending = this.hydrationTasks.get(taskId);
-    if (pending) return pending;
+    if (pending) {
+      // 拉取仍在飞行中: 待其结束后再补连 (届时 token 若已就绪, connectActiveJobs 是幂等的)。
+      if (token) void pending.then(() => this.connectActiveJobs(taskId, token));
+      return pending;
+    }
+    if (this.hydratedTaskId === taskId) {
+      // 本 task 已经拉取过一轮: 只是 token 从 null 变为有值 (如刷新后 auth store 延迟 hydrate)。
+      // 不重新拉数据 (避免抖动), 只对 jobs 里仍是 queued/running 但还没连上 socket 的补连。
+      if (token) this.connectActiveJobs(taskId, token);
+      return Promise.resolve();
+    }
     const hydration = this.loadReviewable(taskId, token).finally(() => {
       this.hydrationTasks.delete(taskId);
+      if (this.currentTaskId === taskId) this.hydratedTaskId = taskId;
     });
     this.hydrationTasks.set(taskId, hydration);
     return hydration;
@@ -216,6 +232,15 @@ export class TrackerJobStore {
     };
   }
 
+  /** 对 taskId 下仍是 queued/running 的 job 补连 socket; connect() 内部按 jobId 判重, 已连的会跳过。 */
+  private connectActiveJobs(taskId: string, token: string): void {
+    for (const job of Object.values(this.jobs)) {
+      if (job.taskId === taskId && (job.status === "queued" || job.status === "running")) {
+        this.connect(job.jobId, token);
+      }
+    }
+  }
+
   private handleMessage(jobId: string, evt: MessageEvent): void {
     let payload:
       | {
@@ -271,12 +296,16 @@ export class TrackerJobStore {
 
   /** 拉候选预览; 有暂存结果则进候选态 (等用户接受/丢弃), 无结果直接清理。 */
   private async enterReview(jobId: string): Promise<void> {
+    const jobTaskId = this.jobs[jobId]?.taskId;
     try {
       const preview = await videoTrackerApi.preview(jobId);
       if (!preview.results || preview.results.length === 0) {
         this.scheduleTerminalCleanup(jobId);
         return;
       }
+      // 护栏: preview 请求飞行中用户已切走 task (scopeToTask 会把该 job 从 jobs 里剔除) →
+      // 丢弃这次写入, 避免孤儿候选挂到新任务上。
+      if (this.currentTaskId !== jobTaskId) return;
       this.candidates = { ...this.candidates, [jobId]: preview };
       this.emit();
     } catch {
@@ -455,9 +484,11 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   tokenRef.current = token;
 
   useEffect(() => {
-    // 传 token 让恢复顺带重连运行中任务的 WS (刷新后仍能收进度 / 完成时冒候选)。
-    if (taskId && enabled) void trackerStore.restoreReviewable(taskId, tokenRef.current);
-  }, [taskId, enabled]);
+    // 传 token 让恢复顺带重连运行中任务的 WS (刷新后仍能收进度 / 完成时冒候选)。token 进依赖:
+    // 刷新时 auth store 可能还没 hydrate (token=null), effect 先跑一轮拉数据但因无 token 连不上
+    // socket; token 就位后这里重跑, restoreReviewable 内部会跳过重复拉数据、只补连 socket。
+    if (taskId && enabled) void trackerStore.restoreReviewable(taskId, token);
+  }, [taskId, enabled, token]);
 
   const propagate = useCallback(
     async (
