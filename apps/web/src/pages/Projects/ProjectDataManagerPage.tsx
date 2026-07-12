@@ -503,11 +503,16 @@ function TaskDataManagerPage({
     }
   }, [columns, filterFields, keyword, rules, searchParams, selectedKey, selectedTask?.id, setSearchParams, sort]);
 
+  const selectedHydratedRef = useRef(false);
   useEffect(() => {
-    if (!initialUrl.selected || selectedTask || !tasksQ.data?.items.length) return;
+    // 仅在结果首次加载后，从 URL 的 selected 恢复一次匹配抽屉；恢复后不再干预。
+    // 若继续依赖 selectedTask，用户点关闭令其变 null 会被这里立即恢复，导致抽屉关不掉。
+    if (selectedHydratedRef.current || !tasksQ.data?.items.length) return;
+    selectedHydratedRef.current = true;
+    if (!initialUrl.selected) return;
     const restored = tasksQ.data.items.find((task) => task.id === initialUrl.selected);
     if (restored) setSelectedTask(restored);
-  }, [initialUrl.selected, selectedTask, tasksQ.data?.items]);
+  }, [initialUrl.selected, tasksQ.data?.items]);
 
   if (projectLoading) return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
