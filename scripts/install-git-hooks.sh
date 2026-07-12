@@ -24,8 +24,8 @@ if command -v pre-commit >/dev/null 2>&1; then
     echo "✓ pre-commit hooks installed (ruff / eslint / tsc / openapi-snapshot)"
 else
   cat <<'EOF' >&2
-⚠ pre-commit 未安装，建议执行：
-    pip install pre-commit && pre-commit install
+⚠ pre-commit 未安装，建议执行（用 uv tool 独立安装，勿装进项目 venv）：
+    uv tool install pre-commit && pre-commit install
   否则修改 apps/api/app/api 或 schemas 时需要手动跑：
     pnpm openapi:export
 EOF
