@@ -91,8 +91,14 @@ async def _make_project_and_task(db_session, super_admin) -> Task:
 
 
 async def _reload(db_session, ann_id) -> Annotation:
-    db_session.expire_all()
-    result = await db_session.execute(select(Annotation).where(Annotation.id == ann_id))
+    # populate_existing 强制用本次 SELECT 的新鲜行覆盖 identity-map 里的旧副本（0118
+    # 通过 run_sync 原始 SQL 在同一事务里改了 track_id/geometry），且不把对象留在过期
+    # 态——避免之后同步读属性触发懒加载、在 async 同步桥接上下文里做 IO 抛 MissingGreenlet。
+    result = await db_session.execute(
+        select(Annotation)
+        .where(Annotation.id == ann_id)
+        .execution_options(populate_existing=True)
+    )
     return result.scalar_one()
 
 
