@@ -886,19 +886,31 @@ export function useWorkbenchShellModel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsData, currentTaskId, setSelectedId]);
 
+  // Data Manager 带 ?focus=/?track=/?frame= 深链进入工作台时一次性生效;成功 hydrate 后置位,
+  // 避免之后每次 annotation refetch(annotationsData 引用变化)重跑下方 effect 把用户已改选的
+  // 帧/标注强行拉回 URL 值。
+  const urlFocusHydratedRef = useRef(false);
+
   useEffect(() => {
+    if (urlFocusHydratedRef.current) return;
     if (!taskId || (requestedTaskId && taskId !== requestedTaskId)) return;
     if (isVideoTask && requestedFrameIndex !== null) {
       const maxFrame = Math.max(0, videoFrameCount - 1);
       setVideoFrameIndex(Math.min(requestedFrameIndex, maxFrame));
     }
-    if (!requestedFocusId && !requestedTrackId) return;
+    if (!requestedFocusId && !requestedTrackId) {
+      urlFocusHydratedRef.current = true;
+      return;
+    }
     const target = (annotationsData ?? []).find(
       (annotation) =>
         annotation.id === requestedFocusId
         || (requestedTrackId && annotation.track_id === requestedTrackId),
     );
-    if (target) setSelectedId(target.id);
+    if (target) {
+      setSelectedId(target.id);
+      urlFocusHydratedRef.current = true;
+    }
   }, [
     annotationsData,
     isVideoTask,

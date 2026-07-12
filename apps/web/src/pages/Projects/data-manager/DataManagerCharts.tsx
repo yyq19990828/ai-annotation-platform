@@ -109,7 +109,7 @@ export function DataManagerCharts({
   isLoading?: boolean;
   onSelect?: (field: string, value: string) => void;
 }) {
-  useTheme();
+  const { resolved: themeResolved } = useTheme();
   const muted = cssVar("--sc-muted-foreground");
   const rankColor = cssVar("--sc-chart-1");
   const statusColors = useMemo<Record<string, string>>(
@@ -117,9 +117,8 @@ export function DataManagerCharts({
       Object.fromEntries(
         Object.entries(STATUS_COLOR_VARS).map(([key, varName]) => [key, cssVar(varName)]),
       ),
-    // 主题切换由 useTheme() 触发重渲染，颜色随之重新计算
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    // 主题切换（themeResolved 变化）触发重渲染时随之重新计算
+    [themeResolved],
   );
   const tooltipStyle = useMemo<CSSProperties>(
     () => ({
