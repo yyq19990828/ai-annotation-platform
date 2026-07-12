@@ -12,7 +12,7 @@
 
 ### 计划中
 
-- **多几何 track 剩余切片**：`export_video.py` 的 COCO-seg 导出；真·mask 栅格 track + DAVIS 导出（平台**零占位**，需从头建并单独立项）；**polyline 轨迹的 AI 传播回填**（当前明确 400 拒绝，见 §A [#56](https://github.com/yyq19990828/ai-annotation-platform/issues/56)）。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
+- **[多几何 track 剩余切片](docs/plans/2026-07-12-multi-geometry-track-remaining-slices.md)**：[`v0.21.31`](docs/plans/2026-07-12-v0.21.31-yolo-frames-seg-ui-reachability.md) 补 `yolo-frames-seg` UI 可达；[`v0.21.33`](docs/plans/2026-07-12-v0.21.33-coco-frames-seg.md) 在明确消费方后新增 COCO；[`v0.22.0`](docs/plans/2026-07-12-v0.22.0-raster-mask-track-davis.md) 独立建设真·栅格 mask track + DAVIS。polyline AI 因无通用原生模型、启发式中心线价值不足已[取消](docs/plans/2026-07-12-v0.21.32-polyline-track-ai-propagation.md)，继续保留 400 安全拒绝，不再列为待办。历史母计划见 [v0.21.20](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
 - **视频单帧工具暂停项**：keypoint / rotated-box（OBB）/ mask 笔刷的绘制交互尚未实现，其中 OBB 还需旋转手柄。因使用少、反馈少，保持暂停，等明确需求触发；计划归档见 [`v0.21.22`](docs/plans/archive/2026-07-07-v0.21.22-video-single-frame-keypoint-obb-mask.md)。
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
@@ -78,10 +78,6 @@
 - **编排源扩展：crops 源（方向 B）与 scene 源（方向 C）**（**P3**，各自触发）：**输入节点终态已落地**——v0.21.5/v0.21.6 把编排输入节点收敛为深度 0 的纯数据源（`source:{data_type,execution_unit}`，不配模型、不入后端 stage），源检测/追踪模型下沉为其子阶段；v0.21.7 又让 `execution_unit=frame`（视频逐帧检测，图像 backend 逐帧跑落 `VideoBboxGeometry`）落地。「输入 vs 第一模型」的解耦、「执行单位」作为输入节点字段的骨架都已成型，剩两种非平凡源仍待接入这套骨架：
   - **方向 B · 矩形标注框（crops）作为源**：以项目里已有的矩形标注为父框来源、**第一个算子不是模型**（零推理）。输入节点已是纯数据源，故只需让其 payload 表达「无模型输入」（无 `ml_backend_id`/`model_id`，换 `source: {kind:"annotations", annotation_type:"rectangle"}`），backend 源阶段增「读已有标注而非调 backend」分支。**触发**：crops 源诉求出现（rule-of-three：客户明确要「用已有框跑下游」）。不要退而在模型节点上挂「源种类下拉」（那是把已解耦的东西糊回去）。
   - **方向 C · 图片序列（scene 抽帧）作为源**：打破 pipeline per-task 独立执行、逼执行单位从 task/frame 再升到 **scene**（跨帧聚合），是执行单位维度**最贵的一块**。`execution_unit` 字段与 frame 单位已就位（v0.21.7），scene 是其上待补的值。**触发**：scene 跨帧聚合标注单独立项（计划已判「最贵、单独立项」）。
-
-### polyline 轨迹追踪回填链路（源自 PR #51 审查，[#56](https://github.com/yyq19990828/ai-annotation-platform/issues/56)）
-
-- **polyline 轨迹追踪回填链路（P2，当前是「拒绝」不是「支持」）**：`reject polyline track propagation` 只做了短期止血——`video_tracker_runner.py` 的 `_coerce_video_track_geometry` 只认 `video_track_polygon` / `video_track_bbox`，polyline 原本会命中 bbox fallback 被压成 `{x:0,y:0,w:0,h:0}` 空框、`annotation_type` 被改写、原关键帧全丢，故 `video_tracker_job_service.py` 在 propagate 入口改为明确 400 拒绝。**中期仍需实现**：让 polyline 走真实追踪链路（`output_geometry` 传 `"polyline"`、SAM2 mask → 折线的骨架化 / 中心线提取，或退而用顶点集直接传播）。注意 API 侧**不做矢量化**——`video_tracker_runner.py` 只下发 `output_geometry` 让 backend 保留矢量输出，故本项真实工作量在 backend 镜像内。用户现在能画 polyline 轨迹、能按弧长插值、能导出，唯独**不能用 AI 传播**，是多几何 track 能力矩阵上唯一的洞。见 [v0.21.20 计划](docs/plans/2026-07-05-v0.21.20-multi-geometry-track.md)。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -168,7 +164,6 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台剩余路线 | AAP JSON `video_track` 导入、segment 导出聚合、长视频协同 / overlap 与 Track 级质量评估；详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | polyline 轨迹追踪回填链路（[#56](https://github.com/yyq19990828/ai-annotation-platform/issues/56)） | v0.21.24 只做了 400 拒绝止血；polyline 能画 / 能插值 / 能导出，唯独不能 AI 传播 —— 多几何 track 能力矩阵唯一的洞。真实工作量在 backend 镜像内（API 侧不做矢量化），需 >8GB 显存回归 | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) |
 | **P2** | 图片工作台能力扩展剩余（I1 / I21） | 大图 tile、快捷键自定义；详见 §C.7 | [0004](docs/adr/archive/0004-canvas-stack-konva.md) [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md) |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/archive/0013-mask-to-polygon-server-side.md) |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
