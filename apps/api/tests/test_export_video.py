@@ -345,7 +345,14 @@ def test_coco_frames_seg_empty_frames_keep_image_records():
 
 
 def test_coco_frames_seg_skips_bbox_and_polyline():
-    bbox = {"type": "video_bbox", "frame_index": 0, "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    bbox = {
+        "type": "video_bbox",
+        "frame_index": 0,
+        "x": 0.1,
+        "y": 0.1,
+        "w": 0.2,
+        "h": 0.2,
+    }
     polyline = {
         "type": "video_polyline",
         "frame_index": 0,
@@ -479,13 +486,19 @@ def test_coco_frames_seg_deterministic_and_unique_ids_across_sequences():
             "img_h": 100,
         },
     ]
-    doc1 = build_coco_frames_seg(seqs, {"car": 0}, frame_start_number=1, include_attributes=True)
-    doc2 = build_coco_frames_seg(seqs, {"car": 0}, frame_start_number=1, include_attributes=True)
+    doc1 = build_coco_frames_seg(
+        seqs, {"car": 0}, frame_start_number=1, include_attributes=True
+    )
+    doc2 = build_coco_frames_seg(
+        seqs, {"car": 0}, frame_start_number=1, include_attributes=True
+    )
     # 相同输入 → 字节稳定（cache 友好 + 下游 diff 稳定）。
     assert json.dumps(doc1) == json.dumps(doc2)
     # image / annotation id 从 0 连续自增、全局唯一。
     assert [im["id"] for im in doc1["images"]] == list(range(len(doc1["images"])))
-    assert [a["id"] for a in doc1["annotations"]] == list(range(len(doc1["annotations"])))
+    assert [a["id"] for a in doc1["annotations"]] == list(
+        range(len(doc1["annotations"]))
+    )
     # 两 sequence 同名叶子帧靠 seq 前缀区分，不冲突。
     names = {im["file_name"] for im in doc1["images"]}
     assert "images/a/000001.jpg" in names and "images/b/000001.jpg" in names

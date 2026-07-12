@@ -421,7 +421,13 @@ async def build_export_zip(
         # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
         if project.data_type == "video":
             needs_ann = bool(
-                {"mot", "kitti", "yolo-frames-det", "yolo-frames-seg", "coco-frames-seg"}
+                {
+                    "mot",
+                    "kitti",
+                    "yolo-frames-det",
+                    "yolo-frames-seg",
+                    "coco-frames-seg",
+                }
                 & set(targets)
             )
             chunks = svc.iter_export_chunks(

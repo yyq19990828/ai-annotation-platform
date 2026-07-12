@@ -168,9 +168,7 @@ async def test_unload_allowed_for_super_admin(
     async def _fake_unload(self, registry_id):
         return {"ok": True, "unloaded": True, "loaded": False}
 
-    monkeypatch.setattr(
-        "app.services.ml_backend.MLBackendService.unload", _fake_unload
-    )
+    monkeypatch.setattr("app.services.ml_backend.MLBackendService.unload", _fake_unload)
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -208,9 +206,7 @@ async def test_reload_allowed_for_super_admin(
     ):
         return {"ok": True, "reloaded": True}
 
-    monkeypatch.setattr(
-        "app.services.ml_backend.MLBackendService.reload", _fake_reload
-    )
+    monkeypatch.setattr("app.services.ml_backend.MLBackendService.reload", _fake_reload)
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/reload",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -251,9 +247,7 @@ async def test_warmup_allowed_for_owning_project_admin(
     async def _fake_warmup(self, registry_id, body):
         return {"ok": True, "cache_hit": False}
 
-    monkeypatch.setattr(
-        "app.services.ml_backend.MLBackendService.warmup", _fake_warmup
-    )
+    monkeypatch.setattr("app.services.ml_backend.MLBackendService.warmup", _fake_warmup)
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/warmup",
         json={},

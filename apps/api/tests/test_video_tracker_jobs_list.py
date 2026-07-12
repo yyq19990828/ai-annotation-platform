@@ -396,7 +396,13 @@ async def test_preview_typed_results_roundtrip_rich_shape(
             "results": [
                 {
                     "frame_index": 0,
-                    "geometry": {"type": "bbox", "x": 0.0, "y": 0.0, "w": 5.0, "h": 5.0},
+                    "geometry": {
+                        "type": "bbox",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "w": 5.0,
+                        "h": 5.0,
+                    },
                     "confidence": None,
                     "outside": False,
                     "instance_id": "2",
@@ -405,7 +411,13 @@ async def test_preview_typed_results_roundtrip_rich_shape(
                 # 缺失全部可选键的极简行 (只有 frame_index + geometry): 验证 typed 容错。
                 {
                     "frame_index": 1,
-                    "geometry": {"type": "bbox", "x": 1.0, "y": 0.0, "w": 5.0, "h": 5.0},
+                    "geometry": {
+                        "type": "bbox",
+                        "x": 1.0,
+                        "y": 0.0,
+                        "w": 5.0,
+                        "h": 5.0,
+                    },
                 },
             ],
             "grid_step": 2,

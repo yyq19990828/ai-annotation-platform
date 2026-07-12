@@ -601,7 +601,9 @@ async def test_coco_frames_seg_writes_single_coco_doc(monkeypatch):
     ]
     assert person["bbox"] == [128.0, 72.0, 128.0, 144.0]
     # car track 展开：outside frame2 省略 → 落 image_id 0（frame0）与 2（frame4）。
-    car_imgs = sorted(a["image_id"] for a in doc["annotations"] if a["category_id"] == 0)
+    car_imgs = sorted(
+        a["image_id"] for a in doc["annotations"] if a["category_id"] == 0
+    )
     assert car_imgs == [0, 2]
 
 

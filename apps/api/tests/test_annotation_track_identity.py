@@ -35,8 +35,6 @@ def test_existing_column_is_authoritative_and_identity_change_can_be_rejected():
 
 
 def test_non_track_geometry_passes_through_without_allocating_track_id():
-    geometry, track_id = prepare_compact_track_identity(
-        {"type": "bbox", "x": 1}, None
-    )
+    geometry, track_id = prepare_compact_track_identity({"type": "bbox", "x": 1}, None)
     assert geometry == {"type": "bbox", "x": 1}
     assert track_id is None
