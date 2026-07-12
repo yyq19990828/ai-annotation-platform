@@ -442,14 +442,16 @@ def test_coco_frames_seg_omits_attributes_when_disabled():
     assert "attributes" not in doc["annotations"][0]
 
 
-def test_coco_frames_seg_unknown_class_falls_back_to_zero():
-    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+def test_coco_frames_seg_unknown_class_is_skipped_not_zeroed():
+    """未知/已删除类名的 annotation 整条跳过，不再静默落到 category_id=0（旧类撞车 footgun）。"""
+    known = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    unknown = _single_polygon(0, [[0.3, 0.3], [0.4, 0.3], [0.4, 0.4]])
     doc = build_coco_frames_seg(
         [
             {
                 "seq": "c",
                 "tracks": [],
-                "bboxes": [("ghost", single, {}, None)],
+                "bboxes": [("car", known, {}, None), ("ghost", unknown, {}, None)],
                 "frame_count": 3,
                 "step": 1,
                 "img_w": 100,
@@ -460,7 +462,104 @@ def test_coco_frames_seg_unknown_class_falls_back_to_zero():
         frame_start_number=1,
         include_attributes=True,
     )
+    # 已知类正常导出；未知类（比如项目已删除的类）不落 category_id=0，直接跳过。
+    assert len(doc["annotations"]) == 1
     assert doc["annotations"][0]["category_id"] == 0
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["ghost"]
+
+    from pycocotools.coco import COCO
+
+    coco = COCO()
+    coco.dataset = doc  # type: ignore[attr-defined]
+    coco.createIndex()  # 引用不完整会在此抛 KeyError
+    assert len(coco.getAnnIds()) == 1
+
+
+def test_coco_frames_seg_none_class_name_is_skipped():
+    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [(None, single, {}, None)],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["annotations"] == []
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["(empty)"]
+
+
+def test_coco_frames_seg_unknown_class_track_is_skipped():
+    """track polygon 同款：整条 track 用未知类名时跳过所有帧,不落 category_id=0。"""
+    track = _polygon_track(
+        "trk",
+        [
+            (0, [[0.0, 0.0], [0.2, 0.0], [0.2, 0.2]]),
+            (4, [[0.6, 0.6], [0.8, 0.6], [0.8, 0.8]]),
+        ],
+    )
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [("ghost", track, {}, None)],
+                "bboxes": [],
+                "frame_count": 5,
+                "step": 2,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["annotations"] == []
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["ghost"]
+
+
+def test_coco_frames_seg_empty_classes_list_produces_loadable_coco():
+    """classes_list 为空（cat_map={}）时 polygon 标注全部跳过，不产生指向不存在
+    category 的悬空 category_id=0——此前的组合会让 pycocotools ``createIndex`` KeyError。
+    """
+    single = _single_polygon(0, [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]])
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "c",
+                "tracks": [],
+                "bboxes": [("car", single, {}, None)],
+                "frame_count": 3,
+                "step": 1,
+                "img_w": 100,
+                "img_h": 100,
+            }
+        ],
+        {},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    assert doc["categories"] == []
+    assert doc["annotations"] == []
+    assert doc["info"]["skipped_unknown_class_annotations"] == 1
+    assert doc["info"]["skipped_unknown_class_names"] == ["car"]
+
+    from pycocotools.coco import COCO
+
+    coco = COCO()
+    coco.dataset = doc  # type: ignore[attr-defined]
+    coco.createIndex()  # 此前 categories=[] + category_id=0 组合会在此 KeyError
 
 
 def test_coco_frames_seg_deterministic_and_unique_ids_across_sequences():

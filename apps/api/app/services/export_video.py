@@ -20,8 +20,12 @@ v0.21.20 · polygon/polyline track（关键帧存 ``points``）导出到 bbox-on
 
 from __future__ import annotations
 
+import logging
+
 from app.services.video_frame_service import derive_sampled_frames
 from app.services.video_tracks import resolved_track_frames
+
+logger = logging.getLogger("app.services.export_video")
 
 # 视频导出的几何白名单（唯一真源，export.py / export_packaging.py 共用）。
 #
@@ -354,12 +358,20 @@ def build_coco_frames_seg(
     抽帧结果一一对应。只导多边形（单帧 ``video_polygon`` / 轨迹 ``video_track_polygon``，后者按
     弧长插值展开到每帧）；bbox / polyline / ``points < 3`` 跳过，与图片侧 ``_coco_segmentation``
     一致（折线不是闭合区域，矩形请用 ``yolo-frames-det``）。
+
+    class_name 为空/None，或不在 ``cat_map``（已删除的类）时，该 annotation 整条跳过——不再
+    静默落到 ``category_id=0``（旧类/新类撞车，且 ``classes_list`` 为空时 0 会指向不存在的
+    category，pycocotools ``createIndex`` 直接 KeyError）。跳过计数与类名集合累计进返回的
+    ``info.skipped_unknown_class_annotations`` / ``info.skipped_unknown_class_names``，并各记一条
+    warning 日志。
     """
     images: list[dict] = []
     annotations: list[dict] = []
     image_id_by_key: dict[tuple[str, int], int] = {}
     next_image_id = 0
     next_ann_id = 0
+    skipped_unknown_class = 0
+    skipped_class_names: set[str] = set()
 
     for record in sequences:
         seq = record["seq"]
@@ -393,12 +405,17 @@ def build_coco_frames_seg(
             grid_index = grid.get(int(geometry.get("frame_index", 0)))
             if grid_index is None:
                 continue
+            category_id = cat_map.get(class_name or "")
+            if category_id is None:
+                skipped_unknown_class += 1
+                skipped_class_names.add(class_name or "(empty)")
+                continue
             image_id = image_id_by_key[(seq, grid_index + frame_start_number)]
             annotations.append(
                 _coco_seg_annotation(
                     next_ann_id,
                     image_id,
-                    cat_map.get(class_name or "", 0),
+                    category_id,
                     points,
                     img_w,
                     img_h,
@@ -412,7 +429,11 @@ def build_coco_frames_seg(
         for class_name, geometry, attributes, track_id in record["tracks"]:
             if geometry.get("type") != "video_track_polygon":
                 continue
-            category_id = cat_map.get(class_name or "", 0)
+            category_id = cat_map.get(class_name or "")
+            if category_id is None:
+                skipped_unknown_class += 1
+                skipped_class_names.add(class_name or "(empty)")
+                continue
             for frame in resolved_track_frames(
                 geometry, frame_mode="all_frames", frame_count=frame_count
             ):
@@ -442,8 +463,19 @@ def build_coco_frames_seg(
         {"id": cid, "name": name}
         for name, cid in sorted(cat_map.items(), key=lambda kv: kv[1])
     ]
+    if skipped_unknown_class:
+        logger.warning(
+            "build_coco_frames_seg: skipped %d annotation(s) with unknown/missing "
+            "class (not in cat_map): %s",
+            skipped_unknown_class,
+            sorted(skipped_class_names),
+        )
     return {
-        "info": {"description": description},
+        "info": {
+            "description": description,
+            "skipped_unknown_class_annotations": skipped_unknown_class,
+            "skipped_unknown_class_names": sorted(skipped_class_names),
+        },
         "images": images,
         "annotations": annotations,
         "categories": categories,
