@@ -6,6 +6,7 @@ import { DataManagerCharts } from "./DataManagerCharts";
 interface DataManagerOverviewProps {
   summary: DataManagerSummary | undefined;
   isLoading: boolean;
+  onSelect?: (field: string, value: string) => void;
 }
 
 function metric(value: number | undefined) {
@@ -75,7 +76,15 @@ function Distribution({
   );
 }
 
-function overviewItems(summary: DataManagerSummary | undefined) {
+type OverviewItem = {
+  label: string;
+  value: number | undefined;
+  detail: string;
+  // 有值时该 KPI 可点，下钻为一条 `field op value` 筛选；无 → 纯展示。
+  drill?: { field: string; op: string; value: string };
+};
+
+function overviewItems(summary: DataManagerSummary | undefined): OverviewItem[] {
   return [
     {
       label: "当前匹配",
@@ -91,6 +100,7 @@ function overviewItems(summary: DataManagerSummary | undefined) {
       label: "AI 待审",
       value: (summary?.ai_review.prediction_shapes ?? 0) + (summary?.ai_review.tracker_jobs ?? 0),
       detail: `低置信 ${metric(summary?.ai_review.low_confidence_prediction_shapes)}`,
+      drill: { field: "ai.pending_prediction_shape_count", op: "gt", value: "0" },
     },
     {
       label: "逻辑轨迹",
@@ -101,39 +111,63 @@ function overviewItems(summary: DataManagerSummary | undefined) {
       label: "未解决反馈",
       value: summary?.unresolved_feedback,
       detail: summary?.unresolved_feedback ? "需要处理" : "当前无反馈",
+      drill: { field: "feedback.unresolved_count", op: "gt", value: "0" },
     },
   ];
 }
 
-export function DataManagerSummaryStrip({ summary, isLoading }: DataManagerOverviewProps) {
+export function DataManagerSummaryStrip({
+  summary,
+  isLoading,
+  onDrill,
+}: DataManagerOverviewProps & {
+  onDrill?: (rule: { field: string; op: string; value: string }) => void;
+}) {
   const items = overviewItems(summary);
   return (
     <section
       aria-label="数据概览"
       className="grid shrink-0 grid-cols-5 gap-px overflow-hidden rounded-md border border-border bg-border max-md:flex max-md:overflow-x-auto"
     >
-      {items.map((item) => (
-        <div key={item.label} className="min-w-0 bg-card px-3 py-2 max-md:min-w-36">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-xs text-muted-foreground">{item.label}</span>
-            {isLoading ? (
-              <Skeleton className="h-5 w-10" />
-            ) : (
-              <strong className="font-mono text-base font-semibold tabular-nums text-foreground">
-                {metric(item.value)}
-              </strong>
-            )}
+      {items.map((item) => {
+        const drillable = Boolean(item.drill && onDrill);
+        const inner = (
+          <>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-xs text-muted-foreground">{item.label}</span>
+              {isLoading ? (
+                <Skeleton className="h-5 w-10" />
+              ) : (
+                <strong className="font-mono text-base font-semibold tabular-nums text-foreground">
+                  {metric(item.value)}
+                </strong>
+              )}
+            </div>
+            <div className="mt-0.5 truncate text-2xs text-muted-foreground">
+              {isLoading ? <Skeleton className="h-3 w-full" /> : item.detail}
+            </div>
+          </>
+        );
+        return drillable ? (
+          <button
+            key={item.label}
+            type="button"
+            onClick={() => item.drill && onDrill?.(item.drill)}
+            className="min-w-0 bg-card px-3 py-2 text-left transition-colors hover:bg-muted max-md:min-w-36"
+          >
+            {inner}
+          </button>
+        ) : (
+          <div key={item.label} className="min-w-0 bg-card px-3 py-2 max-md:min-w-36">
+            {inner}
           </div>
-          <div className="mt-0.5 truncate text-2xs text-muted-foreground">
-            {isLoading ? <Skeleton className="h-3 w-full" /> : item.detail}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </section>
   );
 }
 
-export function DataManagerAnalyticsContent({ summary, isLoading }: DataManagerOverviewProps) {
+export function DataManagerAnalyticsContent({ summary, isLoading, onSelect }: DataManagerOverviewProps) {
   return (
     <section aria-label="详细统计" className="flex flex-col gap-4">
       <div>
@@ -141,6 +175,7 @@ export function DataManagerAnalyticsContent({ summary, isLoading }: DataManagerO
           scope="tasks"
           summary={summary}
           isLoading={isLoading}
+          onSelect={onSelect}
         />
       </div>
       <details className="rounded-lg border border-border bg-card" open>

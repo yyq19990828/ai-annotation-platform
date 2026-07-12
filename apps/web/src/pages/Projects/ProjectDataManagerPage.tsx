@@ -32,7 +32,7 @@ import {
   PopoverTrigger,
 } from "@/components/shadcn/ui/popover";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
-import { DataManagerAnalyticsSheet } from "./data-manager/DataManagerAnalyticsSheet";
+import { DataManagerAnalyticsPanel } from "./data-manager/DataManagerAnalyticsPanel";
 import {
   DataManagerFilterBar,
   type DataManagerFilterChip,
@@ -369,6 +369,9 @@ function TaskDataManagerPage({
   const [pendingViewKey, setPendingViewKey] = useState<string | null>(null);
   const [pendingScope, setPendingScope] = useState<DataManagerEntityScope | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(
+    () => typeof window !== "undefined" && localStorage.getItem("dm-analytics-open") === "1",
+  );
   const urlHydratedRef = useRef(false);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
@@ -571,6 +574,13 @@ function TaskDataManagerPage({
     ));
     setRules(index >= 0 ? rules.filter((_, itemIndex) => itemIndex !== index) : [...rules, rule]);
   };
+  const toggleAnalytics = () => {
+    setAnalyticsOpen((value) => {
+      const next = !value;
+      localStorage.setItem("dm-analytics-open", next ? "1" : "0");
+      return next;
+    });
+  };
   const quickFilters: DataManagerQuickFilter[] = [
     {
       key: "low-confidence",
@@ -648,11 +658,9 @@ function TaskDataManagerPage({
             </div>
         </div>
           <div className="flex shrink-0 items-center gap-2">
-            <DataManagerAnalyticsSheet
-              scope="tasks"
-              summary={summaryQ.data}
-              isLoading={summaryQ.isLoading}
-            />
+            <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
+              <Icon name="activity" size={12} />统计
+            </Button>
             <Button
               onClick={() => {
                 tasksQ.refetch();
@@ -669,7 +677,26 @@ function TaskDataManagerPage({
           </div>
       </header>
 
-      <DataManagerSummaryStrip summary={summaryQ.data} isLoading={summaryQ.isLoading} />
+      <DataManagerSummaryStrip
+        summary={summaryQ.data}
+        isLoading={summaryQ.isLoading}
+        onDrill={(rule) => {
+          if (!filterFields.some((item) => item.key === rule.field)) return;
+          toggleQuickRule({ field: rule.field, op: rule.op as TaskFilterOp, value: rule.value });
+        }}
+      />
+
+      {analyticsOpen && (
+        <DataManagerAnalyticsPanel
+          scope="tasks"
+          summary={summaryQ.data}
+          isLoading={summaryQ.isLoading}
+          onSelect={(field, value) => {
+            if (!filterFields.some((item) => item.key === field)) return;
+            toggleQuickRule({ field, op: "eq" as const, value });
+          }}
+        />
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
         <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">

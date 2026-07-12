@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import type { DataManagerEntityFacets, DataManagerSummary } from "@/api/taskViews";
 import { DataManagerCharts } from "./DataManagerCharts";
@@ -57,5 +57,19 @@ describe("DataManagerCharts", () => {
 
     expect(screen.getByRole("img", { name: "待审模型版本：detector-v2 5" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "待审置信度：25–49% 3，75–100% 2" })).toBeInTheDocument();
+  });
+
+  it("clicking a selectable bar emits onSelect(field, key)", () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <DataManagerCharts scope="tracks" facets={facets} onSelect={onSelect} />,
+    );
+
+    const bar = container.querySelector(".recharts-bar-rectangle");
+    expect(bar).not.toBeNull();
+    fireEvent.click(bar!);
+
+    // 轨迹来源图（第一张，可点）→ 点最大的一根柱 manual(7)
+    expect(onSelect).toHaveBeenCalledWith("annotation.source", "manual");
   });
 });

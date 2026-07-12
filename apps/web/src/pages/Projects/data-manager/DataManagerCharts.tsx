@@ -2,7 +2,7 @@ import { useMemo, type CSSProperties } from "react";
 import {
   Bar,
   BarChart,
-  CartesianGrid,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -49,6 +49,16 @@ const CONFIDENCE_BUCKET_LABELS: Record<string, string> = {
   gte_075: "75–100%",
 };
 
+// 任务状态语义色：与列表 Badge 语义呼应（已完成=绿 / 待审核=琥珀 / 已退回=红），
+// 让表格与图表的颜色语言一致。其余分布维度统一用量级色（chart-1），不按图序号轮换。
+const STATUS_COLOR_VARS: Record<string, string> = {
+  pending: "--sc-chart-1",
+  in_progress: "--sc-chart-4",
+  review: "--sc-chart-3",
+  completed: "--sc-chart-2",
+  rejected: "--sc-destructive",
+};
+
 function cssVar(name: string) {
   if (typeof window === "undefined") return "";
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -72,6 +82,14 @@ interface ChartSpec {
   title: string;
   description: string;
   data: Array<{ key: string; name: string; value: number }>;
+  kind?: "status";
+  // 该图对应的可筛选字段 key（来自 schema.filter_fields）；有值时点柱子即加一条 `field eq value` 筛选。
+  // 无对应字段（置信度桶 / 质量异常 / 待审模型版本的 null 占位）留空 → 图表只读。
+  filterField?: string;
+}
+
+function chartAria(spec: ChartSpec) {
+  return `${spec.title}：${spec.data.map((item) => `${item.name} ${item.value}`).join("，")}`;
 }
 
 export function DataManagerCharts({
@@ -79,20 +97,26 @@ export function DataManagerCharts({
   summary,
   facets,
   isLoading = false,
+  onSelect,
 }: {
   scope: DataManagerEntityScope;
   summary?: DataManagerSummary;
   facets?: DataManagerEntityFacets;
   isLoading?: boolean;
+  onSelect?: (field: string, value: string) => void;
 }) {
   useTheme();
-  const grid = cssVar("--sc-border");
   const muted = cssVar("--sc-muted-foreground");
-  const series = [
-    cssVar("--sc-chart-1"),
-    cssVar("--sc-chart-2"),
-    cssVar("--sc-chart-3"),
-  ];
+  const rankColor = cssVar("--sc-chart-1");
+  const statusColors = useMemo<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        Object.entries(STATUS_COLOR_VARS).map(([key, varName]) => [key, cssVar(varName)]),
+      ),
+    // 主题切换由 useTheme() 触发重渲染，颜色随之重新计算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   const tooltipStyle = useMemo<CSSProperties>(
     () => ({
       background: "var(--sc-card)",
@@ -111,16 +135,20 @@ export function DataManagerCharts({
           title: "任务状态",
           description: "当前筛选范围内的任务状态分布",
           data: rows(summary.task_status, STATUS_LABELS),
+          kind: "status",
+          filterField: "task.status",
         },
         {
           title: "标注来源",
           description: "active annotation 按来源统计",
           data: rows(summary.annotations.by_source, SOURCE_LABELS),
+          filterField: "annotation.source",
         },
         {
           title: "标注类别",
           description: "数量最多的前 8 个类别",
           data: rows(summary.annotations.by_class),
+          filterField: "annotation.class_name",
         },
         {
           title: "待审模型版本",
@@ -144,11 +172,13 @@ export function DataManagerCharts({
         title: scope === "objects" ? "对象来源" : "轨迹来源",
         description: "当前筛选结果按 annotation source 统计",
         data: rows(facets.by_source, SOURCE_LABELS),
+        filterField: "annotation.source",
       },
       {
         title: scope === "objects" ? "对象类别" : "轨迹类别",
         description: "数量最多的前 8 个类别",
         data: rows(facets.by_class),
+        filterField: "annotation.class_name",
       },
       {
         title: scope === "tracks" ? "质量异常" : "几何类型",
@@ -158,27 +188,35 @@ export function DataManagerCharts({
           scope === "tracks"
             ? rows(facets.by_quality, QUALITY_LABELS)
             : rows(facets.by_type),
+        filterField: scope === "objects" ? "annotation.annotation_type" : undefined,
       },
     ];
   }, [facets, scope, summary]);
 
+  const barColor = (spec: ChartSpec, key: string) =>
+    (spec.kind === "status" ? statusColors[key] : undefined) ?? rankColor;
+
   return (
-    <section aria-label="标注统计图表" className="grid gap-4 lg:grid-cols-3">
-      {(isLoading ? Array.from({ length: scope === "tasks" ? 5 : 3 }, (_, index) => index) : specs).map((spec, index) => (
+    <section aria-label="标注统计图表" className="grid gap-x-6 gap-y-5 lg:grid-cols-2">
+      {(isLoading ? Array.from({ length: scope === "tasks" ? 5 : 3 }, (_, index) => index) : specs).map((spec) => (
         <div key={typeof spec === "number" ? spec : spec.title} className="min-w-0">
           {typeof spec === "number" ? (
-            <Skeleton className="h-44 w-full" />
+            <Skeleton className="h-40 w-full" />
           ) : (
             <>
               <div className="mb-2">
                 <h3 className="text-sm font-medium text-foreground">{spec.title}</h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">{spec.description}</p>
               </div>
-              {spec.data.length ? (
+              {spec.data.length === 0 ? (
+                <div className="flex min-h-[2.5rem] items-center text-xs text-muted-foreground">
+                  当前筛选范围暂无可绘制数据
+                </div>
+              ) : (
                 <div
-                  className="h-40 w-full"
+                  className={`h-40 w-full [&_*]:outline-none${spec.filterField && onSelect ? " [&_.recharts-bar-rectangle]:cursor-pointer" : ""}`}
                   role="img"
-                  aria-label={`${spec.title}：${spec.data.map((item) => `${item.name} ${item.value}`).join("，")}`}
+                  aria-label={chartAria(spec)}
                 >
                   <ResponsiveContainer
                     width="100%"
@@ -187,33 +225,53 @@ export function DataManagerCharts({
                     initialDimension={{ width: 320, height: 160 }}
                   >
                     <BarChart
-                      data={spec.data}
+                      accessibilityLayer={false}
+                      data={spec.data.map((entry) => ({ ...entry, fill: barColor(spec, entry.key) }))}
                       layout="vertical"
-                      margin={{ top: 0, right: 16, bottom: 0, left: 4 }}
+                      margin={{ top: 0, right: 44, bottom: 0, left: 4 }}
                     >
-                      <CartesianGrid stroke={grid} horizontal={false} />
-                      <XAxis type="number" allowDecimals={false} tick={tick} axisLine={{ stroke: grid }} />
+                      <XAxis type="number" hide />
                       <YAxis
                         type="category"
                         dataKey="name"
-                        width={72}
+                        width={80}
                         tick={tick}
                         axisLine={false}
                         tickLine={false}
                       />
                       <Tooltip
+                        cursor={false}
                         contentStyle={tooltipStyle}
                         labelStyle={{ color: "var(--sc-foreground)", fontWeight: 500 }}
                         itemStyle={{ color: "var(--sc-muted-foreground)" }}
                         formatter={(value) => [Number(value).toLocaleString(), "数量"]}
                       />
-                      <Bar dataKey="value" fill={series[index % series.length]} radius={[0, 3, 3, 0]} />
+                      <Bar
+                        dataKey="value"
+                        maxBarSize={22}
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={false}
+                        onClick={
+                          spec.filterField && onSelect
+                            ? (data: unknown) => {
+                                const key = (data as { payload?: { key?: unknown } }).payload?.key;
+                                if (spec.filterField && onSelect && typeof key === "string") {
+                                  onSelect(spec.filterField, key);
+                                }
+                              }
+                            : undefined
+                        }
+                      >
+                        <LabelList
+                          dataKey="value"
+                          position="right"
+                          fill={muted}
+                          fontSize={11}
+                          formatter={(value) => Number(value).toLocaleString()}
+                        />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
-                  当前筛选范围暂无可绘制数据
                 </div>
               )}
             </>

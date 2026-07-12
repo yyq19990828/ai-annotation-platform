@@ -65,7 +65,7 @@ import {
   useUpdateTaskView,
 } from "@/hooks/useTaskViews";
 import { cn } from "@/lib/utils";
-import { DataManagerAnalyticsSheet } from "./DataManagerAnalyticsSheet";
+import { DataManagerAnalyticsPanel } from "./DataManagerAnalyticsPanel";
 import {
   DataManagerFilterBar,
   type DataManagerFilterChip,
@@ -325,6 +325,9 @@ export function EntityDataManagerLens({
   const [saveName, setSaveName] = useState(scope === "objects" ? "对象视图" : "轨迹视图");
   const [saveVisibility, setSaveVisibility] = useState<"private" | "project">("private");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(
+    () => typeof window !== "undefined" && localStorage.getItem("dm-analytics-open") === "1",
+  );
   const hydrationRef = useRef<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
@@ -549,6 +552,29 @@ export function EntityDataManagerLens({
     rules.splice(index, 1);
     setFilter(rules.length ? { op: "and", rules } : {});
   };
+  // 图表交叉筛选：点柱子 → 切换一条 `field eq value`（已存在则移除，实现 toggle）。
+  const toggleFacetRule = (field: string, value: string) => {
+    if (!fields.some((item) => item.key === field)) return;
+    const existing = topRules.find(
+      ({ rule }) => rule.field === field && rule.op === "eq" && String(rule.value) === value,
+    );
+    if (existing) {
+      removeRule(existing.index);
+      return;
+    }
+    const nextRule = { field, op: "eq", value };
+    const rules = Array.isArray(filter.rules)
+      ? [...(filter.rules as FilterNode[]), nextRule]
+      : Object.keys(filter).length ? [filter, nextRule] : [nextRule];
+    setFilter({ op: "and", rules });
+  };
+  const toggleAnalytics = () => {
+    setAnalyticsOpen((value) => {
+      const next = !value;
+      localStorage.setItem("dm-analytics-open", next ? "1" : "0");
+      return next;
+    });
+  };
   const filterChips: DataManagerFilterChip[] = topRules.map(({ index, rule }) => {
     const field = fields.find((item) => item.key === rule.field);
     const rawValue = displayValue(rule.value);
@@ -626,11 +652,9 @@ export function EntityDataManagerLens({
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
-            <DataManagerAnalyticsSheet
-              scope={scope}
-              facets={facets}
-              isLoading={activeQ.isLoading}
-            />
+            <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
+              <Icon name="activity" size={12} />统计
+            </Button>
             <Button onClick={() => activeQ.refetch()} disabled={activeQ.isFetching}>
               <Icon name="refresh" size={12} />刷新
             </Button>
@@ -639,6 +663,15 @@ export function EntityDataManagerLens({
             </Button>
           </div>
         </header>
+
+        {analyticsOpen && (
+          <DataManagerAnalyticsPanel
+            scope={scope}
+            facets={facets}
+            isLoading={activeQ.isLoading}
+            onSelect={toggleFacetRule}
+          />
+        )}
 
         <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
           <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
