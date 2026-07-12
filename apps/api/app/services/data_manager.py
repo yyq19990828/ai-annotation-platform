@@ -1237,50 +1237,77 @@ class DataManagerService:
         include_annotations = (
             _filter_has_annotation_field(filter_json) or not includes_ai_candidates
         )
+        # Matches are drawn from up to three sources (annotations, then pending
+        # prediction shapes, then pending tracker jobs), concatenated in that
+        # fixed order. `remaining_offset`/`remaining_limit` track the slice of
+        # the *global* [offset, offset + limit) window that still needs to be
+        # filled once earlier sources have been accounted for, so each source
+        # can push its own limit/offset down to SQL (or, for prediction
+        # shapes, at least skip the expensive per-shape transform) instead of
+        # materializing the full result set in Python.
         items: list[DataManagerMatchItem] = []
+        total = 0
+        remaining_offset = offset
+        remaining_limit = limit
         if include_annotations:
             annotation_condition = compile_annotation_match_filter(
                 filter_json, Annotation, project
             )
-            annotation_rows = await self.db.execute(
-                select(
-                    Annotation.id,
-                    Annotation.track_id,
-                    Annotation.class_name,
-                    Annotation.tool_unit_id,
-                    Annotation.annotation_type,
-                    Annotation.source,
-                    Annotation.attributes,
-                    cast(Annotation.geometry["frame_index"].astext, Integer).label(
-                        "frame_index"
-                    ),
-                )
-                .where(
-                    Annotation.task_id == task_id,
-                    Annotation.is_active.is_(True),
-                    Annotation.was_cancelled.is_(False),
-                    annotation_condition,
-                )
-                .order_by(Annotation.created_at, Annotation.id)
+            annotation_where = (
+                Annotation.task_id == task_id,
+                Annotation.is_active.is_(True),
+                Annotation.was_cancelled.is_(False),
+                annotation_condition,
             )
-            items.extend(
-                DataManagerMatchItem(
-                    entity_kind="annotation",
-                    id=row.id,
-                    track_id=row.track_id,
-                    class_name=row.class_name,
-                    tool_unit_id=row.tool_unit_id,
-                    annotation_type=row.annotation_type,
-                    source=row.source,
-                    attributes={
-                        key: value
-                        for key, value in (row.attributes or {}).items()
-                        if not str(key).startswith("_")
-                    },
-                    frame_index=row.frame_index,
+            annotation_total = (
+                await self.db.scalar(
+                    select(func.count())
+                    .select_from(Annotation)
+                    .where(*annotation_where)
                 )
-                for row in annotation_rows
+                or 0
             )
+            total += annotation_total
+
+            if remaining_limit > 0 and remaining_offset < annotation_total:
+                annotation_rows = await self.db.execute(
+                    select(
+                        Annotation.id,
+                        Annotation.track_id,
+                        Annotation.class_name,
+                        Annotation.tool_unit_id,
+                        Annotation.annotation_type,
+                        Annotation.source,
+                        Annotation.attributes,
+                        cast(Annotation.geometry["frame_index"].astext, Integer).label(
+                            "frame_index"
+                        ),
+                    )
+                    .where(*annotation_where)
+                    .order_by(Annotation.created_at, Annotation.id)
+                    .offset(remaining_offset)
+                    .limit(remaining_limit)
+                )
+                items.extend(
+                    DataManagerMatchItem(
+                        entity_kind="annotation",
+                        id=row.id,
+                        track_id=row.track_id,
+                        class_name=row.class_name,
+                        tool_unit_id=row.tool_unit_id,
+                        annotation_type=row.annotation_type,
+                        source=row.source,
+                        attributes={
+                            key: value
+                            for key, value in (row.attributes or {}).items()
+                            if not str(key).startswith("_")
+                        },
+                        frame_index=row.frame_index,
+                    )
+                    for row in annotation_rows
+                )
+            remaining_offset = max(remaining_offset - annotation_total, 0)
+            remaining_limit = limit - len(items)
 
         if _filter_has_field(filter_json, "ai.pending_prediction_shape_count"):
             from app.services.prediction import to_internal_shape
@@ -1299,8 +1326,13 @@ class DataManagerService:
                 if isinstance(attributes, dict) and "_shape_index" in attributes
             }
             prediction_rows = await self.db.execute(
-                select(Prediction).where(Prediction.task_id == task_id)
+                select(Prediction)
+                .where(Prediction.task_id == task_id)
+                .order_by(Prediction.created_at, Prediction.id)
             )
+            prediction_total = 0
+            window_start = remaining_offset
+            window_end = remaining_offset + max(remaining_limit, 0)
             for prediction in prediction_rows.scalars().all():
                 rejected = set(prediction.rejected_shape_indexes or [])
                 for shape_index, raw_shape in enumerate(prediction.result or []):
@@ -1309,21 +1341,26 @@ class DataManagerService:
                         or (prediction.id, shape_index) in accepted
                     ):
                         continue
-                    shape = to_internal_shape(raw_shape)
-                    geometry = shape.get("geometry") or {}
-                    items.append(
-                        DataManagerMatchItem(
-                            entity_kind="prediction_shape",
-                            id=prediction.id,
-                            shape_index=shape_index,
-                            class_name=shape.get("class_name"),
-                            tool_unit_id=prediction.tool_unit_id,
-                            annotation_type=shape.get("type"),
-                            source="prediction_candidate",
-                            attributes=shape.get("attributes") or {},
-                            frame_index=geometry.get("frame_index"),
+                    if window_start <= prediction_total < window_end:
+                        shape = to_internal_shape(raw_shape)
+                        geometry = shape.get("geometry") or {}
+                        items.append(
+                            DataManagerMatchItem(
+                                entity_kind="prediction_shape",
+                                id=prediction.id,
+                                shape_index=shape_index,
+                                class_name=shape.get("class_name"),
+                                tool_unit_id=prediction.tool_unit_id,
+                                annotation_type=shape.get("type"),
+                                source="prediction_candidate",
+                                attributes=shape.get("attributes") or {},
+                                frame_index=geometry.get("frame_index"),
+                            )
                         )
-                    )
+                    prediction_total += 1
+            total += prediction_total
+            remaining_offset = max(remaining_offset - prediction_total, 0)
+            remaining_limit = limit - len(items)
 
         if _filter_has_field(filter_json, "ai.pending_tracker_job_count"):
             tracker_results = VideoTrackerJob.staged_result["results"]
@@ -1349,23 +1386,37 @@ class DataManagerService:
                 tracker_clause = and_(
                     tracker_clause, VideoTrackerJob.created_by == user.id
                 )
-            tracker_rows = await self.db.execute(
-                select(VideoTrackerJob).where(tracker_clause)
-            )
-            items.extend(
-                DataManagerMatchItem(
-                    entity_kind="tracker_job",
-                    id=job.id,
-                    source="ai_tracker_candidate",
-                    frame_index=job.from_frame,
+            tracker_total = (
+                await self.db.scalar(
+                    select(func.count())
+                    .select_from(VideoTrackerJob)
+                    .where(tracker_clause)
                 )
-                for job in tracker_rows.scalars().all()
+                or 0
             )
+            total += tracker_total
 
-        total = len(items)
+            if remaining_limit > 0 and remaining_offset < tracker_total:
+                tracker_rows = await self.db.execute(
+                    select(VideoTrackerJob)
+                    .where(tracker_clause)
+                    .order_by(VideoTrackerJob.created_at, VideoTrackerJob.id)
+                    .offset(remaining_offset)
+                    .limit(remaining_limit)
+                )
+                items.extend(
+                    DataManagerMatchItem(
+                        entity_kind="tracker_job",
+                        id=job.id,
+                        source="ai_tracker_candidate",
+                        frame_index=job.from_frame,
+                    )
+                    for job in tracker_rows.scalars().all()
+                )
+
         return DataManagerMatchesResponse(
             task_id=task_id,
-            items=items[offset : offset + limit],
+            items=items,
             total=total,
             limit=limit,
             offset=offset,
