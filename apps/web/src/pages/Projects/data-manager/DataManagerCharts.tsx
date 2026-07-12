@@ -12,6 +12,7 @@ import {
 import type {
   DataManagerEntityFacets,
   DataManagerEntityScope,
+  DataManagerFilterField,
   DataManagerSummary,
 } from "@/api/taskViews";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
@@ -96,12 +97,15 @@ export function DataManagerCharts({
   scope,
   summary,
   facets,
+  fields,
   isLoading = false,
   onSelect,
 }: {
   scope: DataManagerEntityScope;
   summary?: DataManagerSummary;
   facets?: DataManagerEntityFacets;
+  // 可筛选字段（用于属性值分布图的 value→label 映射与可点校验）
+  fields?: DataManagerFilterField[];
   isLoading?: boolean;
   onSelect?: (field: string, value: string) => void;
 }) {
@@ -130,7 +134,7 @@ export function DataManagerCharts({
   const tick = useMemo(() => ({ fontSize: 11, fill: muted }), [muted]);
   const specs = useMemo<ChartSpec[]>(() => {
     if (scope === "tasks" && summary) {
-      return [
+      const base: ChartSpec[] = [
         {
           title: "任务状态",
           description: "当前筛选范围内的任务状态分布",
@@ -165,6 +169,24 @@ export function DataManagerCharts({
           ),
         },
       ];
+      // 每个 select / boolean 属性追加一张「属性值分布」图，点柱子下钻到含该值的任务。
+      // 值分布只对这两类属性产出（后端聚合口径），它们都支持 eq 筛选，恰好匹配交叉筛选。
+      const attributeSpecs: ChartSpec[] = (summary.attributes ?? [])
+        .filter((attr) => Object.keys(attr.values).length > 0)
+        .map((attr) => {
+          const fieldKey = `annotation.attribute.${attr.tool_unit_id}.${attr.key}`;
+          const field = fields?.find((item) => item.key === fieldKey);
+          const valueLabels = Object.fromEntries(
+            (field?.options ?? []).map((option) => [option.value, option.label]),
+          );
+          return {
+            title: attr.label,
+            description: `「${attr.label}」属性值分布 · 点击下钻`,
+            data: rows(attr.values, valueLabels),
+            filterField: field ? fieldKey : undefined,
+          };
+        });
+      return [...base, ...attributeSpecs];
     }
     if (!facets) return [];
     return [
@@ -191,7 +213,7 @@ export function DataManagerCharts({
         filterField: scope === "objects" ? "annotation.annotation_type" : undefined,
       },
     ];
-  }, [facets, scope, summary]);
+  }, [facets, fields, scope, summary]);
 
   const barColor = (spec: ChartSpec, key: string) =>
     (spec.kind === "status" ? statusColors[key] : undefined) ?? rankColor;

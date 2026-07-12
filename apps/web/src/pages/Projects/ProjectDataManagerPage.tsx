@@ -696,6 +696,7 @@ function TaskDataManagerPage({
           scope="tasks"
           summary={summaryQ.data}
           isLoading={summaryQ.isLoading}
+          fields={filterFields}
           onSelect={(field, value) => {
             if (!filterFields.some((item) => item.key === field)) return;
             toggleQuickRule({ field, op: "eq" as const, value });

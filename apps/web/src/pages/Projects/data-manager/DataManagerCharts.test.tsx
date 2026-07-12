@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DataManagerEntityFacets, DataManagerSummary } from "@/api/taskViews";
+import type { DataManagerEntityFacets, DataManagerFilterField, DataManagerSummary } from "@/api/taskViews";
 import { DataManagerCharts } from "./DataManagerCharts";
 
 const facets: DataManagerEntityFacets = {
@@ -71,5 +71,51 @@ describe("DataManagerCharts", () => {
 
     // 轨迹来源图（第一张，可点）→ 点最大的一根柱 manual(7)
     expect(onSelect).toHaveBeenCalledWith("annotation.source", "manual");
+  });
+
+  it("renders attribute value distribution with label mapping and drills into it", () => {
+    const onSelect = vi.fn();
+    const summaryWithAttr: DataManagerSummary = {
+      ...summary,
+      attributes: [
+        {
+          tool_unit_id: "bbox",
+          key: "vehicle_type",
+          label: "车型",
+          eligible: 20,
+          present: 15,
+          missing: 5,
+          values: { truck: 5, car: 10 },
+        },
+      ],
+    };
+    const fields: DataManagerFilterField[] = [
+      {
+        key: "annotation.attribute.bbox.vehicle_type",
+        label: "车型",
+        group: "属性 · bbox",
+        value_type: "select",
+        operators: ["eq", "in", "exists", "missing"],
+        options: [
+          { value: "truck", label: "卡车" },
+          { value: "car", label: "小汽车" },
+        ],
+        expensive: true,
+        tool_unit_id: "bbox",
+        attribute_key: "vehicle_type",
+      },
+    ];
+    const { container } = render(
+      <DataManagerCharts scope="tasks" summary={summaryWithAttr} fields={fields} onSelect={onSelect} />,
+    );
+
+    // value→label 映射生效、按数量降序
+    expect(screen.getByRole("img", { name: "车型：小汽车 10，卡车 5" })).toBeInTheDocument();
+
+    // 点最大的一根柱（小汽车）→ 注入的是存储值 car，非显示名
+    const attrChart = container.querySelector('[aria-label^="车型"]');
+    const bar = attrChart?.querySelector(".recharts-bar-rectangle");
+    fireEvent.click(bar!);
+    expect(onSelect).toHaveBeenCalledWith("annotation.attribute.bbox.vehicle_type", "car");
   });
 });

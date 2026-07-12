@@ -1,4 +1,4 @@
-import type { DataManagerSummary } from "@/api/taskViews";
+import type { DataManagerFilterField, DataManagerSummary } from "@/api/taskViews";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { DataManagerCharts } from "./DataManagerCharts";
@@ -6,34 +6,13 @@ import { DataManagerCharts } from "./DataManagerCharts";
 interface DataManagerOverviewProps {
   summary: DataManagerSummary | undefined;
   isLoading: boolean;
+  fields?: DataManagerFilterField[];
   onSelect?: (field: string, value: string) => void;
 }
 
 function metric(value: number | undefined) {
   return value === undefined ? "—" : value.toLocaleString();
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "待标注",
-  in_progress: "标注中",
-  review: "待审核",
-  rejected: "已退回",
-  completed: "已完成",
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  manual: "人工",
-  prediction_based: "接受 AI",
-  ai_tracker: "AI 追踪",
-  interpolated: "插值",
-};
-
-const CONFIDENCE_BUCKET_LABELS: Record<string, string> = {
-  lt_025: "0–24%",
-  "025_049": "25–49%",
-  "050_074": "50–74%",
-  gte_075: "75–100%",
-};
 
 const KIND_METRIC_LABELS: Record<string, string> = {
   images_with_dimensions: "已有尺寸",
@@ -167,36 +146,29 @@ export function DataManagerSummaryStrip({
   );
 }
 
-export function DataManagerAnalyticsContent({ summary, isLoading, onSelect }: DataManagerOverviewProps) {
+export function DataManagerAnalyticsContent({ summary, isLoading, fields, onSelect }: DataManagerOverviewProps) {
   return (
     <section aria-label="详细统计" className="flex flex-col gap-4">
       <div>
         <DataManagerCharts
           scope="tasks"
           summary={summary}
+          fields={fields}
           isLoading={isLoading}
           onSelect={onSelect}
         />
       </div>
       <details className="rounded-lg border border-border bg-card" open>
         <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground marker:text-muted-foreground">
-          查看状态、来源、类别与属性聚合
+          属性完整度与当前模态
         </summary>
-        <div className="grid gap-5 border-t border-border p-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-5 border-t border-border p-3 md:grid-cols-2">
           {isLoading || !summary ? (
-            Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-16 w-full" />)
+            Array.from({ length: 2 }, (_, index) => <Skeleton key={index} className="h-16 w-full" />)
           ) : (
             <>
-              <Distribution title="任务状态" values={summary.task_status} labels={STATUS_LABELS} />
-              <Distribution title="标注来源" values={summary.annotations.by_source} labels={SOURCE_LABELS} />
-              <Distribution title="类别" values={summary.annotations.by_class} />
-              <Distribution title="几何类型" values={summary.annotations.by_type} />
-              <Distribution title="工具单位" values={summary.annotations.by_tool_unit} />
-              <Distribution title="待审模型版本" values={summary.ai_review.by_model_version} />
-              <Distribution title="待审置信度" values={summary.ai_review.confidence_buckets} labels={CONFIDENCE_BUCKET_LABELS} />
-              <Distribution title="当前模态" values={summary.kind_metrics} labels={KIND_METRIC_LABELS} />
-              <div className="min-w-0 md:col-span-2 xl:col-span-2">
-                <div className="mb-2 text-xs font-semibold text-muted-foreground">属性完整度和值分布</div>
+              <div className="min-w-0">
+                <div className="mb-2 text-xs font-semibold text-muted-foreground">属性完整度</div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {summary.attributes.length ? summary.attributes.map((attribute) => (
                     <div key={`${attribute.tool_unit_id}.${attribute.key}`} className="rounded-md border border-border bg-background p-2">
@@ -212,16 +184,12 @@ export function DataManagerAnalyticsContent({ summary, isLoading, onSelect }: Da
                         max={Math.max(attribute.eligible, 1)}
                         aria-label={`${attribute.label}完整度`}
                       />
-                      <div className="mt-1.5 flex flex-wrap gap-1 text-xs text-muted-foreground">
-                        <span>缺失 {attribute.missing}</span>
-                        {Object.entries(attribute.values).slice(0, 5).map(([value, count]) => (
-                          <span key={value}>· {value} {count}</span>
-                        ))}
-                      </div>
+                      <div className="mt-1.5 text-xs text-muted-foreground">缺失 {attribute.missing}</div>
                     </div>
                   )) : <span className="text-xs text-muted-foreground">项目未配置属性字段</span>}
                 </div>
               </div>
+              <Distribution title="当前模态" values={summary.kind_metrics} labels={KIND_METRIC_LABELS} />
             </>
           )}
         </div>
