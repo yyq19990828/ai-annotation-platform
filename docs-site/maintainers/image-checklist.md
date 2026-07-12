@@ -52,7 +52,7 @@
 
 - [x] `images/projects/tool-units-panel.png` — 项目设置「类别与属性」面板，按工具单位 tab 切换；红框：工具单位切换 tab、某工具下的类别列表、属性 schema 区 `[auto]`
 
-## Batch 2 · 视频/点云 AI 审阅 + 时间轴交互（新增于 2026-07-06 · PR #50 · v0.21.9–17）
+## Batch 2 · 视频/点云 AI 审阅 + 时间轴交互（新增于 2026-07-06） <!-- PR #50 · v0.21.9–17 -->
 
 > 配套 PR #50「视频/点云工作台 AI 审阅体验 + 时间轴交互增强」。这批交互性强（缩放/刷选/续写/键盘流转），基本都 `[manual]` 手工录，动图优先。文档侧对应改写 `video-playback.md` / `video-propagate.md` / `video-track.md` / `3d-box.md` / 新 `projects/pipeline-library.md` 时再嵌图。新增目录 `images/video-timeline/`、`images/pipeline-library/`。
 
