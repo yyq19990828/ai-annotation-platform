@@ -34,6 +34,8 @@
 
 ## [Unreleased]
 
+## [0.21.33] - 2026-07-12
+
 ### Added
 - **视频项目新增「COCO 逐帧分割」导出（`coco-frames-seg`）**：把视频逐帧多边形导成标准 COCO instance segmentation 单文档（每个采样帧一条 image 记录含空帧、segmentation 为顶点像素坐标、bbox 取外接框、iscrowd=0、可选 `attributes.__track_id`），按项目采样网格抽帧并复用 `fetch_frames.py`；可直接喂 pycocotools / Detectron2 / MMDetection。bbox / polyline 跳过。
 
