@@ -595,7 +595,8 @@ export function useWorkbenchShellModel({
 
   const trackerJobs = useVideoTrackerJobs(taskId, isVideoTask);
   const [propagateDialog, setPropagateDialog] = useState<{
-    annotation: TrackerSourceAnnotation;
+    // v0.22.1 · B · annotation 为 null = 无源检测 (画布级入口发起, 不绑选中轨迹)。
+    annotation: TrackerSourceAnnotation | null;
     submitting: boolean;
   } | null>(null);
   // v0.21.27 · U-pvs-1 · PVS 点种子采集接线 (state 已在上方声明): 用户在传播对话框点
@@ -634,7 +635,7 @@ export function useWorkbenchShellModel({
     if (hasSeed) setSeedObj(seedObj + 1);
   }, [trackerSeeds, trackerSeedBoxes, seedObj]);
 
-  const openPropagateDialog = useCallback((annotation: TrackerSourceAnnotation) => {
+  const openPropagateDialog = useCallback((annotation: TrackerSourceAnnotation | null) => {
     setPropagateDialog({ annotation, submitting: false });
     setPropagateBrush(null);
     setTrackerSeeds([]);
@@ -708,11 +709,16 @@ export function useWorkbenchShellModel({
               },
             }
           : payload;
-        await trackerJobs.propagate(
-          taskId,
-          propagateDialog.annotation.id,
-          withSeeds,
-        );
+        if (propagateDialog.annotation) {
+          await trackerJobs.propagate(
+            taskId,
+            propagateDialog.annotation.id,
+            withSeeds,
+          );
+        } else {
+          // v0.22.1 · B · 无源检测: 走任务级 track (payload 已含 target_class_name)。
+          await trackerJobs.track(taskId, withSeeds);
+        }
         closePropagateDialog();
       } catch (e) {
         setPropagateDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
@@ -2898,6 +2904,8 @@ export function useWorkbenchShellModel({
       tool: s.tool,
       onSetTool: s.setTool,
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
+      // v0.22.1 · B · 画布级 AI 追踪入口: 无选中轨迹也能发起 (无源检测)。
+      onOpenTracker: isVideoTask ? () => openPropagateDialog(null) : undefined,
       isPromptSupported: routing.isPromptSupported,
       capabilitiesLoading: routing.isLoading,
       reviewMode: mode === "review", videoMode: isVideoTask,
@@ -3497,6 +3505,9 @@ export function useWorkbenchShellModel({
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
     // v0.22.1 · A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
     sourceTrackClassName: propagateDialogTrack?.class_name ?? null,
+    // v0.22.1 · B · 无源检测模式 (画布级入口无选中轨迹) + 可选目标类别 (项目 classes)。
+    sourceless: !propagateDialogTrack,
+    availableClasses: currentProject?.classes ?? [],
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: closePropagateDialog,
     onSubmit: handlePropagateSubmit,

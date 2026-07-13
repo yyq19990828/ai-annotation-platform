@@ -200,6 +200,10 @@ interface VideoTrackerPropagateDialogProps {
   seedBoxCount?: number;
   /** v0.22.1 · A2/A3 · 选中源轨迹类别 (用于「本次影响」摘要 + 文本检测类别继承警示); 无源时 null。 */
   sourceTrackClassName?: string | null;
+  /** v0.22.1 · B · 无源检测模式 (画布级入口, 无选中轨迹): 显示目标类别选择器, 提交带 target_class_name。 */
+  sourceless?: boolean;
+  /** v0.22.1 · B · 无源时可选的目标类别 (项目 classes)。 */
+  availableClasses?: string[];
 }
 
 export function VideoTrackerPropagateDialog({
@@ -231,6 +235,8 @@ export function VideoTrackerPropagateDialog({
   onChangeSeedMode,
   seedBoxCount = 0,
   sourceTrackClassName = null,
+  sourceless = false,
+  availableClasses = [],
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -244,6 +250,8 @@ export function VideoTrackerPropagateDialog({
   // v0.21.14 · 时间轴 Shift+拖刷选回填的自定义范围; 非 null 时覆盖预设/方向派生的范围。
   // 改预设 / 方向即清空 (回到派生范围)。
   const [customRange, setCustomRange] = useState<{ from: number; to: number } | null>(null);
+  // v0.22.1 · B · 无源检测的目标类别 (新建轨迹用); 每次打开重置为首个可选类别。
+  const [targetClass, setTargetClass] = useState<string>("");
 
   // v0.21.14 · 项目已绑真实 tracker 后端 (preferNonMockModel) 时从下拉过滤掉测试用 mock_bbox,
   // 避免误选跑出假框; 未绑后端 / 测试环境仍保留 mock 可见。过滤后的表也用于默认模型解析,
@@ -290,6 +298,13 @@ export function VideoTrackerPropagateDialog({
       setCustomRange(null);
     }
   }, [open, preferNonMockModel, projectDefaultModel, userId, modelOptions]);
+
+  // v0.22.1 · B · 无源目标类别重置独立成 effect (仅依赖 open); 不把不稳定的 availableClasses
+  // 引用混进主 open effect 依赖, 否则每次 render 重跑主 effect 会重置方向 / 范围。
+  useEffect(() => {
+    if (open) setTargetClass(availableClasses[0] ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // 时间轴 Shift+拖刷选 → 覆盖为自定义范围 (每次刷选传新对象, 故按引用触发)。
   useEffect(() => {
@@ -389,6 +404,11 @@ export function VideoTrackerPropagateDialog({
       setError("文本驱动追踪需填写文本描述");
       return;
     }
+    // v0.22.1 · B · 无源检测必须选目标类别 (新建轨迹归属)。
+    if (sourceless && !targetClass) {
+      setError("请选择新目标的类别");
+      return;
+    }
     try {
       await onSubmit({
         from_frame: range.from,
@@ -398,6 +418,8 @@ export function VideoTrackerPropagateDialog({
         sam_variant: samVariant || undefined,
         text: textDrivenActive ? trimmedText : undefined,
         output_geometry: outputGeometry || undefined,
+        target_class_name: sourceless ? targetClass : undefined,
+        target_tool_unit_id: sourceless ? "bbox" : undefined,
       });
       writeDialogMemory(userId, "trackerPropagate", {
         rangePreset,
@@ -501,6 +523,29 @@ export function VideoTrackerPropagateDialog({
             })}
           </select>
         </div>
+
+        {/* v0.22.1 · B · 无源检测: 目标类别选择器 (新建轨迹归属)。 */}
+        {sourceless && (
+          <>
+            {TOOLBAR_DIVIDER}
+            <div className="flex items-center gap-1.5">
+              <span className={TOOLBAR_FIELD_LABEL_CLASS}>类别</span>
+              <select
+                value={targetClass}
+                onChange={(e) => setTargetClass(e.target.value)}
+                data-testid="tracker-target-class"
+                className={cn(TOOLBAR_SELECT_CLASS, "cursor-pointer")}
+              >
+                {availableClasses.length === 0 && <option value="">(无类别)</option>}
+                {availableClasses.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
 
         {/* 模型尺寸 (combobox 2) — 非 mock */}
         {modelKey !== "mock_bbox" && (
@@ -668,7 +713,9 @@ export function VideoTrackerPropagateDialog({
         {/* v0.22.1 · A2/A3 · 本次影响摘要 (延展 / 新建) + 文本检测类别继承警示。 */}
         {!isPolylineTrack && (
           <span data-testid="tracker-impact-summary" className="text-foreground">
-            {textDrivenActive ? (
+            {sourceless ? (
+              `本次将新建轨迹${targetClass ? ` (类别 ${targetClass})` : ""}`
+            ) : textDrivenActive ? (
               <>
                 本次将按文本新建轨迹
                 {sourceTrackClassName && (

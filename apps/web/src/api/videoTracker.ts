@@ -18,7 +18,7 @@ export interface VideoTrackerJob {
   id: string;
   task_id: string;
   dataset_item_id: string;
-  annotation_id: string;
+  annotation_id: string | null;
   segment_id: string | null;
   created_by: string | null;
   status: VideoTrackerJobStatus;
@@ -85,7 +85,7 @@ export interface VideoTrackerPreviewResult {
 export interface VideoTrackerJobPreview {
   job_id: string;
   status: VideoTrackerJobStatus;
-  annotation_id: string;
+  annotation_id: string | null;
   results: VideoTrackerPreviewResult[];
   grid_step: number;
   output_geometry: string;

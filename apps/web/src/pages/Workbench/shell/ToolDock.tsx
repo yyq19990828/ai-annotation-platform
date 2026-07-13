@@ -26,6 +26,8 @@ interface ToolDockProps {
   onSetTool: (t: ToolId) => void;
   videoTool?: VideoTool;
   onSetVideoTool?: (t: VideoTool) => void;
+  /** v0.22.1 · B · 画布级 AI 追踪入口 (动作型, 打开无源追踪对话框, 不绑选中轨迹); 仅视频模式。 */
+  onOpenTracker?: () => void;
   /** v0.10.2 · 由 useMLCapabilities 注入. tool.requiredPrompt 不在 supported 集合 → 置灰. */
   isPromptSupported?: (type: string) => boolean;
   /** v0.10.2 · capability 加载中: AI 工具组半透 + 不可点 (避免误用回退到的 fallback). */
@@ -149,6 +151,7 @@ export function ToolDock({
   onSetTool,
   videoTool = "select",
   onSetVideoTool,
+  onOpenTracker,
   isPromptSupported,
   capabilitiesLoading = false,
   reviewMode = false,
@@ -254,6 +257,29 @@ export function ToolDock({
             </Fragment>
           );
         })}
+        {/* v0.22.1 · B · 画布级 AI 追踪 (动作型): 无需先选轨迹, 打开对话框后可文本/种子
+            检测新目标或延展选中轨迹。与手画 track 工具分属不同组。 */}
+        {onOpenTracker && (
+          <>
+            <div aria-hidden className={DIVIDER_CLASS} />
+            <Tooltip
+              name="AI 追踪"
+              desc="画布级 AI 追踪 · 文本/种子检测新目标, 或延展选中轨迹"
+              side="right"
+              delay={250}
+            >
+              <button
+                type="button"
+                onClick={onOpenTracker}
+                aria-label="AI 追踪"
+                data-testid="video-tool-btn-ai-track"
+                className={cn(TOOL_BTN_CLASS, TOOL_BTN_IDLE, TOOL_BTN_HOVER)}
+              >
+                <Icon name="bot" size={17} />
+              </button>
+            </Tooltip>
+          </>
+        )}
       </div>
     );
   }

@@ -43,7 +43,7 @@ class VideoTrackerJobListItem(BaseModel):
     project_name: str | None = None
     project_display_id: str | None = None
     dataset_item_id: uuid.UUID
-    annotation_id: uuid.UUID
+    annotation_id: uuid.UUID | None = None
     segment_id: uuid.UUID | None = None
     created_by: uuid.UUID | None = None
     status: TrackerJobStatus
@@ -93,7 +93,7 @@ class VideoTrackerJobPreview(BaseModel):
 
     job_id: uuid.UUID
     status: TrackerJobStatus
-    annotation_id: uuid.UUID
+    annotation_id: uuid.UUID | None = None
     results: list[VideoTrackerPreviewResult] = []
     grid_step: int = 1
     output_geometry: str = "bbox"
