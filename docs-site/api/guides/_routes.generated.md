@@ -497,6 +497,7 @@
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
 | POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
+| POST | `/{task_id}/video:track` |
 
 ## `users.py`
 
@@ -542,4 +543,4 @@
 
 ---
 
-_共 52 模块 / 295 路由_
+_共 52 模块 / 296 路由_
