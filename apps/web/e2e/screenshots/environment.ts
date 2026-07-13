@@ -23,6 +23,25 @@ export async function installScreenshotEnvironment(page: Page): Promise<void> {
   });
 }
 
+export async function applyScreenshotTheme(page: Page, theme: "light" | "dark"): Promise<void> {
+  await page.evaluate((nextTheme) => {
+    localStorage.setItem("anno.theme", nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+
+    const raw = localStorage.getItem("auth-storage");
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as {
+      state?: { user?: { preferences?: { ui?: Record<string, unknown> } | null } | null };
+    };
+    const user = parsed.state?.user;
+    if (!user) return;
+    const preferences = user.preferences ?? {};
+    const ui = preferences.ui ?? {};
+    user.preferences = { ...preferences, ui: { ...ui, theme: nextTheme } };
+    localStorage.setItem("auth-storage", JSON.stringify(parsed));
+  }, theme);
+}
+
 /** 等字体、已挂载图片和两个渲染帧稳定；业务控件仍由各 scene 显式等待。 */
 export async function waitForScreenshotReady(page: Page): Promise<void> {
   await page.evaluate(async () => {

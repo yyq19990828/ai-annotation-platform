@@ -1,4 +1,5 @@
 export type { Role, MatrixAxis, ScreenshotScene } from "./_types";
+import type { ScreenshotScene } from "./_types";
 
 import { AUTH_SCENES } from "./auth";
 import { POLYGON_SCENES } from "./workbench-polygon";
@@ -15,19 +16,25 @@ import { DATASET_SCENES } from "./datasets";
 import { SETTINGS_SCENES } from "./settings";
 import { SUPERADMIN_SCENES } from "./superadmin";
 
-export const SCENES = [
-  ...AUTH_SCENES,
-  ...POLYGON_SCENES,
-  ...SAM_SCENES,
-  ...PROJECT_SCENES,
-  ...REVIEW_SCENES,
-  ...EXPORT_SCENES,
-  ...AI_PRE_SCENES,
-  ...PLATFORM_SCENES,
-  ...WORKFLOW_SCENES,
-  ...WORKBENCH_AI_SCENES,
-  ...WORKBENCH_MEDIA_SCENES,
-  ...DATASET_SCENES,
-  ...SETTINGS_SCENES,
-  ...SUPERADMIN_SCENES,
+export type ResolvedScreenshotScene = ScreenshotScene & { source: string };
+
+function fromSource(source: string, scenes: ScreenshotScene[]): ResolvedScreenshotScene[] {
+  return scenes.map((scene) => ({ ...scene, source }));
+}
+
+export const SCENES: ResolvedScreenshotScene[] = [
+  ...fromSource("apps/web/e2e/screenshots/scenes/auth.ts", AUTH_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/workbench-polygon.ts", POLYGON_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/workbench-sam.ts", SAM_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/projects.ts", PROJECT_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/review.ts", REVIEW_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/export.ts", EXPORT_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/ai-pre.ts", AI_PRE_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/platform.ts", PLATFORM_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/workflows.ts", WORKFLOW_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/workbench-ai.ts", WORKBENCH_AI_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/workbench-media.ts", WORKBENCH_MEDIA_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/datasets.ts", DATASET_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/settings.ts", SETTINGS_SCENES),
+  ...fromSource("apps/web/e2e/screenshots/scenes/superadmin.ts", SUPERADMIN_SCENES),
 ];

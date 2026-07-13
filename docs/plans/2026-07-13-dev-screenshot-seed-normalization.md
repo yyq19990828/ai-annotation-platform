@@ -470,10 +470,21 @@ exemplar 工具栏可实际打开。
 
 ### 阶段 D：资产与 CI（约 1–2 个工作日）
 
-- [ ] 重建 manifest 与完整性检查。
-- [ ] 修复 screenshot lint、`AutoImage` 和 snapshot 路径。
-- [ ] 建立视觉回归基线。
-- [ ] 移除 outputs 重复 GIF，补齐清理逻辑。
+- [x] 重建 manifest 与完整性检查。
+- [x] 修复 screenshot lint、`AutoImage` 和 snapshot 路径。
+- [x] 建立视觉回归基线。
+- [x] 移除 outputs 重复 GIF，补齐清理逻辑。
+
+manifest 已迁移为带 SHA-256、尺寸、scene 源码、capture/fixture、seed、commit、浏览器和
+矩阵环境的 v2 格式；只有完整成功矩阵可以原子替换，手工资产在写图前受保护。Markdown、
+`img` 和 `AutoImage` 统一进入引用解析，严格检查覆盖 scene、manifest、磁盘和文档引用。
+旧资产迁移后的 60 项清单通过严格门禁；当前 seed revision 与新增真实场景留给阶段 E 重拍。
+
+视觉回归现在复用 screenshot catalog、正式 scene 和 protocol stub，8 张高价值 Chromium
+基线已生成并在无更新模式 8/8 通过。global setup 对整次运行只执行一次 fail-closed catalog
+预检，多个 Playwright project 共享同一快照。stub 使用 Docker 网关地址，Celery 周期健康
+检查后仍保持 connected。CI 使用 Vite DEV 代理启动 Web，并在失败时上传 diff；流程输出只在
+临时目录转码，12 份重复 GIF 已从仓库移除。
 
 ### 阶段 E：全量重拍（约 1–2 个工作日）
 
@@ -529,13 +540,13 @@ exemplar 工具栏可实际打开。
 
 ## Outcome
 
-- 状态：阶段 A–C 已完成；阶段 D–E 待执行。
+- 状态：阶段 A–D 已完成；阶段 E 待执行。
 - 已交付：版本化网络素材清单、安全缓存下载器、许可可追溯的真实图片/视频/点云派生素材、
   desired-state reconcile、显式任务映射、真实角色与多状态任务、只读 screenshot seed catalog、
   ML Backend 场景能力契约、live/stub 发现、图片/视频/OCR 项目绑定、catalog 驱动的
-  Playwright 真实角色场景、确定性浏览器环境、远程 DEV 同源媒体与 WebSocket 代理，
-  以及定向后端和浏览器验证。
-- 当前待办：阶段 D 需收敛 manifest、图片检查和视觉回归基线；随后阶段 E 才生成并人工
-  审核全量 PNG/GIF，避免在资产契约尚未收敛时覆盖文档。
-- 正式文档：阶段 C 已同步截图操作与远程 WebSocket 说明；资产清单与全量图片待阶段 E 更新。
+  Playwright 真实角色场景、确定性浏览器环境、远程 DEV 同源媒体与 WebSocket 代理、v2
+  manifest 与完整性门禁、真实视觉回归基线，以及定向后端和浏览器验证。
+- 当前待办：阶段 E 生成并人工审核全量 PNG/GIF，把 manifest 从 legacy migration 提升为
+  当前 seed revision，并通过 release gate。
+- 正式文档：阶段 D 已同步截图操作、manifest 和视觉回归说明；全量图片清单待阶段 E 更新。
 - 未尽事项：维护清单中不属于现有自动场景的待拍项，实施后另立截图覆盖扩展计划。

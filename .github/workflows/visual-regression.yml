@@ -25,24 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: user
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: annotation
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7
-        ports: ["6379:6379"]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -70,39 +52,59 @@ jobs:
         working-directory: apps/api
         run: uv sync
 
+      - name: Start screenshot infrastructure
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.ml.yml
+          --profile screenshots up -d --build --wait
+          postgres redis minio screenshot-ml-stub
+
       - name: Run DB migrations
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/annotation
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation
         run: uv run alembic upgrade head
 
-      - name: Seed test data
+      - name: Seed screenshot catalog
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/annotation
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation
           ENVIRONMENT: test
-        run: PYTHONPATH=. uv run python scripts/seed.py
+          MINIO_PUBLIC_URL: /minio
+        run: >-
+          PYTHONPATH=. uv run python scripts/seed.py
+          --profile screenshots --repair --ml-backend-mode stub
 
       - name: Start API server
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/annotation
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation
           REDIS_URL: redis://localhost:6379
           ENVIRONMENT: test
           SECRET_KEY: ci-secret-key-not-for-prod
+          MINIO_PUBLIC_URL: /minio
         run: |
-          uv run uvicorn app.main:app --port 8000 &
-          sleep 5
+          nohup uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/visual-api.log 2>&1 &
+          for attempt in {1..30}; do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 1
+          done
+          cat /tmp/visual-api.log
+          exit 1
 
       - name: Build frontend
         working-directory: apps/web
         run: pnpm build
 
-      - name: Start preview server
+      - name: Start web dev server
         working-directory: apps/web
         run: |
-          pnpm preview --port 3000 &
-          sleep 3
+          nohup pnpm dev --host 127.0.0.1 >/tmp/visual-web.log 2>&1 &
+          for attempt in {1..30}; do
+            curl -fsS http://127.0.0.1:3000/login && exit 0
+            sleep 1
+          done
+          cat /tmp/visual-web.log
+          exit 1
 
       - name: Run visual regression
         working-directory: apps/web
@@ -111,10 +113,18 @@ jobs:
           PLAYWRIGHT_API_BASE: http://localhost:8000
         run: |
           if [ "${{ inputs.update_snapshots }}" = "true" ]; then
-            pnpm screenshots:regression -- --update-snapshots
+            pnpm screenshots:regression:update
           else
             pnpm screenshots:regression
           fi
+
+      - name: Upload updated baselines
+        if: inputs.update_snapshots == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-baseline-${{ github.run_id }}
+          path: apps/web/e2e/screenshots/regression/__screenshots__/
+          retention-days: 14
 
       - name: Upload diff artifacts on failure
         if: failure()
@@ -132,6 +142,12 @@ jobs:
       - name: Check orphan images
         run: node docs-site/scripts/check-orphan-images.mjs --strict
 
+      - name: Stop screenshot infrastructure
+        if: always()
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.ml.yml
+          --profile screenshots down -v
+
       - name: Open issue on failure
         if: failure() && github.event_name == 'schedule'
         uses: actions/github-script@v7
@@ -141,7 +157,7 @@ jobs:
             const body = `视觉回归 CI 检测到截图差异，请检查：\n\n` +
               `- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n` +
               `- 如确认是有意变更，下载 diff artifacts 后更新基线：\n` +
-              `  \`pnpm screenshots:regression -- --update-snapshots\`\n` +
+              `  \`pnpm screenshots:regression:update\`\n` +
               `  然后提交 \`regression/__screenshots__/\` 目录变更。`;
             await github.rest.issues.create({
               owner: context.repo.owner,

@@ -22,13 +22,18 @@
  */
 import { test } from "../fixtures/seed";
 import type { ScreenshotSeedCatalog } from "../fixtures/seed";
-import type { Page } from "@playwright/test";
 import { SCENES } from "./scenes/index";
-import type { Role, MatrixAxis, ScreenshotScene } from "./scenes/index";
+import type { Role } from "./scenes/index";
 import { injectAnnotations } from "./_helpers/annotate";
 import { setupMockState } from "./_helpers/mock-state";
 import { validateScreenshotFixture } from "./catalog";
-import { installScreenshotEnvironment, waitForScreenshotReady } from "./environment";
+import { loadScreenshotCatalog } from "./catalog-runtime";
+import { PROJECT_AXES, resolveOutputPath, shouldRunInProject } from "./matrix";
+import {
+  applyScreenshotTheme,
+  installScreenshotEnvironment,
+  waitForScreenshotReady,
+} from "./environment";
 import path from "path";
 import fs from "fs";
 
@@ -37,13 +42,6 @@ const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/?$/, "");
 const MANIFEST_PATH = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/manifest.json");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 
-// Playwright project name → MatrixAxis
-const PROJECT_AXIS: Record<string, MatrixAxis> = {
-  "desktop-light": { viewport: "desktop", theme: "light", locale: "zh-CN" },
-  "desktop-dark":  { viewport: "desktop", theme: "dark",  locale: "zh-CN" },
-  "mobile":        { viewport: "mobile",  theme: "light", locale: "zh-CN" },
-};
-
 // 全局默认 mask 选择器（时间戳 / 头像 / 显式标记元素）
 const DEFAULT_MASK_SELECTORS = [
   "[data-screenshot-mask]",
@@ -51,96 +49,22 @@ const DEFAULT_MASK_SELECTORS = [
   "time[datetime]",
 ];
 
-type ManifestEntry = {
-  auto: boolean;
-  scene: string;
-  lastRun: string;
-  project: string;
-};
-
-function readExistingManifest(): Record<string, ManifestEntry> {
+function readExistingManifest(): Record<string, { auto?: boolean }> {
   if (!fs.existsSync(MANIFEST_PATH)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")) as Record<string, ManifestEntry>;
-  } catch {
-    return {};
-  }
+  const raw = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")) as {
+    schema_version?: number;
+    entries?: Record<string, { auto?: boolean }>;
+  } & Record<string, { auto?: boolean }>;
+  return raw.schema_version === 2 && raw.entries ? raw.entries : raw;
 }
 
-const manifest: Record<string, ManifestEntry> = readExistingManifest();
-
-/** 判断 scene 是否应在当前 Playwright project 中跑 */
-function shouldRunInProject(scene: ScreenshotScene, axis: MatrixAxis): boolean {
-  if (!scene.matrix) {
-    return axis.viewport === "desktop" && axis.theme === "light";
-  }
-  const viewports = scene.matrix.viewports ?? ["desktop"];
-  const themes    = scene.matrix.themes    ?? ["light"];
-  return viewports.includes(axis.viewport) && themes.includes(axis.theme);
-}
-
-/** 根据矩阵轴生成带后缀的输出路径 */
-function resolveOutputPath(scene: ScreenshotScene, axis: MatrixAxis): string {
-  const base = typeof scene.target === "function" ? scene.target(axis) : scene.target;
-  const isDefault =
-    axis.viewport === "desktop" && axis.theme === "light" && axis.locale === "zh-CN";
-  if (isDefault) return base;
-
-  const ext  = path.extname(base);
-  const stem = base.slice(0, -ext.length);
-  const parts = [
-    axis.theme    !== "light"   ? axis.theme    : null,
-    axis.viewport !== "desktop" ? axis.viewport : null,
-    axis.locale   !== "zh-CN"   ? axis.locale   : null,
-  ].filter(Boolean);
-
-  return `${stem}.${parts.join(".")}${ext}`;
-}
-
-async function applyScreenshotTheme(page: Page, theme: "light" | "dark") {
-  await page.evaluate((nextTheme) => {
-    localStorage.setItem("anno.theme", nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
-
-    const raw = localStorage.getItem("auth-storage");
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as {
-        state?: { user?: { preferences?: { ui?: Record<string, unknown> } | null } | null };
-      };
-      const user = parsed.state?.user;
-      if (!user) return;
-      const preferences = user.preferences ?? {};
-      const ui = preferences.ui ?? {};
-      user.preferences = { ...preferences, ui: { ...ui, theme: nextTheme } };
-      localStorage.setItem("auth-storage", JSON.stringify(parsed));
-    } catch {
-      // Corrupt persisted auth should not make screenshot generation fail.
-    }
-  }, theme);
-}
+const existingManifest = readExistingManifest();
 
 test.describe("screenshots automation", () => {
   let cached: ScreenshotSeedCatalog | null = null;
 
-  test.beforeAll(async ({ request }) => {
-    const res = await request.get(
-      `${process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000"}/api/v1/__test/seed/catalog?profile=screenshots`,
-    );
-    if (!res.ok()) {
-      throw new Error(
-        `seed/catalog failed: ${res.status()} ${await res.text()}\n` +
-          "请先运行 screenshots seed，并确保 live backend 或 protocol stub 已启动。",
-      );
-    }
-    cached = (await res.json()) as ScreenshotSeedCatalog;
-  });
-
-  test.afterAll(() => {
-    if (VALIDATE_ONLY) return;
-    // 写 manifest.json（供 M4 文档站组件 + screenshots:lint 使用）
-    fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
-    fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
+  test.beforeAll(() => {
+    cached = loadScreenshotCatalog();
   });
 
   for (const scene of SCENES) {
@@ -149,7 +73,8 @@ test.describe("screenshots automation", () => {
       const catalog = cached;
 
       // 获取当前 Playwright project 对应的矩阵轴
-      const axis = PROJECT_AXIS[info.project.name] ?? PROJECT_AXIS["desktop-light"];
+      const axis = PROJECT_AXES[info.project.name as keyof typeof PROJECT_AXES]
+        ?? PROJECT_AXES["desktop-light"];
 
       // 不在此 project 跑的 scene 直接 skip
       if (!shouldRunInProject(scene, axis)) {
@@ -190,7 +115,12 @@ test.describe("screenshots automation", () => {
       // 确保输出目录存在
       const outRelative = resolveOutputPath(scene, axis);
       const out = `${REPO_ROOT}/${outRelative}`;
-      if (!VALIDATE_ONLY) fs.mkdirSync(path.dirname(out), { recursive: true });
+      if (!VALIDATE_ONLY) {
+        if (existingManifest[outRelative]?.auto === false) {
+          throw new Error(`${scene.name}: ${outRelative} 已标记为 auto:false，拒绝覆盖`);
+        }
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+      }
 
       // 按 capture 模式截图
       const capture = scene.capture;
@@ -242,17 +172,26 @@ test.describe("screenshots automation", () => {
       await cleanupAnnotations();
       await cleanupMock();
 
-      // 更新 manifest
-      if (!VALIDATE_ONLY) {
-        manifest[outRelative] = {
-          auto: true,
-          scene: scene.name,
-          lastRun: new Date().toISOString(),
-          project: info.project.name,
-        };
-      }
-
       info.annotations.push({ type: "screenshot", description: outRelative });
+      await info.attach("screenshot-manifest", {
+        body: Buffer.from(JSON.stringify({
+          target: outRelative,
+          scene: scene.name,
+          source: scene.source,
+          capture: capture ?? { kind: "viewport" },
+          fixture: scene.fixture ?? null,
+          seed_revision: catalog.seed_revision,
+          project: info.project.name,
+          viewport: page.viewportSize(),
+          theme: axis.theme,
+          locale: axis.locale,
+          browser: {
+            name: page.context().browser()?.browserType().name() ?? "chromium",
+            version: page.context().browser()?.version() ?? "unknown",
+          },
+        })),
+        contentType: "application/json",
+      });
     });
   }
 });

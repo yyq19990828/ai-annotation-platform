@@ -26,8 +26,9 @@ pnpm screenshots                  # desktop-light 全量（最常用）
 pnpm screenshots:dark             # desktop-dark 变体
 pnpm screenshots:matrix           # desktop-light / dark / mobile
 pnpm screenshots:flows            # 流程录制 → GIF（需 ffmpeg）
-pnpm screenshots:regression       # 视觉回归（每次 release 前跑）
-pnpm screenshots:lint             # 检查文档引用图是否都在 manifest
+pnpm screenshots:regression       # 比较高价值视觉回归基线
+pnpm screenshots:regression:update # 有意改变 UI 后更新基线
+pnpm screenshots:lint             # 快速检查静态引用与 manifest
 
 # 开发/验证场景：执行真实导航和 locator 校验，但不写 PNG/manifest
 SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots
@@ -37,6 +38,10 @@ SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots
 `admin`、`anno` 和 `qa` 账号呈现超管、标注员和审核员的真实项目关系。
 AI 场景必须先绑定能力匹配的 ML Backend；无 GPU 时启动
 `screenshot-ml-stub` 并把 seed 命令的模式改为 `stub`。
+
+Playwright 在整次运行开始时只做一次严格 catalog 预检，并把同一逻辑键快照提供给
+desktop-light、dark、mobile 和 regression project。运行期间不要 repair seed 或删除项目；
+场景自己的正常读取不会触发跨 project 的第二次全库预检。
 
 ## 目录结构
 
@@ -54,7 +59,10 @@ apps/web/e2e/screenshots/
 │   ├── ai-pre.ts
 │   └── index.ts               # 聚合导出
 ├── catalog.ts                     # fixture / backend capability 预检
+├── catalog-runtime.ts             # 单次运行共享的 catalog 快照
 ├── environment.ts                 # 固定时钟、禁动画、资源 ready
+├── global-setup.ts                # 整次 Playwright 运行的 fail-closed 预检
+├── manifest-reporter.ts           # 成功矩阵后原子重建 manifest
 ├── _helpers/
 │   ├── annotate.ts            # SVG overlay 注释
 │   ├── mock-state.ts          # page.route 网络状态 mock
@@ -67,9 +75,9 @@ apps/web/e2e/screenshots/
 ├── regression/                # 视觉回归
 │   ├── regression.spec.ts
 │   └── __screenshots__/       # 基线截图（提交入 git）
-├── outputs/                   # 运行时产出（.gitignore 中）
-│   ├── manifest.json          # 自动生成的图清单
-│   └── flows/                 # GIF / WebM
+├── outputs/
+│   ├── manifest.json          # 提交入 git 的 v2 图片清单
+│   └── flows/                 # GIF / WebM 临时目录（不提交）
 └── screenshots.spec.ts        # 主 driver
 ```
 
@@ -115,13 +123,13 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
 ];
 ```
 
-### 2. 运行生成图片
+### 2. 定向验证场景
 
 ```bash
 cd apps/web
 # 先只验证，不写正式资产
 SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots --grep "my-new-scene"
-# 通过后生成目标图
+# 需要检查画面时可定向生成目标图；这不会发布完整 manifest
 pnpm screenshots --grep "my-new-scene"
 ```
 
@@ -139,12 +147,23 @@ pnpm screenshots --grep "my-new-scene"
 ![我的新场景](../images/projects/my-new-scene.png)
 ```
 
-### 4. 检查 manifest
+### 4. 发布完整矩阵和 manifest
 
 ```bash
 cd apps/web
+pnpm screenshots:matrix
 pnpm screenshots:lint
+
+cd ../..
+node docs-site/scripts/check-image-manifest.mjs --strict
+node docs-site/scripts/check-orphan-images.mjs --strict
 ```
+
+只有 desktop-light、desktop-dark、mobile 三个 project 全部成功时，reporter 才会原子
+重建 manifest；失败、定向运行、`--list` 和 `SCREENSHOT_VALIDATE_ONLY=1` 都不会替换它。
+每个自动条目记录 scene、源码文件、capture/fixture、seed revision、commit、浏览器、
+视口/主题/语言、生成时间、SHA-256 和像素尺寸。`--strict` 检查现有资产四方一致性；
+全量重拍交付前再用 `--release` 要求所有当前 scene 和 seed revision 都已更新。
 
 ## `ScreenshotScene` 完整字段说明
 
@@ -168,8 +187,11 @@ pnpm screenshots:lint
 
 ```bash
 cd apps/web
-# 更新基线
-pnpm screenshots:regression -- --update-snapshots
+# 先在 protocol stub + screenshots seed 环境更新基线
+pnpm screenshots:regression:update
+
+# 无更新模式复跑，确认基线可稳定比较
+pnpm screenshots:regression
 
 # 查看 diff（在 test-results/ 目录）
 # 确认无误后提交基线变更
@@ -179,14 +201,23 @@ git commit -m "chore(screenshots): 更新视觉回归基线 — <变更原因>"
 
 ## 手动维护的图
 
-maintainer 手动修改图片时，在 `manifest.json` 里把 `auto` 改为 `false`，
-下次自动运行会跳过该图不覆盖：
+手工合成且没有可复现场景的图片使用 `auto: false`。自动 driver 在写文件前会拒绝覆盖
+这类 target，完整矩阵只会保留磁盘上真实存在的手工条目。手工图片改变后必须同步更新
+哈希、尺寸和时间，再运行严格检查：
 
 ```json
 {
-  "docs-site/user-guide/images/<page>/<figure>.png": {
-    "auto": false,
-    "note": "示意图需人工合成，自动化无法复现"
+  "schema_version": 2,
+  "entries": {
+    "docs-site/user-guide/images/<page>/<figure>.png": {
+      "auto": false,
+      "target": "docs-site/user-guide/images/<page>/<figure>.png",
+      "note": "示意图需人工合成，自动化无法复现",
+      "provenance": "manual",
+      "sha256": "<64 位摘要>",
+      "width": 1440,
+      "height": 900
+    }
   }
 }
 ```
@@ -212,4 +243,5 @@ DEV 远程页面应连当前 `:3000` 同源的 `/ws`，由 Vite 升级并转发�
 或设置 `FFMPEG_PATH=/path/to/ffmpeg`。
 
 **Q: 视觉回归误报（字体渲染差异）**
-调高阈值：`maxDiffPixelRatio: 0.02`，或在 `regression.spec.ts` 里对该页面专门调整。
+先确认 CI 与本机都使用 Playwright Chromium、固定时区/语言/DPR 和 protocol stub。
+确有平台级渲染差异时，再在 `regression.spec.ts` 里对单个场景调整阈值，避免放宽全部基线。

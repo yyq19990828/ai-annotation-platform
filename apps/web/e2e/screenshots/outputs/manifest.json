@@ -1,366 +1,1738 @@
 {
-  "docs-site/user-guide/images/settings/profile.png": {
-    "auto": true,
-    "scene": "settings/profile",
-    "lastRun": "2026-06-19T12:05:24.808Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/settings/workbench-prefs.png": {
-    "auto": true,
-    "scene": "settings/workbench-prefs",
-    "lastRun": "2026-06-19T12:05:26.929Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/settings/notification-prefs.png": {
-    "auto": true,
-    "scene": "settings/notification-prefs",
-    "lastRun": "2026-06-19T12:05:28.949Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/settings/system-smtp.png": {
-    "auto": true,
-    "scene": "settings/system-smtp",
-    "lastRun": "2026-06-19T12:05:30.974Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/settings/my-feedback.png": {
-    "auto": true,
-    "scene": "settings/my-feedback",
-    "lastRun": "2026-06-19T12:05:32.999Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/users/list.png": {
-    "auto": true,
-    "scene": "superadmin/users/list",
-    "lastRun": "2026-06-19T12:05:34.928Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/users/invite-modal.png": {
-    "auto": true,
-    "scene": "superadmin/users/invite-modal",
-    "lastRun": "2026-06-19T12:05:37.086Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/bugs/list.png": {
-    "auto": true,
-    "scene": "superadmin/bugs/list",
-    "lastRun": "2026-06-19T12:05:39.200Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/bugs/detail-panel.png": {
-    "auto": true,
-    "scene": "superadmin/bugs/detail-panel",
-    "lastRun": "2026-06-19T12:05:41.408Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/analytics/overview.png": {
-    "auto": true,
-    "scene": "superadmin/analytics/overview",
-    "lastRun": "2026-06-19T12:05:43.951Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/analytics/heatmap.png": {
-    "auto": true,
-    "scene": "superadmin/analytics/heatmap",
-    "lastRun": "2026-06-19T12:05:46.203Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/system-monitoring/health-panel.png": {
-    "auto": true,
-    "scene": "superadmin/system-monitoring/health-panel",
-    "lastRun": "2026-06-19T12:05:49.190Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/model-market/list.png": {
-    "auto": true,
-    "scene": "superadmin/model-market/list",
-    "lastRun": "2026-06-19T12:05:51.678Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
-    "auto": true,
-    "scene": "superadmin/audit-logs/filter-bar",
-    "lastRun": "2026-06-19T12:05:53.822Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/notifications/panel-overview.png": {
-    "auto": true,
-    "scene": "notifications/panel-overview",
-    "lastRun": "2026-06-19T12:05:58.932Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/tool-units-panel.png": {
-    "auto": true,
-    "scene": "projects/tool-units-panel",
-    "lastRun": "2026-06-19T12:04:12.619Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/batch-status-list.png": {
-    "auto": true,
-    "scene": "projects/batch-status-list",
-    "lastRun": "2026-06-19T12:04:14.865Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/data-manager-overview.png": {
-    "auto": true,
-    "scene": "projects/data-manager-overview",
-    "lastRun": "2026-06-19T12:04:17.111Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
-    "auto": true,
-    "scene": "projects/data-manager-filter-rules",
-    "lastRun": "2026-06-19T12:04:19.161Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/template-library-overview.png": {
-    "auto": true,
-    "scene": "projects/template-library-overview",
-    "lastRun": "2026-06-19T12:04:21.241Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/ml-backends/register-form.png": {
-    "auto": true,
-    "scene": "projects/ml-backends/register-form",
-    "lastRun": "2026-06-19T12:04:23.773Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/ai-pre-config-panel.png": {
-    "auto": true,
-    "scene": "projects/ai-pre-config-panel",
-    "lastRun": "2026-06-19T12:04:26.058Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
-    "auto": true,
-    "scene": "projects/prediction-import-wizard",
-    "lastRun": "2026-06-19T12:04:28.837Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/review/review-list-page.png": {
-    "auto": true,
-    "scene": "review/review-list-page",
-    "lastRun": "2026-06-19T12:04:42.862Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
-    "auto": true,
-    "scene": "superadmin/users/edit-modal",
-    "lastRun": "2026-06-19T12:06:01.538Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/users/groups-tab.png": {
-    "auto": true,
-    "scene": "superadmin/users/groups-tab",
-    "lastRun": "2026-06-19T12:06:03.652Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/users/permission-matrix.png": {
-    "auto": true,
-    "scene": "superadmin/users/permission-matrix",
-    "lastRun": "2026-06-19T12:06:05.774Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png": {
-    "auto": true,
-    "scene": "superadmin/audit-logs/detail-modal",
-    "lastRun": "2026-06-19T12:06:08.381Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/failed-predictions/list.png": {
-    "auto": true,
-    "scene": "superadmin/failed-predictions/list",
-    "lastRun": "2026-06-15T03:03:25.462Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png": {
-    "auto": true,
-    "scene": "superadmin/system-monitoring/workers-table",
-    "lastRun": "2026-06-19T12:06:11.430Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/ml-backend/register-form.png": {
-    "auto": true,
-    "scene": "superadmin/ml-backend/register-form",
-    "lastRun": "2026-06-19T12:06:14.075Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/public-templates/templates-list.png": {
-    "auto": true,
-    "scene": "superadmin/public-templates/templates-list",
-    "lastRun": "2026-06-19T12:06:16.504Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/superadmin/bugs/status-transitions.png": {
-    "auto": true,
-    "scene": "superadmin/bugs/status-transitions",
-    "lastRun": "2026-06-19T12:06:18.724Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/prediction-purge-modal.png": {
-    "auto": true,
-    "scene": "projects/prediction-purge-modal",
-    "lastRun": "2026-06-19T12:04:31.901Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/getting-started/login.png": {
-    "auto": true,
-    "scene": "getting-started/login",
-    "lastRun": "2026-06-19T12:03:48.821Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/getting-started/forgot-password.png": {
-    "auto": true,
-    "scene": "getting-started/forgot-password",
-    "lastRun": "2026-06-19T12:03:50.486Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/polygon/vertex-edit.png": {
-    "auto": true,
-    "scene": "polygon/vertex-edit",
-    "lastRun": "2026-06-19T12:03:53.043Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/polygon/close-hint.png": {
-    "auto": true,
-    "scene": "polygon/close-hint",
-    "lastRun": "2026-06-19T12:03:55.766Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/create-entry.png": {
-    "auto": true,
-    "scene": "projects/create-entry",
-    "lastRun": "2026-06-19T12:04:04.479Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/wizard-steps.png": {
-    "auto": true,
-    "scene": "projects/wizard-steps",
-    "lastRun": "2026-06-19T12:04:06.105Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/empty-state.png": {
-    "auto": true,
-    "scene": "projects/empty-state",
-    "lastRun": "2026-06-19T12:04:07.878Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/error-state.png": {
-    "auto": true,
-    "scene": "projects/error-state",
-    "lastRun": "2026-06-19T12:04:10.378Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/review/workbench.png": {
-    "auto": true,
-    "scene": "review/workbench",
-    "lastRun": "2026-06-19T12:04:35.614Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/review/reject-form.png": {
-    "auto": true,
-    "scene": "review/reject-form",
-    "lastRun": "2026-06-19T12:04:39.954Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/export/format-select.png": {
-    "auto": true,
-    "scene": "export/format-select",
-    "lastRun": "2026-06-19T12:04:45.326Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/ai-pre-stepper.png": {
-    "auto": true,
-    "scene": "ai-pre/stepper",
-    "lastRun": "2026-06-19T12:04:47.075Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/ai-pre-history-search.png": {
-    "auto": true,
-    "scene": "ai-pre/history-search",
-    "lastRun": "2026-06-19T12:04:49.237Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/projects/wizard-step4-backend.png": {
-    "auto": true,
-    "scene": "wizard/step4-backend",
-    "lastRun": "2026-06-19T12:04:52.956Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/getting-started/platform-nav-overview.png": {
-    "auto": true,
-    "scene": "platform/nav-overview",
-    "lastRun": "2026-06-19T12:04:54.791Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/getting-started/role-dashboard-overview.png": {
-    "auto": true,
-    "scene": "platform/role-dashboard-overview",
-    "lastRun": "2026-06-19T12:04:56.970Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
-    "auto": true,
-    "scene": "workflows/failed-prediction-recovery-jobs-list",
-    "lastRun": "2026-06-19T12:05:01.107Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/workbench/layout-overview.png": {
-    "auto": true,
-    "scene": "workbench/layout-overview",
-    "lastRun": "2026-06-19T12:05:08.524Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/mask-brush/toolbar-overview.png": {
-    "auto": true,
-    "scene": "mask-brush/toolbar-overview",
-    "lastRun": "2026-06-19T12:05:11.571Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
-    "auto": true,
-    "scene": "sam/exemplar-output-mode",
-    "lastRun": "2026-06-19T12:05:17.309Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/sam/ai-inspector-panel.png": {
-    "auto": true,
-    "scene": "sam/ai-inspector-panel",
-    "lastRun": "2026-06-19T12:05:20.584Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/datasets/import-images-wizard.png": {
-    "auto": true,
-    "scene": "datasets/import-images-wizard",
-    "lastRun": "2026-06-19T12:05:22.873Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/getting-started/login.dark.png": {
-    "auto": true,
-    "scene": "getting-started/login",
-    "lastRun": "2026-06-19T12:06:21.853Z",
-    "project": "desktop-dark"
-  },
-  "docs-site/user-guide/images/projects/create-entry.dark.png": {
-    "auto": true,
-    "scene": "projects/create-entry",
-    "lastRun": "2026-06-19T12:06:24.353Z",
-    "project": "desktop-dark"
-  },
-  "docs-site/user-guide/images/sam/subtoolbar.png": {
-    "auto": true,
-    "scene": "sam/subtoolbar",
-    "lastRun": "2026-06-19T12:04:02.808Z",
-    "project": "desktop-light"
-  },
-  "docs-site/user-guide/images/getting-started/login.mobile.png": {
-    "auto": true,
-    "scene": "getting-started/login",
-    "lastRun": "2026-06-19T12:07:30.426Z",
-    "project": "mobile"
-  },
-  "docs-site/user-guide/images/sam/text-three-modes.png": {
-    "auto": false,
-    "note": "legacy screenshot retained after the text-three-modes scene was removed"
+  "schema_version": 2,
+  "generated_at": "2026-07-13T10:12:38.174Z",
+  "seed_profile": "screenshots",
+  "seed_revision": "legacy-pre-catalog",
+  "source_commit": "b83b7e6b526f1bde1d6b2e8eca2cd3ef4effcefc",
+  "projects": [
+    "desktop-light",
+    "desktop-dark",
+    "mobile"
+  ],
+  "provenance": "legacy-migration",
+  "entries": {
+    "docs-site/user-guide/images/datasets/import-images-wizard.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/datasets/import-images-wizard.png",
+      "scene": "datasets/import-images-wizard",
+      "source": "apps/web/e2e/screenshots/scenes/datasets.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:22.873Z",
+      "provenance": "legacy",
+      "sha256": "8306fce95df9b5ff0f332ff643109bf3d07b0f74b4982af6872eefd40c06ec28",
+      "width": 640,
+      "height": 361
+    },
+    "docs-site/user-guide/images/export/format-select.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/export/format-select.png",
+      "scene": "export/format-select",
+      "source": "apps/web/e2e/screenshots/scenes/export.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:45.326Z",
+      "provenance": "legacy",
+      "sha256": "bfc421dc66b975db0f903c9f3c5aaa4a7032a964bd82e7e2d22a4df2649351a6",
+      "width": 520,
+      "height": 717
+    },
+    "docs-site/user-guide/images/getting-started/forgot-password.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/getting-started/forgot-password.png",
+      "scene": "getting-started/forgot-password",
+      "source": "apps/web/e2e/screenshots/scenes/auth.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:03:50.486Z",
+      "provenance": "legacy",
+      "sha256": "e392600e078e1b5658f000e8f05bfd572ad895c99df32877f603f613cbc17cc3",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/getting-started/login.dark.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/getting-started/login.dark.png",
+      "scene": "getting-started/login",
+      "source": "apps/web/e2e/screenshots/scenes/auth.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "dark",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:21.853Z",
+      "provenance": "legacy",
+      "sha256": "99e735e19aa8030115a681913531d4f8e8666a7157e8df5cde1823077f11f573",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/getting-started/login.mobile.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/getting-started/login.mobile.png",
+      "scene": "getting-started/login",
+      "source": "apps/web/e2e/screenshots/scenes/auth.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 664
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:07:30.426Z",
+      "provenance": "legacy",
+      "sha256": "a89dd0b1a7e545f56345e8cae18dfea263724d48a2837c7cb92cba67e44d44f6",
+      "width": 1170,
+      "height": 1992
+    },
+    "docs-site/user-guide/images/getting-started/login.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/getting-started/login.png",
+      "scene": "getting-started/login",
+      "source": "apps/web/e2e/screenshots/scenes/auth.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:03:48.821Z",
+      "provenance": "legacy",
+      "sha256": "c4c6a62ac3b3929ab781cbdc646d3ecb55ccde42f2835cb26eb0b1cf973ca59e",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/getting-started/platform-nav-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/getting-started/platform-nav-overview.png",
+      "scene": "platform/nav-overview",
+      "source": "apps/web/e2e/screenshots/scenes/platform.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "aside",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:54.791Z",
+      "provenance": "legacy",
+      "sha256": "b9482440234719b65df46d15d392eda91acb0b32be82481f1eccdc9d80598d6c",
+      "width": 220,
+      "height": 852
+    },
+    "docs-site/user-guide/images/getting-started/role-dashboard-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/getting-started/role-dashboard-overview.png",
+      "scene": "platform/role-dashboard-overview",
+      "source": "apps/web/e2e/screenshots/scenes/platform.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:56.970Z",
+      "provenance": "legacy",
+      "sha256": "1ba41683c120966a59cd9f0009f8b4a132abdec9b60f56d2c8dd8227132db361",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/mask-brush/toolbar-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/mask-brush/toolbar-overview.png",
+      "scene": "mask-brush/toolbar-overview",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"mask-toolbar\"]",
+        "padding": 12
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:11.571Z",
+      "provenance": "legacy",
+      "sha256": "8e3f9cb6c6e9c7f06f660e255472af99ca3b0afe16fbcc29c190a310e1b30047",
+      "width": 619,
+      "height": 79
+    },
+    "docs-site/user-guide/images/notifications/panel-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/notifications/panel-overview.png",
+      "scene": "notifications/panel-overview",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:58.932Z",
+      "provenance": "legacy",
+      "sha256": "3ec831c61ee884645a973c2e0c0bf1070ff2a442ad2ff32e3659999739520c65",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/polygon/close-hint.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/polygon/close-hint.png",
+      "scene": "polygon/close-hint",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-polygon.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:03:55.766Z",
+      "provenance": "legacy",
+      "sha256": "9ec9bb40728f4b9a1c63f56da86c179f6a62e2c95a39b575a139718e5ffd8d6f",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/polygon/vertex-edit.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/polygon/vertex-edit.png",
+      "scene": "polygon/vertex-edit",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-polygon.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:03:53.043Z",
+      "provenance": "legacy",
+      "sha256": "9ec9bb40728f4b9a1c63f56da86c179f6a62e2c95a39b575a139718e5ffd8d6f",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/ai-pre-config-panel.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/ai-pre-config-panel.png",
+      "scene": "projects/ai-pre-config-panel",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:26.058Z",
+      "provenance": "legacy",
+      "sha256": "997ebf4805a7873f7a0b8d635237c2e391c86be254f1d2c1a262f0c95f0e2999",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/ai-pre-history-search.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/ai-pre-history-search.png",
+      "scene": "ai-pre/history-search",
+      "source": "apps/web/e2e/screenshots/scenes/ai-pre.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:49.237Z",
+      "provenance": "legacy",
+      "sha256": "fdab34dbe470e0294f94b359210cdec934dd27840c7047b2174e8db86e0b5ccb",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/ai-pre-stepper.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/ai-pre-stepper.png",
+      "scene": "ai-pre/stepper",
+      "source": "apps/web/e2e/screenshots/scenes/ai-pre.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:47.075Z",
+      "provenance": "legacy",
+      "sha256": "332b39f855ab450cc125cdef37ca435c8bfc41b604ed38514634a12a35600c3b",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/batch-status-list.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/batch-status-list.png",
+      "scene": "projects/batch-status-list",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:14.865Z",
+      "provenance": "legacy",
+      "sha256": "89ccf37d19666348420ddf23c6c0fa6bd586fca49a49fad4a368d3e35ed024c9",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/create-entry.dark.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/create-entry.dark.png",
+      "scene": "projects/create-entry",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "dark",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:24.353Z",
+      "provenance": "legacy",
+      "sha256": "0926e75462b4f92537b67b52bc16545dc3bcfd864ae961a1073bdf58bd71748c",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/create-entry.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/create-entry.png",
+      "scene": "projects/create-entry",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:04.479Z",
+      "provenance": "legacy",
+      "sha256": "b3b2f547faa2889b725fc6f63a8d564e19242eb9860422589bda0541dde679ab",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/data-manager-filter-rules.png",
+      "scene": "projects/data-manager-filter-rules",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:19.161Z",
+      "provenance": "legacy",
+      "sha256": "398fce9fd715947353d14ffe5974670782ab16ad4376f87a27c22e34d1e6ff86",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/data-manager-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/data-manager-overview.png",
+      "scene": "projects/data-manager-overview",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:17.111Z",
+      "provenance": "legacy",
+      "sha256": "78c4762e96c942ea7a9c011ca667a3e21ec9d9e9c903e02504886c26ba6af3f5",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/empty-state.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/empty-state.png",
+      "scene": "projects/empty-state",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:07.878Z",
+      "provenance": "legacy",
+      "sha256": "4df74b11a4827453ffb9c9f916e24f21a23cc1b62ae66f42e995afdafa32f1a2",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/error-state.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/error-state.png",
+      "scene": "projects/error-state",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:10.378Z",
+      "provenance": "legacy",
+      "sha256": "eca718f6cc1fd39198d7511e35b42adb9b9f9c90d88847fc5cc72e2de7e98949",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/ml-backends/register-form.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/ml-backends/register-form.png",
+      "scene": "projects/ml-backends/register-form",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:23.773Z",
+      "provenance": "legacy",
+      "sha256": "7cddca749baa3c49ab2f026ab9bad602472b07f79f50a0809a0a7dfcc947525d",
+      "width": 560,
+      "height": 603
+    },
+    "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/prediction-import-wizard.png",
+      "scene": "projects/prediction-import-wizard",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:28.837Z",
+      "provenance": "legacy",
+      "sha256": "647fe8923e6a0f8b7de601c49ac66b1acddf566bee07689906c8c762904920d3",
+      "width": 560,
+      "height": 457
+    },
+    "docs-site/user-guide/images/projects/prediction-purge-modal.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/prediction-purge-modal.png",
+      "scene": "projects/prediction-purge-modal",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:31.901Z",
+      "provenance": "legacy",
+      "sha256": "f6d92b1d160c747c02322fddb9bcc3f20da7367404cae2a5303abfcd3e6c6d38",
+      "width": 520,
+      "height": 320
+    },
+    "docs-site/user-guide/images/projects/template-library-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/template-library-overview.png",
+      "scene": "projects/template-library-overview",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:21.241Z",
+      "provenance": "legacy",
+      "sha256": "80c927c88f1a2fd238c4399e470c736608f5bf4a44a819acf207fca227da70ee",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/tool-units-panel.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/tool-units-panel.png",
+      "scene": "projects/tool-units-panel",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:12.619Z",
+      "provenance": "legacy",
+      "sha256": "fee34b6fa1ad0765d3fa18964724a9f06cb8e6e993bba78c6a5d9a5c4c365aed",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/wizard-step4-backend.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/wizard-step4-backend.png",
+      "scene": "wizard/step4-backend",
+      "source": "apps/web/e2e/screenshots/scenes/ai-pre.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"project-wizard\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:52.956Z",
+      "provenance": "legacy",
+      "sha256": "c0ed4a8ef178fc982fcffd3c8aa9c96f5a35b6bc4d1369a7b7bbb06eae44c10f",
+      "width": 582,
+      "height": 175
+    },
+    "docs-site/user-guide/images/projects/wizard-steps.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/projects/wizard-steps.png",
+      "scene": "projects/wizard-steps",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"project-wizard\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:06.105Z",
+      "provenance": "legacy",
+      "sha256": "ab916a133920fea1bfd6fca1bfee9b0c7750b3df5484f709d09eed804438fb11",
+      "width": 582,
+      "height": 768
+    },
+    "docs-site/user-guide/images/review/reject-form.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/review/reject-form.png",
+      "scene": "review/reject-form",
+      "source": "apps/web/e2e/screenshots/scenes/review.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:39.954Z",
+      "provenance": "legacy",
+      "sha256": "b416cee4a5b3a82948be3c76b22dbfccd94c360febfb0267acac46f647ec7ca1",
+      "width": 460,
+      "height": 405
+    },
+    "docs-site/user-guide/images/review/review-list-page.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/review/review-list-page.png",
+      "scene": "review/review-list-page",
+      "source": "apps/web/e2e/screenshots/scenes/review.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:42.862Z",
+      "provenance": "legacy",
+      "sha256": "131668df2040c87e73f573c622c500c430a9e223ef86c460dd03ff75579995b5",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/review/workbench.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/review/workbench.png",
+      "scene": "review/workbench",
+      "source": "apps/web/e2e/screenshots/scenes/review.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:35.614Z",
+      "provenance": "legacy",
+      "sha256": "1db13ffd2ef6af96fba2cf96868d8d789a4c1b341fd645408db7ada39ef75450",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/sam/ai-inspector-panel.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/sam/ai-inspector-panel.png",
+      "scene": "sam/ai-inspector-panel",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"ai-prediction-popover\"]",
+        "padding": 8
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:20.584Z",
+      "provenance": "legacy",
+      "sha256": "93244c874462cdd776a37072d18511a370a9ffb1223fdfbcaae5dd7752c2c319",
+      "width": 376,
+      "height": 824
+    },
+    "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/sam/exemplar-output-mode.png",
+      "scene": "sam/exemplar-output-mode",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"interactive-toolbar\"]",
+        "padding": 8
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:17.309Z",
+      "provenance": "legacy",
+      "sha256": "e36f52bf1b08d7e421f5c5aa311e983975e4c45ff476ca838e545c2f7f32dc75",
+      "width": 256,
+      "height": 220
+    },
+    "docs-site/user-guide/images/sam/subtoolbar.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/sam/subtoolbar.png",
+      "scene": "sam/subtoolbar",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-sam.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"interactive-toolbar\"]",
+        "padding": 8
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:04:02.808Z",
+      "provenance": "legacy",
+      "sha256": "f4ad310080be1b41c854d73b5d700b47b486f23aa3d758b4be5d1c37112aa288",
+      "width": 256,
+      "height": 236
+    },
+    "docs-site/user-guide/images/sam/text-three-modes.png": {
+      "auto": false,
+      "target": "docs-site/user-guide/images/sam/text-three-modes.png",
+      "note": "legacy screenshot retained after the text-three-modes scene was removed",
+      "generated_at": "2026-07-13T10:12:38.174Z",
+      "provenance": "manual",
+      "sha256": "6b103e79fa878493320a2dee0358b8b8dea90a55fec596250822771c097bbbc1",
+      "width": 275,
+      "height": 52
+    },
+    "docs-site/user-guide/images/settings/my-feedback.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/settings/my-feedback.png",
+      "scene": "settings/my-feedback",
+      "source": "apps/web/e2e/screenshots/scenes/settings.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:32.999Z",
+      "provenance": "legacy",
+      "sha256": "fcd8a525b4fe420f1e64adddc8bdaa0b0605eeff943a72d3bed311b3ba301930",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/settings/notification-prefs.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/settings/notification-prefs.png",
+      "scene": "settings/notification-prefs",
+      "source": "apps/web/e2e/screenshots/scenes/settings.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:28.949Z",
+      "provenance": "legacy",
+      "sha256": "afbbc6af6813849cfd17d5749e3bb927cbd8f3f8fa120fb8cdcad9882b83d26a",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/settings/profile.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/settings/profile.png",
+      "scene": "settings/profile",
+      "source": "apps/web/e2e/screenshots/scenes/settings.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:24.808Z",
+      "provenance": "legacy",
+      "sha256": "1c513cd22f8cb06c67f72a609f5ab516b9287854396253df2f5488ae5eb85705",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/settings/system-smtp.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/settings/system-smtp.png",
+      "scene": "settings/system-smtp",
+      "source": "apps/web/e2e/screenshots/scenes/settings.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:30.974Z",
+      "provenance": "legacy",
+      "sha256": "415317c07543c4986a3af7a3d3b4b8cd905b09a72300451e72d7423839ab52a5",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/settings/workbench-prefs.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/settings/workbench-prefs.png",
+      "scene": "settings/workbench-prefs",
+      "source": "apps/web/e2e/screenshots/scenes/settings.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:26.929Z",
+      "provenance": "legacy",
+      "sha256": "29d6dcff711f4c7eb9ac5fa425eecb65d58954bbd90f8aca45f911e805bda756",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/analytics/heatmap.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/analytics/heatmap.png",
+      "scene": "superadmin/analytics/heatmap",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"panel-heatmap\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:46.203Z",
+      "provenance": "legacy",
+      "sha256": "3fa674338a890b0ae3bd8b53a7253c5106ebcb75bf97c4837c909539b9cad0d5",
+      "width": 1172,
+      "height": 243
+    },
+    "docs-site/user-guide/images/superadmin/analytics/overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/analytics/overview.png",
+      "scene": "superadmin/analytics/overview",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:43.951Z",
+      "provenance": "legacy",
+      "sha256": "9d91358566fa2a27e8974610d8d26f2f7c94fa89fde5fec020cef68289544bd3",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png",
+      "scene": "superadmin/audit-logs/detail-modal",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:08.381Z",
+      "provenance": "legacy",
+      "sha256": "8294127acd9187e1ea76a52279b06f4c162c0b1bee16795d04c3cfb12d85bb8d",
+      "width": 620,
+      "height": 616
+    },
+    "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png",
+      "scene": "superadmin/audit-logs/filter-bar",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:53.822Z",
+      "provenance": "legacy",
+      "sha256": "e8eb3d045b8004cf8201e00c1d6869791901ac3bc4db7a9ff9a5d6073108965d",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/bugs/detail-panel.png": {
+      "auto": false,
+      "target": "docs-site/user-guide/images/superadmin/bugs/detail-panel.png",
+      "note": "待固定 BUG seed 进入 screenshot catalog 后恢复自动场景",
+      "generated_at": "2026-06-19T12:05:41.408Z",
+      "provenance": "manual",
+      "sha256": "01e14e4d9610d3f43fa7be3c5786043c3b61cb5dc76651a868d8403597c87dab",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/bugs/list.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/bugs/list.png",
+      "scene": "superadmin/bugs/list",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:39.200Z",
+      "provenance": "legacy",
+      "sha256": "4849ef352806263238481048cbc33b62c46f8de33ba42422fc65126aa1b587f5",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/bugs/status-transitions.png": {
+      "auto": false,
+      "target": "docs-site/user-guide/images/superadmin/bugs/status-transitions.png",
+      "note": "待固定 BUG seed 进入 screenshot catalog 后恢复自动场景",
+      "generated_at": "2026-06-19T12:06:18.724Z",
+      "provenance": "manual",
+      "sha256": "2a71cd90d7b2bbd6dd615a28f1b6c87e7efa5b25726bcafd37c2f6b5eebf8eb4",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/ml-backend/register-form.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/ml-backend/register-form.png",
+      "scene": "superadmin/ml-backend/register-form",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:14.075Z",
+      "provenance": "legacy",
+      "sha256": "6a7c75dc5c20e63edb76bcad855452326950fe0c40df125dc63e65de543a948d",
+      "width": 560,
+      "height": 603
+    },
+    "docs-site/user-guide/images/superadmin/model-market/list.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/model-market/list.png",
+      "scene": "superadmin/model-market/list",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:51.678Z",
+      "provenance": "legacy",
+      "sha256": "384b424fb0e6816f881ec55e77ce975962304e67b2e8edf1b652f343c353de6f",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/public-templates/templates-list.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/public-templates/templates-list.png",
+      "scene": "superadmin/public-templates/templates-list",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:16.504Z",
+      "provenance": "legacy",
+      "sha256": "3b95762da16c6bcd8d101c487debb9335db00981766ccc60d3019d916feaedc1",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/system-monitoring/health-panel.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/system-monitoring/health-panel.png",
+      "scene": "superadmin/system-monitoring/health-panel",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:49.190Z",
+      "provenance": "legacy",
+      "sha256": "e0b02dfe096038bbb62892b1c15d6162b4224f1655aaa53b7bbc5340bf8b9ec7",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png",
+      "scene": "superadmin/system-monitoring/workers-table",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "table:has-text(\"Heartbeat\")",
+        "padding": 8
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:11.430Z",
+      "provenance": "legacy",
+      "sha256": "d31885dfc1e701d374172d0e73b9ca6893704d40af2f849a642baff22529c68b",
+      "width": 644,
+      "height": 123
+    },
+    "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/users/edit-modal.png",
+      "scene": "superadmin/users/edit-modal",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:01.538Z",
+      "provenance": "legacy",
+      "sha256": "202adcb9791ded0064d9a611124555d7f8efa520e6773bc5be34f95d06a02870",
+      "width": 520,
+      "height": 349
+    },
+    "docs-site/user-guide/images/superadmin/users/groups-tab.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/users/groups-tab.png",
+      "scene": "superadmin/users/groups-tab",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:03.652Z",
+      "provenance": "legacy",
+      "sha256": "efa1a3d896e9fba3fa05088062d31e47ccaed9169411d0b5352cc65f503d4a73",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/users/invite-modal.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/users/invite-modal.png",
+      "scene": "superadmin/users/invite-modal",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[role=\"dialog\"]",
+        "padding": 0
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:37.086Z",
+      "provenance": "legacy",
+      "sha256": "0224ebbe2d8c5bccf86dab4f752680eca8808f82100cb3326ffe03e087409ba3",
+      "width": 520,
+      "height": 350
+    },
+    "docs-site/user-guide/images/superadmin/users/list.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/users/list.png",
+      "scene": "superadmin/users/list",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:34.928Z",
+      "provenance": "legacy",
+      "sha256": "daf5d69b062ecdc56fc4079b9e4783695caf6f04040c35532cc0f67d3f3a7496",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/superadmin/users/permission-matrix.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/superadmin/users/permission-matrix.png",
+      "scene": "superadmin/users/permission-matrix",
+      "source": "apps/web/e2e/screenshots/scenes/superadmin.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:06:05.774Z",
+      "provenance": "legacy",
+      "sha256": "08ec613d6621f24bd3037f0657864315b131a6af3fe7e32abae365df4dfde6c4",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/workbench/layout-overview.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/workbench/layout-overview.png",
+      "scene": "workbench/layout-overview",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:08.524Z",
+      "provenance": "legacy",
+      "sha256": "235698c106d6586b873f8cdf2ce4b9dd8e060f44a292a1d0c31dcaa6110b121c",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png",
+      "scene": "workflows/failed-prediction-recovery-jobs-list",
+      "source": "apps/web/e2e/screenshots/scenes/workflows.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": null,
+      "seed_profile": "screenshots",
+      "seed_revision": "legacy-pre-catalog",
+      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "browser": {
+        "name": "chromium",
+        "version": "unknown"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-06-19T12:05:01.107Z",
+      "provenance": "legacy",
+      "sha256": "7173280c8ccb60549ce46fa6d83c732924acdeff6838b1441bfd30ebc90b54d4",
+      "width": 1440,
+      "height": 900
+    }
   }
 }

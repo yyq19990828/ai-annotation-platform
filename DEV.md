@@ -357,10 +357,19 @@ pnpm --filter web screenshots                              # 生成 desktop-ligh
 pnpm --filter web screenshots:dark                         # 显式声明的深色场景
 pnpm --filter web screenshots:matrix                       # desktop-light/dark/mobile
 pnpm --filter web screenshots:flows                        # 流程 GIF，需 ffmpeg
+pnpm --filter web screenshots:regression                   # 比较 8 张高价值视觉基线
+pnpm --filter web screenshots:regression:update            # 有意 UI 变化后更新基线
 ```
 
 当前 desktop-light 有 58 个真实场景。生成后使用 `git diff docs-site/user-guide/images/`
-人工审阅；流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。
+人工审阅；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
+流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
+
+```bash
+pnpm --filter web screenshots:lint
+node docs-site/scripts/check-image-manifest.mjs --strict
+node docs-site/scripts/check-orphan-images.mjs --strict
+```
 
 **E2E 跑过后想恢复 dev 账号**：`pnpm test:e2e` 内部仍会 TRUNCATE 重建 fixture（含
 `@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑上面的 screenshots seed

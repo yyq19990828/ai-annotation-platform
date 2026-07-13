@@ -21,9 +21,14 @@ const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 export default defineConfig({
   testDir: "./e2e/screenshots",
   testMatch: ["**/*.spec.ts"],
+  globalSetup: "./e2e/screenshots/global-setup.ts",
   fullyParallel: false,
   workers: 1,
-  reporter: "list",
+  reporter: [
+    ["list"],
+    ["./e2e/screenshots/manifest-reporter.ts"],
+  ],
+  snapshotPathTemplate: "{testDir}/regression/__screenshots__/{arg}{ext}",
 
   use: {
     baseURL: BASE_URL,
@@ -60,7 +65,11 @@ export default defineConfig({
     {
       name: "mobile",
       testMatch: ["**/screenshots.spec.ts"],
-      use: { ...devices["iPhone 14"], deviceScaleFactor: 1 },
+      use: {
+        ...devices["iPhone 14"],
+        browserName: "chromium",
+        deviceScaleFactor: 1,
+      },
     },
     // ── 流程录制（video:on 全程）────────────────────────────────
     {
@@ -76,7 +85,7 @@ export default defineConfig({
         trace: "on",
       },
     },
-    // ── 视觉回归（M4，固定 seed-fixed）─────────────────────────
+    // ── 视觉回归（同一 screenshot catalog + protocol stub）─────────────
     {
       name: "regression",
       testMatch: ["**/regression/regression.spec.ts"],

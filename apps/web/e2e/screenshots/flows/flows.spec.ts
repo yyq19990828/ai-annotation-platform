@@ -4,8 +4,7 @@
  * 执行：`pnpm screenshots:flows`（单独 project，video:on 全程录制）
  *
  * 前置条件同 screenshots.spec.ts。
- * 每条 test 跑完后把 .webm → GIF 落到
- * apps/web/e2e/screenshots/outputs/flows/。
+ * 只有声明文档 target 的 flow 会转码；outputs/flows 仅作为转码临时目录。
  */
 import { test } from "../../fixtures/seed";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
@@ -27,6 +26,7 @@ import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { convertToGif } from "../_helpers/recorder";
 import { installScreenshotEnvironment } from "../environment";
+import { loadScreenshotCatalog } from "../catalog-runtime";
 import { execFileSync } from "child_process";
 import path from "path";
 import fs from "fs";
@@ -34,18 +34,13 @@ import fs from "fs";
 const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/flows\/?$/, "");
 const FLOWS_OUT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/flows");
-const DOCS_GIF  = path.join(REPO_ROOT, "docs-site/user-guide/images/getting-started");
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 
 let cached: ScreenshotSeedCatalog | null = null;
 
-test.beforeAll(async ({ request }) => {
-  const res = await request.get(
-    `${process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000"}/api/v1/__test/seed/catalog?profile=screenshots`,
-  );
-  if (!res.ok()) throw new Error(`seed/catalog failed: ${res.status()} ${await res.text()}`);
-  cached = (await res.json()) as ScreenshotSeedCatalog;
+test.beforeAll(() => {
+  cached = loadScreenshotCatalog();
 });
 
 // flow 会修改任务状态、标注和预标注作业。结束后由 screenshots profile
@@ -88,6 +83,10 @@ async function finalize(
     await page.close();
     return;
   }
+  if (!docsTarget) {
+    await page.close();
+    return;
+  }
   const video = page.video();
   if (!video) {
     throw new Error("[flows] video 未开启，检查 playwright config 的 flows project");
@@ -100,20 +99,24 @@ async function finalize(
   // 避免直接读 video.path() 拿到半截 webm 导致 ffmpeg palettegen 失败（短流程必踩）。
   await page.close();
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
-  await video.saveAs(outWebm);
-  await convertToGif(outWebm, outGif, {
-    fps: gifOpts?.fps ?? 10,
-    maxWidth: gifOpts?.maxWidth ?? 1280,
-    startSec: gifOpts?.startSec,
-    durationSec: gifOpts?.durationSec,
-  });
-
-  // 同步 gif 到文档站
-  const docsGif = docsTarget ?? (gifName === "e2e-quickstart" ? path.join(DOCS_GIF, "e2e.gif") : null);
-  if (docsGif && fs.existsSync(outGif)) {
-    fs.mkdirSync(path.dirname(docsGif), { recursive: true });
-    fs.copyFileSync(outGif, docsGif);
-    console.log(`[flows] ✓ 同步 gif 到文档站：${docsGif}`);
+  try {
+    await video.saveAs(outWebm);
+    await convertToGif(outWebm, outGif, {
+      fps: gifOpts?.fps ?? 10,
+      maxWidth: gifOpts?.maxWidth ?? 1280,
+      startSec: gifOpts?.startSec,
+      durationSec: gifOpts?.durationSec,
+    });
+    if (!fs.existsSync(outGif)) {
+      throw new Error(`[flows] ${gifName}: GIF 未生成，请安装 ffmpeg 或检查 FFMPEG_PATH`);
+    }
+    fs.mkdirSync(path.dirname(docsTarget), { recursive: true });
+    fs.copyFileSync(outGif, docsTarget);
+    console.log(`[flows] ✓ 同步 gif 到文档站：${docsTarget}`);
+  } finally {
+    fs.rmSync(outWebm, { force: true });
+    fs.rmSync(outGif, { force: true });
+    fs.rmSync(outGif.replace(/\.gif$/, ".palette.png"), { force: true });
   }
 }
 
