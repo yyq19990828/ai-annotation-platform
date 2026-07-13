@@ -52,6 +52,14 @@ export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?:
     label: "SAM3 · 点框交互追踪",
     note: "点/框种子 + memory 跨帧 · 需项目绑定 sam3 backend",
   },
+  // v0.22.2 · B-combo · 发现追踪: multiplex 按文本发现目标 → 逐对象 PVS memory 追踪
+  // (兼得自动发现与干净身份)。发现对象全新建, 需目标类别; 需 sam3 backend 同时声明
+  // sam3_video 与 sam3_video_interactive。
+  {
+    value: "sam3_video_combo",
+    label: "SAM3 · 发现追踪 (combo)",
+    note: "按文本发现目标 + 逐对象 memory 追踪 · 需 sam3 backend",
+  },
 ];
 
 // v0.10.36: SAM 模型尺寸 (tracker 不用 DINO, 只选 SAM 尺寸)。空 = 默认/tiny。
@@ -286,15 +294,27 @@ export function VideoTrackerPropagateDialog({
   // 声明后可选, 否则灰置 (不做假占位可点)。mock_bbox / sam2_video 不受此门控 (零回归)。
   const isTextDrivenModel = useMemo(() => {
     const set = new Set(textDrivenTrackers ?? []);
-    return (value: string) => set.has(value) || value === "sam3_video";
+    // combo 也文本驱动 (发现趟按 text 检测), 显 text 框。
+    return (value: string) =>
+      set.has(value) || value === "sam3_video" || value === "sam3_video_combo";
   }, [textDrivenTrackers]);
   const isModelDisabled = useMemo(() => {
     const supported = new Set(supportedTrackers ?? []);
-    return (value: string) => isTextDrivenModel(value) && !supported.has(value);
+    return (value: string) => {
+      // v0.22.2 · B-combo · combo 编排两趟, 需 backend 同时声明 sam3_video (发现) 与
+      // sam3_video_interactive (追踪); 缺一即灰置。
+      if (value === "sam3_video_combo") {
+        return !(supported.has("sam3_video") && supported.has("sam3_video_interactive"));
+      }
+      return isTextDrivenModel(value) && !supported.has(value);
+    };
   }, [supportedTrackers, isTextDrivenModel]);
 
   const textDrivenActive = isTextDrivenModel(modelKey);
   const selectedModelDisabled = isModelDisabled(modelKey);
+  // v0.22.2 · B-combo · combo 发现对象全新建, 与无源检测同样需目标类别 —— 无论从画布级
+  // 无源入口还是选中源入口打开, 选 combo 都按无源处理 (显类别选择器 + payload 带 target)。
+  const sourcelessLike = sourceless || modelKey === "sam3_video_combo";
 
   useEffect(() => {
     if (open) {
@@ -421,8 +441,8 @@ export function VideoTrackerPropagateDialog({
       setError("文本驱动追踪需填写文本描述");
       return;
     }
-    // v0.22.1 · B · 无源检测必须选目标类别 (新建轨迹归属)。
-    if (sourceless && !targetClass) {
+    // v0.22.1 · B · 无源检测必须选目标类别 (新建轨迹归属); combo 发现同理。
+    if (sourcelessLike && !targetClass) {
       setError("请选择新目标的类别");
       return;
     }
@@ -435,8 +455,8 @@ export function VideoTrackerPropagateDialog({
         sam_variant: samVariant || undefined,
         text: textDrivenActive ? trimmedText : undefined,
         output_geometry: outputGeometry || undefined,
-        target_class_name: sourceless ? targetClass : undefined,
-        target_tool_unit_id: sourceless ? "bbox" : undefined,
+        target_class_name: sourcelessLike ? targetClass : undefined,
+        target_tool_unit_id: sourcelessLike ? "bbox" : undefined,
       });
       writeDialogMemory(userId, "trackerPropagate", {
         rangePreset,
@@ -583,8 +603,8 @@ export function VideoTrackerPropagateDialog({
           </select>
         </div>
 
-        {/* v0.22.1 · B · 无源检测: 目标类别选择器 (新建轨迹归属)。 */}
-        {sourceless && (
+        {/* v0.22.1 · B · 无源检测 / v0.22.2 · B-combo 发现: 目标类别选择器 (新建轨迹归属)。 */}
+        {sourcelessLike && (
           <>
             {TOOLBAR_DIVIDER}
             <div className="flex items-center gap-1.5">

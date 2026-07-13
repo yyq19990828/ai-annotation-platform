@@ -473,6 +473,58 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(window.localStorage.getItem(key)).toBe(JSON.stringify(remembered));
   });
 
+  it("B-combo · 发现追踪需双 sam3 能力, 提交带 model_key + text + 目标类别", () => {
+    const onSubmit = vi.fn();
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={0}
+        supportedTrackers={["sam3_video", "sam3_video_interactive"]}
+        textDrivenTrackers={["sam3_video"]}
+        availableClasses={["car", "person"]}
+        onSubmit={onSubmit}
+        onToggleSeedCollecting={vi.fn()}
+      />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const comboOption = Array.from(modelSelect.options).find(
+      (o) => o.value === "sam3_video_combo",
+    ) as HTMLOptionElement;
+    // 双能力就绪 → combo 可选。
+    expect(comboOption.disabled).toBe(false);
+    fireEvent.change(modelSelect, { target: { value: "sam3_video_combo" } });
+    // 文本框 (文本驱动) 出现并填写。
+    fireEvent.change(screen.getByTestId("tracker-text-input"), { target: { value: "car" } });
+    // 目标类别选择器 (发现即新建) 默认首个 car。
+    expect((screen.getByTestId("tracker-target-class") as HTMLSelectElement).value).toBe("car");
+    fireEvent.click(screen.getByText("开始追踪"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model_key: "sam3_video_combo",
+        text: "car",
+        target_class_name: "car",
+        target_tool_unit_id: "bbox",
+      }),
+    );
+  });
+
+  it("B-combo · 缺 sam3 能力 (只 sam3_video) 时发现追踪灰置", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={0}
+        supportedTrackers={["sam3_video"]}
+        textDrivenTrackers={["sam3_video"]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const comboOption = Array.from(modelSelect.options).find(
+      (o) => o.value === "sam3_video_combo",
+    ) as HTMLOptionElement;
+    expect(comboOption.disabled).toBe(true);
+  });
+
   it("U1: 方向按钮用消歧标签 (更晚/更早帧) + testid", () => {
     render(<VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />);
     expect(screen.getByTestId("tracker-direction-forward").textContent).toContain("更晚帧");

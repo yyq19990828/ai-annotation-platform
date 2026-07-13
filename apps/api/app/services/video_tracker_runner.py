@@ -126,7 +126,8 @@ def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     # - sam3_video(multiplex): 视频前向显存随窗口线性增长, 大窗 OOM@24GB。
     # - sam3_video_interactive(PVS): backend wrapper 上限 SAM3_PVS_MAX_WINDOW_FRAMES(默认 16),
     #   超限会被 backend 拒; PVS 是 SAM2 式 memory 传播、显存轻于 multiplex, 但先与之齐。
-    if job.model_key in ("sam3_video", "sam3_video_interactive"):
+    # v0.22.2 · B-combo · sam3_video_combo 追踪趟走 PVS, 用与 PVS 齐的小分窗。
+    if job.model_key in ("sam3_video", "sam3_video_interactive", "sam3_video_combo"):
         size = min(size, max(1, int(settings.video_tracker_sam3_window_size_frames)))
     windows = []
     start = job.from_frame
@@ -361,6 +362,34 @@ def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
         {"obj_id": _instance_seed_obj_id(iid, idx + 1), "geometry": geom}
         for idx, (iid, geom) in enumerate(sorted(last_geom_by_instance.items()))
     ]
+
+
+# ── v0.22.2 · B-combo · multiplex 发现 → PVS 种子铸造 ──────────────────────
+# combo (sam3_video_combo) 两趟编排的桥: 发现趟 (multiplex 按 text 在种子帧检测) 的
+# per-obj 结果 → 追踪趟 (PVS) 的逐对象种子。发现对象**无源** → 种子不带
+# source_annotation_id, 落库走成熟的无源新建 (source_map 为空 → 全部 _new_discovered_track)。
+
+
+def _combo_seeds_from_discovery(
+    discovery_results: list["TrackerFrameResult"],
+) -> list[dict]:
+    """发现趟结果 → PVS 种子 (逐对象一条, obj_id=1..N, geometry=发现框)。
+
+    multiplex 在单帧发现趟里每个对象返回一条结果 (各带窗内 instance_id)。按 instance_id
+    稳定排序后逐个铸成 PVS 种子 (obj_id 连续从 1 起, 与 _instance_seed_obj_id 契约一致),
+    geometry 直接用发现框 (PVS backend seeds 支持 geometry, 自动取外接框)。outside / 空框
+    的发现结果跳过 (无有效种子)。种子不带 source_annotation_id → 落库全部新建。
+    """
+    seeds: list[dict] = []
+    obj = 1
+    for result in sorted(
+        discovery_results, key=lambda r: (r.instance_id or "", r.frame_index)
+    ):
+        if result.outside or not result.geometry:
+            continue
+        seeds.append({"obj_id": obj, "geometry": result.geometry})
+        obj += 1
+    return seeds
 
 
 # ── v0.21.28 · B-mx · text-multiplex 跨窗 IoU 关联 ─────────────────────────
@@ -842,12 +871,17 @@ async def run_tracker_job(
             raise ValueError("Dataset item not found")
         from app.api.v1.ml_backends import _resolve_task_url
 
+        # v0.22.2 · B-combo · sam3_video_combo = multiplex 发现 → PVS 追踪 两趟编排。
+        # 两趟都在 sam3-backend (声明 sam3_video + sam3_video_interactive); 后端按 PVS 能力
+        # 解析 (同一 backend), 追踪趟 adapter 用 PVS, 发现趟另取 multiplex adapter (见下)。
+        is_combo = job.model_key == "sam3_video_combo"
         # v0.21.25 (阶段 R) · 按 tracker 能力选后端而非项目单一绑定: sam3_video 挑声明了
         # sam3_video 的 backend(sam3-backend), 而非静默落到项目绑定的 grounded-sam2。
+        tracker_capability = "sam3_video_interactive" if is_combo else job.model_key
         backend = await MLBackendService(db).get_tracker_backend(
-            task.project_id, job.model_key
+            task.project_id, tracker_capability
         )
-        adapter = get_tracker_adapter(job.model_key)
+        adapter = get_tracker_adapter(tracker_capability)
 
         # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
         from app.db.models.project import Project
@@ -909,6 +943,41 @@ async def run_tracker_job(
         # 只在种子窗 (首窗, 含原始种子帧) 下发: points 锚在种子帧, 后续窗靠 last_geometry
         # (上一窗末帧框) 续追, 不重发点种子。缺省无 seeds 时行为与 B-pvs 框种子完全一致。
         prompt_seeds = (job.prompt or {}).get("seeds")
+
+        # v0.22.2 · B-combo · 发现趟 (先于追踪窗循环, 串行 → 中间 idle 可卸载 multiplex 再载
+        # PVS, 避两模型同容峰值)。multiplex 在种子帧按 text 检测 → per-obj 框 → 铸成 PVS 种子
+        # (无源, 落库全新建)。发现不到目标即失败 (无种子无法追踪)。
+        if is_combo:
+            discovery_text = (job.prompt or {}).get("text")
+            if not discovery_text:
+                raise ValueError("sam3_video_combo requires prompt.text for discovery")
+            discovery_ctx = TrackerContext(
+                job_id=job.id,
+                task_id=task.id,
+                project_id=task.project_id,
+                dataset_item_id=job.dataset_item_id,
+                annotation_id=job.annotation_id,
+                from_frame=job.from_frame,
+                to_frame=job.from_frame,
+                direction="forward",
+                prompt=job.prompt or {},
+                source_geometry={},
+                task_data=task_data,
+                ml_backend=backend,
+                text=discovery_text,
+                exemplars=(job.prompt or {}).get("exemplars"),
+                output_geometry=output_geometry,
+            )
+            discovery_adapter = get_tracker_adapter("sam3_video")
+            discovery_results = [
+                _materialize_tracker_mask_result(r)
+                async for r in discovery_adapter.propagate(discovery_ctx)
+            ]
+            prompt_seeds = _combo_seeds_from_discovery(discovery_results)
+            if not prompt_seeds:
+                raise ValueError(
+                    f"sam3_video_combo discovery found no objects for text: {discovery_text!r}"
+                )
 
         for win_idx, (from_frame, to_frame) in enumerate(tracker_windows):
             # 种子窗下发原始点/框种子; 后续窗若多实例则各自续种 (见 _continuation_seeds),
