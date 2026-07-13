@@ -25,22 +25,22 @@ last_reviewed: 2026-07-13
 
 ```mermaid
 flowchart LR
-    A["选中源轨迹"] --> B["选择 tracker、范围与提示"]
+    A["选中源轨迹 或 画布级发起(无源)"] --> B["选择 tracker、范围与提示"]
     B --> C["按 supported_trackers 选择 backend"]
     C --> D["创建 VideoTrackerJob"]
     D --> E["Celery worker 分窗调用 /predict"]
     E --> F["跨窗续种或身份关联"]
     F --> G["staged_result 候选"]
     G --> H{"人工决策"}
-    H -->|接受| I["主实例回填源轨迹"]
+    H -->|接受| I["主实例回填源轨迹(无源则新建)"]
     I --> J["额外实例创建新轨迹"]
     H -->|丢弃| K["清空候选，annotation 不变"]
 ```
 
 核心入口：
 
-- 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态。
-- API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate` 创建 job。
+- 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态；画布级「AI 追踪」入口（ToolDock，`onOpenTracker`）不选轨迹也能发起。
+- API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate`（延展选中轨迹）或 `POST /tasks/{task_id}/video:track`（源可选：`source_annotation_id` 缺省即无源检测，`target_class_name` 指定新轨迹类别）创建 job。
 - worker：`app.workers.video_tracker.run_video_tracker_job` 调用 `video_tracker_runner`。
 - backend adapter：`video_tracker_adapters.py` 把平台 context 转为 ML Backend `/predict` 请求。
 - 决策：`POST /video-tracker-jobs/{job_id}/accept|discard`。
@@ -136,13 +136,13 @@ runner 把结果序列化到：
 - 没有 primary 标记时，使用字典序最小的 `instance_id` 作为确定性兜底。
 - 没有任何 `instance_id` 时，全部按单实例老 backend 处理。
 
-主实例通过 `apply_tracker_results()` 回填源 annotation；额外实例通过 `_new_discovered_track()` 创建同类新轨迹。持久化时：
+有源时主实例通过 `apply_tracker_results()` 回填源 annotation；无源检测（`job.annotation_id` 为空，画布级发起）时主实例也走新建。额外实例通过 `_new_discovered_track()` 创建；归属由 `_TrackTarget` 提供——有源继承源 label，无源取 job 的 `target_class_name` / `target_tool_unit_id` 显式类别。持久化时：
 
 - 人工关键帧优先，预测不得覆盖 manual frame。
 - outside 结果合并为 prediction outside ranges。
 - polygon 输出少于三个顶点时按 outside 处理，避免写入非法几何。
 - mask 输出保存 RLE 引用；accept 提交前再次按源视频 width / height / frame_count 校验，不能把错误尺寸写进 annotation。
-- 新轨迹继承源类别和工具单位，分配新 `track_id`，source 标记为 `ai_tracker`。
+- 新轨迹的类别与工具单位来自 `_TrackTarget`（有源继承源轨迹，无源取 job 显式 `target_class_name`），分配新 `track_id`，source 标记为 `ai_tracker`。
 
 ## 前端审阅边界
 
