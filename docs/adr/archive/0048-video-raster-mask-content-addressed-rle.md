@@ -95,7 +95,7 @@ COCO export / tracker continuation 多一层解码与再编码，故不选。
 
 ## Notes
 
-- Phase A plan：`docs/plans/2026-07-12-v0.22.0-raster-mask-track-davis.md`
+- Phase A plan：`docs/plans/archive/2026-07-12-v0.22.0-raster-mask-track-davis.md`
 - Benchmark：`scripts/benchmark_raster_mask_rle.py`、`docs/research/16-raster-mask-rle-benchmark.md`
 - Codec：`apps/_shared/mask_utils/src/mask_utils/rle.py`、`apps/api/app/utils/raster_mask_rle.py`、
   `apps/web/src/pages/Workbench/stage/shared/geometry/maskRle.ts`

@@ -68,6 +68,6 @@
   `apps/api/app/services/export.py` · `export_lidar.py`（导出）、
   `apps/web/src/pages/Workbench/stages/three-d/geometry/perObjectAlign.ts`（3D 前端）。
 - 相关 alembic：`0113_*`（加列 + 回填），后续 drop `cross_frame_group_seq` 在 v0.21.3。
-- 相关计划 / ROADMAP：`docs/plans/2026-07-01-v0.21.2-crossframe-object-id-unification.md`、
-  `docs/plans/2026-07-01-v0.21.3-remove-annotation-group.md`。
+- 相关计划 / ROADMAP：`docs/plans/archive/2026-07-01-v0.21.2-crossframe-object-id-unification.md`、
+  `docs/plans/archive/2026-07-01-v0.21.3-remove-annotation-group.md`。
 - 上游：v0.21.1 检测式追踪先落 geometry 内 track_id，本 ADR 随即提升表列，避免迁两遍。

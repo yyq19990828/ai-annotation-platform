@@ -38,7 +38,7 @@
 
 ### 2.9 多几何 track（polygon / polyline / mask）（**已落地**；原 R9）
 - polygon / polyline 采用平行 `video_track_polygon` / `video_track_polyline` geometry，完成绘制、按周长 / 弧长参数化插值、渲染、编辑与普通导出。polyline AI 因现有模型不原生追踪开放折线、mask 骨架化启发式价值不足而取消；保留明确 400，不再作为缺口。
-- 真·栅格 mask 使用平行 `video_track_mask` geometry 与内容寻址 COCO RLE 对象，完成 hold 解析、逐像素渲染 / 选择、笔刷编辑、tracker 原始 mask 候选、AAP 无损迁移、COCO RLE 与 DAVIS 导出。实施合同见 [栅格 mask track 计划](../docs/plans/2026-07-12-v0.22.0-raster-mask-track-davis.md)。
+- 真·栅格 mask 使用平行 `video_track_mask` geometry 与内容寻址 COCO RLE 对象，完成 hold 解析、逐像素渲染 / 选择、笔刷编辑、tracker 原始 mask 候选、AAP 无损迁移、COCO RLE 与 DAVIS 导出。实施合同见 [栅格 mask track 计划](../docs/plans/archive/2026-07-12-v0.22.0-raster-mask-track-davis.md)。
 
 ### 2.11 采样下 propagate「N 帧」单位对齐导航网格（**v0.10.35 落地**）
 - 已落地（设计前提保留供后续 Phase 参考）：采样开启时 propagate 对话框「N」改以网格格子为单位、tracker 只回填 `frame_index % step == 0` 的网格帧（底层仍逐源帧算、`frame_index` 存源帧，D2）。详见 [CHANGELOG v0.10.35](../CHANGELOG.md) / [v0.10.35 计划](../docs/plans/archive/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §A。
