@@ -56,6 +56,11 @@ export interface VideoTrackerPropagatePayload {
   text?: string;
   exemplars?: VideoTrackerExemplar[];
   output_geometry?: "bbox" | "polygon" | "mask";
+  // v0.22.1 · B · 无源检测 (画布级发起): source_annotation_id 缺省 = 无源, 新建轨迹类别
+  // 由 target_class_name/target_tool_unit_id 显式指定。有源延展时留空 (从 path / 继承源)。
+  source_annotation_id?: string | null;
+  target_class_name?: string | null;
+  target_tool_unit_id?: string | null;
 }
 
 /** v0.21.28 · 候选预览: job 暂存的逐帧结果, 供接受前渲染候选叠加。 */
@@ -92,6 +97,10 @@ export const videoTrackerApi = {
       `/tasks/${taskId}/video/tracks/${annotationId}:propagate`,
       payload,
     ),
+  // v0.22.1 · B · 任务级追踪 (画布级入口, 源可选): payload.source_annotation_id 给出即延展
+  // 该轨迹, 缺省则为无源检测。
+  track: (taskId: string, payload: VideoTrackerPropagatePayload) =>
+    apiClient.post<VideoTrackerJob>(`/tasks/${taskId}/video:track`, payload),
   get: (jobId: string) =>
     apiClient.get<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   reviewable: (taskId: string) =>
