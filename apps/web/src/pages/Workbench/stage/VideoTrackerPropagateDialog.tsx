@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import type {
   VideoTrackerDirection,
   VideoTrackerPropagatePayload,
@@ -204,6 +205,14 @@ interface VideoTrackerPropagateDialogProps {
   sourceless?: boolean;
   /** v0.22.1 · B · 无源时可选的目标类别 (项目 classes)。 */
   availableClasses?: string[];
+  /**
+   * v0.22.2 · U8 · 提交后就地进行态。true 时对话框不再显表单, 而是在原位转成
+   * 「追踪中…」轻量进度视图 (让位审阅条前给即时反馈); 由上层在追踪 job 建成后置真、
+   * 结果就绪 / 失败时关闭对话框复位。
+   */
+  tracking?: boolean;
+  /** v0.22.2 · U8 · 追踪分窗进度 (WS 回报; 未开始为 null)。tracking 为真时显示「第 c/t 窗」。 */
+  trackingWindow?: { current: number; total: number } | null;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -237,6 +246,8 @@ export function VideoTrackerPropagateDialog({
   sourceTrackClassName = null,
   sourceless = false,
   availableClasses = [],
+  tracking = false,
+  trackingWindow = null,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -445,6 +456,48 @@ export function VideoTrackerPropagateDialog({
         TOOLBAR_CHROME_CLASS,
       )}
     >
+      {tracking ? (
+        // v0.22.2 · U8 · 就地进行态: 提交后不关闭对话框, 而在原位转「追踪中…」轻量进度视图,
+        // 对齐图片侧交互式 AI 的即时反馈。结果就绪 (候选待审) / 失败时由上层关闭对话框复位。
+        <>
+          <div className="flex items-center gap-2.5">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <b className="whitespace-nowrap text-xs">AI 追踪</b>
+            </div>
+            {TOOLBAR_DIVIDER}
+            <span
+              data-testid="tracker-progress"
+              className="flex items-center gap-1.5 whitespace-nowrap text-xs text-foreground"
+            >
+              <Icon name="loader2" size={13} className="spin" />
+              追踪中…
+              {trackingWindow && trackingWindow.total > 1 && (
+                <span data-testid="tracker-progress-window" className="mono text-2xs text-muted-foreground">
+                  第 {trackingWindow.current}/{trackingWindow.total} 窗
+                </span>
+              )}
+            </span>
+            {TOOLBAR_DIVIDER}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button variant="ghost" size="sm" onClick={onCancel}>
+                后台继续
+              </Button>
+              <button
+                type="button"
+                onClick={onCancel}
+                aria-label="关闭"
+                className="cursor-pointer border-0 bg-transparent text-sm text-muted-foreground"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="text-2xs text-muted-foreground">
+            追踪完成后将在此弹出候选审阅条 · 关闭不影响后台追踪
+          </div>
+        </>
+      ) : (
+      <>
       {/* 主行: 标题 | 方向 | 范围 | 模型 | 种子/文本 | 尺寸 | 动作 (横排, 溢出折行) */}
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="flex shrink-0 items-center gap-1.5">
@@ -778,6 +831,8 @@ export function VideoTrackerPropagateDialog({
         )}
         {error && <span className="text-status-danger">{error}</span>}
       </div>
+      </>
+      )}
     </div>
   );
 }

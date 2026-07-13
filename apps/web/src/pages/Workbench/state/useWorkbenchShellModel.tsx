@@ -598,6 +598,9 @@ export function useWorkbenchShellModel({
     // v0.22.1 · B · annotation 为 null = 无源检测 (画布级入口发起, 不绑选中轨迹)。
     annotation: TrackerSourceAnnotation | null;
     submitting: boolean;
+    // v0.22.2 · U8 · 提交成功后置入建成的 tracker job id: 对话框就地转「追踪中…」进行态,
+    // 追踪进度读该 job (jobs[jobId]); 结果就绪 (候选) / 失败时由 effect 关闭对话框复位。
+    jobId?: string;
   } | null>(null);
   // v0.21.27 · U-pvs-1 · PVS 点种子采集接线 (state 已在上方声明): 用户在传播对话框点
   // 「落点选目标」进入采集态, 画布点击落归一化种子点 (复用 smart-point 手势 →
@@ -654,6 +657,19 @@ export function useWorkbenchShellModel({
     setSeedAnchorFrame(null);
     stopSeedCollecting();
   }, [stopSeedCollecting]);
+  // v0.22.2 · U8 · 提交成功后不立即关闭对话框, 而就地转「追踪中…」进行态 (保留对话框显示进度,
+  // 让位审阅条前给即时反馈)。清掉种子采集态 (与关闭同款), 但保留对话框记录并挂上 job id。
+  const enterTrackingProgress = useCallback(
+    (jobId: string) => {
+      setTrackerSeeds([]);
+      setTrackerSeedBoxes([]);
+      setSeedObj(1);
+      setSeedAnchorFrame(null);
+      stopSeedCollecting();
+      setPropagateDialog((prev) => (prev ? { ...prev, submitting: false, jobId } : prev));
+    },
+    [stopSeedCollecting],
+  );
 
   const handlePropagateSubmit = useCallback(
     async (payload: Parameters<typeof trackerJobs.propagate>[2]) => {
@@ -709,24 +725,33 @@ export function useWorkbenchShellModel({
               },
             }
           : payload;
-        if (propagateDialog.annotation) {
-          await trackerJobs.propagate(
-            taskId,
-            propagateDialog.annotation.id,
-            withSeeds,
-          );
-        } else {
-          // v0.22.1 · B · 无源检测: 走任务级 track (payload 已含 target_class_name)。
-          await trackerJobs.track(taskId, withSeeds);
-        }
-        closePropagateDialog();
+        const job = propagateDialog.annotation
+          ? await trackerJobs.propagate(taskId, propagateDialog.annotation.id, withSeeds)
+          : // v0.22.1 · B · 无源检测: 走任务级 track (payload 已含 target_class_name)。
+            await trackerJobs.track(taskId, withSeeds);
+        // v0.22.2 · U8 · 就地转进行态: 不立即关闭, 挂上 job id 让对话框显示「追踪中…」,
+        // 直到结果就绪 (候选) / 失败时由 effect 复位关闭。
+        enterTrackingProgress(job.id);
       } catch (e) {
         setPropagateDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
         throw e;
       }
     },
-    [propagateDialog, taskId, trackerJobs, trackerSeeds, trackerSeedBoxes, closePropagateDialog],
+    [propagateDialog, taskId, trackerJobs, trackerSeeds, trackerSeedBoxes, enterTrackingProgress],
   );
+
+  // v0.22.2 · U8 · 进行态收尾: 对话框挂着的 job 出候选 (结果就绪待审) → 关闭对话框, 让位顶部
+  // 居中的审阅条 (二者同位, 避免叠); job 失败 / 已被终态清理移除 → 同样收起复位。运行中则保持
+  // 「追踪中…」。仅依赖 job id + candidates/jobs 引用, 进度 (windowProgress) 变化不触发关闭。
+  const trackingJobId = propagateDialog?.jobId ?? null;
+  useEffect(() => {
+    if (!trackingJobId) return;
+    const candidateReady = Boolean(trackerJobs.candidates[trackingJobId]);
+    const job = trackerJobs.jobs[trackingJobId];
+    if (candidateReady || !job || job.status === "failed") {
+      closePropagateDialog();
+    }
+  }, [trackingJobId, trackerJobs.candidates, trackerJobs.jobs, closePropagateDialog]);
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
   const videoFps = videoManifest.data?.metadata.fps ?? null;
@@ -2398,6 +2423,10 @@ export function useWorkbenchShellModel({
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
   const selectedIds = s.selectedIds;
   const selectionCount = selectedIds.length;
+  // v0.22.2 · U7 · AI 追踪对话框 (顶部居中悬浮工具条) 打开时, 让右侧选中卡收起让位, 避免与
+  // 工具条视觉相撞。仅强制渲染折叠态 (经 OR 叠加, 不改用户持久化的 collapsed 偏好): 对话框
+  // 关闭后自动复位到用户偏好, 无需额外记忆。
+  const trackerDialogOpen = Boolean(propagateDialog);
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
     if (!selectionCardEligible || selectionCount < 1) return null;
     const multi = selectionCount > 1;
@@ -2600,7 +2629,8 @@ export function useWorkbenchShellModel({
       title,
       position: floatingSelectionPosition,
       onPositionChange: onSelectionPositionChange,
-      collapsed: floatingSelection.collapsed,
+      // v0.22.2 · U7 · 追踪对话框打开时强制折叠让位 (OR 叠加, 不动持久化偏好)。
+      collapsed: floatingSelection.collapsed || trackerDialogOpen,
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
       // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
@@ -2657,6 +2687,7 @@ export function useWorkbenchShellModel({
     floatingSelectionPosition,
     onSelectionPositionChange,
     floatingSelection.collapsed,
+    trackerDialogOpen,
     collapseSelectionCard,
     expandSelectionCard,
   ]);
@@ -3509,6 +3540,12 @@ export function useWorkbenchShellModel({
     sourceless: !propagateDialogTrack,
     availableClasses: currentProject?.classes ?? [],
     submitting: Boolean(propagateDialog?.submitting),
+    // v0.22.2 · U8 · 提交成功后挂上 job id → 对话框就地转「追踪中…」进行态, 进度读该 job 的
+    // 分窗回报; 结果就绪 / 失败时 effect 关闭对话框复位。
+    tracking: Boolean(trackingJobId),
+    trackingWindow: trackingJobId
+      ? trackerJobs.jobs[trackingJobId]?.windowProgress ?? null
+      : null,
     onCancel: closePropagateDialog,
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,

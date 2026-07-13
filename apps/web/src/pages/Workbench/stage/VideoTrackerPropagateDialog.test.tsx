@@ -574,4 +574,54 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(summary).toContain("继承");
     expect(summary).toContain("car");
   });
+
+  it("U8: tracking 态就地转「追踪中…」进度视图, 隐表单 (无范围下拉 / 开始追踪按钮)", () => {
+    render(
+      <VideoTrackerPropagateDialog {...baseProps} frameIndex={50} tracking onSubmit={vi.fn()} />,
+    );
+    // 进度视图: 追踪中… + tracker-progress; 表单控件不再渲染。
+    expect(screen.getByTestId("tracker-progress").textContent).toContain("追踪中");
+    expect(screen.queryByText("开始追踪")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    // 对话框本体仍在 (仅内容切换)。
+    expect(screen.getByTestId("video-tracker-propagate-dialog")).toBeInTheDocument();
+  });
+
+  it("U8: 有分窗进度时显示「第 c/t 窗」; 单窗 (total<=1) 不显", () => {
+    const { rerender } = render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        tracking
+        trackingWindow={{ current: 2, total: 5 }}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("tracker-progress-window").textContent).toContain("第 2/5 窗");
+    rerender(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        tracking
+        trackingWindow={{ current: 1, total: 1 }}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("tracker-progress-window")).toBeNull();
+  });
+
+  it("U8: 进度态点「后台继续」调 onCancel (关闭对话框, 后台继续追踪)", () => {
+    const onCancel = vi.fn();
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        tracking
+        onCancel={onCancel}
+        onSubmit={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("后台继续"));
+    expect(onCancel).toHaveBeenCalled();
+  });
 });
