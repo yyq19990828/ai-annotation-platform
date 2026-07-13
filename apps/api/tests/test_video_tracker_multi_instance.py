@@ -745,3 +745,190 @@ async def test_runner_associates_window_local_ids_across_windows(
     right_kfs = sorted(rows[0].geometry["keyframes"], key=lambda k: k["frame_index"])
     assert [k["frame_index"] for k in right_kfs] == [0, 1, 2, 3]
     assert all(k["bbox"]["x"] > 0.3 for k in right_kfs if k.get("bbox"))
+
+
+# ── v0.22.2 · M · 多选批量: 多源各回填各自源 ──────────────────────────
+
+
+class _MultiSourceAdapter:
+    """两个种子源 obj "1"/"2", 各自几何区分 (obj1 x≈frame, obj2 x≈frame+100), 模拟 PVS
+    逐 obj_id 追踪 (instance_id=str(obj_id))。多源批量落库测试用。"""
+
+    model_key = "sam3_video_interactive"
+
+    async def propagate(self, ctx: TrackerContext):
+        for f in range(ctx.from_frame, ctx.to_frame + 1):
+            yield TrackerFrameResult(
+                frame_index=f,
+                geometry={"type": "bbox", "x": float(f), "y": 0.0, "w": 10.0, "h": 10.0},
+                confidence=1.0,
+                outside=False,
+                instance_id="1",
+                primary=True,
+            )
+            yield TrackerFrameResult(
+                frame_index=f,
+                geometry={
+                    "type": "bbox",
+                    "x": float(f) + 100.0,
+                    "y": 0.0,
+                    "w": 8.0,
+                    "h": 8.0,
+                },
+                confidence=1.0,
+                outside=False,
+                instance_id="2",
+                primary=False,
+            )
+
+
+async def _seed_two_source_job(db_session, user):
+    """建两条源轨迹 + 一个带 {obj_id ↔ source_annotation_id} 种子的多源 job。"""
+    task, item = await _make_video_task(db_session, user.id)
+    src_a = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 0, "y": 0, "w": 10, "h": 10},
+    )
+    src_b = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 100, "y": 0, "w": 8, "h": 8},
+    )
+    db_session.add_all([src_a, src_b])
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=None,  # v0.22.2 · §8 · 多源 job 不认单主 annotation_id → NULL
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video_interactive",
+        direction="forward",
+        from_frame=0,
+        to_frame=3,
+        prompt={
+            "seeds": [
+                {"obj_id": 1, "source_annotation_id": str(src_a.id)},
+                {"obj_id": 2, "source_annotation_id": str(src_b.id)},
+            ]
+        },
+        event_channel="video-tracker-job:test-multi-source",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    return task, src_a, src_b, job
+
+
+async def test_runner_multi_source_backfills_each_own_track(
+    db_session, super_admin, monkeypatch
+):
+    """2 条源轨迹各带 obj_id 种子 → 1 job → 各回填各自源 (不串), 无额外新轨迹。"""
+    user, _ = super_admin
+    task, src_a, src_b, job = await _seed_two_source_job(db_session, user)
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    adapter = _MultiSourceAdapter()
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+    )
+
+    async def collect(_c: str, _p: dict) -> None:
+        return None
+
+    from sqlalchemy import select
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    await db_session.refresh(src_a)
+    await db_session.refresh(src_b)
+    assert job.status == "accepted"
+
+    # 各回填各自源: src_a=obj1 (x≈frame), src_b=obj2 (x≈frame+100), 帧末几何区分证明不串。
+    assert src_a.annotation_type == "video_track_bbox"
+    assert src_b.annotation_type == "video_track_bbox"
+    assert [kf["frame_index"] for kf in src_a.geometry["keyframes"]] == [0, 1, 2, 3]
+    assert [kf["frame_index"] for kf in src_b.geometry["keyframes"]] == [0, 1, 2, 3]
+    assert src_a.geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(3.0)
+    assert src_b.geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(103.0)
+
+    # 两 obj 都有源 → 无额外 ai_tracker 新轨迹。
+    rows = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id,
+                    Annotation.source == "ai_tracker",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
+
+
+async def test_accept_multi_source_orphan_degrades_to_new_track(
+    db_session, super_admin, monkeypatch
+):
+    """一源在 job 运行后被软删 → 该 instance per-source 降级为新建 (不串到别的源、不整 job
+    失败), 另一源正常回填。"""
+    user, _ = super_admin
+    task, src_a, src_b, job = await _seed_two_source_job(db_session, user)
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    adapter = _MultiSourceAdapter()
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+    )
+
+    async def collect(_c: str, _p: dict) -> None:
+        return None
+
+    from sqlalchemy import select
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+
+    # 接受前软删 src_b (obj2 的源)。
+    src_b.is_active = False
+    await db_session.flush()
+
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    await db_session.refresh(src_a)
+    assert job.status == "accepted"  # 不整 job 失败
+
+    # src_a (obj1) 正常回填。
+    assert src_a.annotation_type == "video_track_bbox"
+    assert src_a.geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(3.0)
+
+    # src_b 被删 → obj2 降级为一条新建 ai_tracker 轨迹 (几何 x≈frame+100, 类别继承存活源)。
+    rows = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id,
+                    Annotation.source == "ai_tracker",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].class_name == "car"
+    assert rows[0].geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(103.0)

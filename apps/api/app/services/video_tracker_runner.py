@@ -332,6 +332,17 @@ def _partition_results_by_instance(
     return primary, extras
 
 
+# v0.22.2 · M · 多选批量: 单源延展时从结果推断主实例 id, 构造单源 source_map 的键。
+_SOLE_SOURCE_KEY = "__sole__"
+
+
+def _primary_instance_id(results: list[TrackerFrameResult]) -> str | None:
+    """单源延展时推断与用户种子对应的主实例 id (primary 标记 → 最小 id → None 全无 id)。
+    复用 _partition_results_by_instance 的主实例判定, 供构造单源 source_map。"""
+    primary, _ = _partition_results_by_instance(results)
+    return primary[0].instance_id if primary else None
+
+
 def _instance_seed_obj_id(instance_id: str, fallback: int) -> int:
     """把 instance_id 还原成 backend 播种用的 obj_id。PVS 的 instance_id 就是 str(obj_id),
     直接 int; 非数字 (老 backend 兜底) 按序补 fallback。"""
@@ -479,6 +490,28 @@ def _target_from_job(job: VideoTrackerJob, task: Task) -> _TrackTarget:
     )
 
 
+def _seed_source_map(job: VideoTrackerJob) -> dict[str, uuid.UUID]:
+    """从 job.prompt.seeds 读 {instance_id: 源 annotation id} —— v0.22.2 · M · 多选批量。
+
+    每个 seed 可带 source_annotation_id (该 obj 延展哪条已有轨迹); 无该字段的 seed
+    (无源检测 / B-combo 发现) 不入映射。instance_id 契约 = str(obj_id)。
+    """
+    seeds = ((job.prompt or {}).get("seeds")) or []
+    mapping: dict[str, uuid.UUID] = {}
+    for seed in seeds:
+        if not isinstance(seed, dict):
+            continue
+        src = seed.get("source_annotation_id")
+        obj_id = seed.get("obj_id")
+        if not src or obj_id is None:
+            continue
+        try:
+            mapping[str(obj_id)] = uuid.UUID(str(src))
+        except (ValueError, TypeError):
+            continue
+    return mapping
+
+
 def _new_discovered_track(target: _TrackTarget, output_geometry: str) -> Annotation:
     """为一个新发现的实例建一条空 video_track annotation。
 
@@ -512,33 +545,51 @@ def _new_discovered_track(target: _TrackTarget, output_geometry: str) -> Annotat
 
 def _persist_tracker_results(
     db: AsyncSession,
-    source: Annotation | None,
+    source_map: dict[str, Annotation],
     target: _TrackTarget,
     job: VideoTrackerJob,
     results: list[TrackerFrameResult],
     grid_step: int,
     output_geometry: str,
 ) -> list[Annotation]:
-    """落库逐帧结果: 有源时主实例回填源 annotation, 每个新 instance 各建一条 track。
+    """落库逐帧结果: 按 instance_id 分组, 命中 source_map 的实例回填对应源 annotation,
+    未命中的每个 instance 各建一条新 track。
 
-    v0.22.1 · B · 无源检测 (source=None) 时主实例也走新建, 归属取自 target (job 显式
-    目标类别)。返回新建的 annotation 列表 (调用方负责 commit)。有源单实例时 extras 为空,
-    退化为对源 annotation 调一次 apply_tracker_results —— 零回归。
+    source_map 语义 (instance_id → 源 annotation):
+    - 单源延展 (0.22.1 及以前): 恰一个条目 {主实例 id: 源};
+    - 多源批量 (v0.22.2 · M · 多选): N 个条目 {obj_id: 各自源}, 各回填各源;
+    - 无源检测 / B-combo 发现: 空映射, 全部新建 (归属取自 target)。
+
+    无 instance_id 的老单实例 backend: 整体回填 source_map 的唯一源 (若有), 否则新建 ——
+    与既有单 track 行为等价, 零回归。返回新建的 annotation 列表 (调用方负责 commit)。
     """
-    primary, extras = _partition_results_by_instance(results)
     created: list[Annotation] = []
-    if source is not None:
-        apply_tracker_results(source, job, primary, grid_step, output_geometry)
-    else:
-        main_ann = _new_discovered_track(target, output_geometry)
-        db.add(main_ann)
-        apply_tracker_results(main_ann, job, primary, grid_step, output_geometry)
-        created.append(main_ann)
-    for instance_id in sorted(extras):
-        new_ann = _new_discovered_track(target, output_geometry)
-        db.add(new_ann)
-        apply_tracker_results(new_ann, job, extras[instance_id], grid_step, output_geometry)
-        created.append(new_ann)
+    if all(r.instance_id is None for r in results):
+        sole_source = next(iter(source_map.values()), None)
+        if sole_source is not None:
+            apply_tracker_results(sole_source, job, results, grid_step, output_geometry)
+        else:
+            main_ann = _new_discovered_track(target, output_geometry)
+            db.add(main_ann)
+            apply_tracker_results(main_ann, job, results, grid_step, output_geometry)
+            created.append(main_ann)
+        return created
+
+    by_instance: dict[str, list[TrackerFrameResult]] = {}
+    for result in results:
+        by_instance.setdefault(result.instance_id or "", []).append(result)
+    for instance_id in sorted(by_instance):
+        inst_results = by_instance[instance_id]
+        source = source_map.get(instance_id)
+        if source is not None:
+            apply_tracker_results(source, job, inst_results, grid_step, output_geometry)
+        else:
+            new_ann = _new_discovered_track(target, output_geometry)
+            db.add(new_ann)
+            apply_tracker_results(
+                new_ann, job, inst_results, grid_step, output_geometry
+            )
+            created.append(new_ann)
     return created
 
 
@@ -618,14 +669,31 @@ async def accept_tracker_job(
         raise TrackerJobStateConflict(
             f"Video tracker job cannot be accepted from status {current_status}"
         )
-    # v0.22.1 · B · 源轨迹可选: 无源检测 (annotation_id is None) 时 source 为空, 主实例也
-    # 新建轨迹, 归属取自 job 显式目标类别。有源时保留"源软删 → 丢弃孤儿候选"逻辑。
-    annotation = None
-    if job.annotation_id is not None:
+    # v0.22.1 · B · 源轨迹可选 (无源检测 → 全新建); v0.22.2 · M · 多选批量: prompt.seeds
+    # 每条可带 source_annotation_id (obj_id ↔ 源轨迹), 各实例回填各自源。
+    results = _deserialize_results(rows)
+    task = await db.get(Task, job.task_id)
+    if task is None:
+        await db.rollback()
+        raise ValueError("Task not found")
+    seed_sources = _seed_source_map(job)
+    source_map: dict[str, Annotation] = {}
+    if seed_sources:
+        # 多源批量: 各 instance 回填各自源; 某源在 job 期间被软删 → 该源 per-source 降级
+        # (跳过映射 → 该 instance 落新建), 不整 job 失败。
+        for instance_id, ann_id in seed_sources.items():
+            ann = await db.get(Annotation, ann_id)
+            if ann is not None and ann.is_active:
+                source_map[instance_id] = ann
+        target = (
+            _target_from_source(next(iter(source_map.values())))
+            if source_map
+            else _target_from_job(job, task)
+        )
+    elif job.annotation_id is not None:
+        # 单源延展 (0.22.1 及以前): 主实例回填源; 整源软删 → 丢弃孤儿候选 (409 告知前端)。
         annotation = await db.get(Annotation, job.annotation_id)
         if annotation is None or not annotation.is_active:
-            # 源 annotation 已软删 (多标注员协作常见): 自动丢弃孤儿候选, 别让它一直挂在
-            # pending_review, 并以 409 告知前端清理审阅条。
             job.status = VideoTrackerJobStatus.DISCARDED.value
             job.staged_result = None
             await db.commit()
@@ -634,27 +702,26 @@ async def accept_tracker_job(
             raise TrackerJobStateConflict(
                 "Source annotation no longer exists; candidate discarded"
             )
-    task = await db.get(Task, job.task_id)
-    if task is None:
-        await db.rollback()
-        raise ValueError("Task not found")
-    target = (
-        _target_from_source(annotation)
-        if annotation is not None
-        else _target_from_job(job, task)
-    )
+        primary_iid = _primary_instance_id(results)
+        source_map = {
+            primary_iid if primary_iid is not None else _SOLE_SOURCE_KEY: annotation
+        }
+        target = _target_from_source(annotation)
+    else:
+        # 无源检测 (画布级文本/种子发起): 全部新建, 归属取 job 显式目标类别。
+        target = _target_from_job(job, task)
     created = _persist_tracker_results(
         db,
-        annotation,
+        source_map,
         target,
         job,
-        _deserialize_results(rows),
+        results,
         int(staged.get("grid_step", 1)),
         staged.get("output_geometry", "bbox"),
     )
     try:
-        if annotation is not None:
-            await validate_mask_geometry_for_task(db, task, annotation.geometry or {})
+        for src in source_map.values():
+            await validate_mask_geometry_for_task(db, task, src.geometry or {})
         for created_annotation in created:
             await validate_mask_geometry_for_task(
                 db, task, created_annotation.geometry or {}
