@@ -14,6 +14,7 @@ v0.13.11 · 由 `scripts/seed_pointcloud_dev.py` 移入 apps/api/scripts/, 与�
 """
 
 import asyncio
+import hashlib
 import sys
 import uuid
 from pathlib import Path
@@ -36,6 +37,25 @@ DATASET_NAME = "pc-scene-dev"
 ADMIN_EMAIL = "admin"
 ADMIN_PASSWORD = "123456"
 
+POINTCLOUD_TOOL_BINDINGS = {
+    "lidar_box_3d": {
+        "classes": [
+            {"name": "car", "order": 0},
+            {"name": "person", "order": 1},
+        ],
+        "enabled": True,
+        "attribute_schema": {"fields": []},
+    },
+    "point_mask_3d": {
+        "classes": [
+            {"name": "ground", "order": 0},
+            {"name": "obstacle", "order": 1},
+        ],
+        "enabled": True,
+        "attribute_schema": {"fields": []},
+    },
+}
+
 # nuScenes-mini 共 10 个 scene(~5.1G)。仅取 1 个 scene(scene-0061, 39 帧)做 scene
 # 模式点云项目演示——"不要全用,有点大"。dataset_name 取短名让派生 display_id 不被 hash 截断
 # (DS-NU-nuscenes-mini / P-NU-nuscenes-mini 均 ≤ 20 字符)。
@@ -55,8 +75,12 @@ async def _ensure_admin(db) -> uuid.UUID:
     if admin:
         return admin.id
     admin = User(
-        id=uuid.uuid4(), email=ADMIN_EMAIL, name="超级管理员",
-        password_hash=hash_password(ADMIN_PASSWORD), role="super_admin", is_active=True,
+        id=uuid.uuid4(),
+        email=ADMIN_EMAIL,
+        name="超级管理员",
+        password_hash=hash_password(ADMIN_PASSWORD),
+        role="super_admin",
+        is_active=True,
     )
     db.add(admin)
     await db.flush()
@@ -64,7 +88,11 @@ async def _ensure_admin(db) -> uuid.UUID:
 
 
 async def seed_pointcloud(
-    db, *, owner_id: uuid.UUID, fixture: Path | None = None
+    db,
+    *,
+    owner_id: uuid.UUID,
+    fixture: Path | None = None,
+    axis_convention: str = "sustechpoints_demo",
 ) -> dict | None:
     """把点云夹具灌入当前栈,owner 为传入用户。
 
@@ -90,19 +118,25 @@ async def seed_pointcloud(
         raise FileNotFoundError(f"点云夹具缺失: {fixture}")
 
     project = Project(
-        display_id=PROJECT_DISPLAY_ID, name="点云联合标注 (dev)",
-        type_label="点云检测", type_key="lidar", data_type="lidar",
-        owner_id=owner_id, tool_bindings={}, ai_enabled=False,
+        display_id=PROJECT_DISPLAY_ID,
+        name="点云联合标注 (dev)",
+        type_label="点云检测",
+        type_key="lidar",
+        data_type="lidar",
+        owner_id=owner_id,
+        tool_bindings=POINTCLOUD_TOOL_BINDINGS,
+        ai_enabled=False,
     )
     db.add(project)
 
-    # v0.13.11 · 夹具来自 SUSTechPOINTS 示例,lidar 系约定 +X 车左 / +Y 车后 / +Z 天 (非
-    # ISO 8855),写 axis_convention=sustechpoints_demo 让前端加载侧自动旋转到 ISO,BEV
-    # 才会车头朝上,框选画框 yaw=0 才能沿车身长轴对齐。
+    # SUSTechPOINTS 默认用其实测轴向;截图 profile 的 PCL RGB-D 扫描则显式传
+    # opencv_camera(+X 右 / +Y 下 / +Z 前),前端统一归一到 ISO 8855。
     ds = Dataset(
-        display_id=DATASET_DISPLAY_ID, name=DATASET_NAME, data_type="point_cloud",
+        display_id=DATASET_DISPLAY_ID,
+        name=DATASET_NAME,
+        data_type="point_cloud",
         created_by=owner_id,
-        metadata_={"axis_convention": "sustechpoints_demo"},
+        metadata_={"axis_convention": axis_convention},
     )
     db.add(ds)
     await db.flush()
@@ -112,35 +146,47 @@ async def seed_pointcloud(
     def upload(relpath: str, file_type: str):
         local = fixture / relpath
         key = f"{DATASET_NAME}/{relpath}"
+        payload = local.read_bytes()
         storage_service.client.put_object(
-            Bucket=bucket, Key=key, Body=local.read_bytes(),
+            Bucket=bucket,
+            Key=key,
+            Body=payload,
         )
-        db.add(DatasetItem(
-            dataset_id=ds.id, file_name=Path(relpath).name,
-            file_path=key, file_type=file_type,
-            file_size=local.stat().st_size,
-        ))
+        db.add(
+            DatasetItem(
+                dataset_id=ds.id,
+                file_name=Path(relpath).name,
+                file_path=key,
+                file_type=file_type,
+                file_size=local.stat().st_size,
+                content_hash=hashlib.sha256(payload).hexdigest(),
+            )
+        )
 
     n = 0
     for pcd in sorted((fixture / "lidar").glob("*.pcd")):
         upload(f"lidar/{pcd.name}", "point_cloud")
         n += 1
-    for cam_dir in sorted((fixture / "camera").iterdir()):
-        if not cam_dir.is_dir():
-            continue
-        for jpg in sorted(cam_dir.glob("*.jpg")):
-            upload(f"camera/{cam_dir.name}/{jpg.name}", "image")
+    camera_root = fixture / "camera"
+    if camera_root.is_dir():
+        for cam_dir in sorted(camera_root.iterdir()):
+            if not cam_dir.is_dir():
+                continue
+            for jpg in sorted(cam_dir.glob("*.jpg")):
+                upload(f"camera/{cam_dir.name}/{jpg.name}", "image")
+                n += 1
+    calibration_root = fixture / "calib/camera"
+    if calibration_root.is_dir():
+        for cj in sorted(calibration_root.glob("*.json")):
+            upload(f"calib/camera/{cj.name}", "other")
             n += 1
-    for cj in sorted((fixture / "calib/camera").glob("*.json")):
-        upload(f"calib/camera/{cj.name}", "other")
-        n += 1
+
+    ds.file_count = n
 
     db.add(ProjectDataset(project_id=project.id, dataset_id=ds.id))
     await db.flush()
 
-    result = await build_tasks_for_link(
-        db, dataset_id=ds.id, project_id=project.id
-    )
+    result = await build_tasks_for_link(db, dataset_id=ds.id, project_id=project.id)
     return {"project": PROJECT_DISPLAY_ID, "files": n, "tasks": result}
 
 
@@ -207,7 +253,9 @@ async def main() -> None:
     else:
         print(f"SUSTechPOINTS  上传文件: {info['files']}  建任务: {info['tasks']}")
         print(f"  项目: {info['project']}")
-    print(f"nuScenes scene 模式  total_items: {nu['total_items']}  本次建包: {nu['batches']}")
+    print(
+        f"nuScenes scene 模式  total_items: {nu['total_items']}  本次建包: {nu['batches']}"
+    )
     for s in nu["scenes"]:
         tag = " (已存在,跳过)" if s.get("skipped") else ""
         print(f"  scene {s['name']}: {s['frames']} frames{tag}")

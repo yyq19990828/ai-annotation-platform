@@ -21,6 +21,7 @@ owner 用传入用户(seed.py 传 admin;独立跑兜底 admin),与其余 seed �
 """
 
 import asyncio
+import hashlib
 import uuid
 from pathlib import Path
 
@@ -29,7 +30,9 @@ from pathlib import Path
 _parents = Path(__file__).resolve().parents
 REPO = _parents[3] if len(_parents) > 3 else _parents[-1]
 # 开源素材:grounded-sam-2 vendor 自带的行车跟踪片段(Apache-2.0)。
-VIDEO = REPO / "apps/grounded-sam2-backend/vendor/grounded-sam-2/assets/tracking_car.mp4"
+VIDEO = (
+    REPO / "apps/grounded-sam2-backend/vendor/grounded-sam-2/assets/tracking_car.mp4"
+)
 
 PROJECT_DISPLAY_ID = "P-VIDEO-DEV"
 DATASET_DISPLAY_ID = "DS-VIDEO-DEV"
@@ -37,6 +40,27 @@ DATASET_NAME = "tracking-car-dev"
 DATASET_FOLDER = "tracking-car-dev"  # MinIO datasets 桶内前缀
 ADMIN_EMAIL = "admin"
 ADMIN_PASSWORD = "123456"
+
+VIDEO_TOOL_BINDINGS = {
+    "bbox": {
+        "enabled": True,
+        "classes": [
+            {"name": "car", "order": 0},
+            {"name": "person", "order": 1},
+        ],
+    },
+    "region": {
+        "enabled": True,
+        "classes": [
+            {"name": "car", "order": 0},
+            {"name": "person", "order": 1},
+        ],
+    },
+    "polyline": {
+        "enabled": True,
+        "classes": [{"name": "lane", "order": 0}],
+    },
+}
 
 
 async def _ensure_admin(db) -> uuid.UUID:
@@ -50,8 +74,12 @@ async def _ensure_admin(db) -> uuid.UUID:
     if admin:
         return admin.id
     admin = User(
-        id=uuid.uuid4(), email=ADMIN_EMAIL, name="超级管理员",
-        password_hash=hash_password(ADMIN_PASSWORD), role="super_admin", is_active=True,
+        id=uuid.uuid4(),
+        email=ADMIN_EMAIL,
+        name="超级管理员",
+        password_hash=hash_password(ADMIN_PASSWORD),
+        role="super_admin",
+        is_active=True,
     )
     db.add(admin)
     await db.flush()
@@ -103,33 +131,14 @@ async def seed_video(
         owner_id=owner_id,
         ai_enabled=True,
         # 视频几何单位独立 (对齐图片): bbox / region(多边形) / polyline(折线) 各自类别与属性 schema。
-        tool_bindings={
-            "bbox": {
-                "enabled": True,
-                "classes": [
-                    {"name": "car", "order": 0},
-                    {"name": "person", "order": 1},
-                ],
-            },
-            "region": {
-                "enabled": True,
-                "classes": [
-                    {"name": "car", "order": 0},
-                    {"name": "person", "order": 1},
-                ],
-            },
-            "polyline": {
-                "enabled": True,
-                "classes": [
-                    {"name": "lane", "order": 0},
-                ],
-            },
-        },
+        tool_bindings=VIDEO_TOOL_BINDINGS,
     )
     db.add(project)
 
     ds = Dataset(
-        display_id=DATASET_DISPLAY_ID, name=DATASET_NAME, data_type="video",
+        display_id=DATASET_DISPLAY_ID,
+        name=DATASET_NAME,
+        data_type="video",
         description="开源行车跟踪片段(grounded-sam-2 vendor, Apache-2.0)dev 夹具",
         created_by=owner_id,
     )
@@ -140,38 +149,51 @@ async def seed_video(
     # 上传视频到 MinIO datasets 桶。
     bucket = storage_service.datasets_bucket
     key = f"{DATASET_FOLDER}/{video.name}"
+    payload = video.read_bytes()
     storage_service.client.put_object(
-        Bucket=bucket, Key=key, Body=video.read_bytes(), ContentType="video/mp4",
+        Bucket=bucket,
+        Key=key,
+        Body=payload,
+        ContentType="video/mp4",
     )
 
     item = DatasetItem(
-        dataset_id=ds.id, file_name=video.name, file_path=key, file_type="video",
+        dataset_id=ds.id,
+        file_name=video.name,
+        file_path=key,
+        file_type="video",
         file_size=video.stat().st_size,
-        width=video_meta["width"], height=video_meta["height"],
+        content_hash=hashlib.sha256(payload).hexdigest(),
+        width=video_meta["width"],
+        height=video_meta["height"],
         metadata_={"video": video_meta},
     )
     db.add(item)
     await db.flush()
 
     # 逐帧时间表(manifest/timetable 接口依赖;不填前端按 fps 估算,这里填精确值)。
-    db.add_all([
-        VideoFrameIndex(
-            dataset_item_id=item.id,
-            frame_index=e["frame_index"],
-            pts_ms=e["pts_ms"],
-            is_keyframe=e["is_keyframe"],
-            pict_type=e.get("pict_type"),
-            byte_offset=e.get("byte_offset"),
-        )
-        for e in timetable
-    ])
+    db.add_all(
+        [
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=e["frame_index"],
+                pts_ms=e["pts_ms"],
+                is_keyframe=e["is_keyframe"],
+                pict_type=e.get("pict_type"),
+                byte_offset=e.get("byte_offset"),
+            )
+            for e in timetable
+        ]
+    )
 
     ds.file_count = 1
     db.add(ProjectDataset(project_id=project_id, dataset_id=ds.id))
     await db.flush()
 
     # 每个视频一个 Task(video 走普通路径,非 lidar 分支)。
-    tasks_result = await build_tasks_for_link(db, dataset_id=ds.id, project_id=project_id)
+    tasks_result = await build_tasks_for_link(
+        db, dataset_id=ds.id, project_id=project_id
+    )
 
     return {
         "project": PROJECT_DISPLAY_ID,

@@ -14,7 +14,7 @@
 - 截图目标元素缺失时，部分场景会吞掉异常或退化为整页截图，导致命令成功但图片内容错误。
 - 当前已引用资产共 72 个（60 PNG、12 GIF），自动图片最后集中生成于 2026-06-15/19，此后 UI 已有多轮调整，需在数据契约稳定后全量更新。
 
-当前 DEV 数据库只有 `P-VIDEO-DEV`。在这种状态下直接运行全量截图，`seed/peek` 会把视频项目错误地提供给通用图片项目场景，因此本计划不允许先重拍、后补 seed。
+计划启动时 DEV 数据库只有 `P-VIDEO-DEV`。在这种状态下直接运行全量截图，`seed/peek` 会把视频项目错误地提供给通用图片项目场景，因此本计划不允许先重拍、后补 seed。
 
 ## 2. 目标
 
@@ -93,7 +93,7 @@ PYTHONPATH=. uv run python scripts/seed.py --profile screenshots
 |---|---|---|---|
 | `image_demo` | `P-COCO8` | 图片工作台、bbox、polygon、mask、AI 交互、AI 预标、数据管理、导出 | 8 个固定媒体；预测样例；多状态批次；绑定 image AI backend |
 | `video_demo` | `P-VIDEO-DEV` | 视频工作台、轨迹、AI 追踪入口 | 固定视频和任务；绑定 tracker backend |
-| `pointcloud_demo` | `P-PC-DEV` | 3D 工作台、相机投影、点云控件 | 小型点云/相机/标定包；固定帧顺序 |
+| `pointcloud_demo` | `P-PC-DEV` | 3D 工作台、点云视角与标注控件 | 4 帧真实 RGB-D 扫描；剔除无效深度；固定帧顺序 |
 | `ocr_demo` | `P-OCR` | OCR 项目和模型入口 | 单张固定图片；OCR 工具绑定 |
 
 `image_demo` 至少提供以下任务逻辑键：
@@ -195,9 +195,14 @@ driver 在打开浏览器前统一校验 catalog。AI scene 不再自行寻找 P
 - 测试使用临时本地 HTTP 服务或 mock transport，不依赖真实公网。
 
 清单中的 `public_docs_status` 决定素材能否进入严格 `screenshots` profile。来源审计后，
-RapidOCR 图片已带署名进入；COCO8 被阻止，行车视频和 SUSTechPOINTS 示例媒体待确认。
-后续用项目自有的确定性合成数据替换无法确认的素材。完整 nuScenes-mini 保留为显式可选
-数据源，不作为普通全量截图的隐式前置。
+COCO8、旧行车视频和 SUSTechPOINTS 示例都不进入公开截图 profile；图片改用
+Wikimedia Commons 的 CC0 奥克兰车流照片，视频改用 CC BY 3.0 的真实城市交通片段，
+点云改用 PCL 数据仓库中固定 commit 的 BSD-3-Clause RGB-D 扫描，OCR 继续使用
+RapidOCR 官方示例。完整 nuScenes-mini 保留为显式可选数据源。
+
+网络地址分为两层：DEV 浏览器使用同源 `/minio` 并由 Vite `:3000` 转发，
+远程机器无需直连 9000；ML Backend 仍通过 `ML_BACKEND_STORAGE_HOST` 使用 Docker 网关。
+两者不得共用 Docker 私网 IP 或远端解释的 `localhost`。
 
 ## 9. Seed catalog API
 
@@ -212,7 +217,7 @@ GET /api/v1/__test/seed/catalog?profile=screenshots
 ```json
 {
   "schema_version": 1,
-  "seed_revision": "screenshots-2026-07-a",
+  "seed_revision": "screenshots-2026-07-c",
   "users": {
     "admin": {"email": "admin"},
     "project_admin": {"email": "pm"},
@@ -406,12 +411,25 @@ pnpm docs:build
 存在 NC/ND 许可；行车视频和 SUSTechPOINTS 示例媒体没有独立来源说明。RapidOCR 示例图
 可带署名使用。A1 因此先交付可审计、可失败的契约，不把许可证不明确误包装成可公开素材。
 
-#### 里程碑 A2：合规素材与 desired-state（待执行）
+#### 里程碑 A2：真实合规素材与 desired-state（已完成）
 
-- [ ] 用项目自有的确定性合成图片和固定框替换公开截图 profile 中的 COCO8 媒体。
-- [ ] 确认行车视频、点云示例媒体许可，无法确认则替换为项目自有合成素材。
-- [ ] 实现只管理 seed 自有对象的 `--repair` desired-state reconcile。
-- [ ] 让 `screenshots` profile 在素材门禁通过后完成写库，并运行 catalog preflight。
+- [x] 用固定版本与哈希的 CC0 真实道路照片生成 8 张确定性裁剪和固定框。
+- [x] 用真实城市交通视频的固定 6 秒 H.264 派生片段替换合成视频。
+- [x] 用 PCL 官方数据仓库的 4 帧真实 RGB-D 扫描替换合成点云，剔除 NaN 深度点并明确 `opencv_camera` 坐标约定。
+- [x] 实现只管理 seed 自有对象的 `--repair` desired-state reconcile。
+- [x] 让 `screenshots` profile 在素材门禁通过后完成写库，并运行 catalog preflight。
+- [x] DEV 浏览器签名 URL 改走同源 `/minio` 代理，远程访问不再依赖 9000 端口或 Docker IP。
+
+真实素材派生包固定生成 8 张道路图片、1 段 6 秒 H.264 视频和 4 帧室内点云，
+使用源文件摘要与派生内容摘要双重校验缓存；缓存损坏会原子重建。任务逻辑键由固定 `DatasetItem.file_path` 显式
+映射，不再依赖文件名排序。数据集记录 `managed_by`、profile、逻辑键、seed revision 和素材
+摘要；`--repair` 仅在 marker 匹配或旧 seed 的 owner、名称、独占关联和存储前缀全部匹配时
+允许重建，固定 ID 与用户项目碰撞时直接失败。
+
+真实 DEV 栈验证已经完成：首次 `--repair` 创建 4 个项目、14 个任务和 4 个固定批次；重复执行
+不重建资源。浏览器中图片、视频、点云和 OCR 四种媒体均真实渲染，同源 `/minio`
+请求返回 200/206。catalog 除图片和视频项目尚未绑定 ML Backend 产生的 4 条预期问题外
+无其他问题，这些问题由阶段 B 收敛。
 
 ### 阶段 B：ML Backend 与项目数据（约 2 个工作日）
 
@@ -419,7 +437,7 @@ pnpm docs:build
 - [ ] 实现 live backend 按能力发现和绑定。
 - [ ] 实现/复用 CI protocol stub 及 contract test。
 - [ ] 为图片、视频项目创建 `ProjectMLBackend`、主 backend 和能力校验。
-- [ ] 创建真实角色、成员、固定批次和任务状态。
+- [x] 创建真实角色、成员、固定批次和任务状态。
 
 ### 阶段 C：Playwright 迁移（约 2–3 个工作日）
 
@@ -470,7 +488,7 @@ pnpm docs:build
 | Mock backend 被健康任务改成 error，AI 按钮再次置灰 | Stub 必须真实可达并通过 `/health`、`/setup`，不只在数据库伪造 connected |
 | Seed repair 覆盖开发者数据 | 只操作带稳定 seed 标识的项目/数据集/backend；测试证明用户项目不受影响 |
 | 上游素材变更或失效 | 固定 URL + SHA-256 + 镜像 + 本地 override；失败时明确列出 asset id |
-| 大型点云数据拖慢日常截图 | 采用小型、许可已确认的项目自有 fixture；完整 nuScenes 置于可选 profile |
+| 大型点云数据拖慢日常截图 | 采用 PCL 仓库已确认许可的小型真实扫描，派生时剔除无效深度；完整 nuScenes 置于可选 profile |
 | Backend 名称或 URL 漂移 | 按能力和 registry id 绑定，不按显示名称猜测；catalog 返回实际 id |
 | Matrix 数量膨胀 | 默认只跑 desktop-light，其它维度显式 opt-in |
 | 全量覆盖误伤手动图 | `auto:false` 在写文件前强制检查；人工图不进入自动 target |
@@ -490,10 +508,11 @@ pnpm docs:build
 
 ## Outcome
 
-- 状态：里程碑 A1 已完成；A2 及阶段 B–E 待执行。
-- 已交付：版本化素材清单、安全缓存下载器、严格 profile 入口、只读 screenshot seed catalog、
-  ML Backend 就绪硬校验和定向后端测试。
-- 已确认阻塞：COCO8 不适合公开截图；行车视频与 SUSTechPOINTS 媒体许可待确认。严格 profile
-  当前会在写库前明确失败，这是 A1 的预期安全行为，不是静默降级。
+- 状态：阶段 A 已完成；阶段 B–E 待执行。
+- 已交付：版本化网络素材清单、安全缓存下载器、许可可追溯的真实图片/视频/点云派生素材、
+  desired-state reconcile、显式任务映射、真实角色与多状态任务、只读 screenshot seed catalog、
+  ML Backend 就绪硬校验、远程 DEV 同源媒体代理和定向后端测试。
+- 当前阻塞：图片和视频项目尚未绑定满足能力要求的 ML Backend。seed 写库和非 backend
+  catalog 校验已通过，阶段 B 需完成 live/stub 发现、项目 enablement、主绑定与能力快照。
 - 正式文档：待阶段 E 同步。
 - 未尽事项：维护清单中不属于现有自动场景的待拍项，实施后另立截图覆盖扩展计划。

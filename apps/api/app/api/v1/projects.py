@@ -60,6 +60,7 @@ from app.services.project_clone import (
     CLONEABLE_PROJECT_FIELDS as _CLONEABLE_PROJECT_FIELDS,  # noqa: F401 (re-export)
     merge_from_source as _merge_from_source_project_impl,
 )
+from app.services.project_delete import delete_project_records
 
 router = APIRouter()
 logger = logging.getLogger("app.api.projects")
@@ -771,66 +772,7 @@ async def delete_project(
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
 ):
-    pid = str(project.id)
-    p = {"pid": pid}
-
-    await db.execute(text("DELETE FROM annotation_comments WHERE project_id = :pid"), p)
-    await db.execute(
-        text("DELETE FROM annotation_feedbacks WHERE project_id = :pid"), p
-    )
-    await db.execute(
-        text(
-            "DELETE FROM annotation_drafts WHERE task_id IN "
-            "(SELECT id FROM tasks WHERE project_id = :pid)"
-        ),
-        p,
-    )
-    await db.execute(
-        text(
-            "DELETE FROM prediction_metas WHERE prediction_id IN "
-            "(SELECT id FROM predictions WHERE project_id = :pid) "
-            "OR failed_prediction_id IN "
-            "(SELECT id FROM failed_predictions WHERE project_id = :pid)"
-        ),
-        p,
-    )
-    await db.execute(
-        text(
-            "UPDATE annotations SET parent_prediction_id = NULL, "
-            "parent_annotation_id = NULL WHERE project_id = :pid"
-        ),
-        p,
-    )
-    await db.execute(text("DELETE FROM annotations WHERE project_id = :pid"), p)
-    await db.execute(text("DELETE FROM predictions WHERE project_id = :pid"), p)
-    await db.execute(text("DELETE FROM failed_predictions WHERE project_id = :pid"), p)
-    await db.execute(
-        text(
-            "DELETE FROM task_locks WHERE task_id IN "
-            "(SELECT id FROM tasks WHERE project_id = :pid)"
-        ),
-        p,
-    )
-    # v0.19.0 ADR-0044 · 全局 backend 注册项不属于某个项目, 不随项目删;
-    # project_ml_backend.project_id ON DELETE CASCADE, db.delete(project) 会自动清启用关联;
-    # registry 行的下线/复用走 superadmin /admin/ml-integrations/registry 端点。
-    await db.execute(
-        text("UPDATE bug_reports SET project_id = NULL WHERE project_id = :pid"),
-        p,
-    )
-    # task_id 须按"任务属于本项目"清空: bug_report 可能 project_id 为空 / 指向他项,
-    # 但 task_id 仍指向本项目任务 (例如历史上 project_id 已被置空), 否则删 tasks 时
-    # 会撞 bug_reports_task_id_fkey.
-    await db.execute(
-        text(
-            "UPDATE bug_reports SET task_id = NULL WHERE task_id IN "
-            "(SELECT id FROM tasks WHERE project_id = :pid)"
-        ),
-        p,
-    )
-    await db.execute(text("DELETE FROM tasks WHERE project_id = :pid"), p)
-
-    await db.delete(project)
+    await delete_project_records(db, project)
     await db.commit()
     return Response(status_code=204)
 

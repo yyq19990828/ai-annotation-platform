@@ -86,20 +86,41 @@ def test_repository_manifest_records_public_docs_clearance():
     assets = load_manifest()
 
     assert {asset.id for asset in assets} == {
+        "auckland-traffic-1",
+        "auckland-traffic-2",
         "coco8",
+        "pcl-pairwise-capture-1",
+        "pcl-pairwise-capture-2",
+        "pcl-pairwise-capture-3",
+        "pcl-pairwise-capture-4",
         "tracking-video",
         "rapidocr-image",
+        "street-traffic-video",
         "sustechpoints-example",
     }
     statuses = {asset.id: asset.public_docs_status for asset in assets}
     assert statuses == {
+        "auckland-traffic-1": "approved",
+        "auckland-traffic-2": "approved",
         "coco8": "blocked",
+        "pcl-pairwise-capture-1": "approved_with_attribution",
+        "pcl-pairwise-capture-2": "approved_with_attribution",
+        "pcl-pairwise-capture-3": "approved_with_attribution",
+        "pcl-pairwise-capture-4": "approved_with_attribution",
         "tracking-video": "review_required",
         "rapidocr-image": "approved_with_attribution",
+        "street-traffic-video": "approved_with_attribution",
         "sustechpoints-example": "review_required",
     }
     assert {asset.id for asset in assets if "screenshots" in asset.profiles} == {
-        "rapidocr-image"
+        "auckland-traffic-1",
+        "auckland-traffic-2",
+        "pcl-pairwise-capture-1",
+        "pcl-pairwise-capture-2",
+        "pcl-pairwise-capture-3",
+        "pcl-pairwise-capture-4",
+        "rapidocr-image",
+        "street-traffic-video",
     }
 
 

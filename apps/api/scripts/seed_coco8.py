@@ -20,6 +20,7 @@ seed_coco8() 也被 apps/api/scripts/seed.py 复用,作为开发者初始化的�
 """
 
 import asyncio
+import hashlib
 import io
 import uuid
 import zipfile
@@ -40,17 +41,85 @@ ADMIN_PASSWORD = "123456"
 
 # COCO 80 类(按官方 class_idx 顺序);tool_bindings 全量内置 → YOLO class_idx 直接对位。
 COCO_NAMES = (
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
     "toothbrush",
 )
 
@@ -96,8 +165,12 @@ async def _ensure_admin(db) -> uuid.UUID:
     if admin:
         return admin.id
     admin = User(
-        id=uuid.uuid4(), email=ADMIN_EMAIL, name="超级管理员",
-        password_hash=hash_password(ADMIN_PASSWORD), role="super_admin", is_active=True,
+        id=uuid.uuid4(),
+        email=ADMIN_EMAIL,
+        name="超级管理员",
+        password_hash=hash_password(ADMIN_PASSWORD),
+        role="super_admin",
+        is_active=True,
     )
     db.add(admin)
     await db.flush()
@@ -120,7 +193,11 @@ def _build_yolo_zip(fixture: Path = FIXTURE) -> bytes:
 
 
 async def seed_coco8(
-    db, *, owner_id: uuid.UUID, fixture: Path | None = None
+    db,
+    *,
+    owner_id: uuid.UUID,
+    fixture: Path | None = None,
+    prediction_model_version: str | None = None,
 ) -> dict | None:
     """把 coco8 灌入当前栈,owner 为传入用户。
 
@@ -168,8 +245,7 @@ async def seed_coco8(
             "bbox": {
                 "enabled": True,
                 "classes": [
-                    {"name": name, "order": idx}
-                    for idx, name in enumerate(COCO_NAMES)
+                    {"name": name, "order": idx} for idx, name in enumerate(COCO_NAMES)
                 ],
             },
             **EXTRA_TOOL_BINDINGS,
@@ -178,8 +254,11 @@ async def seed_coco8(
     db.add(project)
 
     ds = Dataset(
-        display_id=DATASET_DISPLAY_ID, name=DATASET_NAME, data_type="image",
-        description="Ultralytics coco8(8 张 COCO 图)dev 夹具", created_by=owner_id,
+        display_id=DATASET_DISPLAY_ID,
+        name=DATASET_NAME,
+        data_type="image",
+        description="Ultralytics coco8(8 张 COCO 图)dev 夹具",
+        created_by=owner_id,
     )
     db.add(ds)
     await db.flush()
@@ -194,14 +273,25 @@ async def seed_coco8(
             with Image.open(jpg) as im:
                 w_px, h_px = im.size
             key = f"{DATASET_FOLDER}/{split}/{jpg.name}"
+            payload = jpg.read_bytes()
             storage_service.client.put_object(
-                Bucket=bucket, Key=key, Body=jpg.read_bytes(), ContentType="image/jpeg",
+                Bucket=bucket,
+                Key=key,
+                Body=payload,
+                ContentType="image/jpeg",
             )
-            db.add(DatasetItem(
-                dataset_id=ds.id, file_name=jpg.name, file_path=key,
-                file_type="image", file_size=jpg.stat().st_size,
-                width=w_px, height=h_px,
-            ))
+            db.add(
+                DatasetItem(
+                    dataset_id=ds.id,
+                    file_name=jpg.name,
+                    file_path=key,
+                    file_type="image",
+                    file_size=jpg.stat().st_size,
+                    content_hash=hashlib.sha256(payload).hexdigest(),
+                    width=w_px,
+                    height=h_px,
+                )
+            )
             n_images += 1
 
     ds.file_count = n_images
@@ -209,12 +299,18 @@ async def seed_coco8(
     await db.flush()
 
     # 每图一个 Task(内部分块 commit)。
-    tasks_result = await build_tasks_for_link(db, dataset_id=ds.id, project_id=project_id)
+    tasks_result = await build_tasks_for_link(
+        db, dataset_id=ds.id, project_id=project_id
+    )
 
     # 预标注导入:coco8 YOLO 框 → predictions(每图一条,含该图全部框),source=external_import。
     # 走平台现成 import_yolo,按文件名 stem 匹配 task;task 仍 pending,待人工采纳。
     pred = await import_yolo(
-        db, project_id, _build_yolo_zip(fixture), yolo_variant="det"
+        db,
+        project_id,
+        _build_yolo_zip(fixture),
+        yolo_variant="det",
+        model_version_fallback=prediction_model_version,
     )
     await db.flush()
 
@@ -253,7 +349,9 @@ async def main() -> None:
     if info is None:
         print(f"项目 {PROJECT_DISPLAY_ID} 已存在,工具绑定无需更新,跳过")
     elif "added_tool_units" in info:
-        print(f"项目 {PROJECT_DISPLAY_ID} 已存在,补齐工具单位: {info['added_tool_units']}")
+        print(
+            f"项目 {PROJECT_DISPLAY_ID} 已存在,补齐工具单位: {info['added_tool_units']}"
+        )
     else:
         print(
             f"上传图片: {info['images']}  建任务: {info['tasks']}  "

@@ -35,6 +35,9 @@
 
 ## [Unreleased]
 
+### Added
+- **DEV 截图 seed 使用可追溯的真实场景和期望状态**：`screenshots` profile 从固定来源拉取真实道路图片、城市交通视频、PCL 室内点云与 RapidOCR 示例，经确定性裁剪/转码/无效深度过滤后，按显式媒体路径创建 4 个项目、14 个任务和多状态批次；`--repair` 仅重建能够证明由截图 seed 管理的对象。DEV 媒体改走同源 `/minio` 代理，远程浏览器不再依赖直连 9000 端口或 Docker 私网 IP。
+
 <!--
 日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：
 Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空组省略）。

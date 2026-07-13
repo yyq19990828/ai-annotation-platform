@@ -27,6 +27,10 @@ PUBLIC_DOCS_STATUSES = {
     "review_required",
     "blocked",
 }
+DOWNLOAD_USER_AGENT = (
+    "ai-annotation-platform-seed/1.0 "
+    "(https://github.com/yyq19990828/ai-annotation-platform)"
+)
 
 
 class SeedAssetError(RuntimeError):
@@ -415,7 +419,10 @@ def ensure_asset(
         tempfile.mkdtemp(prefix=f".{asset.sha256[:12]}-", dir=destination.parent)
     )
     owned_client = client is None
-    active_client = client or httpx.Client(timeout=httpx.Timeout(60.0, connect=15.0))
+    active_client = client or httpx.Client(
+        headers={"User-Agent": DOWNLOAD_USER_AGENT},
+        timeout=httpx.Timeout(60.0, connect=15.0),
+    )
     try:
         download = staging / "download.part"
         source_url = _download(asset, active_client, download)

@@ -329,8 +329,8 @@ cd apps/api && uv run uvicorn app.main:app --port 8000     # 另开窗口
 pnpm dev:web                                               # 另开窗口，:3000
 pnpm exec playwright install chromium                      # 首次需下载浏览器
 
-# 首次还需要至少一个 super_admin 账号 + 一个项目，否则截图脚本会报缺数据
-cd apps/api && PYTHONPATH=. uv run python scripts/seed.py  # 创建 admin/pm/qa/anno + 2 示例项目 + 点云项目 P-PC-DEV(owner=admin,需 MinIO,缺则跳过)
+# 首次下载并校验公开小型素材，再创建截图专用的 4 个真实场景项目
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py --profile screenshots --repair
 ```
 
 ### 触发
@@ -361,6 +361,11 @@ peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
 
 ### 已知坑
 
+- **远程浏览器只显示模糊占位图**：根 `.env` 保持 `MINIO_PUBLIC_URL=/minio`，
+  DEV 会让签名媒体走页面同源的 `:3000/minio` 并由 Vite 转发到 MinIO，远程机器
+  只需打通 3000 端口。若返回 `localhost:9000` 或宿主机 `:9000`，会分别命中
+  访问者自己或受跨网段端口策略影响。`ML_BACKEND_STORAGE_HOST` 是容器的另一层
+  地址，可以继续使用 Docker 网关。修改 `.env` 或 Vite 代理配置后重启 API/Web。
 - **中文路径**：仓库根含中文（`AI标注平台设计/`）时，`import.meta.url` 会 percent-encode；
   `screenshots.spec.ts` 已 `decodeURIComponent` 兜底，写到正确位置而非 `AI%E6%A0%87...` 镜像目录。
 - **flaky 时间敏感 UI**：当前未注入 `page.clock`，dashboard 日期 / 头像随机色可能每次微变；

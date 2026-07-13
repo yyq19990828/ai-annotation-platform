@@ -71,6 +71,160 @@ public_docs_status = "approved_with_attribution"
 public_docs_notes = "Keep source attribution with published screenshot documentation."
 
 [[assets]]
+id = "auckland-traffic-1"
+profiles = ["screenshots"]
+urls = ["https://upload.wikimedia.org/wikipedia/commons/e/e4/Cars_in_traffic_in_Auckland%2C_New_Zealand_-_copyright-free_photo_released_to_public_domain.jpg"]
+sha256 = "ed42679283b7b29fdef3ab32025b6a8ddf342725480451ce5210fc86f2c796a4"
+size_bytes = 6686563
+max_bytes = 7000000
+max_unpacked_bytes = 7000000
+archive = "none"
+filename = "auckland-traffic-1.jpg"
+root = "."
+required_files = ["auckland-traffic-1.jpg"]
+source = "https://commons.wikimedia.org/wiki/File:Cars_in_traffic_in_Auckland,_New_Zealand_-_copyright-free_photo_released_to_public_domain.jpg"
+
+[assets.license]
+artifact_spdx = "CC0-1.0"
+media_status = "author released the photograph into the public domain"
+notice_url = "https://commons.wikimedia.org/wiki/File:Cars_in_traffic_in_Auckland,_New_Zealand_-_copyright-free_photo_released_to_public_domain.jpg"
+attribution = "Kiwiev / Wikimedia Commons"
+public_docs_status = "approved"
+public_docs_notes = "The screenshot profile creates deterministic crops from the original CC0 photograph."
+
+[[assets]]
+id = "auckland-traffic-2"
+profiles = ["screenshots"]
+urls = ["https://upload.wikimedia.org/wikipedia/commons/b/b5/Auckland_traffic_-_copyright-free_photo_released_to_public_domain.jpg"]
+sha256 = "c742938335496aa6b5b87e4d07c4efaeb9610751d7415bbc4a8d3b6fc0b9ba53"
+size_bytes = 7083329
+max_bytes = 7500000
+max_unpacked_bytes = 7500000
+archive = "none"
+filename = "auckland-traffic-2.jpg"
+root = "."
+required_files = ["auckland-traffic-2.jpg"]
+source = "https://commons.wikimedia.org/wiki/File:Auckland_traffic_-_copyright-free_photo_released_to_public_domain.jpg"
+
+[assets.license]
+artifact_spdx = "CC0-1.0"
+media_status = "author released the photograph into the public domain"
+notice_url = "https://commons.wikimedia.org/wiki/File:Auckland_traffic_-_copyright-free_photo_released_to_public_domain.jpg"
+attribution = "Kiwiev / Wikimedia Commons"
+public_docs_status = "approved"
+public_docs_notes = "The screenshot profile creates deterministic crops from the original CC0 photograph."
+
+[[assets]]
+id = "street-traffic-video"
+profiles = ["screenshots"]
+urls = ["https://upload.wikimedia.org/wikipedia/commons/7/70/Street_traffic.webm"]
+sha256 = "e5facb24baf755f0c1193999d823e99f6032661ad2bdef5cc28cc1cbbfde03e2"
+size_bytes = 26490572
+max_bytes = 27000000
+max_unpacked_bytes = 27000000
+archive = "none"
+filename = "street-traffic.webm"
+root = "."
+required_files = ["street-traffic.webm"]
+source = "https://commons.wikimedia.org/wiki/File:Street_traffic.webm"
+
+[assets.license]
+artifact_spdx = "CC-BY-3.0"
+media_status = "license and source reviewed by Wikimedia Commons"
+notice_url = "https://commons.wikimedia.org/wiki/File:Street_traffic.webm"
+attribution = "Editor / Wikimedia Commons, CC BY 3.0"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the attribution in screenshot documentation that publishes frames from this clip."
+
+[[assets]]
+id = "pcl-pairwise-capture-1"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0001.pcd"]
+sha256 = "b3bf4f1ca7200e665c86e9ce28c142c7b058de64455713a36f555b0003f773de"
+size_bytes = 972688
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0001.pcd"
+root = "."
+required_files = ["capture0001.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "pcl-pairwise-capture-2"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0002.pcd"]
+sha256 = "42e1c94ccd55e3c007c22736091d4151bf23c1f45b12b384a0168ad438a396fd"
+size_bytes = 964377
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0002.pcd"
+root = "."
+required_files = ["capture0002.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "pcl-pairwise-capture-3"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0003.pcd"]
+sha256 = "0f0b017ac0c43649383eeb5fc4580d4e589a313f7a087c7a7612f46b7bc12c29"
+size_bytes = 978555
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0003.pcd"
+root = "."
+required_files = ["capture0003.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "pcl-pairwise-capture-4"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0004.pcd"]
+sha256 = "31dcf57d076e054e1a828057930beab7dd12676bf2ed364405311b309c4c34a8"
+size_bytes = 996256
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0004.pcd"
+root = "."
+required_files = ["capture0004.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
 id = "sustechpoints-example"
 profiles = ["demo"]
 urls = ["https://codeload.github.com/naurril/SUSTechPOINTS/tar.gz/20eda5d14692fd837ac694cfdfbf2477a284abd3"]

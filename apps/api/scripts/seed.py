@@ -25,10 +25,24 @@ from seed_assets import (  # noqa: E402  (版本化网络素材)
     ensure_profile,
     select_profile,
 )
+from seed_screenshot_assets import (  # noqa: E402
+    REQUIRED_SOURCE_IDS,
+    ensure_screenshot_assets,
+)
+from seed_screenshot_profile import (  # noqa: E402
+    prepare_screenshot_seed,
+    reconcile_screenshot_seed,
+)
 
 from app.config import settings
 from app.core.security import hash_password
 from app.db.models.user import User
+from app.services.screenshot_seed_catalog import (
+    ScreenshotSeedCatalogError,
+    build_screenshot_seed_catalog,
+    is_backend_readiness_issue,
+)
+from app.services.screenshot_seed_spec import SEED_REVISION
 
 # 生产保护栏：seed.py 仅用于 dev / staging
 if settings.environment == "production":
@@ -103,17 +117,14 @@ async def seed(
     cache_dir: Path | None = None,
     asset_dir: Path | None = None,
     offline: bool = False,
+    repair: bool = False,
 ) -> None:
     assets = {}
+    generated_assets = None
     if profile == "screenshots":
         selected_assets = select_profile(
             "screenshots",
-            required_ids={
-                "coco8",
-                "tracking-video",
-                "rapidocr-image",
-                "sustechpoints-example",
-            },
+            required_ids={"rapidocr-image", *REQUIRED_SOURCE_IDS},
         )
         assets = ensure_profile(
             "screenshots",
@@ -121,6 +132,16 @@ async def seed(
             asset_dir=asset_dir,
             offline=offline,
             assets=selected_assets,
+        )
+        source_files = {
+            asset_id: assets[asset_id].root.joinpath(
+                *assets[asset_id].asset.required_files[0].parts
+            )
+            for asset_id in REQUIRED_SOURCE_IDS
+        }
+        generated_assets = ensure_screenshot_assets(
+            source_files=source_files,
+            cache_dir=cache_dir,
         )
     strict = profile == "screenshots"
 
@@ -158,16 +179,27 @@ async def seed(
         admin_user = created_users.get("admin")
         owner_id = owner.id if owner is not None else None
         admin_id = admin_user.id if admin_user is not None else None
+        preparation = None
+        if strict:
+            preparation = await prepare_screenshot_seed(db, repair=repair)
+            if preparation.purged_projects or preparation.purged_datasets:
+                print(
+                    "  repair screenshots "
+                    f"projects={preparation.purged_projects} "
+                    f"datasets={preparation.purged_datasets}"
+                )
 
-        # 图片标注项目:真实 coco8(8 张图)+ GT 框, owner=pm(无 pm 则兜底 admin)。
-        # 依赖 MinIO + third-party/coco8 夹具, 缺失则跳过, 不阻断核心账号种子。
+        # 图片标注项目:默认 demo 用 coco8;截图 profile 用校验后的真实道路照片派生集。
         img_owner_id = owner_id or admin_id
         if img_owner_id is not None:
             try:
                 info = await seed_coco8(
                     db,
                     owner_id=img_owner_id,
-                    fixture=assets["coco8"].root if strict else None,
+                    fixture=generated_assets.image_root if strict else None,
+                    prediction_model_version=(
+                        f"screenshot-seed:{SEED_REVISION}" if strict else None
+                    ),
                 )
                 await db.commit()
                 if info is None:
@@ -187,17 +219,13 @@ async def seed(
                     raise
                 print(f"  WARN  coco8 夹具跳过: {e}")
 
-            # 视频时序追踪项目:开源行车视频 tracking_car.mp4(grounded-sam-2 vendor)。
+            # 视频时序追踪项目:截图 profile 用真实城市交通片段的确定性转码。
             # 依赖 MinIO + 宿主 ffprobe, 缺失则跳过。幂等:P-VIDEO-DEV 已存在则跳过。
             try:
                 info = await seed_video(
                     db,
                     owner_id=img_owner_id,
-                    video=(
-                        assets["tracking-video"].root / "tracking_car.mp4"
-                        if strict
-                        else None
-                    ),
+                    video=(generated_assets.video_path if strict else None),
                 )
                 await db.commit()
                 if info is None:
@@ -234,7 +262,8 @@ async def seed(
                 info = await seed_pointcloud(
                     db,
                     owner_id=admin_id,
-                    fixture=assets["sustechpoints-example"].root if strict else None,
+                    fixture=generated_assets.pointcloud_root if strict else None,
+                    axis_convention="opencv_camera" if strict else "sustechpoints_demo",
                 )
                 await db.commit()
                 if info is None:
@@ -268,6 +297,43 @@ async def seed(
                     await db.rollback()
                     print(f"  WARN  nuscenes 夹具跳过: {e}")
 
+        if strict:
+            if preparation is None or generated_assets is None:
+                raise RuntimeError("screenshots profile preparation is missing")
+            report = await reconcile_screenshot_seed(
+                db,
+                preparation=preparation,
+                asset_sha256={
+                    "image_demo": generated_assets.content_sha256,
+                    "video_demo": generated_assets.content_sha256,
+                    "pointcloud_demo": generated_assets.content_sha256,
+                    "ocr_demo": assets["rapidocr-image"].asset.sha256,
+                },
+            )
+            print(
+                "  ready screenshots desired-state "
+                f"projects={report['projects']} tasks={report['tasks']} "
+                f"batches={report['batches']}"
+            )
+            try:
+                await build_screenshot_seed_catalog(db)
+            except ScreenshotSeedCatalogError as exc:
+                blocking = [
+                    issue
+                    for issue in exc.issues
+                    if not is_backend_readiness_issue(issue)
+                ]
+                if blocking:
+                    raise RuntimeError(
+                        "screenshots catalog preflight failed: " + "; ".join(blocking)
+                    ) from exc
+                print(
+                    "  pending screenshots ML binding "
+                    f"issues={len(exc.issues)} (next milestone)"
+                )
+            else:
+                print("  ready screenshots catalog preflight")
+
     # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue_media_for_items,
     # 故图片/视频的 thumbnail_path / blurhash 一直为 NULL(视频还缺 poster)。这里按
     # data_type 选出全部图片/视频数据集派发 backfill_media,由 media worker 异步生成。
@@ -298,6 +364,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--asset-dir", type=Path)
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="rebuild only screenshot-seed-owned fixed projects and datasets",
+    )
     return parser.parse_args()
 
 
@@ -309,6 +380,7 @@ async def main() -> None:
         cache_dir=args.cache_dir,
         asset_dir=args.asset_dir,
         offline=args.offline,
+        repair=args.repair,
     )
     print("=== seed done  ===\n")
     print("测试账号一览 (密码统一: 123456):")

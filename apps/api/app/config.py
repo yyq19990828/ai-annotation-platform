@@ -109,7 +109,9 @@ class Settings(BaseSettings):
     minio_import_bucket: str = "import"
     minio_export_bucket: str = "export"
     minio_use_ssl: bool = False
-    minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
+    # 浏览器可达的签名 URL 根地址：可为绝对 URL，也可为 DEV 同源前缀
+    # (/minio，由 Vite 代理到对象存储)。
+    minio_public_url: str = ""
 
     # v0.9.4 · 当 ML backend 在 docker compose 网内、平台 api 在 host 进程时,
     # SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge gateway
