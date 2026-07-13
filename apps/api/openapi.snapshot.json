@@ -22070,6 +22070,21 @@
             "title": "To Frame",
             "type": "integer"
           },
+          "touched_annotation_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Touched Annotation Ids"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -22354,6 +22369,21 @@
               }
             ],
             "title": "Source Annotation Id"
+          },
+          "source_annotation_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Ids"
           },
           "target_class_name": {
             "anyOf": [
@@ -22981,7 +23011,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.22.1"
+    "version": "0.22.2"
   },
   "openapi": "3.1.0",
   "paths": {
