@@ -97,6 +97,13 @@ function supportsSeedCapture(modelKey: string): boolean {
   return modelKey === "sam3_video_interactive" || modelKey === "sam2_video";
 }
 
+// v0.22.2 · SAM 尺寸档位 (tiny/small/base_plus/large) 是 SAM2 checkpoint 概念, 只有
+// sam2_video 消费; sam3 系 (multiplex / PVS / combo) 用各自 sam3 权重、忽略该变体, 故不显
+// 尺寸选择器 (显示会误导用户以为能调 sam3 模型大小)。
+function usesSamVariant(modelKey: string): boolean {
+  return modelKey === "sam2_video";
+}
+
 const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
   rangePreset: "30",
   direction: "forward",
@@ -452,7 +459,8 @@ export function VideoTrackerPropagateDialog({
         to_frame: range.to,
         model_key: modelKey,
         direction,
-        sam_variant: samVariant || undefined,
+        // sam3 系忽略 SAM2 尺寸档位 —— 只对 sam2_video 透传, 避免把残留档位发给 sam3。
+        sam_variant: usesSamVariant(modelKey) ? samVariant || undefined : undefined,
         text: textDrivenActive ? trimmedText : undefined,
         output_geometry: outputGeometry || undefined,
         target_class_name: sourcelessLike ? targetClass : undefined,
@@ -626,8 +634,8 @@ export function VideoTrackerPropagateDialog({
           </>
         )}
 
-        {/* 模型尺寸 (combobox 2) — 非 mock */}
-        {modelKey !== "mock_bbox" && (
+        {/* 模型尺寸 (combobox 2) — 仅 SAM2 (sam3 系用各自权重, 无 SAM2 尺寸档位) */}
+        {usesSamVariant(modelKey) && (
           <>
             {TOOLBAR_DIVIDER}
             <div className="flex items-center gap-1.5">

@@ -270,6 +270,32 @@ describe("VideoTrackerPropagateDialog", () => {
     expect((screen.getAllByRole("combobox")[2] as HTMLSelectElement).value).toBe("large");
   });
 
+  it("SAM 尺寸档位只对 sam2_video 显示, sam3 系隐藏且提交不带 sam_variant", () => {
+    const onSubmit = vi.fn();
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        projectDefaultModel="sam2_video"
+        preferNonMockModel
+        onSubmit={onSubmit}
+      />,
+    );
+    const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    expect(modelSelect.value).toBe("sam2_video");
+    // sam2_video → 尺寸(SAM2 档位)选择器可见。
+    expect(screen.queryByText("尺寸")).toBeTruthy();
+    // 切到 sam3 点框交互 → 尺寸选择器消失(sam3 用各自权重, 无 SAM2 档位)。
+    fireEvent.change(modelSelect, { target: { value: "sam3_video_interactive" } });
+    expect(screen.queryByText("尺寸")).toBeNull();
+    // 提交(sam3)→ payload 不带 sam_variant。
+    fireEvent.click(screen.getByText("开始追踪"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ model_key: "sam3_video_interactive" }),
+    );
+    expect(onSubmit.mock.calls[0][0].sam_variant).toBeUndefined();
+  });
+
   it("项目默认模型优先于用户记忆作为打开时初值", async () => {
     window.localStorage.setItem(
       videoDialogMemoryStorageKey("u1", "trackerPropagate"),

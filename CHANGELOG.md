@@ -35,6 +35,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **视频 AI 追踪对话框选 SAM3 系模型时不再显示无效的「尺寸」档位**：SAM 尺寸档位（tiny/small/base_plus/large）是 SAM2 checkpoint 概念，此前对所有非 mock 模型都显示，选 SAM3 文本检测 / 点框交互 / 发现追踪时也能选——但这些模型用各自 SAM3 权重、忽略该档位，误导用户以为能调 SAM3 模型大小。现「尺寸」选择器只对 `sam2_video` 显示，提交时也只对它透传 `sam_variant`。
+
 ## [0.22.2] - 2026-07-13
 
 ### Added
