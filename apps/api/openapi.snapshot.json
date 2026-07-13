@@ -21747,9 +21747,16 @@
       "VideoTrackerJobListItem": {
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "completed_at": {
             "anyOf": [
@@ -21893,7 +21900,6 @@
           "task_id",
           "project_id",
           "dataset_item_id",
-          "annotation_id",
           "status",
           "model_key",
           "direction",
@@ -21907,9 +21913,16 @@
       "VideoTrackerJobOut": {
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "cancel_requested_at": {
             "anyOf": [
@@ -22074,7 +22087,6 @@
           "id",
           "task_id",
           "dataset_item_id",
-          "annotation_id",
           "status",
           "model_key",
           "direction",
@@ -22090,9 +22102,16 @@
         "description": "v0.21.28 · 候选预览: job 暂存的逐帧结果, 供前端在接受前渲染候选叠加。",
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "grid_step": {
             "default": 1,
@@ -22134,8 +22153,7 @@
         },
         "required": [
           "job_id",
-          "status",
-          "annotation_id"
+          "status"
         ],
         "title": "VideoTrackerJobPreview",
         "type": "object"
@@ -22324,6 +22342,42 @@
               }
             ],
             "title": "Segment Id"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "target_class_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Class Name"
+          },
+          "target_tool_unit_id": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Tool Unit Id"
           },
           "text": {
             "anyOf": [
@@ -22927,7 +22981,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.22.0"
+    "version": "0.22.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -39149,6 +39203,65 @@
           }
         ],
         "summary": "Propagate Video Track",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video:track": {
+      "post": {
+        "description": "v0.22.1 · B · 任务级追踪 (画布级入口): source_annotation_id 可选——给出即延展该轨迹,\n缺省则为无源检测 (文本/种子), 新建轨迹类别由 target_class_name 指定。旧的\n/tracks/{annotation_id}:propagate 仍保留 (延展快捷路径)。",
+        "operationId": "track_video_api_v1_tasks__task_id__video_track_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackerPropagateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Track Video",
         "tags": [
           "tasks"
         ]
