@@ -5,7 +5,7 @@ import logging
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -447,12 +447,44 @@ def _associate_multiplex_window(
     return remapped
 
 
-def _new_discovered_track(source: Annotation, output_geometry: str) -> Annotation:
-    """为一个新发现的实例建一条空 video_track annotation (阶段 0)。
+@dataclass(frozen=True)
+class _TrackTarget:
+    """新建轨迹的归属模板: 有源延展取自源轨迹, 无源检测取自 job 的显式目标类别。"""
 
-    归属策略 (epic 已定): 继承 source 的 label (class_name/tool_unit_id) 与项目/任务/
-    归属人, 标 source="ai_tracker" (与批量预标 prediction_based 区分, 不被批量清理误删),
-    新 track_id 走统一工厂 _new_track_id()。几何先空, 由 apply_tracker_results 填预测帧。
+    task_id: uuid.UUID
+    project_id: uuid.UUID
+    user_id: uuid.UUID | None
+    class_name: str
+    tool_unit_id: str
+
+
+def _target_from_source(source: Annotation) -> _TrackTarget:
+    return _TrackTarget(
+        task_id=source.task_id,
+        project_id=source.project_id,
+        user_id=source.user_id,
+        class_name=source.class_name,
+        tool_unit_id=source.tool_unit_id,
+    )
+
+
+def _target_from_job(job: VideoTrackerJob, task: Task) -> _TrackTarget:
+    # v0.22.1 · B · 无源检测: 类别由 job.target_* 显式指定 (缺省兜底空类 / bbox 单位)。
+    return _TrackTarget(
+        task_id=job.task_id,
+        project_id=task.project_id,
+        user_id=job.created_by,
+        class_name=job.target_class_name or "",
+        tool_unit_id=job.target_tool_unit_id or "bbox",
+    )
+
+
+def _new_discovered_track(target: _TrackTarget, output_geometry: str) -> Annotation:
+    """为一个新发现的实例建一条空 video_track annotation。
+
+    归属由 _TrackTarget 提供 (有源继承源 label, 无源用 job 显式目标类别), 标
+    source="ai_tracker" (与批量预标 prediction_based 区分, 不被批量清理误删), 新 track_id
+    走统一工厂 _new_track_id()。几何先空, 由 apply_tracker_results 填预测帧。
     """
     track_id = _new_track_id()
     geom_type = {
@@ -461,13 +493,13 @@ def _new_discovered_track(source: Annotation, output_geometry: str) -> Annotatio
     }.get(output_geometry, "video_track_bbox")
     return Annotation(
         id=uuid.uuid4(),
-        task_id=source.task_id,
-        project_id=source.project_id,
-        user_id=source.user_id,
+        task_id=target.task_id,
+        project_id=target.project_id,
+        user_id=target.user_id,
         source="ai_tracker",
         annotation_type=geom_type,
-        tool_unit_id="region" if output_geometry == "mask" else source.tool_unit_id,
-        class_name=source.class_name,
+        tool_unit_id="region" if output_geometry == "mask" else target.tool_unit_id,
+        class_name=target.class_name,
         geometry={
             "type": geom_type,
             "track_id": track_id,
@@ -480,22 +512,30 @@ def _new_discovered_track(source: Annotation, output_geometry: str) -> Annotatio
 
 def _persist_tracker_results(
     db: AsyncSession,
-    source: Annotation,
+    source: Annotation | None,
+    target: _TrackTarget,
     job: VideoTrackerJob,
     results: list[TrackerFrameResult],
     grid_step: int,
     output_geometry: str,
 ) -> list[Annotation]:
-    """落库逐帧结果: 主实例回填源 annotation, 每个新 instance 各建并回填一条 track。
+    """落库逐帧结果: 有源时主实例回填源 annotation, 每个新 instance 各建一条 track。
 
-    返回新建的 annotation 列表 (调用方负责 commit)。单实例时 extras 为空, 退化为对源
-    annotation 调一次 apply_tracker_results —— 与阶段 0 之前完全一致。
+    v0.22.1 · B · 无源检测 (source=None) 时主实例也走新建, 归属取自 target (job 显式
+    目标类别)。返回新建的 annotation 列表 (调用方负责 commit)。有源单实例时 extras 为空,
+    退化为对源 annotation 调一次 apply_tracker_results —— 零回归。
     """
     primary, extras = _partition_results_by_instance(results)
-    apply_tracker_results(source, job, primary, grid_step, output_geometry)
     created: list[Annotation] = []
+    if source is not None:
+        apply_tracker_results(source, job, primary, grid_step, output_geometry)
+    else:
+        main_ann = _new_discovered_track(target, output_geometry)
+        db.add(main_ann)
+        apply_tracker_results(main_ann, job, primary, grid_step, output_geometry)
+        created.append(main_ann)
     for instance_id in sorted(extras):
-        new_ann = _new_discovered_track(source, output_geometry)
+        new_ann = _new_discovered_track(target, output_geometry)
         db.add(new_ann)
         apply_tracker_results(new_ann, job, extras[instance_id], grid_step, output_geometry)
         created.append(new_ann)
@@ -578,32 +618,43 @@ async def accept_tracker_job(
         raise TrackerJobStateConflict(
             f"Video tracker job cannot be accepted from status {current_status}"
         )
-    annotation = await db.get(Annotation, job.annotation_id)
-    if annotation is None or not annotation.is_active:
-        # 源 annotation 已软删 (多标注员协作常见): 自动丢弃孤儿候选, 别让它一直挂在
-        # pending_review, 并以 409 告知前端清理审阅条。
-        job.status = VideoTrackerJobStatus.DISCARDED.value
-        job.staged_result = None
-        await db.commit()
-        await db.refresh(job)
-        await publisher(job.event_channel, _event(job, "job_discarded"))
-        raise TrackerJobStateConflict(
-            "Source annotation no longer exists; candidate discarded"
-        )
+    # v0.22.1 · B · 源轨迹可选: 无源检测 (annotation_id is None) 时 source 为空, 主实例也
+    # 新建轨迹, 归属取自 job 显式目标类别。有源时保留"源软删 → 丢弃孤儿候选"逻辑。
+    annotation = None
+    if job.annotation_id is not None:
+        annotation = await db.get(Annotation, job.annotation_id)
+        if annotation is None or not annotation.is_active:
+            # 源 annotation 已软删 (多标注员协作常见): 自动丢弃孤儿候选, 别让它一直挂在
+            # pending_review, 并以 409 告知前端清理审阅条。
+            job.status = VideoTrackerJobStatus.DISCARDED.value
+            job.staged_result = None
+            await db.commit()
+            await db.refresh(job)
+            await publisher(job.event_channel, _event(job, "job_discarded"))
+            raise TrackerJobStateConflict(
+                "Source annotation no longer exists; candidate discarded"
+            )
+    task = await db.get(Task, job.task_id)
+    if task is None:
+        await db.rollback()
+        raise ValueError("Task not found")
+    target = (
+        _target_from_source(annotation)
+        if annotation is not None
+        else _target_from_job(job, task)
+    )
     created = _persist_tracker_results(
         db,
         annotation,
+        target,
         job,
         _deserialize_results(rows),
         int(staged.get("grid_step", 1)),
         staged.get("output_geometry", "bbox"),
     )
-    task = await db.get(Task, job.task_id)
-    if task is None:
-        await db.rollback()
-        raise ValueError("Task not found")
     try:
-        await validate_mask_geometry_for_task(db, task, annotation.geometry or {})
+        if annotation is not None:
+            await validate_mask_geometry_for_task(db, task, annotation.geometry or {})
         for created_annotation in created:
             await validate_mask_geometry_for_task(
                 db, task, created_annotation.geometry or {}
@@ -702,8 +753,12 @@ async def run_tracker_job(
     await publisher(job.event_channel, _event(job, "job_started"))
 
     try:
-        annotation = await db.get(Annotation, job.annotation_id)
-        if annotation is None or not annotation.is_active:
+        # v0.22.1 · B · 源轨迹可选: 无源检测 (job.annotation_id is None) 时不加载 source,
+        # 种子来自 prompt (text/seeds), 主实例落库时新建。
+        annotation = (
+            await db.get(Annotation, job.annotation_id) if job.annotation_id else None
+        )
+        if job.annotation_id and (annotation is None or not annotation.is_active):
             raise ValueError("Annotation not found")
         task = await db.get(Task, job.task_id)
         if task is None:
@@ -746,7 +801,7 @@ async def run_tracker_job(
         # each subsequent window seeds from the previous window's last
         # non-outside frame geometry so the tracker keeps following a moving
         # target instead of restarting from the original box every window.
-        source_geometry = annotation.geometry or {}
+        source_geometry = (annotation.geometry or {}) if annotation else {}
         last_geometry = (
             _mask_track_seed_geometry(source_geometry, job.from_frame)
             if is_mask_track(source_geometry)
@@ -764,10 +819,14 @@ async def run_tracker_job(
         mp_next_global = [1]
         # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
         output_geometry = (job.prompt or {}).get("output_geometry") or (
-            "mask"
-            if is_mask_track(annotation.geometry or {})
-            else "polygon"
-            if is_polygon_track(annotation.geometry or {})
+            (
+                "mask"
+                if is_mask_track(annotation.geometry or {})
+                else "polygon"
+                if is_polygon_track(annotation.geometry or {})
+                else "bbox"
+            )
+            if annotation
             else "bbox"
         )
 

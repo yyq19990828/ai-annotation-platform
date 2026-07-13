@@ -282,6 +282,74 @@ async def test_runner_lands_extra_instances_as_new_tracks(
         assert r.geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(103.0)
 
 
+async def test_runner_sourceless_detection_lands_all_as_new_tracks(
+    db_session, super_admin, monkeypatch
+):
+    """v0.22.1 · B · 无源检测 (annotation_id=None, 画布级文本/种子发起): 所有实例含主实例
+    都新建轨迹, 类别取 job.target_class_name (不继承任何 source)。"""
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=None,
+        target_class_name="pedestrian",
+        target_tool_unit_id="bbox",
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=3,
+        prompt={"text": "pedestrian"},
+        event_channel="video-tracker-job:test-sourceless",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    adapter = _MultiInstanceAdapter(extra_ids=["obj1"])
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter",
+        lambda _model_key: adapter,
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    from sqlalchemy import select
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "accepted"
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id,
+                    Annotation.source == "ai_tracker",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # 无源 → 主实例 obj0 + 新发现 obj1 各落一条新轨迹 = 2 条 (无回填对象)。
+    assert len(rows) == 2
+    assert len({r.track_id for r in rows}) == 2
+    for r in rows:
+        assert r.class_name == "pedestrian"  # 取 job.target_class_name, 不继承 source
+        assert r.tool_unit_id == "bbox"
+        assert r.annotation_type == "video_track_bbox"
+        assert r.user_id == user.id
+        assert all(kf["source"] == "prediction" for kf in r.geometry["keyframes"])
+
+
 async def test_runner_single_instance_no_extra_tracks(
     db_session, super_admin, monkeypatch
 ):
