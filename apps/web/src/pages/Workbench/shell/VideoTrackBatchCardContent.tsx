@@ -26,6 +26,9 @@ export interface VideoTrackBatchCardContentProps {
   allLocked: boolean;
   allHidden: boolean;
   onChangeClass: (className: string) => void;
+  /** v0.22.2 · M2 · 批量 AI 追踪: 对选中的 ≥2 条轨迹一次发起多源追踪 (单 job 各回填各自源)。
+   *  只读 (review/completed) 或未接线时省略 → 按钮灰置。 */
+  onBatchTrack?: () => void;
   onToggleHidden: () => void;
   onToggleLock: () => void;
   onMerge: () => void;
@@ -54,6 +57,7 @@ export function VideoTrackBatchCardContent({
   allLocked,
   allHidden,
   onChangeClass,
+  onBatchTrack,
   onToggleHidden,
   onToggleLock,
   onMerge,
@@ -89,6 +93,16 @@ export function VideoTrackBatchCardContent({
       </div>
 
       <ActionBar label="批量操作">
+        <Button
+          variant="ghost"
+          size="sm"
+          title="批量 AI 追踪 · 对选中的多条轨迹一次发起追踪 (各回填各自轨迹)"
+          aria-label="批量 AI 追踪"
+          disabled={readOnly || !onBatchTrack}
+          onClick={onBatchTrack}
+        >
+          <Icon name="bot" size={14} />AI 追踪
+        </Button>
         <Button
           variant="ghost"
           size="sm"

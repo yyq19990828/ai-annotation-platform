@@ -597,6 +597,9 @@ export function useWorkbenchShellModel({
   const [propagateDialog, setPropagateDialog] = useState<{
     // v0.22.1 · B · annotation 为 null = 无源检测 (画布级入口发起, 不绑选中轨迹)。
     annotation: TrackerSourceAnnotation | null;
+    // v0.22.2 · M2 · 多选批量: ≥2 条源轨迹一次延展 (单 job 多源, 后端 annotation_id 存 NULL →
+    // 走 job 级审阅)。多源时 annotation 置 null, sources 持全列表; 单源/无源时 sources 省略。
+    sources?: TrackerSourceAnnotation[];
     submitting: boolean;
     // v0.22.2 · U8 · 提交成功后置入建成的 tracker job id: 对话框就地转「追踪中…」进行态,
     // 追踪进度读该 job (jobs[jobId]); 结果就绪 (候选) / 失败时由 effect 关闭对话框复位。
@@ -638,8 +641,15 @@ export function useWorkbenchShellModel({
     if (hasSeed) setSeedObj(seedObj + 1);
   }, [trackerSeeds, trackerSeedBoxes, seedObj]);
 
-  const openPropagateDialog = useCallback((annotation: TrackerSourceAnnotation | null) => {
-    setPropagateDialog({ annotation, submitting: false });
+  const openPropagateDialog = useCallback(
+    (source: TrackerSourceAnnotation | TrackerSourceAnnotation[] | null) => {
+    // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
+    const list = Array.isArray(source) ? source : source ? [source] : [];
+    setPropagateDialog({
+      annotation: list.length === 1 ? list[0] : null,
+      sources: list.length >= 2 ? list : undefined,
+      submitting: false,
+    });
     setPropagateBrush(null);
     setTrackerSeeds([]);
     setTrackerSeedBoxes([]);
@@ -648,7 +658,9 @@ export function useWorkbenchShellModel({
     setSeedAnchorFrame(null);
     setSeedCollecting(false);
     seedPrevToolRef.current = null;
-  }, []);
+  },
+    [],
+  );
   const closePropagateDialog = useCallback(() => {
     setPropagateDialog(null);
     setTrackerSeeds([]);
@@ -725,7 +737,15 @@ export function useWorkbenchShellModel({
               },
             }
           : payload;
-        const job = propagateDialog.annotation
+        // v0.22.2 · M2 · 多选批量 (≥2 源) → 任务级 track 带 source_annotation_ids, 后端逐源
+        // 读当前帧几何构 seeds, 一个 job 各回填各自源 (annotation_id 存 NULL, 走 job 级审阅)。
+        const batchSources = propagateDialog.sources;
+        const job = batchSources && batchSources.length >= 2
+          ? await trackerJobs.track(taskId, {
+              ...withSeeds,
+              source_annotation_ids: batchSources.map((sd) => sd.id),
+            })
+          : propagateDialog.annotation
           ? await trackerJobs.propagate(taskId, propagateDialog.annotation.id, withSeeds)
           : // v0.22.1 · B · 无源检测: 走任务级 track (payload 已含 target_class_name)。
             await trackerJobs.track(taskId, withSeeds);
@@ -2393,6 +2413,7 @@ export function useWorkbenchShellModel({
         onSelectionChange={view === "roster" ? setVideoBatchTracks : undefined}
         trackerJobsByAnnotation={trackerJobs.byAnnotation}
         onPropagateTrack={openPropagateDialog}
+        onBatchTrack={(annotations) => openPropagateDialog(annotations as TrackerSourceAnnotation[])}
         onCancelTrackerJob={trackerJobs.cancel}
         trackColorOverrides={s.trackColorOverrides}
         onSetTrackColor={s.setVideoTrackColor}
@@ -2579,6 +2600,11 @@ export function useWorkbenchShellModel({
             allHidden={allTracksHidden}
             allLocked={allTracksLocked}
             onChangeClass={(cls) => handleVideoBatchRename(videoBatchTracks, cls)}
+            onBatchTrack={
+              isLocked
+                ? undefined
+                : () => openPropagateDialog(videoBatchTracks as TrackerSourceAnnotation[])
+            }
             onToggleHidden={() => setBatchHidden(!allTracksHidden)}
             onToggleLock={() => setBatchLocked(!allTracksLocked)}
             onMerge={() => handleVideoComposeTracks({ operation: "merge_tracks", annotationIds: ids })}
@@ -2839,6 +2865,9 @@ export function useWorkbenchShellModel({
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
+  // v0.22.2 · M2 · 多选批量源列表 (≥2 时对话框转多源叙事; 非无源)。
+  const propagateSources = propagateDialog?.sources ?? null;
+  const propagateMultiSource = (propagateSources?.length ?? 0) >= 2;
   // v0.21.27 · 框修正 · 是否多目标 (跨点种子与框种子统计 distinct obj); 决定 overlay 是否逐目标配色。
   const seedMultiObj =
     new Set([
@@ -3537,8 +3566,14 @@ export function useWorkbenchShellModel({
     // v0.22.1 · A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
     sourceTrackClassName: propagateDialogTrack?.class_name ?? null,
     // v0.22.1 · B · 无源检测模式 (画布级入口无选中轨迹) + 可选目标类别 (项目 classes)。
-    sourceless: !propagateDialogTrack,
+    // v0.22.2 · M2 · 多源批量不是无源 (各源自带几何与类别), 故排除。
+    sourceless: !propagateDialogTrack && !propagateMultiSource,
     availableClasses: currentProject?.classes ?? [],
+    // v0.22.2 · M2 · 多选批量: 源条数 + 去重类别 (混类叙事「N 类」/ 单类「XX」)。
+    sourceCount: propagateMultiSource ? propagateSources!.length : undefined,
+    sourceClassNames: propagateMultiSource
+      ? [...new Set(propagateSources!.map((sd) => sd.class_name))]
+      : undefined,
     submitting: Boolean(propagateDialog?.submitting),
     // v0.22.2 · U8 · 提交成功后挂上 job id → 对话框就地转「追踪中…」进行态, 进度读该 job 的
     // 分窗回报; 结果就绪 / 失败时 effect 关闭对话框复位。

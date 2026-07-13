@@ -557,6 +557,36 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(screen.getByTestId("tracker-impact-summary").textContent).toContain("新建 2 条");
   });
 
+  it("M2 · 多选批量: 摘要显示延展 N 条轨迹 (单类展示类名)", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        sourceCount={3}
+        sourceClassNames={["car"]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    const summary = screen.getByTestId("tracker-impact-summary").textContent ?? "";
+    expect(summary).toContain("延展 3 条轨迹");
+    expect(summary).toContain("car");
+  });
+
+  it("M2 · 多选批量混类: 摘要显示「N 类」", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        sourceCount={2}
+        sourceClassNames={["car", "person"]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    const summary = screen.getByTestId("tracker-impact-summary").textContent ?? "";
+    expect(summary).toContain("延展 2 条轨迹");
+    expect(summary).toContain("2 类");
+  });
+
   it("A3 · 文本检测: 摘要提示新目标继承源类别 (类别继承警示)", () => {
     render(
       <VideoTrackerPropagateDialog

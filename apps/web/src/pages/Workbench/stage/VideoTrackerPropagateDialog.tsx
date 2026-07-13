@@ -205,6 +205,10 @@ interface VideoTrackerPropagateDialogProps {
   sourceless?: boolean;
   /** v0.22.1 · B · 无源时可选的目标类别 (项目 classes)。 */
   availableClasses?: string[];
+  /** v0.22.2 · M2 · 多选批量: 一次延展的源轨迹条数 (≥2 时摘要转「延展 N 条轨迹」)。缺省 = 单源。 */
+  sourceCount?: number;
+  /** v0.22.2 · M2 · 多选批量源的去重类别 (单类展示「XX」, 混类展示「N 类」)。 */
+  sourceClassNames?: string[];
   /**
    * v0.22.2 · U8 · 提交后就地进行态。true 时对话框不再显表单, 而是在原位转成
    * 「追踪中…」轻量进度视图 (让位审阅条前给即时反馈); 由上层在追踪 job 建成后置真、
@@ -246,6 +250,8 @@ export function VideoTrackerPropagateDialog({
   sourceTrackClassName = null,
   sourceless = false,
   availableClasses = [],
+  sourceCount = 1,
+  sourceClassNames = [],
   tracking = false,
   trackingWindow = null,
 }: VideoTrackerPropagateDialogProps) {
@@ -766,7 +772,11 @@ export function VideoTrackerPropagateDialog({
         {/* v0.22.1 · A2/A3 · 本次影响摘要 (延展 / 新建) + 文本检测类别继承警示。 */}
         {!isPolylineTrack && (
           <span data-testid="tracker-impact-summary" className="text-foreground">
-            {sourceless ? (
+            {sourceCount >= 2 ? (
+              `本次:延展 ${sourceCount} 条轨迹 · ${
+                sourceClassNames.length === 1 ? `「${sourceClassNames[0]}」` : `${sourceClassNames.length} 类`
+              }`
+            ) : sourceless ? (
               `本次将新建轨迹${targetClass ? ` (类别 ${targetClass})` : ""}`
             ) : textDrivenActive ? (
               <>

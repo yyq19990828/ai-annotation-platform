@@ -61,6 +61,9 @@ export interface VideoTrackerPropagatePayload {
   source_annotation_id?: string | null;
   target_class_name?: string | null;
   target_tool_unit_id?: string | null;
+  // v0.22.2 · M2 · 多选批量: ≥2 条已有轨迹一次延展 (单 job 多源)。后端逐源读当前帧几何构
+  // prompt.seeds[] (obj_id + source_annotation_id), 各回填各自源。给出时 track 走多源分支。
+  source_annotation_ids?: string[] | null;
 }
 
 /** v0.21.28 · 候选预览: job 暂存的逐帧结果, 供接受前渲染候选叠加。 */

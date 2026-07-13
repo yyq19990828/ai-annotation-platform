@@ -62,6 +62,8 @@ interface VideoTrackSidebarProps {
   reviewDisplayMode?: DiffMode;
   trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  /** v0.22.2 · M2 · 批量 AI 追踪: 把多选的 ≥2 条轨迹一次喂给追踪对话框 (单 job 多源)。 */
+  onBatchTrack?: (annotations: AnnotationResponse[]) => void;
   onCancelTrackerJob?: (jobId: string) => void;
   // v0.10.30 · 1A 选色器透传 (session 级覆盖)。
   trackColorOverrides?: Record<string, string>;
@@ -152,6 +154,7 @@ export function VideoTrackSidebar({
   reviewDisplayMode,
   trackerJobsByAnnotation,
   onPropagateTrack,
+  onBatchTrack,
   onCancelTrackerJob,
   trackColorOverrides,
   onSetTrackColor,
@@ -341,6 +344,12 @@ export function VideoTrackSidebar({
     if (!className || selectedTracks.length <= 1) return;
     onRenameTracks?.(selectedTracks, className);
   }, [onRenameTracks, selectedTracks]);
+
+  // v0.22.2 · M2 · 批量 AI 追踪: 把当前多选的 ≥2 条轨迹一次喂给追踪对话框。
+  const batchTrackSelectedTracks = useCallback(() => {
+    if (selectedTracks.length <= 1 || !onBatchTrack) return;
+    onBatchTrack(selectedTracks);
+  }, [onBatchTrack, selectedTracks]);
 
   const deleteSelectedTracks = useCallback(() => {
     if (selectedTracks.length <= 1 || !onDeleteTracks) return;
@@ -539,6 +548,7 @@ export function VideoTrackSidebar({
       onDeleteTrack={onDeleteTracks ? deleteTrack : undefined}
       onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
       onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}
+      onBatchTrackTracks={onBatchTrack ? batchTrackSelectedTracks : undefined}
       onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
       onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
       canMergeSelectedTracks={canMergeSelectedTracks}
