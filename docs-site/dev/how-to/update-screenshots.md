@@ -10,7 +10,7 @@ last_reviewed: 2026-07-13
 # 更新文档截图
 
 本平台采用 Playwright 自动化产出文档图片，支持矩阵化截图（多视口 / 多主题）、
-元素级裁切、SVG 注释叠加、网络状态 mock 以及流程录制（GIF/MP4）。
+元素级裁切、SVG 注释叠加、网络状态 mock 以及流程录制（GIF/WebM）。
 
 ## 快速运行
 
@@ -25,7 +25,7 @@ cd ../web
 pnpm screenshots                  # desktop-light 全量（最常用）
 pnpm screenshots:dark             # desktop-dark 变体
 pnpm screenshots:matrix           # desktop-light / dark / mobile
-pnpm screenshots:flows            # 流程录制 → GIF（需 ffmpeg）
+pnpm screenshots:flows            # 流程录制 → GIF / 首页 WebM（需 ffmpeg）
 pnpm screenshots:regression       # 比较高价值视觉回归基线
 pnpm screenshots:regression:update # 有意改变 UI 后更新基线
 pnpm screenshots:lint             # 快速检查静态引用与 manifest
@@ -38,13 +38,16 @@ SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots
 `admin`、`anno` 和 `qa` 账号呈现超管、标注员和审核员的真实项目关系。
 AI 场景必须先绑定能力匹配的 ML Backend；无 GPU 时启动
 `screenshot-ml-stub` 并把 seed 命令的模式改为 `stub`。
+stub 模式可以验证并更新普通截图与 GIF，但会跳过首页 SAM3 WebM，避免协议替身覆盖
+对外展示的真实模型流程。
 
 Playwright 在整次运行开始时只做一次严格 catalog 预检，并把同一逻辑键快照提供给
 desktop-light、dark、mobile 和 regression project。运行期间不要 repair seed 或删除项目；
 场景自己的正常读取不会触发跨 project 的第二次全库预检。
 
 当前完整矩阵产出 60 张自动 PNG：57 张 desktop-light、2 张显式声明的
-desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG 和 12 个文档目标 GIF。
+desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、12 个文档目标 GIF，
+以及 1 段首页 AI WebM 与对应静态海报。
 这些数量用于人工审阅交接，发布判断仍以 scene、manifest、磁盘文件和文档引用四方一致为准。
 
 ## 目录结构
@@ -55,7 +58,7 @@ apps/web/e2e/screenshots/
 │   ├── _types.ts              # ScreenshotScene 接口定义
 │   ├── auth.ts
 │   ├── workbench-polygon.ts
-│   ├── workbench-sam.ts
+│   ├── workbench-ai.ts
 │   ├── workbench-media.ts
 │   ├── projects.ts
 │   ├── review.ts
@@ -70,10 +73,11 @@ apps/web/e2e/screenshots/
 ├── _helpers/
 │   ├── annotate.ts            # SVG overlay 注释
 │   ├── mock-state.ts          # page.route 网络状态 mock
-│   └── recorder.ts            # video → GIF 转换
+│   └── recorder.ts            # video → GIF / WebM / WebP 海报转换
 ├── flows/                     # 流程录制脚本
 │   ├── e2e-quickstart.ts
 │   ├── ai-preannotate.ts
+│   ├── sam-interactive.ts
 │   ├── review-reject.ts
 │   └── flows.spec.ts
 ├── regression/                # 视觉回归
@@ -169,8 +173,9 @@ node docs-site/scripts/check-orphan-images.mjs --strict
 视口/主题/语言、生成时间、SHA-256 和像素尺寸。`--strict` 检查现有资产四方一致性；
 全量重拍交付前再用 `--release` 要求所有当前 scene 和 seed revision 都已更新。
 
-人工审阅时至少检查每张 PNG 的主体内容、加载状态和敏感信息；GIF 除首帧外还要抽查正文帧，
-并确认每个目标包含多帧、体积不超过 5 MiB。录制结束后 `outputs/flows/` 必须为空。
+人工审阅时至少检查每张 PNG 的主体内容、加载状态和敏感信息；GIF / WebM 除首帧外
+还要抽查正文帧，并确认动效完整、体积合理。首页 WebM 还需检查对应 WebP 海报能独立说明
+场景，移动端与 `prefers-reduced-motion` 下不自动播放。录制结束后 `outputs/flows/` 必须为空。
 
 ## `ScreenshotScene` 完整字段说明
 

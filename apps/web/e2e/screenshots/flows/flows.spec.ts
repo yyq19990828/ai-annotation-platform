@@ -24,7 +24,8 @@ import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
-import { convertToGif } from "../_helpers/recorder";
+import { runSamInteractive } from "./sam-interactive";
+import { convertToGif, convertToWebm } from "../_helpers/recorder";
 import { installScreenshotEnvironment } from "../environment";
 import { loadScreenshotCatalog } from "../catalog-runtime";
 import { execFileSync } from "child_process";
@@ -35,6 +36,7 @@ const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/flows\/?$/, "");
 const FLOWS_OUT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/flows");
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
+const HOME_MEDIA = path.join(REPO_ROOT, "docs-site/public/home");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 
 let cached: ScreenshotSeedCatalog | null = null;
@@ -120,6 +122,36 @@ async function finalize(
   }
 }
 
+async function finalizeHomepageWebm(
+  page: Page,
+  name: string,
+  trim: { startSec?: number; durationSec?: number },
+) {
+  if (VALIDATE_ONLY) {
+    await page.close();
+    return;
+  }
+  const video = page.video();
+  if (!video) throw new Error("[flows] video 未开启，无法生成首页 AI 媒体");
+
+  const source = path.join(FLOWS_OUT, `${name}.source.webm`);
+  await page.close();
+  fs.mkdirSync(FLOWS_OUT, { recursive: true });
+  try {
+    await video.saveAs(source);
+    const posterAtSec = Math.max(1, (trim.durationSec ?? 4) - 2.8);
+    await convertToWebm(source, path.join(HOME_MEDIA, `${name}.webm`), {
+      ...trim,
+      fps: 12,
+      maxWidth: 960,
+      posterAtSec,
+      posterPath: path.join(HOME_MEDIA, `${name}-poster.webp`),
+    });
+  } finally {
+    fs.rmSync(source, { force: true });
+  }
+}
+
 test.describe("flow recordings", () => {
   test("e2e-quickstart — 登录→标注→提交", async ({ page }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
@@ -134,6 +166,26 @@ test.describe("flow recordings", () => {
     await seed.injectToken(page, cached.users.admin.email);
     await runAiPreannotate(page, cached);
     await finalize(page, "ai-preannotate");
+  });
+
+  test("sam-interactive — Magic Box 候选→人工确认", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const backend = cached.projects.image_demo.ml_backend;
+    const hasSam3 =
+      backend?.name.toLowerCase().includes("sam3") ||
+      (backend?.capabilities.models ?? []).some((model) =>
+        [model.id, model.model_family].some(
+          (value) => typeof value === "string" && value.toLowerCase().includes("sam3"),
+        ),
+      );
+    test.skip(!hasSam3, "首页 AI 视频只由 live SAM3 场景更新，stub 模式保留现有资产");
+    test.setTimeout(150_000);
+    const t0 = Date.now();
+    // 首页视频保留候选虚线与 toast 的自然动效，因此不安装面向静态 PNG 的
+    // fixed-time / reduced-motion 截图环境。
+    await seed.injectToken(page, cached.users.admin.email);
+    const win = await runSamInteractive(page, cached);
+    await finalizeHomepageWebm(page, "ai-assisted-annotation", drawTrim(win, t0));
   });
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {
