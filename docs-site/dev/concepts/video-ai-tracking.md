@@ -40,7 +40,7 @@ flowchart LR
 核心入口：
 
 - 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态；画布级「AI 追踪」入口（ToolDock，`onOpenTracker`）不选轨迹也能发起。
-- API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate`（延展选中轨迹）或 `POST /tasks/{task_id}/video:track`（源可选：`source_annotation_id` 缺省即无源检测，`target_class_name` 指定新轨迹类别）创建 job。
+- API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate`（延展选中轨迹）或 `POST /tasks/{task_id}/video:track`（源可选）创建 job。`video:track` 的源模式有三种：`source_annotation_id` 单源延展；`source_annotation_ids[]` 多选批量（一个 job 延展 N 条已有轨迹，各回填各自源）；两者皆缺省即无源检测（`target_class_name` 指定新轨迹类别）。
 - worker：`app.workers.video_tracker.run_video_tracker_job` 调用 `video_tracker_runner`。
 - backend adapter：`video_tracker_adapters.py` 把平台 context 转为 ML Backend `/predict` 请求。
 - 决策：`POST /video-tracker-jobs/{job_id}/accept|discard`。
@@ -80,6 +80,16 @@ flowchart LR
 - 未匹配的新实例分配新全局 id，供接受阶段创建独立轨迹。
 
 这两类模型共享 `context.type="video_tracker"` 和结果结构，但提示来源与跨窗身份策略不同。不要用“是否多目标”区分它们：两者都可以多目标。
+
+### 编排：发现追踪 combo（`sam3_video_combo`）
+
+`sam3_video_combo` 不是新的 backend 模型，而是 runner 侧对上述两类原语的**两趟串行编排**（backend 零改），兼得 multiplex 的文本自动发现与 PVS 的干净跨帧身份：
+
+1. **发现趟**：从种子帧向后取一小窗（`COMBO_DISCOVERY_WINDOW_FRAMES`）调 multiplex（`sam3_video`）。multiplex 需多帧传播才会在种子帧填充检测，单帧窗恒返回空——所以跑小窗但只取种子帧那一帧的 per-obj 框铸种。
+2. **种子铸造**：每个发现框铸成一条 PVS 种子 `{obj_id: 1..N, geometry}`，不带 `source_annotation_id`（发现对象无源 → 落库全部新建）。
+3. **追踪趟**：用这些种子跑 PVS（`sam3_video_interactive`）窗循环，逐对象 memory 跨窗续种。因是 PVS memory，不需要 multiplex 的窗边界 IoU 关联。
+
+两趟串行意味着发现趟结束、追踪趟开始之间有一段 idle，可让 backend 卸载 multiplex 再载 PVS，避免两模型同容峰值。后端解析取 `sam3_video_interactive` 能力（同一 sam3-backend 也声明 `sam3_video`）；前端仅在两能力都声明时才放开该选项。发现不到目标或缺 `text` 时 job 直接失败。
 
 ## 分窗与续追
 
@@ -136,7 +146,13 @@ runner 把结果序列化到：
 - 没有 primary 标记时，使用字典序最小的 `instance_id` 作为确定性兜底。
 - 没有任何 `instance_id` 时，全部按单实例老 backend 处理。
 
-有源时主实例通过 `apply_tracker_results()` 回填源 annotation；无源检测（`job.annotation_id` 为空，画布级发起）时主实例也走新建。额外实例通过 `_new_discovered_track()` 创建；归属由 `_TrackTarget` 提供——有源继承源 label，无源取 job 的 `target_class_name` / `target_tool_unit_id` 显式类别。持久化时：
+落库以 `source_map: {instance_id → 源 annotation}` 决定每个实例回填还是新建，命中源则 `apply_tracker_results()` 回填、未命中则 `_new_discovered_track()` 新建：
+
+- **单源延展**：主实例回填源，额外发现实例各新建。
+- **多选批量**（`source_annotation_ids[]`）：`prompt.seeds[]` 每条带 `source_annotation_id`，`instance_id == str(obj_id)` 契约让每个实例回填各自源；某源在 job 运行期被删则该实例 per-source 降级为新建，不整 job 失败。多源 job 的 `annotation_id` 存 NULL，走 job 级审阅，接受时按 task 粒度 invalidate，各源轨迹一并刷新。
+- **无源检测 / combo 发现**（`job.annotation_id` 为空）：`source_map` 为空，主实例也走新建。
+
+归属由 `_TrackTarget` 提供——有源继承源 label，无源取 job 的 `target_class_name` / `target_tool_unit_id` 显式类别。持久化时：
 
 - 人工关键帧优先，预测不得覆盖 manual frame。
 - outside 结果合并为 prediction outside ranges。
