@@ -1,4 +1,4 @@
-# ML Backend 叠加文件 · 3 个 GPU 推理 backend（grounded-sam2 / sam3 / yolo）。
+# ML Backend 叠加文件 · GPU 推理 backend + 截图协议 stub。
 #
 # 从 docker-compose.yml 拆出：这三者都是 profile-gated 的独立 HTTP 服务，
 # 与核心 infra（postgres/redis/minio/celery）无 depends_on、不共享数据卷，
@@ -8,15 +8,34 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu      up -d grounded-sam2-backend
 #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 up -d sam3-backend
 #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo up -d yolo-backend
+#   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile screenshots up -d screenshot-ml-stub
 #
 # 嫌每次敲两个 -f 麻烦, 可在 shell / .env 固化:
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml
 # 之后 `docker compose --profile gpu up -d grounded-sam2-backend` 即可（profile-gated 不影响默认 `up`）。
 #
-# 三个 backend 完全独立的 profile（gpu / gpu-sam3 / gpu-yolo），用户按显存预算自由组合启动。
-# 端口: grounded-sam2 → 8001 · sam3 → 8002 · yolo → 8003 · onnxtools → 8004。
+# 各 backend 使用独立 profile，用户可按显存预算组合 GPU 服务，或只启动 CPU 截图 stub。
+# 端口: grounded-sam2 → 8001 · sam3 → 8002 · yolo → 8003 · onnxtools → 8004 · stub → 9100。
 
 services:
+  # 截图/视觉回归专用 CPU 协议 stub。平台宿主进程与 Celery 容器都通过已发布端口访问，
+  # registry URL 默认复用 ML_BACKEND_STORAGE_HOST 的主机部分并改用 9100；也可在 seed 命令覆盖。
+  screenshot-ml-stub:
+    build:
+      context: ./docs-site/dev/examples/mock-v2-backend
+    profiles: ["screenshots"]
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:9100/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # v0.9.0+ Grounded-SAM-2 ML Backend (GroundingDINO + SAM 2.1).
   # 默认 GPU profile, dev 无 GPU 笔记本不会被拉起; 启用方式:
   #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up grounded-sam2-backend

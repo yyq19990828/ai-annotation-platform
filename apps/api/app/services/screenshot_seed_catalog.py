@@ -18,7 +18,12 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from app.services.ml_backend import MLBackendService
+from app.services.screenshot_seed_backends import (
+    backend_requirement_issues,
+    selected_tracker,
+)
 from app.services.screenshot_seed_spec import (
+    BACKEND_REQUIREMENTS,
     PROJECT_SPECS,
     SEED_MANAGED_BY,
     SEED_REVISION,
@@ -29,24 +34,12 @@ from app.services.storage import storage_service
 
 
 SCHEMA_VERSION = 1
-_BACKEND_ISSUE_MARKERS = (
-    "ai_enabled",
-    "ai_interactive_enabled",
-    "ML backend",
-    "supported_trackers",
-    "tracker capability",
-)
 
 
 class ScreenshotSeedCatalogError(RuntimeError):
     def __init__(self, issues: list[str]):
         super().__init__("screenshot seed profile is not ready")
         self.issues = issues
-
-
-def is_backend_readiness_issue(issue: str) -> bool:
-    """Return whether an issue belongs to the planned ML binding milestone."""
-    return any(marker in issue for marker in _BACKEND_ISSUE_MARKERS)
 
 
 def _task_payload(task: Task) -> dict[str, Any]:
@@ -84,9 +77,10 @@ async def _resolve_backend(
         return None
 
     prefix = project.display_id
+    requirement = BACKEND_REQUIREMENTS[spec.required_backend]
     if not project.ai_enabled:
         issues.append(f"{prefix}: ai_enabled must be true")
-    if spec.required_backend == "image" and not project.ai_interactive_enabled:
+    if requirement.interactive and not project.ai_interactive_enabled:
         issues.append(f"{prefix}: ai_interactive_enabled must be true")
     if project.ml_backend_id is None:
         issues.append(f"{prefix}: primary ML backend is not bound")
@@ -100,19 +94,13 @@ async def _resolve_backend(
         issues.append(
             f"{prefix}: resolved ML backend is not the declared primary backend"
         )
-    if backend.state != "connected":
-        issues.append(f"{prefix}: ML backend {backend.name} is not connected")
     capabilities = (backend.health_meta or {}).get("capabilities")
-    if not isinstance(capabilities, dict) or not capabilities:
-        issues.append(f"{prefix}: ML backend capabilities snapshot is missing")
-        capabilities = {}
-    if spec.required_backend == "image" and not backend.is_interactive:
-        issues.append(f"{prefix}: primary ML backend is not interactive")
-    if spec.required_backend == "tracker":
-        trackers = capabilities.get("supported_trackers") or []
-        if not trackers:
-            issues.append(f"{prefix}: ML backend has no supported_trackers capability")
-        elif await service.get_tracker_backend(project.id, trackers[0]) is None:
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    for detail in backend_requirement_issues(backend, requirement):
+        issues.append(f"{prefix}: ML backend {detail}")
+    tracker = selected_tracker(capabilities, requirement)
+    if tracker is not None:
+        if await service.get_tracker_backend(project.id, tracker) is None:
             issues.append(
                 f"{prefix}: tracker capability does not resolve through project binding"
             )
@@ -122,6 +110,8 @@ async def _resolve_backend(
         "name": backend.name,
         "state": backend.state,
         "is_interactive": backend.is_interactive,
+        "requirement": requirement.key,
+        "selected_tracker": tracker,
         "capabilities": capabilities,
     }
 

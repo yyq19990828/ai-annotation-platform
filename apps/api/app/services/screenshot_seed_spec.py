@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SEED_REVISION = "screenshots-2026-07-c"
+SEED_REVISION = "screenshots-2026-07-d"
 SEED_MANAGED_BY = "screenshot-seed"
 USER_SPECS = {
     "admin": ("admin", "super_admin"),
@@ -37,6 +37,19 @@ class BatchSpec:
 
 
 @dataclass(frozen=True)
+class BackendRequirement:
+    key: str
+    description: str
+    required_prompts: tuple[str, ...] = ()
+    required_tasks: tuple[str, ...] = ()
+    required_inputs: tuple[str, ...] = ()
+    required_geometries: tuple[str, ...] = ()
+    required_output_attributes: tuple[str, ...] = ()
+    tracker_priority: tuple[str, ...] = ()
+    interactive: bool = False
+
+
+@dataclass(frozen=True)
 class ProjectSpec:
     display_id: str
     dataset_display_id: str
@@ -47,6 +60,32 @@ class ProjectSpec:
     required_backend: str | None = None
     batches: tuple[BatchSpec, ...] = ()
     require_members: bool = False
+
+
+BACKEND_REQUIREMENTS = {
+    "image_interactive": BackendRequirement(
+        key="image_interactive",
+        description="point + interactive_box + exemplar image interaction",
+        required_prompts=("point", "interactive_box", "exemplar"),
+        required_tasks=("interactive_seg",),
+        required_geometries=("polygon",),
+        interactive=True,
+    ),
+    "video_tracker": BackendRequirement(
+        key="video_tracker",
+        description="interactive video tracking",
+        required_tasks=("tracker",),
+        tracker_priority=("sam3_video_interactive", "sam2_video"),
+    ),
+    "ocr": BackendRequirement(
+        key="ocr",
+        description="full-image OCR with text attributes",
+        required_tasks=("ocr",),
+        required_inputs=("full_image",),
+        required_geometries=("polygon",),
+        required_output_attributes=("text",),
+    ),
+}
 
 
 IMAGE_BATCHES = (
@@ -127,7 +166,7 @@ PROJECT_SPECS = {
             TaskSpec("spare_1", "coco8-dev/val/screenshot_07.jpg", batch_key="draft"),
             TaskSpec("spare_2", "coco8-dev/val/screenshot_08.jpg", batch_key="draft"),
         ),
-        required_backend="image",
+        required_backend="image_interactive",
         batches=IMAGE_BATCHES,
         require_members=True,
     ),
@@ -137,7 +176,7 @@ PROJECT_SPECS = {
         data_type="video",
         storage_prefix="tracking-car-dev/",
         tasks=(TaskSpec("tracking", "tracking-car-dev/tracking_scene.mp4"),),
-        required_backend="tracker",
+        required_backend="video_tracker",
     ),
     "pointcloud_demo": ProjectSpec(
         display_id="P-PC-DEV",
@@ -158,5 +197,6 @@ PROJECT_SPECS = {
         data_type="image",
         storage_prefix="ocr-dev/",
         tasks=(TaskSpec("ocr", "ocr-dev/ch_en_num.jpg"),),
+        required_backend="ocr",
     ),
 }

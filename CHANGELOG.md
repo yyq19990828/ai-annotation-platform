@@ -37,6 +37,7 @@
 
 ### Added
 - **DEV 截图 seed 使用可追溯的真实场景和期望状态**：`screenshots` profile 从固定来源拉取真实道路图片、城市交通视频、PCL 室内点云与 RapidOCR 示例，经确定性裁剪/转码/无效深度过滤后，按显式媒体路径创建 4 个项目、14 个任务和多状态批次；`--repair` 仅重建能够证明由截图 seed 管理的对象。DEV 媒体改走同源 `/minio` 代理，远程浏览器不再依赖直连 9000 端口或 Docker 私网 IP。
+- **截图 seed 按场景能力绑定 ML Backend**：live 模式通过 `/health` 与 `/setup` 为图片交互、视频追踪和 OCR 项目选择可用 backend，并精确创建项目启用关联和主绑定；无 GPU 环境可启动同协议 stub，catalog 会对连接状态、能力快照、tracker 路由及 OCR 输出契约 fail-closed。
 
 <!--
 日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：

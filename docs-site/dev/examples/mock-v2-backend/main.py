@@ -2,7 +2,7 @@
 
 用途: 平台「能力声明协议 v2.1」端到端冒烟与接入参考。
 - `/setup` 暴露 YOLO 风格多任务 models[] (detection / segmentation / keypoint / obb /
-  classification) + PaddleOCR / DocLayout 条目, 每条带 task / infra / 几何 / variants;
+  classification) + PaddleOCR / DocLayout + 交互分割 / 视频追踪条目;
   yolo 条目演示 default_variants 与 variant_combinations (非全笛卡尔积)。
 - `/predict` 按 `context.type` (task_type) 返回固定 demo 结果; OCR 条目在 result shape
   顶层带 `attributes.text`, 供平台 OCR adapter 提取 → annotation.attributes。
@@ -117,6 +117,37 @@ MODELS = [
             },
         },
     },
+    {
+        "id": "screenshot-interactive",
+        "display_name": "Screenshot interactive segmentation (mock)",
+        "task": "interactive_seg",
+        "model_family": "screenshot-stub",
+        "infra": "onnx",
+        "is_interactive": True,
+        "supported_prompts": ["point", "interactive_box", "exemplar"],
+        "supported_inputs": ["full_image", "point_prompt", "bbox_prompt"],
+        "supported_geometric_outputs": ["polygon"],
+        "exemplar_capabilities": {
+            "multi_box": True,
+            "negative_box": True,
+            "text_combination": False,
+            "threshold_refilter": True,
+        },
+        "resource_profile": {"device": "cpu", "batchable": False},
+    },
+    {
+        "id": "screenshot-tracker",
+        "display_name": "Screenshot video tracker (mock)",
+        "task": "tracker",
+        "model_family": "screenshot-stub",
+        "infra": "onnx",
+        "is_interactive": True,
+        "supported_prompts": ["bbox"],
+        "supported_inputs": ["video", "bbox_prompt"],
+        "supported_geometric_outputs": ["bbox", "polygon"],
+        "supported_trackers": ["sam3_video_interactive", "sam2_video"],
+        "resource_profile": {"device": "cpu", "batchable": False},
+    },
 ]
 
 
@@ -134,7 +165,7 @@ def setup() -> dict:
         "protocol_version": "2.1",
         "compat_protocol_versions": ["2.0"],
         "model_version": "mock-v2",
-        "is_interactive": False,
+        "is_interactive": True,
         "infra": "onnx",
         "warmup_endpoint": True,
         "models": MODELS,
@@ -197,8 +228,29 @@ class PredictRequest(BaseModel):
     context: dict = {}
 
 
-def _demo_shapes(task_type: str | None) -> list[dict]:
+def _demo_shapes(context: dict) -> list[dict]:
     """按 task_type 返回固定 demo result (LabelStudio 风格 + OCR attributes)。"""
+    task_type = context.get("type")
+    if task_type == "video_tracker":
+        geometry = context.get("source_geometry") or {
+            "type": "bbox",
+            "x": 0.2,
+            "y": 0.3,
+            "w": 0.25,
+            "h": 0.2,
+        }
+        return [
+            {
+                "frame_index": frame_index,
+                "geometry": geometry,
+                "confidence": 0.9,
+                "outside": False,
+            }
+            for frame_index in range(
+                int(context.get("from_frame", 0)),
+                int(context.get("to_frame", 0)) + 1,
+            )
+        ]
     if task_type == "ocr":
         return [
             {
@@ -235,8 +287,7 @@ def predict(req: PredictRequest) -> dict:
     # v2.1 通用 axis dict; 兼容期继续接受旧字段 context.variants (yolo 风格) 并 normalize。
     variants = ctx.get("model_variants") or ctx.get("variants") or {}
     resolved = _resolve_variants(variants)
-    task_type = ctx.get("type")
-    shapes = _demo_shapes(task_type)
+    shapes = _demo_shapes(ctx)
     key = f"{resolved['series']}/{resolved['size']}"
     cache_hit = key in _warmed
     _warmed.add(key)

@@ -82,11 +82,25 @@ PYTHONPATH=. uv run python scripts/seed_assets.py \
 `--asset-dir <path>` 使用 `<path>/<asset-id>/` 下已经解压的本地目录。下载器拒绝摘要或
 大小不符、路径穿越、符号链接、设备文件和超出解压上限的归档。
 
-当前来源审计结果：RapidOCR 示例图可带署名用于公开截图；COCO8 含 NC/ND 图片，不能进入
-公开截图 profile；行车视频和 SUSTechPOINTS 示例媒体只有仓库级许可证，仍需确认媒体来源。
-因此严格 `seed.py --profile screenshots` 会在写数据库前 fail-closed，直到后续里程碑用
-项目自有合成素材替换 COCO8，并确认或替换视频/点云素材。`demo` 模式不受此门禁影响。
+严格截图 profile 使用固定摘要的 CC0 道路照片、CC BY 城市交通视频、PCL BSD-3-Clause
+RGB-D 扫描和 RapidOCR 示例图；派生素材会先完成许可门禁、摘要校验和确定性转换，再上传
+到对象存储。`demo` 模式不受该门禁影响。
+
+截图 profile 还必须绑定满足场景能力的 ML Backend。真实服务就绪时使用 live 模式；无 GPU
+时先启动 `docker-compose.ml.yml` 的 `screenshot-ml-stub`，再使用 stub 模式：
+
+```bash
+PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode live
+
+PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode stub
+```
+
+stub 默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100`，可用
+`--ml-backend-url` 覆盖。图片、视频和 OCR 项目都会创建唯一启用关联并设置主 backend；
+切回 live 模式时会移除 screenshot seed 自有的 stub registry。
 
 非 production 环境提供只读 `GET /api/v1/__test/seed/catalog`。它按固定逻辑键解析用户、
-项目、任务、批次和运行时 UUID，并硬校验真实 ML Backend 主绑定、项目启用关联、connected
-状态和能力快照；数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。
+项目、任务、批次和运行时 UUID，并硬校验 ML Backend 主绑定、项目启用关联、connected
+状态及场景级能力；数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。

@@ -40,7 +40,11 @@ from app.db.models.user import User
 from app.services.screenshot_seed_catalog import (
     ScreenshotSeedCatalogError,
     build_screenshot_seed_catalog,
-    is_backend_readiness_issue,
+)
+from app.services.screenshot_seed_backends import (
+    ScreenshotSeedBackendError,
+    default_screenshot_stub_url,
+    reconcile_screenshot_backends,
 )
 from app.services.screenshot_seed_spec import SEED_REVISION
 
@@ -118,6 +122,8 @@ async def seed(
     asset_dir: Path | None = None,
     offline: bool = False,
     repair: bool = False,
+    ml_backend_mode: str = "live",
+    ml_backend_url: str | None = None,
 ) -> None:
     assets = {}
     generated_assets = None
@@ -315,24 +321,26 @@ async def seed(
                 f"projects={report['projects']} tasks={report['tasks']} "
                 f"batches={report['batches']}"
             )
+            backend_report = await reconcile_screenshot_backends(
+                db,
+                mode=ml_backend_mode,
+                stub_url=ml_backend_url,
+            )
+            binding_names = ", ".join(
+                f"{key}={value['backend_name']}"
+                for key, value in backend_report["bindings"].items()
+            )
+            print(
+                f"  ready screenshots ML binding mode={ml_backend_mode} "
+                f"{binding_names}"
+            )
             try:
                 await build_screenshot_seed_catalog(db)
             except ScreenshotSeedCatalogError as exc:
-                blocking = [
-                    issue
-                    for issue in exc.issues
-                    if not is_backend_readiness_issue(issue)
-                ]
-                if blocking:
-                    raise RuntimeError(
-                        "screenshots catalog preflight failed: " + "; ".join(blocking)
-                    ) from exc
-                print(
-                    "  pending screenshots ML binding "
-                    f"issues={len(exc.issues)} (next milestone)"
-                )
-            else:
-                print("  ready screenshots catalog preflight")
+                raise RuntimeError(
+                    "screenshots catalog preflight failed: " + "; ".join(exc.issues)
+                ) from exc
+            print("  ready screenshots catalog preflight")
 
     # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue_media_for_items,
     # 故图片/视频的 thumbnail_path / blurhash 一直为 NULL(视频还缺 poster)。这里按
@@ -369,6 +377,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="rebuild only screenshot-seed-owned fixed projects and datasets",
     )
+    parser.add_argument(
+        "--ml-backend-mode",
+        choices=("live", "stub"),
+        default="live",
+        help="screenshots profile backend discovery mode",
+    )
+    parser.add_argument(
+        "--ml-backend-url",
+        help=(
+            "stub URL reachable by the API and workers "
+            f"(default: {default_screenshot_stub_url()})"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -381,6 +402,8 @@ async def main() -> None:
         asset_dir=args.asset_dir,
         offline=args.offline,
         repair=args.repair,
+        ml_backend_mode=args.ml_backend_mode,
+        ml_backend_url=args.ml_backend_url,
     )
     print("=== seed done  ===\n")
     print("测试账号一览 (密码统一: 123456):")
@@ -397,5 +420,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except SeedAssetError as exc:
+        print(f"[seed] {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    except ScreenshotSeedBackendError as exc:
         print(f"[seed] {exc}", file=sys.stderr)
         raise SystemExit(2) from exc

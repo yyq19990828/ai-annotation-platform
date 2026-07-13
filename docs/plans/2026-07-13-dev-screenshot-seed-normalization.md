@@ -217,7 +217,7 @@ GET /api/v1/__test/seed/catalog?profile=screenshots
 ```json
 {
   "schema_version": 1,
-  "seed_revision": "screenshots-2026-07-c",
+  "seed_revision": "screenshots-2026-07-d",
   "users": {
     "admin": {"email": "admin"},
     "project_admin": {"email": "pm"},
@@ -433,11 +433,22 @@ pnpm docs:build
 
 ### 阶段 B：ML Backend 与项目数据（约 2 个工作日）
 
-- [ ] 定义 image/tracker backend 能力要求。
-- [ ] 实现 live backend 按能力发现和绑定。
-- [ ] 实现/复用 CI protocol stub 及 contract test。
-- [ ] 为图片、视频项目创建 `ProjectMLBackend`、主 backend 和能力校验。
+- [x] 定义 image/tracker/OCR backend 能力要求。
+- [x] 实现 live backend 按能力发现和绑定。
+- [x] 实现/复用 CI protocol stub 及 contract test。
+- [x] 为图片、视频和 OCR 项目创建 `ProjectMLBackend`、主 backend 和能力校验。
 - [x] 创建真实角色、成员、固定批次和任务状态。
+
+live 模式会重新探测 registry 的 `/health` 与 `/setup`，图片按 point、interactive box、
+exemplar 和 polygon 能力选择，视频按 `sam3_video_interactive`、`sam2_video` 的明确优先级
+选择，OCR 要求整图输入、OCR task、polygon 和 text 属性。选择顺序只依赖能力与稳定 URL，
+不猜 backend 名称。每个 seed 项目的启用关联精确收敛为所选 backend，并同步主绑定。
+
+无 GPU 模式直接复用协议参考实现 `mock-v2-backend`，补充交互分割和逐帧 tracker 固定响应，
+以 Compose `screenshots` profile 暴露 9100。seed 仍真实探测服务并写入能力快照；宿主 API 与
+Celery GPU worker 均验证可达。真实 DEV 栈最终恢复 live 状态：图片和视频绑定 SAM3，OCR
+绑定 RapidOCR；catalog 完整返回 200，图片 smart-point、smart-box、exemplar 均 enabled，
+exemplar 工具栏可实际打开。
 
 ### 阶段 C：Playwright 迁移（约 2–3 个工作日）
 
@@ -508,11 +519,12 @@ pnpm docs:build
 
 ## Outcome
 
-- 状态：阶段 A 已完成；阶段 B–E 待执行。
+- 状态：阶段 A–B 已完成；阶段 C–E 待执行。
 - 已交付：版本化网络素材清单、安全缓存下载器、许可可追溯的真实图片/视频/点云派生素材、
   desired-state reconcile、显式任务映射、真实角色与多状态任务、只读 screenshot seed catalog、
-  ML Backend 就绪硬校验、远程 DEV 同源媒体代理和定向后端测试。
-- 当前阻塞：图片和视频项目尚未绑定满足能力要求的 ML Backend。seed 写库和非 backend
-  catalog 校验已通过，阶段 B 需完成 live/stub 发现、项目 enablement、主绑定与能力快照。
+  ML Backend 场景能力契约、live/stub 发现、图片/视频/OCR 项目绑定、远程 DEV 同源媒体代理
+  和定向后端及浏览器测试。
+- 当前阻塞：截图 driver 仍依赖 peek、历史项目 UUID 和管理员角色替身，阶段 C 需迁移到
+  catalog fixture 并收紧失败路径，之后才能安全全量重拍。
 - 正式文档：待阶段 E 同步。
 - 未尽事项：维护清单中不属于现有自动场景的待拍项，实施后另立截图覆盖扩展计划。

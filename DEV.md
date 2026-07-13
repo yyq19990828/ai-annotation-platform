@@ -49,7 +49,7 @@ ai-annotation-platform/
 ├── docs-site/                   # VitePress 用户手册 + 开发文档 + API
 ├── docs/                        # ADR / changelogs / plans / research
 ├── docker-compose.yml           # 本地基础服务（postgres/redis/minio/celery + 监控 profile）
-├── docker-compose.ml.yml        # GPU ML Backend 叠加（grounded-sam2 / sam3 / yolo）
+├── docker-compose.ml.yml        # ML Backend 叠加（GPU 推理服务 + 截图协议 stub）
 └── .env.example                 # 环境变量模板
 ```
 
@@ -329,9 +329,27 @@ cd apps/api && uv run uvicorn app.main:app --port 8000     # 另开窗口
 pnpm dev:web                                               # 另开窗口，:3000
 pnpm exec playwright install chromium                      # 首次需下载浏览器
 
-# 首次下载并校验公开小型素材，再创建截图专用的 4 个真实场景项目
-cd apps/api && PYTHONPATH=. uv run python scripts/seed.py --profile screenshots --repair
+# 有 GPU/真实 backend：按能力发现并绑定图片、视频、OCR backend
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode live
 ```
+
+没有 GPU 时使用协议 stub。它仍经过 `/health`、`/setup`、全局 registry、项目启用关联和
+主 backend 绑定，不会在数据库里伪造“已连接”状态：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile screenshots up -d --build screenshot-ml-stub
+
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode stub
+```
+
+stub 地址默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100` 端口，确保宿主 API
+和 Celery 容器都能访问；Docker 网关不同时可显式传
+`--ml-backend-url http://<gateway>:9100`。seed 会按能力而非 backend 名称选择：图片要求
+point、interactive box 与 exemplar，视频要求交互 tracker，OCR 要求整图输入及文本属性输出。
+任一能力、连接、启用关联或主绑定缺失都会退出非零。
 
 ### 触发
 
@@ -366,6 +384,10 @@ peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
   只需打通 3000 端口。若返回 `localhost:9000` 或宿主机 `:9000`，会分别命中
   访问者自己或受跨网段端口策略影响。`ML_BACKEND_STORAGE_HOST` 是容器的另一层
   地址，可以继续使用 Docker 网关。修改 `.env` 或 Vite 代理配置后重启 API/Web。
+- **截图 seed 报 backend 能力不足**：live 模式只接受当前可达且能力快照覆盖截图场景的
+  registry，不按名称猜测。确认目标 backend 已启动并被 API 同步；无 GPU 时启动
+  `screenshot-ml-stub` 后改用 `--ml-backend-mode stub`。不要把浏览器的 `/minio`
+  地址拿来配置 backend，后者必须同时对宿主 API 和 Celery 容器可达。
 - **中文路径**：仓库根含中文（`AI标注平台设计/`）时，`import.meta.url` 会 percent-encode；
   `screenshots.spec.ts` 已 `decodeURIComponent` 兜底，写到正确位置而非 `AI%E6%A0%87...` 镜像目录。
 - **flaky 时间敏感 UI**：当前未注入 `page.clock`，dashboard 日期 / 头像随机色可能每次微变；

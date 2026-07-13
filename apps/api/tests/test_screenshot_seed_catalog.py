@@ -231,7 +231,19 @@ async def _ready_profile(db):
         url=f"http://image-{uuid.uuid4().hex}.test",
         state="connected",
         is_interactive=True,
-        health_meta={"capabilities": {"is_interactive": True, "prompts": ["point"]}},
+        health_meta={
+            "capabilities": {
+                "is_interactive": True,
+                "supported_prompts": ["point", "interactive_box", "exemplar"],
+                "supported_geometric_outputs": ["polygon"],
+                "models": [
+                    {
+                        "task": "interactive_seg",
+                        "output_attribute_types": [],
+                    }
+                ],
+            }
+        },
     )
     video_backend = MLBackendRegistry(
         id=uuid.uuid4(),
@@ -239,13 +251,36 @@ async def _ready_profile(db):
         url=f"http://video-{uuid.uuid4().hex}.test",
         state="connected",
         is_interactive=False,
-        health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
+        health_meta={
+            "capabilities": {
+                "supported_trackers": ["sam2_video"],
+                "models": [{"task": "tracker", "output_attribute_types": []}],
+            }
+        },
     )
-    db.add_all([image_backend, video_backend])
+    ocr_backend = MLBackendRegistry(
+        id=uuid.uuid4(),
+        name="screenshot-ocr",
+        url=f"http://ocr-{uuid.uuid4().hex}.test",
+        state="connected",
+        is_interactive=False,
+        health_meta={
+            "capabilities": {
+                "supported_inputs": ["full_image"],
+                "supported_geometric_outputs": ["polygon"],
+                "models": [
+                    {"task": "ocr", "output_attribute_types": ["text"]}
+                ],
+            }
+        },
+    )
+    db.add_all([image_backend, video_backend, ocr_backend])
     await db.flush()
     image.ml_backend_id = image_backend.id
     video = projects["video_demo"]
     video.ml_backend_id = video_backend.id
+    ocr = projects["ocr_demo"]
+    ocr.ml_backend_id = ocr_backend.id
     db.add_all(
         [
             ProjectMLBackend(
@@ -253,6 +288,9 @@ async def _ready_profile(db):
             ),
             ProjectMLBackend(
                 project_id=video.id, registry_id=video_backend.id, enabled=True
+            ),
+            ProjectMLBackend(
+                project_id=ocr.id, registry_id=ocr_backend.id, enabled=True
             ),
         ]
     )
