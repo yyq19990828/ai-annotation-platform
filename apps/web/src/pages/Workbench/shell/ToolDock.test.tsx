@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { ToolDock } from "./ToolDock";
 import { dispatchKey, type DispatchCtx } from "../state/hotkeys";
 
@@ -40,6 +40,81 @@ describe("ToolDock · video tools", () => {
     expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-polyline")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-hand")).toBeNull();
+  });
+
+  it("按单帧、SAM 与轨迹语义排列工具", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        onOpenTracker={vi.fn()}
+      />,
+    );
+
+    const frameGroup = screen.getByRole("group", { name: "单帧工具" });
+    const samGroup = within(frameGroup).getByRole("group", { name: "SAM 工具" });
+    const trackGroup = screen.getByRole("group", { name: "轨迹工具" });
+    const toolIds = (root: HTMLElement) =>
+      [...root.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")]
+        .map((button) => button.dataset.testid?.replace("video-tool-btn-", ""));
+
+    expect(toolIds(frameGroup)).toEqual([
+      "box",
+      "polygon",
+      "polyline",
+      "smart-point",
+      "smart-box",
+      "exemplar",
+      "magic-box",
+    ]);
+    expect(toolIds(samGroup)).toEqual(["smart-point", "smart-box", "exemplar", "magic-box"]);
+    expect(toolIds(trackGroup)).toEqual([
+      "track",
+      "polygon-track",
+      "polyline-track",
+      "mask",
+      "ai-track",
+    ]);
+    expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
+  });
+
+  it("矩形框轨迹使用独立的叠帧图标", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+      />,
+    );
+
+    const track = screen.getByTestId("video-tool-btn-track");
+    const smartPoint = screen.getByTestId("video-tool-btn-smart-point");
+    expect(track).toHaveAccessibleName("矩形框轨迹");
+    expect(track.querySelector(".lucide-gallery-horizontal-end")).toBeInTheDocument();
+    expect(smartPoint.querySelector(".lucide-target")).toBeInTheDocument();
+  });
+
+  it("项目开关隐藏全部创建工具时不渲染空分组", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+        aiInteractiveEnabled={false}
+        isVideoToolEnabled={() => false}
+      />,
+    );
+
+    expect(screen.queryByRole("group", { name: "单帧工具" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "SAM 工具" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "轨迹工具" })).toBeNull();
   });
 });
 

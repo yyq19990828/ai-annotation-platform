@@ -20,6 +20,11 @@ const HOTKEY_BADGE_CLASS =
   "pointer-events-none absolute bottom-px right-[3px] text-3xs font-bold leading-none text-muted-foreground/60";
 const HOTKEY_BADGE_ACTIVE = "text-brand-foreground/80";
 const DIVIDER_CLASS = "my-1.5 h-px w-[26px] bg-border";
+const VIDEO_SECTION_CLASS = "flex flex-col items-center gap-1.5";
+const VIDEO_SECTION_LABEL_CLASS =
+  "mb-0.5 text-2xs font-semibold leading-none text-muted-foreground";
+const VIDEO_SUBSECTION_LABEL_CLASS =
+  "mt-1 text-3xs font-medium leading-none tracking-wide text-muted-foreground/70";
 
 interface ToolDockProps {
   tool: ToolId;
@@ -97,25 +102,25 @@ const VIDEO_TOOLS: Array<{
   hotkey?: string;
   /** 视频侧 Alt+数字只绑到 3; 其余工具没有备用数字键, 故可选。 */
   altDigit?: number;
-  group: "select" | "static" | "track" | "ai";
+  group: "select" | "frame" | "sam" | "track";
   /** 非空 = AI 工具: 受项目总开关(隐藏) + 后端能力(置灰) 双层管控, 对齐图片侧。 */
   requiredPrompt?: string;
 }> = [
   { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
-  { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "static" },
-  { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2, group: "track" },
-  { id: "mask", hotkey: "M", label: "Mask 轨迹", icon: "scissors", desc: "当前帧绘制或编辑逐像素 Mask 关键帧", group: "track" },
+  { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "frame" },
   // v0.21.21 · 单帧 polygon/polyline (点击落点, Enter/双击闭合, Esc 取消)。
-  { id: "polygon", hotkey: "P", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", group: "static" },
-  { id: "polyline", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", group: "static" },
+  { id: "polygon", hotkey: "P", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", group: "frame" },
+  { id: "polyline", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", group: "frame" },
+  // v0.21.23 · 交互式 SAM 单帧工具; requiredPrompt 决定后端能力门控 (不支持则置灰)。
+  { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", group: "sam", requiredPrompt: "point" },
+  { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", group: "sam", requiredPrompt: "interactive_box" },
+  { id: "exemplar", hotkey: "E", label: "示例框", icon: "sparkles", desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检", group: "sam", requiredPrompt: "exemplar" },
+  { id: "magic-box", hotkey: "G", label: "Magic Box", icon: "wandSparkles", desc: "粗框 → SAM 收紧 → 落矩形框", group: "sam", requiredPrompt: "interactive_box" },
+  { id: "track", hotkey: "T", label: "矩形框轨迹", icon: "galleryHorizontalEnd", desc: "跨帧矩形框轨迹", altDigit: 2, group: "track" },
   // v0.21.20 · polygon/polyline 轨迹关键帧 (原 polygon/polyline, 拆分后 -track 后缀)。
   { id: "polygon-track", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", group: "track" },
   { id: "polyline-track", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", group: "track" },
-  // v0.21.23 · 交互式 SAM 单帧工具; requiredPrompt 决定后端能力门控 (不支持则置灰)。
-  { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", group: "ai", requiredPrompt: "point" },
-  { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", group: "ai", requiredPrompt: "interactive_box" },
-  { id: "exemplar", hotkey: "E", label: "示例框", icon: "sparkles", desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检", group: "ai", requiredPrompt: "exemplar" },
-  { id: "magic-box", hotkey: "G", label: "Magic Box", icon: "wandSparkles", desc: "粗框 → SAM 收紧 → 落矩形框", group: "ai", requiredPrompt: "interactive_box" },
+  { id: "mask", hotkey: "M", label: "Mask 轨迹", icon: "scissors", desc: "当前帧绘制或编辑逐像素 Mask 关键帧", group: "track" },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
@@ -205,79 +210,104 @@ export function ToolDock({
       if (!isVideoToolEnabled) return true;
       return isVideoToolEnabled(t.id);
     });
+    const selectTool = visibleVideoTools.find((t) => t.group === "select");
+    const frameTools = visibleVideoTools.filter((t) => t.group === "frame");
+    const samTools = visibleVideoTools.filter((t) => t.group === "sam");
+    const trackTools = visibleVideoTools.filter((t) => t.group === "track");
+    const hasFrameSection = frameTools.length > 0 || samTools.length > 0;
+    const hasTrackSection = trackTools.length > 0 || !!onOpenTracker;
+
+    const renderVideoTool = (t: (typeof VIDEO_TOOLS)[number]) => {
+      const active = videoTool === t.id;
+      // 层 2: 后端不支持该交互模式 → 置灰 + tooltip (不隐藏, 让用户知道工具存在)。
+      const supported = t.requiredPrompt
+        ? (isPromptSupported ? isPromptSupported(t.requiredPrompt) : true)
+        : true;
+      const disabled = t.requiredPrompt ? capabilitiesLoading || !supported : false;
+      const disabledHint = t.requiredPrompt && !capabilitiesLoading && !supported
+        ? "当前后端不支持此交互模式"
+        : capabilitiesLoading && t.requiredPrompt
+        ? "正在协商后端能力…"
+        : null;
+      return (
+        <Tooltip
+          key={t.id}
+          name={t.label}
+          desc={disabledHint ?? (t.altDigit ? `${t.desc} · 备用 Alt+${t.altDigit}` : t.desc)}
+          hotkey={t.hotkey}
+          side="right"
+          delay={250}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (disabled) return;
+              onSetVideoTool?.(t.id);
+            }}
+            aria-label={t.label}
+            aria-pressed={active}
+            aria-disabled={disabled || undefined}
+            disabled={disabled}
+            data-testid={`video-tool-btn-${t.id}`}
+            className={cn(
+              TOOL_BTN_CLASS,
+              active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, !disabled && TOOL_BTN_HOVER),
+              disabled && TOOL_BTN_DISABLED,
+            )}
+          >
+            <Icon name={t.icon} size={17} />
+            <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
+              {t.hotkey}
+            </span>
+          </button>
+        </Tooltip>
+      );
+    };
+
     return (
       <div className={ROOT_CLASS}>
-        {visibleVideoTools.map((t, idx) => {
-          const active = videoTool === t.id;
-          const prevGroup = idx > 0 ? visibleVideoTools[idx - 1].group : null;
-          const showDivider = prevGroup !== null && prevGroup !== t.group;
-          // 层 2: 后端不支持该交互模式 → 置灰 + tooltip (不隐藏, 让用户知道工具存在)。
-          const supported = t.requiredPrompt
-            ? (isPromptSupported ? isPromptSupported(t.requiredPrompt) : true)
-            : true;
-          const disabled = t.requiredPrompt ? capabilitiesLoading || !supported : false;
-          const disabledHint = t.requiredPrompt && !capabilitiesLoading && !supported
-            ? "当前后端不支持此交互模式"
-            : capabilitiesLoading && t.requiredPrompt
-            ? "正在协商后端能力…"
-            : null;
-          return (
-            <Fragment key={t.id}>
-              {showDivider && <div aria-hidden className={DIVIDER_CLASS} />}
-              <Tooltip
-                name={t.label}
-                desc={disabledHint ?? (t.altDigit ? `${t.desc} · 备用 Alt+${t.altDigit}` : t.desc)}
-                hotkey={t.hotkey}
-                side="right"
-                delay={250}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (disabled) return;
-                    onSetVideoTool?.(t.id);
-                  }}
-                  aria-label={t.label}
-                  aria-pressed={active}
-                  aria-disabled={disabled || undefined}
-                  disabled={disabled}
-                  data-testid={`video-tool-btn-${t.id}`}
-                  className={cn(
-                    TOOL_BTN_CLASS,
-                    active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, !disabled && TOOL_BTN_HOVER),
-                    disabled && TOOL_BTN_DISABLED,
-                  )}
-                >
-                  <Icon name={t.icon} size={17} />
-                  <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
-                    {t.hotkey}
-                  </span>
-                </button>
-              </Tooltip>
-            </Fragment>
-          );
-        })}
-        {/* v0.22.1 · B · 画布级 AI 追踪 (动作型): 无需先选轨迹, 打开对话框后可文本/种子
-            检测新目标或延展选中轨迹。与手画 track 工具分属不同组。 */}
-        {onOpenTracker && (
+        {selectTool && renderVideoTool(selectTool)}
+        {hasFrameSection && (
           <>
             <div aria-hidden className={DIVIDER_CLASS} />
-            <Tooltip
-              name="AI 追踪"
-              desc="画布级 AI 追踪 · 文本/种子检测新目标, 或延展选中轨迹"
-              side="right"
-              delay={250}
-            >
-              <button
-                type="button"
-                onClick={onOpenTracker}
-                aria-label="AI 追踪"
-                data-testid="video-tool-btn-ai-track"
-                className={cn(TOOL_BTN_CLASS, TOOL_BTN_IDLE, TOOL_BTN_HOVER)}
-              >
-                <Icon name="bot" size={17} />
-              </button>
-            </Tooltip>
+            <div role="group" aria-label="单帧工具" className={VIDEO_SECTION_CLASS}>
+              <span aria-hidden className={VIDEO_SECTION_LABEL_CLASS}>单帧</span>
+              {frameTools.map(renderVideoTool)}
+              {samTools.length > 0 && (
+                <div role="group" aria-label="SAM 工具" className={VIDEO_SECTION_CLASS}>
+                  <span aria-hidden className={VIDEO_SUBSECTION_LABEL_CLASS}>SAM</span>
+                  {samTools.map(renderVideoTool)}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        {hasTrackSection && (
+          <>
+            <div aria-hidden className={DIVIDER_CLASS} />
+            <div role="group" aria-label="轨迹工具" className={VIDEO_SECTION_CLASS}>
+              <span aria-hidden className={VIDEO_SECTION_LABEL_CLASS}>轨迹</span>
+              {trackTools.map(renderVideoTool)}
+              {/* 画布级 AI 追踪是轨迹组内的动作入口, 不是可持续激活的绘制工具。 */}
+              {onOpenTracker && (
+                <Tooltip
+                  name="AI 追踪"
+                  desc="画布级 AI 追踪 · 文本/种子检测新目标, 或延展选中轨迹"
+                  side="right"
+                  delay={250}
+                >
+                  <button
+                    type="button"
+                    onClick={onOpenTracker}
+                    aria-label="AI 追踪"
+                    data-testid="video-tool-btn-ai-track"
+                    className={cn(TOOL_BTN_CLASS, "mt-1", TOOL_BTN_IDLE, TOOL_BTN_HOVER)}
+                  >
+                    <Icon name="bot" size={17} />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
           </>
         )}
       </div>
