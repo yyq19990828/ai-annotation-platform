@@ -15,6 +15,7 @@ E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重
 from __future__ import annotations
 
 import secrets
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -602,6 +603,34 @@ class SeedPeekResponse(BaseModel):
     admin_email: str | None = None
     project_id: str | None = None
     task_id: str | None = None
+
+
+@router.get(
+    "/seed/catalog",
+    include_in_schema=False,
+)
+async def seed_catalog(
+    profile: Literal["screenshots"] = "screenshots",
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """解析 screenshots profile 的稳定逻辑键；数据漂移时明确失败。"""
+    _ensure_non_production()
+
+    from app.services.screenshot_seed_catalog import (
+        ScreenshotSeedCatalogError,
+        build_screenshot_seed_catalog,
+    )
+
+    try:
+        return await build_screenshot_seed_catalog(db)
+    except ScreenshotSeedCatalogError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "screenshot_seed_not_ready",
+                "issues": exc.issues,
+            },
+        ) from exc
 
 
 @router.get(

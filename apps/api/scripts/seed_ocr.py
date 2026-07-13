@@ -65,7 +65,9 @@ async def _ensure_admin(db) -> uuid.UUID:
     return admin.id
 
 
-async def seed_ocr(db, *, owner_id: uuid.UUID) -> dict | None:
+async def seed_ocr(
+    db, *, owner_id: uuid.UUID, image: Path | None = None
+) -> dict | None:
     from PIL import Image
     from sqlalchemy import select
 
@@ -78,9 +80,9 @@ async def seed_ocr(db, *, owner_id: uuid.UUID) -> dict | None:
     if existing is not None:
         return {"project": PROJECT_DISPLAY_ID, "skipped": True}
 
-    if not TEXT_IMG.exists():
-        print(f"缺测试图 {TEXT_IMG}，跳过")
-        return None
+    image = image or TEXT_IMG
+    if not image.exists():
+        raise FileNotFoundError(f"OCR 测试图缺失: {image}")
 
     project = Project(
         display_id=PROJECT_DISPLAY_ID,
@@ -102,15 +104,15 @@ async def seed_ocr(db, *, owner_id: uuid.UUID) -> dict | None:
     await db.flush()
 
     bucket = storage_service.datasets_bucket
-    with Image.open(TEXT_IMG) as im:
+    with Image.open(image) as im:
         w_px, h_px = im.size
-    key = f"{DATASET_FOLDER}/{TEXT_IMG.name}"
+    key = f"{DATASET_FOLDER}/{image.name}"
     storage_service.client.put_object(
-        Bucket=bucket, Key=key, Body=TEXT_IMG.read_bytes(), ContentType="image/jpeg",
+        Bucket=bucket, Key=key, Body=image.read_bytes(), ContentType="image/jpeg",
     )
     db.add(DatasetItem(
-        dataset_id=ds.id, file_name=TEXT_IMG.name, file_path=key,
-        file_type="image", file_size=TEXT_IMG.stat().st_size, width=w_px, height=h_px,
+        dataset_id=ds.id, file_name=image.name, file_path=key,
+        file_type="image", file_size=image.stat().st_size, width=w_px, height=h_px,
     ))
     ds.file_count = 1
     db.add(ProjectDataset(project_id=project.id, dataset_id=ds.id))

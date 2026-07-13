@@ -63,7 +63,9 @@ async def _ensure_admin(db) -> uuid.UUID:
     return admin.id
 
 
-async def seed_pointcloud(db, *, owner_id: uuid.UUID) -> dict | None:
+async def seed_pointcloud(
+    db, *, owner_id: uuid.UUID, fixture: Path | None = None
+) -> dict | None:
     """把点云夹具灌入当前栈,owner 为传入用户。
 
     幂等:项目 P-PC-DEV 已存在则直接返回 None(不重复造)。
@@ -83,8 +85,9 @@ async def seed_pointcloud(db, *, owner_id: uuid.UUID) -> dict | None:
     if existing:
         return None
 
-    if not FIXTURE.exists():
-        raise FileNotFoundError(f"点云夹具缺失: {FIXTURE}")
+    fixture = fixture or FIXTURE
+    if not fixture.exists():
+        raise FileNotFoundError(f"点云夹具缺失: {fixture}")
 
     project = Project(
         display_id=PROJECT_DISPLAY_ID, name="点云联合标注 (dev)",
@@ -107,7 +110,7 @@ async def seed_pointcloud(db, *, owner_id: uuid.UUID) -> dict | None:
     bucket = storage_service.datasets_bucket
 
     def upload(relpath: str, file_type: str):
-        local = FIXTURE / relpath
+        local = fixture / relpath
         key = f"{DATASET_NAME}/{relpath}"
         storage_service.client.put_object(
             Bucket=bucket, Key=key, Body=local.read_bytes(),
@@ -119,16 +122,16 @@ async def seed_pointcloud(db, *, owner_id: uuid.UUID) -> dict | None:
         ))
 
     n = 0
-    for pcd in sorted((FIXTURE / "lidar").glob("*.pcd")):
+    for pcd in sorted((fixture / "lidar").glob("*.pcd")):
         upload(f"lidar/{pcd.name}", "point_cloud")
         n += 1
-    for cam_dir in sorted((FIXTURE / "camera").iterdir()):
+    for cam_dir in sorted((fixture / "camera").iterdir()):
         if not cam_dir.is_dir():
             continue
         for jpg in sorted(cam_dir.glob("*.jpg")):
             upload(f"camera/{cam_dir.name}/{jpg.name}", "image")
             n += 1
-    for cj in sorted((FIXTURE / "calib/camera").glob("*.json")):
+    for cj in sorted((fixture / "calib/camera").glob("*.json")):
         upload(f"calib/camera/{cj.name}", "other")
         n += 1
 

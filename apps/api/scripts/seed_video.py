@@ -58,7 +58,9 @@ async def _ensure_admin(db) -> uuid.UUID:
     return admin.id
 
 
-async def seed_video(db, *, owner_id: uuid.UUID) -> dict | None:
+async def seed_video(
+    db, *, owner_id: uuid.UUID, video: Path | None = None
+) -> dict | None:
     """把开源行车视频灌入当前栈,建 video-track 项目 + 1 个 Task,owner 为传入用户。
 
     幂等:项目 P-VIDEO-DEV 已存在则直接返回 None(不重复造)。
@@ -84,12 +86,13 @@ async def seed_video(db, *, owner_id: uuid.UUID) -> dict | None:
     if existing:
         return None
 
-    if not VIDEO.exists():
-        raise FileNotFoundError(f"开源视频素材缺失: {VIDEO}")
+    video = video or VIDEO
+    if not video.exists():
+        raise FileNotFoundError(f"开源视频素材缺失: {video}")
 
     # 同步探测元数据 + 逐帧时间表(宿主 ffprobe)。
-    video_meta = probe_video_file(VIDEO)
-    timetable = probe_video_frame_timetable(VIDEO)
+    video_meta = probe_video_file(video)
+    timetable = probe_video_frame_timetable(video)
 
     project = Project(
         display_id=PROJECT_DISPLAY_ID,
@@ -136,14 +139,14 @@ async def seed_video(db, *, owner_id: uuid.UUID) -> dict | None:
 
     # 上传视频到 MinIO datasets 桶。
     bucket = storage_service.datasets_bucket
-    key = f"{DATASET_FOLDER}/{VIDEO.name}"
+    key = f"{DATASET_FOLDER}/{video.name}"
     storage_service.client.put_object(
-        Bucket=bucket, Key=key, Body=VIDEO.read_bytes(), ContentType="video/mp4",
+        Bucket=bucket, Key=key, Body=video.read_bytes(), ContentType="video/mp4",
     )
 
     item = DatasetItem(
-        dataset_id=ds.id, file_name=VIDEO.name, file_path=key, file_type="video",
-        file_size=VIDEO.stat().st_size,
+        dataset_id=ds.id, file_name=video.name, file_path=key, file_type="video",
+        file_size=video.stat().st_size,
         width=video_meta["width"], height=video_meta["height"],
         metadata_={"video": video_meta},
     )

@@ -1,0 +1,109 @@
+schema_version = 1
+
+[[assets]]
+id = "coco8"
+profiles = ["demo"]
+urls = ["https://github.com/ultralytics/assets/releases/download/v0.0.0/coco8.zip"]
+sha256 = "54c67fe9ef88313e021ec0e92b73c200167bb0a86633e8df8658d832cca828c9"
+size_bytes = 443158
+max_bytes = 500000
+max_unpacked_bytes = 3000000
+archive = "zip"
+root = "coco8"
+required_files = [
+  "images/train/000000000009.jpg",
+  "images/val/000000000036.jpg",
+  "labels/train/000000000009.txt",
+  "labels/val/000000000036.txt",
+]
+source = "https://github.com/ultralytics/assets/releases/tag/v0.0.0"
+
+[assets.license]
+artifact_spdx = "GPL-3.0-only"
+media_status = "per-file license required"
+notice_url = "https://cocodataset.org/#termsofuse"
+attribution = "COCO images retain the licenses selected by their Flickr authors."
+public_docs_status = "blocked"
+public_docs_notes = "The eight images include NC and ND licenses; keep this asset out of public screenshot profiles."
+
+[[assets]]
+id = "tracking-video"
+profiles = ["demo"]
+urls = ["https://raw.githubusercontent.com/IDEA-Research/Grounded-SAM-2/b7a9c29f196edff0eb54dbe14588d7ae5e3dde28/assets/tracking_car.mp4"]
+sha256 = "a4c3ee6aeca7f5085cc49408d572e3e3df7cab65ead15701996724827ef99c10"
+size_bytes = 12253807
+max_bytes = 13000000
+max_unpacked_bytes = 13000000
+archive = "none"
+filename = "tracking_car.mp4"
+root = "."
+required_files = ["tracking_car.mp4"]
+source = "https://github.com/IDEA-Research/Grounded-SAM-2/tree/b7a9c29f196edff0eb54dbe14588d7ae5e3dde28/assets"
+
+[assets.license]
+artifact_spdx = "Apache-2.0"
+media_status = "repository license only"
+notice_url = "https://github.com/IDEA-Research/Grounded-SAM-2/blob/b7a9c29f196edff0eb54dbe14588d7ae5e3dde28/LICENSE"
+attribution = "Grounded-SAM-2 contributors"
+public_docs_status = "review_required"
+public_docs_notes = "The repository is Apache-2.0, but the video has no separate provenance or license notice."
+
+[[assets]]
+id = "rapidocr-image"
+profiles = ["demo", "screenshots"]
+urls = ["https://raw.githubusercontent.com/RapidAI/RapidOCR/d4bf8f2b96f1f4747ec7d9b2b7e919e4f904c0d6/python/tests/test_files/ch_en_num.jpg"]
+sha256 = "b94c1bf68af9ceb3c550b86931d7b48d4181c26c9f5ace2492e64042f36a02ca"
+size_bytes = 70680
+max_bytes = 100000
+max_unpacked_bytes = 100000
+archive = "none"
+filename = "ch_en_num.jpg"
+root = "."
+required_files = ["ch_en_num.jpg"]
+source = "https://github.com/RapidAI/RapidOCR/tree/d4bf8f2b96f1f4747ec7d9b2b7e919e4f904c0d6/python/tests/test_files"
+
+[assets.license]
+artifact_spdx = "Apache-2.0"
+media_status = "used by the upstream README example"
+notice_url = "https://github.com/RapidAI/RapidOCR/blob/d4bf8f2b96f1f4747ec7d9b2b7e919e4f904c0d6/LICENSE"
+attribution = "RapidOCR contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep source attribution with published screenshot documentation."
+
+[[assets]]
+id = "sustechpoints-example"
+profiles = ["demo"]
+urls = ["https://codeload.github.com/naurril/SUSTechPOINTS/tar.gz/20eda5d14692fd837ac694cfdfbf2477a284abd3"]
+sha256 = "103ee51be8afce538a0f8fc2f5c568cb2ab5d484fdf4ad5c8b3bbccd6583c7d0"
+size_bytes = 12123957
+max_bytes = 13000000
+max_unpacked_bytes = 50000000
+archive = "tar.gz"
+root = "SUSTechPOINTS-20eda5d14692fd837ac694cfdfbf2477a284abd3/data/example"
+required_files = [
+  "lidar/000950.pcd",
+  "lidar/000965.pcd",
+  "lidar/000970.pcd",
+  "lidar/000975.pcd",
+  "camera/front/000965.jpg",
+  "camera/front/000970.jpg",
+  "camera/front/000975.jpg",
+  "camera/left/000965.jpg",
+  "camera/left/000970.jpg",
+  "camera/left/000975.jpg",
+  "camera/right/000965.jpg",
+  "camera/right/000970.jpg",
+  "camera/right/000975.jpg",
+  "calib/camera/front.json",
+  "calib/camera/left.json",
+  "calib/camera/right.json",
+]
+source = "https://github.com/naurril/SUSTechPOINTS/tree/20eda5d14692fd837ac694cfdfbf2477a284abd3/data/example"
+
+[assets.license]
+artifact_spdx = "GPL-3.0-only"
+media_status = "repository license only"
+notice_url = "https://github.com/naurril/SUSTechPOINTS/blob/20eda5d14692fd837ac694cfdfbf2477a284abd3/LICENSE"
+attribution = "SUSTechPOINTS contributors"
+public_docs_status = "review_required"
+public_docs_notes = "The sample PCD and camera media have no separate provenance or license notice."

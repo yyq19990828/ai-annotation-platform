@@ -5,9 +5,11 @@
     PYTHONPATH=. uv run python scripts/seed.py
 """
 
+import argparse
 import asyncio
 import sys
 import uuid
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select
@@ -17,6 +19,12 @@ sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))  # 让 `scripts/` 入 sys.pa
 from seed_pointcloud import seed_pointcloud, seed_nuscenes_scene  # noqa: E402
 from seed_coco8 import seed_coco8  # noqa: E402  (依赖 sys.path 先扩)
 from seed_video import seed_video  # noqa: E402  (开源视频 video-track 夹具)
+from seed_ocr import seed_ocr  # noqa: E402  (OCR 截图夹具)
+from seed_assets import (  # noqa: E402  (版本化网络素材)
+    SeedAssetError,
+    ensure_profile,
+    select_profile,
+)
 
 from app.config import settings
 from app.core.security import hash_password
@@ -89,7 +97,33 @@ USERS = [
 # seed_pointcloud / seed_nuscenes_scene 建, 均在 seed() 内按夹具可用性容错调用。
 
 
-async def seed() -> None:
+async def seed(
+    *,
+    profile: str = "demo",
+    cache_dir: Path | None = None,
+    asset_dir: Path | None = None,
+    offline: bool = False,
+) -> None:
+    assets = {}
+    if profile == "screenshots":
+        selected_assets = select_profile(
+            "screenshots",
+            required_ids={
+                "coco8",
+                "tracking-video",
+                "rapidocr-image",
+                "sustechpoints-example",
+            },
+        )
+        assets = ensure_profile(
+            "screenshots",
+            cache_dir=cache_dir,
+            asset_dir=asset_dir,
+            offline=offline,
+            assets=selected_assets,
+        )
+    strict = profile == "screenshots"
+
     async with Session() as db:
         created_users: dict[str, User] = {}
 
@@ -130,10 +164,17 @@ async def seed() -> None:
         img_owner_id = owner_id or admin_id
         if img_owner_id is not None:
             try:
-                info = await seed_coco8(db, owner_id=img_owner_id)
+                info = await seed_coco8(
+                    db,
+                    owner_id=img_owner_id,
+                    fixture=assets["coco8"].root if strict else None,
+                )
                 await db.commit()
                 if info is None:
                     print("  skip  image P-COCO8 (已存在)")
+                elif "images" not in info:
+                    units = ",".join(info.get("added_tool_units", []))
+                    print(f"  repair image P-COCO8  tool_units={units}")
                 else:
                     print(
                         f"  add   image {info['project']}  "
@@ -142,12 +183,22 @@ async def seed() -> None:
                     )
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
                 await db.rollback()
+                if strict:
+                    raise
                 print(f"  WARN  coco8 夹具跳过: {e}")
 
             # 视频时序追踪项目:开源行车视频 tracking_car.mp4(grounded-sam-2 vendor)。
             # 依赖 MinIO + 宿主 ffprobe, 缺失则跳过。幂等:P-VIDEO-DEV 已存在则跳过。
             try:
-                info = await seed_video(db, owner_id=img_owner_id)
+                info = await seed_video(
+                    db,
+                    owner_id=img_owner_id,
+                    video=(
+                        assets["tracking-video"].root / "tracking_car.mp4"
+                        if strict
+                        else None
+                    ),
+                )
                 await db.commit()
                 if info is None:
                     print("  skip  video P-VIDEO-DEV (已存在)")
@@ -160,13 +211,31 @@ async def seed() -> None:
                     )
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO/ffprobe 不可用时不阻断 seed
                 await db.rollback()
+                if strict:
+                    raise
                 print(f"  WARN  video 夹具跳过: {e}")
+
+            if strict:
+                info = await seed_ocr(
+                    db,
+                    owner_id=img_owner_id,
+                    image=assets["rapidocr-image"].root / "ch_en_num.jpg",
+                )
+                await db.commit()
+                print(
+                    f"  {'skip' if info and info.get('skipped') else 'add  '}  "
+                    "ocr P-OCR"
+                )
 
         # 点云开发夹具(owner=admin):依赖 MinIO + SUSTechPOINTS 夹具,缺失则跳过,
         # 不影响核心账号/项目种子。幂等:P-PC-DEV 已存在则跳过。
         if admin_id is not None:
             try:
-                info = await seed_pointcloud(db, owner_id=admin_id)
+                info = await seed_pointcloud(
+                    db,
+                    owner_id=admin_id,
+                    fixture=assets["sustechpoints-example"].root if strict else None,
+                )
                 await db.commit()
                 if info is None:
                     print("  skip  point-cloud P-PC-DEV (已存在)")
@@ -177,24 +246,27 @@ async def seed() -> None:
                     )
             except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
                 await db.rollback()
+                if strict:
+                    raise
                 print(f"  WARN  point-cloud 夹具跳过: {e}")
 
             # scene 模式点云项目(owner=admin):nuScenes-mini 取 1 个 scene。依赖 MinIO +
             # third-party/nuscenes-mini 夹具(~5.1G), 缺失则跳过。幂等:同名 scene 跳过。
-            try:
-                nu = await seed_nuscenes_scene(db, owner_id=admin_id)
-                await db.commit()
-                scenes = ", ".join(
-                    f"{s['name']}({s['frames']}帧{'·已存在' if s.get('skipped') else ''})"
-                    for s in nu["scenes"]
-                )
-                print(
-                    f"  add   nuscenes scene-mode  items={nu['total_items']} "
-                    f"batches={nu['batches']}  {scenes}"
-                )
-            except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
-                await db.rollback()
-                print(f"  WARN  nuscenes 夹具跳过: {e}")
+            if not strict:
+                try:
+                    nu = await seed_nuscenes_scene(db, owner_id=admin_id)
+                    await db.commit()
+                    scenes = ", ".join(
+                        f"{s['name']}({s['frames']}帧{'·已存在' if s.get('skipped') else ''})"
+                        for s in nu["scenes"]
+                    )
+                    print(
+                        f"  add   nuscenes scene-mode  items={nu['total_items']} "
+                        f"batches={nu['batches']}  {scenes}"
+                    )
+                except Exception as e:  # noqa: BLE001 — demo 模式下大型夹具可选
+                    await db.rollback()
+                    print(f"  WARN  nuscenes 夹具跳过: {e}")
 
     # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue_media_for_items,
     # 故图片/视频的 thumbnail_path / blurhash 一直为 NULL(视频还缺 poster)。这里按
@@ -220,9 +292,24 @@ async def seed() -> None:
     await engine.dispose()
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=("demo", "screenshots"), default="demo")
+    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--asset-dir", type=Path)
+    parser.add_argument("--offline", action="store_true")
+    return parser.parse_args()
+
+
 async def main() -> None:
+    args = parse_args()
     print("\n=== seed start ===")
-    await seed()
+    await seed(
+        profile=args.profile,
+        cache_dir=args.cache_dir,
+        asset_dir=args.asset_dir,
+        offline=args.offline,
+    )
     print("=== seed done  ===\n")
     print("测试账号一览 (密码统一: 123456):")
     print("  admin    超级管理员   → AdminDashboard")
@@ -235,4 +322,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except SeedAssetError as exc:
+        print(f"[seed] {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc

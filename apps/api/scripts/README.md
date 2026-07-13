@@ -54,7 +54,8 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 
 ## 其他脚本
 
-- `seed.py`:dev 账号 + 调用下方各夹具种子(图片 coco8 + 点云 SUSTech/nuScenes),不再造假项目
+- `seed.py`:dev 账号 + 示例项目；`--profile screenshots` 使用严格素材与截图 catalog 契约
+- `seed_assets.py`:按 `seed-assets.toml` 下载固定版本素材，校验大小/SHA-256、安全解压并缓存
 - `seed_coco8.py`:真实 `third-party/coco8`(8 图)→ 图片检测项目 + 每图 Task + YOLO 框走 `import_yolo` 作**预标注**导入(非人工标注)
 - `seed_pointcloud.py`:SUSTechPOINTS 点云 demo + `third-party/nuscenes-mini` scene-0061 → scene 模式项目并按 scene 建包(by_scene split)
 - `seed_scale.py`:大规模压测夹具种子
@@ -62,3 +63,30 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 - `bootstrap_admin.py`:从 ENV 建超管
 - `reset_datasets.py`:清空 datasets + 关联表
 - `dump-openapi.py`:导出 openapi.snapshot.json
+
+## Screenshot seed 素材
+
+素材清单同时记录来源、摘要、仓库许可证和媒体公开文档状态。默认缓存目录为
+`$XDG_CACHE_HOME/ai-annotation-platform/seed-assets`，也可显式指定：
+
+```bash
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_assets.py \
+  --profile screenshots --cache-dir /tmp/aap-seed-assets
+
+# 已有完整缓存时禁止联网
+PYTHONPATH=. uv run python scripts/seed_assets.py \
+  --profile screenshots --cache-dir /tmp/aap-seed-assets --offline
+```
+
+`--asset-dir <path>` 使用 `<path>/<asset-id>/` 下已经解压的本地目录。下载器拒绝摘要或
+大小不符、路径穿越、符号链接、设备文件和超出解压上限的归档。
+
+当前来源审计结果：RapidOCR 示例图可带署名用于公开截图；COCO8 含 NC/ND 图片，不能进入
+公开截图 profile；行车视频和 SUSTechPOINTS 示例媒体只有仓库级许可证，仍需确认媒体来源。
+因此严格 `seed.py --profile screenshots` 会在写数据库前 fail-closed，直到后续里程碑用
+项目自有合成素材替换 COCO8，并确认或替换视频/点云素材。`demo` 模式不受此门禁影响。
+
+非 production 环境提供只读 `GET /api/v1/__test/seed/catalog`。它按固定逻辑键解析用户、
+项目、任务、批次和运行时 UUID，并硬校验真实 ML Backend 主绑定、项目启用关联、connected
+状态和能力快照；数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。
