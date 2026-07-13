@@ -1,10 +1,11 @@
 import type { Page } from "@playwright/test";
-import type { SeedData } from "../../fixtures/seed";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import type { ScreenshotFixture } from "../catalog";
 
 export type Role = "admin" | "annotator" | "reviewer";
 
 export interface MatrixAxis {
-  viewport: "desktop" | "tablet" | "mobile";
+  viewport: "desktop" | "mobile";
   theme: "light" | "dark";
   locale: "zh-CN" | "en-US";
 }
@@ -13,9 +14,11 @@ export interface ScreenshotScene {
   name: string;
   /** 单角色或多角色（多角色时取第一个登录） */
   role: Role | Role[];
-  route: (data: SeedData) => string;
+  /** 场景消费的稳定 seed 资源；driver 会在导航前统一 fail-closed 校验。 */
+  fixture?: ScreenshotFixture;
+  route: (catalog: ScreenshotSeedCatalog) => string;
   /** 进页面后的准备步骤（开 modal / 切 tab / 键盘交互等） */
-  prepare?: (page: Page, data: SeedData) => Promise<void>;
+  prepare?: (page: Page, catalog: ScreenshotSeedCatalog) => Promise<void>;
 
   /**
    * 自动红框 / 编号注释（截图前用 SVG overlay 注入，截图后自动移除）。
@@ -59,7 +62,7 @@ export interface ScreenshotScene {
    * driver 根据当前 Playwright project 名称决定是否跑此 scene。
    */
   matrix?: {
-    viewports?: Array<"desktop" | "tablet" | "mobile">;
+    viewports?: Array<"desktop" | "mobile">;
     themes?: Array<"light" | "dark">;
     locales?: Array<"zh-CN" | "en-US">;
   };
@@ -70,6 +73,4 @@ export interface ScreenshotScene {
    */
   target: string | ((axis: MatrixAxis) => string);
 
-  /** @deprecated 已改为 matrix.viewports；仍支持但优先级低于 matrix */
-  viewport?: { width: number; height: number };
 }

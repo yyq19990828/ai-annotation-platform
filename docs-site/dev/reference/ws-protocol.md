@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-13
 ---
 
 # WebSocket 协议
@@ -44,7 +44,7 @@ sequenceDiagram
 | 视频 tracker job | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验 | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `job_started / job_progress / frame_result / job_completed / job_failed / job_cancelled` 事件 |
 | ML Backend Stats | `/ws/ml-backend-stats?token=<jwt 或 ak_key>` | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；v0.15.12 起 SDK/TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`) | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
 
-base URL：`ws://<api-host>/ws/...` 或 `wss://...`。前端通过 `apps/web/src/hooks/useReconnectingWebSocket.ts` 处理重连。
+base URL：`ws://<api-host>/ws/...` 或 `wss://...`。前端通过 `apps/web/src/hooks/useReconnectingWebSocket.ts` 处理重连。本机 DEV 默认直连 `localhost:8000`；远程 DEV 访问使用页面同源 `/ws` 代理，避免远程浏览器错误连接自己的 localhost。
 
 ---
 

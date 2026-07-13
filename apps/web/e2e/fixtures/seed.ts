@@ -25,6 +25,68 @@ export interface SeedData {
   ml_backend_id: string;
 }
 
+export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
+export type ScreenshotProjectKey =
+  | "image_demo"
+  | "video_demo"
+  | "pointcloud_demo"
+  | "ocr_demo";
+export type ScreenshotBackendRequirement = "image_interactive" | "video_tracker" | "ocr";
+
+export interface ScreenshotCatalogUser {
+  id: string;
+  email: string;
+  role: string;
+}
+
+export interface ScreenshotCatalogTask {
+  id: string;
+  display_id: string;
+  file_name: string;
+  file_path: string;
+  status: string;
+}
+
+export interface ScreenshotCatalogBatch {
+  id: string;
+  display_id: string;
+  status: string;
+}
+
+export interface ScreenshotCatalogBackend {
+  id: string;
+  name: string;
+  state: string;
+  is_interactive: boolean;
+  requirement: ScreenshotBackendRequirement;
+  selected_tracker: string | null;
+  capabilities: {
+    models?: Array<Record<string, unknown>>;
+    supported_prompts?: string[];
+    supported_trackers?: string[];
+    supported_geometric_outputs?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface ScreenshotCatalogProject {
+  id: string;
+  display_id: string;
+  name: string;
+  data_type: string;
+  datasets: Record<string, { id: string; name: string; file_count: number }>;
+  tasks: Record<string, ScreenshotCatalogTask>;
+  batches: Record<string, ScreenshotCatalogBatch>;
+  ml_backend: ScreenshotCatalogBackend | null;
+}
+
+export interface ScreenshotSeedCatalog {
+  schema_version: 1;
+  seed_revision: string;
+  users: Record<ScreenshotUserKey, ScreenshotCatalogUser>;
+  projects: Record<ScreenshotProjectKey, ScreenshotCatalogProject>;
+}
+
 /** v0.16.x · 点云 E2E 基线 fixture：1 个 lidar 项目 + 2 帧(同一最小 .pcd)point_cloud task。
  *  需先 reset()(复用其 E2E 用户),缺则后端补建。 */
 export interface SeedLidarData {
@@ -51,6 +113,21 @@ class SeedAPI {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedData;
+  }
+
+  /** 截图专用只读 catalog：解析稳定逻辑键，服务端会对完整 profile fail-closed。 */
+  async screenshotCatalog(): Promise<ScreenshotSeedCatalog> {
+    const res = await this.request.get(
+      `${API_BASE}/api/v1/__test/seed/catalog?profile=screenshots`,
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/catalog failed: ${res.status()} ${await res.text()}\n` +
+          "请运行 `cd apps/api && PYTHONPATH=. uv run python scripts/seed.py " +
+          "--profile screenshots --ml-backend-mode live`。",
+      );
+    }
+    return (await res.json()) as ScreenshotSeedCatalog;
   }
 
   /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */

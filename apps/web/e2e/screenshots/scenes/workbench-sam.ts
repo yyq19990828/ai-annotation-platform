@@ -5,21 +5,27 @@ import type { ScreenshotScene } from "./_types";
 // 自 v0.18.25 起 AIToolDrawer 退役, 改为画布顶部居中浮块 InteractiveToolBar
 // （testid=interactive-toolbar）。文字提示(text-prompt)已从工具栏摘除（见 stage/tools/index.ts:160），
 // 故旧 sam/text-three-modes 场景移除。
-// AI 工具需绑定 backend 的项目才能激活：dev 环境 P-0001 注册了 gsam2。
-const PROJECT_AI = "3f999396-65da-4f2b-a32d-d1560bad74b0"; // P-0001 · gsam2 connected
-
 export const SAM_SCENES: ScreenshotScene[] = [
   {
     name: "sam/subtoolbar",
     role: "annotator",
-    route: () => `/projects/${PROJECT_AI}/annotate`,
+    fixture: {
+      project: "image_demo",
+      task: "annotating",
+      backend: "image_interactive",
+      capabilities: ["prompt:interactive_box", "output:polygon"],
+    },
+    route: (catalog) => {
+      const project = catalog.projects.image_demo;
+      return `/projects/${project.id}/annotate?task=${project.tasks.annotating.id}`;
+    },
     prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
-      // 激活 AI 工具 smart-box → 顶部交互工具栏(InteractiveToolBar)显示
-      const btn = page.locator('[data-testid="tool-btn-smart-box"]');
-      if (await btn.count()) await btn.click();
-      await page.waitForSelector('[data-testid="interactive-toolbar"]', { timeout: 3000 }).catch(() => {});
+      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
+      const button = page.getByTestId("tool-btn-smart-box");
+      await button.waitFor({ state: "visible" });
+      if (!(await button.isEnabled())) throw new Error("sam/subtoolbar: smart-box 被禁用");
+      await button.click();
+      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },

@@ -2,8 +2,8 @@ import type { Page } from "@playwright/test";
 import type { ScreenshotScene } from "./_types";
 
 async function waitForAdminProjectsDashboard(page: Page) {
-  await page.getByRole("heading", { name: "项目管理" }).waitFor({ timeout: 10_000 });
-  await page.getByRole("heading", { name: "全部项目" }).waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Dashboard" }).waitFor({ timeout: 10_000 });
+  await page.getByText("全部项目", { exact: true }).waitFor({ timeout: 10_000 });
 }
 
 export const PROJECT_SCENES: ScreenshotScene[] = [
@@ -53,7 +53,7 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
     role: "admin",
     route: () => "/projects",
     prepare: async (page) => {
-      await page.getByRole("heading", { name: "项目管理" }).waitFor({ timeout: 10_000 });
+      await page.getByRole("heading", { name: "Dashboard" }).waitFor({ timeout: 10_000 });
       await page.getByText("HTTP 500").first().waitFor({ timeout: 10_000 });
       await page.getByText("没有匹配的项目").waitFor({ timeout: 10_000 });
     },
@@ -64,7 +64,8 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/tool-units-panel",
     role: "admin",
-    route: (d) => `/projects/${d.project_id}/settings?section=classes`,
+    fixture: { project: "image_demo" },
+    route: (catalog) => `/projects/${catalog.projects.image_demo.id}/settings?section=classes`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(500); // 类别面板 + 工具单位 tab 渲染
@@ -75,8 +76,8 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/batch-status-list",
     role: "admin",
-    // seed peek 项目(COCO8)无批次会截出空态；P-0001 有 BT-260/261/262 多批次，能展示状态徽标
-    route: () => "/projects/3f999396-65da-4f2b-a32d-d1560bad74b0/settings?section=batches",
+    fixture: { project: "image_demo", batch: "review" },
+    route: (catalog) => `/projects/${catalog.projects.image_demo.id}/settings?section=batches`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(500); // 批次列表彩色状态徽标
@@ -87,7 +88,8 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/data-manager-overview",
     role: "admin",
-    route: (d) => `/projects/${d.project_id}/data-manager`,
+    fixture: { project: "image_demo", task: "predicted" },
+    route: (catalog) => `/projects/${catalog.projects.image_demo.id}/data-manager`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(600); // 视图列表 + 过滤条件栏 + 任务表格
@@ -98,16 +100,15 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/data-manager-filter-rules",
     role: "admin",
-    route: (d) => `/projects/${d.project_id}/data-manager`,
+    fixture: { project: "image_demo", task: "predicted" },
+    route: (catalog) => `/projects/${catalog.projects.image_demo.id}/data-manager`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(400);
       // 展开/新增一条过滤条件行（字段选择器展开）
-      const addRule = page.getByRole("button", { name: /\+\s*条件|添加条件|新增条件/ }).first();
-      if (await addRule.count()) {
-        await addRule.click().catch(() => {});
-        await page.waitForTimeout(300);
-      }
+      const addRule = page.getByRole("button", { name: "筛选", exact: true });
+      await addRule.click();
+      await page.waitForTimeout(300);
     },
     capture: { kind: "fullPage" },
     target: "docs-site/user-guide/images/projects/data-manager-filter-rules.png",
@@ -126,16 +127,15 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/ml-backends/register-form",
     role: "admin",
-    route: (d) => `/projects/${d.project_id}/settings?section=ml-backends`,
+    fixture: { project: "image_demo", backend: "image_interactive" },
+    route: (catalog) => `/projects/${catalog.projects.image_demo.id}/settings?section=ml-backends`,
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(300);
-      const reg = page.getByRole("button", { name: /注册\s*backend|注册\s*ML|注册/ }).first();
-      if (await reg.count()) {
-        await reg.click().catch(() => {});
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      const reg = page.getByRole("button", { name: /管理 backend/ });
+      await reg.click();
+      await page.waitForTimeout(300);
+      await page.waitForSelector('[role="dialog"]', { timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/projects/ml-backends/register-form.png",
@@ -143,19 +143,17 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/ai-pre-config-panel",
     role: "admin",
+    fixture: { project: "image_demo", batch: "active", backend: "image_interactive" },
     route: () => "/ai-pre",
-    prepare: async (page) => {
+    prepare: async (page, catalog) => {
       await page.waitForLoadState("networkidle");
-      const card = page.getByText(/2D图片标注测试|P-0001/).first();
-      if (await card.count()) {
-        await card.click();
-        await page.waitForTimeout(400);
-      }
+      const card = page.getByText(catalog.projects.image_demo.name, { exact: true }).first();
+      await card.click();
+      await page.waitForTimeout(400);
       await page
         .getByText(/待预标批次|批跑预标|跑预标/)
         .first()
-        .waitFor({ timeout: 3000 })
-        .catch(() => {});
+        .waitFor({ timeout: 3000 });
       await page.waitForLoadState("networkidle");
     },
     capture: { kind: "fullPage" },
@@ -164,20 +162,17 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/prediction-import-wizard",
     role: "admin",
+    fixture: { project: "image_demo", task: "predicted", backend: "image_interactive" },
     route: () => "/ai-pre",
-    prepare: async (page) => {
+    prepare: async (page, catalog) => {
       await page.waitForLoadState("networkidle");
-      const card = page.getByText(/2D图片标注测试|P-0001/).first();
-      if (await card.count()) {
-        await card.click();
-        await page.waitForTimeout(400);
-      }
+      const card = page.getByText(catalog.projects.image_demo.name, { exact: true }).first();
+      await card.click();
+      await page.waitForTimeout(400);
       const importBtn = page.getByRole("button", { name: /导入预测/ }).first();
-      if (await importBtn.count()) {
-        await importBtn.click().catch(() => {});
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await importBtn.click();
+      await page.waitForTimeout(300);
+      await page.waitForSelector('[role="dialog"]', { timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/projects/prediction-import-wizard.png",
@@ -185,24 +180,21 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
   {
     name: "projects/prediction-purge-modal",
     role: "admin",
+    fixture: { project: "image_demo", task: "predicted" },
     // /projects（AdminProjectsDashboard）的项目卡/行才有 ProjectActionsMenu ⋮ 菜单
     route: () => "/projects",
-    prepare: async (page) => {
+    prepare: async (page, catalog) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(400);
-      // 项目行「更多操作」⋮ 菜单（title="更多操作"）→ 清理预测
-      // 所有 click 显式带 timeout，避免点到不可交互元素时挂到测试级 30s 超时
-      const menuBtn = page.getByRole("button", { name: "更多操作" }).first();
-      if (await menuBtn.count()) {
-        await menuBtn.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(300);
-      }
+      const row = page.locator("tr", { hasText: catalog.projects.image_demo.name });
+      await row.waitFor({ state: "visible" });
+      const menuBtn = row.getByRole("button", { name: "更多操作" });
+      await menuBtn.click({ timeout: 3000 });
+      await page.waitForTimeout(300);
       const purge = page.getByText("清理预测", { exact: true }).first();
-      if (await purge.count()) {
-        await purge.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await purge.click({ timeout: 3000 });
+      await page.waitForTimeout(300);
+      await page.waitForSelector('[role="dialog"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },

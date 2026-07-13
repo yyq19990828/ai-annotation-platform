@@ -3,31 +3,31 @@
  *
  * 输出：outputs/flows/batch-bulk-actions.gif → docs-site/.../projects/batch-bulk-actions.gif
  *
- * P-0001（2D图片标注测试）有 BT-260/261/262 多批次，勾选后 BatchesSection 浮出
+ * screenshots seed 的 image_demo 有四种状态批次，勾选后 BatchesSection 浮出
  * 「已选 N 个批次」工具栏（激活/通过/驳回/改派/归档/删除）。
  */
 import type { Page } from "@playwright/test";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 
-const P0001 = "3f999396-65da-4f2b-a32d-d1560bad74b0";
-
-export async function runBatchBulkActions(page: Page): Promise<void> {
+export async function runBatchBulkActions(page: Page, catalog: ScreenshotSeedCatalog): Promise<void> {
   // ── Step 1：进项目设置「批次管理」────────────────────────────
-  await page.goto(`/projects/${P0001}/settings?section=batches`);
+  await page.goto(`/projects/${catalog.projects.image_demo.id}/settings?section=batches`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1200);
 
   // ── Step 2：确保列表视图（行 checkbox 在列表态）──────────────
   const listTab = page.getByRole("button", { name: /^列表$|列表/ }).first();
   if (await listTab.count()) {
-    await listTab.click().catch(() => {});
+    await listTab.click();
     await page.waitForTimeout(700);
   }
 
   // ── Step 3：逐行勾选 → 批量工具栏浮现（停顿让录屏捕捉）───────
   const checkboxes = page.locator('tbody input[type="checkbox"]');
   const n = await checkboxes.count();
+  if (n < 2) throw new Error(`[batch-bulk-actions] 需要至少 2 个批次复选框，实际 ${n}`);
   for (let i = 0; i < Math.min(2, n); i++) {
-    await checkboxes.nth(i).click().catch(() => {});
+    await checkboxes.nth(i).click();
     await page.waitForTimeout(800);
   }
 
@@ -35,7 +35,6 @@ export async function runBatchBulkActions(page: Page): Promise<void> {
   await page
     .getByText(/已选/)
     .first()
-    .waitFor({ timeout: 2000 })
-    .catch(() => {});
+    .waitFor({ timeout: 2000 });
   await page.waitForTimeout(2000);
 }

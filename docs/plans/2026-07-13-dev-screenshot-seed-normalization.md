@@ -426,7 +426,7 @@ pnpm docs:build
 摘要；`--repair` 仅在 marker 匹配或旧 seed 的 owner、名称、独占关联和存储前缀全部匹配时
 允许重建，固定 ID 与用户项目碰撞时直接失败。
 
-真实 DEV 栈验证已经完成：首次 `--repair` 创建 4 个项目、14 个任务和 4 个固定批次；重复执行
+真实 DEV 栈验证已经完成：首次 `--repair` 创建 4 个项目、14 个任务和 5 个固定批次；重复执行
 不重建资源。浏览器中图片、视频、点云和 OCR 四种媒体均真实渲染，同源 `/minio`
 请求返回 200/206。catalog 除图片和视频项目尚未绑定 ML Backend 产生的 4 条预期问题外
 无其他问题，这些问题由阶段 B 收敛。
@@ -452,11 +452,21 @@ exemplar 工具栏可实际打开。
 
 ### 阶段 C：Playwright 迁移（约 2–3 个工作日）
 
-- [ ] 扩展 `ScreenshotScene.fixture` 和 capability 声明。
-- [ ] 主 driver 改用 catalog。
-- [ ] 删除 P-0001、固定 UUID、peek 和重复 resolver。
-- [ ] 收紧关键交互与截图失败路径。
-- [ ] 固化浏览器环境和稳定等待。
+- [x] 扩展 `ScreenshotScene.fixture` 和 capability 声明。
+- [x] 主 driver 改用 catalog。
+- [x] 删除 P-0001、固定 UUID、peek 和重复 resolver。
+- [x] 收紧关键交互与截图失败路径。
+- [x] 固化浏览器环境和稳定等待。
+
+截图 driver 现在于导航前 fail-closed 校验项目、任务、批次、backend 与能力，
+并使用 `admin`、`anno`、`qa` 的真实身份。固定时钟、时区、语言、DPR、动画与资源就绪
+条件已统一；无场景消费的 tablet project 已删除。AI 预标实际仅列出 active 批次，
+因此 seed 补齐了第 5 个活动批次并由流程实际发起预标。远程 DEV 的 WebSocket 同时改为
+页面同源 `/ws` 代理，不再让远程浏览器误连自己的 `localhost:8000`。
+
+`SCREENSHOT_VALIDATE_ONLY=1` 的 desktop-light 全场景验证通过，15 个交互 flow
+全部完成；局域网来源下的真实视频场景另外验证了 WebSocket OPEN、媒体 Range
+`206 Partial Content`、视频 stage、时间轴与「实时同步」。校验模式未写入 PNG 或 manifest。
 
 ### 阶段 D：资产与 CI（约 1–2 个工作日）
 
@@ -519,12 +529,13 @@ exemplar 工具栏可实际打开。
 
 ## Outcome
 
-- 状态：阶段 A–B 已完成；阶段 C–E 待执行。
+- 状态：阶段 A–C 已完成；阶段 D–E 待执行。
 - 已交付：版本化网络素材清单、安全缓存下载器、许可可追溯的真实图片/视频/点云派生素材、
   desired-state reconcile、显式任务映射、真实角色与多状态任务、只读 screenshot seed catalog、
-  ML Backend 场景能力契约、live/stub 发现、图片/视频/OCR 项目绑定、远程 DEV 同源媒体代理
-  和定向后端及浏览器测试。
-- 当前阻塞：截图 driver 仍依赖 peek、历史项目 UUID 和管理员角色替身，阶段 C 需迁移到
-  catalog fixture 并收紧失败路径，之后才能安全全量重拍。
-- 正式文档：待阶段 E 同步。
+  ML Backend 场景能力契约、live/stub 发现、图片/视频/OCR 项目绑定、catalog 驱动的
+  Playwright 真实角色场景、确定性浏览器环境、远程 DEV 同源媒体与 WebSocket 代理，
+  以及定向后端和浏览器验证。
+- 当前待办：阶段 D 需收敛 manifest、图片检查和视觉回归基线；随后阶段 E 才生成并人工
+  审核全量 PNG/GIF，避免在资产契约尚未收敛时覆盖文档。
+- 正式文档：阶段 C 已同步截图操作与远程 WebSocket 说明；资产清单与全量图片待阶段 E 更新。
 - 未尽事项：维护清单中不属于现有自动场景的待拍项，实施后另立截图覆盖扩展计划。

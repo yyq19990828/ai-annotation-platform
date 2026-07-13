@@ -1,33 +1,26 @@
 import type { ScreenshotScene } from "./_types";
-import { openCoco8Annotate } from "../flows/_canvas";
 
-async function openCoco8OrThrow(
-  page: Parameters<NonNullable<ScreenshotScene["prepare"]>>[0],
-  data: Parameters<NonNullable<ScreenshotScene["prepare"]>>[1],
-  sceneName: string,
-) {
-  if (!(await openCoco8Annotate(page, data.admin_email))) {
-    throw new Error(`${sceneName} screenshot requires seeded image project P-COCO8`);
-  }
-}
-
-// AI 工具只在绑定了 ML backend 的项目里可激活（否则工具按钮置灰，工具栏打不开）。
-// dev 环境里 P-0001「2D图片标注测试」注册了 gsam2 backend，故 AI 工具 scene 固定指向它。
-const PROJECT_AI = "3f999396-65da-4f2b-a32d-d1560bad74b0"; // P-0001 · gsam2 connected
+const imageTaskRoute = (
+  catalog: Parameters<ScreenshotScene["route"]>[0],
+  task: string,
+) => {
+  const project = catalog.projects.image_demo;
+  return `/projects/${project.id}/annotate?task=${project.tasks[task].id}`;
+};
 
 // 工作台布局 + AI 工具体系截图。
 // 工具激活：ToolDock 按钮 testid 为 `tool-btn-{id}`；AI 工具(smart-point/smart-box/exemplar)
 // 激活后画布顶部居中浮 InteractiveToolBar(testid=interactive-toolbar, v0.18.25 取代旧 AIToolDrawer)；
 // mask 工具激活后画布上方浮 MaskToolbar(testid=mask-toolbar)，两者互斥。
-// AI 工具能否激活取决于 backend capability（seed 项目 P-0001 绑定 gsam2）。
+// AI 工具能否激活取决于 catalog 声明的 backend capability。
 
 export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "workbench/layout-overview",
     role: "annotator",
-    route: () => "/",
-    prepare: async (page, data) => {
-      await openCoco8OrThrow(page, data, "workbench/layout-overview");
+    fixture: { project: "image_demo", task: "annotating" },
+    route: (catalog) => imageTaskRoute(catalog, "annotating"),
+    prepare: async (page) => {
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.waitForTimeout(500);
     },
@@ -37,17 +30,11 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "mask-brush/toolbar-overview",
     role: "annotator",
-    route: () => "/",
-    prepare: async (page, data) => {
-      await openCoco8OrThrow(page, data, "mask-brush/toolbar-overview");
+    fixture: { project: "image_demo", task: "annotating" },
+    route: (catalog) => imageTaskRoute(catalog, "annotating"),
+    prepare: async (page) => {
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
-      // 激活 mask 工具（hotkey M / tool-btn-mask）
-      const maskBtn = page.locator('[data-testid="tool-btn-mask"]');
-      if (await maskBtn.count()) {
-        await maskBtn.click();
-      } else {
-        await page.keyboard.press("m");
-      }
+      await page.getByTestId("tool-btn-mask").click();
       await page.waitForSelector('[data-testid="mask-toolbar"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
@@ -62,14 +49,20 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "sam/interactive-toolbar",
     role: "annotator",
-    route: () => `/projects/${PROJECT_AI}/annotate`,
+    fixture: {
+      project: "image_demo",
+      task: "annotating",
+      backend: "image_interactive",
+      capabilities: ["prompt:interactive_box", "output:polygon"],
+    },
+    route: (catalog) => imageTaskRoute(catalog, "annotating"),
     prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 }).catch(() => {});
-      // 激活 AI 工具 smart-box（bbox prompt，grounded-sam2 支持），顶部交互工具栏出现
-      const btn = page.locator('[data-testid="tool-btn-smart-box"]');
-      if (await btn.count()) await btn.click();
-      await page.waitForSelector('[data-testid="interactive-toolbar"]', { timeout: 3000 }).catch(() => {});
+      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
+      const button = page.getByTestId("tool-btn-smart-box");
+      await button.waitFor({ state: "visible" });
+      if (!(await button.isEnabled())) throw new Error("sam/interactive-toolbar: smart-box 被禁用");
+      await button.click();
+      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
@@ -78,14 +71,19 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "sam/exemplar-output-mode",
     role: "annotator",
-    // P-COCO8（= seed peek 默认项目）注册了 sam3，支持 exemplar prompt
-    route: () => "/",
-    prepare: async (page, data) => {
-      await openCoco8OrThrow(page, data, "sam/exemplar-output-mode");
+    fixture: {
+      project: "image_demo",
+      task: "annotating",
+      backend: "image_interactive",
+      capabilities: ["prompt:exemplar", "output:polygon"],
+    },
+    route: (catalog) => imageTaskRoute(catalog, "annotating"),
+    prepare: async (page) => {
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
-      // 激活 exemplar 工具，顶部交互工具栏内出现「输出形态」TabRow
-      const btn = page.locator('[data-testid="tool-btn-exemplar"]');
-      if (await btn.count()) await btn.click({ timeout: 4000 }).catch(() => {});
+      const btn = page.getByTestId("tool-btn-exemplar");
+      await btn.waitFor({ state: "visible" });
+      if (!(await btn.isEnabled())) throw new Error("sam/exemplar-output-mode: exemplar 被禁用");
+      await btn.click({ timeout: 4000 });
       await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
@@ -97,15 +95,20 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   },
   {
     name: "sam/ai-inspector-panel",
-    role: "annotator",
+    role: "admin",
     // Topbar「打开 AI 面板」→ AIPredictionPopover（悬浮 AI 面板：置信度阈值滑块 + 单图预标）
-    route: () => "/",
-    prepare: async (page, data) => {
-      await openCoco8OrThrow(page, data, "sam/ai-inspector-panel");
+    fixture: {
+      project: "image_demo",
+      task: "predicted",
+      backend: "image_interactive",
+      capabilities: ["task:interactive_seg"],
+    },
+    route: (catalog) => imageTaskRoute(catalog, "predicted"),
+    prepare: async (page) => {
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.waitForTimeout(300);
       const aiBtn = page.getByTitle("打开 AI 面板");
-      if (await aiBtn.count()) await aiBtn.first().click({ timeout: 4000 }).catch(() => {});
+      await aiBtn.click({ timeout: 4000 });
       await page.waitForSelector('[data-testid="ai-prediction-popover"]', { timeout: 3000 });
       await page.waitForTimeout(300);
     },

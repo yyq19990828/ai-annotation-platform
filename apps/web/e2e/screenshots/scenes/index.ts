@@ -10,6 +10,7 @@ import { AI_PRE_SCENES } from "./ai-pre";
 import { PLATFORM_SCENES } from "./platform";
 import { WORKFLOW_SCENES } from "./workflows";
 import { WORKBENCH_AI_SCENES } from "./workbench-ai";
+import { WORKBENCH_MEDIA_SCENES } from "./workbench-media";
 import { DATASET_SCENES } from "./datasets";
 import { SETTINGS_SCENES } from "./settings";
 import { SUPERADMIN_SCENES } from "./superadmin";
@@ -25,6 +26,7 @@ export const SCENES = [
   ...PLATFORM_SCENES,
   ...WORKFLOW_SCENES,
   ...WORKBENCH_AI_SCENES,
+  ...WORKBENCH_MEDIA_SCENES,
   ...DATASET_SCENES,
   ...SETTINGS_SCENES,
   ...SUPERADMIN_SCENES,

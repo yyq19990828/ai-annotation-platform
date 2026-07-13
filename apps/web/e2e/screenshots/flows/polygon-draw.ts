@@ -3,41 +3,32 @@
  *
  * 输出：outputs/flows/polygon-draw.gif → docs-site/.../polygon/draw-in-progress.gif
  *
- * P-COCO8 已绑定 region 工具单位（seed_coco8.py，tool polygon→unit region）。选「多边形」工具 →
+ * screenshot catalog 的 image_demo 已绑定 region 工具单位（tool polygon→unit region）。选「多边形」工具 →
  * 在画布逐点单击落顶点，每段带预览线；Enter 闭合提交（geometry.type=polygon）。
  * Konva canvas，用 page.mouse 坐标逐点点击。落点刻意避开首点（靠近首点会自动闭合提前结束）。
  *
  * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(隐藏预测/选工具)与结尾(落库等待)。
- * 画完的多边形由 flows.spec 的 afterAll 经 psql 清理。
+ * 画完的多边形由 flows.spec 的 afterAll 重建截图 seed 清理。
  */
 import type { Page } from "@playwright/test";
-import { hidePredictions, openCoco8Annotate } from "./_canvas";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { hidePredictions, openImageAnnotate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-export async function runPolygonDraw(page: Page, adminEmail: string): Promise<DrawWindow | null> {
-  if (!(await openCoco8Annotate(page, adminEmail))) {
-    console.warn("[polygon-draw] 无法解析 P-COCO8（seed_coco8 未跑?），跳过");
-    return null;
-  }
+export async function runPolygonDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
+  await openImageAnnotate(page, catalog);
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏预测 → 选多边形工具
   await hidePredictions(page);
 
   const btn = page.getByTestId("tool-btn-polygon");
-  if (!(await btn.count())) {
-    console.warn("[polygon-draw] 无 tool-btn-polygon（项目未绑定 region?），跳过");
-    return null;
-  }
   await btn.click();
   await page.waitForTimeout(900);
 
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
-  if (!box) {
-    console.warn("[polygon-draw] 无 workbench-stage 边界，跳过");
-    return null;
-  }
+  if (!box) throw new Error("[polygon-draw] workbench-stage 没有可见边界");
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
 
@@ -66,8 +57,7 @@ export async function runPolygonDraw(page: Page, adminEmail: string): Promise<Dr
 
   const drawEndMs = Date.now();
 
-  // 等 autosave 把多边形落库（清理由 flows.spec 的 afterAll 经 psql 完成）
-  await page.waitForLoadState("networkidle").catch(() => {});
+  // 等 autosave 把多边形落库（清理由 flows.spec 的 afterAll 重建截图 seed 完成）
   await page.waitForTimeout(1200);
 
   return { drawStartMs, drawEndMs };

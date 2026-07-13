@@ -311,14 +311,12 @@ pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物�
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
 
-## 截图自动化（v0.8.7+）
+## 截图自动化
 
 用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，
-不进 CI（避免 baseline drift / flaky），由 maintainer 手动触发。
-
-> **不破坏 dev 数据**：v0.8.7 起截图脚本走 `seed/peek` 只读窥探现有用户 / 项目 /
-> 任务，不再 TRUNCATE 整库。已积累的数据集 / 项目 / 标注会保留。E2E spec
-> （`pnpm test:e2e`）仍走 `seed/reset` 保证可重入，与截图独立。
+不进默认 CI，由 maintainer 手动触发。截图脚本只使用 `screenshots`
+seed profile 和只读 catalog，不会随机选取开发库里的项目。`--repair` 只收敛带截图
+seed 标记的对象，用户自建项目不受影响。
 
 ### 前置条件
 
@@ -354,28 +352,30 @@ point、interactive box 与 exemplar，视频要求交互 tracker，OCR 要求�
 ### 触发
 
 ```bash
-pnpm --filter web screenshots
+SCREENSHOT_VALIDATE_ONLY=1 pnpm --filter web screenshots  # 只验证场景，不写 PNG/manifest
+pnpm --filter web screenshots                              # 生成 desktop-light 正式图
+pnpm --filter web screenshots:dark                         # 显式声明的深色场景
+pnpm --filter web screenshots:matrix                       # desktop-light/dark/mobile
+pnpm --filter web screenshots:flows                        # 流程 GIF，需 ffmpeg
 ```
 
-跑完会向 `docs-site/user-guide/images/` 写入 13 张 PNG（getting-started / bbox /
-polygon / projects / review / export 六类）。`git diff docs-site/user-guide/images/`
-人眼审阅，满意即 commit。
+当前 desktop-light 有 58 个真实场景。生成后使用 `git diff docs-site/user-guide/images/`
+人工审阅；流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。
 
 **E2E 跑过后想恢复 dev 账号**：`pnpm test:e2e` 内部仍会 TRUNCATE 重建 fixture（含
-`@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑 seed.py 即可（与首次相同命令；
-peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
+`@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑上面的 screenshots seed
+命令即可恢复 catalog 中的固定账号、项目、任务、批次与 backend 绑定。
 
 ### 改场景
 
-- 14 个场景配置：`apps/web/e2e/screenshots/scenes.ts` —— 修 `route` / `prepare`
-  钩子（高亮元素 / 切 tab / 打开 modal）后再跑。
-- 主入口：`apps/web/e2e/screenshots/screenshots.spec.ts` —— 改视口 / 注入 CSS；
-  `beforeAll` 调用 `/api/v1/__test/seed/peek` 拿首个 admin / project / task。
+- 58 个 desktop-light 场景按功能放在 `apps/web/e2e/screenshots/scenes/`；新增项目场景
+  必须声明 `fixture` 并通过 catalog 逻辑键生成 `route`。
+- 主入口 `apps/web/e2e/screenshots/screenshots.spec.ts` 在浏览器导航前校验项目、任务、
+  批次、backend 和场景能力，并分别使用 `admin`、`anno` 和 `qa` 的真实身份。
 - 独立 config：`apps/web/playwright.screenshots.config.ts` —— 与默认 `playwright.config.ts`
   分离（默认 `testMatch: ["**/tests/**/*.spec.ts"]` 不收录 screenshots）。
-- keypoint 两张（human-pose / hand）暂跳过 —— 等非 image-det 工作台落地。
-- 部分场景（`bbox/iou.png` 双框 / `bbox/bulk-edit.png` 多选 / `export/progress.png`
-  真实 50% 进度）需 maintainer 在 dev 数据库里造数据（手工标 + 半提交）后再跑覆盖。
+- 用 `SCREENSHOT_VALIDATE_ONLY=1` 开发场景：它仍执行登录、导航、能力与 locator
+  检查，但不覆盖正式资产或 manifest。
 
 ### 已知坑
 
@@ -388,10 +388,17 @@ peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
   registry，不按名称猜测。确认目标 backend 已启动并被 API 同步；无 GPU 时启动
   `screenshot-ml-stub` 后改用 `--ml-backend-mode stub`。不要把浏览器的 `/minio`
   地址拿来配置 backend，后者必须同时对宿主 API 和 Celery 容器可达。
+- **远程工作台一直「重连中」**：DEV 中的 WebSocket 默认跟随页面同源，由
+  Vite 将 `:3000/ws` 升级并转发到本机 API。只有本机打开页面时才直连
+  `localhost:8000`。不要把 Docker 默认 IP 或服务器端 `localhost` 发给远程浏览器；
+  如果确需覆盖，使用对远程浏览器可达的 `VITE_WS_HOST`。
+- **seed repair 后点项目被退回总览**：`--repair` 可能为 seed 自有项目生成新 UUID。
+  旧页签或已缓存的项目卡片仍指向旧 UUID 时会跳回总览；修复数据后强制刷新
+  项目总览一次。
 - **中文路径**：仓库根含中文（`AI标注平台设计/`）时，`import.meta.url` 会 percent-encode；
   `screenshots.spec.ts` 已 `decodeURIComponent` 兜底，写到正确位置而非 `AI%E6%A0%87...` 镜像目录。
-- **flaky 时间敏感 UI**：当前未注入 `page.clock`，dashboard 日期 / 头像随机色可能每次微变；
-  如需稳定 baseline 后续接 `playwright clock.install` + 固定 fixture。
+- **时间或动画导致截图漂移**：截图 driver 已固定测试时钟、语言、时区、DPR 并禁用动画；
+  新场景还必须等待字体、图片解码和具体业务 ready selector，不要依赖单纯延时。
 
 ## 测试账号
 

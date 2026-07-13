@@ -9,11 +9,8 @@ export const DATASET_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       const importBtn = page.getByRole("button", { name: /导入数据集|导入|新建数据集/ }).first();
-      if (await importBtn.count()) {
-        await importBtn.click();
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await importBtn.click();
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },

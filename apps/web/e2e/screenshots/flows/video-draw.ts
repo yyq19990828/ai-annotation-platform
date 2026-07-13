@@ -3,80 +3,47 @@
  *
  * 输出：outputs/flows/video-draw.gif → docs-site/.../workbench/video-track-trajectory.gif
  *
- * 数据来自 seed_video.py 的 P-VIDEO-DEV(开源行车 tracking_car.mp4)。演示"轨迹"概念:
+ * 数据来自 screenshot catalog 的 video_demo（固定公开行车视频）。演示"轨迹"概念:
  * 选 track 工具 → 第 0 帧画框(新建 track, 关键帧0)→ 前进若干帧 → 再画框(自动 upsert 关键帧)
  * → 两关键帧间逐帧前进时 bbox 线性插值平滑移动。
  *
- * 落库:geometry.type=video_track_bbox(或单帧 video_bbox), 由 flows.spec afterAll 按
- * display_id='P-VIDEO-DEV' 清理。
+ * 落库:geometry.type=video_track_bbox(或单帧 video_bbox)，由 flows.spec afterAll 重建截图 seed 清理。
  *
- * 盲坐标:视频用 SVG 叠加层, 画框落点取 video-stage-surface 的 boundingBox 再按比例算客户端坐标
+ * 盲坐标:视频用 Konva 叠加层, 画框落点取 video-konva-stage 的 boundingBox 再按比例算客户端坐标
  * (finishDrag 内部 clientPointToVideoPoint 会把客户端坐标转成归一化 [0,1])。
  *
  * 返回 { drawStartMs, drawEndMs }:供 finalize 裁掉开头(导航/解析/就绪等待)。
  */
 import type { Page } from "@playwright/test";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
-
-const API = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
 
 /**
  * 收起工作台左右边栏（任务列表 / 标注详情），让录制聚焦视频画面。
  * 两个切换钮在 Topbar，展开时 title 为「收起任务列表」/「收起标注详情」（收起后变「展开…」），
- * 按 title 点击只在仍展开时命中，幂等。必须在读 video-stage-surface 的 boundingBox 之前收起，
+ * 按 title 点击只在仍展开时命中，幂等。必须在读 video-konva-stage 的 boundingBox 之前收起，
  * 否则画框落点按收起前的窄画布算，收起后画布变宽会错位。
  */
 async function collapseSidebars(page: Page): Promise<void> {
   for (const title of ["收起任务列表", "收起标注详情"]) {
     const btn = page.getByTitle(title);
     if (await btn.count()) {
-      await btn.first().click().catch(() => {});
+      await btn.first().click();
       await page.waitForTimeout(300);
     }
   }
   await page.waitForTimeout(400);
 }
 
-/** 用 admin token 解析 P-VIDEO-DEV 的 project_id 与首个 task id。 */
-async function resolveVideoProject(
+export async function runVideoDraw(
   page: Page,
-  adminEmail: string,
-): Promise<{ projectId: string; taskId: string | null } | null> {
-  const login = await page.request.post(`${API}/api/v1/__test/seed/login`, {
-    data: { email: adminEmail },
-  });
-  if (!login.ok()) return null;
-  const token = (await login.json()).access_token as string;
-  const headers = { Authorization: `Bearer ${token}` };
-
-  const projRes = await page.request.get(`${API}/api/v1/projects?data_type=video`, { headers });
-  if (!projRes.ok()) return null;
-  const projBody = await projRes.json();
-  const projects = Array.isArray(projBody) ? projBody : (projBody.items ?? []);
-  const proj = projects.find((p: { display_id?: string }) => p.display_id === "P-VIDEO-DEV");
-  if (!proj) return null;
-
-  const taskRes = await page.request.get(
-    `${API}/api/v1/tasks?project_id=${proj.id}&limit=1`,
-    { headers },
-  );
-  const taskBody = taskRes.ok() ? await taskRes.json() : null;
-  const tasks = Array.isArray(taskBody) ? taskBody : (taskBody?.items ?? []);
-  return { projectId: proj.id as string, taskId: (tasks?.[0]?.id as string) ?? null };
-}
-
-export async function runVideoDraw(page: Page, adminEmail: string): Promise<DrawWindow | null> {
-  const resolved = await resolveVideoProject(page, adminEmail);
-  if (!resolved) {
-    console.warn("[video-draw] 无法解析 P-VIDEO-DEV(seed_video 未跑?), 跳过");
-    return null;
-  }
-  const { projectId, taskId } = resolved;
-  const task = taskId ? `?task=${taskId}` : "";
-  await page.goto(`/projects/${projectId}/annotate${task}`);
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
+  const project = catalog.projects.video_demo;
+  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
   await page.waitForLoadState("domcontentloaded");
 
-  await page.getByTestId("video-timeline-shell").waitFor({ timeout: 15000 }).catch(() => {});
+  await page.getByTestId("video-timeline-shell").waitFor({ timeout: 15_000 });
   await page.waitForTimeout(2500);
 
   // 收起左右边栏，画面聚焦视频本身（须在下面读 boundingBox 前收起，否则画框落点错位）。
@@ -84,18 +51,13 @@ export async function runVideoDraw(page: Page, adminEmail: string): Promise<Draw
 
   // 选 track(跨帧轨迹)工具:画框会建/扩展 track 关键帧并自动插值。
   const trackBtn = page.getByTestId("video-tool-btn-track");
-  if (await trackBtn.count()) {
-    await trackBtn.click().catch(() => {});
-    await page.waitForTimeout(500);
-  }
+  await trackBtn.click();
+  await page.waitForTimeout(500);
 
   // 取视频画布区域, 用其 boundingBox 算落点(客户端像素), finishDrag 内部转归一化。
-  const surface = page.getByTestId("video-stage-surface");
+  const surface = page.getByTestId("video-konva-stage");
   const box = await surface.boundingBox();
-  if (!box) {
-    console.warn("[video-draw] 找不到 video-stage-surface, 跳过");
-    return null;
-  }
+  if (!box) throw new Error("[video-draw] video-konva-stage 没有可见边界");
   const at = (fx: number, fy: number) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy });
 
   const drawStartMs = Date.now();
@@ -109,7 +71,7 @@ export async function runVideoDraw(page: Page, adminEmail: string): Promise<Draw
   await page.mouse.move(a1.x, a1.y, { steps: 6 });
   await page.mouse.up();
   // 画完弹 ClassPickerPopover, Enter 用默认类别提交(否则停在 pending draft 不落库)。
-  await page.getByTestId("class-picker-popover").waitFor({ timeout: 3000 }).catch(() => {});
+  await page.getByTestId("class-picker-popover").waitFor({ timeout: 3000 });
   await page.keyboard.press("Enter");
   await page.waitForTimeout(1000);
 
@@ -130,7 +92,9 @@ export async function runVideoDraw(page: Page, adminEmail: string): Promise<Draw
   await page.mouse.up();
   // track 工具已选中该 track 时, 第二次画框是 upsert 关键帧, 通常不再弹 popover;
   // 若弹(被当作新 pending)仍 Enter 兜底提交。
-  await page.getByTestId("class-picker-popover").waitFor({ timeout: 1500 }).catch(() => {});
+  if (await page.getByTestId("class-picker-popover").count()) {
+    await page.getByTestId("class-picker-popover").waitFor({ timeout: 1500 });
+  }
   await page.keyboard.press("Enter");
   await page.waitForTimeout(900);
 

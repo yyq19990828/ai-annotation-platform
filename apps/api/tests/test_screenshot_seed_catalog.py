@@ -423,7 +423,7 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
         asset_sha256=digests,
     )
 
-    assert first == second == {"projects": 4, "tasks": 14, "batches": 4}
+    assert first == second == {"projects": 4, "tasks": 14, "batches": 5}
     assert {
         logical_key: {key: task.id for key, task in project_tasks.items()}
         for logical_key, project_tasks in tasks.items()

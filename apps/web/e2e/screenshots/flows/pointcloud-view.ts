@@ -12,8 +12,8 @@
  * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(导航/解析/点云加载等待 + 收边栏)。
  */
 import type { Page } from "@playwright/test";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
-import { resolvePointcloudProject } from "./pointcloud-controls";
 
 /**
  * 收起工作台左右边栏(任务列表 / 标注详情), 让 3D 视口占满画面。
@@ -24,7 +24,7 @@ async function collapseSidebars(page: Page): Promise<void> {
   for (const title of ["收起任务列表", "收起标注详情"]) {
     const btn = page.getByTitle(title);
     if (await btn.count()) {
-      await btn.first().click().catch(() => {});
+      await btn.first().click();
       await page.waitForTimeout(300);
     }
   }
@@ -57,32 +57,23 @@ async function dragOrbit(
 
 export async function runPointcloudView(
   page: Page,
-  adminEmail: string,
-): Promise<DrawWindow | null> {
-  const resolved = await resolvePointcloudProject(page, adminEmail);
-  if (!resolved) {
-    console.warn("[pointcloud-view] 无法解析 P-NU-nuscenes-mini(seed nuScenes 未跑?), 跳过");
-    return null;
-  }
-  const { projectId, taskId } = resolved;
-  const task = taskId ? `?task=${taskId}` : "";
-  await page.goto(`/projects/${projectId}/annotate${task}`);
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
+  const project = catalog.projects.pointcloud_demo;
+  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.frame_000.id}`);
   // 点云工作台持续渲染 + 可能轮询, networkidle 不会稳定 settle; 用 domcontentloaded + 显式等待。
   await page.waitForLoadState("domcontentloaded");
 
   // 等 3D 视口挂载 + 点云经 WebGL 渲染(PCD 异步加载, SwiftShader 较慢, 多等一段)。
   const viewport = page.getByTestId("pc-viewport");
-  await viewport.waitFor({ timeout: 20000 }).catch(() => {});
+  await viewport.waitFor({ timeout: 20_000 });
   await page.waitForTimeout(4000);
 
   // 收起左右边栏, 画面聚焦点云(默认展开, 点 Topbar 切换钮收起; 收起后视口重新适应窗口)。
   await collapseSidebars(page);
 
   const box = await viewport.boundingBox();
-  if (!box) {
-    console.warn("[pointcloud-view] 取不到 pc-viewport 尺寸, 跳过拖拽");
-    return null;
-  }
+  if (!box) throw new Error("[pointcloud-view] pc-viewport 没有可见边界");
 
   const drawStartMs = Date.now();
 

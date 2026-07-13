@@ -20,7 +20,7 @@
     "test:e2e": "playwright test",
     "screenshots": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light",
     "screenshots:dark": "playwright test --config=playwright.screenshots.config.ts --project=desktop-dark",
-    "screenshots:matrix": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light --project=desktop-dark --project=tablet --project=mobile",
+    "screenshots:matrix": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light --project=desktop-dark --project=mobile",
     "screenshots:flows": "playwright test --config=playwright.screenshots.config.ts --project=flows",
     "screenshots:regression": "playwright test --config=playwright.screenshots.config.ts --project=regression",
     "screenshots:lint": "node scripts/screenshots-lint.mjs",

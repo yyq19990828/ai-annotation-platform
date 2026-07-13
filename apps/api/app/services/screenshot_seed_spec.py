@@ -90,6 +90,7 @@ BACKEND_REQUIREMENTS = {
 
 IMAGE_BATCHES = (
     BatchSpec("draft", "B-SS-DRAFT", "截图 · 待分派", "draft"),
+    BatchSpec("active", "B-SS-ACTIVE", "截图 · 待预标", "active"),
     BatchSpec(
         "annotating",
         "B-SS-ANNOTATING",
@@ -163,7 +164,7 @@ PROJECT_SPECS = {
                 reviewer_key="reviewer",
                 annotation=True,
             ),
-            TaskSpec("spare_1", "coco8-dev/val/screenshot_07.jpg", batch_key="draft"),
+            TaskSpec("spare_1", "coco8-dev/val/screenshot_07.jpg", batch_key="active"),
             TaskSpec("spare_2", "coco8-dev/val/screenshot_08.jpg", batch_key="draft"),
         ),
         required_backend="image_interactive",
