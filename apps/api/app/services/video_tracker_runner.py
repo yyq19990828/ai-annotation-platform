@@ -38,6 +38,10 @@ log = logging.getLogger(__name__)
 TrackerEventPublisher = Callable[[str, dict], Awaitable[None]]
 MAX_TRACKER_STAGED_BYTES = 64 * 1024 * 1024
 
+# v0.22.2 · B-combo · 发现趟窗口帧数。multiplex 需多帧传播才在种子帧填充 obj_id (单帧窗
+# 不出检测), 故发现趟跑这么多帧但只取种子帧的框铸种; 取小值以压低 multiplex 显存与耗时。
+COMBO_DISCOVERY_WINDOW_FRAMES = 5
+
 
 class TrackerJobStateConflict(ValueError):
     """Requested review action is incompatible with the current job state."""
@@ -372,20 +376,23 @@ def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
 
 def _combo_seeds_from_discovery(
     discovery_results: list["TrackerFrameResult"],
+    *,
+    seed_frame: int,
 ) -> list[dict]:
     """发现趟结果 → PVS 种子 (逐对象一条, obj_id=1..N, geometry=发现框)。
 
-    multiplex 在单帧发现趟里每个对象返回一条结果 (各带窗内 instance_id)。按 instance_id
-    稳定排序后逐个铸成 PVS 种子 (obj_id 连续从 1 起, 与 _instance_seed_obj_id 契约一致),
-    geometry 直接用发现框 (PVS backend seeds 支持 geometry, 自动取外接框)。outside / 空框
-    的发现结果跳过 (无有效种子)。种子不带 source_annotation_id → 落库全部新建。
+    multiplex 需多帧传播才会在**种子帧**填充检测 (单帧窗不出 obj_id), 故发现趟跑一小窗但
+    只取 seed_frame 这一帧的 per-obj 框铸种 (传播帧仅为让模型锁定对象)。按 instance_id 稳定
+    排序后逐个铸成 PVS 种子 (obj_id 连续从 1 起, 与 _instance_seed_obj_id 契约一致), geometry
+    直接用发现框 (PVS backend seeds 支持 geometry, 自动取外接框)。outside / 空框跳过。种子
+    不带 source_annotation_id → 落库全部新建。
     """
     seeds: list[dict] = []
     obj = 1
     for result in sorted(
         discovery_results, key=lambda r: (r.instance_id or "", r.frame_index)
     ):
-        if result.outside or not result.geometry:
+        if result.frame_index != seed_frame or result.outside or not result.geometry:
             continue
         seeds.append({"obj_id": obj, "geometry": result.geometry})
         obj += 1
@@ -951,6 +958,13 @@ async def run_tracker_job(
             discovery_text = (job.prompt or {}).get("text")
             if not discovery_text:
                 raise ValueError("sam3_video_combo requires prompt.text for discovery")
+            # 发现窗从种子帧向后铺 COMBO_DISCOVERY_WINDOW_FRAMES 帧 (受 job 范围与 backend
+            # 窗上限约束); multiplex 传播这几帧后在种子帧填充 obj_id, 只取种子帧的框铸种。
+            disc_span = min(
+                COMBO_DISCOVERY_WINDOW_FRAMES,
+                max(1, int(settings.video_tracker_sam3_window_size_frames)),
+            )
+            disc_to = min(job.to_frame, job.from_frame + disc_span - 1)
             discovery_ctx = TrackerContext(
                 job_id=job.id,
                 task_id=task.id,
@@ -958,7 +972,7 @@ async def run_tracker_job(
                 dataset_item_id=job.dataset_item_id,
                 annotation_id=job.annotation_id,
                 from_frame=job.from_frame,
-                to_frame=job.from_frame,
+                to_frame=disc_to,
                 direction="forward",
                 prompt=job.prompt or {},
                 source_geometry={},
@@ -973,7 +987,9 @@ async def run_tracker_job(
                 _materialize_tracker_mask_result(r)
                 async for r in discovery_adapter.propagate(discovery_ctx)
             ]
-            prompt_seeds = _combo_seeds_from_discovery(discovery_results)
+            prompt_seeds = _combo_seeds_from_discovery(
+                discovery_results, seed_frame=job.from_frame
+            )
             if not prompt_seeds:
                 raise ValueError(
                     f"sam3_video_combo discovery found no objects for text: {discovery_text!r}"

@@ -38,7 +38,9 @@ def _disc(frame_index, instance_id, x):
 
 def test_combo_seeds_from_discovery_mints_sequential_obj_ids():
     # 发现 2 个对象(乱序 instance_id)→ 按 instance_id 稳定排序、obj_id 从 1 连续。
-    seeds = _combo_seeds_from_discovery([_disc(0, "2", 100.0), _disc(0, "1", 10.0)])
+    seeds = _combo_seeds_from_discovery(
+        [_disc(0, "2", 100.0), _disc(0, "1", 10.0)], seed_frame=0
+    )
     assert [s["obj_id"] for s in seeds] == [1, 2]
     # 排序后 obj1 = instance "1"(x=10), obj2 = instance "2"(x=100)。
     assert seeds[0]["geometry"]["x"] == pytest.approx(10.0)
@@ -53,20 +55,32 @@ def test_combo_seeds_from_discovery_skips_outside_and_empty():
         instance_id="9", outside=True,
     )
     empty = TrackerFrameResult(frame_index=0, geometry={}, instance_id="8")
-    seeds = _combo_seeds_from_discovery([outside, _disc(0, "1", 10.0), empty])
+    seeds = _combo_seeds_from_discovery(
+        [outside, _disc(0, "1", 10.0), empty], seed_frame=0
+    )
+    assert [s["obj_id"] for s in seeds] == [1]
+    assert seeds[0]["geometry"]["x"] == pytest.approx(10.0)
+
+
+def test_combo_seeds_from_discovery_only_seed_frame():
+    # 发现窗跑多帧(种子帧 + 传播帧); 只有种子帧的框铸种, 传播帧的不入种子。
+    seeds = _combo_seeds_from_discovery(
+        [_disc(0, "1", 10.0), _disc(1, "1", 12.0), _disc(2, "2", 200.0)],
+        seed_frame=0,
+    )
     assert [s["obj_id"] for s in seeds] == [1]
     assert seeds[0]["geometry"]["x"] == pytest.approx(10.0)
 
 
 def test_combo_seeds_from_discovery_empty():
-    assert _combo_seeds_from_discovery([]) == []
+    assert _combo_seeds_from_discovery([], seed_frame=0) == []
 
 
 # ── run 级 E2E: 发现趟 → 追踪趟(mock 两 adapter, 按 model_key 分派)──────────
 
 
 class _DiscoveryAdapter:
-    """multiplex 发现趟: 记录调用(from/to/text), 单帧回 N 个对象框。"""
+    """multiplex 发现趟: 记录调用(from/to/text), 在窗内每帧回 N 个对象框(种子帧铸种)。"""
 
     model_key = "sam3_video"
 
@@ -76,20 +90,22 @@ class _DiscoveryAdapter:
 
     async def propagate(self, ctx: TrackerContext):
         self.calls.append((ctx.from_frame, ctx.to_frame, ctx.text))
-        for k in range(self.n):
-            yield TrackerFrameResult(
-                frame_index=ctx.from_frame,
-                geometry={
-                    "type": "bbox",
-                    "x": float(10 + 100 * k),
-                    "y": 0.0,
-                    "w": 8.0,
-                    "h": 8.0,
-                },
-                confidence=1.0,
-                outside=False,
-                instance_id=str(k + 1),
-            )
+        # multiplex 传播整窗, 每帧吐 N 对象(runner 只取种子帧 from_frame 铸种)。
+        for f in range(ctx.from_frame, ctx.to_frame + 1):
+            for k in range(self.n):
+                yield TrackerFrameResult(
+                    frame_index=f,
+                    geometry={
+                        "type": "bbox",
+                        "x": float(10 + 100 * k),
+                        "y": 0.0,
+                        "w": 8.0,
+                        "h": 8.0,
+                    },
+                    confidence=1.0,
+                    outside=False,
+                    instance_id=str(k + 1),
+                )
 
 
 class _PvsCaptureAdapter:
@@ -171,8 +187,8 @@ async def test_combo_discovery_mints_pvs_seeds(db_session, super_admin, monkeypa
     await db_session.refresh(job)
     assert job.status == "pending_review"
 
-    # 发现趟: 只在种子帧(from==to==0)跑一次 multiplex, 带 text。
-    assert discovery.calls == [(0, 0, "car")]
+    # 发现趟: 跑一次 multiplex(种子帧向后小窗, 此处 window=2 → 0→1), 带 text。
+    assert discovery.calls == [(0, 1, "car")]
     # 追踪趟首窗(0,1)下发 2 条铸造种子(obj_id 1/2, 无 source_annotation_id)。
     first_seeds = pvs.windows[0][2]
     assert first_seeds is not None
@@ -216,5 +232,6 @@ async def test_combo_no_discovery_fails(db_session, super_admin, monkeypatch):
     await run_tracker_job(db_session, job.id, publisher=_noop_pub)
     await db_session.refresh(job)
     assert job.status == "failed"
-    assert discovery.calls == [(0, 0, "unicorn")]  # 跑了发现
+    # 发现窗 = [from_frame, min(to_frame, from_frame+disc_span-1)]; 此处未缩窗 → 截到 to_frame=3。
+    assert discovery.calls == [(0, 3, "unicorn")]  # 跑了发现
     assert pvs.windows == []  # 没进追踪
