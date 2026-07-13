@@ -97,7 +97,7 @@ describe("VideoPlaybackOverlay", () => {
     expect(getByTestId("video-timeline-collapse")).toBeInTheDocument();
     expect(getByText("AI 预测密度")).toBeInTheDocument();
     expect(getByText("标注密度")).toBeInTheDocument();
-    expect(getByText("AI 传播")).toBeInTheDocument();
+    expect(getByText("AI 追踪")).toBeInTheDocument();
     expect(getByText("Loop 区域")).toBeInTheDocument();
     expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
     expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口 F0–9");

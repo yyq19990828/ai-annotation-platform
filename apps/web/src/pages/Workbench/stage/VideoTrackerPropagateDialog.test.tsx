@@ -129,7 +129,7 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(screen.getByText("F10 → F42")).toBeTruthy();
     expect(screen.getByTestId("tracker-range-custom")).toBeInTheDocument();
     expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 10, endFrame: 42 });
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ from_frame: 10, to_frame: 42 }),
     );
@@ -155,7 +155,7 @@ describe("VideoTrackerPropagateDialog", () => {
     // 默认 forward + 30 帧 → F50 → F80
     expect(screen.getByText("30 帧")).toBeTruthy();
     expect(screen.getByText("F50 → F80")).toBeTruthy();
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ from_frame: 50, to_frame: 80, direction: "forward" }),
     );
@@ -172,7 +172,7 @@ describe("VideoTrackerPropagateDialog", () => {
       />,
     );
     fireEvent.change(screen.getByTestId("tracker-output-geometry"), { target: { value: "mask" } });
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ output_geometry: "mask" }));
   });
 
@@ -184,7 +184,7 @@ describe("VideoTrackerPropagateDialog", () => {
     // 默认 30 格 · step=10 → ≈300 帧, forward: F100 → F400, G10 → G40
     expect(screen.getByText("30 格 (≈300 帧)")).toBeTruthy();
     expect(screen.getByText("G10 → G40 (F100 → F400)")).toBeTruthy();
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ from_frame: 100, to_frame: 400, direction: "forward" }),
     );
@@ -198,7 +198,7 @@ describe("VideoTrackerPropagateDialog", () => {
     fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     // 30 格 · step=10 → 300 帧, backward: F200 → F500
     expect(screen.getByText("G20 → G50 (F200 → F500)")).toBeTruthy();
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ from_frame: 200, to_frame: 500, direction: "backward" }),
     );
@@ -231,7 +231,7 @@ describe("VideoTrackerPropagateDialog", () => {
     fireEvent.change(screen.getAllByRole("combobox")[2], {
       target: { value: "large" },
     });
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -307,7 +307,7 @@ describe("VideoTrackerPropagateDialog", () => {
     const sam3Option = Array.from(modelSelect.options).find((o) => o.value === "sam3_video");
     expect(sam3Option?.disabled).toBe(true);
     // 选中的是被灰置的 sam3_video → 提交按钮禁用。
-    expect((screen.getByText("发起传播").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("开始追踪").closest("button") as HTMLButtonElement).disabled).toBe(true);
     // 未灰置的 sam2_video 不受门控。
     const sam2Option = Array.from(modelSelect.options).find((o) => o.value === "sam2_video");
     expect(sam2Option?.disabled).toBe(false);
@@ -330,12 +330,12 @@ describe("VideoTrackerPropagateDialog", () => {
     const textInput = screen.getByTestId("tracker-text-input") as HTMLInputElement;
     expect(textInput).toBeTruthy();
     // 空 text 提交被拦。
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByText("文本驱动追踪需填写文本描述")).toBeTruthy();
     // 填 text → 提交带 text。
     fireEvent.change(textInput, { target: { value: "the red car" } });
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ model_key: "sam3_video", text: "the red car" }),
@@ -355,7 +355,7 @@ describe("VideoTrackerPropagateDialog", () => {
       />,
     );
     expect(screen.queryByTestId("tracker-text-input")).toBeNull();
-    fireEvent.click(screen.getByText("发起传播"));
+    fireEvent.click(screen.getByText("开始追踪"));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ model_key: "sam2_video", text: undefined }),
     );

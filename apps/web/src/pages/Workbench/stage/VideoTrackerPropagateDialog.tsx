@@ -68,9 +68,9 @@ const DIRECTION_META: Record<
   VideoTrackerDirection,
   { label: string; title: string }
 > = {
-  forward: { label: "更晚帧 →", title: "向后追踪: 传播到更晚 (时间轴更右) 的帧" },
-  backward: { label: "← 更早帧", title: "向前追踪: 传播到更早 (时间轴更左) 的帧" },
-  bidirectional: { label: "⇆ 双向", title: "双向: 同时向更早与更晚帧传播" },
+  forward: { label: "更晚帧 →", title: "向后追踪: 追踪到更晚 (时间轴更右) 的帧" },
+  backward: { label: "← 更早帧", title: "向前追踪: 追踪到更早 (时间轴更左) 的帧" },
+  bidirectional: { label: "⇆ 双向", title: "双向: 同时向更早与更晚帧追踪" },
 };
 
 // v0.21.27 · U-pvs-3 · U6: 分窗窗口数粗估。窗口尺寸镜像后端默认 (sam3 系 16 / 其余 300,
@@ -169,7 +169,7 @@ interface VideoTrackerPropagateDialogProps {
   supportedTrackers?: string[];
   /** v0.21.19 · text-driven tracker 子集; 选中其中之一时显 text 框。缺省时 sam3_video 静态视为 text-driven。 */
   textDrivenTrackers?: string[];
-  /** polyline 轨迹传播暂不支持 (后端只识别 polygon/bbox track); 为真时灰置传播动作。 */
+  /** polyline 轨迹追踪暂不支持 (后端只识别 polygon/bbox track); 为真时灰置传播动作。 */
   isPolylineTrack?: boolean;
   submitting: boolean;
   onCancel: () => void;
@@ -369,7 +369,7 @@ export function VideoTrackerPropagateDialog({
 
   const handleSubmit = async () => {
     if (isPolylineTrack) {
-      setError("polyline 轨迹传播暂不支持");
+      setError("polyline 轨迹追踪暂不支持");
       return;
     }
     if (range.from > range.to) {
@@ -413,7 +413,7 @@ export function VideoTrackerPropagateDialog({
     // 时间轴、无遮罩 (原全屏 modal 会遮住时间轴, 看不到范围高亮 / 无法刷选)。Esc / ✕ / 取消 关闭。
     <div
       role="dialog"
-      aria-label="AI 追踪传播"
+      aria-label="AI 追踪"
       data-testid="video-tracker-propagate-dialog"
       className={cn(
         "fixed left-1/2 top-16 z-workbench-modal max-w-[calc(100%-1.5rem)] -translate-x-1/2",
@@ -551,9 +551,9 @@ export function VideoTrackerPropagateDialog({
             size="sm"
             onClick={handleSubmit}
             disabled={submitting || selectedModelDisabled || isPolylineTrack}
-            title={isPolylineTrack ? "polyline 轨迹传播暂不支持" : undefined}
+            title={isPolylineTrack ? "polyline 轨迹追踪暂不支持" : undefined}
           >
-            {submitting ? "发起中…" : "发起传播"}
+            {submitting ? "追踪中…" : "开始追踪"}
           </Button>
           <button
             type="button"
@@ -567,7 +567,7 @@ export function VideoTrackerPropagateDialog({
       </div>
 
       {/* v0.21.27 · U-pvs-3 · #4 · 第二行: 种子/文本 (仅交互/文本驱动)。独立成行 →
-          宽度随落点计数/文本变化时不再挤动主行的「发起传播」等动作按钮; 跨 backend
+          宽度随落点计数/文本变化时不再挤动主行的「开始追踪」等动作按钮; 跨 backend
           行数可预测 (有此行 iff 交互或文本驱动)。二者互斥 (交互非 text-driven)。 */}
       {(supportsSeedCapture(modelKey) || textDrivenActive) && (
         <div className="flex flex-wrap items-center gap-2">
@@ -704,7 +704,7 @@ export function VideoTrackerPropagateDialog({
             data-testid="tracker-polyline-unsupported"
             className="text-status-danger"
           >
-            polyline 轨迹传播暂不支持
+            polyline 轨迹追踪暂不支持
           </span>
         )}
         {error && <span className="text-status-danger">{error}</span>}

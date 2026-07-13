@@ -1186,9 +1186,9 @@ export function VideoPlaybackOverlay({
           </div>
         )}
 
-        {/* AI 传播 */}
+        {/* AI 追踪 */}
         <div className={styles.laneRow}>
-          <span className={styles.laneLabel}>AI 传播</span>
+          <span className={styles.laneLabel}>AI 追踪</span>
           <div className={styles.laneBody}>
             {propagateRange && (
               <TimelineSpan

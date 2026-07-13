@@ -420,7 +420,7 @@ export function VideoTrackCardContent({
             size="sm"
             className={ACTION_BUTTON_CLASS}
             disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
-            title="AI 追踪传播 · 调用追踪模型逐帧预测新框 (Ctrl+B)"
+            title="AI 追踪 · 调用追踪模型逐帧预测新框 (Ctrl+B)"
             onClick={() => onPropagateTrack?.(selectedTrack)}
           >
             <Icon name="bot" size={13} />AI 追踪
