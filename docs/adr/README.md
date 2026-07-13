@@ -43,6 +43,7 @@
 - [0009](0009-task-events-table-and-partition.md) — task_events 表与按月分区方案
 - [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）
 - [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
+- [0049](0049-cross-backend-gpu-memory-arbitration.md) — 跨 backend 显存互斥编排：单卡显存预算准入 + LRU 驱逐 + 跨进程仲裁
 
 ### 已采纳（Accepted，归档）
 

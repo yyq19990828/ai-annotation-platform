@@ -39,6 +39,7 @@
 - **DEV 截图 seed 使用可追溯的真实场景和期望状态**：`screenshots` profile 从固定来源拉取真实道路图片、城市交通视频、PCL 室内点云与 RapidOCR 示例，经确定性裁剪/转码/无效深度过滤后，按显式媒体路径创建 4 个项目、14 个任务和多状态批次；`--repair` 仅重建能够证明由截图 seed 管理的对象。DEV 媒体改走同源 `/minio` 代理，远程浏览器不再依赖直连 9000 端口或 Docker 私网 IP。
 - **截图 seed 按场景能力绑定 ML Backend**：live 模式通过 `/health` 与 `/setup` 为图片交互、视频追踪和 OCR 项目选择可用 backend，并精确创建项目启用关联和主绑定；无 GPU 环境可启动同协议 stub，catalog 会对连接状态、能力快照、tracker 路由及 OCR 输出契约 fail-closed。
 - **截图场景改由 seed catalog 和真实角色驱动**：Playwright 在导航前统一校验项目、任务、批次、ML Backend 与场景能力，标注员和审核员页面使用真实成员关系；截图时钟、语言、时区、DPR、动画和资源就绪条件现已固定，并提供不覆盖资产的全场景验证模式。
+- **ML Backend 性能基准文档（RTX 3090）**：新增超管文档《ML Backend 性能基准》，实测 grounded-sam2 / sam3 / yolo / rapidocr 各任务的纯推理 / 端到端延迟、重新加载耗时、显存足迹、并发标注吞吐、视频轨迹转播（含 sam3 16 帧分窗口耗时拆解）与模型变体（yolo11 尺寸 / SAM2 档位 / GroundingDINO T·B / OCR mobile·server）对照，供客户做硬件规划与 backend / 模型选型参考。
 
 ### Changed
 - **视频工作台工具栏改按单帧与轨迹分组**：选择工具保持独立，SAM 工具归入单帧子组，手工轨迹与 AI 追踪集中到轨迹组；矩形框轨迹改用叠帧方框图标，不再与 SAM 智能点混淆。
