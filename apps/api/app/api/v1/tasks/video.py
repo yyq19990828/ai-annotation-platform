@@ -760,6 +760,10 @@ async def track_video(
             "annotation_id": str(payload.source_annotation_id)
             if payload.source_annotation_id
             else None,
+            # v0.22.2 · M · 多选批量: 记录批量延展的源轨迹 ids (多源时 annotation_id 为 None)。
+            "source_annotation_ids": [str(a) for a in payload.source_annotation_ids]
+            if payload.source_annotation_ids
+            else None,
             "dataset_item_id": str(ctx.item.id),
             "segment_id": str(body.segment_id) if body.segment_id else None,
             "from_frame": body.from_frame,

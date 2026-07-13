@@ -64,6 +64,10 @@ class VideoTrackerPropagateRequest(BaseModel):
     # v0.22.1 · B · 无源检测 (画布级发起): source_annotation_id 缺省 = 无源, 新建轨迹类别
     # 由 target_class_name/target_tool_unit_id 显式指定。有源延展时留空 (从 path / 继承源)。
     source_annotation_id: UUID | None = None
+    # v0.22.2 · M · 多选批量: 一次对 N 条已有轨迹批量延展 (各 obj_id ↔ 各源)。给出 (≥1 条)
+    # 时走多源分支——各源写成带 source_annotation_id 的 seed、job.annotation_id 存 NULL (不认
+    # 单主, 各源各回填); 单数 source_annotation_id 保留 (单源快捷/兼容)。
+    source_annotation_ids: list[UUID] | None = None
     target_class_name: str | None = Field(default=None, max_length=100)
     target_tool_unit_id: str | None = Field(default=None, max_length=30)
 
@@ -78,6 +82,9 @@ class VideoTrackerJobOut(BaseModel):
     task_id: UUID
     dataset_item_id: UUID
     annotation_id: UUID | None = None
+    # v0.22.2 · M · 本 job 接受后触及的轨迹 id (回填源 + 新建)。accept 时落进 job.prompt
+    # (免 DB 迁移), 序列化时由 _hydrate_touched_from_prompt 提到顶层。未接受的 job → None。
+    touched_annotation_ids: list[UUID] | None = None
     segment_id: UUID | None = None
     created_by: UUID | None = None
     status: TrackerJobStatus
@@ -94,6 +101,16 @@ class VideoTrackerJobOut(BaseModel):
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _hydrate_touched_from_prompt(self) -> "VideoTrackerJobOut":
+        # v0.22.2 · M · touched_annotation_ids 存于 prompt JSONB (accept 时写), 序列化时提到
+        # 顶层便于前端直接读 (无需再钻 prompt)。未接受的 job prompt 无此键 → 保持 None。
+        if self.touched_annotation_ids is None:
+            raw = (self.prompt or {}).get("touched_annotation_ids")
+            if isinstance(raw, list):
+                self.touched_annotation_ids = [UUID(str(x)) for x in raw]
+        return self
 
     class Config:
         from_attributes = True

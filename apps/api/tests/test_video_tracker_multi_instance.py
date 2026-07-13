@@ -932,3 +932,213 @@ async def test_accept_multi_source_orphan_degrades_to_new_track(
     assert len(rows) == 1
     assert rows[0].class_name == "car"
     assert rows[0].geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(103.0)
+
+
+# ── v0.22.2 · M1 · 建 job 侧: 多源 endpoint/schema/service ────────────────
+
+
+async def test_create_tracker_job_multi_source_builds_seeds(db_session, super_admin):
+    """v0.22.2 · M · 多选批量: source_annotation_ids ≥1 → job.annotation_id 为 NULL,
+    prompt.seeds 每源一条 (obj_id 1..N + source_annotation_id + from_frame 处几何)。"""
+    from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_tracker_job_service import create_tracker_job
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    # 普通 bbox 源 (resolve 取不到 → 回退整条几何) + video_track_bbox 源 (取 frame 0 关键帧)。
+    src_a = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 0, "y": 0, "w": 10, "h": 10},
+    )
+    src_b = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_track_bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={
+            "type": "video_track_bbox",
+            "track_id": "trk_b",
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 5, "y": 5, "w": 3, "h": 3},
+                    "source": "manual",
+                }
+            ],
+            "outside": [],
+        },
+        track_id="trk_b",
+    )
+    db_session.add_all([src_a, src_b])
+    await db_session.flush()
+    ctx = await build_context_from_task(db_session, task)
+    payload = VideoTrackerPropagateRequest(
+        from_frame=0,
+        to_frame=3,
+        model_key="sam3_video_interactive",
+        source_annotation_ids=[src_a.id, src_b.id],
+        target_class_name="pedestrian",  # 多源时应被忽略 (各源继承自身 label)
+    )
+    body = await create_tracker_job(
+        db_session, task=task, ctx=ctx, annotation_id=None, payload=payload, user=user
+    )
+    job = await db_session.get(VideoTrackerJob, body.id)
+    assert job is not None
+    assert job.annotation_id is None  # 多源不认单主
+    assert job.target_class_name is None  # 多源不存显式目标类别
+    seeds = job.prompt["seeds"]
+    assert [s["obj_id"] for s in seeds] == [1, 2]
+    assert seeds[0]["source_annotation_id"] == str(src_a.id)
+    assert seeds[1]["source_annotation_id"] == str(src_b.id)
+    # 普通 bbox 源: 回退整条几何。
+    assert seeds[0]["geometry"] == {"type": "bbox", "x": 0, "y": 0, "w": 10, "h": 10}
+    # video_track_bbox 源: 取 frame 0 关键帧 → result-style bbox。
+    assert seeds[1]["geometry"] == {"type": "bbox", "x": 5, "y": 5, "w": 3, "h": 3}
+
+
+async def test_track_video_endpoint_multi_source_builds_job(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    """v0.22.2 · M · track_video 端点透传 source_annotation_ids: 多源建 job (annotation_id
+    为 None, prompt.seeds 各源一条)。"""
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    src_a = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 0, "y": 0, "w": 10, "h": 10},
+    )
+    src_b = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 100, "y": 0, "w": 8, "h": 8},
+    )
+    db_session.add_all([src_a, src_b])
+    await db_session.flush()
+    await db_session.commit()
+
+    class FakeAsyncResult:
+        id = "tracker-celery-task"
+
+    monkeypatch.setattr(
+        "app.workers.video_tracker.run_video_tracker_job.delay",
+        lambda job_id: FakeAsyncResult(),
+    )
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video:track",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "from_frame": 0,
+            "to_frame": 3,
+            "model_key": "sam3_video_interactive",
+            "source_annotation_ids": [str(src_a.id), str(src_b.id)],
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["annotation_id"] is None  # 多源不认单主
+    assert body["status"] == "queued"
+    row = await db_session.get(VideoTrackerJob, uuid.UUID(body["id"]))
+    seeds = row.prompt["seeds"]
+    assert [s["obj_id"] for s in seeds] == [1, 2]
+    assert {s["source_annotation_id"] for s in seeds} == {str(src_a.id), str(src_b.id)}
+    assert all(s["geometry"]["type"] == "bbox" for s in seeds)
+
+
+class _MultiSourcePlusDiscoveryAdapter:
+    """两个种子源 obj"1"/"2" + 一个无源新发现 obj"3", 几何各自区分。多源 accept 的 touched
+    (回填源 + 新建) 断言用。"""
+
+    model_key = "sam3_video_interactive"
+
+    async def propagate(self, ctx: TrackerContext):
+        for f in range(ctx.from_frame, ctx.to_frame + 1):
+            for iid, base in (("1", 0.0), ("2", 100.0), ("3", 200.0)):
+                yield TrackerFrameResult(
+                    frame_index=f,
+                    geometry={
+                        "type": "bbox",
+                        "x": float(f) + base,
+                        "y": 0.0,
+                        "w": 8.0,
+                        "h": 8.0,
+                    },
+                    confidence=1.0,
+                    outside=False,
+                    instance_id=iid,
+                    primary=(iid == "1"),
+                )
+
+
+async def test_accept_multi_source_touched_covers_sources_and_created(
+    db_session, super_admin, monkeypatch
+):
+    """v0.22.2 · M · accept 后 job.prompt.touched_annotation_ids 覆盖回填源 + 新建; 未接受
+    时为空。VideoTrackerJobOut 把它提到顶层字段。"""
+    from app.schemas.video_tracker_job import VideoTrackerJobOut
+
+    user, _ = super_admin
+    task, src_a, src_b, job = await _seed_two_source_job(db_session, user)
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    adapter = _MultiSourcePlusDiscoveryAdapter()
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+    )
+
+    async def collect(_c: str, _p: dict) -> None:
+        return None
+
+    from sqlalchemy import select
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+    # 未接受 → 无 touched。
+    assert "touched_annotation_ids" not in (job.prompt or {})
+    assert (
+        VideoTrackerJobOut.model_validate(
+            job, from_attributes=True
+        ).touched_annotation_ids
+        is None
+    )
+
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "accepted"
+
+    # obj3 无源 → 一条新建 ai_tracker 轨迹。
+    created = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id, Annotation.source == "ai_tracker"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(created) == 1
+    touched = set(job.prompt["touched_annotation_ids"])
+    assert touched == {str(src_a.id), str(src_b.id), str(created[0].id)}
+    # VideoTrackerJobOut 顶层字段与 prompt 落库一致。
+    out = VideoTrackerJobOut.model_validate(job, from_attributes=True)
+    assert {str(x) for x in out.touched_annotation_ids} == touched
