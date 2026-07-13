@@ -24,8 +24,8 @@
 - **主题**：默认浅色；只有 scene 显式声明时才生成 dark / mobile 变体
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
 
-当前正式矩阵包含 60 张自动 PNG（57 desktop-light、2 desktop-dark、1 mobile）、
-3 张手工 PNG 和 12 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
+当前正式矩阵包含 61 张自动 PNG（58 desktop-light、2 desktop-dark、1 mobile）、
+3 张手工 PNG 和 13 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
@@ -72,7 +72,7 @@
 
 - [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 单条采纳/拒绝入口 [manual]
 - [ ] `images/video-propagate/tracker-review-bar.png` — AI 追踪 job 候选叠加 + 顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 [manual]
-- [ ] `images/video-propagate/multi-target-seeds.gif` — AI 追踪工具条切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 [manual]
+- [ ] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 [manual]
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
 - [ ] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 / 点选即续写 →「续写后自动前进」自动跳下一条 [manual]
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
@@ -86,7 +86,7 @@
 ### 两类传播术语（对应 `workbench/video-propagate.md`）
 
 - [ ] `images/video-propagate/track-vs-copy-buttons.png` — 选中卡两类传播按钮对比：「AI 追踪」（bot 图标 · 调 tracker 模型）vs「复制后续」（copy 图标 · 纯几何铺帧）；红框：两按钮 + tooltip [manual]
-- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 传播范围 → 传播对话框顶部浮层化打开（不遮时间轴）+ 影响范围高亮可见 [manual]
+- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 [manual]
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
 
@@ -255,7 +255,8 @@
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [ ] `images/video-propagate/ai-propagate-toolbar.png` — AI 追踪顶部工具条（更晚/更早/双向、范围、模型、点框种子、尺寸） [manual]
+- [x] `images/video-propagate/ai-tracking-panel.png` — 顶部「追踪 / AI 单题」入口 + 画布右上紧凑追踪面板（方向、范围、模型、种子、影响摘要）`[auto]`（scene: `workbench/video-ai-tracking-panel`，P-VIDEO-DEV）
+- [x] `images/video-propagate/ai-tracking-panel-interaction.gif` — 顶部打开 → 拖动 → 缩放 → 关闭重开恢复 → 与 AI 单题互斥 `[auto-gif]`（flow: `ai-tracker-panel`）
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
 - [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）

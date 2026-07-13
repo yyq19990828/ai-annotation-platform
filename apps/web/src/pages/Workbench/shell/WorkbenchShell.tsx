@@ -34,9 +34,15 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   return (
     <>
-      <WorkbenchLayout {...model.layout} />
-      <VideoTrackerPropagateDialog {...model.propagateDialog} />
-      <VideoTrackerReviewBar {...model.trackerReview} />
+      <WorkbenchLayout
+        {...model.layout}
+        stageOverlay={(
+          <>
+            <VideoTrackerPropagateDialog {...model.propagateDialog} />
+            <VideoTrackerReviewBar {...model.trackerReview} />
+          </>
+        )}
+      />
       {model.issueSection && (() => {
         // 落点模式(armed)进行中强制保持露出,否则用户移开光标会丢失高亮指示。
         const fabShown = fabRevealed || model.issueSection.issuePinDropArmed;

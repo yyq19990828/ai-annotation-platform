@@ -42,7 +42,7 @@ describe("ToolDock · video tools", () => {
     expect(screen.queryByTestId("video-tool-btn-hand")).toBeNull();
   });
 
-  it("按单帧、SAM 与轨迹语义排列工具", () => {
+  it("按单帧、SAM 与轨迹语义排列工具，AI 追踪不再占用左侧工具栏", () => {
     render(
       <ToolDock
         tool="select"
@@ -50,7 +50,6 @@ describe("ToolDock · video tools", () => {
         videoMode
         videoTool="select"
         onSetVideoTool={vi.fn()}
-        onOpenTracker={vi.fn()}
       />,
     );
 
@@ -76,8 +75,8 @@ describe("ToolDock · video tools", () => {
       "polygon-track",
       "polyline-track",
       "mask",
-      "ai-track",
     ]);
+    expect(screen.queryByTestId("video-tool-btn-ai-track")).toBeNull();
     expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
   });
 

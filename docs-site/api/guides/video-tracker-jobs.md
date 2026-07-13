@@ -2,12 +2,12 @@
 audience: [dev]
 type: how-to
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-14
 ---
 
 # Video Tracker Jobs
 
-Video Tracker Job API 用于视频工作台里的异步 AI 传播。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，调用 accept 后才写入 annotation。
+Video Tracker Job API 用于视频工作台里的异步 AI 追踪。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，调用 accept 后才写入 annotation。
 
 ## 创建追踪任务
 
@@ -75,7 +75,7 @@ Content-Type: application/json
 }
 ```
 
-工作台的文本追踪工具条当前只收集 `text`；视觉示例适用于直接调用此 API 的客户端。`frame_index` 与范围字段始终使用绝对源帧。
+工作台的文本追踪面板当前只收集 `text`；视觉示例适用于直接调用此 API 的客户端。`frame_index` 与范围字段始终使用绝对源帧。
 
 创建端点要求 task 对当前用户可见、annotation 属于该 task，并且普通标注员持有覆盖整个范围的有效 video segment lock。请求不能跨 segment。
 

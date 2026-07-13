@@ -16,6 +16,16 @@ const baseProps = {
   onCancel: vi.fn(),
 };
 
+function firePointerEvent(
+  element: Element,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  init: MouseEventInit & { pointerId: number },
+) {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+  Object.defineProperty(event, "pointerId", { value: init.pointerId });
+  fireEvent(element, event);
+}
+
 describe("visibleTrackerModelOptions", () => {
   const has = (opts: Array<{ value: string }>, v: string) => opts.some((o) => o.value === v);
 
@@ -166,6 +176,115 @@ describe("VideoTrackerPropagateDialog", () => {
       <VideoTrackerPropagateDialog {...baseProps} open={false} frameIndex={5} onSubmit={vi.fn()} />,
     );
     expect(screen.queryByTestId("video-tracker-propagate-dialog")).toBeNull();
+  });
+
+  it("以紧凑检查器停靠画布右侧，并与 AI 单题共用面板内部视觉骨架", () => {
+    render(
+      <VideoTrackerPropagateDialog {...baseProps} frameIndex={5} onSubmit={vi.fn()} />,
+    );
+
+    const panel = screen.getByTestId("video-tracker-propagate-dialog");
+    expect(panel.className).toContain("right-2");
+    expect(panel.className).toContain(
+      "w-[var(--tracker-panel-w,min(360px,calc(100%-1rem)))]",
+    );
+    expect(panel.className).toContain("border-violet-500/35");
+    expect(panel.className).toContain("rounded-lg");
+    expect(panel.className).not.toContain("left-1/2");
+
+    const header = screen.getByTestId("tracker-panel-header");
+    expect(header.className).toContain("from-violet-500/10");
+    expect(header.className).toContain("px-3.5");
+    expect(header.className).toContain("py-3");
+
+    const settings = screen.getByTestId("tracker-settings-section");
+    expect(settings.className).toContain("bg-muted");
+    expect(settings.className).toContain("px-3.5");
+    expect(settings.className).toContain("py-2.5");
+
+    expect(screen.getByRole("button", { name: "开始追踪" }).className).toContain(
+      "border-violet-500/30",
+    );
+  });
+
+  it("拖动头部时在画布范围内更新位置", () => {
+    const onPositionChange = vi.fn();
+    render(
+      <div data-testid="stage-parent">
+        <VideoTrackerPropagateDialog
+          {...baseProps}
+          frameIndex={5}
+          onPositionChange={onPositionChange}
+          onSubmit={vi.fn()}
+        />
+      </div>,
+    );
+
+    const panel = screen.getByTestId("video-tracker-propagate-dialog");
+    const parent = screen.getByTestId("stage-parent");
+    Object.defineProperty(panel, "offsetParent", { configurable: true, value: parent });
+    vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
+      left: 100, top: 50, width: 900, height: 700, right: 1000, bottom: 750,
+      x: 100, y: 50, toJSON: () => ({}),
+    });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      left: 500, top: 100, width: 360, height: 500, right: 860, bottom: 600,
+      x: 500, y: 100, toJSON: () => ({}),
+    });
+
+    const header = screen.getByTestId("tracker-panel-header");
+    firePointerEvent(header, "pointerdown", {
+      button: 0,
+      pointerId: 1,
+      clientX: 520,
+      clientY: 120,
+    });
+    firePointerEvent(header, "pointermove", { pointerId: 1, clientX: 320, clientY: 270 });
+    firePointerEvent(header, "pointerup", { pointerId: 1 });
+
+    expect(onPositionChange).toHaveBeenNthCalledWith(1, { left: 400, top: 50 });
+    expect(onPositionChange).toHaveBeenLastCalledWith({ left: 200, top: 192 });
+  });
+
+  it("拖动右下角时更新尺寸，并把默认停靠转换为显式位置", () => {
+    const onPositionChange = vi.fn();
+    const onSizeChange = vi.fn();
+    render(
+      <div data-testid="stage-parent">
+        <VideoTrackerPropagateDialog
+          {...baseProps}
+          frameIndex={5}
+          onPositionChange={onPositionChange}
+          onSizeChange={onSizeChange}
+          onSubmit={vi.fn()}
+        />
+      </div>,
+    );
+
+    const panel = screen.getByTestId("video-tracker-propagate-dialog");
+    const parent = screen.getByTestId("stage-parent");
+    Object.defineProperty(panel, "offsetParent", { configurable: true, value: parent });
+    vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
+      left: 100, top: 50, width: 900, height: 700, right: 1000, bottom: 750,
+      x: 100, y: 50, toJSON: () => ({}),
+    });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      left: 500, top: 100, width: 360, height: 500, right: 860, bottom: 600,
+      x: 500, y: 100, toJSON: () => ({}),
+    });
+
+    const handle = screen.getByTestId("tracker-panel-resize-handle");
+    firePointerEvent(handle, "pointerdown", {
+      button: 0,
+      pointerId: 2,
+      clientX: 860,
+      clientY: 600,
+    });
+    firePointerEvent(handle, "pointermove", { pointerId: 2, clientX: 920, clientY: 650 });
+    firePointerEvent(handle, "pointerup", { pointerId: 2 });
+
+    expect(onPositionChange).toHaveBeenLastCalledWith({ left: 400, top: 50 });
+    expect(onSizeChange).toHaveBeenLastCalledWith({ w: 420, h: 550 });
   });
 
   it("step===1 (采样关闭): 预设标签为「N 帧」, range 用 F{from}→F{to}, 提交源帧", async () => {
@@ -714,6 +833,9 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
     // 对话框本体仍在 (仅内容切换)。
     expect(screen.getByTestId("video-tracker-propagate-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("tracker-panel-header").className).toContain(
+      "from-violet-500/10",
+    );
   });
 
   it("U8: 有分窗进度时显示「第 c/t 窗」; 单窗 (total<=1) 不显", () => {

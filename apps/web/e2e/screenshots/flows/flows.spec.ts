@@ -20,6 +20,7 @@ import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
 import { runVideoTrack } from "./video-track";
+import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
@@ -295,6 +296,20 @@ test.describe("flow recordings", () => {
       // 收起边栏后画布变宽、帧间变化更大，maxWidth 再降到 640 才稳压 5MB。
       path.join(DOCS_IMAGES, "workbench/video-track-overview.gif"),
       { fps: 6, maxWidth: 640, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("ai-tracker-panel — AI 追踪面板拖动缩放与互斥", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    const win = await runAiTrackerPanel(page, cached);
+    await finalize(
+      page,
+      "ai-tracker-panel",
+      path.join(DOCS_IMAGES, "video-propagate/ai-tracking-panel-interaction.gif"),
+      { fps: 8, maxWidth: 760, ...drawTrim(win, t0) },
     );
   });
 

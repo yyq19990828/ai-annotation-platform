@@ -2,7 +2,7 @@
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-14
 ---
 
 # 视频 AI 追踪架构
@@ -39,7 +39,7 @@ flowchart LR
 
 核心入口：
 
-- 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态；画布级「AI 追踪」入口（ToolDock，`onOpenTracker`）不选轨迹也能发起。
+- 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态；画布级「AI 追踪」入口由 `Topbar.onToggleTracker` 提供，位于 AI 单题入口左侧，不选轨迹也能发起。`VideoTrackerPropagateDialog` 经 `WorkbenchLayout.stageOverlay` 挂到中间画布，不再占用 ToolDock 或视口级居中弹窗。
 - API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate`（延展选中轨迹）或 `POST /tasks/{task_id}/video:track`（源可选）创建 job。`video:track` 的源模式有三种：`source_annotation_id` 单源延展；`source_annotation_ids[]` 多选批量（一个 job 延展 N 条已有轨迹，各回填各自源）；两者皆缺省即无源检测（`target_class_name` 指定新轨迹类别）。
 - worker：`app.workers.video_tracker.run_video_tracker_job` 调用 `video_tracker_runner`。
 - backend adapter：`video_tracker_adapters.py` 把平台 context 转为 ML Backend `/predict` 请求。
@@ -56,7 +56,13 @@ flowchart LR
 3. 项目主后端在候选中时优先。
 4. 否则选择 connected 候选；没有 connected 时保留首个匹配项供调用层给出明确错误。
 
-前端使用同一能力集合过滤追踪工具条。`mock_bbox` 是本地 adapter，不参加 backend 路由。
+前端使用同一能力集合过滤追踪面板。`mock_bbox` 是本地 adapter，不参加 backend 路由；生产构建始终不在 UI 暴露它，仅开发构建在无真实 backend 时保留流程兜底。
+
+## 面板与布局状态
+
+AI 追踪与 AI 单题共用一套面板 chrome，但开关互斥：`togglePropagateDialog` 打开追踪前收起单题面板，`toggleAiPopover` 则先关闭追踪。追踪面板默认停靠画布右上，拖动与缩放都以 stage 的 `offsetParent` 为局部坐标系，而不是 viewport 坐标。画布或窗口收缩时，恢复的旧坐标和尺寸会被 clamp 回 8px 安全边界。
+
+`useFloatingPanelFrame` 是 AI 面板局部偏好的共用持久化层。`useVideoTrackerPanelFrame` 使用 `wb:video-tracker-panel-position` / `wb:video-tracker-panel-size`，`useAiPopoverFrame` 使用独立的 `wb:ai-popover-position` / `wb:ai-popover-size`。它们只保存 UI 位置与尺寸，不进入 job payload、annotation 或服务端工作台偏好。
 
 ## 两类追踪语义
 

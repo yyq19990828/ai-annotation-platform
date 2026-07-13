@@ -96,7 +96,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "sam/ai-inspector-panel",
     role: "admin",
-    // Topbar「打开 AI 面板」→ AIPredictionPopover（悬浮 AI 面板：置信度阈值滑块 + 单图预标）
+    // Topbar「AI 单题」→ AIPredictionPopover（悬浮 AI 面板：置信度阈值滑块 + 单图预标）
     fixture: {
       project: "image_demo",
       task: "predicted",
@@ -107,7 +107,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.waitForTimeout(300);
-      const aiBtn = page.getByTitle("打开 AI 面板");
+      const aiBtn = page.getByTestId("workbench-ai-single");
       await aiBtn.click({ timeout: 4000 });
       await page.waitForSelector('[data-testid="ai-prediction-popover"]', { timeout: 3000 });
       await page.waitForTimeout(300);

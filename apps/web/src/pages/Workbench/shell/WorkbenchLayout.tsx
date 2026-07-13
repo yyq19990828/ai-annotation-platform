@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type CSSProperties, type Ref } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type CSSProperties, type ReactNode, type Ref } from "react";
 import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
@@ -59,6 +59,8 @@ interface WorkbenchLayoutProps {
   banners: ComponentProps<typeof WorkbenchBanners>;
   topbar: ComponentProps<typeof Topbar>;
   stageHost: ComponentPropsWithoutRef<typeof WorkbenchStageHost>;
+  /** 相对中间画布居中的非模态浮层，例如视频 AI 追踪配置与候选审阅。 */
+  stageOverlay?: ReactNode;
   videoControlsRef: Ref<VideoStageControls>;
   statusBar: ComponentProps<typeof StatusBar>;
   inspector: ComponentProps<typeof AIInspectorPanel>;
@@ -116,6 +118,7 @@ export function WorkbenchLayout({
   banners,
   topbar,
   stageHost,
+  stageOverlay,
   videoControlsRef,
   statusBar,
   inspector,
@@ -210,7 +213,10 @@ export function WorkbenchLayout({
 
         <div className="flex min-w-0 flex-col overflow-hidden">
           <WorkbenchBanners {...banners} />
-          <WorkbenchStageHost ref={videoControlsRef} {...stageHost} />
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <WorkbenchStageHost ref={videoControlsRef} {...stageHost} />
+            {stageOverlay}
+          </div>
           <StatusBar {...statusBar} />
         </div>
 

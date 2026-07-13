@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.21
 status: stable
-last_reviewed: 2026-06-05
+last_reviewed: 2026-07-14
 ---
 
 # 工作台 Shell 架构
@@ -17,6 +17,7 @@ WorkbenchShell
        -> WorkbenchBanners
        -> Topbar
        -> WorkbenchStageHost
+       -> stageOverlay（AI 追踪面板 / 候选审阅条）
        -> StatusBar
        -> TaskQueuePanel / ToolDock
        -> 右栏 .rightSplit（列宽可拖拽）
@@ -80,6 +81,8 @@ type StageKind = "image" | "video" | "3d";
 跨 Stage 的弹窗放在 `WorkbenchOverlays`：待选类别、改类、SAM 接受、批量改类。图片画布自己的浮动控件仍放在 `ImageWorkbench` 内部。
 
 这个边界保证视频 bbox / track 新建时也能显示 class picker，不再依赖 `ImageStage.overlay`。
+
+视频 AI 追踪面板和候选审阅条使用 `WorkbenchLayout.stageOverlay`，相对中间 Stage 定位。顶部 `Topbar` 在视频任务中并列「追踪」与「AI 单题」入口，两个配置面板互斥。它们的位置 / 尺寸通过 `useFloatingPanelFrame` 保存到各自的 localStorage key，不属于下文的服务端 `workbench.layout` 偏好树。
 
 ## 右栏：AI 检查器 + 讨论面板
 

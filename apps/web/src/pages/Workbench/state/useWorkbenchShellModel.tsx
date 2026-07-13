@@ -38,6 +38,7 @@ import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
 import { usePredictionPropagation } from "./usePredictionPropagation";
 import { useAiPopoverFrame } from "./useAiPopoverFrame";
+import { useVideoTrackerPanelFrame } from "./useVideoTrackerPanelFrame";
 import { useAnnotationHistory } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -413,6 +414,12 @@ export function useWorkbenchShellModel({
   // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
   const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
     useAiPopoverFrame();
+  const {
+    trackerPanelPosition,
+    setTrackerPanelPosition,
+    trackerPanelSize,
+    setTrackerPanelSize,
+  } = useVideoTrackerPanelFrame();
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(
@@ -643,22 +650,24 @@ export function useWorkbenchShellModel({
 
   const openPropagateDialog = useCallback(
     (source: TrackerSourceAnnotation | TrackerSourceAnnotation[] | null) => {
-    // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
-    const list = Array.isArray(source) ? source : source ? [source] : [];
-    setPropagateDialog({
-      annotation: list.length === 1 ? list[0] : null,
-      sources: list.length >= 2 ? list : undefined,
-      submitting: false,
-    });
-    setPropagateBrush(null);
-    setTrackerSeeds([]);
-    setTrackerSeedBoxes([]);
-    setSeedObj(1);
-    setSeedMode("point");
-    setSeedAnchorFrame(null);
-    setSeedCollecting(false);
-    seedPrevToolRef.current = null;
-  },
+      // AI 单题与 AI 追踪共用顶部工具组；打开追踪时先收起单题面板，避免两个浮层叠加。
+      setAiPopoverOpen(false);
+      // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
+      const list = Array.isArray(source) ? source : source ? [source] : [];
+      setPropagateDialog({
+        annotation: list.length === 1 ? list[0] : null,
+        sources: list.length >= 2 ? list : undefined,
+        submitting: false,
+      });
+      setPropagateBrush(null);
+      setTrackerSeeds([]);
+      setTrackerSeedBoxes([]);
+      setSeedObj(1);
+      setSeedMode("point");
+      setSeedAnchorFrame(null);
+      setSeedCollecting(false);
+      seedPrevToolRef.current = null;
+    },
     [],
   );
   const closePropagateDialog = useCallback(() => {
@@ -669,6 +678,21 @@ export function useWorkbenchShellModel({
     setSeedAnchorFrame(null);
     stopSeedCollecting();
   }, [stopSeedCollecting]);
+  const togglePropagateDialog = useCallback(() => {
+    if (propagateDialog) {
+      closePropagateDialog();
+      return;
+    }
+    openPropagateDialog(null);
+  }, [closePropagateDialog, openPropagateDialog, propagateDialog]);
+  const toggleAiPopover = useCallback(() => {
+    if (aiPopoverOpen) {
+      setAiPopoverOpen(false);
+      return;
+    }
+    closePropagateDialog();
+    setAiPopoverOpen(true);
+  }, [aiPopoverOpen, closePropagateDialog]);
   // v0.22.2 · U8 · 提交成功后不立即关闭对话框, 而就地转「追踪中…」进行态 (保留对话框显示进度,
   // 让位审阅条前给即时反馈)。清掉种子采集态 (与关闭同款), 但保留对话框记录并挂上 job id。
   const enterTrackingProgress = useCallback(
@@ -2964,8 +2988,6 @@ export function useWorkbenchShellModel({
       tool: s.tool,
       onSetTool: s.setTool,
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
-      // v0.22.1 · B · 画布级 AI 追踪入口: 无选中轨迹也能发起 (无源检测)。
-      onOpenTracker: isVideoTask ? () => openPropagateDialog(null) : undefined,
       isPromptSupported: routing.isPromptSupported,
       capabilitiesLoading: routing.isLoading,
       reviewMode: mode === "review", videoMode: isVideoTask,
@@ -2992,11 +3014,13 @@ export function useWorkbenchShellModel({
       rightSidebarOpen: rightOpen,
       onToggleLeftSidebar: toggleLeftSidebar,
       onToggleRightSidebar: toggleRightSidebar,
-      onRunAi: () => {
-        setAiPopoverOpen((open) => !open);
-      },
+      onRunAi: toggleAiPopover,
+      aiOpen: aiPopoverOpen,
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
       aiDisabled: false,
+      onToggleTracker: isVideoTask ? togglePropagateDialog : undefined,
+      trackerOpen: Boolean(propagateDialog),
+      trackerRunning: Boolean(trackingJobId),
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
@@ -3547,6 +3571,10 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
+    position: trackerPanelPosition,
+    onPositionChange: setTrackerPanelPosition,
+    size: trackerPanelSize,
+    onSizeChange: setTrackerPanelSize,
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,

@@ -27,6 +27,12 @@ import {
   SIDE_FLOATING_PANEL_MIN_SIZE,
   SIDE_FLOATING_PANEL_MAX_SIZE,
 } from "./floatingPanelSizing";
+import {
+  AI_PANEL_HEADER_CLASS,
+  AI_PANEL_ICON_CLASS,
+  AI_PANEL_SECTION_CLASS,
+  AI_PANEL_SURFACE_CLASS,
+} from "./workbenchAiPanelChrome";
 
 // 卡片化分组头（AI 待审 / 人工 等列表分段头）与筛选卡共用的容器外观。
 const SECTION_CARD_CLASS =
@@ -498,6 +504,8 @@ export function AIPredictionPopover({
   const handleResizeStart = (evt: React.PointerEvent<HTMLButtonElement>) => {
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // 默认右侧停靠在开始缩放时转成显式左上坐标，让右下角手柄跟随指针，位置也进入偏好记忆。
+    if (!position) onPositionChange({ left: Math.round(rect.left), top: Math.round(rect.top) });
     resizeStartRef.current = { x: evt.clientX, y: evt.clientY, w: rect.width, h: rect.height };
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     evt.preventDefault();
@@ -525,24 +533,61 @@ export function AIPredictionPopover({
   useEffect(() => {
     const node = panelRef.current;
     if (!node || !open) return;
-    if (position) {
-      node.style.setProperty("--ai-inspector-popover-left", `${position.left}px`);
-      node.style.setProperty("--ai-inspector-popover-top", `${position.top}px`);
-      node.style.removeProperty("--ai-inspector-popover-right");
-    } else {
-      node.style.setProperty("--ai-inspector-popover-top", "58px");
-      node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
-      node.style.removeProperty("--ai-inspector-popover-left");
-    }
-    // 显式尺寸 (用户拖角后): 覆盖 CSS 默认宽度 + 固定高度; null 时回落 CSS 默认.
-    if (size) {
-      node.style.setProperty("--ai-inspector-popover-w", `${size.w}px`);
-      node.style.setProperty("--ai-inspector-popover-h", `${size.h}px`);
-    } else {
-      node.style.removeProperty("--ai-inspector-popover-w");
-      node.style.removeProperty("--ai-inspector-popover-h");
-    }
-  }, [open, position, rightOffset, size]);
+    const applyFrame = () => {
+      if (position) {
+        node.style.removeProperty("--ai-inspector-popover-right");
+      } else {
+        node.style.setProperty("--ai-inspector-popover-top", "58px");
+        node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
+        node.style.removeProperty("--ai-inspector-popover-left");
+      }
+
+      const maxAvailableW = Math.max(1, window.innerWidth - 16);
+      const maxAvailableH = Math.max(1, window.innerHeight - 16);
+      const minW = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.w, maxAvailableW);
+      const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxAvailableH);
+      const nextSize = size
+        ? {
+            w: Math.round(Math.max(
+              minW,
+              Math.min(size.w, SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW),
+            )),
+            h: Math.round(Math.max(
+              minH,
+              Math.min(size.h, SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH),
+            )),
+          }
+        : null;
+
+      if (nextSize) {
+        node.style.setProperty("--ai-inspector-popover-w", `${nextSize.w}px`);
+        node.style.setProperty("--ai-inspector-popover-h", `${nextSize.h}px`);
+        if ((nextSize.w !== size?.w || nextSize.h !== size?.h) && onSizeChange) {
+          onSizeChange(nextSize);
+        }
+      } else {
+        node.style.removeProperty("--ai-inspector-popover-w");
+        node.style.removeProperty("--ai-inspector-popover-h");
+      }
+
+      if (position) {
+        const rect = node.getBoundingClientRect();
+        const nextPosition = {
+          left: Math.round(Math.max(8, Math.min(position.left, window.innerWidth - rect.width - 8))),
+          top: Math.round(Math.max(8, Math.min(position.top, window.innerHeight - rect.height - 8))),
+        };
+        node.style.setProperty("--ai-inspector-popover-left", `${nextPosition.left}px`);
+        node.style.setProperty("--ai-inspector-popover-top", `${nextPosition.top}px`);
+        if (nextPosition.left !== position.left || nextPosition.top !== position.top) {
+          onPositionChange(nextPosition);
+        }
+      }
+    };
+
+    applyFrame();
+    window.addEventListener("resize", applyFrame);
+    return () => window.removeEventListener("resize", applyFrame);
+  }, [onPositionChange, onSizeChange, open, position, rightOffset, size]);
 
   if (!open) return null;
 
@@ -551,7 +596,8 @@ export function AIPredictionPopover({
       ref={panelRef}
       data-testid="ai-prediction-popover"
       className={cn(
-        "fixed z-popover flex flex-col overflow-hidden rounded-lg border border-violet-500/35 bg-card shadow-xl",
+        AI_PANEL_SURFACE_CLASS,
+        "fixed z-popover flex flex-col",
         "h-[var(--ai-inspector-popover-h,auto)] w-[var(--ai-inspector-popover-w,min(360px,calc(100vw-32px)))]",
         "max-h-[calc(100vh-92px)] max-w-[calc(100vw-32px)]",
         position
@@ -564,12 +610,12 @@ export function AIPredictionPopover({
         onPointerMove={handleDragMove}
         onPointerUp={handleDragEnd}
         onPointerCancel={handleDragEnd}
-        className="cursor-move touch-none border-b border-border bg-gradient-to-b from-violet-500/10 to-transparent px-3.5 py-3"
+        className={cn(AI_PANEL_HEADER_CLASS, "cursor-move touch-none")}
         title="拖动 AI 面板"
       >
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="inline-flex size-6 items-center justify-center rounded-sm bg-violet-500/[0.18] text-status-info">
+            <span className={AI_PANEL_ICON_CLASS}>
               <Icon name="bot" size={14} />
             </span>
             <b className="text-sm">当前题 AI</b>
@@ -638,7 +684,7 @@ export function AIPredictionPopover({
       {/* v0.14.18 · header 以下整体可滚 (拖动头固定), 修面板内容超高时底部 (输出形态/效率) 被截断. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* v0.14.18 · 置信度阈值移出拖动头 → body 顶部: 拖面板 (头部) 与拖滑块互不抢手势. */}
-        <div className="border-b border-border bg-muted px-3.5 py-2.5">
+        <div className={AI_PANEL_SECTION_CLASS}>
           <div className="mb-1.5 text-xs font-semibold text-foreground">候选筛选</div>
           <div className="mb-1 flex items-baseline justify-between text-xs">
             <span className="text-muted-foreground">置信度阈值</span>
@@ -669,7 +715,7 @@ export function AIPredictionPopover({
 
         {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
             与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
-        <div className="border-b border-border bg-muted px-3.5 py-2.5">
+        <div className={AI_PANEL_SECTION_CLASS}>
           <div className="mb-2 text-xs font-semibold text-foreground">本次运行</div>
           <PreannotateConfigForm
             cfg={cfg}
@@ -681,7 +727,7 @@ export function AIPredictionPopover({
           />
         </div>
 
-        <div className="border-t border-border bg-muted px-3.5 py-2.5">
+        <div className={AI_PANEL_SECTION_CLASS}>
           <div className="mb-1.5 text-xs text-muted-foreground">本次效率</div>
           <div className="mb-1 flex justify-between text-xs">
             <span>AI 接管率</span>

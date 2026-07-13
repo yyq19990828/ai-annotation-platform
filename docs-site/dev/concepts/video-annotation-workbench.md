@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-14
 ---
 
 # 视频标注工作台
@@ -361,7 +361,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
 - `V` / `B` / `T` 切换视频选择 / 矩形框 / 轨迹工具
 - `P` 进入视频多边形绘制；智能点 / 智能框 / Exemplar / Magic Box 使用视频侧各自直达键
-- `Ctrl+B` 选中 bbox 轨迹时打开 AI 追踪工具条
+- `Ctrl+B` 选中 bbox 轨迹时打开 AI 追踪检查器
 - `←` / `→` 上一帧 / 下一帧；采样开启时按网格跳
 - `Shift + ←/→` 采样开启时源帧 ±1 微调
 - `,` / `.` 选中 `video_track_bbox` 时跳上 / 下可见关键帧
@@ -375,7 +375,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Esc` 取消选择
 - `1-9` 有选中视频对象时改其 `class_name`；无选中时切 active class
 
-视频任务使用自己的 polygon / polyline 与交互式 AI 工具入口：智能点、智能框、Exemplar 在当前帧生成 `video_polygon`，Magic Box 生成 `video_bbox`；切帧会清理帧绑定的瞬态候选。图片专用 canvas 工具不会直接挂进视频 Stage。左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
+视频任务使用自己的 polygon / polyline 与交互式 AI 工具入口：智能点、智能框、Exemplar 在当前帧生成 `video_polygon`，Magic Box 生成 `video_bbox`；切帧会清理帧绑定的瞬态候选。图片专用 canvas 工具不会直接挂进视频 Stage。视频 AI 追踪配置面板与 job 审阅条由 `WorkbenchShell` 经 `stageOverlay` 渲染；配置面板以中间 stage 为局部定位容器，使拖动、缩放和边界夹取始终限定在画布内。左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
 
 视频创建、追加关键帧、重命名、改类、track 转 bbox 等动作由 `useVideoAnnotationActions` 维护。跨 Stage 的 class picker / 改类 / SAM 接受 / 批量改类弹窗由 `WorkbenchOverlays` 渲染，不再挂在 `ImageStage.overlay` 上。
 

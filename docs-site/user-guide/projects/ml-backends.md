@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.10.3
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-14
 ---
 
 # 启用 ML 后端
@@ -70,7 +70,7 @@ last_reviewed: 2026-07-11
 
 1. 项目主后端支持该 tracker 时优先使用。
 2. 主后端不支持时，改用其它声明该 tracker 的 connected backend。
-3. 没有任何已启用 backend 声明该 tracker 时，模型在追踪工具条中置灰或提交时报不支持。
+3. 没有任何已启用 backend 声明该 tracker 时，模型在追踪面板中置灰或提交时报不支持。
 
 因此 SAM2 框追踪、SAM3 文本检测追踪和 SAM3 点框交互追踪可以由不同 backend 承载。项目主后端只是初始选择与同能力优先项，不是视频 tracker 的唯一执行后端。排查置灰模型时，先确认对应 backend 已对项目启用，再做一次健康检查刷新 `supported_trackers` 能力快照。
 

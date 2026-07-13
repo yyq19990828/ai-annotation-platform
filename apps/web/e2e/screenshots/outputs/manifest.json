@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-13T11:03:25.854Z",
+  "generated_at": "2026-07-13T17:40:39.860Z",
   "seed_profile": "screenshots",
   "seed_revision": "screenshots-2026-07-d",
-  "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+  "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
   "projects": [
     "desktop-light",
     "desktop-dark",
@@ -1026,7 +1026,7 @@
       },
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1038,7 +1038,7 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-07-13T17:40:39.860Z",
       "provenance": "current-run",
       "sha256": "0e98284739049b8776ae8f68a4a46d42287f514b36b06e8a3f72e5e68e20cd54",
       "width": 376,
@@ -1744,6 +1744,42 @@
       "width": 1440,
       "height": 900
     },
+    "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png",
+      "scene": "workbench/video-ai-tracking-panel",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-media.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": {
+        "project": "video_demo",
+        "task": "tracking",
+        "backend": "video_tracker",
+        "capabilities": [
+          "task:tracker"
+        ]
+      },
+      "seed_profile": "screenshots",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-07-13T17:40:39.860Z",
+      "provenance": "current-run",
+      "sha256": "5b1d5dd41ea04c909e67c3a8ab2d5652eba4943a58e1538a18bc20c481bea153",
+      "width": 1440,
+      "height": 900
+    },
     "docs-site/user-guide/images/workbench/layout-overview.png": {
       "auto": true,
       "target": "docs-site/user-guide/images/workbench/layout-overview.png",
@@ -1796,7 +1832,7 @@
       },
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1808,9 +1844,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-07-13T17:40:39.860Z",
       "provenance": "current-run",
-      "sha256": "adb34d292cd799466cc1d63c6edf5d0ecd3a502dcf3674dfca3b0025b4064ff4",
+      "sha256": "0a5394fda402d842ab894e1be39022974dc6c2a749008218c0fdfd59b5e12bf1",
       "width": 1440,
       "height": 900
     },
@@ -1864,7 +1900,7 @@
       },
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1876,9 +1912,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-07-13T17:40:39.860Z",
       "provenance": "current-run",
-      "sha256": "d040c756987e44f9fa3924a11537f719d59a0b85f374bbab7a97855416ffdb1a",
+      "sha256": "cb28172b1dff5f470fcd1885a5c485b88a7a46375b1d76c8e805bd7d6677f4f3",
       "width": 1440,
       "height": 900
     },

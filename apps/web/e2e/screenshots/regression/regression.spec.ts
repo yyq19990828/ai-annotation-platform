@@ -26,6 +26,7 @@ const REGRESSION_SCENES = [
   "export/format-select",
   "projects/ai-pre-config-panel",
   "workbench/video-real-scene",
+  "workbench/video-ai-tracking-panel",
 ] as const;
 
 const DEFAULT_MASK_SELECTORS = [

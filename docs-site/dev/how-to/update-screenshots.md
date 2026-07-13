@@ -4,7 +4,7 @@ description: 如何新增场景、更新现有截图、维护视觉回归基线
 audience: [developer]
 type: how-to
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-14
 ---
 
 # 更新文档截图
@@ -45,8 +45,8 @@ Playwright 在整次运行开始时只做一次严格 catalog 预检，并把同
 desktop-light、dark、mobile 和 regression project。运行期间不要 repair seed 或删除项目；
 场景自己的正常读取不会触发跨 project 的第二次全库预检。
 
-当前完整矩阵产出 60 张自动 PNG：57 张 desktop-light、2 张显式声明的
-desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、12 个文档目标 GIF，
+当前完整矩阵产出 61 张自动 PNG：58 张 desktop-light、2 张显式声明的
+desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、13 个文档目标 GIF，
 以及 1 段首页 AI WebM 与对应静态海报。
 这些数量用于人工审阅交接，发布判断仍以 scene、manifest、磁盘文件和文档引用四方一致为准。
 
@@ -77,6 +77,7 @@ apps/web/e2e/screenshots/
 ├── flows/                     # 流程录制脚本
 │   ├── e2e-quickstart.ts
 │   ├── ai-preannotate.ts
+│   ├── ai-tracker-panel.ts
 │   ├── sam-interactive.ts
 │   ├── review-reject.ts
 │   └── flows.spec.ts
