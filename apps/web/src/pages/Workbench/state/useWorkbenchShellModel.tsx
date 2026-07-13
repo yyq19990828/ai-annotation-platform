@@ -3495,6 +3495,8 @@ export function useWorkbenchShellModel({
     textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
+    // v0.22.1 · A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
+    sourceTrackClassName: propagateDialogTrack?.class_name ?? null,
     submitting: Boolean(propagateDialog?.submitting),
     onCancel: closePropagateDialog,
     onSubmit: handlePropagateSubmit,

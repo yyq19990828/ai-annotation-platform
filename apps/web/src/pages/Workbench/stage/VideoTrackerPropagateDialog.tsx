@@ -198,6 +198,8 @@ interface VideoTrackerPropagateDialogProps {
   onChangeSeedMode?: (mode: "point" | "box") => void;
   /** 已落框种子数 (框修正)。 */
   seedBoxCount?: number;
+  /** v0.22.1 · A2/A3 · 选中源轨迹类别 (用于「本次影响」摘要 + 文本检测类别继承警示); 无源时 null。 */
+  sourceTrackClassName?: string | null;
 }
 
 export function VideoTrackerPropagateDialog({
@@ -228,6 +230,7 @@ export function VideoTrackerPropagateDialog({
   seedMode = "point",
   onChangeSeedMode,
   seedBoxCount = 0,
+  sourceTrackClassName = null,
 }: VideoTrackerPropagateDialogProps) {
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
@@ -662,6 +665,25 @@ export function VideoTrackerPropagateDialog({
 
       {/* 次行: 范围预览 + 提示 + 警告 + 错误 (折行, 对齐 InteractiveToolBar 的次行) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-muted-foreground">
+        {/* v0.22.1 · A2/A3 · 本次影响摘要 (延展 / 新建) + 文本检测类别继承警示。 */}
+        {!isPolylineTrack && (
+          <span data-testid="tracker-impact-summary" className="text-foreground">
+            {textDrivenActive ? (
+              <>
+                本次将按文本新建轨迹
+                {sourceTrackClassName && (
+                  <span className="text-status-caution">
+                    {` · 新目标暂继承「${sourceTrackClassName}」类别`}
+                  </span>
+                )}
+              </>
+            ) : seedTargetCount > 1 ? (
+              `本次:延展选中轨迹 + 新建 ${seedTargetCount - 1} 条`
+            ) : (
+              `本次:延展选中轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}`
+            )}
+          </span>
+        )}
         <span className="mono">
           {grid > 1 ? (
             <>

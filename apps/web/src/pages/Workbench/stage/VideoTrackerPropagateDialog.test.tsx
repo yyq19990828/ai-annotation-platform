@@ -527,4 +527,51 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(count).toContain("1 点");
     expect(count).toContain("2 框");
   });
+
+  it("A2/A3 · 本次影响摘要: 单纯延展显示源类别", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        sourceTrackClassName="car"
+        onSubmit={vi.fn()}
+      />,
+    );
+    const summary = screen.getByTestId("tracker-impact-summary").textContent ?? "";
+    expect(summary).toContain("延展选中轨迹");
+    expect(summary).toContain("car");
+  });
+
+  it("A2 · 多目标种子: 摘要显示延展 + 新建 N 条", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        projectDefaultModel="sam3_video_interactive"
+        sourceTrackClassName="car"
+        seedTargetCount={3}
+        onSubmit={vi.fn()}
+        onToggleSeedCollecting={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("tracker-impact-summary").textContent).toContain("新建 2 条");
+  });
+
+  it("A3 · 文本检测: 摘要提示新目标继承源类别 (类别继承警示)", () => {
+    render(
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        projectDefaultModel="sam3_video"
+        supportedTrackers={["sam3_video"]}
+        textDrivenTrackers={["sam3_video"]}
+        sourceTrackClassName="car"
+        onSubmit={vi.fn()}
+      />,
+    );
+    const summary = screen.getByTestId("tracker-impact-summary").textContent ?? "";
+    expect(summary).toContain("按文本");
+    expect(summary).toContain("继承");
+    expect(summary).toContain("car");
+  });
 });
