@@ -8,6 +8,8 @@ last_reviewed: 2026-07-13
 
 # 视频追踪标注
 
+![真实城市交通视频任务工作台](../images/workbench/video-real-scene.png)
+
 ![视频追踪工作台：时间轴 + 逐帧前进 + 播放](../images/workbench/video-track-overview.gif)
 
 视频任务在同一个工作台里打开，左侧队列、顶部提交、右侧属性与评论仍沿用图片工作台。画布区域会切换为视频播放器，时间轴悬浮在画布底部。本页讲**矩形框、轨迹与关键帧**的标注。相关页：

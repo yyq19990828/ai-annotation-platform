@@ -12,8 +12,6 @@ last_reviewed: 2026-07-11
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
 
-![AI 工具子工具栏](../images/sam/subtoolbar.png)
-
 工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
 | 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
@@ -31,7 +29,7 @@ last_reviewed: 2026-07-11
 
 ## 工具说明
 
-<!-- screenshot pending: interactive-toolbar.png — 画布顶部交互工具栏全貌（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）。旧 ai-tool-drawer.png 已退役。 -->
+![交互工具栏：引擎、模型档位与连接状态](../images/sam/interactive-toolbar.png)
 
 > 选中点 / 框 / Exemplar 任一交互工具时，画布顶部居中浮出**交互工具栏**（横排布局，取代了旧的贴 ToolDock 右侧竖排抽屉）：左侧是引擎 / 模型 / 档位选择，右侧是工具特定控件（极性 / 输出形态 / 叠加文本 / 阈值），最右边是兼容性警告 + 状态指示。Mask 笔刷工具激活时改显 MaskToolbar，两者互斥。
 

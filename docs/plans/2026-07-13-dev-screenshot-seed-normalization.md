@@ -341,7 +341,7 @@ GIF 只保留 `docs-site/user-guide/images/` 中的最终副本。`apps/web/e2e/
 11. 重建 manifest，删除 stale entry 和重复 outputs GIF。
 12. 运行文档校验、视觉回归和文档构建。
 
-预计最终静态资产为 60 张自动 PNG 加 1 张手动 PNG，其中包括补齐已有 scene 的 `sam/interactive-toolbar.png`；GIF 以当前 12 个文档目标为基线。若 scene 清理导致数量变化，以“scene/manifest/disk/docs 四方一致”为最终标准，不把数量硬编码进 CI。
+最终静态资产为 60 张自动 PNG 加 3 张手动 PNG，其中包括补齐已有 scene 的 `sam/interactive-toolbar.png`；旧 `sam/subtoolbar.png` 与其内容完全重复，已统一到新的 canonical 名称并删除。GIF 以当前 12 个文档目标为基线。若 scene 清理导致数量变化，以“scene/manifest/disk/docs 四方一致”为最终标准，不把数量硬编码进 CI。
 
 ## 15. 测试计划
 
@@ -488,12 +488,17 @@ manifest 已迁移为带 SHA-256、尺寸、scene 源码、capture/fixture、see
 
 ### 阶段 E：全量重拍（约 1–2 个工作日）
 
-- [ ] 静态场景全跑，0 skip。
-- [ ] dark/mobile 声明矩阵全跑。
-- [ ] 文档目标 GIF 全部重录。
-- [ ] 人工审核完整图片 diff。
-- [ ] 更新正式截图指南、维护清单和 CHANGELOG。
-- [ ] 清理全部测试中间产物。
+- [x] 静态场景全跑，desktop-light 57/57 通过且无业务 skip。
+- [x] dark/mobile 声明矩阵全跑，2 个 dark 与 1 个 mobile 目标全部通过。
+- [x] 文档目标 GIF 全部重录，15 个流程通过并产出 12 个多帧文档 GIF。
+- [x] 人工审核完整图片 diff，并抽查 GIF 正文帧；清理 1 组重复图片和视频场景的持久化布局/候选提示污染。
+- [x] 更新正式截图指南、维护清单和 CHANGELOG。
+- [x] 清理全部测试中间产物。
+
+正式矩阵使用 live backend 生成 60 张自动 PNG，manifest 以当前 seed revision 重建为
+63 个静态条目；文档目标 GIF 均低于 5 MiB。发布门禁确认 57 个 scene、manifest、磁盘文件
+与文档引用四方一致，无缺图、孤儿和未豁免重复内容。protocol stub 下的 8 张视觉回归基线
+在无更新模式全部通过，交付前运行环境已恢复 SAM3 / RapidOCR live 绑定。
 
 总计约 8–12 个工作日。点云小型素材的许可证确认、ML protocol stub 适配或真实 backend 能力缺口可能影响排期。
 
@@ -540,13 +545,12 @@ manifest 已迁移为带 SHA-256、尺寸、scene 源码、capture/fixture、see
 
 ## Outcome
 
-- 状态：阶段 A–D 已完成；阶段 E 待执行。
+- 状态：阶段 A–E 已完成。
 - 已交付：版本化网络素材清单、安全缓存下载器、许可可追溯的真实图片/视频/点云派生素材、
   desired-state reconcile、显式任务映射、真实角色与多状态任务、只读 screenshot seed catalog、
   ML Backend 场景能力契约、live/stub 发现、图片/视频/OCR 项目绑定、catalog 驱动的
   Playwright 真实角色场景、确定性浏览器环境、远程 DEV 同源媒体与 WebSocket 代理、v2
-  manifest 与完整性门禁、真实视觉回归基线，以及定向后端和浏览器验证。
-- 当前待办：阶段 E 生成并人工审核全量 PNG/GIF，把 manifest 从 legacy migration 提升为
-  当前 seed revision，并通过 release gate。
-- 正式文档：阶段 D 已同步截图操作、manifest 和视觉回归说明；全量图片清单待阶段 E 更新。
+  manifest 与完整性门禁、真实视觉回归基线、当前 seed revision 的全量 PNG/GIF、人工视觉审核，
+  以及 live/stub 后端和浏览器验证。
+- 正式文档：截图操作指南、维护清单、DEV 快速参考和用户手册真实场景引用均已同步。
 - 未尽事项：维护清单中不属于现有自动场景的待拍项，实施后另立截图覆盖扩展计划。

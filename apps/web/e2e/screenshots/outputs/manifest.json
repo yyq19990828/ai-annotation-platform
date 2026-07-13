@@ -1,15 +1,15 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-13T10:12:38.174Z",
+  "generated_at": "2026-07-13T11:03:25.854Z",
   "seed_profile": "screenshots",
-  "seed_revision": "legacy-pre-catalog",
-  "source_commit": "b83b7e6b526f1bde1d6b2e8eca2cd3ef4effcefc",
+  "seed_revision": "screenshots-2026-07-d",
+  "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
   "projects": [
     "desktop-light",
     "desktop-dark",
     "mobile"
   ],
-  "provenance": "legacy-migration",
+  "provenance": "current-run",
   "entries": {
     "docs-site/user-guide/images/datasets/import-images-wizard.png": {
       "auto": true,
@@ -23,11 +23,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -36,9 +36,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:22.873Z",
-      "provenance": "legacy",
-      "sha256": "8306fce95df9b5ff0f332ff643109bf3d07b0f74b4982af6872eefd40c06ec28",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "7222175ae4559be03ecb9b287dc32c5d0f188270117492edf251d7873773b4d3",
       "width": 640,
       "height": 361
     },
@@ -54,11 +54,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -67,11 +67,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:45.326Z",
-      "provenance": "legacy",
-      "sha256": "bfc421dc66b975db0f903c9f3c5aaa4a7032a964bd82e7e2d22a4df2649351a6",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "0425b326bf569ba96285d1c93cf1da978ddc7383e1ae555050fc45dd0fba1828",
       "width": 520,
-      "height": 717
+      "height": 852
     },
     "docs-site/user-guide/images/getting-started/forgot-password.png": {
       "auto": true,
@@ -83,11 +83,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -96,9 +96,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:03:50.486Z",
-      "provenance": "legacy",
-      "sha256": "e392600e078e1b5658f000e8f05bfd572ad895c99df32877f603f613cbc17cc3",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "12bfaf7d554518e979e0a14c6ff45718f0249df4c2951feb4a3f02617ff9b349",
       "width": 1440,
       "height": 900
     },
@@ -112,11 +112,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-dark",
       "viewport": {
@@ -125,9 +125,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:21.853Z",
-      "provenance": "legacy",
-      "sha256": "99e735e19aa8030115a681913531d4f8e8666a7157e8df5cde1823077f11f573",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "e3308be724b970c14f00e8a6f9ab31a0be300f3fb58e713b122bb6bb34e056a0",
       "width": 1440,
       "height": 900
     },
@@ -141,11 +141,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "mobile",
       "viewport": {
@@ -154,11 +154,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:07:30.426Z",
-      "provenance": "legacy",
-      "sha256": "a89dd0b1a7e545f56345e8cae18dfea263724d48a2837c7cb92cba67e44d44f6",
-      "width": 1170,
-      "height": 1992
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "bb9fee9f4247a6a36203046680d2cef8ee8bdde8c0977f63d17ace50414e91fc",
+      "width": 390,
+      "height": 664
     },
     "docs-site/user-guide/images/getting-started/login.png": {
       "auto": true,
@@ -170,11 +170,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -183,9 +183,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:03:48.821Z",
-      "provenance": "legacy",
-      "sha256": "c4c6a62ac3b3929ab781cbdc646d3ecb55ccde42f2835cb26eb0b1cf973ca59e",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "65107dd617f6c77df99f377974e823be42b5e008569b71bfb6bf790d6f52bfc8",
       "width": 1440,
       "height": 900
     },
@@ -201,11 +201,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -214,9 +214,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:54.791Z",
-      "provenance": "legacy",
-      "sha256": "b9482440234719b65df46d15d392eda91acb0b32be82481f1eccdc9d80598d6c",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "b94710ce31b0171048e5397a44c51bcee75971d2ffea1539b6bb3920b5bae9d8",
       "width": 220,
       "height": 852
     },
@@ -230,11 +230,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -243,9 +243,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:56.970Z",
-      "provenance": "legacy",
-      "sha256": "1ba41683c120966a59cd9f0009f8b4a132abdec9b60f56d2c8dd8227132db361",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "1488d5b6ce7a248b42b58421817326b4af6651d6df9fe189dbf484080df6a649",
       "width": 1440,
       "height": 900
     },
@@ -259,13 +259,16 @@
         "selector": "[data-testid=\"mask-toolbar\"]",
         "padding": 12
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -274,11 +277,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:11.571Z",
-      "provenance": "legacy",
-      "sha256": "8e3f9cb6c6e9c7f06f660e255472af99ca3b0afe16fbcc29c190a310e1b30047",
-      "width": 619,
-      "height": 79
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "8b036215d663b75b4805820cce45446916d72bc7b7b263047b2378ec9ff91cdb",
+      "width": 525,
+      "height": 97
     },
     "docs-site/user-guide/images/notifications/panel-overview.png": {
       "auto": true,
@@ -292,11 +295,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -305,11 +308,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:58.932Z",
-      "provenance": "legacy",
-      "sha256": "3ec831c61ee884645a973c2e0c0bf1070ff2a442ad2ff32e3659999739520c65",
-      "width": 1440,
-      "height": 900
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "a290aa6d4f86e39b36be5d0ae5eb813f1b6e859e8710704b50f6a245d7deb5ca",
+      "width": 520,
+      "height": 653
     },
     "docs-site/user-guide/images/polygon/close-hint.png": {
       "auto": true,
@@ -319,13 +322,16 @@
       "capture": {
         "kind": "viewport"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -334,9 +340,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:03:55.766Z",
-      "provenance": "legacy",
-      "sha256": "9ec9bb40728f4b9a1c63f56da86c179f6a62e2c95a39b575a139718e5ffd8d6f",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "b7aed834f67ee73960071e933b38065b0824c4e8cf6b99c7f6fcf20852f4ed43",
       "width": 1440,
       "height": 900
     },
@@ -348,13 +354,16 @@
       "capture": {
         "kind": "viewport"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -363,9 +372,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:03:53.043Z",
-      "provenance": "legacy",
-      "sha256": "9ec9bb40728f4b9a1c63f56da86c179f6a62e2c95a39b575a139718e5ffd8d6f",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "3659469e3c41b3d14f0db75c6addc48150cb335cbab2ad895aebcf319ff39457",
       "width": 1440,
       "height": 900
     },
@@ -377,13 +386,17 @@
       "capture": {
         "kind": "fullPage"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "batch": "active",
+        "backend": "image_interactive"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -392,9 +405,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:26.058Z",
-      "provenance": "legacy",
-      "sha256": "997ebf4805a7873f7a0b8d635237c2e391c86be254f1d2c1a262f0c95f0e2999",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "e3e773612d5a3bf95710ef9d9a61b070194a759c3235cb45b12cade151d7946c",
       "width": 1440,
       "height": 900
     },
@@ -408,11 +421,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -421,9 +434,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:49.237Z",
-      "provenance": "legacy",
-      "sha256": "fdab34dbe470e0294f94b359210cdec934dd27840c7047b2174e8db86e0b5ccb",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "1b9283f54009e3aaec8b92bae9287edf03552b65ee6ac1dc82966c25cbc8e3a6",
       "width": 1440,
       "height": 900
     },
@@ -437,11 +450,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -450,9 +463,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:47.075Z",
-      "provenance": "legacy",
-      "sha256": "332b39f855ab450cc125cdef37ca435c8bfc41b604ed38514634a12a35600c3b",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "4bcbaf7cc1ff4fbc77bf9a452f8ead4d8fdaf79dbd45dc8d0d6b510bff2645eb",
       "width": 1440,
       "height": 900
     },
@@ -464,13 +477,16 @@
       "capture": {
         "kind": "fullPage"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "batch": "review"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -479,9 +495,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:14.865Z",
-      "provenance": "legacy",
-      "sha256": "89ccf37d19666348420ddf23c6c0fa6bd586fca49a49fad4a368d3e35ed024c9",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "c614df4132ee4410138255491067a7e6b78d1247633b01ad38fec3e16de4043c",
       "width": 1440,
       "height": 900
     },
@@ -495,11 +511,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-dark",
       "viewport": {
@@ -508,9 +524,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:24.353Z",
-      "provenance": "legacy",
-      "sha256": "0926e75462b4f92537b67b52bc16545dc3bcfd864ae961a1073bdf58bd71748c",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "128f7bbb76d01d7b01f8762eb16a3530f7b0a4c1414ada36f294c21a9965c1a4",
       "width": 1440,
       "height": 900
     },
@@ -524,11 +540,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -537,9 +553,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:04.479Z",
-      "provenance": "legacy",
-      "sha256": "b3b2f547faa2889b725fc6f63a8d564e19242eb9860422589bda0541dde679ab",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "ef74cfa4a39797f2b2248b9ebfb22196b0abd242d25cecc768f6579204fe748c",
       "width": 1440,
       "height": 900
     },
@@ -551,13 +567,16 @@
       "capture": {
         "kind": "fullPage"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "predicted"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -566,9 +585,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:19.161Z",
-      "provenance": "legacy",
-      "sha256": "398fce9fd715947353d14ffe5974670782ab16ad4376f87a27c22e34d1e6ff86",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "957aa2d28c617d6b960a686ad06f9baefc8dabb689b05526333864f165993987",
       "width": 1440,
       "height": 900
     },
@@ -580,13 +599,16 @@
       "capture": {
         "kind": "fullPage"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "predicted"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -595,9 +617,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:17.111Z",
-      "provenance": "legacy",
-      "sha256": "78c4762e96c942ea7a9c011ca667a3e21ec9d9e9c903e02504886c26ba6af3f5",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "5466cb0d9daab645742cbefbeaf16311a6ac1b227358895e2672c50ca8701452",
       "width": 1440,
       "height": 900
     },
@@ -611,11 +633,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -624,9 +646,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:07.878Z",
-      "provenance": "legacy",
-      "sha256": "4df74b11a4827453ffb9c9f916e24f21a23cc1b62ae66f42e995afdafa32f1a2",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "f1df4aef143d0a4ac4981e04d8b975f779c7c66b45883bcf1c2065858687f908",
       "width": 1440,
       "height": 900
     },
@@ -640,11 +662,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -653,9 +675,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:10.378Z",
-      "provenance": "legacy",
-      "sha256": "eca718f6cc1fd39198d7511e35b42adb9b9f9c90d88847fc5cc72e2de7e98949",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "0d7ca01b60d700790a679b858b2af586e9de2e580844836c93c61a4cd2702ab8",
       "width": 1440,
       "height": 900
     },
@@ -669,13 +691,16 @@
         "selector": "[role=\"dialog\"]",
         "padding": 0
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "backend": "image_interactive"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -684,11 +709,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:23.773Z",
-      "provenance": "legacy",
-      "sha256": "7cddca749baa3c49ab2f026ab9bad602472b07f79f50a0809a0a7dfcc947525d",
-      "width": 560,
-      "height": 603
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "d81359680183795031fbd66b3d912188f4e00fcc3fe4b8ed12e0af1fbb8adc3f",
+      "width": 720,
+      "height": 401
     },
     "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
       "auto": true,
@@ -700,13 +725,17 @@
         "selector": "[role=\"dialog\"]",
         "padding": 0
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "predicted",
+        "backend": "image_interactive"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -715,11 +744,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:28.837Z",
-      "provenance": "legacy",
-      "sha256": "647fe8923e6a0f8b7de601c49ac66b1acddf566bee07689906c8c762904920d3",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "28a7c1bcc9aa8bfa5b157b8e9debf08b508bc6b0cbc86eee6996f4bf9459e7d4",
       "width": 560,
-      "height": 457
+      "height": 455
     },
     "docs-site/user-guide/images/projects/prediction-purge-modal.png": {
       "auto": true,
@@ -731,13 +760,16 @@
         "selector": "[role=\"dialog\"]",
         "padding": 0
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "predicted"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -746,11 +778,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:31.901Z",
-      "provenance": "legacy",
-      "sha256": "f6d92b1d160c747c02322fddb9bcc3f20da7367404cae2a5303abfcd3e6c6d38",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "b170a66fb030380e1f7780e4181197c82d8b3e075b2a5ab82c95a0066d5c2c9d",
       "width": 520,
-      "height": 320
+      "height": 318
     },
     "docs-site/user-guide/images/projects/template-library-overview.png": {
       "auto": true,
@@ -762,11 +794,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -775,9 +807,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:21.241Z",
-      "provenance": "legacy",
-      "sha256": "80c927c88f1a2fd238c4399e470c736608f5bf4a44a819acf207fca227da70ee",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "f9ed76d99fd4f6cd5286011e7d76dca26e72959f99bc06d86bed3f27d30dddc5",
       "width": 1440,
       "height": 900
     },
@@ -789,13 +821,15 @@
       "capture": {
         "kind": "fullPage"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -804,9 +838,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:12.619Z",
-      "provenance": "legacy",
-      "sha256": "fee34b6fa1ad0765d3fa18964724a9f06cb8e6e993bba78c6a5d9a5c4c365aed",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "7f53588fc151d4bbfdd0947d82fe10e5e14d1b2d0b64b28aad9535fa422822c9",
       "width": 1440,
       "height": 900
     },
@@ -822,11 +856,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -835,10 +869,10 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:52.956Z",
-      "provenance": "legacy",
-      "sha256": "c0ed4a8ef178fc982fcffd3c8aa9c96f5a35b6bc4d1369a7b7bbb06eae44c10f",
-      "width": 582,
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "e305b9f0ee499f7dff4f5de201e2ae6af6a458e282c92ed9d35383b2c5727e6b",
+      "width": 586,
       "height": 175
     },
     "docs-site/user-guide/images/projects/wizard-steps.png": {
@@ -853,11 +887,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -866,11 +900,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:06.105Z",
-      "provenance": "legacy",
-      "sha256": "ab916a133920fea1bfd6fca1bfee9b0c7750b3df5484f709d09eed804438fb11",
-      "width": 582,
-      "height": 768
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "a5952a75100bae8f3f52912826a7a5aacbae17aac1e9754e474894bf0fd7ba2a",
+      "width": 586,
+      "height": 752
     },
     "docs-site/user-guide/images/review/reject-form.png": {
       "auto": true,
@@ -882,13 +916,17 @@
         "selector": "[role=\"dialog\"]",
         "padding": 0
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "review",
+        "batch": "review"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -897,9 +935,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:39.954Z",
-      "provenance": "legacy",
-      "sha256": "b416cee4a5b3a82948be3c76b22dbfccd94c360febfb0267acac46f647ec7ca1",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "a61da3da716f47a5f9b76a43e2fd4415b77b18b13f92a9e2b6e97a678f116c90",
       "width": 460,
       "height": 405
     },
@@ -911,13 +949,16 @@
       "capture": {
         "kind": "fullPage"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "batch": "review"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -926,9 +967,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:42.862Z",
-      "provenance": "legacy",
-      "sha256": "131668df2040c87e73f573c622c500c430a9e223ef86c460dd03ff75579995b5",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "0f81e979ed79fe8946be5f54a15e68526c7ac15638d70d449cfe22a2de9f0772",
       "width": 1440,
       "height": 900
     },
@@ -940,13 +981,17 @@
       "capture": {
         "kind": "viewport"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "review",
+        "batch": "review"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -955,9 +1000,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:35.614Z",
-      "provenance": "legacy",
-      "sha256": "1db13ffd2ef6af96fba2cf96868d8d789a4c1b341fd645408db7ada39ef75450",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "a963f032ba60ab32be57e5d50a201a9f549b122db788189147f0a8d2cd3db8b7",
       "width": 1440,
       "height": 900
     },
@@ -971,13 +1016,20 @@
         "selector": "[data-testid=\"ai-prediction-popover\"]",
         "padding": 8
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "predicted",
+        "backend": "image_interactive",
+        "capabilities": [
+          "task:interactive_seg"
+        ]
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -986,9 +1038,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:20.584Z",
-      "provenance": "legacy",
-      "sha256": "93244c874462cdd776a37072d18511a370a9ffb1223fdfbcaae5dd7752c2c319",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "0e98284739049b8776ae8f68a4a46d42287f514b36b06e8a3f72e5e68e20cd54",
       "width": 376,
       "height": 824
     },
@@ -1002,13 +1054,21 @@
         "selector": "[data-testid=\"interactive-toolbar\"]",
         "padding": 8
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating",
+        "backend": "image_interactive",
+        "capabilities": [
+          "prompt:exemplar",
+          "output:polygon"
+        ]
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1017,29 +1077,37 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:17.309Z",
-      "provenance": "legacy",
-      "sha256": "e36f52bf1b08d7e421f5c5aa311e983975e4c45ff476ca838e545c2f7f32dc75",
-      "width": 256,
-      "height": 220
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "ec906d023b034373b67995df7cbc08efa32e71905ea4ea87050cbf46fd815310",
+      "width": 928,
+      "height": 60
     },
-    "docs-site/user-guide/images/sam/subtoolbar.png": {
+    "docs-site/user-guide/images/sam/interactive-toolbar.png": {
       "auto": true,
-      "target": "docs-site/user-guide/images/sam/subtoolbar.png",
-      "scene": "sam/subtoolbar",
-      "source": "apps/web/e2e/screenshots/scenes/workbench-sam.ts",
+      "target": "docs-site/user-guide/images/sam/interactive-toolbar.png",
+      "scene": "sam/interactive-toolbar",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
       "capture": {
         "kind": "locator",
         "selector": "[data-testid=\"interactive-toolbar\"]",
         "padding": 8
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating",
+        "backend": "image_interactive",
+        "capabilities": [
+          "prompt:interactive_box",
+          "output:polygon"
+        ]
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1048,11 +1116,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:04:02.808Z",
-      "provenance": "legacy",
-      "sha256": "f4ad310080be1b41c854d73b5d700b47b486f23aa3d758b4be5d1c37112aa288",
-      "width": 256,
-      "height": 236
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "ce4e7dd3deb3f9a79c97b7182c434ba1bbd5b04da8267de0545b5546d5f8c6f6",
+      "width": 422,
+      "height": 56
     },
     "docs-site/user-guide/images/sam/text-three-modes.png": {
       "auto": false,
@@ -1074,11 +1142,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1087,9 +1155,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:32.999Z",
-      "provenance": "legacy",
-      "sha256": "fcd8a525b4fe420f1e64adddc8bdaa0b0605eeff943a72d3bed311b3ba301930",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "a13dd8843fd00bcd2997b6f9b4b3426849cbce6bd290aa581583eaa232ecca4c",
       "width": 1440,
       "height": 900
     },
@@ -1103,11 +1171,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1116,9 +1184,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:28.949Z",
-      "provenance": "legacy",
-      "sha256": "afbbc6af6813849cfd17d5749e3bb927cbd8f3f8fa120fb8cdcad9882b83d26a",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "90b720586bd95d02036873b8c2c80f0f2d3d5a05e127a1e35e80b8f59dd405a3",
       "width": 1440,
       "height": 900
     },
@@ -1132,11 +1200,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1145,9 +1213,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:24.808Z",
-      "provenance": "legacy",
-      "sha256": "1c513cd22f8cb06c67f72a609f5ab516b9287854396253df2f5488ae5eb85705",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "09f6fc23bce3c4b2fd890f4a57c7cd885174a96d05480ee785dd44c982db6146",
       "width": 1440,
       "height": 900
     },
@@ -1161,11 +1229,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1174,9 +1242,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:30.974Z",
-      "provenance": "legacy",
-      "sha256": "415317c07543c4986a3af7a3d3b4b8cd905b09a72300451e72d7423839ab52a5",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "a0903ffe9ffd1d4b6008c4f10e13d07893705ad4bc8ed3452fbdfbbb63d9d0f0",
       "width": 1440,
       "height": 900
     },
@@ -1190,11 +1258,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1203,9 +1271,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:26.929Z",
-      "provenance": "legacy",
-      "sha256": "29d6dcff711f4c7eb9ac5fa425eecb65d58954bbd90f8aca45f911e805bda756",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "b04ca2a3364ff059cbb307b6cb1198f65041c96cb41fe0b744d21fe5ccd94329",
       "width": 1440,
       "height": 900
     },
@@ -1221,11 +1289,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1234,11 +1302,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:46.203Z",
-      "provenance": "legacy",
-      "sha256": "3fa674338a890b0ae3bd8b53a7253c5106ebcb75bf97c4837c909539b9cad0d5",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "0aaee819d5e9b109f1c47bfe04db5026fce7fd1604fc2427aa277658efd4624e",
       "width": 1172,
-      "height": 243
+      "height": 122
     },
     "docs-site/user-guide/images/superadmin/analytics/overview.png": {
       "auto": true,
@@ -1250,11 +1318,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1263,9 +1331,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:43.951Z",
-      "provenance": "legacy",
-      "sha256": "9d91358566fa2a27e8974610d8d26f2f7c94fa89fde5fec020cef68289544bd3",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "45945268224784b69bcda9af8447f399bbbfb5c05afebc6f0a81c892a6b706e0",
       "width": 1440,
       "height": 900
     },
@@ -1281,11 +1349,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1294,11 +1362,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:08.381Z",
-      "provenance": "legacy",
-      "sha256": "8294127acd9187e1ea76a52279b06f4c162c0b1bee16795d04c3cfb12d85bb8d",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "57ca9a4ed13b900ec9476392b2b2dac49061137bc8d897c156551ee768916949",
       "width": 620,
-      "height": 616
+      "height": 561
     },
     "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
       "auto": true,
@@ -1310,11 +1378,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1323,9 +1391,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:53.822Z",
-      "provenance": "legacy",
-      "sha256": "e8eb3d045b8004cf8201e00c1d6869791901ac3bc4db7a9ff9a5d6073108965d",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "0639745fac9d3985eb974765b509561fa03463f80bc8d5f1a81471f42189e8de",
       "width": 1440,
       "height": 900
     },
@@ -1349,11 +1417,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1362,9 +1430,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:39.200Z",
-      "provenance": "legacy",
-      "sha256": "4849ef352806263238481048cbc33b62c46f8de33ba42422fc65126aa1b587f5",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "dde18648fdf1da42d2c78c464a2976ab657f39899b875f286de687091117b899",
       "width": 1440,
       "height": 900
     },
@@ -1390,11 +1458,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1403,11 +1471,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:14.075Z",
-      "provenance": "legacy",
-      "sha256": "6a7c75dc5c20e63edb76bcad855452326950fe0c40df125dc63e65de543a948d",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "01eef3aec1b4706660699a2d1045a0442b8ee8792405c4613874c47b310d4cc6",
       "width": 560,
-      "height": 603
+      "height": 575
     },
     "docs-site/user-guide/images/superadmin/model-market/list.png": {
       "auto": true,
@@ -1419,11 +1487,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1432,9 +1500,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:51.678Z",
-      "provenance": "legacy",
-      "sha256": "384b424fb0e6816f881ec55e77ce975962304e67b2e8edf1b652f343c353de6f",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "71d3b0a99d937d36f9da84602adeb567a3ce5a14e66bf1549316f8c92695883e",
       "width": 1440,
       "height": 900
     },
@@ -1448,11 +1516,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1461,9 +1529,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:16.504Z",
-      "provenance": "legacy",
-      "sha256": "3b95762da16c6bcd8d101c487debb9335db00981766ccc60d3019d916feaedc1",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "5d4638dd3b14800f804d0d71a8641261c35a2b05d520c5bc2c939b5417fcee84",
       "width": 1440,
       "height": 900
     },
@@ -1477,11 +1545,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1490,9 +1558,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:49.190Z",
-      "provenance": "legacy",
-      "sha256": "e0b02dfe096038bbb62892b1c15d6162b4224f1655aaa53b7bbc5340bf8b9ec7",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "17b5c2274ae222c2c60ccc6e3be378e0ea0d43f192523e9067295096aa57184d",
       "width": 1440,
       "height": 900
     },
@@ -1508,11 +1576,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1521,11 +1589,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:11.430Z",
-      "provenance": "legacy",
-      "sha256": "d31885dfc1e701d374172d0e73b9ca6893704d40af2f849a642baff22529c68b",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "eeb17e5a430ec8a9e41f735ddceec5b6b32db8f38cad80be5b5e455e0a32c443",
       "width": 644,
-      "height": 123
+      "height": 206
     },
     "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
       "auto": true,
@@ -1539,11 +1607,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1552,11 +1620,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:01.538Z",
-      "provenance": "legacy",
-      "sha256": "202adcb9791ded0064d9a611124555d7f8efa520e6773bc5be34f95d06a02870",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "02019a8d04af1d1c57ba942e8c9abf9983e301303f7febce54b7aa3a6f80940e",
       "width": 520,
-      "height": 349
+      "height": 345
     },
     "docs-site/user-guide/images/superadmin/users/groups-tab.png": {
       "auto": true,
@@ -1568,11 +1636,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1581,9 +1649,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:03.652Z",
-      "provenance": "legacy",
-      "sha256": "efa1a3d896e9fba3fa05088062d31e47ccaed9169411d0b5352cc65f503d4a73",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "d5f8bee3a485b34402855b2e9428024ce18055f63a694b547d24febe2eada768",
       "width": 1440,
       "height": 900
     },
@@ -1599,11 +1667,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1612,11 +1680,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:37.086Z",
-      "provenance": "legacy",
-      "sha256": "0224ebbe2d8c5bccf86dab4f752680eca8808f82100cb3326ffe03e087409ba3",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "01756c23d40a6d7245666e4e28a2020aabf19805d41cd006443216133b1ad73e",
       "width": 520,
-      "height": 350
+      "height": 348
     },
     "docs-site/user-guide/images/superadmin/users/list.png": {
       "auto": true,
@@ -1628,11 +1696,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1641,9 +1709,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:34.928Z",
-      "provenance": "legacy",
-      "sha256": "daf5d69b062ecdc56fc4079b9e4783695caf6f04040c35532cc0f67d3f3a7496",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "148cfface330f507f9ec0ec8887a63f8b86424e0b7e8e570221b2b0760003137",
       "width": 1440,
       "height": 900
     },
@@ -1657,11 +1725,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1670,9 +1738,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:06:05.774Z",
-      "provenance": "legacy",
-      "sha256": "08ec613d6621f24bd3037f0657864315b131a6af3fe7e32abae365df4dfde6c4",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "b1e5807ce4dea33b32f84ab43936ada03ccc50114abd3e3592828fc7536f63c0",
       "width": 1440,
       "height": 900
     },
@@ -1684,13 +1752,16 @@
       "capture": {
         "kind": "viewport"
       },
-      "fixture": null,
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating"
+      },
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1699,9 +1770,115 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:08.524Z",
-      "provenance": "legacy",
-      "sha256": "235698c106d6586b873f8cdf2ce4b9dd8e060f44a292a1d0c31dcaa6110b121c",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "b68b69fca8b6371e0d6bd588fb92f2da1f46c007e4133071e89e558a1196133b",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/workbench/ocr-real-scene.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/workbench/ocr-real-scene.png",
+      "scene": "workbench/ocr-real-scene",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-media.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": {
+        "project": "ocr_demo",
+        "task": "ocr",
+        "backend": "ocr",
+        "capabilities": [
+          "task:ocr",
+          "output:polygon",
+          "attribute:text"
+        ]
+      },
+      "seed_profile": "screenshots",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "adb34d292cd799466cc1d63c6edf5d0ecd3a502dcf3674dfca3b0025b4064ff4",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/workbench/pointcloud-real-scene.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/workbench/pointcloud-real-scene.png",
+      "scene": "workbench/pointcloud-real-scene",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-media.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": {
+        "project": "pointcloud_demo",
+        "task": "frame_000"
+      },
+      "seed_profile": "screenshots",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "8688e386a67794233581fa48eac71bf1d02a95d7d76cdd65a3118bab39ea99d5",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/workbench/video-real-scene.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/workbench/video-real-scene.png",
+      "scene": "workbench/video-real-scene",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-media.ts",
+      "capture": {
+        "kind": "viewport"
+      },
+      "fixture": {
+        "project": "video_demo",
+        "task": "tracking",
+        "backend": "video_tracker",
+        "capabilities": [
+          "task:tracker"
+        ]
+      },
+      "seed_profile": "screenshots",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "d040c756987e44f9fa3924a11537f719d59a0b85f374bbab7a97855416ffdb1a",
       "width": 1440,
       "height": 900
     },
@@ -1715,11 +1892,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "legacy-pre-catalog",
-      "source_commit": "585a4671668e0c2b2c39953a23bf780227d6e8a7",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
       "browser": {
         "name": "chromium",
-        "version": "unknown"
+        "version": "147.0.7727.15"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1728,9 +1905,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-06-19T12:05:01.107Z",
-      "provenance": "legacy",
-      "sha256": "7173280c8ccb60549ce46fa6d83c732924acdeff6838b1441bfd30ebc90b54d4",
+      "generated_at": "2026-07-13T11:03:25.854Z",
+      "provenance": "current-run",
+      "sha256": "bc83de6ca8bcbc5388653fd1e9c821310b42c0e28b12169aded6b04ef3c7996f",
       "width": 1440,
       "height": 900
     }

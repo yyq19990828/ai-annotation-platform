@@ -3,7 +3,6 @@ import type { ScreenshotScene } from "./_types";
 
 import { AUTH_SCENES } from "./auth";
 import { POLYGON_SCENES } from "./workbench-polygon";
-import { SAM_SCENES } from "./workbench-sam";
 import { PROJECT_SCENES } from "./projects";
 import { REVIEW_SCENES } from "./review";
 import { EXPORT_SCENES } from "./export";
@@ -25,7 +24,6 @@ function fromSource(source: string, scenes: ScreenshotScene[]): ResolvedScreensh
 export const SCENES: ResolvedScreenshotScene[] = [
   ...fromSource("apps/web/e2e/screenshots/scenes/auth.ts", AUTH_SCENES),
   ...fromSource("apps/web/e2e/screenshots/scenes/workbench-polygon.ts", POLYGON_SCENES),
-  ...fromSource("apps/web/e2e/screenshots/scenes/workbench-sam.ts", SAM_SCENES),
   ...fromSource("apps/web/e2e/screenshots/scenes/projects.ts", PROJECT_SCENES),
   ...fromSource("apps/web/e2e/screenshots/scenes/review.ts", REVIEW_SCENES),
   ...fromSource("apps/web/e2e/screenshots/scenes/export.ts", EXPORT_SCENES),

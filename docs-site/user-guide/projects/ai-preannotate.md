@@ -100,6 +100,10 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 OCR 与文档版面预标走和几何检测（YOLO）、文本检测（gsam2/sam3）**完全相同的 model-first 配置**：「模型任务」下拉列出 backend 自报的所有可批量预标的模型，OCR 端到端 / 检测模型与几何检测器并列出现，按选中模型自动决定要不要文本 prompt、要不要变体面板。
 
+![真实 OCR 图片在工作台当前题 AI 面板中的模型与参数](../images/workbench/ocr-real-scene.png)
+
+同一能力也可从工作台「当前题 AI」面板对正在标注的图片直接运行；项目必须先绑定支持 OCR 输出契约的 ML Backend。
+
 <!-- 历史：曾有 OCR / 文档版面专属的「任务类型」tab 层，since v0.20.5 取消并与几何 / 文本检测的 model-first 配置对齐。-->
 
 - **选 OCR 端到端模型**（默认值 `ocr-e2e`）：整图直接出文本 polygon + `text` / `orientation` / `language` 属性，不需要文本 prompt；变体面板按模型自报的轴展开 PP-OCRv5/v6 × 尺寸档 × 通用(中英)/英文，调档实际下发后端。

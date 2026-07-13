@@ -8,19 +8,24 @@
 > 更新流程：
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
-> 2. `pnpm --filter @anno/web screenshots`
-> 3. `git diff docs-site/user-guide/images/` 人眼审阅
-> 4. 满意即 commit；如需调整可编辑 `apps/web/e2e/screenshots/scenes/` 中对应场景的 `prepare` 钩子后再跑
+> 2. 修复截图 seed 并按能力绑定 live backend；无 GPU 时显式使用协议 stub
+> 3. `pnpm --filter @anno/web screenshots:matrix` 和 `pnpm --filter @anno/web screenshots:flows`
+> 4. `git diff docs-site/user-guide/images/` 人眼审阅全部 PNG 和 GIF 正文帧
+> 5. 运行 manifest release gate 和 orphan strict gate 后再提交
 
 ## 拍摄约定
 
-- **分辨率**：1920×1080（页面级）/ 1280×720（GIF 录屏）
+- **分辨率**：desktop 1440×900、mobile 390×664；GIF 录屏 1280×720
 - **格式**：截图 PNG，GIF 用于流程录屏
-- **浏览器**：Chrome / Edge，关闭账号头像 / 时间 / 通知数等动态元素
-- **数据脱敏**：邮箱 `demo@example.com`、姓名 `张三 / 李四 / 王五`、项目名 `演示项目-A`
+- **浏览器**：Playwright 固定版本 Chromium；时区、语言、DPR、时钟和动画由 driver 统一固定
+- **数据来源**：只使用 `screenshots` seed catalog 的固定逻辑键；不从开发库随机选择项目或任务
+- **动态信息**：账号、时间和通知数等不稳定区域由统一 mask 规则处理
 - **标注红框**：引导读者注意的位置用红框（#FF3333，2px）
-- **主题**：统一浅色主题
+- **主题**：默认浅色；只有 scene 显式声明时才生成 dark / mobile 变体
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
+
+当前正式矩阵包含 60 张自动 PNG（57 desktop-light、2 desktop-dark、1 mobile）、
+3 张手工 PNG 和 12 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
@@ -218,12 +223,12 @@
 - [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 [auto]
 - [ ] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线；旧 1×1 占位图已删除，待重拍
 - [ ] `images/keypoint/hand.png` — 21 点手部骨架；旧 1×1 占位图已删除，待重拍
-- [x] `images/sam/subtoolbar.png` — SAM 子工具栏 [auto]
 - [x] `images/sam/text-three-modes.png` — 文字提示三种模式 `[manual]`（旧自动截图场景已移除，现作为保留参考图）
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
 - [x] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
+- [x] `images/workbench/ocr-real-scene.png` — 真实 OCR 图片 + 当前题 AI 模型/参数面板 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，提交转 polygon 落库）
@@ -232,8 +237,9 @@
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，nuScenes-mini）
-- [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，nuScenes-mini）
+- [x] `images/workbench/pointcloud-real-scene.png` — 真实 PCL RGB-D 室内扫描点云工作台 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-DEV）
+- [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，P-PC-DEV）
+- [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [x] `images/polygon/draw-in-progress.gif` — 多边形逐点绘制全过程（落点 + 预览线，Enter 闭合提交）`[auto-gif]`（flows/polygon-draw，P-COCO8）
@@ -242,7 +248,7 @@
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
 - [x] `images/workbench/rotated-bbox.gif` — 拖框生成旋转框（angle=0）全过程 `[auto-gif]`（flows/rotated-bbox，P-COCO8；旋转手柄演示待补，盲拖坐标易空拖出第二框）
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
-- [ ] `images/sam/interactive-toolbar.png` — 画布顶部交互工具栏（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）；旧 `ai-tool-drawer.png` 已退役待替换 `[auto]`（scene: `sam/interactive-toolbar`）
+- [x] `images/sam/interactive-toolbar.png` — 画布顶部交互工具栏（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）`[auto]`（scene: `sam/interactive-toolbar`，P-COCO8 + live backend）
 - [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
 - [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
@@ -253,6 +259,7 @@
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
 - [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）
+- [x] `images/workbench/video-real-scene.png` — 真实城市交通视频任务工作台 `[auto]`（scene: `workbench/video-real-scene`，P-VIDEO-DEV）
 - [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`
 - [ ] `images/workbench/video-track-compose-dialog.png` — 跳连对话框两种 gap 模式 [manual]
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]

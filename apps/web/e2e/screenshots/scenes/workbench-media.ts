@@ -18,6 +18,27 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       await page.getByTestId("video-timeline-shell").waitFor({ state: "visible", timeout: 15_000 });
       await page.getByTestId("video-konva-stage").waitFor({ state: "visible", timeout: 10_000 });
       await page.getByText("实时同步", { exact: true }).waitFor({ timeout: 5000 });
+
+      // 录制型 flow 会收起边栏并把该偏好保存到账号；正式静态图必须显式恢复统一布局。
+      for (const title of ["展开任务列表", "展开标注详情"]) {
+        const button = page.getByTitle(title);
+        if (await button.count()) {
+          await button.first().click();
+          await page.waitForTimeout(300);
+        }
+      }
+
+      // 后台追踪若在 seed repair 前刚好完成，候选审阅条可能晚到；静态场景只展示干净工作台。
+      const trackerReview = page.getByTestId("video-tracker-review-bar");
+      if (await trackerReview.isVisible()) {
+        await page.getByTestId("tracker-review-discard").click();
+        await trackerReview.waitFor({ state: "hidden", timeout: 5000 });
+        await page
+          .getByText("已丢弃 AI 追踪候选", { exact: true })
+          .waitFor({ state: "hidden", timeout: 10_000 });
+      }
+
+      await page.getByTitle("适应视口（双击空白）").click();
       await page.waitForTimeout(800);
     },
     target: "docs-site/user-guide/images/workbench/video-real-scene.png",
