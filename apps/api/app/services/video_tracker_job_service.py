@@ -147,16 +147,19 @@ async def create_tracker_job(
     *,
     task: Task,
     ctx: VideoContext,
-    annotation_id: uuid.UUID,
+    annotation_id: uuid.UUID | None,
     payload: VideoTrackerPropagateRequest,
     user: User,
 ) -> VideoTrackerJobOut:
     _assert_frame_range(ctx, payload.from_frame, payload.to_frame)
-    annotation = await _load_annotation(db, task, annotation_id)
-    # polyline 轨迹传播暂不支持: runner 只识别 polygon/bbox track, polyline 会命中 bbox
-    # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
-    if is_polyline_track(annotation.geometry or {}):
-        raise HTTPException(status_code=400, detail="polyline 轨迹传播暂不支持")
+    # v0.22.1 · B · 源轨迹可选: 无源检测 (annotation_id is None) 不加载 source / 不查 polyline,
+    # 新建轨迹类别由 payload.target_* 显式指定。有源延展保留 polyline 400 拒绝。
+    if annotation_id is not None:
+        annotation = await _load_annotation(db, task, annotation_id)
+        # polyline 轨迹追踪暂不支持: runner 只识别 polygon/bbox track, polyline 会命中 bbox
+        # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
+        if is_polyline_track(annotation.geometry or {}):
+            raise HTTPException(status_code=400, detail="polyline 轨迹追踪暂不支持")
     privileged = await _is_privileged(db, task, user)
     segment_id = await _assert_segment_lock(
         db, ctx, payload, user, privileged=privileged
@@ -166,6 +169,9 @@ async def create_tracker_job(
         task_id=task.id,
         dataset_item_id=ctx.item.id,
         annotation_id=annotation_id,
+        # v0.22.1 · B · 无源时存显式目标类别 (有源留空, 继承源)。
+        target_class_name=payload.target_class_name if annotation_id is None else None,
+        target_tool_unit_id=payload.target_tool_unit_id if annotation_id is None else None,
         segment_id=segment_id,
         created_by=user.id,
         status=VideoTrackerJobStatus.QUEUED.value,

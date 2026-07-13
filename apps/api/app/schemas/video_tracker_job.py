@@ -61,6 +61,11 @@ class VideoTrackerPropagateRequest(BaseModel):
     text: str | None = Field(default=None, max_length=500)
     exemplars: list[TrackerExemplar] | None = None
     output_geometry: Literal["bbox", "polygon", "mask"] | None = None
+    # v0.22.1 · B · 无源检测 (画布级发起): source_annotation_id 缺省 = 无源, 新建轨迹类别
+    # 由 target_class_name/target_tool_unit_id 显式指定。有源延展时留空 (从 path / 继承源)。
+    source_annotation_id: UUID | None = None
+    target_class_name: str | None = Field(default=None, max_length=100)
+    target_tool_unit_id: str | None = Field(default=None, max_length=30)
 
     @field_validator("prompt")
     @classmethod
@@ -72,7 +77,7 @@ class VideoTrackerJobOut(BaseModel):
     id: UUID
     task_id: UUID
     dataset_item_id: UUID
-    annotation_id: UUID
+    annotation_id: UUID | None = None
     segment_id: UUID | None = None
     created_by: UUID | None = None
     status: TrackerJobStatus

@@ -350,6 +350,80 @@ async def test_runner_sourceless_detection_lands_all_as_new_tracks(
         assert all(kf["source"] == "prediction" for kf in r.geometry["keyframes"])
 
 
+async def test_create_tracker_job_sourceless_stores_target_category(
+    db_session, super_admin
+):
+    """v0.22.1 · B · 无源发起 (source_annotation_id=None): job 建成且 annotation_id 为空,
+    显式目标类别落到 target_class_name/target_tool_unit_id。"""
+    from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_tracker_job_service import create_tracker_job
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    ctx = await build_context_from_task(db_session, task)
+    payload = VideoTrackerPropagateRequest(
+        from_frame=0,
+        to_frame=3,
+        model_key="sam3_video",
+        text="pedestrian",
+        target_class_name="pedestrian",
+        target_tool_unit_id="bbox",
+    )
+    body = await create_tracker_job(
+        db_session, task=task, ctx=ctx, annotation_id=None, payload=payload, user=user
+    )
+    job = await db_session.get(VideoTrackerJob, body.id)
+    assert job is not None
+    assert job.annotation_id is None
+    assert job.target_class_name == "pedestrian"
+    assert job.target_tool_unit_id == "bbox"
+
+
+async def test_create_tracker_job_with_source_keeps_target_null(
+    db_session, super_admin
+):
+    """有源延展: source_annotation_id 给出时 target_* 留空 (继承源, 不写显式类别)。"""
+    from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_tracker_job_service import create_tracker_job
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    source = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_track_bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={
+            "type": "video_track_bbox",
+            "track_id": "trk_src",
+            "keyframes": [
+                {"frame_index": 0, "bbox": {"x": 1, "y": 2, "w": 3, "h": 4}, "source": "manual"}
+            ],
+            "outside": [],
+        },
+        track_id="trk_src",
+    )
+    db_session.add(source)
+    await db_session.flush()
+    ctx = await build_context_from_task(db_session, task)
+    payload = VideoTrackerPropagateRequest(
+        from_frame=0,
+        to_frame=3,
+        model_key="mock_bbox",
+        target_class_name="pedestrian",  # 有源时应被忽略
+    )
+    body = await create_tracker_job(
+        db_session, task=task, ctx=ctx, annotation_id=source.id, payload=payload, user=user
+    )
+    job = await db_session.get(VideoTrackerJob, body.id)
+    assert job.annotation_id == source.id
+    assert job.target_class_name is None
+
+
 async def test_runner_single_instance_no_extra_tracks(
     db_session, super_admin, monkeypatch
 ):
