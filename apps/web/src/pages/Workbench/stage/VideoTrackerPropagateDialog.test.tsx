@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   resolveTrackerDefaultModel,
+  visibleTrackerModelOptions,
   VideoTrackerPropagateDialog,
 } from "./VideoTrackerPropagateDialog";
 import { videoDialogMemoryStorageKey } from "../state/videoDialogMemory";
@@ -14,6 +15,26 @@ const baseProps = {
   submitting: false,
   onCancel: vi.fn(),
 };
+
+describe("visibleTrackerModelOptions", () => {
+  const has = (opts: Array<{ value: string }>, v: string) => opts.some((o) => o.value === v);
+
+  it("生产构建始终隐藏 mock_bbox (即便没绑后端)", () => {
+    expect(has(visibleTrackerModelOptions(false, false), "mock_bbox")).toBe(false);
+    expect(has(visibleTrackerModelOptions(true, false), "mock_bbox")).toBe(false);
+  });
+
+  it("dev 构建未绑后端时保留 mock_bbox, 绑后端仍过滤", () => {
+    expect(has(visibleTrackerModelOptions(false, true), "mock_bbox")).toBe(true);
+    expect(has(visibleTrackerModelOptions(true, true), "mock_bbox")).toBe(false);
+  });
+
+  it("过滤后仍保留真实模型", () => {
+    const prod = visibleTrackerModelOptions(false, false);
+    expect(has(prod, "sam2_video")).toBe(true);
+    expect(has(prod, "sam3_video_interactive")).toBe(true);
+  });
+});
 
 describe("VideoTrackerPropagateDialog", () => {
   it("按 项目默认 > 用户记忆 > 首个真实模型 > mock 解析默认模型", () => {

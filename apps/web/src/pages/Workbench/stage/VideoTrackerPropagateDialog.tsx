@@ -104,6 +104,18 @@ function usesSamVariant(modelKey: string): boolean {
   return modelKey === "sam2_video";
 }
 
+// v0.22.2 · mock_bbox「测试框」只是无后端时验证流程的开发/测试兜底, 不是给真实用户的模型。
+// 绑了真实后端 (preferNonMockModel) 时一直会过滤掉它; 现进一步在生产构建 (非 import.meta.env.DEV)
+// 里彻底不出现 —— 即便项目没绑后端, 生产 UI 也不再露出 mock。dev 构建保留它便于本地无 GPU 验证。
+export function visibleTrackerModelOptions(
+  preferNonMockModel: boolean,
+  isDev: boolean,
+): typeof TRACKER_MODEL_OPTIONS {
+  return preferNonMockModel || !isDev
+    ? TRACKER_MODEL_OPTIONS.filter((m) => m.value !== "mock_bbox")
+    : TRACKER_MODEL_OPTIONS;
+}
+
 const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
   rangePreset: "30",
   direction: "forward",
@@ -285,14 +297,11 @@ export function VideoTrackerPropagateDialog({
   // v0.22.1 · B · 无源检测的目标类别 (新建轨迹用); 每次打开重置为首个可选类别。
   const [targetClass, setTargetClass] = useState<string>("");
 
-  // v0.21.14 · 项目已绑真实 tracker 后端 (preferNonMockModel) 时从下拉过滤掉测试用 mock_bbox,
-  // 避免误选跑出假框; 未绑后端 / 测试环境仍保留 mock 可见。过滤后的表也用于默认模型解析,
-  // 使记忆里残留的 mock_bbox 不再复现 (不在候选 → 回退到首个真实模型)。
+  // v0.21.14 · 绑真实后端时过滤掉测试用 mock_bbox (避免误选跑出假框); v0.22.2 · 生产构建
+  // 里进一步彻底隐藏 mock (即便没绑后端)。过滤后的表也用于默认模型解析, 使记忆里残留的
+  // mock_bbox 不再复现 (不在候选 → 回退到首个真实模型)。
   const modelOptions = useMemo(
-    () =>
-      preferNonMockModel
-        ? TRACKER_MODEL_OPTIONS.filter((m) => m.value !== "mock_bbox")
-        : TRACKER_MODEL_OPTIONS,
+    () => visibleTrackerModelOptions(preferNonMockModel, import.meta.env.DEV),
     [preferNonMockModel],
   );
 
