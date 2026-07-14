@@ -42,7 +42,7 @@
 
 ### L0 · 显存账本地基（前置，与 CPU fallback 审计计划共享）
 
-1. **放行 `effective_device` + per-backend 显存**：从 `ml_client.py:139` 与 `ml_health.py:41` 两处白名单放行 `effective_device`（及 ORT 系的生效 provider），落进注册表 `health_meta`。此步由 [ML backend CPU fallback 审计计划](../plans/2026-07-13-ml-backend-cpu-fallback-audit.md) 的 WS4 交付，本 ADR 直接消费。
+1. **放行 `effective_device` + per-backend 显存**：从 `ml_client.py:139` 与 `ml_health.py:41` 两处白名单放行 `effective_device`（及 ORT 系的生效 provider），落进注册表 `health_meta`。此步由 [ML backend CPU fallback 审计计划](../plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md) 的 WS4 交付，本 ADR 直接消费。
 2. **账本落 Redis**（跨进程真值），按物理卡 key：
    - `card:{device_id}` → `{ total_mb, committed_mb }`
    - `backend:{registry_id}` → `{ card_id, budget_mb, priority, loaded: bool, last_used_at, inflight: int }`
@@ -123,7 +123,7 @@
 
 ## Notes
 
-- **前置依赖**：L0 的 `effective_device` 放行由 [ML backend CPU fallback 审计计划](../plans/2026-07-13-ml-backend-cpu-fallback-audit.md)（WS4）交付；本 ADR 与该计划是「地基 ↔ 上层」关系，建议该计划先行。
+- **前置依赖**：L0 的 `effective_device` 放行由 [ML backend CPU fallback 审计计划](../plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md)（WS4）交付；本 ADR 与该计划是「地基 ↔ 上层」关系，建议该计划先行。
 - **主要代码触点**：仲裁 gate 加在 `ml_client.py`（`predict` / `predict_interactive` 的 `_acquire()` 前）；派发方 `tasks.py:481`（`_run_batch`）、`video_tracker_runner.py:800`；注册表列 `ml_backend_registry.py:16` + alembic 迁移；开关与卡容量 `config.py`；新增 `app/services/gpu_arbiter.py` + Redis 账本；卸载复用 `ml_backends.py:304`。
 - **配置**：`gpu_arbiter_enabled`（默认 false）、`card_total_mb` 兜底、per-backend `vram_budget_mb` / `priority` / `gpu_device_id`。
 - **触发 / 灰度**：默认关；单卡多 backend 部署开启。上线先 L1（超额告警）验证预算数值，再开 L2 仲裁。
