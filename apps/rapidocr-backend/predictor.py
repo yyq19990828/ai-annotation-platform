@@ -30,6 +30,7 @@ import numpy as np
 from rapidocr import OCRVersion, RapidOCR
 
 from catalog import RUNTIME_PARAM_DEFAULTS, ResolvedEngine
+import catalog as catalog_mod
 
 logger = logging.getLogger("rapidocr-backend.predictor")
 
@@ -56,7 +57,7 @@ def _probe_ort_cuda_use() -> bool:
         return False
     if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
         return False
-    probe_path = catalog.resolve(catalog.DET_MODEL_ID, None).det_path
+    probe_path = catalog_mod.resolve(catalog_mod.DET_MODEL_ID, None).det_path
     if not os.path.exists(probe_path):
         # 启动期模型可能尚未落盘：退回软检查 (与 RapidOCR 原判定口径一致)，避免误降级。
         return onnxruntime.get_device() == "GPU"
