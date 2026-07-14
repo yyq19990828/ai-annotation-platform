@@ -7,22 +7,24 @@ requires-python = ">=3.10"
 # rapidocr / onnxruntime-gpu / opencv 由 Dockerfile 安装（pin rapidocr==3.9.0 + GPU 引擎 +
 # opencv-python-headless），不在此声明，避免与运行时版本冲突。
 dependencies = [
+    "cryptography>=43.0.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.5",
+    "PyJWT>=2.10,<3",
     "httpx>=0.27",
     "numpy>=1.24,<3.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "predictor", "schemas", "catalog"]
+py-modules = ["main", "predictor", "schemas", "catalog", "engine_pool", "gpu_lifecycle"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

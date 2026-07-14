@@ -3,7 +3,7 @@
 # Base 与瘦身后的 onnxtools-backend 共享 nvidia/cuda cudnn9 runtime（见 v0.20.0 plan「镜像 base 决策」）：
 # cuda12.8 + cudnn9 满足 onnxruntime-gpu 的 CUDAExecutionProvider，系统 cuDNN 走标准 ldconfig 路径，
 # 无需 LD_LIBRARY_PATH hack。RapidOCR 官方 GPU 镜像即同模式（third-party/rapidocr/docker/Dockerfile.onnxruntime-gpu，
-# 用 12.4）。缺 GPU 时 onnxruntime 自动 fallback CPU。
+# 用 12.4）。应用只在明确设备错误时构造 CPU replacement；显式 CPU 模式不申请 GPU。
 #
 # 端口 8005（compose profile gpu-rapidocr）；与 gsam2(8001)/sam3(8002)/yolo(8003)/onnxtools(8004) 解耦。
 #
@@ -40,13 +40,15 @@ RUN python3 -m pip install --no-build-isolation -e /app/backend_runtime
 
 # RapidOCR（pin v3.9.0）+ GPU onnxruntime + backend 轻依赖。RapidOCR 拉 opencv_python(全量)，
 # 容器无 GUI → 换 opencv-python-headless（仿 RapidOCR 官方 Dockerfile）。
-RUN python3 -m pip install "rapidocr==3.9.0" "onnxruntime-gpu" \
+RUN python3 -m pip install "rapidocr==3.9.0" "onnxruntime-gpu==1.23.2" \
+        "cryptography>=43.0.0" "PyJWT>=2.10,<3" \
         "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5" "httpx>=0.27" "numpy>=1.24,<3.0" \
     && python3 -m pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null; \
        python3 -m pip install "opencv-python-headless>=4.5.1"
 
 COPY rapidocr-backend/main.py rapidocr-backend/predictor.py \
-     rapidocr-backend/schemas.py rapidocr-backend/catalog.py ./
+     rapidocr-backend/schemas.py rapidocr-backend/catalog.py \
+     rapidocr-backend/engine_pool.py rapidocr-backend/gpu_lifecycle.py ./
 
 # 模型目录：13 个 onnx 由 bind mount 注入（download_models.py 下载，见 docker-compose.ml.yml）。
 RUN mkdir -p /app/models
