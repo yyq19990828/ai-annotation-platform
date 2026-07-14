@@ -136,6 +136,8 @@ class MLBackendClient:
                 # 这里整段透传; 模型市场变体面板按字段优先级展示 (backend 无 pool 时静默跳过).
                 # v0.10.36 · 加 video_pool (cap / loaded_variants / active_sessions / idle_seconds),
                 # 供视频追踪显存池观测 (backend 无该字段时静默跳过; video pool 协议化留下版).
+                # v0.22.3 WS4 · 加 compute (configured_device/effective_device/effective_provider),
+                # 暴露 backend 是否已静默退回 CPU; platform overview + PerfHud 两路均依赖此处放行.
                 meta = {
                     k: data[k]
                     for k in (
@@ -148,6 +150,7 @@ class MLBackendClient:
                         "last_request_age_seconds",
                         "pool",
                         "video_pool",
+                        "compute",
                     )
                     if k in data
                 }

@@ -48,6 +48,9 @@ _PERFHUD_META_KEYS = (
     "last_request_age_seconds",
     "pool",
     "video_pool",
+    # v0.22.3 WS4 · compute (configured_device/effective_device/effective_provider),
+    # 用于 PerfHud 显示 GPU 静默退回 CPU 告警。
+    "compute",
 )
 
 

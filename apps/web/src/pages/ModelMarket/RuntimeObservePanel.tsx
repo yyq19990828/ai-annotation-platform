@@ -45,6 +45,27 @@ interface RegisteredRef {
   observe?: ObserveTarget;
 }
 
+/** v0.22.3 WS4 · GPU 静默退回 CPU 判定: 配置了 GPU 但实际落到 CPU。
+ * torch 系看 effective_device==="cpu"; ORT 系看 effective_provider==="CPUExecutionProvider"
+ * (此时 configured_device 为 cuda/CUDA 才算异常退回, 显式配 cpu 不告警)。 */
+type ComputeObs =
+  | {
+      configured_device?: string | null;
+      effective_device?: string | null;
+      effective_provider?: string | null;
+    }
+  | null
+  | undefined;
+
+function isCpuFallback(compute: ComputeObs): boolean {
+  if (!compute) return false;
+  if (compute.configured_device === "cpu") return false;
+  return (
+    compute.effective_device === "cpu" ||
+    compute.effective_provider === "CPUExecutionProvider"
+  );
+}
+
 function normalizeUrl(url: string) {
   return url.replace(/\/+$/, "");
 }
@@ -265,6 +286,17 @@ function RegisteredRuntimeCard({
         <Badge variant={ok ? "success" : "danger"} dot>
           {ok ? "在线" : "离线"}
         </Badge>
+        {/* v0.22.3 WS4 · GPU 静默退回 CPU 告警角标 (compute 来自 health_meta 缓存)。 */}
+        {isCpuFallback(backend.health_meta?.compute) && (
+          <span title="配置了 GPU 但已静默退回 CPU 推理">
+            <Badge
+              variant="outline"
+              className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+            >
+              ⚠ CPU 回退
+            </Badge>
+          </span>
+        )}
         <span className="max-w-[220px] truncate text-sm font-semibold">{backend.name}</span>
         <span className="text-xs text-muted-foreground" title={projectNames.join(" / ")}>
           {projectNames.length > 1

@@ -92,6 +92,12 @@ export interface BackendHealthMeta {
   video_pool?: VideoPoolMeta | null;
   /** v0.10.37 · /setup 能力快照 (epic 阶段 1); check_health 探 /setup 后落库。 */
   capabilities?: BackendCapabilities | null;
+  /** v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。 */
+  compute?: {
+    configured_device?: string | null;
+    effective_device?: string | null;
+    effective_provider?: string | null;
+  } | null;
 }
 
 // v0.10.37 · backend /setup 能力快照 (epic 阶段 1); modalities 为派生视图 (image/video)。

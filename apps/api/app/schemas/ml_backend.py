@@ -173,6 +173,23 @@ class BackendCapabilities(BaseModel):
     warnings: list[CapabilityWarning] = []
 
 
+class ComputeInfo(BaseModel):
+    """Backend 有效计算设备观测 (五镜像统一)。
+
+    v0.22.3 WS4 · torch 系 (yolo/gsam2/sam3) 填 ``effective_device`` ("cuda"/"cpu"/None),
+    ORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 "CPUExecutionProvider"/
+    "CUDAExecutionProvider")。``configured_device`` 为配置意图; 当其非 "cpu" 而有效设备
+    已退回 CPU 时, 前端显示「⚠ CPU 回退」告警角标。
+    """
+
+    configured_device: str | None = None
+    effective_device: str | None = None
+    effective_provider: str | None = None
+
+    class Config:
+        extra = "allow"
+
+
 class HealthMeta(BaseModel):
     """v0.9.11 · backend `/health` 深度指标缓存. 由 services/ml_backend.check_health 写入,
     `/admin/ml-integrations/overview` + PerfHud WS 消费."""
@@ -183,6 +200,8 @@ class HealthMeta(BaseModel):
     model_version: str | None = None
     # v0.10.37 · /setup 能力快照 (epic 阶段 1)
     capabilities: BackendCapabilities | None = None
+    # v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。
+    compute: ComputeInfo | None = None
 
     class Config:
         extra = "allow"
@@ -237,6 +256,8 @@ class MLBackendStatsSnapshot(BaseModel):
     last_request_age_seconds: float | None = None
     pool: dict | None = None
     video_pool: dict | None = None
+    # v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。
+    compute: ComputeInfo | None = None
     timestamp: datetime
 
 

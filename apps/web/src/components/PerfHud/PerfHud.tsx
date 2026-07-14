@@ -156,6 +156,12 @@ function BackendPanel({
       <div className={styles.backendMeta}>
         {bindings.length > 0 ? <span>{bindings.map(formatBinding).join(" · ")}</span> : null}
         {snap.gpu_info?.device_name ? <span>{snap.gpu_info.device_name}</span> : null}
+        {/* v0.22.3 WS4 · GPU 静默退回 CPU 指示 (torch 系 effective_device==="cpu")。 */}
+        {snap.compute?.effective_device === "cpu" && (
+          <span className="text-amber-600 dark:text-amber-400" title="GPU 配置但已退回 CPU">
+            · ⚠ CPU
+          </span>
+        )}
         {snap.url_host ? <span>· {snap.url_host}</span> : null}
         {loadLabel ? <span>· {loadLabel}</span> : null}
         {idleAge ? <span>· {idleAge}</span> : null}
