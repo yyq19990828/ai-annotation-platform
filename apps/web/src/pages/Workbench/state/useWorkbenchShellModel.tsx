@@ -25,7 +25,14 @@ import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import { mlBackendsApi } from "@/api/ml-backends";
-import type { Annotation, TaskResponse, AnnotationResponse, VideoTrackGeometry, VideoTrackMaskGeometry } from "@/types";
+import type {
+  Annotation,
+  TaskResponse,
+  AnnotationResponse,
+  VideoTrackGeometry,
+  VideoTrackMaskGeometry,
+  MLBackendResponse,
+} from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
@@ -243,7 +250,7 @@ export function useWorkbenchShellModel({
   //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
   const backendsQ = useMLBackends(projectId);
   const backends = useMemo(
-    () => (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>,
+    () => (backendsQ.data ?? []) as MLBackendResponse[],
     [backendsQ.data],
   );
   const firstBackendId = backends[0]?.id ?? null;
@@ -1159,16 +1166,39 @@ export function useWorkbenchShellModel({
     savedInteractiveBackendId: interactiveBackendPref.savedBackendId ?? null,
     onSaveInteractiveBackend: interactiveBackendPref.save,
   });
-  // v0.21.25 (阶段 R) · tracker 可用性看「项目所有 reachable backend 的 supported_trackers 并集」,
-  // 而非单个绑定/交互 backend——否则项目绑 grounded-sam2 时, sam3-backend 声明的 sam3_video 永远
-  // 被灰置「未绑定后端」。与后端 get_tracker_backend 的按能力路由对齐。
-  const allSupportedTrackers = useMemo(() => {
-    const set = new Set<string>();
-    for (const entry of Object.values(routing.capIndex)) {
-      if (entry.reachable) for (const t of entry.trackers) set.add(t);
+  // tracker 可用性按项目已启用、已连接且 reachable 的 backend 分别计算；保留 provider
+  // 归属，避免把两个 backend 的原子能力误拼成一个可执行 combo。
+  const trackerModelProviders = useMemo(() => {
+    const providers: Record<string, string[]> = {};
+    for (const backend of backends) {
+      const entry = routing.capIndex[backend.id];
+      if (backend.state !== "connected" || !entry?.reachable) continue;
+      for (const tracker of entry.trackers) {
+        (providers[tracker] ??= []).push(backend.name);
+      }
+      if (
+        entry.trackers.includes("sam3_video") &&
+        entry.trackers.includes("sam3_video_interactive")
+      ) {
+        (providers.sam3_video_combo ??= []).push(backend.name);
+      }
     }
+    return providers;
+  }, [backends, routing.capIndex]);
+  const allSupportedTrackers = useMemo(
+    () => Object.keys(trackerModelProviders),
+    [trackerModelProviders],
+  );
+  const allTextDrivenTrackers = useMemo(() => {
+    const set = new Set<string>();
+    for (const backend of backends) {
+      const entry = routing.capIndex[backend.id];
+      if (backend.state !== "connected" || !entry?.reachable) continue;
+      for (const tracker of entry.textDrivenTrackers) set.add(tracker);
+    }
+    if (trackerModelProviders.sam3_video_combo) set.add("sam3_video_combo");
     return [...set];
-  }, [routing.capIndex]);
+  }, [backends, routing.capIndex, trackerModelProviders]);
   // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
@@ -2898,6 +2928,24 @@ export function useWorkbenchShellModel({
       ...trackerSeeds.map((sd) => sd.obj),
       ...trackerSeedBoxes.map((sb) => sb.obj),
     ]).size > 1;
+  const trackerSeedTargets = [
+    ...new Set([
+      ...trackerSeeds.map((seed) => seed.obj),
+      ...trackerSeedBoxes.map((seed) => seed.obj),
+    ]),
+  ]
+    .sort((a, b) => a - b)
+    .map((targetId) => ({
+      targetId,
+      pointCount: trackerSeeds.filter((seed) => seed.obj === targetId).length,
+      boxCount: trackerSeedBoxes.filter((seed) => seed.obj === targetId).length,
+      frames: [
+        ...new Set([
+          ...trackerSeeds.filter((seed) => seed.obj === targetId).map((seed) => seed.frame),
+          ...trackerSeedBoxes.filter((seed) => seed.obj === targetId).map((seed) => seed.frame),
+        ]),
+      ].sort((a, b) => a - b),
+    }));
 
   // v0.21.28 · 候选/接受: 本任务的待审候选 (candidates 按 jobId, 用 jobs[jobId].taskId 过滤)。
   // 普通计算 (非 hook): 位于早返回之后, 且计算便宜。
@@ -3127,7 +3175,7 @@ export function useWorkbenchShellModel({
                     : []
                   )
                     .map((id) => backends.find((b) => b.id === id))
-                    .filter((b): b is { id: string; name: string } => !!b)
+                    .filter((b): b is MLBackendResponse => !!b)
                 }
                 selectedInteractiveId={interactiveBackendId}
                 onSelectInteractive={routing.setPreferredInteractiveId}
@@ -3584,11 +3632,11 @@ export function useWorkbenchShellModel({
     userId: meUserId ?? null,
     samplingStep,
     projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
-    preferNonMockModel: Boolean(currentProject?.ml_backend_id),
-    // v0.21.19 · 能力协商: backend 声明的 tracker 列表, 用于灰置未声明的 text-driven tracker (sam3_video)。
-    // v0.21.25 (阶段 R): 取所有已启用 backend 的并集 (allSupportedTrackers), 不再局限单个绑定/交互 backend。
+    preferNonMockModel: allSupportedTrackers.length > 0,
+    // 仅把当前项目真正可执行的 tracker 与 provider 下发给选择器。
     supportedTrackers: allSupportedTrackers,
-    textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
+    textDrivenTrackers: allTextDrivenTrackers,
+    trackerModelProviders,
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
     // v0.22.1 · A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
@@ -3620,15 +3668,9 @@ export function useWorkbenchShellModel({
     seedBoxCount: trackerSeedBoxes.length,
     seedMode,
     onChangeSeedMode: changeSeedMode,
-    // 目标/帧数跨点与框统计。
-    seedTargetCount: new Set([
-      ...trackerSeeds.map((s) => s.obj),
-      ...trackerSeedBoxes.map((b) => b.obj),
-    ]).size,
-    seedFrameCount: new Set([
-      ...trackerSeeds.map((s) => s.frame),
-      ...trackerSeedBoxes.map((b) => b.frame),
-    ]).size,
+    // 按目标逐行展示点数、框数和所在帧；当前目标即下一个种子的归属。
+    seedTargets: trackerSeedTargets,
+    activeSeedTargetId: seedObj,
     onToggleSeedCollecting: toggleSeedCollecting,
     onNewSeedTarget: newSeedTarget,
     onClearSeeds: () => {

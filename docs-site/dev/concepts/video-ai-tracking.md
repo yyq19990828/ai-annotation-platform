@@ -7,7 +7,7 @@ last_reviewed: 2026-07-14
 
 # 视频 AI 追踪架构
 
-视频 AI 追踪是一条独立于图片批量预标的“人在环”链路：标注员从一条已有轨迹发起模型传播，worker 分窗执行，结果先暂存为 job 候选，人工接受后才写入 annotation。
+视频 AI 追踪是一条独立于图片批量预标的“人在环”链路：标注员可以延展单条已有轨迹、批量延展多条轨迹，或从画布级入口发现多个新目标。worker 分窗执行，结果先暂存为 job 候选，人工接受后才写入 annotation。
 
 本页解释稳定的数据边界与执行流程。端点字段见[视频后端帧服务](../reference/video-frame-service#tracker-job)，backend wire contract 见 [ML Backend Protocol](../reference/ml-backend-protocol#22-interactive-predict单图或短交互)，WebSocket 事件见 [WS 协议](../reference/ws-protocol#6-wsvideo-tracker-jobsjob_id)。
 
@@ -25,7 +25,7 @@ last_reviewed: 2026-07-14
 
 ```mermaid
 flowchart LR
-    A["选中源轨迹 或 画布级发起(无源)"] --> B["选择 tracker、范围与提示"]
+    A["单轨延展 / 多选延展 / 画布发现"] --> B["选择 tracker、范围与提示"]
     B --> C["按 supported_trackers 选择 backend"]
     C --> D["创建 VideoTrackerJob"]
     D --> E["Celery worker 分窗调用 /predict"]
@@ -39,7 +39,7 @@ flowchart LR
 
 核心入口：
 
-- 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态；画布级「AI 追踪」入口由 `Topbar.onToggleTracker` 提供，位于 AI 单题入口左侧，不选轨迹也能发起。`VideoTrackerPropagateDialog` 经 `WorkbenchLayout.stageOverlay` 挂到中间画布，不再占用 ToolDock 或视口级居中弹窗。
+- 前端：`useWorkbenchShellModel.tsx` 组织范围、点 / 框种子和 job 审阅状态；顶部「发现目标」是画布级无源入口，选中卡 / 右键菜单的「延展此轨迹」是单源入口，多选卡的「批量延展」是多源入口。`VideoTrackerPropagateDialog` 首屏显示作用范围，并按作用范围过滤模型：文本发现只在画布级入口出现，单轨 / 多选只列种子驱动模型。
 - API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate`（延展选中轨迹）或 `POST /tasks/{task_id}/video:track`（源可选）创建 job。`video:track` 的源模式有三种：`source_annotation_id` 单源延展；`source_annotation_ids[]` 多选批量（一个 job 延展 N 条已有轨迹，各回填各自源）；两者皆缺省即无源检测（`target_class_name` 指定新轨迹类别）。
 - worker：`app.workers.video_tracker.run_video_tracker_job` 调用 `video_tracker_runner`。
 - backend adapter：`video_tracker_adapters.py` 把平台 context 转为 ML Backend `/predict` 请求。
@@ -52,11 +52,11 @@ flowchart LR
 `MLBackendService.get_tracker_backend(project_id, model_key)` 的选择顺序是：
 
 1. 读取项目所有已启用 backend。
-2. 只保留 `health_meta.capabilities.supported_trackers` 包含 `model_key` 的实例。
+2. 只保留状态为 connected，且 `health_meta.capabilities.supported_trackers` 包含全部所需能力的实例。
 3. 项目主后端在候选中时优先。
-4. 否则选择 connected 候选；没有 connected 时保留首个匹配项供调用层给出明确错误。
+4. 否则选择第一个匹配实例；没有 connected 候选时返回 `None`，创建 job 的 API 在排队前返回 422。
 
-前端使用同一能力集合过滤追踪面板。`mock_bbox` 是本地 adapter，不参加 backend 路由；生产构建始终不在 UI 暴露它，仅开发构建在无真实 backend 时保留流程兜底。
+组合模型要求**同一个** backend 同时声明 `sam3_video` 与 `sam3_video_interactive`，不能把两个 backend 的能力并集误拼成可执行组合。前端从项目已启用 backend 的 `/setup` 能力与连接状态构建 `model_key → backend names`，下拉只显示可执行模型并标出提供者。`mock_bbox` 是本地 adapter，不参加 backend 路由；生产构建始终不在 UI 暴露它，仅开发构建在无真实 backend 时保留流程兜底。
 
 ## 面板与布局状态
 
@@ -82,6 +82,7 @@ AI 追踪与 AI 单题共用一套面板 chrome，但开关互斥：`togglePropa
 
 - `text` 必填，可附带 exemplar。
 - 每个窗口是独立检测会话，窗内 id 不能直接视为全局对象 id。
+- 后续窗口还会把上一窗每个实例最后的有效 bbox 作为正框提示，与 `text` 一起送入种子帧。这样窗首暂时没有纯文本检出时仍能续追已有对象，同时保留发现新目标的能力。
 - 平台在相邻窗口边界帧按 bbox IoU 关联，把窗内局部 id 映射为全局稳定 `instance_id`。
 - 未匹配的新实例分配新全局 id，供接受阶段创建独立轨迹。
 
@@ -104,7 +105,7 @@ runner 根据模型选择窗口大小：SAM3 系使用 `VIDEO_TRACKER_SAM3_WINDO
 分窗有三个不变量：
 
 1. job 的 `from_frame / to_frame` 始终使用绝对源帧。
-2. 首窗接收原始点 / 框种子；后续窗使用上一窗每个实例最后一个非 outside 几何续种。
+2. 首窗接收原始点 / 框种子；后续窗使用上一窗每个实例最后一个非 outside 几何续种。PVS 把它们写入 memory，multiplex 把它们作为与文本组合的正框提示。
 3. 帧采样只影响最终持久化：模型仍逐源帧计算，接受时按 `grid_step` 丢弃非网格帧。
 
 `direction=backward` 时窗口倒序执行，但单个窗口和 prompt 中的 `frame_index` 仍是绝对帧号。窗口之间发布同一个 job 事件流，不为每窗创建子 job。

@@ -59,4 +59,11 @@ describe("VideoTrackBatchCardContent · 显隐/锁定切换按钮", () => {
     expect(screen.getByLabelText("批量锁定")).toBeDisabled();
     expect(screen.getByLabelText("批量隐藏")).not.toBeDisabled();
   });
+
+  it("多选 AI 入口明确为批量延展", async () => {
+    const onBatchTrack = vi.fn();
+    render(<VideoTrackBatchCardContent {...baseProps} onBatchTrack={onBatchTrack} />);
+    await userEvent.click(screen.getByRole("button", { name: "批量延展轨迹" }));
+    expect(onBatchTrack).toHaveBeenCalledTimes(1);
+  });
 });

@@ -75,6 +75,13 @@ describe("VideoTrackCardContent", () => {
     expect(screen.getByTitle("下一关键帧")).toBeTruthy();
   });
 
+  it("单轨 AI 入口明确为延展当前轨迹", () => {
+    const onPropagateTrack = vi.fn();
+    renderCard({ onPropagateTrack });
+    fireEvent.click(screen.getByRole("button", { name: "延展此轨迹" }));
+    expect(onPropagateTrack).toHaveBeenCalledWith(expect.objectContaining({ id: "ann-1" }));
+  });
+
   it("关键帧表渲染全部关键帧, prediction 行带接受/拒绝", () => {
     renderCard({ onAcceptPredictionKeyframe: vi.fn(), onRejectPredictionKeyframe: vi.fn() });
     expect(screen.getAllByTestId(/video-(track|prediction)-keyframe-row/)).toHaveLength(3);

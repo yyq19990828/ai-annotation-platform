@@ -8,6 +8,7 @@ import {
 import { Bot, Clock3, Info, Loader2, MousePointer2, Move, Type, X } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/shadcn/ui/badge";
 import { Input } from "@/components/shadcn/ui/input";
 import { Progress } from "@/components/shadcn/ui/progress";
 import type {
@@ -76,14 +77,14 @@ function presetLabel(value: RangePresetValue, step: number): string {
 // value 保持不变 (提交/记忆/测试均按 value)。
 export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?: string }> = [
   { value: "mock_bbox", label: "mock · 测试框", note: "测试用 (不依赖 ML backend)" },
-  { value: "sam2_video", label: "SAM2 · 框追踪", note: "种子框跨帧追踪 · 需项目绑定 ML backend" },
-  { value: "sam3_video", label: "SAM3 · 文本检测追踪", note: "按文本每帧检测 · 需项目绑定 ML backend" },
+  { value: "sam2_video", label: "SAM2 · 框追踪", note: "种子框跨帧追踪" },
+  { value: "sam3_video", label: "SAM3 · 文本检测追踪", note: "按文本每帧检测" },
   // v0.21.26 · 阶段 B-pvs · SAM3 交互追踪 (点/框 seed + memory 跨帧, 非文本驱动)。与
   // sam2_video 同为种子传播 (不显 text 框); 需绑定声明该 tracker 的 sam3 backend。
   {
     value: "sam3_video_interactive",
     label: "SAM3 · 点框交互追踪",
-    note: "点/框种子 + memory 跨帧 · 需项目绑定 sam3 backend",
+    note: "点/框种子 + memory 跨帧",
   },
   // v0.22.2 · B-combo · 发现追踪: multiplex 按文本发现目标 → 逐对象 PVS memory 追踪
   // (兼得自动发现与干净身份)。发现对象全新建, 需目标类别; 需 sam3 backend 同时声明
@@ -91,7 +92,7 @@ export const TRACKER_MODEL_OPTIONS: Array<{ value: string; label: string; note?:
   {
     value: "sam3_video_combo",
     label: "SAM3 · 发现追踪 (combo)",
-    note: "按文本发现目标 + 逐对象 memory 追踪 · 需 sam3 backend",
+    note: "按文本发现目标 + 逐对象 memory 追踪",
   },
 ];
 
@@ -143,10 +144,21 @@ function usesSamVariant(modelKey: string): boolean {
 export function visibleTrackerModelOptions(
   preferNonMockModel: boolean,
   isDev: boolean,
+  supportedTrackers?: string[],
 ): typeof TRACKER_MODEL_OPTIONS {
-  return preferNonMockModel || !isDev
+  const visible = preferNonMockModel || !isDev
     ? TRACKER_MODEL_OPTIONS.filter((m) => m.value !== "mock_bbox")
     : TRACKER_MODEL_OPTIONS;
+  if (supportedTrackers === undefined) return visible;
+  const supported = new Set(supportedTrackers);
+  return visible.filter(
+    (model) =>
+      model.value === "mock_bbox" ||
+      supported.has(model.value) ||
+      (model.value === "sam3_video_combo" &&
+        supported.has("sam3_video") &&
+        supported.has("sam3_video_interactive")),
+  );
 }
 
 const DEFAULT_TRACKER_MEMORY: TrackerDialogMemory = {
@@ -174,7 +186,7 @@ export function resolveTrackerDefaultModel({
     const realModel = options.find((model) => model.value !== "mock_bbox");
     if (realModel) return realModel.value;
   }
-  return values.has("mock_bbox") ? "mock_bbox" : options[0]?.value ?? "mock_bbox";
+  return values.has("mock_bbox") ? "mock_bbox" : options[0]?.value ?? "";
 }
 
 function hasOption<T extends string>(
@@ -210,6 +222,13 @@ function validateTrackerMemory(value: unknown): TrackerDialogMemory | null {
   };
 }
 
+export interface TrackerSeedTargetSummary {
+  targetId: number;
+  pointCount: number;
+  boxCount: number;
+  frames: number[];
+}
+
 interface VideoTrackerPropagateDialogProps {
   open: boolean;
   /** 画布内坐标；null 时回落右上角默认停靠。 */
@@ -228,10 +247,12 @@ interface VideoTrackerPropagateDialogProps {
   samplingStep?: number;
   projectDefaultModel?: string | null;
   preferNonMockModel?: boolean;
-  /** v0.21.19 · backend /setup 声明的可用 tracker; 用于灰置未声明的 text-driven tracker (sam3_video)。 */
+  /** 当前项目已启用、已连接且能力可达的 tracker。 */
   supportedTrackers?: string[];
   /** v0.21.19 · text-driven tracker 子集; 选中其中之一时显 text 框。缺省时 sam3_video 静态视为 text-driven。 */
   textDrivenTrackers?: string[];
+  /** 可执行模型 → 提供该能力的已连接项目后端名称。 */
+  trackerModelProviders?: Record<string, string[]>;
   /** polyline 轨迹追踪暂不支持 (后端只识别 polygon/bbox track); 为真时灰置传播动作。 */
   isPolylineTrack?: boolean;
   submitting: boolean;
@@ -249,12 +270,12 @@ interface VideoTrackerPropagateDialogProps {
   onToggleSeedCollecting?: () => void;
   /** 清空已落种子点。 */
   onClearSeeds?: () => void;
-  /** 已落目标数 (distinct obj); >1 时显示「M 目标」。 */
-  seedTargetCount?: number;
   /** 新目标: 当前目标已落点后, 后续点归入下一目标 (各成一条轨迹)。 */
   onNewSeedTarget?: () => void;
-  /** 落点跨的帧数 (distinct frame); >1 = 纠偏多帧累积 prompt。 */
-  seedFrameCount?: number;
+  /** 按目标聚合的种子摘要，用于展示每个目标的点、框和涉及帧。 */
+  seedTargets?: TrackerSeedTargetSummary[];
+  /** 当前继续接收新种子的目标编号。 */
+  activeSeedTargetId?: number;
   /** v0.21.27 · 框修正 · 采集模式: point 落点 / box 画修正框。 */
   seedMode?: "point" | "box";
   /** 切换采集模式 (采集中即时切 smart-point ↔ smart-box)。 */
@@ -297,6 +318,7 @@ export function VideoTrackerPropagateDialog({
   preferNonMockModel = false,
   supportedTrackers,
   textDrivenTrackers,
+  trackerModelProviders = {},
   isPolylineTrack = false,
   submitting,
   onCancel,
@@ -307,9 +329,9 @@ export function VideoTrackerPropagateDialog({
   seedPointCount = 0,
   onToggleSeedCollecting,
   onClearSeeds,
-  seedTargetCount = 0,
   onNewSeedTarget,
-  seedFrameCount = 0,
+  seedTargets = [],
+  activeSeedTargetId = 1,
   seedMode = "point",
   onChangeSeedMode,
   seedBoxCount = 0,
@@ -349,37 +371,51 @@ export function VideoTrackerPropagateDialog({
   // v0.21.14 · 绑真实后端时过滤掉测试用 mock_bbox (避免误选跑出假框); v0.22.2 · 生产构建
   // 里进一步彻底隐藏 mock (即便没绑后端)。过滤后的表也用于默认模型解析, 使记忆里残留的
   // mock_bbox 不再复现 (不在候选 → 回退到首个真实模型)。
-  const modelOptions = useMemo(
-    () => visibleTrackerModelOptions(preferNonMockModel, import.meta.env.DEV),
-    [preferNonMockModel],
-  );
+  const modelOptions = useMemo(() => {
+    const available = visibleTrackerModelOptions(
+      preferNonMockModel,
+      import.meta.env.DEV,
+      supportedTrackers,
+    );
+    if (sourceless) return available;
+    return available.filter(
+      (model) => model.value !== "sam3_video" && model.value !== "sam3_video_combo",
+    );
+  }, [preferNonMockModel, sourceless, supportedTrackers]);
 
-  // v0.21.19 · text-driven 判定 + 能力灰置。sam3_video 天然 text-driven (backend 未声明前
-  // 也据静态兜底显 text 框); text-driven tracker 仅在 backend /setup 的 supported_trackers
-  // 声明后可选, 否则灰置 (不做假占位可点)。mock_bbox / sam2_video 不受此门控 (零回归)。
+  // text-driven 判定用于显示目标描述；可执行性已由 modelOptions 按项目后端能力过滤。
   const isTextDrivenModel = useMemo(() => {
     const set = new Set(textDrivenTrackers ?? []);
     // combo 也文本驱动 (发现趟按 text 检测), 显 text 框。
     return (value: string) =>
       set.has(value) || value === "sam3_video" || value === "sam3_video_combo";
   }, [textDrivenTrackers]);
-  const isModelDisabled = useMemo(() => {
-    const supported = new Set(supportedTrackers ?? []);
-    return (value: string) => {
-      // v0.22.2 · B-combo · combo 编排两趟, 需 backend 同时声明 sam3_video (发现) 与
-      // sam3_video_interactive (追踪); 缺一即灰置。
-      if (value === "sam3_video_combo") {
-        return !(supported.has("sam3_video") && supported.has("sam3_video_interactive"));
-      }
-      return isTextDrivenModel(value) && !supported.has(value);
-    };
-  }, [supportedTrackers, isTextDrivenModel]);
-
   const textDrivenActive = isTextDrivenModel(modelKey);
-  const selectedModelDisabled = isModelDisabled(modelKey);
+  const selectedModelDisabled = !modelOptions.some((model) => model.value === modelKey);
   // v0.22.2 · B-combo · combo 发现对象全新建, 与无源检测同样需目标类别 —— 无论从画布级
   // 无源入口还是选中源入口打开, 选 combo 都按无源处理 (显类别选择器 + payload 带 target)。
   const sourcelessLike = sourceless || modelKey === "sam3_video_combo";
+  const operationScope = sourceCount >= 2 ? "batch" : sourceless ? "canvas" : "single";
+  const scopeTitle = operationScope === "canvas"
+    ? "发现新目标"
+    : operationScope === "batch"
+      ? `批量延展 ${sourceCount} 条轨迹`
+      : "延展当前轨迹";
+  const scopeDescription = operationScope === "canvas"
+    ? "画布级操作：发现或播种多个新目标，不修改当前选中轨迹。"
+    : operationScope === "batch"
+      ? "只延展已选轨迹，结果分别回填原轨迹。"
+      : `只延展当前选中轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}。`;
+  const submitLabel = operationScope === "canvas"
+    ? "开始发现"
+    : operationScope === "batch"
+      ? "开始批量延展"
+      : "开始延展";
+  const progressLabel = operationScope === "canvas"
+    ? "正在发现目标…"
+    : operationScope === "batch"
+      ? "正在批量延展…"
+      : "正在延展轨迹…";
 
   useEffect(() => {
     if (open) {
@@ -455,15 +491,24 @@ export function VideoTrackerPropagateDialog({
   // v0.21.27 · U-pvs-3 · U6: 当前范围粗估窗口数 (>1 时提示大范围将分多窗处理)。
   const estimatedWindows = estimateWindowCount(range.to - range.from, modelKey);
 
-  // v0.21.27 · 框修正 · 种子计数文案: 点/框/目标/帧 各段按需拼 (省略 0 段, >1 才显目标/帧)。
-  const seedCountText = [
-    seedPointCount > 0 ? `${seedPointCount} 点` : null,
-    seedBoxCount > 0 ? `${seedBoxCount} 框` : null,
-    seedTargetCount > 1 ? `${seedTargetCount} 目标` : null,
-    seedFrameCount > 1 ? `${seedFrameCount} 帧` : null,
-  ]
-    .filter(Boolean)
-    .join(" / ");
+  // 「+新目标」后的目标在首个种子落下前还不在聚合数据中；先显示一行空态，
+  // 让用户始终知道接下来的点 / 框会归到哪个目标。
+  const displayedSeedTargets = useMemo(() => {
+    const targets = [...seedTargets].sort((a, b) => a.targetId - b.targetId);
+    if (
+      seedPointCount + seedBoxCount > 0 &&
+      !targets.some((target) => target.targetId === activeSeedTargetId)
+    ) {
+      targets.push({
+        targetId: activeSeedTargetId,
+        pointCount: 0,
+        boxCount: 0,
+        frames: [],
+      });
+      targets.sort((a, b) => a.targetId - b.targetId);
+    }
+    return targets;
+  }, [activeSeedTargetId, seedBoxCount, seedPointCount, seedTargets]);
 
   // v0.21.14 WS3 · 把当前影响范围上报给时间轴高亮; 关闭 / 卸载时清空。
   useEffect(() => {
@@ -681,13 +726,21 @@ export function VideoTrackerPropagateDialog({
       return;
     }
     if (selectedModelDisabled) {
-      setError("该 tracker 未由 backend 声明支持, 暂不可用");
+      setError("当前项目没有可执行的追踪模型");
       return;
     }
     // v0.21.19 · text-driven tracker 必须有文本描述 (否则每帧无检测依据)。
     const trimmedText = text.trim();
     if (textDrivenActive && !trimmedText) {
       setError("文本驱动追踪需填写文本描述");
+      return;
+    }
+    if (
+      sourceless &&
+      supportsSeedCapture(modelKey) &&
+      seedPointCount + seedBoxCount === 0
+    ) {
+      setError("画布级点框追踪需先在画布添加点或框种子");
       return;
     }
     // v0.22.1 · B · 无源检测必须选目标类别 (新建轨迹归属); combo 发现同理。
@@ -728,7 +781,7 @@ export function VideoTrackerPropagateDialog({
     <div
       ref={panelRef}
       role="dialog"
-      aria-label="AI 追踪"
+      aria-label={scopeTitle}
       data-testid="video-tracker-propagate-dialog"
       className={cn(
         AI_PANEL_SURFACE_CLASS,
@@ -750,7 +803,7 @@ export function VideoTrackerPropagateDialog({
             onPointerMove={handleDragMove}
             onPointerUp={handleDragEnd}
             onPointerCancel={handleDragEnd}
-            title="拖动 AI 追踪面板"
+            title={`拖动${scopeTitle}面板`}
           >
             <div className="flex min-w-0 items-start gap-2">
               <span className={AI_PANEL_ICON_CLASS}>
@@ -761,7 +814,7 @@ export function VideoTrackerPropagateDialog({
                   data-testid="tracker-progress"
                   className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
                 >
-                  <h2 className="text-sm font-semibold tracking-tight">追踪中…</h2>
+                  <h2 className="text-sm font-semibold tracking-tight">{progressLabel}</h2>
                   <Move className="size-3 text-muted-foreground" />
                   {trackingWindow && trackingWindow.total > 1 && (
                     <span
@@ -777,7 +830,7 @@ export function VideoTrackerPropagateDialog({
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="xs" onClick={onCancel} aria-label="关闭 AI 追踪进度">
+            <Button variant="ghost" size="xs" onClick={onCancel} aria-label={`关闭${scopeTitle}进度`}>
               <X data-icon="inline-start" />
             </Button>
           </div>
@@ -786,7 +839,7 @@ export function VideoTrackerPropagateDialog({
             <div className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2")}>
               <Progress
                 value={trackingProgressValue}
-                aria-label={`AI 追踪进度 ${trackingProgressValue}%`}
+                aria-label={`${scopeTitle}进度 ${trackingProgressValue}%`}
                 className="h-1.5"
               />
             </div>
@@ -813,7 +866,7 @@ export function VideoTrackerPropagateDialog({
             onPointerMove={handleDragMove}
             onPointerUp={handleDragEnd}
             onPointerCancel={handleDragEnd}
-            title="拖动 AI 追踪面板"
+            title={`拖动${scopeTitle}面板`}
           >
             <div className="flex min-w-0 items-start gap-2">
               <span className={AI_PANEL_ICON_CLASS}>
@@ -821,23 +874,41 @@ export function VideoTrackerPropagateDialog({
               </span>
               <div className="flex min-w-0 flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-sm font-semibold tracking-tight">AI 追踪</h2>
+                  <h2 className="text-sm font-semibold tracking-tight">{scopeTitle}</h2>
                   <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
                     Ctrl+B
                   </kbd>
                   <Move className="size-3 text-muted-foreground" />
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  设置范围、模型和种子，结果先进入候选审阅。
+                  {scopeDescription}结果先进入候选审阅。
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="xs" onClick={onCancel} aria-label="关闭 AI 追踪">
+            <Button variant="ghost" size="xs" onClick={onCancel} aria-label={`关闭${scopeTitle}`}>
               <X data-icon="inline-start" />
             </Button>
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
+              <section
+                data-testid="tracker-scope-summary"
+                className={cn(AI_PANEL_SECTION_CLASS, "flex items-start gap-2.5 bg-muted/40")}
+              >
+                <Info className="mt-0.5 size-4 shrink-0 text-status-info" />
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="w-fit rounded-full border border-border bg-background px-2 py-0.5 text-2xs font-medium text-foreground">
+                    {operationScope === "canvas" ? "画布级 · 新建" : operationScope === "batch" ? "多选 · 延展" : "单轨 · 延展"}
+                  </span>
+                  <span data-testid="tracker-impact-summary" className="text-xs leading-relaxed text-foreground">
+                    {operationScope === "batch"
+                      ? `批量延展 ${sourceCount} 条轨迹 · ${sourceClassNames.length === 1 ? `「${sourceClassNames[0]}」` : `${sourceClassNames.length} 类`}`
+                      : operationScope === "canvas"
+                        ? `画布新建多目标轨迹${targetClass ? ` · 类别「${targetClass}」` : ""}`
+                        : `延展当前轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}`}
+                  </span>
+                </div>
+              </section>
               <section
                 aria-labelledby="tracker-settings-heading"
                 data-testid="tracker-settings-section"
@@ -845,8 +916,12 @@ export function VideoTrackerPropagateDialog({
               >
                 <h3 id="tracker-settings-heading" className="text-xs font-semibold text-foreground">本次追踪</h3>
                 <div className="grid grid-cols-2 gap-2.5">
-                  <fieldset className="col-span-2 flex min-w-0 flex-col gap-1.5">
-                    <legend className={TRACKER_FIELD_LABEL_CLASS}>追踪方向</legend>
+                  <fieldset className="col-span-2 m-0 min-w-0 border-0 p-0">
+                    <legend
+                      className={cn(TRACKER_FIELD_LABEL_CLASS, "mb-1.5 block w-full p-0 leading-normal")}
+                    >
+                      追踪方向
+                    </legend>
                     <div className="grid h-8 grid-cols-3 gap-1 rounded-md bg-muted p-1 ring-1 ring-border">
                       {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map((d) => (
                         <button
@@ -901,17 +976,18 @@ export function VideoTrackerPropagateDialog({
                       id="tracker-model"
                       value={modelKey}
                       onChange={(e) => setModelKey(e.target.value)}
+                      disabled={modelOptions.length === 0}
                       className={TRACKER_SELECT_CLASS}
                     >
-                      {modelOptions.map((m) => {
-                        const disabled = isModelDisabled(m.value);
-                        return (
-                          <option key={m.value} value={m.value} disabled={disabled}>
-                            {m.label}
-                            {disabled ? " (未绑定后端)" : ""}
-                          </option>
-                        );
-                      })}
+                      {modelOptions.length === 0 && <option value="">无可用追踪模型</option>}
+                      {modelOptions.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                          {trackerModelProviders[m.value]?.length
+                            ? ` · ${trackerModelProviders[m.value].join(" / ")}`
+                            : ""}
+                        </option>
+                      ))}
                     </select>
                     {activeModelOption?.note && (
                       <p className={TRACKER_FIELD_HELP_CLASS}>{activeModelOption.note}</p>
@@ -1004,43 +1080,43 @@ export function VideoTrackerPropagateDialog({
                   </div>
 
                   {supportsSeedCapture(modelKey) && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="grid h-8 grid-cols-2 gap-1 rounded-md bg-background p-1 ring-1 ring-border" role="group" aria-label="种子类型">
-                        {(["point", "box"] as const).map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            data-testid={`tracker-seed-mode-${m}`}
-                            onClick={() => onChangeSeedMode?.(m)}
-                            disabled={submitting}
-                            aria-pressed={seedMode === m}
-                            className={cn(
-                              "cursor-pointer rounded-sm px-3 text-xs font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
-                              seedMode === m
-                                ? "bg-primary text-primary-foreground shadow-sm"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                            )}
-                          >
-                            {m === "point" ? "点" : "框"}
-                          </button>
-                        ))}
-                      </div>
-                      <Button
-                        type="button"
-                        variant={seedCollecting ? "ai" : "default"}
-                        size="sm"
-                        onClick={onToggleSeedCollecting}
-                        disabled={submitting}
-                        data-testid="tracker-seed-toggle"
-                        aria-pressed={seedCollecting}
-                      >
-                        <MousePointer2 data-icon="inline-start" />
-                        {seedCollecting
-                          ? seedMode === "box" ? "画框中…" : "落点中…"
-                          : seedMode === "box" ? "画框选目标" : "落点选目标"}
-                      </Button>
-                      {(seedPointCount > 0 || seedBoxCount > 0) && (
-                        <>
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="grid h-8 grid-cols-2 gap-1 rounded-md bg-background p-1 ring-1 ring-border" role="group" aria-label="种子类型">
+                          {(["point", "box"] as const).map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              data-testid={`tracker-seed-mode-${m}`}
+                              onClick={() => onChangeSeedMode?.(m)}
+                              disabled={submitting}
+                              aria-pressed={seedMode === m}
+                              className={cn(
+                                "cursor-pointer rounded-sm px-3 text-xs font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+                                seedMode === m
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                              )}
+                            >
+                              {m === "point" ? "点" : "框"}
+                            </button>
+                          ))}
+                        </div>
+                        <Button
+                          type="button"
+                          variant={seedCollecting ? "ai" : "default"}
+                          size="sm"
+                          onClick={onToggleSeedCollecting}
+                          disabled={submitting}
+                          data-testid="tracker-seed-toggle"
+                          aria-pressed={seedCollecting}
+                        >
+                          <MousePointer2 data-icon="inline-start" />
+                          {seedCollecting
+                            ? seedMode === "box" ? "画框中…" : "落点中…"
+                            : seedMode === "box" ? "画框选目标" : "落点选目标"}
+                        </Button>
+                        {(seedPointCount > 0 || seedBoxCount > 0) && sourceless && (
                           <Button
                             type="button"
                             size="sm"
@@ -1051,9 +1127,8 @@ export function VideoTrackerPropagateDialog({
                           >
                             + 新目标
                           </Button>
-                          <span data-testid="tracker-seed-count" className="text-xs text-foreground">
-                            已落 {seedCountText}
-                          </span>
+                        )}
+                        {(seedPointCount > 0 || seedBoxCount > 0) && (
                           <Button
                             type="button"
                             variant="ghost"
@@ -1063,9 +1138,63 @@ export function VideoTrackerPropagateDialog({
                           >
                             清空
                           </Button>
-                        </>
+                        )}
+                      </div>
+
+                      {displayedSeedTargets.length > 0 && (
+                        <div
+                          data-testid="tracker-seed-count"
+                          className="flex flex-col overflow-hidden rounded-md border border-border bg-background"
+                          aria-label="目标种子摘要"
+                        >
+                          {displayedSeedTargets.map((target) => {
+                            const isActive = target.targetId === activeSeedTargetId;
+                            const frames = [...new Set(target.frames)].sort((a, b) => a - b);
+                            return (
+                              <div
+                                key={target.targetId}
+                                data-testid={`tracker-seed-target-${target.targetId}`}
+                                aria-current={isActive ? "true" : undefined}
+                                className={cn(
+                                  "flex min-w-0 items-start justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
+                                  isActive && "bg-primary/5",
+                                )}
+                              >
+                                <div className="flex min-w-0 items-start gap-2.5">
+                                  <span className={cn(
+                                    "flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-xs font-semibold tabular-nums text-muted-foreground",
+                                    isActive && "border-primary/30 bg-primary text-primary-foreground",
+                                  )}>
+                                    {target.targetId}
+                                  </span>
+                                  <div className="flex min-w-0 flex-col gap-1">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="text-xs font-medium text-foreground">
+                                        目标 {target.targetId}
+                                      </span>
+                                      {isActive && <Badge variant="secondary">当前</Badge>}
+                                    </div>
+                                    <span className="mono text-2xs leading-relaxed text-muted-foreground">
+                                      {frames.length > 0
+                                        ? `帧 ${frames.map((frame) => `F${frame}`).join("、")}`
+                                        : "等待在画布添加种子"}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                  <Badge variant="outline" className="tabular-nums">
+                                    {target.pointCount} 点
+                                  </Badge>
+                                  <Badge variant="outline" className="tabular-nums">
+                                    {target.boxCount} 框
+                                  </Badge>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
-                    </div>
+                    </>
                   )}
 
                   {textDrivenActive && (
@@ -1090,43 +1219,13 @@ export function VideoTrackerPropagateDialog({
                 aria-labelledby="tracker-impact-heading"
                 className={cn(
                   AI_PANEL_SECTION_CLASS,
-                  "grid grid-cols-[minmax(0,1fr)_auto] gap-3",
+                  "flex items-start justify-between gap-3",
                 )}
               >
-                <div className="flex min-w-0 items-start gap-2.5">
-                  <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <h3 id="tracker-impact-heading" className="text-xs font-medium text-foreground">本次影响</h3>
-                    {!isPolylineTrack && (
-                      <span data-testid="tracker-impact-summary" className="text-xs leading-relaxed text-foreground">
-                        {sourceCount >= 2 ? (
-                          `延展 ${sourceCount} 条轨迹 · ${
-                            sourceClassNames.length === 1 ? `「${sourceClassNames[0]}」` : `${sourceClassNames.length} 类`
-                          }`
-                        ) : sourceless ? (
-                          `将新建轨迹${targetClass ? ` (类别 ${targetClass})` : ""}`
-                        ) : textDrivenActive ? (
-                          <>
-                            将按文本新建轨迹
-                            {sourceTrackClassName && (
-                              <span className="text-status-caution">
-                                {` · 新目标暂继承「${sourceTrackClassName}」类别`}
-                              </span>
-                            )}
-                          </>
-                        ) : seedTargetCount > 1 ? (
-                          `延展选中轨迹 + 新建 ${seedTargetCount - 1} 条`
-                        ) : (
-                          `延展选中轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}`
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
                 <div className="flex items-start gap-2">
                   <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <div className="flex flex-col gap-1">
+                    <h3 id="tracker-impact-heading" className="text-xs font-medium text-foreground">处理范围</h3>
                     <span className="mono text-xs font-medium text-foreground">
                       {grid > 1 ? (
                         <>G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F{range.from} → F{range.to})</>
@@ -1155,7 +1254,7 @@ export function VideoTrackerPropagateDialog({
                 >
                   {selectedModelDisabled && (
                     <p className="rounded-md bg-status-caution-soft px-3 py-2 text-xs leading-relaxed text-status-caution">
-                      该 tracker 需项目绑定，并由 backend 声明支持。
+                      当前项目没有可执行的追踪模型。请在项目设置中启用并连接支持视频追踪的 ML Backend。
                     </p>
                   )}
                   {isPolylineTrack && (
@@ -1195,7 +1294,7 @@ export function VideoTrackerPropagateDialog({
                 ) : (
                   <Bot data-icon="inline-start" />
                 )}
-                {submitting ? "追踪中…" : "开始追踪"}
+                {submitting ? progressLabel : submitLabel}
               </Button>
             </div>
           </footer>
@@ -1210,7 +1309,7 @@ export function VideoTrackerPropagateDialog({
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeEnd}
           onPointerCancel={handleResizeEnd}
-          aria-label="调整 AI 追踪面板尺寸"
+          aria-label={`调整${scopeTitle}面板尺寸`}
           title="拖拽调整尺寸"
         >
           <span className="pointer-events-none absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current" />

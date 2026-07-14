@@ -143,12 +143,12 @@ export function VideoPointsTrackCardContent({
           <Button
             variant="ghost"
             size="sm"
-            title="AI 追踪当前 Mask"
+            title="AI 延展当前 Mask 轨迹"
             disabled={readOnly || locked}
             onClick={onPropagate}
           >
             <Icon name="sparkles" size={14} />
-            追踪
+            延展轨迹
           </Button>
         )}
         {firstFrame !== null && (

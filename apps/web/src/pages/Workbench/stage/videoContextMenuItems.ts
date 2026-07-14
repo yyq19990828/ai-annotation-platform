@@ -211,7 +211,7 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
     },
     {
       id: "propagate",
-      label: "AI 追踪",
+      label: "AI 延展此轨迹",
       icon: "bot",
       kbd: "Ctrl+B",
       disabled: frameEditDisabled || !onPropagateTrack,

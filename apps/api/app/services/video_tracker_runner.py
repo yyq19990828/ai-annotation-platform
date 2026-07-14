@@ -359,8 +359,8 @@ def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
 
     v0.21.27 · U-pvs-1 · seed-驱动 tracker (PVS) 每窗是独立会话, 若只续主实例, 非主实例
     过一窗即丢。这里对**每个**实例各下发一条 seed (obj_id 与其 instance_id 一致 → 跨窗身份
-    稳定); backend seeds 支持 geometry (自动取外接框)。text-驱动 (multiplex) backend 不读
-    seeds、按 text 每窗重检测, 收到本 seeds 无害忽略。
+    稳定); backend seeds 支持 geometry (自动取外接框)。text-驱动 multiplex 同样把这些框作为
+    下一窗正提示，并继续按 text 发现目标。
     """
     return [
         {"obj_id": _instance_seed_obj_id(iid, idx + 1), "geometry": geom}
@@ -885,8 +885,9 @@ async def run_tracker_job(
         # v0.21.25 (阶段 R) · 按 tracker 能力选后端而非项目单一绑定: sam3_video 挑声明了
         # sam3_video 的 backend(sam3-backend), 而非静默落到项目绑定的 grounded-sam2。
         tracker_capability = "sam3_video_interactive" if is_combo else job.model_key
-        backend = await MLBackendService(db).get_tracker_backend(
-            task.project_id, tracker_capability
+        backend = await MLBackendService(db).get_tracker_backend_for_capabilities(
+            task.project_id,
+            ["sam3_video", "sam3_video_interactive"] if is_combo else [tracker_capability],
         )
         adapter = get_tracker_adapter(tracker_capability)
 

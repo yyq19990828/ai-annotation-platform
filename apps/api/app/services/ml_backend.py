@@ -260,25 +260,36 @@ class MLBackendService:
     async def get_tracker_backend(
         self, project_id: uuid.UUID, model_key: str
     ) -> MLBackendRegistry | None:
-        """按 tracker 能力选后端：项目已启用的 backend 里挑 `supported_trackers` 含 model_key 的。
+        return await self.get_tracker_backend_for_capabilities(project_id, [model_key])
 
-        绑定优先（项目显式绑定的 backend 若支持该 tracker 则用它），否则取首个 connected 的。
+    async def get_tracker_backend_for_capabilities(
+        self, project_id: uuid.UUID, model_keys: list[str]
+    ) -> MLBackendRegistry | None:
+        """选择同时支持全部 tracker 能力的已连接项目后端。
+
+        绑定优先（项目显式绑定的 backend 若支持全部 tracker 则用它），否则取首个 connected 的。
         与 `get_project_backend` 的区别：后者只按「单一绑定 / 交互 fallback」选、不看 tracker——
         一项目同时启用多个 tracker-capable backend 时（如 grounded-sam2[sam2_video] +
         sam3-backend[sam3_video]），会把所有 tracker（含 sam3_video）都发给绑定那个，导致
         sam3_video 静默落到 sam2。本方法按 `health_meta.capabilities.supported_trackers`
         路由，消除该错配。
 
-        返回 None：没有已启用 backend 声明该 tracker（如 mock_bbox 不由任何 backend 声明，
-        或项目未启用对应 backend）——交由 adapter 侧处理（mock 无需 backend；真 tracker 报错）。
+        返回 None：没有已启用且 connected 的 backend 同时声明全部能力。组合追踪因此不会把
+        发现与传播错误拼到两个不同后端，也不会把任务排队后才因断连失败。
         """
+
+        required = set(model_keys)
+        if not required:
+            return None
 
         def _supports(backend: MLBackendRegistry) -> bool:
             caps = (backend.health_meta or {}).get("capabilities") or {}
-            return model_key in (caps.get("supported_trackers") or [])
+            return required.issubset(set(caps.get("supported_trackers") or []))
 
         supporting = [
-            b for b in await self.list_enabled_for_project(project_id) if _supports(b)
+            b
+            for b in await self.list_enabled_for_project(project_id)
+            if b.state == "connected" and _supports(b)
         ]
         if not supporting:
             return None
@@ -288,5 +299,4 @@ class MLBackendService:
             for b in supporting:
                 if b.id == bound_id:
                     return b
-        connected = [b for b in supporting if b.state == "connected"]
-        return (connected or supporting)[0]
+        return supporting[0]

@@ -136,8 +136,10 @@ class _MultiInstanceAdapter:
 
     def __init__(self, extra_ids: list[str]) -> None:
         self.extra_ids = extra_ids
+        self.contexts: list[TrackerContext] = []
 
     async def propagate(self, ctx: TrackerContext):
+        self.contexts.append(ctx)
         frames = range(ctx.from_frame, ctx.to_frame + 1)
         for frame_index in frames:
             yield TrackerFrameResult(
@@ -221,6 +223,12 @@ async def test_runner_lands_extra_instances_as_new_tracks(
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
     await db_session.refresh(source)
+
+    assert len(adapter.contexts) == 2
+    assert adapter.contexts[0].seeds is None
+    continuation = adapter.contexts[1].seeds or []
+    assert {seed["obj_id"] for seed in continuation} == {1, 2, 3}
+    assert all(seed["geometry"]["type"] == "bbox" for seed in continuation)
 
     # v0.21.28 · 候选流: 完成 = 暂存待审, committed annotations 未改。
     assert job.status == "pending_review"
@@ -365,7 +373,7 @@ async def test_create_tracker_job_sourceless_stores_target_category(
     payload = VideoTrackerPropagateRequest(
         from_frame=0,
         to_frame=3,
-        model_key="sam3_video",
+        model_key="mock_bbox",
         text="pedestrian",
         target_class_name="pedestrian",
         target_tool_unit_id="bbox",
@@ -378,6 +386,41 @@ async def test_create_tracker_job_sourceless_stores_target_category(
     assert job.annotation_id is None
     assert job.target_class_name == "pedestrian"
     assert job.target_tool_unit_id == "bbox"
+
+
+async def test_create_tracker_job_rejects_unavailable_real_model(
+    db_session, super_admin
+):
+    """真实 tracker 没有项目已启用且已连接的能力后端时，在排队前直接拒绝。"""
+    from fastapi import HTTPException
+
+    from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_tracker_job_service import create_tracker_job
+
+    user, _ = super_admin
+    task, _item = await _make_video_task(db_session, user.id)
+    ctx = await build_context_from_task(db_session, task)
+    payload = VideoTrackerPropagateRequest(
+        from_frame=0,
+        to_frame=3,
+        model_key="sam3_video",
+        text="pedestrian",
+        target_class_name="pedestrian",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await create_tracker_job(
+            db_session,
+            task=task,
+            ctx=ctx,
+            annotation_id=None,
+            payload=payload,
+            user=user,
+        )
+
+    assert exc.value.status_code == 422
+    assert "No connected project ML backend" in str(exc.value.detail)
 
 
 async def test_create_tracker_job_with_source_keeps_target_null(
@@ -983,7 +1026,7 @@ async def test_create_tracker_job_multi_source_builds_seeds(db_session, super_ad
     payload = VideoTrackerPropagateRequest(
         from_frame=0,
         to_frame=3,
-        model_key="sam3_video_interactive",
+        model_key="mock_bbox",
         source_annotation_ids=[src_a.id, src_b.id],
         target_class_name="pedestrian",  # 多源时应被忽略 (各源继承自身 label)
     )
@@ -1047,7 +1090,7 @@ async def test_track_video_endpoint_multi_source_builds_job(
         json={
             "from_frame": 0,
             "to_frame": 3,
-            "model_key": "sam3_video_interactive",
+            "model_key": "mock_bbox",
             "source_annotation_ids": [str(src_a.id), str(src_b.id)],
         },
     )

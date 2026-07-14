@@ -299,16 +299,16 @@ export function Topbar({
                 variant="ai"
                 size="sm"
                 onClick={onToggleTracker}
-                aria-label="AI 追踪"
+                aria-label="发现新目标"
                 aria-pressed={trackerOpen}
-                title={trackerOpen ? "关闭 AI 追踪" : "打开 AI 追踪"}
+                title={trackerOpen ? "关闭画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"}
                 className="h-7 px-3"
                 data-testid="workbench-ai-tracker"
               >
                 {trackerRunning
                   ? <Icon name="loader2" size={13} className="animate-spin motion-reduce:animate-none" />
                   : <Icon name="bot" size={13} />}
-                追踪
+                发现目标
               </Button>
             )}
             <Button

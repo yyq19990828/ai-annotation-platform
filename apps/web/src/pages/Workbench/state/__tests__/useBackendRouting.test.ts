@@ -78,6 +78,16 @@ describe("buildCapEntry", () => {
     expect(e.isInteractive).toBe(true);
   });
 
+  it("保留 tracker 的文本驱动子集供模型选择器使用", () => {
+    const e = buildCapEntry({
+      ...SAM3,
+      supported_trackers: ["sam3_video", "sam3_video_interactive"],
+      text_driven_trackers: ["sam3_video"],
+    });
+    expect(e.trackers).toEqual(["sam3_video", "sam3_video_interactive"]);
+    expect(e.textDrivenTrackers).toEqual(["sam3_video"]);
+  });
+
   it("undefined (拉取失败): reachable=false, 全空", () => {
     const e = buildCapEntry(undefined);
     expect(e.reachable).toBe(false);
@@ -201,5 +211,12 @@ describe("capFingerprint — capSignature 内容变化感知", () => {
   it("tracker 变化 → 指纹变化", () => {
     const sam3Trk: MLBackendCapability = { ...SAM3, supported_trackers: ["sam2_video"] };
     expect(capFingerprint(sam3Trk)).not.toBe(capFingerprint(SAM3));
+  });
+  it("text-driven tracker 变化 → 指纹变化", () => {
+    const sam3TextTrk: MLBackendCapability = {
+      ...SAM3,
+      text_driven_trackers: ["sam3_video"],
+    };
+    expect(capFingerprint(sam3TextTrk)).not.toBe(capFingerprint(SAM3));
   });
 });

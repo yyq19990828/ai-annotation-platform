@@ -100,12 +100,13 @@ class SAM3MultiplexVideoTracker:
         text: str,
         seed_bbox: dict[str, float] | None = None,
         output_geometry: str = "bbox",
+        seed_bboxes: list[dict[str, float]] | None = None,
     ) -> list[dict[str, Any]]:
         """在 [from_frame, to_frame] 窗内按 text 检测+追踪目标, 返回逐帧几何。
 
         text: 文本 query (必填; SAM3 每帧按此检测目标)。
-        seed_bbox: 归一化 {x,y,w,h}; 用于在种子帧从 multiplex 多目标里挑目标 obj_id
-                   (单目标消费)。None 时取种子帧最高分目标。
+        seed_bbox: 首个归一化 {x,y,w,h}; 用于选择主实例。
+        seed_bboxes: 上一分窗逐实例续追框；与 text 一起作为种子帧正框提示。
         output_geometry: "polygon"→mask 矢量化多边形; 否则 mask 外接框 bbox。
         """
         if not text or not text.strip():
@@ -147,10 +148,22 @@ class SAM3MultiplexVideoTracker:
                 dict(type="start_session", resource_path=tmp_dir)
             )["session_id"]
 
-            # 种子帧加文本 prompt → multiplex 多目标输出。
+            # 首窗只传 text 做开放目标发现；后续窗同时传入上一窗逐实例末框，避免新 session
+            # 在窗首文本暂时未检出时整窗变空。
+            prompt_request: dict[str, Any] = dict(
+                type="add_prompt",
+                session_id=session_id,
+                frame_index=local_seed,
+                text=text.strip(),
+            )
+            if seed_bboxes:
+                prompt_request["bounding_boxes"] = [
+                    [bbox["x"], bbox["y"], bbox["w"], bbox["h"]]
+                    for bbox in seed_bboxes
+                ]
+                prompt_request["bounding_box_labels"] = [1] * len(seed_bboxes)
             seed_out = self._predictor.handle_request(
-                dict(type="add_prompt", session_id=session_id,
-                     frame_index=local_seed, text=text.strip())
+                prompt_request
             )["outputs"]
             # v0.21.28 · B-mx · 多目标批量吐: 不再 _pick_target_obj 收敛单目标, 逐帧把**全部**
             # 检测对象各出一条结果 (instance_id = 窗内 obj_id)。仅在种子帧挑出与 seed_bbox /

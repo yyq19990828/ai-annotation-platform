@@ -19,8 +19,10 @@ from app.schemas.video_tracker_job import (
     VideoTrackerPropagateRequest,
 )
 from app.services.scheduler import is_privileged_for_project
+from app.services.ml_backend import MLBackendService
 from app.services.video_frame_service import VideoContext
 from app.services.video_segment_service import ensure_segments
+from app.services.video_tracker_adapters import registered_tracker_models
 from app.services.video_tracks import is_polyline_track, resolve_track_at_frame
 
 
@@ -170,6 +172,29 @@ async def create_tracker_job(
     user: User,
 ) -> VideoTrackerJobOut:
     _assert_frame_range(ctx, payload.from_frame, payload.to_frame)
+    known_models = set(registered_tracker_models()) | {"sam3_video_combo"}
+    if payload.model_key not in known_models:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported tracker model: {payload.model_key}",
+        )
+    if payload.model_key != "mock_bbox":
+        required = (
+            ["sam3_video", "sam3_video_interactive"]
+            if payload.model_key == "sam3_video_combo"
+            else [payload.model_key]
+        )
+        backend = await MLBackendService(db).get_tracker_backend_for_capabilities(
+            task.project_id, required
+        )
+        if backend is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "No connected project ML backend supports tracker model: "
+                    f"{payload.model_key}"
+                ),
+            )
     # v0.22.2 · M · 多选批量: source_annotation_ids 有 ≥1 条 → 多源分支。各源在 from_frame 处
     # 的几何写成带 source_annotation_id + obj_id (1..N) 的 seed; annotation_id 强制 NULL (§8 ·
     # 多源不认单主, accept 各 obj 各回填各源, 见 _seed_source_map)。obj_id 与 instance_id ==

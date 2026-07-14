@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import math
 import os
 import tempfile
 import time
@@ -890,12 +891,8 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
 # ── v0.21.19 §PR3 · video_tracker 分支 (text-driven sam3_video) ────────
 
 
-def _seed_bbox_from_video_ctx(ctx: dict) -> dict[str, float] | None:
-    """从 video_tracker context 取归一化 seed bbox (仅用于 multiplex 多目标里挑目标)。
-
-    支持 source_geometry / prompt.geometry 为 video_track_bbox / video_track_polygon /
-    bbox / polygon。取不到返回 None (text-driven 无种子时退最高分目标)。
-    """
+def _seed_bbox_from_geometry(geom: Any) -> dict[str, float] | None:
+    """把 video tracker 支持的几何统一成有效的归一化 xywh。"""
 
     def _from_points(points: list) -> dict[str, float] | None:
         xs = [float(p[0]) for p in points if len(p) >= 2]
@@ -904,35 +901,81 @@ def _seed_bbox_from_video_ctx(ctx: dict) -> dict[str, float] | None:
             return None
         return {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
 
-    def _extract(geom: Any) -> dict[str, float] | None:
-        if not isinstance(geom, dict):
+    def _valid(bbox: dict[str, float] | None) -> dict[str, float] | None:
+        if bbox is None:
             return None
-        gtype = geom.get("type")
-        if gtype in {"video_track_bbox", "video_track_polygon"}:
-            kfs = sorted(geom.get("keyframes") or [],
-                         key=lambda k: int(k.get("frame_index", 0)))
-            if not kfs:
-                return None
-            first = kfs[0]
-            if gtype == "video_track_polygon":
-                return _from_points(first.get("points") or [])
-            b = first.get("bbox") or {}
-            return {"x": float(b.get("x", 0)), "y": float(b.get("y", 0)),
-                    "w": float(b.get("w", 0)), "h": float(b.get("h", 0))}
-        if gtype == "polygon":
-            return _from_points(geom.get("points") or [])
-        if gtype in {"bbox", "video_bbox"} or any(k in geom for k in ("x", "y", "w", "width")):
-            return {"x": float(geom.get("x", 0)), "y": float(geom.get("y", 0)),
-                    "w": float(geom.get("w", geom.get("width", 0))),
-                    "h": float(geom.get("h", geom.get("height", 0)))}
+        values = tuple(bbox.values())
+        if not all(math.isfinite(value) for value in values):
+            return None
+        if bbox["w"] <= 0 or bbox["h"] <= 0:
+            return None
+        return bbox
+
+    if not isinstance(geom, dict):
         return None
+    gtype = geom.get("type")
+    if gtype in {"video_track_bbox", "video_track_polygon"}:
+        kfs = sorted(
+            geom.get("keyframes") or [],
+            key=lambda k: int(k.get("frame_index", 0)),
+        )
+        if not kfs:
+            return None
+        first = kfs[0]
+        if gtype == "video_track_polygon":
+            return _valid(_from_points(first.get("points") or []))
+        geom = first.get("bbox") or {}
+        gtype = "bbox"
+    if gtype == "polygon":
+        return _valid(_from_points(geom.get("points") or []))
+    if gtype == "mask" and isinstance(geom.get("bbox"), dict):
+        geom = geom["bbox"]
+        gtype = "bbox"
+    if gtype in {"bbox", "video_bbox"} or any(
+        key in geom for key in ("x", "y", "w", "width")
+    ):
+        return _valid(
+            {
+                "x": float(geom.get("x", 0)),
+                "y": float(geom.get("y", 0)),
+                "w": float(geom.get("w", geom.get("width", 0))),
+                "h": float(geom.get("h", geom.get("height", 0))),
+            }
+        )
+    return None
+
+
+def _seed_bboxes_from_video_ctx(ctx: dict) -> list[dict[str, float]]:
+    """收集 multiplex 的续追框；多实例优先使用平台传入的 ``seeds[]``。"""
+
+    raw_seeds = ctx.get("seeds")
+    if isinstance(raw_seeds, list):
+        bboxes: list[dict[str, float]] = []
+        for seed in raw_seeds:
+            if not isinstance(seed, dict):
+                continue
+            bbox = _seed_bbox_from_geometry(seed.get("bbox"))
+            if bbox is None:
+                bbox = _seed_bbox_from_geometry(seed.get("geometry"))
+            if bbox is not None:
+                bboxes.append(bbox)
+        if bboxes:
+            return bboxes
 
     prompt = ctx.get("prompt")
     if isinstance(prompt, dict):
-        seed = _extract(prompt.get("geometry"))
+        seed = _seed_bbox_from_geometry(prompt.get("geometry"))
         if seed is not None:
-            return seed
-    return _extract(ctx.get("source_geometry"))
+            return [seed]
+    seed = _seed_bbox_from_geometry(ctx.get("source_geometry"))
+    return [seed] if seed is not None else []
+
+
+def _seed_bbox_from_video_ctx(ctx: dict) -> dict[str, float] | None:
+    """兼容单 seed 调用者：返回首个有效续追框。"""
+
+    bboxes = _seed_bboxes_from_video_ctx(ctx)
+    return bboxes[0] if bboxes else None
 
 
 def _video_local_path(file_path: str) -> str:
@@ -981,7 +1024,8 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
     if output_geometry not in ("bbox", "polygon", "mask"):
         raise HTTPException(status_code=422,
                             detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}")
-    seed_bbox = _seed_bbox_from_video_ctx(ctx)
+    seed_bboxes = _seed_bboxes_from_video_ctx(ctx)
+    seed_bbox = seed_bboxes[0] if seed_bboxes else None
 
     tracker = await _ensure_video_tracker_loaded()
     local_path = _video_local_path(file_path)
@@ -992,7 +1036,7 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
             None,
             functools.partial(
                 tracker.propagate, local_path, from_frame, to_frame, direction,
-                text, seed_bbox, output_geometry,
+                text, seed_bbox, output_geometry, seed_bboxes,
             ),
         )
     finally:

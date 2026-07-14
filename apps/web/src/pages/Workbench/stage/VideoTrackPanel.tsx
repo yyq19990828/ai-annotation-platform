@@ -275,8 +275,8 @@ export function VideoTrackPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                title="批量 AI 追踪 · 对选中的多条轨迹一次发起追踪 (各回填各自轨迹)"
-                aria-label="批量 AI 追踪"
+                title="批量延展 · 对选中的多条轨迹一次发起，各自回填原轨迹"
+                aria-label="批量延展轨迹"
                 disabled={batchMutationDisabled || !onBatchTrackTracks}
                 onClick={onBatchTrackTracks}
               >
