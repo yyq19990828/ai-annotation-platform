@@ -56,6 +56,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onClick={model.issueSection.onOpenList}
             className={cn(ISSUE_FAB_CLASS, "bottom-20", hiddenCls)}
             data-testid="issue-fab"
+            data-workbench-fab
           >
             <Icon name="flag" size={14} />
             {model.issueSection.openIssueCount > 0 && (
@@ -75,6 +76,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                 hiddenCls,
               )}
               data-testid="issue-pin-fab"
+              data-workbench-fab
               data-armed={model.issueSection.issuePinDropArmed ? "true" : "false"}
             >
               <Icon name="crosshair" size={14} />

@@ -18,17 +18,37 @@
   opacity: 0;
   pointer-events: none;
   transform: translateX(-50%) translateY(8px);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 180ms ease-out,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   backdrop-filter: blur(6px);
+  view-transition-name: video-timeline-overlay;
+}
+
+:global(::view-transition-group(video-timeline-overlay)),
+:global(::view-transition-old(video-timeline-overlay)),
+:global(::view-transition-new(video-timeline-overlay)) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay {
+    transition-duration: 0.01ms;
+    view-transition-name: none;
+  }
 }
 
 .overlayCollapsed {
   display: grid;
-  grid-template-columns: auto auto minmax(180px, 1fr) auto;
+  grid-template-areas:
+    "play timeline toggle"
+    "status status status";
+  grid-template-columns: auto minmax(280px, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  width: min(640px, calc(100% - 28px));
-  min-height: 44px;
+  gap: 4px 9px;
+  width: min(820px, calc(100% - 28px));
+  min-height: 60px;
   padding: 6px 8px;
   border-radius: 14px;
   background:
@@ -120,7 +140,7 @@
 }
 
 .collapsedPlayButton,
-.collapsedExpandButton {
+.timelineToggleButton {
   width: 30px;
   height: 30px;
   min-width: 30px;
@@ -129,7 +149,22 @@
   pointer-events: auto;
 }
 
+.collapsedPlayButton {
+  grid-area: play;
+}
+
+.overlayCollapsed .timelineToggleButton {
+  grid-area: toggle;
+}
+
+.timelineShell:focus-visible,
+.scrubberBody:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.82);
+  outline-offset: 2px;
+}
+
 .collapsedStatus {
+  grid-area: status;
   display: inline-flex;
   gap: 10px;
   align-items: center;
@@ -139,31 +174,58 @@
   white-space: nowrap;
 }
 
+.collapsedEntryCount {
+  margin-left: auto;
+}
+
 .collapsedStatus span + span {
   padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .collapsedTimelineShell {
-  height: 24px;
-  min-width: 160px;
+  grid-area: timeline;
+  height: 34px;
+  min-width: 280px;
+  padding-bottom: 10px;
+  box-sizing: border-box;
 }
 
-.overlayCollapsed .timelineLayer {
-  opacity: 0.58;
+.collapsedTimelineShell .timelineLayer {
+  bottom: 11px;
 }
 
-.overlayCollapsed .chaptersTrack,
-.overlayCollapsed .bookmarkMarker,
-.overlayCollapsed .issueMarker,
-.overlayCollapsed .densityTrack,
-.overlayCollapsed .predictionTrack,
-.overlayCollapsed .trackTimeline,
-.overlayCollapsed .loopRegion,
-.overlayCollapsed .propagateRegion,
-.overlayCollapsed .chapterDraftRegion,
-.overlayCollapsed .propagateDraftRegion {
-  display: none;
+.collapsedWindowOverview {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  left: 2px;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.collapsedWindowSelection {
+  position: absolute;
+  inset-block: 0;
+  left: var(--timeline-left);
+  width: var(--timeline-width);
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--sc-brand) 28%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--sc-brand) 68%, white),
+    inset 3px 0 0 color-mix(in oklch, var(--sc-brand) 86%, white),
+    inset -3px 0 0 color-mix(in oklch, var(--sc-brand) 86%, white);
+}
+
+.collapsedWindowSelection[data-full-window="true"] {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--sc-brand) 72%, white),
+    inset 3px 0 0 color-mix(in oklch, var(--sc-brand) 82%, white),
+    inset -3px 0 0 color-mix(in oklch, var(--sc-brand) 82%, white);
 }
 
 /* v0.21.16 · 尺子刻度: 整宽帧号标签行, 贴在轨道上方 (与轨道同 2px 内缩对齐)。 */
@@ -654,6 +716,14 @@
   cursor: grab;
 }
 
+.navWindow[data-full-window="true"] {
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.62),
+    inset 3px 0 0 rgba(255, 255, 255, 0.86),
+    inset -3px 0 0 rgba(255, 255, 255, 0.86);
+}
+
 /* 概览条上的播放头位置点。 */
 .navPlayhead {
   position: absolute;
@@ -687,10 +757,10 @@
 .overlayExpanded {
   --expanded-timeline-side: 28px;
   z-index: 56;
-  bottom: 60px;
-  gap: 7px;
+  bottom: 12px;
+  gap: 5px;
   width: min(980px, calc(100% - 72px));
-  padding: 13px 16px 10px;
+  padding: 10px 14px 8px;
   border-color: rgba(255, 255, 255, 0.22);
   border-radius: 15px;
   background:
@@ -701,6 +771,15 @@
     inset 0 0 0 1px rgba(255, 255, 255, 0.03),
     0 24px 70px rgba(0, 0, 0, 0.52);
   backdrop-filter: blur(14px) saturate(125%);
+}
+
+.overlayExpanded .timelineToggleButton {
+  position: static;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  margin-left: 1px;
+  border-radius: 6px;
 }
 
 /* 每条 lane：左标签列 + 右内容列，所有内容列横向对齐（共享帧→百分比映射）。 */
@@ -726,10 +805,6 @@
   position: relative;
   height: 17px;
   margin: 0 var(--expanded-timeline-side);
-}
-
-.laneEmpty {
-  display: none;
 }
 
 /* 标尺 */
@@ -957,21 +1032,15 @@
   transform: translateX(-50%);
 }
 
-/* 控件条（大号居中） */
+/* 紧凑播放控件：直接并入底部状态栏，不再形成独立卡片层。 */
 .expandedControls {
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  margin-top: 2px;
-  padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 8px 20px rgba(0, 0, 0, 0.18);
+  gap: 3px;
+  margin: 0;
+  padding: 0 7px 0 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
   pointer-events: none;
 }
 
@@ -981,53 +1050,48 @@
 
 .expandedGroup {
   display: flex;
-  gap: 5px;
-  margin-left: 7px;
-  padding-left: 9px;
+  gap: 3px;
+  margin-left: 4px;
+  padding-left: 5px;
   border-left: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-.expandedControls .controlButton {
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
+.expandedControls .controlButton,
+.zoomControls .controlButton {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
   padding: 0;
-  border-radius: 8px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 6px 16px rgba(0, 0, 0, 0.24);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-/* 圆形大播放键 */
-.playButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  margin: 0 4px;
-  border: 1px solid rgba(34, 211, 238, 0.7);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
+.zoomControls {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+}
+
+.zoomControls.interactive {
+  pointer-events: auto;
+}
+
+/* 播放键仅保留轻量语义强调，与其它 24px 控件同尺寸。 */
+.compactPlayButton {
+  border-color: rgba(34, 211, 238, 0.62);
+  background: rgba(34, 211, 238, 0.12);
   color: #fff;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 0 0 1px rgba(34, 211, 238, 0.25),
-    0 0 22px rgba(34, 211, 238, 0.22);
-  cursor: pointer;
-  transition: background-color 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 0 9px rgba(34, 211, 238, 0.16);
 }
 
-.playButton:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.playButtonActive {
-  border-color: rgba(34, 211, 238, 0.8);
-  box-shadow:
-    0 0 0 2px rgba(34, 211, 238, 0.55),
-    0 0 28px rgba(34, 211, 238, 0.32);
+.compactPlayButton:hover {
+  background: rgba(34, 211, 238, 0.2);
 }
 
 /* 首/末帧跳转（chevron + 边缘竖条） */
@@ -1041,26 +1105,27 @@
   position: absolute;
   top: 50%;
   width: 2px;
-  height: 12px;
+  height: 10px;
   background: currentcolor;
   transform: translateY(-50%);
 }
 
 .skipStart::before {
-  left: 8px;
+  left: 6px;
 }
 
 .skipEnd::after {
-  right: 8px;
+  right: 6px;
 }
 
-/* 状态条 */
+/* 单层底栏：常规状态一行容纳控件和信息；极端信息量下自然换行但不隐藏操作。 */
 .expandedStatus {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 5px 9px;
+  gap: 4px 6px;
+  min-height: 32px;
+  padding: 3px 6px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.22);
@@ -1085,11 +1150,12 @@
 
 /* status 条内联概览导航条（波形式缩影 + 窗口括选） */
 .navigatorInline {
-  flex: none;
-  width: 210px;
-  height: 24px;
-  margin-left: 2px;
-  border-radius: 7px;
+  flex: 0 1 180px;
+  width: 180px;
+  min-width: 120px;
+  height: 22px;
+  margin-left: 1px;
+  border-radius: 6px;
 }
 
 /* 分行堆叠容器 + 贯穿竖向网格线 (网格线在各行之下, 故 laneRow 提到 z-index:1)。 */
