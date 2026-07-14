@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
 from aap_backend_runtime import free_gpu_memory, gpu_info_snapshot
 
 
@@ -18,3 +21,27 @@ def test_gpu_info_snapshot_shape() -> None:
         assert "memory_total_mb" in snap
         assert "memory_free_mb" in snap
         assert "memory_used_mb" in snap
+
+
+def test_free_gpu_memory_ignores_broken_cuda_cleanup(monkeypatch) -> None:
+    mock_torch = types.ModuleType("torch")
+    mock_cuda = types.ModuleType("torch.cuda")
+    mock_cuda.is_available = lambda: True
+    mock_cuda.empty_cache = lambda: (_ for _ in ()).throw(RuntimeError("CUDA error"))
+    mock_cuda.ipc_collect = lambda: (_ for _ in ()).throw(RuntimeError("CUDA error"))
+    mock_torch.cuda = mock_cuda
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+    monkeypatch.setitem(sys.modules, "torch.cuda", mock_cuda)
+
+    free_gpu_memory()
+
+
+def test_free_gpu_memory_ignores_broken_availability_check(monkeypatch) -> None:
+    mock_torch = types.ModuleType("torch")
+    mock_cuda = types.ModuleType("torch.cuda")
+    mock_cuda.is_available = lambda: (_ for _ in ()).throw(RuntimeError("driver unavailable"))
+    mock_torch.cuda = mock_cuda
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+    monkeypatch.setitem(sys.modules, "torch.cuda", mock_cuda)
+
+    free_gpu_memory()

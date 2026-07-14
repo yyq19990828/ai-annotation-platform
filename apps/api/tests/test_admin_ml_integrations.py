@@ -53,7 +53,18 @@ async def test_overview_groups_backends_by_project(
 
     from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 
-    b1 = MLBackendRegistry(name="b1", url="http://x:9000", state="connected")
+    b1 = MLBackendRegistry(
+        name="b1",
+        url="http://x:9000",
+        state="connected",
+        health_meta={
+            "compute": {
+                "configured_device": "cuda",
+                "effective_provider": "CPUExecutionProvider",
+                "cpu_fallback_supported": True,
+            }
+        },
+    )
     b2 = MLBackendRegistry(name="b2", url="http://y:9000", state="disconnected")
     db_session.add(b1)
     db_session.add(b2)
@@ -88,6 +99,8 @@ async def test_overview_groups_backends_by_project(
         assert len(body["projects"]) == 1
         assert body["projects"][0]["project_name"] == "P1"
         assert len(body["projects"][0]["backends"]) == 2
+        b1_out = next(item for item in body["projects"][0]["backends"] if item["name"] == "b1")
+        assert b1_out["health_meta"]["compute"]["effective_provider"] == "CPUExecutionProvider"
 
 
 @pytest.mark.asyncio
@@ -311,6 +324,11 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
                 "model_version": "mv",
                 "pool": {"cap": 1, "loaded_variants": []},
                 "gpu_info": {"memory_used_mb": 1},
+                "compute": {
+                    "configured_device": "cuda",
+                    "effective_device": "cpu",
+                    "cpu_fallback_supported": True,
+                },
             },
         ),
         ("get", "/setup"): _FakeResp(
@@ -347,6 +365,12 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
     assert t["supports_variants"] is True
     assert t["variant_catalog"]["sam_variant"] == ["tiny", "large"]
     assert t["supported_variants"][0]["key"] == "series"
+    assert t["compute"] == {
+        "configured_device": "cuda",
+        "effective_device": "cpu",
+        "effective_provider": None,
+        "cpu_fallback_supported": True,
+    }
     assert t["registered"] is True
     assert "manual" in (t["registered_label"] or "")
 

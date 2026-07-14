@@ -6099,7 +6099,7 @@
       },
       "ComputeInfo": {
         "additionalProperties": true,
-        "description": "Backend 有效计算设备观测 (五镜像统一)。\n\ntorch 系 (yolo/gsam2/sam3) 填 ``effective_device`` (\"cuda\"/\"cpu\"/None),\nORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 \"CPUExecutionProvider\"/\n\"CUDAExecutionProvider\")。``configured_device`` 为配置意图; 当其非 \"cpu\" 而有效设备\n已退回 CPU 时, 前端显示「⚠ CPU 回退」告警角标。",
+        "description": "Backend 有效计算设备观测 (五镜像统一)。\n\ntorch 系 (yolo/gsam2/sam3) 填 ``effective_device`` (\"cuda\"/\"cpu\"/None),\nORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 \"CPUExecutionProvider\"/\n\"CUDAExecutionProvider\")。``configured_device`` 为配置意图或构造偏好; 只有已知 GPU\n配置 (\"gpu\"/\"cuda\"/\"cuda:*\") 的有效设备已落到 CPU 时, 前端才显示「⚠ CPU 回退」。\n该对象仅作诊断，不代表所有 GPU pool/session 已释放。",
         "properties": {
           "configured_device": {
             "anyOf": [
@@ -6111,6 +6111,17 @@
               }
             ],
             "title": "Configured Device"
+          },
+          "cpu_fallback_supported": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Fallback Supported"
           },
           "effective_device": {
             "anyOf": [
@@ -11648,6 +11659,16 @@
               }
             ],
             "title": "Cache"
+          },
+          "compute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "error": {
             "anyOf": [

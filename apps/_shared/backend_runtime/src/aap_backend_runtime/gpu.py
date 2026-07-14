@@ -20,8 +20,15 @@ def free_gpu_memory() -> None:
         import torch  # noqa: PLC0415
     except Exception:  # noqa: BLE001
         return
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    try:
+        available = torch.cuda.is_available()
+    except Exception:  # noqa: BLE001
+        return
+    if available:
+        try:
+            torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             torch.cuda.ipc_collect()
         except Exception:  # noqa: BLE001

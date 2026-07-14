@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { buildWsUrl } from "@/lib/wsHost";
+import type { MLBackendCompute } from "@/utils/mlBackendCompute";
 import { usePerfHudStore } from "./usePerfHudStore";
 
 export interface BackendSnapshot {
@@ -59,11 +60,7 @@ export interface BackendSnapshot {
     idle_seconds?: number | null;
   } | null;
   /** v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。 */
-  compute?: {
-    configured_device?: string | null;
-    effective_device?: string | null;
-    effective_provider?: string | null;
-  } | null;
+  compute?: MLBackendCompute | null;
   timestamp?: string;
 }
 

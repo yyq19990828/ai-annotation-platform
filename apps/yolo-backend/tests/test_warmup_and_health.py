@@ -102,3 +102,80 @@ def test_health_pool_loaded_key_string_uses_series_size_task(client) -> None:
     pool = client.get("/health").json()["pool"]
     keys = [e["key"] for e in pool["loaded_keys"]]
     assert "yolo11/s/detection" in keys
+
+
+def test_health_declares_cpu_fallback_capability(client) -> None:
+    compute = client.get("/health").json()["compute"]
+    assert compute["cpu_fallback_supported"] is True
+
+
+def test_health_survives_cuda_runtime_failure(client, monkeypatch) -> None:
+    import main
+
+    def _broken_cuda_check():
+        raise RuntimeError("CUDA error: unknown error")
+
+    monkeypatch.setattr(main.torch.cuda, "is_available", _broken_cuda_check)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["gpu_info"]["device_index"] is None
+    assert response.json()["gpu_info"]["process_memory_mb"] is None
+
+
+def test_model_move_commits_latch_after_cpu_replacement(monkeypatch) -> None:
+    import main
+
+    events: list[str] = []
+
+    class _Model:
+        def to(self, device):
+            events.append(f"to:{device}")
+            if device == "cuda":
+                raise RuntimeError("CUDA error: unknown error")
+            return self
+
+    monkeypatch.setattr(main, "effective_device", lambda _configured: "cuda")
+    monkeypatch.setattr(main, "free_gpu_memory", lambda: events.append("cleanup"))
+    monkeypatch.setattr(main, "latch_cpu", lambda _reason: events.append("latch"))
+
+    model = _Model()
+    assert main._move_model_to_effective_device(model) is model
+    assert events == ["to:cuda", "to:cpu", "cleanup", "latch"]
+
+
+def test_model_move_cpu_failure_does_not_commit_latch(monkeypatch) -> None:
+    import main
+
+    latched: list[str] = []
+
+    class _Model:
+        def to(self, device):
+            if device == "cuda":
+                raise RuntimeError("CUDA error: unknown error")
+            raise RuntimeError("CPU move failed")
+
+    monkeypatch.setattr(main, "effective_device", lambda _configured: "cuda")
+    monkeypatch.setattr(main, "latch_cpu", latched.append)
+
+    with pytest.raises(RuntimeError, match="CPU move failed"):
+        main._move_model_to_effective_device(_Model())
+    assert latched == []
+
+
+def test_model_move_non_device_error_is_not_retried(monkeypatch) -> None:
+    import main
+
+    devices: list[str] = []
+
+    class _Model:
+        def to(self, device):
+            devices.append(device)
+            raise ValueError("invalid model")
+
+    monkeypatch.setattr(main, "effective_device", lambda _configured: "cuda")
+
+    with pytest.raises(ValueError, match="invalid model"):
+        main._move_model_to_effective_device(_Model())
+    assert devices == ["cuda"]

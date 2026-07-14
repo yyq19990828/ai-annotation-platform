@@ -1,16 +1,26 @@
 """ML backend 运行时共享无状态叶子函数。"""
 
-from aap_backend_runtime.device import effective_device, effective_device_value, latch_cpu
+from aap_backend_runtime.device import (
+    DeviceUnavailableError,
+    effective_device,
+    effective_device_value,
+    is_device_error,
+    latch_cpu,
+    require_gpu_device,
+)
 from aap_backend_runtime.gpu import free_gpu_memory, gpu_info_snapshot
 from aap_backend_runtime.image import fetch_image
 from aap_backend_runtime.versions import versions_payload
 
 __all__ = [
+    "DeviceUnavailableError",
     "effective_device",
     "effective_device_value",
     "fetch_image",
     "free_gpu_memory",
     "gpu_info_snapshot",
+    "is_device_error",
     "latch_cpu",
+    "require_gpu_device",
     "versions_payload",
 ]

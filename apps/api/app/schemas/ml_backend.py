@@ -178,13 +178,16 @@ class ComputeInfo(BaseModel):
 
     torch 系 (yolo/gsam2/sam3) 填 ``effective_device`` ("cuda"/"cpu"/None),
     ORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 "CPUExecutionProvider"/
-    "CUDAExecutionProvider")。``configured_device`` 为配置意图; 当其非 "cpu" 而有效设备
-    已退回 CPU 时, 前端显示「⚠ CPU 回退」告警角标。
+    "CUDAExecutionProvider")。``configured_device`` 为配置意图或构造偏好; 只有已知 GPU
+    配置 ("gpu"/"cuda"/"cuda:*") 的有效设备已落到 CPU 时, 前端才显示「⚠ CPU 回退」。
+    该对象仅作诊断，不代表所有 GPU pool/session 已释放。
     """
 
     configured_device: str | None = None
     effective_device: str | None = None
     effective_provider: str | None = None
+    # False 表示 GPU-only，设备失效时必须显式失败，不得展示 CPU fallback。
+    cpu_fallback_supported: bool | None = None
 
     class Config:
         extra = "allow"

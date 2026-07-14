@@ -35,10 +35,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **ML Backend 设备失效观测不再误报可回退性和实际 provider**：共享 torch 设备 latch 现在线程安全且向 CPU 单调，Grounded-SAM2 与 YOLO 只在识别为设备错误且 CPU replacement 成功后提交回退；CUDA runtime 查询本身失败时，两者的 `/health` 仍可用，YOLO 也会在 CPU replacement 后尝试释放 CUDA allocator 缓存。SAM3 image、Multiplex 与 PVS 明确为 GPU-only，模型加载检测到 GPU 不可用时返回可重试的结构化 503。RapidOCR 与 ONNXTools 改为读取已加载业务 session 的实际 primary provider，ONNXTools composite 的检测与分类 session 共用同一份功能探测后的 provider 偏好；空池、缺失或混合 provider 返回 `null`（unknown 语义）。注册表快照与实时 `/observe` 均透传 `compute`，Runtime Observe 与 PerfHUD 的前端消费共用同一 CPU fallback 判定，不再误报显式 CPU、实时空状态或 GPU-only backend。
+
 ## [0.22.3] - 2026-07-14
 
 ### Added
-- **ML Backend GPU→CPU fallback 健壮性审计 + 有效设备可观测**：五个 ML 后端镜像（yolo / grounded-sam2 / sam3 / rapidocr / onnxtools）统一「真实设备探测 + 失败 latch CPU」逻辑。torch 系把 yolo 已开路的黄金模式抽成共享 helper `aap_backend_runtime.device`，grounded-sam2 / sam3 的 7 处模型构建点全部接入——GPU 上下文损坏（如笔记本挂起恢复后的 `CUDA error: unknown error`）不再硬 500，而是静默退回 CPU 推理（变慢但不断服）。ORT 系（rapidocr / onnxtools）启动期功能探测真实生效的 ExecutionProvider，CUDA 列出但损坏时不再硬崩。五镜像 `/health` 统一暴露顶层 `compute: {configured_device, effective_device | effective_provider}`；平台放行该字段进注册表 `health_meta` 与 PerfHud 实时快照，管理端「运行时观测」面板与 PerfHud 在「配置了 GPU 但实际跑在 CPU」时显示警示角标，为 ADR-0049 跨 backend 显存仲裁交付 L0 观测地基。
+- **ML Backend 有效计算设备可观测地基**：五个 ML 后端镜像（yolo / grounded-sam2 / sam3 / rapidocr / onnxtools）在 `/health` 暴露顶层 `compute: {configured_device, effective_device | effective_provider}`，并建立共享 torch 设备探测与初始 ORT provider 功能探测。平台将该字段传入注册表 `health_meta` 与 PerfHUD 实时快照，管理端可显示 GPU 配置与 CPU 生效路径的偏离。该交付建立了 ADR-0049 所需的诊断传输链；具体 fallback 是否成立以各 backend 能力为准，不由一次启动探测推断。
 
 ### Changed
 - **视频时间轴两态提升信息密度与窗口辨识度**：展开面板不再为章节、书签、问题、AI 预测、所选轨迹、AI 影响范围与循环区间保留空行，并把播放、逐帧和缩放控件压缩到底部状态栏，不再用大号图标单独占据一整行；缩放 / 适配按钮固定在底栏最右侧，展开 / 收起通过尊重系统动态偏好的平滑过渡衔接，两态也保持同一贴底位置。紧凑态继续呈现语义摘要，并把状态信息移到独立一行，为主时间条保留更多宽度。展开、收起态均显示当前 / 总时长和明确的全片窗口读数，未缩放时也保留完整窗口选区，缩放后可直接判断当前窗口位于全片的哪一段。

@@ -81,6 +81,39 @@ async def test_check_health_marks_error_on_failure(
     assert fresh.last_checked_at is not None
 
 
+async def test_check_health_persists_compute_meta(db_session: AsyncSession, monkeypatch):
+    backend = await _make_backend(db_session)
+    compute = {
+        "configured_device": "cuda",
+        "effective_provider": "CPUExecutionProvider",
+        "cpu_fallback_supported": True,
+    }
+
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, {"compute": compute}
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is True
+    await db_session.flush()
+
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.health_meta["compute"] == compute
+
+
 async def test_check_health_returns_false_for_missing_backend(
     db_session: AsyncSession,
 ):
@@ -127,6 +160,11 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
             "last_request_age_seconds": 2831.8,
             "pool": {"loaded_variants": []},
             "video_pool": {"loaded_variants": [], "active_sessions": 0},
+            "compute": {
+                "configured_device": "cuda",
+                "effective_device": "cpu",
+                "cpu_fallback_supported": True,
+            },
         },
     )
 
@@ -137,6 +175,8 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
     assert snap["loaded"] is False
     assert snap["pool"]["loaded_variants"] == []
     assert snap["video_pool"]["active_sessions"] == 0
+    assert snap["compute"]["effective_device"] == "cpu"
+    assert snap["compute"]["cpu_fallback_supported"] is True
     assert snap["last_request_age_seconds"] == 2831.8
 
 

@@ -25,6 +25,17 @@ from aap_backend_runtime import fetch_image
 logger = logging.getLogger("onnxtools-backend.predictor")
 
 
+def _primary_provider(session: Any) -> str | None:
+    """Return an ORT session's current primary provider, or unknown."""
+    try:
+        providers = session.get_providers()
+    except Exception:  # noqa: BLE001
+        return None
+    if not providers:
+        return None
+    return str(providers[0])
+
+
 def _class_name_of(names: Any, cls: int) -> str:
     """从检测器 ``class_names`` 取下标 ``cls`` 的类名，兼容 dict / list 两种载体。
 
@@ -186,6 +197,45 @@ class VehicleAttributePredictor:
         if self._va_classifier is not None:
             names.append("va")
         return names
+
+    def effective_provider(self) -> str | None:
+        """Aggregate the actual primary provider of every loaded business session.
+
+        Empty/lazy state, a missing private session handle, or mixed providers is
+        reported as unknown instead of guessing from construction preferences.
+        """
+        sessions: list[Any] = []
+        expected_sessions = 0
+
+        detector = self._detector
+        if detector is not None:
+            expected_sessions += 1
+            sessions.append(getattr(detector, "_onnx_session", None))
+
+        va_classifier = self._va_classifier
+        if va_classifier is not None:
+            expected_sessions += 1
+            sessions.append(getattr(va_classifier, "_onnx_session", None))
+
+        pipeline = self._pipeline
+        if pipeline is not None:
+            expected_sessions += 2
+            pipeline_detector = getattr(pipeline, "detector", None)
+            pipeline_va = getattr(pipeline, "va_classifier", None)
+            sessions.extend(
+                [
+                    getattr(pipeline_detector, "_onnx_session", None),
+                    getattr(pipeline_va, "_onnx_session", None),
+                ]
+            )
+
+        if expected_sessions == 0 or len(sessions) != expected_sessions:
+            return None
+        providers = [_primary_provider(session) for session in sessions if session is not None]
+        if len(providers) != expected_sessions or any(provider is None for provider in providers):
+            return None
+        unique = set(providers)
+        return providers[0] if len(unique) == 1 else None
 
     def warm(self, model_id: str | None) -> bool:
         """按 model_id 触发对应句柄懒加载 (无则预热一锅端 pipeline)。

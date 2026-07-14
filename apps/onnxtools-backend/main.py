@@ -74,8 +74,8 @@ IDLE_UNLOAD_SECONDS = float(os.environ.get("ONNXTOOLS_IDLE_UNLOAD_SECONDS", "600
 IDLE_CHECK_INTERVAL = float(os.environ.get("ONNXTOOLS_IDLE_CHECK_INTERVAL", "60"))
 
 
-# ORT provider 功能探测结果 (None=未探测)。一旦探过即缓存，启动后不再重复试 CUDA。
-_effective_providers: list[str] | None = None
+# ORT provider 构造偏好 (None=未探测)。一旦探过即缓存，启动后不再重复试 CUDA。
+_provider_preference: list[str] | None = None
 
 
 def _available_providers() -> list[str]:
@@ -93,47 +93,61 @@ def _available_providers() -> list[str]:
 
 
 def _probe_providers() -> list[str]:
-    """功能探测 ORT 可用 provider 优先级，镜像 onnxtools.infer_utils.get_best_available_providers。
+    """功能探测 ORT provider 构造优先级。
 
     ORT 列出 ``CUDAExecutionProvider`` 不代表可用 —— 驱动 / cuDNN 损坏时
     ``InferenceSession(providers=['CUDAExecutionProvider'])`` 会抛错。这里用真实 det 模型文件
     开一次 CUDA session 探测：能开起来返回 ``['CUDAExecutionProvider', 'CPUExecutionProvider']``
     (ORT 自身在 CUDA 初始化失败时按 list 顺序落 CPU)，否则返回 ``['CPUExecutionProvider']``。
-    探测结果缓存到模块级 ``_effective_providers``，供 ``_make_detector`` / ``_make_va_classifier``
-    与 /health 复用单一真值。
+    探测 session 构造成功后仍必须检查 ``get_providers()[0]``；ORT 可能不报错但
+    已静默使用 CPU。该结果只供后续句柄构造，/health 会读取已加载业务 session
+    的实际 primary provider。
 
     模型文件不存在 (启动期未落盘) 时，仍返回含 CUDA 的优先级列表 —— 此时退回 ORT 自身
     行为 (list 含 CPU fallback)，由 BaseORT 构造时的 ORT fallback 兜底，不阻塞启动。
     """
-    global _effective_providers
-    if _effective_providers is not None:
-        return _effective_providers
+    global _provider_preference
+    if _provider_preference is not None:
+        return _provider_preference
     try:
         import onnxruntime  # noqa: PLC0415
     except Exception:  # noqa: BLE001
         logger.warning("onnxruntime 不可用; provider 探测退回 CPU")
-        _effective_providers = ["CPUExecutionProvider"]
-        return _effective_providers
+        _provider_preference = ["CPUExecutionProvider"]
+        return _provider_preference
     available = onnxruntime.get_available_providers()
     if "CUDAExecutionProvider" not in available:
-        _effective_providers = ["CPUExecutionProvider"]
-        return _effective_providers
+        _provider_preference = ["CPUExecutionProvider"]
+        return _provider_preference
     # 用真实 det 模型文件做 CUDA 功能探测。
     det_path = os.path.join(MODEL_DIR, DET_MODEL)
     try:
         if os.path.exists(det_path):
-            onnxruntime.InferenceSession(det_path, providers=["CUDAExecutionProvider"])
-            _effective_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            probe_session = onnxruntime.InferenceSession(
+                det_path, providers=["CUDAExecutionProvider"]
+            )
+            actual = probe_session.get_providers()
+            if actual and actual[0] == "CUDAExecutionProvider":
+                _provider_preference = [
+                    "CUDAExecutionProvider",
+                    "CPUExecutionProvider",
+                ]
+            else:
+                logger.warning(
+                    "ORT CUDA 探测 session 已静默退回 %s；后续句柄改用 CPU",
+                    actual[0] if actual else "unknown provider",
+                )
+                _provider_preference = ["CPUExecutionProvider"]
         else:
             # 模型尚未落盘：保留 CUDA 优先 (ORT 构造时按 list 自动落 CPU fallback)，不阻塞。
-            _effective_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            _provider_preference = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "ORT CUDA 探测失败 (%s) — CUDA 已列出但不可用 (驱动/cuDNN 不匹配?)，"
             "onnxtools backend 全部句柄退回 CPUExecutionProvider。", exc,
         )
-        _effective_providers = ["CPUExecutionProvider"]
-    return _effective_providers
+        _provider_preference = ["CPUExecutionProvider"]
+    return _provider_preference
 
 _predictor: VehicleAttributePredictor | None = None
 _idle_task: asyncio.Task | None = None
@@ -177,7 +191,7 @@ def _forget_handles() -> None:
     _handle_stats.clear()
 
 
-def _make_detector() -> Any:
+def _make_detector(providers: list[str] | None = None) -> Any:
     """构造独立 rtdetr 检测器(RtdetrORT),只给检测权重。
 
     ``providers`` 由启动期功能探测决定 (``_probe_providers``)：CUDA 列出但损坏时已降级为
@@ -190,37 +204,37 @@ def _make_detector() -> Any:
         model_type="rtdetr",
         onnx_path=os.path.join(MODEL_DIR, DET_MODEL),
         conf_thres=CONF_THRES,
-        providers=_probe_providers(),
+        providers=providers if providers is not None else _probe_providers(),
     )
 
 
-def _make_va_classifier() -> Any:
+def _make_va_classifier(providers: list[str] | None = None) -> Any:
     """构造独立车辆属性分类器(VehicleAttributeORT),只给分类权重(type/color map 用包内默认)。"""
     from onnxtools import VehicleAttributeORT
 
     return VehicleAttributeORT(
         os.path.join(MODEL_DIR, VA_MODEL),
         conf_thres=CONF_THRES,
-        providers=_probe_providers(),
+        providers=providers if providers is not None else _probe_providers(),
     )
 
 
 def _make_pipeline() -> Any:
     """构造一锅端 composite(VehicleAttributePipeline,内部自建 detector + va)。
 
-    ⚠️ 残留: ``VehicleAttributePipeline`` 不接受 ``providers`` kwarg (第三方包限制),
-    内部默认 ``['CUDAExecutionProvider', 'CPUExecutionProvider']`` —— ORT 自身在 CUDA
-    初始化失败时按 list 顺序落 CPU, 故坏上下文仍能降级, 只是 /health 报的 effective_provider
-    对 pipeline 路径是「旁证」(探测 session 的生效 provider), 非每条内部 session 的逐个真值。
+    当前上游构造器虽接受 ``providers``，但只传给属性分类器，检测器仍使用
+    默认 provider。这里跳过该构造器，用两个已经过功能探测的原子工厂注入
+    实例，确保 composite 的两个业务 session 使用同一 provider 偏好。
     """
     from onnxtools.pipeline import VehicleAttributePipeline
 
-    return VehicleAttributePipeline(
-        model_type="rtdetr",
-        model_path=os.path.join(MODEL_DIR, DET_MODEL),
-        va_model_path=os.path.join(MODEL_DIR, VA_MODEL),
-        conf_thres=CONF_THRES,
-    )
+    providers = _probe_providers()
+    pipeline = VehicleAttributePipeline.__new__(VehicleAttributePipeline)
+    pipeline.roi_pad_ratio = 0.1
+    pipeline.detector = _make_detector(providers)
+    pipeline.va_classifier = _make_va_classifier(providers)
+    pipeline.class_names = pipeline._resolve_class_names(None)
+    return pipeline
 
 
 async def _idle_watcher() -> None:
@@ -252,13 +266,12 @@ async def lifespan(app: FastAPI):
         va_factory=_make_va_classifier,
         pipeline_factory=_make_pipeline,
     )
-    # 启动期预热 provider 探测缓存 (功能性 CUDA session 探测)，结果缓存供后续所有句柄构造 +
-    # /health 复用单一真值。CUDA 列出但损坏时这里就降级为 CPU，避免首条 predict 构造句柄时硬抛。
+    # 启动期预热 provider 构造偏好；业务 session 的实际 provider 另由 /health 实时读取。
     probed = _probe_providers()
     _idle_task = asyncio.create_task(_idle_watcher())
     logger.info(
         "onnxtools-backend ready (lazy): model_dir=%s det=%s va=%s conf=%.2f idle_unload=%.0fs "
-        "effective_provider=%s",
+        "provider_preference=%s",
         MODEL_DIR, DET_MODEL, VA_MODEL, CONF_THRES, IDLE_UNLOAD_SECONDS, probed[0],
     )
     try:
@@ -311,7 +324,6 @@ def _pool_status() -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    probed = _probe_providers()
     return {
         "status": "ok",
         "service": "onnxtools-backend",
@@ -321,14 +333,14 @@ def health() -> dict[str, Any]:
         "loaded_handles": _predictor.loaded_count() if _predictor is not None else 0,
         # v0.18.20 · 句柄池状态, 供模型市场「已加载 / 预热」展示 (此前缺 pool 字段)。
         "pool": _pool_status(),
-        # compute: 配置设备 vs 探测后生效 provider。configured_device = 镜像意图 (ORT 构建列出
-        # CUDA 即视作配置 cuda)；effective_provider = 功能探测后实际生效 provider。两者漂移
-        # (configured=cuda / effective=CPUExecutionProvider) 即「CUDA 列出但损坏已静默退回 CPU」
-        # 信号，供平台出角标 (ADR-0049 L0 观测地基)。⚠️ pipeline 路径不接受 providers kwarg
-        # (残留)，effective_provider 对它是旁证，见 _make_pipeline 注释。
+        # effective_provider 只来自当前已加载业务 session；空池、无法完整检查
+        # composite，或多 session provider 不一致时为 None。
         "compute": {
             "configured_device": "cuda" if "CUDAExecutionProvider" in _available_providers() else "cpu",
-            "effective_provider": probed[0],
+            "effective_provider": (
+                _predictor.effective_provider() if _predictor is not None else None
+            ),
+            "cpu_fallback_supported": True,
         },
     }
 

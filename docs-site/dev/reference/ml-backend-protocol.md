@@ -71,7 +71,30 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > **`pool` 子对象**（backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台把健康快照缓存到 `ml_backend_registry.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**未统一的老 backend**回的 `pool` 字段结构各家各异，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。<!-- since v0.14.14 (PoolStatus 统一) -->
 
-> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`。
+### 1.1 `compute` 计算设备观测
+
+GPU backend 应在 `/health` 顶层返回 `compute`：
+
+```json
+{
+  "compute": {
+    "configured_device": "cuda",
+    "effective_device": "cpu",
+    "effective_provider": null,
+    "cpu_fallback_supported": true
+  }
+}
+```
+
+- `configured_device` 表示部署意图或模型/session 构造偏好，常见值为 `cpu`、`cuda`、`cuda:0` 或 `gpu`。
+- torch backend 使用 `effective_device` 表示进程已确认的构造/回退路径；ORT backend 使用 `effective_provider`。另一字段应省略或为 `null`。
+- `null` 表示尚未加载业务模型、无法完整检查，或多个已加载 session / pool 的生效设备不一致；不得用配置偏好补成 CUDA。
+- ORT 的 `effective_provider` 是已加载业务 session 的一致 primary provider（`session.get_providers()[0]`）。启动探测、`use_cuda` 或构造时 provider 列表只是偏好，不是该字段的真值。
+- `cpu_fallback_supported=false` 表示 GPU-only；模型加载检测到 GPU 不可用时 backend 应返回结构化 503，不得伪造 CPU 重试。字段缺失或为 `null` 表示旧 backend 的能力未知；平台只对显式 `false` 抑制 fallback 告警。未加载时 `effective_device` 仍为 `null`。
+
+平台仅在“已知配置 GPU + 实际为 CPU + 未显式声明不支持 fallback”时显示 CPU 回退警示；显式 CPU、unknown 和 `null` 均不告警。实时 `/health` 返回可解析的 HTTP 200 时以实时 `compute` 为准，即使 backend 自报 degraded 或值为 `null`；只有实时 HTTP 探测不可达/失败时才使用注册表缓存。torch 的进程级 latch 不能枚举旧 pool，因此 `effective_device=cpu` 与仍有 GPU pool 驻留可以同时成立。`compute` 是诊断信号，不证明 GPU 权重、tensor 或 cache 已释放，不能单独作为显存驻留或账本减账依据。
+
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：现有 `/unload` 是各 backend 的 legacy best-effort 行为，并不统一保证清空全部 image/video/variant/session pool；例如 Grounded-SAM2 当前只清 image pool，不能作为显存仲裁减账凭据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；受管 full-pool unload 与 residency 契约另行定义。
 
 ---
 

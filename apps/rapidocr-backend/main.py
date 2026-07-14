@@ -45,10 +45,10 @@ async def lifespan(app: FastAPI):
     global _predictor
     _predictor = RapidOCRPredictor()
     logger.info(
-        "rapidocr-backend ready (lazy): model_dir=%s configured_device=%s effective_provider=%s",
+        "rapidocr-backend ready (lazy): model_dir=%s configured_device=%s provider_preference=%s",
         catalog.MODELS_DIR,
         os.environ.get("RAPIDOCR_DEVICE", "gpu"),
-        _predictor.effective_provider(),
+        "CUDAExecutionProvider" if _predictor.use_cuda else "CPUExecutionProvider",
     )
     yield
 
@@ -86,12 +86,12 @@ def health() -> dict[str, Any]:
         "model_version": MODEL_VERSION,
         "ready": _predictor is not None,
         "pool": _predictor.pool_snapshot() if _predictor is not None else None,
-        # compute: 配置设备 vs 探测后生效 provider。RapidOCR 只吃 use_cuda 布尔，
-        # configured=gpu 但 CUDA 列出不可用时 effective_provider 会是 CPUExecutionProvider，
-        # 暴露此漂移供平台出「静默退回 CPU」角标 (ADR-0049 L0 观测地基)。
+        # effective_provider 只来自当前已加载的 det/cls/rec 业务 session；
+        # 空池、缺失或混合 provider 时为 None。
         "compute": {
             "configured_device": _predictor.configured_device() if _predictor else "cpu",
             "effective_provider": _predictor.effective_provider() if _predictor else None,
+            "cpu_fallback_supported": True,
         },
     }
 

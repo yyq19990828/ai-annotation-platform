@@ -414,7 +414,10 @@ def health() -> dict:
     旧前端字段保留：`gpu` 仍是 truthy（True/False），`model_version` / `loaded` 不变；
     新增 `gpu_info` / `cache` 子对象，老前端忽略。
     """
-    available = torch.cuda.is_available()
+    try:
+        available = bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001 — CUDA 运行时损坏不应拖垮 /health
+        available = False
     gpu_info: dict | None = None
     # v0.9.11 PerfHud · 同步采样 GPU util/温度/功耗 + 容器 CPU/RAM (无 GPU 环境字段为 None)
     perf = sample_perfhud()
@@ -476,6 +479,7 @@ def health() -> dict:
         "compute": {
             "configured_device": "cuda",
             "effective_device": effective_device_value(),
+            "cpu_fallback_supported": True,
         },
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),

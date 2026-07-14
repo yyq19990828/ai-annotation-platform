@@ -25,7 +25,7 @@ vendor SAM2 video API 关键事实 (以实际 vendor 代码为准, commit 见 sy
   - propagate_in_video(state, start_frame_idx, max_frame_num_to_track, reverse):
     yield (frame_idx, obj_ids, video_res_masks); masks 是原始视频分辨率的 logits
     (shape [num_obj, 1, H, W]), >0 为前景。
-  - 会话清理: reset_state(state) 反向清理 + del state + torch.cuda.empty_cache()。
+  - 会话清理: reset_state(state) 反向清理 + del state + 共享 best-effort CUDA 缓存清理。
 
 坐标归一化约定照搬 predictor.py: 像素 / (w 或 h), clamp 到 [0,1], 与 _box_to_rect_label 同源。
 """
@@ -47,7 +47,7 @@ import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
 import torch
 
-from aap_backend_runtime import effective_device, latch_cpu
+from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
 from mask_utils.rle import encode_coco_rle
 
@@ -90,6 +90,20 @@ class SAM2VideoTracker:
         self.active_sessions = 0
 
     def _load_video_predictor(self):
+        if self.device == "cpu":
+            return self._build_for_device("cpu")
+        try:
+            predictor = self._build_for_device(self.device)
+        except Exception as exc:  # noqa: BLE001
+            if not is_device_error(exc):
+                raise
+            free_gpu_memory()
+            predictor = self._build_for_device("cpu")
+            self.device = "cpu"
+            latch_cpu(f"GPU video predictor build failed; CPU replacement committed: {exc}")
+        return predictor
+
+    def _build_for_device(self, device: str):
         from sam2.build_sam import build_sam2_video_predictor  # type: ignore[import-not-found]
 
         cfg_name, ckpt_name = SAM2_CONFIGS[self.sam_variant]
@@ -98,12 +112,7 @@ class SAM2VideoTracker:
             # 与图片池一致: checkpoint 未预置交给 main.py 翻成 503。
             raise FileNotFoundError(ckpt_path)
         logger.info("building video predictor variant=%s ckpt=%s", self.sam_variant, ckpt_name)
-        try:
-            return build_sam2_video_predictor(cfg_name, ckpt_path, device=self.device)
-        except Exception as exc:  # noqa: BLE001
-            latch_cpu(f"build_sam2_video_predictor failed: {exc}")
-            self.device = "cpu"
-            return build_sam2_video_predictor(cfg_name, ckpt_path, device=self.device)
+        return build_sam2_video_predictor(cfg_name, ckpt_path, device=device)
 
     # ---------- 公开接口 ----------
 
@@ -225,8 +234,7 @@ class SAM2VideoTracker:
                     logger.exception("reset_state failed; dropping inference_state")
                 del inference_state
             self._cleanup_tmp(tmp_dir)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------

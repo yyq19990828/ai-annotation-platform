@@ -9,6 +9,8 @@ predictor 模块刻意不 import onnxtools——三个句柄经零参工厂注�
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -164,3 +166,64 @@ def test_class_name_of_fallbacks():
     assert pred._class_name_of(["a", "b"], 1) == "b"
     assert pred._class_name_of(["a"], 5) == "unknown"
     assert pred._class_name_of(None, 0) == "unknown"
+
+
+class _FakeSession:
+    def __init__(self, providers):
+        self.providers = list(providers)
+
+    def get_providers(self):
+        return list(self.providers)
+
+
+def test_effective_provider_is_unknown_for_lazy_empty_predictor():
+    p, *_ = _make()
+    assert p.effective_provider() is None
+
+
+def test_effective_provider_reads_loaded_atomic_session_live():
+    p, *_ = _make()
+    session = _FakeSession(["CUDAExecutionProvider", "CPUExecutionProvider"])
+    p._detector = SimpleNamespace(_onnx_session=session)
+
+    assert p.effective_provider() == "CUDAExecutionProvider"
+
+    session.providers = ["CPUExecutionProvider"]
+    assert p.effective_provider() == "CPUExecutionProvider"
+
+
+def test_effective_provider_requires_all_composite_sessions_to_match():
+    p, *_ = _make()
+    p._pipeline = SimpleNamespace(
+        detector=SimpleNamespace(
+            _onnx_session=_FakeSession(["CUDAExecutionProvider"])
+        ),
+        va_classifier=SimpleNamespace(
+            _onnx_session=_FakeSession(["CPUExecutionProvider"])
+        ),
+    )
+
+    assert p.effective_provider() is None
+
+
+def test_effective_provider_is_unknown_when_private_session_is_missing():
+    p, *_ = _make()
+    p._pipeline = SimpleNamespace(
+        detector=SimpleNamespace(
+            _onnx_session=_FakeSession(["CUDAExecutionProvider"])
+        ),
+        va_classifier=SimpleNamespace(),
+    )
+
+    assert p.effective_provider() is None
+
+
+def test_effective_provider_returns_unknown_after_unload():
+    p, *_ = _make()
+    p._va_classifier = SimpleNamespace(
+        _onnx_session=_FakeSession(["CPUExecutionProvider"])
+    )
+    assert p.effective_provider() == "CPUExecutionProvider"
+
+    p.unload()
+    assert p.effective_provider() is None

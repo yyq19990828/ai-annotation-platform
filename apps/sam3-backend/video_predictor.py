@@ -34,9 +34,13 @@ if os.path.isdir(_VENDOR_ROOT) and _VENDOR_ROOT not in sys.path:
 
 import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
-import torch
 
-from aap_backend_runtime import effective_device, latch_cpu
+from aap_backend_runtime import (
+    DeviceUnavailableError,
+    free_gpu_memory,
+    is_device_error,
+    require_gpu_device,
+)
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
 from mask_utils.rle import encode_coco_rle
 
@@ -66,7 +70,7 @@ class SAM3MultiplexVideoTracker:
     def __init__(self, *, use_fa3: bool = _USE_FA3,
                  max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES) -> None:
         self.max_window_frames = max_window_frames
-        self.device = effective_device("cuda")
+        self.device = require_gpu_device("cuda")
         self.active_sessions = 0
         self._predictor = self._load_predictor(use_fa3)
 
@@ -81,8 +85,7 @@ class SAM3MultiplexVideoTracker:
                     _VIDEO_CKPT, use_fa3)
         # max_num_objects / multiplex_count 锁定 16 (checkpoint 按此训练, 调小会
         # state_dict 形状不匹配加载失败)——不暴露为可调项。
-        # build_sam3_multiplex_video_predictor 无 device= 形参, 默认在 CUDA 上构建;
-        # GPU 失效时 latch CPU 并把返回对象显式搬到 CPU 再返回。
+        # vendor builder 无 device= 形参且内部硬绑 CUDA；SAM3 本期明确为 GPU-only。
         try:
             predictor = build_sam3_multiplex_video_predictor(
                 checkpoint_path=_VIDEO_CKPT,
@@ -91,16 +94,13 @@ class SAM3MultiplexVideoTracker:
                 warm_up=False,
             )
         except Exception as exc:  # noqa: BLE001
-            latch_cpu(f"build_sam3_multiplex_video_predictor failed: {exc}")
-            self.device = "cpu"
-            predictor = build_sam3_multiplex_video_predictor(
-                checkpoint_path=_VIDEO_CKPT,
-                bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
-                use_fa3=use_fa3,
-                warm_up=False,
-            )
-        if self.device == "cpu":
-            predictor.to("cpu")
+            if is_device_error(exc):
+                free_gpu_memory()
+                raise DeviceUnavailableError(
+                    "SAM3 multiplex video model requires a healthy CUDA device; "
+                    "CPU fallback is not supported"
+                ) from exc
+            raise
         _patch_init_state_kwargs(predictor)
         return predictor
 
@@ -236,8 +236,7 @@ class SAM3MultiplexVideoTracker:
                 except Exception:  # noqa: BLE001
                     logger.exception("close_session failed")
             self._cleanup_tmp(tmp_dir)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------

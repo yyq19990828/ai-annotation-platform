@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
+import { isCpuFallback, resolveRuntimeCompute } from "@/utils/mlBackendCompute";
 import {
   adminMlIntegrationsApi,
   type MLBackendItem,
@@ -43,27 +44,6 @@ interface RegisteredRef {
   projectNames: string[];   // 启用了该 backend 的所有项目名 (去重聚合展示)
   backend: MLBackendItem;
   observe?: ObserveTarget;
-}
-
-/** v0.22.3 WS4 · GPU 静默退回 CPU 判定: 配置了 GPU 但实际落到 CPU。
- * torch 系看 effective_device==="cpu"; ORT 系看 effective_provider==="CPUExecutionProvider"
- * (此时 configured_device 为 cuda/CUDA 才算异常退回, 显式配 cpu 不告警)。 */
-type ComputeObs =
-  | {
-      configured_device?: string | null;
-      effective_device?: string | null;
-      effective_provider?: string | null;
-    }
-  | null
-  | undefined;
-
-function isCpuFallback(compute: ComputeObs): boolean {
-  if (!compute) return false;
-  if (compute.configured_device === "cpu") return false;
-  return (
-    compute.effective_device === "cpu" ||
-    compute.effective_provider === "CPUExecutionProvider"
-  );
 }
 
 function normalizeUrl(url: string) {
@@ -215,6 +195,7 @@ function RegisteredRuntimeCard({
   const pool = observe?.pool ?? backend.health_meta?.pool;
   const videoPool = observe?.video_pool ?? backend.health_meta?.video_pool;
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
+  const compute = resolveRuntimeCompute(observe, backend.health_meta?.compute);
   const supportsWarmup = backend.health_meta?.capabilities?.warmup_endpoint === true;
   const setupQ = useQuery({
     queryKey: mlBackendSetupQueryKey(projectId, backend.id),
@@ -286,12 +267,12 @@ function RegisteredRuntimeCard({
         <Badge variant={ok ? "success" : "danger"} dot>
           {ok ? "在线" : "离线"}
         </Badge>
-        {/* v0.22.3 WS4 · GPU 静默退回 CPU 告警角标 (compute 来自 health_meta 缓存)。 */}
-        {isCpuFallback(backend.health_meta?.compute) && (
+        {/* 实时 /observe 优先，不可达时回落已缓存 health_meta。 */}
+        {isCpuFallback(compute) && (
           <span title="配置了 GPU 但已静默退回 CPU 推理">
             <Badge
               variant="outline"
-              className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+              className="border-status-caution/50 text-status-caution"
             >
               ⚠ CPU 回退
             </Badge>
@@ -440,6 +421,16 @@ function EnvOnlyCard({ target }: { target: ObserveTarget }) {
         <Badge variant={target.ok ? "success" : "danger"} dot>
           {target.ok ? "在线" : "离线"}
         </Badge>
+        {isCpuFallback(target.compute) && (
+          <span title="配置了 GPU 但已静默退回 CPU 推理">
+            <Badge
+              variant="outline"
+              className="border-status-caution/50 text-status-caution"
+            >
+              ⚠ CPU 回退
+            </Badge>
+          </span>
+        )}
         <span className={URL_CLASS}>{target.url}</span>
         <span className={LATENCY_CLASS}>{target.latency_ms}ms</span>
       </div>

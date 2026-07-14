@@ -29,6 +29,7 @@ from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import get_db, require_roles
 from app.schemas.ml_backend import (
+    ComputeInfo,
     MLBackendCreate,
     MLBackendHealthResponse,
     MLBackendOut,
@@ -464,6 +465,7 @@ class ObserveTarget(BaseModel):
     pool: dict | None = None
     video_pool: dict | None = None  # v0.10.36 · 视频追踪显存池
     cache: dict | None = None
+    compute: ComputeInfo | None = None
     variant_catalog: VariantCatalog | None = None
     supported_variants: list[dict] = []
     supported_trackers: list[
@@ -565,6 +567,7 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         pool=health.get("pool"),
         video_pool=health.get("video_pool"),  # v0.10.36
         cache=health.get("cache"),
+        compute=health.get("compute"),
         variant_catalog=catalog,
         supported_variants=supported_variants,
         supports_variants=catalog is not None or bool(supported_variants),

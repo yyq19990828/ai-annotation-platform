@@ -28,6 +28,7 @@ from aap_backend_runtime import (
     effective_device,
     effective_device_value,
     free_gpu_memory,
+    is_device_error,
     latch_cpu,
     versions_payload,
 )
@@ -135,16 +136,23 @@ def _build_model(task: str, series: str, size: str):
     else:
         model = model_cls(str(weight_path))
 
-    # 真正把模型放到有效设备。CUDA 中途失效时 model.to(DEVICE) 会抛错——此时 latch CPU
-    # 并把模型显式搬到 CPU (旧代码只打日志不搬, 导致后续 model.predict 仍走 CUDA 硬 500)。
+    return _move_model_to_effective_device(model)
+
+
+def _move_model_to_effective_device(model):
+    """移动模型；只在 CPU move 成功后才提交进程级 latch。"""
     dev = effective_device(DEVICE)
-    if dev != "cpu":
-        try:
-            model.to(dev)
-        except Exception as exc:  # noqa: BLE001
-            latch_cpu(f"model.to({dev}) 失败: {exc}")
-    if effective_device(DEVICE) == "cpu":
+    if dev == "cpu":
         model.to("cpu")
+        return model
+    try:
+        model.to(dev)
+    except Exception as exc:  # noqa: BLE001
+        if not is_device_error(exc):
+            raise
+        model.to("cpu")
+        free_gpu_memory()
+        latch_cpu(f"model.to({dev}) 失败，CPU replacement 已提交: {exc}")
     return model
 
 
@@ -225,15 +233,26 @@ def health() -> dict[str, Any]:
     total = perf.get("gpu_memory_total_mb")
     # 本容器自身视角: 物理卡号 (多卡部署按容器绑卡, CUDA_VISIBLE_DEVICES 固定单卡时取该号)
     # + 本进程 torch 已保留显存 (不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
-    _cuda = torch.cuda.is_available()
     _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    _cuda = False
+    device_index: int | None = None
+    process_memory_mb: int | None = None
+    try:
+        _cuda = bool(torch.cuda.is_available())
+        if _cuda:
+            device_index = int(_vis) if _vis.isdigit() else torch.cuda.current_device()
+            process_memory_mb = int(torch.cuda.memory_reserved() / 1024**2)
+    except Exception:  # noqa: BLE001 — CUDA 运行时损坏不应拖垮 /health
+        _cuda = False
+        device_index = None
+        process_memory_mb = None
     gpu_info = {
         "device_name": perf.get("gpu_device_name"),
-        "device_index": (int(_vis) if _vis.isdigit() else torch.cuda.current_device()) if _cuda else None,
+        "device_index": device_index,
         "memory_used_mb": used,
         "memory_total_mb": total,
         "memory_free_mb": (total - used) if (used is not None and total is not None) else None,
-        "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2) if _cuda else None,
+        "process_memory_mb": process_memory_mb,
         "gpu_utilization_percent": perf.get("gpu_utilization_percent"),
         "gpu_temperature_celsius": perf.get("gpu_temperature_celsius"),
         "gpu_power_watts": perf.get("gpu_power_watts"),
@@ -261,6 +280,7 @@ def health() -> dict[str, Any]:
         "compute": {
             "configured_device": DEVICE,
             "effective_device": effective_device_value(),
+            "cpu_fallback_supported": True,
         },
         "pool": _model_pool.pool_status() if pool_ready else {
             "cap": 0, "current_size": 0, "loaded_keys": [], "last_evict": None,

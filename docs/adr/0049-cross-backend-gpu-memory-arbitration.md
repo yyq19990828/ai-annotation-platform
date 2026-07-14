@@ -5,23 +5,25 @@
 - **Deciders:** core team
 - **Supersedes:** —
 
+> **P0b 实施冻结：本 ADR 仍是提出阶段的历史草案，不是可执行规范。** 2026-07-14 已完成 P0a 设备观测地基纠偏，但下文仍保留待整体改写的旧字段与旧流程。不得据此实现或开启仲裁。P0b 必须按[v0.22.4 实施计划](../plans/2026-07-14-v0.22.4-cross-backend-gpu-memory-arbitration.md)的 D2–D14 重写并评审，至少以 `gpu_resource_id`、`allocatable_mb`、`residency.gpu_loaded`、request lease、generation fencing、锁外 unload 和 enforce fail-closed 替换旧的裸 `device_id`、`loaded`、`inflight`、锁内 unload 与 fail-open 设计。
+
 ## Context
 
 平台可同时注册多个 GPU backend（grounded-sam2 / sam3 / yolo / onnxtools / rapidocr），每个常驻 3–5GB 显存。当前的隔离手段是**容器级空间隔离**：`*_GPU_DEVICE_ID` 只作用于 compose 的 `NVIDIA_VISIBLE_DEVICES` + `deploy.resources.reservations.devices[].device_ids`，容器内 backend 代码硬编码 `cuda:0` / `"cuda"`，对显存无任何感知。
 
-默认布局是**双卡**（`SAM3_GPU_DEVICE_ID` 默认 `1`，其余默认 `0`，见 `docker-compose.ml.yml`、`.env.example:299`）。多卡时各 backend 错开到不同物理卡——空间隔离绕开了竞争。但**单卡机器必须把 `SAM3_GPU_DEVICE_ID=0`**，于是 5 个 GPU backend 全部挤在卡 0，**彼此不知道对方占了多少显存**。
+默认布局是**双卡**（`SAM3_GPU_DEVICE_ID` 默认 `1`，其余默认 `0`，见 `docker-compose.ml.yml`、`.env.example:299`）：SAM3 独占卡 1，其余四个 backend 仍共享卡 0。多卡只能隔离被分到不同卡的 backend，不能消除单卡内的竞争。**单卡机器还必须把 `SAM3_GPU_DEVICE_ID=0`**，此时 5 个 GPU backend 全部挤在卡 0，**彼此不知道对方占了多少显存**。
 
-单卡放不下时不会 OOM 报错，而是**静默退化**：`cudaMalloc` 反复失败 → 清缓存 → 重试，模型加载慢一个数量级（8G 卡实测 SAM 3 冷启动 `8.5s` → `159s`），随后撞上 `ml_predict_timeout`（`config.py:146`，默认 100s）超时。表象是「推理超时」，根因是显存竞争，极易误诊成「模型本来就慢」而去调大超时——治标且掩盖问题。
+单卡放不下时可能直接 OOM，也可能表现为**静默退化或超时**：`cudaMalloc` 反复失败 → 清缓存 → 重试，模型加载慢一个数量级（8G 卡实测 SAM 3 冷启动 `8.5s` → `159s`），随后撞上 `ml_predict_timeout`（`config.py:146`，默认 100s）超时。静默退化时的表象是「推理超时」，根因是显存竞争，极易误诊成「模型本来就慢」而去调大超时——治标且掩盖问题。
 
 现状的能力与缺口盘点：
 
 | 维度 | 现状 | 缺口 |
 |---|---|---|
-| 卸载能力 | `MLBackendClient.unload()`（`ml_client.py:264`）+ `POST .../ml-backends/{id}/unload`（`ml_backends.py:304`，super_admin）真释放显存；各 backend 另有 `IDLE_UNLOAD_SECONDS`（默认 600s）定时卸载 | 只有**手动 / 定时**入口，无按需自动编排 |
+| 卸载能力 | `MLBackendClient.unload()`（`ml_client.py:264`）+ `POST .../ml-backends/{id}/unload`（`ml_backends.py:304`，super_admin）提供 legacy best-effort 入口，部分 backend 另有 `IDLE_UNLOAD_SECONDS`（默认 600s）定时卸载 | 尚无统一的 full-pool 卸载契约，不能保证所有 image / video / variant / ORT session 均已释放；RapidOCR 还没有该端点，也无按需自动编排 |
 | 显存账本 | 注册表 `MLBackendRegistry`（`ml_backend_registry.py:16`）**零** vram / priority / device 字段；仅 `health_meta.gpu_info` 是 60s 陈旧的单 backend 自报快照 | 无跨 backend 的显存预算 / 占用聚合 |
 | 共享卡归因 | 单卡共驻时每个 backend 的 `gpu_info.memory_used_mb` 报的是**整卡**用量（含他人模型），不能相加 | 活体用量无法归因到单个 backend |
 | 并发协调 | 唯一限流是**进程内** `asyncio.Semaphore`（`ml_client.py:17`，默认 4）；API 进程与每个 Celery worker 各持一份 | **无跨进程锁**，会互相拆台（worker A 卸 sam3 跑 yolo，worker B 立刻重载 sam3） |
-| 降级可见性 | `effective_device` 由 yolo `/health` 产出（`yolo-backend/main.py:284`），但被平台客户端白名单（`ml_client.py:139`、`ml_health.py:41`）丢弃 | 平台看不到某 backend 是否已静默退回 CPU |
+| 降级可见性 | 五个 backend 已通过 `/health.compute` 暴露计算路径诊断，平台、注册表快照、实时 observe 与 PerfHUD 均可透传 | `compute` 不代表 GPU 驻留已经释放；显存减账仍缺独立的 `residency.gpu_loaded` 真值 |
 
 派发路径有三条，都会打同一个 backend 的同一个 `/predict`、共用同一把 per-backend 信号量、同一 100s 超时：① 交互式 SAM（同步 HTTP）② 「运行当前题」/ 批量预标（Celery `_run_batch`，`tasks.py:481`，逐 task 顺序 await）③ 视频追踪（`video_tracker_runner.py:800`，逐窗串行 `predict_interactive`，长占用）。且「显存不足→卸载 backend」的 helpful 文案只在二次推理路径（`secondary_inference.py:214` 的 504），另两条给 502 / 落 failed prediction，对同一根因反馈不一致。
 
@@ -34,15 +36,15 @@
 | **显存预算准入 + LRU 驱逐（选）** | 小 backend 可共驻、大的才驱逐；支持多阶段流水线共存 | 需 Redis 账本 + 跨进程锁 + 驱逐 + 防抖，最重 |
 | 单驻留（exclusive-group） | 极简、彻底消除竞争 | 多阶段流水线在阶段间抖动卸载/重载 |
 | 仅告警（status quo+） | 廉价、零仲裁风险 | 不解决竞争，只是把静默退化变可见 |
-| 多卡自动放置 / 副本 scale-out | 提升利用率 | 空间隔离已够用，属过度工程 |
+| 多卡自动放置 / 副本 scale-out | 提升利用率 | 属独立 epic；首期继续手工放置，但共享卡仍须逐卡仲裁 |
 
-## Decision
+## Decision（P0b 前的历史草案，禁止实施）
 
-采用**显存预算准入 + LRU 驱逐**，按 L0 → L1 → L2 三层落地，**L3 多卡自动放置 defer**。整体由**功能开关 `gpu_arbiter_enabled` 控制，默认关**；单卡多 backend 部署显式开启。多卡（空间隔离，每卡 ≤1 backend）下仲裁器天然是 no-op，开着也安全。
+旧草案拟采用**显存预算准入 + LRU 驱逐**并按 L0 → L2 落地，L3 多卡自动放置 defer。这里的字段和流程尚未冻结；其中“多卡每卡 ≤1 backend、整机可天然 no-op”的假设已被复核否决——单卡与多卡都必须按物理 GPU 资源逐卡治理，共享卡仲裁、独占卡才走快路径。最终决策以 P0b 重写后的版本为准。
 
 ### L0 · 显存账本地基（前置，与 CPU fallback 审计计划共享）
 
-1. **放行 `effective_device` + per-backend 显存**：从 `ml_client.py:139` 与 `ml_health.py:41` 两处白名单放行 `effective_device`（及 ORT 系的生效 provider），落进注册表 `health_meta`。此步由 [ML backend CPU fallback 审计计划](../plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md) 的 WS4 交付，本 ADR 直接消费。
+1. **计算路径诊断链（已完成并纠偏）**：五个 backend 通过顶层 `compute` 报告 configured/effective device 或实际业务 session provider，平台透传到注册表、实时 observe 与 PerfHUD。SAM3 明确 GPU-only；JSON `null` 表示未加载或无法得出单一结论。该字段只作诊断，不能作为显存 allocation 释放依据。详见 [ML backend GPU 失效诊断与 CPU fallback 地基审计](../plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md)。
 2. **账本落 Redis**（跨进程真值），按物理卡 key：
    - `card:{device_id}` → `{ total_mb, committed_mb }`
    - `backend:{registry_id}` → `{ card_id, budget_mb, priority, loaded: bool, last_used_at, inflight: int }`
@@ -86,20 +88,20 @@
 
 **卸载期 in-flight 语义**：驱逐**优先选无 in-flight 的 backend**（账本 `inflight==0`）；若无足够空闲者，对 LRU 受害者做**有界 drain**（等其 in-flight 结束，超时则放弃转下一受害者或 fail-fast）。in-flight 计数在 `_acquire()`/释放信号量处顺带增减写入账本。
 
-**账本 ↔ 现实对账**：backend 自身的 `IDLE_UNLOAD_SECONDS` 仍在跑，可能**在仲裁器不知情的情况下自行卸载**；手动 `/unload` 亦然。故每次 60s 健康探测（`check_ml_backends_health`）后用 `health_meta.loaded` 校正账本：backend 报未加载而账本说 loaded → 修正为卸载并回收 `committed_mb`；反之亦然。账本是「决策真值」但需按实测对账。
+**账本 ↔ 现实对账（旧设计，已否决）**：不能用 `health_meta.loaded` 或单独的 `compute=cpu` 回收预算；它们都无法表达 image/video/variant/ORT session 的混合驻留。P1 必须先定义逐池聚合的 `residency.gpu_loaded` 与受管 full-pool unload；只有可信确认 `gpu_loaded=false` 后才能减记 allocation，不确定状态继续保守计费。
 
 ### L3 · 多卡自动放置 / 副本 scale-out（defer）
 
 维持手动 `*_GPU_DEVICE_ID` 空间隔离。自动 bin-packing 放置、同 backend 多副本铺多卡 + 请求路由，属独立 epic，本 ADR 不做。仲裁器按卡分片的设计对未来多卡不设障（每卡一把锁一本账）。
 
-## Consequences
+## Consequences（旧草案预期，仅供问题回溯）
 
 正向：
 
 - **消除单卡静默退化**：竞争被转化为三种确定性结果——放得下则共驻、放不下则干净驱逐（成本是有界的重载冷启动，而非 10× 的竞争拖慢）、彻底放不下则 fail-fast 明确报错。
-- **显存状态可观测**：账本 + `effective_device` 放行让「谁在哪张卡、占多少、是否退回 CPU」在管理端可见（L0/L1 即交付此价值，不必等 L2）。
-- **多卡零影响**：空间隔离下每卡 ≤1 backend，仲裁器 no-op；开关默认关，存量部署不受影响。
-- **复用既有能力**：卸载走已有 `unload()` + `/unload`；协调走已有 Redis；信号量并发闸保留。
+- **计算路径可观测**：`effective_device` / `effective_provider` 让「是否退回 CPU」在管理端可见；「谁在哪张卡、是否仍驻留、预算多少」仍必须由 P1/P2 的 `residency` 与资源账本提供，不能由 `compute` 推导。
+- **多卡边界（旧表述已否决）**：不能假定多卡部署每卡至多一个 backend；默认布局的卡 0 仍由多个 backend 共享。新设计必须逐 `gpu_resource_id` 隔离账本、锁和队列，仅实际独占卡自然走无驱逐快路径。
+- **复用既有入口**：控制面保留 `unload()` + `/unload`，但 P1 必须把它们升级为可验证的 full-pool 契约；协调走已有 Redis；信号量并发闸保留。
 
 负向：
 
@@ -123,7 +125,7 @@
 
 ## Notes
 
-- **前置依赖**：L0 的 `effective_device` 放行由 [ML backend CPU fallback 审计计划](../plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md)（WS4）交付；本 ADR 与该计划是「地基 ↔ 上层」关系，建议该计划先行。
+- **前置依赖**：P0a 的 `compute` 诊断链与语义纠偏已由 [ML backend GPU 失效诊断与 CPU fallback 地基审计](../plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md)交付；P0b 仍需按实施计划整体冻结本 ADR，P1 仍需提供受管 residency / unload 契约。
 - **主要代码触点**：仲裁 gate 加在 `ml_client.py`（`predict` / `predict_interactive` 的 `_acquire()` 前）；派发方 `tasks.py:481`（`_run_batch`）、`video_tracker_runner.py:800`；注册表列 `ml_backend_registry.py:16` + alembic 迁移；开关与卡容量 `config.py`；新增 `app/services/gpu_arbiter.py` + Redis 账本；卸载复用 `ml_backends.py:304`。
 - **配置**：`gpu_arbiter_enabled`（默认 false）、`card_total_mb` 兜底、per-backend `vram_budget_mb` / `priority` / `gpu_device_id`。
 - **触发 / 灰度**：默认关；单卡多 backend 部署开启。上线先 L1（超额告警）验证预算数值，再开 L2 仲裁。

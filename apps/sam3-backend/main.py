@@ -43,7 +43,7 @@ from typing import Any
 import httpx
 import torch
 from aap_backend_runtime import (
-    effective_device_value,
+    DeviceUnavailableError,
     fetch_image,
     free_gpu_memory,
     versions_payload,
@@ -51,13 +51,14 @@ from aap_backend_runtime import (
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
+    ModelUnavailableError,
     PlatformRole,
     VariantNotSupportedError,
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
@@ -107,8 +108,6 @@ async def _value_error_to_400(_request: Request, exc: ValueError):
     # aap_backend_runtime.fetch_image 对 unsupported scheme 抛 ValueError;此 handler
     # 把它包成 HTTPException(400) 的等价响应,恢复抽取前 _fetch_image 的 400 语义,并防止
     # 原生 traceback / 内部路径泄露到响应体。
-    from fastapi.responses import JSONResponse  # noqa: PLC0415
-
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
@@ -171,7 +170,10 @@ async def _ensure_predictor_loaded(
         logger.info("reloading SAM 3 on demand (after idle unload or manual unload)")
         loop = asyncio.get_running_loop()
         t0 = time.monotonic()
-        _predictor = await loop.run_in_executor(None, _build_predictor)
+        try:
+            _predictor = await loop.run_in_executor(None, _build_predictor)
+        except DeviceUnavailableError as exc:
+            raise ModelUnavailableError(MODEL_VERSION, str(exc)) from exc
         load_ms = int((time.monotonic() - t0) * 1000)
         now = datetime.now(UTC)
         _pool_loaded_at = now
@@ -243,7 +245,10 @@ async def _ensure_video_tracker_loaded() -> SAM3MultiplexVideoTracker:
             return _video_tracker
         logger.info("building sam3 video tracker on demand")
         loop = asyncio.get_running_loop()
-        _video_tracker = await loop.run_in_executor(None, _build_video_tracker)
+        try:
+            _video_tracker = await loop.run_in_executor(None, _build_video_tracker)
+        except DeviceUnavailableError as exc:
+            raise ModelUnavailableError("sam3_video", str(exc)) from exc
         _video_last_request_at = time.monotonic()
         logger.info("sam3 video tracker built; device=%s", _video_tracker.device)
         return _video_tracker
@@ -277,7 +282,10 @@ async def _ensure_pvs_tracker_loaded() -> SAM3PVSVideoTracker:
             return _pvs_tracker
         logger.info("building sam3 PVS tracker on demand")
         loop = asyncio.get_running_loop()
-        _pvs_tracker = await loop.run_in_executor(None, _build_pvs_tracker)
+        try:
+            _pvs_tracker = await loop.run_in_executor(None, _build_pvs_tracker)
+        except DeviceUnavailableError as exc:
+            raise ModelUnavailableError("sam3_video_interactive", str(exc)) from exc
         _pvs_last_request_at = time.monotonic()
         logger.info("sam3 PVS tracker built; device=%s", _pvs_tracker.device)
         return _pvs_tracker
@@ -333,6 +341,21 @@ def _video_pool_status() -> dict[str, Any]:
         "loaded_variants": loaded_variants,
         "active_sessions": active,
     }
+
+
+def _effective_compute_device() -> str | None:
+    """SAM3 只上报已成功加载池的真实 GPU 设备；未加载/失败为 unknown。"""
+    loaded = [
+        item
+        for item in (_predictor, _video_tracker, _pvs_tracker)
+        if item is not None
+    ]
+    if not loaded:
+        return None
+    devices = {str(getattr(item, "device", "")).strip().lower() for item in loaded}
+    if devices and all(device.startswith("cuda") for device in devices):
+        return next(iter(devices)) if len(devices) == 1 else "cuda"
+    return None
 
 
 def _normalize_predict_context(ctx: dict) -> dict:
@@ -458,13 +481,12 @@ def health() -> dict:
         "pool": _pool_status(),
         # v0.21.x · 视频追踪池 (与图像池并存常驻); 前端据此显示视频追踪已加载 / 预热。
         "video_pool": _video_pool_status(),
-        # 五镜像统一有效设备观测 (torch 系 effective_device / ORT 系 effective_provider)。
-        # configured_device = 环境配置 (本 backend 不读 *_DEVICE env, predictor 锁 "cuda");
-        # effective_device = 真实探测生效设备 (None=尚未加载, "cpu"=GPU 配置但已静默退回,
-        # 供观测「GPU 静默退化」根因排查)。
+        # SAM3 是 GPU-only：effective_device 仅反映已成功加载池的实际设备。
+        # 未加载或 GPU 不可用时为 None，不会伪报 CPU fallback。
         "compute": {
             "configured_device": "cuda",
-            "effective_device": effective_device_value(),
+            "effective_device": _effective_compute_device(),
+            "cpu_fallback_supported": False,
         },
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),

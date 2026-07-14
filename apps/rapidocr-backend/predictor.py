@@ -38,6 +38,17 @@ POLY_LABEL = "text"  # OCR 文本框无类别，用通用占位 label。
 UTC = timezone.utc
 
 
+def _primary_provider(session: Any) -> str | None:
+    """Return an ORT session's current primary provider, or unknown."""
+    try:
+        providers = session.get_providers()
+    except Exception:  # noqa: BLE001
+        return None
+    if not providers:
+        return None
+    return str(providers[0])
+
+
 def _probe_ort_cuda_use() -> bool:
     """功能探测 CUDA 是否真的可用 (不止 ``get_device`` 软检查)，决定 RapidOCR 的 ``use_cuda``。
 
@@ -62,8 +73,17 @@ def _probe_ort_cuda_use() -> bool:
         # 启动期模型可能尚未落盘：退回软检查 (与 RapidOCR 原判定口径一致)，避免误降级。
         return onnxruntime.get_device() == "GPU"
     try:
-        onnxruntime.InferenceSession(probe_path, providers=["CUDAExecutionProvider"])
-        return True
+        probe_session = onnxruntime.InferenceSession(
+            probe_path, providers=["CUDAExecutionProvider"]
+        )
+        actual = _primary_provider(probe_session)
+        if actual == "CUDAExecutionProvider":
+            return True
+        logger.warning(
+            "ORT CUDA 探测 session 已静默退回 %s；rapidocr 改用 CPU",
+            actual or "unknown provider",
+        )
+        return False
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "ORT CUDA 探测失败 (%s) — CUDA 已列出但不可用 (驱动/cuDNN 不匹配?)，"
@@ -323,13 +343,29 @@ class RapidOCRPredictor:
         """配置层设备原值 (RAPIDOCR_DEVICE)，供 /health.compute.configured_device 暴露。"""
         return "cuda" if self._configured_cuda else "cpu"
 
-    def effective_provider(self) -> str:
-        """探测后实际生效的 ORT provider，供 /health.compute.effective_provider 暴露。
+    def effective_provider(self) -> str | None:
+        """汇总当前池内所有 RapidOCR 业务 session 的实际 primary provider。
 
-        RapidOCR 只吃 use_cuda 布尔：True → ``CUDAExecutionProvider``，False →
-        ``CPUExecutionProvider``。这里把布尔翻回 provider 名。
+        空池、任一 det/cls/rec session 无法检查，或 provider 不一致时返回
+        ``None``；``use_cuda`` 只是构造偏好，不作为 health 真值。
         """
-        return "CUDAExecutionProvider" if self.use_cuda else "CPUExecutionProvider"
+        with self._lock:
+            engines = list(self._pool.values())
+        if not engines:
+            return None
+
+        providers: list[str] = []
+        for engine in engines:
+            for component_name in ("text_det", "text_cls", "text_rec"):
+                component = getattr(engine, component_name, None)
+                wrapper = getattr(component, "session", None)
+                session = getattr(wrapper, "session", None)
+                provider = _primary_provider(session) if session is not None else None
+                if provider is None:
+                    return None
+                providers.append(provider)
+        unique = set(providers)
+        return providers[0] if len(unique) == 1 else None
 
     def pool_snapshot(self) -> dict[str, Any]:
         """协议 §4.3 PoolStatus: loaded_keys 需为 [{key, loaded_at, last_used_at, hit_count}]。"""

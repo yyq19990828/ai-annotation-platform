@@ -88,6 +88,11 @@ async def test_health_meta_keeps_pool():
                 "last_request_age_seconds": 12.5,
                 "pool": pool,
                 "video_pool": {"loaded_variants": [], "active_sessions": 0},
+                "compute": {
+                    "configured_device": "cuda",
+                    "effective_device": "cpu",
+                    "cpu_fallback_supported": True,
+                },
             },
         )
 
@@ -102,4 +107,9 @@ async def test_health_meta_keeps_pool():
     assert meta["last_request_age_seconds"] == 12.5
     assert meta["pool"] == pool
     assert meta["video_pool"]["active_sessions"] == 0
+    assert meta["compute"] == {
+        "configured_device": "cuda",
+        "effective_device": "cpu",
+        "cpu_fallback_supported": True,
+    }
     assert "buckets" in meta["cache"]

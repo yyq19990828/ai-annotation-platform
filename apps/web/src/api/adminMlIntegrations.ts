@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type { MLBackendSupportedVariantGroup } from "./ml-backends";
+import type { MLBackendCompute } from "@/utils/mlBackendCompute";
 
 export interface BucketSummary {
   name: string;
@@ -93,11 +94,7 @@ export interface BackendHealthMeta {
   /** v0.10.37 · /setup 能力快照 (epic 阶段 1); check_health 探 /setup 后落库。 */
   capabilities?: BackendCapabilities | null;
   /** v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。 */
-  compute?: {
-    configured_device?: string | null;
-    effective_device?: string | null;
-    effective_provider?: string | null;
-  } | null;
+  compute?: MLBackendCompute | null;
 }
 
 // v0.10.37 · backend /setup 能力快照 (epic 阶段 1); modalities 为派生视图 (image/video)。
@@ -248,6 +245,7 @@ export interface ObserveTarget {
   /** v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空 = 不支持视频追踪。 */
   supported_trackers?: string[];
   cache?: { hit_rate?: number; buckets?: Record<string, CacheBucketStat> } | null;
+  compute?: MLBackendCompute | null;
   variant_catalog?: VariantCatalog | null;
   supported_variants?: MLBackendSupportedVariantGroup[];
   supports_variants: boolean;
