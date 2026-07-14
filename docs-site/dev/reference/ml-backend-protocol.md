@@ -21,12 +21,12 @@ last_reviewed: 2026-07-14
 
 ## 全局注册表与项目启用
 
-ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照 = 一个并发限速闸；项目侧只做「启用」。两层职责：
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。当前实际并发闸仍是各 API / Celery 进程自己的本地 semaphore，并非跨进程全局上限；[ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 已冻结后续以 Redis request lease 执行全局上限的设计，但该能力尚未实现。两层职责：
 
 - **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
 - **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
 
-**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；显存保护改由全局行的 `max_concurrency` 并发闸兜底（同一物理 backend 全局一个 semaphore，不会被「多项目各持一个独立 semaphore」绕过）。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
+**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 目前只为各进程本地 semaphore 提供同一配置值，能减少单进程压力，但 API 与多个 Celery worker 的并发仍会叠加。后续显存仲裁阶段将由 Redis request lease 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
 ---
 
@@ -94,7 +94,7 @@ GPU backend 应在 `/health` 顶层返回 `compute`：
 
 平台仅在“已知配置 GPU + 实际为 CPU + 未显式声明不支持 fallback”时显示 CPU 回退警示；显式 CPU、unknown 和 `null` 均不告警。实时 `/health` 返回可解析的 HTTP 200 时以实时 `compute` 为准，即使 backend 自报 degraded 或值为 `null`；只有实时 HTTP 探测不可达/失败时才使用注册表缓存。torch 的进程级 latch 不能枚举旧 pool，因此 `effective_device=cpu` 与仍有 GPU pool 驻留可以同时成立。`compute` 是诊断信号，不证明 GPU 权重、tensor 或 cache 已释放，不能单独作为显存驻留或账本减账依据。
 
-> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：现有 `/unload` 是各 backend 的 legacy best-effort 行为，并不统一保证清空全部 image/video/variant/session pool；例如 Grounded-SAM2 当前只清 image pool，不能作为显存仲裁减账凭据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；受管 full-pool unload 与 residency 契约另行定义。
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：现有 `/unload` 是各 backend 的 legacy best-effort 行为，并不统一保证清空全部 image/video/variant/session pool；例如 Grounded-SAM2 当前只清 image pool，不能作为显存仲裁减账凭据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；ADR-0049 已冻结受管 full-pool unload 与 residency 的架构边界，但当前协议尚未实现这些字段，接入方不能提前把 legacy unload 声明为可驱逐能力。
 
 ---
 

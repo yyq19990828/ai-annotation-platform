@@ -35,6 +35,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **跨 Backend GPU 显存仲裁冻结逐物理资源治理边界**：ADR-0049 已接受按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。当前仍保持仲裁关闭，后续先完成五个 backend 的受管生命周期契约。
+
 ### Fixed
 
 - **ML Backend 设备失效观测不再误报可回退性和实际 provider**：共享 torch 设备 latch 现在线程安全且向 CPU 单调，Grounded-SAM2 与 YOLO 只在识别为设备错误且 CPU replacement 成功后提交回退；CUDA runtime 查询本身失败时，两者的 `/health` 仍可用，YOLO 也会在 CPU replacement 后尝试释放 CUDA allocator 缓存。SAM3 image、Multiplex 与 PVS 明确为 GPU-only，模型加载检测到 GPU 不可用时返回可重试的结构化 503。RapidOCR 与 ONNXTools 改为读取已加载业务 session 的实际 primary provider，ONNXTools composite 的检测与分类 session 共用同一份功能探测后的 provider 偏好；空池、缺失或混合 provider 返回 `null`（unknown 语义）。注册表快照与实时 `/observe` 均透传 `compute`，Runtime Observe 与 PerfHUD 的前端消费共用同一 CPU fallback 判定，不再误报显式 CPU、实时空状态或 GPU-only backend。

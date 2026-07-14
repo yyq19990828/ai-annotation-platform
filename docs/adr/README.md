@@ -43,7 +43,6 @@
 - [0009](0009-task-events-table-and-partition.md) — task_events 表与按月分区方案
 - [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）
 - [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
-- [0049](0049-cross-backend-gpu-memory-arbitration.md) — 跨 backend 显存互斥编排：单卡显存预算准入 + LRU 驱逐 + 跨进程仲裁
 
 ### 已采纳（Accepted，归档）
 
@@ -92,3 +91,4 @@
 - [0046](0046-project-pipeline-library-and-scopes.md) — 全局 Pipeline 库：持久化命名编排模板 + 三档作用域（private/organization/public，apply copy-on-write）
 - [0047](0047-data-manager-entity-read-model.md) — Data Manager 按 task / object / track 分 grain 查询，不复制权威写模型
 - [0048](archive/0048-video-raster-mask-content-addressed-rle.md) — 视频栅格 mask 使用内容寻址 RLE 对象，不内联进 annotation JSONB
+- [0049](archive/0049-cross-backend-gpu-memory-arbitration.md) — 按物理 GPU 资源进行跨 Backend 显存预算准入与驱逐
