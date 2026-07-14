@@ -168,6 +168,7 @@ def _make_tracker(fake_predictor) -> SAM2VideoTracker:
     inst.sam_variant = "tiny"
     inst.max_window_frames = 300
     inst.device = "cpu"
+    inst.cleanup_uncertain = False
     inst._predictor = fake_predictor
     inst.active_sessions = 0
     return inst
@@ -175,6 +176,47 @@ def _make_tracker(fake_predictor) -> SAM2VideoTracker:
 
 def _seed(obj_id, box):
     return {"obj_id": obj_id, "bbox": box}
+
+
+def test_mkdtemp_failure_releases_active_session(monkeypatch):
+    fake = _FakePropagatePredictor({})
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        "video_predictor.tempfile.mkdtemp",
+        lambda **_kwargs: (_ for _ in ()).throw(OSError("tmp unavailable")),
+    )
+
+    with pytest.raises(OSError, match="tmp unavailable"):
+        tracker.propagate(
+            video_path="/tmp/x.mp4",
+            from_frame=0,
+            to_frame=0,
+            direction="forward",
+            seeds=[_seed(1, {"x": 0, "y": 0, "w": 1, "h": 1})],
+        )
+    assert tracker.active_sessions == 0
+
+
+def test_reset_failure_marks_cleanup_uncertain(monkeypatch):
+    mask = np.ones((2, 2), dtype=bool)
+    fake = _FakePropagatePredictor({0: mask})
+    fake.reset_state = lambda _state: (_ for _ in ()).throw(
+        RuntimeError("reset failed")
+    )
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (2, 2, 1)),
+    )
+    tracker.propagate(
+        video_path="/tmp/x.mp4",
+        from_frame=0,
+        to_frame=0,
+        direction="forward",
+        seeds=[_seed(1, {"x": 0, "y": 0, "w": 1, "h": 1})],
+    )
+    assert tracker.cleanup_uncertain is True
 
 
 def test_propagate_forward_maps_local_to_source_frames(monkeypatch):

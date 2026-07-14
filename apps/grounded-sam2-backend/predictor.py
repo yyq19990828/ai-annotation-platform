@@ -106,6 +106,7 @@ class GroundedSAM2Predictor:
         self.text_threshold = text_threshold
         self.device = effective_device("cuda")
         self.embedding_cache = embedding_cache
+        self.cleanup_uncertain = False
 
         self._sam_predictor, self._dino_model = self._load_models()
 
@@ -147,6 +148,9 @@ class GroundedSAM2Predictor:
         except Exception as exc:  # noqa: BLE001
             if not is_device_error(exc):
                 raise
+            # A device build may allocate hidden CUDA state before raising.  Keep
+            # residency Unknown until a later full-pool cleanup has completed.
+            self.cleanup_uncertain = True
             # 不在 CPU replacement 完整成功前改写进程 latch；先丢弃可能
             # 已在 GPU 上构建的 SAM，再用同一设备重建两个组件。
             gpu_sam = None

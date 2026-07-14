@@ -83,7 +83,9 @@ RUN pip install --no-build-isolation -e /app/mask_utils
 # v0.14.12 · 共享协议 v2 schema + 受控词表常量 (apps/_shared/protocol_v2),
 # 与 sam3-backend / yolo-backend 共用, 避免协议字段在 backend 之间漂移.
 COPY _shared/protocol_v2/ /app/protocol_v2/
-RUN pip install --no-build-isolation -e /app/protocol_v2
+# Base image pins pyOpenSSL 24.0 against cryptography<43. Resolve both together
+# now that the shared lifecycle protocol requires a newer cryptography release.
+RUN pip install --no-build-isolation -e /app/protocol_v2 "pyOpenSSL>=24.2.1"
 
 # 共享 backend_runtime 包 (apps/_shared/backend_runtime). 五 backend 共用的无状态叶子函数
 # (图片下载 / 显存释放 / /versions 载荷). setuptools 已在装 protocol_v2 前处理, 复用.
@@ -91,7 +93,12 @@ COPY _shared/backend_runtime/ /app/backend_runtime/
 RUN pip install --no-build-isolation -e /app/backend_runtime
 
 COPY grounded-sam2-backend/scripts/ ./scripts/
-COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py grounded-sam2-backend/model_pool.py grounded-sam2-backend/observability.py grounded-sam2-backend/video_predictor.py grounded-sam2-backend/video_pool.py ./
+COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py \
+     grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py \
+     grounded-sam2-backend/managed_pool.py grounded-sam2-backend/model_pool.py \
+     grounded-sam2-backend/video_predictor.py grounded-sam2-backend/video_pool.py \
+     grounded-sam2-backend/pool_domain.py grounded-sam2-backend/gpu_lifecycle.py \
+     grounded-sam2-backend/observability.py ./
 COPY grounded-sam2-backend/tests/ ./tests/
 RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 

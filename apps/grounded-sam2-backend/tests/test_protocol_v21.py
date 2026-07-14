@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +15,17 @@ def _stub_modules() -> None:
     sys.modules.setdefault(
         "torch", MagicMock(cuda=MagicMock(is_available=MagicMock(return_value=False)))
     )
+    sys.modules.setdefault("cv2", MagicMock())
+    mask_utils = ModuleType("mask_utils")
+    mask_utils.MultiPolygonRing = dict
+    mask_utils.mask_to_multi_polygon = MagicMock(return_value=[])
+    polygon = ModuleType("mask_utils.polygon")
+    polygon.mask_to_polygon = MagicMock(return_value=[])
+    rle = ModuleType("mask_utils.rle")
+    rle.encode_coco_rle = MagicMock(return_value={})
+    sys.modules.setdefault("mask_utils", mask_utils)
+    sys.modules.setdefault("mask_utils.polygon", polygon)
+    sys.modules.setdefault("mask_utils.rle", rle)
 
 
 def _run(coro):
@@ -55,16 +67,31 @@ def test_resolve_variant_invalid_value_returns_standard_422() -> None:
 
 
 class _PoolMissingWeight:
-    async def get(self, sam_variant, dino_variant):
-        raise FileNotFoundError("missing checkpoint")
+    def borrow(self, sam_variant, dino_variant):
+        class _MissingLease:
+            async def __aenter__(self):
+                raise FileNotFoundError("missing checkpoint")
+
+            async def __aexit__(self, *_args):
+                return False
+
+        return _MissingLease()
+
+    def builder_for_now(self, sam_variant, dino_variant):
+        return None
 
 
-def test_get_predictor_missing_weight_returns_503_retry_after(monkeypatch) -> None:
+def test_borrow_predictor_missing_weight_returns_503_retry_after(monkeypatch) -> None:
     import main
 
     monkeypatch.setattr(main, "_pool", _PoolMissingWeight())
     with pytest.raises(Exception) as exc:
-        _run(main._get_predictor("tiny", "T"))
+        _run(
+            main._run_prompt(
+                "missing.jpg",
+                {"type": "point", "points": [[0.5, 0.5]]},
+            )
+        )
     err = exc.value
     assert err.status_code == 503
     assert err.headers == {"Retry-After": "30"}

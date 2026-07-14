@@ -85,6 +85,7 @@ class SAM2VideoTracker:
         self.sam_variant = sam_variant
         self.max_window_frames = max_window_frames
         self.device = effective_device("cuda")
+        self.cleanup_uncertain = False
         self._predictor = self._load_video_predictor()
         # 当前活跃会话数 (0/1; 单 worker 串行, 仅用于 /health 观测)。
         self.active_sessions = 0
@@ -97,6 +98,7 @@ class SAM2VideoTracker:
         except Exception as exc:  # noqa: BLE001
             if not is_device_error(exc):
                 raise
+            self.cleanup_uncertain = True
             free_gpu_memory()
             predictor = self._build_for_device("cpu")
             self.device = "cpu"
@@ -152,10 +154,11 @@ class SAM2VideoTracker:
         # 窗首帧 (源帧号): forward 从 lo, backward 从 hi。
         seed_src_frame = hi if reverse else lo
 
-        self.active_sessions += 1
-        tmp_dir = tempfile.mkdtemp(prefix="sam2vid_")
+        tmp_dir: str | None = None
         inference_state = None
+        self.active_sessions += 1
         try:
+            tmp_dir = tempfile.mkdtemp(prefix="sam2vid_")
             # 1) 只解码窗内帧到临时 JPEG 目录, 窗内重编号 0..span-1。
             frame_w, frame_h, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
@@ -225,6 +228,10 @@ class SAM2VideoTracker:
                 key=lambda r: (r["frame_index"], r["instance_id"]), reverse=reverse
             )
             return results
+        except BaseException:
+            if inference_state is None and self.device != "cpu":
+                self.cleanup_uncertain = True
+            raise
         finally:
             # 会话状态反向清理 + 释放显存; 模型权重保留供下个 job。
             if inference_state is not None:
@@ -232,8 +239,10 @@ class SAM2VideoTracker:
                     self._predictor.reset_state(inference_state)
                 except Exception:  # noqa: BLE001
                     logger.exception("reset_state failed; dropping inference_state")
+                    self.cleanup_uncertain = True
                 del inference_state
-            self._cleanup_tmp(tmp_dir)
+            if tmp_dir is not None:
+                self._cleanup_tmp(tmp_dir)
             free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 

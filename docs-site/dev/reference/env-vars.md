@@ -235,6 +235,7 @@ last_reviewed: 2026-07-15
 | `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 排队等显存的超时 (秒), 超时 503; video build 比图片慢, 默认 60. |
 | `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存); 超此值的窗口拒绝. |
 | `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭. |
+| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在 Grounded-SAM2 完成实卡 image/video/双池/full-unload 验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## SAM 3 ML Backend
 

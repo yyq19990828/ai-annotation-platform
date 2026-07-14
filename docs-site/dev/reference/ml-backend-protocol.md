@@ -126,7 +126,12 @@ enforce，且 `evictable=false`。RapidOCR 也已实现动态 composite 引擎�
 wire 与全池清理；仓库参考镜像和模型已完成真实满池 GPU 回落与显式 CPU 路径验证。
 该门槛仍按部署 opt-in，默认 `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、硬件与
 验证证据匹配或重新完成同等验证后才设为 `1`，否则继续隐藏能力并拒绝 enforce。
-Grounded-SAM2 与 SAM3 在完成各自全池清理、active 保护和契约测试前固定为 non-evictable。
+Grounded-SAM2 已实现 image/video 双池的 single-flight、borrower、共享冷构建锁、取消安全 executor、
+三态 residency 与 managed full-pool cleanup；bodyless legacy `/unload` 仍只清 image pool。仓库参考镜像、
+六份 checkpoint 与物理 GPU 已完成真实 image/video load→LRU→full-unload 回落验证。该门槛仍按部署
+opt-in，默认 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、模型与硬件匹配或重新完成
+同等验证后才设为 `1`，否则隐藏能力、拒绝 enforce 且 `evictable=false`。
+SAM3 在完成 image/multiplex/PVS 全池清理、active 保护和契约测试前固定为 non-evictable。
 
 `/health` 在实现后新增顶层 `residency`，并保留原有 `compute`、`loaded`、`pool` 等兼容字段：
 

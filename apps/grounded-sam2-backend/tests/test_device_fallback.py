@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import predictor as predictor_mod
@@ -37,6 +39,7 @@ def test_image_pair_rebuilds_together_before_latch(monkeypatch) -> None:
     assert predictor.device == "cpu"
     assert predictor._sam_predictor == "sam-cpu"
     assert predictor._dino_model == "dino-cpu"
+    assert predictor.cleanup_uncertain is True
     assert events == ["sam:cuda", "dino:cuda", "cleanup", "sam:cpu", "dino:cpu", "latch"]
 
 
@@ -104,9 +107,10 @@ def test_initial_cpu_selection_builds_each_component_once(monkeypatch) -> None:
         lambda _self, device: events.append(f"dino:{device}") or "dino",
     )
 
-    predictor_mod.GroundedSAM2Predictor()
+    predictor = predictor_mod.GroundedSAM2Predictor()
 
     assert events == ["sam:cpu", "dino:cpu"]
+    assert predictor.cleanup_uncertain is False
 
 
 def test_video_replacement_commits_latch_only_after_cpu_build(monkeypatch) -> None:
@@ -127,6 +131,7 @@ def test_video_replacement_commits_latch_only_after_cpu_build(monkeypatch) -> No
 
     assert tracker.device == "cpu"
     assert tracker._predictor == "cpu-predictor"
+    assert tracker.cleanup_uncertain is True
     assert events == ["build:cuda", "cleanup", "build:cpu", "latch"]
 
 
@@ -149,8 +154,44 @@ def test_health_survives_cuda_runtime_failure(monkeypatch) -> None:
         },
     )
 
-    payload = main.health()
+    payload = asyncio.run(main.health())
 
     assert payload["ok"] is True
     assert payload["gpu"] is False
     assert payload["gpu_info"] is None
+
+
+def test_managed_cleanup_propagates_cuda_runtime_failure(monkeypatch) -> None:
+    import main
+
+    monkeypatch.setattr(main.torch.cuda, "is_available", lambda: True)
+
+    def _broken_empty_cache() -> None:
+        raise RuntimeError("CUDA allocator unavailable")
+
+    monkeypatch.setattr(main.torch.cuda, "empty_cache", _broken_empty_cache)
+
+    with pytest.raises(RuntimeError, match="allocator unavailable"):
+        main._strict_free_gpu_memory()
+
+
+def test_health_keeps_process_latch_separate_from_pool_devices(monkeypatch) -> None:
+    import main
+
+    monkeypatch.setattr(main, "effective_device_value", lambda: "cpu")
+    monkeypatch.setattr(
+        main,
+        "sample_perfhud",
+        lambda: {
+            "gpu_utilization_percent": None,
+            "gpu_temperature_celsius": None,
+            "gpu_power_watts": None,
+            "container_cpu_percent": 0.0,
+            "container_memory_percent": 0.0,
+        },
+    )
+
+    payload = asyncio.run(main.health())
+
+    assert payload["compute"]["effective_device"] == "cpu"
+    assert payload["compute"]["pool_devices"] == {"image": None, "video": None}

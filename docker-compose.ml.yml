@@ -80,6 +80,9 @@ services:
       VIDEO_TRACKER_MAX_WINDOW_FRAMES: ${VIDEO_TRACKER_MAX_WINDOW_FRAMES:-300}
       # video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭.
       VIDEO_IDLE_UNLOAD_SECONDS: ${VIDEO_IDLE_UNLOAD_SECONDS:-600}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
+      # 实卡完成 image/video/双池/full-unload 验收前保持 0，不发布 enforce 能力。
+      GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED: ${GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED:-0}
     volumes:
       - gsam2_checkpoints:/app/checkpoints
       - gsam2_hf_cache:/app/.cache/huggingface

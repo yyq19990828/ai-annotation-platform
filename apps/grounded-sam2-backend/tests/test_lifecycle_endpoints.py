@@ -1,0 +1,245 @@
+"""Admission ordering and legacy workload wire compatibility."""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+import threading
+from types import ModuleType
+from unittest.mock import MagicMock
+
+import httpx
+import pytest
+from aap_protocol_v2.errors import LifecycleErrorCode, LifecycleHTTPError
+
+
+def _load_main():
+    sys.modules.setdefault(
+        "torch",
+        MagicMock(cuda=MagicMock(is_available=MagicMock(return_value=False))),
+    )
+    sys.modules.setdefault("cv2", MagicMock())
+    if "mask_utils" not in sys.modules:
+        mask_utils = ModuleType("mask_utils")
+        mask_utils.MultiPolygonRing = dict
+        mask_utils.mask_to_multi_polygon = MagicMock(return_value=[])
+        polygon = ModuleType("mask_utils.polygon")
+        polygon.mask_to_polygon = MagicMock(return_value=[])
+        rle = ModuleType("mask_utils.rle")
+        rle.encode_coco_rle = MagicMock(return_value={})
+        sys.modules["mask_utils"] = mask_utils
+        sys.modules["mask_utils.polygon"] = polygon
+        sys.modules["mask_utils.rle"] = rle
+    import main
+
+    return main
+
+
+class _Operation:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.futures = []
+
+    def track_future(self, future) -> None:
+        if future is not None:
+            self.futures.append(future)
+
+    async def close(self) -> None:
+        self.events.append("close")
+
+
+class _Lifecycle:
+    def __init__(self, *, deny: bool = False) -> None:
+        self.deny = deny
+        self.events: list[str] = []
+
+    async def begin_workload(self, scope, **_headers):
+        self.events.append(f"begin:{scope.value}")
+        if self.deny:
+            raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED)
+        return _Operation(self.events)
+
+    async def legacy_unload(self):
+        return {"ok": True, "unloaded": True, "loaded": False}
+
+
+class _ImagePool:
+    async def warmup(self, _sv, _dv):
+        return False, 12, None
+
+    def builder_for_now(self, _sv, _dv):
+        return None
+
+
+class _VideoPool:
+    async def warmup(self, _sv):
+        return False, 13, None
+
+    def builder_for_now(self, _sv):
+        return None
+
+
+async def _request(method: str, path: str, **kwargs):
+    main = _load_main()
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        return await client.request(method, path, **kwargs)
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.mark.parametrize("path", ["/warmup", "/reload"])
+def test_typed_workload_admits_before_malformed_json(
+    monkeypatch,
+    path: str,
+) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle()
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+    response = _run(
+        _request(
+            "POST",
+            path,
+            content=b"{",
+            headers={"content-type": "application/json"},
+        )
+    )
+    assert response.status_code == 422
+    assert lifecycle.events == [f"begin:{path[1:]}", "close"]
+
+
+def test_admission_denial_wins_over_invalid_body(monkeypatch) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle(deny=True)
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+    response = _run(
+        _request(
+            "POST",
+            "/warmup",
+            content=b"{",
+            headers={"content-type": "application/json"},
+        )
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
+    assert lifecycle.events == ["begin:warmup"]
+
+
+def test_predict_keeps_legacy_malformed_json_400(monkeypatch) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle()
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+    response = _run(
+        _request(
+            "POST",
+            "/predict",
+            content=b"{",
+            headers={"content-type": "application/json"},
+        )
+    )
+    assert response.status_code == 400
+    assert lifecycle.events == ["begin:predict", "close"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_task"),
+    [(None, "image"), ({"task_type": "video"}, "video")],
+)
+def test_reload_success_wire_is_unchanged(
+    monkeypatch,
+    body,
+    expected_task: str,
+) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle()
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+    monkeypatch.setattr(main, "_pool", _ImagePool())
+    monkeypatch.setattr(main, "_video_pool", _VideoPool())
+    kwargs = {} if body is None else {"json": body}
+    response = _run(_request("POST", "/reload", **kwargs))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task_type"] == expected_task
+    assert payload["loaded"] is True
+    assert payload["reloaded"] is True
+    if expected_task == "image":
+        assert set(payload) == {
+            "ok",
+            "loaded",
+            "reloaded",
+            "sam_variant",
+            "dino_variant",
+            "task_type",
+        }
+    else:
+        assert set(payload) == {
+            "ok",
+            "loaded",
+            "reloaded",
+            "sam_variant",
+            "task_type",
+        }
+
+
+def test_bodyless_unload_keeps_image_only_legacy_wire(monkeypatch) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle()
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+    response = _run(_request("POST", "/unload"))
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "unloaded": True, "loaded": False}
+
+
+def test_cancelled_image_inference_holds_lease_until_thread_finishes(
+    monkeypatch,
+) -> None:
+    main = _load_main()
+    from model_pool import ModelPool, ModelPoolBusyError
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class _Predictor:
+        device = "cpu"
+        cleanup_uncertain = False
+
+        def predict_point(self, *_args, **_kwargs):
+            started.set()
+            release.wait(timeout=5)
+            return [], False, None
+
+    async def scenario() -> None:
+        pool = ModelPool(
+            1,
+            lambda _sv, _dv, _cache: _Predictor(),
+            lambda: None,
+        )
+        monkeypatch.setattr(main, "_pool", pool)
+        monkeypatch.setattr(main, "fetch_image", lambda *_args, **_kwargs: object())
+        operation = _Operation([])
+        task = asyncio.create_task(
+            main._run_prompt(
+                "image.jpg",
+                {"type": "point", "points": [[0.5, 0.5]]},
+                operation,
+            )
+        )
+        while not started.is_set():
+            await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.sleep(0)
+        with pytest.raises(ModelPoolBusyError):
+            await pool.unload_all(reason="manual")
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert all(future.done() for future in operation.futures)
+        assert await pool.unload_all(reason="manual") == 1
+        await pool.shutdown()
+
+    _run(scenario())

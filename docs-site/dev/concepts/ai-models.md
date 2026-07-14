@@ -115,6 +115,8 @@ embedding cache buffer：`EMBEDDING_CACHE_SIZE` 默认 16 entries；按 GPU 显�
 
 **多容器并存**（生产高负载）：把 `grounded-sam2-backend` 拆成 `gsam2-tiny` / `gsam2-large` 两个 service（独立 profile + 独立端口），按业务 tier 路由不同 batch（tier-A 高精度走 large，tier-B 快通走 tiny）。单容器内需要少量变体切换时，优先使用 ModelPool 并配置 `PREFETCH_SAM_VARIANTS` / `PREFETCH_DINO_VARIANTS`。
 
+单容器内的图像与视频模型由两个独立容量的 LRU 池管理，但共享冷构建串行锁；图像 predictor 与 embedding cache 作为同一条目共同借出和释放。受管卸载会同时清空 image/video 两池，只有两池的 builder、borrower 与 GPU artifact 都可信归零时，`residency.gpu_loaded=false` 才能作为显存账本减账依据。每个部署仍须完成真实模型的加载、淘汰和全量卸载回落验收后，才可开启受管能力。
+
 ### 1.3 镜像基础 + checkpoint 同步
 
 镜像基于 `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`（**devel** 必需，runtime 镜像缺 nvcc 触发 GroundingDINO 编译失败）。Dockerfile 末段 `pip install -e ../_shared/mask_utils` 把共享 mask 转换包链入容器，避免 grounded-sam2 与 sam3 各自维护 mask → polygon 转换逻辑。
