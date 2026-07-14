@@ -6,6 +6,7 @@ import asyncio
 import sys
 import threading
 import time
+import weakref
 from unittest.mock import MagicMock
 
 import pytest
@@ -314,6 +315,82 @@ async def test_cancelled_waiter_does_not_cancel_shared_builder() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repeatedly_cancelled_builder_waits_for_thread_and_cleans_model() -> None:
+    from model_pool import ModelPool
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def build(_task: str, _series: str, size: str) -> _FakeModel:
+        started.set()
+        assert release.wait(timeout=1.0)
+        return _FakeModel(size)
+
+    pool = ModelPool(1, build, lambda: None, build_timeout=1.0)
+    waiter = asyncio.create_task(pool.warmup("detection", "yolo11", "s"))
+    await _wait_for_thread_event(started)
+    builder = await pool.builder_for("detection", "yolo11", "s")
+    assert builder is not None
+
+    builder.cancel()
+    await asyncio.sleep(0.01)
+    builder.cancel()
+    assert not builder.done()
+    assert (await pool.snapshot())["reserved_build_slots"] == 1
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert builder.cancelled()
+    failed = await pool.snapshot()
+    assert failed["builders"] == 0
+    assert failed["current_size"] == 0
+    assert failed["cleanup_failed"] is True
+    assert failed["gpu_resident"] is None
+
+    await pool.unload_all(reason="manual", force_cleanup=True)
+    assert (await pool.snapshot())["gpu_resident"] is False
+
+
+@pytest.mark.asyncio
+async def test_cancelled_builder_drops_model_references_before_cleanup() -> None:
+    from model_pool import ModelPool
+
+    started = threading.Event()
+    release = threading.Event()
+    cleaned_without_model_reference = threading.Event()
+    model_ref: weakref.ReferenceType[_FakeModel] | None = None
+
+    def build(_task: str, _series: str, size: str) -> _FakeModel:
+        nonlocal model_ref
+        model = _FakeModel(size)
+        model_ref = weakref.ref(model)
+        started.set()
+        assert release.wait(timeout=1.0)
+        return model
+
+    def cleanup() -> None:
+        assert model_ref is not None
+        assert model_ref() is None
+        cleaned_without_model_reference.set()
+
+    pool = ModelPool(1, build, cleanup, build_timeout=1.0)
+    waiter = asyncio.create_task(pool.warmup("detection", "yolo11", "s"))
+    await _wait_for_thread_event(started)
+    builder = await pool.builder_for("detection", "yolo11", "s")
+    assert builder is not None
+
+    builder.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+
+    assert cleaned_without_model_reference.is_set()
+    assert builder.cancelled()
+    assert (await pool.snapshot())["builders"] == 0
+
+
+@pytest.mark.asyncio
 async def test_cancelled_successful_warmup_still_drops_waiter(monkeypatch) -> None:
     from model_pool import ModelPool
 
@@ -380,7 +457,7 @@ async def test_unknown_model_device_never_reports_gpu_false() -> None:
 
 @pytest.mark.asyncio
 async def test_failed_build_stays_unknown_until_trusted_full_cleanup() -> None:
-    from model_pool import ModelPool
+    from model_pool import ModelPool, PoolBusyError
 
     should_fail = True
 
@@ -395,11 +472,14 @@ async def test_failed_build_stays_unknown_until_trusted_full_cleanup() -> None:
     assert (await pool.snapshot())["gpu_resident"] is None
 
     should_fail = False
-    await pool.warmup("detection", "yolo11", "s")
-    assert (await pool.snapshot())["gpu_resident"] is None
+    with pytest.raises(PoolBusyError, match="residency is unknown"):
+        await pool.warmup("detection", "yolo11", "s")
 
-    assert await pool.unload_all(reason="manual", force_cleanup=True) == 1
+    assert await pool.unload_all(reason="manual", force_cleanup=True) == 0
     assert (await pool.snapshot())["gpu_resident"] is False
+
+    await pool.warmup("detection", "yolo11", "s")
+    assert (await pool.snapshot())["gpu_resident"] is True
 
 
 @pytest.mark.asyncio
@@ -432,6 +512,47 @@ async def test_cancelled_unload_waits_for_real_cleanup_before_clearing_state() -
         await pool.unload_all(reason="manual", force_cleanup=True)
 
     allow_cleanup.set()
+    with pytest.raises(asyncio.CancelledError):
+        await unload
+    cleaned = await pool.snapshot()
+    assert cleaned["cleanup_in_progress"] is False
+    assert cleaned["cleanup_failed"] is False
+    assert cleaned["gpu_resident"] is False
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancel_cannot_interrupt_unload_state_commit() -> None:
+    from model_pool import ModelPool
+
+    cleanup_started = threading.Event()
+    allow_cleanup = threading.Event()
+    cleanup_finished = threading.Event()
+
+    def cleanup() -> None:
+        cleanup_started.set()
+        assert allow_cleanup.wait(timeout=1.0)
+        cleanup_finished.set()
+
+    pool = ModelPool(
+        1,
+        lambda _task, _series, size: _FakeModel(size),
+        cleanup,
+        build_timeout=1.0,
+    )
+    await pool.warmup("detection", "yolo11", "s")
+    unload = asyncio.create_task(pool.unload_all(reason="manual"))
+    await _wait_for_thread_event(cleanup_started)
+    await pool._lock.acquire()  # noqa: SLF001 - hold the metadata commit point
+    allow_cleanup.set()
+    await _wait_for_thread_event(cleanup_finished)
+    await asyncio.sleep(0)
+
+    unload.cancel()
+    await asyncio.sleep(0)
+    unload.cancel()
+    assert not unload.done()
+    pool._lock.release()  # noqa: SLF001
+
     with pytest.raises(asyncio.CancelledError):
         await unload
     cleaned = await pool.snapshot()

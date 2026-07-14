@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,11 @@ class _Session:
 
     def get_providers(self) -> list[str]:
         return list(self._providers)
+
+
+class _TrackedHandle:
+    def __init__(self, providers: list[str]) -> None:
+        self._onnx_session = _Session(providers)
 
 
 def _handle(providers: list[str]) -> SimpleNamespace:
@@ -265,6 +271,89 @@ def test_cancelled_waiter_does_not_cancel_or_hide_real_builder() -> None:
     asyncio.run(scenario())
 
 
+def test_repeatedly_cancelled_builder_waits_for_thread_and_cleans_handle() -> None:
+    async def scenario() -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def build():
+            started.set()
+            assert release.wait(2)
+            return _handle(["CPUExecutionProvider"])
+
+        pool = HandlePool(_factories(build), _inspect, build_timeout=2)
+        waiter = asyncio.create_task(pool.warmup("detector"))
+        assert await asyncio.to_thread(started.wait, 1)
+        builder = await pool.builder_for("detector")
+        assert builder is not None
+
+        builder.cancel()
+        await asyncio.sleep(0.01)
+        builder.cancel()
+        assert not builder.done()
+        assert (await pool.snapshot())["reserved_build_slots"] == 1
+
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        assert builder.cancelled()
+        failed = await pool.snapshot()
+        assert failed["builders"] == 0
+        assert failed["current_size"] == 0
+        assert failed["cleanup_failed"] is True
+        assert failed["gpu_resident"] is None
+        with pytest.raises(HandlePoolBusyError, match="residency is unknown"):
+            await pool.warmup("va")
+
+        assert await pool.unload_all(reason="manual", force_cleanup=True) == 0
+        assert (await pool.snapshot())["gpu_resident"] is False
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_builder_drops_handle_references_before_cleanup() -> None:
+    async def scenario() -> None:
+        started = threading.Event()
+        release = threading.Event()
+        cleaned_without_handle_reference = threading.Event()
+        handle_ref: weakref.ReferenceType[_TrackedHandle] | None = None
+
+        def build() -> _TrackedHandle:
+            nonlocal handle_ref
+            handle = _TrackedHandle(["CPUExecutionProvider"])
+            handle_ref = weakref.ref(handle)
+            started.set()
+            assert release.wait(2)
+            return handle
+
+        def cleanup() -> None:
+            assert handle_ref is not None
+            assert handle_ref() is None
+            cleaned_without_handle_reference.set()
+
+        pool = HandlePool(
+            _factories(build),
+            _inspect,
+            strict_cleanup=cleanup,
+            build_timeout=2,
+        )
+        waiter = asyncio.create_task(pool.warmup("detector"))
+        assert await asyncio.to_thread(started.wait, 1)
+        builder = await pool.builder_for("detector")
+        assert builder is not None
+
+        builder.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+
+        assert cleaned_without_handle_reference.is_set()
+        assert builder.cancelled()
+        assert (await pool.snapshot())["builders"] == 0
+
+    asyncio.run(scenario())
+
+
 def test_residency_uses_full_provider_chains_and_true_dominates_unknown() -> None:
     async def scenario() -> None:
         providers = {
@@ -320,11 +409,53 @@ def test_cleanup_failure_stays_unknown_until_successful_full_cleanup() -> None:
         assert failed["current_size"] == 0
         assert failed["cleanup_failed"] is True
         assert failed["gpu_resident"] is None
+        with pytest.raises(HandlePoolBusyError, match="residency is unknown"):
+            await pool.warmup("va")
 
         should_fail = False
         assert await pool.unload_all(reason="manual", force_cleanup=True) == 0
         recovered = await pool.snapshot()
         assert recovered["cleanup_failed"] is False
         assert recovered["gpu_resident"] is False
+
+    asyncio.run(scenario())
+
+
+def test_repeated_cancel_cannot_interrupt_unload_state_commit() -> None:
+    async def scenario() -> None:
+        cleanup_started = threading.Event()
+        allow_cleanup = threading.Event()
+        cleanup_finished = threading.Event()
+
+        def cleanup() -> None:
+            cleanup_started.set()
+            assert allow_cleanup.wait(2)
+            cleanup_finished.set()
+
+        pool = HandlePool(
+            _factories(lambda: _handle(["CPUExecutionProvider"])),
+            _inspect,
+            strict_cleanup=cleanup,
+        )
+        await pool.warmup("detector")
+        unload = asyncio.create_task(pool.unload_all(reason="manual"))
+        assert await asyncio.to_thread(cleanup_started.wait, 1)
+        await pool._lock.acquire()  # noqa: SLF001 - hold metadata commit point
+        allow_cleanup.set()
+        assert await asyncio.to_thread(cleanup_finished.wait, 1)
+        await asyncio.sleep(0)
+
+        unload.cancel()
+        await asyncio.sleep(0)
+        unload.cancel()
+        assert not unload.done()
+        pool._lock.release()  # noqa: SLF001
+
+        with pytest.raises(asyncio.CancelledError):
+            await unload
+        cleaned = await pool.snapshot()
+        assert cleaned["cleanup_in_progress"] is False
+        assert cleaned["cleanup_failed"] is False
+        assert cleaned["gpu_resident"] is False
 
     asyncio.run(scenario())

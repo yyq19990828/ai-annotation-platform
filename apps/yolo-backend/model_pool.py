@@ -108,6 +108,7 @@ class ModelPool:
         self._cleanup_in_progress = False
         self._cleanup_failed = False
         self._shutdown_task: asyncio.Task[None] | None = None
+        self._builder_retirements: set[asyncio.Task[None]] = set()
 
         self._lock = asyncio.Lock()
         # ``main._build_model`` temporarily changes process cwd, so callbacks must be
@@ -233,11 +234,14 @@ class ModelPool:
         self,
         key: ModelKey,
     ) -> asyncio.Task[_BuildResult]:
+        self._prune_done_builders_locked()
         builder = self._builders.get(key)
         if builder is not None:
             return builder
         if self._cleanup_in_progress:
             raise PoolBusyError("model pool cleanup is in progress")
+        if self._cleanup_failed:
+            raise PoolBusyError("model residency is unknown; full cleanup is required")
 
         evicted: tuple[ModelKey, _PoolEntry] | None = None
         if len(self._entries) + len(self._builders) >= self._cap:
@@ -256,7 +260,12 @@ class ModelPool:
 
         task = asyncio.create_task(self._build_and_publish(key, evicted))
         self._builders[key] = task
-        task.add_done_callback(self._consume_builder_result)
+        task.add_done_callback(
+            lambda completed, builder_key=key: self._builder_completed(
+                builder_key,
+                completed,
+            )
+        )
         self._assert_capacity_locked()
         return task
 
@@ -268,28 +277,31 @@ class ModelPool:
         current_task = asyncio.current_task()
         evicted_key: ModelKey | None = None
         model: YOLO | None = None
+        entry: _PoolEntry | None = None
         try:
             if evicted is not None:
                 evicted_key = evicted[0]
                 models_to_release = [evicted[1].model]
                 # Do not keep the removed entry/model alive while the replacement builds.
                 evicted = None
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
+                _, cleanup_cancelled = await self._run_executor_to_completion(
                     self._release_models_sync,
                     models_to_release,
                 )
+                if cleanup_cancelled:
+                    raise asyncio.CancelledError
 
             task, series, size = key
             started = time.monotonic()
             async with self._build_serial_lock:
-                model = await asyncio.get_running_loop().run_in_executor(
-                    None,
+                model, build_cancelled = await self._run_executor_to_completion(
                     self._build_model,
                     task,
                     series,
                     size,
                 )
+            if build_cancelled:
+                raise asyncio.CancelledError
             load_ms = int((time.monotonic() - started) * 1000)
             built_at = datetime.now(UTC)
             entry = _PoolEntry(
@@ -304,7 +316,6 @@ class ModelPool:
                 if self._builders.get(key) is not current_task:
                     raise RuntimeError(f"builder ownership changed for {key!r}")
                 self._cache_class_names_locked(task, model)
-                self._builders.pop(key)
                 self._entries[key] = entry
                 self._assert_capacity_locked()
                 update_pool_size(len(self._entries))
@@ -315,25 +326,112 @@ class ModelPool:
                 if evicted_key is not None
                 else None,
             )
-        except BaseException:
+        except BaseException as build_error:
             models_to_release = [model] if model is not None else []
             model = None
+            entry = None
+            cleanup_cancelled = False
             try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
+                _, cleanup_cancelled = await self._run_executor_to_completion(
                     self._release_models_sync,
                     models_to_release,
                 )
+            except asyncio.CancelledError:
+                cleanup_cancelled = True
             except BaseException:
                 logger.exception("model_pool cleanup after failed build also failed")
-            async with self._lock:
-                if self._builders.get(key) is current_task:
-                    self._builders.pop(key)
-                # A failed builder may have allocated GPU state before raising. Only a
-                # later successful full-pool cleanup may restore a trusted false value.
-                self._cleanup_failed = True
-                self._assert_capacity_locked()
+            _, commit_cancelled = await self._run_task_to_completion(
+                self._commit_failed_build(key, current_task)
+            )
+            if (
+                isinstance(build_error, asyncio.CancelledError)
+                or cleanup_cancelled
+                or commit_cancelled
+            ):
+                raise asyncio.CancelledError from build_error
             raise
+
+    async def _commit_failed_build(
+        self,
+        key: ModelKey,
+        current_task: asyncio.Task[Any] | None,
+    ) -> None:
+        async with self._lock:
+            if self._builders.get(key) is not current_task:
+                raise RuntimeError(f"builder ownership changed for {key!r}")
+            # A failed builder may have allocated GPU state before raising. Only a
+            # later successful full-pool cleanup may restore a trusted false value.
+            self._cleanup_failed = True
+            self._assert_capacity_locked()
+
+    def _builder_completed(
+        self,
+        key: ModelKey,
+        task: asyncio.Task[_BuildResult],
+    ) -> None:
+        """Retire a builder only after its coroutine and cleanup frame are done."""
+
+        self._consume_builder_result(task)
+        retirement = asyncio.create_task(self._retire_builder(key, task))
+        self._builder_retirements.add(retirement)
+        retirement.add_done_callback(self._builder_retirement_completed)
+
+    def _builder_retirement_completed(self, task: asyncio.Task[None]) -> None:
+        self._builder_retirements.discard(task)
+        self._consume_builder_result(task)
+
+    async def _retire_builder(
+        self,
+        key: ModelKey,
+        task: asyncio.Task[_BuildResult],
+    ) -> None:
+        async with self._lock:
+            if self._builders.get(key) is task:
+                self._builders.pop(key)
+            self._assert_capacity_locked()
+
+    def _prune_done_builders_locked(self) -> None:
+        for key, task in list(self._builders.items()):
+            if task.done() and self._builders.get(key) is task:
+                self._builders.pop(key)
+
+    @staticmethod
+    async def _run_executor_to_completion(
+        call: Callable[..., Any],
+        *args: Any,
+    ) -> tuple[Any, bool]:
+        """Wait for a real executor owner even when this task is repeatedly cancelled."""
+
+        future = asyncio.get_running_loop().run_in_executor(None, call, *args)
+        cancelled = False
+        while not future.done():
+            try:
+                await asyncio.shield(future)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException:
+                break
+        try:
+            return future.result(), cancelled
+        except BaseException as exc:
+            if cancelled:
+                raise asyncio.CancelledError from exc
+            raise
+
+    @staticmethod
+    async def _run_task_to_completion(coroutine: Any) -> tuple[Any, bool]:
+        """Run an async state commit to completion despite repeated cancellation."""
+
+        task = asyncio.create_task(coroutine)
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException:
+                break
+        return task.result(), cancelled
 
     async def _wait_for_builder(
         self,
@@ -361,6 +459,7 @@ class ModelPool:
         """Return the real owner task for cancellation-safe lifecycle tracking."""
 
         async with self._lock:
+            self._prune_done_builders_locked()
             return self._builders.get((task, series, size))
 
     def builder_for_now(
@@ -371,7 +470,8 @@ class ModelPool:
     ) -> asyncio.Task[_BuildResult] | None:
         """Read the current builder without yielding on the owning event loop."""
 
-        return self._builders.get((task, series, size))
+        builder = self._builders.get((task, series, size))
+        return builder if builder is not None and not builder.done() else None
 
     async def _drop_waiter(self, key: ModelKey) -> None:
         async with self._lock:
@@ -401,7 +501,7 @@ class ModelPool:
             self._waiters[key] = waiters - 1
 
     @staticmethod
-    def _consume_builder_result(task: asyncio.Task[_BuildResult]) -> None:
+    def _consume_builder_result(task: asyncio.Task[Any]) -> None:
         if not task.cancelled():
             task.exception()
 
@@ -433,7 +533,8 @@ class ModelPool:
         logger.info("model_pool evicted %s (reason=%s)", key, reason)
 
     def _assert_capacity_locked(self) -> None:
-        if len(self._entries) + len(self._builders) > self._cap:
+        reserved_builders = sum(key not in self._entries for key in self._builders)
+        if len(self._entries) + reserved_builders > self._cap:
             raise RuntimeError("model pool capacity invariant violated")
 
     def _release_models_sync(self, models: list["YOLO"]) -> None:
@@ -458,6 +559,7 @@ class ModelPool:
         """Release the complete pool without crossing active/building work."""
 
         async with self._lock:
+            self._prune_done_builders_locked()
             if self._cleanup_in_progress:
                 if reason == "idle":
                     return 0
@@ -504,22 +606,19 @@ class ModelPool:
         except BaseException as exc:  # keep pool truth before propagating the outcome
             cleanup_error = exc
 
+        _, commit_cancelled = await self._run_task_to_completion(
+            self._commit_cleanup_result(
+                cleanup_error=cleanup_error,
+                last_key=last_key,
+                reason=reason,
+            )
+        )
+        cancelled = cancelled or commit_cancelled
+
         if cleanup_error is not None:
-            async with self._lock:
-                self._cleanup_in_progress = False
-                self._cleanup_failed = True
             if cancelled:
                 raise asyncio.CancelledError from cleanup_error
             raise cleanup_error
-
-        async with self._lock:
-            self._cleanup_in_progress = False
-            self._cleanup_failed = False
-            if last_key is not None:
-                evict_reason: EvictReason = (
-                    "idle_timeout" if reason == "idle" else "manual"
-                )
-                self._record_evict_locked(last_key, evict_reason)
 
         if reason == "idle":
             for _ in range(count):
@@ -528,6 +627,25 @@ class ModelPool:
         if cancelled:
             raise asyncio.CancelledError
         return count
+
+    async def _commit_cleanup_result(
+        self,
+        *,
+        cleanup_error: BaseException | None,
+        last_key: ModelKey | None,
+        reason: str,
+    ) -> None:
+        async with self._lock:
+            self._cleanup_in_progress = False
+            if cleanup_error is not None:
+                self._cleanup_failed = True
+            else:
+                self._cleanup_failed = False
+                if last_key is not None:
+                    evict_reason: EvictReason = (
+                        "idle_timeout" if reason == "idle" else "manual"
+                    )
+                    self._record_evict_locked(last_key, evict_reason)
 
     async def unload_idle(self, *, idle_before: float) -> int:
         """Atomically unload only if no use occurred after ``idle_before``."""
@@ -567,6 +685,7 @@ class ModelPool:
 
         while True:
             async with self._lock:
+                self._prune_done_builders_locked()
                 builders = list(self._builders.values())
                 active = bool(
                     self._waiters
@@ -588,6 +707,7 @@ class ModelPool:
         """Return one atomic observability/lifecycle snapshot."""
 
         async with self._lock:
+            self._prune_done_builders_locked()
             loaded_keys = [
                 {
                     "key": self._key_str(entry.key),
@@ -611,6 +731,9 @@ class ModelPool:
             devices = {str(device) for device in raw_devices if device is not None}
             unknown_device = any(device is None for device in raw_devices)
             builders = len(self._builders)
+            reserved_build_slots = sum(
+                key not in self._entries for key in self._builders
+            )
             borrowers = sum(entry.borrowers for entry in self._entries.values())
             if builders or self._cleanup_in_progress or self._cleanup_failed:
                 gpu_resident: bool | None = None
@@ -630,7 +753,7 @@ class ModelPool:
                 "loaded_keys": loaded_keys,
                 "last_evict": last_evict,
                 "builders": builders,
-                "reserved_build_slots": builders,
+                "reserved_build_slots": reserved_build_slots,
                 "borrowers": borrowers,
                 "waiters": sum(self._waiters.values()),
                 "cleanup_in_progress": self._cleanup_in_progress,

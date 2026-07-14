@@ -96,6 +96,7 @@ class HandlePool:
         self._cleanup_in_progress = False
         self._cleanup_failed = False
         self._shutdown_task: asyncio.Task[None] | None = None
+        self._builder_retirements: set[asyncio.Task[None]] = set()
 
         self._lock = asyncio.Lock()
         # Serial construction avoids transiently building four ORT sessions from the
@@ -196,30 +197,42 @@ class HandlePool:
         self,
         name: str,
     ) -> asyncio.Task[_BuildResult]:
+        self._prune_done_builders_locked()
         builder = self._builders.get(name)
         if builder is not None:
             return builder
         if self._cleanup_in_progress:
             raise HandlePoolBusyError("handle pool cleanup is in progress")
+        if self._cleanup_failed:
+            raise HandlePoolBusyError(
+                "handle residency is unknown; full cleanup is required"
+            )
         if len(self._entries) + len(self._builders) >= self._cap:
             raise HandlePoolBusyError("all fixed handle slots are occupied")
 
         task = asyncio.create_task(self._build_and_publish(name))
         self._builders[name] = task
-        task.add_done_callback(self._consume_task_result)
+        task.add_done_callback(
+            lambda completed, builder_name=name: self._builder_completed(
+                builder_name,
+                completed,
+            )
+        )
         self._assert_capacity_locked()
         return task
 
     async def _build_and_publish(self, name: str) -> _BuildResult:
         current_task = asyncio.current_task()
         handle: Any = None
+        entry: _HandleEntry | None = None
         try:
             started = time.monotonic()
             async with self._build_serial_lock:
-                handle = await asyncio.get_running_loop().run_in_executor(
-                    None,
+                handle, build_cancelled = await self._run_executor_to_completion(
                     self._factories[name],
                 )
+            if build_cancelled:
+                raise asyncio.CancelledError
             load_ms = int((time.monotonic() - started) * 1000)
             loaded_at = datetime.now(UTC)
             entry = _HandleEntry(
@@ -233,29 +246,115 @@ class HandlePool:
             async with self._lock:
                 if self._builders.get(name) is not current_task:
                     raise RuntimeError(f"builder ownership changed for {name!r}")
-                self._builders.pop(name)
                 self._entries[name] = entry
                 self._assert_capacity_locked()
             return _BuildResult(load_ms=load_ms)
-        except BaseException:
+        except BaseException as build_error:
             handles = [handle] if handle is not None else []
             handle = None
+            entry = None
+            cleanup_cancelled = False
             try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
+                _, cleanup_cancelled = await self._run_executor_to_completion(
                     self._release_handles_sync,
                     handles,
                 )
+            except asyncio.CancelledError:
+                cleanup_cancelled = True
             except BaseException:
                 logger.exception("cleanup after failed handle build also failed")
-            async with self._lock:
-                if self._builders.get(name) is current_task:
-                    self._builders.pop(name)
-                # A factory can allocate a CUDA session before raising.  Only a later
-                # successful full cleanup restores a trusted false residency value.
-                self._cleanup_failed = True
-                self._assert_capacity_locked()
+            _, commit_cancelled = await self._run_task_to_completion(
+                self._commit_failed_build(name, current_task)
+            )
+            if (
+                isinstance(build_error, asyncio.CancelledError)
+                or cleanup_cancelled
+                or commit_cancelled
+            ):
+                raise asyncio.CancelledError from build_error
             raise
+
+    async def _commit_failed_build(
+        self,
+        name: str,
+        current_task: asyncio.Task[Any] | None,
+    ) -> None:
+        async with self._lock:
+            if self._builders.get(name) is not current_task:
+                raise RuntimeError(f"builder ownership changed for {name!r}")
+            # A factory can allocate a CUDA session before raising.  Only a later
+            # successful full cleanup restores a trusted false residency value.
+            self._cleanup_failed = True
+            self._assert_capacity_locked()
+
+    def _builder_completed(
+        self,
+        name: str,
+        task: asyncio.Task[_BuildResult],
+    ) -> None:
+        """Retire a builder only after its coroutine and cleanup frame are done."""
+
+        self._consume_task_result(task)
+        retirement = asyncio.create_task(self._retire_builder(name, task))
+        self._builder_retirements.add(retirement)
+        retirement.add_done_callback(self._builder_retirement_completed)
+
+    def _builder_retirement_completed(self, task: asyncio.Task[None]) -> None:
+        self._builder_retirements.discard(task)
+        self._consume_task_result(task)
+
+    async def _retire_builder(
+        self,
+        name: str,
+        task: asyncio.Task[_BuildResult],
+    ) -> None:
+        async with self._lock:
+            if self._builders.get(name) is task:
+                self._builders.pop(name)
+            self._assert_capacity_locked()
+
+    def _prune_done_builders_locked(self) -> None:
+        for name, task in list(self._builders.items()):
+            if task.done() and self._builders.get(name) is task:
+                self._builders.pop(name)
+
+    @staticmethod
+    async def _run_executor_to_completion(
+        call: Callable[..., Any],
+        *args: Any,
+    ) -> tuple[Any, bool]:
+        """Wait for a real executor owner even when this task is repeatedly cancelled."""
+
+        future = asyncio.get_running_loop().run_in_executor(None, call, *args)
+        cancelled = False
+        while not future.done():
+            try:
+                await asyncio.shield(future)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException:
+                break
+        try:
+            return future.result(), cancelled
+        except BaseException as exc:
+            if cancelled:
+                raise asyncio.CancelledError from exc
+            raise
+
+    @staticmethod
+    async def _run_task_to_completion(coroutine: Any) -> tuple[Any, bool]:
+        """Run an async state commit to completion despite repeated cancellation."""
+
+        task = asyncio.create_task(coroutine)
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException:
+                break
+        return task.result(), cancelled
 
     async def _wait_for_builder(
         self,
@@ -277,6 +376,7 @@ class HandlePool:
     async def builder_for(self, name: str) -> asyncio.Task[_BuildResult] | None:
         self._validate_name(name)
         async with self._lock:
+            self._prune_done_builders_locked()
             return self._builders.get(name)
 
     def builder_for_now(self, name: str) -> asyncio.Task[_BuildResult] | None:
@@ -287,7 +387,8 @@ class HandlePool:
         """
 
         self._validate_name(name)
-        return self._builders.get(name)
+        builder = self._builders.get(name)
+        return builder if builder is not None and not builder.done() else None
 
     async def _drop_waiter(self, name: str) -> None:
         async with self._lock:
@@ -325,7 +426,8 @@ class HandlePool:
             entry.hit_count += 1
 
     def _assert_capacity_locked(self) -> None:
-        if len(self._entries) + len(self._builders) > self._cap:
+        reserved_builders = sum(name not in self._entries for name in self._builders)
+        if len(self._entries) + reserved_builders > self._cap:
             raise RuntimeError("handle pool capacity invariant violated")
 
     def _release_handles_sync(self, handles: list[Any]) -> None:
@@ -343,6 +445,7 @@ class HandlePool:
         """Release all handles without crossing builders, waiters, or borrowers."""
 
         async with self._lock:
+            self._prune_done_builders_locked()
             if self._cleanup_in_progress:
                 if reason == "idle":
                     return 0
@@ -391,6 +494,31 @@ class HandlePool:
         except BaseException as exc:
             cleanup_error = exc
 
+        _, commit_cancelled = await self._run_task_to_completion(
+            self._commit_cleanup_result(
+                cleanup_error=cleanup_error,
+                last_name=last_name,
+                reason=reason,
+            )
+        )
+        cancelled = cancelled or commit_cancelled
+
+        if cleanup_error is not None:
+            if cancelled:
+                raise asyncio.CancelledError from cleanup_error
+            raise cleanup_error
+        logger.info("handle pool unloaded %d handles (reason=%s)", count, reason)
+        if cancelled:
+            raise asyncio.CancelledError
+        return count
+
+    async def _commit_cleanup_result(
+        self,
+        *,
+        cleanup_error: BaseException | None,
+        last_name: str | None,
+        reason: str,
+    ) -> None:
         async with self._lock:
             self._cleanup_in_progress = False
             if cleanup_error is not None:
@@ -403,15 +531,6 @@ class HandlePool:
                         "at": datetime.now(UTC),
                         "reason": "idle_timeout" if reason == "idle" else "manual",
                     }
-
-        if cleanup_error is not None:
-            if cancelled:
-                raise asyncio.CancelledError from cleanup_error
-            raise cleanup_error
-        logger.info("handle pool unloaded %d handles (reason=%s)", count, reason)
-        if cancelled:
-            raise asyncio.CancelledError
-        return count
 
     async def unload_idle(self, *, idle_before: float) -> int:
         return await self.unload_all(reason="idle", idle_before=idle_before)
@@ -449,6 +568,7 @@ class HandlePool:
 
         while True:
             async with self._lock:
+                self._prune_done_builders_locked()
                 builders = list(self._builders.values())
                 active = bool(
                     self._waiters
@@ -470,6 +590,7 @@ class HandlePool:
         """Return pool metadata and conservative ORT residency in one snapshot."""
 
         async with self._lock:
+            self._prune_done_builders_locked()
             ordered_entries = [
                 self._entries[name] for name in HANDLE_ORDER if name in self._entries
             ]
@@ -559,6 +680,9 @@ class HandlePool:
                 }
 
             builders = len(self._builders)
+            reserved_build_slots = sum(
+                name not in self._entries for name in self._builders
+            )
             borrowers = sum(entry.borrowers for entry in ordered_entries)
             handle_values = [item["resident"] for item in per_handle.values()]
             if True in handle_values:
@@ -593,7 +717,7 @@ class HandlePool:
                 "loaded_keys": loaded_keys,
                 "last_evict": last_evict,
                 "builders": builders,
-                "reserved_build_slots": builders,
+                "reserved_build_slots": reserved_build_slots,
                 "borrowers": borrowers,
                 "waiters": sum(self._waiters.values()),
                 "cleanup_in_progress": self._cleanup_in_progress,

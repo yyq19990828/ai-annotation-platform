@@ -48,6 +48,7 @@
 
 ### Fixed
 
+- **YOLO 与 ONNXTools 冷启动取消不再遗留池外 GPU owner**：模型或句柄 builder 现在会等底层 executor、失败清理和状态提交全部结束后才释放 reservation；重复取消也无法打断 unload 真值提交。失败或取消后的未知驻留会阻止继续冷建，直到受管全池清理重新建立可信空状态，避免隐藏对象突破物理显存上限。
 - **YOLO 受管生命周期在重复取消和进程 shutdown 时不再提前丢失真实 owner**：取消冷启动请求会在不再次让出事件循环的情况下登记仍运行的 builder，borrower 释放与 shutdown 即使连续收到取消也会先等待 active、builder、waiter、borrower 和全池清理完成，再向调用方重抛取消，避免健康状态短暂早于真实 GPU 工作归零。
 - **ML Backend 设备失效观测不再误报可回退性和实际 provider**：共享 torch 设备 latch 现在线程安全且向 CPU 单调，Grounded-SAM2 与 YOLO 只在识别为设备错误且 CPU replacement 成功后提交回退；CUDA runtime 查询本身失败时，两者的 `/health` 仍可用，YOLO 也会在 CPU replacement 后尝试释放 CUDA allocator 缓存。SAM3 image、Multiplex 与 PVS 明确为 GPU-only，模型加载检测到 GPU 不可用时返回可重试的结构化 503。RapidOCR 与 ONNXTools 改为读取已加载业务 session 的实际 primary provider，ONNXTools composite 的检测与分类 session 共用同一份功能探测后的 provider 偏好；空池、缺失或混合 provider 返回 `null`（unknown 语义）。注册表快照与实时 `/observe` 均透传 `compute`，Runtime Observe 与 PerfHUD 的前端消费共用同一 CPU fallback 判定，不再误报显式 CPU、实时空状态或 GPU-only backend。
 
