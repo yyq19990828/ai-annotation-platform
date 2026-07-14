@@ -35,6 +35,11 @@
 
 ## [Unreleased]
 
+## [0.22.3] - 2026-07-14
+
+### Added
+- **ML Backend GPU→CPU fallback 健壮性审计 + 有效设备可观测**：五个 ML 后端镜像（yolo / grounded-sam2 / sam3 / rapidocr / onnxtools）统一「真实设备探测 + 失败 latch CPU」逻辑。torch 系把 yolo 已开路的黄金模式抽成共享 helper `aap_backend_runtime.device`，grounded-sam2 / sam3 的 7 处模型构建点全部接入——GPU 上下文损坏（如笔记本挂起恢复后的 `CUDA error: unknown error`）不再硬 500，而是静默退回 CPU 推理（变慢但不断服）。ORT 系（rapidocr / onnxtools）启动期功能探测真实生效的 ExecutionProvider，CUDA 列出但损坏时不再硬崩。五镜像 `/health` 统一暴露顶层 `compute: {configured_device, effective_device | effective_provider}`；平台放行该字段进注册表 `health_meta` 与 PerfHud 实时快照，管理端「运行时观测」面板与 PerfHud 在「配置了 GPU 但实际跑在 CPU」时显示警示角标，为 ADR-0049 跨 backend 显存仲裁交付 L0 观测地基。
+
 ### Changed
 - **视频时间轴两态提升信息密度与窗口辨识度**：展开面板不再为章节、书签、问题、AI 预测、所选轨迹、AI 影响范围与循环区间保留空行，并把播放、逐帧和缩放控件压缩到底部状态栏，不再用大号图标单独占据一整行；缩放 / 适配按钮固定在底栏最右侧，展开 / 收起通过尊重系统动态偏好的平滑过渡衔接，两态也保持同一贴底位置。紧凑态继续呈现语义摘要，并把状态信息移到独立一行，为主时间条保留更多宽度。展开、收起态均显示当前 / 总时长和明确的全片窗口读数，未缩放时也保留完整窗口选区，缩放后可直接判断当前窗口位于全片的哪一段。
 - **视频追踪的目标种子改为逐目标摘要**：种子区现在每个目标单独一行，直接列出点数、框数和具体所在帧，同时标记后续操作会归入的当前目标；多目标与跨帧纠偏不再只显示难以对应的汇总数。

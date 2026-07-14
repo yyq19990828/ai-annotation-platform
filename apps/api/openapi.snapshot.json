@@ -6097,6 +6097,47 @@
         "title": "CommentAttachmentUploadInitResponse",
         "type": "object"
       },
+      "ComputeInfo": {
+        "additionalProperties": true,
+        "description": "Backend 有效计算设备观测 (五镜像统一)。\n\ntorch 系 (yolo/gsam2/sam3) 填 ``effective_device`` (\"cuda\"/\"cpu\"/None),\nORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 \"CPUExecutionProvider\"/\n\"CUDAExecutionProvider\")。``configured_device`` 为配置意图; 当其非 \"cpu\" 而有效设备\n已退回 CPU 时, 前端显示「⚠ CPU 回退」告警角标。",
+        "properties": {
+          "configured_device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured Device"
+          },
+          "effective_device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Device"
+          },
+          "effective_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Provider"
+          }
+        },
+        "title": "ComputeInfo",
+        "type": "object"
+      },
       "ConnectorAllowlistOut": {
         "properties": {
           "entries": {
@@ -9511,6 +9552,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/BackendCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "compute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeInfo"
               },
               {
                 "type": "null"
@@ -23011,7 +23062,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.22.2"
+    "version": "0.22.3"
   },
   "openapi": "3.1.0",
   "paths": {

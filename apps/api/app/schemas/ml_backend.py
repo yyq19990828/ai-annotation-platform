@@ -176,7 +176,7 @@ class BackendCapabilities(BaseModel):
 class ComputeInfo(BaseModel):
     """Backend 有效计算设备观测 (五镜像统一)。
 
-    v0.22.3 WS4 · torch 系 (yolo/gsam2/sam3) 填 ``effective_device`` ("cuda"/"cpu"/None),
+    torch 系 (yolo/gsam2/sam3) 填 ``effective_device`` ("cuda"/"cpu"/None),
     ORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 "CPUExecutionProvider"/
     "CUDAExecutionProvider")。``configured_device`` 为配置意图; 当其非 "cpu" 而有效设备
     已退回 CPU 时, 前端显示「⚠ CPU 回退」告警角标。
