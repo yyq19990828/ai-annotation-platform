@@ -31,6 +31,7 @@ class _FakePredictor:
 def test_continuation_bboxes_are_sent_as_positive_prompts(monkeypatch, tmp_path):
     predictor = _FakePredictor()
     tracker = object.__new__(SAM3MultiplexVideoTracker)
+    tracker.device = "cpu"
     tracker.max_window_frames = 16
     tracker.active_sessions = 0
     tracker._predictor = predictor
@@ -63,6 +64,7 @@ def test_continuation_bboxes_are_sent_as_positive_prompts(monkeypatch, tmp_path)
 def test_first_window_text_prompt_has_no_synthetic_box(monkeypatch, tmp_path):
     predictor = _FakePredictor()
     tracker = object.__new__(SAM3MultiplexVideoTracker)
+    tracker.device = "cpu"
     tracker.max_window_frames = 16
     tracker.active_sessions = 0
     tracker._predictor = predictor

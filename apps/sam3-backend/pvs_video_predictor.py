@@ -128,6 +128,32 @@ class SAM3PVSVideoTracker:
         seeds: list[dict[str, Any]],
         output_geometry: str = "bbox",
     ) -> list[dict[str, Any]]:
+        """Run one PVS window under a bounded BF16 autocast scope."""
+
+        device_type = self.device.split(":", 1)[0]
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=device_type == "cuda",
+        ):
+            return self._propagate(
+                video_path,
+                from_frame,
+                to_frame,
+                direction,
+                seeds,
+                output_geometry,
+            )
+
+    def _propagate(
+        self,
+        video_path: str,
+        from_frame: int,
+        to_frame: int,
+        direction: str,
+        seeds: list[dict[str, Any]],
+        output_geometry: str = "bbox",
+    ) -> list[dict[str, Any]]:
         """在窗内按逐对象 seed(点/框)memory 传播, 返回逐帧逐对象几何。
 
         seeds 每条:
@@ -150,10 +176,11 @@ class SAM3PVSVideoTracker:
         reverse = direction == "backward"
         seed_src_frame = hi if reverse else lo
 
-        self.active_sessions += 1
-        tmp_dir = tempfile.mkdtemp(prefix="sam3pvs_")
+        tmp_dir: str | None = None
         state = None
+        self.active_sessions += 1
         try:
+            tmp_dir = tempfile.mkdtemp(prefix="sam3pvs_")
             _fw, _fh, local_count = SAM3MultiplexVideoTracker._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
@@ -218,8 +245,11 @@ class SAM3PVSVideoTracker:
         finally:
             # Sam3TrackerPredictor 无 reset_state; init_state 返回的是普通 dict, 丢引用
             # + empty_cache 即释放其 GPU 张量(会话状态不跨 job 复用)。
+            if isinstance(state, dict):
+                state.clear()
             state = None
-            SAM3MultiplexVideoTracker._cleanup_tmp(tmp_dir)
+            if tmp_dir is not None:
+                SAM3MultiplexVideoTracker._cleanup_tmp(tmp_dir)
             free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 

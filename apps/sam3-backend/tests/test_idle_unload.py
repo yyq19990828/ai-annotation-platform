@@ -1,167 +1,128 @@
-"""Idle unload + 懒重载行为单测 (v0.10.0 补丁, 镜像 grounded-sam2-backend).
-
-覆盖:
-  - _unload_predictor 在 _predictor=None 时 noop, 返回 False
-  - _unload_predictor 触发 cache.clear (避免 GPU 张量悬挂)
-  - _ensure_predictor_loaded 懒重载: 缺 _predictor 时调用 _build_predictor
-  - _ensure_predictor_loaded 已加载时不重复构造
-  - _predictor_lock 串行化并发请求, 不会并行加载导致 OOM
-  - /unload /reload 端点幂等性
-  - /health 暴露 idle_unload_seconds + last_request_age_seconds
-
-不跑真实模型加载 (mock _build_predictor); 无 GPU 即可跑.
-"""
+"""SAM3 image pool lazy load, unload, and cache ownership."""
 
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
-from unittest.mock import MagicMock
+from types import SimpleNamespace
 
-import pytest
-
-
-@pytest.fixture
-def main_module(monkeypatch):
-    """干净加载 main 模块, 把模型构造换成 MagicMock 不触发真实 SAM 3 加载."""
-    # 注入伪 sam3 模块, 避免 predictor.py 顶部 import 失败.
-    fake_sam3_mod = types.ModuleType("sam3")
-    fake_sam3_mod.build_sam3_image_model = MagicMock(return_value=MagicMock())
-    sys.modules["sam3"] = fake_sam3_mod
-
-    # 让 _build_predictor 直接给一个 MagicMock 实例 (跳过真实 GPU 加载).
-    # 此时 predictor.SAM3Predictor.__init__ 实际不会跑 (我们 replace _build_predictor).
-    sys.modules.pop("main", None)
-    import main as m  # noqa: PLC0415
-
-    monkeypatch.setattr(m, "_build_predictor", lambda: MagicMock(device="cpu"))
-    # 重置全局状态 (上轮测试残留)
-    m._predictor = None
-    m._idle_task = None
-    return m
+from embedding_cache import CacheEntry, EmbeddingCache
+from managed_pool import BuildArtifact, ManagedLruPool
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
-# ---------- _unload_predictor ----------
+def _pool(build, cache: EmbeddingCache, cleanup_calls: list[int]):
+    def cleanup_attachments(attachments):
+        for attachment in attachments:
+            attachment.clear()
 
-
-def test_unload_noop_when_already_unloaded(main_module):
-    m = main_module
-    m._predictor = None
-    result = _run(m._unload_predictor(reason="test"))
-    assert result is False
-
-
-def test_unload_clears_predictor_and_cache(main_module):
-    m = main_module
-    m._predictor = MagicMock(device="cpu")
-    # 塞一条 cache 进去, 验证 unload 会 clear
-    from embedding_cache import CacheEntry  # noqa: PLC0415
-
-    m._cache.put(
-        "k1", CacheEntry(features={"x": 1}, orig_hw=(100, 100), is_batch=False, wh=(100, 100))
+    return ManagedLruPool(
+        cap=1,
+        build_resource=lambda key: BuildArtifact(
+            build(key),
+            attachments=(cache,),
+        ),
+        key_to_str=str,
+        strict_cleanup=lambda: cleanup_calls.append(1),
+        cleanup_attachments=cleanup_attachments,
     )
-    assert m._cache.size() == 1
-
-    result = _run(m._unload_predictor(reason="test"))
-    assert result is True
-    assert m._predictor is None
-    assert m._cache.size() == 0, "unload 必须 clear cache, 避免悬挂的 GPU 张量"
 
 
-# ---------- _ensure_predictor_loaded ----------
-
-
-def test_ensure_predictor_loaded_builds_when_missing(main_module):
-    """v0.14.14: 返回 (predictor, cache_hit, load_ms). 冷启动时 cache_hit=False."""
-    m = main_module
-    m._predictor = None
-    predictor, cache_hit, load_ms = _run(m._ensure_predictor_loaded())
-    assert predictor is not None
-    assert m._predictor is not None
-    assert predictor is m._predictor
-    assert cache_hit is False
-    assert load_ms is not None and load_ms >= 0
-
-
-def test_ensure_predictor_loaded_reuses_existing(main_module):
-    """v0.14.14: 命中时 cache_hit=True, load_ms=None."""
-    m = main_module
-    existing = MagicMock(device="cpu")
-    m._predictor = existing
-    predictor, cache_hit, load_ms = _run(m._ensure_predictor_loaded())
-    assert predictor is existing, "已加载时不应重建"
-    assert cache_hit is True
-    assert load_ms is None
-
-
-def test_ensure_predictor_updates_last_request_at(main_module):
-    """每次 /predict 入口都会刷新 last_request_at, idle watcher 才知道不该卸."""
-    import time as time_mod  # noqa: PLC0415
-
-    m = main_module
-    m._predictor = MagicMock(device="cpu")
-    m._last_request_at = time_mod.monotonic() - 5.0  # 模拟 5s 前
-    old = m._last_request_at
-    _run(m._ensure_predictor_loaded())
-    assert m._last_request_at > old, "应推进 last_request_at"
-
-
-def test_concurrent_loads_serialize_under_lock(main_module):
-    """并发 _ensure_predictor_loaded 必须串行化 (锁内), 避免双重构造 OOM."""
-    m = main_module
-    m._predictor = None
-
-    call_count = {"n": 0}
-
-    def slow_build():
-        call_count["n"] += 1
-        return MagicMock(device="cpu")
-
-    m._build_predictor = slow_build  # type: ignore[assignment]
-
-    async def main():
-        # 三个并发任务同时触发 _ensure_predictor_loaded
-        results = await asyncio.gather(
-            m._ensure_predictor_loaded(),
-            m._ensure_predictor_loaded(),
-            m._ensure_predictor_loaded(),
+def test_unload_noop_when_already_unloaded() -> None:
+    async def scenario() -> None:
+        cache = EmbeddingCache(2, "sam3")
+        pool = _pool(
+            lambda _key: SimpleNamespace(device="cuda:0"),
+            cache,
+            [],
         )
-        return results
+        assert await pool.unload_all(reason="manual") == 0
+        await pool.shutdown()
 
-    results = _run(main())
-    assert call_count["n"] == 1, "并发触发只允许一次真实加载"
-    # v0.14.14: results 是 [(predictor, cache_hit, load_ms), ...] 三元组
-    first_pred = results[0][0]
-    assert all(r[0] is first_pred for r in results)
+    _run(scenario())
 
 
-# ---------- 完整 unload → reload 循环 ----------
+def test_unload_clears_predictor_cache_and_runs_strict_cleanup() -> None:
+    async def scenario() -> None:
+        cache = EmbeddingCache(2, "sam3")
+        cleanup_calls: list[int] = []
+        pool = _pool(
+            lambda _key: SimpleNamespace(device="cuda:0"),
+            cache,
+            cleanup_calls,
+        )
+        cache.put(
+            "k1",
+            CacheEntry(
+                features={"x": 1},
+                orig_hw=(100, 100),
+                is_batch=False,
+                wh=(100, 100),
+            ),
+        )
+        cache_hit, load_ms, evicted = await pool.warmup("sam3")
+        assert cache_hit is False
+        assert load_ms is not None and load_ms >= 0
+        assert evicted is None
+        assert await pool.unload_all(reason="manual") == 1
+        assert cache.size() == 0
+        assert cleanup_calls == [1]
+        await pool.shutdown()
+
+    _run(scenario())
 
 
-def test_unload_then_ensure_rebuilds(main_module):
-    m = main_module
-    m._predictor = MagicMock(device="cpu")
-    first = m._predictor
+def test_concurrent_cold_borrows_are_single_flight() -> None:
+    async def scenario() -> None:
+        cache = EmbeddingCache(2, "sam3")
+        builds = 0
 
-    _run(m._unload_predictor(reason="test"))
-    assert m._predictor is None
+        def build(_key):
+            nonlocal builds
+            builds += 1
+            return SimpleNamespace(device="cuda:0")
 
-    second, cache_hit, load_ms = _run(m._ensure_predictor_loaded())
-    assert second is not None
-    assert second is not first, "重载后应是新实例"
-    assert cache_hit is False, "unload 后再 ensure 必须是 cache_miss"
-    assert load_ms is not None and load_ms >= 0
+        pool = _pool(build, cache, [])
+
+        async def borrow_once():
+            async with pool.borrow("sam3") as lease:
+                return lease.resource
+
+        resources = await asyncio.gather(*(borrow_once() for _ in range(3)))
+        assert builds == 1
+        assert all(resource is resources[0] for resource in resources)
+        await pool.shutdown()
+
+    _run(scenario())
 
 
-# ---------- env 默认值 ----------
+def test_unload_then_borrow_rebuilds() -> None:
+    async def scenario() -> None:
+        cache = EmbeddingCache(2, "sam3")
+        resources = []
+
+        def build(_key):
+            resource = SimpleNamespace(device="cuda:0")
+            resources.append(resource)
+            return resource
+
+        pool = _pool(build, cache, [])
+        async with pool.borrow("sam3") as first:
+            assert first.cache_hit is False
+        assert await pool.unload_all(reason="manual") == 1
+        async with pool.borrow("sam3") as second:
+            assert second.cache_hit is False
+            assert second.resource is not resources[0]
+        assert len(resources) == 2
+        await pool.shutdown()
+
+    _run(scenario())
 
 
-def test_idle_unload_defaults(main_module):
-    m = main_module
-    assert m.IDLE_UNLOAD_SECONDS == 600.0
-    assert m.IDLE_CHECK_INTERVAL == 60.0
+def test_idle_unload_defaults() -> None:
+    import main
+
+    assert main.IDLE_UNLOAD_SECONDS == 600.0
+    assert main.IDLE_CHECK_INTERVAL == 60.0

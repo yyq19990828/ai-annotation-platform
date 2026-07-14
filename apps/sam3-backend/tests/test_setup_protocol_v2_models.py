@@ -1,7 +1,7 @@
 """v0.14.11 · SAM 3 协议 v2 多模型目录测试.
 
-验证 /setup 的 models[] 把 SAM 3 的 3 条能力 (detection / segmentation /
-interactive_seg, 全部走 PCS 路径) 各拆成独立 model 条目。
+验证 /setup 的 models[] 暴露 detection / segmentation / interactive_seg /
+tracker 四条能力。
 """
 
 from __future__ import annotations
@@ -36,16 +36,16 @@ def test_setup_protocol_version_v22(setup_fn):
     assert data["compat_protocol_versions"] == ["2.1", "2.0"]
 
 
-def test_setup_exposes_three_models(setup_fn):
+def test_setup_exposes_four_models(setup_fn):
     data = setup_fn()
     assert isinstance(data["models"], list)
-    assert len(data["models"]) == 3
+    assert len(data["models"]) == 4
 
 
 def test_setup_models_cover_protocol_tasks(setup_fn):
     data = setup_fn()
     tasks = {m["task"] for m in data["models"]}
-    assert tasks == {"detection", "segmentation", "interactive_seg"}
+    assert tasks == {"detection", "segmentation", "interactive_seg", "tracker"}
 
 
 def test_setup_each_model_carries_infra_pytorch(setup_fn):
@@ -91,7 +91,16 @@ def test_segmentation_model_text_to_polygon(setup_fn):
     data = setup_fn()
     seg = next(m for m in data["models"] if m["task"] == "segmentation")
     assert seg["supported_prompts"] == ["text"]
-    assert seg["supported_geometric_outputs"] == ["polygon"]
+    assert seg["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+
+
+def test_tracker_model_declares_both_sam3_video_modes(setup_fn):
+    tracker = next(m for m in setup_fn()["models"] if m["task"] == "tracker")
+    assert tracker["supported_trackers"] == [
+        "sam3_video",
+        "sam3_video_interactive",
+    ]
+    assert tracker["text_driven_trackers"] == ["sam3_video"]
 
 
 def test_interactive_seg_model_prompts(setup_fn):

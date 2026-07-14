@@ -37,15 +37,13 @@ import math
 import os
 import tempfile
 import time
-from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 import torch
 from aap_backend_runtime import (
     DeviceUnavailableError,
     fetch_image,
-    free_gpu_memory,
     versions_payload,
 )
 from aap_protocol_v2 import (
@@ -57,12 +55,30 @@ from aap_protocol_v2 import (
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
+from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
+    GenerationTransitionRequest,
+    LifecycleModeRequest,
+    LifecycleResetRequest,
+    ManagedLifecycleCapabilities,
+    load_verify_keyring,
+)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from fastapi.routing import APIRoute
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from embedding_cache import EmbeddingCache, compute_cache_key
+from gpu_lifecycle import Sam3GpuLifecycle, WorkloadOperation
+from managed_pool import (
+    BuildArtifact,
+    ManagedBuildTimeout,
+    ManagedLruPool,
+    ManagedPoolBusyError,
+)
 from observability import (
     init_perfhud_collectors,
     record_cache,
@@ -79,9 +95,8 @@ from predictor import (
 )
 from video_predictor import SAM3MultiplexVideoTracker
 from pvs_video_predictor import SAM3PVSVideoTracker
+from pool_domain import Sam3Pools
 from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
-
-UTC = timezone.utc
 
 logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -99,8 +114,40 @@ EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_EMBEDDING_CACHE_SIZE", "32"))
 # 0 / 负数 关闭定时卸载, 仍可通过 POST /unload 手动卸载.
 IDLE_UNLOAD_SECONDS = float(os.getenv("SAM3_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.getenv("SAM3_IDLE_CHECK_INTERVAL", "60"))
+MODEL_POOL_BUILD_TIMEOUT = float(os.getenv("SAM3_MODEL_POOL_BUILD_TIMEOUT", "120"))
+MANAGED_LIFECYCLE_VERIFIED = os.getenv(
+    "SAM3_MANAGED_LIFECYCLE_VERIFIED",
+    "0",
+).lower() in {"1", "true", "yes"}
 
 app = FastAPI(title="sam3-backend", version=BACKEND_VERSION)
+
+
+class _ManagedAdmissionRoute(APIRoute):
+    """Admit workload routes before FastAPI reads or validates their bodies."""
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+        scope = {
+            "/predict": AdmissionScope.PREDICT,
+            "/warmup": AdmissionScope.WARMUP,
+            "/reload": AdmissionScope.RELOAD,
+        }.get(self.path)
+        if scope is None:
+            return original
+
+        async def admitted(request: Request):
+            operation = await _begin_workload(request, scope)
+            request.state.gpu_workload = operation
+            try:
+                return await original(request)
+            finally:
+                await operation.close()
+
+        return admitted
+
+
+app.router.route_class = _ManagedAdmissionRoute
 
 
 @app.exception_handler(ValueError)
@@ -111,251 +158,159 @@ async def _value_error_to_400(_request: Request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-_predictor: SAM3Predictor | None = None
 _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION)
 _last_request_at: float = time.monotonic()
-_predictor_lock = asyncio.Lock()
 _idle_task: asyncio.Task | None = None
-# v0.21.19 §PR3 · sam3.1_multiplex 视频追踪模型 (单档, 无变体)。
-# v0.21.x · 取消与图像模型的互斥常驻: 24GB 卡容得下 image(~5.8GB) + video(~3.2GB) 并存,
-# 二者各自独立懒加载 / idle 卸载, 加载其一不再卸另一。小显存部署若不需视频,
-# 设 SAM3_DOWNLOAD_VIDEO=0 不加载视频模型即可。
-_video_tracker: SAM3MultiplexVideoTracker | None = None
-_video_lock = asyncio.Lock()
-_video_last_request_at: float = time.monotonic()
-# v0.21.26 · 阶段 B-pvs · SAM3 PVS 交互追踪模型 (点/框 seed + memory 传播, 与 multiplex
-# 独立懒加载 / idle 卸载; 权重同 sam3.pt, 见 pvs_video_predictor.py)。
-_pvs_tracker: SAM3PVSVideoTracker | None = None
-_pvs_lock = asyncio.Lock()
-_pvs_last_request_at: float = time.monotonic()
-# v0.14.14: PoolStatus 元数据 (sam3 图像模型单档, cap 永远 1).
-_pool_loaded_at: datetime | None = None
-_pool_last_used_at: datetime | None = None
-_pool_hit_count: int = 0
-_pool_last_evict: dict[str, Any] | None = None
 _POOL_KEY: str = MODEL_VERSION  # opaque key, 协议 §4.3 sam3 用 model_variant 字符串
+_MULTIPLEX_KEY = "sam3_video"
+_PVS_KEY = "sam3_video_interactive"
+
+_image_pool: ManagedLruPool[str, SAM3Predictor] | None = None
+_multiplex_pool: ManagedLruPool[str, SAM3MultiplexVideoTracker] | None = None
+_pvs_pool: ManagedLruPool[str, SAM3PVSVideoTracker] | None = None
+_pool_domain: Sam3Pools | None = None
+_gpu_lifecycle: Sam3GpuLifecycle | None = None
 
 
-def _build_predictor() -> SAM3Predictor:
+def _build_predictor(_key: str = _POOL_KEY) -> SAM3Predictor:
     return SAM3Predictor(embedding_cache=_cache)
 
 
-async def _ensure_predictor_loaded(
-    *, count_as_hit: bool = True,
-) -> tuple[SAM3Predictor, bool, int | None]:
-    """v0.14.14: 懒加载 + 运行时观测.
-
-    返回 `(predictor, cache_hit, model_load_ms)`:
-      - cache_hit=True 时 load_ms=None (模型在内存, 复用); count_as_hit=True 时增 hit_count
-      - cache_hit=False 时 load_ms 是本次 build 毫秒 (冷启动 / idle unload 后 / manual reload 后)
-      - count_as_hit=False 走 warmup 路径, 不增 hit_count
-    """
-    global _predictor, _last_request_at
-    global _pool_loaded_at, _pool_last_used_at, _pool_hit_count
-    if _predictor is not None:
-        _last_request_at = time.monotonic()
-        _pool_last_used_at = datetime.now(UTC)
-        if count_as_hit:
-            _pool_hit_count += 1
-        return _predictor, True, None
-    # v0.21.x · 取消互斥: 加载图像模型不再卸视频追踪模型, 二者可并存常驻。
-    async with _predictor_lock:
-        if _predictor is not None:
-            # 锁内 double-check: 等锁期间别的协程可能已加载完.
-            _last_request_at = time.monotonic()
-            _pool_last_used_at = datetime.now(UTC)
-            if count_as_hit:
-                _pool_hit_count += 1
-            return _predictor, True, None
-        logger.info("reloading SAM 3 on demand (after idle unload or manual unload)")
-        loop = asyncio.get_running_loop()
-        t0 = time.monotonic()
-        try:
-            _predictor = await loop.run_in_executor(None, _build_predictor)
-        except DeviceUnavailableError as exc:
-            raise ModelUnavailableError(MODEL_VERSION, str(exc)) from exc
-        load_ms = int((time.monotonic() - t0) * 1000)
-        now = datetime.now(UTC)
-        _pool_loaded_at = now
-        _pool_last_used_at = now
-        _pool_hit_count = 0  # 新加载, 命中计数重置
-        logger.info("SAM 3 reloaded; device=%s; load_ms=%d", _predictor.device, load_ms)
-        _last_request_at = time.monotonic()
-        return _predictor, False, load_ms
-
-
-async def _unload_predictor(reason: str) -> bool:
-    """卸载模型释放显存. 返回是否真的执行了卸载 (已为 None 返回 False).
-
-    embedding cache 中持有的 _features 张量指向 GPU 显存, 模型卸载后这些
-    引用悬挂等同泄漏, 必须一起 clear (与 grounded-sam2-backend 同款处理).
-
-    v0.14.14: 记录 _pool_last_evict 供 PoolStatus.last_evict 输出.
-    """
-    global _predictor, _pool_loaded_at, _pool_last_used_at, _pool_hit_count, _pool_last_evict
-    async with _predictor_lock:
-        if _predictor is None:
-            return False
-        logger.info("unloading SAM 3: reason=%s", reason)
-        _predictor = None
-        free_gpu_memory()
-        _cache.clear()
-        free_gpu_memory()
-        # 归类 evict reason: idle_* / manual / 其他 → manual
-        evict_reason = "idle_timeout" if reason.startswith("idle") else "manual"
-        _pool_last_evict = {
-            "key": _POOL_KEY,
-            "at": datetime.now(UTC),
-            "reason": evict_reason,
-        }
-        _pool_loaded_at = None
-        _pool_last_used_at = None
-        _pool_hit_count = 0
-        return True
-
-
-# ── v0.21.19 §PR3 · 视频追踪模型 (与图像模型互斥常驻) ──────────────────
-
-
-def _build_video_tracker() -> SAM3MultiplexVideoTracker:
+def _build_video_tracker(_key: str = _MULTIPLEX_KEY) -> SAM3MultiplexVideoTracker:
     return SAM3MultiplexVideoTracker()
 
 
-async def _unload_video_tracker(reason: str) -> bool:
-    """卸载视频追踪模型释放显存。返回是否真的卸载。"""
-    global _video_tracker
-    async with _video_lock:
-        if _video_tracker is None:
-            return False
-        logger.info("unloading sam3 video tracker: reason=%s", reason)
-        _video_tracker = None
-        free_gpu_memory()
-        return True
-
-
-async def _ensure_video_tracker_loaded() -> SAM3MultiplexVideoTracker:
-    """懒加载视频追踪模型。v0.21.x 起与图像模型可并存常驻 (取消互斥), 加载视频不再卸图像。"""
-    global _video_tracker, _video_last_request_at
-    if _video_tracker is not None:
-        _video_last_request_at = time.monotonic()
-        return _video_tracker
-    async with _video_lock:
-        if _video_tracker is not None:
-            _video_last_request_at = time.monotonic()
-            return _video_tracker
-        logger.info("building sam3 video tracker on demand")
-        loop = asyncio.get_running_loop()
-        try:
-            _video_tracker = await loop.run_in_executor(None, _build_video_tracker)
-        except DeviceUnavailableError as exc:
-            raise ModelUnavailableError("sam3_video", str(exc)) from exc
-        _video_last_request_at = time.monotonic()
-        logger.info("sam3 video tracker built; device=%s", _video_tracker.device)
-        return _video_tracker
-
-
-def _build_pvs_tracker() -> SAM3PVSVideoTracker:
+def _build_pvs_tracker(_key: str = _PVS_KEY) -> SAM3PVSVideoTracker:
     return SAM3PVSVideoTracker()
 
 
-async def _unload_pvs_tracker(reason: str) -> bool:
-    """卸载 PVS 交互追踪模型释放显存。返回是否真的卸载。"""
-    global _pvs_tracker
-    async with _pvs_lock:
-        if _pvs_tracker is None:
-            return False
-        logger.info("unloading sam3 PVS tracker: reason=%s", reason)
-        _pvs_tracker = None
-        free_gpu_memory()
-        return True
+def _strict_free_gpu_memory() -> None:
+    """Release managed CUDA allocator state without hiding cleanup failure."""
+
+    if not torch.cuda.is_available():
+        return
+    torch.clear_autocast_cache()
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
 
-async def _ensure_pvs_tracker_loaded() -> SAM3PVSVideoTracker:
-    """懒加载 PVS 交互追踪模型 (与 multiplex / 图像模型各自独立常驻)。"""
-    global _pvs_tracker, _pvs_last_request_at
-    if _pvs_tracker is not None:
-        _pvs_last_request_at = time.monotonic()
-        return _pvs_tracker
-    async with _pvs_lock:
-        if _pvs_tracker is not None:
-            _pvs_last_request_at = time.monotonic()
-            return _pvs_tracker
-        logger.info("building sam3 PVS tracker on demand")
-        loop = asyncio.get_running_loop()
-        try:
-            _pvs_tracker = await loop.run_in_executor(None, _build_pvs_tracker)
-        except DeviceUnavailableError as exc:
-            raise ModelUnavailableError("sam3_video_interactive", str(exc)) from exc
-        _pvs_last_request_at = time.monotonic()
-        logger.info("sam3 PVS tracker built; device=%s", _pvs_tracker.device)
-        return _pvs_tracker
+def _cleanup_image_attachments(attachments: tuple[Any, ...]) -> None:
+    for attachment in attachments:
+        if isinstance(attachment, EmbeddingCache):
+            attachment.clear()
 
 
-def _pool_status() -> dict[str, Any]:
-    """v0.14.14 协议 §4.3 PoolStatus: cap=1, current_size 0/1, loaded_keys, last_evict.
+def _image_artifact(key: str) -> BuildArtifact[SAM3Predictor]:
+    return BuildArtifact(
+        resource=_build_predictor(key),
+        attachments=(_cache,),
+    )
 
-    sam3 图像模型单档, cap 永远 1; current_size = 1 表示已加载, 0 表示未加载或 idle unload 后.
-    """
-    loaded_keys: list[dict[str, Any]] = []
-    if _predictor is not None and _pool_loaded_at is not None:
-        loaded_keys.append({
-            "key": _POOL_KEY,
-            "loaded_at": _pool_loaded_at.isoformat(),
-            "last_used_at": (_pool_last_used_at or _pool_loaded_at).isoformat(),
-            "hit_count": _pool_hit_count,
-        })
-    last_evict: dict[str, Any] | None = None
-    if _pool_last_evict is not None:
-        last_evict = {
-            "key": _pool_last_evict["key"],
-            "at": _pool_last_evict["at"].isoformat(),
-            "reason": _pool_last_evict["reason"],
-        }
+
+def _multiplex_artifact(key: str) -> BuildArtifact[SAM3MultiplexVideoTracker]:
+    return BuildArtifact(resource=_build_video_tracker(key))
+
+
+def _pvs_artifact(key: str) -> BuildArtifact[SAM3PVSVideoTracker]:
+    return BuildArtifact(resource=_build_pvs_tracker(key))
+
+
+def _require_checkpoint(filename: str) -> None:
+    path = os.path.join(os.getenv("CHECKPOINT_DIR", "/app/checkpoints"), filename)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"checkpoint not provisioned: {path}")
+
+
+def _preflight_image(_key: str) -> None:
+    _require_checkpoint("sam3.pt")
+
+
+def _preflight_multiplex(_key: str) -> None:
+    _require_checkpoint("sam3.1_multiplex.pt")
+
+
+def _preflight_pvs(_key: str) -> None:
+    _require_checkpoint("sam3.pt")
+
+
+def _legacy_image_pool_status(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
-        "cap": 1,
-        "current_size": 1 if _predictor is not None else 0,
-        "loaded_keys": loaded_keys,
-        "last_evict": last_evict,
+        "cap": snapshot["cap"],
+        "current_size": snapshot["current_size"],
+        "loaded_keys": [
+            {key: value for key, value in item.items() if key != "borrowers"}
+            for item in snapshot["loaded_keys"]
+        ],
+        "last_evict": snapshot["last_evict"],
     }
 
 
-def _video_pool_status() -> dict[str, Any]:
-    """v0.21.x · 视频追踪池状态。含两档独立视频模型 (multiplex 文本 `sam3_video` +
-    PVS 交互 `sam3_video_interactive`), 各自懒加载 / idle 卸载、可并存常驻; 与图像池独立。
-    前端「视频追踪变体」区据此显示已加载 / 预热。"""
-    loaded_keys: list[dict[str, Any]] = []
-    loaded_variants: list[str] = []
-    active = 0
-    if _video_tracker is not None:
-        loaded_keys.append({"key": "sam3_video"})
-        loaded_variants.append("sam3_video")
-        active += _video_tracker.active_sessions
-    if _pvs_tracker is not None:
-        loaded_keys.append({"key": "sam3_video_interactive"})
-        loaded_variants.append("sam3_video_interactive")
-        active += _pvs_tracker.active_sessions
-    return {
-        "cap": 2,
-        "current_size": len(loaded_keys),
-        "loaded_keys": loaded_keys,
-        "loaded_variants": loaded_variants,
-        "active_sessions": active,
-    }
-
-
-def _effective_compute_device() -> str | None:
-    """SAM3 只上报已成功加载池的真实 GPU 设备；未加载/失败为 unknown。"""
-    loaded = [
-        item
-        for item in (_predictor, _video_tracker, _pvs_tracker)
-        if item is not None
+def _legacy_video_pool_status(
+    multiplex: dict[str, Any],
+    pvs: dict[str, Any],
+) -> dict[str, Any]:
+    loaded_variants = [
+        item["key"]
+        for snapshot in (multiplex, pvs)
+        for item in snapshot["loaded_keys"]
     ]
-    if not loaded:
+    return {
+        "cap": multiplex["cap"] + pvs["cap"],
+        "current_size": multiplex["current_size"] + pvs["current_size"],
+        "loaded_keys": [{"key": key} for key in loaded_variants],
+        "loaded_variants": loaded_variants,
+        "active_sessions": (
+            multiplex.get("active_sessions", 0) + pvs.get("active_sessions", 0)
+        ),
+    }
+
+
+def _effective_compute_device(snapshot: dict[str, Any]) -> str | None:
+    devices = {
+        str(pool["device"]).strip().lower()
+        for pool in snapshot["pools"].values()
+        if pool.get("gpu_resident") is True and pool.get("device") is not None
+    }
+    if not devices or not all(device.startswith("cuda") for device in devices):
         return None
-    devices = {str(getattr(item, "device", "")).strip().lower() for item in loaded}
-    if devices and all(device.startswith("cuda") for device in devices):
-        return next(iter(devices)) if len(devices) == 1 else "cuda"
-    return None
+    return next(iter(devices)) if len(devices) == 1 else "cuda"
+
+
+async def _begin_workload(
+    request: Request,
+    scope: AdmissionScope,
+) -> WorkloadOperation:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    return await _gpu_lifecycle.begin_workload(
+        scope,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+
+
+def _request_operation(request: Request) -> WorkloadOperation:
+    operation = getattr(request.state, "gpu_workload", None)
+    if operation is None:
+        raise RuntimeError("workload admission operation is missing")
+    return operation
+
+
+async def _warm_pool(
+    pool: ManagedLruPool[str, Any],
+    key: str,
+    operation: WorkloadOperation,
+) -> tuple[bool, int | None, str | None]:
+    try:
+        return await pool.warmup(key)
+    except ManagedBuildTimeout as exc:
+        operation.track_future(exc.builder)
+        raise ModelUnavailableError(key, str(exc)) from exc
+    except (ManagedPoolBusyError, DeviceUnavailableError, FileNotFoundError) as exc:
+        raise ModelUnavailableError(key, str(exc)) from exc
+    except asyncio.CancelledError:
+        operation.track_future(pool.builder_for_now(key))
+        raise
 
 
 def _normalize_predict_context(ctx: dict) -> dict:
@@ -372,26 +327,20 @@ def _normalize_predict_context(ctx: dict) -> dict:
 
 
 async def _idle_watcher() -> None:
-    """周期检查最近请求时间; 超过 IDLE_UNLOAD_SECONDS 触发自动卸载."""
+    """Unload each independently idle pool without crossing a real owner."""
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
-            if IDLE_UNLOAD_SECONDS <= 0:
+            if IDLE_UNLOAD_SECONDS <= 0 or _gpu_lifecycle is None:
                 continue
-            if _predictor is not None:
-                idle_for = time.monotonic() - _last_request_at
-                if idle_for >= IDLE_UNLOAD_SECONDS:
-                    await _unload_predictor(reason=f"idle {idle_for:.0f}s")
-            # v0.21.19 §PR3 · 视频追踪模型同样 idle 卸载 (无活跃会话时)。
-            if _video_tracker is not None and _video_tracker.active_sessions == 0:
-                v_idle = time.monotonic() - _video_last_request_at
-                if v_idle >= IDLE_UNLOAD_SECONDS:
-                    await _unload_video_tracker(reason=f"idle {v_idle:.0f}s")
-            # v0.21.26 · PVS 交互追踪模型同样 idle 卸载。
-            if _pvs_tracker is not None and _pvs_tracker.active_sessions == 0:
-                p_idle = time.monotonic() - _pvs_last_request_at
-                if p_idle >= IDLE_UNLOAD_SECONDS:
-                    await _unload_pvs_tracker(reason=f"idle {p_idle:.0f}s")
+            idle_before = time.monotonic() - IDLE_UNLOAD_SECONDS
+            for pool_id in ("image", "multiplex_video", "pvs_video"):
+                count = await _gpu_lifecycle.try_idle_unload(
+                    pool_id,
+                    idle_before=idle_before,
+                )
+                if count:
+                    logger.info("idle unloaded SAM3 pool %s", pool_id)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -400,12 +349,57 @@ async def _idle_watcher() -> None:
 
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _idle_task, _last_request_at
-    # 不再启动急加载: 未注册 / 无流量时白占 ~3.6GB 显存. 改纯懒加载 — 首个推理 / 预热请求
-    # 经 _ensure_predictor_loaded 触发冷启; 需暖启点模型市场「预热默认」。
+    global _gpu_lifecycle, _idle_task, _image_pool, _last_request_at
+    global _multiplex_pool, _pool_domain, _pvs_pool
+    raw_keyring = os.getenv("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "").strip()
+    verify_keyring = load_verify_keyring(raw_keyring) if raw_keyring else {}
+    build_serial_lock = asyncio.Lock()
+    _image_pool = ManagedLruPool(
+        cap=1,
+        build_resource=_image_artifact,
+        key_to_str=str,
+        strict_cleanup=_strict_free_gpu_memory,
+        cleanup_attachments=_cleanup_image_attachments,
+        preflight=_preflight_image,
+        build_timeout=MODEL_POOL_BUILD_TIMEOUT,
+        build_serial_lock=build_serial_lock,
+        pool_name="SAM3 image models",
+    )
+    _multiplex_pool = ManagedLruPool(
+        cap=1,
+        build_resource=_multiplex_artifact,
+        key_to_str=str,
+        strict_cleanup=_strict_free_gpu_memory,
+        preflight=_preflight_multiplex,
+        build_timeout=MODEL_POOL_BUILD_TIMEOUT,
+        build_serial_lock=build_serial_lock,
+        pool_name="SAM3 multiplex video models",
+    )
+    _pvs_pool = ManagedLruPool(
+        cap=1,
+        build_resource=_pvs_artifact,
+        key_to_str=str,
+        strict_cleanup=_strict_free_gpu_memory,
+        preflight=_preflight_pvs,
+        build_timeout=MODEL_POOL_BUILD_TIMEOUT,
+        build_serial_lock=build_serial_lock,
+        pool_name="SAM3 PVS video models",
+    )
+    _pool_domain = Sam3Pools(_image_pool, _multiplex_pool, _pvs_pool)
+    _gpu_lifecycle = Sam3GpuLifecycle(
+        _pool_domain,
+        verify_keyring=verify_keyring,
+        evictable_verified=MANAGED_LIFECYCLE_VERIFIED,
+    )
+    # 不再启动急加载: 未注册 / 无流量时白占 ~3.6GB 显存。改纯懒加载——首个推理 /
+    # 预热请求通过对应受管 pool 冷启；需暖启时由模型市场发起「预热默认」。
     logger.info(
-        "SAM 3 backend ready (lazy load; variant=%s, cache_size=%d, idle_unload=%.0fs)",
-        MODEL_VERSION, EMBEDDING_CACHE_SIZE, IDLE_UNLOAD_SECONDS,
+        "SAM 3 backend ready (lazy load; variant=%s, cache_size=%d, "
+        "idle_unload=%.0fs managed_verified=%s)",
+        MODEL_VERSION,
+        EMBEDDING_CACHE_SIZE,
+        IDLE_UNLOAD_SECONDS,
+        MANAGED_LIFECYCLE_VERIFIED,
     )
     _last_request_at = time.monotonic()
     init_perfhud_collectors()
@@ -415,7 +409,8 @@ async def _load_models() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    global _idle_task
+    global _gpu_lifecycle, _idle_task, _image_pool
+    global _multiplex_pool, _pool_domain, _pvs_pool
     if _idle_task is not None:
         _idle_task.cancel()
         try:
@@ -423,13 +418,57 @@ async def _shutdown() -> None:
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
         _idle_task = None
+    if _gpu_lifecycle is not None:
+        await _gpu_lifecycle.shutdown()
+    _gpu_lifecycle = None
+    _pool_domain = None
+    _image_pool = None
+    _multiplex_pool = None
+    _pvs_pool = None
     shutdown_perfhud_collectors()
 
 
+def _empty_pool_snapshot() -> dict[str, Any]:
+    return {
+        "cap": 1,
+        "current_size": 0,
+        "loaded_keys": [],
+        "last_evict": None,
+        "builders": 0,
+        "reserved_build_slots": 0,
+        "borrowers": 0,
+        "waiters": 0,
+        "cleanup_in_progress": False,
+        "cleanup_failed": False,
+        "gpu_resident": False,
+        "device": None,
+        "active_sessions": 0,
+    }
+
+
 @app.get("/health")
-def health() -> dict:
+async def health() -> dict:
     """与 grounded-sam2 /health 字段对齐, 让 AdminDashboard 卡片直接复用渲染."""
-    available = torch.cuda.is_available()
+    if _gpu_lifecycle is not None:
+        aggregate, residency = await _gpu_lifecycle.snapshot_and_residency()
+        residency_payload = residency.model_dump(mode="json")
+    else:
+        aggregate = {
+            "pools": {
+                "image": _empty_pool_snapshot(),
+                "multiplex_video": _empty_pool_snapshot(),
+                "pvs_video": _empty_pool_snapshot(),
+            }
+        }
+        residency_payload = None
+    image_snapshot = aggregate["pools"]["image"]
+    multiplex_snapshot = aggregate["pools"]["multiplex_video"]
+    pvs_snapshot = aggregate["pools"]["pvs_video"]
+
+    try:
+        available = bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001
+        available = False
     gpu_info: dict | None = None
     perf = sample_perfhud()
     if available:
@@ -462,12 +501,12 @@ def health() -> dict:
         except Exception:  # noqa: BLE001
             gpu_info = None
     if gpu_info is not None:
-        gpu_info["gpu_utilization_percent"] = perf["gpu_utilization_percent"]
-        gpu_info["gpu_temperature_celsius"] = perf["gpu_temperature_celsius"]
-        gpu_info["gpu_power_watts"] = perf["gpu_power_watts"]
+        gpu_info["gpu_utilization_percent"] = perf.get("gpu_utilization_percent")
+        gpu_info["gpu_temperature_celsius"] = perf.get("gpu_temperature_celsius")
+        gpu_info["gpu_power_watts"] = perf.get("gpu_power_watts")
     host = {
-        "container_cpu_percent": perf["container_cpu_percent"],
-        "container_memory_percent": perf["container_memory_percent"],
+        "container_cpu_percent": perf.get("container_cpu_percent"),
+        "container_memory_percent": perf.get("container_memory_percent"),
     }
     return {
         "ok": True,
@@ -476,18 +515,22 @@ def health() -> dict:
         "host": host,
         "cache": _cache.stats(),
         "model_version": MODEL_VERSION,
-        "loaded": _predictor is not None,  # 老字段, 兼容前端 AdminDashboard
+        "loaded": image_snapshot["current_size"] > 0,
         # v0.14.14: 协议 §4.3 PoolStatus 统一格式; sam3 cap 永远 1.
-        "pool": _pool_status(),
+        "pool": _legacy_image_pool_status(image_snapshot),
         # v0.21.x · 视频追踪池 (与图像池并存常驻); 前端据此显示视频追踪已加载 / 预热。
-        "video_pool": _video_pool_status(),
+        "video_pool": _legacy_video_pool_status(
+            multiplex_snapshot,
+            pvs_snapshot,
+        ),
         # SAM3 是 GPU-only：effective_device 仅反映已成功加载池的实际设备。
         # 未加载或 GPU 不可用时为 None，不会伪报 CPU fallback。
         "compute": {
             "configured_device": "cuda",
-            "effective_device": _effective_compute_device(),
+            "effective_device": _effective_compute_device(aggregate),
             "cpu_fallback_supported": False,
         },
+        "residency": residency_payload,
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
@@ -693,6 +736,10 @@ def setup() -> dict:
             "params": base["params"],
         },
     ]
+    if MANAGED_LIFECYCLE_VERIFIED:
+        base["managed_lifecycle"] = ManagedLifecycleCapabilities().model_dump(
+            mode="json"
+        )
     return base
 
 
@@ -712,26 +759,117 @@ def cache_stats() -> dict:
     return _cache.stats()
 
 
+def _validate_body(model_type: Any, body: Any) -> Any:
+    try:
+        return model_type.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_url=False),
+        ) from exc
+
+
+async def _request_json(request: Request) -> Any:
+    try:
+        return await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid JSON request body") from exc
+
+
 @app.post("/unload")
-async def unload() -> dict:
-    """主动卸载模型释放显存 (图像 + 视频). 已为空闲状态时返回 ok=true, unloaded=false."""
-    unloaded_img = await _unload_predictor(reason="manual")
-    unloaded_vid = await _unload_video_tracker(reason="manual")
-    unloaded_pvs = await _unload_pvs_tracker(reason="manual")
-    return {
-        "ok": True,
-        "unloaded": unloaded_img or unloaded_vid or unloaded_pvs,
-        "loaded": _predictor is not None,
-        "video_loaded": _video_tracker is not None or _pvs_tracker is not None,
-    }
+async def unload(request: Request) -> dict[str, Any]:
+    """Bodyless legacy unload and signed managed full-pool unload."""
+
+    if _gpu_lifecycle is None:
+        return {
+            "ok": True,
+            "unloaded": False,
+            "loaded": False,
+            "video_loaded": False,
+        }
+    raw_body = await request.body()
+    if not raw_body.strip():
+        return await _gpu_lifecycle.legacy_unload()
+    body = _validate_body(
+        GenerationTransitionRequest,
+        await _request_json(request),
+    )
+    response = await _gpu_lifecycle.managed_unload(
+        body.generation,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/drain")
+async def drain(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(
+        GenerationTransitionRequest,
+        await _request_json(request),
+    )
+    response = await _gpu_lifecycle.drain(
+        body.generation,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/drain/cancel")
+async def cancel_drain(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(
+        GenerationTransitionRequest,
+        await _request_json(request),
+    )
+    response = await _gpu_lifecycle.cancel_drain(
+        body.generation,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/lifecycle/mode")
+async def lifecycle_mode(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(LifecycleModeRequest, await _request_json(request))
+    response = await _gpu_lifecycle.set_mode(
+        body,
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/lifecycle/reset")
+async def lifecycle_reset(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(LifecycleResetRequest, await _request_json(request))
+    response = await _gpu_lifecycle.reset(
+        body,
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
 
 
 @app.post("/reload")
-async def reload() -> dict:
+async def reload(request: Request) -> dict:
     """主动 (重新) 加载模型. 已加载时是 noop."""
-    was_loaded = _predictor is not None
-    await _ensure_predictor_loaded(count_as_hit=False)
-    return {"ok": True, "loaded": True, "reloaded": not was_loaded}
+    if _image_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    operation = _request_operation(request)
+    cache_hit, _load_ms, _evicted = await _warm_pool(
+        _image_pool,
+        _POOL_KEY,
+        operation,
+    )
+    return {"ok": True, "loaded": True, "reloaded": not cache_hit}
 
 
 # v0.14.14 协议 §4.4 · /warmup 端点 (sam3 单档, body 可空).
@@ -748,40 +886,38 @@ class WarmupRequest(BaseModel):
 
 
 @app.post("/warmup", response_model=WarmupResponse)
-async def warmup(req: WarmupRequest | None = None) -> WarmupResponse:
+async def warmup(
+    request: Request,
+    req: WarmupRequest | None = None,
+) -> WarmupResponse:
     """v0.14.14: 加载权重到 GPU 不跑 forward。
 
     默认预热图像模型 (SAM 3 单档, variants.model_variant 必须等于 sam3 或缺省);
     task="tracker" 预热视频追踪模型 (sam3.1_multiplex)。v0.21.x 起图像 / 视频并存,
     预热其一不再卸另一。重复预热返回 cache_hit=true。
     """
+    operation = _request_operation(request)
+    if _image_pool is None or _multiplex_pool is None or _pvs_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
     if req is not None and req.task == "tracker":
-        loaded_before = _video_tracker is not None
-        t0 = time.monotonic()
-        await _ensure_video_tracker_loaded()
-        load_ms = None if loaded_before else int((time.monotonic() - t0) * 1000)
-        return WarmupResponse(
-            ok=True, model_load_ms=load_ms, cache_hit=loaded_before, evicted=None
-        )
-    # v0.21.26 · task="interactive" 预热 PVS 交互追踪模型 (sam3_video_interactive)。
-    if req is not None and req.task == "interactive":
-        loaded_before = _pvs_tracker is not None
-        t0 = time.monotonic()
-        await _ensure_pvs_tracker_loaded()
-        load_ms = None if loaded_before else int((time.monotonic() - t0) * 1000)
-        return WarmupResponse(
-            ok=True, model_load_ms=load_ms, cache_hit=loaded_before, evicted=None
-        )
+        pool: ManagedLruPool[str, Any] = _multiplex_pool
+        key = _MULTIPLEX_KEY
+    elif req is not None and req.task == "interactive":
+        pool = _pvs_pool
+        key = _PVS_KEY
+    else:
+        pool = _image_pool
+        key = _POOL_KEY
     if req is not None and req.variants:
         mv = req.variants.get("model_variant")
         if mv is not None and mv != MODEL_VERSION:
             raise VariantNotSupportedError("model_variant", mv, [MODEL_VERSION])
-    _predictor_obj, cache_hit, load_ms = await _ensure_predictor_loaded(count_as_hit=False)
+    cache_hit, load_ms, evicted = await _warm_pool(pool, key, operation)
     return WarmupResponse(
         ok=True,
         model_load_ms=load_ms,
         cache_hit=cache_hit,
-        evicted=None,
+        evicted=evicted,
     )
 
 
@@ -838,7 +974,39 @@ def _coerce_exemplars(ctx: dict) -> list[dict]:
     return [{"bbox": bbox, "label": True}]
 
 
-def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict], bool, str | None]:
+async def _run_executor_to_completion(
+    call: Callable[[], Any],
+    operation: WorkloadOperation | None,
+) -> Any:
+    """Keep the real executor owner active across request cancellation."""
+
+    future = asyncio.get_running_loop().run_in_executor(None, call)
+    if operation is not None:
+        operation.track_future(future)
+    cancelled = False
+    while not future.done():
+        try:
+            await asyncio.shield(future)
+        except asyncio.CancelledError:
+            cancelled = True
+        except BaseException:
+            break
+    try:
+        result = future.result()
+    except BaseException as exc:
+        if cancelled:
+            raise asyncio.CancelledError from exc
+        raise
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+def _run_prompt_sync(
+    p: SAM3Predictor,
+    file_path: str,
+    ctx: dict,
+) -> tuple[list[dict], bool, str | None]:
     """返回 (results, cache_hit, mask_input_next). 命中时 point/bbox/exemplar 跳过 image fetch.
 
     mask_input_next (v0.18.18) 仅 point 精修单 mask 阶段非空, 其余 prompt 恒 None。
@@ -912,6 +1080,46 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
         return results, hit, None
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
+
+
+async def _run_prompt(
+    file_path: str,
+    ctx: dict,
+    operation: WorkloadOperation | None = None,
+) -> tuple[list[dict], bool, str | None, bool, int | None]:
+    global _last_request_at
+
+    if _image_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    try:
+        async with _image_pool.borrow(_POOL_KEY) as lease:
+            _last_request_at = time.monotonic()
+            result, hit, mask_input_next = await _run_executor_to_completion(
+                functools.partial(
+                    _run_prompt_sync,
+                    lease.resource,
+                    file_path,
+                    ctx,
+                ),
+                operation,
+            )
+            return (
+                result,
+                hit,
+                mask_input_next,
+                lease.cache_hit,
+                lease.load_ms,
+            )
+    except ManagedBuildTimeout as exc:
+        if operation is not None:
+            operation.track_future(exc.builder)
+        raise ModelUnavailableError(_POOL_KEY, str(exc)) from exc
+    except (ManagedPoolBusyError, DeviceUnavailableError, FileNotFoundError) as exc:
+        raise ModelUnavailableError(_POOL_KEY, str(exc)) from exc
+    except asyncio.CancelledError:
+        if operation is not None:
+            operation.track_future(_image_pool.builder_for_now(_POOL_KEY))
+        raise
 
 
 def _observe(prompt_type: str, hit: bool, started: float) -> int:
@@ -1039,7 +1247,43 @@ def _video_local_path(file_path: str) -> str:
     raise HTTPException(status_code=400, detail=f"unsupported video file_path: {file_path[:64]}")
 
 
-async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
+def _run_video_tracker_sync(
+    tracker: SAM3MultiplexVideoTracker,
+    file_path: str,
+    from_frame: int,
+    to_frame: int,
+    direction: str,
+    text: str,
+    seed_bbox: dict[str, float] | None,
+    output_geometry: str,
+    seed_bboxes: list[dict[str, float]],
+) -> list[dict]:
+    local_path = _video_local_path(file_path)
+    cleanup = local_path != file_path
+    try:
+        return tracker.propagate(
+            local_path,
+            from_frame,
+            to_frame,
+            direction,
+            text,
+            seed_bbox,
+            output_geometry,
+            seed_bboxes,
+        )
+    finally:
+        if cleanup:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+
+
+async def _run_video_tracker(
+    file_path: str,
+    ctx: dict,
+    operation: WorkloadOperation | None = None,
+) -> list[dict]:
     """sam3_video: 按 text 在窗内检测+追踪目标, 返回逐帧几何 (polygon/bbox)。"""
     try:
         from_frame = int(ctx["from_frame"])
@@ -1062,25 +1306,39 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> list[dict]:
     seed_bboxes = _seed_bboxes_from_video_ctx(ctx)
     seed_bbox = seed_bboxes[0] if seed_bboxes else None
 
-    tracker = await _ensure_video_tracker_loaded()
-    local_path = _video_local_path(file_path)
-    cleanup = local_path != file_path
+    global _last_request_at
+    if _multiplex_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
     try:
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            functools.partial(
-                tracker.propagate, local_path, from_frame, to_frame, direction,
-                text, seed_bbox, output_geometry, seed_bboxes,
-            ),
-        )
-    finally:
-        if cleanup:
-            try:
-                os.unlink(local_path)
-            except OSError:
-                pass
-    return result
+        async with _multiplex_pool.borrow(_MULTIPLEX_KEY) as lease:
+            _last_request_at = time.monotonic()
+            return await _run_executor_to_completion(
+                functools.partial(
+                    _run_video_tracker_sync,
+                    lease.resource,
+                    file_path,
+                    from_frame,
+                    to_frame,
+                    direction,
+                    text,
+                    seed_bbox,
+                    output_geometry,
+                    seed_bboxes,
+                ),
+                operation,
+            )
+    except ManagedBuildTimeout as exc:
+        if operation is not None:
+            operation.track_future(exc.builder)
+        raise ModelUnavailableError(_MULTIPLEX_KEY, str(exc)) from exc
+    except (ManagedPoolBusyError, DeviceUnavailableError, FileNotFoundError) as exc:
+        raise ModelUnavailableError(_MULTIPLEX_KEY, str(exc)) from exc
+    except asyncio.CancelledError:
+        if operation is not None:
+            operation.track_future(
+                _multiplex_pool.builder_for_now(_MULTIPLEX_KEY)
+            )
+        raise
 
 
 def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
@@ -1119,7 +1377,39 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
     return [{"obj_id": 1, "bbox": seed}]
 
 
-async def _run_pvs_video_tracker(file_path: str, ctx: dict) -> list[dict]:
+def _run_pvs_video_tracker_sync(
+    tracker: SAM3PVSVideoTracker,
+    file_path: str,
+    from_frame: int,
+    to_frame: int,
+    direction: str,
+    seeds: list[dict],
+    output_geometry: str,
+) -> list[dict]:
+    local_path = _video_local_path(file_path)
+    cleanup = local_path != file_path
+    try:
+        return tracker.propagate(
+            local_path,
+            from_frame,
+            to_frame,
+            direction,
+            seeds,
+            output_geometry,
+        )
+    finally:
+        if cleanup:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+
+
+async def _run_pvs_video_tracker(
+    file_path: str,
+    ctx: dict,
+    operation: WorkloadOperation | None = None,
+) -> list[dict]:
     """sam3_video_interactive: 点/框 seed + memory 逐对象跨帧追踪, 返回逐帧逐对象几何。"""
     try:
         from_frame = int(ctx["from_frame"])
@@ -1141,29 +1431,40 @@ async def _run_pvs_video_tracker(file_path: str, ctx: dict) -> list[dict]:
             status_code=422,
             detail="sam3_video_interactive tracker requires a seed (source_geometry / seeds[])")
 
-    tracker = await _ensure_pvs_tracker_loaded()
-    local_path = _video_local_path(file_path)
-    cleanup = local_path != file_path
+    global _last_request_at
+    if _pvs_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
     try:
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            functools.partial(
-                tracker.propagate, local_path, from_frame, to_frame, direction,
-                seeds, output_geometry,
-            ),
-        )
-    finally:
-        if cleanup:
-            try:
-                os.unlink(local_path)
-            except OSError:
-                pass
-    return result
+        async with _pvs_pool.borrow(_PVS_KEY) as lease:
+            _last_request_at = time.monotonic()
+            return await _run_executor_to_completion(
+                functools.partial(
+                    _run_pvs_video_tracker_sync,
+                    lease.resource,
+                    file_path,
+                    from_frame,
+                    to_frame,
+                    direction,
+                    seeds,
+                    output_geometry,
+                ),
+                operation,
+            )
+    except ManagedBuildTimeout as exc:
+        if operation is not None:
+            operation.track_future(exc.builder)
+        raise ModelUnavailableError(_PVS_KEY, str(exc)) from exc
+    except (ManagedPoolBusyError, DeviceUnavailableError, FileNotFoundError) as exc:
+        raise ModelUnavailableError(_PVS_KEY, str(exc)) from exc
+    except asyncio.CancelledError:
+        if operation is not None:
+            operation.track_future(_pvs_pool.builder_for_now(_PVS_KEY))
+        raise
 
 
 @app.post("/predict")
 async def predict(request: Request):
+    operation = _request_operation(request)
     body = await request.json()
     started = time.perf_counter()
 
@@ -1175,9 +1476,17 @@ async def predict(request: Request):
         # 否则 (sam3_video) → multiplex 文本追踪。
         if ctx.get("type") == "video_tracker":
             if ctx.get("model_key") == "sam3_video_interactive":
-                result = await _run_pvs_video_tracker(task["file_path"], ctx)
+                result = await _run_pvs_video_tracker(
+                    task["file_path"],
+                    ctx,
+                    operation,
+                )
             else:
-                result = await _run_video_tracker(task["file_path"], ctx)
+                result = await _run_video_tracker(
+                    task["file_path"],
+                    ctx,
+                    operation,
+                )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return PredictionResult(
                 result=result,
@@ -1187,9 +1496,9 @@ async def predict(request: Request):
                 cache_hit=False,
                 model_load_ms=None,
             ).model_dump(exclude_none=True)
-        # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
-        p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
-        result, hit, mask_input_next = _run_prompt(p, task["file_path"], ctx)
+        result, hit, mask_input_next, pool_cache_hit, model_load_ms = (
+            await _run_prompt(task["file_path"], ctx, operation)
+        )
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
             result=result,
@@ -1213,13 +1522,23 @@ async def predict(request: Request):
             ctx = {**ctx, "type": "text", "output": "box"}
         elif _mid == "sam3-segmentation":
             ctx = {**ctx, "type": "text", "output": ctx.get("output", "mask")}
-        p, pool_cache_hit, model_load_ms = await _ensure_predictor_loaded()
+        if _image_pool is None:
+            raise HTTPException(status_code=503, detail="backend not ready")
+        pool_cache_hit, model_load_ms, _evicted = await _warm_pool(
+            _image_pool,
+            _POOL_KEY,
+            operation,
+        )
         results = []
         for t in tasks:
             t_started = time.perf_counter()
             try:
                 # 文本批量不回灌 mask_input → 丢弃 mask_input_next.
-                result, hit, _ = _run_prompt(p, t["file_path"], ctx)
+                result, hit, _, _entry_hit, _entry_load_ms = await _run_prompt(
+                    t["file_path"],
+                    ctx,
+                    operation,
+                )
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001

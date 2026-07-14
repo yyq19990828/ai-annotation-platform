@@ -96,7 +96,9 @@ RUN pip install --no-build-isolation -e /app/mask_utils
 # v0.14.12 · 共享协议 v2 schema + 受控词表常量 (apps/_shared/protocol_v2),
 # 与 grounded-sam2-backend / yolo-backend 共用, 避免协议字段在 backend 之间漂移.
 COPY _shared/protocol_v2/ /app/protocol_v2/
-RUN pip install --no-build-isolation -e /app/protocol_v2
+# Base image may pin an older pyOpenSSL against cryptography. Resolve both
+# together now that the lifecycle verifier requires current cryptography.
+RUN pip install --no-build-isolation -e /app/protocol_v2 "pyOpenSSL>=24.2.1"
 
 # 共享 backend_runtime 包 (apps/_shared/backend_runtime). 五 backend 共用的无状态叶子函数
 # (图片下载 / 显存释放 / /versions 载荷). setuptools 已在装 protocol_v2 前处理, 复用.
@@ -104,7 +106,11 @@ COPY _shared/backend_runtime/ /app/backend_runtime/
 RUN pip install --no-build-isolation -e /app/backend_runtime
 
 COPY sam3-backend/scripts/ ./scripts/
-COPY sam3-backend/main.py sam3-backend/predictor.py sam3-backend/video_predictor.py sam3-backend/pvs_video_predictor.py sam3-backend/schemas.py sam3-backend/embedding_cache.py sam3-backend/observability.py ./
+COPY sam3-backend/main.py sam3-backend/predictor.py sam3-backend/video_predictor.py \
+     sam3-backend/pvs_video_predictor.py sam3-backend/schemas.py \
+     sam3-backend/embedding_cache.py sam3-backend/observability.py \
+     sam3-backend/managed_pool.py sam3-backend/pool_domain.py \
+     sam3-backend/gpu_lifecycle.py ./
 COPY sam3-backend/tests/ ./tests/
 RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 

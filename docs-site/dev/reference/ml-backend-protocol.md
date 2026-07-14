@@ -131,7 +131,12 @@ Grounded-SAM2 已实现 image/video 双池的 single-flight、borrower、共享�
 六份 checkpoint 与物理 GPU 已完成真实 image/video load→LRU→full-unload 回落验证。该门槛仍按部署
 opt-in，默认 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、模型与硬件匹配或重新完成
 同等验证后才设为 `1`，否则隐藏能力、拒绝 enforce 且 `evictable=false`。
-SAM3 在完成 image/multiplex/PVS 全池清理、active 保护和契约测试前固定为 non-evictable。
+SAM3 已实现 image、multiplex video 与 PVS video 三池 single-flight、borrower/use lock、
+共享冷构建锁、取消安全 executor、三态 residency 和 managed full-pool cleanup。三条推理
+路径使用请求级 BF16 autocast，卸载不保留 vendor 的转换权重缓存。部署门槛默认
+`SAM3_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、权重和硬件与已冻结证据匹配，或重新完成
+图像与两类视频真实推理、两轮 generation 冷启和物理显存回落验收后才设为 `1`，
+否则隐藏能力、拒绝 enforce 且 `evictable=false`。
 
 `/health` 在实现后新增顶层 `residency`，并保留原有 `compute`、`loaded`、`pool` 等兼容字段：
 

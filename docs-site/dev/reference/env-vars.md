@@ -252,6 +252,8 @@ last_reviewed: 2026-07-15
 | `SAM3_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
+| `SAM3_MODEL_POOL_BUILD_TIMEOUT` | `120` | 三个模型池等待冷构建的超时 (秒); 超时后真实 builder 仍由 backend 跟踪至结束。 |
+| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 image/multiplex/PVS 真实推理与全池显存回落验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## ML Backend GPU 分卡 (多卡机器可选)
 

@@ -61,9 +61,21 @@ def test_normalize_predict_context_invalid_model_variant_returns_standard_422(ma
 
 
 def test_warmup_invalid_model_variant_returns_standard_422(main_module, monkeypatch):
-    monkeypatch.setattr(main_module, "_predictor", MagicMock(device="cpu"))
+    request = types.SimpleNamespace(
+        state=types.SimpleNamespace(gpu_workload=MagicMock())
+    )
+    monkeypatch.setattr(main_module, "_image_pool", object())
+    monkeypatch.setattr(main_module, "_multiplex_pool", object())
+    monkeypatch.setattr(main_module, "_pvs_pool", object())
     with pytest.raises(Exception) as exc:
-        _run(main_module.warmup(main_module.WarmupRequest(variants={"model_variant": "sam3.0"})))
+        _run(
+            main_module.warmup(
+                request,
+                main_module.WarmupRequest(
+                    variants={"model_variant": "sam3.0"}
+                ),
+            )
+        )
     err = exc.value
     assert err.status_code == 422
     assert err.detail["error_code"] == "variant_not_supported"

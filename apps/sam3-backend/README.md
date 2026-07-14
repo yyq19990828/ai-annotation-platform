@@ -1,6 +1,6 @@
 # sam3-backend
 
-> v0.10.x AI 基座的 ML Backend — 把 [`facebookresearch/sam3`](https://github.com/facebookresearch/sam3) (848M, 2025-11) 打包成独立 GPU 服务, 遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md). 图像 PCS + inst 交互用 `facebook/sam3` 的 `sam3.pt`; `facebook/sam3.1` 的 `sam3.1_multiplex.pt` (视频权重) 一并落盘, 预留后续视频追踪.
+> v0.10.x AI 基座的 ML Backend — 把 [`facebookresearch/sam3`](https://github.com/facebookresearch/sam3) (848M, 2025-11) 打包成独立 GPU 服务, 遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md). 图像 PCS + inst 交互与 PVS 视频追踪使用 `facebook/sam3` 的 `sam3.pt`；multiplex 文本视频追踪使用 `facebook/sam3.1` 的 `sam3.1_multiplex.pt`.
 >
 > 当前版本: **v0.10.0 (M0 — 容器化 + exemplar 协议落地)**. 后续 v0.10.1 ~ v0.10.3 在 [`ROADMAP/archive/0.10.x.md`](../../ROADMAP/archive/0.10.x.md) 切片.
 
@@ -31,6 +31,8 @@
 | `context.type=interactive_box` | `model.predict_inst(box)` → 单框单 mask | SAM 2 式「框内出一个 mask」; ≠ exemplar 的全图相似 |
 | `context.type=text` | `set_text_prompt(prompt)` → PCS 一步出全图匹配概念 | 文本批量预标 / `/ai-pre` |
 | `context.type=exemplar` | `(可选)set_text_prompt → 顺序多次 add_geometric_prompt(box, label)` → 全图相似实例 | PCS 视觉示例迭代 refine: 多正负框累加 (`exemplars[]`, 正框扩召回 / 负框排误检) + 可选 text 概念组合 + per-request 阈值重过滤; 缺省退化单 `bbox` 正框 |
+| `context.type=video_tracker`, `model_key=sam3_video` | multiplex 文本发现与跨帧传播 | 按文本发现多目标并输出逐帧 bbox / polygon / mask |
+| `context.type=video_tracker`, `model_key=sam3_video_interactive` | PVS 点/框 seed 与 memory 传播 | 按稳定 `obj_id` 逐对象跨帧追踪 |
 | ~~`context.type=bbox`~~ | — | v0.18.17 退役 (仅作几何形状); 旧请求落 422 |
 
 point / interactive_box 与 PCS 共用同一 `backbone_out` 缓存 (开 inst 后 `set_image` 一次同产两路特征). 返回数据均为 `polygonlabels` / `rectanglelabels` (归一化 [0,1]) + score + model_version + inference_time_ms.
@@ -44,15 +46,21 @@ apps/sam3-backend/
 ├── pyproject.toml          Python 3.12 依赖锁 (不含 torch/torchvision, 由 base image 锁定)
 ├── Dockerfile              基于 pytorch/pytorch:2.7.0-cuda12.6-cudnn-devel
 ├── .dockerignore
-├── main.py                 FastAPI app + 6 端点 (含 /metrics、/cache/stats)
+├── main.py                 FastAPI app + 推理、预热与生命周期端点
 ├── predictor.py            SAM3Predictor: 四种 prompt 推理 + mask→polygon + cache snapshot/restore
+├── video_predictor.py      multiplex 文本视频追踪
+├── pvs_video_predictor.py  PVS 点/框视频追踪
 ├── embedding_cache.py      SAM 3 image embedding LRU 缓存 (cap 默认 32)
+├── managed_pool.py         取消安全的模型 owner / borrower 内核
+├── pool_domain.py          image / multiplex / PVS 三池驻留聚合
+├── gpu_lifecycle.py        admission、generation fencing 与 drain/unload 状态机
 ├── observability.py        Prometheus Counter/Histogram/Gauge (sam3_* 前缀)
 ├── schemas.py              Pydantic schema (协议对齐, 含 exemplar)
 ├── tests/                  pytest 单测 (无 GPU 即可跑)
 ├── checkpoints/            权重落盘点 (启动时下载, 挂 volume)
 ├── scripts/
 │   ├── download_checkpoints.py   幂等拉 sam3.pt + sam3.1_multiplex 权重 (gated, 需 HF_TOKEN)
+│   ├── validate_managed_lifecycle.py  真实 GPU 三池部署验收
 │   └── sync_vendor.sh            同步上游到 vendor/
 ├── vendor/
 │   └── sam3/               vendored copy (须先跑 sync_vendor.sh)
@@ -147,6 +155,9 @@ GET  /versions      → {"versions": ["sam3"]}
 POST /predict       → 交互式 (task+context) 或 批量 (tasks[])
 GET  /metrics       → Prometheus exposition (sam3_* 指标)
 GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "hit_rate": 0.85, "variant": "sam3"}
+POST /warmup       → 空 body 预热 image；`task=tracker|interactive` 预热对应视频池
+POST /unload       → 空 body 保留 legacy 响应；带签名 generation body 执行受管三池卸载
+POST /drain        → 受管停流；`/drain/cancel` 取消尚未完成的迁移
 ```
 
 `POST /predict` 按 body shape 自动分流, 与 grounded-sam2-backend 完全一致:
@@ -185,21 +196,28 @@ GET  /cache/stats   → {"size": N, "capacity": 32, "hits":..., "misses":..., "h
 | `IMAGE_DOWNLOAD_TIMEOUT` | `30` | 拉远端图片超时 (秒). |
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲多少秒后自动卸载模型释放显存; ≤0 关闭定时卸载. |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (秒). |
+| `SAM3_MODEL_POOL_BUILD_TIMEOUT` | `120` | 冷构建等待超时；超时后真实 builder 仍跟踪到结束. |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | 空 | 平台 Ed25519 公钥 keyring；非空时必须可完整解析. |
+| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前制品/权重/硬件完成三池实卡验收后设为 `1`. |
 
 ---
 
-## Idle Unload (双 backend 并存的关键)
+## 受管模型池与 Idle Unload
 
-sam3 (开 inst) FP16 常驻 ~5.8GB 显存, 单卡若同时挂 grounded-sam2 (~2GB) 与平台其他 GPU 任务, 必须靠 idle unload 互让显存. 机制:
+SAM3 把 image、multiplex video、PVS video 作为三个独立 `cap=1` 池。三池共用冷构建串行锁，避免大模型同时冷启；已加载池可同时常驻。每个池用 single-flight、borrower 和 use lock 保护真实 owner，HTTP 取消或 build timeout 不会提前把仍在运行的 executor 报成空池。
 
-1. **自动卸载**: 后台 `_idle_watcher` 每 `SAM3_IDLE_CHECK_INTERVAL` 秒检查; 若 `_predictor` 已加载且 `last_request_age >= SAM3_IDLE_UNLOAD_SECONDS` → 释放模型 + `torch.cuda.empty_cache()` + clear embedding cache (避免悬挂的 GPU 张量).
-2. **懒重载**: 下一次 `/predict` 请求触发 `_ensure_predictor_loaded()`, 在 `asyncio.Lock` 内 `run_in_executor` 异步重建, 冷启动 ~8-12s; 并发请求串行化, 不会双重构造 OOM.
-3. **手动**: `POST /unload` 显式释放, `POST /reload` 显式重载. 已为目标状态时返回 `unloaded=false` / `reloaded=false`.
+1. **自动卸载**：`_idle_watcher` 逐池判断空闲时间；有 builder、waiter 或 borrower 的池不会被越过 owner 卸载。
+2. **懒重载**：下一个 predict / warmup / reload 通过对应 pool 恢复所需模型；同 key 并发冷启只执行一次构建。
+3. **手动兼容**：bodyless `POST /unload` 保留 `{ok, unloaded, loaded, video_loaded}` 响应并清理三池；`POST /reload` 仍只预热 image。legacy 调用没有 generation fencing，不能作为仲裁账本减记证据。
+4. **受管卸载**：签名 reset / mode / drain / unload 覆盖三池和 image embedding cache。`/health.residency` 仅在所有池、builder、borrower 都可信为空时报 `gpu_loaded=false`。
+
+仓库默认保持 `SAM3_MANAGED_LIFECYCLE_VERIFIED=0`，此时 `/setup` 不发布 `managed_lifecycle`、`/lifecycle/mode` 拒绝 enforce。只有与已验收制品匹配，或在当前部署重新运行 `scripts/validate_managed_lifecycle.py` 通过后，才能显式开启。
 
 `/health` 返回字段:
 ```json
 {
   "loaded": true,
+  "residency": {"state": "resident", "gpu_loaded": true, "pools": {"image": {"resident": true}}},
   "idle_unload_seconds": 600,
   "last_request_age_seconds": 123.45
 }

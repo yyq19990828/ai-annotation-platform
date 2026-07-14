@@ -150,18 +150,12 @@ def test_pvs_builder_receives_cuda_device_without_retry(monkeypatch) -> None:
     assert vendor_tracker.backbone is model.detector.backbone
 
 
-@pytest.fixture()
-def main_module(monkeypatch):
-    sys.modules.pop("main", None)
-    import main as module  # noqa: PLC0415
+def test_health_reports_unknown_until_a_cuda_pool_is_loaded(monkeypatch) -> None:
+    import main as main_module  # noqa: PLC0415
+    from gpu_lifecycle import Sam3GpuLifecycle  # noqa: PLC0415
+    from managed_pool import BuildArtifact, ManagedLruPool  # noqa: PLC0415
+    from pool_domain import Sam3Pools  # noqa: PLC0415
 
-    monkeypatch.setattr(module, "_predictor", None)
-    monkeypatch.setattr(module, "_video_tracker", None)
-    monkeypatch.setattr(module, "_pvs_tracker", None)
-    return module
-
-
-def test_health_reports_unknown_until_a_cuda_pool_is_loaded(main_module, monkeypatch) -> None:
     monkeypatch.setattr(main_module.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(
         main_module,
@@ -172,45 +166,72 @@ def test_health_reports_unknown_until_a_cuda_pool_is_loaded(main_module, monkeyp
         },
     )
 
-    compute = main_module.health()["compute"]
-    assert compute == {
-        "configured_device": "cuda",
-        "effective_device": None,
-        "cpu_fallback_supported": False,
-    }
+    async def scenario() -> None:
+        def pool(device=None):
+            return ManagedLruPool(
+                1,
+                lambda _key: BuildArtifact(
+                    SimpleNamespace(device=device, active_sessions=0)
+                ),
+                str,
+                lambda: None,
+            )
 
-    main_module._video_tracker = SimpleNamespace(device="cuda:0", active_sessions=0)
-    assert main_module.health()["compute"]["effective_device"] == "cuda:0"
+        image = pool("cuda:0")
+        multiplex = pool("cuda:0")
+        pvs = pool("cuda:0")
+        domain = Sam3Pools(image, multiplex, pvs)
+        lifecycle = Sam3GpuLifecycle(domain, verify_keyring={})
+        monkeypatch.setattr(main_module, "_gpu_lifecycle", lifecycle)
+
+        compute = (await main_module.health())["compute"]
+        assert compute == {
+            "configured_device": "cuda",
+            "effective_device": None,
+            "cpu_fallback_supported": False,
+        }
+
+        await multiplex.warmup("sam3_video")
+        assert (await main_module.health())["compute"]["effective_device"] == "cuda:0"
+        await lifecycle.shutdown()
+
+    _run(scenario())
 
 
 @pytest.mark.parametrize(
-    ("ensure_name", "build_name", "model_key"),
+    "model_key",
     [
-        ("_ensure_predictor_loaded", "_build_predictor", "sam3"),
-        ("_ensure_video_tracker_loaded", "_build_video_tracker", "sam3_video"),
-        (
-            "_ensure_pvs_tracker_loaded",
-            "_build_pvs_tracker",
-            "sam3_video_interactive",
-        ),
+        "sam3",
+        "sam3_video",
+        "sam3_video_interactive",
     ],
 )
 def test_gpu_unavailable_is_translated_to_protocol_503(
-    main_module, monkeypatch, ensure_name, build_name, model_key
+    model_key,
 ) -> None:
-    def fail_build():
+    import main as main_module  # noqa: PLC0415
+    from managed_pool import ManagedLruPool  # noqa: PLC0415
+
+    def fail_build(_key):
         raise DeviceUnavailableError("CUDA unavailable")
 
-    monkeypatch.setattr(main_module, build_name, fail_build)
+    class _Operation:
+        def track_future(self, _future):
+            pass
 
-    with pytest.raises(Exception) as exc_info:
-        _run(getattr(main_module, ensure_name)())
+    async def scenario() -> None:
+        pool = ManagedLruPool(1, fail_build, str, lambda: None)
+        with pytest.raises(Exception) as exc_info:
+            await main_module._warm_pool(pool, model_key, _Operation())
 
-    error = exc_info.value
-    assert error.status_code == 503
-    assert error.headers == {"Retry-After": "30"}
-    assert error.detail == {
-        "error_code": "model_unavailable",
-        "key": model_key,
-        "reason": "CUDA unavailable",
-    }
+        error = exc_info.value
+        assert error.status_code == 503
+        assert error.headers == {"Retry-After": "30"}
+        assert error.detail == {
+            "error_code": "model_unavailable",
+            "key": model_key,
+            "reason": "CUDA unavailable",
+        }
+        await pool.shutdown()
+
+    _run(scenario())

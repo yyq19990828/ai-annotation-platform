@@ -42,6 +42,7 @@
 - **ONNXTools 获得受保护的固定句柄池与受管生命周期纵切**：pipeline、detector、va 冷启动现在 single-flight，并以 borrower、逐句柄使用锁和真实 executor/builder 跟踪防止重复构建、推理中卸载及取消后的隐藏 GPU session。`/health` 聚合四个业务 ORT session 的真实 provider chain，manual、idle、shutdown 与受管 reset/unload 共用全池清理；Docker 依赖固定到已审计上游提交。部署完成真实 GPU 回落验证前不会在 `/setup` 宣告 managed capability，也不会进入自动驱逐集合。
 - **RapidOCR 获得动态 composite 引擎池与受管 GPU 生命周期**：六种权重三件套现在通过 slot 预留、同 key single-flight、borrower 和逐引擎使用锁保护 det/cls/rec 三条 ORT session；LRU 会先完整释放空闲旧引擎再构造替代。`/health` 新增可验证 residency，predict/warmup 接入 admission，并支持 drain/cancel、generation fencing、受管 unload、mode/reset、idle 与 shutdown 全池清理。经确认的设备错误才允许 CPU replacement，部分 CUDA 构造的释放未经全池清理确认时保持 Unknown。参考镜像和模型已通过真实满池 GPU 回落及显式 CPU 推理验证；能力门槛仍由每个部署显式开启。
 - **Grounded-SAM2 获得图像/视频双池受管 GPU 生命周期**：两个变体池现在共享冷构建串行锁，并通过 single-flight、容量预留、borrower 和逐条目使用锁保护 predictor、embedding cache 与 video tracker；请求取消后会继续跟踪真实 executor 和 builder。受管 unload/reset 会完整清理双池，`/health` 聚合三态 residency，predict/warmup/reload 接入 generation fencing、admission、drain/cancel 与 mode/reset。参考镜像与六份 checkpoint 已通过双池 LRU、两轮 generation 冷启及物理显存回落验证；能力门槛仍由每个部署显式开启。
+- **SAM3 获得图像与两类视频三池受管 GPU 生命周期**：image、multiplex 文本追踪和 PVS 点框追踪现在通过独立池与共享冷构建锁管理，single-flight、borrower/use lock 和取消安全 executor 保护真实 owner。`/health` 聚合三池 residency，受管 reset/unload/shutdown 覆盖全部模型与 embedding cache，predict/warmup/reload 接入 admission、generation fencing、drain/cancel 与 mode/reset。参考制品完成图像及两类视频真实推理、两轮冷启与三池物理显存回落验收；部署能力门槛仍默认关闭并需显式验证。
 
 ### Changed
 
@@ -52,6 +53,7 @@
 - **YOLO 与 ONNXTools 冷启动取消不再遗留池外 GPU owner**：模型或句柄 builder 现在会等底层 executor、失败清理和状态提交全部结束后才释放 reservation；重复取消也无法打断 unload 真值提交。失败或取消后的未知驻留会阻止继续冷建，直到受管全池清理重新建立可信空状态，避免隐藏对象突破物理显存上限。
 - **YOLO 受管生命周期在重复取消和进程 shutdown 时不再提前丢失真实 owner**：取消冷启动请求会在不再次让出事件循环的情况下登记仍运行的 builder，borrower 释放与 shutdown 即使连续收到取消也会先等待 active、builder、waiter、borrower 和全池清理完成，再向调用方重抛取消，避免健康状态短暂早于真实 GPU 工作归零。
 - **Grounded-SAM2 的淘汰取消与失败清理不再丢失 GPU artifact owner**：替换 builder 在首次调度前取消时，被摘除的 LRU victim 仍由独立 cleanup owner 接管；attachment cleanup 失败会隔离保留强引用供后续 force cleanup 重试，只有所有失败 artifact 与 CUDA 清理均可信完成后才恢复空驻留，避免隐藏显存被误报为已释放。
+- **SAM3 全池卸载不再遗留 BF16 权重转换缓存**：vendor 原先把 autocast 永久进入进程上下文，真实推理后即使三池逻辑上已空，PyTorch 仍会持有数 GiB 的转换权重。图像、multiplex 与 PVS 现均使用请求级 autocast，严格清理同时清空 cast cache，卸载驻留真值与物理显存恢复一致。
 - **ML Backend 设备失效观测不再误报可回退性和实际 provider**：共享 torch 设备 latch 现在线程安全且向 CPU 单调，Grounded-SAM2 与 YOLO 只在识别为设备错误且 CPU replacement 成功后提交回退；CUDA runtime 查询本身失败时，两者的 `/health` 仍可用，YOLO 也会在 CPU replacement 后尝试释放 CUDA allocator 缓存。SAM3 image、Multiplex 与 PVS 明确为 GPU-only，模型加载检测到 GPU 不可用时返回可重试的结构化 503。RapidOCR 与 ONNXTools 改为读取已加载业务 session 的实际 primary provider，ONNXTools composite 的检测与分类 session 共用同一份功能探测后的 provider 偏好；空池、缺失或混合 provider 返回 `null`（unknown 语义）。注册表快照与实时 `/observe` 均透传 `compute`，Runtime Observe 与 PerfHUD 的前端消费共用同一 CPU fallback 判定，不再误报显式 CPU、实时空状态或 GPU-only backend。
 
 ## [0.22.3] - 2026-07-14

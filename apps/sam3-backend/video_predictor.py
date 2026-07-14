@@ -34,6 +34,7 @@ if os.path.isdir(_VENDOR_ROOT) and _VENDOR_ROOT not in sys.path:
 
 import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
+import torch
 
 from aap_backend_runtime import (
     DeviceUnavailableError,
@@ -72,6 +73,7 @@ class SAM3MultiplexVideoTracker:
         self.max_window_frames = max_window_frames
         self.device = require_gpu_device("cuda")
         self.active_sessions = 0
+        self.cleanup_uncertain = False
         self._predictor = self._load_predictor(use_fa3)
 
     def _load_predictor(self, use_fa3: bool):
@@ -117,6 +119,36 @@ class SAM3MultiplexVideoTracker:
         output_geometry: str = "bbox",
         seed_bboxes: list[dict[str, float]] | None = None,
     ) -> list[dict[str, Any]]:
+        """Run one multiplex window under a bounded BF16 autocast scope."""
+
+        device_type = self.device.split(":", 1)[0]
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=device_type == "cuda",
+        ):
+            return self._propagate(
+                video_path,
+                from_frame,
+                to_frame,
+                direction,
+                text,
+                seed_bbox,
+                output_geometry,
+                seed_bboxes,
+            )
+
+    def _propagate(
+        self,
+        video_path: str,
+        from_frame: int,
+        to_frame: int,
+        direction: str,
+        text: str,
+        seed_bbox: dict[str, float] | None = None,
+        output_geometry: str = "bbox",
+        seed_bboxes: list[dict[str, float]] | None = None,
+    ) -> list[dict[str, Any]]:
         """在 [from_frame, to_frame] 窗内按 text 检测+追踪目标, 返回逐帧几何。
 
         text: 文本 query (必填; SAM3 每帧按此检测目标)。
@@ -136,10 +168,11 @@ class SAM3MultiplexVideoTracker:
         reverse = direction == "backward"
         seed_src_frame = hi if reverse else lo
 
-        self.active_sessions += 1
-        tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
+        tmp_dir: str | None = None
         session_id = None
+        self.active_sessions += 1
         try:
+            tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
             # 窗口不完整只 warn (见 _extract_window_jpegs); 但下面两种截断必须硬失败:
             _fw, _fh, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
@@ -234,8 +267,10 @@ class SAM3MultiplexVideoTracker:
                         dict(type="close_session", session_id=session_id)
                     )
                 except Exception:  # noqa: BLE001
+                    self.cleanup_uncertain = True
                     logger.exception("close_session failed")
-            self._cleanup_tmp(tmp_dir)
+            if tmp_dir is not None:
+                self._cleanup_tmp(tmp_dir)
             free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 
