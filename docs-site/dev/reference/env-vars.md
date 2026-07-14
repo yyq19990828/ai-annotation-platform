@@ -85,6 +85,19 @@ last_reviewed: 2026-07-14
 | `YOLO_LOG_LEVEL` | `INFO` | — |
 | `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | `—` | Managed GPU lifecycle Ed25519 public-key ring (kid -> unpadded base64url key). Empty keeps the backend in legacy-compatible mode; a non-empty invalid value fails startup. |
 
+## ONNXTools 固定句柄池与受管生命周期
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ONNXTOOLS_DET_MODEL` | `rtdetr-2024080100.onnx` | 检测模型文件名。 |
+| `ONNXTOOLS_VA_MODEL` | `va_260612.onnx` | ONNXTools 车辆属性分类模型文件名。 |
+| `ONNXTOOLS_CONF_THRES` | `0.5` | ONNXTools 检测置信度阈值。 |
+| `ONNXTOOLS_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
+| `ONNXTOOLS_IDLE_UNLOAD_SECONDS` | `600` | 全池空闲卸载阈值（秒）；非正数关闭。 |
+| `ONNXTOOLS_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
+| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成真实 GPU 四 session warmup → full unload → baseline 验证后设为 1。 |
+| `ONNXTOOLS_LOG_LEVEL` | `INFO` | ONNXTools 日志级别。 |
+
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
 
 | 变量 | 默认值 | 说明 |

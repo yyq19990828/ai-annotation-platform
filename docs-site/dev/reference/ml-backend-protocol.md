@@ -94,7 +94,7 @@ GPU backend 应在 `/health` 顶层返回 `compute`：
 
 平台仅在“已知配置 GPU + 实际为 CPU + 未显式声明不支持 fallback”时显示 CPU 回退警示；显式 CPU、unknown 和 `null` 均不告警。实时 `/health` 返回可解析的 HTTP 200 时以实时 `compute` 为准，即使 backend 自报 degraded 或值为 `null`；只有实时 HTTP 探测不可达/失败时才使用注册表缓存。torch 的进程级 latch 不能枚举旧 pool，因此 `effective_device=cpu` 与仍有 GPU pool 驻留可以同时成立。`compute` 是诊断信号，不证明 GPU 权重、tensor 或 cache 已释放，不能单独作为显存驻留或账本减账依据。
 
-> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：无 lifecycle body 的 `/unload` 是 legacy best-effort 行为，不能统一证明全部 image/video/variant/session pool 已清空。例如 Grounded-SAM2 仍只清 image pool，不能作为显存仲裁减账凭据。YOLO 已实现下节的受管 full-pool unload；它的 bodyless legacy 路径仍只用于向后兼容，不构成受管卸载证据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；接入方不得把未完成受管契约的 legacy unload 声明为可驱逐能力。
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：无 lifecycle body 的 `/unload` 是 legacy best-effort 行为，不能统一证明全部 image/video/variant/session pool 已清空。例如 Grounded-SAM2 仍只清 image pool，不能作为显存仲裁减账凭据。YOLO 与 ONNXTools 的 bodyless legacy 路径会走各自全池清理，但仍只用于向后兼容；没有 generation、fencing 与受管响应，不能作为减账证据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；接入方不得把未完成受管契约的 legacy unload 声明为可驱逐能力。
 
 ### 1.2 受管 GPU 生命周期（能力协商）
 
@@ -118,9 +118,12 @@ GPU backend 应在 `/health` 顶层返回 `compute`：
 }
 ```
 
-只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 是当前首个完整宣告
-`managed_lifecycle` 的 backend；Grounded-SAM2、SAM3、ONNXTools 与 RapidOCR 在完成各自全池清理、active
-保护和契约测试前仍固定为 non-evictable。
+只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 已完整宣告
+`managed_lifecycle`。ONNXTools 已实现固定三句柄池的 single-flight、borrower、取消安全 executor、全池清理与
+完整 lifecycle wire，但部署还必须完成真实四 session GPU 回落验证；验证前
+`ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED=0`，`/setup` 不宣告该能力、`/lifecycle/mode` 拒绝切入
+enforce，且 `evictable=false`。Grounded-SAM2、
+SAM3 与 RapidOCR 在完成各自全池清理、active 保护和契约测试前同样固定为 non-evictable。
 
 `/health` 在实现后新增顶层 `residency`，并保留原有 `compute`、`loaded`、`pool` 等兼容字段：
 
@@ -170,10 +173,16 @@ token 固定为 Ed25519 / EdDSA compact JWS，protected header 为 `alg=EdDSA`�
 JWT key 不得复用。轮换必须先把新旧公钥共同部署到 backend，再切 signer 的 active `kid`，最后等旧 token、
 lease 与 replay tombstone 全部安全过期后移除旧 key。
 
-YOLO 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
+YOLO 与 ONNXTools 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
 以 legacy gate 启动；非空但无法解析的配置会阻止启动。`/health` 与 `/setup` 始终免 token；legacy gate 下
 无 header 的 `/predict`、`/predict/interactive`、`/warmup` 和 bodyless `/unload` 保持兼容，但会把驻留标记为
 unmanaged。enforce gate 下这些加载入口必须携带匹配当前 boot、identity、control epoch 与 generation 的 token。
+
+ONNXTools 的 `residency.pools` 固定包含 `pipeline`、`detector`、`va`。其中 composite pipeline 持两个 ORT
+session，因此三句柄全驻留时共有四个业务 session。逐池 residency 检查完整 `get_providers()` chain；任一
+CUDA/TensorRT provider 即为 GPU 驻留，全部已知且仅 CPU 才为 false，私有 session 路径缺失、builder 或清理失败
+保持 unknown。诊断字段 `compute.effective_provider` 仍只在所有已加载 session primary provider 一致时有值，不能
+代替 residency。
 
 控制端点按以下顺序使用：平台先以 `/lifecycle/mode` 建立 gate；驱逐时用更大 generation 调 `/drain`，待
 active、builder、borrower 全部归零后用同 generation、owner、operation 调带 body 的 `/unload`；放弃驱逐则

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import sys
 import types
@@ -16,7 +17,6 @@ except ImportError:
     sys.modules["cv2"] = types.ModuleType("cv2")
 
 import main as backend_main
-from predictor import VehicleAttributePredictor
 
 
 class _FakeSession:
@@ -93,12 +93,8 @@ def test_missing_model_keeps_preference_without_claiming_effective(monkeypatch):
         monkeypatch,
         available=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
-    predictor = VehicleAttributePredictor(
-        detector_factory=lambda: None,
-        va_factory=lambda: None,
-        pipeline_factory=lambda: None,
-    )
-    monkeypatch.setattr(backend_main, "_predictor", predictor)
+    monkeypatch.setattr(backend_main, "_handle_pool", None)
+    monkeypatch.setattr(backend_main, "_gpu_lifecycle", None)
     monkeypatch.setattr(
         backend_main,
         "_available_providers",
@@ -107,7 +103,7 @@ def test_missing_model_keeps_preference_without_claiming_effective(monkeypatch):
 
     assert backend_main._probe_providers()[0] == "CUDAExecutionProvider"
     assert calls == []
-    assert backend_main.health()["compute"] == {
+    assert asyncio.run(backend_main.health())["compute"] == {
         "configured_device": "cuda",
         "effective_provider": None,
         "cpu_fallback_supported": True,
@@ -137,6 +133,7 @@ def test_composite_routes_cpu_preference_to_both_business_sessions(monkeypatch):
     pipeline_module.VehicleAttributePipeline = FakePipeline
     monkeypatch.setitem(sys.modules, "onnxtools", package)
     monkeypatch.setitem(sys.modules, "onnxtools.pipeline", pipeline_module)
+
     def probe_providers():
         probe_calls.append(True)
         return ["CPUExecutionProvider"]

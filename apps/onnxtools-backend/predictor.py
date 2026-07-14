@@ -13,27 +13,15 @@ xyxy，这里 / image(W, H) × 100。
 
 from __future__ import annotations
 
-import logging
+import asyncio
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from functools import partial
 from typing import Any
 
 import cv2
 import numpy as np
 from aap_backend_runtime import fetch_image
-
-logger = logging.getLogger("onnxtools-backend.predictor")
-
-
-def _primary_provider(session: Any) -> str | None:
-    """Return an ORT session's current primary provider, or unknown."""
-    try:
-        providers = session.get_providers()
-    except Exception:  # noqa: BLE001
-        return None
-    if not providers:
-        return None
-    return str(providers[0])
 
 
 def _class_name_of(names: Any, cls: int) -> str:
@@ -103,7 +91,9 @@ def classification_to_result(
     }
 
 
-def detections_to_results(output: list[dict[str, Any]], img_w: int, img_h: int) -> list[dict[str, Any]]:
+def detections_to_results(
+    output: list[dict[str, Any]], img_w: int, img_h: int
+) -> list[dict[str, Any]]:
     """把 VehicleAttributePipeline 输出映射为协议 v2 result 数组。
 
     Args:
@@ -130,199 +120,158 @@ def detections_to_results(output: list[dict[str, Any]], img_w: int, img_h: int) 
             "score": float(d.get("score", 0.0)),
         }
         if "vehicle_type" in d:
-            item["attributes"] = {"vehicle_type": d["vehicle_type"], "color": d["color"]}
+            item["attributes"] = {
+                "vehicle_type": d["vehicle_type"],
+                "color": d["color"],
+            }
         items.append(item)
     return items
 
 
-class VehicleAttributePredictor:
-    """三句柄推理器:detect 原子(RtdetrORT)、classify 原子(VehicleAttributeORT)、
-    composite 一锅端(VehicleAttributePipeline),按需懒加载。
+def _session_provider_chain(session: Any) -> list[str] | None:
+    """Return one ORT session's complete provider chain, or unknown."""
 
-    原子层直架单模型推理类(经注入的工厂构造),不再「伸手」借 pipeline 子模型——
-    detect-only 部署只加载检测器、classify-only 只加载分类器。composite 路径仍跑
-    ``VehicleAttributePipeline``(过渡保留,迟早由平台层编排两原子取代)。
+    if session is None:
+        return None
+    try:
+        providers = session.get_providers()
+    except Exception:  # noqa: BLE001
+        return None
+    if not providers:
+        return None
+    return [str(provider) for provider in providers]
 
-    本类不 import onnxtools:三个句柄由 ``*_factory`` 零参工厂(在 main.py 内 import
-    onnxtools 后注入)首调时构造并缓存,故纯映射 + 懒加载逻辑可用 fake 工厂隔离单测。
+
+def inspect_handle_providers(name: str, handle: Any) -> list[list[str]] | None:
+    """Read every expected business session owned by one logical handle.
+
+    Missing private fields stay unknown.  Each unknown session is represented by an
+    empty provider chain so a known CUDA sibling can still conservatively prove GPU
+    residency for a partially introspectable composite handle.
     """
 
-    def __init__(
+    if name == "detector" or name == "va":
+        chain = _session_provider_chain(getattr(handle, "_onnx_session", None))
+        return [chain or []]
+    if name == "pipeline":
+        detector = getattr(handle, "detector", None)
+        classifier = getattr(handle, "va_classifier", None)
+        return [
+            _session_provider_chain(getattr(detector, "_onnx_session", None)) or [],
+            _session_provider_chain(getattr(classifier, "_onnx_session", None)) or [],
+        ]
+    return None
+
+
+async def _run_blocking_until_complete(call: Any) -> Any:
+    """Keep a borrower active until the real executor future has finished."""
+
+    future = asyncio.get_running_loop().run_in_executor(None, call)
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(future)
+        except asyncio.CancelledError:
+            cancelled = True
+            continue
+        except BaseException:
+            if cancelled:
+                raise asyncio.CancelledError() from None
+            raise
+        if cancelled:
+            raise asyncio.CancelledError
+        return result
+
+
+class VehicleAttributePredictor:
+    """Run every ONNXTools handle access under a pool borrower and use lock."""
+
+    def __init__(self, handle_pool: Any) -> None:
+        self._pool = handle_pool
+
+    async def predict_one(
         self,
-        *,
-        detector_factory: Callable[[], Any],
-        va_factory: Callable[[], Any],
-        pipeline_factory: Callable[[], Any],
-    ) -> None:
-        """Args: 三个零参工厂,分别构造 RtdetrORT / VehicleAttributeORT / VehicleAttributePipeline。"""
-        self._detector_factory = detector_factory
-        self._va_factory = va_factory
-        self._pipeline_factory = pipeline_factory
-        self._detector: Any = None
-        self._va_classifier: Any = None
-        self._pipeline: Any = None
-
-    @property
-    def detector(self) -> Any:
-        if self._detector is None:
-            logger.info("lazy-loading detector (RtdetrORT)")
-            self._detector = self._detector_factory()
-        return self._detector
-
-    @property
-    def va_classifier(self) -> Any:
-        if self._va_classifier is None:
-            logger.info("lazy-loading va_classifier (VehicleAttributeORT)")
-            self._va_classifier = self._va_factory()
-        return self._va_classifier
-
-    @property
-    def pipeline(self) -> Any:
-        if self._pipeline is None:
-            logger.info("lazy-loading pipeline (VehicleAttributePipeline)")
-            self._pipeline = self._pipeline_factory()
-        return self._pipeline
-
-    def loaded_count(self) -> int:
-        """当前已加载(非 None)的句柄数,供 /health 与 idle 判定。"""
-        return sum(h is not None for h in (self._detector, self._va_classifier, self._pipeline))
-
-    def loaded_handles(self) -> list[str]:
-        """已加载句柄名列表 (供 /health.pool.loaded_keys 展示)。"""
-        names: list[str] = []
-        if self._pipeline is not None:
-            names.append("pipeline")
-        if self._detector is not None:
-            names.append("detector")
-        if self._va_classifier is not None:
-            names.append("va")
-        return names
-
-    def effective_provider(self) -> str | None:
-        """Aggregate the actual primary provider of every loaded business session.
-
-        Empty/lazy state, a missing private session handle, or mixed providers is
-        reported as unknown instead of guessing from construction preferences.
-        """
-        sessions: list[Any] = []
-        expected_sessions = 0
-
-        detector = self._detector
-        if detector is not None:
-            expected_sessions += 1
-            sessions.append(getattr(detector, "_onnx_session", None))
-
-        va_classifier = self._va_classifier
-        if va_classifier is not None:
-            expected_sessions += 1
-            sessions.append(getattr(va_classifier, "_onnx_session", None))
-
-        pipeline = self._pipeline
-        if pipeline is not None:
-            expected_sessions += 2
-            pipeline_detector = getattr(pipeline, "detector", None)
-            pipeline_va = getattr(pipeline, "va_classifier", None)
-            sessions.extend(
-                [
-                    getattr(pipeline_detector, "_onnx_session", None),
-                    getattr(pipeline_va, "_onnx_session", None),
-                ]
+        file_path: str,
+        handle_name: str,
+    ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
+        async with self._pool.borrow(handle_name) as lease:
+            if handle_name == "va":
+                items, inference_ms = await _run_blocking_until_complete(
+                    partial(self._classify_sync, lease.handle, file_path)
+                )
+            elif handle_name == "detector":
+                items, inference_ms = await _run_blocking_until_complete(
+                    partial(self._detect_sync, lease.handle, file_path)
+                )
+            else:
+                items, inference_ms = await _run_blocking_until_complete(
+                    partial(self._pipeline_sync, lease.handle, file_path)
+                )
+            return (
+                items,
+                lease.cache_hit,
+                lease.handle_load_ms,
+                inference_ms,
             )
 
-        if expected_sessions == 0 or len(sessions) != expected_sessions:
-            return None
-        providers = [_primary_provider(session) for session in sessions if session is not None]
-        if len(providers) != expected_sessions or any(provider is None for provider in providers):
-            return None
-        unique = set(providers)
-        return providers[0] if len(unique) == 1 else None
-
-    def warm(self, model_id: str | None) -> bool:
-        """按 model_id 触发对应句柄懒加载 (无则预热一锅端 pipeline)。
-
-        返回 cache_hit: True 表示目标句柄此前已加载 (本次未新增)。供 /warmup 响应。
-        """
-        before = self.loaded_count()
-        if model_id == "vehicle-attr-classify":
-            _ = self.va_classifier
-        elif model_id == "vehicle-detect":
-            _ = self.detector
-        else:  # 默认 / vehicle-attr → 一锅端 pipeline
-            _ = self.pipeline
-        return self.loaded_count() == before
-
-    def unload(self) -> int:
-        """释放全部已加载句柄,返回释放数(供 /unload 与 idle-unload)。"""
-        n = self.loaded_count()
-        self._detector = None
-        self._va_classifier = None
-        self._pipeline = None
-        return n
-
-    def predict_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
-        """一锅端:整跑 composite pipeline(检测→ROI→属性分类)。
-
-        Args:
-            file_path: 图像来源（见 :func:`load_image_bgr`）。
-
-        Returns:
-            (协议 result 数组, 推理耗时毫秒)。
-        """
+    @staticmethod
+    def _pipeline_sync(
+        pipeline: Any,
+        file_path: str,
+    ) -> tuple[list[dict[str, Any]], int]:
         img = load_image_bgr(file_path)
         img_h, img_w = img.shape[:2]
-        t0 = time.time()
-        output = self.pipeline(img)
-        infer_ms = int((time.time() - t0) * 1000)
-        return detections_to_results(output, img_w, img_h), infer_ms
+        started = time.monotonic()
+        output = pipeline(img)
+        inference_ms = int((time.monotonic() - started) * 1000)
+        return detections_to_results(output, img_w, img_h), inference_ms
 
-    def detect_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
-        """纯检测原子:直跑独立 ``RtdetrORT``,只产检测框,不写 vehicle_type / color 属性。
-
-        用于多阶段编排的上游检测阶段——出框后交给下游纯分类原子补属性。类名取自
-        ``detector.class_names``(ONNX metadata),不绕 pipeline。
-
-        Args:
-            file_path: 图像来源(见 :func:`load_image_bgr`)。
-
-        Returns:
-            (协议 result 数组(纯 bbox, 无 attributes), 推理耗时毫秒)。
-        """
+    @staticmethod
+    def _detect_sync(
+        detector: Any,
+        file_path: str,
+    ) -> tuple[list[dict[str, Any]], int]:
         img = load_image_bgr(file_path)
         img_h, img_w = img.shape[:2]
-        detector = self.detector
-        t0 = time.time()
+        started = time.monotonic()
         result = detector(img)
-        infer_ms = int((time.time() - t0) * 1000)
+        inference_ms = int((time.monotonic() - started) * 1000)
         names = detector.class_names
         output: list[dict[str, Any]] = []
         for i in range(len(result)):
-            xyxy = [float(c) for c in result.boxes[i]]
-            cls = int(result.class_ids[i])
+            xyxy = [float(coordinate) for coordinate in result.boxes[i]]
+            class_id = int(result.class_ids[i])
             output.append(
-                {"type": _class_name_of(names, cls), "box2d": xyxy, "score": float(result.scores[i])}
+                {
+                    "type": _class_name_of(names, class_id),
+                    "box2d": xyxy,
+                    "score": float(result.scores[i]),
+                }
             )
-        return detections_to_results(output, img_w, img_h), infer_ms
+        return detections_to_results(output, img_w, img_h), inference_ms
 
-    def classify_one(self, file_path: str) -> tuple[list[dict[str, Any]], int]:
-        """纯分类原子:直跑独立 ``VehicleAttributeORT``,把整张输入图当作一辆车分类。
-
-        用于多阶段编排的下游分类阶段——上游检测器(如 gsam2)已框出并裁好 ROI,
-        这里不再重复检测。
-
-        Args:
-            file_path: 图像来源(见 :func:`load_image_bgr`)。
-
-        Returns:
-            (单元素协议 result 数组, 推理耗时毫秒)。
-        """
+    @staticmethod
+    def _classify_sync(
+        classifier: Any,
+        file_path: str,
+    ) -> tuple[list[dict[str, Any]], int]:
         img = load_image_bgr(file_path)
-        t0 = time.time()
-        va = self.va_classifier(img)
-        infer_ms = int((time.time() - t0) * 1000)
+        started = time.monotonic()
+        classified = classifier(img)
+        inference_ms = int((time.monotonic() - started) * 1000)
         item = classification_to_result(
-            va.labels[0],
-            va.labels[1],
-            vehicle_type_conf=float(va.confidences[0]),
-            color_conf=float(va.confidences[1]),
+            classified.labels[0],
+            classified.labels[1],
+            vehicle_type_conf=float(classified.confidences[0]),
+            color_conf=float(classified.confidences[1]),
         )
-        return [item], infer_ms
+        return [item], inference_ms
+
+
+__all__ = [
+    "VehicleAttributePredictor",
+    "classification_to_result",
+    "detections_to_results",
+    "inspect_handle_providers",
+    "load_image_bgr",
+]

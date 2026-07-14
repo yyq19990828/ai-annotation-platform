@@ -184,7 +184,7 @@ services:
 
   # v0.18.0 · onnxtools-backend (rtdetr 检测 + va 车辆属性, 二阶段预标).
   #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-onnxtools up onnxtools-backend
-  # 单一固定 pipeline (无 variant/pool); 纯批量预标 (supported_prompts=['none']).
+  # 三个固定 lazy handle (pipeline/detector/va); 纯批量预标 (supported_prompts=['none']).
   # 模型由 bind mount 注入 (不打进镜像), 起栈前先复制 (见 apps/onnxtools-backend/README.md):
   #   cp /home/tyjt/Desktop/onnxtools/models/{rtdetr-2024080100,va_260612}.onnx apps/onnxtools-backend/models/
   # onnxruntime-gpu 缺 GPU/cuDNN 时自动 fallback CPU, 功能仍可用 (仅变慢).
@@ -200,6 +200,11 @@ services:
       ONNXTOOLS_DET_MODEL: ${ONNXTOOLS_DET_MODEL:-rtdetr-2024080100.onnx}
       ONNXTOOLS_VA_MODEL: ${ONNXTOOLS_VA_MODEL:-va_260612.onnx}
       ONNXTOOLS_CONF_THRES: ${ONNXTOOLS_CONF_THRES:-0.5}
+      ONNXTOOLS_BUILD_TIMEOUT: ${ONNXTOOLS_BUILD_TIMEOUT:-30}
+      ONNXTOOLS_IDLE_UNLOAD_SECONDS: ${ONNXTOOLS_IDLE_UNLOAD_SECONDS:-600}
+      ONNXTOOLS_IDLE_CHECK_INTERVAL: ${ONNXTOOLS_IDLE_CHECK_INTERVAL:-60}
+      ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED: ${ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED:-0}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${ONNXTOOLS_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${ONNXTOOLS_GPU_DEVICE_ID:-0}
     volumes:
