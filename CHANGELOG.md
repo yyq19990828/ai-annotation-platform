@@ -37,7 +37,8 @@
 
 ### Added
 
-- **受管 GPU 生命周期获得共享 wire 与非对称验签契约**：共享 ML Backend 协议新增 canonical generation/control epoch、residency、transition、八类结构化错误和 admission claims schema，并固定使用带 `kid` 的 Ed25519 / EdDSA token；平台签发进程独占私钥，backend 只持可轮换公钥 keyring。当前尚无 backend 宣告 managed lifecycle，显存仲裁继续保持关闭。
+- **受管 GPU 生命周期获得共享 wire 与非对称验签契约**：共享 ML Backend 协议新增 canonical generation/control epoch、residency、transition、八类结构化错误和 admission claims schema，并固定使用带 `kid` 的 Ed25519 / EdDSA token；平台签发进程独占私钥，backend 只持可轮换公钥 keyring。
+- **YOLO 成为首个具备受管 GPU 生命周期的 Backend**：模型池现在先预留再构建，并以 borrower 与逐模型使用锁保护 LRU、可变模型状态和全池卸载；请求取消或 build 超时后仍跟踪真实 executor/builder 完成，tracker 会在截断和异常时关闭流。`/health` 暴露可信 residency，加载入口支持 EdDSA admission、generation fencing、replay 防护、drain/cancel、受管 unload、mode/reset 与 legacy 兼容。其他 Backend 与平台仲裁账本尚未接入，enforce 仍保持关闭。
 
 ### Changed
 

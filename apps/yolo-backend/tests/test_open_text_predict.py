@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import sys
 import types
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -60,6 +62,7 @@ class _FakeYoloe:
 
     def __init__(self, with_mask: bool = True) -> None:
         self._with_mask = with_mask
+        self.device = "cpu"
         self.names = {0: "cat"}
         self.last_predict_kw: dict = {}
 
@@ -79,8 +82,13 @@ class _FakePool:
     def __init__(self, model) -> None:
         self._model = model
 
-    async def get(self, task: str, series: str, size: str):
-        return self._model, True, None
+    @asynccontextmanager
+    async def borrow(self, task: str, series: str, size: str):
+        yield SimpleNamespace(
+            model=self._model,
+            cache_hit=True,
+            model_load_ms=None,
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -120,11 +128,12 @@ async def test_output_both_emits_rectangles_and_polygons() -> None:
     assert {i["type"] for i in items} == {"rectanglelabels", "polygonlabels"}
 
 
-async def test_world_mask_falls_back_to_box() -> None:
-    """world 无分割头: 即便 output=mask 也退回检测框 (family != yoloe)."""
+async def test_world_mask_is_rejected() -> None:
+    """YOLO-World 没有分割头，mask 请求必须明确返回 422。"""
     p = YoloPredictor(_FakePool(_FakeYoloe(with_mask=False)))
-    items, *_ = await p.predict_one("x", _ctx("mask", series="yolo-worldv2"))
-    assert [i["type"] for i in items] == ["rectanglelabels"]
+    with pytest.raises(pred.HTTPException) as exc_info:
+        await p.predict_one("x", _ctx("mask", series="yolo-worldv2"))
+    assert exc_info.value.status_code == 422
 
 
 async def test_empty_text_returns_empty() -> None:

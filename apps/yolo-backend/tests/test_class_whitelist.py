@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from unittest.mock import MagicMock
 
@@ -20,14 +19,6 @@ def _stub_modules() -> None:
     sys.modules.setdefault(
         "torch", MagicMock(cuda=MagicMock(is_available=MagicMock(return_value=False)))
     )
-
-
-def _run(coro):
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def _pool_with_names(names: dict[int, str], cap: int = 2):
@@ -49,9 +40,10 @@ def test_class_names_none_before_any_load() -> None:
     assert pool.class_names("detection") is None
 
 
-def test_class_names_populated_after_get_sorted_by_index() -> None:
+async def test_class_names_populated_after_borrow_sorted_by_index() -> None:
     pool = _pool_with_names({2: "car", 0: "person", 1: "bicycle"})
-    _run(pool.get("detection", "yolo11", "s"))
+    async with pool.borrow("detection", "yolo11", "s"):
+        pass
     classes = pool.class_names("detection")
     assert classes == [
         {"index": 0, "name": "person"},
@@ -60,18 +52,19 @@ def test_class_names_populated_after_get_sorted_by_index() -> None:
     ]
 
 
-def test_class_names_populated_after_warmup() -> None:
+async def test_class_names_populated_after_warmup() -> None:
     pool = _pool_with_names({0: "plane", 1: "ship"})
-    _run(pool.warmup("obb", "yolo11", "s"))
+    await pool.warmup("obb", "yolo11", "s")
     assert pool.class_names("obb") == [
         {"index": 0, "name": "plane"},
         {"index": 1, "name": "ship"},
     ]
 
 
-def test_class_names_isolated_per_task() -> None:
+async def test_class_names_isolated_per_task() -> None:
     pool = _pool_with_names({0: "person"})
-    _run(pool.get("detection", "yolo11", "s"))
+    async with pool.borrow("detection", "yolo11", "s"):
+        pass
     # 另一 task 未加载 → None (各 task 独立缓存).
     assert pool.class_names("segmentation") is None
 

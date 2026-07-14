@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,9 +18,8 @@ def _stub_modules() -> None:
 
 
 @pytest.fixture()
-def app_client():
-    tmp = tempfile.mkdtemp(prefix="yolo-protocol-v21-")
-    os.environ["YOLO_CHECKPOINTS_DIR"] = tmp
+def app_client(tmp_path):
+    os.environ["YOLO_CHECKPOINTS_DIR"] = str(tmp_path)
     import importlib
     import main
 
@@ -47,6 +45,20 @@ class _PredictorOneBox:
         item = {"type": "rectanglelabels", "value": {"x": 1, "y": 1, "width": 1, "height": 1,
                 "rectanglelabels": ["object0"]}, "score": 0.9}
         return [item], True, None, 5
+
+
+class _PredictorPoolBusy:
+    async def predict_one(self, file_path, ctx):
+        from model_pool import PoolBusyError
+
+        raise PoolBusyError("all model pool slots are active")
+
+
+class _PredictorHTTPError:
+    async def predict_one(self, file_path, ctx):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=422, detail="unsupported output")
 
 
 def test_predict_singular_task_wire_returns_singular_shape(app_client, monkeypatch) -> None:
@@ -105,6 +117,45 @@ def test_predict_accepts_model_variants(app_client, monkeypatch) -> None:
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["results"][0]["model_version"] == "yolo11s"
+
+
+def test_predict_pool_busy_returns_retryable_503(app_client, monkeypatch) -> None:
+    main, client = app_client
+    monkeypatch.setattr(main, "_predictor", _PredictorPoolBusy())
+
+    response = client.post(
+        "/predict",
+        json={
+            "tasks": [{"id": "t1", "file_path": "unused.jpg"}],
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolo11", "size": "s"},
+            },
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"
+    assert response.json()["detail"]["error_code"] == "model_unavailable"
+
+
+def test_predict_preserves_http_exception_status(app_client, monkeypatch) -> None:
+    main, client = app_client
+    monkeypatch.setattr(main, "_predictor", _PredictorHTTPError())
+
+    response = client.post(
+        "/predict",
+        json={
+            "tasks": [{"id": "t1", "file_path": "unused.jpg"}],
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolo11", "size": "s"},
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "unsupported output"
 
 
 def test_predict_accepts_legacy_variants_with_deprecation_warning(

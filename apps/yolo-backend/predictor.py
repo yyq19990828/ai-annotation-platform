@@ -13,11 +13,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import os
 import tempfile
 import time
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 import re
@@ -189,96 +192,104 @@ def _obb_to_rectanglelabels(
     }
 
 
-class YoloPredictor:
-    """围绕 model_pool 的薄分发. /predict 单 task 调用一次.
+async def _run_blocking_until_complete(call: Callable[[], Any]) -> Any:
+    """Keep awaiting a shielded executor future after request cancellation."""
 
-    v0.14.14: predict_one 返回 (results, cache_hit, model_load_ms, inference_time_ms)
-    四元组, main /predict 把后三项透传到 PredictionResult 供前端冷启动反馈.
-    """
+    future = asyncio.get_running_loop().run_in_executor(None, call)
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(future)
+        except asyncio.CancelledError:
+            cancelled = True
+            continue
+        except BaseException:
+            if cancelled:
+                raise asyncio.CancelledError() from None
+            raise
+        if cancelled:
+            raise asyncio.CancelledError()
+        return result
+
+
+class YoloPredictor:
+    """Run every model access under a pool borrower and tracked executor future."""
 
     def __init__(self, model_pool: Any) -> None:
         self._pool = model_pool
 
     async def predict_one(
-        self, file_path: str, ctx: Context
+        self,
+        file_path: str,
+        ctx: Context,
     ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
-        """返回 (results, cache_hit, model_load_ms, inference_time_ms)."""
         variants: Variants = ctx.variants
-        task = ctx.type
-        params = ctx.params
-
-        # v0.18.21 · 开集文本路径: type=text, series=world/yoloe, 文本 → 类名 → set_classes.
-        if task == "text":
+        if ctx.type == "text":
             return await self._predict_open_text(file_path, ctx)
-
-        # v0.18.23 · YOLOE visual prompt exemplar: type=exemplar, 框样例 → 找全图同类.
-        if task == "exemplar":
+        if ctx.type == "exemplar":
             return await self._predict_visual_prompt(file_path, ctx)
-
-        # v0.21.1 · 检测式视频追踪: type=tracker, 整段视频 → ultralytics model.track → 聚合轨迹.
-        if task == "tracker":
+        if ctx.type == "tracker":
             return await self._predict_tracker(file_path, ctx)
 
-        model, cache_hit, load_ms = await self._pool.get(task, variants.series, variants.size)
+        async with self._pool.borrow(
+            ctx.type,
+            variants.series,
+            variants.size,
+        ) as lease:
+            items, inference_ms = await _run_blocking_until_complete(
+                partial(self._predict_closed_sync, lease.model, file_path, ctx)
+            )
+            return items, lease.cache_hit, lease.model_load_ms, inference_ms
+
+    @staticmethod
+    def _predict_closed_sync(
+        model: Any,
+        file_path: str,
+        ctx: Context,
+    ) -> tuple[list[dict[str, Any]], int]:
+        variants = ctx.variants
+        task = ctx.type
+        params = ctx.params
         img = fetch_image(file_path)
         img_w, img_h = img.size
-
-        t0 = time.time()
-        # v0.14.17 · 类别白名单: 非空时传 ultralytics classes= 只检出选中 index (原生过滤, 不后处理).
-        class_filter = getattr(ctx, "classes", None) or None
-        # 显式传 device=模型实际所在设备: model 已由 _build_model 放到有效设备 (CUDA 坏时是 CPU),
-        # 若不传, ultralytics 会因 torch.cuda.is_available()==True 自动选回 cuda:0 → 硬 500。
+        started = time.monotonic()
         results = model.predict(
             img,
             conf=params.conf,
             iou=params.iou,
             max_det=params.max_det,
-            classes=class_filter,
+            classes=getattr(ctx, "classes", None) or None,
             device=str(model.device),
             verbose=False,
         )
-        elapsed = time.time() - t0
+        elapsed = time.monotonic() - started
         record_inference(task, variants.series, variants.size, elapsed)
         inference_ms = int(elapsed * 1000)
-
         if not results:
-            return [], cache_hit, load_ms, inference_ms
-        r0 = results[0]
-        names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
+            return [], inference_ms
 
+        result = results[0]
+        names: dict[int, str] = getattr(result, "names", {}) or getattr(model, "names", {})
         if task == "detection":
-            items = _emit_detection(r0, names, img_w, img_h)
+            items = _emit_detection(result, names, img_w, img_h)
         elif task == "segmentation":
-            items = _emit_segmentation(r0, names, img_w, img_h)
+            items = _emit_segmentation(result, names, img_w, img_h)
         elif task == "keypoint":
-            items = _emit_keypoint(r0, names, img_w, img_h)
+            items = _emit_keypoint(result, names, img_w, img_h)
         elif task == "obb":
-            items = _emit_obb(r0, names, img_w, img_h)
+            items = _emit_obb(result, names, img_w, img_h)
         else:
             raise ValueError(f"unsupported task: {task}")
-        return items, cache_hit, load_ms, inference_ms
+        return items, inference_ms
 
     async def _predict_open_text(
-        self, file_path: str, ctx: Context
+        self,
+        file_path: str,
+        ctx: Context,
     ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
-        """开集文本推理 (v0.18.21 检测 / v0.18.22 分割). series 决定 family (world/yoloe),
-        文本 → 类名 → 框 / mask.
-
-        pool key 用 (POOL_TASK_OPENVOCAB, series, size): yoloe 的 det/seg 同权重共用一份,
-        detect-yoloe 与 segment-yoloe 走同一句柄, 仅 ctx.output 决定取 box / mask / 两者.
-
-        - output=box  → 检测框 (rectanglelabels). world/yoloe 皆可.
-        - output=mask → 实例分割 (polygonlabels). 仅 yoloe -seg 权重有 mask 头;
-          world 无分割头时退回检测框.
-        - output=both → 同时返回框 + mask.
-        """
-        variants: Variants = ctx.variants
+        variants = ctx.variants
         series, size = variants.series, variants.size
         family = openvocab_family(series)
-        classes = _parse_open_classes(ctx.text)
-
-        # claude[bot] P2 · YOLO-World 无分割头, 请求 mask/both 此前静默降级回 box; 改为 422,
-        # 让上游知道这个组合不被支持 (与 /setup.supported_text_outputs=["box"] 声明一致)。
         if family == "world" and ctx.output in ("mask", "both"):
             raise HTTPException(
                 status_code=422,
@@ -287,20 +298,35 @@ class YoloPredictor:
                     f"(无分割头), 收到 output='{ctx.output}'。"
                 ),
             )
+        classes = _parse_open_classes(ctx.text)
+        async with self._pool.borrow(POOL_TASK_OPENVOCAB, series, size) as lease:
+            items, inference_ms = await _run_blocking_until_complete(
+                partial(
+                    self._predict_open_text_sync,
+                    lease.model,
+                    file_path,
+                    ctx,
+                    classes,
+                    family,
+                )
+            )
+            return items, lease.cache_hit, lease.model_load_ms, inference_ms
 
-        model, cache_hit, load_ms = await self._pool.get(
-            POOL_TASK_OPENVOCAB, series, size
-        )
+    @staticmethod
+    def _predict_open_text_sync(
+        model: Any,
+        file_path: str,
+        ctx: Context,
+        classes: list[str],
+        family: str,
+    ) -> tuple[list[dict[str, Any]], int]:
         img = fetch_image(file_path)
         img_w, img_h = img.size
-
         if not classes:
-            # 无类名: 不推理, 返回空 (前端文本框为空时的退化, 不报错).
-            return [], cache_hit, load_ms, 0
-
+            return [], 0
         _ensure_open_classes(model, classes, family)
         params = ctx.params
-        t0 = time.time()
+        started = time.monotonic()
         results = model.predict(
             img,
             conf=params.conf,
@@ -309,73 +335,74 @@ class YoloPredictor:
             device=str(model.device),
             verbose=False,
         )
-        elapsed = time.time() - t0
-        record_inference(POOL_TASK_OPENVOCAB, series, size, elapsed)
+        elapsed = time.monotonic() - started
+        variants = ctx.variants
+        record_inference(POOL_TASK_OPENVOCAB, variants.series, variants.size, elapsed)
         inference_ms = int(elapsed * 1000)
-
         if not results:
-            return [], cache_hit, load_ms, inference_ms
-        r0 = results[0]
-        # set_classes 后 model.names = 设入的类名, cls index 映射回类名.
-        names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
+            return [], inference_ms
 
-        # mask 仅 yoloe -seg 权重有; world 即便请求 mask 也无分割头 → 退回检测框.
+        result = results[0]
+        names: dict[int, str] = getattr(result, "names", {}) or getattr(model, "names", {})
         want_mask = ctx.output in ("mask", "both") and family == "yoloe"
         want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
         items: list[dict[str, Any]] = []
         if want_box:
-            items += _emit_detection(r0, names, img_w, img_h)
+            items += _emit_detection(result, names, img_w, img_h)
         if want_mask:
-            items += _emit_segmentation(r0, names, img_w, img_h)
-        return items, cache_hit, load_ms, inference_ms
+            items += _emit_segmentation(result, names, img_w, img_h)
+        return items, inference_ms
 
     async def _predict_visual_prompt(
-        self, file_path: str, ctx: Context
+        self,
+        file_path: str,
+        ctx: Context,
     ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
-        """YOLOE visual prompt exemplar (v0.18.23): 框样例 → 找全图同类 → box / mask.
+        variants = ctx.variants
+        async with self._pool.borrow(
+            POOL_TASK_OPENVOCAB_VP,
+            variants.series,
+            variants.size,
+        ) as lease:
+            items, inference_ms = await _run_blocking_until_complete(
+                partial(self._predict_visual_prompt_sync, lease.model, file_path, ctx)
+            )
+            return items, lease.cache_hit, lease.model_load_ms, inference_ms
 
-        统一用 ``YOLOEVPSegPredictor`` (在 ``-seg`` 权重上同时产出 box + masks; 若强用
-        ``YOLOEVPDetectPredictor`` 会在 NMS 收到 seg 头的 tuple 输出而崩)。**同图样例**:
-        ``refer_image`` 必须显式传 (= source 自身), 缺省 None 会得 0 结果。
-
-        独立 pool key (POOL_TASK_OPENVOCAB_VP): 与文本句柄隔离, 避免 VP 改写模型状态污染
-        文本 PE 缓存。MVP 单类 (cls 全 0), 仅取正框 (label=True), 无负框 / 跨图。
-        """
+    @staticmethod
+    def _predict_visual_prompt_sync(
+        model: Any,
+        file_path: str,
+        ctx: Context,
+    ) -> tuple[list[dict[str, Any]], int]:
         from ultralytics.models.yolo.yoloe.predict import (  # noqa: PLC0415
             YOLOEVPSegPredictor,
         )
 
-        variants: Variants = ctx.variants
-        series, size = variants.series, variants.size
-
-        model, cache_hit, load_ms = await self._pool.get(
-            POOL_TASK_OPENVOCAB_VP, series, size
-        )
         img = fetch_image(file_path)
         img_w, img_h = img.size
-
-        # 仅取正框 (YOLOE 无负框), 归一化 xyxy → 像素.
-        exemplars = ctx.exemplars or []
         pos_boxes = [
-            [e.bbox[0] * img_w, e.bbox[1] * img_h, e.bbox[2] * img_w, e.bbox[3] * img_h]
-            for e in exemplars
-            if e.label and len(e.bbox) == 4
+            [
+                exemplar.bbox[0] * img_w,
+                exemplar.bbox[1] * img_h,
+                exemplar.bbox[2] * img_w,
+                exemplar.bbox[3] * img_h,
+            ]
+            for exemplar in (ctx.exemplars or [])
+            if exemplar.label and len(exemplar.bbox) == 4
         ]
         if not pos_boxes:
-            # 无正框样例: 不推理, 返回空 (会话首拖前 / 仅负框的退化, 不报错).
-            return [], cache_hit, load_ms, 0
-
+            return [], 0
         visual_prompts = {
             "bboxes": np.array(pos_boxes, dtype=float),
-            "cls": np.zeros(len(pos_boxes), dtype=int),  # MVP 单类 object.
+            "cls": np.zeros(len(pos_boxes), dtype=int),
         }
         conf = ctx.score_threshold if ctx.score_threshold is not None else ctx.params.conf
-
-        t0 = time.time()
+        started = time.monotonic()
         results = model.predict(
             img,
             visual_prompts=visual_prompts,
-            refer_image=img,  # 同图: refer 必须显式 = source, 否则 0 结果.
+            refer_image=img,
             predictor=YOLOEVPSegPredictor,
             conf=conf,
             iou=ctx.params.iou,
@@ -383,60 +410,54 @@ class YoloPredictor:
             device=str(model.device),
             verbose=False,
         )
-        elapsed = time.time() - t0
-        record_inference(POOL_TASK_OPENVOCAB_VP, series, size, elapsed)
+        elapsed = time.monotonic() - started
+        variants = ctx.variants
+        record_inference(POOL_TASK_OPENVOCAB_VP, variants.series, variants.size, elapsed)
         inference_ms = int(elapsed * 1000)
-
         if not results:
-            return [], cache_hit, load_ms, inference_ms
-        r0 = results[0]
-        names: dict[int, str] = getattr(r0, "names", {}) or getattr(model, "names", {})
+            return [], inference_ms
 
-        # exemplar 输出形态 box/mask/both (VPSeg 同时产出, 按 output 取用)。output 受
-        # Literal 约束恒为三者之一, 直接读即可 (无需文本路径那种 not want_mask 兜底)。
-        want_mask = ctx.output in ("mask", "both")
-        want_box = ctx.output in ("box", "both")
-        # exemplar 是交互单数 wire, 候选走前端浮层 (SamCandidateOverlay) → 坐标须归一化 0-1
-        # (与 sam3/gsam2 交互候选一致); 批量入库的百分比仅用于闭集四 task / 文本批量路径。
+        result = results[0]
+        names: dict[int, str] = getattr(result, "names", {}) or getattr(model, "names", {})
         items: list[dict[str, Any]] = []
-        if want_box:
-            items += _emit_detection(r0, names, img_w, img_h, normalized=True)
-        if want_mask:
-            items += _emit_segmentation(r0, names, img_w, img_h, normalized=True)
-        return items, cache_hit, load_ms, inference_ms
+        if ctx.output in ("box", "both"):
+            items += _emit_detection(result, names, img_w, img_h, normalized=True)
+        if ctx.output in ("mask", "both"):
+            items += _emit_segmentation(result, names, img_w, img_h, normalized=True)
+        return items, inference_ms
 
     async def _predict_tracker(
-        self, file_path: str, ctx: Context
+        self,
+        file_path: str,
+        ctx: Context,
     ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
-        """v0.21.1 · 检测式视频追踪 (detect-then-track). 整段视频喂 ultralytics
-        ``model.track(stream=True)``, 逐帧收 ``boxes.id``, 按 track_id 聚合成
-        ``video_track_bbox`` item (每项一条已聚合轨迹, 平台不再做时间关联)。
+        variants = ctx.variants
+        async with self._pool.borrow("tracker", variants.series, variants.size) as lease:
+            items, inference_ms = await _run_blocking_until_complete(
+                partial(self._predict_tracker_sync, lease.model, file_path, ctx)
+            )
+            return items, lease.cache_hit, lease.model_load_ms, inference_ms
 
-        - 复用 detection 权重 (pool key task=tracker → MODEL_MATRIX 别名解出 det 权重)。
-        - 坐标**直接归一 0-1** (对齐 VideoTrackKeyframe + 平台"直信 0-1 不做百分比探测"约定)。
-        - track_id 返回 ultralytics 原生 int; 平台 ingestion 再映射成 ``trk_<uuid>``。
-        - 首版**单次整段** track (不分窗), 帧数超 ``YOLO_TRACKER_MAX_FRAMES`` 截断并 log
-          (不静默丢), 避免长视频爆内存 / 超时。
-        """
-        variants: Variants = ctx.variants
+    @staticmethod
+    def _predict_tracker_sync(
+        model: Any,
+        file_path: str,
+        ctx: Context,
+    ) -> tuple[list[dict[str, Any]], int]:
+        variants = ctx.variants
         params = ctx.params
-        model, cache_hit, load_ms = await self._pool.get(
-            "tracker", variants.series, variants.size
-        )
-        tracker_yaml = f"{params.tracker}.yaml"  # bytetrack.yaml / botsort.yaml (ultralytics 内建)
-        class_filter = getattr(ctx, "classes", None) or None
+        tracker_yaml = f"{params.tracker}.yaml"
         max_frames = int(os.environ.get("YOLO_TRACKER_MAX_FRAMES", "900"))
-
-        video_path, cleanup = _fetch_video(file_path)
-        # track_id → {class_counts, scores, keyframes[]} 聚合累加器。
+        video_path: str | None = None
+        cleanup = False
+        stream: Any = None
+        frame_result: Any = None
         tracks: dict[int, dict[str, Any]] = {}
         frame_idx = 0
         truncated = False
-        t0 = time.time()
+        started = time.monotonic()
         try:
-            # persist=False: 每段视频独立起追 —— 池化 model 可能残留上一段视频的 tracker 状态,
-            # persist=True 会错误续接上一段的 track_id。单次整段一个 track() 调用内, 帧间状态天然
-            # 保持, 无需 persist。
+            video_path, cleanup = _fetch_video(file_path)
             stream = model.track(
                 source=video_path,
                 stream=True,
@@ -444,22 +465,30 @@ class YoloPredictor:
                 tracker=tracker_yaml,
                 conf=params.conf,
                 iou=params.iou,
-                classes=class_filter,
+                classes=getattr(ctx, "classes", None) or None,
                 device=str(model.device),
                 verbose=False,
             )
-            for r in stream:
+            for frame_result in stream:
                 if frame_idx >= max_frames:
                     truncated = True
                     break
-                _accumulate_track_frame(r, frame_idx, tracks)
+                _accumulate_track_frame(frame_result, frame_idx, tracks)
                 frame_idx += 1
         finally:
-            if cleanup:
+            frame_result = None
+            close_stream = getattr(stream, "close", None)
+            if callable(close_stream):
+                try:
+                    close_stream()
+                except Exception:  # noqa: BLE001
+                    logger.warning("tracker stream close failed", exc_info=True)
+            stream = None
+            if cleanup and video_path is not None:
                 _safe_unlink(video_path)
-        elapsed = time.time() - t0
+
+        elapsed = time.monotonic() - started
         record_inference("tracker", variants.series, variants.size, elapsed)
-        inference_ms = int(elapsed * 1000)
         if truncated:
             logger.warning(
                 "tracker 视频超帧上限 %d, 已截断 (track_id 数=%d); 首版单次整段限制, "
@@ -467,7 +496,7 @@ class YoloPredictor:
                 max_frames,
                 len(tracks),
             )
-        return _emit_tracks(tracks), cache_hit, load_ms, inference_ms
+        return _emit_tracks(tracks), int(elapsed * 1000)
 
 
 # ── v0.21.1 · 检测式视频追踪辅助 ──────────────────────────────────────────────

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,12 +22,12 @@ def _stub_modules() -> None:
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(tmp_path_factory):
     """启动 FastAPI TestClient. lifespan 内会建一个真实 ModelPool, 但 build_model 是
     mock (sys.modules ultralytics MagicMock), 不会真的拉权重."""
     # CHECKPOINTS_DIR 默认 /app/checkpoints, 在测试机上不可写; 改指向 tmp.
-    tmp = tempfile.mkdtemp(prefix="yolo-test-")
-    os.environ["YOLO_CHECKPOINTS_DIR"] = tmp
+    tmp = tmp_path_factory.mktemp("yolo-test-")
+    os.environ["YOLO_CHECKPOINTS_DIR"] = str(tmp)
     # main 已被其他测试 import 过, 用 importlib.reload 让 env 重新生效.
     import importlib
     import main
@@ -122,6 +121,20 @@ def test_health_survives_cuda_runtime_failure(client, monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["gpu_info"]["device_index"] is None
     assert response.json()["gpu_info"]["process_memory_mb"] is None
+
+
+def test_managed_cleanup_propagates_cuda_runtime_failure(monkeypatch) -> None:
+    import main
+
+    monkeypatch.setattr(main.torch.cuda, "is_available", lambda: True)
+
+    def _broken_empty_cache() -> None:
+        raise RuntimeError("CUDA allocator unavailable")
+
+    monkeypatch.setattr(main.torch.cuda, "empty_cache", _broken_empty_cache)
+
+    with pytest.raises(RuntimeError, match="allocator unavailable"):
+        main._strict_free_gpu_memory()
 
 
 def test_model_move_commits_latch_after_cpu_replacement(monkeypatch) -> None:

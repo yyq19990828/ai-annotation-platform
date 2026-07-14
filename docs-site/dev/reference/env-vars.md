@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-14
 ---
 
 # 环境变量参考
@@ -83,6 +83,7 @@ last_reviewed: 2026-07-13
 | `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
 | `YOLO_STRICT_OFFLINE` | `0` | — |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | `—` | Managed GPU lifecycle Ed25519 public-key ring (kid -> unpadded base64url key). Empty keeps the backend in legacy-compatible mode; a non-empty invalid value fails startup. |
 
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
 

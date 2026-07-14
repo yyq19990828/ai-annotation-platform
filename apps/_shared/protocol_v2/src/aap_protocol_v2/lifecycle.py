@@ -207,6 +207,53 @@ class LifecycleResetRequest(BaseModel):
     control_epoch: CanonicalPositiveInt64String
 
 
+class LifecycleModeResponse(BaseModel):
+    """Confirmed backend gate and control epoch after a mode handshake."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    gate: LifecycleGate
+    control_epoch: CanonicalPositiveInt64String
+    residency: BackendResidency
+
+    @model_validator(mode="after")
+    def _validate_residency(self) -> "LifecycleModeResponse":
+        if self.residency.lifecycle_gate is not self.gate:
+            raise ValueError("response and residency lifecycle gate must match")
+        if self.residency.control_epoch != self.control_epoch:
+            raise ValueError("response and residency control epoch must match")
+        return self
+
+
+class LifecycleResetResponse(BaseModel):
+    """Result of a signed full-pool reset in the legacy gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    control_epoch: CanonicalPositiveInt64String
+    unloaded: bool
+    unloaded_count: int = Field(ge=0)
+    residency: BackendResidency
+
+    @model_validator(mode="after")
+    def _validate_residency(self) -> "LifecycleResetResponse":
+        if self.residency.control_epoch != self.control_epoch:
+            raise ValueError("response and residency control epoch must match")
+        if self.unloaded:
+            if self.residency.generation is not None:
+                raise ValueError("successful reset must clear managed generation")
+            if self.residency.active_requests != 0:
+                raise ValueError("successful reset requires zero active requests")
+            if (
+                self.residency.state is not LifecycleState.UNLOADED
+                or self.residency.gpu_loaded is not False
+            ):
+                raise ValueError("successful reset requires trusted unloaded residency")
+        return self
+
+
 class DrainTransitionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -437,7 +484,9 @@ __all__ = [
     "GenerationTransitionRequest",
     "LifecycleGate",
     "LifecycleModeRequest",
+    "LifecycleModeResponse",
     "LifecycleResetRequest",
+    "LifecycleResetResponse",
     "LifecycleState",
     "MANAGED_LIFECYCLE_PROTOCOL_VERSION",
     "MAX_POSITIVE_INT64",

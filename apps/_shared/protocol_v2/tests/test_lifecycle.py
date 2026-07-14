@@ -21,6 +21,8 @@ from aap_protocol_v2.lifecycle import (
     GPU_GENERATION_HEADER,
     GenerationTransitionRequest,
     LifecycleModeRequest,
+    LifecycleModeResponse,
+    LifecycleResetResponse,
     ManagedLifecycleCapabilities,
     ManagedUnloadResponse,
     PoolResidency,
@@ -378,8 +380,29 @@ def test_transition_response_models_round_trip() -> None:
         unloaded_count=2,
         residency=unloaded_residency,
     )
+    mode = LifecycleModeResponse(
+        gate="enforce",
+        control_epoch="7",
+        residency=_residency(),
+    )
+    reset = LifecycleResetResponse(
+        control_epoch="7",
+        unloaded=True,
+        unloaded_count=2,
+        residency=_residency(
+            state="unloaded",
+            gpu_loaded=False,
+            evictable=False,
+            generation=None,
+            pools={
+                "models": {"resident": False, "device": None, "provider": None},
+            },
+        ),
+    )
     assert drain.model_dump(mode="json")["generation"] == "43"
     assert unload.model_dump(mode="json")["unloaded_count"] == 2
+    assert mode.model_dump(mode="json")["gate"] == "enforce"
+    assert reset.model_dump(mode="json")["unloaded_count"] == 2
 
 
 def test_transition_responses_reject_stale_or_contradictory_residency() -> None:
@@ -407,6 +430,32 @@ def test_transition_responses_reject_stale_or_contradictory_residency() -> None:
             unloaded=True,
             unloaded_count=1,
             residency=_residency(generation="43"),
+        )
+
+    with pytest.raises(ValidationError):
+        LifecycleModeResponse(
+            gate="legacy",
+            control_epoch="7",
+            residency=_residency(),
+        )
+
+    with pytest.raises(ValidationError):
+        LifecycleResetResponse(
+            control_epoch="7",
+            unloaded=True,
+            unloaded_count=1,
+            residency=_residency(
+                state="unloaded",
+                gpu_loaded=False,
+                evictable=False,
+                pools={
+                    "models": {
+                        "resident": False,
+                        "device": None,
+                        "provider": None,
+                    },
+                },
+            ),
         )
 
 

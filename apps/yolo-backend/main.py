@@ -41,13 +41,24 @@ from aap_protocol_v2 import (
     PredictionResult,
     VariantNotSupportedError,
 )
+from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
+    GenerationTransitionRequest,
+    LifecycleModeRequest,
+    LifecycleResetRequest,
+    ManagedLifecycleCapabilities,
+    load_verify_keyring,
+)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import ValidationError
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 import class_names
-from model_pool import ModelPool
+from gpu_lifecycle import WorkloadOperation, YoloGpuLifecycle
+from model_pool import ModelBuildTimeout, ModelPool, PoolBusyError
 from model_registry import (
     MODEL_MATRIX,
     OPENVOCAB_DEFAULT_WORLD,
@@ -99,6 +110,15 @@ IDLE_UNLOAD_SECONDS = float(os.environ.get("YOLO_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.environ.get("YOLO_IDLE_CHECK_INTERVAL", "60"))
 STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in ("0", "", "false", "False")
 CHECKPOINTS_DIR = Path(os.environ.get("YOLO_CHECKPOINTS_DIR", "/app/checkpoints"))
+
+
+def _strict_free_gpu_memory() -> None:
+    """Release managed CUDA allocator state without hiding an untrusted outcome."""
+
+    if not torch.cuda.is_available():
+        return
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
 
 def _build_model(task: str, series: str, size: str):
@@ -158,26 +178,23 @@ def _move_model_to_effective_device(model):
 
 _model_pool: ModelPool | None = None
 _predictor: YoloPredictor | None = None
+_gpu_lifecycle: YoloGpuLifecycle | None = None
 _idle_task: asyncio.Task | None = None
 
 
 async def _idle_watcher() -> None:
-    """周期检查池空闲, 超 IDLE_UNLOAD_SECONDS 触发 unload_all."""
-    assert _model_pool is not None
+    """周期检查池空闲，并通过池内原子判断安全卸载。"""
+    assert _gpu_lifecycle is not None
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
             if IDLE_UNLOAD_SECONDS <= 0:
                 continue
-            if len(_model_pool) == 0:
-                continue
-            last = _model_pool.last_used_at()
-            if last is None:
-                continue
-            idle = time.time() - last
-            if idle >= IDLE_UNLOAD_SECONDS:
-                n = await _model_pool.unload_all(reason="idle")
-                logger.info("idle unloaded %d models (idle=%.0fs)", n, idle)
+            n = await _gpu_lifecycle.try_idle_unload(
+                idle_before=time.monotonic() - IDLE_UNLOAD_SECONDS
+            )
+            if n:
+                logger.info("idle unloaded %d models", n)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -186,7 +203,9 @@ async def _idle_watcher() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _model_pool, _predictor, _idle_task
+    global _model_pool, _predictor, _gpu_lifecycle, _idle_task
+    raw_keyring = os.environ.get("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "").strip()
+    verify_keyring = load_verify_keyring(raw_keyring) if raw_keyring else {}
     CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
     # v0.18.21 · 创建文本编码器权重目录 (Dockerfile 软链 /app/weights → 此处持久卷子目录).
     # ultralytics WEIGHTS_DIR 相对 "weights" 落 /app/weights → 经软链入卷; 目录须先存在,
@@ -196,8 +215,12 @@ async def lifespan(app: FastAPI):
     _model_pool = ModelPool(
         cap=MODEL_POOL_CAP,
         build_model=_build_model,
-        free_gpu_memory=free_gpu_memory,
+        free_gpu_memory=_strict_free_gpu_memory,
         build_timeout=BUILD_TIMEOUT,
+    )
+    _gpu_lifecycle = YoloGpuLifecycle(
+        _model_pool,
+        verify_keyring=verify_keyring,
     )
     update_pool_size(0)
     _predictor = YoloPredictor(_model_pool)
@@ -215,8 +238,8 @@ async def lifespan(app: FastAPI):
                 await _idle_task
             except (asyncio.CancelledError, BaseException):
                 pass
-        if _model_pool is not None:
-            await _model_pool.unload_all(reason="shutdown")
+        if _gpu_lifecycle is not None:
+            await _gpu_lifecycle.shutdown()
         shutdown_perfhud_collectors()
 
 
@@ -224,7 +247,7 @@ app = FastAPI(title="yolo-backend", version=BACKEND_VERSION, lifespan=lifespan)
 
 
 @app.get("/health")
-def health() -> dict[str, Any]:
+async def health() -> dict[str, Any]:
     perf = sample_perfhud()
     # 平台 PerfHud / 观测面板读顶层 gpu_info + host (见 api/app/workers/ml_health.py
     # _PERFHUD_META_KEYS, gsam2 参考实现). sample_perfhud() 是扁平形, 这里映射成协议标准的
@@ -263,7 +286,17 @@ def health() -> dict[str, Any]:
     }
     # NOTE: ModelPool 实现了 __len__, 用 `if pool` 会因 __len__()==0 退化为 False;
     # 必须用 `is not None`.
-    pool_ready = _model_pool is not None
+    if _gpu_lifecycle is not None:
+        pool_snapshot, residency = await _gpu_lifecycle.snapshot_and_residency()
+        residency_payload = residency.model_dump(mode="json")
+    else:
+        pool_snapshot = {
+            "cap": 0,
+            "current_size": 0,
+            "loaded_keys": [],
+            "last_evict": None,
+        }
+        residency_payload = None
     return {
         "status": "ok",
         "service": "yolo-backend",
@@ -282,9 +315,11 @@ def health() -> dict[str, Any]:
             "effective_device": effective_device_value(),
             "cpu_fallback_supported": True,
         },
-        "pool": _model_pool.pool_status() if pool_ready else {
-            "cap": 0, "current_size": 0, "loaded_keys": [], "last_evict": None,
+        "pool": {
+            key: pool_snapshot[key]
+            for key in ("cap", "current_size", "loaded_keys", "last_evict")
         },
+        "residency": residency_payload,
         "gpu_info": gpu_info,
         "host": host,
     }
@@ -522,8 +557,6 @@ def _build_model_entry(
     # 开集 task 无固定类别 (走 _build_openvocab_model_entry, 不经此函数). 若某 task 无静态表
     # (理论不会), 回退权重 metadata (仅 warmup/首次 predict 后有值).
     classes = class_names.classes_for_task(task)
-    if classes is None and _model_pool is not None:
-        classes = _model_pool.class_names(task)
     if classes:
         entry["classes"] = classes
     return entry
@@ -713,6 +746,7 @@ def setup() -> dict[str, Any]:
         "supported_variants": [],  # 顶层留空, 由 models[].supported_variants 各自声明.
         "infra": "pytorch",
         "warmup_endpoint": True,  # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4)
+        "managed_lifecycle": ManagedLifecycleCapabilities().model_dump(mode="json"),
         "params": _PARAMS_SCHEMA,
         "models": [
             _build_model_entry(
@@ -769,7 +803,11 @@ def versions() -> dict[str, Any]:
     return versions_payload(MODEL_VERSION, BACKEND_VERSION, ultralytics=ul_ver)
 
 
-async def _run_predict(req: BatchPredictRequest) -> list[PredictionResult]:
+async def _run_predict(
+    req: BatchPredictRequest,
+    *,
+    operation: WorkloadOperation | None = None,
+) -> list[PredictionResult]:
     """核心: 校验组合 + 逐 task 推理, 产出 PredictionResult 列表。响应形态由调用方按 wire 决定。"""
     if _predictor is None or _model_pool is None:
         raise HTTPException(status_code=503, detail="backend not ready")
@@ -801,6 +839,31 @@ async def _run_predict(req: BatchPredictRequest) -> list[PredictionResult]:
                 _pool_key(ctx.type, ctx.variants.series, ctx.variants.size),
                 str(exc),
             ) from exc
+        except ModelBuildTimeout as exc:
+            if operation is not None:
+                operation.track_future(exc.builder)
+            raise ModelUnavailableError(
+                _pool_key(ctx.type, ctx.variants.series, ctx.variants.size),
+                str(exc),
+            ) from exc
+        except PoolBusyError as exc:
+            raise ModelUnavailableError(
+                _pool_key(ctx.type, ctx.variants.series, ctx.variants.size),
+                str(exc),
+            ) from exc
+        except asyncio.CancelledError:
+            if operation is not None:
+                pool_task = _pool_task_for_context(ctx)
+                operation.track_future(
+                    await _model_pool.builder_for(
+                        pool_task,
+                        ctx.variants.series,
+                        ctx.variants.size,
+                    )
+                )
+            raise
+        except HTTPException:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("predict failed for task %s", t.id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -817,25 +880,32 @@ async def predict(request: Request) -> dict[str, Any]:
 
     与 gsam2/sam3 的 /predict 双形态契约一致。
     """
-    body = await request.json()
-    is_single = isinstance(body, dict) and "task" in body and "tasks" not in body
-    # 手工 model_validate 绕过了 FastAPI 的请求体校验, ValidationError 会冒成 500;
-    # 转 422 与 gsam2/sam3 的入参拒绝语义一致 (调用方据此知是 wire 错而非后端故障)。
+    operation = await _begin_workload(request, AdmissionScope.PREDICT)
     try:
-        req = BatchPredictRequest.model_validate(body)
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
-    results = await _run_predict(req)
-    if is_single:
-        return results[0].model_dump(exclude_none=True)
-    return BatchPredictResponse(results=results).model_dump(exclude_none=True)
+        body = await _request_json(request)
+        is_single = isinstance(body, dict) and "task" in body and "tasks" not in body
+        req = _validate_body(BatchPredictRequest, body)
+        results = await _run_predict(req, operation=operation)
+        if is_single:
+            return results[0].model_dump(exclude_none=True)
+        return BatchPredictResponse(results=results).model_dump(exclude_none=True)
+    finally:
+        await operation.close()
 
 
 @app.post("/predict/interactive")
-async def predict_interactive(req: InteractiveRequest) -> dict[str, Any]:
+async def predict_interactive(request: Request) -> dict[str, Any]:
     """交互式单 task 路由 (兼容旧路径): 返回单数 PredictionResult, 与 /predict 单数 wire 一致。"""
-    results = await _run_predict(BatchPredictRequest(tasks=[req.task], context=req.context))
-    return results[0].model_dump(exclude_none=True)
+    operation = await _begin_workload(request, AdmissionScope.PREDICT)
+    try:
+        req = _validate_body(InteractiveRequest, await _request_json(request))
+        results = await _run_predict(
+            BatchPredictRequest(tasks=[req.task], context=req.context),
+            operation=operation,
+        )
+        return results[0].model_dump(exclude_none=True)
+    finally:
+        await operation.close()
 
 
 def _is_supported_combo(ctx: Context) -> bool:
@@ -860,16 +930,109 @@ def _pool_key(task: str, series: str, size: str) -> str:
     return f"{series}/{size}/{task}"
 
 
+def _pool_task_for_context(ctx: Context) -> str:
+    if ctx.type == "text":
+        return POOL_TASK_OPENVOCAB
+    if ctx.type == "exemplar":
+        return POOL_TASK_OPENVOCAB_VP
+    return ctx.type
+
+
+def _validate_body(model_type, body):
+    try:
+        return model_type.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
+
+
+async def _request_json(request: Request) -> Any:
+    try:
+        return await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid JSON request body") from exc
+
+
+async def _begin_workload(
+    request: Request,
+    scope: AdmissionScope,
+) -> WorkloadOperation:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    return await _gpu_lifecycle.begin_workload(
+        scope,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+
+
 @app.post("/unload")
-async def unload() -> dict[str, Any]:
-    if _model_pool is None:
+async def unload(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
         return {"ok": True, "unloaded": 0}
-    n = await _model_pool.unload_all(reason="manual")
-    return {"ok": True, "unloaded": n}
+    raw_body = await request.body()
+    if not raw_body.strip():
+        return await _gpu_lifecycle.legacy_unload()
+    body = _validate_body(GenerationTransitionRequest, await _request_json(request))
+    response = await _gpu_lifecycle.managed_unload(
+        body.generation,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/drain")
+async def drain(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(GenerationTransitionRequest, await _request_json(request))
+    response = await _gpu_lifecycle.drain(
+        body.generation,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/drain/cancel")
+async def cancel_drain(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(GenerationTransitionRequest, await _request_json(request))
+    response = await _gpu_lifecycle.cancel_drain(
+        body.generation,
+        generation_header=request.headers.get(GPU_GENERATION_HEADER),
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/lifecycle/mode")
+async def lifecycle_mode(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(LifecycleModeRequest, await _request_json(request))
+    response = await _gpu_lifecycle.set_mode(
+        body,
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/lifecycle/reset")
+async def lifecycle_reset(request: Request) -> dict[str, Any]:
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(LifecycleResetRequest, await _request_json(request))
+    response = await _gpu_lifecycle.reset(
+        body,
+        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+    )
+    return response.model_dump(mode="json")
 
 
 @app.post("/warmup", response_model=WarmupResponse)
-async def warmup(req: WarmupRequest) -> WarmupResponse:
+async def warmup(request: Request) -> WarmupResponse:
     """v0.14.14 协议 §4.4: 加载指定 (task, series, size) 权重到 pool, 不跑 forward.
 
     重复预热同 variant 返回 cache_hit=true. pool 满时按 LRU 淘汰最旧的 key, evicted 字段
@@ -877,6 +1040,20 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     """
     if _model_pool is None:
         raise HTTPException(status_code=503, detail="backend not ready")
+    operation = await _begin_workload(request, AdmissionScope.WARMUP)
+    try:
+        req = _validate_body(WarmupRequest, await _request_json(request))
+        return await _run_warmup(req, operation=operation)
+    finally:
+        await operation.close()
+
+
+async def _run_warmup(
+    req: WarmupRequest,
+    *,
+    operation: WorkloadOperation,
+) -> WarmupResponse:
+    assert _model_pool is not None
     series, size = req.variants.series, req.variants.size
     # 开集 series: 校验 + 预热. exemplar (task=interactive_seg, = /setup exemplar 模型条目的
     # task) 走独立 VP pool (与 /predict 视觉提示路径 _predict_visual_prompt 同 key), 否则首次
@@ -897,6 +1074,14 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
         cache_hit, load_ms, evicted = await _model_pool.warmup(pool_task, series, size)
     except FileNotFoundError as exc:
         raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
+    except ModelBuildTimeout as exc:
+        operation.track_future(exc.builder)
+        raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
+    except PoolBusyError as exc:
+        raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
+    except asyncio.CancelledError:
+        operation.track_future(await _model_pool.builder_for(pool_task, series, size))
+        raise
     return WarmupResponse(
         ok=True,
         model_load_ms=load_ms,
