@@ -35,6 +35,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **受管 GPU 生命周期获得共享 wire 与非对称验签契约**：共享 ML Backend 协议新增 canonical generation/control epoch、residency、transition、八类结构化错误和 admission claims schema，并固定使用带 `kid` 的 Ed25519 / EdDSA token；平台签发进程独占私钥，backend 只持可轮换公钥 keyring。当前尚无 backend 宣告 managed lifecycle，显存仲裁继续保持关闭。
+
 ### Changed
 
 - **跨 Backend GPU 显存仲裁冻结逐物理资源治理边界**：ADR-0049 已接受按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。当前仍保持仲裁关闭，后续先完成五个 backend 的受管生命周期契约。

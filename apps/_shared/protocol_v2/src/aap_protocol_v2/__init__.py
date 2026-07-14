@@ -1,6 +1,11 @@
 """ML backend 协议 v2 共享 schema + 受控词表常量。"""
 
-from aap_protocol_v2.errors import ModelUnavailableError, VariantNotSupportedError
+from aap_protocol_v2.errors import (
+    LifecycleErrorCode,
+    LifecycleHTTPError,
+    ModelUnavailableError,
+    VariantNotSupportedError,
+)
 from aap_protocol_v2.mask_codec import decode_low_res_mask, encode_low_res_mask
 from aap_protocol_v2.predict import (
     LEGACY_CONTEXT_VARIANT_FIELDS,
@@ -36,6 +41,8 @@ __all__ = [
     "INFRA_VALUES",
     "LEGACY_CONTEXT_VARIANT_FIELDS",
     "LoadedKey",
+    "LifecycleErrorCode",
+    "LifecycleHTTPError",
     "ModelUnavailableError",
     "PoolStateSnapshot",
     "PoolStatus",

@@ -62,6 +62,7 @@ SAM3 使用卡 1，其余四个 backend 仍共用卡 0；单卡部署则五个 b
 | D12 | 本地 semaphore 保留为进程内背压；Redis request lease 执行 backend 级全局 `max_concurrency`，stale lease 在 backend 仍 active 时继续保守占用。 |
 | D13 | `enforce` 下所有可能加载 GPU 的 predict / warmup / reload / unload 端点必须验证短期 admission token；平台与 backend 通过 control epoch 握手 enforce gate，生产网络同时限制加载端点直连，只读 health / setup 可豁免。 |
 | D14 | 每次新 residency 写入 `not_evict_before`；慢路径按卡 FIFO 有界等待，超时返回结构化 503 与 `Retry-After`，不采用无界 job pin 或 pipeline 特判。 |
+| D15 | admission token 使用带 `kid` 的 Ed25519 / EdDSA compact JWS；平台签发进程独占私钥，backend 只持可重叠轮换的公钥 keyring，禁止复用用户 JWT key 或把可签名秘密下发给 backend。 |
 
 ### 资源与静态配置
 
@@ -125,7 +126,8 @@ allocatable_mb, mode}`；`allocatable_mb` 是扣除驱动、CUDA context、桌�
 - `residency.state` 固定为 `unloaded|loading|resident|draining|unloading|unknown`；CPU fallback 与 mixed
   不另造 state，而由 `compute`、`gpu_loaded` 和逐 pool device/provider 联合表达；
 - `pools` 以稳定 pool id 为 key，每项至少包含 `resident: bool | null`、`device: str | null`、
-  `provider: str | null`；
+  `provider: str | null`；其中 `resident` 专指该 pool 是否仍持有 GPU residency，纯 CPU handle 应报告
+  `resident=false` 并用 `device=cpu` 或 CPU provider 表达；
 - `compute=cpu` 与 `gpu_loaded=true` 是合法 mixed 状态，不能据此减账；只有可信确认
   `gpu_loaded=false` 才释放 allocation；
 - 受管 `/unload` 必须清空全部 GPU pool/session/cache，并返回实际 generation；predict、warmup 与 reload
@@ -150,14 +152,26 @@ allocatable_mb, mode}`；`allocatable_mb` 是扣除驱动、CUDA context、桌�
 受管 workload 与 drain/unload transition 使用两个独立 header，不复用 backend 的 `Authorization`：
 
 - `X-AAP-GPU-Generation: <canonical positive int64 string>`；
-- `X-AAP-GPU-Admission-Token: <opaque signed token>`。
+- `X-AAP-GPU-Admission-Token: <compact EdDSA JWS>`。
 
-token claims 至少包含 audience、backend registry id、`gpu_resource_id`、backend `boot_id`、generation、
-control epoch、scope、`jti` 与 `exp`；scope 为
+token 固定使用 Ed25519 / EdDSA 签名，protected header 必须是
+`{"alg":"EdDSA","typ":"aap-gpu+jwt","kid":"<key-id>"}`。平台 API / Celery 签发进程从 secret
+store 读取私钥，backend 只接收 `kid -> Ed25519 public key` keyring；私钥不得进入 GPU backend，且不得复用
+用户登录 JWT 的 `SECRET_KEY`。未知 `kid`、其他算法、其他 token type 或验签失败一律按 admission denied
+处理，不能根据 token header 动态选择算法。
+
+claims 的 wire 名固定为 `aud`、`backend_registry_id`、`gpu_resource_id`、`boot_id`、`generation`、
+`control_epoch`、`scope`、`jti`、`exp`，transition/control token 另含 `owner` 与 `operation`。`aud` 固定为
+`aap-gpu-lifecycle`；scope 为
 `predict|warmup|reload|drain|unload|resume|mode|reset` 之一。header generation、token
-claim 与 transition body 中的 generation 必须完全一致。generation 在 JSON 与 health 中始终编码为无符号、
-无前导零的十进制字符串，取值 `1..9223372036854775807`，避免 JavaScript 整数精度问题。
-`scope=mode|reset` 是例外：它只携带 control epoch、不携带模型 generation，也不要求 generation header。
+claim 与 transition body 中的 generation 必须完全一致。generation 与 control epoch 在 JSON、token 与 health
+中始终编码为无符号、无前导零的十进制字符串，取值 `1..9223372036854775807`，避免 JavaScript 整数精度
+问题；`exp` 仍使用标准 JWT NumericDate 整数。`scope=mode|reset` 是例外：它只携带 control epoch、不携带
+模型 generation，也不要求 generation header。
+
+轮换采用先扩后缩：先把新公钥与旧公钥同时部署到所有 backend，再让 signer 切换 active `kid`；只有旧
+token 全部过期且对应 replay tombstone / lease 已安全收敛后，才能移除旧公钥与私钥。无法加载 keyring、找不到
+active signing key 或 backend 尚未确认新 keyring 时，资源不具备 enforce readiness。
 
 workload token 的 `jti` 就是 Redis request lease id。backend 必须在自己的单一生命周期状态域内原子消费，
 并把 replay tombstone 保留到 token 过期；普通 predict/warmup/reload token 不可重放。transition token 的
@@ -195,8 +209,9 @@ generation。managed unload 成功后保留 unloaded generation tombstone，同 
 - drain / cancel：`{ok,generation,draining,active_requests,ready_to_unload,residency}`；
 - managed unload：`{ok,generation,unloaded,unloaded_count,residency}`。
 
-`residency.gpu_loaded` 与逐 pool `resident` 为 `bool | null`；只有显式确认所有 pool/session/cache、builder 与
-borrower 均为空时才返回 `state=unloaded,gpu_loaded=false`。清理异常必须返回
+`residency.gpu_loaded` 与逐 pool `resident` 为 `bool | null`；只有显式确认所有 pool 的 GPU residency 均为
+`false`，且 GPU session/cache、builder 与 borrower 均为空时，才能返回 `gpu_loaded=false`；managed unload
+成功还必须返回 `state=unloaded`。清理异常必须返回
 `state=unknown,gpu_loaded=null`，平台保持计费。错误沿用现有 FastAPI envelope：
 `{"detail":{"error_code":"...","message":"..."}}`。
 

@@ -13,11 +13,15 @@ ML backend 协议 v2 的共享 Pydantic schema 与受控词表常量。
   - `BatchPredictResponse` (`/predict` 顶层响应)
 - `aap_protocol_v2.vocab` — 协议 v2 受控词表常量（与 `apps/api/app/services/capability_registry.py` SSOT 同源镜像）
   - `TASK_VALUES` / `INFRA_VALUES` / `GEOMETRY_VALUES` / `PROMPT_VALUES`
+- `aap_protocol_v2.lifecycle` — 受管 GPU 生命周期 wire 模型、header 常量与 EdDSA admission token codec
+  - generation / control epoch 使用 canonical positive int64 字符串
+  - token 固定 `aud=aap-gpu-lifecycle`，通过 Ed25519 公钥 keyring 按 `kid` 验签
+- `aap_protocol_v2.errors` — 生命周期结构化错误词表与 FastAPI `detail.error_code` helper
 
 **不包含**：
 - 每个 backend 的 `Context` —— prompt 字段集差异大（sam3 有 `exemplar`、yolo 走 `variants`），各 backend 自己定义。
 - `/setup` 字典字面量 —— 各 backend 自己构造。
-- 任何抽象基类、推理生命周期、模型池等业务实现。详见 [ADR-0038](../../../docs/adr/archive/0038-defer-ml-backend-base-class.md)。
+- lifecycle lock、active / borrower / builder、token replay tombstone、模型池与全池释放实现。它们必须留在各 backend 的本地并发模型中。详见 [ADR-0038](../../../docs/adr/archive/0038-defer-ml-backend-base-class.md)与 [ADR-0049](../../../docs/adr/archive/0049-cross-backend-gpu-memory-arbitration.md)。
 
 ## 协议版本同步
 
@@ -36,4 +40,12 @@ backend 代码：
 ```python
 from aap_protocol_v2.schemas import TaskItem, PredictionResult, BatchPredictResponse
 from aap_protocol_v2.vocab import TASK_VALUES, INFRA_VALUES
+from aap_protocol_v2.lifecycle import GPU_GENERATION_HEADER, BackendResidency
 ```
+
+生命周期符号必须从 `aap_protocol_v2.lifecycle` 显式导入；包根不 eager re-export，避免尚未接入受管生命周期的
+backend 仅导入旧 schema 时也被迫加载验签依赖。
+
+只有完整实现 `/drain`、`/drain/cancel`、managed `/unload`、`/lifecycle/mode`、
+`/lifecycle/reset`、active / borrower / builder fencing 与 token replay 防护的 backend，才可在
+`/setup` 返回 `ManagedLifecycleCapabilities`。只导入 schema 不代表 backend 可驱逐。

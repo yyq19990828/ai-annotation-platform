@@ -1,0 +1,453 @@
+"""Managed GPU lifecycle wire models and admission-token codec.
+
+This module is deliberately framework-neutral.  It defines the wire contract shared by
+the platform and GPU backends, but does not implement backend locks, model-pool state,
+request accounting, or transition replay storage.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import re
+from enum import Enum
+from typing import Annotated, Literal, Mapping
+
+import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
+
+GPU_GENERATION_HEADER = "X-AAP-GPU-Generation"
+GPU_ADMISSION_TOKEN_HEADER = "X-AAP-GPU-Admission-Token"
+GPU_LIFECYCLE_AUDIENCE = "aap-gpu-lifecycle"
+GPU_ADMISSION_TOKEN_TYPE = "aap-gpu+jwt"
+GPU_ADMISSION_TOKEN_ALGORITHM = "EdDSA"
+MANAGED_LIFECYCLE_PROTOCOL_VERSION = "1"
+
+MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
+_CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
+_KEY_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
+_RAW_ED25519_PUBLIC_KEY_RE = re.compile(r"[A-Za-z0-9_-]{43}\Z")
+
+
+def validate_canonical_positive_int64(value: str) -> str:
+    """Validate the canonical JSON/header representation of a positive int64."""
+
+    if not isinstance(value, str):
+        raise ValueError("must be a decimal string")
+    if _CANONICAL_POSITIVE_INT64_RE.fullmatch(value) is None:
+        raise ValueError("must be a canonical positive int64 decimal string")
+    if int(value) > MAX_POSITIVE_INT64:
+        raise ValueError("must not exceed signed int64 max")
+    return value
+
+
+CanonicalPositiveInt64String = Annotated[
+    str,
+    AfterValidator(validate_canonical_positive_int64),
+]
+
+
+class LifecycleState(str, Enum):
+    UNLOADED = "unloaded"
+    LOADING = "loading"
+    RESIDENT = "resident"
+    DRAINING = "draining"
+    UNLOADING = "unloading"
+    UNKNOWN = "unknown"
+
+
+class LifecycleGate(str, Enum):
+    LEGACY = "legacy"
+    ENFORCE = "enforce"
+
+
+class AdmissionScope(str, Enum):
+    PREDICT = "predict"
+    WARMUP = "warmup"
+    RELOAD = "reload"
+    DRAIN = "drain"
+    UNLOAD = "unload"
+    RESUME = "resume"
+    MODE = "mode"
+    RESET = "reset"
+
+
+WORKLOAD_ADMISSION_SCOPES = frozenset(
+    {
+        AdmissionScope.PREDICT,
+        AdmissionScope.WARMUP,
+        AdmissionScope.RELOAD,
+    }
+)
+CONTROL_ADMISSION_SCOPES = frozenset(
+    {
+        AdmissionScope.DRAIN,
+        AdmissionScope.UNLOAD,
+        AdmissionScope.RESUME,
+        AdmissionScope.MODE,
+        AdmissionScope.RESET,
+    }
+)
+
+
+class ManagedLifecycleCapabilities(BaseModel):
+    """Additive ``/setup.managed_lifecycle`` capability declaration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    protocol_version: Literal["1"] = MANAGED_LIFECYCLE_PROTOCOL_VERSION
+    generation_fencing: Literal[True] = True
+    drain_endpoint: Literal["/drain"] = "/drain"
+    drain_cancel_endpoint: Literal["/drain/cancel"] = "/drain/cancel"
+    unload_endpoint: Literal["/unload"] = "/unload"
+    mode_endpoint: Literal["/lifecycle/mode"] = "/lifecycle/mode"
+    reset_endpoint: Literal["/lifecycle/reset"] = "/lifecycle/reset"
+    generation_header: Literal["X-AAP-GPU-Generation"] = GPU_GENERATION_HEADER
+    token_header: Literal["X-AAP-GPU-Admission-Token"] = GPU_ADMISSION_TOKEN_HEADER
+
+
+class PoolResidency(BaseModel):
+    """One stable pool's GPU residency; CPU-only handles report ``resident=false``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resident: bool | None
+    device: str | None
+    provider: str | None
+
+
+class BoundLifecycleIdentity(BaseModel):
+    """Platform identity atomically bound to one backend boot lifecycle domain."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    audience: Literal["aap-gpu-lifecycle"] = GPU_LIFECYCLE_AUDIENCE
+    backend_registry_id: str = Field(min_length=1, max_length=128)
+    gpu_resource_id: str = Field(min_length=1, max_length=512)
+
+
+class BackendResidency(BaseModel):
+    """Managed GPU residency snapshot returned under ``/health.residency``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: LifecycleState
+    gpu_loaded: bool | None
+    active_requests: int = Field(ge=0)
+    builders: int = Field(ge=0)
+    borrowers: int = Field(ge=0)
+    draining: bool
+    evictable: bool
+    generation: CanonicalPositiveInt64String | None
+    pools: dict[str, PoolResidency]
+    boot_id: str = Field(min_length=1, max_length=128)
+    lifecycle_gate: LifecycleGate
+    control_epoch: CanonicalPositiveInt64String | None
+    identity: BoundLifecycleIdentity | None
+
+    @field_validator("pools")
+    @classmethod
+    def _validate_pool_ids(
+        cls, value: dict[str, PoolResidency]
+    ) -> dict[str, PoolResidency]:
+        if any(not pool_id or pool_id.strip() != pool_id for pool_id in value):
+            raise ValueError("pool ids must be non-empty and canonical")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_snapshot_consistency(self) -> "BackendResidency":
+        if self.gpu_loaded is False:
+            if self.builders != 0 or self.borrowers != 0:
+                raise ValueError(
+                    "gpu_loaded=false requires zero builders and borrowers"
+                )
+            if any(pool.resident is not False for pool in self.pools.values()):
+                raise ValueError(
+                    "gpu_loaded=false requires every pool residency to be explicitly false"
+                )
+        if self.evictable:
+            if self.generation is None or self.identity is None:
+                raise ValueError(
+                    "evictable residency requires managed generation and identity"
+                )
+            if self.lifecycle_gate is not LifecycleGate.ENFORCE:
+                raise ValueError("evictable residency requires enforce lifecycle gate")
+        return self
+
+
+class GenerationTransitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generation: CanonicalPositiveInt64String
+
+
+class LifecycleModeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gate: LifecycleGate
+    control_epoch: CanonicalPositiveInt64String
+
+
+class LifecycleResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    control_epoch: CanonicalPositiveInt64String
+
+
+class DrainTransitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    generation: CanonicalPositiveInt64String
+    draining: bool
+    active_requests: int = Field(ge=0)
+    ready_to_unload: bool
+    residency: BackendResidency
+
+    @model_validator(mode="after")
+    def _validate_residency(self) -> "DrainTransitionResponse":
+        if self.residency.generation != self.generation:
+            raise ValueError("response and residency generation must match")
+        if self.residency.draining != self.draining:
+            raise ValueError("response and residency draining state must match")
+        if self.residency.active_requests != self.active_requests:
+            raise ValueError("response and residency active request count must match")
+        ready = (
+            self.draining
+            and self.active_requests == 0
+            and self.residency.builders == 0
+            and self.residency.borrowers == 0
+        )
+        if self.ready_to_unload != ready:
+            raise ValueError(
+                "ready_to_unload must reflect active, builder, and borrower state"
+            )
+        return self
+
+
+class ManagedUnloadResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    generation: CanonicalPositiveInt64String
+    unloaded: bool
+    unloaded_count: int = Field(ge=0)
+    residency: BackendResidency
+
+    @model_validator(mode="after")
+    def _validate_residency(self) -> "ManagedUnloadResponse":
+        if self.residency.generation != self.generation:
+            raise ValueError("response and residency generation must match")
+        if self.unloaded:
+            if self.residency.active_requests != 0:
+                raise ValueError("successful unload requires zero active requests")
+            if (
+                self.residency.state is not LifecycleState.UNLOADED
+                or self.residency.gpu_loaded is not False
+            ):
+                raise ValueError(
+                    "successful unload requires trusted unloaded residency"
+                )
+        return self
+
+
+class AdmissionTokenClaims(BaseModel):
+    """Claims after EdDSA verification and before backend-local replay checks."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    aud: Literal["aap-gpu-lifecycle"] = GPU_LIFECYCLE_AUDIENCE
+    backend_registry_id: str = Field(min_length=1, max_length=128)
+    gpu_resource_id: str = Field(min_length=1, max_length=512)
+    boot_id: str = Field(min_length=1, max_length=128)
+    generation: CanonicalPositiveInt64String | None = None
+    control_epoch: CanonicalPositiveInt64String
+    scope: AdmissionScope
+    jti: str = Field(min_length=1, max_length=256)
+    exp: StrictInt = Field(gt=0)
+    owner: str | None = Field(default=None, min_length=1, max_length=256)
+    operation: str | None = Field(default=None, min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def _validate_scope_shape(self) -> "AdmissionTokenClaims":
+        if self.scope in {AdmissionScope.MODE, AdmissionScope.RESET}:
+            if self.generation is not None:
+                raise ValueError("mode/reset claims must not carry generation")
+        elif self.generation is None:
+            raise ValueError("workload/transition claims require generation")
+
+        if self.scope in CONTROL_ADMISSION_SCOPES:
+            if self.owner is None or self.operation is None:
+                raise ValueError(
+                    "control/transition claims require owner and operation"
+                )
+        elif self.owner is not None or self.operation is not None:
+            raise ValueError("workload claims must not carry owner or operation")
+        return self
+
+
+class AdmissionTokenError(ValueError):
+    """The compact token, key id, signature, expiry, or claim shape is invalid."""
+
+
+def encode_ed25519_public_key(public_key: Ed25519PublicKey) -> str:
+    """Encode a raw Ed25519 public key as unpadded base64url for keyring config."""
+
+    raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def load_verify_keyring(raw_json: str) -> dict[str, Ed25519PublicKey]:
+    """Load ``kid -> raw-public-key-base64url`` JSON used by backend verifiers."""
+
+    try:
+        payload = json.loads(raw_json)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("verify keyring must be a JSON object") from exc
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("verify keyring must be a non-empty JSON object")
+
+    keyring: dict[str, Ed25519PublicKey] = {}
+    for kid, encoded_key in payload.items():
+        if not isinstance(kid, str) or _KEY_ID_RE.fullmatch(kid) is None:
+            raise ValueError("verify key ids must match [A-Za-z0-9._-]{1,64}")
+        if (
+            not isinstance(encoded_key, str)
+            or _RAW_ED25519_PUBLIC_KEY_RE.fullmatch(encoded_key) is None
+        ):
+            raise ValueError(
+                f"verify key {kid!r} must be an unpadded base64url Ed25519 key"
+            )
+        padded = encoded_key + "=" * (-len(encoded_key) % 4)
+        try:
+            key_bytes = base64.urlsafe_b64decode(padded.encode("ascii"))
+            keyring[kid] = Ed25519PublicKey.from_public_bytes(key_bytes)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"verify key {kid!r} is invalid") from exc
+    return keyring
+
+
+def sign_admission_token(
+    claims: AdmissionTokenClaims,
+    *,
+    private_key: Ed25519PrivateKey,
+    kid: str,
+) -> str:
+    """Create the compact EdDSA JWS consumed through the dedicated token header."""
+
+    if not isinstance(kid, str) or _KEY_ID_RE.fullmatch(kid) is None:
+        raise ValueError("kid must match [A-Za-z0-9._-]{1,64}")
+    return jwt.encode(
+        claims.model_dump(mode="json", exclude_none=True),
+        private_key,
+        algorithm=GPU_ADMISSION_TOKEN_ALGORITHM,
+        headers={"kid": kid, "typ": GPU_ADMISSION_TOKEN_TYPE},
+    )
+
+
+def verify_admission_token(
+    token: str,
+    *,
+    keyring: Mapping[str, Ed25519PublicKey],
+    leeway_seconds: int = 0,
+) -> AdmissionTokenClaims:
+    """Verify algorithm, key id, signature, audience, expiry, and claim shape."""
+
+    if not token or not isinstance(token, str):
+        raise AdmissionTokenError("admission token is missing")
+    if (
+        not isinstance(leeway_seconds, int)
+        or isinstance(leeway_seconds, bool)
+        or leeway_seconds < 0
+    ):
+        raise ValueError("leeway_seconds must be a non-negative integer")
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError as exc:
+        raise AdmissionTokenError("admission token header is invalid") from exc
+
+    if set(header) != {"alg", "typ", "kid"}:
+        raise AdmissionTokenError("admission token header fields are invalid")
+    if header.get("alg") != GPU_ADMISSION_TOKEN_ALGORITHM:
+        raise AdmissionTokenError("admission token algorithm is invalid")
+    if header.get("typ") != GPU_ADMISSION_TOKEN_TYPE:
+        raise AdmissionTokenError("admission token type is invalid")
+    kid = header.get("kid")
+    if not isinstance(kid, str) or _KEY_ID_RE.fullmatch(kid) is None:
+        raise AdmissionTokenError("admission token kid is invalid")
+    public_key = keyring.get(kid)
+    if public_key is None:
+        raise AdmissionTokenError("admission token kid is unknown")
+
+    try:
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=[GPU_ADMISSION_TOKEN_ALGORITHM],
+            audience=GPU_LIFECYCLE_AUDIENCE,
+            leeway=leeway_seconds,
+            options={
+                "require": [
+                    "aud",
+                    "backend_registry_id",
+                    "gpu_resource_id",
+                    "boot_id",
+                    "control_epoch",
+                    "scope",
+                    "jti",
+                    "exp",
+                ],
+            },
+        )
+        return AdmissionTokenClaims.model_validate(payload)
+    except (jwt.PyJWTError, ValueError, TypeError, OverflowError) as exc:
+        raise AdmissionTokenError("admission token verification failed") from exc
+
+
+__all__ = [
+    "AdmissionScope",
+    "AdmissionTokenClaims",
+    "AdmissionTokenError",
+    "BackendResidency",
+    "BoundLifecycleIdentity",
+    "CONTROL_ADMISSION_SCOPES",
+    "CanonicalPositiveInt64String",
+    "DrainTransitionResponse",
+    "GPU_ADMISSION_TOKEN_ALGORITHM",
+    "GPU_ADMISSION_TOKEN_HEADER",
+    "GPU_ADMISSION_TOKEN_TYPE",
+    "GPU_GENERATION_HEADER",
+    "GPU_LIFECYCLE_AUDIENCE",
+    "GenerationTransitionRequest",
+    "LifecycleGate",
+    "LifecycleModeRequest",
+    "LifecycleResetRequest",
+    "LifecycleState",
+    "MANAGED_LIFECYCLE_PROTOCOL_VERSION",
+    "MAX_POSITIVE_INT64",
+    "ManagedLifecycleCapabilities",
+    "ManagedUnloadResponse",
+    "PoolResidency",
+    "WORKLOAD_ADMISSION_SCOPES",
+    "encode_ed25519_public_key",
+    "load_verify_keyring",
+    "sign_admission_token",
+    "validate_canonical_positive_int64",
+    "verify_admission_token",
+]
