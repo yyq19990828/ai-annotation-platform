@@ -488,6 +488,28 @@ A: 接入方实现的 `/health` 没在 `ml_health_timeout`（10s）内返回。�
 
 ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本节给出 docker-compose 最小落地。
 
+### 声明平台可分配的物理 GPU
+
+平台不用容器内 `cuda:0` 猜测物理卡。每张 GPU 或 MIG 资源都要用稳定 key
+`<resource_domain>/<physical_device_token>` 显式声明；同一主机的卡 0 / 卡 1 和不同主机的卡 0
+因 resource domain 不同而互不混淆。优先用 GPU / MIG UUID；只有部署已固定容器与物理
+索引映射时才用 `index:N`。
+
+```dotenv
+GPU_ARBITER_MODE=off
+GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
+```
+
+`allocatable_mb` 是扣除驱动 / CUDA context、桌面或系统进程、平台外占用和安全余量后的可分配
+容量，不是显卡标称总显存。`GPU_ARBITER_MODE` 是全局上限，resource 的 `mode` 是逐卡
+开关；期望模式取两者中更保守的一个，resource 未显式声明 mode 时按 `off`。静态配置
+层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量
+是允许驱逐的弹性超售告警。管理 API 会分开显示 desired 与 effective mode；
+在 observe 派发、运行时账本和门禁握手完成前，effective 固定为 `off`，
+配置 `observe` 会显示未就绪告警，配置 `enforce` 会显示 blocker，不会伪报已启用强制仲裁。
+管理诊断只使用 `connected` 且 3 分钟内成功探测的 CPU / GPU 身份快照；
+URL 改动、探测失败或快照过期后都按 unknown 保守报告，不会用旧 CPU/UUID 证据跳过 claim blocker。
+
 ### docker compose 启用 GPU service
 
 五个 backend 定义在叠加文件 `docker-compose.ml.yml`（从基础 `docker-compose.yml` 拆出，profile-gated 且与核心 infra 无 depends_on），各有独立 profile，可单独启用也可并存。启用时须同时 `-f` 两个文件：

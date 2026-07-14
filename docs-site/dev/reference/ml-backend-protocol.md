@@ -40,7 +40,9 @@ ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全�
 | `/warmup` | POST | 显式预热模型权重到 pool | ⚪ | `MLBackendClient.warmup` |
 | `/versions` | GET | 列出可用模型版本 | ⚪ | `MLBackendClient.get_versions` (`ml_client.py:90`) |
 
-base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；末尾 `/` 会被平台自动 `rstrip` (`ml_client.py:21`)。
+base URL 由超级管理员在「模型市场 → 注册管理」录入；项目管理员只在
+项目设置中启用已注册 backend。末尾 `/` 会被平台自动 `rstrip`
+(`ml_client.py:21`)。
 
 ---
 
@@ -49,7 +51,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 `MLBackend.auth_method` 二选一（`ml_backend.py:22`）：
 
 - `none`（默认）— 平台不发送任何认证头。
-- `token` — 平台在所有请求加 `Authorization: Bearer <auth_token>`（`ml_client.py:25-29`）。`auth_token` 在 ProjectSettings 录入，存 PG 加密列，仅服务端可见。
+- `token` — 平台在所有请求加 `Authorization: Bearer <auth_token>`（`ml_client.py:25-29`）。`auth_token` 在全局注册表单录入，存入 PG 且不在 API 响应中回传。
 
 未来扩展（如 mTLS、HMAC 签名）走新 `auth_method` 值，不破坏现有 backend。
 

@@ -30,14 +30,31 @@ from app.db.models.user import User
 from app.deps import get_db, require_roles
 from app.schemas.ml_backend import (
     ComputeInfo,
-    MLBackendCreate,
+    GPUBackendConfigStatus,
+    GPUConfigDiagnostic,
+    GPUConfigErrorResponse,
+    HealthMeta,
     MLBackendHealthResponse,
     MLBackendOut,
-    MLBackendUpdate,
+    MLBackendRegistryConflictResponse,
+    MLBackendRegistryCreate,
+    MLBackendRegistryUpdate,
+    RequestValidationErrorResponse,
+    ResidencyInfo,
 )
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
-from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
+from app.services.gpu_arbiter import (
+    GPUClaimConfigurationError,
+    build_backend_gpu_config_status,
+    build_resource_summaries,
+    claimed_budget_by_resource,
+)
+from app.services.ml_backend import (
+    MLBackendDeleteBlocked,
+    MLBackendService,
+    MLBackendURLConflict,
+)
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -251,7 +268,11 @@ class GlobalBackendItem(BaseModel):
     is_interactive: bool
     auth_method: str
     extra_params: dict = Field(default_factory=dict)
-    health_meta: dict | None = None
+    gpu_resource_id: str | None = None
+    vram_budget_mb: int | None = None
+    eviction_priority: int = 0
+    gpu_config: GPUBackendConfigStatus
+    health_meta: HealthMeta | dict | None = None
     source_project_id: str
     source_project_name: str
     last_checked_at: str | None = None
@@ -277,8 +298,10 @@ async def list_all_backends(
             MLBackendRegistry.last_checked_at.desc().nullslast()
         )
     )
+    backends = list(res.scalars().all())
+    totals = claimed_budget_by_resource(backends)
     items: list[GlobalBackendItem] = []
-    for backend in res.scalars().all():
+    for backend in backends:
         items.append(
             GlobalBackendItem(
                 id=str(backend.id),
@@ -288,6 +311,10 @@ async def list_all_backends(
                 is_interactive=backend.is_interactive,
                 auth_method=backend.auth_method,
                 extra_params=backend.extra_params or {},
+                gpu_resource_id=backend.gpu_resource_id,
+                vram_budget_mb=backend.vram_budget_mb,
+                eviction_priority=backend.eviction_priority,
+                gpu_config=build_backend_gpu_config_status(backend, totals),
                 health_meta=backend.health_meta,
                 source_project_id="",
                 source_project_name=backend.source,
@@ -299,6 +326,46 @@ async def list_all_backends(
     return GlobalBackendListResponse(items=items)
 
 
+class GPUArbiterResourceItem(BaseModel):
+    gpu_resource_id: str
+    node_id: str
+    physical_device_token: str
+    allocatable_mb: int
+    configured_mode: Literal["off", "observe", "enforce"] | None = None
+    desired_mode: Literal["off", "observe", "enforce"]
+    effective_mode: Literal["off", "observe", "enforce"]
+    claimed_budget_mb: int
+    claimed_backend_count: int
+    status: Literal["ok", "info", "warning", "critical", "blocker"]
+    diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)
+
+
+class GPUArbiterResourcesResponse(BaseModel):
+    global_desired_mode: Literal["off", "observe", "enforce"]
+    runtime_ready: bool
+    resources: list[GPUArbiterResourceItem]
+    diagnostics: list[GPUConfigDiagnostic]
+
+
+@router.get("/gpu-resources", response_model=GPUArbiterResourcesResponse)
+async def list_gpu_resources(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> GPUArbiterResourcesResponse:
+    """Return typed physical resources and static claim diagnostics; no side effects."""
+
+    backends = list(
+        (await db.execute(select(MLBackendRegistry))).scalars().all()
+    )
+    resources, diagnostics = build_resource_summaries(backends)
+    return GPUArbiterResourcesResponse(
+        global_desired_mode=settings.gpu_arbiter_mode.value,
+        runtime_ready=False,
+        resources=[GPUArbiterResourceItem(**item) for item in resources],
+        diagnostics=diagnostics,
+    )
+
+
 # ─── v0.19.0 ADR-0044 · superadmin 全局注册表 CRUD ──────────────────────────
 #
 # backend 是全局资源 (一物理 backend = 一 registry 行 = 一能力快照 = 一并发闸)。
@@ -307,9 +374,19 @@ async def list_all_backends(
 # 守卫 + projects/predictions FK SET NULL 级联。
 
 
-@router.post("/registry", response_model=MLBackendOut, status_code=201)
+@router.post(
+    "/registry",
+    response_model=MLBackendOut,
+    status_code=201,
+    responses={
+        409: {"model": MLBackendRegistryConflictResponse},
+        422: {
+            "model": GPUConfigErrorResponse | RequestValidationErrorResponse
+        },
+    },
+)
 async def create_registry(
-    data: MLBackendCreate,
+    data: MLBackendRegistryCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
@@ -320,17 +397,36 @@ async def create_registry(
     if existing is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"该 URL 已注册为全局 backend ({existing.name})",
+            detail={
+                "error_code": "ml_backend_url_conflict",
+                "message": f"该 URL 已注册为全局 backend ({existing.name})",
+            },
         )
-    backend = await svc.create_registry(
-        name=data.name,
-        url=data.url,
-        source="manual",
-        is_interactive=data.is_interactive,
-        auth_method=data.auth_method,
-        auth_token=data.auth_token,
-        extra_params=data.extra_params,
-    )
+    try:
+        backend = await svc.create_registry(
+            name=data.name,
+            url=data.url,
+            source="manual",
+            is_interactive=data.is_interactive,
+            auth_method=data.auth_method,
+            auth_token=data.auth_token,
+            extra_params=data.extra_params,
+            gpu_resource_id=data.gpu_resource_id,
+            vram_budget_mb=data.vram_budget_mb,
+            eviction_priority=data.eviction_priority,
+        )
+    except GPUClaimConfigurationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "gpu_config_invalid",
+                "message": str(exc),
+                "diagnostics": [
+                    diagnostic.model_dump(mode="json")
+                    for diagnostic in exc.diagnostics
+                ],
+            },
+        ) from exc
     await AuditService.log(
         db,
         actor=admin,
@@ -346,10 +442,19 @@ async def create_registry(
     return MLBackendOut.model_validate(backend, from_attributes=True)
 
 
-@router.put("/registry/{registry_id}", response_model=MLBackendOut)
+@router.put(
+    "/registry/{registry_id}",
+    response_model=MLBackendOut,
+    responses={
+        409: {"model": MLBackendRegistryConflictResponse},
+        422: {
+            "model": GPUConfigErrorResponse | RequestValidationErrorResponse
+        },
+    },
+)
 async def update_registry(
     registry_id: uuid.UUID,
-    data: MLBackendUpdate,
+    data: MLBackendRegistryUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
@@ -357,7 +462,28 @@ async def update_registry(
     """编辑全局 backend 的端点固有属性 (name/url/auth/extra_params/is_interactive)。"""
     svc = MLBackendService(db)
     updates = data.model_dump(exclude_unset=True)
-    backend = await svc.update(registry_id, **updates)
+    try:
+        backend = await svc.update(registry_id, **updates)
+    except GPUClaimConfigurationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "gpu_config_invalid",
+                "message": str(exc),
+                "diagnostics": [
+                    diagnostic.model_dump(mode="json")
+                    for diagnostic in exc.diagnostics
+                ],
+            },
+        ) from exc
+    except MLBackendURLConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_url_conflict",
+                "message": f"该 URL 已注册为全局 backend ({exc.backend_name})",
+            },
+        ) from exc
     if backend is None:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(
@@ -466,6 +592,7 @@ class ObserveTarget(BaseModel):
     video_pool: dict | None = None  # v0.10.36 · 视频追踪显存池
     cache: dict | None = None
     compute: ComputeInfo | None = None
+    residency: ResidencyInfo | dict | None = None
     variant_catalog: VariantCatalog | None = None
     supported_variants: list[dict] = []
     supported_trackers: list[
@@ -568,6 +695,7 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         video_pool=health.get("video_pool"),  # v0.10.36
         cache=health.get("cache"),
         compute=health.get("compute"),
+        residency=health.get("residency"),
         variant_catalog=catalog,
         supported_variants=supported_variants,
         supports_variants=catalog is not None or bool(supported_variants),

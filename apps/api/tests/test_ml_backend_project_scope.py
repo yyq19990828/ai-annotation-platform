@@ -4,9 +4,11 @@
 require_roles 校验「全局角色」, 未校验 URL 里的 project_id 是否对调用者可见/归其所有,
 形成跨项目越权面:
   · 读端点 (list/setup/capabilities/interactive): 全局 annotator/reviewer 可读任意项目;
-  · 写端点 (create/update/delete/unload/...): 任一 project_admin 可改他人名下项目。
+  · 项目启用写端点: 任一 project_admin 可改他人名下项目。
+  · 全局注册行写端点 (create/update/unload/...): project_admin 可改全局共享状态。
 
-修复: 读端点叠加 require_project_visible, 写端点叠加 require_project_owner。
+修复: 读端点叠加 require_project_visible，项目启用叠加
+require_project_owner；会新建或修改全局注册行的端点只允许 super_admin。
 本模块锁定该行为 (正/反各一)。
 """
 
@@ -95,6 +97,29 @@ async def test_list_backends_ok_for_member_annotator(
     assert len(resp.json()) == 1
 
 
+async def test_project_backend_list_keeps_malformed_health_meta_observable(
+    httpx_client_bound, super_admin, db_session
+):
+    """第三方历史坏 health JSON 不能让项目 backend 列表整体 500。"""
+    owner, token = super_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    backend.health_meta = {
+        "compute": [],
+        "gpu_info": "unreadable",
+        "residency": {},
+    }
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj.id}/ml-backends",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()[0]["health_meta"]["residency"] == {}
+
+
 # ── 写端点: require_project_owner ────────────────────────────────────
 
 
@@ -115,10 +140,10 @@ async def test_create_backend_denied_for_non_owner_project_admin(
     assert resp.status_code == 403, resp.text
 
 
-async def test_create_backend_ok_for_owning_project_admin(
+async def test_create_backend_denied_for_owning_project_admin(
     httpx_client_bound, project_admin, db_session
 ):
-    """owner project_admin 给自己项目加 backend → 201 (未被过度收紧)。"""
+    """create 会写全局注册行，项目 owner 也不能执行。"""
     pm, pm_token = project_admin
     proj = await _seed_project(db_session, pm.id)
     await db_session.commit()
@@ -128,7 +153,7 @@ async def test_create_backend_ok_for_owning_project_admin(
         json={"name": "sam3", "url": "http://sam3-own/", "is_interactive": True},
         headers={"Authorization": f"Bearer {pm_token}"},
     )
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 403, resp.text
 
 
 # ── 共享全局态运维端点: unload/reload 收口到 super_admin ────────────────────

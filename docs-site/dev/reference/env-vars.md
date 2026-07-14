@@ -71,6 +71,13 @@ last_reviewed: 2026-07-15
 |---|---|---|
 | `ML_BACKEND_OBSERVE_URLS` | `—` | 与项目注册解耦: 没有任何项目注册 backend 时, 运维也能在模型市场直连这些容器看 健康度 / 变体目录 / 试启动。留空则回退到 ML_BACKEND_DEFAULT_URL (若其非空)。 例: ML_BACKEND_OBSERVE_URLS=http://172.17.0.1:8001,http://172.17.0.1:8002,http://172.17.0.1:8003 (8001=grounded-sam2, 8002=sam3, 8003=yolo) |
 
+## ADR-0049 · 跨 backend GPU 显存仲裁。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `GPU_ARBITER_MODE` | `off` | 全局 desired mode 是逐卡 desired mode 的上限，默认 off。 运行时账本/握手未就绪前 effective 保持 off，observe/enforce 仅显示未就绪诊断。 |
+| `GPU_ARBITER_RESOURCES_JSON` | `{}` | resource key 必须等于 node_id/physical_device_token；优先使用 GPU/MIG UUID。 只有部署明确固定索引映射时才使用 index:N。allocatable_mb 已扣除系统与安全余量。 例: {"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"observe"}} |
+
 ## yolo-backend (ultralytics 多任务 det/seg/pose/obb)
 
 | 变量 | 默认值 | 说明 |

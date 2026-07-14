@@ -93,6 +93,21 @@ async def test_health_meta_keeps_pool():
                     "effective_device": "cpu",
                     "cpu_fallback_supported": True,
                 },
+                "residency": {
+                    "state": "resident",
+                    "gpu_loaded": True,
+                    "active_requests": 1,
+                    "builders": 0,
+                    "borrowers": 2,
+                    "evictable": False,
+                    "pools": {
+                        "models": {
+                            "resident": True,
+                            "device": "cuda:0",
+                            "provider": None,
+                        }
+                    },
+                },
             },
         )
 
@@ -112,4 +127,7 @@ async def test_health_meta_keeps_pool():
         "effective_device": "cpu",
         "cpu_fallback_supported": True,
     }
+    assert meta["residency"]["gpu_loaded"] is True
+    assert meta["residency"]["active_requests"] == 1
+    assert meta["residency"]["borrowers"] == 2
     assert "buckets" in meta["cache"]

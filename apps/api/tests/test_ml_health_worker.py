@@ -62,6 +62,10 @@ async def test_check_health_marks_error_on_failure(
     db_session: AsyncSession, monkeypatch
 ):
     backend = await _make_backend(db_session)
+    backend.health_meta = {
+        "compute": {"configured_device": "cpu"},
+        "gpu_info": {"device_uuid": "GPU-stale"},
+    }
 
     async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
         return False, None
@@ -79,6 +83,7 @@ async def test_check_health_marks_error_on_failure(
     fresh = await svc.get(backend.id)
     assert fresh.state == "error"
     assert fresh.last_checked_at is not None
+    assert fresh.health_meta is None
 
 
 async def test_check_health_persists_compute_meta(db_session: AsyncSession, monkeypatch):
@@ -112,6 +117,46 @@ async def test_check_health_persists_compute_meta(db_session: AsyncSession, monk
     fresh = await MLBackendService(db_session).get(backend.id)
     assert fresh is not None
     assert fresh.health_meta["compute"] == compute
+
+
+async def test_check_health_discards_response_after_endpoint_identity_changes(
+    db_session: AsyncSession, monkeypatch
+):
+    backend = await _make_backend(db_session, url="http://old-endpoint/")
+
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        await MLBackendService(db_session).update(
+            backend.id,
+            url="http://new-endpoint/",
+        )
+        return True, {
+            "compute": {"configured_device": "cpu"},
+            "gpu_info": {"device_uuid": "GPU-old"},
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    healthy = await MLBackendService(db_session).check_health(backend.id)
+
+    assert healthy is False
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.url == "http://new-endpoint"
+    assert fresh.state == "disconnected"
+    assert fresh.health_meta is None
+    assert fresh.last_checked_at is None
 
 
 async def test_check_health_returns_false_for_missing_backend(
@@ -165,6 +210,15 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
                 "effective_device": "cpu",
                 "cpu_fallback_supported": True,
             },
+            "residency": {
+                "state": "resident",
+                "gpu_loaded": True,
+                "active_requests": 0,
+                "builders": 1,
+                "borrowers": 0,
+                "evictable": False,
+                "pools": {"models": {"resident": True, "device": "cuda:0"}},
+            },
         },
     )
 
@@ -177,6 +231,8 @@ def test_build_stats_snapshot_keeps_runtime_load_state():
     assert snap["video_pool"]["active_sessions"] == 0
     assert snap["compute"]["effective_device"] == "cpu"
     assert snap["compute"]["cpu_fallback_supported"] is True
+    assert snap["residency"]["gpu_loaded"] is True
+    assert snap["residency"]["builders"] == 1
     assert snap["last_request_age_seconds"] == 2831.8
 
 

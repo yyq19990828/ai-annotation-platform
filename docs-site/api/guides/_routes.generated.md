@@ -25,6 +25,7 @@
 | POST | `/probe` |
 | GET | `/runtime-hints` |
 | GET | `/all` |
+| GET | `/gpu-resources` |
 | POST | `/registry` |
 | PUT | `/registry/{registry_id}` |
 | DELETE | `/registry/{registry_id}` |
@@ -543,4 +544,4 @@
 
 ---
 
-_共 52 模块 / 296 路由_
+_共 52 模块 / 297 路由_

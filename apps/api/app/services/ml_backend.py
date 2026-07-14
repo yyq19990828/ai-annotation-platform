@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
+from app.services.gpu_arbiter import validate_gpu_claim
 from app.services.ml_client import MLBackendClient
 
 
@@ -17,6 +18,27 @@ class MLBackendDeleteBlocked(Exception):
     def __init__(self, running_jobs: int) -> None:
         super().__init__(f"ml backend has {running_jobs} running prediction job(s)")
         self.running_jobs = running_jobs
+
+
+class MLBackendURLConflict(Exception):
+    """A different global registry row already owns the normalized URL."""
+
+    def __init__(self, backend_name: str) -> None:
+        super().__init__(f"ML backend URL already registered by {backend_name}")
+        self.backend_name = backend_name
+
+
+_REGISTRY_MUTABLE_FIELDS = {
+    "name",
+    "url",
+    "is_interactive",
+    "auth_method",
+    "auth_token",
+    "extra_params",
+    "gpu_resource_id",
+    "vram_budget_mb",
+    "eviction_priority",
+}
 
 
 class MLBackendService:
@@ -34,6 +56,12 @@ class MLBackendService:
     async def create_registry(
         self, name: str, url: str, source: str = "manual", **kwargs
     ) -> MLBackendRegistry:
+        unknown = set(kwargs) - (_REGISTRY_MUTABLE_FIELDS - {"name", "url"})
+        if unknown:
+            raise TypeError(f"unsupported ML backend fields: {sorted(unknown)}")
+        validate_gpu_claim(
+            kwargs.get("gpu_resource_id"), kwargs.get("vram_budget_mb")
+        )
         row = MLBackendRegistry(
             id=uuid.uuid4(), name=name, url=url.rstrip("/"), source=source, **kwargs
         )
@@ -65,27 +93,68 @@ class MLBackendService:
         row = await self.get(registry_id)
         if not row:
             return None
+        unknown = set(kwargs) - _REGISTRY_MUTABLE_FIELDS
+        if unknown:
+            raise TypeError(f"unsupported ML backend fields: {sorted(unknown)}")
+
+        endpoint_identity_changed = False
+        if "url" in kwargs:
+            url = kwargs["url"]
+            if not isinstance(url, str) or not url:
+                raise ValueError("url must not be null or empty")
+            normalized_url = url.rstrip("/")
+            conflict = await self.get_by_url(normalized_url)
+            if conflict is not None and conflict.id != row.id:
+                raise MLBackendURLConflict(conflict.name)
+            endpoint_identity_changed = normalized_url != row.url.rstrip("/")
+            kwargs["url"] = normalized_url
+        if "auth_method" in kwargs:
+            endpoint_identity_changed = endpoint_identity_changed or (
+                kwargs["auth_method"] != row.auth_method
+            )
+        if "auth_token" in kwargs:
+            endpoint_identity_changed = endpoint_identity_changed or (
+                kwargs["auth_token"] != row.auth_token
+            )
+
+        next_resource_id = kwargs.get("gpu_resource_id", row.gpu_resource_id)
+        next_budget_mb = kwargs.get("vram_budget_mb", row.vram_budget_mb)
+        validate_gpu_claim(next_resource_id, next_budget_mb)
+        if "eviction_priority" in kwargs and kwargs["eviction_priority"] is None:
+            raise ValueError("eviction_priority must not be null")
+
         for key, value in kwargs.items():
-            if hasattr(row, key):
-                setattr(row, key, value)
+            setattr(row, key, value)
+        if endpoint_identity_changed:
+            # Endpoint identity changed: old compute/UUID/capability evidence belongs
+            # to a different service and must not survive until the next probe.
+            row.state = "disconnected"
+            row.health_meta = None
+            row.last_checked_at = None
+            row.error_message = None
         await self.db.flush()
         return row
+
+    async def _count_running_predictions(self, registry_id: uuid.UUID) -> int:
+        """Legacy deletion guard only; never an allocation or active-lease truth."""
+
+        running = await self.db.execute(
+            select(AsyncJob.id).where(
+                AsyncJob.kind == "batch_predict",
+                AsyncJob.payload["ml_backend_id"].astext == str(registry_id),
+                AsyncJob.status == AsyncJobStatus.RUNNING.value,
+            )
+        )
+        return len(list(running.scalars().all()))
 
     async def delete(self, registry_id: uuid.UUID) -> bool:
         row = await self.get(registry_id)
         if not row:
             return False
         # prediction job 仍在跑则拒删 (payload.ml_backend_id 现存 registry id)
-        running = await self.db.execute(
-            select(AsyncJob).where(
-                AsyncJob.kind == "batch_predict",
-                AsyncJob.payload["ml_backend_id"].astext == str(registry_id),
-                AsyncJob.status == AsyncJobStatus.RUNNING.value,
-            )
-        )
-        running_jobs = list(running.scalars().all())
+        running_jobs = await self._count_running_predictions(registry_id)
         if running_jobs:
-            raise MLBackendDeleteBlocked(len(running_jobs))
+            raise MLBackendDeleteBlocked(running_jobs)
         # 级联: 解绑 projects.ml_backend_id (SET NULL 语义); project_ml_backend 关联
         # 由 FK ondelete=CASCADE 自动清。历史 prediction.ml_backend_id 同样 SET NULL。
         bound_projects = await self.db.execute(
@@ -205,12 +274,17 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return False
+        requested_url = backend.url
+        requested_auth_method = backend.auth_method
+        requested_auth_token = backend.auth_token
         client = MLBackendClient(backend)
         # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到全局注册行
         healthy, meta = await client.health_meta()
-        backend.state = "connected" if healthy else "error"
-        backend.last_checked_at = datetime.now(UTC)
-        if meta is not None:
+        # A failed or metadata-free probe invalidates the previous device/identity
+        # snapshot.  Keeping it would let stale CPU/UUID evidence pass GPU diagnostics.
+        next_health_meta = None
+        next_is_interactive: bool | None = None
+        if healthy and meta is not None:
             # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]。
             from app.services.ml_capabilities import extract_capabilities
 
@@ -221,9 +295,34 @@ class MLBackendService:
             if caps is not None:
                 meta = {**meta, "capabilities": caps}
                 # is_interactive 改派生对账: 以 /setup 自报为真值
-                backend.is_interactive = caps["is_interactive"]
-            backend.health_meta = meta
-        await self.db.flush()
+                next_is_interactive = caps["is_interactive"]
+            next_health_meta = meta
+
+        values: dict = {
+            "state": "connected" if healthy else "error",
+            "last_checked_at": datetime.now(UTC),
+            "health_meta": next_health_meta,
+        }
+        if next_is_interactive is not None:
+            values["is_interactive"] = next_is_interactive
+        result = await self.db.execute(
+            update(MLBackendRegistry)
+            .where(
+                MLBackendRegistry.id == registry_id,
+                MLBackendRegistry.url == requested_url,
+                MLBackendRegistry.auth_method == requested_auth_method,
+                MLBackendRegistry.auth_token == requested_auth_token,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        # A concurrent URL/credential change invalidates the in-flight response.
+        # The conditional UPDATE is the commit-time fence without holding a DB lock
+        # across the backend network call.
+        if result.rowcount != 1:
+            await self.db.refresh(backend)
+            return False
+        await self.db.refresh(backend)
         return healthy
 
     async def get_interactive_backend(

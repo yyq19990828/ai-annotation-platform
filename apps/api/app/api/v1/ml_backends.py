@@ -29,7 +29,11 @@ from app.schemas.ml_backend import (
     ProjectMLBackendList,
     ProjectMLBackendEnablement,
 )
-from app.services.ml_backend import MLBackendService
+from app.services.gpu_arbiter import GPUClaimConfigurationError
+from app.services.ml_backend import (
+    MLBackendService,
+    MLBackendURLConflict,
+)
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
 from app.services.prediction import PredictionService, to_video_bbox_result
@@ -77,7 +81,7 @@ async def create_ml_backend(
     data: MLBackendCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     # v0.19.0 ADR-0044 · 「为项目添加 backend」= 按 url 复用/新建全局注册项 + 为本项目启用。
     # 不再有 max_ml_backends_per_project 上限 (显存保护交全局行 extra_params.max_concurrency)。
@@ -243,7 +247,7 @@ async def update_ml_backend(
     data: MLBackendUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     svc = MLBackendService(db)
     if not await svc.is_enabled(project_id, backend_id):
@@ -251,7 +255,28 @@ async def update_ml_backend(
     _setup_cache.pop(backend_id, None)
     updates = data.model_dump(exclude_unset=True)
     # 更新作用于全局注册行 (auth/url/extra_params 等端点固有属性)。
-    backend = await svc.update(backend_id, **updates)
+    try:
+        backend = await svc.update(backend_id, **updates)
+    except GPUClaimConfigurationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "gpu_config_invalid",
+                "message": str(exc),
+                "diagnostics": [
+                    diagnostic.model_dump(mode="json")
+                    for diagnostic in exc.diagnostics
+                ],
+            },
+        ) from exc
+    except MLBackendURLConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_url_conflict",
+                "message": f"该 URL 已注册为全局 backend ({exc.backend_name})",
+            },
+        ) from exc
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(

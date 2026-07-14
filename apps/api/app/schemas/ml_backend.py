@@ -1,11 +1,29 @@
 from datetime import datetime
+from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.utils.gpu_resource import validate_gpu_resource_id
 
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+_POSTGRES_INT_MIN = -(2**31)
+_POSTGRES_INT_MAX = 2**31 - 1
+
+GPUResourceId = Annotated[
+    str,
+    Field(strict=True, min_length=3, max_length=512),
+]
+VRAMBudgetMB = Annotated[
+    int,
+    Field(strict=True, ge=1, le=_POSTGRES_INT_MAX),
+]
+EvictionPriority = Annotated[
+    int,
+    Field(strict=True, ge=_POSTGRES_INT_MIN, le=_POSTGRES_INT_MAX),
+]
 
 
 def _validate_ml_backend_url(v: str) -> str:
@@ -25,13 +43,17 @@ def _validate_ml_backend_url(v: str) -> str:
     return v
 
 
+def _validate_gpu_resource_id(value: str) -> str:
+    return validate_gpu_resource_id(value)
+
+
 class MLBackendCreate(BaseModel):
     name: str
     url: str
     is_interactive: bool = False
     auth_method: str = "none"
     auth_token: str | None = None
-    extra_params: dict = {}
+    extra_params: dict = Field(default_factory=dict)
 
     @field_validator("url")
     @classmethod
@@ -55,15 +77,70 @@ class MLBackendUpdate(BaseModel):
         return _validate_ml_backend_url(v)
 
 
+class MLBackendRegistryCreate(MLBackendCreate):
+    """Superadmin-only global registry payload with a strong-typed GPU claim."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gpu_resource_id: GPUResourceId | None = None
+    vram_budget_mb: VRAMBudgetMB | None = None
+    eviction_priority: EvictionPriority = 0
+
+    @field_validator("gpu_resource_id")
+    @classmethod
+    def _single_gpu_resource(cls, value: str | None) -> str | None:
+        return _validate_gpu_resource_id(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def _complete_gpu_claim(self):
+        if (self.gpu_resource_id is None) != (self.vram_budget_mb is None):
+            raise ValueError(
+                "gpu_resource_id 与 vram_budget_mb 必须同时设置或同时为 null"
+            )
+        return self
+
+
+class MLBackendRegistryUpdate(MLBackendUpdate):
+    """Superadmin-only partial update; the service validates the merged claim."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gpu_resource_id: GPUResourceId | None = None
+    vram_budget_mb: VRAMBudgetMB | None = None
+    eviction_priority: EvictionPriority | None = None
+
+    @field_validator("gpu_resource_id")
+    @classmethod
+    def _single_gpu_resource(cls, value: str | None) -> str | None:
+        return _validate_gpu_resource_id(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def _priority_cannot_be_cleared(self):
+        if (
+            "eviction_priority" in self.model_fields_set
+            and self.eviction_priority is None
+        ):
+            raise ValueError("eviction_priority 不得为 null")
+        return self
+
+
 # v0.9.11 PerfHud · health_meta 子结构 (Pydantic 模型 → 前端 codegen 派生类型)
 class GpuInfo(BaseModel):
     device_name: str | None = None
+    device_index: int | None = None
+    device_uuid: str | None = None
+    mig_uuid: str | None = None
+    physical_device_token: str | None = None
     memory_used_mb: int | None = None
     memory_total_mb: int | None = None
     memory_free_mb: int | None = None
+    process_memory_mb: int | None = None
     gpu_utilization_percent: int | None = None
     gpu_temperature_celsius: int | None = None
     gpu_power_watts: float | None = None
+
+    class Config:
+        extra = "allow"
 
 
 class HostInfo(BaseModel):
@@ -193,6 +270,91 @@ class ComputeInfo(BaseModel):
         extra = "allow"
 
 
+class PoolResidencyInfo(BaseModel):
+    resident: bool | None = None
+    device: str | None = None
+    provider: str | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class ResidencyIdentityInfo(BaseModel):
+    audience: str | None = None
+    backend_registry_id: str | None = None
+    gpu_resource_id: str | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class ResidencyInfo(BaseModel):
+    """Backend-reported physical GPU residency; independent from compute intent."""
+
+    state: Literal[
+        "unloaded", "loading", "resident", "draining", "unloading", "unknown"
+    ]
+    gpu_loaded: bool | None = None
+    active_requests: int | None = None
+    builders: int | None = None
+    borrowers: int | None = None
+    draining: bool | None = None
+    evictable: bool | None = None
+    generation: str | None = None
+    pools: dict[str, PoolResidencyInfo] = Field(default_factory=dict)
+    boot_id: str | None = None
+    lifecycle_gate: Literal["legacy", "enforce"] | None = None
+    control_epoch: str | None = None
+    identity: ResidencyIdentityInfo | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class GPUConfigDiagnostic(BaseModel):
+    code: str
+    level: Literal["info", "warning", "critical", "blocker"]
+    message: str
+    field: str | None = None
+    resource_id: str | None = None
+    backend_id: UUID | None = None
+
+
+class GPUBackendConfigStatus(BaseModel):
+    status: Literal["ok", "info", "warning", "critical", "blocker"] = "ok"
+    desired_mode: Literal["off", "observe", "enforce"] = "off"
+    effective_mode: Literal["off", "observe", "enforce"] = "off"
+    allocatable_mb: int | None = None
+    resource_claimed_budget_mb: int | None = None
+    diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)
+
+
+class GPUConfigErrorDetail(BaseModel):
+    error_code: Literal["gpu_config_invalid"] = "gpu_config_invalid"
+    message: str
+    diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)
+
+
+class GPUConfigErrorResponse(BaseModel):
+    detail: GPUConfigErrorDetail
+
+
+class RequestValidationErrorResponse(BaseModel):
+    """FastAPI's default request validation envelope for non-GPU fields."""
+
+    detail: list[dict[str, Any]]
+
+
+class MLBackendRegistryConflictDetail(BaseModel):
+    error_code: Literal["ml_backend_url_conflict", "gpu_backend_active"]
+    message: str
+    active_workloads: int | None = None
+
+
+class MLBackendRegistryConflictResponse(BaseModel):
+    detail: MLBackendRegistryConflictDetail
+
+
 class HealthMeta(BaseModel):
     """v0.9.11 · backend `/health` 深度指标缓存. 由 services/ml_backend.check_health 写入,
     `/admin/ml-integrations/overview` + PerfHud WS 消费."""
@@ -205,6 +367,8 @@ class HealthMeta(BaseModel):
     capabilities: BackendCapabilities | None = None
     # v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。
     compute: ComputeInfo | None = None
+    # ADR-0049 · 真实 pool/session GPU 驻留，不得由 compute=cpu 推断。
+    residency: ResidencyInfo | dict[str, Any] | None = None
 
     class Config:
         extra = "allow"
@@ -221,10 +385,13 @@ class MLBackendOut(BaseModel):
     is_interactive: bool
     auth_method: str
     extra_params: dict
+    gpu_resource_id: str | None = None
+    vram_budget_mb: int | None = None
+    eviction_priority: int = 0
     # v0.9.6 · 缓存的 backend `/health` 深度指标 (gpu_info / cache / model_version);
     # 由 services/ml_backend.check_health 写入, /admin/ml-integrations/overview 直接消费.
     # v0.9.11 · 类型从 dict 收紧到 HealthMeta (含 host PerfHud 字段), 前端 codegen 派生.
-    health_meta: HealthMeta | None = None
+    health_meta: HealthMeta | dict[str, Any] | None = None
     error_message: str | None
     last_checked_at: datetime | None = None
     created_at: datetime
@@ -261,6 +428,7 @@ class MLBackendStatsSnapshot(BaseModel):
     video_pool: dict | None = None
     # v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。
     compute: ComputeInfo | None = None
+    residency: ResidencyInfo | dict[str, Any] | None = None
     timestamp: datetime
 
 

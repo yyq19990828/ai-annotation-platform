@@ -74,8 +74,8 @@ async def sync_env_backends() -> None:
                 existing.name = name
                 existing.state = state
                 existing.is_interactive = is_interactive
-                if health_meta is not None:
-                    existing.health_meta = health_meta
+                # A failed probe must invalidate the previous endpoint snapshot.
+                existing.health_meta = health_meta
                 existing.last_checked_at = now
 
         # reconcile: env 里已不存在的 source='env' 行置 disconnected (保留行)

@@ -151,6 +151,8 @@ class MLBackendClient:
                         "pool",
                         "video_pool",
                         "compute",
+                        # ADR-0049 · 全 pool/session 驻留真值，与 compute 配置意图分离。
+                        "residency",
                     )
                     if k in data
                 }

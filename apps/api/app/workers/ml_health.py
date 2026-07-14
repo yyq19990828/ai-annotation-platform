@@ -51,6 +51,8 @@ _PERFHUD_META_KEYS = (
     # v0.22.3 WS4 · compute (configured_device/effective_device/effective_provider),
     # 用于 PerfHud 显示 GPU 静默退回 CPU 告警。
     "compute",
+    # ADR-0049 · 保留后端真实驻留 / active / builder / borrower 信号。
+    "residency",
 )
 
 

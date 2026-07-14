@@ -84,6 +84,8 @@ services:
       MINIO_SECRET_KEY: minioadmin
       CONNECTOR_ENCRYPTION_KEY: ${CONNECTOR_ENCRYPTION_KEY:-}
       CONNECTOR_HOST_ALLOWLIST: ${CONNECTOR_HOST_ALLOWLIST:-}
+      GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
+      GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
     volumes:
@@ -128,6 +130,8 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+      GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
+      GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
       # SAM3 文本 multiplex / PVS 的单窗上限。显式透传 .env，避免 dev compose
       # 只改宿主机变量但 GPU worker 仍使用镜像内默认值。
       VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES: ${VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES:-16}
@@ -165,6 +169,8 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+      GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
+      GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
     volumes:
       - ./data/duckdb:/var/lib/duckdb
       - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
@@ -198,6 +204,8 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
+      GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
     volumes:
@@ -240,6 +248,8 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
+      GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
     volumes:
       # v0.10.25 · dev 源码热挂载 (同 celery-worker): 改 beat schedule 只需 restart 不必 rebuild。
       - ./apps/api:/app
