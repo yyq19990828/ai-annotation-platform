@@ -30,7 +30,12 @@ import time
 
 import httpx
 import torch
-from aap_backend_runtime import fetch_image, free_gpu_memory, versions_payload
+from aap_backend_runtime import (
+    effective_device_value,
+    fetch_image,
+    free_gpu_memory,
+    versions_payload,
+)
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -464,6 +469,14 @@ def health() -> dict:
         # v0.14.15 · video tracker 独立池同样使用 PoolStatus.loaded_keys 协议形态.
         "video_pool": _video_pool.health(),
         "provisioning": _provisioning,
+        # 五镜像统一有效设备观测 (torch 系 effective_device / ORT 系 effective_provider)。
+        # configured_device = 环境配置 (本 backend 不读 *_DEVICE env, predictor 锁 "cuda");
+        # effective_device = 真实探测生效设备 (None=尚未加载, "cpu"=GPU 配置但已静默退回,
+        # 供观测「GPU 静默退化」根因排查)。
+        "compute": {
+            "configured_device": "cuda",
+            "effective_device": effective_device_value(),
+        },
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }

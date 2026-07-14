@@ -35,6 +35,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from aap_backend_runtime import effective_device, latch_cpu
 from aap_protocol_v2 import decode_low_res_mask, encode_low_res_mask
 from embedding_cache import CacheEntry, EmbeddingCache
 from mask_utils import MultiPolygonRing, mask_to_multi_polygon
@@ -103,7 +104,7 @@ class GroundedSAM2Predictor:
         self.dino_variant = dino_variant
         self.box_threshold = box_threshold
         self.text_threshold = text_threshold
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = effective_device("cuda")
         self.embedding_cache = embedding_cache
 
         self._sam_predictor = self._load_sam()
@@ -117,7 +118,12 @@ class GroundedSAM2Predictor:
 
         cfg_name, ckpt_name = SAM2_CONFIGS[self.sam_variant]
         ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
-        sam2_model = build_sam2(cfg_name, ckpt_path, device=self.device)
+        try:
+            sam2_model = build_sam2(cfg_name, ckpt_path, device=self.device)
+        except Exception as exc:  # noqa: BLE001
+            latch_cpu(f"build_sam2 failed: {exc}")
+            self.device = "cpu"
+            sam2_model = build_sam2(cfg_name, ckpt_path, device=self.device)
         return SAM2ImagePredictor(sam2_model)
 
     def _load_dino(self):
@@ -132,7 +138,12 @@ class GroundedSAM2Predictor:
             f"/app/vendor/grounded-sam-2/grounding_dino/groundingdino/config/{cfg_name}",
         )
         ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
-        return load_model(cfg_path, ckpt_path, device=self.device)
+        try:
+            return load_model(cfg_path, ckpt_path, device=self.device)
+        except Exception as exc:  # noqa: BLE001
+            latch_cpu(f"load_model(GroundingDINO) failed: {exc}")
+            self.device = "cpu"
+            return load_model(cfg_path, ckpt_path, device=self.device)
 
     # ---------- SAM 内部状态 snapshot / restore ----------
     #

@@ -31,6 +31,7 @@ if os.path.isdir(_VENDOR_ROOT) and _VENDOR_ROOT not in sys.path:
 import numpy as np
 import torch
 
+from aap_backend_runtime import effective_device, latch_cpu
 # 复用 multiplex 封装里的通用几何/IO 静态工具(抽窗解码、mask→几何、临时目录清理),
 # 避免重复实现; 这些与 multiplex 逻辑无关, 纯 OpenCV/几何。
 from video_predictor import SAM3MultiplexVideoTracker, _to_numpy
@@ -75,7 +76,7 @@ class SAM3PVSVideoTracker:
         self, *, max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES
     ) -> None:
         self.max_window_frames = max_window_frames
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = effective_device("cuda")
         self.active_sessions = 0
         self._predictor = self._load_predictor()
 
@@ -87,17 +88,30 @@ class SAM3PVSVideoTracker:
         if not os.path.isfile(_IMAGE_CKPT):
             raise FileNotFoundError(_IMAGE_CKPT)
         logger.info("building sam3 PVS video predictor ckpt=%s", _IMAGE_CKPT)
-        model = build_sam3_video_model(
-            checkpoint_path=_IMAGE_CKPT,
-            bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
-            # 图像/视频权重同容 sam3.pt, tracker 相关键齐, 但整包含非 tracker 键 →
-            # 非严格加载(与官方 notebook 及 multiplex 封装一致)。
-            strict_state_dict_loading=False,
-        )
+        # build_sam3_video_model 无 device= 形参, 默认在 CUDA 上构建; GPU 失效时 latch CPU
+        # 并重建, 之后把 tracker(+ 嫁接的 detector backbone)显式搬到 CPU。
+        try:
+            model = build_sam3_video_model(
+                checkpoint_path=_IMAGE_CKPT,
+                bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
+                # 图像/视频权重同容 sam3.pt, tracker 相关键齐, 但整包含非 tracker 键 →
+                # 非严格加载(与官方 notebook 及 multiplex 封装一致)。
+                strict_state_dict_loading=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            latch_cpu(f"build_sam3_video_model failed: {exc}")
+            self.device = "cpu"
+            model = build_sam3_video_model(
+                checkpoint_path=_IMAGE_CKPT,
+                bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
+                strict_state_dict_loading=False,
+            )
         predictor = model.tracker
         # 嫁接 detector 的 backbone 给 tracker(官方 notebook 配方: 二者共享视觉 backbone,
         # build 时 tracker.backbone 被剥离以省显存, 用前接回)。
         predictor.backbone = model.detector.backbone
+        if self.device == "cpu":
+            predictor.to("cpu")
         return predictor
 
     # ---------- 公开接口 ----------

@@ -47,6 +47,7 @@ import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
 import torch
 
+from aap_backend_runtime import effective_device, latch_cpu
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
 from mask_utils.rle import encode_coco_rle
 
@@ -83,7 +84,7 @@ class SAM2VideoTracker:
     ) -> None:
         self.sam_variant = sam_variant
         self.max_window_frames = max_window_frames
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = effective_device("cuda")
         self._predictor = self._load_video_predictor()
         # 当前活跃会话数 (0/1; 单 worker 串行, 仅用于 /health 观测)。
         self.active_sessions = 0
@@ -97,7 +98,12 @@ class SAM2VideoTracker:
             # 与图片池一致: checkpoint 未预置交给 main.py 翻成 503。
             raise FileNotFoundError(ckpt_path)
         logger.info("building video predictor variant=%s ckpt=%s", self.sam_variant, ckpt_name)
-        return build_sam2_video_predictor(cfg_name, ckpt_path, device=self.device)
+        try:
+            return build_sam2_video_predictor(cfg_name, ckpt_path, device=self.device)
+        except Exception as exc:  # noqa: BLE001
+            latch_cpu(f"build_sam2_video_predictor failed: {exc}")
+            self.device = "cpu"
+            return build_sam2_video_predictor(cfg_name, ckpt_path, device=self.device)
 
     # ---------- 公开接口 ----------
 
