@@ -73,6 +73,68 @@ CONF_THRES = float(os.environ.get("ONNXTOOLS_CONF_THRES", "0.5"))
 IDLE_UNLOAD_SECONDS = float(os.environ.get("ONNXTOOLS_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.environ.get("ONNXTOOLS_IDLE_CHECK_INTERVAL", "60"))
 
+
+# ORT provider 功能探测结果 (None=未探测)。一旦探过即缓存，启动后不再重复试 CUDA。
+_effective_providers: list[str] | None = None
+
+
+def _available_providers() -> list[str]:
+    """ORT 构建列出的 provider 列表 (可用性, 非功能性)。
+
+    供 /health.configured_device 判断「镜像意图」——构建列出 CUDAExecutionProvider 即视作
+    配置 cuda。与 ``_probe_providers`` (功能性探测) 区分：列出 ≠ 可用, 驱动损坏时列出仍有 CUDA
+    但功能探测退回 CPU, 两者漂移即「静默退回 CPU」信号。
+    """
+    try:
+        import onnxruntime  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return ["CPUExecutionProvider"]
+    return list(onnxruntime.get_available_providers())
+
+
+def _probe_providers() -> list[str]:
+    """功能探测 ORT 可用 provider 优先级，镜像 onnxtools.infer_utils.get_best_available_providers。
+
+    ORT 列出 ``CUDAExecutionProvider`` 不代表可用 —— 驱动 / cuDNN 损坏时
+    ``InferenceSession(providers=['CUDAExecutionProvider'])`` 会抛错。这里用真实 det 模型文件
+    开一次 CUDA session 探测：能开起来返回 ``['CUDAExecutionProvider', 'CPUExecutionProvider']``
+    (ORT 自身在 CUDA 初始化失败时按 list 顺序落 CPU)，否则返回 ``['CPUExecutionProvider']``。
+    探测结果缓存到模块级 ``_effective_providers``，供 ``_make_detector`` / ``_make_va_classifier``
+    与 /health 复用单一真值。
+
+    模型文件不存在 (启动期未落盘) 时，仍返回含 CUDA 的优先级列表 —— 此时退回 ORT 自身
+    行为 (list 含 CPU fallback)，由 BaseORT 构造时的 ORT fallback 兜底，不阻塞启动。
+    """
+    global _effective_providers
+    if _effective_providers is not None:
+        return _effective_providers
+    try:
+        import onnxruntime  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        logger.warning("onnxruntime 不可用; provider 探测退回 CPU")
+        _effective_providers = ["CPUExecutionProvider"]
+        return _effective_providers
+    available = onnxruntime.get_available_providers()
+    if "CUDAExecutionProvider" not in available:
+        _effective_providers = ["CPUExecutionProvider"]
+        return _effective_providers
+    # 用真实 det 模型文件做 CUDA 功能探测。
+    det_path = os.path.join(MODEL_DIR, DET_MODEL)
+    try:
+        if os.path.exists(det_path):
+            onnxruntime.InferenceSession(det_path, providers=["CUDAExecutionProvider"])
+            _effective_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        else:
+            # 模型尚未落盘：保留 CUDA 优先 (ORT 构造时按 list 自动落 CPU fallback)，不阻塞。
+            _effective_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "ORT CUDA 探测失败 (%s) — CUDA 已列出但不可用 (驱动/cuDNN 不匹配?)，"
+            "onnxtools backend 全部句柄退回 CPUExecutionProvider。", exc,
+        )
+        _effective_providers = ["CPUExecutionProvider"]
+    return _effective_providers
+
 _predictor: VehicleAttributePredictor | None = None
 _idle_task: asyncio.Task | None = None
 _last_used: float | None = None
@@ -116,13 +178,19 @@ def _forget_handles() -> None:
 
 
 def _make_detector() -> Any:
-    """构造独立 rtdetr 检测器(RtdetrORT),只给检测权重。"""
+    """构造独立 rtdetr 检测器(RtdetrORT),只给检测权重。
+
+    ``providers`` 由启动期功能探测决定 (``_probe_providers``)：CUDA 列出但损坏时已降级为
+    纯 CPU，避免 RtdetrORT 构造时硬抛 CUDA error。create_detector 把 kwargs 透传给
+    RtdetrORT → BaseORT (providers list 含 CPU fallback，ORT 自身按序降级)。
+    """
     from onnxtools import create_detector
 
     return create_detector(
         model_type="rtdetr",
         onnx_path=os.path.join(MODEL_DIR, DET_MODEL),
         conf_thres=CONF_THRES,
+        providers=_probe_providers(),
     )
 
 
@@ -130,11 +198,21 @@ def _make_va_classifier() -> Any:
     """构造独立车辆属性分类器(VehicleAttributeORT),只给分类权重(type/color map 用包内默认)。"""
     from onnxtools import VehicleAttributeORT
 
-    return VehicleAttributeORT(os.path.join(MODEL_DIR, VA_MODEL), conf_thres=CONF_THRES)
+    return VehicleAttributeORT(
+        os.path.join(MODEL_DIR, VA_MODEL),
+        conf_thres=CONF_THRES,
+        providers=_probe_providers(),
+    )
 
 
 def _make_pipeline() -> Any:
-    """构造一锅端 composite(VehicleAttributePipeline,内部自建 detector + va)。"""
+    """构造一锅端 composite(VehicleAttributePipeline,内部自建 detector + va)。
+
+    ⚠️ 残留: ``VehicleAttributePipeline`` 不接受 ``providers`` kwarg (第三方包限制),
+    内部默认 ``['CUDAExecutionProvider', 'CPUExecutionProvider']`` —— ORT 自身在 CUDA
+    初始化失败时按 list 顺序落 CPU, 故坏上下文仍能降级, 只是 /health 报的 effective_provider
+    对 pipeline 路径是「旁证」(探测 session 的生效 provider), 非每条内部 session 的逐个真值。
+    """
     from onnxtools.pipeline import VehicleAttributePipeline
 
     return VehicleAttributePipeline(
@@ -174,10 +252,14 @@ async def lifespan(app: FastAPI):
         va_factory=_make_va_classifier,
         pipeline_factory=_make_pipeline,
     )
+    # 启动期预热 provider 探测缓存 (功能性 CUDA session 探测)，结果缓存供后续所有句柄构造 +
+    # /health 复用单一真值。CUDA 列出但损坏时这里就降级为 CPU，避免首条 predict 构造句柄时硬抛。
+    probed = _probe_providers()
     _idle_task = asyncio.create_task(_idle_watcher())
     logger.info(
-        "onnxtools-backend ready (lazy): model_dir=%s det=%s va=%s conf=%.2f idle_unload=%.0fs",
-        MODEL_DIR, DET_MODEL, VA_MODEL, CONF_THRES, IDLE_UNLOAD_SECONDS,
+        "onnxtools-backend ready (lazy): model_dir=%s det=%s va=%s conf=%.2f idle_unload=%.0fs "
+        "effective_provider=%s",
+        MODEL_DIR, DET_MODEL, VA_MODEL, CONF_THRES, IDLE_UNLOAD_SECONDS, probed[0],
     )
     try:
         yield
@@ -229,6 +311,7 @@ def _pool_status() -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    probed = _probe_providers()
     return {
         "status": "ok",
         "service": "onnxtools-backend",
@@ -238,6 +321,15 @@ def health() -> dict[str, Any]:
         "loaded_handles": _predictor.loaded_count() if _predictor is not None else 0,
         # v0.18.20 · 句柄池状态, 供模型市场「已加载 / 预热」展示 (此前缺 pool 字段)。
         "pool": _pool_status(),
+        # compute: 配置设备 vs 探测后生效 provider。configured_device = 镜像意图 (ORT 构建列出
+        # CUDA 即视作配置 cuda)；effective_provider = 功能探测后实际生效 provider。两者漂移
+        # (configured=cuda / effective=CPUExecutionProvider) 即「CUDA 列出但损坏已静默退回 CPU」
+        # 信号，供平台出角标 (ADR-0049 L0 观测地基)。⚠️ pipeline 路径不接受 providers kwarg
+        # (残留)，effective_provider 对它是旁证，见 _make_pipeline 注释。
+        "compute": {
+            "configured_device": "cuda" if "CUDAExecutionProvider" in _available_providers() else "cpu",
+            "effective_provider": probed[0],
+        },
     }
 
 

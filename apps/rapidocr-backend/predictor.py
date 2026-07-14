@@ -37,6 +37,40 @@ POLY_LABEL = "text"  # OCR 文本框无类别，用通用占位 label。
 UTC = timezone.utc
 
 
+def _probe_ort_cuda_use() -> bool:
+    """功能探测 CUDA 是否真的可用 (不止 ``get_device`` 软检查)，决定 RapidOCR 的 ``use_cuda``。
+
+    RapidOCR 不接受 ``providers`` list，只接受 ``use_cuda`` 布尔。它内部的 CUDA 判定是
+    「软」的 (仅 ``onnxruntime.get_device() == "GPU"`` + provider 列出)，驱动 / cuDNN 损坏
+    时 ``InferenceSession()`` 仍会抛错 → ``RapidOCR(params)`` 构造硬失败。这里在构造前先
+    用一个真实 det 模型文件开 ``CUDAExecutionProvider`` session 做功能探测：能开起来才让
+    ``use_cuda=True``，否则降级 CPU。
+
+    探测目标用 catalog SSOT 的默认 det 模型路径 (``catalog.resolve(DET_MODEL_ID, None)``
+    取默认 v5-mobile variant 的 det_path)；模型文件不存在 (如启动时未落盘) 则退回软检查，
+    不阻塞启动 —— 此路径降级由 RapidOCR 自身 ``use_cuda=False`` 兜底。
+    """
+    try:
+        import onnxruntime  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return False
+    if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
+        return False
+    probe_path = catalog.resolve(catalog.DET_MODEL_ID, None).det_path
+    if not os.path.exists(probe_path):
+        # 启动期模型可能尚未落盘：退回软检查 (与 RapidOCR 原判定口径一致)，避免误降级。
+        return onnxruntime.get_device() == "GPU"
+    try:
+        onnxruntime.InferenceSession(probe_path, providers=["CUDAExecutionProvider"])
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "ORT CUDA 探测失败 (%s) — CUDA 已列出但不可用 (驱动/cuDNN 不匹配?)，"
+            "rapidocr 退回 use_cuda=False (CPU)。", exc,
+        )
+        return False
+
+
 def _box_to_points(box: np.ndarray, w: int, h: int) -> list[list[float]]:
     """像素四点 (4,2) → 0-100 百分比 [[x,y],...]。"""
     return [[float(p[0]) / w * 100.0, float(p[1]) / h * 100.0] for p in box]
@@ -98,7 +132,12 @@ class RapidOCRPredictor:
     """
 
     def __init__(self) -> None:
-        self.use_cuda = os.environ.get("RAPIDOCR_DEVICE", "gpu").lower() == "gpu"
+        # 配置层：RAPIDOCR_DEVICE=gpu → 想用 CUDA；cpu → 明确禁用。
+        # 功能层：use_cuda 由 _probe_ort_cuda_use() 决定 —— 配置 gpu 但 CUDA 列出不可用
+        # 时，这里探测失败即翻 False，避免 RapidOCR(params) 构造硬失败。
+        configured = os.environ.get("RAPIDOCR_DEVICE", "gpu").lower() == "gpu"
+        self._configured_cuda = configured  # 配置原值，供 /health.configured_device 暴露
+        self.use_cuda = _probe_ort_cuda_use() if configured else False
         self.pool_cap = int(os.environ.get("RAPIDOCR_POOL_CAP", "3"))
         self._pool: OrderedDict[str, RapidOCR] = OrderedDict()
         self._meta: dict[str, dict[str, Any]] = {}  # pool_key → {loaded_at,last_used,hit}
@@ -279,6 +318,18 @@ class RapidOCRPredictor:
         return items, infer_ms
 
     # ---------------- 观测 ----------------
+    def configured_device(self) -> str:
+        """配置层设备原值 (RAPIDOCR_DEVICE)，供 /health.compute.configured_device 暴露。"""
+        return "cuda" if self._configured_cuda else "cpu"
+
+    def effective_provider(self) -> str:
+        """探测后实际生效的 ORT provider，供 /health.compute.effective_provider 暴露。
+
+        RapidOCR 只吃 use_cuda 布尔：True → ``CUDAExecutionProvider``，False →
+        ``CPUExecutionProvider``。这里把布尔翻回 provider 名。
+        """
+        return "CUDAExecutionProvider" if self.use_cuda else "CPUExecutionProvider"
+
     def pool_snapshot(self) -> dict[str, Any]:
         """协议 §4.3 PoolStatus: loaded_keys 需为 [{key, loaded_at, last_used_at, hit_count}]。"""
         with self._lock:
