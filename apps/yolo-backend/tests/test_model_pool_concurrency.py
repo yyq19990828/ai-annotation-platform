@@ -175,6 +175,38 @@ async def test_borrowed_lru_is_not_evicted_or_unloaded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cancelled_borrow_release_finishes_before_returning() -> None:
+    from model_pool import ModelPool
+
+    pool = ModelPool(
+        1,
+        lambda _task, _series, size: _FakeModel(size),
+        lambda: None,
+        build_timeout=1.0,
+    )
+    await pool.warmup("detection", "yolo11", "s")
+    entered = asyncio.Event()
+    leave = asyncio.Event()
+
+    async def use_model() -> None:
+        async with pool.borrow("detection", "yolo11", "s"):
+            entered.set()
+            await leave.wait()
+
+    borrower = asyncio.create_task(use_model())
+    await entered.wait()
+    await pool._lock.acquire()  # noqa: SLF001 - hold borrower metadata release
+    leave.set()
+    await asyncio.sleep(0)
+    borrower.cancel()
+    pool._lock.release()  # noqa: SLF001
+
+    with pytest.raises(asyncio.CancelledError):
+        await borrower
+    assert (await pool.snapshot())["borrowers"] == 0
+
+
+@pytest.mark.asyncio
 async def test_per_entry_use_lock_serializes_mutable_model_use() -> None:
     from model_pool import ModelPool
 
@@ -264,6 +296,9 @@ async def test_cancelled_waiter_does_not_cancel_shared_builder() -> None:
     waiter.cancel()
     with pytest.raises(asyncio.CancelledError):
         await waiter
+    assert pool.builder_for_now("detection", "yolo11", "s") is await pool.builder_for(
+        "detection", "yolo11", "s"
+    )
 
     after_cancel = await pool.snapshot()
     assert after_cancel["builders"] == 1
@@ -403,3 +438,74 @@ async def test_cancelled_unload_waits_for_real_cleanup_before_clearing_state() -
     assert cleaned["cleanup_in_progress"] is False
     assert cleaned["cleanup_failed"] is False
     assert cleaned["gpu_resident"] is False
+
+
+@pytest.mark.asyncio
+async def test_shutdown_waits_for_active_borrower_before_cleanup() -> None:
+    from model_pool import ModelPool
+
+    pool = ModelPool(
+        1,
+        lambda _task, _series, size: _FakeModel(size),
+        lambda: None,
+        build_timeout=1.0,
+    )
+    await pool.warmup("detection", "yolo11", "s")
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def use_model() -> None:
+        async with pool.borrow("detection", "yolo11", "s"):
+            entered.set()
+            await release.wait()
+
+    borrower = asyncio.create_task(use_model())
+    await entered.wait()
+    shutdown = asyncio.create_task(pool.shutdown())
+    await asyncio.sleep(0.02)
+    assert not shutdown.done()
+    assert (await pool.snapshot())["borrowers"] == 1
+
+    release.set()
+    await borrower
+    await asyncio.wait_for(shutdown, timeout=1.0)
+    snapshot = await pool.snapshot()
+    assert snapshot["current_size"] == 0
+    assert snapshot["gpu_resident"] is False
+
+
+@pytest.mark.asyncio
+async def test_cancelled_shutdown_cleans_up_before_reraising() -> None:
+    from model_pool import ModelPool
+
+    pool = ModelPool(
+        1,
+        lambda _task, _series, size: _FakeModel(size),
+        lambda: None,
+        build_timeout=1.0,
+    )
+    await pool.warmup("detection", "yolo11", "s")
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def use_model() -> None:
+        async with pool.borrow("detection", "yolo11", "s"):
+            entered.set()
+            await release.wait()
+
+    borrower = asyncio.create_task(use_model())
+    await entered.wait()
+    shutdown = asyncio.create_task(pool.shutdown())
+    await asyncio.sleep(0)
+    shutdown.cancel()
+    await asyncio.sleep(0.02)
+    shutdown.cancel()
+    assert not shutdown.done()
+
+    release.set()
+    await borrower
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(asyncio.shield(shutdown), timeout=1.0)
+    snapshot = await pool.snapshot()
+    assert snapshot["current_size"] == 0
+    assert snapshot["gpu_resident"] is False

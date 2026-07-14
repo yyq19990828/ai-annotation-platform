@@ -855,7 +855,7 @@ async def _run_predict(
             if operation is not None:
                 pool_task = _pool_task_for_context(ctx)
                 operation.track_future(
-                    await _model_pool.builder_for(
+                    _model_pool.builder_for_now(
                         pool_task,
                         ctx.variants.series,
                         ctx.variants.size,
@@ -1080,7 +1080,7 @@ async def _run_warmup(
     except PoolBusyError as exc:
         raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
     except asyncio.CancelledError:
-        operation.track_future(await _model_pool.builder_for(pool_task, series, size))
+        operation.track_future(_model_pool.builder_for_now(pool_task, series, size))
         raise
     return WarmupResponse(
         ok=True,

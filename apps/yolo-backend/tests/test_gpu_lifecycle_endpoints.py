@@ -340,6 +340,11 @@ async def test_run_warmup_cancellation_tracks_real_builder(monkeypatch) -> None:
 
     pool = ModelPool(1, build, lambda: None, build_timeout=1.0)
     monkeypatch.setattr(main, "_model_pool", pool)
+
+    async def forbidden_builder_lookup(*_args):
+        raise AssertionError("cancel handling must not yield before tracking builder")
+
+    monkeypatch.setattr(pool, "builder_for", forbidden_builder_lookup)
     operation = _OperationRecorder()
     request = main.WarmupRequest.model_validate(
         {"task": "detection", "variants": {"series": "yolo11", "size": "s"}}
@@ -347,6 +352,8 @@ async def test_run_warmup_cancellation_tracks_real_builder(monkeypatch) -> None:
     run = asyncio.create_task(main._run_warmup(request, operation=operation))
     try:
         assert await asyncio.wait_for(asyncio.to_thread(started.wait), timeout=1.0)
+        run.cancel()
+        await asyncio.sleep(0)
         run.cancel()
         with pytest.raises(asyncio.CancelledError):
             await run
@@ -374,6 +381,11 @@ async def test_run_predict_cancellation_tracks_real_builder(monkeypatch) -> None
     pool = ModelPool(1, build, lambda: None, build_timeout=1.0)
     monkeypatch.setattr(main, "_model_pool", pool)
     monkeypatch.setattr(main, "_predictor", YoloPredictor(pool))
+
+    async def forbidden_builder_lookup(*_args):
+        raise AssertionError("cancel handling must not yield before tracking builder")
+
+    monkeypatch.setattr(pool, "builder_for", forbidden_builder_lookup)
     operation = _OperationRecorder()
     request = main.BatchPredictRequest.model_validate(
         {
@@ -387,6 +399,8 @@ async def test_run_predict_cancellation_tracks_real_builder(monkeypatch) -> None
     run = asyncio.create_task(main._run_predict(request, operation=operation))
     try:
         assert await asyncio.wait_for(asyncio.to_thread(started.wait), timeout=1.0)
+        run.cancel()
+        await asyncio.sleep(0)
         run.cancel()
         with pytest.raises(asyncio.CancelledError):
             await run

@@ -512,6 +512,81 @@ async def test_tracked_future_keeps_active_after_http_operation_closes() -> None
 
 
 @pytest.mark.asyncio
+async def test_shutdown_waits_for_active_operation_and_pool_borrower() -> None:
+    lifecycle, pool, _key = _domain()
+    operation = await lifecycle.begin_workload(
+        AdmissionScope.PREDICT,
+        generation_header=None,
+        token=None,
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def use_model() -> None:
+        async with pool.borrow("detection", "yolo11", "s"):
+            entered.set()
+            await release.wait()
+
+    borrower = asyncio.create_task(use_model())
+    await entered.wait()
+    shutdown = asyncio.create_task(lifecycle.shutdown())
+    await asyncio.sleep(0.02)
+    residency = await lifecycle.residency()
+    assert not shutdown.done()
+    assert residency.state.value == "unloading"
+    assert residency.active_requests == 1
+    assert residency.borrowers == 1
+
+    release.set()
+    await borrower
+    await operation.close()
+    await asyncio.wait_for(shutdown, timeout=1.0)
+    residency = await lifecycle.residency()
+    assert residency.state.value == "unloaded"
+    assert residency.gpu_loaded is False
+    assert residency.active_requests == 0
+    assert residency.borrowers == 0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_shutdown_restores_state_after_full_cleanup() -> None:
+    lifecycle, pool, _key = _domain()
+    operation = await lifecycle.begin_workload(
+        AdmissionScope.PREDICT,
+        generation_header=None,
+        token=None,
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def use_model() -> None:
+        async with pool.borrow("detection", "yolo11", "s"):
+            entered.set()
+            await release.wait()
+
+    borrower = asyncio.create_task(use_model())
+    await entered.wait()
+    shutdown = asyncio.create_task(lifecycle.shutdown())
+    await asyncio.sleep(0)
+    shutdown.cancel()
+    await asyncio.sleep(0.02)
+    shutdown.cancel()
+    assert not shutdown.done()
+    assert (await lifecycle.residency()).state.value == "unloading"
+
+    release.set()
+    await borrower
+    await operation.close()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(asyncio.shield(shutdown), timeout=1.0)
+    residency = await lifecycle.residency()
+    assert residency.state.value == "unloaded"
+    assert residency.gpu_loaded is False
+    assert residency.active_requests == 0
+    assert residency.borrowers == 0
+
+
+@pytest.mark.asyncio
 async def test_cancelled_close_still_releases_active_operation() -> None:
     lifecycle, _pool, _key = _domain()
     operation = await lifecycle.begin_workload(

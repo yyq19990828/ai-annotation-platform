@@ -107,6 +107,7 @@ class ModelPool:
         self._last_evict: dict[str, Any] | None = None
         self._cleanup_in_progress = False
         self._cleanup_failed = False
+        self._shutdown_task: asyncio.Task[None] | None = None
 
         self._lock = asyncio.Lock()
         # ``main._build_model`` temporarily changes process cwd, so callbacks must be
@@ -156,7 +157,7 @@ class ModelPool:
         finally:
             if use_lock_acquired:
                 entry.use_lock.release()
-            await asyncio.shield(self._release_borrower(entry))
+            await self._release_borrower_cancellation_safe(entry)
 
     async def warmup(
         self,
@@ -215,6 +216,18 @@ class ModelPool:
                 raise RuntimeError(f"invalid borrower release for {entry.key!r}")
             entry.borrowers -= 1
             self._touch_locked(entry, count_hit=False)
+
+    async def _release_borrower_cancellation_safe(self, entry: _PoolEntry) -> None:
+        cleanup = asyncio.create_task(self._release_borrower(entry))
+        cancelled = False
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                cancelled = True
+        cleanup.result()
+        if cancelled:
+            raise asyncio.CancelledError
 
     def _get_or_start_builder_locked(
         self,
@@ -349,6 +362,16 @@ class ModelPool:
 
         async with self._lock:
             return self._builders.get((task, series, size))
+
+    def builder_for_now(
+        self,
+        task: str,
+        series: str,
+        size: str,
+    ) -> asyncio.Task[_BuildResult] | None:
+        """Read the current builder without yielding on the owning event loop."""
+
+        return self._builders.get((task, series, size))
 
     async def _drop_waiter(self, key: ModelKey) -> None:
         async with self._lock:
@@ -512,16 +535,53 @@ class ModelPool:
         return await self.unload_all(reason="idle", idle_before=idle_before)
 
     async def shutdown(self) -> None:
-        """Wait for real builders before the final full cleanup."""
+        """Finish final cleanup before propagating cancellation to the caller."""
+
+        if self._shutdown_task is None:
+            self._shutdown_task = asyncio.create_task(self._shutdown_impl())
+            self._shutdown_task.add_done_callback(self._consume_builder_result)
+        task = self._shutdown_task
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException:
+                pass
+
+        shutdown_error: BaseException | None = None
+        try:
+            task.result()
+        except BaseException as exc:
+            shutdown_error = exc
+        if shutdown_error is not None:
+            if cancelled:
+                raise asyncio.CancelledError from shutdown_error
+            raise shutdown_error
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _shutdown_impl(self) -> None:
+        """Wait for every real owner before the final full cleanup."""
 
         while True:
             async with self._lock:
                 builders = list(self._builders.values())
-            if not builders:
+                active = bool(
+                    self._waiters
+                    or any(entry.borrowers > 0 for entry in self._entries.values())
+                    or self._cleanup_in_progress
+                )
+            if not builders and not active:
                 break
-            await asyncio.gather(
-                *(asyncio.shield(task) for task in builders), return_exceptions=True
-            )
+            if builders:
+                await asyncio.gather(
+                    *(asyncio.shield(task) for task in builders),
+                    return_exceptions=True,
+                )
+            else:
+                await asyncio.sleep(0.01)
         await self.unload_all(reason="shutdown", force_cleanup=True)
 
     async def snapshot(self) -> dict[str, Any]:

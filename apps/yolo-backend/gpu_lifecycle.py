@@ -167,6 +167,7 @@ class YoloGpuLifecycle:
         self._last_mode: _ModeRecord | None = None
         self._last_reset: _CleanupRecord | None = None
         self._last_unload: _CleanupRecord | None = None
+        self._shutdown_task: asyncio.Task[None] | None = None
 
     @property
     def boot_id(self) -> str:
@@ -673,8 +674,39 @@ class YoloGpuLifecycle:
         return count
 
     async def shutdown(self) -> None:
+        if self._shutdown_task is None:
+            self._shutdown_task = asyncio.create_task(self._shutdown_impl())
+            self._shutdown_task.add_done_callback(self._consume_task_result)
+        task = self._shutdown_task
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException:
+                pass
+
+        shutdown_error: BaseException | None = None
+        try:
+            task.result()
+        except BaseException as exc:
+            shutdown_error = exc
+        if shutdown_error is not None:
+            if cancelled:
+                raise asyncio.CancelledError from shutdown_error
+            raise shutdown_error
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _shutdown_impl(self) -> None:
         async with self._lock:
             self._phase = "unloading"
+        while True:
+            async with self._lock:
+                if not self._active:
+                    break
+            await asyncio.sleep(0.01)
         try:
             await self._pool.shutdown()
         finally:
