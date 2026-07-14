@@ -1,6 +1,6 @@
 # ML backend GPU 失效 → CPU fallback 健壮性审计（四镜像）+ effective_device 平台可观测
 
-- 状态：**v0.22.3 · 执行中**
+- 状态：**v0.22.3 · 已交付**
 - 日期：2026-07-13（计划），2026-07-14（执行）
 - 关联：
   - 黄金标准：`apps/yolo-backend/main.py`、`apps/yolo-backend/predictor.py`（yolo 已开路，共享 helper 已收敛到 `aap_backend_runtime.device`）。
@@ -107,4 +107,8 @@ WS1（✅）→ （WS2 ‖ WS3）→ WS4。WS4 完成即解锁 ADR-0049 的 L1/L
 
 ## Outcome
 
-- v0.22.3 执行中。WS1 已提交（commit `2b059307`）。WS2/WS3/WS4 并行执行中。
+- v0.22.3 已交付。五镜像 device 探测 + latch + `/health` `compute` 字段全部上线。
+- **Commits**：`2b059307`（WS1 共享 helper + yolo）→ `907216e3`（WS4 平台 + UI）→ `4a9aa89f`（WS2 gsam2/sam3）→ `e8f52eca`（WS3 rapidocr/onnxtools）→ `5e2c2491`（发版 + 文档定稿）→ `8e42c362`（rapidocr catalog 导入修复）。
+- **部署验证**：四镜像（yolo:8003 / gsam2:8001 / sam3:8002 / rapidocr:8005）rebuild + restart 后 `/health` 均暴露 `compute` 字段；重启 Celery worker 后 `check_health` 周期写回 DB `health_meta`，四 backend 均可读到 `compute`（torch 系 `effective_device: null` 为懒加载正确态，ORT 系 `effective_provider: "CUDAExecutionProvider"` 为启动探测结果）。onnxtools 不在 docker compose 管理范围，未重建。
+- **测试**：共享包 14 测全过、API 35 测全过、前端 typecheck + ESLint + CSS token 门禁全过、PerfHud 组件测试 7 测全过。
+- **残留**：onnxtools-backend 代码已改但未 rebuild 部署（非 compose 管理）；坏 GPU 上下文 ORT 深度降级真机验证（需坏 GPU 测试台）；`VehicleAttributePipeline` 不接受 providers（第三方包限制）。
