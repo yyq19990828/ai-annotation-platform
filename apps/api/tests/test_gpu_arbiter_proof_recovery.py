@@ -24,11 +24,14 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_arbiter import (
+    GPUResidentRuntimeSubjectError,
     _record_gpu_backend_token_expiry_in_transaction,
     activate_gpu_backend_membership,
     collect_gpu_backend_tombstone,
     commit_gpu_proof_reset_from_health,
+    read_gpu_resident_runtime_subject,
     record_gpu_backend_token_expiry,
+    record_gpu_resident_runtime_token_expiry,
     repair_gpu_resource,
 )
 from app.services.gpu_arbiter_store import (
@@ -1294,5 +1297,236 @@ async def test_readiness_blocker_demotes_existing_ready_card(
         snapshot = await proof_store.snapshot(_RESOURCE_A)
         assert snapshot.ready is False
         assert snapshot.not_ready_reason == "membership_promotion_unconfirmed"
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_resident_runtime_subject_allows_nonidle_and_post_horizon_proof(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert fence is not None
+            assert backend is not None
+            assert backend.health_meta is not None
+            fence.generation_high_water = 2
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["active_requests"] = 2
+            health_meta["residency"]["builders"] = 1
+            health_meta["residency"]["borrowers"] = 1
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        async with factory() as db:
+            subject = await read_gpu_resident_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+            )
+        assert subject.generation == "1"
+        assert subject.control_epoch == "1"
+        assert subject.runtime_epoch == "1"
+        assert subject.membership_epoch == 1
+
+        token_expires_at = subject.db_now + timedelta(minutes=2)
+        persisted = await record_gpu_resident_runtime_token_expiry(
+            factory,
+            subject,
+            token_expires_at=token_expires_at,
+        )
+        assert persisted == token_expires_at
+
+        # Workload admission deliberately does not require a new proof after each
+        # token horizon advance; that condition belongs only to proof recovery.
+        async with factory() as db:
+            repeated = await read_gpu_resident_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+            )
+            fence = await db.get(GPUBackendFence, backend_id)
+        assert repeated.generation == "1"
+        assert fence is not None
+        assert fence.generation_high_water == 2
+        assert fence.control_epoch_high_water == 1
+        assert fence.token_expiry_high_water == token_expires_at
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_resident_runtime_subject_refreshes_preloaded_identity_map(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        async with factory() as stale_db:
+            assert await stale_db.get(MLBackendRegistry, backend_id) is not None
+            assert await stale_db.get(GPUBackendFence, backend_id) is not None
+            assert (
+                await stale_db.get(
+                    GPUBackendMembership,
+                    (backend_id, _RESOURCE_A),
+                )
+                is not None
+            )
+
+            async with factory.begin() as writer:
+                backend = await writer.get(MLBackendRegistry, backend_id)
+                assert backend is not None
+                backend.state = "disconnected"
+
+            with pytest.raises(
+                GPUResidentRuntimeSubjectError,
+                match="registry_claim_mismatch",
+            ):
+                await read_gpu_resident_runtime_subject(
+                    stale_db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_reason"),
+    [
+        ("legacy_gate", "residency_evictable_inconsistent"),
+        ("draining", "resident_runtime_not_ready"),
+        ("pool_unknown", "resident_runtime_not_ready"),
+        ("control_stale", "residency_control_epoch_mismatch"),
+        ("capability_mismatch", "managed_lifecycle_capability_mismatch"),
+        ("horizon_missing", "token_horizon_missing"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_resident_runtime_subject_rejects_untrusted_state(
+    test_engine: AsyncEngine,
+    mutation: str,
+    expected_reason: str,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert fence is not None
+            assert backend is not None
+            assert backend.health_meta is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            if mutation == "legacy_gate":
+                health_meta["residency"]["lifecycle_gate"] = "legacy"
+            elif mutation == "draining":
+                health_meta["residency"]["draining"] = True
+            elif mutation == "pool_unknown":
+                health_meta["residency"]["pools"]["models"]["resident"] = None
+            elif mutation == "control_stale":
+                health_meta["residency"]["control_epoch"] = "2"
+            elif mutation == "capability_mismatch":
+                health_meta["gpu_arbiter_probe"]["managed_lifecycle_sha256"] = "0" * 64
+            else:
+                assert mutation == "horizon_missing"
+                fence.token_expiry_high_water = None
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        async with factory() as db:
+            with pytest.raises(
+                GPUResidentRuntimeSubjectError,
+                match=expected_reason,
+            ):
+                await read_gpu_resident_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_runtime_token_horizon_revalidates_subject_before_commit(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        async with factory() as db:
+            subject = await read_gpu_resident_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+            )
+            original_horizon = (
+                await db.get(GPUBackendFence, backend_id)
+            ).token_expiry_high_water
+
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            assert fence is not None
+            fence.control_epoch_high_water = 2
+
+        with pytest.raises(
+            GPUResidentRuntimeSubjectError,
+            match="residency_control_epoch_mismatch",
+        ):
+            await record_gpu_resident_runtime_token_expiry(
+                factory,
+                subject,
+                token_expires_at=subject.db_now + timedelta(minutes=2),
+            )
+
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+        assert fence is not None
+        assert fence.token_expiry_high_water == original_horizon
     finally:
         await _cleanup_backends(factory, backend_ids)

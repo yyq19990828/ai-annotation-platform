@@ -266,6 +266,14 @@ class GPULegacyAckBlockedError(RuntimeError):
         self.reason = reason
 
 
+class GPUResidentRuntimeSubjectError(RuntimeError):
+    """Durable/runtime evidence cannot authorize one Resident-only workload."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class GPULegacyAckPreparation:
     """Durable result returned before signing one boot-scoped mode capability."""
@@ -584,6 +592,23 @@ class _LockedGPUProofDomain:
     db_now: datetime
 
 
+@dataclass(frozen=True)
+class GPUResidentRuntimeSubject:
+    """Exact durable and live identity used for one Resident-only admission."""
+
+    backend_registry_id: uuid.UUID
+    gpu_resource_id: str
+    membership_epoch: int
+    budget_mb: int
+    eviction_priority: int
+    max_concurrency: int
+    boot_id: str
+    generation: str
+    control_epoch: str
+    runtime_epoch: str
+    db_now: datetime
+
+
 _GPU_PROBE_KEYS = frozenset(
     {
         "protocol_version",
@@ -842,6 +867,299 @@ def _parse_gpu_proof_residency(value: Any) -> _GPUProofResidency:
         control_epoch=control_epoch,
         identity=identity,
     )
+
+
+def _validate_gpu_resident_runtime_subject(
+    membership: GPUBackendMembership,
+    fence: GPUBackendFence,
+    registry: MLBackendRegistry,
+    *,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> GPUResidentRuntimeSubject:
+    membership_epoch = _strict_nonnegative_int64(
+        membership.membership_epoch,
+        reason="membership_epoch_invalid",
+    )
+    if membership.state != "active" or membership_epoch == 0:
+        raise _GPUProofInvalid("membership_not_active")
+    generation_high_water = _strict_nonnegative_int64(
+        fence.generation_high_water,
+        reason="generation_high_water_invalid",
+    )
+    control_epoch_high_water = _strict_nonnegative_int64(
+        fence.control_epoch_high_water,
+        reason="control_epoch_high_water_invalid",
+    )
+    runtime_epoch_high_water = _strict_nonnegative_int64(
+        fence.runtime_epoch_high_water,
+        reason="runtime_epoch_high_water_invalid",
+    )
+    runtime_epoch_baseline = _strict_nonnegative_int64(
+        membership.runtime_epoch_baseline,
+        reason="runtime_epoch_baseline_invalid",
+    )
+    if runtime_epoch_high_water <= runtime_epoch_baseline:
+        raise _GPUProofInvalid("active_runtime_epoch_invalid")
+    horizon = fence.token_expiry_high_water
+    if horizon is None:
+        raise _GPUProofInvalid("token_horizon_missing")
+    if horizon.tzinfo is None or horizon.utcoffset() is None:
+        raise _GPUProofInvalid("token_horizon_invalid")
+
+    if (
+        registry.state != "connected"
+        or registry.gpu_resource_id != membership.gpu_resource_id
+        or registry.vram_budget_mb != membership.vram_budget_mb
+        or registry.eviction_priority != membership.eviction_priority
+        or _registry_gpu_max_concurrency(registry.extra_params)
+        != membership.max_concurrency
+    ):
+        raise _GPUProofInvalid("registry_claim_mismatch")
+
+    raw_health = registry.health_meta
+    raw_probe = (
+        raw_health.get("gpu_arbiter_probe") if type(raw_health) is dict else None
+    )
+    raw_residency = raw_health.get("residency") if type(raw_health) is dict else None
+    probe = _parse_gpu_proof_probe(raw_probe)
+    capability_sha256 = _health_managed_lifecycle_sha256(raw_health)
+    if (
+        capability_sha256 is None
+        or probe.managed_lifecycle_sha256 is None
+        or capability_sha256 != probe.managed_lifecycle_sha256
+    ):
+        raise _GPUProofInvalid("managed_lifecycle_capability_mismatch")
+    if (
+        probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
+        or probe.raw["gpu_resource_id"] != membership.gpu_resource_id
+        or probe.raw["membership_epoch"] != str(membership_epoch)
+        or probe.raw["membership_state"] != "active"
+    ):
+        raise _GPUProofInvalid("probe_membership_mismatch")
+    if (
+        registry.last_checked_at is None
+        or registry.last_checked_at.tzinfo is None
+        or registry.last_checked_at.utcoffset() is None
+        or registry.last_checked_at.astimezone(UTC) != probe.observed_at
+    ):
+        raise _GPUProofInvalid("probe_registry_clock_mismatch")
+    db_now_utc = db_now.astimezone(UTC)
+    if probe.observed_at > db_now_utc:
+        raise _GPUProofInvalid("probe_from_future")
+    if db_now_utc - probe.observed_at > evidence_ttl:
+        raise _GPUProofInvalid("probe_expired")
+
+    residency = _parse_gpu_proof_residency(raw_residency)
+    identity = residency.identity
+    if (
+        residency.state != "resident"
+        or residency.gpu_loaded is not True
+        or residency.lifecycle_gate != "enforce"
+        or residency.draining
+        or residency.generation is None
+        or residency.control_epoch is None
+        or identity is None
+        or any(item is None for item in residency.pool_residencies)
+        or not any(item is True for item in residency.pool_residencies)
+    ):
+        raise _GPUProofInvalid("resident_runtime_not_ready")
+    if (
+        identity["backend_registry_id"] != str(membership.backend_registry_id)
+        or identity["gpu_resource_id"] != membership.gpu_resource_id
+    ):
+        raise _GPUProofInvalid("residency_identity_mismatch")
+    if int(residency.generation) > generation_high_water:
+        raise _GPUProofInvalid("residency_generation_ahead")
+    if int(residency.control_epoch) != control_epoch_high_water:
+        raise _GPUProofInvalid("residency_control_epoch_mismatch")
+
+    return GPUResidentRuntimeSubject(
+        backend_registry_id=membership.backend_registry_id,
+        gpu_resource_id=membership.gpu_resource_id,
+        membership_epoch=membership_epoch,
+        budget_mb=membership.vram_budget_mb,
+        eviction_priority=membership.eviction_priority,
+        max_concurrency=membership.max_concurrency,
+        boot_id=residency.boot_id,
+        generation=residency.generation,
+        control_epoch=residency.control_epoch,
+        runtime_epoch=str(runtime_epoch_high_water),
+        db_now=db_now,
+    )
+
+
+def _runtime_subject_identity(subject: GPUResidentRuntimeSubject) -> tuple[Any, ...]:
+    return (
+        subject.backend_registry_id,
+        subject.gpu_resource_id,
+        subject.membership_epoch,
+        subject.budget_mb,
+        subject.eviction_priority,
+        subject.max_concurrency,
+        subject.boot_id,
+        subject.generation,
+        subject.control_epoch,
+        subject.runtime_epoch,
+    )
+
+
+def _validate_runtime_subject_inputs(
+    backend_id: str,
+    gpu_resource_id: str,
+    evidence_ttl: timedelta,
+) -> uuid.UUID:
+    try:
+        backend_registry_id = uuid.UUID(backend_id)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise GPUResidentRuntimeSubjectError("backend_identity_invalid") from exc
+    if str(backend_registry_id) != backend_id:
+        raise GPUResidentRuntimeSubjectError("backend_identity_invalid")
+    try:
+        validate_gpu_resource_id(gpu_resource_id)
+    except (TypeError, ValueError) as exc:
+        raise GPUResidentRuntimeSubjectError("gpu_resource_id_invalid") from exc
+    if evidence_ttl <= timedelta(0) or evidence_ttl > _PROOF_RESET_MAX_WINDOW:
+        raise ValueError(
+            "evidence_ttl must be positive and no greater than five minutes"
+        )
+    return backend_registry_id
+
+
+async def read_gpu_resident_runtime_subject(
+    db: AsyncSession,
+    *,
+    backend_id: str,
+    gpu_resource_id: str,
+    evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+) -> GPUResidentRuntimeSubject:
+    """Read one strict, non-idle Resident runtime subject from one MVCC snapshot."""
+
+    backend_registry_id = _validate_runtime_subject_inputs(
+        backend_id,
+        gpu_resource_id,
+        evidence_ttl,
+    )
+    row = (
+        await db.execute(
+            select(
+                GPUBackendMembership,
+                GPUBackendFence,
+                MLBackendRegistry,
+                func.clock_timestamp(),
+            )
+            .join(
+                GPUBackendFence,
+                GPUBackendFence.backend_registry_id
+                == GPUBackendMembership.backend_registry_id,
+            )
+            .join(
+                MLBackendRegistry,
+                MLBackendRegistry.id == GPUBackendMembership.backend_registry_id,
+            )
+            .where(
+                GPUBackendMembership.backend_registry_id == backend_registry_id,
+                GPUBackendMembership.gpu_resource_id == gpu_resource_id,
+                GPUBackendMembership.state == "active",
+            )
+            .execution_options(populate_existing=True)
+        )
+    ).one_or_none()
+    if row is None:
+        raise GPUResidentRuntimeSubjectError("membership_not_active")
+    membership, fence, registry, db_now = row
+    if (
+        not isinstance(db_now, datetime)
+        or db_now.tzinfo is None
+        or db_now.utcoffset() is None
+    ):
+        raise RuntimeError("PostgreSQL returned an invalid runtime proof clock")
+    try:
+        return _validate_gpu_resident_runtime_subject(
+            membership,
+            fence,
+            registry,
+            db_now=db_now,
+            evidence_ttl=evidence_ttl,
+        )
+    except _GPUProofInvalid as exc:
+        raise GPUResidentRuntimeSubjectError(exc.reason) from None
+
+
+async def record_gpu_resident_runtime_token_expiry(
+    session_factory: GPUFenceSessionFactory,
+    expected_subject: GPUResidentRuntimeSubject,
+    *,
+    token_expires_at: datetime,
+    evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+) -> datetime:
+    """Revalidate one subject under ordered locks and commit its token horizon."""
+
+    _validate_token_expiry(token_expires_at)
+    async with session_factory() as db:
+        async with db.begin():
+            membership = await db.scalar(
+                select(GPUBackendMembership)
+                .where(
+                    GPUBackendMembership.backend_registry_id
+                    == expected_subject.backend_registry_id,
+                    GPUBackendMembership.gpu_resource_id
+                    == expected_subject.gpu_resource_id,
+                    GPUBackendMembership.membership_epoch
+                    == expected_subject.membership_epoch,
+                    GPUBackendMembership.state == "active",
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if membership is None:
+                raise GPUResidentRuntimeSubjectError("membership_changed")
+            fence = await db.scalar(
+                select(GPUBackendFence)
+                .where(
+                    GPUBackendFence.backend_registry_id
+                    == expected_subject.backend_registry_id
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            registry = await db.scalar(
+                select(MLBackendRegistry)
+                .where(MLBackendRegistry.id == expected_subject.backend_registry_id)
+                .execution_options(populate_existing=True)
+            )
+            db_now = await db.scalar(select(func.clock_timestamp()))
+            if fence is None or registry is None:
+                raise GPUResidentRuntimeSubjectError("runtime_subject_missing")
+            if (
+                not isinstance(db_now, datetime)
+                or db_now.tzinfo is None
+                or db_now.utcoffset() is None
+            ):
+                raise RuntimeError("PostgreSQL returned an invalid runtime proof clock")
+            try:
+                current_subject = _validate_gpu_resident_runtime_subject(
+                    membership,
+                    fence,
+                    registry,
+                    db_now=db_now,
+                    evidence_ttl=evidence_ttl,
+                )
+            except _GPUProofInvalid as exc:
+                raise GPUResidentRuntimeSubjectError(exc.reason) from None
+            if _runtime_subject_identity(current_subject) != _runtime_subject_identity(
+                expected_subject
+            ):
+                raise GPUResidentRuntimeSubjectError("runtime_subject_changed")
+            if token_expires_at <= db_now:
+                raise GPUResidentRuntimeSubjectError("token_expiry_not_in_future")
+            return await _record_gpu_backend_token_expiry_in_transaction(
+                db,
+                expected_subject.backend_registry_id,
+                gpu_resource_id=expected_subject.gpu_resource_id,
+                membership_epoch=expected_subject.membership_epoch,
+                token_expires_at=token_expires_at,
+            )
 
 
 async def _lock_gpu_resource_proof_domain(
