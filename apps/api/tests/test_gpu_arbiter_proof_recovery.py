@@ -27,12 +27,16 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_arbiter import (
+    GPUColdRuntimeSubjectError,
     GPUDispatchRequest,
+    GPUPreparedColdRuntimeSubject,
     GPUResidentRuntimeSubjectError,
     _record_gpu_backend_token_expiry_in_transaction,
     activate_gpu_backend_membership,
     collect_gpu_backend_tombstone,
     commit_gpu_proof_reset_from_health,
+    prepare_gpu_cold_runtime_generation,
+    read_gpu_cold_runtime_subject,
     read_gpu_resident_runtime_subject,
     record_gpu_backend_token_expiry,
     record_gpu_resident_runtime_token_expiry,
@@ -1371,6 +1375,235 @@ async def test_resident_runtime_subject_allows_nonidle_and_post_horizon_proof(
         assert fence.generation_high_water == 2
         assert fence.control_epoch_high_water == 1
         assert fence.token_expiry_high_water == token_expires_at
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_runtime_subject_atomically_advances_generation_and_token_horizon(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            assert backend.health_meta is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["lifecycle_gate"] = "enforce"
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        async with factory() as db:
+            subject = await read_gpu_cold_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+            )
+        assert subject.observed_generation is None
+        assert subject.generation_high_water == 0
+        assert subject.control_epoch == "1"
+
+        token_expires_at = subject.db_now + timedelta(minutes=2)
+        for invalid_ttl in (
+            timedelta(0),
+            timedelta(seconds=-1),
+            timedelta(minutes=5, microseconds=1),
+        ):
+            with pytest.raises(ValueError, match="no greater than five minutes"):
+                await prepare_gpu_cold_runtime_generation(
+                    factory,
+                    subject,
+                    token_expires_at=token_expires_at,
+                    evidence_ttl=invalid_ttl,
+                )
+        prepared = await prepare_gpu_cold_runtime_generation(
+            factory,
+            subject,
+            token_expires_at=token_expires_at,
+        )
+        assert prepared.generation == "1"
+        assert prepared.token_expires_at == token_expires_at
+        with pytest.raises(
+            GPUColdRuntimeSubjectError,
+            match="runtime_subject_changed",
+        ):
+            await prepare_gpu_cold_runtime_generation(
+                factory,
+                subject,
+                token_expires_at=token_expires_at,
+            )
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            repeated = await read_gpu_cold_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+            )
+        assert fence is not None
+        assert repeated.generation_high_water == 1
+        assert fence.generation_high_water == 1
+        assert fence.token_expiry_high_water == token_expires_at
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_runtime_subject_allows_only_one_concurrent_generation_prepare(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            assert backend.health_meta is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["lifecycle_gate"] = "enforce"
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        async with factory() as db:
+            subject = await read_gpu_cold_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+            )
+        token_expires_at = subject.db_now + timedelta(minutes=2)
+        results = await asyncio.gather(
+            prepare_gpu_cold_runtime_generation(
+                factory,
+                subject,
+                token_expires_at=token_expires_at,
+            ),
+            prepare_gpu_cold_runtime_generation(
+                factory,
+                subject,
+                token_expires_at=token_expires_at,
+            ),
+            return_exceptions=True,
+        )
+
+        prepared = [
+            result
+            for result in results
+            if isinstance(result, GPUPreparedColdRuntimeSubject)
+        ]
+        rejected = [
+            result
+            for result in results
+            if isinstance(result, GPUColdRuntimeSubjectError)
+        ]
+        assert len(prepared) == 1
+        assert prepared[0].generation == "1"
+        assert len(rejected) == 1
+        assert rejected[0].reason == "runtime_subject_changed"
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+        assert fence is not None
+        assert fence.generation_high_water == 1
+        assert fence.token_expiry_high_water == token_expires_at
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.parametrize(
+    ("backend_id", "resource_id", "expected_reason"),
+    (
+        ("NOT-A-UUID", _RESOURCE_A, "backend_identity_invalid"),
+        (
+            "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            _RESOURCE_A,
+            "backend_identity_invalid",
+        ),
+        (str(uuid.uuid4()), "bad resource", "gpu_resource_id_invalid"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_cold_runtime_subject_rejects_invalid_identity_with_cold_error(
+    test_engine: AsyncEngine,
+    backend_id: str,
+    resource_id: str,
+    expected_reason: str,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with factory() as db:
+        with pytest.raises(GPUColdRuntimeSubjectError, match=expected_reason):
+            await read_gpu_cold_runtime_subject(
+                db,
+                backend_id=backend_id,
+                gpu_resource_id=resource_id,
+            )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_reason"),
+    (
+        ("active", "cold_runtime_not_ready"),
+        ("legacy_gate", "cold_runtime_not_ready"),
+        ("pool_unknown", "residency_unloaded_inconsistent"),
+        ("generation_ahead", "residency_generation_ahead"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_cold_runtime_subject_rejects_untrusted_state(
+    test_engine: AsyncEngine,
+    mutation: str,
+    expected_reason: str,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            fence = await db.get(GPUBackendFence, backend_id)
+            assert backend is not None
+            assert backend.health_meta is not None
+            assert fence is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["lifecycle_gate"] = "enforce"
+            if mutation == "active":
+                health_meta["residency"]["active_requests"] = 1
+            elif mutation == "legacy_gate":
+                health_meta["residency"]["lifecycle_gate"] = "legacy"
+            elif mutation == "pool_unknown":
+                health_meta["residency"]["pools"]["models"]["resident"] = None
+            elif mutation == "generation_ahead":
+                health_meta["residency"]["generation"] = "2"
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        async with factory() as db:
+            with pytest.raises(
+                GPUColdRuntimeSubjectError,
+                match=expected_reason,
+            ):
+                await read_gpu_cold_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                )
     finally:
         await _cleanup_backends(factory, backend_ids)
 
