@@ -1,35 +1,52 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import re
 import time
 from dataclasses import dataclass
 
 import httpx
 import structlog
+from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
+)
 from fastapi import HTTPException
 
-from app.config import settings
+from app.config import GPUArbiterMode, settings
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.observability.metrics import observe_ml_backend
 from app.services.gpu_arbiter import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+    GPUClaimConfigurationError,
+    GPUDispatchContextFactory,
+    GPUDispatchGrant,
+    GPUDispatchOperation,
+    GPUDispatchRequest,
     GPUShadowSessionFactory,
+    any_gpu_resource_effectively_enforced,
+    backend_is_trusted_explicit_cpu,
+    effective_gpu_arbiter_mode,
     gpu_shadow_observation_enabled,
     record_gpu_shadow_dispatch,
+    validate_gpu_claim,
 )
 
 logger = structlog.get_logger(__name__)
 
 # v0.9.12 BUG B-17 · per-backend asyncio.Semaphore 限速. 受 ml_backends.extra_params.max_concurrency
 # 控制 (默认 4, 匹配现有 celery worker --concurrency=4 不破坏既有行为). 改 extra_params 后需 worker
-# 重启才生效 (信号量按 backend_id 永久缓存; 工时换简洁性的取舍, 见 docs-site/dev/architecture/ai-models.md).
+# 重启才生效 (每个存活 event loop 按 backend_id 缓存; 见 docs-site/dev/concepts/ai-models.md).
 _DEFAULT_MAX_CONCURRENCY = 4
 _GPU_SHADOW_OBSERVER_TIMEOUT_SECONDS = 0.25
 GPU_HEALTH_CHALLENGE_HEADER = "X-AAP-GPU-Health-Challenge"
 GPU_HEALTH_CHALLENGE_QUERY_PARAM = "aap_gpu_health_challenge"
 GPU_HEALTH_CHALLENGE_ECHO_MARKER = "_aap_gpu_health_challenge_echo"
 _GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
-_semaphores: dict[str, asyncio.Semaphore] = {}
+_SEMAPHORE_CACHE_ATTR = "_aap_ml_backend_semaphores"
 
 
 def _backend_detail(resp: httpx.Response) -> str:
@@ -74,10 +91,15 @@ def _raise_for_backend_status(resp: httpx.Response) -> None:
 def _get_semaphore(backend_id: str | None, max_cc: int) -> asyncio.Semaphore | None:
     if not backend_id:
         return None
-    sem = _semaphores.get(backend_id)
+    loop = asyncio.get_running_loop()
+    loop_semaphores = getattr(loop, _SEMAPHORE_CACHE_ATTR, None)
+    if loop_semaphores is None:
+        loop_semaphores = {}
+        setattr(loop, _SEMAPHORE_CACHE_ATTR, loop_semaphores)
+    sem = loop_semaphores.get(backend_id)
     if sem is None:
         sem = asyncio.Semaphore(max(1, int(max_cc)))
-        _semaphores[backend_id] = sem
+        loop_semaphores[backend_id] = sem
     return sem
 
 
@@ -103,18 +125,27 @@ class MLBackendClient:
         backend: MLBackendRegistry,
         *,
         shadow_session_factory: GPUShadowSessionFactory | None = None,
+        dispatch_context_factory: GPUDispatchContextFactory | None = None,
     ) -> None:
+        self._backend = backend
         self.base_url = backend.url.rstrip("/")
         self.auth_method = backend.auth_method
         self.auth_token = backend.auth_token
-        self.backend_id = str(getattr(backend, "id", "")) or None
+        raw_backend_id = getattr(backend, "id", None)
+        self.backend_id = str(raw_backend_id) if raw_backend_id else None
         self.gpu_resource_id = getattr(backend, "gpu_resource_id", None)
+        self.vram_budget_mb = getattr(backend, "vram_budget_mb", None)
         self._shadow_session_factory = shadow_session_factory
+        self._dispatch_context_factory = dispatch_context_factory
         extra = getattr(backend, "extra_params", None) or {}
+        self._extra_params = extra
         self.max_concurrency = int(
             extra.get("max_concurrency", _DEFAULT_MAX_CONCURRENCY)
         )
-        self._semaphore = _get_semaphore(self.backend_id, self.max_concurrency)
+
+    @property
+    def _semaphore(self) -> asyncio.Semaphore | None:
+        return _get_semaphore(self.backend_id, self.max_concurrency)
 
     async def _observe_gpu_dispatch(self, operation: str) -> None:
         """Record P2 shadow decisions and fail open without changing the request."""
@@ -146,10 +177,97 @@ class MLBackendClient:
                 exc_info=True,
             )
 
-    def _headers(self) -> dict[str, str]:
+    @asynccontextmanager
+    async def _gpu_dispatch(
+        self,
+        operation: GPUDispatchOperation,
+        scope: AdmissionScope,
+    ):
+        """Wrap one residency-changing HTTP call in the mode-specific boundary."""
+
+        resources = settings.gpu_arbiter_resources
+        resource_is_configured = self.gpu_resource_id in resources
+        effective_mode = (
+            effective_gpu_arbiter_mode(self.gpu_resource_id)
+            if self.gpu_resource_id is not None
+            else GPUArbiterMode.OFF
+        )
+        if effective_mode is GPUArbiterMode.ENFORCE:
+            try:
+                validate_gpu_claim(
+                    self.gpu_resource_id,
+                    self.vram_budget_mb,
+                    extra_params=self._extra_params,
+                )
+            except GPUClaimConfigurationError as exc:
+                raise GPUArbiterDispatchError(
+                    GPUArbiterErrorCode.CONFIG_INVALID,
+                    message=str(exc),
+                ) from exc
+            if self.backend_id is None:
+                raise GPUArbiterDispatchError(
+                    GPUArbiterErrorCode.CONFIG_INVALID,
+                    message="GPU backend registry identity is missing",
+                )
+            if self._dispatch_context_factory is None:
+                raise GPUArbiterDispatchError(
+                    GPUArbiterErrorCode.NOT_READY,
+                    message="GPU arbiter dispatch authority is not configured",
+                )
+            request = GPUDispatchRequest(
+                backend_id=self.backend_id,
+                gpu_resource_id=self.gpu_resource_id,
+                operation=operation,
+                scope=scope,
+            )
+            boundary_error: BaseException | None = None
+            async with self._dispatch_context_factory(request) as grant:
+                try:
+                    if not isinstance(grant, GPUDispatchGrant):
+                        raise GPUArbiterDispatchError(
+                            GPUArbiterErrorCode.UNAVAILABLE,
+                            message=(
+                                "GPU arbiter dispatch authority returned an invalid grant"
+                            ),
+                        )
+                    yield grant
+                except BaseException as exc:
+                    boundary_error = exc
+                    raise
+            if boundary_error is not None:
+                # A faulty authority context must not turn backend errors or
+                # cancellation into an apparent successful dispatch.
+                raise boundary_error
+            return
+
+        unclaimed_explicit_cpu = (
+            self.gpu_resource_id is None
+            and self.vram_budget_mb is None
+            and backend_is_trusted_explicit_cpu(self._backend)
+        )
+        if (
+            not resource_is_configured
+            and not unclaimed_explicit_cpu
+            and any_gpu_resource_effectively_enforced()
+        ):
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.CONFIG_INVALID,
+                message=(
+                    "GPU backend must declare a valid configured resource before "
+                    "dispatch while any resource is effectively enforced"
+                ),
+            )
+
+        await self._observe_gpu_dispatch(operation)
+        yield None
+
+    def _headers(self, grant: GPUDispatchGrant | None = None) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.auth_method == "token" and self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
+        if grant is not None:
+            headers[GPU_GENERATION_HEADER] = grant.generation
+            headers[GPU_ADMISSION_TOKEN_HEADER] = grant.admission_token
         return headers
 
     async def health(self) -> bool:
@@ -249,9 +367,10 @@ class MLBackendClient:
             async def __aexit__(self, *exc):
                 return False
 
-        if self._semaphore is None:
+        semaphore = self._semaphore
+        if semaphore is None:
             return _NullCtx()
-        return self._semaphore
+        return semaphore
 
     async def predict(
         self, tasks: list[dict], context: dict | None = None
@@ -264,17 +383,19 @@ class MLBackendClient:
             payload["context"] = context
         try:
             async with await self._acquire():
-                await self._observe_gpu_dispatch("predict")
-                async with httpx.AsyncClient(
-                    timeout=settings.ml_predict_timeout
-                ) as client:
-                    resp = await client.post(
-                        f"{self.base_url}/predict",
-                        json=payload,
-                        headers=self._headers(),
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
+                async with self._gpu_dispatch(
+                    "predict", AdmissionScope.PREDICT
+                ) as grant:
+                    async with httpx.AsyncClient(
+                        timeout=settings.ml_predict_timeout
+                    ) as client:
+                        resp = await client.post(
+                            f"{self.base_url}/predict",
+                            json=payload,
+                            headers=self._headers(grant),
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
         except Exception:
             outcome = "error"
             observe_ml_backend(self.backend_id, outcome, time.monotonic() - start)
@@ -307,25 +428,28 @@ class MLBackendClient:
         outcome = "success"
         try:
             async with await self._acquire():
-                await self._observe_gpu_dispatch("predict_interactive")
-                async with httpx.AsyncClient(
-                    timeout=settings.ml_predict_timeout
-                ) as client:
-                    try:
-                        resp = await client.post(
-                            f"{self.base_url}/predict",
-                            json={"task": task_data, "context": context},
-                            headers=self._headers(),
-                        )
-                    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-                        # backend 不可达 / 超时 → 502 (而非含糊的 500)
-                        raise HTTPException(
-                            status_code=502,
-                            detail=f"ML backend unreachable: {exc}",
-                        ) from exc
-                    # 上游 4xx 原样透传, 5xx → 502 (见 _raise_for_backend_status)
-                    _raise_for_backend_status(resp)
-                    data = resp.json()
+                try:
+                    async with self._gpu_dispatch(
+                        "predict_interactive", AdmissionScope.PREDICT
+                    ) as grant:
+                        async with httpx.AsyncClient(
+                            timeout=settings.ml_predict_timeout
+                        ) as client:
+                            resp = await client.post(
+                                f"{self.base_url}/predict",
+                                json={"task": task_data, "context": context},
+                                headers=self._headers(grant),
+                            )
+                            # 上游 4xx 原样透传, 5xx → 502 (见 _raise_for_backend_status)
+                            _raise_for_backend_status(resp)
+                            data = resp.json()
+                except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                    # 转换发生在 dispatch context 退出后，使 authority 能看到
+                    # 原始 timeout/connect 不确定结果。
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"ML backend unreachable: {exc}",
+                    ) from exc
         except Exception:
             # 仍记 error 指标 (HTTPException 也走这里), 再原样抛出, 指标语义不变.
             outcome = "error"
@@ -349,11 +473,17 @@ class MLBackendClient:
 
     async def unload(self) -> dict:
         """B-28+ · 让 backend 卸载模型释放显存. backend 必须实现 POST /unload."""
-        await self._observe_gpu_dispatch("unload")
-        async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
-            resp = await client.post(f"{self.base_url}/unload", headers=self._headers())
-            resp.raise_for_status()
-            return resp.json()
+        async with self._gpu_dispatch("unload", AdmissionScope.UNLOAD) as grant:
+            async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+                request_kwargs: dict = {"headers": self._headers(grant)}
+                if grant is not None:
+                    request_kwargs["json"] = {"generation": grant.generation}
+                resp = await client.post(
+                    f"{self.base_url}/unload",
+                    **request_kwargs,
+                )
+                resp.raise_for_status()
+                return resp.json()
 
     async def reload(
         self,
@@ -373,15 +503,15 @@ class MLBackendClient:
             body["dino_variant"] = dino_variant
         if task_type:
             body["task_type"] = task_type
-        await self._observe_gpu_dispatch("reload")
-        async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/reload",
-                json=body or None,
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
-            return resp.json()
+        async with self._gpu_dispatch("reload", AdmissionScope.RELOAD) as grant:
+            async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}/reload",
+                    json=body or None,
+                    headers=self._headers(grant),
+                )
+                resp.raise_for_status()
+                return resp.json()
 
     async def setup(self) -> dict:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
@@ -397,15 +527,15 @@ class MLBackendClient:
         响应统一为 {ok, model_load_ms, cache_hit, evicted}. 用 predict 超时配额 (加载
         可能数秒).
         """
-        await self._observe_gpu_dispatch("warmup")
-        async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/warmup",
-                json=body or {},
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
-            return resp.json()
+        async with self._gpu_dispatch("warmup", AdmissionScope.WARMUP) as grant:
+            async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}/warmup",
+                    json=body or {},
+                    headers=self._headers(grant),
+                )
+                resp.raise_for_status()
+                return resp.json()
 
     async def get_versions(self) -> list[str]:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:

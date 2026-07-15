@@ -166,10 +166,7 @@ async def test_max_concurrency_semaphore_caps_in_flight_predictions():
         return real(*args, **kwargs)
 
     # 用唯一 backend_id 避免被前序测试缓存的 Semaphore 污染
-    from app.services.ml_client import _semaphores
-
     bid = "11111111-2222-3333-4444-555555555555"
-    _semaphores.pop(bid, None)
     backend = _backend(backend_id=bid, extra_params={"max_concurrency": 2})
     client = MLBackendClient(backend)
 
@@ -184,10 +181,33 @@ async def test_max_concurrency_semaphore_caps_in_flight_predictions():
 async def test_no_max_concurrency_defaults_to_4():
     """无 extra_params.max_concurrency 时默认 cap=4."""
     bid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-    from app.services.ml_client import _semaphores
-
-    _semaphores.pop(bid, None)
     backend = _backend(backend_id=bid)
     client = MLBackendClient(backend)
     assert client.max_concurrency == 4
     assert client._semaphore is not None
+
+
+def test_semaphore_cache_is_event_loop_local() -> None:
+    """Celery repeated asyncio.run calls must not reuse a loop-bound semaphore."""
+
+    backend = _backend(
+        backend_id="bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+        extra_params={"max_concurrency": 1},
+    )
+
+    async def exercise() -> asyncio.Semaphore:
+        semaphore = MLBackendClient(backend)._semaphore
+        assert semaphore is not None
+        await semaphore.acquire()
+        waiter = asyncio.create_task(semaphore.acquire())
+        await asyncio.sleep(0)
+        assert waiter.done() is False
+        semaphore.release()
+        await waiter
+        semaphore.release()
+        return semaphore
+
+    first = asyncio.run(exercise())
+    second = asyncio.run(exercise())
+
+    assert first is not second

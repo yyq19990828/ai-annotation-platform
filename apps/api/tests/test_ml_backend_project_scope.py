@@ -19,6 +19,7 @@ import uuid
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 
 
 async def _seed_project(db, owner_id) -> Project:
@@ -237,6 +238,43 @@ async def test_reload_allowed_for_super_admin(
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 200, resp.text
+
+
+async def test_residency_routes_preserve_gpu_arbiter_error_contract(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    owner, admin_token = super_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def _reject(*_args, **_kwargs):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+            message="lease full",
+            retry_after_s=7,
+        )
+
+    for method in ("unload", "reload", "warmup"):
+        monkeypatch.setattr(
+            f"app.services.ml_backend.MLBackendService.{method}",
+            _reject,
+        )
+
+    for operation in ("unload", "reload", "warmup"):
+        response = await httpx_client_bound.post(
+            f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/{operation}",
+            json={} if operation != "unload" else None,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 503, response.text
+        assert response.json() == {
+            "detail": {
+                "error_code": "gpu_backend_concurrency_saturated",
+                "message": "lease full",
+            }
+        }
+        assert response.headers["Retry-After"] == "7"
 
 
 # ── warmup: 刻意保留 project_owner (未随 unload/reload 收口) ─────────────────

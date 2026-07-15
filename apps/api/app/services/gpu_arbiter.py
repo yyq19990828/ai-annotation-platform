@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import asdict, dataclass, field as dataclass_field
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 import hashlib
 import json
 import re
@@ -21,6 +22,11 @@ from typing import Any, Literal, NoReturn
 import uuid
 
 import structlog
+from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
+    validate_canonical_positive_int64,
+)
+from fastapi import HTTPException
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +72,109 @@ _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 GPUShadowSessionFactory = Callable[[], AsyncSession]
 GPUFenceSessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 GPUFenceCounter = Literal["generation", "control_epoch"]
+
+
+class GPUArbiterErrorCode(str, Enum):
+    """Stable platform-side arbitration errors frozen by ADR-0049."""
+
+    NOT_READY = "gpu_arbiter_not_ready"
+    CAPACITY_UNAVAILABLE = "gpu_capacity_unavailable"
+    BACKEND_CONCURRENCY_SATURATED = "gpu_backend_concurrency_saturated"
+    DRAIN_TIMEOUT = "gpu_drain_timeout"
+    UNAVAILABLE = "gpu_arbiter_unavailable"
+    CONFIG_INVALID = "gpu_config_invalid"
+    BACKEND_RETIREMENT_REQUIRED = "gpu_backend_retirement_required"
+
+
+_GPU_ARBITER_DISPATCH_ERROR_STATUS = {
+    GPUArbiterErrorCode.NOT_READY: 503,
+    GPUArbiterErrorCode.CAPACITY_UNAVAILABLE: 503,
+    GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED: 503,
+    GPUArbiterErrorCode.DRAIN_TIMEOUT: 503,
+    GPUArbiterErrorCode.UNAVAILABLE: 503,
+    GPUArbiterErrorCode.CONFIG_INVALID: 503,
+    GPUArbiterErrorCode.BACKEND_RETIREMENT_REQUIRED: 409,
+}
+_GPU_ARBITER_RETRY_AFTER_REQUIRED = frozenset(
+    {
+        GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+        GPUArbiterErrorCode.DRAIN_TIMEOUT,
+    }
+)
+
+
+class GPUArbiterDispatchError(HTTPException):
+    """Structured dispatch error usable by FastAPI routes and worker callers."""
+
+    def __init__(
+        self,
+        code: GPUArbiterErrorCode,
+        *,
+        message: str | None = None,
+        retry_after_s: int | None = None,
+    ) -> None:
+        if code in _GPU_ARBITER_RETRY_AFTER_REQUIRED and retry_after_s is None:
+            raise ValueError(f"{code.value} requires retry_after_s")
+        if retry_after_s is not None and (
+            not isinstance(retry_after_s, int)
+            or isinstance(retry_after_s, bool)
+            or retry_after_s < 0
+        ):
+            raise ValueError("retry_after_s must be a non-negative integer")
+
+        detail = {"error_code": code.value}
+        if message is not None:
+            detail["message"] = message
+        headers = (
+            {"Retry-After": str(retry_after_s)} if retry_after_s is not None else None
+        )
+        self.error_code = code.value
+        self.retry_after_s = retry_after_s
+        super().__init__(
+            status_code=_GPU_ARBITER_DISPATCH_ERROR_STATUS[code],
+            detail=detail,
+            headers=headers,
+        )
+
+
+GPUDispatchOperation = Literal[
+    "predict",
+    "predict_interactive",
+    "warmup",
+    "reload",
+    "unload",
+]
+
+
+@dataclass(frozen=True)
+class GPUDispatchRequest:
+    """Exact client metadata passed to the authoritative dispatch context."""
+
+    backend_id: str
+    gpu_resource_id: str
+    operation: GPUDispatchOperation
+    scope: AdmissionScope
+
+
+@dataclass(frozen=True)
+class GPUDispatchGrant:
+    """Managed lifecycle headers produced after authoritative admission."""
+
+    generation: str
+    admission_token: str
+
+    def __post_init__(self) -> None:
+        validate_canonical_positive_int64(self.generation)
+        if (
+            not self.admission_token
+            or self.admission_token.strip() != self.admission_token
+        ):
+            raise ValueError("admission_token must be non-empty and canonical")
+
+
+GPUDispatchContextFactory = Callable[
+    [GPUDispatchRequest], AbstractAsyncContextManager[GPUDispatchGrant]
+]
 
 
 class GPUFenceExhaustedError(RuntimeError):
@@ -2124,6 +2233,21 @@ def effective_gpu_arbiter_mode(
     return GPUArbiterMode.OFF
 
 
+def any_gpu_resource_effectively_enforced(*, config: Settings = settings) -> bool:
+    """Return whether at least one configured resource is truly enforced."""
+
+    return any(
+        effective_gpu_arbiter_mode(resource_id, config=config) is GPUArbiterMode.ENFORCE
+        for resource_id in config.gpu_arbiter_resources
+    )
+
+
+def unregistered_gpu_loading_blocked(*, config: Settings = settings) -> bool:
+    """Block raw loading URLs once any resource is effectively enforced."""
+
+    return any_gpu_resource_effectively_enforced(config=config)
+
+
 def gpu_shadow_observation_enabled(
     resource_id: str | None, *, config: Settings = settings
 ) -> bool:
@@ -2360,6 +2484,19 @@ def _is_explicit_cpu_backend(
         isinstance(configured, str)
         and configured.strip().lower() == "cpu"
         and not requires_gpu_claim
+    )
+
+
+def backend_is_trusted_explicit_cpu(
+    backend: Any, *, now: datetime | None = None
+) -> bool:
+    """Accept a null GPU claim only with fresh, connected explicit-CPU evidence."""
+
+    health_meta = _trusted_health_meta(backend, now=now)
+    requires_gpu_claim = _requires_gpu_claim(health_meta)
+    return _is_explicit_cpu_backend(
+        health_meta,
+        requires_gpu_claim=requires_gpu_claim,
     )
 
 

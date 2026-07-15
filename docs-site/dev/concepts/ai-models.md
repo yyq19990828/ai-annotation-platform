@@ -237,10 +237,10 @@ histogram_quantile(0.95,
 
 `ml_backend_registry.extra_params.max_concurrency` (JSONB 字段, 默认 4) 控制平台到该 backend 的并发 `/predict` 上限. 实现:
 
-- `apps/api/app/services/ml_client.py` 模块级 `_semaphores: dict[backend_id, asyncio.Semaphore]` 缓存.
-- `MLBackendClient.__init__` 读 `extra_params.max_concurrency`, 通过 `_get_semaphore(backend_id, max_cc)` 拿到或创建信号量.
+- `apps/api/app/services/ml_client.py` 把 backend id → semaphore 的缓存挂在当前 event loop 自身；loop 退出后缓存与已绑定 semaphore 作为同一循环对象图一起回收，不会被模块级容器反向保活，也不会交给后续 `asyncio.run()`.
+- `MLBackendClient.__init__` 读取 `extra_params.max_concurrency`；真正进入预测时，`_get_semaphore(backend_id, max_cc)` 在当前 event loop 中取得或创建信号量.
 - `predict()` / `predict_interactive()` 在 `async with await self._acquire():` 内调 httpx, 信号量 acquire/release 自动绕在请求 IO 外.
-- 多个 `MLBackendClient` 实例共享同 backend_id 的信号量 (按 backend_id 索引), 跨 task / 跨请求生效.
+- 同一 event loop 内的多个 `MLBackendClient` 实例共享同 backend id 的信号量，跨 task / 跨请求生效；API 与不同 Celery loop 之间仍不共享，本地闸不能替代 Redis 全局 lease.
 
 **配置示例** (DB JSONB):
 
@@ -255,7 +255,7 @@ histogram_quantile(0.95,
 }
 ```
 
-**调整后必须重启 worker**：信号量按 backend_id 永久缓存，改字段后须 `docker compose restart api celery-worker` 才能生效。若要运行期热更新，需要把 cache key 改为 `(backend_id, max_cc)` 或加 invalidation 机制。
+**调整后必须重启 worker**：每个存活 event loop 仍按 backend id 缓存既有信号量，改字段后须 `docker compose restart api celery-worker` 才能生效。若要运行期热更新，需要把 cache key 纳入 `max_cc` 或增加 invalidation 机制。
 
 **注册表单 UI**：全局注册表单 `GlobalBackendFormModal`（模型市场 → 注册管理，仅超管）在「认证方式」下方提供「最大并发」number input（1-32，留空走默认 4），提交时合并到 `extra_params.max_concurrency`（覆盖 textarea JSON 同名键）。`RegisteredBackendsTab` 全局注册表行的类型列旁显示 `≤N 并发` chip，缺省值不渲染避免列表噪音——限速真正 per-物理-backend 生效，此 chip 即该物理 backend 的全局并发闸。不再需要直接手改 DB JSONB 字段。 <!-- since v0.19.0 · ADR-0044 限速上提全局 -->
 

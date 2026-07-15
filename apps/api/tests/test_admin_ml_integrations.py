@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 from tests.factory import create_project
 
 
@@ -599,6 +600,44 @@ async def test_smoke_test_warms_and_unloads_empty_pool(httpx_client, super_admin
 
 
 @pytest.mark.asyncio
+async def test_unregistered_smoke_test_blocks_raw_load_in_effective_enforce(
+    httpx_client, super_admin, monkeypatch
+):
+    _, token = super_admin
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.unregistered_gpu_loading_blocked",
+        lambda: True,
+    )
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200, {"ok": True, "loaded": False, "pool": {"loaded_variants": []}}
+        ),
+    }
+
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://unregistered:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 503
+    assert res.json()["detail"] == {
+        "error_code": "gpu_config_invalid",
+        "message": (
+            "effective enforce 下未注册 URL 只能执行只读 health/setup；"
+            "请先注册 backend 并完成受管身份绑定"
+        ),
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "health",
     [
@@ -685,6 +724,10 @@ async def test_registered_smoke_test_uses_unified_ml_client(
     )
     db_session.add(backend)
     await db_session.commit()
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.unregistered_gpu_loading_blocked",
+        lambda: True,
+    )
     calls: list[tuple[str, dict]] = []
 
     async def fake_health_meta(self):
@@ -739,6 +782,74 @@ async def test_registered_smoke_test_uses_unified_ml_client(
         ("unload", {}),
     ]
     assert "residency" in res.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_registered_smoke_test_preserves_gpu_arbiter_error_contract(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+
+    _, token = super_admin
+    backend = MLBackendRegistry(
+        name="registered-smoke-rejected",
+        url="http://obs-rejected:8001",
+        state="connected",
+        auth_method="none",
+        extra_params={},
+    )
+    db_session.add(backend)
+    await db_session.commit()
+    unload_calls = 0
+
+    async def fake_health_meta(self):
+        return True, {"loaded": False, "pool": {"loaded_variants": []}}
+
+    async def fake_reload(self, **_kwargs):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+            message="lease full",
+            retry_after_s=7,
+        )
+
+    async def fake_unload(self):
+        nonlocal unload_calls
+        unload_calls += 1
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.health_meta",
+        fake_health_meta,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.reload", fake_reload
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.unload", fake_unload
+    )
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient",
+        _fake_client({}),
+    ):
+        response = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://obs-rejected:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 503, response.text
+    assert response.json() == {
+        "detail": {
+            "error_code": "gpu_backend_concurrency_saturated",
+            "message": "lease full",
+        }
+    }
+    assert response.headers["Retry-After"] == "7"
+    assert unload_calls == 0
 
 
 @pytest.mark.asyncio

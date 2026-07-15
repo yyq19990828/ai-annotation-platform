@@ -28,7 +28,11 @@ ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全�
 
 **没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 目前只为各进程本地 semaphore 提供同一配置值，能减少单进程压力，但 API 与多个 Celery worker 的并发仍会叠加。后续显存仲裁阶段将由 Redis request lease 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
-平台在 GPU `observe` 模式下会在 predict、交互预测、warmup 和 reload 的真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。该模式不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。只有 enforce 通过 Redis lease、generation fencing 与 lifecycle gate 握手后才发送受管 header。
+平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
+
+GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威 authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，authority context 也不能抑制 backend 错误或调用取消。后续接入 runtime authority 时还会补充显式 outcome report，用可信响应提交 allocation 终态，不能把 context 的异常退出本身视为最终账本协议。签名器和 lifecycle gate promotion 尚未接通，effective enforce 继续保持关闭。
+
+派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
 
 ---
 

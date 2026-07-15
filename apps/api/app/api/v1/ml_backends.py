@@ -32,6 +32,7 @@ from app.schemas.ml_backend import (
     ProjectMLBackendEnablement,
 )
 from app.services.gpu_arbiter import (
+    GPUArbiterDispatchError,
     GPUClaimConfigurationError,
     GPUShadowSessionFactory,
 )
@@ -361,6 +362,8 @@ async def unload_ml_backend(
     svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
     try:
         result = await svc.unload(backend_id)
+    except GPUArbiterDispatchError:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend unload failed: {exc}")
     if result is None:
@@ -410,6 +413,8 @@ async def reload_ml_backend(
             dino_variant=dino_variant,
             task_type=task_type,
         )
+    except GPUArbiterDispatchError:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend reload failed: {exc}")
     if result is None:
@@ -463,6 +468,8 @@ async def warmup_ml_backend(
     svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
     try:
         result = await svc.warmup(backend_id, body or {})
+    except GPUArbiterDispatchError:
+        raise
     except httpx.HTTPStatusError as exc:
         # 透传 backend 上游的业务错误 (4xx 变体非法 / 5xx OOM / weight missing).
         status = exc.response.status_code

@@ -15,6 +15,7 @@ from app.config import GPUArbiterMode, settings
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 from app.services.ml_backend import MLBackendService
 
 
@@ -659,6 +660,36 @@ async def test_registry_unload_does_not_require_project_binding(
     assert res.status_code == 200, res.text
     assert res.json()["unloaded"] is True
     assert calls == [backend.id]
+
+
+async def test_registry_unload_preserves_gpu_arbiter_error_contract(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    _, token = super_admin
+    backend = await _seed_registry(db_session, name="arbiter-reject")
+    await db_session.commit()
+
+    async def _reject(_self, _registry_id: uuid.UUID):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+            message="lease full",
+            retry_after_s=7,
+        )
+
+    monkeypatch.setattr(MLBackendService, "unload", _reject)
+    response = await httpx_client.post(
+        f"/api/v1/admin/ml-integrations/registry/{backend.id}/unload",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 503, response.text
+    assert response.json() == {
+        "detail": {
+            "error_code": "gpu_backend_concurrency_saturated",
+            "message": "lease full",
+        }
+    }
+    assert response.headers["Retry-After"] == "7"
 
 
 # ── 项目启用勾选清单 ──────────────────────────────────────────────────────

@@ -284,7 +284,7 @@ docker compose --env-file .env.production \
 ```
 
 > 开发态不带 `-f docker-compose.prod.yml`，api/web 仍跑宿主机。
-> 单独构建镜像：`docker build -f infra/docker/Dockerfile.web -t anno-web .` / `docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/`。
+> 单独构建镜像：`docker build -f infra/docker/Dockerfile.web -t anno-web .` / `docker build -f infra/docker/Dockerfile.api -t anno-api .`。API 镜像需要仓库根目录作为 context，以复制 `apps/_shared/protocol_v2`。
 
 ## 测试与文档
 

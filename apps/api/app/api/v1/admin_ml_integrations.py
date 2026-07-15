@@ -48,6 +48,8 @@ from app.schemas.ml_backend import (
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
 from app.services.gpu_arbiter import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
     GPUClaimConfigurationError,
     GPUResourceRuntimeObservation,
     GPUShadowSessionFactory,
@@ -58,6 +60,7 @@ from app.services.gpu_arbiter import (
     observe_gpu_resource_runtime,
     record_unregistered_gpu_shadow_dispatch,
     strict_gpu_loaded_evidence,
+    unregistered_gpu_loading_blocked,
 )
 from app.services.gpu_arbiter_store import (
     GPUArbiterStore,
@@ -736,6 +739,8 @@ async def unload_registry_backend(
     svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
     try:
         result = await svc.unload(registry_id)
+    except GPUArbiterDispatchError:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail=f"backend unload failed: {exc}"
@@ -1190,6 +1195,15 @@ async def smoke_test_backend(
             await _audit(r)
             return r
 
+        if registered_backend is None and unregistered_gpu_loading_blocked():
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.CONFIG_INVALID,
+                message=(
+                    "effective enforce 下未注册 URL 只能执行只读 health/setup；"
+                    "请先注册 backend 并完成受管身份绑定"
+                ),
+            )
+
         # 2) 空池: warm 指定变体。
         body = {k: v for k, v in variant.items() if v}
         start = time.monotonic()
@@ -1205,6 +1219,8 @@ async def smoke_test_backend(
                 rresp = await client.post(f"{base}/reload", json=body or None)
                 rresp.raise_for_status()
                 reload_data = rresp.json()
+        except GPUArbiterDispatchError:
+            raise
         except Exception as e:  # noqa: BLE001
             r = SmokeTestResponse(
                 ok=False, message="试启动失败：模型未能加载", error=str(e)[:200]
