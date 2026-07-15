@@ -18,7 +18,10 @@ from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.annotation_propagation import _new_track_id
-from app.services.gpu_arbiter import GPUShadowSessionFactory
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
 from app.services.ml_backend import MLBackendService
 from app.services.raster_mask_storage import (
     load_coco_rle,
@@ -847,6 +850,7 @@ async def run_tracker_job(
     *,
     publisher: TrackerEventPublisher = publish_tracker_event,
     shadow_session_factory: GPUShadowSessionFactory | None = None,
+    dispatch_context_factory: GPUDispatchContextFactory | None = None,
 ) -> VideoTrackerJob | None:
     job = await _load_job_for_update(db, job_id)
     if job is None:
@@ -982,6 +986,7 @@ async def run_tracker_job(
                 task_data=task_data,
                 ml_backend=backend,
                 shadow_session_factory=shadow_session_factory,
+                dispatch_context_factory=dispatch_context_factory,
                 text=discovery_text,
                 exemplars=(job.prompt or {}).get("exemplars"),
                 output_geometry=output_geometry,
@@ -1022,6 +1027,7 @@ async def run_tracker_job(
                 task_data=task_data,
                 ml_backend=backend,
                 shadow_session_factory=shadow_session_factory,
+                dispatch_context_factory=dispatch_context_factory,
                 sam_variant=(job.prompt or {}).get("sam_variant"),  # v0.10.36
                 # v0.21.19 · text-driven 追踪的 text/exemplars 从 prompt JSONB 读出透传。
                 text=(job.prompt or {}).get("text"),

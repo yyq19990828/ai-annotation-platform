@@ -114,7 +114,15 @@ async def test_all_residency_changing_methods_observe_before_http(
 
     monkeypatch.setattr("app.services.ml_client.record_gpu_shadow_dispatch", record)
     _patch_async_client(monkeypatch, _transport(events))
-    client = MLBackendClient(_backend(), shadow_session_factory=factory)  # type: ignore[arg-type]
+
+    def unexpected_dispatch(_request):
+        raise AssertionError("observe must not enter workload authority")
+
+    client = MLBackendClient(
+        _backend(),
+        shadow_session_factory=factory,  # type: ignore[arg-type]
+        dispatch_context_factory=unexpected_dispatch,  # type: ignore[arg-type]
+    )
 
     await client.predict([{"id": "t1"}])
     await client.predict_interactive({"id": "t1"}, {})
@@ -133,6 +141,48 @@ async def test_all_residency_changing_methods_observe_before_http(
         "http:/reload",
         "shadow:unload",
         "http:/unload",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_two_enforced_cards_share_authority_without_cross_card_identity(
+    monkeypatch,
+) -> None:
+    card_b = "node-a/index:1"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        '{"node-a/index:0":{"node_id":"node-a",'
+        '"physical_device_token":"index:0","allocatable_mb":20000,'
+        '"mode":"enforce"},"node-a/index:1":{"node_id":"node-a",'
+        '"physical_device_token":"index:1","allocatable_mb":20000,'
+        '"mode":"enforce"}}',
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.effective_gpu_arbiter_mode",
+        lambda _resource_id: GPUArbiterMode.ENFORCE,
+    )
+    backend_a = _backend()
+    backend_b = _backend()
+    backend_b.gpu_resource_id = card_b
+    captured: list[tuple[str, str]] = []
+
+    @asynccontextmanager
+    async def dispatch(request):
+        captured.append((request.backend_id, request.gpu_resource_id))
+        yield GPUDispatchGrant(generation="1", admission_token="signed-token")
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    await MLBackendClient(backend_a, dispatch_context_factory=dispatch).reload()
+    await MLBackendClient(backend_b, dispatch_context_factory=dispatch).reload()
+
+    assert captured == [
+        (str(backend_a.id), RESOURCE_ID),
+        (str(backend_b.id), card_b),
     ]
 
 

@@ -344,6 +344,9 @@ async def _run_segment(
 
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.task import Task
+    from app.services.gpu_dispatch_authority import (
+        build_gpu_dispatch_context_factory,
+    )
     from app.services.ml_client import MLBackendClient
     from app.services.prediction import PredictionService, to_video_bbox_result
     from app.services.video_frame_service import build_context_from_task
@@ -357,6 +360,7 @@ async def _run_segment(
     SessionLocal = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+    dispatch_context_factory = build_gpu_dispatch_context_factory(SessionLocal)
 
     stats = {
         "task_id": task_id,
@@ -372,7 +376,11 @@ async def _run_segment(
             if backend is None or task is None:
                 return stats
             ctx = await build_context_from_task(db, task)
-            client = MLBackendClient(backend, shadow_session_factory=SessionLocal)
+            client = MLBackendClient(
+                backend,
+                shadow_session_factory=SessionLocal,
+                dispatch_context_factory=dispatch_context_factory,
+            )
             context = _build_predict_context(
                 prompt=None,
                 output_mode="box",

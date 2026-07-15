@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from app.config import settings
-from app.services.gpu_arbiter import GPUShadowSessionFactory
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
 from app.services.ml_client import MLBackendClient
 
 if TYPE_CHECKING:
@@ -44,6 +47,7 @@ class TrackerContext:
     task_data: dict
     ml_backend: "MLBackend | None" = None
     shadow_session_factory: GPUShadowSessionFactory | None = None
+    dispatch_context_factory: GPUDispatchContextFactory | None = None
     sam_variant: str | None = (
         None  # v0.10.36 · 透传到 backend /predict video_tracker 分支
     )
@@ -155,7 +159,9 @@ class MLBackendVideoTrackerAdapter:
             )
 
         client = MLBackendClient(
-            backend, shadow_session_factory=ctx.shadow_session_factory
+            backend,
+            shadow_session_factory=ctx.shadow_session_factory,
+            dispatch_context_factory=ctx.dispatch_context_factory,
         )
         context: dict = {
             "type": "video_tracker",

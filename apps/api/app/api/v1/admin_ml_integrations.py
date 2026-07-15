@@ -29,7 +29,12 @@ from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.user import User
-from app.deps import get_db, get_gpu_shadow_session_factory, require_roles
+from app.deps import (
+    get_db,
+    get_gpu_dispatch_context_factory,
+    get_gpu_shadow_session_factory,
+    require_roles,
+)
 from app.schemas.ml_backend import (
     ComputeInfo,
     GPUBackendConfigStatus,
@@ -51,6 +56,7 @@ from app.services.gpu_arbiter import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
     GPUClaimConfigurationError,
+    GPUDispatchContextFactory,
     GPUResourceRuntimeObservation,
     GPUShadowSessionFactory,
     build_backend_gpu_config_status,
@@ -732,11 +738,18 @@ async def unload_registry_backend(
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
     ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> MLBackendUnloadResponse:
     """全局卸载 backend，不要求它已被任一项目启用。"""
 
-    svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     try:
         result = await svc.unload(registry_id)
     except GPUArbiterDispatchError:
@@ -965,6 +978,9 @@ async def smoke_test_backend(
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
     ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> SmokeTestResponse:
     """试启动: 空池时 warm 指定变体验证可加载性, 成功后自动 /unload 还原现场。
@@ -985,6 +1001,7 @@ async def smoke_test_backend(
         MLBackendClient(
             registered_backend,
             shadow_session_factory=shadow_session_factory,
+            dispatch_context_factory=dispatch_context_factory,
         )
         if registered_backend is not None
         else None

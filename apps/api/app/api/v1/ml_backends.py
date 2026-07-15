@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
     get_db,
+    get_gpu_dispatch_context_factory,
     get_gpu_shadow_session_factory,
     require_roles,
     require_project_visible,
@@ -34,6 +35,7 @@ from app.schemas.ml_backend import (
 from app.services.gpu_arbiter import (
     GPUArbiterDispatchError,
     GPUClaimConfigurationError,
+    GPUDispatchContextFactory,
     GPUShadowSessionFactory,
 )
 from app.services.ml_backend import (
@@ -350,6 +352,9 @@ async def unload_ml_backend(
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
     ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> MLBackendUnloadResponse:
     """B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502.
@@ -359,7 +364,11 @@ async def unload_ml_backend(
     平台管理员, 与前端「运行时观测」面板 (super_admin only) 及 admin observe/smoke-test 的
     运维基线一致; 不叠加 require_project_owner —— 全局操作按 backend_id 定位, 与 path 里的
     project 无归属关系。构造性的 /warmup 仍保留在 project_owner (见该端点注释)。"""
-    svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     try:
         result = await svc.unload(backend_id)
     except GPUArbiterDispatchError:
@@ -392,6 +401,9 @@ async def reload_ml_backend(
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
     ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     """B-28+ · 触发 backend 重新加载模型. 已加载则 noop.
@@ -402,7 +414,11 @@ async def reload_ml_backend(
     鉴权 super_admin only · /reload 会改写「全局 backend 常驻变体」(同 backend 被多项目共用),
     切变体等于换掉其他项目正在用的权重, 属破坏性驻留操作, 与 /unload 同基线收口到平台管理员
     (对齐 super_admin only 的「运行时观测」面板)。"""
-    svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     sam_variant = body.sam_variant if body else None
     dino_variant = body.dino_variant if body else None
     task_type = body.task_type if body else None
@@ -451,6 +467,9 @@ async def warmup_ml_backend(
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
     ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     """v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.
@@ -465,7 +484,11 @@ async def warmup_ml_backend(
     上其他项目常驻的模型, 属可接受代价 —— 它是本项目用模型的必要前提, 且 backend 侧有
     max_concurrency / idle 淘汰兜底。只有会直接驱逐/换掉他人在用权重的 unload/reload 才收口
     到平台管理员。"""
-    svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     try:
         result = await svc.warmup(backend_id, body or {})
     except GPUArbiterDispatchError:
@@ -663,6 +686,9 @@ async def predict_test(
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
     ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = MLBackendService(db)
@@ -674,7 +700,9 @@ async def predict_test(
     await db.commit()
 
     client = ml_client_module.MLBackendClient(
-        backend, shadow_session_factory=shadow_session_factory
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
     )
     results = await client.predict(
         [{"id": str(task.id), "file_path": _resolve_task_url(task)}]
@@ -698,6 +726,9 @@ async def interactive_annotating(
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
     ),
     current_user: User = Depends(
         require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
@@ -723,7 +754,9 @@ async def interactive_annotating(
     await db.commit()
 
     client = ml_client_module.MLBackendClient(
-        backend, shadow_session_factory=shadow_session_factory
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
     )
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
@@ -754,6 +787,9 @@ async def predict_frame(
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
     ),
     current_user: User = Depends(
         require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
@@ -820,7 +856,9 @@ async def predict_frame(
     await db.commit()
 
     client = ml_client_module.MLBackendClient(
-        backend, shadow_session_factory=shadow_session_factory
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
     )
     results = await client.predict(
         [{"id": str(task.id), "file_path": frame_url}], context=context
@@ -863,6 +901,9 @@ async def interactive_annotating_frame(
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
     ),
     current_user: User = Depends(
         require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
@@ -915,7 +956,9 @@ async def interactive_annotating_frame(
     # 与 interactive_annotating 一致: 不注入项目级 DINO 阈值 (那是 gsam2 专属, 塞给 sam3
     # 等后端会出错); 推理参数由前端按 /setup.params 渲染后随 context 透传。
     client = ml_client_module.MLBackendClient(
-        backend, shadow_session_factory=shadow_session_factory
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
     )
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": frame_url},

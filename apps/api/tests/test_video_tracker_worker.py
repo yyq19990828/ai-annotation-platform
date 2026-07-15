@@ -429,8 +429,10 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     await db_session.commit()
     monkeypatch.setattr(settings, "video_tracker_window_size_frames", 2)
     calls: list[dict] = []
+    authority_marker = object()
 
     async def fake_predict_interactive(self, task_data, context):
+        assert self._dispatch_context_factory is authority_marker
         calls.append(context)
         return PredictionResult(
             task_id=task_data["id"],
@@ -452,7 +454,12 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     async def collect(_channel: str, _payload: dict) -> None:
         return None
 
-    await run_tracker_job(db_session, job.id, publisher=collect)
+    await run_tracker_job(
+        db_session,
+        job.id,
+        publisher=collect,
+        dispatch_context_factory=authority_marker,  # type: ignore[arg-type]
+    )
     await db_session.refresh(job)
     await db_session.refresh(annotation)
 
@@ -799,8 +806,22 @@ async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, st
     )
     db_session.add(job)
     await db_session.commit()
+    authority_marker = object()
+    built_from: list[object] = []
+
+    def _build_authority(session_factory):
+        built_from.append(session_factory)
+        return authority_marker
+
+    monkeypatch.setattr(
+        worker_mod,
+        "build_gpu_dispatch_context_factory",
+        _build_authority,
+    )
 
     async def _stub_run(db, job_id, **_kw):
+        assert _kw["shadow_session_factory"] is built_from[0]
+        assert _kw["dispatch_context_factory"] is authority_marker
         row = await db.get(VideoTrackerJob, job_id)
         row.status = status
         if status == VideoTrackerJobStatus.FAILED.value:
@@ -834,6 +855,7 @@ async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, st
     monkeypatch.setattr(worker_mod, "async_sessionmaker", _Factory)
 
     await worker_mod._run_video_tracker_job(str(job.id), "celery-vt")
+    assert len(built_from) == 1
 
     aj = (
         (

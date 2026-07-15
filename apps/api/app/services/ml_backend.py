@@ -14,7 +14,11 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
-from app.services.gpu_arbiter import GPUShadowSessionFactory, validate_gpu_claim
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+    validate_gpu_claim,
+)
 from app.services.ml_client import (
     GPU_HEALTH_CHALLENGE_ECHO_MARKER,
     MLBackendClient,
@@ -98,9 +102,11 @@ class MLBackendService:
         db: AsyncSession,
         *,
         shadow_session_factory: GPUShadowSessionFactory | None = None,
+        dispatch_context_factory: GPUDispatchContextFactory | None = None,
     ) -> None:
         self.db = db
         self.shadow_session_factory = shadow_session_factory
+        self.dispatch_context_factory = dispatch_context_factory
 
     # ── 全局注册表 ───────────────────────────────────────────────────────────
     async def create_registry(
@@ -328,7 +334,9 @@ class MLBackendService:
         # 远程调用前释放只读事务连接，避免 shadow 短会话与请求会话互相挤占池。
         await self.db.commit()
         return await MLBackendClient(
-            backend, shadow_session_factory=self.shadow_session_factory
+            backend,
+            shadow_session_factory=self.shadow_session_factory,
+            dispatch_context_factory=self.dispatch_context_factory,
         ).unload()
 
     async def reload(
@@ -343,7 +351,9 @@ class MLBackendService:
             return None
         await self.db.commit()
         return await MLBackendClient(
-            backend, shadow_session_factory=self.shadow_session_factory
+            backend,
+            shadow_session_factory=self.shadow_session_factory,
+            dispatch_context_factory=self.dispatch_context_factory,
         ).reload(
             sam_variant=sam_variant, dino_variant=dino_variant, task_type=task_type
         )
@@ -355,7 +365,9 @@ class MLBackendService:
             return None
         await self.db.commit()
         return await MLBackendClient(
-            backend, shadow_session_factory=self.shadow_session_factory
+            backend,
+            shadow_session_factory=self.shadow_session_factory,
+            dispatch_context_factory=self.dispatch_context_factory,
         ).warmup(body)
 
     async def check_health(self, registry_id: uuid.UUID) -> bool:

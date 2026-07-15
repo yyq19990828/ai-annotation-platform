@@ -526,6 +526,9 @@ async def _run_batch(
     from app.db.models.task_batch import TaskBatch
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
+    from app.services.gpu_dispatch_authority import (
+        build_gpu_dispatch_context_factory,
+    )
     from app.services.ml_client import MLBackendClient
     from app.services.prediction import PredictionService
 
@@ -811,6 +814,7 @@ async def _run_batch(
 
         box_thr = float(project.box_threshold) if project is not None else None
         text_thr = float(project.text_threshold) if project is not None else None
+        dispatch_context_factory = build_gpu_dispatch_context_factory(SessionLocal)
         stage_clients: list[MLBackendClient] = []
         stage_contexts: list[dict | None] = []
         # v0.18.14 · 每阶段投递模式 (crop|geometry), 按 write.target 推断 (input.mode 可覆盖)。
@@ -819,14 +823,22 @@ async def _run_batch(
         for s in stages:
             if s["parent_stage"] is None:
                 stage_clients.append(
-                    MLBackendClient(backend, shadow_session_factory=SessionLocal)
+                    MLBackendClient(
+                        backend,
+                        shadow_session_factory=SessionLocal,
+                        dispatch_context_factory=dispatch_context_factory,
+                    )
                 )
                 stage_contexts.append(context)
                 stage_modes.append("crop")
             else:
                 s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
                 stage_clients.append(
-                    MLBackendClient(s_backend, shadow_session_factory=SessionLocal)
+                    MLBackendClient(
+                        s_backend,
+                        shadow_session_factory=SessionLocal,
+                        dispatch_context_factory=dispatch_context_factory,
+                    )
                 )
                 stage_modes.append(_resolve_input_mode(s))
                 stage_contexts.append(

@@ -235,8 +235,22 @@ async def test_retry_worker_tracks_success_in_async_jobs(
         db_session, project_id=proj.id, task_id=task.id, backend_id=backend.id
     )
     await db_session.commit()
+    session_factory = _passthrough_session_factory(db_session)
+    authority_marker = object()
+    built_from: list[object] = []
+
+    def build_authority(received_factory):
+        built_from.append(received_factory)
+        return authority_marker
+
+    monkeypatch.setattr(
+        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        build_authority,
+    )
 
     async def fake_predict(self, tasks_payload):
+        assert self._shadow_session_factory is session_factory
+        assert self._dispatch_context_factory is authority_marker
         return [
             PredictionResult(
                 task_id=tasks_payload[0]["id"],
@@ -250,10 +264,11 @@ async def test_retry_worker_tracks_success_in_async_jobs(
     monkeypatch.setattr("app.services.ml_client.MLBackendClient.predict", fake_predict)
 
     result = await retry_worker._do_retry_with_factory(
-        _passthrough_session_factory(db_session), str(fp.id), str(user.id)
+        session_factory, str(fp.id), str(user.id)
     )
 
     assert result["status"] == "succeeded"
+    assert built_from == [session_factory]
     assert result["prediction_id"]
     jobs = (
         (

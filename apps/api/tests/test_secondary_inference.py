@@ -44,10 +44,16 @@ def _patch_io(monkeypatch):
     monkeypatch.setattr(storage_mod, "StorageService", _FakeStorage)
 
 
-def _patch_predict(monkeypatch, results: list[PredictionResult]):
+def _patch_predict(
+    monkeypatch,
+    results: list[PredictionResult],
+    *,
+    expected_dispatch_factory=None,
+):
     class _FakeClient:
         def __init__(self, backend, **_kwargs):
-            pass
+            if expected_dispatch_factory is not None:
+                assert _kwargs["dispatch_context_factory"] is expected_dispatch_factory
 
         async def predict(self, inputs, context=None):
             return results
@@ -78,6 +84,7 @@ async def test_attributes_written_back_with_ai_origin(
     await db_session.flush()
     box = await _mk_box(db_session, task.id, user.id)
     await db_session.flush()
+    authority_marker = object()
 
     # 下游分类返回 color=blue (crop 输入 id="0" → cr.task_id="0")
     _patch_predict(
@@ -88,6 +95,7 @@ async def test_attributes_written_back_with_ai_origin(
                 result=[{"attributes": {"color": "blue"}, "score": 0.9}],
             )
         ],
+        expected_dispatch_factory=authority_marker,
     )
 
     updated, children = await run_secondary_inference(
@@ -106,6 +114,7 @@ async def test_attributes_written_back_with_ai_origin(
         class_filter=None,
         pad=0.08,
         user_id=user.id,
+        dispatch_context_factory=authority_marker,  # type: ignore[arg-type]
     )
 
     assert children == []

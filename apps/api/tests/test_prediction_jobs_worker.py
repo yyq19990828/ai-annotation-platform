@@ -184,10 +184,23 @@ async def test_run_batch_accumulates_total_cost(
     )
     db_session.add_all([t1, t2])
     await db_session.flush()
+    authority_marker = object()
+    built_from: list[object] = []
+    client_kwargs: list[dict] = []
+
+    def build_authority(session_factory):
+        built_from.append(session_factory)
+        return authority_marker
+
+    monkeypatch.setattr(
+        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        build_authority,
+    )
 
     class _StubClient:
         def __init__(self, _backend, **_kwargs):
             self._backend = _backend
+            client_kwargs.append(_kwargs)
 
         async def predict(self, tasks_payload, context=None):
             return [
@@ -226,6 +239,13 @@ async def test_run_batch_accumulates_total_cost(
     job = res.scalar_one()
     assert job.status == "completed"
     assert job.result["success_count"] == 2
+    assert len(built_from) == 1
+    assert client_kwargs == [
+        {
+            "shadow_session_factory": built_from[0],
+            "dispatch_context_factory": authority_marker,
+        }
+    ]
     # 0.0012 × 2 = 0.0024 (格式化到 4 位)
     assert job.result["total_cost"] == "0.0024"
 

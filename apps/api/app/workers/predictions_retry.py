@@ -159,6 +159,9 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.prediction import FailedPrediction
     from app.db.models.task import Task
+    from app.services.gpu_dispatch_authority import (
+        build_gpu_dispatch_context_factory,
+    )
     from app.services.ml_client import MLBackendClient
     from app.services.notification import NotificationService
     from app.services.prediction import PredictionService
@@ -197,7 +200,11 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
         }
 
     # 第二阶段：调 backend
-    client = MLBackendClient(backend, shadow_session_factory=session_factory)
+    client = MLBackendClient(
+        backend,
+        shadow_session_factory=session_factory,
+        dispatch_context_factory=build_gpu_dispatch_context_factory(session_factory),
+    )
     try:
         results = await client.predict(
             [{"id": str(task.id), "file_path": task.file_path}]
