@@ -3485,6 +3485,335 @@ async def test_missing_or_not_ready_card_fails_closed(redis_stores) -> None:
     assert rebuilding.status == "not_ready"
 
 
+@pytest.mark.parametrize(
+    ("state", "expected_reason"),
+    [
+        (None, "resident_allocation_required"),
+        (GPUAllocationState.UNKNOWN, "allocation_unknown"),
+        (GPUAllocationState.UNLOADED, "resident_allocation_required"),
+        (GPUAllocationState.CPU_FALLBACK, "resident_allocation_required"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_require_resident_rejects_nonresident_without_side_effects(
+    redis_stores,
+    state: GPUAllocationState | None,
+    expected_reason: str,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-resident-only/{state.value if state else 'missing'}"
+    allocations = (
+        () if state is None else (_reconcile_allocation(state=state, generation="1"),)
+    )
+    reconciled = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a"),
+        allocations=allocations,
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id=f"resident-only-{state.value if state else 'missing'}",
+    )
+    assert reconciled.status == "reconciled"
+    before = await first.snapshot(resource_id)
+    kwargs = _admission_kwargs(
+        "backend-a",
+        "resident-only-lease",
+        generation=(
+            "2"
+            if state in {GPUAllocationState.UNLOADED, GPUAllocationState.CPU_FALLBACK}
+            else "1"
+        ),
+    )
+    kwargs["evictable"] = False
+
+    rejected = await first.admit(
+        resource_id,
+        require_resident=True,
+        **kwargs,
+    )
+
+    assert (rejected.status, rejected.reason) == (
+        "not_ready",
+        expected_reason,
+    )
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == before.ledger_revision
+    assert after.committed_mb == before.committed_mb
+    assert after.allocations == before.allocations
+    assert after.leases == ()
+
+
+@pytest.mark.parametrize(
+    "state",
+    [GPUAllocationState.RESERVING, GPUAllocationState.LOADING],
+)
+@pytest.mark.asyncio
+async def test_require_resident_rejects_cold_allocation_and_idempotent_lease(
+    redis_stores,
+    state: GPUAllocationState,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-resident-only/{state.value}"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    cold_kwargs = _admission_kwargs("backend-a", "cold-lease")
+    assert (await first.admit(resource_id, **cold_kwargs)).admitted
+    if state is GPUAllocationState.LOADING:
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_generation="1",
+                target_state=GPUAllocationState.LOADING,
+                request_lease_id="cold-lease",
+                request_owner_id="owner-a",
+            )
+        ).status == "transitioned"
+    before = await first.snapshot(resource_id)
+
+    new_lease = await first.admit(
+        resource_id,
+        require_resident=True,
+        **_admission_kwargs("backend-a", "resident-only-lease"),
+    )
+    idempotent_lease = await first.admit(
+        resource_id,
+        require_resident=True,
+        **cold_kwargs,
+    )
+
+    assert (new_lease.status, new_lease.reason) == (
+        "not_ready",
+        "resident_allocation_required",
+    )
+    assert (idempotent_lease.status, idempotent_lease.reason) == (
+        "not_ready",
+        "resident_allocation_required",
+    )
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == before.ledger_revision
+    assert after.allocations == before.allocations
+    assert after.leases == before.leases
+
+
+@pytest.mark.asyncio
+async def test_require_resident_admits_only_resident_and_enforces_concurrency(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-resident-only/resident"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await _admit_resident(
+        first,
+        resource_id,
+        lease_id="initial-lease",
+        max_concurrency=1,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="initial-lease",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    kwargs = _admission_kwargs(
+        "backend-a",
+        "resident-lease",
+        max_concurrency=1,
+    )
+
+    saturated_kwargs = _admission_kwargs(
+        "backend-a",
+        "saturated-lease",
+        max_concurrency=1,
+        owner_id="owner-b",
+    )
+    results = await asyncio.gather(
+        first.admit(
+            resource_id,
+            require_resident=True,
+            **kwargs,
+        ),
+        second.admit(
+            resource_id,
+            require_resident=True,
+            **saturated_kwargs,
+        ),
+    )
+
+    assert sorted(result.status for result in results) == [
+        "admitted",
+        "concurrency_saturated",
+    ]
+    admitted = next(result for result in results if result.admitted)
+    saturated = next(
+        result for result in results if result.status == "concurrency_saturated"
+    )
+    assert admitted.admitted is True
+    assert admitted.allocation_state is GPUAllocationState.RESIDENT
+    assert (saturated.status, saturated.reason) == (
+        "concurrency_saturated",
+        "max_concurrency_reached",
+    )
+    snapshot = await first.snapshot(resource_id)
+    assert len(snapshot.allocations) == 1
+    assert snapshot.allocations[0].state is GPUAllocationState.RESIDENT
+    assert snapshot.allocations[0].generation == "1"
+    assert len(snapshot.leases) == 1
+    assert snapshot.committed_mb == 60
+
+
+@pytest.mark.parametrize(
+    "state",
+    [GPUAllocationState.DRAINING, GPUAllocationState.UNLOADING],
+)
+@pytest.mark.asyncio
+async def test_require_resident_rejects_transition_race(
+    redis_stores,
+    state: GPUAllocationState,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-resident-only/{state.value}"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await _admit_resident(first, resource_id, lease_id="initial-lease")
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="initial-lease",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    owner = await first.acquire_transition_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="drain-owner",
+        generation="2",
+        operation="drain",
+        ttl_ms=30_000,
+        require_idle=True,
+    )
+    assert owner.status == "acquired"
+    assert (
+        await first.transition_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            target_state=GPUAllocationState.DRAINING,
+            next_generation="2",
+            transition_owner_id="drain-owner",
+            transition_operation="drain",
+        )
+    ).status == "transitioned"
+    if state is GPUAllocationState.UNLOADING:
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_generation="2",
+                target_state=GPUAllocationState.UNLOADING,
+                transition_owner_id="drain-owner",
+                transition_operation="drain",
+            )
+        ).status == "transitioned"
+    before = await first.snapshot(resource_id)
+
+    rejected = await first.admit(
+        resource_id,
+        require_resident=True,
+        **_admission_kwargs(
+            "backend-a",
+            "resident-only-lease",
+            generation="2",
+        ),
+    )
+
+    assert (rejected.status, rejected.reason) == (
+        "transition_in_progress",
+        "transition_owner_active",
+    )
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == before.ledger_revision
+    assert after.allocations == before.allocations
+    assert after.leases == ()
+
+
+@pytest.mark.asyncio
+async def test_require_resident_and_idle_transition_owner_are_atomic(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-resident-only/atomic-transition"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await _admit_resident(first, resource_id, lease_id="initial-lease")
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="initial-lease",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+
+    admission, transition = await asyncio.gather(
+        first.admit(
+            resource_id,
+            require_resident=True,
+            **_admission_kwargs("backend-a", "race-lease"),
+        ),
+        second.acquire_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="drain-owner",
+            generation="2",
+            operation="drain",
+            ttl_ms=30_000,
+            require_idle=True,
+        ),
+    )
+
+    assert (admission.status, transition.status) in {
+        ("admitted", "active_leases"),
+        ("transition_in_progress", "acquired"),
+    }
+    snapshot = await first.snapshot(resource_id)
+    assert len(snapshot.allocations) == 1
+    assert snapshot.allocations[0].state is GPUAllocationState.RESIDENT
+    assert all(
+        allocation.state is not GPUAllocationState.RESERVING
+        for allocation in snapshot.allocations
+    )
+
+
 @pytest.mark.asyncio
 async def test_two_independent_clients_cannot_oversell_capacity(redis_stores) -> None:
     first, second = redis_stores
@@ -3627,6 +3956,15 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
         ttl_ms=30_000,
     )
     assert (ticket_one.position, ticket_two.position) == (1, 2)
+    card_ticket = await first.enqueue_card(
+        resource_id,
+        backend_id="backend-b",
+        membership_epoch=1,
+        ticket_id="card-ticket",
+        owner_id="card-waiter",
+        ttl_ms=30_000,
+    )
+    assert card_ticket.position == 1
 
     released = await first.release_lease(
         resource_id,
@@ -3639,6 +3977,7 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
 
     bypass = await second.admit(
         resource_id,
+        require_resident=True,
         **_admission_kwargs(
             "backend-a", "lease-bypass", max_concurrency=1, owner_id="bypass"
         ),
@@ -3647,12 +3986,21 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
 
     first_waiter = await second.admit(
         resource_id,
+        require_resident=True,
         backend_ticket_id="ticket-1",
         **_admission_kwargs(
             "backend-a", "lease-waiter-1", max_concurrency=1, owner_id="waiter-1"
         ),
     )
     assert first_waiter.admitted
+    assert (
+        await first.queue_position(
+            resource_id,
+            backend_id="backend-b",
+            ticket_id="card-ticket",
+            card_queue=True,
+        )
+    ).position == 1
     assert (
         await first.queue_position(
             resource_id,
@@ -3668,6 +4016,15 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
             ticket_id="ticket-2",
             owner_id="waiter-2",
             card_queue=False,
+        )
+    ).status == "cancelled"
+    assert (
+        await first.cancel_queue_ticket(
+            resource_id,
+            backend_id="backend-b",
+            ticket_id="card-ticket",
+            owner_id="card-waiter",
+            card_queue=True,
         )
     ).status == "cancelled"
 
@@ -4391,6 +4748,23 @@ async def test_card_fifo_and_resource_shards_are_independent(redis_stores) -> No
         _bootstrap_empty_card(first, resource_a, 50),
         _bootstrap_empty_card(second, resource_b, 50),
     )
+    await _admit_resident(
+        second,
+        resource_b,
+        backend_id="backend-b",
+        lease_id="lease-b-initial",
+        owner_id="owner-b",
+        budget_mb=50,
+    )
+    assert (
+        await second.release_lease(
+            resource_b,
+            backend_id="backend-b",
+            lease_id="lease-b-initial",
+            owner_id="owner-b",
+            generation="1",
+        )
+    ).status == "released"
     await first.enqueue_card(
         resource_a,
         backend_id="backend-a",
@@ -4419,6 +4793,7 @@ async def test_card_fifo_and_resource_shards_are_independent(redis_stores) -> No
     # a common infrastructure failure and latency domain.
     admitted_b = await second.admit(
         resource_b,
+        require_resident=True,
         **_admission_kwargs("backend-b", "lease-b", budget_mb=50, owner_id="owner-b"),
     )
     assert admitted_b.admitted

@@ -3727,6 +3727,9 @@ end
 if ledger.memberships[ARGV[2]].membership_epoch ~= ARGV[22] then
   return cjson.encode({status='config_mismatch', reason='membership_epoch_changed', committed_mb=ledger.committed, lease_count=0})
 end
+if ARGV[23] ~= '0' and ARGV[23] ~= '1' then
+  return cjson.encode({status='config_mismatch', reason='admission_mode_invalid', committed_mb=ledger.committed, lease_count=0})
+end
 local lease_key = ledger.lease_keys[ARGV[2]]
 local backend_queue_key = ledger.queue_keys[ARGV[2]]
 
@@ -3812,6 +3815,9 @@ if existing_lease then
       redis.call('HSET', lease_key, ARGV[8], cjson.encode(existing_lease))
       return cjson.encode({status='lease_conflict', reason='idempotent_lease_not_active', committed_mb=committed, lease_count=redis.call('HLEN', lease_key)})
     end
+    if ARGV[23] == '1' and allocation.state ~= 'resident' then
+      return cjson.encode({status='not_ready', reason='resident_allocation_required', committed_mb=committed, lease_count=redis.call('HLEN', lease_key)})
+    end
     return cjson.encode({
       status='admitted', reason='idempotent_lease', idempotent=true,
       committed_mb=committed,
@@ -3878,6 +3884,9 @@ if allocation then
   end
 else
   increment = tonumber(ARGV[3])
+end
+if ARGV[23] == '1' and (not allocation or allocation.state ~= 'resident') then
+  return cjson.encode({status='not_ready', reason='resident_allocation_required', committed_mb=committed, lease_count=lease_count})
 end
 
 local backend_head, backend_live, backend_queue_error = read_queue(
@@ -6328,6 +6337,7 @@ class GPUArbiterStore:
         hard_ttl_ms: int,
         backend_ticket_id: str | None = None,
         card_ticket_id: str | None = None,
+        require_resident: bool = False,
     ) -> GPUAdmissionResult:
         keys = self.keys(resource_id)
         _validate_nonempty(backend_id, "backend_id", max_length=128)
@@ -6355,6 +6365,8 @@ class GPUArbiterStore:
 
         if not isinstance(evictable, bool):
             raise ValueError("evictable must be a boolean")
+        if not isinstance(require_resident, bool):
+            raise ValueError("require_resident must be a boolean")
         eviction_priority = _validate_redis_safe_int(
             eviction_priority, "eviction_priority"
         )
@@ -6387,6 +6399,7 @@ class GPUArbiterStore:
                     domains.active_backend_domain_raw,
                     domains.active_backend_domain_fingerprint,
                     str(membership_epoch),
+                    "1" if require_resident else "0",
                 ],
             )
         )
