@@ -356,7 +356,11 @@ class RequestValidationErrorResponse(BaseModel):
 
 
 class MLBackendRegistryConflictDetail(BaseModel):
-    error_code: Literal["ml_backend_url_conflict", "gpu_backend_active"]
+    error_code: Literal[
+        "ml_backend_url_conflict",
+        "gpu_backend_active",
+        "gpu_backend_retirement_required",
+    ]
     message: str
     active_workloads: int | None = None
 

@@ -334,8 +334,27 @@ lease 与 transition 是否过期以逻辑 deadline 为准，Redis 物理 TTL �
 
 bootstrap/repair 的 backend 域必须来自独立持久化 membership，包含当前成员及尚未确认 Redis child 全部收敛
 的 retired tombstone。活动 registry 行不是封闭域；Lua `KEYS`/`SCAN` 也不能作为遗漏 key 不存在的证明。
-现有 `gpu_backend_fences.backend_registry_id` 采用级联删除，不能承担 tombstone。实现必须先持久化 membership，
-再允许创建该 backend 的 Redis child；只有 health、token、lease 与队列均确认收敛后才能清除 tombstone。
+`gpu_backend_memberships` 与 fence 现在独立于 registry 生命周期：GPU claim 与 pending membership/fence 在同一
+数据库事务建立，资源迁移或 registry 删除先把旧成员冻结为 retiring tombstone，并保存 health、generation、
+control/runtime epoch 与令牌过期高水位；membership 以 RESTRICT 外键阻止 fence 高水位先行删除，同一
+backend 最多一个 pending/active 成员，retiring tombstone 清理前禁止同资源重入。pending 只能在 exact
+registry claim 仍匹配时，以创建时的 runtime baseline 为基准，在同一短事务新推进一档 epoch 后转 active；
+membership 的 backend/resource 身份不可原地改写，membership epoch 不可回退或跳变；只有 registry
+已撤销旧 claim 时才可将旧行原位转 retiring 并严格推进一档。retiring 行的冻结证据在
+proof-backed GC 落地前禁止 UPDATE/DELETE。探活网络调用后锁定 registry 行并用
+新语句重读 membership epoch；所有会推进 epoch 的配置变更立即清空旧 health，从而阻止配置变化、行锁等待
+与 A→B 竞态写入旧证据。进入正 runtime epoch 后，直接修改端点、claim、预算、
+优先级、并发参数或硬删除 registry 会被服务层与数据库 trigger 双重拒绝，必须走受管退役。退役时冻结的
+health 只作诊断快照，不得代替 GC 所需的 live health。
+
+签发 capability 前必须锁定 exact active membership。token/activation 使用 membership→fence 锁序；registry
+mutation 由 registry row→membership→fence trigger 线性化，服务层不得反向预锁 membership。需要新 generation/control epoch 时，fence 与令牌时域
+在同一事务推进；复用既有 epoch 的普通 workload 使用 horizon-only 更新。两条路径都必须 UPDATE-only
+单调持久化 `token_expiry_high_water`，缺失 fence 视为持久状态损坏，禁止从 1 重建。Redis 连续性丢失后，
+只有该时域已过且取得时域之后的 live-idle health，或完成更强的受签 reset，才可恢复 ready。
+Redis 还必须区分 all-domain 与 active-domain，以 revision/incarnation CAS 原子扩缩域和清理 retired child；
+partial corruption 只能通过封闭域、令牌时域和 live health 共同证明的 reset 修复。只有 health、token、lease、
+队列、transition 与 Redis 域均确认收敛后才能清除 tombstone。
 
 API lifespan 与 Celery 中反复 `asyncio.run` 会创建不同 event loop。实现不得跨 loop 复用 module-global
 `redis.asyncio` client/pool；必须按 event loop 管理并显式关闭，或封装同步 Redis 调用，并用重复创建和销毁
@@ -419,14 +438,15 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 | `gpu_drain_timeout` | victim 在有界时间内未达到 lease/active/builder/borrower 均为 0 | `503` + `Retry-After`；仅 cancel + generation CAS 均确认后回滚 Resident，否则转 Unknown |
 | `gpu_arbiter_unavailable` | `enforce` 下 Redis、durable fence 存储不可用或原子操作失败 | `503`，对所有 GPU resource fail-closed |
 | `gpu_config_invalid` | resource、budget、allocatable、device set 或 backend identity / URL 状态域配置缺失 / 非法 | 配置写入时 `422`；历史坏配置在派发时 `503`，均不调用 backend |
+| `gpu_backend_retirement_required` | backend 已进入正 runtime epoch 后仍尝试直接修改端点、claim、预算、优先级、并发参数或硬删除 registry | `409`；保持原配置，必须改走受管退役流程 |
 
 ### 阶段门禁
 
 - P0：接受本 ADR，只冻结设计；不代表自动仲裁可用。
 - P1：五个 backend 完成 residency、active/draining、全池 unload、generation fencing 与 admission token 契约。
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
-- P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期以及 fail-closed 重建原语完成；独立
-  durable membership/tombstone 与 bootstrap/repair worker 接通后才算通过。
+- P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语以及独立
+  durable membership/tombstone 已完成；Redis 双域演进、live health 与 bootstrap/repair worker 接通后才算通过。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。

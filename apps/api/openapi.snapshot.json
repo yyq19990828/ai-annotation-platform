@@ -11152,7 +11152,8 @@
           "error_code": {
             "enum": [
               "ml_backend_url_conflict",
-              "gpu_backend_active"
+              "gpu_backend_active",
+              "gpu_backend_retirement_required"
             ],
             "title": "Error Code",
             "type": "string"

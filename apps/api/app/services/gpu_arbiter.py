@@ -1,8 +1,8 @@
 """ADR-0049 GPU claims, durable fences, and P2 read-only shadow arbitration.
 
 This module deliberately performs no Redis admission, eviction, or backend calls.
-P2b evaluates non-authoritative ``would-*`` decisions from a fresh DB snapshot; P3a
-adds only the PostgreSQL fencing high-water allocator used before future token issue.
+P2b evaluates non-authoritative ``would-*`` decisions from a fresh DB snapshot;
+P3a/P3c-2a add durable fencing, exact membership, and token-expiry high-water marks.
 """
 
 from __future__ import annotations
@@ -13,16 +13,16 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 import re
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 import uuid
 
 import structlog
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import GPUArbiterMode, Settings, settings
 from app.db.models.gpu_backend_fence import GPUBackendFence
+from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.schemas.ml_backend import GPUBackendConfigStatus, GPUConfigDiagnostic
 from app.utils.gpu_resource import validate_gpu_resource_id
@@ -55,43 +55,183 @@ class GPUFenceExhaustedError(RuntimeError):
     """A durable positive-int64 fencing sequence cannot advance safely."""
 
 
+class GPUFenceMembershipError(RuntimeError):
+    """Fence issuance did not match one active durable resource membership."""
+
+
+async def _lock_gpu_backend_membership(
+    db: AsyncSession,
+    backend_registry_id: uuid.UUID,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+    state: Literal["pending", "active"],
+) -> GPUBackendMembership:
+    membership = await db.scalar(
+        select(GPUBackendMembership)
+        .where(
+            GPUBackendMembership.backend_registry_id == backend_registry_id,
+            GPUBackendMembership.gpu_resource_id == gpu_resource_id,
+            GPUBackendMembership.membership_epoch == membership_epoch,
+            GPUBackendMembership.state == state,
+        )
+        .with_for_update()
+    )
+    if membership is None:
+        raise GPUFenceMembershipError(
+            f"{state} GPU membership changed before durable fence update"
+        )
+    return membership
+
+
+async def _raise_fence_update_failure(
+    db: AsyncSession,
+    backend_registry_id: uuid.UUID,
+    counter: str,
+) -> NoReturn:
+    fence_exists = await db.scalar(
+        select(GPUBackendFence.backend_registry_id).where(
+            GPUBackendFence.backend_registry_id == backend_registry_id
+        )
+    )
+    if fence_exists is None:
+        raise GPUFenceMembershipError("durable GPU fence is missing")
+    raise GPUFenceExhaustedError(f"{counter} high-water reached positive int64 maximum")
+
+
+def _validate_token_expiry(token_expires_at: datetime) -> None:
+    if token_expires_at.tzinfo is None:
+        raise ValueError("token_expires_at must be timezone-aware")
+
+
 async def _advance_gpu_backend_fence_in_transaction(
     db: AsyncSession,
     backend_registry_id: uuid.UUID,
     counter: GPUFenceCounter,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+    token_expires_at: datetime | None,
 ) -> int:
-    """Advance one high-water mark with one PostgreSQL UPSERT + RETURNING."""
+    """Advance one existing high-water mark with UPDATE + RETURNING."""
+
+    await _lock_gpu_backend_membership(
+        db,
+        backend_registry_id,
+        gpu_resource_id=gpu_resource_id,
+        membership_epoch=membership_epoch,
+        state="active",
+    )
+    if token_expires_at is not None:
+        _validate_token_expiry(token_expires_at)
 
     if counter == "generation":
         column = GPUBackendFence.generation_high_water
-        initial_values = {
-            "generation_high_water": 1,
-            "control_epoch_high_water": 0,
-        }
     elif counter == "control_epoch":
         column = GPUBackendFence.control_epoch_high_water
-        initial_values = {
-            "generation_high_water": 0,
-            "control_epoch_high_water": 1,
-        }
     else:  # pragma: no cover - Literal callers are statically constrained
         raise ValueError(f"unsupported fence counter: {counter}")
 
-    statement = (
-        pg_insert(GPUBackendFence)
-        .values(backend_registry_id=backend_registry_id, **initial_values)
-        .on_conflict_do_update(
-            index_elements=[GPUBackendFence.backend_registry_id],
-            set_={column.key: column + 1, "updated_at": func.now()},
-            where=column < _MAX_POSITIVE_INT64,
+    update_values: dict[str, Any] = {
+        column.key: column + 1,
+        "updated_at": func.now(),
+    }
+    if token_expires_at is not None:
+        update_values["token_expiry_high_water"] = func.greatest(
+            func.coalesce(
+                GPUBackendFence.token_expiry_high_water,
+                token_expires_at,
+            ),
+            token_expires_at,
         )
+
+    statement = (
+        update(GPUBackendFence)
+        .where(
+            GPUBackendFence.backend_registry_id == backend_registry_id,
+            column < _MAX_POSITIVE_INT64,
+        )
+        .values(**update_values)
         .returning(column)
     )
     value = (await db.execute(statement)).scalar_one_or_none()
     if value is None:
-        raise GPUFenceExhaustedError(
-            f"{counter} high-water reached positive int64 maximum"
+        await _raise_fence_update_failure(db, backend_registry_id, counter)
+    return int(value)
+
+
+async def _record_gpu_backend_token_expiry_in_transaction(
+    db: AsyncSession,
+    backend_registry_id: uuid.UUID,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+    token_expires_at: datetime,
+) -> datetime:
+    """Persist one token horizon without changing generation or control epoch."""
+
+    _validate_token_expiry(token_expires_at)
+    await _lock_gpu_backend_membership(
+        db,
+        backend_registry_id,
+        gpu_resource_id=gpu_resource_id,
+        membership_epoch=membership_epoch,
+        state="active",
+    )
+    statement = (
+        update(GPUBackendFence)
+        .where(GPUBackendFence.backend_registry_id == backend_registry_id)
+        .values(
+            token_expiry_high_water=func.greatest(
+                func.coalesce(
+                    GPUBackendFence.token_expiry_high_water,
+                    token_expires_at,
+                ),
+                token_expires_at,
+            ),
+            updated_at=func.now(),
         )
+        .returning(GPUBackendFence.token_expiry_high_water)
+    )
+    value = (await db.execute(statement)).scalar_one_or_none()
+    if value is None:
+        raise GPUFenceMembershipError("durable GPU fence is missing")
+    return value
+
+
+async def _activate_gpu_backend_membership_in_transaction(
+    db: AsyncSession,
+    backend_registry_id: uuid.UUID,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+) -> int:
+    """Enter a durable runtime epoch and activate the exact pending membership."""
+
+    membership = await _lock_gpu_backend_membership(
+        db,
+        backend_registry_id,
+        gpu_resource_id=gpu_resource_id,
+        membership_epoch=membership_epoch,
+        state="pending",
+    )
+    statement = (
+        update(GPUBackendFence)
+        .where(
+            GPUBackendFence.backend_registry_id == backend_registry_id,
+            GPUBackendFence.runtime_epoch_high_water < _MAX_POSITIVE_INT64,
+        )
+        .values(
+            runtime_epoch_high_water=GPUBackendFence.runtime_epoch_high_water + 1,
+            updated_at=func.now(),
+        )
+        .returning(GPUBackendFence.runtime_epoch_high_water)
+    )
+    value = (await db.execute(statement)).scalar_one_or_none()
+    if value is None:
+        await _raise_fence_update_failure(db, backend_registry_id, "runtime_epoch")
+    membership.state = "active"
+    await db.flush()
     return int(value)
 
 
@@ -99,6 +239,10 @@ async def advance_gpu_backend_fence(
     session_factory: GPUFenceSessionFactory,
     backend_registry_id: uuid.UUID,
     counter: GPUFenceCounter,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+    token_expires_at: datetime | None = None,
 ) -> str:
     """Durably advance a fence and return only after the short transaction commits.
 
@@ -110,7 +254,53 @@ async def advance_gpu_backend_fence(
     async with session_factory() as db:
         async with db.begin():
             value = await _advance_gpu_backend_fence_in_transaction(
-                db, backend_registry_id, counter
+                db,
+                backend_registry_id,
+                counter,
+                gpu_resource_id=gpu_resource_id,
+                membership_epoch=membership_epoch,
+                token_expires_at=token_expires_at,
+            )
+    return str(value)
+
+
+async def record_gpu_backend_token_expiry(
+    session_factory: GPUFenceSessionFactory,
+    backend_registry_id: uuid.UUID,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+    token_expires_at: datetime,
+) -> datetime:
+    """Persist a token expiry before signing without advancing a fence counter."""
+
+    async with session_factory() as db:
+        async with db.begin():
+            return await _record_gpu_backend_token_expiry_in_transaction(
+                db,
+                backend_registry_id,
+                gpu_resource_id=gpu_resource_id,
+                membership_epoch=membership_epoch,
+                token_expires_at=token_expires_at,
+            )
+
+
+async def activate_gpu_backend_membership(
+    session_factory: GPUFenceSessionFactory,
+    backend_registry_id: uuid.UUID,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+) -> str:
+    """Atomically activate one membership and make mutation guards durable."""
+
+    async with session_factory() as db:
+        async with db.begin():
+            value = await _activate_gpu_backend_membership_in_transaction(
+                db,
+                backend_registry_id,
+                gpu_resource_id=gpu_resource_id,
+                membership_epoch=membership_epoch,
             )
     return str(value)
 
@@ -265,6 +455,7 @@ def validate_gpu_claim(
     gpu_resource_id: str | None,
     vram_budget_mb: int | None,
     *,
+    extra_params: Mapping[str, Any] | None = None,
     config: Settings = settings,
 ) -> None:
     """Reject only per-backend blockers; aggregate oversubscription stays a warning."""
@@ -304,6 +495,27 @@ def validate_gpu_claim(
                     resource_id=gpu_resource_id,
                 )
             )
+        if extra_params is not None and "max_concurrency" in extra_params:
+            raw_limit = extra_params["max_concurrency"]
+            valid_limit = (
+                isinstance(raw_limit, int)
+                and not isinstance(raw_limit, bool)
+                and 1 <= raw_limit <= 10000
+            ) or (
+                isinstance(raw_limit, str)
+                and re.fullmatch(r"[1-9][0-9]{0,4}", raw_limit) is not None
+                and int(raw_limit) <= 10000
+            )
+            if not valid_limit:
+                diagnostics.append(
+                    _diag(
+                        "gpu_max_concurrency_invalid",
+                        "blocker",
+                        "extra_params.max_concurrency 必须是 1 到 10000 的整数",
+                        field="extra_params.max_concurrency",
+                        resource_id=gpu_resource_id,
+                    )
+                )
     if diagnostics:
         raise GPUClaimConfigurationError(diagnostics)
 

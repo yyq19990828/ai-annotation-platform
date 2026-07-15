@@ -36,6 +36,7 @@ from app.services.gpu_arbiter import (
     GPUShadowSessionFactory,
 )
 from app.services.ml_backend import (
+    GPUBackendManagedMutationBlocked,
     MLBackendService,
     MLBackendURLConflict,
 )
@@ -280,6 +281,14 @@ async def update_ml_backend(
             detail={
                 "error_code": "ml_backend_url_conflict",
                 "message": f"该 URL 已注册为全局 backend ({exc.backend_name})",
+            },
+        ) from exc
+    except GPUBackendManagedMutationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "gpu_backend_retirement_required",
+                "message": str(exc),
             },
         ) from exc
     if not backend:

@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import GPUArbiterMode, settings
+from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.services.ml_backend import MLBackendService
@@ -333,6 +334,45 @@ async def test_update_registry_duplicate_url_is_structured_409(
 
     assert res.status_code == 409, res.text
     assert res.json()["detail"]["error_code"] == "ml_backend_url_conflict"
+
+
+async def test_managed_gpu_registry_mutation_requires_retirement(
+    httpx_client,
+    db_session,
+    super_admin,
+    monkeypatch,
+):
+    _, token = super_admin
+    resource_id = _configure_gpu(monkeypatch)
+    backend = await _seed_registry(db_session, name="managed")
+    backend.gpu_resource_id = resource_id
+    backend.vram_budget_mb = 18000
+    await db_session.flush()
+    fence = await db_session.get(GPUBackendFence, backend.id)
+    assert fence is not None
+    fence.runtime_epoch_high_water = 1
+    await db_session.commit()
+
+    update_response = await httpx_client.put(
+        f"/api/v1/admin/ml-integrations/registry/{backend.id}",
+        json={"url": "http://managed-replacement:8000"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    delete_response = await httpx_client.delete(
+        f"/api/v1/admin/ml-integrations/registry/{backend.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert update_response.status_code == 409, update_response.text
+    assert (
+        update_response.json()["detail"]["error_code"]
+        == "gpu_backend_retirement_required"
+    )
+    assert delete_response.status_code == 409, delete_response.text
+    assert (
+        delete_response.json()["detail"]["error_code"]
+        == "gpu_backend_retirement_required"
+    )
 
 
 async def test_update_registry_url_invalidates_old_health_evidence(

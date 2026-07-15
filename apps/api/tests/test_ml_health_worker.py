@@ -7,12 +7,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, text, update
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+)
 
+from app.db.models.gpu_backend_fence import GPUBackendFence
+from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
 from app.services.ml_backend import MLBackendService
 
@@ -157,6 +165,215 @@ async def test_check_health_discards_response_after_endpoint_identity_changes(
     assert fresh.state == "disconnected"
     assert fresh.health_meta is None
     assert fresh.last_checked_at is None
+
+
+async def test_check_health_discards_response_after_gpu_membership_changes(
+    db_session: AsyncSession, monkeypatch
+):
+    backend = await _make_backend(db_session, url="http://gpu-membership-old/")
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(
+            gpu_resource_id="node-health/GPU-old",
+            vram_budget_mb=1024,
+        )
+    )
+    await db_session.refresh(backend)
+
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        await db_session.execute(
+            update(MLBackend)
+            .where(MLBackend.id == backend.id)
+            .values(gpu_resource_id="node-health/GPU-new")
+        )
+        return True, {
+            "residency": {
+                "state": "resident",
+                "gpu_loaded": True,
+                "identity": {"gpu_resource_id": "node-health/GPU-old"},
+            }
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is False
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.gpu_resource_id == "node-health/GPU-new"
+    assert fresh.health_meta is None
+    assert fresh.last_checked_at is None
+
+
+async def test_check_health_discards_response_after_membership_epoch_changes(
+    db_session: AsyncSession, monkeypatch
+):
+    backend = await _make_backend(db_session, url="http://gpu-membership-epoch/")
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(
+            gpu_resource_id="node-health/GPU-epoch",
+            vram_budget_mb=1024,
+        )
+    )
+    await db_session.refresh(backend)
+
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        await db_session.execute(
+            update(MLBackend)
+            .where(MLBackend.id == backend.id)
+            .values(vram_budget_mb=2048)
+        )
+        return True, {
+            "residency": {
+                "state": "resident",
+                "gpu_loaded": True,
+                "identity": {"gpu_resource_id": "node-health/GPU-epoch"},
+            }
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is False
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.vram_budget_mb == 2048
+    assert fresh.health_meta is None
+    assert fresh.last_checked_at is None
+
+
+async def test_check_health_rechecks_epoch_after_waiting_on_registry_lock(
+    test_engine: AsyncEngine,
+    monkeypatch,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    backend_id = uuid.uuid4()
+    resource_id = "node-health/GPU-independent-race"
+    async with factory.begin() as db:
+        db.add(
+            MLBackend(
+                id=backend_id,
+                name="health-epoch-independent-race",
+                url=f"http://health-epoch-race-{backend_id}.test",
+                state="disconnected",
+                gpu_resource_id=resource_id,
+                vram_budget_mb=1024,
+            )
+        )
+
+    health_started = asyncio.Event()
+    allow_health_response = asyncio.Event()
+
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        health_started.set()
+        await allow_health_response.wait()
+        return True, {
+            "residency": {
+                "state": "resident",
+                "gpu_loaded": True,
+                "identity": {"gpu_resource_id": resource_id},
+            }
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    async def run_health() -> bool:
+        async with factory.begin() as db:
+            return await MLBackendService(db).check_health(backend_id)
+
+    health_task = asyncio.create_task(run_health())
+    config_db = factory()
+    try:
+        await health_started.wait()
+        await config_db.begin()
+        await config_db.execute(
+            update(MLBackend)
+            .where(MLBackend.id == backend_id)
+            .values(vram_budget_mb=2048)
+        )
+        allow_health_response.set()
+        await asyncio.sleep(0.05)
+        assert not health_task.done()
+        await config_db.commit()
+
+        assert await asyncio.wait_for(health_task, timeout=2) is False
+        async with factory() as db:
+            backend = await db.get(MLBackend, backend_id)
+            assert backend is not None
+            assert backend.vram_budget_mb == 2048
+            assert backend.health_meta is None
+            assert backend.last_checked_at is None
+    finally:
+        if config_db.in_transaction():
+            await config_db.rollback()
+        await config_db.close()
+        if not health_task.done():
+            health_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await health_task
+        async with factory.begin() as db:
+            await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendMembership).where(
+                    GPUBackendMembership.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendFence).where(
+                    GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
 
 
 async def test_check_health_returns_false_for_missing_backend(

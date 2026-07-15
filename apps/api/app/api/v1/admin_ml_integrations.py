@@ -55,6 +55,7 @@ from app.services.gpu_arbiter import (
     strict_gpu_loaded_evidence,
 )
 from app.services.ml_backend import (
+    GPUBackendManagedMutationBlocked,
     MLBackendDeleteBlocked,
     MLBackendService,
     MLBackendURLConflict,
@@ -519,6 +520,14 @@ async def update_registry(
                 "message": f"该 URL 已注册为全局 backend ({exc.backend_name})",
             },
         ) from exc
+    except GPUBackendManagedMutationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "gpu_backend_retirement_required",
+                "message": str(exc),
+            },
+        ) from exc
     if backend is None:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(
@@ -552,6 +561,14 @@ async def delete_registry(
         raise HTTPException(
             status_code=409,
             detail=f"该 backend 上仍有 {exc.running_jobs} 个运行中的预标任务, 无法删除",
+        ) from exc
+    except GPUBackendManagedMutationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "gpu_backend_retirement_required",
+                "message": str(exc),
+            },
         ) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="ML Backend not found")

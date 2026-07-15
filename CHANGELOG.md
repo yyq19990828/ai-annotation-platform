@@ -49,7 +49,7 @@
 
 ### Changed
 
-- **跨 Backend GPU 显存仲裁按逐物理资源治理**：ADR-0049 按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切、静态 claim、observe 影子派发、持久 fencing 高水位以及 Redis allocation/lease/FIFO/transition 原子账本已经落地；账本重建以 revision + incarnation 双重 CAS、全域镜像校验和有界 deadline fail-closed。ONNXTools 仍待真实 GPU 回落验收，权威 membership/tombstone、bootstrap/repair worker、enforce 与真正驱逐仍待实施。
+- **跨 Backend GPU 显存仲裁按逐物理资源治理**：ADR-0049 按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切、静态 claim、observe 影子派发、持久 fencing 高水位以及 Redis allocation/lease/FIFO/transition 原子账本已经落地；账本重建以 revision + incarnation 双重 CAS、全域镜像校验和有界 deadline fail-closed。独立持久 membership/tombstone 现会在 claim 事务内建立并保留退役证据，RESTRICT fence 不会先于墓碑丢失，pending 成员以 runtime baseline 为基准受控激活，冻结墓碑在 proof-backed GC 前不可改删；签发新 fence 或复用既有 epoch 时都能按 exact membership epoch 单调持久化令牌过期上界，探活写回会在 registry 行锁后重验 epoch。缺失 fence、旧探活写回、墓碑重入、反向锁序以及受管 runtime 后的端点、claim、预算和删除旁路均会 fail-closed。ONNXTools 仍待真实 GPU 回落验收，Redis 双域演进、live-health bootstrap/repair worker、enforce 与真正驱逐仍待实施。
 
 ### Fixed
 
