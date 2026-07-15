@@ -38,6 +38,7 @@ _REDIS_OPERATION_TIMEOUT_SECONDS = 1.0
 _REDIS_CALL_DEADLINE_SECONDS = 2.0
 _SNAPSHOT_MAX_ATTEMPTS = 32
 GPU_COLD_ADMISSION_OPERATION = "cold_admit"
+GPU_EVICTION_OPERATION = "evict"
 _RedisResultT = TypeVar("_RedisResultT")
 _COUNTED_ALLOCATION_STATES = frozenset(
     {
@@ -4915,12 +4916,30 @@ end
 if ARGV[18] ~= '0' and ARGV[18] ~= '1' then
   return cjson.encode({status='invalid_transition', committed_mb=0})
 end
+if ARGV[19] ~= '0' and ARGV[19] ~= '1' then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
 local cold_finalize = ARGV[17] == '1'
+local eviction_transition = ARGV[19] == '1'
 if cold_finalize and (
     (ARGV[4] ~= 'resident' and ARGV[4] ~= 'unknown'
       and ARGV[4] ~= 'unloaded' and ARGV[4] ~= 'cpu_fallback')
     or (ARGV[4] == 'resident' and ARGV[18] ~= '1')
     or (ARGV[4] ~= 'resident' and ARGV[18] ~= '0')) then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
+local eviction_allowed = {
+  resident={draining=true},
+  draining={unloading=true, unknown=true},
+  unloading={unloaded=true, unknown=true}
+}
+if eviction_transition and (
+    cold_finalize or ARGV[20] == ''
+    or not eviction_allowed[ARGV[20]]
+    or not eviction_allowed[ARGV[20]][ARGV[4]]
+    or ARGV[8] == '' or ARGV[9] ~= 'evict'
+    or (ARGV[20] == 'resident' and ARGV[5] == '')
+    or (ARGV[20] ~= 'resident' and ARGV[5] ~= '')) then
   return cjson.encode({status='invalid_transition', committed_mb=0})
 end
 local function valid_allocation(item, backend_id)
@@ -4983,9 +5002,6 @@ local allocation = decode(raw)
 if not valid_allocation(allocation, ARGV[2]) then
   return cjson.encode({status='ledger_corrupt', committed_mb=0})
 end
-if allocation.generation ~= ARGV[3] then
-  return cjson.encode({status='stale_generation', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
-end
 
 local lease_count = 0
 local lease_entries = redis.call('HGETALL', lease_key)
@@ -4995,6 +5011,33 @@ for i = 1, #lease_entries, 2 do
     return cjson.encode({status='ledger_corrupt', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
   end
   lease_count = lease_count + 1
+end
+
+if eviction_transition and allocation.state == ARGV[4] then
+  local result_generation = ARGV[3]
+  if ARGV[20] == 'resident' then result_generation = ARGV[5] end
+  local transition = ledger.transition
+  local terminal = allocation.state == 'unloaded' or allocation.state == 'unknown'
+  if allocation.generation ~= result_generation then
+    return cjson.encode({status='stale_generation', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
+  if not transition or transition.resource_id ~= ARGV[1]
+     or transition.backend_id ~= ARGV[2]
+     or transition.owner_id ~= ARGV[8]
+     or transition.operation ~= ARGV[9]
+     or transition.generation ~= result_generation then
+    return cjson.encode({status='owner_mismatch', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
+  if lease_count > 0
+     or (terminal and allocation.evictable ~= false)
+     or (not terminal and allocation.evictable ~= true) then
+    return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
+  return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed, idempotent=true})
+end
+
+if allocation.generation ~= ARGV[3] then
+  return cjson.encode({status='stale_generation', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
 end
 
 if cold_finalize and allocation.state == ARGV[4]
@@ -5014,6 +5057,10 @@ if cold_finalize and allocation.state == ARGV[4]
 end
 
 if not allowed[allocation.state] or not allowed[allocation.state][ARGV[4]] then
+  return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
+end
+if eviction_transition and (
+    allocation.state ~= ARGV[20] or allocation.evictable ~= true) then
   return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
 end
 local changes_generation = (allocation.state == 'resident' and ARGV[4] == 'draining')
@@ -5065,6 +5112,9 @@ if (allocation.state == 'draining' and ARGV[4] == 'unloading'
    and lease_count > 0 then
   return cjson.encode({status='active_leases', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
 end
+if eviction_transition and lease_count > 0 then
+  return cjson.encode({status='active_leases', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
+end
 if workload_owned and (ARGV[4] == 'unloaded' or ARGV[4] == 'cpu_fallback')
    and lease_count ~= 1 then
   return cjson.encode({status='active_leases', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
@@ -5088,6 +5138,10 @@ elseif not counted[previous_state] and counted[allocation.state] then
 end
 if ARGV[5] ~= '' then allocation.generation = ARGV[5] end
 if cold_finalize then allocation.evictable = (ARGV[18] == '1') end
+if eviction_transition
+   and (allocation.state == 'unloaded' or allocation.state == 'unknown') then
+  allocation.evictable = false
+end
 if allocation.state ~= 'reserving' and allocation.state ~= 'loading' then
   allocation.reservation_lease_id = nil
   allocation.reservation_owner_id = nil
@@ -6916,6 +6970,32 @@ class GPUArbiterStore:
             require_idle=True,
         )
 
+    async def revalidate_transition_owner(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        membership_epoch: int,
+        owner_id: str,
+        generation: str,
+        operation: str,
+        ttl_ms: int,
+        require_idle: bool = False,
+    ) -> GPUTransitionOwnerResult:
+        if not isinstance(require_idle, bool):
+            raise ValueError("require_idle must be a boolean")
+        return await self._transition_owner_operation(
+            "revalidate",
+            resource_id,
+            backend_id=backend_id,
+            membership_epoch=membership_epoch,
+            owner_id=owner_id,
+            generation=generation,
+            operation_name=operation,
+            ttl_ms=ttl_ms,
+            require_idle=require_idle,
+        )
+
     async def release_transition_owner(
         self,
         resource_id: str,
@@ -7036,6 +7116,8 @@ class GPUArbiterStore:
             transition_operation=transition_operation,
             cold_finalize=False,
             target_evictable=False,
+            eviction_transition=False,
+            expected_source_state=None,
         )
 
     async def finalize_cold_allocation(
@@ -7072,6 +7154,53 @@ class GPUArbiterStore:
             transition_operation=None,
             cold_finalize=True,
             target_evictable=target_evictable,
+            eviction_transition=False,
+            expected_source_state=None,
+        )
+
+    async def transition_eviction_allocation(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        expected_state: GPUAllocationState,
+        expected_generation: str,
+        target_state: GPUAllocationState,
+        transition_owner_id: str,
+        next_generation: str | None = None,
+    ) -> GPUTransitionResult:
+        allowed = {
+            GPUAllocationState.RESIDENT: {GPUAllocationState.DRAINING},
+            GPUAllocationState.DRAINING: {
+                GPUAllocationState.UNLOADING,
+                GPUAllocationState.UNKNOWN,
+            },
+            GPUAllocationState.UNLOADING: {
+                GPUAllocationState.UNLOADED,
+                GPUAllocationState.UNKNOWN,
+            },
+        }
+        if target_state not in allowed.get(expected_state, set()):
+            raise ValueError("eviction allocation transition is invalid")
+        if expected_state is GPUAllocationState.RESIDENT:
+            if next_generation is None:
+                raise ValueError("Resident eviction requires next_generation")
+        elif next_generation is not None:
+            raise ValueError("only Resident eviction may change generation")
+        return await self._transition_allocation_operation(
+            resource_id,
+            backend_id=backend_id,
+            expected_generation=expected_generation,
+            target_state=target_state,
+            next_generation=next_generation,
+            request_lease_id=None,
+            request_owner_id=None,
+            transition_owner_id=transition_owner_id,
+            transition_operation=GPU_EVICTION_OPERATION,
+            cold_finalize=False,
+            target_evictable=False,
+            eviction_transition=True,
+            expected_source_state=expected_state,
         )
 
     async def _transition_allocation_operation(
@@ -7088,6 +7217,8 @@ class GPUArbiterStore:
         transition_operation: str | None,
         cold_finalize: bool,
         target_evictable: bool,
+        eviction_transition: bool,
+        expected_source_state: GPUAllocationState | None,
     ) -> GPUTransitionResult:
         keys = self.keys(resource_id)
         _validate_nonempty(backend_id, "backend_id", max_length=128)
@@ -7125,6 +7256,8 @@ class GPUArbiterStore:
                     domains.active_backend_domain_fingerprint,
                     "1" if cold_finalize else "0",
                     "1" if target_evictable else "0",
+                    "1" if eviction_transition else "0",
+                    expected_source_state.value if expected_source_state else "",
                 ],
             )
         )

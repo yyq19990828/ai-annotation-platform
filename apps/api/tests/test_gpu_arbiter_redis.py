@@ -5212,6 +5212,204 @@ async def test_generation_cas_and_active_lease_guard_transitions(redis_stores) -
 
 
 @pytest.mark.asyncio
+async def test_eviction_transition_is_exact_and_response_loss_idempotent(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-a/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await first.acquire_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="eviction-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+            require_idle=True,
+        )
+    ).status == "acquired"
+    assert (
+        await first.revalidate_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="eviction-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+            require_idle=True,
+        )
+    ).status == "renewed"
+
+    draining = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.RESIDENT,
+        expected_generation="1",
+        target_state=GPUAllocationState.DRAINING,
+        next_generation="2",
+        transition_owner_id="eviction-owner",
+    )
+    assert (draining.status, draining.idempotent) == ("transitioned", False)
+    after_draining = await first.snapshot(resource_id)
+    draining_retry = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.RESIDENT,
+        expected_generation="1",
+        target_state=GPUAllocationState.DRAINING,
+        next_generation="2",
+        transition_owner_id="eviction-owner",
+    )
+    assert (draining_retry.status, draining_retry.idempotent) == (
+        "transitioned",
+        True,
+    )
+    assert (await first.snapshot(resource_id)).ledger_revision == (
+        after_draining.ledger_revision
+    )
+
+    wrong_owner = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.RESIDENT,
+        expected_generation="1",
+        target_state=GPUAllocationState.DRAINING,
+        next_generation="2",
+        transition_owner_id="other-owner",
+    )
+    assert wrong_owner.status == "owner_mismatch"
+
+    unloading = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.DRAINING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNLOADING,
+        transition_owner_id="eviction-owner",
+    )
+    assert (unloading.status, unloading.idempotent) == ("transitioned", False)
+    assert (
+        await first.transition_eviction_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNLOADING,
+            transition_owner_id="eviction-owner",
+        )
+    ).idempotent is True
+
+    unloaded = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.UNLOADING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNLOADED,
+        transition_owner_id="eviction-owner",
+    )
+    assert (unloaded.status, unloaded.idempotent, unloaded.committed_mb) == (
+        "transitioned",
+        False,
+        0,
+    )
+    terminal_snapshot = await first.snapshot(resource_id)
+    assert terminal_snapshot.allocations[0].evictable is False
+    terminal_retry = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.UNLOADING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNLOADED,
+        transition_owner_id="eviction-owner",
+    )
+    assert (terminal_retry.status, terminal_retry.idempotent) == (
+        "transitioned",
+        True,
+    )
+    assert (await first.snapshot(resource_id)).ledger_revision == (
+        terminal_snapshot.ledger_revision
+    )
+
+
+@pytest.mark.asyncio
+async def test_eviction_unknown_stays_counted_and_non_evictable(redis_stores) -> None:
+    first, _ = redis_stores
+    resource_id = "node-a/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await first.acquire_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="eviction-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+            require_idle=True,
+        )
+    ).status == "acquired"
+    assert (
+        await first.transition_eviction_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.RESIDENT,
+            expected_generation="1",
+            target_state=GPUAllocationState.DRAINING,
+            next_generation="2",
+            transition_owner_id="eviction-owner",
+        )
+    ).status == "transitioned"
+    unknown = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.DRAINING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNKNOWN,
+        transition_owner_id="eviction-owner",
+    )
+    assert (unknown.status, unknown.committed_mb) == ("transitioned", 60)
+    snapshot = await first.snapshot(resource_id)
+    assert snapshot.allocations[0].state is GPUAllocationState.UNKNOWN
+    assert snapshot.allocations[0].evictable is False
+    retry = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.DRAINING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNKNOWN,
+        transition_owner_id="eviction-owner",
+    )
+    assert (retry.status, retry.idempotent, retry.committed_mb) == (
+        "transitioned",
+        True,
+        60,
+    )
+
+
+@pytest.mark.asyncio
 async def test_expired_transition_owner_cannot_commit_after_takeover(
     redis_stores,
 ) -> None:
