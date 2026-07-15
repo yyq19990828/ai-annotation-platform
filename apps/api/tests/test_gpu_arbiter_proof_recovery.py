@@ -29,15 +29,20 @@ from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_arbiter import (
     GPUColdRuntimeSubjectError,
     GPUDispatchRequest,
+    GPUIdleEvictionRuntimeSubjectError,
     GPUPreparedColdRuntimeSubject,
+    GPUPreparedIdleEvictionRuntimeSubject,
     GPUResidentRuntimeSubjectError,
     _record_gpu_backend_token_expiry_in_transaction,
     activate_gpu_backend_membership,
     collect_gpu_backend_tombstone,
     commit_gpu_cold_terminal_from_health,
+    commit_gpu_eviction_phase_from_health,
     commit_gpu_proof_reset_from_health,
     prepare_gpu_cold_runtime_generation,
+    prepare_gpu_idle_eviction_runtime_generation,
     read_gpu_cold_runtime_subject,
+    read_gpu_idle_eviction_runtime_subject,
     read_gpu_resident_runtime_subject,
     record_gpu_backend_token_expiry,
     record_gpu_resident_runtime_token_expiry,
@@ -510,6 +515,178 @@ async def _install_cold_terminal_health(
             "residency": residency,
         }
         flag_modified(backend, "health_meta")
+
+
+async def _install_eviction_phase_health(
+    factory: async_sessionmaker[AsyncSession],
+    backend_id: uuid.UUID,
+    resource_id: str,
+    *,
+    challenge: str,
+    generation: str,
+    phase: str,
+    stored_challenge: str | None = None,
+) -> None:
+    capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+    capability_sha256 = managed_lifecycle_capability_sha256(capability)
+    async with factory.begin() as db:
+        membership = await db.get(GPUBackendMembership, (backend_id, resource_id))
+        backend = await db.get(MLBackendRegistry, backend_id)
+        db_now = await db.scalar(select(text("clock_timestamp()")))
+        assert membership is not None
+        assert backend is not None
+        assert isinstance(db_now, datetime)
+        probe_started_at = db_now - timedelta(milliseconds=2)
+        observed_at = db_now - timedelta(milliseconds=1)
+        unloaded = phase == "unload"
+        backend.state = "connected"
+        backend.last_checked_at = observed_at
+        backend.health_meta = {
+            "capabilities": {"managed_lifecycle": capability},
+            "gpu_arbiter_probe": {
+                "protocol_version": "1",
+                "challenge": stored_challenge or challenge,
+                "backend_registry_id": str(backend_id),
+                "gpu_resource_id": resource_id,
+                "membership_epoch": str(membership.membership_epoch),
+                "membership_state": "active",
+                "managed_lifecycle_sha256": capability_sha256,
+                "probe_started_at": _proof_timestamp(probe_started_at),
+                "observed_at": _proof_timestamp(observed_at),
+            },
+            "residency": {
+                "state": "unloaded" if unloaded else "draining",
+                "gpu_loaded": not unloaded,
+                "active_requests": 1 if phase == "busy" else 0,
+                "builders": 0,
+                "borrowers": 0,
+                "draining": not unloaded,
+                "evictable": False,
+                "generation": generation,
+                "pools": {
+                    "models": {
+                        "resident": not unloaded,
+                        "device": "cpu" if unloaded else "cuda:0",
+                        "provider": None,
+                    }
+                },
+                "boot_id": f"boot-{backend_id}",
+                "lifecycle_gate": "enforce",
+                "control_epoch": "1",
+                "identity": {
+                    "audience": "aap-gpu-lifecycle",
+                    "backend_registry_id": str(backend_id),
+                    "gpu_resource_id": resource_id,
+                },
+            },
+        }
+        flag_modified(backend, "health_meta")
+
+
+async def _prepare_selected_idle_eviction(
+    factory: async_sessionmaker[AsyncSession],
+    store: GPUArbiterStore,
+    *,
+    victim_id: uuid.UUID,
+    requester_id: uuid.UUID,
+    resource_id: str,
+) -> tuple[GPUPreparedIdleEvictionRuntimeSubject, str]:
+    async with factory() as db:
+        victim_membership = await db.get(
+            GPUBackendMembership,
+            (victim_id, resource_id),
+        )
+        requester_membership = await db.get(
+            GPUBackendMembership,
+            (requester_id, resource_id),
+        )
+        victim_backend = await db.get(MLBackendRegistry, victim_id)
+        assert victim_membership is not None
+        assert requester_membership is not None
+        assert victim_backend is not None
+        challenge = victim_backend.health_meta["gpu_arbiter_probe"]["challenge"]
+    reconciled = await store.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=await _membership_domain(factory, resource_id),
+        allocations=(),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=int(time.time() * 1000) + 120_000,
+        repair_id=f"idle-eviction-{uuid.uuid4()}",
+    )
+    assert reconciled.status == "reconciled", (
+        reconciled.status,
+        reconciled.reason,
+    )
+    lease_id = f"workload:{uuid.uuid4()}"
+    workload_owner_id = f"dispatch:{uuid.uuid4()}"
+    admission = await store.admit(
+        resource_id,
+        backend_id=str(victim_id),
+        membership_epoch=victim_membership.membership_epoch,
+        budget_mb=victim_membership.vram_budget_mb,
+        generation="1",
+        eviction_priority=victim_membership.eviction_priority,
+        evictable=True,
+        max_concurrency=victim_membership.max_concurrency,
+        lease_id=lease_id,
+        owner_id=workload_owner_id,
+        operation="predict",
+        heartbeat_ttl_ms=15_000,
+        hard_ttl_ms=120_000,
+    )
+    assert admission.admitted
+    for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
+        transition = await store.transition_allocation(
+            resource_id,
+            backend_id=str(victim_id),
+            expected_generation="1",
+            target_state=state,
+            request_lease_id=lease_id,
+            request_owner_id=workload_owner_id,
+        )
+        assert transition.status == "transitioned"
+    released = await store.release_lease(
+        resource_id,
+        backend_id=str(victim_id),
+        lease_id=lease_id,
+        owner_id=workload_owner_id,
+        generation="1",
+    )
+    assert released.status == "released"
+    async with factory() as db:
+        subject = await read_gpu_idle_eviction_runtime_subject(
+            db,
+            backend_id=str(victim_id),
+            gpu_resource_id=resource_id,
+            expected_generation="1",
+            challenge=challenge,
+        )
+    prepared = await prepare_gpu_idle_eviction_runtime_generation(
+        factory,
+        subject,
+        token_expires_at=subject.db_now + timedelta(seconds=120),
+    )
+    owner_id = f"eviction:{uuid.uuid4()}"
+    selected = await store.begin_idle_eviction(
+        resource_id,
+        requester_backend_id=str(requester_id),
+        requester_membership_epoch=requester_membership.membership_epoch,
+        requester_budget_mb=requester_membership.vram_budget_mb,
+        requester_eviction_priority=requester_membership.eviction_priority,
+        victim_backend_id=str(victim_id),
+        victim_membership_epoch=victim_membership.membership_epoch,
+        victim_expected_generation=prepared.source_generation,
+        victim_next_generation=prepared.generation,
+        owner_id=owner_id,
+        ttl_ms=30_000,
+        hard_ttl_ms=120_000,
+    )
+    assert selected.status == "selected"
+    return prepared, owner_id
 
 
 def _fake_context(
@@ -2550,5 +2727,353 @@ async def test_cold_dispatch_authority_integrates_generation_intent_and_reservat
             claims.exp,
             tz=UTC,
         )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_idle_eviction_subject_advances_generation_and_horizon_atomically(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60,),
+    )
+    backend_id = backend_ids[0]
+    challenge = f"{1:064x}"
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({backend_id}),
+        )
+        async with factory() as db:
+            subject = await read_gpu_idle_eviction_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+                expected_generation="1",
+                challenge=challenge,
+            )
+        assert subject.generation_high_water == 1
+        assert subject.generation == "1"
+        assert subject.challenge == challenge
+
+        with pytest.raises(
+            GPUIdleEvictionRuntimeSubjectError,
+            match="idle_eviction_challenge_mismatch",
+        ):
+            async with factory() as db:
+                await read_gpu_idle_eviction_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                    expected_generation="1",
+                    challenge="f" * 64,
+                )
+        with pytest.raises(
+            GPUIdleEvictionRuntimeSubjectError,
+            match="idle_eviction_generation_mismatch",
+        ):
+            async with factory() as db:
+                await read_gpu_idle_eviction_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                    expected_generation="2",
+                    challenge=challenge,
+                )
+
+        token_expires_at = subject.db_now + timedelta(seconds=120)
+        prepared = await prepare_gpu_idle_eviction_runtime_generation(
+            factory,
+            subject,
+            token_expires_at=token_expires_at,
+        )
+        assert prepared.source_generation == "1"
+        assert prepared.generation == "2"
+        assert prepared.token_expires_at == token_expires_at
+        with pytest.raises(
+            GPUIdleEvictionRuntimeSubjectError,
+            match="runtime_subject_changed",
+        ):
+            await prepare_gpu_idle_eviction_runtime_generation(
+                factory,
+                subject,
+                token_expires_at=token_expires_at,
+            )
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+        assert fence is not None
+        assert fence.generation_high_water == 2
+        assert fence.token_expiry_high_water == token_expires_at
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("active_requests", 1),
+        ("builders", 1),
+        ("borrowers", 1),
+        ("evictable", False),
+    ),
+)
+@pytest.mark.asyncio
+async def test_idle_eviction_subject_rejects_nonidle_or_protected_victim(
+    test_engine: AsyncEngine,
+    field: str,
+    value: int | bool,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({backend_id}),
+        )
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"][field] = value
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+        with pytest.raises(
+            GPUIdleEvictionRuntimeSubjectError,
+            match="idle_eviction_runtime_not_ready",
+        ):
+            async with factory() as db:
+                await read_gpu_idle_eviction_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                    expected_generation="1",
+                    challenge=f"{1:064x}",
+                )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_eviction_phase_commit_proves_drain_and_unload_exactly(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60, 50),
+    )
+    victim_id, requester_id = backend_ids
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({victim_id}),
+        )
+        prepared, owner_id = await _prepare_selected_idle_eviction(
+            factory,
+            proof_store,
+            victim_id=victim_id,
+            requester_id=requester_id,
+            resource_id=_RESOURCE_A,
+        )
+        # A concurrent preparation may burn a later generation without exposing it.
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, victim_id)
+            assert fence is not None
+            fence.generation_high_water = int(prepared.generation) + 1
+        drain_challenge = "a" * 64
+        await _install_eviction_phase_health(
+            factory,
+            victim_id,
+            _RESOURCE_A,
+            challenge=drain_challenge,
+            generation=prepared.generation,
+            phase="drain",
+        )
+        drain = await commit_gpu_eviction_phase_from_health(
+            factory,
+            proof_store,
+            prepared,
+            phase="drain",
+            challenge=drain_challenge,
+            owner_id=owner_id,
+        )
+        assert (drain.status, drain.state, drain.reason) == (
+            "finalized",
+            GPUAllocationState.UNLOADING,
+            "ready_to_unload",
+        )
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.committed_mb == 60
+        assert snapshot.allocations[0].state is GPUAllocationState.UNLOADING
+
+        unload_challenge = "b" * 64
+        await _install_eviction_phase_health(
+            factory,
+            victim_id,
+            _RESOURCE_A,
+            challenge=unload_challenge,
+            generation=prepared.generation,
+            phase="unload",
+        )
+        original_transition = proof_store.transition_eviction_allocation
+        transition_calls = 0
+
+        async def lose_first_transition_response(*args, **kwargs):
+            nonlocal transition_calls
+            transition_calls += 1
+            result = await original_transition(*args, **kwargs)
+            if transition_calls == 1:
+                raise TimeoutError("simulated Redis response loss")
+            return result
+
+        monkeypatch.setattr(
+            proof_store,
+            "transition_eviction_allocation",
+            lose_first_transition_response,
+        )
+        unloaded = await commit_gpu_eviction_phase_from_health(
+            factory,
+            proof_store,
+            prepared,
+            phase="unload",
+            challenge=unload_challenge,
+            owner_id=owner_id,
+        )
+        assert (unloaded.status, unloaded.state, unloaded.reason) == (
+            "finalized",
+            GPUAllocationState.UNLOADED,
+            "unloaded",
+        )
+        assert unloaded.idempotent is True
+        assert transition_calls == 2
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.committed_mb == 0
+        assert snapshot.allocations[0].state is GPUAllocationState.UNLOADED
+
+        retried = await commit_gpu_eviction_phase_from_health(
+            factory,
+            proof_store,
+            prepared,
+            phase="unload",
+            challenge=unload_challenge,
+            owner_id=owner_id,
+        )
+        assert (retried.status, retried.idempotent) == ("finalized", True)
+        assert (await proof_store.snapshot(_RESOURCE_A)).committed_mb == 0
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_eviction_drain_uncertainty_becomes_unknown_without_releasing_budget(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60, 50),
+    )
+    victim_id, requester_id = backend_ids
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({victim_id}),
+        )
+        prepared, owner_id = await _prepare_selected_idle_eviction(
+            factory,
+            proof_store,
+            victim_id=victim_id,
+            requester_id=requester_id,
+            resource_id=_RESOURCE_A,
+        )
+        result = await commit_gpu_eviction_phase_from_health(
+            factory,
+            proof_store,
+            prepared,
+            phase="drain",
+            challenge=None,
+            owner_id=owner_id,
+        )
+        assert (result.status, result.state, result.reason) == (
+            "finalized",
+            GPUAllocationState.UNKNOWN,
+            "eviction_response_uncertain",
+        )
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.committed_mb == 60
+        assert snapshot.allocations[0].state is GPUAllocationState.UNKNOWN
+        assert snapshot.allocations[0].evictable is False
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_eviction_phase_commit_skips_redis_after_durable_control_changes(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60, 50),
+    )
+    victim_id, requester_id = backend_ids
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({victim_id}),
+        )
+        prepared, owner_id = await _prepare_selected_idle_eviction(
+            factory,
+            proof_store,
+            victim_id=victim_id,
+            requester_id=requester_id,
+            resource_id=_RESOURCE_A,
+        )
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, victim_id)
+            assert fence is not None
+            fence.control_epoch_high_water = 2
+        challenge = "c" * 64
+        await _install_eviction_phase_health(
+            factory,
+            victim_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            generation=prepared.generation,
+            phase="drain",
+        )
+        result = await commit_gpu_eviction_phase_from_health(
+            factory,
+            proof_store,
+            prepared,
+            phase="drain",
+            challenge=challenge,
+            owner_id=owner_id,
+        )
+        assert (result.status, result.reason) == ("stale", "control_epoch_changed")
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.committed_mb == 60
+        assert snapshot.allocations[0].state is GPUAllocationState.DRAINING
     finally:
         await _cleanup_backends(factory, backend_ids)
