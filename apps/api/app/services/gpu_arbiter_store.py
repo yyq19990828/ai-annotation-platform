@@ -37,6 +37,7 @@ _MAX_GPU_QUEUE_LENGTH = 10_000
 _REDIS_OPERATION_TIMEOUT_SECONDS = 1.0
 _REDIS_CALL_DEADLINE_SECONDS = 2.0
 _SNAPSHOT_MAX_ATTEMPTS = 32
+GPU_COLD_ADMISSION_OPERATION = "cold_admit"
 _RedisResultT = TypeVar("_RedisResultT")
 _COUNTED_ALLOCATION_STATES = frozenset(
     {
@@ -3730,6 +3731,12 @@ end
 if ARGV[23] ~= '0' and ARGV[23] ~= '1' then
   return cjson.encode({status='config_mismatch', reason='admission_mode_invalid', committed_mb=ledger.committed, lease_count=0})
 end
+if ARGV[24] ~= '0' and ARGV[24] ~= '1' then
+  return cjson.encode({status='config_mismatch', reason='cold_owner_mode_invalid', committed_mb=ledger.committed, lease_count=0})
+end
+if ARGV[23] == '1' and ARGV[24] == '1' then
+  return cjson.encode({status='config_mismatch', reason='admission_mode_conflict', committed_mb=ledger.committed, lease_count=0})
+end
 local lease_key = ledger.lease_keys[ARGV[2]]
 local backend_queue_key = ledger.queue_keys[ARGV[2]]
 
@@ -3762,7 +3769,15 @@ if committed > allocatable then
   return cjson.encode({status='not_ready', reason='committed_exceeds_allocatable', committed_mb=committed, lease_count=redis.call('HLEN', lease_key)})
 end
 local transition = ledger.transition
-if transition and transition.backend_id == ARGV[2] then
+local cold_owner_matches = ARGV[24] == '1'
+  and transition
+  and transition.backend_id == ARGV[2]
+  and transition.owner_id == ARGV[9]
+  and transition.generation == ARGV[4]
+  and transition.operation == 'cold_admit'
+  and transition.require_idle == true
+if transition and transition.backend_id == ARGV[2]
+   and not cold_owner_matches then
   return cjson.encode({status='transition_in_progress', reason='transition_owner_active', committed_mb=committed, lease_count=redis.call('HLEN', lease_key)})
 end
 local lease_count = 0
@@ -3889,6 +3904,16 @@ if allocation then
 else
   increment = tonumber(ARGV[3])
 end
+if increment > 0 and transition and transition.operation == 'cold_admit'
+   and not cold_owner_matches then
+  return cjson.encode({status='transition_in_progress', reason='cold_admission_owner_active', committed_mb=committed, lease_count=lease_count})
+end
+if ARGV[24] == '1' and not cold_owner_matches then
+  return cjson.encode({status='transition_in_progress', reason='cold_admission_owner_required', committed_mb=committed, lease_count=lease_count})
+end
+if ARGV[24] == '1' and increment <= 0 then
+  return cjson.encode({status='not_ready', reason='cold_allocation_required', committed_mb=committed, lease_count=lease_count})
+end
 if ARGV[23] == '1' and (not allocation or allocation.state ~= 'resident') then
   return cjson.encode({status='not_ready', reason='resident_allocation_required', committed_mb=committed, lease_count=lease_count})
 end
@@ -3985,6 +4010,10 @@ redis.call('HSET', KEYS[1],
   'lease_counts', cjson.encode(ledger.lease_counts),
   'backend_queue_counts', cjson.encode(ledger.backend_queue_counts),
   'updated_at_ms', tostring(now))
+if ARGV[24] == '1' then
+  redis.call('DEL', KEYS[4])
+  redis.call('HSET', KEYS[1], 'transition_mirror', '')
+end
 if increment > 0 then
   local card_queue_count = #card_live
   if consumed_card_ticket ~= '' then card_queue_count = card_queue_count - 1 end
@@ -4588,15 +4617,18 @@ if not owner_domains.known_backends[ARGV[3]] then
 end
 local ledger = nil
 local target_lease_key = nil
-if ARGV[1] == 'acquire' then
+if ARGV[1] == 'acquire' or ARGV[1] == 'revalidate' then
   local integrity_status
   ledger, integrity_status = inspect_ledger(
     ARGV[2], ARGV[9], ARGV[10], ARGV[12], ARGV[13],
-    ARGV[14], ARGV[15], ARGV[11], false, ARGV[3])
+    ARGV[14], ARGV[15], ARGV[11], ARGV[6] == 'cold_admit', ARGV[3])
   if not ledger then
     return cjson.encode({status=integrity_status})
   end
   if ledger.memberships[ARGV[3]].membership_epoch ~= ARGV[16] then
+    return cjson.encode({status='config_mismatch'})
+  end
+  if ARGV[6] == 'cold_admit' and not ledger.active_backends[ARGV[3]] then
     return cjson.encode({status='config_mismatch'})
   end
   target_lease_key = ledger.lease_keys[ARGV[3]]
@@ -4613,7 +4645,7 @@ end
 
 local raw = nil
 local current = nil
-if ARGV[1] == 'acquire' then
+if ARGV[1] == 'acquire' or ARGV[1] == 'revalidate' then
   current = ledger.transition
 else
   raw = redis.call('GET', KEYS[4])
@@ -4658,6 +4690,32 @@ if current and current.expires_at_ms <= now then current = nil end
 
 local function validate_acquire_target()
   local allocation_raw = redis.call('HGET', KEYS[2], ARGV[3])
+  if ARGV[6] == 'cold_admit' then
+    if ARGV[8] ~= '1' then return 'invalid_transition', nil end
+    if not allocation_raw then
+      if redis.call('HLEN', target_lease_key) > 0 then
+        return 'active_leases', nil
+      end
+      return nil, nil
+    end
+    local cold_allocation = decode(allocation_raw)
+    if not cold_allocation or cold_allocation.backend_id ~= ARGV[3]
+       or not valid_allocation_generation(cold_allocation)
+       or type(cold_allocation.state) ~= 'string' then
+      return 'ledger_corrupt', nil
+    end
+    if cold_allocation.state ~= 'unloaded'
+       and cold_allocation.state ~= 'cpu_fallback' then
+      return 'invalid_transition', cold_allocation.generation
+    end
+    if not generation_greater(ARGV[5], cold_allocation.generation) then
+      return 'stale_generation', cold_allocation.generation
+    end
+    if redis.call('HLEN', target_lease_key) > 0 then
+      return 'active_leases', cold_allocation.generation
+    end
+    return nil, cold_allocation.generation
+  end
   if not allocation_raw then return 'missing', nil end
   local allocation = decode(allocation_raw)
   if not allocation or allocation.backend_id ~= ARGV[3]
@@ -4750,7 +4808,30 @@ if current.operation ~= ARGV[6] or current.backend_id ~= ARGV[3] then
   return cjson.encode({status='operation_mismatch', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
 end
 
-if ARGV[1] == 'heartbeat' then
+if ARGV[1] == 'revalidate' then
+  if current.require_idle ~= (ARGV[8] == '1') then
+    return cjson.encode({status='operation_mismatch', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
+  end
+  local target_error, target_generation = validate_acquire_target()
+  if target_error then
+    return cjson.encode({status=target_error, generation=target_generation})
+  end
+  if not integrity_has_revision_headroom(
+      redis.call('HGET', KEYS[1], 'ledger_revision')) then
+    redis.call('HSET', KEYS[1],
+      'bootstrap_state', 'not_ready',
+      'reconcile_deadline_ms', '0',
+      'not_ready_reason', 'ledger_revision_rebase_required')
+    return cjson.encode({status='not_ready'})
+  end
+  current.expires_at_ms = now + tonumber(ARGV[7])
+  local encoded = cjson.encode(current)
+  redis.call('SET', KEYS[4], encoded, 'PXAT',
+    tostring(current.expires_at_ms + 1000))
+  redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
+  redis.call('HSET', KEYS[1], 'transition_mirror', encoded)
+  return cjson.encode({status='renewed', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
+elseif ARGV[1] == 'heartbeat' then
   local allocation = decode(redis.call('HGET', KEYS[2], ARGV[3]))
   if allocation and valid_allocation_generation(allocation)
      and allocation.generation == cjson.null then
@@ -6342,6 +6423,7 @@ class GPUArbiterStore:
         backend_ticket_id: str | None = None,
         card_ticket_id: str | None = None,
         require_resident: bool = False,
+        require_cold_owner: bool = False,
     ) -> GPUAdmissionResult:
         keys = self.keys(resource_id)
         _validate_nonempty(backend_id, "backend_id", max_length=128)
@@ -6371,6 +6453,12 @@ class GPUArbiterStore:
             raise ValueError("evictable must be a boolean")
         if not isinstance(require_resident, bool):
             raise ValueError("require_resident must be a boolean")
+        if not isinstance(require_cold_owner, bool):
+            raise ValueError("require_cold_owner must be a boolean")
+        if require_resident and require_cold_owner:
+            raise ValueError(
+                "require_resident and require_cold_owner are mutually exclusive"
+            )
         eviction_priority = _validate_redis_safe_int(
             eviction_priority, "eviction_priority"
         )
@@ -6404,6 +6492,7 @@ class GPUArbiterStore:
                     domains.active_backend_domain_fingerprint,
                     str(membership_epoch),
                     "1" if require_resident else "0",
+                    "1" if require_cold_owner else "0",
                 ],
             )
         )
@@ -6729,6 +6818,27 @@ class GPUArbiterStore:
             require_idle=require_idle,
         )
 
+    async def acquire_cold_admission_owner(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        membership_epoch: int,
+        owner_id: str,
+        generation: str,
+        ttl_ms: int,
+    ) -> GPUTransitionOwnerResult:
+        return await self.acquire_transition_owner(
+            resource_id,
+            backend_id=backend_id,
+            membership_epoch=membership_epoch,
+            owner_id=owner_id,
+            generation=generation,
+            operation=GPU_COLD_ADMISSION_OPERATION,
+            ttl_ms=ttl_ms,
+            require_idle=True,
+        )
+
     async def heartbeat_transition_owner(
         self,
         resource_id: str,
@@ -6749,6 +6859,28 @@ class GPUArbiterStore:
             operation_name=operation,
             ttl_ms=ttl_ms,
             require_idle=False,
+        )
+
+    async def revalidate_cold_admission_owner(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        membership_epoch: int,
+        owner_id: str,
+        generation: str,
+        ttl_ms: int,
+    ) -> GPUTransitionOwnerResult:
+        return await self._transition_owner_operation(
+            "revalidate",
+            resource_id,
+            backend_id=backend_id,
+            membership_epoch=membership_epoch,
+            owner_id=owner_id,
+            generation=generation,
+            operation_name=GPU_COLD_ADMISSION_OPERATION,
+            ttl_ms=ttl_ms,
+            require_idle=True,
         )
 
     async def release_transition_owner(
@@ -6772,9 +6904,25 @@ class GPUArbiterStore:
             require_idle=False,
         )
 
+    async def release_cold_admission_owner(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        owner_id: str,
+        generation: str,
+    ) -> GPUTransitionOwnerResult:
+        return await self.release_transition_owner(
+            resource_id,
+            backend_id=backend_id,
+            owner_id=owner_id,
+            generation=generation,
+            operation=GPU_COLD_ADMISSION_OPERATION,
+        )
+
     async def _transition_owner_operation(
         self,
-        action: Literal["acquire", "heartbeat", "release"],
+        action: Literal["acquire", "revalidate", "heartbeat", "release"],
         resource_id: str,
         *,
         backend_id: str,
@@ -6790,9 +6938,11 @@ class GPUArbiterStore:
         _validate_nonempty(owner_id, "owner_id", max_length=256)
         _validate_nonempty(operation_name, "operation", max_length=256)
         generation = _validate_generation(generation)
-        if action == "acquire":
+        if action in {"acquire", "revalidate"}:
             if membership_epoch is None:
-                raise ValueError("transition acquire requires membership_epoch")
+                raise ValueError(
+                    "transition acquire/revalidate requires membership_epoch"
+                )
             membership_epoch = _validate_membership_epoch(membership_epoch)
         ttl_ms = _validate_ttl_ms(ttl_ms, "ttl_ms")
         domains = await self._ledger_domain(keys)
@@ -7310,6 +7460,7 @@ class GPUArbiterStore:
 
 
 __all__ = [
+    "GPU_COLD_ADMISSION_OPERATION",
     "GPUAdmissionResult",
     "GPUAllocation",
     "GPUAllocationState",

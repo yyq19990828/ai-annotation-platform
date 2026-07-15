@@ -3659,6 +3659,631 @@ async def test_cold_allocation_only_admits_its_reservation_owner(
 
 
 @pytest.mark.asyncio
+async def test_cold_admission_owner_serializes_generation_and_reservation(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-cold-owner/prepare"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a", "backend-b"),
+    )
+
+    acquired = await first.acquire_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="cold-owner-a",
+        generation="1",
+        ttl_ms=30_000,
+    )
+    blocked = await second.acquire_cold_admission_owner(
+        resource_id,
+        backend_id="backend-b",
+        membership_epoch=1,
+        owner_id="cold-owner-b",
+        generation="1",
+        ttl_ms=30_000,
+    )
+    assert acquired.status == "acquired"
+    assert blocked.status == "busy"
+    renewed = await first.revalidate_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="cold-owner-a",
+        generation="1",
+        ttl_ms=30_000,
+    )
+    assert renewed.status == "renewed"
+
+    unowned = await second.admit(
+        resource_id,
+        **_admission_kwargs("backend-a", "unowned-lease", owner_id="other-owner"),
+    )
+    unowned_other_backend = await second.admit(
+        resource_id,
+        **_admission_kwargs(
+            "backend-b",
+            "unowned-other-lease",
+            owner_id="other-owner",
+        ),
+    )
+    wrong_owner = await second.admit(
+        resource_id,
+        require_cold_owner=True,
+        **_admission_kwargs("backend-a", "wrong-lease", owner_id="other-owner"),
+    )
+    assert (unowned.status, unowned.reason) == (
+        "transition_in_progress",
+        "transition_owner_active",
+    )
+    assert (wrong_owner.status, wrong_owner.reason) == (
+        "transition_in_progress",
+        "transition_owner_active",
+    )
+    assert (unowned_other_backend.status, unowned_other_backend.reason) == (
+        "transition_in_progress",
+        "cold_admission_owner_active",
+    )
+
+    reservation = _admission_kwargs(
+        "backend-a",
+        "cold-lease",
+        owner_id="cold-owner-a",
+    )
+    admitted = await first.admit(
+        resource_id,
+        require_cold_owner=True,
+        **reservation,
+    )
+    retry = await second.admit(
+        resource_id,
+        require_cold_owner=True,
+        **reservation,
+    )
+    assert admitted.admitted is True
+    assert admitted.allocation_state is GPUAllocationState.RESERVING
+    assert retry.admitted is True
+    assert retry.idempotent is True
+
+    for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_generation="1",
+                target_state=state,
+                request_lease_id="cold-lease",
+                request_owner_id="cold-owner-a",
+            )
+        ).status == "transitioned"
+    other_intent = await second.acquire_cold_admission_owner(
+        resource_id,
+        backend_id="backend-b",
+        membership_epoch=1,
+        owner_id="cold-owner-b",
+        generation="1",
+        ttl_ms=30_000,
+    )
+    assert other_intent.status == "acquired"
+    response_loss_retry = await first.admit(
+        resource_id,
+        require_cold_owner=True,
+        **reservation,
+    )
+    assert response_loss_retry.admitted is True
+    assert response_loss_retry.idempotent is True
+    assert (
+        await second.release_cold_admission_owner(
+            resource_id,
+            backend_id="backend-b",
+            owner_id="cold-owner-b",
+            generation="1",
+        )
+    ).status == "released"
+
+    released = await first.release_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        owner_id="cold-owner-a",
+        generation="1",
+    )
+    assert released.status == "missing"
+    stale_target = await second.acquire_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="cold-owner-next",
+        generation="2",
+        ttl_ms=30_000,
+    )
+    assert stale_target.status == "invalid_transition"
+    snapshot = await first.snapshot(resource_id)
+    assert snapshot.transition_present is False
+    assert snapshot.allocations[0].state is GPUAllocationState.RESIDENT
+    assert snapshot.allocations[0].reservation_owner_id is None
+    assert tuple(item.lease_id for item in snapshot.leases) == ("cold-lease",)
+
+
+@pytest.mark.asyncio
+async def test_cold_admission_owner_requires_ready_fresh_active_card(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        for suffix, fields in (
+            ("not-ready", {"bootstrap_state": "not_ready"}),
+            ("expired", {"reconcile_deadline_ms": "1"}),
+        ):
+            resource_id = f"node-cold-owner/{suffix}"
+            await _bootstrap_empty_card(
+                first,
+                resource_id,
+                100,
+                memberships=_memberships("backend-a"),
+            )
+            await raw.hset(first.keys(resource_id).card, mapping=fields)
+            result = await first.acquire_cold_admission_owner(
+                resource_id,
+                backend_id="backend-a",
+                membership_epoch=1,
+                owner_id="cold-owner",
+                generation="1",
+                ttl_ms=30_000,
+            )
+            assert result.status == "not_ready"
+            assert (await first.snapshot(resource_id)).transition_present is False
+
+        for membership_state in ("pending", "retiring"):
+            resource_id = f"node-cold-owner/{membership_state}"
+            await _bootstrap_empty_card(
+                first,
+                resource_id,
+                100,
+                memberships=(
+                    *_memberships("backend-a", state=membership_state),
+                    *_memberships("backend-b"),
+                ),
+            )
+            result = await first.acquire_cold_admission_owner(
+                resource_id,
+                backend_id="backend-a",
+                membership_epoch=1,
+                owner_id="cold-owner",
+                generation="1",
+                ttl_ms=30_000,
+            )
+            assert result.status == "config_mismatch"
+            assert (await first.snapshot(resource_id)).transition_present is False
+
+        resource_id = "node-cold-owner/revalidate-not-ready"
+        await _bootstrap_empty_card(
+            first,
+            resource_id,
+            100,
+            memberships=_memberships("backend-a"),
+        )
+        assert (
+            await first.acquire_cold_admission_owner(
+                resource_id,
+                backend_id="backend-a",
+                membership_epoch=1,
+                owner_id="cold-owner",
+                generation="1",
+                ttl_ms=30_000,
+            )
+        ).status == "acquired"
+        keys = first.keys(resource_id)
+        transition_before = await raw.get(keys.transition)
+        await raw.hset(keys.card, "bootstrap_state", "not_ready")
+        revision_before = await raw.hget(keys.card, "ledger_revision")
+        not_ready = await first.revalidate_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="cold-owner",
+            generation="1",
+            ttl_ms=30_000,
+        )
+        assert not_ready.status == "not_ready"
+        assert await raw.get(keys.transition) == transition_before
+        assert await raw.hget(keys.card, "ledger_revision") == revision_before
+
+        resource_id = "node-cold-owner/revalidate-epoch"
+        await _bootstrap_empty_card(
+            first,
+            resource_id,
+            100,
+            memberships=_memberships("backend-a"),
+        )
+        assert (
+            await first.acquire_cold_admission_owner(
+                resource_id,
+                backend_id="backend-a",
+                membership_epoch=1,
+                owner_id="cold-owner",
+                generation="1",
+                ttl_ms=30_000,
+            )
+        ).status == "acquired"
+        keys = first.keys(resource_id)
+        transition_before = await raw.get(keys.transition)
+        revision_before = await raw.hget(keys.card, "ledger_revision")
+        changed = await first.revalidate_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=2,
+            owner_id="cold-owner",
+            generation="1",
+            ttl_ms=30_000,
+        )
+        assert changed.status == "config_mismatch"
+        assert await raw.get(keys.transition) == transition_before
+        assert await raw.hget(keys.card, "ledger_revision") == revision_before
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cold_admission_owner_does_not_block_other_resident_backend(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-cold-owner/resident-fast-path"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a", "backend-b"),
+    )
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-b",
+        lease_id="resident-lease-a",
+        owner_id="resident-owner-a",
+        budget_mb=40,
+    )
+    assert (
+        await first.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="cold-owner",
+            generation="1",
+            ttl_ms=30_000,
+        )
+    ).status == "acquired"
+
+    resident = await second.admit(
+        resource_id,
+        require_resident=True,
+        **_admission_kwargs(
+            "backend-b",
+            "resident-lease-b",
+            budget_mb=40,
+            owner_id="resident-owner-b",
+        ),
+    )
+    assert resident.admitted is True
+    assert resident.allocation_state is GPUAllocationState.RESIDENT
+
+
+@pytest.mark.asyncio
+async def test_failed_cold_admission_keeps_owner_until_exact_release(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-cold-owner/capacity-failure"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a", "backend-b"),
+    )
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-b",
+        lease_id="resident-lease",
+        owner_id="resident-owner",
+        budget_mb=80,
+    )
+    assert (
+        await first.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="cold-owner-a",
+            generation="1",
+            ttl_ms=30_000,
+        )
+    ).status == "acquired"
+    failed = await first.admit(
+        resource_id,
+        require_cold_owner=True,
+        **_admission_kwargs(
+            "backend-a",
+            "cold-lease",
+            budget_mb=30,
+            owner_id="cold-owner-a",
+        ),
+    )
+    assert failed.status == "capacity_unavailable"
+    assert (
+        await second.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="cold-owner-b",
+            generation="1",
+            ttl_ms=30_000,
+        )
+    ).status == "busy"
+    assert (
+        await first.release_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="cold-owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await second.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="cold-owner-b",
+            generation="2",
+            ttl_ms=30_000,
+        )
+    ).status == "acquired"
+
+
+@pytest.mark.asyncio
+async def test_cold_admission_owners_are_isolated_by_full_resource_id(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_a = "node-cold-multi/index:0"
+    resource_b = "node-cold-multi/index:1"
+    for store, resource_id in ((first, resource_a), (second, resource_b)):
+        await _bootstrap_empty_card(
+            store,
+            resource_id,
+            100,
+            memberships=_memberships("backend-a"),
+        )
+
+    owner_a, owner_b = await asyncio.gather(
+        first.acquire_cold_admission_owner(
+            resource_a,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="same-owner",
+            generation="1",
+            ttl_ms=30_000,
+        ),
+        second.acquire_cold_admission_owner(
+            resource_b,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="same-owner",
+            generation="1",
+            ttl_ms=30_000,
+        ),
+    )
+
+    assert owner_a.status == owner_b.status == "acquired"
+    assert (await first.snapshot(resource_a)).transition_present is True
+    assert (await second.snapshot(resource_b)).transition_present is True
+
+
+@pytest.mark.asyncio
+async def test_expired_cold_admission_owner_cannot_reserve_after_takeover(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-cold-owner/takeover"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    assert (
+        await first.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="expired-owner",
+            generation="1",
+            ttl_ms=30,
+        )
+    ).status == "acquired"
+
+    deadline = asyncio.get_running_loop().time() + 1
+    while True:
+        takeover = await second.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="current-owner",
+            generation="2",
+            ttl_ms=30_000,
+        )
+        if takeover.status == "acquired":
+            break
+        assert takeover.status == "busy"
+        if asyncio.get_running_loop().time() >= deadline:
+            pytest.fail("cold admission owner did not expire")
+        await asyncio.sleep(0.005)
+
+    stale = await first.admit(
+        resource_id,
+        require_cold_owner=True,
+        **_admission_kwargs(
+            "backend-a",
+            "stale-lease",
+            owner_id="expired-owner",
+        ),
+    )
+    stale_release = await first.release_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        owner_id="expired-owner",
+        generation="1",
+    )
+    current = await second.admit(
+        resource_id,
+        require_cold_owner=True,
+        **_admission_kwargs(
+            "backend-a",
+            "current-lease",
+            owner_id="current-owner",
+            generation="2",
+        ),
+    )
+    assert (stale.status, stale.reason) == (
+        "transition_in_progress",
+        "transition_owner_active",
+    )
+    assert stale_release.status == "owner_mismatch"
+    assert current.admitted is True
+    snapshot = await first.snapshot(resource_id)
+    assert tuple(item.lease_id for item in snapshot.leases) == ("current-lease",)
+
+
+@pytest.mark.asyncio
+async def test_expired_cold_admission_owner_cannot_be_revalidated_or_recreated(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-cold-owner/revalidate-expired"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    assert (
+        await first.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="expired-owner",
+            generation="1",
+            ttl_ms=30,
+        )
+    ).status == "acquired"
+
+    await asyncio.sleep(0.05)
+    for _ in range(2):
+        missing = await first.revalidate_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="expired-owner",
+            generation="1",
+            ttl_ms=30_000,
+        )
+        assert missing.status == "missing"
+
+    assert (
+        await second.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="takeover-owner",
+            generation="2",
+            ttl_ms=30_000,
+        )
+    ).status == "acquired"
+    assert (
+        await second.release_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="takeover-owner",
+            generation="2",
+        )
+    ).status == "released"
+    stale = await first.revalidate_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="expired-owner",
+        generation="1",
+        ttl_ms=30_000,
+    )
+    assert stale.status == "missing"
+    assert (await first.snapshot(resource_id)).transition_present is False
+
+
+@pytest.mark.parametrize(
+    "state",
+    (GPUAllocationState.UNLOADED, GPUAllocationState.CPU_FALLBACK),
+)
+@pytest.mark.asyncio
+async def test_cold_admission_owner_requires_new_generation_for_empty_tombstone(
+    redis_stores,
+    state: GPUAllocationState,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-cold-owner/{state.value}"
+    reconciled = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(_reconcile_allocation(state=state, generation="1"),),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id=f"cold-owner-{state.value}",
+    )
+    assert reconciled.status == "reconciled"
+
+    stale = await first.acquire_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="cold-owner",
+        generation="1",
+        ttl_ms=30_000,
+    )
+    current = await first.acquire_cold_admission_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="cold-owner",
+        generation="2",
+        ttl_ms=30_000,
+    )
+    assert stale.status == "stale_generation"
+    assert current.status == "acquired"
+
+    kwargs = _admission_kwargs(
+        "backend-a",
+        "cold-lease",
+        owner_id="cold-owner",
+        generation="2",
+    )
+    kwargs["evictable"] = False
+    admitted = await first.admit(
+        resource_id,
+        require_cold_owner=True,
+        **kwargs,
+    )
+    assert admitted.admitted is True
+    assert admitted.allocation_state is GPUAllocationState.RESERVING
+
+
+@pytest.mark.asyncio
 async def test_require_resident_admits_only_resident_and_enforces_concurrency(
     redis_stores,
 ) -> None:
@@ -3940,7 +4565,15 @@ async def test_allocation_and_global_backend_lease_are_atomic(redis_stores) -> N
     first, second = redis_stores
     resource_id = "node-a/index:0"
     await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        lease_id="lease-0",
+        owner_id="owner-0",
+        max_concurrency=2,
+    )
 
+    request_indices = range(1, 8)
     results = await asyncio.gather(
         *(
             (first if index % 2 == 0 else second).admit(
@@ -3952,19 +4585,22 @@ async def test_allocation_and_global_backend_lease_are_atomic(redis_stores) -> N
                     owner_id=f"owner-{index}",
                 ),
             )
-            for index in range(8)
+            for index in request_indices
         )
     )
 
-    assert sum(result.admitted for result in results) == 2
+    assert sum(result.admitted for result in results) == 1
     assert sum(result.status == "concurrency_saturated" for result in results) == 6
     snapshot = await first.snapshot(resource_id)
     assert snapshot.committed_mb == 60
     assert len(snapshot.allocations) == 1
     assert len(snapshot.leases) == 2
 
-    admitted = next(result for result in results if result.admitted)
-    lease_index = results.index(admitted)
+    lease_index = next(
+        index
+        for index, result in zip(request_indices, results, strict=True)
+        if result.admitted
+    )
     repeated = await second.admit(
         resource_id,
         **_admission_kwargs(
@@ -4266,7 +4902,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
 
 
 @pytest.mark.asyncio
-async def test_uncertain_and_stale_lease_remain_counted_until_owned_release(
+async def test_uncertain_stale_reservation_remains_owned_until_terminal_release(
     redis_stores,
 ) -> None:
     first, _ = redis_stores
@@ -4317,7 +4953,10 @@ async def test_uncertain_and_stale_lease_remain_counted_until_owned_release(
             "backend-a", "lease-b", max_concurrency=1, owner_id="owner-b"
         ),
     )
-    assert blocked.status == "concurrency_saturated"
+    assert (blocked.status, blocked.reason) == (
+        "not_ready",
+        "cold_allocation_in_progress",
+    )
 
     reservation_guard = await first.release_lease(
         resource_id,
