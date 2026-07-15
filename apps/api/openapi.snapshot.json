@@ -9155,6 +9155,9 @@
             "title": "Physical Device Token",
             "type": "string"
           },
+          "runtime": {
+            "$ref": "#/components/schemas/GPUArbiterRuntimeObservationItem"
+          },
           "status": {
             "enum": [
               "ok",
@@ -9176,7 +9179,8 @@
           "effective_mode",
           "claimed_budget_mb",
           "claimed_backend_count",
-          "status"
+          "status",
+          "runtime"
         ],
         "title": "GPUArbiterResourceItem",
         "type": "object"
@@ -9228,6 +9232,167 @@
           "diagnostics"
         ],
         "title": "GPUArbiterResourcesResponse",
+        "type": "object"
+      },
+      "GPUArbiterRuntimeObservationItem": {
+        "properties": {
+          "active_backend_count": {
+            "title": "Active Backend Count",
+            "type": "integer"
+          },
+          "allocation_state_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Allocation State Counts",
+            "type": "object"
+          },
+          "backend_count": {
+            "title": "Backend Count",
+            "type": "integer"
+          },
+          "backend_queue_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Queue Count"
+          },
+          "card_queue_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Queue Count"
+          },
+          "committed_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed Mb"
+          },
+          "durable_domain_matches": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durable Domain Matches"
+          },
+          "lease_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Count"
+          },
+          "ledger_incarnation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Incarnation"
+          },
+          "ledger_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Revision"
+          },
+          "membership_state_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Membership State Counts",
+            "type": "object"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "reconcile_deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconcile Deadline Ms"
+          },
+          "status": {
+            "enum": [
+              "disabled",
+              "missing",
+              "prepared",
+              "ready",
+              "not_ready",
+              "corrupt",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transition_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Present"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "ready",
+          "backend_count",
+          "active_backend_count",
+          "membership_state_counts",
+          "allocation_state_counts",
+          "lease_count",
+          "card_queue_count",
+          "backend_queue_count",
+          "transition_present"
+        ],
+        "title": "GPUArbiterRuntimeObservationItem",
         "type": "object"
       },
       "GPUBackendConfigStatus": {

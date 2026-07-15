@@ -192,6 +192,30 @@ predict、交互预测、warmup 或 reload 之前输出 `gpu_arbiter_shadow_deci
 `off` 模式不解析资源配置、不查询影子快照也不产生上述日志。这些日志由各派发进程分别输出，不应把单个 API
 进程的内存或日志片段解读为跨进程全局账本。
 
+### GPU 资源账本与修复状态
+
+`GET /api/v1/admin/ml-integrations/gpu-resources` 的每个资源包含 `runtime`：账本状态、ready、revision、
+证据 deadline、已承诺预算、durable pending/active/retiring 数、allocation 状态数、lease、卡级/backend 级
+队列以及 transition。`durable_domain_matches=false` 表示 PostgreSQL 封闭成员域与 Redis 不一致，不能仅凭
+Redis 快照继续工作。`prepared` 表示 proof reset 已冻结并可在下一轮恢复；`corrupt/unavailable` 都按
+fail-closed 处理。prepared、disabled 或读取失败时，无法原子证明的 child/queue/transition 计数返回 `null`，
+不会用 `0` 误报为空。
+
+每轮完整 backend 健康扫描后会输出逐资源 `gpu_arbiter_resource_repair` 结构化日志，包含 action、status、
+reason、revision、committed、GC collection 结果和耗时。只有 desired mode 为 `enforce` 的资源运行该控制面；
+beat 消息过期、长于任务 hard limit 的防重入锁和 50 秒批次总时限共同阻止慢任务跨分钟堆积；多卡最多四路
+并行，并按波次数量均分 45 秒工作预算，确保固定排序后的每张卡都能在本轮获得执行机会。稳定 ready 且不含
+retiring 的卡只读
+返回，缺失/损坏/过期账本走严格 proof reset。退役 GC 的常见阻塞包括等待 token horizon、
+缺少 challenge 回显、residency 未严格 unloaded、仍有 lease/queue/transition，或 registry 已删除而无法重新
+探活。每个 tombstone 由不可复用 `retirement_id` 标识，completion receipt 独立保留七天，并以自身收集结果域
+承受数据库 sibling 域的后续演进；proof reset 轮换 incarnation 后则必须用新鲜证明重新收集。冻结的退役 health
+只用于诊断，不能授权删除 tombstone。
+
+`off/observe` 的 `runtime.status=disabled`，周期 worker 和管理查询都不创建仲裁 Redis client；observe 的
+shadow 日志仍按上一节工作。worker 结果通过 Celery 结果与进程日志暴露，当前不应把 worker 进程内的普通
+Prometheus Gauge 当作 API `/metrics` 可见的跨进程指标。
+
 ---
 
 ## 6. 关键文件索引

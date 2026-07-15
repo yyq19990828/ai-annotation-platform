@@ -397,8 +397,38 @@ retiring 后不会失去清理入口。域演进只能在卡已 not-ready 时使
 pending@1 加入且 child 为空，既有状态变化遵循持久 membership 的同构规则，all-domain 在 proof-backed GC
 落地前只能单调扩张。响应丢失精确重试保持只读，v1 或缺失三域的账本只会 fail-close，不能静默升级。
 partial corruption 仍只能通过封闭域、令牌时域和 live health 共同证明的 reset 修复；retired child 与
-tombstone 必须走后续两阶段 GC。只有 health、token、lease、队列、transition 与 Redis 域均确认收敛后才能
-清除 tombstone。
+tombstone 必须走独立两阶段 GC。每次退役生成不可复用的 `retirement_id`，避免行删除重建、membership epoch
+重新从 1 开始后误消费旧 receipt。第一阶段只接受绑定 exact retiring identity、晚于冻结 token horizon 的
+challenge-bound live-unloaded 证明；Redis Lua 在 revision/incarnation CAS 下确认目标 lease、两级队列、
+transition、allocation 与镜像 cache 均收敛，并逐项解码封闭域内所有 sibling lease/ticket，随后原子删除
+目标 child、从 all/membership domain 移除目标并保持卡 not-ready。completion receipt 以 `retirement_id`
+独立成键并使用固定七天 TTL，不占用卡级单槽，也不绑定后续可合法推进的全局 revision；相同 collection 的
+精确重试只读且不续期。第二阶段在同一资源 advisory→membership→fence 锁序内，以 receipt 自带的收集结果域
+和同一 ledger incarnation 复验 card 与全域 child/cache，再允许数据库删除 exact tombstone；数据库 sibling 域
+在崩溃窗口内新增、删除或变更状态不会抹去已完成的目标证明，finalize 后再由 proof reset 对齐最新 durable
+domain。若 proof reset 已轮换 incarnation，基础身份有效的旧 receipt 会被原子失效，只有新鲜 live proof 才能
+重新收集。若 registry 已不存在且该 backend 不再有其他 membership，随后删除孤立 fence。
+Redis 已收集而数据库事务未提交是可恢复中间态，下一轮只能在 receipt 与当前 card 的收集结果域仍精确匹配时
+完成删除；
+Redis flush 或后续 reset 使 receipt 丢失时必须保留 tombstone 并重新取证。退役时冻结的 health 仍只作诊断，
+registry 已先删除且不存在 completion receipt 时无法取得新的 live health，必须安全保留墓碑。
+
+PostgreSQL 无法在同一事务内独立读取 Redis，因此 transaction-local receipt 是受信 collector 对“已完成 Redis
+复验”的声明，而不是数据库可自行验证的跨存储 capability。触发器仍要求 exact `retirement_id`、资源 advisory
+lock、token horizon 与 receipt shape，足以封住普通 ORM/SQL 误删；若 API、worker 与迁移共用拥有表级 DELETE
+的同一数据库角色，该角色可蓄意伪造声明。开启 `enforce` 前必须把 collector 收缩为独立受限角色/过程并撤销
+普通应用角色的 membership DELETE，或把同角色 worker 明确定义为完全受信边界；当前 `effective=off` 不把这项
+权限假设带入线上仲裁。
+
+每 60 秒健康扫描完整结束后运行逐资源 bootstrap/repair。beat 消息 55 秒过期，任务使用 TTL 长于 Celery hard
+limit 的全局防重入锁，并对修复批次设置 50 秒总时限，避免慢卡让分钟任务重叠堆积。worker 只处理 desired mode
+为 `enforce` 的资源，
+`off/observe` 不创建仲裁 Redis client；完整 ready 且数据库/Redis 域一致的卡保持只读，完整 flush、旧 schema、
+证据过期、prepared 重启或 partial corruption 一律走 proof reset。每个 task/event loop 自建并关闭 Redis client
+与数据库 engine，多卡最多四路并行并按波次数量均分 45 秒工作预算，一张卡失败或持续超时不会让固定排序后的
+卡跨轮饥饿。管理 API 同样以最多四路读取 Redis；它与 task result 暴露逐资源
+ready/revision/预算、成员/分配状态、lease、两级队列、transition 与 GC 阻塞原因；这些观测永不作为恢复授权。
+P3 闭环本身不提升 effective mode，P1 真实 GPU 验收与 P4 lifecycle/admission 接线完成前仍保持 `off`。
 
 API lifespan 与 Celery 中反复 `asyncio.run` 会创建不同 event loop。实现不得跨 loop 复用 module-global
 `redis.asyncio` client/pool；必须按 event loop 管理并显式关闭，或封装同步 Redis 调用，并用重复创建和销毁
@@ -489,11 +519,11 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P0：接受本 ADR，只冻结设计；不代表自动仲裁可用。
 - P1：五个 backend 完成 residency、active/draining、全池 unload、generation fencing 与 admission token 契约。
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
-- P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语、独立 durable
+- P3：已完成 Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语、独立 durable
   membership/tombstone、v2 all/membership/active 三域的单调演进与操作权限矩阵，以及 challenge-bound
   live-health 证据候选、Redis 两阶段 proof reset、prepared 重启恢复、逐资源并发屏障、token horizon 锁内
-  消费与严格 residency 证明已完成；retired child/tombstone GC 和
-  bootstrap/repair worker 接通后才算通过。
+  消费、严格 residency 证明、retired child/tombstone 两阶段 GC、逐资源观测与 60 秒 bootstrap/repair worker；
+  该阶段完成不改变 effective mode。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。

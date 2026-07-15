@@ -21,10 +21,13 @@ from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_arbiter import (
     _record_gpu_backend_token_expiry_in_transaction,
     activate_gpu_backend_membership,
+    collect_gpu_backend_tombstone,
     commit_gpu_proof_reset_from_health,
     record_gpu_backend_token_expiry,
+    repair_gpu_resource,
 )
 from app.services.gpu_arbiter_store import (
+    GPUAllocation,
     GPUAllocationState,
     GPUArbiterStore,
     GPUBackendDomainMember,
@@ -240,9 +243,7 @@ async def _install_live_health(
         db_now = await db.scalar(select(text("clock_timestamp()")))
         assert isinstance(db_now, datetime)
         for index, backend_id in enumerate(backend_ids):
-            membership = await db.get(
-                GPUBackendMembership, (backend_id, resource_id)
-            )
+            membership = await db.get(GPUBackendMembership, (backend_id, resource_id))
             fence = await db.get(GPUBackendFence, backend_id)
             backend = await db.get(MLBackendRegistry, backend_id)
             assert membership is not None
@@ -584,17 +585,17 @@ async def test_proof_recovery_maps_untrusted_evidence_to_unknown(
                 elif invalid_case == "generation_ahead":
                     health_meta["residency"]["generation"] = "2"
                 elif invalid_case == "identity_mismatch":
-                    health_meta["residency"]["identity"][
-                        "backend_registry_id"
-                    ] = str(uuid.uuid4())
+                    health_meta["residency"]["identity"]["backend_registry_id"] = str(
+                        uuid.uuid4()
+                    )
                 elif invalid_case == "stale_probe":
                     stale_observed_at = started[backend_id] - timedelta(minutes=10)
                     stale_started_at = stale_observed_at - timedelta(seconds=1)
-                    health_meta["gpu_arbiter_probe"][
-                        "probe_started_at"
-                    ] = _proof_timestamp(stale_started_at)
-                    health_meta["gpu_arbiter_probe"]["observed_at"] = (
-                        _proof_timestamp(stale_observed_at)
+                    health_meta["gpu_arbiter_probe"]["probe_started_at"] = (
+                        _proof_timestamp(stale_started_at)
+                    )
+                    health_meta["gpu_arbiter_probe"]["observed_at"] = _proof_timestamp(
+                        stale_observed_at
                     )
                     backend.last_checked_at = stale_observed_at
                     fence.token_expiry_high_water = stale_started_at - timedelta(
@@ -850,12 +851,8 @@ async def test_resource_barrier_blocks_same_card_insert_but_not_other_card(
                 )
                 await db.flush()
 
-        same_task = asyncio.create_task(
-            insert_backend(same_backend_id, _RESOURCE_A)
-        )
-        other_task = asyncio.create_task(
-            insert_backend(other_backend_id, _RESOURCE_B)
-        )
+        same_task = asyncio.create_task(insert_backend(same_backend_id, _RESOURCE_A))
+        other_task = asyncio.create_task(insert_backend(other_backend_id, _RESOURCE_B))
         await asyncio.wait_for(other_task, timeout=1)
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(asyncio.shield(same_task), timeout=0.05)
@@ -918,5 +915,187 @@ async def test_domain_change_clears_only_prepared_domain_not_ready(
         current_old_domain = await _membership_domain(factory, _RESOURCE_A)
         assert current_old_domain[0].state == "retiring"
         assert current_old_domain != original_domain
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_redis_gc_receipt_resumes_db_tombstone_and_orphan_fence_finalize(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    backend_id = uuid.uuid4()
+    resource_id = "node-proof/GPU-gc-receipt"
+    async with factory.begin() as db:
+        db.add(
+            MLBackendRegistry(
+                id=backend_id,
+                name="gc-receipt",
+                url=f"http://gc-receipt-{backend_id}.test",
+                gpu_resource_id=resource_id,
+                vram_budget_mb=1024,
+            )
+        )
+    async with factory.begin() as db:
+        await db.execute(
+            update(MLBackendRegistry)
+            .where(MLBackendRegistry.id == backend_id)
+            .values(gpu_resource_id=None, vram_budget_mb=None)
+        )
+    async with factory() as db:
+        tombstone = await db.get(GPUBackendMembership, (backend_id, resource_id))
+    assert tombstone is not None
+    assert tombstone.retirement_id is not None
+    retirement_id = str(tombstone.retirement_id)
+    domain = (
+        GPUBackendDomainMember(
+            backend_id=str(backend_id),
+            membership_epoch=2,
+            state="retiring",
+        ),
+    )
+    prepared = await proof_store.begin_proof_reset(
+        resource_id,
+        2048,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=domain,
+        reset_id="gc-receipt-bootstrap",
+    )
+    assert prepared.status == "prepared"
+    context = await proof_store.prepared_proof_reset(resource_id)
+    assert context is not None
+    committed = await proof_store.commit_proof_reset(
+        resource_id,
+        2048,
+        reset_id=context.reset_id,
+        expected_reset_revision=context.ledger_revision,
+        expected_reset_incarnation=context.ledger_incarnation,
+        backend_memberships=domain,
+        allocations=(
+            GPUAllocation(
+                backend_id=str(backend_id),
+                state=GPUAllocationState.UNKNOWN,
+                budget_mb=1024,
+                generation=None,
+                eviction_priority=0,
+                evictable=False,
+                max_concurrency=4,
+                reservation_lease_id=None,
+                reservation_owner_id=None,
+                last_used_at_ms=1,
+            ),
+        ),
+        ready=False,
+        evidence_deadline_ms=0,
+        proof_fingerprint="4" * 64,
+    )
+    assert committed.status == "not_ready"
+    snapshot = await proof_store.snapshot(resource_id)
+    staged = await proof_store.collect_retired_backend(
+        resource_id,
+        expected_ledger_revision=snapshot.ledger_revision,
+        expected_ledger_incarnation=snapshot.ledger_incarnation,
+        backend_memberships=domain,
+        backend_id=str(backend_id),
+        membership_epoch=2,
+        retirement_id=retirement_id,
+        vram_budget_mb=1024,
+        evidence_deadline_ms=int(time.time() * 1000) + 120_000,
+        evidence_fingerprint="5" * 64,
+        collection_id="gc-receipt-stage",
+    )
+    assert staged.status == "collected"
+    collected_snapshot = await proof_store.snapshot(resource_id)
+    assert collected_snapshot.backend_ids == ()
+    assert collected_snapshot.committed_mb == 0
+    receipt = await proof_store.verify_tombstone_gc_receipt(
+        resource_id,
+        backend_memberships=domain,
+        backend_id=str(backend_id),
+        membership_epoch=2,
+        retirement_id=retirement_id,
+    )
+    assert receipt is not None
+
+    # Simulate a process crash after Redis, followed by registry deletion.  The
+    # next worker must finalize from the exact Redis receipt without frozen health.
+    async with factory.begin() as db:
+        await db.execute(
+            delete(MLBackendRegistry).where(MLBackendRegistry.id == backend_id)
+        )
+    receipt_after_registry_delete = await proof_store.verify_tombstone_gc_receipt(
+        resource_id,
+        backend_memberships=domain,
+        backend_id=str(backend_id),
+        membership_epoch=2,
+        retirement_id=retirement_id,
+    )
+    assert receipt_after_registry_delete is not None
+    async with factory() as db:
+        locked_tombstone = await db.get(GPUBackendMembership, (backend_id, resource_id))
+    assert locked_tombstone is not None
+    assert str(locked_tombstone.retirement_id) == retirement_id
+    finalized = await collect_gpu_backend_tombstone(
+        factory,
+        proof_store,
+        backend_id,
+        resource_id,
+        2,
+        proof=None,
+    )
+    assert finalized.status == "collected", finalized
+    assert finalized.reason == "redis_receipt_finalized"
+    assert finalized.redis_idempotent is True
+    async with factory() as db:
+        assert await db.get(GPUBackendMembership, (backend_id, resource_id)) is None
+        assert await db.get(GPUBackendFence, backend_id) is None
+
+
+@pytest.mark.asyncio
+async def test_repair_bootstraps_missing_card_then_leaves_ready_card_read_only(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024, 2048),
+    )
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({backend_ids[1]}),
+        )
+        first = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+        )
+        assert first.action == "bootstrap"
+        assert first.ready is True
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.ready is True
+        assert snapshot.committed_mb == 2048
+        assert tuple(item.state for item in snapshot.allocations) == (
+            GPUAllocationState.RESIDENT,
+        )
+
+        second = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+        )
+        assert second.action == "already_ready"
+        assert second.ledger_revision == snapshot.ledger_revision
     finally:
         await _cleanup_backends(factory, backend_ids)

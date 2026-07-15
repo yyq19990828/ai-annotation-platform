@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -96,7 +97,9 @@ async def test_check_health_marks_error_on_failure(
     assert fresh.health_meta is None
 
 
-async def test_check_health_persists_compute_meta(db_session: AsyncSession, monkeypatch):
+async def test_check_health_persists_compute_meta(
+    db_session: AsyncSession, monkeypatch
+):
     backend = await _make_backend(db_session)
     compute = {
         "configured_device": "cuda",
@@ -197,7 +200,7 @@ async def test_check_health_discards_response_after_gpu_membership_changes(
                 "state": "resident",
                 "gpu_loaded": True,
                 "identity": {"gpu_resource_id": "node-health/GPU-old"},
-            }
+            },
         }
 
     async def fake_setup(self):  # noqa: ARG001
@@ -255,7 +258,7 @@ async def test_check_health_discards_response_after_configuration_aba(
                 "state": "resident",
                 "gpu_loaded": True,
                 "identity": {"gpu_resource_id": "node-health/GPU-epoch"},
-            }
+            },
         }
 
     async def fake_setup(self):  # noqa: ARG001
@@ -534,10 +537,9 @@ async def test_gpu_check_health_holds_membership_lock_through_probe_commit(
 
             async def execute_with_commit_pause(statement, *args, **kwargs):
                 result = await original_execute(statement, *args, **kwargs)
-                if (
-                    getattr(statement, "_for_update_arg", None) is not None
-                    and "gpu_backend_memberships" in str(statement)
-                ):
+                if getattr(
+                    statement, "_for_update_arg", None
+                ) is not None and "gpu_backend_memberships" in str(statement):
                     final_membership_locked.set()
                     await allow_health_commit.wait()
                 return result
@@ -753,8 +755,121 @@ def test_worker_module_imports_and_registers_task():
     from app.workers.celery_app import celery_app
 
     assert hasattr(ml_health, "check_ml_backends_health")
+    assert hasattr(ml_health, "repair_gpu_arbiter_resources")
     assert "app.workers.ml_health.check_ml_backends_health" in celery_app.tasks
+    assert "app.workers.ml_health.repair_gpu_arbiter_resources" in celery_app.tasks
     assert "check-ml-backends-health" in celery_app.conf.beat_schedule
+    assert (
+        celery_app.conf.beat_schedule["check-ml-backends-health"]["options"]["expires"]
+        == 55
+    )
+
+
+@pytest.mark.parametrize(
+    ("global_mode", "resource_mode"),
+    (("off", "enforce"), ("observe", "enforce"), ("enforce", "observe")),
+)
+async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
+    monkeypatch,
+    global_mode: str,
+    resource_mode: str,
+) -> None:
+    from app.config import GPUArbiterMode, settings
+    from app.workers import ml_health
+
+    resource_id = "node-worker/GPU-mode-gate"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode(global_mode))
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": "GPU-mode-gate",
+                    "allocatable_mb": 8192,
+                    "mode": resource_mode,
+                }
+            }
+        ),
+    )
+    redis_calls = 0
+
+    def fail_if_called(*args, **kwargs):  # noqa: ARG001
+        nonlocal redis_calls
+        redis_calls += 1
+        raise AssertionError("off/observe must not create a GPU Redis store")
+
+    monkeypatch.setattr(ml_health.GPUArbiterStore, "from_url", fail_if_called)
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert result == {
+        "skipped": True,
+        "reason": "no_desired_enforce_resources",
+        "resources": [],
+    }
+    assert redis_calls == 0
+
+
+async def test_gpu_repair_worker_gives_every_card_time_within_batch(
+    monkeypatch,
+) -> None:
+    from app.config import GPUArbiterMode, settings
+    from app.workers import ml_health
+
+    resource_ids = [f"node-worker/GPU-{index}" for index in range(9)]
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": f"GPU-{index}",
+                    "allocatable_mb": 8192,
+                    "mode": "enforce",
+                }
+                for index, resource_id in enumerate(resource_ids)
+            }
+        ),
+    )
+    monkeypatch.setattr(ml_health, "_GPU_REPAIR_WORK_BUDGET_SECONDS", 0.03)
+    monkeypatch.setattr(ml_health, "_GPU_REPAIR_BATCH_TIMEOUT_SECONDS", 0.1)
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            return None
+
+    class FakeStore:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        ml_health, "create_async_engine", lambda *args, **kwargs: FakeEngine()
+    )
+    monkeypatch.setattr(
+        ml_health, "async_sessionmaker", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        ml_health.GPUArbiterStore,
+        "from_url",
+        lambda *args, **kwargs: FakeStore(),
+    )
+    started: list[str] = []
+
+    async def slow_repair(factory, store, resource_id, allocatable_mb):  # noqa: ARG001
+        started.append(resource_id)
+        await asyncio.sleep(0.02)
+
+    monkeypatch.setattr(ml_health, "_repair_one_gpu_resource", slow_repair)
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert set(started) == set(resource_ids)
+    assert len(result["resources"]) == len(resource_ids)
+    assert all(item["status"] == "unavailable" for item in result["resources"])
 
 
 def test_build_stats_snapshot_keeps_runtime_load_state():

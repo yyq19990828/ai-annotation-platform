@@ -411,6 +411,14 @@ async def test_gpu_resources_reports_per_card_oversubscription_warning(
         backend.vram_budget_mb = 12000
     await db_session.commit()
 
+    def fail_if_called(*args, **kwargs):  # noqa: ARG001
+        raise AssertionError("observe resource endpoint must not read arbiter Redis")
+
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.GPUArbiterStore.from_url",
+        fail_if_called,
+    )
+
     res = await httpx_client.get(
         "/api/v1/admin/ml-integrations/gpu-resources",
         headers={"Authorization": f"Bearer {token}"},
@@ -429,6 +437,12 @@ async def test_gpu_resources_reports_per_card_oversubscription_warning(
     assert resource["claimed_backend_count"] == 2
     assert resource["status"] == "warning"
     assert resource["diagnostics"][0]["code"] == "gpu_resource_oversubscribed"
+    assert resource["runtime"]["status"] == "disabled"
+    assert resource["runtime"]["membership_state_counts"] == {
+        "pending": 2,
+        "active": 0,
+        "retiring": 0,
+    }
 
 
 async def test_gpu_resources_requires_superadmin(httpx_client, project_admin):

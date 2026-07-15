@@ -55,6 +55,10 @@ class GPUBackendMembership(Base):
             name="ck_gpu_backend_memberships_retired_at",
         ),
         CheckConstraint(
+            "(state = 'retiring') = (retirement_id IS NOT NULL)",
+            name="ck_gpu_backend_memberships_retirement_id",
+        ),
+        CheckConstraint(
             "state <> 'retiring' OR ("
             "retired_generation_high_water IS NOT NULL AND "
             "retired_control_epoch_high_water IS NOT NULL AND "
@@ -126,6 +130,9 @@ class GPUBackendMembership(Base):
         Integer, nullable=False, default=4, server_default="4"
     )
 
+    retirement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     retired_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

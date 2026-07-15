@@ -96,6 +96,7 @@ celery_app.conf.update(
         "app.workers.ml_health.publish_ml_backend_stats": {"queue": "default"},
         # v0.8.6 · check_ml_backends_health 历史也漏在路由表外, 同步补上避免 stale celery 队列堆积
         "app.workers.ml_health.check_ml_backends_health": {"queue": "default"},
+        "app.workers.ml_health.repair_gpu_arbiter_resources": {"queue": "default"},
     },
     # v0.7.0：beat schedule。运维侧需 deploy `celery -A app.workers.celery_app beat` 进程
     # （或 worker --beat 单进程模式）才会触发。
@@ -147,6 +148,7 @@ celery_app.conf.update(
         "check-ml-backends-health": {
             "task": "app.workers.ml_health.check_ml_backends_health",
             "schedule": crontab(minute="*"),
+            "options": {"expires": 55},
         },
         # v0.9.11 PerfHud · ML Backend 实时统计推送：每 1s 拉所有 active backend /health → publish 到
         # ml-backend-stats:global. 仅在 WS 订阅者计数 > 0 时执行实拉, 0 订阅者时短路 skip 节省 GPU 成本.

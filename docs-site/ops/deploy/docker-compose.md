@@ -509,7 +509,12 @@ GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physic
 的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
 快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
 绝不拒绝、排队或驱逐业务请求。`enforce` 仍需 Redis 账本与 lifecycle gate
-握手；未就绪时 effective 保持 `off` 并显示 blocker，不会静默降级为 observe。
+握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本并恢复
+prepared 中间态，但不会签发 token、切换 backend gate 或接入 admission。未完成这些后续握手时 effective
+保持 `off` 并显示 blocker，不会静默降级为 observe。`off/observe` 不创建或修复仲裁 Redis key。
+当前 PostgreSQL 与 worker 共用应用数据库角色时，tombstone completion receipt 属于受信 worker 的跨存储声明；
+正式启用 `enforce` 前应将 collector 收缩为独立受限角色/过程，并撤销普通应用角色对
+`gpu_backend_memberships` 的直接 DELETE，或在安全评审中明确接受同角色 worker 为完全受信边界。
 管理诊断只使用 `connected` 且 3 分钟内成功探测的 CPU / GPU 身份快照；
 URL 改动、探测失败或快照过期后都按 unknown 保守报告，不会用旧 CPU/UUID 证据跳过 claim blocker。
 

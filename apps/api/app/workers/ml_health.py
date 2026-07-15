@@ -14,11 +14,14 @@ v0.9.11 PerfHud · 新增 publish_ml_backend_stats: 每 1s 把所有 is_active=t
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import hashlib
 import json
 import logging
 import random
+import secrets
 from datetime import datetime, timezone
+from time import perf_counter
 from urllib.parse import urlparse
 
 import redis as redis_sync
@@ -29,14 +32,36 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.config import settings
+from app.config import GPUArbiterMode, settings
+from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
+from app.services.gpu_arbiter import (
+    collect_gpu_backend_tombstone,
+    effective_gpu_arbiter_mode,
+    observe_gpu_resource_runtime,
+    probe_retired_gpu_membership,
+    repair_gpu_resource,
+)
+from app.services.gpu_arbiter_store import GPUArbiterStore, GPUBackendDomainMember
 from app.services.ml_backend import MLBackendService
 from app.workers._db import task_session
 from app.services.ml_client import MLBackendClient
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
+
+_HEALTH_TASK_LOCK_KEY = "celery-lock:check-ml-backends-health"
+_PERIODIC_HEALTH_TASK_LOCK_SECONDS = 720
+_MANUAL_REPAIR_TASK_LOCK_SECONDS = 90
+_GPU_REPAIR_MAX_CONCURRENCY = 4
+_GPU_REPAIR_BATCH_TIMEOUT_SECONDS = 50
+_GPU_REPAIR_WORK_BUDGET_SECONDS = 45
+_RELEASE_TASK_LOCK_LUA = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
 
 _PERFHUD_META_KEYS = (
     "gpu_info",
@@ -150,13 +175,325 @@ def _group_backend_rows(
     return list(grouped.values())
 
 
-@celery_app.task(name="app.workers.ml_health.check_ml_backends_health")
+def _run_with_health_task_lock(operation, *, lock_seconds: int) -> dict:
+    owner = secrets.token_hex(32)
+    redis = redis_sync.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
+    try:
+        acquired = redis.set(
+            _HEALTH_TASK_LOCK_KEY,
+            owner,
+            nx=True,
+            ex=lock_seconds,
+        )
+    except Exception as exc:  # noqa: BLE001 - fail closed on lock uncertainty
+        log.warning("ml_health_task_lock_failed: %s", exc)
+        redis.close()
+        return {"skipped": True, "reason": "health_task_lock_unavailable"}
+    if not acquired:
+        redis.close()
+        return {"skipped": True, "reason": "health_task_already_running"}
+    try:
+        return asyncio.run(operation())
+    finally:
+        try:
+            redis.eval(_RELEASE_TASK_LOCK_LUA, 1, _HEALTH_TASK_LOCK_KEY, owner)
+        except Exception as exc:  # noqa: BLE001 - TTL remains the crash fallback
+            log.warning("ml_health_task_lock_release_failed: %s", exc)
+        redis.close()
+
+
+@celery_app.task(
+    name="app.workers.ml_health.check_ml_backends_health",
+    soft_time_limit=650,
+    time_limit=680,
+)
 def check_ml_backends_health() -> dict:
-    return asyncio.run(_run_async())
+    return _run_with_health_task_lock(
+        _run_async,
+        lock_seconds=_PERIODIC_HEALTH_TASK_LOCK_SECONDS,
+    )
 
 
 async def _run_async() -> dict:
-    return await check_all_backends()
+    health = await check_all_backends()
+    health["gpu_arbiter"] = await _repair_gpu_arbiter_resources()
+    return health
+
+
+@celery_app.task(
+    name="app.workers.ml_health.repair_gpu_arbiter_resources",
+    soft_time_limit=65,
+    time_limit=75,
+)
+def repair_gpu_arbiter_resources() -> dict:
+    """Run the same post-health repair loop on demand."""
+
+    return _run_with_health_task_lock(
+        _repair_gpu_arbiter_resources,
+        lock_seconds=_MANUAL_REPAIR_TASK_LOCK_SECONDS,
+    )
+
+
+async def _resource_memberships(
+    factory: async_sessionmaker[AsyncSession], resource_id: str
+) -> tuple[GPUBackendMembership, ...]:
+    async with factory() as db:
+        return tuple(
+            (
+                await db.execute(
+                    select(GPUBackendMembership)
+                    .where(GPUBackendMembership.gpu_resource_id == resource_id)
+                    .order_by(GPUBackendMembership.backend_registry_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+
+def _worker_domain(
+    memberships: tuple[GPUBackendMembership, ...],
+) -> tuple[GPUBackendDomainMember, ...]:
+    return tuple(
+        GPUBackendDomainMember(
+            backend_id=str(item.backend_registry_id),
+            membership_epoch=item.membership_epoch,
+            state=item.state,  # type: ignore[arg-type]
+        )
+        for item in memberships
+    )
+
+
+def _collection_document(result) -> dict:
+    return {
+        "backend_id": str(result.backend_id),
+        "resource_id": result.resource_id,
+        "membership_epoch": result.membership_epoch,
+        "status": result.status,
+        "reason": result.reason,
+        "redis_idempotent": result.redis_idempotent,
+    }
+
+
+async def _repair_one_gpu_resource(
+    factory: async_sessionmaker[AsyncSession],
+    store: GPUArbiterStore,
+    resource_id: str,
+    allocatable_mb: int,
+) -> dict:
+    started = perf_counter()
+    collections: list[dict] = []
+
+    # Complete Redis-collected/DB-pending receipts before a reset can legally
+    # reintroduce the still-durable tombstone into the closed domain.
+    memberships = await _resource_memberships(factory, resource_id)
+    for membership in memberships:
+        if membership.state != "retiring":
+            continue
+        finalized = await collect_gpu_backend_tombstone(
+            factory,
+            store,
+            membership.backend_registry_id,
+            resource_id,
+            membership.membership_epoch,
+            proof=None,
+        )
+        if finalized.status == "collected":
+            collections.append(_collection_document(finalized))
+
+    repair = await repair_gpu_resource(
+        factory,
+        store,
+        resource_id,
+        allocatable_mb,
+    )
+
+    memberships = await _resource_memberships(factory, resource_id)
+    collected_now = False
+    for membership in memberships:
+        if membership.state != "retiring":
+            continue
+        probe = await probe_retired_gpu_membership(
+            factory,
+            membership.backend_registry_id,
+            resource_id,
+            membership.membership_epoch,
+        )
+        if probe.proof is None:
+            collections.append(
+                {
+                    "backend_id": str(membership.backend_registry_id),
+                    "resource_id": resource_id,
+                    "membership_epoch": membership.membership_epoch,
+                    "status": "blocked",
+                    "reason": probe.reason,
+                    "redis_idempotent": False,
+                }
+            )
+            continue
+        collected = await collect_gpu_backend_tombstone(
+            factory,
+            store,
+            membership.backend_registry_id,
+            resource_id,
+            membership.membership_epoch,
+            proof=probe.proof,
+        )
+        collections.append(_collection_document(collected))
+        collected_now = collected_now or collected.status == "collected"
+
+    if collected_now:
+        repair = await repair_gpu_resource(
+            factory,
+            store,
+            resource_id,
+            allocatable_mb,
+        )
+
+    memberships = await _resource_memberships(factory, resource_id)
+    observation = await observe_gpu_resource_runtime(
+        store,
+        resource_id,
+        _worker_domain(memberships),
+    )
+    result = {
+        "resource_id": resource_id,
+        "desired_mode": "enforce",
+        "effective_mode": effective_gpu_arbiter_mode(resource_id).value,
+        "action": repair.action,
+        "status": repair.status,
+        "ready": repair.ready,
+        "reason": repair.reason,
+        "ledger_revision": repair.ledger_revision,
+        "ledger_incarnation": repair.ledger_incarnation,
+        "committed_mb": repair.committed_mb,
+        "collections": collections,
+        "observation": asdict(observation),
+        "duration_ms": round((perf_counter() - started) * 1000),
+    }
+    log.info(
+        "gpu_arbiter_resource_repair: %s",
+        json.dumps(result, sort_keys=True, separators=(",", ":")),
+    )
+    return result
+
+
+async def _repair_gpu_arbiter_resources() -> dict:
+    """Repair desired-enforce cards after a complete health scan.
+
+    Off/observe are strict no-Redis modes.  Each invocation owns its async engine
+    and Redis client so repeated Celery ``asyncio.run`` loops never share sockets.
+    """
+
+    if settings.gpu_arbiter_config_errors:
+        return {
+            "skipped": True,
+            "reason": "gpu_resources_config_invalid",
+            "resources": [],
+        }
+    resources = [
+        (resource_id, resource)
+        for resource_id, resource in sorted(settings.gpu_arbiter_resources.items())
+        if settings.gpu_arbiter_desired_mode(resource_id) is GPUArbiterMode.ENFORCE
+    ]
+    if not resources:
+        return {
+            "skipped": True,
+            "reason": "no_desired_enforce_resources",
+            "resources": [],
+        }
+
+    engine = create_async_engine(settings.database_url, echo=False)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    store = GPUArbiterStore.from_url(settings.redis_url)
+    semaphore = asyncio.Semaphore(_GPU_REPAIR_MAX_CONCURRENCY)
+    repair_waves = max(
+        1,
+        (len(resources) + _GPU_REPAIR_MAX_CONCURRENCY - 1)
+        // _GPU_REPAIR_MAX_CONCURRENCY,
+    )
+    per_resource_timeout_seconds = min(
+        30.0,
+        _GPU_REPAIR_WORK_BUDGET_SECONDS / repair_waves,
+    )
+
+    def failure_result(resource_id: str, reason: str, started: float) -> dict:
+        return {
+            "resource_id": resource_id,
+            "desired_mode": "enforce",
+            "effective_mode": effective_gpu_arbiter_mode(resource_id).value,
+            "action": "error",
+            "status": "unavailable",
+            "ready": False,
+            "reason": reason[:256],
+            "ledger_revision": None,
+            "ledger_incarnation": None,
+            "committed_mb": None,
+            "collections": [],
+            "observation": None,
+            "duration_ms": round((perf_counter() - started) * 1000),
+        }
+
+    async def run_one(resource_id: str, allocatable_mb: int) -> dict:
+        async with semaphore:
+            started = perf_counter()
+            try:
+                async with asyncio.timeout(per_resource_timeout_seconds):
+                    return await _repair_one_gpu_resource(
+                        factory,
+                        store,
+                        resource_id,
+                        allocatable_mb,
+                    )
+            except Exception as exc:  # noqa: BLE001 - isolate physical resources
+                result = failure_result(
+                    resource_id,
+                    str(exc) or type(exc).__name__,
+                    started,
+                )
+                log.warning(
+                    "gpu_arbiter_resource_repair_failed: %s",
+                    json.dumps(result, sort_keys=True, separators=(",", ":")),
+                )
+                return result
+
+    try:
+        tasks = {
+            asyncio.create_task(run_one(resource_id, resource.allocatable_mb)): (
+                resource_id,
+                perf_counter(),
+            )
+            for resource_id, resource in resources
+        }
+        done, pending = await asyncio.wait(
+            tasks,
+            timeout=_GPU_REPAIR_BATCH_TIMEOUT_SECONDS,
+        )
+        results_by_resource = {tasks[task][0]: task.result() for task in done}
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        for task in pending:
+            resource_id, started = tasks[task]
+            results_by_resource[resource_id] = failure_result(
+                resource_id,
+                "gpu_arbiter_repair_batch_timeout",
+                started,
+            )
+        results = [results_by_resource[resource_id] for resource_id, _ in resources]
+    finally:
+        try:
+            await store.aclose()
+        except Exception as exc:  # noqa: BLE001 - task result remains useful
+            log.warning("gpu_arbiter_store_close_failed: %s", exc)
+        await engine.dispose()
+    return {"skipped": False, "resources": results}
 
 
 @celery_app.task(name="app.workers.ml_health.publish_ml_backend_stats")

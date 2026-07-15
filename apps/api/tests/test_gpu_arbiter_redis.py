@@ -2476,9 +2476,7 @@ async def test_proof_reset_validates_cas_domain_and_evidence_deadline(
             "proof_reset_domain_changed",
         )
         assert await raw.hgetall(keys.card) == prepared_card
-        with pytest.raises(
-            ValueError, match="unknown allocations cannot be evictable"
-        ):
+        with pytest.raises(ValueError, match="unknown allocations cannot be evictable"):
             await first.commit_proof_reset(
                 resource_id,
                 100,
@@ -2746,12 +2744,15 @@ async def test_proof_reset_cleans_closed_domain_and_latches_overcommit(
         )
         assert committed.ready is False
         assert await raw.exists(keys.queue, keys.transition) == 0
-        assert await raw.exists(
-            keys.leases("backend-a"),
-            keys.backend_queue("backend-a"),
-            keys.leases("backend-b"),
-            keys.backend_queue("backend-b"),
-        ) == 0
+        assert (
+            await raw.exists(
+                keys.leases("backend-a"),
+                keys.backend_queue("backend-a"),
+                keys.leases("backend-b"),
+                keys.backend_queue("backend-b"),
+            )
+            == 0
+        )
         snapshot = await first.snapshot(resource_id)
         assert snapshot.backend_ids == ("backend-a", "backend-b")
         assert snapshot.active_backend_ids == ("backend-a",)
@@ -5219,3 +5220,229 @@ async def test_failed_close_is_bounded_and_can_be_retried(monkeypatch) -> None:
     await store.aclose()
     with pytest.raises(GPUArbiterStoreError, match="store is closed"):
         await store.ping()
+
+
+@pytest.mark.asyncio
+async def test_retiring_collection_shrinks_exact_domain_and_receipt_replays(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-gc/GPU-exact"
+    memberships = (
+        GPUBackendDomainMember("backend-active", 1, "active"),
+        GPUBackendDomainMember("backend-retiring", 2, "retiring"),
+    )
+    prepared = await first.begin_proof_reset(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=memberships,
+        reset_id="gc-bootstrap",
+    )
+    assert prepared.status == "prepared"
+    context = await first.prepared_proof_reset(resource_id)
+    assert context is not None
+    committed = await first.commit_proof_reset(
+        resource_id,
+        100,
+        reset_id=context.reset_id,
+        expected_reset_revision=context.ledger_revision,
+        expected_reset_incarnation=context.ledger_incarnation,
+        backend_memberships=memberships,
+        allocations=(
+            _reconcile_allocation(
+                backend_id="backend-active",
+                generation=None,
+                budget_mb=40,
+                last_used_at_ms=1,
+            ),
+            _reconcile_allocation(
+                backend_id="backend-retiring",
+                generation=None,
+                budget_mb=60,
+                last_used_at_ms=1,
+            ),
+        ),
+        ready=False,
+        evidence_deadline_ms=0,
+        proof_fingerprint="1" * 64,
+    )
+    assert committed.status == "not_ready"
+    before = await first.snapshot(resource_id)
+    evidence_deadline_ms = int(time.time() * 1000) + 120_000
+    retirement_id = str(uuid.uuid4())
+
+    # A target ticket hidden under a sibling queue must block collection even
+    # when all queue-count mirrors are internally consistent.
+    keys = first.keys(resource_id)
+    sibling_queue = keys.backend_queue("backend-active")
+    await first._redis.rpush(
+        sibling_queue,
+        json.dumps(
+            {
+                "kind": "backend",
+                "ticket_id": "hidden-retiring-ticket",
+                "owner_id": "owner-hidden",
+                "backend_id": "backend-retiring",
+                "membership_epoch": "2",
+                "enqueued_at_ms": 1,
+                "expires_at_ms": evidence_deadline_ms,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
+    await first._redis.hset(
+        keys.card,
+        "backend_queue_counts",
+        json.dumps(
+            {"backend-active": 1, "backend-retiring": 0},
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
+    blocked = await first.collect_retired_backend(
+        resource_id,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=memberships,
+        backend_id="backend-retiring",
+        membership_epoch=2,
+        retirement_id=retirement_id,
+        vram_budget_mb=60,
+        evidence_deadline_ms=evidence_deadline_ms,
+        evidence_fingerprint="2" * 64,
+        collection_id="gc-exact",
+    )
+    assert blocked.status == "ledger_corrupt"
+    assert blocked.reason == "backend_queue_invalid"
+    assert await first._redis.llen(sibling_queue) == 1
+    await first._redis.delete(sibling_queue)
+    await first._redis.hset(
+        keys.card,
+        "backend_queue_counts",
+        json.dumps(
+            {"backend-active": 0, "backend-retiring": 0},
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
+
+    collection = await first.collect_retired_backend(
+        resource_id,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=memberships,
+        backend_id="backend-retiring",
+        membership_epoch=2,
+        retirement_id=retirement_id,
+        vram_budget_mb=60,
+        evidence_deadline_ms=evidence_deadline_ms,
+        evidence_fingerprint="2" * 64,
+        collection_id="gc-exact",
+    )
+
+    assert collection.status == "collected"
+    assert collection.idempotent is False
+    after = await first.snapshot(resource_id)
+    assert after.backend_ids == ("backend-active",)
+    assert after.active_backend_ids == ("backend-active",)
+    assert after.committed_mb == 40
+    assert tuple(item.backend_id for item in after.allocations) == ("backend-active",)
+    await first._redis.hincrby(keys.card, "ledger_revision", 1)
+    evolved_memberships = (
+        *memberships,
+        GPUBackendDomainMember("backend-pending", 1, "pending"),
+    )
+    receipt = await first.verify_tombstone_gc_receipt(
+        resource_id,
+        backend_memberships=evolved_memberships,
+        backend_id="backend-retiring",
+        membership_epoch=2,
+        retirement_id=retirement_id,
+    )
+    assert receipt is not None
+    assert receipt.ledger_revision == after.ledger_revision + 1
+
+    replay = await first.collect_retired_backend(
+        resource_id,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=memberships,
+        backend_id="backend-retiring",
+        membership_epoch=2,
+        retirement_id=retirement_id,
+        vram_budget_mb=60,
+        evidence_deadline_ms=evidence_deadline_ms,
+        evidence_fingerprint="2" * 64,
+        collection_id="gc-exact",
+    )
+    assert replay.status == "collected"
+    assert replay.idempotent is True
+    assert replay.ledger_revision == after.ledger_revision + 1
+
+    reset = await first.begin_proof_reset(
+        resource_id,
+        100,
+        expected_ledger_revision=replay.ledger_revision,
+        expected_ledger_incarnation=replay.ledger_incarnation,
+        backend_memberships=memberships,
+        reset_id="gc-rebootstrap",
+    )
+    assert reset.status == "prepared"
+    reset_context = await first.prepared_proof_reset(resource_id)
+    assert reset_context is not None
+    reset_commit = await first.commit_proof_reset(
+        resource_id,
+        100,
+        reset_id=reset_context.reset_id,
+        expected_reset_revision=reset_context.ledger_revision,
+        expected_reset_incarnation=reset_context.ledger_incarnation,
+        backend_memberships=memberships,
+        allocations=(
+            _reconcile_allocation(
+                backend_id="backend-active",
+                generation=None,
+                budget_mb=40,
+                last_used_at_ms=2,
+            ),
+            _reconcile_allocation(
+                backend_id="backend-retiring",
+                generation=None,
+                budget_mb=60,
+                last_used_at_ms=2,
+            ),
+        ),
+        ready=False,
+        evidence_deadline_ms=0,
+        proof_fingerprint="3" * 64,
+    )
+    assert reset_commit.status == "not_ready"
+    reset_snapshot = await first.snapshot(resource_id)
+    assert reset_snapshot.ledger_incarnation != replay.ledger_incarnation
+
+    recollected = await first.collect_retired_backend(
+        resource_id,
+        expected_ledger_revision=reset_snapshot.ledger_revision,
+        expected_ledger_incarnation=reset_snapshot.ledger_incarnation,
+        backend_memberships=memberships,
+        backend_id="backend-retiring",
+        membership_epoch=2,
+        retirement_id=retirement_id,
+        vram_budget_mb=60,
+        evidence_deadline_ms=evidence_deadline_ms,
+        evidence_fingerprint="4" * 64,
+        collection_id="gc-after-reset",
+    )
+    assert recollected.status == "collected"
+    assert recollected.idempotent is False
+    refreshed_receipt = await first.verify_tombstone_gc_receipt(
+        resource_id,
+        backend_memberships=memberships,
+        backend_id="backend-retiring",
+        membership_epoch=2,
+        retirement_id=retirement_id,
+    )
+    assert refreshed_receipt is not None
+    assert refreshed_receipt.ledger_incarnation == reset_snapshot.ledger_incarnation

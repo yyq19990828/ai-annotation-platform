@@ -10,6 +10,7 @@ v0.9.6 · 加 /probe (无 DB 副作用的 health check) + /runtime-hints (前端
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import re
 import time
 from typing import Literal
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.enums import UserRole
+from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.user import User
@@ -47,12 +49,20 @@ from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
 from app.services.gpu_arbiter import (
     GPUClaimConfigurationError,
+    GPUResourceRuntimeObservation,
     GPUShadowSessionFactory,
     build_backend_gpu_config_status,
     build_resource_summaries,
     claimed_budget_by_resource,
+    disabled_gpu_resource_runtime_observation,
+    observe_gpu_resource_runtime,
     record_unregistered_gpu_shadow_dispatch,
     strict_gpu_loaded_evidence,
+)
+from app.services.gpu_arbiter_store import (
+    GPUArbiterStore,
+    GPUArbiterStoreError,
+    GPUBackendDomainMember,
 )
 from app.services.ml_backend import (
     GPUBackendManagedMutationBlocked,
@@ -355,6 +365,33 @@ async def list_all_backends(
     return GlobalBackendListResponse(items=items)
 
 
+class GPUArbiterRuntimeObservationItem(BaseModel):
+    status: Literal[
+        "disabled",
+        "missing",
+        "prepared",
+        "ready",
+        "not_ready",
+        "corrupt",
+        "unavailable",
+    ]
+    reason: str
+    ready: bool
+    ledger_revision: int | None = None
+    ledger_incarnation: str | None = None
+    reconcile_deadline_ms: int | None = None
+    committed_mb: int | None = None
+    backend_count: int
+    active_backend_count: int
+    membership_state_counts: dict[str, int]
+    allocation_state_counts: dict[str, int]
+    lease_count: int | None
+    card_queue_count: int | None
+    backend_queue_count: int | None
+    transition_present: bool | None
+    durable_domain_matches: bool | None = None
+
+
 class GPUArbiterResourceItem(BaseModel):
     gpu_resource_id: str
     node_id: str
@@ -367,6 +404,7 @@ class GPUArbiterResourceItem(BaseModel):
     claimed_backend_count: int
     status: Literal["ok", "info", "warning", "critical", "blocker"]
     diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)
+    runtime: GPUArbiterRuntimeObservationItem
 
 
 class GPUArbiterResourcesResponse(BaseModel):
@@ -385,10 +423,91 @@ async def list_gpu_resources(
 ) -> GPUArbiterResourcesResponse:
     """Return typed physical resources and static claim diagnostics; no side effects."""
 
-    backends = list(
-        (await db.execute(select(MLBackendRegistry))).scalars().all()
+    backends = list((await db.execute(select(MLBackendRegistry))).scalars().all())
+    memberships = list(
+        (
+            await db.execute(
+                select(GPUBackendMembership).order_by(
+                    GPUBackendMembership.gpu_resource_id,
+                    GPUBackendMembership.backend_registry_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
+    domain_by_resource: dict[str, tuple[GPUBackendDomainMember, ...]] = {}
+    for membership in memberships:
+        domain_by_resource.setdefault(membership.gpu_resource_id, ())
+        domain_by_resource[membership.gpu_resource_id] += (
+            GPUBackendDomainMember(
+                backend_id=str(membership.backend_registry_id),
+                membership_epoch=membership.membership_epoch,
+                state=membership.state,  # type: ignore[arg-type]
+            ),
+        )
     resources, diagnostics = build_resource_summaries(backends)
+    # Release the read transaction after materializing all ORM data and before any
+    # Redis I/O. The dependency keeps the session object alive until serialization,
+    # but no DB connection is held while a slow or corrupt card is observed.
+    await db.rollback()
+    store: GPUArbiterStore | None = None
+    try:
+        enforce_items = [
+            item for item in resources if item["desired_mode"] == "enforce"
+        ]
+        if enforce_items:
+            store = GPUArbiterStore.from_url(settings.redis_url)
+        observation_semaphore = asyncio.Semaphore(4)
+
+        async def observe_one(item: dict) -> tuple[dict, GPUResourceRuntimeObservation]:
+            resource_id = item["gpu_resource_id"]
+            durable_domain = domain_by_resource.get(resource_id, ())
+            if item["desired_mode"] == "enforce":
+                assert store is not None
+                try:
+                    async with observation_semaphore:
+                        async with asyncio.timeout(3):
+                            observation = await observe_gpu_resource_runtime(
+                                store,
+                                resource_id,
+                                durable_domain,
+                            )
+                except TimeoutError:
+                    state_counts = {"pending": 0, "active": 0, "retiring": 0}
+                    for member in durable_domain:
+                        state_counts[member.state] += 1
+                    observation = GPUResourceRuntimeObservation(
+                        status="unavailable",
+                        reason="gpu_arbiter_observation_timeout",
+                        ready=False,
+                        ledger_revision=None,
+                        ledger_incarnation=None,
+                        reconcile_deadline_ms=None,
+                        committed_mb=None,
+                        backend_count=0,
+                        active_backend_count=0,
+                        membership_state_counts=state_counts,
+                        allocation_state_counts={},
+                        lease_count=None,
+                        card_queue_count=None,
+                        backend_queue_count=None,
+                        transition_present=None,
+                        durable_domain_matches=None,
+                    )
+            else:
+                observation = disabled_gpu_resource_runtime_observation(durable_domain)
+            return item, observation
+
+        observed = await asyncio.gather(*(observe_one(item) for item in resources))
+        for item, observation in observed:
+            item["runtime"] = asdict(observation)
+    finally:
+        if store is not None:
+            try:
+                await store.aclose()
+            except GPUArbiterStoreError:
+                pass
     runtime_ready = not settings.gpu_arbiter_config_errors and all(
         item["desired_mode"] != "enforce" for item in resources
     )
@@ -416,9 +535,7 @@ async def list_gpu_resources(
     status_code=201,
     responses={
         409: {"model": MLBackendRegistryConflictResponse},
-        422: {
-            "model": GPUConfigErrorResponse | RequestValidationErrorResponse
-        },
+        422: {"model": GPUConfigErrorResponse | RequestValidationErrorResponse},
     },
 )
 async def create_registry(
@@ -458,8 +575,7 @@ async def create_registry(
                 "error_code": "gpu_config_invalid",
                 "message": str(exc),
                 "diagnostics": [
-                    diagnostic.model_dump(mode="json")
-                    for diagnostic in exc.diagnostics
+                    diagnostic.model_dump(mode="json") for diagnostic in exc.diagnostics
                 ],
             },
         ) from exc
@@ -483,9 +599,7 @@ async def create_registry(
     response_model=MLBackendOut,
     responses={
         409: {"model": MLBackendRegistryConflictResponse},
-        422: {
-            "model": GPUConfigErrorResponse | RequestValidationErrorResponse
-        },
+        422: {"model": GPUConfigErrorResponse | RequestValidationErrorResponse},
     },
 )
 async def update_registry(
@@ -507,8 +621,7 @@ async def update_registry(
                 "error_code": "gpu_config_invalid",
                 "message": str(exc),
                 "diagnostics": [
-                    diagnostic.model_dump(mode="json")
-                    for diagnostic in exc.diagnostics
+                    diagnostic.model_dump(mode="json") for diagnostic in exc.diagnostics
                 ],
             },
         ) from exc
@@ -938,9 +1051,7 @@ async def smoke_test_backend(
         # 取不到时退到数组长度.
         raw_loaded_keys = pool.get("loaded_keys")
         raw_loaded_variants = pool.get("loaded_variants")
-        loaded_keys_valid = raw_loaded_keys is None or isinstance(
-            raw_loaded_keys, list
-        )
+        loaded_keys_valid = raw_loaded_keys is None or isinstance(raw_loaded_keys, list)
         loaded_variants_valid = raw_loaded_variants is None or isinstance(
             raw_loaded_variants, list
         )
@@ -968,14 +1079,11 @@ async def smoke_test_backend(
         video_loaded_keys_valid = raw_video_loaded_keys is None or isinstance(
             raw_video_loaded_keys, list
         )
-        video_loaded_variants_valid = (
-            raw_video_loaded_variants is None
-            or isinstance(raw_video_loaded_variants, list)
+        video_loaded_variants_valid = raw_video_loaded_variants is None or isinstance(
+            raw_video_loaded_variants, list
         )
         video_loaded_keys = (
-            raw_video_loaded_keys
-            if isinstance(raw_video_loaded_keys, list)
-            else []
+            raw_video_loaded_keys if isinstance(raw_video_loaded_keys, list) else []
         )
         video_loaded_variants = (
             raw_video_loaded_variants
@@ -1077,10 +1185,7 @@ async def smoke_test_backend(
                 ok=True,
                 skipped=True,
                 loaded_variant=first_display,
-                message=(
-                    f"{occupancy}；"
-                    "为避免驱逐在用模型，未执行试启动。"
-                ),
+                message=(f"{occupancy}；为避免驱逐在用模型，未执行试启动。"),
             )
             await _audit(r)
             return r
