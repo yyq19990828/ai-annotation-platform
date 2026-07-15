@@ -10,9 +10,12 @@ import uuid
 
 import pytest
 from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
     ManagedLifecycleCapabilities,
     managed_lifecycle_capability_sha256,
+    verify_admission_token,
 )
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from redis.asyncio import Redis
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
@@ -24,6 +27,7 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_arbiter import (
+    GPUDispatchRequest,
     GPUResidentRuntimeSubjectError,
     _record_gpu_backend_token_expiry_in_transaction,
     activate_gpu_backend_membership,
@@ -34,6 +38,8 @@ from app.services.gpu_arbiter import (
     record_gpu_resident_runtime_token_expiry,
     repair_gpu_resource,
 )
+from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
+from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
 from app.services.gpu_arbiter_store import (
     GPUAllocation,
     GPUAllocationState,
@@ -1528,5 +1534,81 @@ async def test_runtime_token_horizon_revalidates_subject_before_commit(
             fence = await db.get(GPUBackendFence, backend_id)
         assert fence is not None
         assert fence.token_expiry_high_water == original_horizon
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_resident_dispatch_authority_integrates_db_redis_and_signer(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        repaired = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+        )
+        assert repaired.ready is True
+
+        private_key = Ed25519PrivateKey.generate()
+        signer = GPUAdmissionTokenSigner(
+            active_kid="test",
+            _private_key=private_key,
+        )
+        dispatch = build_gpu_dispatch_context_factory(
+            factory,
+            store_factory=lambda: GPUArbiterStore.from_url(
+                _redis_url(),
+                namespace=proof_store.namespace,
+            ),
+            signer_factory=lambda: signer,
+        )
+        request = GPUDispatchRequest(
+            backend_id=str(backend_id),
+            gpu_resource_id=_RESOURCE_A,
+            operation="predict",
+            scope=AdmissionScope.PREDICT,
+        )
+
+        async with dispatch(request) as grant:
+            claims = verify_admission_token(
+                grant.admission_token,
+                keyring={"test": private_key.public_key()},
+            )
+            assert grant.generation == claims.generation == "1"
+            assert claims.backend_registry_id == str(backend_id)
+            assert claims.gpu_resource_id == _RESOURCE_A
+            assert claims.scope is AdmissionScope.PREDICT
+            assert claims.owner is None
+            assert claims.operation is None
+            snapshot = await proof_store.snapshot(_RESOURCE_A)
+            assert tuple(item.lease_id for item in snapshot.leases) == (claims.jti,)
+            grant.report_response(200)
+
+        assert (await proof_store.snapshot(_RESOURCE_A)).leases == ()
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+        assert fence is not None
+        assert fence.generation_high_water == 1
+        assert fence.control_epoch_high_water == 1
+        assert fence.token_expiry_high_water == datetime.fromtimestamp(
+            claims.exp,
+            tz=UTC,
+        )
     finally:
         await _cleanup_backends(factory, backend_ids)
