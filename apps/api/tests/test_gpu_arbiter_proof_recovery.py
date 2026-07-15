@@ -34,6 +34,7 @@ from app.services.gpu_arbiter import (
     _record_gpu_backend_token_expiry_in_transaction,
     activate_gpu_backend_membership,
     collect_gpu_backend_tombstone,
+    commit_gpu_cold_terminal_from_health,
     commit_gpu_proof_reset_from_health,
     prepare_gpu_cold_runtime_generation,
     read_gpu_cold_runtime_subject,
@@ -327,6 +328,188 @@ async def _membership_domain(
         )
         for row in rows
     )
+
+
+async def _enable_cold_runtime_health(
+    factory: async_sessionmaker[AsyncSession],
+    backend_id: uuid.UUID,
+) -> None:
+    async with factory.begin() as db:
+        backend = await db.get(MLBackendRegistry, backend_id)
+        assert backend is not None
+        health_meta = dict(backend.health_meta)
+        residency = dict(health_meta["residency"])
+        residency["lifecycle_gate"] = "enforce"
+        health_meta["residency"] = residency
+        backend.health_meta = health_meta
+        flag_modified(backend, "health_meta")
+
+
+async def _bootstrap_cold_loading(
+    factory: async_sessionmaker[AsyncSession],
+    store: GPUArbiterStore,
+    backend_id: uuid.UUID,
+    resource_id: str,
+    *,
+    bootstrap_card: bool = True,
+) -> tuple[GPUPreparedColdRuntimeSubject, str, str]:
+    if bootstrap_card:
+        reconciled = await store.reconcile_card(
+            resource_id,
+            8192,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=await _membership_domain(factory, resource_id),
+            allocations=(),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=int(time.time() * 1000) + 120_000,
+            repair_id=f"cold-terminal-{uuid.uuid4()}",
+        )
+        assert reconciled.status == "reconciled", (
+            reconciled.status,
+            reconciled.reason,
+        )
+    async with factory() as db:
+        subject = await read_gpu_cold_runtime_subject(
+            db,
+            backend_id=str(backend_id),
+            gpu_resource_id=resource_id,
+        )
+    generation = str(subject.generation_high_water + 1)
+    lease_id = f"workload:{uuid.uuid4()}"
+    owner_id = f"dispatch:{uuid.uuid4()}"
+    acquired = await store.acquire_cold_admission_owner(
+        resource_id,
+        backend_id=str(backend_id),
+        membership_epoch=subject.membership_epoch,
+        owner_id=owner_id,
+        generation=generation,
+        ttl_ms=30_000,
+    )
+    assert acquired.status == "acquired"
+    prepared = await prepare_gpu_cold_runtime_generation(
+        factory,
+        subject,
+        token_expires_at=subject.db_now + timedelta(seconds=120),
+    )
+    assert prepared.generation == generation
+    renewed = await store.revalidate_cold_admission_owner(
+        resource_id,
+        backend_id=str(backend_id),
+        membership_epoch=subject.membership_epoch,
+        owner_id=owner_id,
+        generation=generation,
+        ttl_ms=30_000,
+    )
+    assert renewed.status == "renewed"
+    admission = await store.admit(
+        resource_id,
+        backend_id=str(backend_id),
+        membership_epoch=subject.membership_epoch,
+        budget_mb=subject.budget_mb,
+        generation=generation,
+        eviction_priority=subject.eviction_priority,
+        evictable=False,
+        max_concurrency=subject.max_concurrency,
+        lease_id=lease_id,
+        owner_id=owner_id,
+        operation="predict",
+        heartbeat_ttl_ms=15_000,
+        hard_ttl_ms=120_000,
+        require_cold_owner=True,
+    )
+    assert admission.admitted
+    loading = await store.transition_allocation(
+        resource_id,
+        backend_id=str(backend_id),
+        expected_generation=generation,
+        target_state=GPUAllocationState.LOADING,
+        request_lease_id=lease_id,
+        request_owner_id=owner_id,
+    )
+    assert loading.status == "transitioned"
+    return prepared, lease_id, owner_id
+
+
+async def _install_cold_terminal_health(
+    factory: async_sessionmaker[AsyncSession],
+    backend_id: uuid.UUID,
+    resource_id: str,
+    *,
+    challenge: str,
+    terminal: str,
+    stored_challenge: str | None = None,
+) -> None:
+    capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+    capability_sha256 = managed_lifecycle_capability_sha256(capability)
+    async with factory.begin() as db:
+        membership = await db.get(GPUBackendMembership, (backend_id, resource_id))
+        backend = await db.get(MLBackendRegistry, backend_id)
+        db_now = await db.scalar(select(text("clock_timestamp()")))
+        assert membership is not None
+        assert backend is not None
+        assert isinstance(db_now, datetime)
+        probe_started_at = db_now - timedelta(milliseconds=2)
+        observed_at = db_now - timedelta(milliseconds=1)
+        gpu_loaded = terminal in {"resident", "unknown_busy"}
+        residency_state = "unloaded" if terminal == "unloaded" else "resident"
+        pool_resident = gpu_loaded
+        residency = {
+            "state": residency_state,
+            "gpu_loaded": gpu_loaded,
+            "active_requests": 1 if terminal == "unknown_busy" else 0,
+            "builders": 0,
+            "borrowers": 0,
+            "draining": False,
+            "evictable": gpu_loaded,
+            "generation": None if terminal == "unloaded" else "1",
+            "pools": {
+                "models": {
+                    "resident": pool_resident,
+                    "device": "cuda:0" if pool_resident else "cpu",
+                    "provider": None,
+                }
+            },
+            "boot_id": f"boot-{backend_id}",
+            "lifecycle_gate": "enforce",
+            "control_epoch": "1",
+            "identity": {
+                "audience": "aap-gpu-lifecycle",
+                "backend_registry_id": str(backend_id),
+                "gpu_resource_id": resource_id,
+            },
+        }
+        cpu_fallback = terminal in {"cpu_device", "cpu_provider"}
+        compute = {
+            "configured_device": "cuda",
+            "effective_device": (
+                "cpu" if terminal in {"resident", "cpu_device"} else "cuda"
+            ),
+            "effective_provider": (
+                "CPUExecutionProvider" if terminal == "cpu_provider" else None
+            ),
+            "cpu_fallback_supported": cpu_fallback or terminal == "resident",
+        }
+        backend.state = "connected"
+        backend.last_checked_at = observed_at
+        backend.health_meta = {
+            "capabilities": {"managed_lifecycle": capability},
+            "compute": compute,
+            "gpu_arbiter_probe": {
+                "protocol_version": "1",
+                "challenge": stored_challenge or challenge,
+                "backend_registry_id": str(backend_id),
+                "gpu_resource_id": resource_id,
+                "membership_epoch": str(membership.membership_epoch),
+                "membership_state": "active",
+                "managed_lifecycle_sha256": capability_sha256,
+                "probe_started_at": _proof_timestamp(probe_started_at),
+                "observed_at": _proof_timestamp(observed_at),
+            },
+            "residency": residency,
+        }
+        flag_modified(backend, "health_meta")
 
 
 def _fake_context(
@@ -1847,6 +2030,439 @@ async def test_resident_dispatch_authority_integrates_db_redis_and_signer(
         await _cleanup_backends(factory, backend_ids)
 
 
+@pytest.mark.parametrize(
+    ("terminal", "expected_state", "expected_evictable", "expected_committed"),
+    (
+        ("resident", GPUAllocationState.RESIDENT, True, 1024),
+        ("cpu_device", GPUAllocationState.CPU_FALLBACK, False, 0),
+        ("cpu_provider", GPUAllocationState.CPU_FALLBACK, False, 0),
+        ("unloaded", GPUAllocationState.UNLOADED, False, 0),
+        ("unknown_busy", GPUAllocationState.UNKNOWN, False, 1024),
+    ),
+)
+@pytest.mark.asyncio
+async def test_cold_terminal_commit_classifies_exact_post_response_health(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+    terminal: str,
+    expected_state: GPUAllocationState,
+    expected_evictable: bool,
+    expected_committed: int,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    challenge = "a" * 64
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        await _enable_cold_runtime_health(factory, backend_id)
+        prepared, lease_id, owner_id = await _bootstrap_cold_loading(
+            factory,
+            proof_store,
+            backend_id,
+            _RESOURCE_A,
+        )
+        await _install_cold_terminal_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            terminal=terminal,
+        )
+
+        result = await commit_gpu_cold_terminal_from_health(
+            factory,
+            proof_store,
+            prepared,
+            challenge=challenge,
+            lease_id=lease_id,
+            owner_id=owner_id,
+        )
+
+        assert result.status == "finalized"
+        assert result.state is expected_state
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.committed_mb == expected_committed
+        assert snapshot.allocations[0].state is expected_state
+        assert snapshot.allocations[0].evictable is expected_evictable
+        assert snapshot.allocations[0].reservation_lease_id is None
+        assert tuple(item.lease_id for item in snapshot.leases) == (lease_id,)
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_terminal_commit_retries_exactly_after_redis_response_loss(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+    monkeypatch,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    challenge = "e" * 64
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        await _enable_cold_runtime_health(factory, backend_id)
+        prepared, lease_id, owner_id = await _bootstrap_cold_loading(
+            factory,
+            proof_store,
+            backend_id,
+            _RESOURCE_A,
+        )
+        await _install_cold_terminal_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            terminal="resident",
+        )
+        before = await proof_store.snapshot(_RESOURCE_A)
+        original_finalize = proof_store.finalize_cold_allocation
+        attempts = 0
+
+        async def lose_first_response(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            result = await original_finalize(*args, **kwargs)
+            if attempts == 1:
+                raise RuntimeError("terminal response lost")
+            return result
+
+        monkeypatch.setattr(
+            proof_store,
+            "finalize_cold_allocation",
+            lose_first_response,
+        )
+
+        result = await commit_gpu_cold_terminal_from_health(
+            factory,
+            proof_store,
+            prepared,
+            challenge=challenge,
+            lease_id=lease_id,
+            owner_id=owner_id,
+        )
+
+        assert attempts == 2
+        assert result.status == "finalized"
+        assert result.state is GPUAllocationState.RESIDENT
+        assert result.idempotent is True
+        after = await proof_store.snapshot(_RESOURCE_A)
+        assert after.ledger_revision == before.ledger_revision + 1
+        assert after.allocations[0].state is GPUAllocationState.RESIDENT
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_terminal_commit_rejects_stale_health_challenge(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    challenge = "1" * 64
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        await _enable_cold_runtime_health(factory, backend_id)
+        prepared, lease_id, owner_id = await _bootstrap_cold_loading(
+            factory,
+            proof_store,
+            backend_id,
+            _RESOURCE_A,
+        )
+        await _install_cold_terminal_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            terminal="resident",
+            stored_challenge="0" * 64,
+        )
+
+        result = await commit_gpu_cold_terminal_from_health(
+            factory,
+            proof_store,
+            prepared,
+            challenge=challenge,
+            lease_id=lease_id,
+            owner_id=owner_id,
+        )
+
+        assert result.status == "finalized"
+        assert result.state is GPUAllocationState.UNKNOWN
+        assert result.reason == "terminal_challenge_mismatch"
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.committed_mb == 1024
+        assert snapshot.allocations[0].state is GPUAllocationState.UNKNOWN
+        assert snapshot.allocations[0].evictable is False
+        assert tuple(item.lease_id for item in snapshot.leases) == (lease_id,)
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_terminal_commit_skips_redis_when_generation_advanced(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    challenge = "b" * 64
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        await _enable_cold_runtime_health(factory, backend_id)
+        prepared, lease_id, owner_id = await _bootstrap_cold_loading(
+            factory,
+            proof_store,
+            backend_id,
+            _RESOURCE_A,
+        )
+        await _install_cold_terminal_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            terminal="resident",
+        )
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            assert fence is not None
+            fence.generation_high_water = 2
+        before = await proof_store.snapshot(_RESOURCE_A)
+
+        result = await commit_gpu_cold_terminal_from_health(
+            factory,
+            proof_store,
+            prepared,
+            challenge=challenge,
+            lease_id=lease_id,
+            owner_id=owner_id,
+        )
+
+        assert result.status == "stale"
+        assert result.reason == "generation_changed"
+        after = await proof_store.snapshot(_RESOURCE_A)
+        assert after.ledger_revision == before.ledger_revision
+        assert after.allocations[0].state is GPUAllocationState.LOADING
+        assert after.allocations[0].reservation_lease_id == lease_id
+        assert tuple(item.lease_id for item in after.leases) == (lease_id,)
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_terminal_commit_preserves_same_card_resident_sibling(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(512, 1024),
+    )
+    sibling_id, target_id = backend_ids
+    challenge = "f" * 64
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({sibling_id}),
+        )
+        await _enable_cold_runtime_health(factory, target_id)
+        reconciled = await proof_store.reconcile_card(
+            _RESOURCE_A,
+            8192,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=await _membership_domain(factory, _RESOURCE_A),
+            allocations=(),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=int(time.time() * 1000) + 120_000,
+            repair_id=f"cold-terminal-sibling-{uuid.uuid4()}",
+        )
+        assert reconciled.status == "reconciled"
+        sibling_lease_id = f"workload:{uuid.uuid4()}"
+        sibling_owner_id = f"dispatch:{uuid.uuid4()}"
+        sibling_admission = await proof_store.admit(
+            _RESOURCE_A,
+            backend_id=str(sibling_id),
+            membership_epoch=1,
+            budget_mb=512,
+            generation="1",
+            eviction_priority=0,
+            evictable=False,
+            max_concurrency=4,
+            lease_id=sibling_lease_id,
+            owner_id=sibling_owner_id,
+            operation="predict",
+            heartbeat_ttl_ms=15_000,
+            hard_ttl_ms=120_000,
+        )
+        assert sibling_admission.admitted
+        for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
+            transitioned = await proof_store.transition_allocation(
+                _RESOURCE_A,
+                backend_id=str(sibling_id),
+                expected_generation="1",
+                target_state=state,
+                request_lease_id=sibling_lease_id,
+                request_owner_id=sibling_owner_id,
+            )
+            assert transitioned.status == "transitioned"
+        released = await proof_store.release_lease(
+            _RESOURCE_A,
+            backend_id=str(sibling_id),
+            lease_id=sibling_lease_id,
+            owner_id=sibling_owner_id,
+            generation="1",
+        )
+        assert released.status == "released"
+        prepared, lease_id, owner_id = await _bootstrap_cold_loading(
+            factory,
+            proof_store,
+            target_id,
+            _RESOURCE_A,
+            bootstrap_card=False,
+        )
+        await _install_cold_terminal_health(
+            factory,
+            target_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            terminal="unloaded",
+        )
+
+        result = await commit_gpu_cold_terminal_from_health(
+            factory,
+            proof_store,
+            prepared,
+            challenge=challenge,
+            lease_id=lease_id,
+            owner_id=owner_id,
+        )
+
+        assert result.state is GPUAllocationState.UNLOADED
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        allocations = {item.backend_id: item for item in snapshot.allocations}
+        assert snapshot.committed_mb == 512
+        assert allocations[str(sibling_id)].state is GPUAllocationState.RESIDENT
+        assert allocations[str(sibling_id)].generation == "1"
+        assert allocations[str(sibling_id)].evictable is False
+        assert allocations[str(target_id)].state is GPUAllocationState.UNLOADED
+        assert tuple(item.lease_id for item in snapshot.leases) == (lease_id,)
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_terminal_commit_isolated_across_cards(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory_a, backend_ids_a = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    factory_b, backend_ids_b = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_B,
+        budgets=(2048,),
+    )
+    backend_a = backend_ids_a[0]
+    backend_b = backend_ids_b[0]
+    try:
+        await _install_live_health(
+            factory_a,
+            backend_ids_a,
+            resource_id=_RESOURCE_A,
+        )
+        await _install_live_health(
+            factory_b,
+            backend_ids_b,
+            resource_id=_RESOURCE_B,
+        )
+        await _enable_cold_runtime_health(factory_a, backend_a)
+        await _enable_cold_runtime_health(factory_b, backend_b)
+        prepared_a, lease_a, owner_a = await _bootstrap_cold_loading(
+            factory_a,
+            proof_store,
+            backend_a,
+            _RESOURCE_A,
+        )
+        prepared_b, lease_b, owner_b = await _bootstrap_cold_loading(
+            factory_b,
+            proof_store,
+            backend_b,
+            _RESOURCE_B,
+        )
+        await _install_cold_terminal_health(
+            factory_a,
+            backend_a,
+            _RESOURCE_A,
+            challenge="c" * 64,
+            terminal="resident",
+        )
+        await _install_cold_terminal_health(
+            factory_b,
+            backend_b,
+            _RESOURCE_B,
+            challenge="d" * 64,
+            terminal="unloaded",
+        )
+
+        result_a, result_b = await asyncio.gather(
+            commit_gpu_cold_terminal_from_health(
+                factory_a,
+                proof_store,
+                prepared_a,
+                challenge="c" * 64,
+                lease_id=lease_a,
+                owner_id=owner_a,
+            ),
+            commit_gpu_cold_terminal_from_health(
+                factory_b,
+                proof_store,
+                prepared_b,
+                challenge="d" * 64,
+                lease_id=lease_b,
+                owner_id=owner_b,
+            ),
+        )
+
+        assert result_a.state is GPUAllocationState.RESIDENT
+        assert result_b.state is GPUAllocationState.UNLOADED
+        snapshot_a = await proof_store.snapshot(_RESOURCE_A)
+        snapshot_b = await proof_store.snapshot(_RESOURCE_B)
+        assert snapshot_a.committed_mb == 1024
+        assert snapshot_a.allocations[0].backend_id == str(backend_a)
+        assert tuple(item.lease_id for item in snapshot_a.leases) == (lease_a,)
+        assert snapshot_b.committed_mb == 0
+        assert snapshot_b.allocations[0].backend_id == str(backend_b)
+        assert tuple(item.lease_id for item in snapshot_b.leases) == (lease_b,)
+    finally:
+        await _cleanup_backends(factory_a, backend_ids_a)
+        await _cleanup_backends(factory_b, backend_ids_b)
+
+
 @pytest.mark.asyncio
 async def test_cold_dispatch_authority_integrates_generation_intent_and_reservation(
     test_engine: AsyncEngine,
@@ -1918,7 +2534,7 @@ async def test_cold_dispatch_authority_integrates_generation_intent_and_reservat
             assert snapshot.allocations[0].state is GPUAllocationState.LOADING
             assert snapshot.allocations[0].reservation_lease_id == claims.jti
             assert tuple(item.lease_id for item in snapshot.leases) == (claims.jti,)
-            grant.report_response(200)
+            grant.report_uncertain_if_missing("request_aborted")
 
         snapshot = await proof_store.snapshot(_RESOURCE_A)
         assert snapshot.allocations[0].state is GPUAllocationState.UNKNOWN

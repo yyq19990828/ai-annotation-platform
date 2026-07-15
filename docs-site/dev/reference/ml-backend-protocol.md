@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-15
 ---
 
 # ML Backend 协议契约
@@ -21,16 +21,16 @@ last_reviewed: 2026-07-14
 
 ## 全局注册表与项目启用
 
-ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。当前实际并发闸仍是各 API / Celery 进程自己的本地 semaphore，并非跨进程全局上限；[ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 已冻结后续以 Redis request lease 执行全局上限的设计，但该能力尚未实现。两层职责：
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。effective `off/observe` 仍由各 API / Celery 进程的本地 semaphore 限流；effective `enforce` authority 则已按 [ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 使用 Redis request lease 执行跨进程上限。生产 effective enforce 仍保持关闭，因此当前生产请求仍只受本地闸限制。两层职责：
 
 - **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
 - **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
 
-**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 目前只为各进程本地 semaphore 提供同一配置值，能减少单进程压力，但 API 与多个 Celery worker 的并发仍会叠加。后续显存仲裁阶段将由 Redis request lease 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
+**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 同时作为本地 semaphore 配置与 enforce Redis lease 上限。off/observe 下 API 与多个 Celery worker 的并发仍会叠加；enforce 下才由 Redis 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
 平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
 
-GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威 authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，不能单独提交 allocation 终态。平台 signer 与 legacy membership promotion 已接入 desired-enforce 周期修复，但它们只建立 post-horizon ready 证明，不会开启业务权威。Redis admission lease、业务 token 和 enforce gate promotion 尚未接通，effective enforce 继续保持关闭。
+GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威 authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，不能单独提交 allocation 终态。平台 signer、membership promotion、Redis admission lease、业务 token、Resident 快路与 cold admission 均已接入 authority。cold 请求收到完整响应后会用新 challenge 探测，并在逐资源持久锁内把 Loading 分类为 Resident、CPU fallback、Unloaded 或保守 Unknown；无完整响应时不发探测，只收口 Unknown。victim 选择、驱逐编排与入场门禁尚未完成，effective enforce 继续保持关闭。
 
 派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
 
@@ -81,7 +81,7 @@ base URL 由超级管理员在「模型市场 → 注册管理」录入；项目
 
 ### 1.1 GPU 仲裁实时健康挑战
 
-绑定了 `gpu_resource_id` 的 backend 在平台周期探活时会收到同一个随机 challenge：
+绑定了 `gpu_resource_id` 的 backend 在平台周期探活、以及 cold 派发收到完整 HTTP 响应后的立即探活中，会收到同一个随机 challenge：
 
 - Header：`X-AAP-GPU-Health-Challenge`
 - Query：`aap_gpu_health_challenge`
@@ -102,8 +102,7 @@ PostgreSQL `clock_timestamp()` 分别记录网络请求开始前的 `probe_start
 时间或 `observed_at < probe_started_at` 时同样 fail-closed。
 
 `gpu_arbiter_probe` 只是实时证据候选，不单独授权减记显存或重置 Redis 账本。消费方还必须重新读取当前
-membership/fence，严格要求 `probe_started_at > token_expiry_high_water`，校验证据时效与完整 residency，
-并把最终核验和账本提交放在同一个受保护的恢复流程中。退役记录中的历史 health 只能用于诊断。
+membership/fence，校验证据时效与完整 residency，并把最终核验和账本提交放在同一个受保护的流程中。周期 proof reset 额外要求 `probe_started_at > token_expiry_high_water`；cold 响应后终态对账则以「challenge 在完整响应后才生成」绑定该次调用，并要求 durable generation 仍与 prepared generation 精确相等。退役记录中的历史 health 只能用于诊断。
 
 ### 1.2 `compute` 计算设备观测
 

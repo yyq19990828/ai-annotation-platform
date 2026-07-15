@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -370,7 +371,19 @@ class MLBackendService:
             dispatch_context_factory=self.dispatch_context_factory,
         ).warmup(body)
 
-    async def check_health(self, registry_id: uuid.UUID) -> bool:
+    async def check_health(
+        self,
+        registry_id: uuid.UUID,
+        *,
+        gpu_health_challenge: str | None = None,
+    ) -> bool:
+        if gpu_health_challenge is not None and (
+            not isinstance(gpu_health_challenge, str)
+            or re.fullmatch(r"[0-9a-f]{64}", gpu_health_challenge) is None
+        ):
+            raise ValueError(
+                "gpu_health_challenge must be 64 lowercase hexadecimal characters"
+            )
         backend = await self.get(registry_id)
         if not backend:
             return False
@@ -380,7 +393,6 @@ class MLBackendService:
         requested_gpu_resource_id = backend.gpu_resource_id
         requested_membership_epoch: int | None = None
         requested_membership_state: str | None = None
-        gpu_health_challenge: str | None = None
         probe_started_at: datetime | None = None
         if requested_gpu_resource_id is not None:
             requested_membership = (
@@ -400,10 +412,12 @@ class MLBackendService:
                 return False
             requested_membership_epoch = requested_membership.membership_epoch
             requested_membership_state = requested_membership.state
-            gpu_health_challenge = secrets.token_hex(32)
+            gpu_health_challenge = gpu_health_challenge or secrets.token_hex(32)
             probe_started_at = await self.db.scalar(select(func.clock_timestamp()))
             if probe_started_at is None:
                 return False
+        elif gpu_health_challenge is not None:
+            raise ValueError("gpu_health_challenge requires a GPU backend membership")
         client = MLBackendClient(backend)
         # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到全局注册行
         if gpu_health_challenge is None:

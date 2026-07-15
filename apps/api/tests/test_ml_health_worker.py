@@ -342,16 +342,22 @@ async def test_gpu_check_health_persists_challenge_bound_probe(
         raising=True,
     )
 
-    assert await MLBackendService(db_session).check_health(backend.id) is True
+    expected_challenge = "a" * 64
+    assert (
+        await MLBackendService(db_session).check_health(
+            backend.id,
+            gpu_health_challenge=expected_challenge,
+        )
+        is True
+    )
     fresh = await MLBackendService(db_session).get(backend.id)
     assert fresh is not None
     assert fresh.state == "connected"
     assert fresh.health_meta is not None
     assert GPU_HEALTH_CHALLENGE_ECHO_MARKER not in fresh.health_meta
     proof = fresh.health_meta["gpu_arbiter_probe"]
-    assert captured_challenge is not None
-    assert len(captured_challenge) == 64
-    assert set(captured_challenge) <= set("0123456789abcdef")
+    assert captured_challenge == expected_challenge
+    assert proof["challenge"] == expected_challenge
     assert set(proof) == {
         "protocol_version",
         "challenge",

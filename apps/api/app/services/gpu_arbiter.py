@@ -701,6 +701,16 @@ class GPUPreparedColdRuntimeSubject:
     db_now: datetime
 
 
+@dataclass(frozen=True)
+class GPUColdTerminalCommitResult:
+    """Result of classifying and committing one exposed cold generation."""
+
+    status: Literal["finalized", "stale", "rejected"]
+    state: GPUAllocationState
+    reason: str
+    idempotent: bool = False
+
+
 _GPU_PROBE_KEYS = frozenset(
     {
         "protocol_version",
@@ -1639,6 +1649,263 @@ async def _lock_gpu_resource_proof_domain(
         registries={item.id: item for item in registries},
         db_now=db_now,
     )
+
+
+def _cold_terminal_durable_reason(
+    membership: GPUBackendMembership,
+    fence: GPUBackendFence,
+    registry: MLBackendRegistry,
+    expected_subject: GPUPreparedColdRuntimeSubject,
+) -> str | None:
+    try:
+        generation = _strict_nonnegative_int64(
+            fence.generation_high_water,
+            reason="generation_high_water_invalid",
+        )
+        control_epoch = _strict_nonnegative_int64(
+            fence.control_epoch_high_water,
+            reason="control_epoch_high_water_invalid",
+        )
+        runtime_epoch = _strict_nonnegative_int64(
+            fence.runtime_epoch_high_water,
+            reason="runtime_epoch_high_water_invalid",
+        )
+    except _GPUProofInvalid as exc:
+        return exc.reason
+    if (
+        membership.state != "active"
+        or membership.backend_registry_id != expected_subject.backend_registry_id
+        or membership.gpu_resource_id != expected_subject.gpu_resource_id
+        or membership.membership_epoch != expected_subject.membership_epoch
+        or membership.vram_budget_mb != expected_subject.budget_mb
+        or membership.eviction_priority != expected_subject.eviction_priority
+        or membership.max_concurrency != expected_subject.max_concurrency
+    ):
+        return "membership_changed"
+    if generation != int(expected_subject.generation):
+        return "generation_changed"
+    if control_epoch != int(expected_subject.control_epoch):
+        return "control_epoch_changed"
+    if runtime_epoch != int(expected_subject.runtime_epoch):
+        return "runtime_epoch_changed"
+    horizon = fence.token_expiry_high_water
+    if (
+        horizon is None
+        or horizon.tzinfo is None
+        or horizon.utcoffset() is None
+        or horizon.astimezone(UTC) < expected_subject.token_expires_at.astimezone(UTC)
+    ):
+        return "token_horizon_changed"
+    if (
+        registry.gpu_resource_id != expected_subject.gpu_resource_id
+        or registry.vram_budget_mb != expected_subject.budget_mb
+        or registry.eviction_priority != expected_subject.eviction_priority
+        or _registry_gpu_max_concurrency(registry.extra_params)
+        != expected_subject.max_concurrency
+    ):
+        return "registry_claim_changed"
+    return None
+
+
+def _cold_terminal_cpu_fallback(raw_health: dict[str, Any]) -> bool:
+    compute = raw_health.get("compute")
+    if type(compute) is not dict or compute.get("cpu_fallback_supported") is not True:
+        return False
+    effective_device = compute.get("effective_device")
+    effective_provider = compute.get("effective_provider")
+    return (
+        type(effective_device) is str and effective_device.strip().lower() == "cpu"
+    ) or (
+        type(effective_provider) is str
+        and effective_provider.strip().lower() == "cpuexecutionprovider"
+    )
+
+
+def _classify_gpu_cold_terminal(
+    membership: GPUBackendMembership,
+    registry: MLBackendRegistry,
+    expected_subject: GPUPreparedColdRuntimeSubject,
+    *,
+    challenge: str,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> tuple[GPUAllocationState, str]:
+    if registry.state != "connected" or type(registry.health_meta) is not dict:
+        raise _GPUProofInvalid("terminal_health_unavailable")
+    raw_health = registry.health_meta
+    probe = _parse_gpu_proof_probe(raw_health.get("gpu_arbiter_probe"))
+    if probe.raw["challenge"] != challenge:
+        raise _GPUProofInvalid("terminal_challenge_mismatch")
+    capability_sha256 = _health_managed_lifecycle_sha256(raw_health)
+    if (
+        capability_sha256 is None
+        or probe.managed_lifecycle_sha256 is None
+        or capability_sha256 != probe.managed_lifecycle_sha256
+    ):
+        raise _GPUProofInvalid("managed_lifecycle_capability_mismatch")
+    if (
+        probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
+        or probe.raw["gpu_resource_id"] != membership.gpu_resource_id
+        or probe.raw["membership_epoch"] != str(membership.membership_epoch)
+        or probe.raw["membership_state"] != "active"
+    ):
+        raise _GPUProofInvalid("probe_membership_mismatch")
+    if (
+        registry.last_checked_at is None
+        or registry.last_checked_at.tzinfo is None
+        or registry.last_checked_at.utcoffset() is None
+        or registry.last_checked_at.astimezone(UTC) != probe.observed_at
+    ):
+        raise _GPUProofInvalid("probe_registry_clock_mismatch")
+    db_now_utc = db_now.astimezone(UTC)
+    if probe.observed_at > db_now_utc:
+        raise _GPUProofInvalid("probe_from_future")
+    if db_now_utc - probe.observed_at > evidence_ttl:
+        raise _GPUProofInvalid("probe_expired")
+
+    residency = _parse_gpu_proof_residency(raw_health.get("residency"))
+    identity = residency.identity
+    if (
+        residency.lifecycle_gate != "enforce"
+        or residency.boot_id != expected_subject.boot_id
+        or residency.control_epoch != expected_subject.control_epoch
+        or identity is None
+        or identity["backend_registry_id"] != str(expected_subject.backend_registry_id)
+        or identity["gpu_resource_id"] != expected_subject.gpu_resource_id
+        or residency.active_requests != 0
+        or residency.builders != 0
+        or residency.borrowers != 0
+        or residency.draining
+    ):
+        raise _GPUProofInvalid("terminal_residency_identity_mismatch")
+
+    if (
+        residency.state == "resident"
+        and residency.gpu_loaded is True
+        and residency.evictable
+        and residency.generation == expected_subject.generation
+        and all(item is not None for item in residency.pool_residencies)
+        and any(item is True for item in residency.pool_residencies)
+    ):
+        return GPUAllocationState.RESIDENT, "resident"
+    if (
+        residency.state == "resident"
+        and residency.gpu_loaded is False
+        and not residency.evictable
+        and residency.generation == expected_subject.generation
+        and all(item is False for item in residency.pool_residencies)
+        and _cold_terminal_cpu_fallback(raw_health)
+    ):
+        return GPUAllocationState.CPU_FALLBACK, "cpu_fallback"
+    if (
+        residency.state == "unloaded"
+        and residency.gpu_loaded is False
+        and not residency.evictable
+        and all(item is False for item in residency.pool_residencies)
+        and (
+            residency.generation is None
+            or int(residency.generation) <= int(expected_subject.generation)
+        )
+    ):
+        return GPUAllocationState.UNLOADED, "unloaded"
+    raise _GPUProofInvalid("terminal_residency_unknown")
+
+
+async def commit_gpu_cold_terminal_from_health(
+    session_factory: GPUFenceSessionFactory,
+    store: GPUArbiterStore,
+    expected_subject: GPUPreparedColdRuntimeSubject,
+    *,
+    challenge: str | None,
+    lease_id: str,
+    owner_id: str,
+    evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+) -> GPUColdTerminalCommitResult:
+    """Commit one exposed cold terminal; no response proof forces Unknown."""
+
+    if challenge is not None and _GPU_HEALTH_CHALLENGE_RE.fullmatch(challenge) is None:
+        raise ValueError("challenge must be 64 lowercase hexadecimal characters")
+    _validate_runtime_subject_evidence_ttl(evidence_ttl)
+    async with session_factory() as db:
+        async with db.begin():
+            locked = await _lock_gpu_resource_proof_domain(
+                db,
+                expected_subject.gpu_resource_id,
+            )
+            membership = next(
+                (
+                    item
+                    for item in locked.memberships
+                    if item.backend_registry_id == expected_subject.backend_registry_id
+                    and item.membership_epoch == expected_subject.membership_epoch
+                    and item.state == "active"
+                ),
+                None,
+            )
+            fence = locked.fences.get(expected_subject.backend_registry_id)
+            registry = locked.registries.get(expected_subject.backend_registry_id)
+            if membership is None or fence is None or registry is None:
+                return GPUColdTerminalCommitResult(
+                    status="stale",
+                    state=GPUAllocationState.UNKNOWN,
+                    reason="runtime_subject_missing",
+                )
+            durable_reason = _cold_terminal_durable_reason(
+                membership,
+                fence,
+                registry,
+                expected_subject,
+            )
+            if durable_reason is not None:
+                return GPUColdTerminalCommitResult(
+                    status="stale",
+                    state=GPUAllocationState.UNKNOWN,
+                    reason=durable_reason,
+                )
+            try:
+                if challenge is None:
+                    raise _GPUProofInvalid("terminal_response_uncertain")
+                target_state, reason = _classify_gpu_cold_terminal(
+                    membership,
+                    registry,
+                    expected_subject,
+                    challenge=challenge,
+                    db_now=locked.db_now,
+                    evidence_ttl=evidence_ttl,
+                )
+            except _GPUProofInvalid as exc:
+                target_state = GPUAllocationState.UNKNOWN
+                reason = exc.reason
+            finalize_kwargs = {
+                "backend_id": str(expected_subject.backend_registry_id),
+                "expected_generation": expected_subject.generation,
+                "request_lease_id": lease_id,
+                "request_owner_id": owner_id,
+                "target_state": target_state,
+                "target_evictable": target_state is GPUAllocationState.RESIDENT,
+            }
+            try:
+                transition = await store.finalize_cold_allocation(
+                    expected_subject.gpu_resource_id,
+                    **finalize_kwargs,
+                )
+            except Exception:  # noqa: BLE001 - exact idempotent response-loss retry
+                transition = await store.finalize_cold_allocation(
+                    expected_subject.gpu_resource_id,
+                    **finalize_kwargs,
+                )
+            if transition.status != "transitioned":
+                return GPUColdTerminalCommitResult(
+                    status="rejected",
+                    state=target_state,
+                    reason=f"redis_{transition.status}",
+                )
+            return GPUColdTerminalCommitResult(
+                status="finalized",
+                state=target_state,
+                reason=reason,
+                idempotent=transition.idempotent,
+            )
 
 
 @dataclass(frozen=True)

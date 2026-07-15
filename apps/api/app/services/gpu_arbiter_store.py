@@ -203,6 +203,7 @@ class GPUTransitionResult:
     state: GPUAllocationState | None
     generation: str | None
     committed_mb: int
+    idempotent: bool = False
 
 
 @dataclass(frozen=True)
@@ -4908,6 +4909,20 @@ local valid = {
   unknown=true, unloaded=true, reserving=true, loading=true, resident=true,
   draining=true, unloading=true, cpu_fallback=true
 }
+if ARGV[17] ~= '0' and ARGV[17] ~= '1' then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
+if ARGV[18] ~= '0' and ARGV[18] ~= '1' then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
+local cold_finalize = ARGV[17] == '1'
+if cold_finalize and (
+    (ARGV[4] ~= 'resident' and ARGV[4] ~= 'unknown'
+      and ARGV[4] ~= 'unloaded' and ARGV[4] ~= 'cpu_fallback')
+    or (ARGV[4] == 'resident' and ARGV[18] ~= '1')
+    or (ARGV[4] ~= 'resident' and ARGV[18] ~= '0')) then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
 local function valid_allocation(item, backend_id)
   local reservation_state = item
     and (item.state == 'reserving' or item.state == 'loading')
@@ -4971,6 +4986,33 @@ end
 if allocation.generation ~= ARGV[3] then
   return cjson.encode({status='stale_generation', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
 end
+
+local lease_count = 0
+local lease_entries = redis.call('HGETALL', lease_key)
+for i = 1, #lease_entries, 2 do
+  local lease = decode(lease_entries[i + 1])
+  if not valid_lease(lease, lease_entries[i], ARGV[2]) then
+    return cjson.encode({status='ledger_corrupt', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
+  end
+  lease_count = lease_count + 1
+end
+
+if cold_finalize and allocation.state == ARGV[4]
+   and allocation.state ~= 'reserving' and allocation.state ~= 'loading' then
+  local terminal_lease = decode(redis.call('HGET', lease_key, ARGV[6]))
+  if ARGV[6] == '' or ARGV[7] == ''
+     or (allocation.state ~= 'resident' and lease_count ~= 1)
+     or not valid_lease(terminal_lease, ARGV[6], ARGV[2])
+     or terminal_lease.owner_id ~= ARGV[7]
+     or terminal_lease.generation ~= allocation.generation then
+    return cjson.encode({status='owner_mismatch', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
+  if allocation.evictable ~= (ARGV[18] == '1') then
+    return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
+  return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed, idempotent=true})
+end
+
 if not allowed[allocation.state] or not allowed[allocation.state][ARGV[4]] then
   return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
 end
@@ -4984,16 +5026,6 @@ if ARGV[5] ~= '' and not generation_greater(ARGV[5], allocation.generation) then
 end
 if changes_generation and ARGV[5] == '' then
   return cjson.encode({status='stale_generation', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
-end
-
-local lease_count = 0
-local lease_entries = redis.call('HGETALL', lease_key)
-for i = 1, #lease_entries, 2 do
-  local lease = decode(lease_entries[i + 1])
-  if not valid_lease(lease, lease_entries[i], ARGV[2]) then
-    return cjson.encode({status='ledger_corrupt', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
-  end
-  lease_count = lease_count + 1
 end
 
 local workload_owned = allocation.state == 'reserving' or allocation.state == 'loading'
@@ -5055,6 +5087,7 @@ elseif not counted[previous_state] and counted[allocation.state] then
   committed = committed + tonumber(allocation.budget_mb)
 end
 if ARGV[5] ~= '' then allocation.generation = ARGV[5] end
+if cold_finalize then allocation.evictable = (ARGV[18] == '1') end
 if allocation.state ~= 'reserving' and allocation.state ~= 'loading' then
   allocation.reservation_lease_id = nil
   allocation.reservation_owner_id = nil
@@ -5063,7 +5096,7 @@ allocation.last_used_at_ms = now_ms()
 redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
 redis.call('HSET', KEYS[2], ARGV[2], cjson.encode(allocation))
 redis.call('HSET', KEYS[1], 'committed_mb', tostring(committed), 'updated_at_ms', tostring(now_ms()))
-return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=committed})
+return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=committed, idempotent=false})
 """
 )
 
@@ -6991,6 +7024,71 @@ class GPUArbiterStore:
         transition_owner_id: str | None = None,
         transition_operation: str | None = None,
     ) -> GPUTransitionResult:
+        return await self._transition_allocation_operation(
+            resource_id,
+            backend_id=backend_id,
+            expected_generation=expected_generation,
+            target_state=target_state,
+            next_generation=next_generation,
+            request_lease_id=request_lease_id,
+            request_owner_id=request_owner_id,
+            transition_owner_id=transition_owner_id,
+            transition_operation=transition_operation,
+            cold_finalize=False,
+            target_evictable=False,
+        )
+
+    async def finalize_cold_allocation(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        expected_generation: str,
+        request_lease_id: str,
+        request_owner_id: str,
+        target_state: GPUAllocationState,
+        target_evictable: bool,
+    ) -> GPUTransitionResult:
+        if target_state not in {
+            GPUAllocationState.RESIDENT,
+            GPUAllocationState.UNKNOWN,
+            GPUAllocationState.UNLOADED,
+            GPUAllocationState.CPU_FALLBACK,
+        }:
+            raise ValueError("cold terminal target state is invalid")
+        if not isinstance(target_evictable, bool):
+            raise ValueError("target_evictable must be a boolean")
+        if target_evictable is not (target_state is GPUAllocationState.RESIDENT):
+            raise ValueError("only a Resident cold terminal may be evictable")
+        return await self._transition_allocation_operation(
+            resource_id,
+            backend_id=backend_id,
+            expected_generation=expected_generation,
+            target_state=target_state,
+            next_generation=None,
+            request_lease_id=request_lease_id,
+            request_owner_id=request_owner_id,
+            transition_owner_id=None,
+            transition_operation=None,
+            cold_finalize=True,
+            target_evictable=target_evictable,
+        )
+
+    async def _transition_allocation_operation(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        expected_generation: str,
+        target_state: GPUAllocationState,
+        next_generation: str | None,
+        request_lease_id: str | None,
+        request_owner_id: str | None,
+        transition_owner_id: str | None,
+        transition_operation: str | None,
+        cold_finalize: bool,
+        target_evictable: bool,
+    ) -> GPUTransitionResult:
         keys = self.keys(resource_id)
         _validate_nonempty(backend_id, "backend_id", max_length=128)
         expected_generation = _validate_generation(expected_generation)
@@ -7025,6 +7123,8 @@ class GPUArbiterStore:
                     domains.membership_domain_fingerprint,
                     domains.active_backend_domain_raw,
                     domains.active_backend_domain_fingerprint,
+                    "1" if cold_finalize else "0",
+                    "1" if target_evictable else "0",
                 ],
             )
         )
@@ -7035,6 +7135,7 @@ class GPUArbiterStore:
             state=GPUAllocationState(state) if state else None,
             generation=payload.get("generation"),
             committed_mb=int(payload.get("committed_mb", 0)),
+            idempotent=bool(payload.get("idempotent", False)),
         )
 
     async def snapshot(self, resource_id: str) -> GPUCardSnapshot:

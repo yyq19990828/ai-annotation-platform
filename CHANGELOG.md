@@ -37,6 +37,7 @@
 
 ### Added
 
+- **GPU 冷建派发可以在响应后立即收敛显存终态**：完整 HTTP 响应后，平台使用新 challenge 重新探测 backend，并在逐卡持久锁内把 Loading 严格分类为 Resident、CPU fallback、Unloaded 或保守 Unknown。只有全池显式空的可信证明才释放显存预算；代际或成员漂移会保留不确定租约等待修复。Redis 响应丢失使用精确 owner/lease/generation 重试，单卡与多卡均按完整物理资源隔离；生产 effective enforce 仍保持关闭。
 - **GPU 冷启准入获得持久 generation 授权地基**：平台只会为具备新鲜 challenge proof、enforce gate、绑定 identity、全池显式空且零活跃的 backend 持久推进新 generation；提交前会在 membership→fence 锁序内二次复验，generation 与保守 token horizon 在同一事务推进，失败代际不回滚。Redis 保留尚未接通，生产 effective enforce 仍保持关闭。
 - **GPU 驱逐控制线具备可验证的锁外 transition wire**：平台可以用成对 generation/token 调用受管 drain、cancel 与 full-pool unload，并在解析前保留完整 HTTP transport outcome。远端 ACK 必须包含精确字段和严格类型，重复 JSON key 或矛盾 residency 均不能作为显存释放证据。该接缝尚未接入生产驱逐，effective enforce 仍保持关闭。
 - **ML Backend 注册表新增强类型逐卡显存声明**：超管可为全局 backend 设置稳定 `gpu_resource_id`、保守 `vram_budget_mb` 与驱逐优先级；平台从显式逐卡资源映射校验单体预算，并通过只诊断端点区分配置阻断与允许驱逐的弹性超售。单卡、同机多卡和多主机同号卡均按资源 key 隔离；管理 API 分开报告 desired/effective mode，observe 影子派发就绪时 effective 为 `observe`，enforce 在账本与 gate 握手就绪前仍为 `off`。过期或失败的 health 不会被当作 CPU/UUID 证据。

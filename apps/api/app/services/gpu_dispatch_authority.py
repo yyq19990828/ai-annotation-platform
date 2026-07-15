@@ -1,4 +1,4 @@
-"""Dormant Resident-only workload authority for ADR-0049 GPU dispatch."""
+"""Dormant ADR-0049 authority for Resident and cold GPU dispatch."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+import secrets
 import time
 import uuid
 
@@ -19,6 +20,7 @@ from app.services.gpu_arbiter import (
     GPUArbiterErrorCode,
     GPUColdRuntimeSubject,
     GPUColdRuntimeSubjectError,
+    GPUColdTerminalCommitResult,
     GPUDispatchContextFactory,
     GPUDispatchGrant,
     GPUDispatchRequest,
@@ -26,11 +28,13 @@ from app.services.gpu_arbiter import (
     GPUPreparedColdRuntimeSubject,
     GPUResidentRuntimeSubject,
     GPUResidentRuntimeSubjectError,
+    commit_gpu_cold_terminal_from_health,
     prepare_gpu_cold_runtime_generation,
     read_gpu_cold_runtime_subject,
     read_gpu_resident_runtime_subject,
     record_gpu_resident_runtime_token_expiry,
 )
+from app.services.ml_backend import MLBackendService
 from app.services.gpu_arbiter_store import (
     GPUAdmissionResult,
     GPUAllocationState,
@@ -353,7 +357,33 @@ async def _release_cold_intent(
         )
 
 
+async def _refresh_cold_terminal_health(
+    session_factory: GPUFenceSessionFactory,
+    subject: GPUPreparedColdRuntimeSubject,
+) -> str:
+    challenge = secrets.token_hex(32)
+    try:
+        async with session_factory() as db:
+            await MLBackendService(db).check_health(
+                subject.backend_registry_id,
+                gpu_health_challenge=challenge,
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 - the locked classifier falls back to Unknown
+        logger.warning(
+            "gpu_cold_terminal_health_failed",
+            gpu_arbiter={
+                "backend_id": str(subject.backend_registry_id),
+                "resource_id": subject.gpu_resource_id,
+                "generation": subject.generation,
+            },
+            exc_info=True,
+        )
+    return challenge
+
+
 async def _finalize_cold_runtime(
+    session_factory: GPUFenceSessionFactory,
     store: GPUArbiterStore,
     subject: GPUColdRuntimeSubject,
     *,
@@ -363,50 +393,99 @@ async def _finalize_cold_runtime(
     intent_may_exist: bool,
     lease_may_exist: bool,
     grant_exposed: bool,
+    response_received: bool,
+    prepared_subject: GPUPreparedColdRuntimeSubject | None,
     heartbeat_task: asyncio.Task[None] | None,
 ) -> None:
-    await _stop_heartbeat(heartbeat_task)
     if lease_may_exist:
-        target_state = (
-            GPUAllocationState.UNKNOWN if grant_exposed else GPUAllocationState.UNLOADED
-        )
+        target_state = GPUAllocationState.UNLOADED
         terminal_confirmed = False
-        try:
-            transition = await store.transition_allocation(
-                subject.gpu_resource_id,
-                backend_id=str(subject.backend_registry_id),
-                expected_generation=generation,
-                target_state=target_state,
-                request_lease_id=lease_id,
-                request_owner_id=owner_id,
-            )
-            terminal_confirmed = transition.status in {"transitioned", "missing"}
-            if not terminal_confirmed:
+        terminal_result: GPUColdTerminalCommitResult | None = None
+        if grant_exposed and prepared_subject is not None:
+            challenge = None
+            if response_received:
+                challenge = await _refresh_cold_terminal_health(
+                    session_factory,
+                    prepared_subject,
+                )
+            try:
+                terminal_result = await commit_gpu_cold_terminal_from_health(
+                    session_factory,
+                    store,
+                    prepared_subject,
+                    challenge=challenge,
+                    lease_id=lease_id,
+                    owner_id=owner_id,
+                )
+                target_state = terminal_result.state
+                terminal_confirmed = terminal_result.status == "finalized"
+                if not terminal_confirmed:
+                    logger.warning(
+                        "gpu_cold_terminal_commit_rejected",
+                        gpu_arbiter={
+                            "backend_id": str(subject.backend_registry_id),
+                            "resource_id": subject.gpu_resource_id,
+                            "lease_id": lease_id,
+                            "generation": generation,
+                            "status": terminal_result.status,
+                            "reason": terminal_result.reason,
+                        },
+                    )
+            except Exception:  # noqa: BLE001 - uncertain lease remains conservative
                 logger.warning(
-                    "gpu_cold_allocation_cleanup_rejected",
+                    "gpu_cold_terminal_commit_failed",
+                    gpu_arbiter={
+                        "backend_id": str(subject.backend_registry_id),
+                        "resource_id": subject.gpu_resource_id,
+                        "lease_id": lease_id,
+                        "generation": generation,
+                    },
+                    exc_info=True,
+                )
+        else:
+            target_state = (
+                GPUAllocationState.UNKNOWN
+                if grant_exposed
+                else GPUAllocationState.UNLOADED
+            )
+            try:
+                transition = await store.finalize_cold_allocation(
+                    subject.gpu_resource_id,
+                    backend_id=str(subject.backend_registry_id),
+                    expected_generation=generation,
+                    request_lease_id=lease_id,
+                    request_owner_id=owner_id,
+                    target_state=target_state,
+                    target_evictable=False,
+                )
+                terminal_confirmed = transition.status == "transitioned"
+                if not terminal_confirmed:
+                    logger.warning(
+                        "gpu_cold_allocation_cleanup_rejected",
+                        gpu_arbiter={
+                            "backend_id": str(subject.backend_registry_id),
+                            "resource_id": subject.gpu_resource_id,
+                            "lease_id": lease_id,
+                            "generation": generation,
+                            "target_state": target_state.value,
+                            "status": transition.status,
+                        },
+                    )
+            except Exception:  # noqa: BLE001 - uncertain lease remains conservative
+                logger.warning(
+                    "gpu_cold_allocation_cleanup_failed",
                     gpu_arbiter={
                         "backend_id": str(subject.backend_registry_id),
                         "resource_id": subject.gpu_resource_id,
                         "lease_id": lease_id,
                         "generation": generation,
                         "target_state": target_state.value,
-                        "status": transition.status,
                     },
+                    exc_info=True,
                 )
-        except Exception:  # noqa: BLE001 - uncertain lease remains conservative
-            logger.warning(
-                "gpu_cold_allocation_cleanup_failed",
-                gpu_arbiter={
-                    "backend_id": str(subject.backend_registry_id),
-                    "resource_id": subject.gpu_resource_id,
-                    "lease_id": lease_id,
-                    "generation": generation,
-                    "target_state": target_state.value,
-                },
-                exc_info=True,
-            )
+        await _stop_heartbeat(heartbeat_task)
         try:
-            if not grant_exposed and terminal_confirmed:
+            if terminal_confirmed and target_state is not GPUAllocationState.UNKNOWN:
                 cleanup = await store.release_lease(
                     subject.gpu_resource_id,
                     backend_id=str(subject.backend_registry_id),
@@ -503,6 +582,8 @@ async def _dispatch_cold_runtime(
     intent_may_exist = False
     lease_may_exist = False
     grant_exposed = False
+    grant: GPUDispatchGrant | None = None
+    prepared_subject: GPUPreparedColdRuntimeSubject | None = None
     heartbeat_task: asyncio.Task[None] | None = None
     try:
         try:
@@ -539,6 +620,7 @@ async def _dispatch_cold_runtime(
                 subject,
                 token_expires_at=subject.db_now + timedelta(milliseconds=hard_ttl_ms),
             )
+            prepared_subject = prepared
         except GPUColdRuntimeSubjectError as exc:
             raise _dispatch_error(
                 GPUArbiterErrorCode.NOT_READY,
@@ -715,6 +797,7 @@ async def _dispatch_cold_runtime(
     finally:
         await _await_cancellation_safe(
             _finalize_cold_runtime(
+                session_factory,
                 store,
                 subject,
                 generation=generation,
@@ -723,6 +806,12 @@ async def _dispatch_cold_runtime(
                 intent_may_exist=intent_may_exist,
                 lease_may_exist=lease_may_exist,
                 grant_exposed=grant_exposed,
+                response_received=(
+                    grant is not None
+                    and grant.outcome is not None
+                    and grant.outcome.kind == "response_received"
+                ),
+                prepared_subject=prepared_subject,
                 heartbeat_task=heartbeat_task,
             )
         )

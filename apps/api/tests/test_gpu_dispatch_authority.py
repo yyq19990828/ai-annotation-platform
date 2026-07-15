@@ -16,6 +16,7 @@ from app.services.gpu_arbiter import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
     GPUColdRuntimeSubject,
+    GPUColdTerminalCommitResult,
     GPUDispatchRequest,
     GPUPreparedColdRuntimeSubject,
     GPUResidentRuntimeSubject,
@@ -142,6 +143,7 @@ class _RecordingStore:
         self.release_kwargs: list[dict] = []
         self.uncertain_kwargs: list[dict] = []
         self.transition_kwargs: list[dict] = []
+        self.finalize_kwargs: list[dict] = []
         self.cold_owner_kwargs: list[dict] = []
         self.cold_revalidate_kwargs: list[dict] = []
         self.cold_release_kwargs: list[dict] = []
@@ -243,6 +245,22 @@ class _RecordingStore:
             committed_mb=4096,
         )
 
+    async def finalize_cold_allocation(self, resource_id: str, **kwargs):
+        target_state = kwargs["target_state"]
+        self.events.append(f"finalize:{target_state.value}")
+        self.finalize_kwargs.append({"resource_id": resource_id, **kwargs})
+        return GPUTransitionResult(
+            status="transitioned",
+            state=target_state,
+            generation=kwargs["expected_generation"],
+            committed_mb=(
+                4096
+                if target_state
+                in {GPUAllocationState.RESIDENT, GPUAllocationState.UNKNOWN}
+                else 0
+            ),
+        )
+
     async def aclose(self) -> None:
         self.events.append("close")
 
@@ -286,6 +304,8 @@ def _install_cold_authority_fakes(
     subject: GPUColdRuntimeSubject,
     *,
     prepared: GPUPreparedColdRuntimeSubject | None = None,
+    terminal_state: GPUAllocationState = GPUAllocationState.RESIDENT,
+    terminal_status: str = "finalized",
 ) -> GPUPreparedColdRuntimeSubject:
     prepared_subject = prepared or _prepared_cold_subject(subject)
 
@@ -312,6 +332,35 @@ def _install_cold_authority_fakes(
         assert token_expires_at > subject.db_now
         return replace(prepared_subject, token_expires_at=token_expires_at)
 
+    async def refresh_terminal_health(session_factory, expected_subject):
+        events.append("health")
+        assert expected_subject.backend_registry_id == subject.backend_registry_id
+        return "a" * 64
+
+    async def commit_terminal(
+        session_factory,
+        store,
+        expected_subject,
+        *,
+        challenge: str | None,
+        lease_id: str,
+        owner_id: str,
+    ):
+        committed_state = (
+            terminal_state if challenge is not None else GPUAllocationState.UNKNOWN
+        )
+        events.append(f"terminal:{committed_state.value}")
+        assert expected_subject.generation == prepared_subject.generation
+        assert challenge in {None, "a" * 64}
+        assert store.admit_kwargs is not None
+        assert lease_id == store.admit_kwargs["lease_id"]
+        assert owner_id == store.admit_kwargs["owner_id"]
+        return GPUColdTerminalCommitResult(
+            status=terminal_status,  # type: ignore[arg-type]
+            state=committed_state,
+            reason=committed_state.value,
+        )
+
     monkeypatch.setattr(
         authority_module,
         "read_gpu_resident_runtime_subject",
@@ -326,6 +375,16 @@ def _install_cold_authority_fakes(
         authority_module,
         "prepare_gpu_cold_runtime_generation",
         prepare_cold,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "_refresh_cold_terminal_health",
+        refresh_terminal_health,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "commit_gpu_cold_terminal_from_health",
+        commit_terminal,
     )
     return prepared_subject
 
@@ -648,8 +707,10 @@ async def test_resident_authority_finishes_uncertain_cleanup_under_repeated_canc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", (200, 503))
 async def test_cold_authority_orders_generation_reservation_and_loading(
     monkeypatch,
+    status_code: int,
 ) -> None:
     events: list[str] = []
     subject = _cold_subject()
@@ -673,7 +734,7 @@ async def test_cold_authority_orders_generation_reservation_and_loading(
     async with factory(_request(subject)) as grant:
         events.append("yield")
         assert grant.generation == "8"
-        assert grant.report_response(503) is True
+        assert grant.report_response(status_code) is True
 
     ordered = [
         "signer",
@@ -687,8 +748,9 @@ async def test_cold_authority_orders_generation_reservation_and_loading(
         "heartbeat",
         "transition:loading",
         "yield",
-        "transition:unknown",
-        "uncertain",
+        "health",
+        "terminal:resident",
+        "release",
         "close",
     ]
     assert [event for event in events if event in ordered] == ordered
@@ -703,8 +765,96 @@ async def test_cold_authority_orders_generation_reservation_and_loading(
     assert signer.claims.jti == store.admit_kwargs["lease_id"]
     assert store.hard_deadline_ms is not None
     assert signer.claims.exp == store.hard_deadline_ms // 1000
+    assert len(store.release_kwargs) == 1
+    assert store.uncertain_kwargs == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ("finalized", "stale"))
+async def test_cold_authority_keeps_unknown_or_stale_terminal_lease_uncertain(
+    monkeypatch,
+    terminal_status: str,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    store = _RecordingStore(events)
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(
+        monkeypatch,
+        events,
+        subject,
+        terminal_state=GPUAllocationState.UNKNOWN,
+        terminal_status=terminal_status,
+    )
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+    )
+
+    async with factory(_request(subject)) as grant:
+        grant.report_response(200)
+
+    assert events[-4:] == [
+        "health",
+        "terminal:unknown",
+        "uncertain",
+        "close",
+    ]
     assert store.release_kwargs == []
     assert len(store.uncertain_kwargs) == 1
+
+
+@pytest.mark.asyncio
+async def test_cold_authority_heartbeats_through_terminal_commit(monkeypatch) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    store = _RecordingStore(events)
+    signer = _RecordingSigner(events)
+    prepared = _install_cold_authority_fakes(monkeypatch, events, subject)
+
+    async def commit_after_heartbeat(
+        session_factory,
+        passed_store,
+        expected_subject,
+        *,
+        challenge: str | None,
+        lease_id: str,
+        owner_id: str,
+    ) -> GPUColdTerminalCommitResult:
+        assert passed_store is store
+        assert expected_subject.generation == prepared.generation
+        assert challenge == "a" * 64
+        heartbeat_count = events.count("heartbeat")
+        for _ in range(100):
+            if events.count("heartbeat") > heartbeat_count:
+                break
+            await asyncio.sleep(0.001)
+        assert events.count("heartbeat") > heartbeat_count
+        events.append("terminal:resident")
+        return GPUColdTerminalCommitResult(
+            status="finalized",
+            state=GPUAllocationState.RESIDENT,
+            reason="resident",
+        )
+
+    monkeypatch.setattr(
+        authority_module,
+        "commit_gpu_cold_terminal_from_health",
+        commit_after_heartbeat,
+    )
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        heartbeat_ttl_ms=1_000,
+        heartbeat_interval_seconds=0.001,
+    )
+
+    async with factory(_request(subject)) as grant:
+        grant.report_response(200)
+
+    assert events[-2:] == ["release", "close"]
 
 
 @pytest.mark.asyncio
@@ -754,10 +904,10 @@ async def test_cold_authority_rolls_back_unexposed_signing_failure(
             raise AssertionError("grant must not be exposed")
 
     assert caught.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
-    assert events[-3:] == ["transition:unloaded", "release", "close"]
+    assert events[-3:] == ["finalize:unloaded", "release", "close"]
     assert store.uncertain_kwargs == []
     assert (
-        store.transition_kwargs[-1]["request_owner_id"]
+        store.finalize_kwargs[-1]["request_owner_id"]
         == (store.admit_kwargs or {})["owner_id"]
     )
 
@@ -780,7 +930,7 @@ async def test_cold_authority_rolls_back_invalid_unexposed_grant(monkeypatch) ->
             raise AssertionError("grant must not be exposed")
 
     assert caught.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
-    assert events[-3:] == ["transition:unloaded", "release", "close"]
+    assert events[-3:] == ["finalize:unloaded", "release", "close"]
     assert store.uncertain_kwargs == []
 
 
@@ -805,7 +955,8 @@ async def test_cold_authority_retries_exact_admission_after_response_loss(
     assert store.admit_attempts == 2
     assert events.count("admit") == 2
     assert "transition:loading" in events
-    assert events[-3:] == ["transition:unknown", "uncertain", "close"]
+    assert "health" not in events
+    assert events[-3:] == ["terminal:unknown", "uncertain", "close"]
 
 
 @pytest.mark.asyncio
@@ -830,7 +981,7 @@ async def test_cold_authority_rolls_back_when_exact_admission_retry_is_lost(
     assert caught.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
     assert store.admit_attempts == 2
     assert events[-4:] == [
-        "transition:unloaded",
+        "finalize:unloaded",
         "release",
         "cold_release",
         "close",
@@ -929,7 +1080,8 @@ async def test_cold_authority_finishes_uncertain_cleanup_under_repeated_cancel(
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert events[-3:] == ["transition:unknown", "uncertain", "close"]
+    assert "health" not in events
+    assert events[-3:] == ["terminal:unknown", "uncertain", "close"]
 
 
 @pytest.mark.asyncio

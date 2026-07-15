@@ -4224,6 +4224,124 @@ async def test_expired_cold_admission_owner_cannot_be_revalidated_or_recreated(
 
 
 @pytest.mark.parametrize(
+    ("target_state", "target_evictable", "committed_mb"),
+    (
+        (GPUAllocationState.RESIDENT, True, 60),
+        (GPUAllocationState.UNKNOWN, False, 60),
+        (GPUAllocationState.UNLOADED, False, 0),
+        (GPUAllocationState.CPU_FALLBACK, False, 0),
+    ),
+)
+@pytest.mark.asyncio
+async def test_finalize_cold_allocation_is_owned_and_idempotent(
+    redis_stores,
+    target_state: GPUAllocationState,
+    target_evictable: bool,
+    committed_mb: int,
+) -> None:
+    first, second = redis_stores
+    resource_id = f"node-cold-finalize/{target_state.value}"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    assert (
+        await first.acquire_cold_admission_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="cold-owner",
+            generation="1",
+            ttl_ms=30_000,
+        )
+    ).status == "acquired"
+    kwargs = _admission_kwargs(
+        "backend-a",
+        "cold-lease",
+        owner_id="cold-owner",
+    )
+    kwargs["evictable"] = False
+    assert (
+        await first.admit(
+            resource_id,
+            require_cold_owner=True,
+            **kwargs,
+        )
+    ).admitted
+    assert (
+        await first.transition_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            target_state=GPUAllocationState.LOADING,
+            request_lease_id="cold-lease",
+            request_owner_id="cold-owner",
+        )
+    ).status == "transitioned"
+
+    wrong_owner = await second.finalize_cold_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="1",
+        request_lease_id="cold-lease",
+        request_owner_id="other-owner",
+        target_state=target_state,
+        target_evictable=target_evictable,
+    )
+    assert wrong_owner.status == "owner_mismatch"
+    finalized = await first.finalize_cold_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="1",
+        request_lease_id="cold-lease",
+        request_owner_id="cold-owner",
+        target_state=target_state,
+        target_evictable=target_evictable,
+    )
+    assert finalized.status == "transitioned"
+    assert finalized.idempotent is False
+    assert finalized.committed_mb == committed_mb
+    if target_state is GPUAllocationState.RESIDENT:
+        assert (
+            await first.admit(
+                resource_id,
+                require_resident=True,
+                **_admission_kwargs(
+                    "backend-a",
+                    "resident-lease",
+                    owner_id="resident-owner",
+                ),
+            )
+        ).admitted
+    revision = (await first.snapshot(resource_id)).ledger_revision
+
+    retried = await second.finalize_cold_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="1",
+        request_lease_id="cold-lease",
+        request_owner_id="cold-owner",
+        target_state=target_state,
+        target_evictable=target_evictable,
+    )
+    assert retried.status == "transitioned"
+    assert retried.idempotent is True
+    assert retried.committed_mb == committed_mb
+    snapshot = await first.snapshot(resource_id)
+    assert snapshot.ledger_revision == revision
+    assert snapshot.allocations[0].state is target_state
+    assert snapshot.allocations[0].evictable is target_evictable
+    expected_leases = (
+        ("cold-lease", "resident-lease")
+        if target_state is GPUAllocationState.RESIDENT
+        else ("cold-lease",)
+    )
+    assert tuple(item.lease_id for item in snapshot.leases) == expected_leases
+
+
+@pytest.mark.parametrize(
     "state",
     (GPUAllocationState.UNLOADED, GPUAllocationState.CPU_FALLBACK),
 )
