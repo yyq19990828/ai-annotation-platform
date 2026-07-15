@@ -297,13 +297,22 @@ enforce 前必须先把所有 generation=null 的既有 residency 通过 `/lifec
 Redis key 使用版本化 namespace，并让同一卡的 key 进入同一 Redis Cluster hash slot：
 
 ```text
-gpu-arbiter:v1:{resource_id}:card
-gpu-arbiter:v1:{resource_id}:allocations
-gpu-arbiter:v1:{resource_id}:queue
-gpu-arbiter:v1:{resource_id}:backend_queue:<backend_id>
-gpu-arbiter:v1:{resource_id}:leases:<backend_id>
-gpu-arbiter:v1:{resource_id}:transition
+resource_tag = sha256(exact gpu_resource_id)
+gpu-arbiter:v1:{resource_tag}:card
+gpu-arbiter:v1:{resource_tag}:allocations
+gpu-arbiter:v1:{resource_tag}:queue
+gpu-arbiter:v1:{resource_tag}:backend_queue:<backend_id>
+gpu-arbiter:v1:{resource_tag}:leases:<backend_id>
+gpu-arbiter:v1:{resource_tag}:transition
 ```
+
+花括号内是 Redis Cluster hash tag，不直接放未经编码的资源 ID。`resource_tag` 对完整
+`gpu_resource_id` 做确定性 SHA-256，避免资源 ID 自带花括号时改变分槽；`card.resource_id` 仍保存原始值，
+所有原子脚本都必须 exact-match 原始身份，摘要碰撞或 key 身份不一致时 fail-closed。
+
+逐资源 key、队列和 transition owner 隔离的是逻辑状态与应用层 head-of-line blocking；standalone Redis 的
+命令执行仍是共享延迟域。Lua 必须保持有界，Redis 服务整体拥塞或不可用仍按 D10 作为基础设施故障处理，
+不能把 hash slot 设计误写成当前部署已经具备物理延迟隔离或 Redis Cluster client 能力。
 
 PostgreSQL 保存静态 claim 与 `gpu_backend_fences` 的 generation/control-epoch high-water 持久 fencing 真值；Redis 保存运行时
 allocation、generation 副本、LRU、FIFO ticket 和带 heartbeat 的 request lease。驻留 allocation 不设置自动
