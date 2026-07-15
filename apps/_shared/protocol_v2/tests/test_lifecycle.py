@@ -33,9 +33,11 @@ from aap_protocol_v2.lifecycle import (
     load_verify_keyring,
     match_gpu_health_challenge,
     managed_lifecycle_capability_sha256,
+    parse_drain_transition_response_json,
     parse_lifecycle_mode_response_json,
     parse_gpu_admission_header_values,
     parse_gpu_control_token_header_values,
+    parse_managed_unload_response_json,
     sign_admission_token,
     validate_canonical_positive_int64,
     validate_gpu_health_challenge,
@@ -598,6 +600,150 @@ def test_remote_mode_response_parser_rejects_partial_or_coerced_json(mutate) -> 
 def test_remote_mode_response_parser_rejects_invalid_or_duplicate_json(raw) -> None:
     with pytest.raises(ValueError, match="lifecycle mode"):
         parse_lifecycle_mode_response_json(raw)
+
+
+def _drain_transition_response_payload() -> dict:
+    return DrainTransitionResponse(
+        generation="43",
+        draining=True,
+        active_requests=0,
+        ready_to_unload=True,
+        residency=_residency(
+            state="draining",
+            draining=True,
+            generation="43",
+        ),
+    ).model_dump(mode="json")
+
+
+def _managed_unload_response_payload() -> dict:
+    return ManagedUnloadResponse(
+        generation="43",
+        unloaded=True,
+        unloaded_count=2,
+        residency=_residency(
+            state="unloaded",
+            gpu_loaded=False,
+            evictable=False,
+            generation="43",
+            pools={
+                "models": {"resident": False, "device": None, "provider": None},
+            },
+        ),
+    ).model_dump(mode="json")
+
+
+@pytest.mark.parametrize(
+    ("parser", "payload_factory"),
+    (
+        (parse_drain_transition_response_json, _drain_transition_response_payload),
+        (parse_managed_unload_response_json, _managed_unload_response_payload),
+    ),
+)
+def test_remote_transition_response_parsers_accept_complete_strict_json(
+    parser,
+    payload_factory,
+) -> None:
+    payload = payload_factory()
+
+    parsed = parser(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+
+    assert parsed.model_dump(mode="json") == payload
+
+
+@pytest.mark.parametrize(
+    ("parser", "payload_factory", "mutate"),
+    (
+        (
+            parse_drain_transition_response_json,
+            _drain_transition_response_payload,
+            lambda payload: payload.pop("ready_to_unload"),
+        ),
+        (
+            parse_drain_transition_response_json,
+            _drain_transition_response_payload,
+            lambda payload: payload.update({"active_requests": "0"}),
+        ),
+        (
+            parse_drain_transition_response_json,
+            _drain_transition_response_payload,
+            lambda payload: payload["residency"].update({"generation": "44"}),
+        ),
+        (
+            parse_drain_transition_response_json,
+            _drain_transition_response_payload,
+            lambda payload: payload["residency"].update({"state": "resident"}),
+        ),
+        (
+            parse_managed_unload_response_json,
+            _managed_unload_response_payload,
+            lambda payload: payload.update({"unexpected": True}),
+        ),
+        (
+            parse_managed_unload_response_json,
+            _managed_unload_response_payload,
+            lambda payload: payload.update({"unloaded_count": "2"}),
+        ),
+        (
+            parse_managed_unload_response_json,
+            _managed_unload_response_payload,
+            lambda payload: payload["residency"].update({"gpu_loaded": True}),
+        ),
+        (
+            parse_managed_unload_response_json,
+            _managed_unload_response_payload,
+            lambda payload: payload["residency"].update({"draining": True}),
+        ),
+        (
+            parse_managed_unload_response_json,
+            _managed_unload_response_payload,
+            lambda payload: payload["residency"].update({"lifecycle_gate": "legacy"}),
+        ),
+        (
+            parse_managed_unload_response_json,
+            _managed_unload_response_payload,
+            lambda payload: payload["residency"].update({"pools": {}}),
+        ),
+    ),
+)
+def test_remote_transition_response_parsers_reject_partial_or_coerced_json(
+    parser,
+    payload_factory,
+    mutate,
+) -> None:
+    payload = payload_factory()
+    mutate(payload)
+
+    with pytest.raises(ValueError, match="response"):
+        parser(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    ("parser", "raw"),
+    (
+        (parse_drain_transition_response_json, b"\xff"),
+        (
+            parse_drain_transition_response_json,
+            json.dumps(_drain_transition_response_payload()).replace(
+                '"ready_to_unload": true',
+                '"ready_to_unload": true, "ready_to_unload": true',
+            ),
+        ),
+        (
+            parse_managed_unload_response_json,
+            json.dumps(_managed_unload_response_payload()).replace(
+                '"unloaded": true',
+                '"unloaded": true, "unloaded": true',
+            ),
+        ),
+    ),
+)
+def test_remote_transition_response_parsers_reject_invalid_or_duplicate_json(
+    parser,
+    raw,
+) -> None:
+    with pytest.raises(ValueError, match="response"):
+        parser(raw)
 
 
 def test_transition_responses_reject_stale_or_contradictory_residency() -> None:

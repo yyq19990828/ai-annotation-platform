@@ -315,6 +315,19 @@ class LifecycleModeResponse(BaseModel):
 
 
 _LIFECYCLE_MODE_RESPONSE_KEYS = frozenset({"ok", "gate", "control_epoch", "residency"})
+_DRAIN_TRANSITION_RESPONSE_KEYS = frozenset(
+    {
+        "ok",
+        "generation",
+        "draining",
+        "active_requests",
+        "ready_to_unload",
+        "residency",
+    }
+)
+_MANAGED_UNLOAD_RESPONSE_KEYS = frozenset(
+    {"ok", "generation", "unloaded", "unloaded_count", "residency"}
+)
 _BACKEND_RESIDENCY_KEYS = frozenset(
     {
         "state",
@@ -349,21 +362,19 @@ def _require_exact_json_object(
     return value
 
 
-def parse_lifecycle_mode_response_json(raw: str | bytes) -> LifecycleModeResponse:
-    """Strictly parse one untrusted remote ``/lifecycle/mode`` response.
-
-    The local wire models retain construction defaults for backend authors.  A
-    platform consumer must not let those defaults, JSON type coercion, or duplicate
-    object keys manufacture a successful acknowledgement from a partial response.
-    """
-
+def _parse_managed_response_payload(
+    raw: str | bytes,
+    *,
+    response_name: str,
+    response_keys: frozenset[str],
+) -> dict[str, object]:
     if isinstance(raw, bytes):
         try:
             raw = raw.decode("utf-8")
         except UnicodeDecodeError:
-            raise ValueError("lifecycle mode response must be UTF-8 JSON") from None
+            raise ValueError(f"{response_name} must be UTF-8 JSON") from None
     elif not isinstance(raw, str):
-        raise ValueError("lifecycle mode response must be JSON text")
+        raise ValueError(f"{response_name} must be JSON text")
 
     class _DuplicateField(ValueError):
         pass
@@ -381,38 +392,56 @@ def parse_lifecycle_mode_response_json(raw: str | bytes) -> LifecycleModeRespons
     try:
         payload = json.loads(raw, object_pairs_hook=_reject_duplicates)
     except (TypeError, json.JSONDecodeError, _DuplicateField):
-        raise ValueError("lifecycle mode response must be a JSON object") from None
+        raise ValueError(f"{response_name} must be a JSON object") from None
 
     response = _require_exact_json_object(
         payload,
-        _LIFECYCLE_MODE_RESPONSE_KEYS,
-        field="lifecycle mode response",
+        response_keys,
+        field=response_name,
     )
     if response["ok"] is not True:
-        raise ValueError("lifecycle mode response must acknowledge success")
+        raise ValueError(f"{response_name} must acknowledge success")
     residency = _require_exact_json_object(
         response["residency"],
         _BACKEND_RESIDENCY_KEYS,
-        field="lifecycle mode residency",
+        field=f"{response_name} residency",
     )
     pools = residency["pools"]
-    if type(pools) is not dict:
-        raise ValueError("lifecycle mode residency pools must be a JSON object")
+    if type(pools) is not dict or not pools:
+        raise ValueError(
+            f"{response_name} residency pools must be a non-empty JSON object"
+        )
     for pool_id, pool in pools.items():
         if type(pool_id) is not str:
-            raise ValueError("lifecycle mode residency pool ids must be strings")
+            raise ValueError(f"{response_name} residency pool ids must be strings")
         _require_exact_json_object(
             pool,
             _POOL_RESIDENCY_KEYS,
-            field="lifecycle mode pool residency",
+            field=f"{response_name} pool residency",
         )
     identity = residency["identity"]
     if identity is None:
-        raise ValueError("lifecycle mode residency identity must be bound")
+        raise ValueError(f"{response_name} residency identity must be bound")
     _require_exact_json_object(
         identity,
         _BOUND_LIFECYCLE_IDENTITY_KEYS,
-        field="lifecycle mode residency identity",
+        field=f"{response_name} residency identity",
+    )
+    return response
+
+
+def parse_lifecycle_mode_response_json(raw: str | bytes) -> LifecycleModeResponse:
+    """Strictly parse one untrusted remote ``/lifecycle/mode`` response.
+
+    The local wire models retain construction defaults for backend authors.  A
+    platform consumer must not let those defaults, JSON type coercion, or duplicate
+    object keys manufacture a successful acknowledgement from a partial response.
+    """
+
+    response = _parse_managed_response_payload(
+        raw,
+        response_name="lifecycle mode response",
+        response_keys=_LIFECYCLE_MODE_RESPONSE_KEYS,
     )
 
     try:
@@ -469,10 +498,23 @@ class DrainTransitionResponse(BaseModel):
     def _validate_residency(self) -> "DrainTransitionResponse":
         if self.residency.generation != self.generation:
             raise ValueError("response and residency generation must match")
+        if (
+            self.residency.lifecycle_gate is not LifecycleGate.ENFORCE
+            or self.residency.control_epoch is None
+            or self.residency.identity is None
+        ):
+            raise ValueError("managed drain requires bound enforce residency")
         if self.residency.draining != self.draining:
             raise ValueError("response and residency draining state must match")
         if self.residency.active_requests != self.active_requests:
             raise ValueError("response and residency active request count must match")
+        if self.draining and self.residency.state is not LifecycleState.DRAINING:
+            raise ValueError("drain state must match the transition result")
+        if not self.draining and self.residency.state in {
+            LifecycleState.DRAINING,
+            LifecycleState.UNLOADING,
+        }:
+            raise ValueError("drain state must match the transition result")
         ready = (
             self.draining
             and self.active_requests == 0
@@ -499,9 +541,19 @@ class ManagedUnloadResponse(BaseModel):
     def _validate_residency(self) -> "ManagedUnloadResponse":
         if self.residency.generation != self.generation:
             raise ValueError("response and residency generation must match")
+        if (
+            self.residency.lifecycle_gate is not LifecycleGate.ENFORCE
+            or self.residency.control_epoch is None
+            or self.residency.identity is None
+        ):
+            raise ValueError("managed unload requires bound enforce residency")
         if self.unloaded:
             if self.residency.active_requests != 0:
                 raise ValueError("successful unload requires zero active requests")
+            if self.residency.draining or self.residency.evictable:
+                raise ValueError(
+                    "successful unload must close draining and eviction state"
+                )
             if (
                 self.residency.state is not LifecycleState.UNLOADED
                 or self.residency.gpu_loaded is not False
@@ -510,6 +562,48 @@ class ManagedUnloadResponse(BaseModel):
                     "successful unload requires trusted unloaded residency"
                 )
         return self
+
+
+def parse_drain_transition_response_json(
+    raw: str | bytes,
+) -> DrainTransitionResponse:
+    """Strictly parse one untrusted remote drain or drain-cancel response."""
+
+    response = _parse_managed_response_payload(
+        raw,
+        response_name="drain transition response",
+        response_keys=_DRAIN_TRANSITION_RESPONSE_KEYS,
+    )
+    try:
+        canonical = json.dumps(
+            response,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        return DrainTransitionResponse.model_validate_json(canonical, strict=True)
+    except (TypeError, ValueError):
+        raise ValueError("drain transition response is invalid") from None
+
+
+def parse_managed_unload_response_json(raw: str | bytes) -> ManagedUnloadResponse:
+    """Strictly parse one untrusted remote managed-unload response."""
+
+    response = _parse_managed_response_payload(
+        raw,
+        response_name="managed unload response",
+        response_keys=_MANAGED_UNLOAD_RESPONSE_KEYS,
+    )
+    try:
+        canonical = json.dumps(
+            response,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        return ManagedUnloadResponse.model_validate_json(canonical, strict=True)
+    except (TypeError, ValueError):
+        raise ValueError("managed unload response is invalid") from None
 
 
 class AdmissionTokenClaims(BaseModel):
@@ -713,8 +807,10 @@ __all__ = [
     "match_gpu_health_challenge",
     "managed_lifecycle_capability_sha256",
     "parse_lifecycle_mode_response_json",
+    "parse_drain_transition_response_json",
     "parse_gpu_admission_header_values",
     "parse_gpu_control_token_header_values",
+    "parse_managed_unload_response_json",
     "sign_admission_token",
     "validate_canonical_positive_int64",
     "validate_gpu_health_challenge",

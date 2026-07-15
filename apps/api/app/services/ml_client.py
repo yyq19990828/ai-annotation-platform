@@ -10,11 +10,16 @@ import httpx
 import structlog
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
+    DrainTransitionResponse,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleModeResponse,
+    ManagedUnloadResponse,
+    parse_drain_transition_response_json,
     parse_lifecycle_mode_response_json,
+    parse_managed_unload_response_json,
 )
 from fastapi import HTTPException
 
@@ -567,6 +572,72 @@ class MLBackendClient:
                 )
             _raise_for_backend_status(resp)
             return parse_lifecycle_mode_response_json(resp.content)
+
+    async def _managed_generation_transition(
+        self,
+        endpoint: str,
+        grant: GPUDispatchGrant,
+    ) -> httpx.Response:
+        if endpoint not in {"/drain", "/drain/cancel", "/unload"}:
+            raise ValueError("managed GPU transition endpoint is invalid")
+        request = GenerationTransitionRequest(generation=grant.generation)
+        try:
+            async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}{endpoint}",
+                    json=request.model_dump(mode="json"),
+                    headers=self._headers(grant),
+                )
+                grant.report_response(response.status_code)
+        except BaseException:
+            grant.report_uncertain_if_missing("request_aborted")
+            raise
+        if response.status_code < 200 or response.status_code >= 300:
+            if response.status_code >= 400:
+                _raise_for_backend_status(response)
+            raise HTTPException(
+                status_code=502,
+                detail="ML backend transition endpoint returned a non-success status",
+            )
+        return response
+
+    async def lifecycle_drain(
+        self,
+        grant: GPUDispatchGrant,
+    ) -> DrainTransitionResponse:
+        """Send one signed generation-fenced drain outside workload dispatch."""
+
+        response = await self._managed_generation_transition("/drain", grant)
+        parsed = parse_drain_transition_response_json(response.content)
+        if parsed.generation != grant.generation:
+            raise ValueError("drain response generation does not match the request")
+        return parsed
+
+    async def lifecycle_cancel_drain(
+        self,
+        grant: GPUDispatchGrant,
+    ) -> DrainTransitionResponse:
+        """Send one signed newer-generation drain cancellation."""
+
+        response = await self._managed_generation_transition("/drain/cancel", grant)
+        parsed = parse_drain_transition_response_json(response.content)
+        if parsed.generation != grant.generation:
+            raise ValueError(
+                "drain cancellation response generation does not match the request"
+            )
+        return parsed
+
+    async def lifecycle_unload(
+        self,
+        grant: GPUDispatchGrant,
+    ) -> ManagedUnloadResponse:
+        """Send one signed full-pool unload outside workload dispatch."""
+
+        response = await self._managed_generation_transition("/unload", grant)
+        parsed = parse_managed_unload_response_json(response.content)
+        if parsed.generation != grant.generation:
+            raise ValueError("unload response generation does not match the request")
+        return parsed
 
     async def warmup(self, body: dict) -> dict:
         """v0.14.14 协议 §4.4 · 把指定 variant 权重加载到 pool, 不跑 forward.

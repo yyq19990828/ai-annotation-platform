@@ -37,6 +37,7 @@
 
 ### Added
 
+- **GPU 驱逐控制线具备可验证的锁外 transition wire**：平台可以用成对 generation/token 调用受管 drain、cancel 与 full-pool unload，并在解析前保留完整 HTTP transport outcome。远端 ACK 必须包含精确字段和严格类型，重复 JSON key 或矛盾 residency 均不能作为显存释放证据。该接缝尚未接入生产驱逐，effective enforce 仍保持关闭。
 - **ML Backend 注册表新增强类型逐卡显存声明**：超管可为全局 backend 设置稳定 `gpu_resource_id`、保守 `vram_budget_mb` 与驱逐优先级；平台从显式逐卡资源映射校验单体预算，并通过只诊断端点区分配置阻断与允许驱逐的弹性超售。单卡、同机多卡和多主机同号卡均按资源 key 隔离；管理 API 分开报告 desired/effective mode，observe 影子派发就绪时 effective 为 `observe`，enforce 在账本与 gate 握手就绪前仍为 `off`。过期或失败的 health 不会被当作 CPU/UUID 证据。
 - **模型市场新增逐卡 GPU 配置与 residency 观测**：超管可编辑 backend 的物理资源、显存预算和驱逐优先级，并查看每张卡的容量、静态超售、desired → effective mode、CPU fallback 与逐池驻留。没有绑定项目的全局 backend 仍可做健康检查与卸载，操作成功文案不再将请求已接受误报为显存已释放。
 - **GPU observe 影子仲裁覆盖真实加载派发口**：predict、交互预测、warmup、reload 与注册 smoke-test 在发送 backend HTTP 前使用同卡静态预算和新鲜 residency 输出非权威 `would-admit|would-evict|would-reject` 决策；legacy unload 只记录请求，不能作为显存减账证据。单卡、同机多卡和多主机同号卡始终按完整资源 key 隔离；旁路查询超时后 fail-open，不会拒绝、排队或驱逐业务请求，enforce 在 Redis 账本与 lifecycle gate 就绪前仍保持关闭。

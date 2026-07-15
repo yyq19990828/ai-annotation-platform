@@ -953,6 +953,65 @@ def _legacy_mode_ack_payload() -> dict:
     }
 
 
+def _managed_transition_residency(
+    *,
+    generation: str,
+    state: str,
+    gpu_loaded: bool,
+    draining: bool,
+) -> dict:
+    payload = _legacy_mode_ack_payload()["residency"]
+    payload.update(
+        {
+            "state": state,
+            "gpu_loaded": gpu_loaded,
+            "draining": draining,
+            "evictable": gpu_loaded,
+            "generation": generation,
+            "lifecycle_gate": "enforce",
+        }
+    )
+    payload["pools"]["models"].update(
+        {
+            "resident": gpu_loaded,
+            "device": "cuda:0" if gpu_loaded else None,
+            "provider": "CUDAExecutionProvider" if gpu_loaded else None,
+        }
+    )
+    return payload
+
+
+def _drain_ack_payload(*, cancelled: bool = False) -> dict:
+    return {
+        "ok": True,
+        "generation": "10" if cancelled else "9",
+        "draining": not cancelled,
+        "active_requests": 0,
+        "ready_to_unload": not cancelled,
+        "residency": _managed_transition_residency(
+            generation="10" if cancelled else "9",
+            state="resident" if cancelled else "draining",
+            gpu_loaded=True,
+            draining=not cancelled,
+        ),
+    }
+
+
+def _managed_unload_ack_payload() -> dict:
+    return {
+        "ok": True,
+        "generation": "9",
+        "unloaded": True,
+        "unloaded_count": 1,
+        "residency": _managed_transition_residency(
+            generation="9",
+            state="unloaded",
+            gpu_loaded=False,
+            draining=False,
+        ),
+    }
+
+
 @pytest.mark.asyncio
 async def test_lifecycle_mode_uses_only_signed_control_header(
     monkeypatch, enforce_dispatch_mode
@@ -1003,6 +1062,162 @@ async def test_lifecycle_mode_rejects_redirect_with_valid_ack_body(monkeypatch) 
         )
 
     assert exc_info.value.status_code == 502
+
+
+@pytest.mark.parametrize(
+    ("method_name", "path", "generation", "payload"),
+    (
+        ("lifecycle_drain", "/drain", "9", _drain_ack_payload()),
+        (
+            "lifecycle_cancel_drain",
+            "/drain/cancel",
+            "10",
+            _drain_ack_payload(cancelled=True),
+        ),
+        ("lifecycle_unload", "/unload", "9", _managed_unload_ack_payload()),
+    ),
+)
+@pytest.mark.asyncio
+async def test_managed_transition_uses_generation_token_pair_outside_dispatch(
+    monkeypatch,
+    method_name: str,
+    path: str,
+    generation: str,
+    payload: dict,
+) -> None:
+    def unexpected_dispatch(_request):
+        raise AssertionError("managed transition must remain outside workload dispatch")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == path
+        assert request.headers[GPU_GENERATION_HEADER] == generation
+        assert request.headers[GPU_ADMISSION_TOKEN_HEADER] == "signed-transition-token"
+        assert json.loads(request.content) == {"generation": generation}
+        return httpx.Response(200, json=payload)
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        _backend(),
+        dispatch_context_factory=unexpected_dispatch,  # type: ignore[arg-type]
+    )
+    grant = GPUDispatchGrant(
+        generation=generation,
+        admission_token="signed-transition-token",
+    )
+
+    response = await getattr(client, method_name)(grant)
+
+    assert response.generation == generation
+    assert grant.outcome is not None
+    assert grant.outcome.kind == "response_received"
+    assert grant.outcome.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_managed_transition_records_response_before_status_or_json_validation(
+    monkeypatch,
+) -> None:
+    responses = iter(
+        (
+            httpx.Response(409, json={"detail": "busy"}),
+            httpx.Response(200, content=b'{"ok":true,"ok":true}'),
+        )
+    )
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return next(responses)
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(_backend())
+    rejected = GPUDispatchGrant(generation="9", admission_token="signed-token")
+    invalid = GPUDispatchGrant(generation="9", admission_token="signed-token")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await client.lifecycle_drain(rejected)
+    with pytest.raises(ValueError, match="drain transition response"):
+        await client.lifecycle_drain(invalid)
+
+    assert exc_info.value.status_code == 409
+    assert rejected.outcome is not None
+    assert rejected.outcome.kind == "response_received"
+    assert rejected.outcome.status_code == 409
+    assert invalid.outcome is not None
+    assert invalid.outcome.kind == "response_received"
+    assert invalid.outcome.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("method_name", "payload"),
+    (
+        ("lifecycle_drain", _drain_ack_payload()),
+        ("lifecycle_cancel_drain", _drain_ack_payload(cancelled=True)),
+        ("lifecycle_unload", _managed_unload_ack_payload()),
+    ),
+)
+@pytest.mark.asyncio
+async def test_managed_transition_rejects_ack_for_a_different_generation(
+    monkeypatch,
+    method_name: str,
+    payload: dict,
+) -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    grant = GPUDispatchGrant(generation="8", admission_token="signed-token")
+
+    with pytest.raises(ValueError, match="generation does not match"):
+        await getattr(MLBackendClient(_backend()), method_name)(grant)
+
+    assert grant.outcome is not None
+    assert grant.outcome.kind == "response_received"
+
+
+@pytest.mark.asyncio
+async def test_managed_transition_marks_transport_cancellation_uncertain(
+    monkeypatch,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("transition timed out", request=request)
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    grant = GPUDispatchGrant(generation="9", admission_token="signed-token")
+
+    with pytest.raises(httpx.ReadTimeout):
+        await MLBackendClient(_backend()).lifecycle_unload(grant)
+
+    assert grant.outcome is not None
+    assert grant.outcome.kind == "uncertain"
+    assert grant.outcome.reason == "request_aborted"
+
+
+@pytest.mark.asyncio
+async def test_managed_transition_keeps_response_when_client_exit_fails(
+    monkeypatch,
+) -> None:
+    class ExitFailureClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            raise asyncio.CancelledError
+
+        async def post(self, *_args, **_kwargs) -> httpx.Response:
+            return httpx.Response(200, json=_drain_ack_payload())
+
+    monkeypatch.setattr(
+        "app.services.ml_client.httpx.AsyncClient",
+        lambda **_kwargs: ExitFailureClient(),
+    )
+    grant = GPUDispatchGrant(generation="9", admission_token="signed-token")
+
+    with pytest.raises(asyncio.CancelledError):
+        await MLBackendClient(_backend()).lifecycle_drain(grant)
+
+    assert grant.outcome is not None
+    assert grant.outcome.kind == "response_received"
+    assert grant.outcome.status_code == 200
 
 
 @pytest.mark.asyncio
