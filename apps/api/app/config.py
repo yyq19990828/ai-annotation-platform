@@ -211,6 +211,11 @@ class Settings(BaseSettings):
     # 保留 raw JSON，使 off/observe 能安全启动并在管理端展示配置
     # blocker。解析失败时 resources 为空，逐卡 desired mode 自动回落 off。
     gpu_arbiter_resources_json: Annotated[str, NoDecode] = "{}"
+    # Platform-only Ed25519 private seeds are read lazily from a mounted file by
+    # enforce authority/promotion code.  off/observe startup and dispatch never
+    # read this file, and GPU backends receive only their public verify keyring.
+    gpu_lifecycle_signing_keys_file: str = ""
+    gpu_lifecycle_active_signing_kid: str = ""
 
     def _parse_gpu_arbiter_resources(
         self,

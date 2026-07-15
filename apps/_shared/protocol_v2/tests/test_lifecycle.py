@@ -112,6 +112,14 @@ def test_managed_lifecycle_capability_payload_matches_adr() -> None:
     }
 
 
+def test_verify_keyring_rejects_duplicate_key_ids() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    encoded = encode_ed25519_public_key(private_key.public_key())
+
+    with pytest.raises(ValueError, match="verify keyring"):
+        load_verify_keyring('{"current":"' + encoded + '","current":"' + encoded + '"}')
+
+
 def _residency(**overrides) -> BackendResidency:
     payload = {
         "state": "resident",

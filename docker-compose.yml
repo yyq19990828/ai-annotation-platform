@@ -86,6 +86,8 @@ services:
       CONNECTOR_HOST_ALLOWLIST: ${CONNECTOR_HOST_ALLOWLIST:-}
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
+      GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
     volumes:
@@ -98,6 +100,14 @@ services:
       # 匿名卷屏蔽 host 的 apps/api/.venv 避免泄入容器。Celery 无 --reload, 改码后仍需 restart。
       - ./apps/api:/app
       - /app/.venv
+      # Bind mount preserves the host file's 0400 mode. Compose file-backed
+      # secrets ignore uid/gid/mode and would expose the file as 0444.
+      - type: bind
+        source: ${GPU_LIFECYCLE_SIGNING_KEYS_FILE:-/dev/null}
+        target: /run/secrets/gpu_lifecycle_signing_keys
+        read_only: true
+        bind:
+          create_host_path: false
     # v0.10.24 · worker 健康探针: inspect ping 自身节点 (-d 限定当前 worker, 不等其它副本)。
     # 必须用 CMD-SHELL — exec-form 无 shell, $$HOSTNAME 不展开会 ping 字面节点名导致永远 unhealthy。
     # start_period 留足 image 冷启 + broker 连接; SIGTERM 后给 30s warm shutdown 跑完在途任务。
@@ -132,6 +142,8 @@ services:
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
+      GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
       # SAM3 文本 multiplex / PVS 的单窗上限。显式透传 .env，避免 dev compose
       # 只改宿主机变量但 GPU worker 仍使用镜像内默认值。
       VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES: ${VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES:-16}
@@ -140,6 +152,12 @@ services:
       - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
       - ./apps/api:/app
       - /app/.venv
+      - type: bind
+        source: ${GPU_LIFECYCLE_SIGNING_KEYS_FILE:-/dev/null}
+        target: /run/secrets/gpu_lifecycle_signing_keys
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s

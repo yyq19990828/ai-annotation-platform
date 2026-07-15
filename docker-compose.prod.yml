@@ -48,6 +48,16 @@ services:
     # entrypoint.sh 启动时自动 alembic upgrade head，再跑 Dockerfile CMD 的 uvicorn。
     env_file:
       - .env.production
+    environment:
+      GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
+      GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
+    volumes:
+      - type: bind
+        source: ${GPU_LIFECYCLE_SIGNING_KEYS_FILE:-/dev/null}
+        target: /run/secrets/gpu_lifecycle_signing_keys
+        read_only: true
+        bind:
+          create_host_path: false
     # 默认只绑宿主回环 127.0.0.1：强制流量走外层反代，不直接暴露公网（Docker 发布端口会绕过 ufw）。
     # 外层反代在别的机器时，于 .env.production 设 PROXY_BIND_HOST=<内网IP>（勿用 0.0.0.0）。
     ports:

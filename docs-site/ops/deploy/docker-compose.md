@@ -498,6 +498,9 @@ ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本�
 ```dotenv
 GPU_ARBITER_MODE=off
 GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
+# 仅在准备 promotion/enforce 时配置；文件权限建议 0400，并由 secret store 投递。
+GPU_LIFECYCLE_SIGNING_KEYS_FILE=/secure/aap-gpu-signing-keys.json
+GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 ```
 
 `allocatable_mb` 是扣除驱动 / CUDA context、桌面或系统进程、平台外占用和安全余量后的可分配
@@ -515,6 +518,14 @@ prepared 中间态，但不会签发 token、切换 backend gate 或接入 admis
 当前 PostgreSQL 与 worker 共用应用数据库角色时，tombstone completion receipt 属于受信 worker 的跨存储声明；
 正式启用 `enforce` 前应将 collector 收缩为独立受限角色/过程，并撤销普通应用角色对
 `gpu_backend_memberships` 的直接 DELETE，或在安全评审中明确接受同角色 worker 为完全受信边界。
+签名私钥文件使用严格 JSON `kid -> unpadded-base64url(raw 32-byte Ed25519 private seed)`；Compose 只把它
+挂载到 API、通用 worker 与 GPU worker 的 `/run/secrets/gpu_lifecycle_signing_keys`。ML backend 只接收
+`GPU_LIFECYCLE_VERIFY_KEYS_JSON` 公钥环；CPU/export/beat、Web 和 ML backend 均不应取得平台私钥。
+这里有意使用服务级只读 bind 并要求宿主文件为 `0400`：Compose 本地 file secret 会忽略声明的
+`uid/gid/mode` 并在容器内呈现为 `0444`，无法满足同容器非 root 用户不可读的边界。当前应用容器以 root
+运行；若以后改成非 root，需同步调整宿主文件 owner，不能放宽权限。
+轮换必须先扩展所有 backend 的公钥环，再切 active kid，待旧 token、lease 与 replay tombstone 安全收敛后
+才能移除旧 key。desired `enforce` 但 effective 尚未提升时，普通业务派发仍不会读取或使用 signer。
 管理诊断只使用 `connected` 且 3 分钟内成功探测的 CPU / GPU 身份快照；
 URL 改动、探测失败或快照过期后都按 unknown 保守报告，不会用旧 CPU/UUID 证据跳过 claim blocker。
 

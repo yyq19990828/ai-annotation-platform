@@ -391,9 +391,19 @@ def encode_ed25519_public_key(public_key: Ed25519PublicKey) -> str:
 def load_verify_keyring(raw_json: str) -> dict[str, Ed25519PublicKey]:
     """Load ``kid -> raw-public-key-base64url`` JSON used by backend verifiers."""
 
+    def _reject_duplicate_keys(
+        pairs: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("verify keyring contains duplicate key ids")
+            value[key] = item
+        return value
+
     try:
-        payload = json.loads(raw_json)
-    except (TypeError, json.JSONDecodeError) as exc:
+        payload = json.loads(raw_json, object_pairs_hook=_reject_duplicate_keys)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("verify keyring must be a JSON object") from exc
     if not isinstance(payload, dict) or not payload:
         raise ValueError("verify keyring must be a non-empty JSON object")

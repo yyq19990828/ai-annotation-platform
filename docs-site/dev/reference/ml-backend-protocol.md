@@ -220,7 +220,13 @@ token 固定为 Ed25519 / EdDSA compact JWS，protected header 为 `alg=EdDSA`�
 JWT key 不得复用。轮换必须先把新旧公钥共同部署到 backend，再切 signer 的 active `kid`，最后等旧 token、
 lease 与 replay tombstone 全部安全过期后移除旧 key。
 
-YOLO、ONNXTools 与 RapidOCR 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
+平台签发进程通过 `GPU_LIFECYCLE_SIGNING_KEYS_FILE` 延迟读取私钥文件，并用
+`GPU_LIFECYCLE_ACTIVE_SIGNING_KID` 选择当前签名 key。文件是严格 JSON
+`kid -> unpadded-base64url(raw 32-byte Ed25519 private seed)`；只应以只读 secret 挂载给 API、通用 worker
+和 GPU worker，不得进入 CPU/export/beat、Web 或任何 ML backend。`off/observe` 派发不会读取私钥文件；
+缺失、不可读、重复 key、非法 key 或 active kid 不存在都会让 promotion/enforce 准入保持 fail-closed。
+
+五个 GPU backend 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
 以 legacy gate 启动；非空但无法解析的配置会阻止启动。`/health` 与 `/setup` 始终免 token；legacy gate 下
 无 header 的 `/predict`、`/predict/interactive`、`/warmup` 和 bodyless `/unload` 保持兼容，但会把驻留标记为
 unmanaged。enforce gate 下这些加载入口必须携带匹配当前 boot、identity、control epoch 与 generation 的 token。
