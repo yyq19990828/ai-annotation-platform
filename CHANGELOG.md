@@ -49,7 +49,7 @@
 
 ### Changed
 
-- **跨 Backend GPU 显存仲裁按逐物理资源治理**：ADR-0049 按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切、静态 claim 与 observe 影子派发已落地；ONNXTools 仍待真实 GPU 回落验收，Redis 账本、lease、enforce 与真正驱逐仍待实施。
+- **跨 Backend GPU 显存仲裁按逐物理资源治理**：ADR-0049 按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切、静态 claim、observe 影子派发、持久 fencing 高水位以及 Redis allocation/lease/FIFO/transition 原子账本已经落地；账本重建以 revision + incarnation 双重 CAS、全域镜像校验和有界 deadline fail-closed。ONNXTools 仍待真实 GPU 回落验收，权威 membership/tombstone、bootstrap/repair worker、enforce 与真正驱逐仍待实施。
 
 ### Fixed
 

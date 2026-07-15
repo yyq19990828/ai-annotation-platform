@@ -326,6 +326,17 @@ Redis 为空时必须先从 PostgreSQL claim、durable generation high-water 与
 或身份不一致时保持 not-ready 并要求显式灾难恢复，不得自动降低 generation。60 秒 repair loop 收敛
 idle/manual unload、backend 重启、Redis flush 和不确定写回。
 
+repair 调用方必须提交不晚于 Redis `TIME` 后五分钟的绝对证据 deadline，并由成功重建将它冻结到账本；
+重建只能在该期限内，以 revision + incarnation 双重 CAS 原子提交。allocation、lease、卡级与 backend 级 FIFO、transition 的镜像
+计数必须覆盖完整权威域，任何部分删除、身份不匹配或超出有界输入都保持 not-ready。完整 flush 或 revision
+接近精度上限时轮换 incarnation，避免同 revision 的 ABA；响应丢失后的同 owner 精确重试只读幂等。queue、
+lease 与 transition 是否过期以逻辑 deadline 为准，Redis 物理 TTL 只负责最终回收。
+
+bootstrap/repair 的 backend 域必须来自独立持久化 membership，包含当前成员及尚未确认 Redis child 全部收敛
+的 retired tombstone。活动 registry 行不是封闭域；Lua `KEYS`/`SCAN` 也不能作为遗漏 key 不存在的证明。
+现有 `gpu_backend_fences.backend_registry_id` 采用级联删除，不能承担 tombstone。实现必须先持久化 membership，
+再允许创建该 backend 的 Redis child；只有 health、token、lease 与队列均确认收敛后才能清除 tombstone。
+
 API lifespan 与 Celery 中反复 `asyncio.run` 会创建不同 event loop。实现不得跨 loop 复用 module-global
 `redis.asyncio` client/pool；必须按 event loop 管理并显式关闭，或封装同步 Redis 调用，并用重复创建和销毁
 event loop 的测试证明连接生命周期正确。
@@ -414,7 +425,8 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P0：接受本 ADR，只冻结设计；不代表自动仲裁可用。
 - P1：五个 backend 完成 residency、active/draining、全池 unload、generation fencing 与 admission token 契约。
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
-- P3：Redis 原子账本、lease、FIFO、bootstrap/reconcile 和跨 event-loop client 生命周期完成。
+- P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期以及 fail-closed 重建原语完成；独立
+  durable membership/tombstone 与 bootstrap/repair worker 接通后才算通过。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。
