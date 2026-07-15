@@ -352,9 +352,15 @@ mutation 由 registry row→membership→fence trigger 线性化，服务层不�
 在同一事务推进；复用既有 epoch 的普通 workload 使用 horizon-only 更新。两条路径都必须 UPDATE-only
 单调持久化 `token_expiry_high_water`，缺失 fence 视为持久状态损坏，禁止从 1 重建。Redis 连续性丢失后，
 只有该时域已过且取得时域之后的 live-idle health，或完成更强的受签 reset，才可恢复 ready。
-Redis 还必须区分 all-domain 与 active-domain，以 revision/incarnation CAS 原子扩缩域和清理 retired child；
-partial corruption 只能通过封闭域、令牌时域和 live health 共同证明的 reset 修复。只有 health、token、lease、
-队列、transition 与 Redis 域均确认收敛后才能清除 tombstone。
+Redis v2 以三份 canonical 文档区分有界 all-domain、携带 positive-int64 epoch/state 的 membership-domain 与
+由 active 成员唯一派生的 active-domain。新 admission、两级 enqueue 与 ticket 消费 exact-match active
+membership epoch；lease、ticket 取消/查询及 transition 收敛只要求成员仍位于 all-domain，因此 active 转
+retiring 后不会失去清理入口。域演进只能在卡已 not-ready 时使用 revision/incarnation CAS：新成员必须先以
+pending@1 加入且 child 为空，既有状态变化遵循持久 membership 的同构规则，all-domain 在 proof-backed GC
+落地前只能单调扩张。响应丢失精确重试保持只读，v1 或缺失三域的账本只会 fail-close，不能静默升级。
+partial corruption 仍只能通过封闭域、令牌时域和 live health 共同证明的 reset 修复；retired child 与
+tombstone 必须走后续两阶段 GC。只有 health、token、lease、队列、transition 与 Redis 域均确认收敛后才能
+清除 tombstone。
 
 API lifespan 与 Celery 中反复 `asyncio.run` 会创建不同 event loop。实现不得跨 loop 复用 module-global
 `redis.asyncio` client/pool；必须按 event loop 管理并显式关闭，或封装同步 Redis 调用，并用重复创建和销毁
@@ -445,8 +451,9 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P0：接受本 ADR，只冻结设计；不代表自动仲裁可用。
 - P1：五个 backend 完成 residency、active/draining、全池 unload、generation fencing 与 admission token 契约。
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
-- P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语以及独立
-  durable membership/tombstone 已完成；Redis 双域演进、live health 与 bootstrap/repair worker 接通后才算通过。
+- P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语、独立 durable
+  membership/tombstone，以及 v2 all/membership/active 三域的单调演进与操作权限矩阵已完成；live health、
+  token horizon proof reset、retired child/tombstone GC 与 bootstrap/repair worker 接通后才算通过。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。

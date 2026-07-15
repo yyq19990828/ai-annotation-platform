@@ -65,6 +65,10 @@ class GPURequestLeaseState(str, Enum):
     STALE = "stale"
 
 
+GPUBackendMembershipState = Literal["pending", "active", "retiring"]
+_GPU_BACKEND_MEMBERSHIP_STATES = frozenset({"pending", "active", "retiring"})
+
+
 class GPUArbiterStoreError(RuntimeError):
     """The Redis ledger is unavailable, corrupt, or returned an invalid response."""
 
@@ -84,6 +88,13 @@ class GPUArbiterKeys:
 
     def leases(self, backend_id: str) -> str:
         return f"{self.namespace}:{{{self.resource_tag}}}:leases:{backend_id}"
+
+
+@dataclass(frozen=True)
+class GPUBackendDomainMember:
+    backend_id: str
+    membership_epoch: int
+    state: GPUBackendMembershipState
 
 
 @dataclass(frozen=True)
@@ -155,6 +166,7 @@ class GPUQueueResult:
         "owner_mismatch",
         "ticket_conflict",
         "not_ready",
+        "config_mismatch",
         "ledger_corrupt",
     ]
     ticket_id: str
@@ -194,6 +206,7 @@ class GPUTransitionOwnerResult:
         "invalid_transition",
         "ledger_corrupt",
         "not_ready",
+        "config_mismatch",
     ]
     owner_id: str | None = None
     generation: str | None = None
@@ -230,6 +243,26 @@ class GPUReconcileResult:
 
 
 @dataclass(frozen=True)
+class GPUBackendDomainEvolutionResult:
+    status: Literal[
+        "evolved",
+        "unchanged",
+        "not_ready",
+        "stale_revision",
+        "partial_state",
+        "config_mismatch",
+        "ledger_corrupt",
+    ]
+    ledger_revision: int
+    ledger_incarnation: str
+    requested_backend_ids: tuple[str, ...]
+    requested_active_backend_ids: tuple[str, ...]
+    requested_backend_memberships: tuple[GPUBackendDomainMember, ...]
+    reason: str = ""
+    idempotent: bool = False
+
+
+@dataclass(frozen=True)
 class GPULeaseMutationResult:
     status: Literal[
         "heartbeated",
@@ -256,8 +289,25 @@ class GPUCardSnapshot:
     ledger_revision: int
     ledger_incarnation: str
     committed_mb: int
+    backend_ids: tuple[str, ...]
+    active_backend_ids: tuple[str, ...]
+    backend_memberships: tuple[GPUBackendDomainMember, ...]
     allocations: tuple[GPUAllocation, ...]
     leases: tuple[GPURequestLease, ...]
+
+
+@dataclass(frozen=True)
+class _GPUBackendDomains:
+    backend_domain_raw: str
+    backend_domain_fingerprint: str
+    membership_domain_raw: str
+    membership_domain_fingerprint: str
+    active_backend_domain_raw: str
+    active_backend_domain_fingerprint: str
+    backend_ids: tuple[str, ...]
+    active_backend_ids: tuple[str, ...]
+    backend_memberships: tuple[GPUBackendDomainMember, ...]
+    ledger_incarnation: str
 
 
 _MARK_CARD_NOT_READY_LUA = r"""
@@ -328,6 +378,44 @@ if card_exists and (
     ledger_incarnation=''
   })
 end
+if card_exists and redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
+  local revision = tonumber(revision_raw)
+  if revision_raw ~= '9007199254740991' then
+    revision = redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
+  end
+  redis.call('HSET', KEYS[1],
+    'bootstrap_state', 'not_ready',
+    'reconcile_deadline_ms', '0',
+    'not_ready_reason', 'legacy_schema_requires_proof_reset',
+    'updated_at_ms', tostring(now_ms()))
+  return cjson.encode({
+    status='ledger_corrupt', reason='legacy_schema_requires_proof_reset',
+    ledger_revision=revision, ledger_incarnation=incarnation or '',
+    committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0
+  })
+end
+if card_exists and (
+    not redis.call('HGET', KEYS[1], 'backend_domain')
+    or not redis.call('HGET', KEYS[1], 'backend_domain_fingerprint')
+    or not redis.call('HGET', KEYS[1], 'membership_domain')
+    or not redis.call('HGET', KEYS[1], 'membership_domain_fingerprint')
+    or not redis.call('HGET', KEYS[1], 'active_backend_domain')
+    or not redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint')) then
+  local revision = tonumber(revision_raw)
+  if revision_raw ~= '9007199254740991' then
+    revision = redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
+  end
+  redis.call('HSET', KEYS[1],
+    'bootstrap_state', 'not_ready',
+    'reconcile_deadline_ms', '0',
+    'not_ready_reason', 'ledger_schema_incomplete',
+    'updated_at_ms', tostring(now_ms()))
+  return cjson.encode({
+    status='ledger_corrupt', reason='ledger_schema_incomplete',
+    ledger_revision=revision, ledger_incarnation=incarnation or '',
+    committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0
+  })
+end
 if revision_raw == '9007199254740991' then
   redis.call('HSET', KEYS[1],
     'bootstrap_state', 'not_ready',
@@ -346,11 +434,15 @@ redis.call('HSET', KEYS[1],
   'bootstrap_state', 'not_ready',
   'reconcile_deadline_ms', '0',
   'not_ready_reason', ARGV[3],
-  'ledger_version', '1',
+  'ledger_version', '2',
   'updated_at_ms', tostring(now_ms()))
 redis.call('HSETNX', KEYS[1], 'committed_mb', '0')
 redis.call('HSETNX', KEYS[1], 'backend_domain', '[]')
 redis.call('HSETNX', KEYS[1], 'backend_domain_fingerprint', ARGV[4])
+redis.call('HSETNX', KEYS[1], 'membership_domain', '[]')
+redis.call('HSETNX', KEYS[1], 'membership_domain_fingerprint', ARGV[4])
+redis.call('HSETNX', KEYS[1], 'active_backend_domain', '[]')
+redis.call('HSETNX', KEYS[1], 'active_backend_domain_fingerprint', ARGV[4])
 redis.call('HSETNX', KEYS[1], 'allocation_count', '0')
 redis.call('HSETNX', KEYS[1], 'lease_counts', '{}')
 redis.call('HSETNX', KEYS[1], 'card_queue_count', '0')
@@ -455,6 +547,7 @@ local function read_queue(
        or type(ticket.ticket_id) ~= 'string' or ticket.ticket_id == ''
        or type(ticket.owner_id) ~= 'string' or ticket.owner_id == ''
        or type(ticket.backend_id) ~= 'string' or ticket.backend_id == ''
+       or not valid_generation(ticket.membership_epoch)
        or ticket.kind ~= expected_kind
        or not known_backends[ticket.backend_id]
        or (expected_backend_id ~= ''
@@ -491,8 +584,8 @@ end
 local now = now_ms()
 local requested_deadline = tonumber(ARGV[5])
 local supplied_expected_revision = ARGV[2]
-local supplied_expected_incarnation = ARGV[12]
-local proposed_incarnation = ARGV[13]
+local supplied_expected_incarnation = ARGV[16]
+local proposed_incarnation = ARGV[17]
 local expected_revision = supplied_expected_revision
 local expected_incarnation = supplied_expected_incarnation
 local existing_resource = redis.call('HGET', KEYS[1], 'resource_id')
@@ -568,7 +661,7 @@ if expected_revision ~= '' then
   local allocation_count = tonumber(redis.call('HGET', KEYS[1], 'allocation_count') or '-1')
   local card_queue_count = tonumber(redis.call('HGET', KEYS[1], 'card_queue_count') or '-1')
   local bootstrap_state = redis.call('HGET', KEYS[1], 'bootstrap_state')
-  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '1'
+  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
      or not valid_integer(card_allocatable, 1, 9007199254740991)
      or not valid_integer(card_committed, 0, 9007199254740991)
      or not valid_integer(card_deadline, 0, 9007199254740991)
@@ -585,7 +678,7 @@ local queue_keys = {}
 local known_backends = {}
 local initialize_domain = false
 local key_index = 5
-for i = 14, #ARGV do
+for i = 18, #ARGV do
   local backend_id = ARGV[i]
   if type(backend_id) ~= 'string' or backend_id == '' or known_backends[backend_id] then
     return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='backend_domain_invalid'})
@@ -604,20 +697,76 @@ if not requested_domain or #requested_domain > 64
   return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='backend_domain_invalid'})
 end
 for index, backend_id in ipairs(requested_domain) do
-  if ARGV[index + 13] ~= backend_id then
+  if ARGV[index + 17] ~= backend_id then
     return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='backend_domain_invalid'})
   end
+end
+local requested_membership_domain = decode(ARGV[12])
+local valid_membership_states = {pending=true, active=true, retiring=true}
+if not requested_membership_domain
+   or #requested_membership_domain ~= #requested_domain
+   or ARGV[12] == '' then
+  return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='membership_domain_invalid'})
+end
+local membership_by_backend = {}
+for index, member in ipairs(requested_membership_domain) do
+  local backend_id = requested_domain[index]
+  if type(member) ~= 'table' or table_size(member) ~= 3
+     or member.backend_id ~= backend_id
+     or type(member.membership_epoch) ~= 'string'
+     or not valid_generation(member.membership_epoch)
+     or not valid_membership_states[member.state] then
+    return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='membership_domain_invalid'})
+  end
+  membership_by_backend[backend_id] = member
+end
+local requested_active_domain = decode(ARGV[14])
+local active_backends = {}
+local previous_active_backend = nil
+if not requested_active_domain or #requested_active_domain > 64
+   or ARGV[14] == '' then
+  return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='active_backend_domain_invalid'})
+end
+for _, backend_id in ipairs(requested_active_domain) do
+  if type(backend_id) ~= 'string' or backend_id == ''
+     or not known_backends[backend_id] or active_backends[backend_id]
+     or (previous_active_backend and backend_id <= previous_active_backend) then
+    return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='active_backend_domain_invalid'})
+  end
+  active_backends[backend_id] = true
+  previous_active_backend = backend_id
+end
+if table_size(active_backends) ~= #requested_active_domain then
+  return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='active_backend_domain_invalid'})
+end
+for _, member in ipairs(requested_membership_domain) do
+  if (member.state == 'active') ~= (active_backends[member.backend_id] == true) then
+    return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='active_membership_domain_mismatch'})
+  end
+end
+if ARGV[4] == '1' and #requested_active_domain == 0 then
+  return cjson.encode({status='not_ready', ready=false, ledger_revision=0, committed_mb=0, purged_leases=0, reason='active_backend_domain_empty'})
 end
 if expected_revision ~= '' then
   local stored_domain = redis.call('HGET', KEYS[1], 'backend_domain')
   local stored_fingerprint = redis.call('HGET', KEYS[1], 'backend_domain_fingerprint')
+  local stored_membership_domain = redis.call('HGET', KEYS[1], 'membership_domain')
+  local stored_membership_fingerprint = redis.call('HGET', KEYS[1], 'membership_domain_fingerprint')
+  local stored_active_domain = redis.call('HGET', KEYS[1], 'active_backend_domain')
+  local stored_active_fingerprint = redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint')
   initialize_domain = not idempotent_retry and ARGV[10] ~= '[]'
     and stored_domain == '[]'
+    and stored_membership_domain == '[]'
+    and stored_active_domain == '[]'
     and redis.call('HGET', KEYS[1], 'bootstrap_state') == 'not_ready'
     and redis.call('HGET', KEYS[1], 'allocation_count') == '0'
     and redis.call('HGET', KEYS[1], 'committed_mb') == '0'
   if not initialize_domain
-     and (stored_domain ~= ARGV[10] or stored_fingerprint ~= ARGV[11]) then
+     and (stored_domain ~= ARGV[10] or stored_fingerprint ~= ARGV[11]
+       or stored_membership_domain ~= ARGV[12]
+       or stored_membership_fingerprint ~= ARGV[13]
+       or stored_active_domain ~= ARGV[14]
+       or stored_active_fingerprint ~= ARGV[15]) then
     return cjson.encode({status='config_mismatch', ready=false, ledger_revision=tonumber(expected_revision), committed_mb=0, purged_leases=0, reason='backend_domain_changed'})
   end
   if initialize_domain then current_incarnation = proposed_incarnation end
@@ -964,11 +1113,15 @@ redis.call('HSET', KEYS[1],
   'bootstrap_state', ready and 'ready' or 'not_ready',
   'reconcile_deadline_ms', tostring(deadline),
   'not_ready_reason', reason,
-  'ledger_version', '1',
+  'ledger_version', '2',
   'ledger_incarnation', current_incarnation,
   'committed_mb', tostring(committed),
   'backend_domain', ARGV[10],
   'backend_domain_fingerprint', ARGV[11],
+  'membership_domain', ARGV[12],
+  'membership_domain_fingerprint', ARGV[13],
+  'active_backend_domain', ARGV[14],
+  'active_backend_domain_fingerprint', ARGV[15],
   'allocation_count', tostring(#target_order),
   'lease_counts', cjson.encode(lease_counts),
   'card_queue_count', '0',
@@ -986,6 +1139,394 @@ return cjson.encode({
   committed_mb=committed,
   purged_leases=purge_count, reason=reason, idempotent=idempotent_retry
 })
+"""
+
+
+_EVOLVE_BACKEND_DOMAINS_LUA = r"""
+local function now_ms()
+  local t = redis.call('TIME')
+  return (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000)
+end
+local function decode(raw)
+  if not raw then return nil end
+  local ok, value = pcall(cjson.decode, raw)
+  if not ok or type(value) ~= 'table' then return nil end
+  return value
+end
+local function table_size(value)
+  local count = 0
+  for _, _ in pairs(value) do count = count + 1 end
+  return count
+end
+local function valid_epoch(value)
+  if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
+    return false
+  end
+  if string.len(value) < 19 then return true end
+  if string.len(value) > 19 then return false end
+  return value <= '9223372036854775807'
+end
+local function increment_epoch(value)
+  local carry = 1
+  local digits = {}
+  for index = string.len(value), 1, -1 do
+    local digit = tonumber(string.sub(value, index, index)) + carry
+    if digit >= 10 then
+      digit = digit - 10
+      carry = 1
+    else
+      carry = 0
+    end
+    table.insert(digits, 1, tostring(digit))
+  end
+  if carry == 1 then table.insert(digits, 1, '1') end
+  return table.concat(digits)
+end
+local function valid_revision(value)
+  if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
+    return false
+  end
+  if string.len(value) < 16 then return true end
+  if string.len(value) > 16 then return false end
+  return value < '9007199254740991'
+end
+local function validate_domains(domain_raw, membership_raw, active_raw)
+  local domain = decode(domain_raw)
+  local membership_domain = decode(membership_raw)
+  local active_domain = decode(active_raw)
+  if not domain or #domain > 64
+     or not membership_domain or #membership_domain ~= #domain
+     or not active_domain or #active_domain > #domain
+     or (#domain == 0 and domain_raw ~= '[]')
+     or (#membership_domain == 0 and membership_raw ~= '[]')
+     or (#active_domain == 0 and active_raw ~= '[]') then
+    return nil
+  end
+  local valid_states = {pending=true, active=true, retiring=true}
+  local known = {}
+  local members = {}
+  local previous = nil
+  local active_index = 1
+  for index, backend_id in ipairs(domain) do
+    local member = membership_domain[index]
+    if type(backend_id) ~= 'string' or backend_id == ''
+       or string.len(backend_id) > 128
+       or (previous and backend_id <= previous)
+       or type(member) ~= 'table' or table_size(member) ~= 3
+       or member.backend_id ~= backend_id
+       or not valid_epoch(member.membership_epoch)
+       or not valid_states[member.state] then
+      return nil
+    end
+    previous = backend_id
+    known[backend_id] = true
+    members[backend_id] = member
+    if member.state == 'active' then
+      if active_domain[active_index] ~= backend_id then return nil end
+      active_index = active_index + 1
+    end
+  end
+  if active_index ~= #active_domain + 1 then return nil end
+  return {domain=domain, known=known, members=members, active=active_domain}
+end
+local function response(status, revision, incarnation, domains, reason, idempotent)
+  return cjson.encode({
+    status=status, ledger_revision=revision,
+    ledger_incarnation=incarnation or '',
+    backend_ids=domains and domains.domain or {},
+    active_backend_ids=domains and domains.active or {},
+    reason=reason or '', idempotent=idempotent or false
+  })
+end
+
+local incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+local current_revision = redis.call('HGET', KEYS[1], 'ledger_revision')
+local target_domains = validate_domains(ARGV[12], ARGV[14], ARGV[16])
+if not target_domains then
+  return response('ledger_corrupt', 0, incarnation, nil, 'target_membership_domain_invalid')
+end
+if redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[1] then
+  return response('not_ready', 0, incarnation, target_domains, 'card_missing_or_mismatched')
+end
+if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
+  return response('ledger_corrupt', tonumber(current_revision or '0') or 0,
+    incarnation, target_domains, 'legacy_schema_requires_proof_reset')
+end
+if not valid_revision(current_revision) then
+  return response('ledger_corrupt', 0, incarnation, target_domains, 'ledger_revision_invalid')
+end
+if type(incarnation) ~= 'string' or incarnation == ''
+   or string.len(incarnation) > 128 then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'ledger_incarnation_invalid')
+end
+if incarnation ~= ARGV[3] then
+  return response('stale_revision', tonumber(current_revision), incarnation,
+    target_domains, 'ledger_incarnation_changed')
+end
+
+if redis.call('HGET', KEYS[1], 'last_domain_evolution_id') == ARGV[4] then
+  if redis.call('HGET', KEYS[1], 'last_domain_evolution_fingerprint') ~= ARGV[5]
+     or redis.call('HGET', KEYS[1], 'last_domain_evolution_expected_revision') ~= ARGV[2]
+     or redis.call('HGET', KEYS[1], 'last_domain_evolution_expected_incarnation') ~= ARGV[3] then
+    return response('config_mismatch', tonumber(current_revision or '0') or 0,
+      incarnation, target_domains, 'evolution_id_conflict')
+  end
+  local marker_revision = redis.call('HGET', KEYS[1], 'last_domain_evolution_revision')
+  if not valid_revision(marker_revision) or current_revision ~= marker_revision then
+    return response('stale_revision', tonumber(current_revision or '0') or 0,
+      incarnation, target_domains, 'ledger_changed_after_evolution')
+  end
+  if redis.call('HGET', KEYS[1], 'backend_domain') ~= ARGV[12]
+     or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= ARGV[13]
+     or redis.call('HGET', KEYS[1], 'membership_domain') ~= ARGV[14]
+     or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= ARGV[15]
+     or redis.call('HGET', KEYS[1], 'active_backend_domain') ~= ARGV[16]
+     or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= ARGV[17] then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'evolution_marker_domain_mismatch')
+  end
+  return response('evolved', tonumber(current_revision), incarnation,
+    target_domains, '', true)
+end
+
+if current_revision ~= ARGV[2] then
+  return response('stale_revision', tonumber(current_revision), incarnation,
+    target_domains, 'ledger_revision_changed')
+end
+if tonumber(current_revision) >= 9007199252740991 then
+  return response('not_ready', tonumber(current_revision), incarnation,
+    target_domains, 'ledger_revision_rebase_required')
+end
+if redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
+   or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= '0' then
+  return response('not_ready', tonumber(current_revision), incarnation,
+    target_domains, 'domain_evolution_requires_not_ready')
+end
+if redis.call('HGET', KEYS[1], 'backend_domain') ~= ARGV[6]
+   or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= ARGV[7]
+   or redis.call('HGET', KEYS[1], 'membership_domain') ~= ARGV[8]
+   or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= ARGV[9]
+   or redis.call('HGET', KEYS[1], 'active_backend_domain') ~= ARGV[10]
+   or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= ARGV[11] then
+  return response('stale_revision', tonumber(current_revision), incarnation,
+    target_domains, 'membership_domain_changed')
+end
+local current_domains = validate_domains(ARGV[6], ARGV[8], ARGV[10])
+if not current_domains then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'current_membership_domain_invalid')
+end
+if #KEYS ~= 4 + (#target_domains.domain * 2)
+   or #ARGV ~= 17 + #target_domains.domain then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'backend_domain_key_mismatch')
+end
+local lease_keys = {}
+local queue_keys = {}
+for index, backend_id in ipairs(target_domains.domain) do
+  if ARGV[index + 17] ~= backend_id then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'backend_domain_key_mismatch')
+  end
+  lease_keys[backend_id] = KEYS[3 + (index * 2)]
+  queue_keys[backend_id] = KEYS[4 + (index * 2)]
+end
+
+for _, backend_id in ipairs(current_domains.domain) do
+  local current = current_domains.members[backend_id]
+  local target = target_domains.members[backend_id]
+  if not target then
+    return response('config_mismatch', tonumber(current_revision), incarnation,
+      target_domains, 'backend_domain_shrink_forbidden')
+  end
+  local same_epoch = target.membership_epoch == current.membership_epoch
+  local next_epoch = not same_epoch
+    and target.membership_epoch == increment_epoch(current.membership_epoch)
+  local valid_transition = same_epoch and (
+      target.state == current.state
+      or (current.state == 'pending' and target.state == 'active'))
+    or next_epoch and (
+      (current.state == 'pending' and target.state == 'pending')
+      or (current.state ~= 'retiring' and target.state == 'retiring'))
+  if not valid_transition then
+    return response('config_mismatch', tonumber(current_revision), incarnation,
+      target_domains, 'membership_transition_invalid')
+  end
+end
+local new_backends = {}
+for _, backend_id in ipairs(target_domains.domain) do
+  if not current_domains.known[backend_id] then
+    new_backends[backend_id] = true
+    local member = target_domains.members[backend_id]
+    if member.state ~= 'pending' or member.membership_epoch ~= '1' then
+      return response('config_mismatch', tonumber(current_revision), incarnation,
+        target_domains, 'new_membership_must_start_pending')
+    end
+    if redis.call('HEXISTS', KEYS[2], backend_id) ~= 0
+       or redis.call('HLEN', lease_keys[backend_id]) ~= 0
+       or redis.call('LLEN', queue_keys[backend_id]) ~= 0 then
+      return response('partial_state', tonumber(current_revision), incarnation,
+        target_domains, 'new_backend_children_present')
+    end
+  end
+end
+
+local lease_counts = decode(redis.call('HGET', KEYS[1], 'lease_counts'))
+local backend_queue_counts = decode(redis.call('HGET', KEYS[1], 'backend_queue_counts'))
+if not lease_counts or not backend_queue_counts
+   or table_size(lease_counts) ~= #current_domains.domain
+   or table_size(backend_queue_counts) ~= #current_domains.domain then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'child_count_cache_invalid')
+end
+local total_queue_count = 0
+for _, backend_id in ipairs(current_domains.domain) do
+  local lease_count = redis.call('HLEN', lease_keys[backend_id])
+  local backend_queue_count = redis.call('LLEN', queue_keys[backend_id])
+  if lease_count > 10000 then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'lease_domain_exceeded')
+  end
+  if backend_queue_count > 10000 then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'queue_domain_exceeded')
+  end
+  if lease_counts[backend_id] ~= lease_count
+     or backend_queue_counts[backend_id] ~= backend_queue_count then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'child_count_cache_drift')
+  end
+  total_queue_count = total_queue_count + backend_queue_count
+end
+local card_queue_count = redis.call('LLEN', KEYS[3])
+if tonumber(redis.call('HGET', KEYS[1], 'card_queue_count') or '-1') ~= card_queue_count then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'card_queue_count_cache_drift')
+end
+total_queue_count = total_queue_count + card_queue_count
+if card_queue_count > 10000 or total_queue_count > 10000 then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'queue_domain_exceeded')
+end
+local card_queue_entries = redis.call('LRANGE', KEYS[3], 0, -1)
+for _, raw in ipairs(card_queue_entries) do
+  local ticket = decode(raw)
+  if not ticket or type(ticket.backend_id) ~= 'string'
+     or not target_domains.known[ticket.backend_id] then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'card_queue_domain_invalid')
+  end
+  if new_backends[ticket.backend_id] then
+    return response('partial_state', tonumber(current_revision), incarnation,
+      target_domains, 'new_backend_children_present')
+  end
+end
+local allocation_count = redis.call('HLEN', KEYS[2])
+if tonumber(redis.call('HGET', KEYS[1], 'allocation_count') or '-1') ~= allocation_count
+   or allocation_count > 64 then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'allocation_count_cache_drift')
+end
+local counted_states = {
+  unknown=true, reserving=true, loading=true, resident=true,
+  draining=true, unloading=true
+}
+local valid_states = {
+  unknown=true, unloaded=true, reserving=true, loading=true, resident=true,
+  draining=true, unloading=true, cpu_fallback=true
+}
+local committed = 0
+local allocation_entries = redis.call('HGETALL', KEYS[2])
+for index = 1, #allocation_entries, 2 do
+  local backend_id = allocation_entries[index]
+  local allocation = decode(allocation_entries[index + 1])
+  local reservation_state = allocation
+    and (allocation.state == 'reserving' or allocation.state == 'loading')
+  local has_reservation = allocation
+    and type(allocation.reservation_lease_id) == 'string'
+    and allocation.reservation_lease_id ~= ''
+    and type(allocation.reservation_owner_id) == 'string'
+    and allocation.reservation_owner_id ~= ''
+  local reservation_present = allocation
+    and (allocation.reservation_lease_id ~= nil
+      or allocation.reservation_owner_id ~= nil)
+  if not current_domains.known[backend_id] or not allocation
+     or allocation.backend_id ~= backend_id or not valid_states[allocation.state]
+     or type(allocation.budget_mb) ~= 'number' or allocation.budget_mb < 1
+     or allocation.budget_mb > 9007199254740991
+     or allocation.budget_mb ~= math.floor(allocation.budget_mb)
+     or not valid_epoch(allocation.generation)
+     or type(allocation.eviction_priority) ~= 'number'
+     or allocation.eviction_priority ~= math.floor(allocation.eviction_priority)
+     or math.abs(allocation.eviction_priority) > 9007199254740991
+     or type(allocation.evictable) ~= 'boolean'
+     or type(allocation.max_concurrency) ~= 'number'
+     or allocation.max_concurrency ~= math.floor(allocation.max_concurrency)
+     or allocation.max_concurrency < 1 or allocation.max_concurrency > 10000
+     or type(allocation.last_used_at_ms) ~= 'number'
+     or allocation.last_used_at_ms ~= math.floor(allocation.last_used_at_ms)
+     or allocation.last_used_at_ms < 1
+     or allocation.last_used_at_ms > 9007199254740991
+     or (reservation_state and not has_reservation)
+     or (not reservation_state and reservation_present) then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'allocation_domain_invalid')
+  end
+  if counted_states[allocation.state] then committed = committed + allocation.budget_mb end
+end
+if tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '-1') ~= committed then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'committed_cache_drift')
+end
+local transition_raw = redis.call('GET', KEYS[4])
+local transition_mirror = redis.call('HGET', KEYS[1], 'transition_mirror')
+if transition_mirror == false or (transition_raw and transition_raw ~= transition_mirror) then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'transition_mirror_mismatch')
+end
+if transition_raw then
+  local transition = decode(transition_raw)
+  if not transition or not current_domains.known[transition.backend_id] then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'transition_domain_invalid')
+  end
+elseif transition_mirror ~= '' then
+  return response('ledger_corrupt', tonumber(current_revision), incarnation,
+    target_domains, 'transition_key_missing')
+end
+
+if ARGV[6] == ARGV[12] and ARGV[8] == ARGV[14] and ARGV[10] == ARGV[16]
+   and ARGV[7] == ARGV[13] and ARGV[9] == ARGV[15] and ARGV[11] == ARGV[17] then
+  return response('unchanged', tonumber(current_revision), incarnation,
+    target_domains, '', true)
+end
+for _, backend_id in ipairs(target_domains.domain) do
+  if not current_domains.known[backend_id] then
+    lease_counts[backend_id] = 0
+    backend_queue_counts[backend_id] = 0
+  end
+end
+local revision = redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
+redis.call('HSET', KEYS[1],
+  'bootstrap_state', 'not_ready',
+  'reconcile_deadline_ms', '0',
+  'not_ready_reason', 'backend_domain_evolved',
+  'backend_domain', ARGV[12],
+  'backend_domain_fingerprint', ARGV[13],
+  'membership_domain', ARGV[14],
+  'membership_domain_fingerprint', ARGV[15],
+  'active_backend_domain', ARGV[16],
+  'active_backend_domain_fingerprint', ARGV[17],
+  'lease_counts', cjson.encode(lease_counts),
+  'backend_queue_counts', cjson.encode(backend_queue_counts),
+  'last_domain_evolution_id', ARGV[4],
+  'last_domain_evolution_fingerprint', ARGV[5],
+  'last_domain_evolution_expected_revision', ARGV[2],
+  'last_domain_evolution_expected_incarnation', ARGV[3],
+  'last_domain_evolution_revision', tostring(revision),
+  'updated_at_ms', tostring(now_ms()))
+return response('evolved', revision, incarnation, target_domains, '', false)
 """
 
 
@@ -1099,13 +1640,91 @@ local function integrity_valid_ticket(
     and type(ticket.ticket_id) == 'string' and ticket.ticket_id ~= ''
     and type(ticket.owner_id) == 'string' and ticket.owner_id ~= ''
     and type(ticket.backend_id) == 'string' and ticket.backend_id ~= ''
+    and integrity_valid_generation(ticket.membership_epoch)
     and ticket.kind == expected_kind
     and known_backends[ticket.backend_id]
     and (expected_backend_id == '' or ticket.backend_id == expected_backend_id)
 end
+local function inspect_membership_domains(
+    resource_id, domain_raw, domain_fingerprint,
+    membership_raw, membership_fingerprint,
+    active_domain_raw, active_domain_fingerprint)
+  local now = integrity_now_ms()
+  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
+    integrity_fault(resource_id, 'membership_domain_invalid', now)
+    return nil, 'ledger_corrupt', 'membership_domain_invalid'
+  end
+  local stored_domain_raw = redis.call('HGET', KEYS[1], 'backend_domain')
+  local stored_membership_raw = redis.call('HGET', KEYS[1], 'membership_domain')
+  local stored_active_domain_raw = redis.call('HGET', KEYS[1], 'active_backend_domain')
+  if stored_domain_raw ~= domain_raw
+     or stored_membership_raw ~= membership_raw
+     or stored_active_domain_raw ~= active_domain_raw then
+    return nil, 'not_ready', 'membership_domain_changed'
+  end
+  if redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= domain_fingerprint
+     or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= membership_fingerprint
+     or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= active_domain_fingerprint then
+    integrity_fault(resource_id, 'membership_domain_invalid', now)
+    return nil, 'ledger_corrupt', 'membership_domain_invalid'
+  end
+  local domain = integrity_decode(domain_raw)
+  local membership_domain = integrity_decode(membership_raw)
+  local active_domain = integrity_decode(active_domain_raw)
+  if not domain or #domain > 64
+     or not membership_domain or #membership_domain ~= #domain
+     or not active_domain or #active_domain > #domain
+     or (#domain == 0 and domain_raw ~= '[]')
+     or (#membership_domain == 0 and membership_raw ~= '[]')
+     or (#active_domain == 0 and active_domain_raw ~= '[]') then
+    integrity_fault(resource_id, 'membership_domain_invalid', now)
+    return nil, 'ledger_corrupt', 'membership_domain_invalid'
+  end
+  local known_backends = {}
+  local memberships = {}
+  local active_backends = {}
+  local valid_membership_states = {pending=true, active=true, retiring=true}
+  local active_index = 1
+  local previous_backend_id = nil
+  for index, backend_id in ipairs(domain) do
+    local member = membership_domain[index]
+    if type(backend_id) ~= 'string' or backend_id == ''
+       or string.len(backend_id) > 128
+       or (previous_backend_id and backend_id <= previous_backend_id)
+       or known_backends[backend_id]
+       or type(member) ~= 'table' or integrity_table_size(member) ~= 3
+       or member.backend_id ~= backend_id
+       or not integrity_valid_generation(member.membership_epoch)
+       or not valid_membership_states[member.state] then
+      integrity_fault(resource_id, 'membership_domain_invalid', now)
+      return nil, 'ledger_corrupt', 'membership_domain_invalid'
+    end
+    known_backends[backend_id] = true
+    previous_backend_id = backend_id
+    memberships[backend_id] = member
+    if member.state == 'active' then
+      if active_domain[active_index] ~= backend_id then
+        integrity_fault(resource_id, 'active_membership_domain_mismatch', now)
+        return nil, 'ledger_corrupt', 'active_membership_domain_mismatch'
+      end
+      active_backends[backend_id] = true
+      active_index = active_index + 1
+    end
+  end
+  if active_index ~= #active_domain + 1 then
+    integrity_fault(resource_id, 'active_membership_domain_mismatch', now)
+    return nil, 'ledger_corrupt', 'active_membership_domain_mismatch'
+  end
+  return {
+    domain=domain, known_backends=known_backends,
+    memberships=memberships, active_backends=active_backends
+  }, nil, nil
+end
 local function inspect_ledger(
-    resource_id, domain_raw, domain_fingerprint, expected_incarnation,
-    require_ready, focus_backend_id)
+    resource_id, domain_raw, domain_fingerprint,
+    membership_raw, membership_fingerprint,
+    active_domain_raw, active_domain_fingerprint,
+    expected_incarnation, require_ready, focus_backend_id)
   local now = integrity_now_ms()
   if redis.call('HGET', KEYS[1], 'resource_id') ~= resource_id then
     return nil, 'not_ready', 'card_missing_or_mismatched'
@@ -1119,30 +1738,22 @@ local function inspect_ledger(
   if ledger_incarnation ~= expected_incarnation then
     return nil, 'not_ready', 'ledger_incarnation_changed'
   end
-  local domain = integrity_decode(domain_raw)
-  if not domain or #domain > 64
-     or redis.call('HGET', KEYS[1], 'backend_domain') ~= domain_raw
-     or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= domain_fingerprint
-     or #KEYS ~= 4 + (#domain * 2) then
+  local domains, domain_status, domain_reason = inspect_membership_domains(
+    resource_id, domain_raw, domain_fingerprint,
+    membership_raw, membership_fingerprint,
+    active_domain_raw, active_domain_fingerprint)
+  if not domains then return nil, domain_status, domain_reason end
+  local domain = domains.domain
+  if #KEYS ~= 4 + (#domain * 2) then
     integrity_fault(resource_id, 'backend_domain_invalid', now)
     return nil, 'ledger_corrupt', 'backend_domain_invalid'
   end
-  local known_backends = {}
+  local known_backends = domains.known_backends
   local lease_keys = {}
   local queue_keys = {}
   for index, backend_id in ipairs(domain) do
-    if type(backend_id) ~= 'string' or backend_id == ''
-       or known_backends[backend_id] then
-      integrity_fault(resource_id, 'backend_domain_invalid', now)
-      return nil, 'ledger_corrupt', 'backend_domain_invalid'
-    end
-    known_backends[backend_id] = true
     lease_keys[backend_id] = KEYS[3 + (index * 2)]
     queue_keys[backend_id] = KEYS[4 + (index * 2)]
-  end
-  if integrity_table_size(known_backends) ~= #domain then
-    integrity_fault(resource_id, 'backend_domain_invalid', now)
-    return nil, 'ledger_corrupt', 'backend_domain_invalid'
   end
 
   local allocatable = tonumber(redis.call('HGET', KEYS[1], 'allocatable_mb') or '-1')
@@ -1150,7 +1761,7 @@ local function inspect_ledger(
   local cached_committed = tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '-1')
   local cached_allocation_count = tonumber(redis.call('HGET', KEYS[1], 'allocation_count') or '-1')
   local deadline = tonumber(redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') or '-1')
-  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '1'
+  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
      or not integrity_valid_revision(ledger_revision)
      or not integrity_valid_integer(allocatable, 1, 9007199254740991)
      or not integrity_valid_integer(cached_committed, 0, 9007199254740991)
@@ -1310,6 +1921,7 @@ local function inspect_ledger(
   end
   return {
     now=now, domain=domain, known_backends=known_backends,
+    memberships=domains.memberships, active_backends=domains.active_backends,
     lease_keys=lease_keys, queue_keys=queue_keys,
     allocations=allocations, leases=leases,
     lease_counts=cached_lease_counts,
@@ -1414,7 +2026,8 @@ local function calculate_committed(key)
   return committed
 end
 
-local function read_queue(key, now, expected_kind, expected_backend_id)
+local function read_queue(
+    key, now, expected_kind, expected_backend_id, known_backends)
   local entries = redis.call('LRANGE', key, 0, -1)
   local live = {}
   local seen = {}
@@ -1426,7 +2039,9 @@ local function read_queue(key, now, expected_kind, expected_backend_id)
        or type(ticket.ticket_id) ~= 'string' or ticket.ticket_id == ''
        or type(ticket.owner_id) ~= 'string' or ticket.owner_id == ''
        or type(ticket.backend_id) ~= 'string' or ticket.backend_id == ''
+       or not valid_generation(ticket.membership_epoch)
        or ticket.kind ~= expected_kind
+       or not known_backends[ticket.backend_id]
        or (expected_backend_id ~= '' and ticket.backend_id ~= expected_backend_id)
        or seen[ticket.ticket_id] then
       return nil, nil, 'corrupt'
@@ -1450,7 +2065,8 @@ local function rewrite_queue(key, live, consumed_ticket_id)
 end
 
 local ledger, integrity_status, integrity_reason = inspect_ledger(
-  ARGV[1], ARGV[15], ARGV[16], ARGV[17], true, ARGV[2])
+  ARGV[1], ARGV[15], ARGV[16], ARGV[18], ARGV[19],
+  ARGV[20], ARGV[21], ARGV[17], true, ARGV[2])
 if not ledger then
   return cjson.encode({
     status=integrity_status, reason=integrity_reason,
@@ -1460,6 +2076,12 @@ if not ledger then
 end
 if not ledger.known_backends[ARGV[2]] then
   return cjson.encode({status='config_mismatch', reason='backend_outside_domain', committed_mb=ledger.committed, lease_count=0})
+end
+if not ledger.active_backends[ARGV[2]] then
+  return cjson.encode({status='config_mismatch', reason='backend_not_active', committed_mb=ledger.committed, lease_count=0})
+end
+if ledger.memberships[ARGV[2]].membership_epoch ~= ARGV[22] then
+  return cjson.encode({status='config_mismatch', reason='membership_epoch_changed', committed_mb=ledger.committed, lease_count=0})
 end
 local lease_key = ledger.lease_keys[ARGV[2]]
 local backend_queue_key = ledger.queue_keys[ARGV[2]]
@@ -1615,13 +2237,14 @@ else
 end
 
 local backend_head, backend_live, backend_queue_error = read_queue(
-  backend_queue_key, now, 'backend', ARGV[2])
+  backend_queue_key, now, 'backend', ARGV[2], ledger.known_backends)
 if backend_queue_error then
   return cjson.encode({status='ledger_corrupt', reason='backend_queue_decode_failed', committed_mb=committed, lease_count=lease_count})
 end
 if backend_head and (
   ARGV[13] == '' or backend_head.ticket_id ~= ARGV[13]
   or backend_head.owner_id ~= ARGV[9] or backend_head.backend_id ~= ARGV[2]
+  or backend_head.membership_epoch ~= ARGV[22]
 ) then
   return cjson.encode({status='concurrency_queued', reason='backend_fifo_wait', committed_mb=committed, lease_count=lease_count})
 end
@@ -1634,13 +2257,14 @@ local consumed_card_ticket = ''
 if increment > 0 then
   local card_head, card_queue_error
   card_head, card_live, card_queue_error = read_queue(
-    KEYS[3], now, 'card', '')
+    KEYS[3], now, 'card', '', ledger.known_backends)
   if card_queue_error then
     return cjson.encode({status='ledger_corrupt', reason='card_queue_decode_failed', committed_mb=committed, lease_count=lease_count})
   end
   if card_head and (
     ARGV[14] == '' or card_head.ticket_id ~= ARGV[14]
     or card_head.owner_id ~= ARGV[9] or card_head.backend_id ~= ARGV[2]
+    or card_head.membership_epoch ~= ARGV[22]
   ) then
     return cjson.encode({status='card_queued', reason='card_fifo_wait', committed_mb=committed, lease_count=lease_count})
   end
@@ -1719,7 +2343,81 @@ return cjson.encode({
 )
 
 
-_LEASE_LUA = r"""
+_MEMBERSHIP_DOMAIN_GUARD_LUA = r"""
+local function guard_decode(raw)
+  if not raw then return nil end
+  local ok, value = pcall(cjson.decode, raw)
+  if not ok or type(value) ~= 'table' then return nil end
+  return value
+end
+local function guard_valid_epoch(value)
+  if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
+    return false
+  end
+  if string.len(value) < 19 then return true end
+  if string.len(value) > 19 then return false end
+  return value <= '9223372036854775807'
+end
+local function guard_table_size(value)
+  local count = 0
+  for _, _ in pairs(value) do count = count + 1 end
+  return count
+end
+local function guard_membership_domain(
+    card_key, resource_id, backend_id, expected_incarnation,
+    domain_raw, domain_fingerprint, membership_raw, membership_fingerprint,
+    active_raw, active_fingerprint)
+  if redis.call('HGET', card_key, 'resource_id') ~= resource_id
+     or redis.call('HGET', card_key, 'ledger_version') ~= '2'
+     or redis.call('HGET', card_key, 'ledger_incarnation') ~= expected_incarnation
+     or redis.call('HGET', card_key, 'backend_domain') ~= domain_raw
+     or redis.call('HGET', card_key, 'backend_domain_fingerprint') ~= domain_fingerprint
+     or redis.call('HGET', card_key, 'membership_domain') ~= membership_raw
+     or redis.call('HGET', card_key, 'membership_domain_fingerprint') ~= membership_fingerprint
+     or redis.call('HGET', card_key, 'active_backend_domain') ~= active_raw
+     or redis.call('HGET', card_key, 'active_backend_domain_fingerprint') ~= active_fingerprint then
+    return false
+  end
+  local domain = guard_decode(domain_raw)
+  local memberships = guard_decode(membership_raw)
+  local active = guard_decode(active_raw)
+  if not domain or not memberships or not active
+     or #domain > 64 or #memberships ~= #domain or #active > #domain
+     or (#domain == 0 and domain_raw ~= '[]')
+     or (#memberships == 0 and membership_raw ~= '[]')
+     or (#active == 0 and active_raw ~= '[]') then
+    return false
+  end
+  local valid_states = {pending=true, active=true, retiring=true}
+  local previous = nil
+  local active_index = 1
+  local target_found = false
+  for index, member_backend_id in ipairs(domain) do
+    local member = memberships[index]
+    if type(member_backend_id) ~= 'string' or member_backend_id == ''
+       or string.len(member_backend_id) > 128
+       or (previous and member_backend_id <= previous)
+       or type(member) ~= 'table' or guard_table_size(member) ~= 3
+       or member.backend_id ~= member_backend_id
+       or not guard_valid_epoch(member.membership_epoch)
+       or not valid_states[member.state] then
+      return false
+    end
+    previous = member_backend_id
+    if member_backend_id == backend_id then target_found = true end
+    if member.state == 'active' then
+      if active[active_index] ~= member_backend_id then return false end
+      active_index = active_index + 1
+    end
+  end
+  return target_found and active_index == #active + 1
+end
+"""
+
+
+_LEASE_LUA = (
+    _MEMBERSHIP_DOMAIN_GUARD_LUA
+    + r"""
 local function now_ms()
   local t = redis.call('TIME')
   return (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000)
@@ -1752,7 +2450,9 @@ local function valid_revision(value)
   return value < '9007199254740991'
 end
 
-if redis.call('HGET', KEYS[2], 'resource_id') ~= ARGV[6] then
+if not guard_membership_domain(
+    KEYS[2], ARGV[6], ARGV[7], ARGV[10],
+    ARGV[8], ARGV[9], ARGV[11], ARGV[12], ARGV[13], ARGV[14]) then
   return cjson.encode({status='not_ready'})
 end
 local ledger_revision = redis.call('HGET', KEYS[2], 'ledger_revision')
@@ -1861,9 +2561,12 @@ elseif ARGV[1] == 'release' then
 end
 return redis.error_reply('unsupported gpu arbiter lease operation')
 """
+)
 
 
-_SWEEP_LEASES_LUA = r"""
+_SWEEP_LEASES_LUA = (
+    _MEMBERSHIP_DOMAIN_GUARD_LUA
+    + r"""
 local function valid_revision(value)
   if type(value) ~= 'string'
      or not string.match(value, '^[1-9][0-9]*$') then
@@ -1886,7 +2589,9 @@ local function valid_integer(value)
     and value >= 1 and value <= 9007199254740991
 end
 
-if redis.call('HGET', KEYS[2], 'resource_id') ~= ARGV[1] then
+if not guard_membership_domain(
+    KEYS[2], ARGV[1], ARGV[2], ARGV[5],
+    ARGV[3], ARGV[4], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
   return cjson.encode({status='not_ready', changed=0, total=0})
 end
 if not valid_revision(redis.call('HGET', KEYS[2], 'ledger_revision')) then
@@ -1942,6 +2647,7 @@ if changed > 0 then
 end
 return cjson.encode({status='swept', changed=changed, total=total})
 """
+)
 
 
 _QUEUE_LUA = (
@@ -1967,31 +2673,34 @@ if not integrity_valid_revision(
 end
 local revision_bumped = false
 
-local domain = integrity_decode(ARGV[9])
+local domains, domain_status = inspect_membership_domains(
+  ARGV[8], ARGV[9], ARGV[10], ARGV[12], ARGV[13], ARGV[14], ARGV[15])
+if not domains then
+  return cjson.encode({status=domain_status, ticket_id=ARGV[2]})
+end
+local domain = domains.domain
 local queue_key = nil
 local backend_queue_counts = integrity_decode(
   redis.call('HGET', KEYS[1], 'backend_queue_counts'))
-if not domain or #domain > 64 or not backend_queue_counts
-   or redis.call('HGET', KEYS[1], 'backend_domain') ~= ARGV[9]
-   or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= ARGV[10]
-   or #KEYS ~= 4 + (#domain * 2) then
+if not backend_queue_counts or #KEYS ~= 4 + (#domain * 2) then
   integrity_fault(ARGV[8], 'backend_domain_invalid', now)
   return cjson.encode({status='ledger_corrupt', ticket_id=ARGV[2]})
 end
-local known_backends = {}
+local known_backends = domains.known_backends
 for index, backend_id in ipairs(domain) do
-  if type(backend_id) ~= 'string' or backend_id == ''
-     or known_backends[backend_id] then
-    integrity_fault(ARGV[8], 'backend_domain_invalid', now)
-    return cjson.encode({status='ledger_corrupt', ticket_id=ARGV[2]})
-  end
-  known_backends[backend_id] = true
   if ARGV[5] == 'backend' and backend_id == ARGV[3] then
     queue_key = KEYS[4 + (index * 2)]
   end
 end
 if not known_backends[ARGV[3]] then
   return cjson.encode({status='not_ready', ticket_id=ARGV[2]})
+end
+if ARGV[1] == 'enqueue' and not domains.active_backends[ARGV[3]] then
+  return cjson.encode({status='config_mismatch', ticket_id=ARGV[2]})
+end
+if ARGV[1] == 'enqueue'
+   and domains.memberships[ARGV[3]].membership_epoch ~= ARGV[16] then
+  return cjson.encode({status='config_mismatch', ticket_id=ARGV[2]})
 end
 if ARGV[5] == 'card' then queue_key = KEYS[3] end
 if not queue_key then
@@ -2002,7 +2711,8 @@ end
 local inspected_ledger = nil
 if ARGV[1] == 'enqueue' then
   local ledger, integrity_status = inspect_ledger(
-    ARGV[8], ARGV[9], ARGV[10], ARGV[11], true, ARGV[3])
+    ARGV[8], ARGV[9], ARGV[10], ARGV[12], ARGV[13],
+    ARGV[14], ARGV[15], ARGV[11], true, ARGV[3])
   if not ledger then
     return cjson.encode({status=integrity_status, ticket_id=ARGV[2]})
   end
@@ -2068,7 +2778,8 @@ if ARGV[1] == 'enqueue' then
   if existing_position then
     local ticket = cjson.decode(live[existing_position])
     if ticket.owner_id ~= ARGV[4] or ticket.backend_id ~= ARGV[3]
-       or ticket.kind ~= ARGV[5] then
+       or ticket.kind ~= ARGV[5]
+       or ticket.membership_epoch ~= ARGV[16] then
       return cjson.encode({status='ticket_conflict', ticket_id=ARGV[2]})
     end
     if pruned then rewrite_live(nil) end
@@ -2090,6 +2801,7 @@ if ARGV[1] == 'enqueue' then
   end
   local ticket = {
     ticket_id=ARGV[2], backend_id=ARGV[3], owner_id=ARGV[4], kind=ARGV[5],
+    membership_epoch=ARGV[16],
     enqueued_at_ms=now, expires_at_ms=now + tonumber(ARGV[6])
   }
   if pruned then rewrite_live(nil) end
@@ -2178,17 +2890,26 @@ if not integrity_valid_revision(
   integrity_fault(ARGV[2], 'ledger_revision_invalid', now)
   return cjson.encode({status='ledger_corrupt'})
 end
+local owner_domains, owner_domain_status = inspect_membership_domains(
+  ARGV[2], ARGV[9], ARGV[10], ARGV[12], ARGV[13], ARGV[14], ARGV[15])
+if not owner_domains then
+  return cjson.encode({status=owner_domain_status})
+end
+if not owner_domains.known_backends[ARGV[3]] then
+  return cjson.encode({status='not_ready'})
+end
 local ledger = nil
 local target_lease_key = nil
 if ARGV[1] == 'acquire' then
   local integrity_status
   ledger, integrity_status = inspect_ledger(
-    ARGV[2], ARGV[9], ARGV[10], ARGV[11], true, ARGV[3])
+    ARGV[2], ARGV[9], ARGV[10], ARGV[12], ARGV[13],
+    ARGV[14], ARGV[15], ARGV[11], false, ARGV[3])
   if not ledger then
     return cjson.encode({status=integrity_status})
   end
-  if not ledger.known_backends[ARGV[3]] then
-    return cjson.encode({status='not_ready'})
+  if ledger.memberships[ARGV[3]].membership_epoch ~= ARGV[16] then
+    return cjson.encode({status='config_mismatch'})
   end
   target_lease_key = ledger.lease_keys[ARGV[3]]
 end
@@ -2441,7 +3162,8 @@ local function valid_lease(lease, lease_id, backend_id)
 end
 
 local ledger, integrity_status = inspect_ledger(
-  ARGV[1], ARGV[10], ARGV[11], ARGV[12], false, ARGV[2])
+  ARGV[1], ARGV[10], ARGV[11], ARGV[13], ARGV[14],
+  ARGV[15], ARGV[16], ARGV[12], false, ARGV[2])
 if not ledger then
   return cjson.encode({
     status=integrity_status,
@@ -2610,6 +3332,84 @@ def _validate_generation(value: str) -> str:
     return value
 
 
+def _validate_membership_epoch(value: int) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value <= 0
+        or value > _MAX_POSITIVE_INT64
+    ):
+        raise ValueError("membership_epoch must be a positive int64")
+    return value
+
+
+def _canonical_backend_domains(
+    memberships: Sequence[GPUBackendDomainMember],
+    *,
+    ledger_incarnation: str = "",
+) -> _GPUBackendDomains:
+    normalized: list[GPUBackendDomainMember] = []
+    seen_backend_ids: set[str] = set()
+    for member in memberships:
+        if not isinstance(member, GPUBackendDomainMember):
+            raise ValueError(
+                "backend_memberships must contain GPUBackendDomainMember values"
+            )
+        backend_id = _validate_nonempty(member.backend_id, "backend_id", max_length=128)
+        if backend_id in seen_backend_ids:
+            raise ValueError("backend_memberships must not contain duplicate backends")
+        if (
+            not isinstance(member.state, str)
+            or member.state not in _GPU_BACKEND_MEMBERSHIP_STATES
+        ):
+            raise ValueError("backend membership state is invalid")
+        seen_backend_ids.add(backend_id)
+        normalized.append(
+            GPUBackendDomainMember(
+                backend_id=backend_id,
+                membership_epoch=_validate_membership_epoch(member.membership_epoch),
+                state=member.state,
+            )
+        )
+    normalized.sort(key=lambda item: item.backend_id)
+    if len(normalized) > _MAX_GPU_BACKENDS_PER_RESOURCE:
+        raise ValueError("backend_memberships exceeds the per-resource safety limit")
+    backend_ids = tuple(item.backend_id for item in normalized)
+    active_backend_ids = tuple(
+        item.backend_id for item in normalized if item.state == "active"
+    )
+    backend_domain_raw = json.dumps(backend_ids, separators=(",", ":"))
+    membership_domain_raw = json.dumps(
+        [
+            {
+                "backend_id": item.backend_id,
+                "membership_epoch": str(item.membership_epoch),
+                "state": item.state,
+            }
+            for item in normalized
+        ],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    active_backend_domain_raw = json.dumps(active_backend_ids, separators=(",", ":"))
+
+    def fingerprint(raw: str) -> str:
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    return _GPUBackendDomains(
+        backend_domain_raw=backend_domain_raw,
+        backend_domain_fingerprint=fingerprint(backend_domain_raw),
+        membership_domain_raw=membership_domain_raw,
+        membership_domain_fingerprint=fingerprint(membership_domain_raw),
+        active_backend_domain_raw=active_backend_domain_raw,
+        active_backend_domain_fingerprint=fingerprint(active_backend_domain_raw),
+        backend_ids=backend_ids,
+        active_backend_ids=active_backend_ids,
+        backend_memberships=tuple(normalized),
+        ledger_incarnation=ledger_incarnation,
+    )
+
+
 def normalize_gpu_backend_max_concurrency(value: Any, *, default: int = 4) -> int:
     """Normalize the global Redis limit without accepting bool or invalid strings."""
 
@@ -2666,6 +3466,9 @@ class GPUArbiterStore:
             _MARK_CARD_NOT_READY_LUA
         )
         self._reconcile_card_script = redis.register_script(_RECONCILE_CARD_LUA)
+        self._evolve_backend_domains_script = redis.register_script(
+            _EVOLVE_BACKEND_DOMAINS_LUA
+        )
         self._admit_script = redis.register_script(_ADMIT_LUA)
         self._lease_script = redis.register_script(_LEASE_LUA)
         self._sweep_leases_script = redis.register_script(_SWEEP_LEASES_LUA)
@@ -2730,38 +3533,91 @@ class GPUArbiterStore:
     def keys(self, resource_id: str) -> GPUArbiterKeys:
         return gpu_arbiter_keys(resource_id, namespace=self.namespace)
 
-    async def _ledger_domain(
-        self, keys: GPUArbiterKeys
-    ) -> tuple[str, str, tuple[str, ...], str]:
-        _, incarnation, raw, _ = await self._call(
+    async def _ledger_domain(self, keys: GPUArbiterKeys) -> _GPUBackendDomains:
+        (
+            _,
+            incarnation,
+            backend_raw,
+            _,
+            membership_raw,
+            _,
+            active_raw,
+            _,
+        ) = await self._call(
             lambda: self._redis.hmget(
                 keys.card,
                 "resource_id",
                 "ledger_incarnation",
                 "backend_domain",
                 "backend_domain_fingerprint",
+                "membership_domain",
+                "membership_domain_fingerprint",
+                "active_backend_domain",
+                "active_backend_domain_fingerprint",
             )
         )
         incarnation = incarnation or ""
-        if raw is None:
-            return "", hashlib.sha256(b"").hexdigest(), (), incarnation
-        fingerprint = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+        def raw_fingerprint(value: str | None) -> tuple[str, str]:
+            raw = value or ""
+            return raw, hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+        backend_raw, backend_fingerprint = raw_fingerprint(backend_raw)
+        membership_raw, membership_fingerprint = raw_fingerprint(membership_raw)
+        active_raw, active_fingerprint = raw_fingerprint(active_raw)
         try:
-            decoded = json.loads(raw)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return raw, fingerprint, (), incarnation
-        if (
-            not isinstance(decoded, list)
-            or len(decoded) > _MAX_GPU_BACKENDS_PER_RESOURCE
-            or any(
-                not isinstance(item, str) or not item or len(item) > 128
-                for item in decoded
+            backend_values = json.loads(backend_raw)
+            membership_values = json.loads(membership_raw)
+            active_values = json.loads(active_raw)
+            if (
+                not isinstance(backend_values, list)
+                or not isinstance(membership_values, list)
+                or not isinstance(active_values, list)
+                or len(backend_values) > _MAX_GPU_BACKENDS_PER_RESOURCE
+                or len(membership_values) != len(backend_values)
+                or backend_values != sorted(set(backend_values))
+                or active_values != sorted(set(active_values))
+                or json.dumps(backend_values, separators=(",", ":")) != backend_raw
+                or json.dumps(active_values, separators=(",", ":")) != active_raw
+            ):
+                raise ValueError("backend membership domain is invalid")
+            memberships = tuple(
+                GPUBackendDomainMember(
+                    backend_id=item["backend_id"],
+                    membership_epoch=int(item["membership_epoch"]),
+                    state=item["state"],
+                )
+                for item in membership_values
+                if isinstance(item, dict)
+                and set(item) == {"backend_id", "membership_epoch", "state"}
+                and isinstance(item.get("membership_epoch"), str)
+                and _CANONICAL_POSITIVE_INT64_RE.fullmatch(item["membership_epoch"])
+                is not None
+                and int(item["membership_epoch"]) <= _MAX_POSITIVE_INT64
             )
-            or decoded != sorted(set(decoded))
-            or json.dumps(decoded, separators=(",", ":")) != raw
-        ):
-            return raw, fingerprint, (), incarnation
-        return raw, fingerprint, tuple(decoded), incarnation
+            canonical = _canonical_backend_domains(
+                memberships, ledger_incarnation=incarnation
+            )
+            if (
+                canonical.backend_domain_raw != backend_raw
+                or canonical.membership_domain_raw != membership_raw
+                or canonical.active_backend_domain_raw != active_raw
+            ):
+                raise ValueError("backend membership domain is not canonical")
+            return canonical
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return _GPUBackendDomains(
+                backend_domain_raw=backend_raw,
+                backend_domain_fingerprint=backend_fingerprint,
+                membership_domain_raw=membership_raw,
+                membership_domain_fingerprint=membership_fingerprint,
+                active_backend_domain_raw=active_raw,
+                active_backend_domain_fingerprint=active_fingerprint,
+                backend_ids=(),
+                active_backend_ids=(),
+                backend_memberships=(),
+                ledger_incarnation=incarnation,
+            )
 
     @staticmethod
     def _ledger_keys(keys: GPUArbiterKeys, backend_ids: Sequence[str]) -> list[str]:
@@ -2837,7 +3693,7 @@ class GPUArbiterStore:
         *,
         expected_ledger_revision: int | None,
         expected_ledger_incarnation: str | None,
-        backend_ids: Sequence[str],
+        backend_memberships: Sequence[GPUBackendDomainMember],
         allocations: Sequence[GPUAllocation],
         lease_cleanup: Mapping[str, GPUReconcileLeaseCleanup] | None,
         ready: bool,
@@ -2846,8 +3702,8 @@ class GPUArbiterStore:
     ) -> GPUReconcileResult:
         """Atomically repair one resource from a durable closed-world domain.
 
-        ``backend_ids`` must be authoritative and include current members plus retained
-        membership tombstones. Active registry rows alone are not sufficient:
+        ``backend_memberships`` must be authoritative and include current members plus
+        retained membership tombstones. Active registry rows alone are not sufficient:
         omitting a retired backend can hide a surviving per-backend Redis child
         key after a partial flush. The P3c-2 reconciler is responsible for
         producing that durable domain evidence before enforce can call this
@@ -2882,21 +3738,12 @@ class GPUArbiterStore:
                 max_length=128,
             )
 
-        domain: list[str] = []
-        seen_backend_ids: set[str] = set()
-        for backend_id in backend_ids:
-            backend_id = _validate_nonempty(backend_id, "backend_id", max_length=128)
-            if backend_id in seen_backend_ids:
-                raise ValueError("backend_ids must not contain duplicates")
-            seen_backend_ids.add(backend_id)
-            domain.append(backend_id)
-        domain.sort()
-        if len(domain) > _MAX_GPU_BACKENDS_PER_RESOURCE:
-            raise ValueError("backend_ids exceeds the per-resource safety limit")
-        if ready and not domain:
-            raise ValueError("ready reconciliation requires a backend domain")
-        domain_json = json.dumps(domain, separators=(",", ":"))
-        domain_fingerprint = hashlib.sha256(domain_json.encode("utf-8")).hexdigest()
+        domains = _canonical_backend_domains(backend_memberships)
+        domain = domains.backend_ids
+        active_domain = domains.active_backend_ids
+        seen_backend_ids = set(domain)
+        if ready and not active_domain:
+            raise ValueError("ready reconciliation requires an active backend domain")
 
         allocation_payloads: list[dict[str, Any]] = []
         seen_allocations: set[str] = set()
@@ -2938,7 +3785,9 @@ class GPUArbiterStore:
         repair_document = {
             "resource_id": resource_id,
             "allocatable_mb": allocatable_mb,
-            "backend_ids": domain,
+            "backend_domain": json.loads(domains.backend_domain_raw),
+            "membership_domain": json.loads(domains.membership_domain_raw),
+            "active_backend_domain": json.loads(domains.active_backend_domain_raw),
             "allocations": allocation_payloads,
             "lease_cleanup": cleanup_payload,
             "ready": ready,
@@ -2989,8 +3838,12 @@ class GPUArbiterStore:
                         separators=(",", ":"),
                     ),
                     repair_fingerprint,
-                    domain_json,
-                    domain_fingerprint,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
                     expected_ledger_incarnation or "",
                     proposed_incarnation,
                     *domain,
@@ -3009,11 +3862,94 @@ class GPUArbiterStore:
             idempotent=bool(payload.get("idempotent", False)),
         )
 
+    async def evolve_backend_domains(
+        self,
+        resource_id: str,
+        *,
+        expected_ledger_revision: int,
+        expected_ledger_incarnation: str,
+        backend_memberships: Sequence[GPUBackendDomainMember],
+        evolution_id: str,
+    ) -> GPUBackendDomainEvolutionResult:
+        """Atomically expand or change membership state while the card is fail-closed.
+
+        This stage deliberately forbids all-domain shrink. Retiring members remain in
+        the bounded key domain until the later proof-backed collection state machine
+        can remove their Redis children and durable tombstone together.
+        """
+
+        keys = self.keys(resource_id)
+        if (
+            isinstance(expected_ledger_revision, bool)
+            or not isinstance(expected_ledger_revision, int)
+            or expected_ledger_revision <= 0
+            or expected_ledger_revision > _MAX_REDIS_SAFE_INTEGER
+        ):
+            raise ValueError(
+                "expected_ledger_revision must be a positive Redis-safe integer"
+            )
+        _validate_nonempty(
+            expected_ledger_incarnation,
+            "expected_ledger_incarnation",
+            max_length=128,
+        )
+        _validate_nonempty(evolution_id, "evolution_id", max_length=256)
+        current = await self._ledger_domain(keys)
+        target = _canonical_backend_domains(backend_memberships)
+        evolution_document = {
+            "resource_id": resource_id,
+            "backend_domain": json.loads(target.backend_domain_raw),
+            "membership_domain": json.loads(target.membership_domain_raw),
+            "active_backend_domain": json.loads(target.active_backend_domain_raw),
+        }
+        evolution_fingerprint = hashlib.sha256(
+            json.dumps(
+                evolution_document, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        raw = await self._call(
+            lambda: self._evolve_backend_domains_script(
+                keys=self._ledger_keys(keys, target.backend_ids),
+                args=[
+                    resource_id,
+                    expected_ledger_revision,
+                    expected_ledger_incarnation,
+                    evolution_id,
+                    evolution_fingerprint,
+                    current.backend_domain_raw,
+                    current.backend_domain_fingerprint,
+                    current.membership_domain_raw,
+                    current.membership_domain_fingerprint,
+                    current.active_backend_domain_raw,
+                    current.active_backend_domain_fingerprint,
+                    target.backend_domain_raw,
+                    target.backend_domain_fingerprint,
+                    target.membership_domain_raw,
+                    target.membership_domain_fingerprint,
+                    target.active_backend_domain_raw,
+                    target.active_backend_domain_fingerprint,
+                    *target.backend_ids,
+                ],
+            )
+        )
+        payload = self._decode_result(raw)
+        return GPUBackendDomainEvolutionResult(
+            status=payload["status"],
+            ledger_revision=int(payload.get("ledger_revision", 0)),
+            ledger_incarnation=str(payload.get("ledger_incarnation", "")),
+            requested_backend_ids=target.backend_ids,
+            requested_active_backend_ids=target.active_backend_ids,
+            requested_backend_memberships=target.backend_memberships,
+            reason=str(payload.get("reason", "")),
+            idempotent=bool(payload.get("idempotent", False)),
+        )
+
     async def admit(
         self,
         resource_id: str,
         *,
         backend_id: str,
+        membership_epoch: int,
         budget_mb: int,
         generation: str,
         eviction_priority: int,
@@ -3039,6 +3975,7 @@ class GPUArbiterStore:
             if ticket_id is not None:
                 _validate_nonempty(ticket_id, field, max_length=256)
         budget_mb = _validate_positive_int(budget_mb, "budget_mb")
+        membership_epoch = _validate_membership_epoch(membership_epoch)
         generation = _validate_generation(generation)
         if isinstance(eviction_priority, bool) or not isinstance(
             eviction_priority, int
@@ -3056,16 +3993,11 @@ class GPUArbiterStore:
             eviction_priority, "eviction_priority"
         )
 
-        (
-            domain_raw,
-            domain_fingerprint,
-            backend_ids,
-            ledger_incarnation,
-        ) = await self._ledger_domain(keys)
+        domains = await self._ledger_domain(keys)
 
         raw = await self._call(
             lambda: self._admit_script(
-                keys=self._ledger_keys(keys, backend_ids),
+                keys=self._ledger_keys(keys, domains.backend_ids),
                 args=[
                     resource_id,
                     backend_id,
@@ -3081,9 +4013,14 @@ class GPUArbiterStore:
                     hard_ttl_ms,
                     backend_ticket_id or "",
                     card_ticket_id or "",
-                    domain_raw,
-                    domain_fingerprint,
-                    ledger_incarnation,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                    str(membership_epoch),
                 ],
             )
         )
@@ -3177,6 +4114,7 @@ class GPUArbiterStore:
         _validate_nonempty(lease_id, "lease_id", max_length=256)
         _validate_nonempty(owner_id, "owner_id", max_length=256)
         generation = _validate_generation(generation)
+        domains = await self._ledger_domain(keys)
         raw = await self._call(
             lambda: self._lease_script(
                 keys=[keys.leases(backend_id), keys.card, keys.allocations],
@@ -3188,6 +4126,13 @@ class GPUArbiterStore:
                     heartbeat_ttl_ms,
                     resource_id,
                     backend_id,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
                 ],
             )
         )
@@ -3207,10 +4152,21 @@ class GPUArbiterStore:
     ) -> tuple[int, int]:
         keys = self.keys(resource_id)
         _validate_nonempty(backend_id, "backend_id", max_length=128)
+        domains = await self._ledger_domain(keys)
         raw = await self._call(
             lambda: self._sweep_leases_script(
                 keys=[keys.leases(backend_id), keys.card],
-                args=[resource_id, backend_id],
+                args=[
+                    resource_id,
+                    backend_id,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                ],
             )
         )
         payload = self._decode_result(raw)
@@ -3221,6 +4177,7 @@ class GPUArbiterStore:
         resource_id: str,
         *,
         backend_id: str,
+        membership_epoch: int,
         ticket_id: str,
         owner_id: str,
         ttl_ms: int,
@@ -3231,6 +4188,7 @@ class GPUArbiterStore:
             "enqueue",
             ticket_id=ticket_id,
             backend_id=backend_id,
+            membership_epoch=membership_epoch,
             owner_id=owner_id,
             kind="backend",
             ttl_ms=ttl_ms,
@@ -3242,6 +4200,7 @@ class GPUArbiterStore:
         resource_id: str,
         *,
         backend_id: str,
+        membership_epoch: int,
         ticket_id: str,
         owner_id: str,
         ttl_ms: int,
@@ -3252,6 +4211,7 @@ class GPUArbiterStore:
             "enqueue",
             ticket_id=ticket_id,
             backend_id=backend_id,
+            membership_epoch=membership_epoch,
             owner_id=owner_id,
             kind="card",
             ttl_ms=ttl_ms,
@@ -3271,6 +4231,7 @@ class GPUArbiterStore:
             "position",
             ticket_id=ticket_id,
             backend_id=backend_id,
+            membership_epoch=None,
             owner_id="position",
             kind="card" if card_queue else "backend",
             ttl_ms=1,
@@ -3291,6 +4252,7 @@ class GPUArbiterStore:
             "cancel",
             ticket_id=ticket_id,
             backend_id=backend_id,
+            membership_epoch=None,
             owner_id=owner_id,
             kind="card" if card_queue else "backend",
             ttl_ms=1,
@@ -3304,6 +4266,7 @@ class GPUArbiterStore:
         *,
         ticket_id: str,
         backend_id: str,
+        membership_epoch: int | None,
         owner_id: str,
         kind: Literal["backend", "card"],
         ttl_ms: int,
@@ -3312,6 +4275,10 @@ class GPUArbiterStore:
         _validate_nonempty(ticket_id, "ticket_id", max_length=256)
         _validate_nonempty(backend_id, "backend_id", max_length=128)
         _validate_nonempty(owner_id, "owner_id", max_length=256)
+        if operation == "enqueue":
+            if membership_epoch is None:
+                raise ValueError("enqueue requires membership_epoch")
+            membership_epoch = _validate_membership_epoch(membership_epoch)
         ttl_ms = _validate_ttl_ms(ttl_ms, "ttl_ms")
         max_queue_length = _validate_positive_int(max_queue_length, "max_queue_length")
         if max_queue_length > _MAX_GPU_QUEUE_LENGTH:
@@ -3319,15 +4286,10 @@ class GPUArbiterStore:
                 f"max_queue_length must be at most {_MAX_GPU_QUEUE_LENGTH}"
             )
         keys = self.keys(resource_id)
-        (
-            domain_raw,
-            domain_fingerprint,
-            backend_ids,
-            ledger_incarnation,
-        ) = await self._ledger_domain(keys)
+        domains = await self._ledger_domain(keys)
         raw = await self._call(
             lambda: self._queue_script(
-                keys=self._ledger_keys(keys, backend_ids),
+                keys=self._ledger_keys(keys, domains.backend_ids),
                 args=[
                     operation,
                     ticket_id,
@@ -3337,9 +4299,14 @@ class GPUArbiterStore:
                     ttl_ms,
                     max_queue_length,
                     resource_id,
-                    domain_raw,
-                    domain_fingerprint,
-                    ledger_incarnation,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                    "" if membership_epoch is None else str(membership_epoch),
                 ],
             )
         )
@@ -3356,6 +4323,7 @@ class GPUArbiterStore:
         resource_id: str,
         *,
         backend_id: str,
+        membership_epoch: int,
         owner_id: str,
         generation: str,
         operation: str,
@@ -3368,6 +4336,7 @@ class GPUArbiterStore:
             "acquire",
             resource_id,
             backend_id=backend_id,
+            membership_epoch=membership_epoch,
             owner_id=owner_id,
             generation=generation,
             operation_name=operation,
@@ -3389,6 +4358,7 @@ class GPUArbiterStore:
             "heartbeat",
             resource_id,
             backend_id=backend_id,
+            membership_epoch=None,
             owner_id=owner_id,
             generation=generation,
             operation_name=operation,
@@ -3409,6 +4379,7 @@ class GPUArbiterStore:
             "release",
             resource_id,
             backend_id=backend_id,
+            membership_epoch=None,
             owner_id=owner_id,
             generation=generation,
             operation_name=operation,
@@ -3422,6 +4393,7 @@ class GPUArbiterStore:
         resource_id: str,
         *,
         backend_id: str,
+        membership_epoch: int | None,
         owner_id: str,
         generation: str,
         operation_name: str,
@@ -3433,16 +4405,15 @@ class GPUArbiterStore:
         _validate_nonempty(owner_id, "owner_id", max_length=256)
         _validate_nonempty(operation_name, "operation", max_length=256)
         generation = _validate_generation(generation)
+        if action == "acquire":
+            if membership_epoch is None:
+                raise ValueError("transition acquire requires membership_epoch")
+            membership_epoch = _validate_membership_epoch(membership_epoch)
         ttl_ms = _validate_ttl_ms(ttl_ms, "ttl_ms")
-        (
-            domain_raw,
-            domain_fingerprint,
-            backend_ids,
-            ledger_incarnation,
-        ) = await self._ledger_domain(keys)
+        domains = await self._ledger_domain(keys)
         raw = await self._call(
             lambda: self._transition_owner_script(
-                keys=self._ledger_keys(keys, backend_ids),
+                keys=self._ledger_keys(keys, domains.backend_ids),
                 args=[
                     action,
                     resource_id,
@@ -3452,9 +4423,14 @@ class GPUArbiterStore:
                     operation_name,
                     ttl_ms,
                     "1" if require_idle else "0",
-                    domain_raw,
-                    domain_fingerprint,
-                    ledger_incarnation,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                    "" if membership_epoch is None else str(membership_epoch),
                 ],
             )
         )
@@ -3493,15 +4469,10 @@ class GPUArbiterStore:
         ):
             if value is not None:
                 _validate_nonempty(value, field, max_length=256)
-        (
-            domain_raw,
-            domain_fingerprint,
-            backend_ids,
-            ledger_incarnation,
-        ) = await self._ledger_domain(keys)
+        domains = await self._ledger_domain(keys)
         raw = await self._call(
             lambda: self._transition_script(
-                keys=self._ledger_keys(keys, backend_ids),
+                keys=self._ledger_keys(keys, domains.backend_ids),
                 args=[
                     resource_id,
                     backend_id,
@@ -3512,9 +4483,13 @@ class GPUArbiterStore:
                     request_owner_id or "",
                     transition_owner_id or "",
                     transition_operation or "",
-                    domain_raw,
-                    domain_fingerprint,
-                    ledger_incarnation,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
                 ],
             )
         )
@@ -3542,21 +4517,46 @@ class GPUArbiterStore:
                     "ledger_incarnation",
                     max_length=128,
                 )
+                if card_before.get("ledger_version") != "2":
+                    raise ValueError("ledger schema is not v2")
                 domain_raw = card_before["backend_domain"]
-                backend_ids = json.loads(domain_raw)
-                if (
-                    not isinstance(backend_ids, list)
-                    or len(backend_ids) > _MAX_GPU_BACKENDS_PER_RESOURCE
-                    or any(
-                        not isinstance(item, str) or not item or len(item) > 128
-                        for item in backend_ids
-                    )
-                    or backend_ids != sorted(set(backend_ids))
-                    or json.dumps(backend_ids, separators=(",", ":")) != domain_raw
-                    or hashlib.sha256(domain_raw.encode("utf-8")).hexdigest()
-                    != card_before["backend_domain_fingerprint"]
+                membership_raw = card_before["membership_domain"]
+                active_domain_raw = card_before["active_backend_domain"]
+                membership_values = json.loads(membership_raw)
+                if not isinstance(membership_values, list) or any(
+                    not isinstance(item, dict)
+                    or set(item) != {"backend_id", "membership_epoch", "state"}
+                    or not isinstance(item["membership_epoch"], str)
+                    or _CANONICAL_POSITIVE_INT64_RE.fullmatch(item["membership_epoch"])
+                    is None
+                    or int(item["membership_epoch"]) > _MAX_POSITIVE_INT64
+                    for item in membership_values
                 ):
-                    raise ValueError("backend domain is invalid")
+                    raise ValueError("membership domain is invalid")
+                domains = _canonical_backend_domains(
+                    tuple(
+                        GPUBackendDomainMember(
+                            backend_id=item["backend_id"],
+                            membership_epoch=int(item["membership_epoch"]),
+                            state=item["state"],
+                        )
+                        for item in membership_values
+                    ),
+                    ledger_incarnation=incarnation_before,
+                )
+                if (
+                    domains.backend_domain_raw != domain_raw
+                    or domains.membership_domain_raw != membership_raw
+                    or domains.active_backend_domain_raw != active_domain_raw
+                    or domains.backend_domain_fingerprint
+                    != card_before["backend_domain_fingerprint"]
+                    or domains.membership_domain_fingerprint
+                    != card_before["membership_domain_fingerprint"]
+                    or domains.active_backend_domain_fingerprint
+                    != card_before["active_backend_domain_fingerprint"]
+                ):
+                    raise ValueError("backend membership domains are invalid")
+                backend_ids = domains.backend_ids
                 allocation_count = int(
                     await self._call(lambda: self._redis.hlen(keys.allocations))
                 )
@@ -3653,6 +4653,12 @@ class GPUArbiterStore:
                     card_after.get("backend_domain") != domain_raw
                     or card_after.get("backend_domain_fingerprint")
                     != card_before["backend_domain_fingerprint"]
+                    or card_after.get("membership_domain") != membership_raw
+                    or card_after.get("membership_domain_fingerprint")
+                    != card_before["membership_domain_fingerprint"]
+                    or card_after.get("active_backend_domain") != active_domain_raw
+                    or card_after.get("active_backend_domain_fingerprint")
+                    != card_before["active_backend_domain_fingerprint"]
                     or int(card_after["allocation_count"]) != len(allocations)
                     or json.loads(card_after["lease_counts"]) != lease_counts
                     or int(card_after["card_queue_count"]) != card_queue_count
@@ -3709,6 +4715,7 @@ class GPUArbiterStore:
                     allocatable_mb=allocatable_mb,
                     ready=(
                         card_after.get("bootstrap_state") == "ready"
+                        and bool(domains.active_backend_ids)
                         and revision_after < _LEDGER_REVISION_REBASE_THRESHOLD
                         and reconcile_deadline_ms > redis_now_ms
                         and reconcile_deadline_ms <= redis_now_ms + 300_000
@@ -3717,6 +4724,9 @@ class GPUArbiterStore:
                     ledger_revision=revision_after,
                     ledger_incarnation=incarnation_before,
                     committed_mb=committed,
+                    backend_ids=domains.backend_ids,
+                    active_backend_ids=domains.active_backend_ids,
+                    backend_memberships=domains.backend_memberships,
                     allocations=allocations,
                     leases=tuple(sorted(leases, key=lambda item: item.lease_id)),
                 )
@@ -3902,6 +4912,9 @@ __all__ = [
     "GPUArbiterKeys",
     "GPUArbiterStore",
     "GPUArbiterStoreError",
+    "GPUBackendDomainEvolutionResult",
+    "GPUBackendDomainMember",
+    "GPUBackendMembershipState",
     "GPUCardSnapshot",
     "GPULeaseMutationResult",
     "GPUQueueResult",

@@ -20,6 +20,8 @@ from app.services.gpu_arbiter_store import (
     GPUAllocationState,
     GPUArbiterStore,
     GPUArbiterStoreError,
+    GPUBackendDomainMember,
+    GPUBackendMembershipState,
     GPUReconcileLeaseCleanup,
     GPURequestLeaseState,
     gpu_arbiter_keys,
@@ -33,6 +35,29 @@ _TEST_BACKEND_DOMAIN = (
     "backend-c",
     "backend-missing",
 )
+_TEST_BACKEND_MEMBERSHIPS = tuple(
+    GPUBackendDomainMember(
+        backend_id=backend_id,
+        membership_epoch=1,
+        state="active",
+    )
+    for backend_id in _TEST_BACKEND_DOMAIN
+)
+
+
+def _memberships(
+    *backend_ids: str,
+    epoch: int = 1,
+    state: GPUBackendMembershipState = "active",
+) -> tuple[GPUBackendDomainMember, ...]:
+    return tuple(
+        GPUBackendDomainMember(
+            backend_id=backend_id,
+            membership_epoch=epoch,
+            state=state,
+        )
+        for backend_id in backend_ids
+    )
 
 
 def _future_reconcile_deadline_ms(window_ms: int = 120_000) -> int:
@@ -97,6 +122,7 @@ def _admission_kwargs(
 ) -> dict:
     return {
         "backend_id": backend_id,
+        "membership_epoch": 1,
         "budget_mb": budget_mb,
         "generation": generation,
         "eviction_priority": 0,
@@ -151,13 +177,15 @@ async def _bootstrap_empty_card(
     store: GPUArbiterStore,
     resource_id: str,
     allocatable_mb: int,
-) -> None:
+    *,
+    memberships: tuple[GPUBackendDomainMember, ...] = _TEST_BACKEND_MEMBERSHIPS,
+):
     result = await store.reconcile_card(
         resource_id,
         allocatable_mb,
         expected_ledger_revision=None,
         expected_ledger_incarnation=None,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=memberships,
         allocations=(),
         lease_cleanup=None,
         ready=True,
@@ -166,6 +194,7 @@ async def _bootstrap_empty_card(
     )
     assert result.status == "reconciled"
     assert result.ready is True
+    return result
 
 
 def _reconcile_allocation(
@@ -221,7 +250,7 @@ async def test_reconcile_bootstrap_is_atomic_and_retry_idempotent(
     kwargs = {
         "expected_ledger_revision": None,
         "expected_ledger_incarnation": None,
-        "backend_ids": ("backend-a",),
+        "backend_memberships": _memberships("backend-a"),
         "allocations": (allocation,),
         "lease_cleanup": None,
         "ready": True,
@@ -260,7 +289,7 @@ async def test_normal_repair_exact_retry_is_read_only_and_idempotent(
     kwargs = {
         "expected_ledger_revision": before.ledger_revision,
         "expected_ledger_incarnation": before.ledger_incarnation,
-        "backend_ids": _TEST_BACKEND_DOMAIN,
+        "backend_memberships": _TEST_BACKEND_MEMBERSHIPS,
         "allocations": before.allocations,
         "lease_cleanup": None,
         "ready": True,
@@ -284,6 +313,1189 @@ async def test_normal_repair_exact_retry_is_read_only_and_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_repair_id_fingerprint_includes_membership_epoch(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-repair-membership-fingerprint/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    before = await first.snapshot(resource_id)
+    kwargs = {
+        "expected_ledger_revision": before.ledger_revision,
+        "expected_ledger_incarnation": before.ledger_incarnation,
+        "allocations": before.allocations,
+        "lease_cleanup": None,
+        "ready": True,
+        "reconcile_deadline_ms": _future_reconcile_deadline_ms(),
+        "repair_id": "membership-sensitive-repair",
+    }
+    created = await first.reconcile_card(
+        resource_id,
+        100,
+        backend_memberships=_memberships("backend-a", epoch=1),
+        **kwargs,
+    )
+    assert created.status == "reconciled"
+
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_after_create = await raw.hgetall(keys.card)
+        conflict = await first.reconcile_card(
+            resource_id,
+            100,
+            backend_memberships=_memberships("backend-a", epoch=2),
+            **kwargs,
+        )
+        assert (conflict.status, conflict.reason, conflict.idempotent) == (
+            "stale_revision",
+            "ledger_changed",
+            False,
+        )
+        assert await raw.hgetall(keys.card) == card_after_create
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_membership_domain_is_canonical_and_fingerprint_covers_epoch_and_state(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-membership-canonical/index:0"
+    large_epoch = 9_007_199_254_740_993
+    memberships = (
+        GPUBackendDomainMember("backend-b", 4, "pending"),
+        GPUBackendDomainMember("backend-a", large_epoch, "active"),
+    )
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_before = await raw.hgetall(keys.card)
+        expected_membership_raw = json.dumps(
+            [
+                {
+                    "backend_id": "backend-a",
+                    "membership_epoch": str(large_epoch),
+                    "state": "active",
+                },
+                {
+                    "backend_id": "backend-b",
+                    "membership_epoch": "4",
+                    "state": "pending",
+                },
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        assert card_before["backend_domain"] == '["backend-a","backend-b"]'
+        assert card_before["membership_domain"] == expected_membership_raw
+        assert card_before["active_backend_domain"] == '["backend-a"]'
+        assert (
+            card_before["membership_domain_fingerprint"]
+            == hashlib.sha256(expected_membership_raw.encode()).hexdigest()
+        )
+        snapshot = await first.snapshot(resource_id)
+        assert snapshot.backend_memberships == tuple(
+            sorted(memberships, key=lambda item: item.backend_id)
+        )
+
+        await first.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="membership_change",
+        )
+        before_evolution = await first.snapshot(resource_id)
+        evolved = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before_evolution.ledger_revision,
+            expected_ledger_incarnation=before_evolution.ledger_incarnation,
+            backend_memberships=(
+                GPUBackendDomainMember("backend-a", large_epoch + 1, "retiring"),
+                GPUBackendDomainMember("backend-b", 4, "pending"),
+            ),
+            evolution_id="canonical-state-change",
+        )
+        assert evolved.status == "evolved"
+        card_after = await raw.hgetall(keys.card)
+        assert (
+            card_after["backend_domain_fingerprint"]
+            == card_before["backend_domain_fingerprint"]
+        )
+        assert (
+            card_after["membership_domain_fingerprint"]
+            != card_before["membership_domain_fingerprint"]
+        )
+        assert (
+            card_after["active_backend_domain_fingerprint"]
+            != card_before["active_backend_domain_fingerprint"]
+        )
+        assert (await first.snapshot(resource_id)).active_backend_ids == ()
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_only_exact_active_membership_epoch_can_start_new_work(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-membership-admission/index:0"
+    memberships = (
+        GPUBackendDomainMember("backend-a", 7, "active"),
+        GPUBackendDomainMember("backend-b", 3, "pending"),
+        GPUBackendDomainMember("backend-c", 2, "retiring"),
+    )
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    before = await first.snapshot(resource_id)
+
+    wrong_epoch = await first.admit(
+        resource_id,
+        **{
+            **_admission_kwargs("backend-a", "wrong-epoch"),
+            "membership_epoch": 6,
+        },
+    )
+    assert (wrong_epoch.status, wrong_epoch.reason) == (
+        "config_mismatch",
+        "membership_epoch_changed",
+    )
+    for backend_id, membership_epoch in (("backend-b", 3), ("backend-c", 2)):
+        rejected = await first.admit(
+            resource_id,
+            **{
+                **_admission_kwargs(backend_id, f"inactive-{backend_id}"),
+                "membership_epoch": membership_epoch,
+            },
+        )
+        assert (rejected.status, rejected.reason) == (
+            "config_mismatch",
+            "backend_not_active",
+        )
+    assert (
+        await first.enqueue_backend(
+            resource_id,
+            backend_id="backend-b",
+            membership_epoch=3,
+            ticket_id="pending-ticket",
+            owner_id="owner-a",
+            ttl_ms=30_000,
+        )
+    ).status == "config_mismatch"
+    assert (
+        await first.enqueue_card(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=6,
+            ticket_id="wrong-card-ticket",
+            owner_id="owner-a",
+            ttl_ms=30_000,
+        )
+    ).status == "config_mismatch"
+    assert (
+        await first.acquire_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=6,
+            owner_id="wrong-owner",
+            generation="1",
+            operation="evict",
+            ttl_ms=30_000,
+        )
+    ).status == "config_mismatch"
+    rejected_snapshot = await first.snapshot(resource_id)
+    assert rejected_snapshot.ledger_revision == before.ledger_revision
+    assert rejected_snapshot.allocations == ()
+    assert rejected_snapshot.leases == ()
+
+    backend_ticket = await first.enqueue_backend(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=7,
+        ticket_id="active-backend-ticket",
+        owner_id="owner-a",
+        ttl_ms=30_000,
+    )
+    card_ticket = await first.enqueue_card(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=7,
+        ticket_id="active-card-ticket",
+        owner_id="owner-a",
+        ttl_ms=30_000,
+    )
+    assert backend_ticket.status == card_ticket.status == "queued"
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        assert (
+            json.loads(await raw.lindex(keys.backend_queue("backend-a"), 0))[
+                "membership_epoch"
+            ]
+            == "7"
+        )
+        assert json.loads(await raw.lindex(keys.queue, 0))["membership_epoch"] == "7"
+
+        admitted = await first.admit(
+            resource_id,
+            backend_ticket_id="active-backend-ticket",
+            card_ticket_id="active-card-ticket",
+            **{
+                **_admission_kwargs("backend-a", "exact-active-epoch"),
+                "membership_epoch": 7,
+            },
+        )
+        assert admitted.status == "admitted"
+        assert await raw.llen(keys.backend_queue("backend-a")) == 0
+        assert await raw.llen(keys.queue) == 0
+        card_queue_count, backend_queue_counts = await raw.hmget(
+            keys.card,
+            "card_queue_count",
+            "backend_queue_counts",
+        )
+        assert card_queue_count == "0"
+        assert json.loads(backend_queue_counts) == {
+            "backend-a": 0,
+            "backend-b": 0,
+            "backend-c": 0,
+        }
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_retiring_members_remain_in_all_domain_until_cleanup_converges(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-retiring-cleanup/index:0"
+    initial_memberships = _memberships("backend-a", "backend-c")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=initial_memberships,
+    )
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="lease-a",
+        owner_id="owner-a",
+        budget_mb=30,
+    )
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-c",
+        lease_id="lease-c",
+        owner_id="owner-c",
+        budget_mb=30,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-c",
+            lease_id="lease-c",
+            owner_id="owner-c",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await first.enqueue_backend(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="backend-ticket-a",
+            owner_id="owner-a",
+            ttl_ms=30_000,
+        )
+    ).status == "queued"
+    assert (
+        await first.enqueue_card(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="card-ticket-a",
+            owner_id="owner-a",
+            ttl_ms=30_000,
+        )
+    ).status == "queued"
+
+    ready_snapshot = await first.snapshot(resource_id)
+    target_with_pending = (
+        GPUBackendDomainMember("backend-a", 1, "active"),
+        GPUBackendDomainMember("backend-b", 1, "pending"),
+        GPUBackendDomainMember("backend-c", 1, "active"),
+    )
+    refused = await first.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=ready_snapshot.ledger_revision,
+        expected_ledger_incarnation=ready_snapshot.ledger_incarnation,
+        backend_memberships=target_with_pending,
+        evolution_id="must-fail-while-ready",
+    )
+    assert (refused.status, refused.reason) == (
+        "not_ready",
+        "domain_evolution_requires_not_ready",
+    )
+    assert (await first.snapshot(resource_id)).ledger_revision == (
+        ready_snapshot.ledger_revision
+    )
+
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before_expand = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        children_before = (
+            await raw.hgetall(keys.allocations),
+            await raw.hgetall(keys.leases("backend-a")),
+            await raw.lrange(keys.backend_queue("backend-a"), 0, -1),
+            await raw.lrange(keys.queue, 0, -1),
+            await raw.get(keys.transition),
+        )
+        expanded = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before_expand.ledger_revision,
+            expected_ledger_incarnation=before_expand.ledger_incarnation,
+            backend_memberships=target_with_pending,
+            evolution_id="add-pending-b",
+        )
+        assert expanded.status == "evolved"
+        target_retiring = (
+            GPUBackendDomainMember("backend-a", 2, "retiring"),
+            GPUBackendDomainMember("backend-b", 1, "active"),
+            GPUBackendDomainMember("backend-c", 2, "retiring"),
+        )
+        retired = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=expanded.ledger_revision,
+            expected_ledger_incarnation=expanded.ledger_incarnation,
+            backend_memberships=target_retiring,
+            evolution_id="activate-b-retire-a-c",
+        )
+        assert retired.status == "evolved"
+        assert (
+            await raw.hgetall(keys.allocations),
+            await raw.hgetall(keys.leases("backend-a")),
+            await raw.lrange(keys.backend_queue("backend-a"), 0, -1),
+            await raw.lrange(keys.queue, 0, -1),
+            await raw.get(keys.transition),
+        ) == children_before
+
+        inactive_admission = await first.admit(
+            resource_id,
+            **_admission_kwargs("backend-a", "retiring-new-work"),
+        )
+        assert inactive_admission.status == "not_ready"
+        blocked_reconcile_snapshot = await first.snapshot(resource_id)
+        blocked_reconcile = await first.reconcile_card(
+            resource_id,
+            100,
+            expected_ledger_revision=blocked_reconcile_snapshot.ledger_revision,
+            expected_ledger_incarnation=blocked_reconcile_snapshot.ledger_incarnation,
+            backend_memberships=target_retiring,
+            allocations=blocked_reconcile_snapshot.allocations,
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+            repair_id="blocked-by-retiring-work",
+        )
+        assert blocked_reconcile.status == "busy"
+
+        assert (
+            await first.sweep_expired_leases(
+                resource_id,
+                backend_id="backend-a",
+            )
+        ) == (0, 1)
+        assert (
+            await first.heartbeat_lease(
+                resource_id,
+                backend_id="backend-a",
+                lease_id="lease-a",
+                owner_id="owner-a",
+                generation="1",
+                heartbeat_ttl_ms=5_000,
+            )
+        ).status == "heartbeated"
+        assert (
+            await first.release_lease(
+                resource_id,
+                backend_id="backend-a",
+                lease_id="lease-a",
+                owner_id="owner-a",
+                generation="1",
+            )
+        ).status == "released"
+        backend_position = await first.queue_position(
+            resource_id,
+            backend_id="backend-a",
+            ticket_id="backend-ticket-a",
+            card_queue=False,
+        )
+        card_position = await first.queue_position(
+            resource_id,
+            backend_id="backend-a",
+            ticket_id="card-ticket-a",
+            card_queue=True,
+        )
+        assert (backend_position.status, backend_position.position) == ("queued", 1)
+        assert (card_position.status, card_position.position) == ("queued", 1)
+        assert (
+            await first.cancel_queue_ticket(
+                resource_id,
+                backend_id="backend-a",
+                ticket_id="backend-ticket-a",
+                owner_id="owner-a",
+                card_queue=False,
+            )
+        ).status == "cancelled"
+        assert (
+            await first.cancel_queue_ticket(
+                resource_id,
+                backend_id="backend-a",
+                ticket_id="card-ticket-a",
+                owner_id="owner-a",
+                card_queue=True,
+            )
+        ).status == "cancelled"
+
+        assert (
+            await first.acquire_transition_owner(
+                resource_id,
+                backend_id="backend-c",
+                membership_epoch=2,
+                owner_id="transition-c",
+                generation="2",
+                operation="evict",
+                ttl_ms=30_000,
+            )
+        ).status == "acquired"
+        assert (
+            await first.heartbeat_transition_owner(
+                resource_id,
+                backend_id="backend-c",
+                owner_id="transition-c",
+                generation="2",
+                operation="evict",
+                ttl_ms=30_000,
+            )
+        ).status == "renewed"
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-c",
+                expected_generation="1",
+                target_state=GPUAllocationState.DRAINING,
+                next_generation="2",
+                transition_owner_id="transition-c",
+                transition_operation="evict",
+            )
+        ).status == "transitioned"
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-c",
+                expected_generation="2",
+                target_state=GPUAllocationState.UNLOADING,
+                transition_owner_id="transition-c",
+                transition_operation="evict",
+            )
+        ).status == "transitioned"
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-c",
+                expected_generation="2",
+                target_state=GPUAllocationState.UNLOADED,
+                transition_owner_id="transition-c",
+                transition_operation="evict",
+            )
+        ).status == "transitioned"
+        assert (
+            await first.release_transition_owner(
+                resource_id,
+                backend_id="backend-c",
+                owner_id="transition-c",
+                generation="2",
+                operation="evict",
+            )
+        ).status == "released"
+
+        cleanup_snapshot = await first.snapshot(resource_id)
+        target_allocations = tuple(
+            replace(allocation, state=GPUAllocationState.UNLOADED)
+            if allocation.backend_id == "backend-a"
+            else allocation
+            for allocation in cleanup_snapshot.allocations
+        )
+        reconciled = await first.reconcile_card(
+            resource_id,
+            100,
+            expected_ledger_revision=cleanup_snapshot.ledger_revision,
+            expected_ledger_incarnation=cleanup_snapshot.ledger_incarnation,
+            backend_memberships=target_retiring,
+            allocations=target_allocations,
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+            repair_id="retiring-cleanup-complete",
+        )
+        assert reconciled.status == "reconciled"
+        final = await first.snapshot(resource_id)
+        assert final.ready is True
+        assert final.backend_ids == ("backend-a", "backend-b", "backend-c")
+        assert final.active_backend_ids == ("backend-b",)
+        assert final.leases == ()
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.parametrize("child_kind", ("lease", "queue", "card_queue"))
+@pytest.mark.asyncio
+async def test_domain_evolution_rejects_nonempty_new_backend_children_atomically(
+    redis_stores,
+    child_kind: str,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-new-child-{child_kind}/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        if child_kind == "lease":
+            child_key = keys.leases("backend-b")
+        elif child_kind == "queue":
+            child_key = keys.backend_queue("backend-b")
+        else:
+            child_key = keys.queue
+        if child_kind == "lease":
+            await raw.hset(child_key, "orphan", "{}")
+        elif child_kind == "card_queue":
+            await raw.rpush(
+                child_key,
+                json.dumps(
+                    {
+                        "ticket_id": "orphan-card-ticket",
+                        "backend_id": "backend-b",
+                        "owner_id": "owner-b",
+                        "kind": "card",
+                        "membership_epoch": "1",
+                        "enqueued_at_ms": 1,
+                        "expires_at_ms": _future_reconcile_deadline_ms(),
+                    },
+                    separators=(",", ":"),
+                ),
+            )
+            await raw.hset(keys.card, "card_queue_count", "1")
+        else:
+            await raw.rpush(child_key, "{}")
+        card_before = await raw.hgetall(keys.card)
+        rejected = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=(
+                GPUBackendDomainMember("backend-a", 1, "active"),
+                GPUBackendDomainMember("backend-b", 1, "pending"),
+            ),
+            evolution_id=f"reject-{child_kind}",
+        )
+        assert (rejected.status, rejected.reason) == (
+            "partial_state",
+            "new_backend_children_present",
+        )
+        assert await raw.hgetall(keys.card) == card_before
+        assert await raw.exists(child_key) == 1
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.parametrize(
+    ("corrupt_kind", "expected_reason"),
+    (
+        ("card_queue", "queue_domain_exceeded"),
+        ("backend_queue", "queue_domain_exceeded"),
+        ("aggregate_queue", "queue_domain_exceeded"),
+        ("lease", "lease_domain_exceeded"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_domain_evolution_rejects_oversized_child_domains_before_scanning(
+    redis_stores,
+    corrupt_kind: str,
+    expected_reason: str,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-oversized-evolution-{corrupt_kind}/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        if corrupt_kind == "card_queue":
+            await raw.rpush(keys.queue, *("{}" for _ in range(10_001)))
+            await raw.hset(keys.card, "card_queue_count", "10001")
+        elif corrupt_kind == "backend_queue":
+            await raw.rpush(
+                keys.backend_queue("backend-a"),
+                *("{}" for _ in range(10_001)),
+            )
+            await raw.hset(
+                keys.card,
+                "backend_queue_counts",
+                '{"backend-a":10001}',
+            )
+        elif corrupt_kind == "aggregate_queue":
+            await raw.rpush(keys.queue, *("{}" for _ in range(9_999)))
+            await raw.rpush(keys.backend_queue("backend-a"), "{}", "{}")
+            await raw.hset(
+                keys.card,
+                mapping={
+                    "card_queue_count": "9999",
+                    "backend_queue_counts": '{"backend-a":2}',
+                },
+            )
+        else:
+            await raw.hset(
+                keys.leases("backend-a"),
+                mapping={f"lease-{index}": "{}" for index in range(10_001)},
+            )
+            await raw.hset(keys.card, "lease_counts", '{"backend-a":10001}')
+        card_before = await raw.hgetall(keys.card)
+        children_before = (
+            await raw.llen(keys.queue),
+            await raw.llen(keys.backend_queue("backend-a")),
+            await raw.hlen(keys.leases("backend-a")),
+        )
+        rejected = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=(
+                GPUBackendDomainMember("backend-a", 1, "active"),
+                GPUBackendDomainMember("backend-b", 1, "pending"),
+            ),
+            evolution_id=f"oversized-{corrupt_kind}",
+        )
+        assert (rejected.status, rejected.reason) == (
+            "ledger_corrupt",
+            expected_reason,
+        )
+        assert await raw.hgetall(keys.card) == card_before
+        assert (
+            await raw.llen(keys.queue),
+            await raw.llen(keys.backend_queue("backend-a")),
+            await raw.hlen(keys.leases("backend-a")),
+        ) == children_before
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_domain_evolution_rejects_all_domain_shrink_without_mutation(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-domain-shrink/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a", "backend-b"),
+    )
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_before = await raw.hgetall(keys.card)
+        rejected = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=_memberships("backend-a"),
+            evolution_id="shrink-forbidden",
+        )
+        assert (rejected.status, rejected.reason) == (
+            "config_mismatch",
+            "backend_domain_shrink_forbidden",
+        )
+        assert await raw.hgetall(keys.card) == card_before
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.parametrize(
+    ("current_memberships", "target_memberships", "expected_reason"),
+    (
+        (
+            (GPUBackendDomainMember("backend-a", 2, "active"),),
+            (GPUBackendDomainMember("backend-a", 1, "active"),),
+            "membership_transition_invalid",
+        ),
+        (
+            (GPUBackendDomainMember("backend-a", 1, "active"),),
+            (GPUBackendDomainMember("backend-a", 3, "retiring"),),
+            "membership_transition_invalid",
+        ),
+        (
+            (GPUBackendDomainMember("backend-a", 1, "active"),),
+            (GPUBackendDomainMember("backend-a", 1, "pending"),),
+            "membership_transition_invalid",
+        ),
+        (
+            (GPUBackendDomainMember("backend-a", 1, "active"),),
+            (GPUBackendDomainMember("backend-a", 1, "retiring"),),
+            "membership_transition_invalid",
+        ),
+        (
+            (
+                GPUBackendDomainMember("backend-a", 1, "active"),
+                GPUBackendDomainMember("backend-b", 2, "retiring"),
+            ),
+            (
+                GPUBackendDomainMember("backend-a", 1, "active"),
+                GPUBackendDomainMember("backend-b", 2, "active"),
+            ),
+            "membership_transition_invalid",
+        ),
+        (
+            (GPUBackendDomainMember("backend-a", 1, "active"),),
+            (
+                GPUBackendDomainMember("backend-a", 1, "active"),
+                GPUBackendDomainMember("backend-b", 2, "pending"),
+            ),
+            "new_membership_must_start_pending",
+        ),
+    ),
+    ids=(
+        "epoch-rollback",
+        "epoch-jump",
+        "active-to-pending",
+        "retiring-without-epoch-bump",
+        "retiring-resurrection",
+        "new-pending-wrong-epoch",
+    ),
+)
+@pytest.mark.asyncio
+async def test_domain_evolution_rejects_invalid_membership_transitions_atomically(
+    redis_stores,
+    current_memberships: tuple[GPUBackendDomainMember, ...],
+    target_memberships: tuple[GPUBackendDomainMember, ...],
+    expected_reason: str,
+) -> None:
+    first, _ = redis_stores
+    resource_id = f"node-invalid-transition-{uuid.uuid4().hex}/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=current_memberships,
+    )
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    backend_ids = sorted(
+        {member.backend_id for member in (*current_memberships, *target_memberships)}
+    )
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+
+    async def resource_state() -> tuple:
+        backend_children = []
+        for backend_id in backend_ids:
+            backend_children.append(
+                (
+                    backend_id,
+                    await raw.hgetall(keys.leases(backend_id)),
+                    await raw.lrange(keys.backend_queue(backend_id), 0, -1),
+                )
+            )
+        return (
+            await raw.hgetall(keys.card),
+            await raw.hgetall(keys.allocations),
+            await raw.lrange(keys.queue, 0, -1),
+            await raw.get(keys.transition),
+            tuple(backend_children),
+        )
+
+    try:
+        state_before = await resource_state()
+        rejected = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=target_memberships,
+            evolution_id=f"reject-{expected_reason}-{uuid.uuid4().hex}",
+        )
+        assert (rejected.status, rejected.reason) == (
+            "config_mismatch",
+            expected_reason,
+        )
+        assert await resource_state() == state_before
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_domain_evolution_exact_retry_is_read_only_after_response_loss(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-evolution-retry/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before = await first.snapshot(resource_id)
+    target = (GPUBackendDomainMember("backend-a", 2, "retiring"),)
+    created = await first.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=target,
+        evolution_id="response-loss-evolution",
+    )
+    assert created.status == "evolved"
+    assert created.ledger_revision == before.ledger_revision + 1
+    assert created.idempotent is False
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_after_create = await raw.hgetall(keys.card)
+        retried = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="response-loss-evolution",
+        )
+        assert retried.status == "evolved"
+        assert retried.idempotent is True
+        assert retried.ledger_revision == created.ledger_revision
+        assert await raw.hgetall(keys.card) == card_after_create
+
+        await raw.hset(keys.card, "ledger_incarnation", "replacement-incarnation")
+        incarnation_fenced = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="response-loss-evolution",
+        )
+        assert (incarnation_fenced.status, incarnation_fenced.reason) == (
+            "stale_revision",
+            "ledger_incarnation_changed",
+        )
+        await raw.hset(keys.card, "ledger_incarnation", created.ledger_incarnation)
+        await raw.hset(keys.card, "ledger_version", "1")
+        schema_fenced = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="response-loss-evolution",
+        )
+        assert (schema_fenced.status, schema_fenced.reason) == (
+            "ledger_corrupt",
+            "legacy_schema_requires_proof_reset",
+        )
+        await raw.hset(keys.card, "ledger_version", "2")
+        assert await raw.hgetall(keys.card) == card_after_create
+
+        conflict = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=(GPUBackendDomainMember("backend-a", 3, "retiring"),),
+            evolution_id="response-loss-evolution",
+        )
+        assert (conflict.status, conflict.reason) == (
+            "config_mismatch",
+            "evolution_id_conflict",
+        )
+        assert await raw.hgetall(keys.card) == card_after_create
+
+        unchanged = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=created.ledger_revision,
+            expected_ledger_incarnation=created.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="already-current-domain",
+        )
+        assert unchanged.status == "unchanged"
+        assert unchanged.idempotent is True
+        assert unchanged.ledger_revision == created.ledger_revision
+        assert await raw.hgetall(keys.card) == card_after_create
+
+        progressed = await first.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="later_observation",
+        )
+        assert progressed.ledger_revision == created.ledger_revision + 1
+        card_after_progress = await raw.hgetall(keys.card)
+        fenced_retry = await first.evolve_backend_domains(
+            resource_id,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="response-loss-evolution",
+        )
+        assert (fenced_retry.status, fenced_retry.reason) == (
+            "stale_revision",
+            "ledger_changed_after_evolution",
+        )
+        assert await raw.hgetall(keys.card) == card_after_progress
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_domain_evolution_is_isolated_by_full_resource_id(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_a = "node-shared/index:0"
+    resource_b = "node-shared/index:1"
+    for store, resource_id in ((first, resource_a), (second, resource_b)):
+        await _bootstrap_empty_card(
+            store,
+            resource_id,
+            100,
+            memberships=_memberships("backend-a"),
+        )
+        await store.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="membership_change",
+        )
+    before_a = await first.snapshot(resource_a)
+    before_b = await second.snapshot(resource_b)
+    target = (
+        GPUBackendDomainMember("backend-a", 1, "active"),
+        GPUBackendDomainMember("backend-b", 1, "pending"),
+    )
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.hset(first.keys(resource_a).leases("backend-b"), "orphan", "{}")
+        failed_a = await first.evolve_backend_domains(
+            resource_a,
+            expected_ledger_revision=before_a.ledger_revision,
+            expected_ledger_incarnation=before_a.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="same-evolution-id",
+        )
+        evolved_b = await second.evolve_backend_domains(
+            resource_b,
+            expected_ledger_revision=before_b.ledger_revision,
+            expected_ledger_incarnation=before_b.ledger_incarnation,
+            backend_memberships=target,
+            evolution_id="same-evolution-id",
+        )
+        assert failed_a.status == "partial_state"
+        assert evolved_b.status == "evolved"
+        after_a = await first.snapshot(resource_a)
+        after_b = await second.snapshot(resource_b)
+        assert after_a.ledger_revision == before_a.ledger_revision
+        assert after_a.backend_ids == ("backend-a",)
+        assert after_b.ledger_revision == before_b.ledger_revision + 1
+        assert after_b.backend_ids == ("backend-a", "backend-b")
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_domain_evolution_fences_revision_and_incarnation(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-evolution-cas/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    stale = await first.snapshot(resource_id)
+    await first.mark_card_not_ready(resource_id, 100, reason="newer_observation")
+    current = await first.snapshot(resource_id)
+    target = (
+        GPUBackendDomainMember("backend-a", 1, "active"),
+        GPUBackendDomainMember("backend-b", 1, "pending"),
+    )
+    stale_revision = await first.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=stale.ledger_revision,
+        expected_ledger_incarnation=stale.ledger_incarnation,
+        backend_memberships=target,
+        evolution_id="stale-revision",
+    )
+    assert (stale_revision.status, stale_revision.reason) == (
+        "stale_revision",
+        "ledger_revision_changed",
+    )
+    skipped_pending = await first.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=current.ledger_revision,
+        expected_ledger_incarnation=current.ledger_incarnation,
+        backend_memberships=_memberships("backend-a", "backend-b"),
+        evolution_id="new-active-without-pending",
+    )
+    assert (skipped_pending.status, skipped_pending.reason) == (
+        "config_mismatch",
+        "new_membership_must_start_pending",
+    )
+    stale_incarnation = await first.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=current.ledger_revision,
+        expected_ledger_incarnation="stale-incarnation",
+        backend_memberships=target,
+        evolution_id="stale-incarnation",
+    )
+    assert (stale_incarnation.status, stale_incarnation.reason) == (
+        "stale_revision",
+        "ledger_incarnation_changed",
+    )
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == current.ledger_revision
+    assert after.backend_ids == ("backend-a",)
+
+
+@pytest.mark.asyncio
+async def test_legacy_ledger_v1_is_latched_not_ready_without_in_place_upgrade(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-legacy-v1/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.hset(keys.card, "ledger_version", "1")
+        await raw.hdel(
+            keys.card,
+            "membership_domain",
+            "membership_domain_fingerprint",
+            "active_backend_domain",
+            "active_backend_domain_fingerprint",
+        )
+        revision_before = int(await raw.hget(keys.card, "ledger_revision"))
+        latched = await first.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="operator_fail_close",
+        )
+        assert (latched.status, latched.reason) == (
+            "ledger_corrupt",
+            "legacy_schema_requires_proof_reset",
+        )
+        assert latched.ledger_revision == revision_before + 1
+        assert await raw.hget(keys.card, "ledger_version") == "1"
+        assert await raw.hget(keys.card, "bootstrap_state") == "not_ready"
+        assert await raw.hmget(
+            keys.card,
+            "membership_domain",
+            "membership_domain_fingerprint",
+            "active_backend_domain",
+            "active_backend_domain_fingerprint",
+        ) == [None, None, None, None]
+
+        rejected_reconcile = await first.reconcile_card(
+            resource_id,
+            100,
+            expected_ledger_revision=latched.ledger_revision,
+            expected_ledger_incarnation=latched.ledger_incarnation,
+            backend_memberships=_memberships("backend-a"),
+            allocations=(),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+            repair_id="legacy-must-not-upgrade",
+        )
+        assert rejected_reconcile.status == "ledger_corrupt"
+        assert await raw.hget(keys.card, "ledger_version") == "1"
+        assert await raw.hget(keys.card, "membership_domain") is None
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_incomplete_v2_domains_are_not_filled_by_mark_not_ready(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-incomplete-v2/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.hdel(keys.card, "membership_domain")
+        revision_before = int(await raw.hget(keys.card, "ledger_revision"))
+        rejected = await first.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="operator_fail_close",
+        )
+        assert (rejected.status, rejected.reason) == (
+            "ledger_corrupt",
+            "ledger_schema_incomplete",
+        )
+        assert rejected.ledger_revision == revision_before + 1
+        assert await raw.hget(keys.card, "ledger_version") == "2"
+        assert await raw.hget(keys.card, "membership_domain") is None
+        assert await raw.hget(keys.card, "active_backend_domain") == '["backend-a"]'
+        assert await raw.hget(keys.card, "bootstrap_state") == "not_ready"
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
 async def test_full_flush_revision_aba_is_fenced_by_incarnation(
     redis_stores,
 ) -> None:
@@ -295,7 +1507,7 @@ async def test_full_flush_revision_aba_is_fenced_by_incarnation(
         100,
         expected_ledger_revision=None,
         expected_ledger_incarnation=None,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=(allocation,),
         lease_cleanup=None,
         ready=True,
@@ -326,7 +1538,7 @@ async def test_full_flush_revision_aba_is_fenced_by_incarnation(
             100,
             expected_ledger_revision=None,
             expected_ledger_incarnation=None,
-            backend_ids=_TEST_BACKEND_DOMAIN,
+            backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
             allocations=(allocation,),
             lease_cleanup=None,
             ready=True,
@@ -341,7 +1553,7 @@ async def test_full_flush_revision_aba_is_fenced_by_incarnation(
             100,
             expected_ledger_revision=old_snapshot.ledger_revision,
             expected_ledger_incarnation=old_snapshot.ledger_incarnation,
-            backend_ids=_TEST_BACKEND_DOMAIN,
+            backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
             allocations=(old_target,),
             lease_cleanup=None,
             ready=True,
@@ -373,7 +1585,7 @@ async def test_partial_flush_state_cannot_be_bootstrapped_over(
             100,
             expected_ledger_revision=None,
             expected_ledger_incarnation=None,
-            backend_ids=("backend-a",),
+            backend_memberships=_memberships("backend-a"),
             allocations=(_reconcile_allocation(),),
             lease_cleanup=None,
             ready=True,
@@ -417,6 +1629,7 @@ async def test_ready_card_integrity_loss_blocks_every_new_work_entry(
             await first.enqueue_backend(
                 resource_id,
                 backend_id="backend-b",
+                membership_epoch=1,
                 ticket_id="existing-ticket",
                 owner_id="existing-owner",
                 ttl_ms=30_000,
@@ -427,6 +1640,7 @@ async def test_ready_card_integrity_loss_blocks_every_new_work_entry(
             await first.acquire_transition_owner(
                 resource_id,
                 backend_id="backend-a",
+                membership_epoch=1,
                 owner_id="existing-transition-owner",
                 generation="2",
                 operation="evict",
@@ -476,6 +1690,7 @@ async def test_ready_card_integrity_loss_blocks_every_new_work_entry(
             result = await first.enqueue_card(
                 resource_id,
                 backend_id="backend-b",
+                membership_epoch=1,
                 ticket_id="new-ticket",
                 owner_id="new-owner",
                 ttl_ms=30_000,
@@ -484,6 +1699,7 @@ async def test_ready_card_integrity_loss_blocks_every_new_work_entry(
             result = await first.acquire_transition_owner(
                 resource_id,
                 backend_id="backend-a",
+                membership_epoch=1,
                 owner_id="new-transition-owner",
                 generation="2",
                 operation="evict",
@@ -515,6 +1731,7 @@ async def test_missing_revision_blocks_cleanup_and_state_mutations(
         await first.enqueue_backend(
             resource_id,
             backend_id="backend-b",
+            membership_epoch=1,
             ticket_id="existing-ticket",
             owner_id="existing-owner",
             ttl_ms=30_000,
@@ -524,6 +1741,7 @@ async def test_missing_revision_blocks_cleanup_and_state_mutations(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="existing-transition-owner",
             generation="2",
             operation="evict",
@@ -603,7 +1821,7 @@ async def test_expired_idempotent_repair_cannot_reopen_readiness(
     kwargs = {
         "expected_ledger_revision": None,
         "expected_ledger_incarnation": None,
-        "backend_ids": _TEST_BACKEND_DOMAIN,
+        "backend_memberships": _TEST_BACKEND_MEMBERSHIPS,
         "allocations": (),
         "lease_cleanup": None,
         "ready": True,
@@ -637,7 +1855,7 @@ async def test_expired_reconcile_deadline_stops_new_work_and_queueing(
         100,
         expected_ledger_revision=None,
         expected_ledger_incarnation=None,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=(),
         lease_cleanup=None,
         ready=True,
@@ -658,6 +1876,7 @@ async def test_expired_reconcile_deadline_stops_new_work_and_queueing(
         await first.enqueue_backend(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="ticket-after-expiry",
             owner_id="owner-a",
             ttl_ms=30_000,
@@ -679,6 +1898,7 @@ async def test_expired_queue_ticket_does_not_block_reconcile(
         await enqueue(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="expired-ticket",
             owner_id="owner-a",
             ttl_ms=10,
@@ -692,7 +1912,7 @@ async def test_expired_queue_ticket_does_not_block_reconcile(
         100,
         expected_ledger_revision=before.ledger_revision,
         expected_ledger_incarnation=before.ledger_incarnation,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=before.allocations,
         lease_cleanup=None,
         ready=True,
@@ -722,7 +1942,7 @@ async def test_busy_reconcile_reports_expired_card_as_not_ready(
         100,
         expected_ledger_revision=None,
         expected_ledger_incarnation=None,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=(),
         lease_cleanup=None,
         ready=True,
@@ -734,6 +1954,7 @@ async def test_busy_reconcile_reports_expired_card_as_not_ready(
         await first.enqueue_backend(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="live-ticket",
             owner_id="owner-a",
             ttl_ms=30_000,
@@ -747,7 +1968,7 @@ async def test_busy_reconcile_reports_expired_card_as_not_ready(
         100,
         expected_ledger_revision=before.ledger_revision,
         expected_ledger_incarnation=before.ledger_incarnation,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=before.allocations,
         lease_cleanup=None,
         ready=True,
@@ -789,7 +2010,7 @@ async def test_stale_incarnation_new_work_context_does_not_latch_replacement(
             100,
             expected_ledger_revision=None,
             expected_ledger_incarnation=None,
-            backend_ids=_TEST_BACKEND_DOMAIN,
+            backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
             allocations=(),
             lease_cleanup=None,
             ready=True,
@@ -817,6 +2038,74 @@ async def test_stale_incarnation_new_work_context_does_not_latch_replacement(
 
 
 @pytest.mark.asyncio
+async def test_stale_membership_context_does_not_latch_reconciled_card(
+    redis_stores,
+    monkeypatch,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-stale-membership-context/index:0"
+    initial_memberships = _memberships("backend-a", "backend-b")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=initial_memberships,
+    )
+    keys = first.keys(resource_id)
+    old_context = await first._ledger_domain(keys)
+    await first.mark_card_not_ready(resource_id, 100, reason="membership_change")
+    before_evolution = await first.snapshot(resource_id)
+    target_memberships = (
+        GPUBackendDomainMember("backend-a", 2, "retiring"),
+        GPUBackendDomainMember("backend-b", 1, "active"),
+    )
+    evolved = await first.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=before_evolution.ledger_revision,
+        expected_ledger_incarnation=before_evolution.ledger_incarnation,
+        backend_memberships=target_memberships,
+        evolution_id="stale-context-evolution",
+    )
+    assert evolved.status == "evolved"
+    reconciled = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=evolved.ledger_revision,
+        expected_ledger_incarnation=evolved.ledger_incarnation,
+        backend_memberships=target_memberships,
+        allocations=(),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="stale-context-reconcile",
+    )
+    assert reconciled.status == "reconciled"
+
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_before = await raw.hgetall(keys.card)
+
+        async def stale_context(_keys):
+            return old_context
+
+        monkeypatch.setattr(first, "_ledger_domain", stale_context)
+        rejected = await first.admit(
+            resource_id,
+            **_admission_kwargs("backend-a", "stale-membership-lease"),
+        )
+        assert (rejected.status, rejected.reason) == (
+            "not_ready",
+            "membership_domain_changed",
+        )
+        assert await raw.hgetall(keys.card) == card_before
+        assert card_before["bootstrap_state"] == "ready"
+        assert await raw.hlen(keys.allocations) == 0
+        assert await raw.hlen(keys.leases("backend-a")) == 0
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
 async def test_reconcile_revision_cas_cannot_overwrite_a_new_admission(
     redis_stores,
 ) -> None:
@@ -836,7 +2125,7 @@ async def test_reconcile_revision_cas_cannot_overwrite_a_new_admission(
         100,
         expected_ledger_revision=stale_snapshot.ledger_revision,
         expected_ledger_incarnation=stale_snapshot.ledger_incarnation,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=stale_snapshot.allocations,
         lease_cleanup=None,
         ready=True,
@@ -890,7 +2179,7 @@ async def test_reconcile_only_purges_stale_lease_after_hard_deadline(
             100,
             expected_ledger_revision=before.ledger_revision,
             expected_ledger_incarnation=before.ledger_incarnation,
-            backend_ids=_TEST_BACKEND_DOMAIN,
+            backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
             allocations=(target,),
             lease_cleanup=cleanup,
             ready=True,
@@ -914,7 +2203,7 @@ async def test_reconcile_only_purges_stale_lease_after_hard_deadline(
             100,
             expected_ledger_revision=before.ledger_revision,
             expected_ledger_incarnation=before.ledger_incarnation,
-            backend_ids=_TEST_BACKEND_DOMAIN,
+            backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
             allocations=(target,),
             lease_cleanup={
                 "backend-a": GPUReconcileLeaseCleanup(
@@ -1084,6 +2373,7 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
     ticket_one = await first.enqueue_backend(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         ticket_id="ticket-1",
         owner_id="waiter-1",
         ttl_ms=30_000,
@@ -1091,6 +2381,7 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
     ticket_two = await second.enqueue_backend(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         ticket_id="ticket-2",
         owner_id="waiter-2",
         ttl_ms=30_000,
@@ -1151,6 +2442,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
     await first.enqueue_backend(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         ticket_id="ticket-a",
         owner_id="queue-owner",
         ttl_ms=30_000,
@@ -1184,6 +2476,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
     await first.enqueue_card(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         ticket_id="card-ticket",
         owner_id="queue-owner",
         ttl_ms=30_000,
@@ -1255,6 +2548,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
     acquired = await first.acquire_transition_owner(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         owner_id="transition-owner",
         generation="2",
         operation="drain",
@@ -1265,6 +2559,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
     repeated = await second.acquire_transition_owner(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         owner_id="transition-owner",
         generation="2",
         operation="drain",
@@ -1275,6 +2570,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
     blocked = await second.acquire_transition_owner(
         resource_id,
         backend_id="backend-b",
+        membership_epoch=1,
         owner_id="other-owner",
         generation="1",
         operation="drain",
@@ -1295,6 +2591,7 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
         takeover = await second.acquire_transition_owner(
             resource_id,
             backend_id="backend-b",
+            membership_epoch=1,
             owner_id="other-owner",
             generation="3",
             operation="drain",
@@ -1447,6 +2744,7 @@ async def test_generation_cas_and_active_lease_guard_transitions(redis_stores) -
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="transition-owner",
             generation="2",
             operation="evict",
@@ -1518,6 +2816,7 @@ async def test_expired_transition_owner_cannot_commit_after_takeover(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="old-owner",
             generation="2",
             operation="evict",
@@ -1530,6 +2829,7 @@ async def test_expired_transition_owner_cannot_commit_after_takeover(
         takeover = await second.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="new-owner",
             generation="3",
             operation="evict",
@@ -1578,6 +2878,7 @@ async def test_idle_transition_owner_closes_the_admission_window(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-missing",
+            membership_epoch=1,
             owner_id="transition-owner",
             generation="1",
             operation="evict",
@@ -1588,6 +2889,7 @@ async def test_idle_transition_owner_closes_the_admission_window(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="transition-owner",
             generation="1",
             operation="evict",
@@ -1597,6 +2899,7 @@ async def test_idle_transition_owner_closes_the_admission_window(
     active = await first.acquire_transition_owner(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         owner_id="transition-owner",
         generation="2",
         operation="evict",
@@ -1617,6 +2920,7 @@ async def test_idle_transition_owner_closes_the_admission_window(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="transition-owner",
             generation="2",
             operation="evict",
@@ -1659,6 +2963,7 @@ async def test_generation_tombstone_is_strict_beyond_lua_safe_integer(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="transition-owner",
             generation=drain_generation,
             operation="evict",
@@ -1786,7 +3091,7 @@ async def test_reconcile_cannot_change_counted_allocation_evictability(
         100,
         expected_ledger_revision=before.ledger_revision,
         expected_ledger_incarnation=before.ledger_incarnation,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=(changed,),
         lease_cleanup=None,
         ready=True,
@@ -1812,7 +3117,7 @@ async def test_overcommit_disables_new_resident_fast_path(redis_stores) -> None:
         50,
         expected_ledger_revision=before.ledger_revision,
         expected_ledger_incarnation=before.ledger_incarnation,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=before.allocations,
         lease_cleanup=None,
         ready=True,
@@ -1849,6 +3154,7 @@ async def test_card_fifo_and_resource_shards_are_independent(redis_stores) -> No
     await first.enqueue_card(
         resource_a,
         backend_id="backend-a",
+        membership_epoch=1,
         ticket_id="card-ticket-a",
         owner_id="owner-a",
         ttl_ms=30_000,
@@ -1856,6 +3162,7 @@ async def test_card_fifo_and_resource_shards_are_independent(redis_stores) -> No
     await second.enqueue_card(
         resource_a,
         backend_id="backend-b",
+        membership_epoch=1,
         ticket_id="card-ticket-b",
         owner_id="owner-b",
         ttl_ms=30_000,
@@ -1923,6 +3230,7 @@ async def test_corrupt_queue_does_not_truncate_existing_tickets(
     await first.enqueue_backend(
         resource_id,
         backend_id="backend-a",
+        membership_epoch=1,
         ticket_id="ticket-a",
         owner_id="owner-a",
         ttl_ms=30_000,
@@ -2113,7 +3421,7 @@ async def test_snapshot_retries_when_incarnation_changes_at_same_revision(
         100,
         expected_ledger_revision=None,
         expected_ledger_incarnation=None,
-        backend_ids=_TEST_BACKEND_DOMAIN,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
         allocations=(old_allocation,),
         lease_cleanup=None,
         ready=True,
@@ -2149,7 +3457,7 @@ async def test_snapshot_retries_when_incarnation_changes_at_same_revision(
                 100,
                 expected_ledger_revision=None,
                 expected_ledger_incarnation=None,
-                backend_ids=_TEST_BACKEND_DOMAIN,
+                backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
                 allocations=(
                     replace(
                         old_allocation,
@@ -2204,6 +3512,7 @@ async def test_snapshot_retries_across_concurrent_ledger_revisions(
                     await second.acquire_transition_owner(
                         resource_id,
                         backend_id="backend-a",
+                        membership_epoch=1,
                         owner_id=transition_owner,
                         generation=drain_generation,
                         operation="evict",
@@ -2307,6 +3616,7 @@ async def test_revision_headroom_rejects_new_queue_work_without_mutation(
         rejected = await first.enqueue_backend(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="must-not-queue",
             owner_id="owner-a",
             ttl_ms=30_000,
@@ -2385,6 +3695,7 @@ async def test_cutoff_response_loss_retries_confirm_existing_ownership(
         first_ticket = await first.enqueue_backend(
             queue_resource,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="cutoff-ticket",
             owner_id="owner-a",
             ttl_ms=30_000,
@@ -2392,6 +3703,7 @@ async def test_cutoff_response_loss_retries_confirm_existing_ownership(
         retried_ticket = await first.enqueue_backend(
             queue_resource,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="cutoff-ticket",
             owner_id="owner-a",
             ttl_ms=30_000,
@@ -2416,6 +3728,7 @@ async def test_cutoff_response_loss_retries_confirm_existing_ownership(
         await raw.hset(owner_keys.card, "ledger_revision", str(cutoff - 1))
         owner_kwargs = {
             "backend_id": "backend-a",
+            "membership_epoch": 1,
             "owner_id": "cutoff-owner",
             "generation": "2",
             "operation": "evict",
@@ -2446,6 +3759,7 @@ async def test_queue_position_without_pruning_is_revision_read_only(
         await first.enqueue_backend(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="live-ticket",
             owner_id="owner-a",
             ttl_ms=30_000,
@@ -2488,7 +3802,7 @@ async def test_reconcile_rotates_incarnation_and_rebases_revision_headroom(
             100,
             expected_ledger_revision=rebase_boundary,
             expected_ledger_incarnation=before.ledger_incarnation,
-            backend_ids=_TEST_BACKEND_DOMAIN,
+            backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
             allocations=before.allocations,
             lease_cleanup=None,
             ready=True,
@@ -2533,6 +3847,7 @@ async def test_ttl_durations_cannot_write_unsafe_absolute_deadlines(
         await first.enqueue_backend(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="ticket-a",
             owner_id="owner-a",
             ttl_ms=maximum_ttl_ms,
@@ -2553,6 +3868,7 @@ async def test_ttl_durations_cannot_write_unsafe_absolute_deadlines(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="transition-owner",
             generation="2",
             operation="evict",
@@ -2569,6 +3885,7 @@ async def test_ttl_durations_cannot_write_unsafe_absolute_deadlines(
         await first.enqueue_card(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             ticket_id="ticket-invalid",
             owner_id="owner-a",
             ttl_ms=invalid_ttl_ms,
@@ -2577,6 +3894,7 @@ async def test_ttl_durations_cannot_write_unsafe_absolute_deadlines(
         await first.acquire_transition_owner(
             resource_id,
             backend_id="backend-a",
+            membership_epoch=1,
             owner_id="invalid-owner",
             generation="2",
             operation="evict",
