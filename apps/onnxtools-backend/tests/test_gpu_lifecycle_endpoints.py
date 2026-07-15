@@ -12,6 +12,8 @@ import pytest
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     AdmissionTokenClaims,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     encode_ed25519_public_key,
     sign_admission_token,
 )
@@ -109,6 +111,29 @@ def _promote(client, private_key: Ed25519PrivateKey) -> str:
     )
     assert response.status_code == 200, response.text
     return boot_id
+
+
+def test_health_echoes_only_exact_gpu_challenge(managed_client) -> None:
+    _, client, _ = managed_client
+    challenge = "ab" * 32
+    response = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: challenge},
+    )
+    assert response.status_code == 200
+    assert response.headers[GPU_HEALTH_CHALLENGE_HEADER] == challenge
+    assert response.headers["cache-control"] == "no-store"
+
+    ordinary = client.get("/health")
+    assert GPU_HEALTH_CHALLENGE_HEADER not in ordinary.headers
+    mismatch = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: "cd" * 32},
+    )
+    assert mismatch.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in mismatch.headers
 
 
 def _workload_headers(

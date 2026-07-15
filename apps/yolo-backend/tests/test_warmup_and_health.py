@@ -11,6 +11,10 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
+from aap_protocol_v2.lifecycle import (
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -106,6 +110,50 @@ def test_health_pool_loaded_key_string_uses_series_size_task(client) -> None:
 def test_health_declares_cpu_fallback_capability(client) -> None:
     compute = client.get("/health").json()["compute"]
     assert compute["cpu_fallback_supported"] is True
+
+
+def test_health_echoes_only_exact_gpu_challenge(client) -> None:
+    challenge = "ab" * 32
+    response = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: challenge},
+    )
+    assert response.status_code == 200
+    assert response.headers[GPU_HEALTH_CHALLENGE_HEADER] == challenge
+    assert response.headers["cache-control"] == "no-store"
+
+    ordinary = client.get("/health")
+    assert GPU_HEALTH_CHALLENGE_HEADER not in ordinary.headers
+    mismatch = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: "cd" * 32},
+    )
+    assert mismatch.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in mismatch.headers
+
+    duplicate_query = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params=[
+            (GPU_HEALTH_CHALLENGE_QUERY_PARAM, challenge),
+            (GPU_HEALTH_CHALLENGE_QUERY_PARAM, challenge),
+        ],
+    )
+    assert duplicate_query.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in duplicate_query.headers
+
+    duplicate_header = client.get(
+        "/health",
+        headers=[
+            (GPU_HEALTH_CHALLENGE_HEADER, challenge),
+            (GPU_HEALTH_CHALLENGE_HEADER, challenge),
+        ],
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: challenge},
+    )
+    assert duplicate_header.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in duplicate_header.headers
 
 
 def test_health_survives_cuda_runtime_failure(client, monkeypatch) -> None:

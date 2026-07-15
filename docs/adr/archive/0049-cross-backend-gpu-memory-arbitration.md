@@ -341,9 +341,17 @@ backend 最多一个 pending/active 成员，retiring tombstone 清理前禁止�
 registry claim 仍匹配时，以创建时的 runtime baseline 为基准，在同一短事务新推进一档 epoch 后转 active；
 membership 的 backend/resource 身份不可原地改写，membership epoch 不可回退或跳变；只有 registry
 已撤销旧 claim 时才可将旧行原位转 retiring 并严格推进一档。retiring 行的冻结证据在
-proof-backed GC 落地前禁止 UPDATE/DELETE。探活网络调用后锁定 registry 行并用
-新语句重读 membership epoch；所有会推进 epoch 的配置变更立即清空旧 health，从而阻止配置变化、行锁等待
-与 A→B 竞态写入旧证据。进入正 runtime epoch 后，直接修改端点、claim、预算、
+proof-backed GC 落地前禁止 UPDATE/DELETE。GPU 探活使用 64 位小写十六进制 challenge，同时放入
+`X-AAP-GPU-Health-Challenge` header 与 `aap_gpu_health_challenge` query；backend 仅在二者各唯一、合法且
+完全一致时精确回显 header，并返回 `Cache-Control: no-store`。平台发送 `no-cache`，只接受唯一响应 header，
+backend body 不能自报成功。严格旧 backend 以 400/422 拒绝未知 query 时可降级一次普通探活，但 fallback
+响应永不成为证明。缺失回显仍可表示 connected，不能授权账本恢复。
+
+探活请求前与响应完整返回后分别读取 PostgreSQL `clock_timestamp()`，把 `probe_started_at`、`observed_at`、
+challenge、backend/resource 身份和 membership epoch/state 绑定为证据候选。网络调用后按
+registry→exact membership 顺序锁行并重验 endpoint/auth/resource/epoch/state，直到 registry 写回完成；所有
+会推进 epoch 的配置变更立即清空旧 health，从而阻止配置变化、行锁等待、pending→active 状态窗口与
+A→B→A 竞态写入旧证据。无时区时间或时钟倒退一律拒绝。进入正 runtime epoch 后，直接修改端点、claim、预算、
 优先级、并发参数或硬删除 registry 会被服务层与数据库 trigger 双重拒绝，必须走受管退役。退役时冻结的
 health 只作诊断快照，不得代替 GC 所需的 live health。
 
@@ -352,6 +360,9 @@ mutation 由 registry row→membership→fence trigger 线性化，服务层不�
 在同一事务推进；复用既有 epoch 的普通 workload 使用 horizon-only 更新。两条路径都必须 UPDATE-only
 单调持久化 `token_expiry_high_water`，缺失 fence 视为持久状态损坏，禁止从 1 重建。Redis 连续性丢失后，
 只有该时域已过且取得时域之后的 live-idle health，或完成更强的受签 reset，才可恢复 ready。
+challenge-bound health 只是证据候选，不是 reset 授权；消费时必须重新锁定当前 membership/fence，严格要求
+`probe_started_at > token_expiry_high_water`，校验证据 TTL、完整 residency 与身份，并把最终 horizon 复核和
+Redis reset 提交置于同一受保护恢复流程。不得缓存“已满足 horizon”的布尔值。
 Redis v2 以三份 canonical 文档区分有界 all-domain、携带 positive-int64 epoch/state 的 membership-domain 与
 由 active 成员唯一派生的 active-domain。新 admission、两级 enqueue 与 ticket 消费 exact-match active
 membership epoch；lease、ticket 取消/查询及 transition 收敛只要求成员仍位于 all-domain，因此 active 转
@@ -452,8 +463,9 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P1：五个 backend 完成 residency、active/draining、全池 unload、generation fencing 与 admission token 契约。
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
 - P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语、独立 durable
-  membership/tombstone，以及 v2 all/membership/active 三域的单调演进与操作权限矩阵已完成；live health、
-  token horizon proof reset、retired child/tombstone GC 与 bootstrap/repair worker 接通后才算通过。
+  membership/tombstone、v2 all/membership/active 三域的单调演进与操作权限矩阵，以及 challenge-bound
+  live-health 证据候选已完成；token horizon 消费与 proof reset、retired child/tombstone GC 和
+  bootstrap/repair worker 接通后才算通过。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。

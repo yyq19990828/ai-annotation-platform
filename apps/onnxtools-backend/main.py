@@ -41,13 +41,16 @@ from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleResetRequest,
     ManagedLifecycleCapabilities,
     load_verify_keyring,
+    match_gpu_health_challenge,
 )
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import ValidationError
 
 from attribute_schema import OUTPUT_ATTRIBUTE_SCHEMA
@@ -325,6 +328,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="onnxtools-backend", version=BACKEND_VERSION, lifespan=lifespan)
 
 
+def _echo_gpu_health_challenge(request: Request, response: Response) -> None:
+    challenge = match_gpu_health_challenge(
+        request.headers.getlist(GPU_HEALTH_CHALLENGE_HEADER),
+        request.query_params.getlist(GPU_HEALTH_CHALLENGE_QUERY_PARAM),
+    )
+    if challenge is not None:
+        response.headers[GPU_HEALTH_CHALLENGE_HEADER] = challenge
+        response.headers["Cache-Control"] = "no-store"
+
+
 def _pool_status(snapshot: dict[str, Any]) -> dict[str, Any]:
     """协议 §4.3 PoolStatus: 句柄池状态, 供模型市场展示已加载 / 预热状态。
 
@@ -337,7 +350,7 @@ def _pool_status(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(_echo_gpu_health_challenge)])
 async def health() -> dict[str, Any]:
     if _gpu_lifecycle is not None:
         pool_snapshot, residency = await _gpu_lifecycle.snapshot_and_residency()

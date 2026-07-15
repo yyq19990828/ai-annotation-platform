@@ -11,7 +11,7 @@ import base64
 import json
 import re
 from enum import Enum
-from typing import Annotated, Literal, Mapping
+from typing import Annotated, Literal, Mapping, Sequence
 
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -31,6 +31,8 @@ from pydantic import (
 
 GPU_GENERATION_HEADER = "X-AAP-GPU-Generation"
 GPU_ADMISSION_TOKEN_HEADER = "X-AAP-GPU-Admission-Token"
+GPU_HEALTH_CHALLENGE_HEADER = "X-AAP-GPU-Health-Challenge"
+GPU_HEALTH_CHALLENGE_QUERY_PARAM = "aap_gpu_health_challenge"
 GPU_LIFECYCLE_AUDIENCE = "aap-gpu-lifecycle"
 GPU_ADMISSION_TOKEN_TYPE = "aap-gpu+jwt"
 GPU_ADMISSION_TOKEN_ALGORITHM = "EdDSA"
@@ -38,6 +40,7 @@ MANAGED_LIFECYCLE_PROTOCOL_VERSION = "1"
 
 MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 _CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
+_GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _KEY_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _RAW_ED25519_PUBLIC_KEY_RE = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 
@@ -52,6 +55,31 @@ def validate_canonical_positive_int64(value: str) -> str:
     if int(value) > MAX_POSITIVE_INT64:
         raise ValueError("must not exceed signed int64 max")
     return value
+
+
+def validate_gpu_health_challenge(value: str) -> str:
+    """Validate the canonical nonce used to bind one live GPU health response."""
+
+    if not isinstance(value, str) or _GPU_HEALTH_CHALLENGE_RE.fullmatch(value) is None:
+        raise ValueError("must be exactly 64 lowercase hexadecimal characters")
+    return value
+
+
+def match_gpu_health_challenge(
+    header_values: Sequence[str],
+    query_values: Sequence[str],
+) -> str | None:
+    """Return a challenge only when header and query contain one exact valid value."""
+
+    if len(header_values) != 1 or len(query_values) != 1:
+        return None
+    challenge = header_values[0]
+    if challenge != query_values[0]:
+        return None
+    try:
+        return validate_gpu_health_challenge(challenge)
+    except ValueError:
+        return None
 
 
 CanonicalPositiveInt64String = Annotated[
@@ -480,6 +508,8 @@ __all__ = [
     "GPU_ADMISSION_TOKEN_HEADER",
     "GPU_ADMISSION_TOKEN_TYPE",
     "GPU_GENERATION_HEADER",
+    "GPU_HEALTH_CHALLENGE_HEADER",
+    "GPU_HEALTH_CHALLENGE_QUERY_PARAM",
     "GPU_LIFECYCLE_AUDIENCE",
     "GenerationTransitionRequest",
     "LifecycleGate",
@@ -496,7 +526,9 @@ __all__ = [
     "WORKLOAD_ADMISSION_SCOPES",
     "encode_ed25519_public_key",
     "load_verify_keyring",
+    "match_gpu_health_challenge",
     "sign_admission_token",
     "validate_canonical_positive_int64",
+    "validate_gpu_health_challenge",
     "verify_admission_token",
 ]

@@ -19,6 +19,8 @@ from aap_protocol_v2.lifecycle import (
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_ADMISSION_TOKEN_TYPE,
     GPU_GENERATION_HEADER,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleModeResponse,
@@ -28,8 +30,10 @@ from aap_protocol_v2.lifecycle import (
     PoolResidency,
     encode_ed25519_public_key,
     load_verify_keyring,
+    match_gpu_health_challenge,
     sign_admission_token,
     validate_canonical_positive_int64,
+    validate_gpu_health_challenge,
     verify_admission_token,
 )
 
@@ -49,6 +53,42 @@ def test_canonical_positive_int64_accepts_bounds(value: str) -> None:
 def test_canonical_positive_int64_rejects_non_canonical_values(value: str) -> None:
     with pytest.raises(ValueError):
         validate_canonical_positive_int64(value)
+
+
+def test_gpu_health_challenge_wire_names_and_canonical_value() -> None:
+    challenge = "a1" * 32
+    assert GPU_HEALTH_CHALLENGE_HEADER == "X-AAP-GPU-Health-Challenge"
+    assert GPU_HEALTH_CHALLENGE_QUERY_PARAM == "aap_gpu_health_challenge"
+    assert validate_gpu_health_challenge(challenge) == challenge
+    assert match_gpu_health_challenge((challenge,), (challenge,)) == challenge
+
+
+@pytest.mark.parametrize(
+    "value",
+    ("", "a" * 63, "a" * 65, "A" * 64, "g" * 64, f"{'a' * 63} "),
+)
+def test_gpu_health_challenge_rejects_non_canonical_values(value: str) -> None:
+    with pytest.raises(ValueError):
+        validate_gpu_health_challenge(value)
+
+
+@pytest.mark.parametrize(
+    ("headers", "queries"),
+    (
+        ((), ()),
+        (("a" * 64,), ()),
+        ((), ("a" * 64,)),
+        (("a" * 64,), ("b" * 64,)),
+        (("a" * 64, "a" * 64), ("a" * 64,)),
+        (("a" * 64,), ("a" * 64, "a" * 64)),
+        (("A" * 64,), ("A" * 64,)),
+    ),
+)
+def test_gpu_health_challenge_requires_one_exact_header_query_pair(
+    headers: tuple[str, ...],
+    queries: tuple[str, ...],
+) -> None:
+    assert match_gpu_health_challenge(headers, queries) is None
 
 
 def test_generation_and_control_epoch_reject_json_numbers() -> None:

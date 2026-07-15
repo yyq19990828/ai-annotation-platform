@@ -49,13 +49,16 @@ from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleResetRequest,
     ManagedLifecycleCapabilities,
     load_verify_keyring,
+    match_gpu_health_challenge,
 )
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
@@ -543,7 +546,17 @@ def _legacy_pool_status(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.get("/health")
+def _echo_gpu_health_challenge(request: Request, response: Response) -> None:
+    challenge = match_gpu_health_challenge(
+        request.headers.getlist(GPU_HEALTH_CHALLENGE_HEADER),
+        request.query_params.getlist(GPU_HEALTH_CHALLENGE_QUERY_PARAM),
+    )
+    if challenge is not None:
+        response.headers[GPU_HEALTH_CHALLENGE_HEADER] = challenge
+        response.headers["Cache-Control"] = "no-store"
+
+
+@app.get("/health", dependencies=[Depends(_echo_gpu_health_challenge)])
 async def health() -> dict:
     """v0.9.5 · 加 GPU 显存 + cache 指标，便于运维实时观察。
 

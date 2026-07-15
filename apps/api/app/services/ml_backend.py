@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import UTC, datetime
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,10 @@ from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.services.gpu_arbiter import GPUShadowSessionFactory, validate_gpu_claim
-from app.services.ml_client import MLBackendClient
+from app.services.ml_client import (
+    GPU_HEALTH_CHALLENGE_ECHO_MARKER,
+    MLBackendClient,
+)
 
 
 class MLBackendDeleteBlocked(Exception):
@@ -71,6 +75,12 @@ _REGISTRY_MUTABLE_FIELDS = {
     "vram_budget_mb",
     "eviction_priority",
 }
+
+
+def _proof_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("proof timestamps must be timezone-aware")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 class MLBackendService:
@@ -355,25 +365,78 @@ class MLBackendService:
         requested_auth_token = backend.auth_token
         requested_gpu_resource_id = backend.gpu_resource_id
         requested_membership_epoch: int | None = None
+        requested_membership_state: str | None = None
+        gpu_health_challenge: str | None = None
+        probe_started_at: datetime | None = None
         if requested_gpu_resource_id is not None:
-            requested_membership_epoch = await self.db.scalar(
-                select(GPUBackendMembership.membership_epoch).where(
-                    GPUBackendMembership.backend_registry_id == registry_id,
-                    GPUBackendMembership.gpu_resource_id == requested_gpu_resource_id,
-                    GPUBackendMembership.state.in_(("pending", "active")),
+            requested_membership = (
+                await self.db.execute(
+                    select(
+                        GPUBackendMembership.membership_epoch,
+                        GPUBackendMembership.state,
+                    ).where(
+                        GPUBackendMembership.backend_registry_id == registry_id,
+                        GPUBackendMembership.gpu_resource_id
+                        == requested_gpu_resource_id,
+                        GPUBackendMembership.state.in_(("pending", "active")),
+                    )
                 )
-            )
-            if requested_membership_epoch is None:
+            ).one_or_none()
+            if requested_membership is None:
+                return False
+            requested_membership_epoch = requested_membership.membership_epoch
+            requested_membership_state = requested_membership.state
+            gpu_health_challenge = secrets.token_hex(32)
+            probe_started_at = await self.db.scalar(select(func.clock_timestamp()))
+            if probe_started_at is None:
                 return False
         client = MLBackendClient(backend)
         # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到全局注册行
-        healthy, meta = await client.health_meta()
-        observed_at = datetime.now(UTC)
+        if gpu_health_challenge is None:
+            healthy, meta = await client.health_meta()
+        else:
+            healthy, meta = await client.health_meta(
+                gpu_health_challenge=gpu_health_challenge
+            )
+        observed_at = await self.db.scalar(select(func.clock_timestamp()))
+        if observed_at is None:
+            return False
+        if probe_started_at is not None and (
+            probe_started_at.tzinfo is None
+            or probe_started_at.utcoffset() is None
+            or observed_at.tzinfo is None
+            or observed_at.utcoffset() is None
+            or observed_at < probe_started_at
+        ):
+            return False
+        echoed_challenge: str | None = None
+        if meta is not None:
+            meta = dict(meta)
+            echoed = meta.pop(GPU_HEALTH_CHALLENGE_ECHO_MARKER, None)
+            if isinstance(echoed, str):
+                echoed_challenge = echoed
         # A failed or metadata-free probe invalidates the previous device/identity
         # snapshot.  Keeping it would let stale CPU/UUID evidence pass GPU diagnostics.
         next_health_meta = None
         next_is_interactive: bool | None = None
         if healthy and meta is not None:
+            if (
+                gpu_health_challenge is not None
+                and echoed_challenge == gpu_health_challenge
+                and probe_started_at is not None
+                and requested_membership_epoch is not None
+                and requested_membership_state is not None
+            ):
+                meta["gpu_arbiter_probe"] = {
+                    "protocol_version": "1",
+                    "challenge": gpu_health_challenge,
+                    "backend_registry_id": str(registry_id),
+                    "gpu_resource_id": requested_gpu_resource_id,
+                    "membership_epoch": str(requested_membership_epoch),
+                    "membership_state": requested_membership_state,
+                    "probe_started_at": _proof_timestamp(probe_started_at),
+                    "observed_at": _proof_timestamp(observed_at),
+                }
             # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]。
             from app.services.ml_capabilities import extract_capabilities
 
@@ -408,14 +471,25 @@ class MLBackendService:
         ):
             return False
         if requested_membership_epoch is not None:
-            current_membership_epoch = await self.db.scalar(
-                select(GPUBackendMembership.membership_epoch).where(
-                    GPUBackendMembership.backend_registry_id == registry_id,
-                    GPUBackendMembership.gpu_resource_id == requested_gpu_resource_id,
-                    GPUBackendMembership.state.in_(("pending", "active")),
+            current_membership = (
+                await self.db.execute(
+                    select(
+                        GPUBackendMembership.membership_epoch,
+                        GPUBackendMembership.state,
+                    ).where(
+                        GPUBackendMembership.backend_registry_id == registry_id,
+                        GPUBackendMembership.gpu_resource_id
+                        == requested_gpu_resource_id,
+                        GPUBackendMembership.state.in_(("pending", "active")),
+                    ).with_for_update()
                 )
-            )
-            if current_membership_epoch != requested_membership_epoch:
+            ).one_or_none()
+            if (
+                current_membership is None
+                or current_membership.membership_epoch
+                != requested_membership_epoch
+                or current_membership.state != requested_membership_state
+            ):
                 return False
         result = await self.db.execute(
             update(MLBackendRegistry)

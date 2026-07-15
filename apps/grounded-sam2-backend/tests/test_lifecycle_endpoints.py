@@ -11,6 +11,10 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 from aap_protocol_v2.errors import LifecycleErrorCode, LifecycleHTTPError
+from aap_protocol_v2.lifecycle import (
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
+)
 
 
 def _load_main():
@@ -91,6 +95,34 @@ async def _request(method: str, path: str, **kwargs):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_health_echoes_only_exact_gpu_challenge() -> None:
+    challenge = "ab" * 32
+    response = _run(
+        _request(
+            "GET",
+            "/health",
+            headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+            params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: challenge},
+        )
+    )
+    assert response.status_code == 200
+    assert response.headers[GPU_HEALTH_CHALLENGE_HEADER] == challenge
+    assert response.headers["cache-control"] == "no-store"
+
+    ordinary = _run(_request("GET", "/health"))
+    assert GPU_HEALTH_CHALLENGE_HEADER not in ordinary.headers
+    mismatch = _run(
+        _request(
+            "GET",
+            "/health",
+            headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+            params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: "cd" * 32},
+        )
+    )
+    assert mismatch.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in mismatch.headers
 
 
 @pytest.mark.parametrize("path", ["/warmup", "/reload"])

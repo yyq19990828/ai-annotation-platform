@@ -59,13 +59,16 @@ from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleResetRequest,
     ManagedLifecycleCapabilities,
     load_verify_keyring,
+    match_gpu_health_challenge,
 )
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -446,7 +449,17 @@ def _empty_pool_snapshot() -> dict[str, Any]:
     }
 
 
-@app.get("/health")
+def _echo_gpu_health_challenge(request: Request, response: Response) -> None:
+    challenge = match_gpu_health_challenge(
+        request.headers.getlist(GPU_HEALTH_CHALLENGE_HEADER),
+        request.query_params.getlist(GPU_HEALTH_CHALLENGE_QUERY_PARAM),
+    )
+    if challenge is not None:
+        response.headers[GPU_HEALTH_CHALLENGE_HEADER] = challenge
+        response.headers["Cache-Control"] = "no-store"
+
+
+@app.get("/health", dependencies=[Depends(_echo_gpu_health_challenge)])
 async def health() -> dict:
     """与 grounded-sam2 /health 字段对齐, 让 AdminDashboard 卡片直接复用渲染."""
     if _gpu_lifecycle is not None:

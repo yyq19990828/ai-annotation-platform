@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 
@@ -24,6 +25,10 @@ logger = structlog.get_logger(__name__)
 # 重启才生效 (信号量按 backend_id 永久缓存; 工时换简洁性的取舍, 见 docs-site/dev/architecture/ai-models.md).
 _DEFAULT_MAX_CONCURRENCY = 4
 _GPU_SHADOW_OBSERVER_TIMEOUT_SECONDS = 0.25
+GPU_HEALTH_CHALLENGE_HEADER = "X-AAP-GPU-Health-Challenge"
+GPU_HEALTH_CHALLENGE_QUERY_PARAM = "aap_gpu_health_challenge"
+GPU_HEALTH_CHALLENGE_ECHO_MARKER = "_aap_gpu_health_challenge_echo"
+_GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
@@ -157,16 +162,43 @@ class MLBackendClient:
         except (httpx.RequestError, httpx.TimeoutException):
             return False
 
-    async def health_meta(self) -> tuple[bool, dict | None]:
+    async def health_meta(
+        self,
+        *,
+        gpu_health_challenge: str | None = None,
+    ) -> tuple[bool, dict | None]:
         """v0.9.6 · 拉 /health 完整响应; 上层 service 把 gpu_info/cache/model_version 缓存到 ml_backends.health_meta.
 
         返回 (ok, meta?); meta 仅在 ok=True 且响应 JSON 时返回, 否则 None.
         """
+        if gpu_health_challenge is not None and (
+            not isinstance(gpu_health_challenge, str)
+            or _GPU_HEALTH_CHALLENGE_RE.fullmatch(gpu_health_challenge) is None
+        ):
+            raise ValueError(
+                "gpu_health_challenge must be 64 lowercase hexadecimal characters"
+            )
+        base_headers = self._headers()
+        headers = dict(base_headers)
+        params: dict[str, str] | None = None
+        if gpu_health_challenge is not None:
+            headers[GPU_HEALTH_CHALLENGE_HEADER] = gpu_health_challenge
+            headers["Cache-Control"] = "no-cache"
+            params = {GPU_HEALTH_CHALLENGE_QUERY_PARAM: gpu_health_challenge}
         try:
             async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
                 resp = await client.get(
-                    f"{self.base_url}/health", headers=self._headers()
+                    f"{self.base_url}/health",
+                    headers=headers,
+                    params=params,
                 )
+                response_challenge = gpu_health_challenge
+                if gpu_health_challenge is not None and resp.status_code in (400, 422):
+                    resp = await client.get(
+                        f"{self.base_url}/health",
+                        headers=base_headers,
+                    )
+                    response_challenge = None
                 if resp.status_code != 200:
                     return False, None
                 try:
@@ -199,6 +231,10 @@ class MLBackendClient:
                     )
                     if k in data
                 }
+                if response_challenge is not None and resp.headers.get_list(
+                    GPU_HEALTH_CHALLENGE_HEADER
+                ) == [response_challenge]:
+                    meta[GPU_HEALTH_CHALLENGE_ECHO_MARKER] = response_challenge
                 return True, meta or None
         except (httpx.RequestError, httpx.TimeoutException):
             return False, None

@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import (
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
+from app.services.gpu_arbiter import _activate_gpu_backend_membership_in_transaction
 from app.services.ml_backend import MLBackendService
+from app.services.ml_client import GPU_HEALTH_CHALLENGE_ECHO_MARKER
 
 
 async def _make_backend(db: AsyncSession, url: str = "http://example/") -> MLBackend:
@@ -181,13 +183,16 @@ async def test_check_health_discards_response_after_gpu_membership_changes(
     )
     await db_session.refresh(backend)
 
-    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
         await db_session.execute(
             update(MLBackend)
             .where(MLBackend.id == backend.id)
             .values(gpu_resource_id="node-health/GPU-new")
         )
         return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
             "residency": {
                 "state": "resident",
                 "gpu_loaded": True,
@@ -217,7 +222,7 @@ async def test_check_health_discards_response_after_gpu_membership_changes(
     assert fresh.last_checked_at is None
 
 
-async def test_check_health_discards_response_after_membership_epoch_changes(
+async def test_check_health_discards_response_after_configuration_aba(
     db_session: AsyncSession, monkeypatch
 ):
     backend = await _make_backend(db_session, url="http://gpu-membership-epoch/")
@@ -231,13 +236,21 @@ async def test_check_health_discards_response_after_membership_epoch_changes(
     )
     await db_session.refresh(backend)
 
-    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
         await db_session.execute(
             update(MLBackend)
             .where(MLBackend.id == backend.id)
             .values(vram_budget_mb=2048)
         )
+        await db_session.execute(
+            update(MLBackend)
+            .where(MLBackend.id == backend.id)
+            .values(vram_budget_mb=1024)
+        )
         return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
             "residency": {
                 "state": "resident",
                 "gpu_loaded": True,
@@ -262,9 +275,358 @@ async def test_check_health_discards_response_after_membership_epoch_changes(
     assert await MLBackendService(db_session).check_health(backend.id) is False
     fresh = await MLBackendService(db_session).get(backend.id)
     assert fresh is not None
-    assert fresh.vram_budget_mb == 2048
+    assert fresh.vram_budget_mb == 1024
     assert fresh.health_meta is None
     assert fresh.last_checked_at is None
+    membership = await db_session.get(
+        GPUBackendMembership,
+        {
+            "backend_registry_id": backend.id,
+            "gpu_resource_id": "node-health/GPU-epoch",
+        },
+    )
+    assert membership is not None
+    assert membership.membership_epoch > 1
+
+
+async def test_gpu_check_health_persists_challenge_bound_probe(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    backend = await _make_backend(db_session, url="http://gpu-proof-health/")
+    resource_id = "node-health/GPU-proof"
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(gpu_resource_id=resource_id, vram_budget_mb=1024)
+    )
+    await db_session.refresh(backend)
+    captured_challenge: str | None = None
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        nonlocal captured_challenge
+        captured_challenge = gpu_health_challenge
+        await asyncio.sleep(0.01)
+        return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
+            "residency": {
+                "state": "unloaded",
+                "gpu_loaded": False,
+                "active_requests": 0,
+                "builders": 0,
+                "borrowers": 0,
+                "pools": {"models": {"resident": False}},
+            },
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is True
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.state == "connected"
+    assert fresh.health_meta is not None
+    assert GPU_HEALTH_CHALLENGE_ECHO_MARKER not in fresh.health_meta
+    proof = fresh.health_meta["gpu_arbiter_probe"]
+    assert captured_challenge is not None
+    assert len(captured_challenge) == 64
+    assert set(captured_challenge) <= set("0123456789abcdef")
+    assert set(proof) == {
+        "protocol_version",
+        "challenge",
+        "backend_registry_id",
+        "gpu_resource_id",
+        "membership_epoch",
+        "membership_state",
+        "probe_started_at",
+        "observed_at",
+    }
+    assert proof["protocol_version"] == "1"
+    assert proof["challenge"] == captured_challenge
+    assert proof["backend_registry_id"] == str(backend.id)
+    assert proof["gpu_resource_id"] == resource_id
+    assert proof["membership_epoch"] == "1"
+    assert proof["membership_state"] == "pending"
+    assert proof["probe_started_at"].endswith("Z")
+    assert proof["observed_at"].endswith("Z")
+    probe_started_at = datetime.fromisoformat(
+        proof["probe_started_at"].replace("Z", "+00:00")
+    )
+    observed_at = datetime.fromisoformat(proof["observed_at"].replace("Z", "+00:00"))
+    assert probe_started_at < observed_at
+    assert fresh.last_checked_at == observed_at
+
+
+async def test_gpu_check_health_rotates_challenge_and_clears_stale_probe_without_echo(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    backend = await _make_backend(db_session, url="http://gpu-unproven-health/")
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(gpu_resource_id="node-health/GPU-unproven", vram_budget_mb=1024)
+    )
+    challenges: list[str] = []
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        assert gpu_health_challenge is not None
+        challenges.append(gpu_health_challenge)
+        meta = {"residency": {"state": "unloaded"}}
+        if len(challenges) <= 2:
+            meta[GPU_HEALTH_CHALLENGE_ECHO_MARKER] = gpu_health_challenge
+        return True, meta
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    service = MLBackendService(db_session)
+    assert await service.check_health(backend.id) is True
+    fresh = await service.get(backend.id)
+    assert fresh is not None
+    first_challenge = fresh.health_meta["gpu_arbiter_probe"]["challenge"]
+
+    assert await service.check_health(backend.id) is True
+    fresh = await service.get(backend.id)
+    assert fresh is not None
+    second_challenge = fresh.health_meta["gpu_arbiter_probe"]["challenge"]
+    assert second_challenge != first_challenge
+
+    assert await service.check_health(backend.id) is True
+    fresh = await service.get(backend.id)
+    assert fresh is not None
+    assert fresh.state == "connected"
+    assert "gpu_arbiter_probe" not in fresh.health_meta
+    assert len(challenges) == 3
+    assert len(set(challenges)) == 3
+
+
+async def test_gpu_check_health_rejects_membership_state_change_at_same_epoch(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    backend = await _make_backend(db_session, url="http://gpu-state-race-health/")
+    resource_id = "node-health/GPU-state-race"
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(gpu_resource_id=resource_id, vram_budget_mb=1024)
+    )
+    await db_session.flush()
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        await _activate_gpu_backend_membership_in_transaction(
+            db_session,
+            backend.id,
+            gpu_resource_id=resource_id,
+            membership_epoch=1,
+        )
+        return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
+            "residency": {"state": "unloaded"},
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is False
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.state == "disconnected"
+    assert fresh.health_meta is None
+    membership = await db_session.get(
+        GPUBackendMembership,
+        {"backend_registry_id": backend.id, "gpu_resource_id": resource_id},
+    )
+    assert membership is not None
+    assert (membership.membership_epoch, membership.state) == (1, "active")
+
+
+async def test_gpu_check_health_holds_membership_lock_through_probe_commit(
+    test_engine: AsyncEngine,
+    monkeypatch,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    backend_id = uuid.uuid4()
+    resource_id = "node-health/GPU-membership-lock"
+    async with factory.begin() as db:
+        db.add(
+            MLBackend(
+                id=backend_id,
+                name="health-membership-lock",
+                url=f"http://health-membership-lock-{backend_id}.test",
+                state="disconnected",
+                gpu_resource_id=resource_id,
+                vram_budget_mb=1024,
+            )
+        )
+
+    final_membership_locked = asyncio.Event()
+    allow_health_commit = asyncio.Event()
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
+            "residency": {"state": "unloaded"},
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    async def run_health() -> bool:
+        async with factory() as db:
+            original_execute = db.execute
+
+            async def execute_with_commit_pause(statement, *args, **kwargs):
+                result = await original_execute(statement, *args, **kwargs)
+                if (
+                    getattr(statement, "_for_update_arg", None) is not None
+                    and "gpu_backend_memberships" in str(statement)
+                ):
+                    final_membership_locked.set()
+                    await allow_health_commit.wait()
+                return result
+
+            monkeypatch.setattr(db, "execute", execute_with_commit_pause)
+            async with db.begin():
+                return await MLBackendService(db).check_health(backend_id)
+
+    async def activate_membership() -> int:
+        async with factory.begin() as db:
+            return await _activate_gpu_backend_membership_in_transaction(
+                db,
+                backend_id,
+                gpu_resource_id=resource_id,
+                membership_epoch=1,
+            )
+
+    health_task = asyncio.create_task(run_health())
+    activation_task: asyncio.Task[int] | None = None
+    try:
+        await asyncio.wait_for(final_membership_locked.wait(), timeout=2)
+        activation_task = asyncio.create_task(activate_membership())
+        await asyncio.sleep(0.05)
+        assert not activation_task.done()
+
+        allow_health_commit.set()
+        assert await asyncio.wait_for(health_task, timeout=2) is True
+        assert await asyncio.wait_for(activation_task, timeout=2) == 1
+
+        async with factory() as db:
+            backend = await db.get(MLBackend, backend_id)
+            membership = await db.get(
+                GPUBackendMembership,
+                {
+                    "backend_registry_id": backend_id,
+                    "gpu_resource_id": resource_id,
+                },
+            )
+            assert backend is not None
+            assert backend.health_meta is not None
+            assert (
+                backend.health_meta["gpu_arbiter_probe"]["membership_state"]
+                == "pending"
+            )
+            assert membership is not None
+            assert (membership.membership_epoch, membership.state) == (1, "active")
+    finally:
+        allow_health_commit.set()
+        for task in (health_task, activation_task):
+            if task is not None and not task.done():
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+        async with factory.begin() as db:
+            await db.execute(
+                text(
+                    "ALTER TABLE ml_backend_registry DISABLE TRIGGER "
+                    "trg_sync_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendMembership).where(
+                    GPUBackendMembership.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendFence).where(
+                    GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
+            await db.execute(
+                text(
+                    "ALTER TABLE ml_backend_registry ENABLE TRIGGER "
+                    "trg_sync_gpu_backend_membership"
+                )
+            )
 
 
 async def test_check_health_rechecks_epoch_after_waiting_on_registry_lock(
@@ -291,7 +653,9 @@ async def test_check_health_rechecks_epoch_after_waiting_on_registry_lock(
     health_started = asyncio.Event()
     allow_health_response = asyncio.Event()
 
-    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
         health_started.set()
         await allow_health_response.wait()
         return True, {

@@ -45,13 +45,16 @@ from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleResetRequest,
     ManagedLifecycleCapabilities,
     load_verify_keyring,
+    match_gpu_health_challenge,
 )
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import ValidationError
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -246,7 +249,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="yolo-backend", version=BACKEND_VERSION, lifespan=lifespan)
 
 
-@app.get("/health")
+def _echo_gpu_health_challenge(request: Request, response: Response) -> None:
+    challenge = match_gpu_health_challenge(
+        request.headers.getlist(GPU_HEALTH_CHALLENGE_HEADER),
+        request.query_params.getlist(GPU_HEALTH_CHALLENGE_QUERY_PARAM),
+    )
+    if challenge is not None:
+        response.headers[GPU_HEALTH_CHALLENGE_HEADER] = challenge
+        response.headers["Cache-Control"] = "no-store"
+
+
+@app.get("/health", dependencies=[Depends(_echo_gpu_health_challenge)])
 async def health() -> dict[str, Any]:
     perf = sample_perfhud()
     # 平台 PerfHud / 观测面板读顶层 gpu_info + host (见 api/app/workers/ml_health.py

@@ -75,7 +75,33 @@ base URL 由超级管理员在「模型市场 → 注册管理」录入；项目
 
 > **`pool` 子对象**（backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台把健康快照缓存到 `ml_backend_registry.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**未统一的老 backend**回的 `pool` 字段结构各家各异，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。<!-- since v0.14.14 (PoolStatus 统一) -->
 
-### 1.1 `compute` 计算设备观测
+### 1.1 GPU 仲裁实时健康挑战
+
+绑定了 `gpu_resource_id` 的 backend 在平台周期探活时会收到同一个随机 challenge：
+
+- Header：`X-AAP-GPU-Health-Challenge`
+- Query：`aap_gpu_health_challenge`
+- 值：固定 64 位小写十六进制字符串
+
+平台同时发送 header、query 和 `Cache-Control: no-cache`。backend 只有在 header 与 query 各出现一次、值完全
+一致且格式合法时，才在响应 header 中精确回显 `X-AAP-GPU-Health-Challenge`，并发送
+`Cache-Control: no-store`。challenge 缺失、重复、非法或不一致时，`/health` 仍保持原有响应语义，但不得
+回显。旧 backend 或中间代理不支持该契约时，HTTP 200 仍表示已连接，只是不能形成 GPU 仲裁证明。若严格的
+旧 backend 因未知 query 返回 400/422，平台只重试一次不带 challenge 与缓存指令的普通 `/health`；该兼容
+响应即使携带同名 header 也永远不能升级为证明，原有 Authorization 仍会保留。
+
+平台只接受唯一且精确的响应 header 回显；backend JSON body 不能自行声明回显成功。命中后，健康服务使用
+PostgreSQL `clock_timestamp()` 分别记录网络请求开始前的 `probe_started_at` 和响应完整返回后的
+`observed_at`，并把 challenge、backend/resource 身份及 membership epoch/state 一并写入
+`health_meta.gpu_arbiter_probe`。写回前会依次锁定注册表行和 exact membership 行并重新核对 epoch/state，
+使成员状态不能插入最终复核与写回之间；端点或成员配置在探测期间发生变化时丢弃响应。数据库返回无时区
+时间或 `observed_at < probe_started_at` 时同样 fail-closed。
+
+`gpu_arbiter_probe` 只是实时证据候选，不单独授权减记显存或重置 Redis 账本。消费方还必须重新读取当前
+membership/fence，严格要求 `probe_started_at > token_expiry_high_water`，校验证据时效与完整 residency，
+并把最终核验和账本提交放在同一个受保护的恢复流程中。退役记录中的历史 health 只能用于诊断。
+
+### 1.2 `compute` 计算设备观测
 
 GPU backend 应在 `/health` 顶层返回 `compute`：
 
@@ -100,7 +126,7 @@ GPU backend 应在 `/health` 顶层返回 `compute`：
 
 > **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：无 lifecycle body 的 `/unload` 是 legacy best-effort 行为，不能统一证明全部 image/video/variant/session pool 已清空。例如 Grounded-SAM2 仍只清 image pool，不能作为显存仲裁减账凭据。YOLO、ONNXTools 与 RapidOCR 的 bodyless legacy 路径会走各自全池清理，但仍只用于向后兼容；没有 generation、fencing 与受管响应，不能作为减账证据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；接入方不得把未完成受管契约的 legacy unload 声明为可驱逐能力。
 
-### 1.2 受管 GPU 生命周期（能力协商）
+### 1.3 受管 GPU 生命周期（能力协商）
 
 共享协议包已经定义受管生命周期的 wire schema、header、错误词表与 admission token 验签 codec。backend
 只有在完整实现 active / builder / borrower 保护、全池释放、generation fencing、token replay 防护和全部控制端点后，
