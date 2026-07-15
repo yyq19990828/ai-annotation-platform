@@ -3874,6 +3874,10 @@ if allocation then
     if allocation.generation ~= ARGV[4] then
       return cjson.encode({status='stale_generation', reason='allocation_generation_mismatch', committed_mb=committed, lease_count=lease_count})
     end
+    if ARGV[23] == '0'
+       and (allocation.state == 'reserving' or allocation.state == 'loading') then
+      return cjson.encode({status='not_ready', reason='cold_allocation_in_progress', committed_mb=committed, lease_count=lease_count})
+    end
   elseif allocation.state == 'unloaded' or allocation.state == 'cpu_fallback' then
     if not generation_greater(ARGV[4], allocation.generation) then
       return cjson.encode({status='stale_generation', reason='new_allocation_generation_not_monotonic', committed_mb=committed, lease_count=lease_count})

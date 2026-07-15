@@ -58,6 +58,7 @@
 
 ### Fixed
 
+- **GPU 冷建 reservation 不再向非 owner 泄漏并发许可**：Redis 准入现在在同一原子区内拒绝其他调用方加入处于 `Reserving/Loading` 的 allocation，仅保留原 reservation lease + owner 的幂等重试。这避免同一模型被重复冷启，也防止第二条 lease 卡住失败回滚。生产 effective enforce 仍保持关闭。
 - **异步 ML 任务不再丢失 GPU 仲裁根因**：批量预标、跨 Backend 下游阶段、逐帧预标、失败重试和视频追踪现在统一保留稳定仲裁错误码、HTTP 状态与可选重试窗口。失败预测明细继续可按根因检索，批量与逐帧任务使用按错误码聚合的有界摘要；逐帧任务不会为每帧制造不可正确重试的失败行，普通 Backend 异常与现有任务终态保持不变。
 - **项目管理员不再能通过项目旧路由改写全局 ML Backend**：全局 backend 的 URL、鉴权、名称与调用参数已与 GPU 资源声明一并收口到超级管理员；项目管理员仍可在项目设置中启用或停用已注册 backend，不会再影响其他项目共享的端点。
 - **YOLO 与 ONNXTools 冷启动取消不再遗留池外 GPU owner**：模型或句柄 builder 现在会等底层 executor、失败清理和状态提交全部结束后才释放 reservation；重复取消也无法打断 unload 真值提交。失败或取消后的未知驻留会阻止继续冷建，直到受管全池清理重新建立可信空状态，避免隐藏对象突破物理显存上限。

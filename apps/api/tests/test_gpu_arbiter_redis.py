@@ -3604,6 +3604,60 @@ async def test_require_resident_rejects_cold_allocation_and_idempotent_lease(
     assert after.leases == before.leases
 
 
+@pytest.mark.parametrize(
+    "state",
+    [GPUAllocationState.RESERVING, GPUAllocationState.LOADING],
+)
+@pytest.mark.asyncio
+async def test_cold_allocation_only_admits_its_reservation_owner(
+    redis_stores,
+    state: GPUAllocationState,
+) -> None:
+    first, second = redis_stores
+    resource_id = f"node-cold-owner/{state.value}"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    reservation = _admission_kwargs("backend-a", "cold-lease")
+    admitted = await first.admit(resource_id, **reservation)
+    assert admitted.admitted
+    if state is GPUAllocationState.LOADING:
+        transitioned = await first.transition_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            target_state=GPUAllocationState.LOADING,
+            request_lease_id="cold-lease",
+            request_owner_id="owner-a",
+        )
+        assert transitioned.status == "transitioned"
+    before = await first.snapshot(resource_id)
+
+    retry = await first.admit(resource_id, **reservation)
+    competitor = await second.admit(
+        resource_id,
+        **_admission_kwargs(
+            "backend-a",
+            "competitor-lease",
+            owner_id="owner-b",
+        ),
+    )
+
+    assert retry.admitted is True
+    assert retry.idempotent is True
+    assert (competitor.status, competitor.reason) == (
+        "not_ready",
+        "cold_allocation_in_progress",
+    )
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == before.ledger_revision
+    assert after.allocations == before.allocations
+    assert after.leases == before.leases
+
+
 @pytest.mark.asyncio
 async def test_require_resident_admits_only_resident_and_enforces_concurrency(
     redis_stores,
