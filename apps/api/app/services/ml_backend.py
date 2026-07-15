@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 
 from aap_protocol_v2.lifecycle import managed_lifecycle_capability_sha256
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -486,6 +486,25 @@ class MLBackendService:
             or current_backend.gpu_resource_id != requested_gpu_resource_id
         ):
             return False
+        if requested_membership_epoch is not None:
+            # Keep registry -> resource -> try-global -> membership ordering.
+            # Promotion uses the same resource -> try-global prefix; neither side
+            # waits on the global barrier while holding a card lock.
+            await self.db.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtextextended('aap:gpu-resource:' || :resource_id, 0))"
+                ),
+                {"resource_id": requested_gpu_resource_id},
+            )
+            promotion_barrier_acquired = await self.db.scalar(
+                text(
+                    "SELECT pg_try_advisory_xact_lock("
+                    "hashtextextended('aap:gpu-membership-promotion', 0))"
+                )
+            )
+            if promotion_barrier_acquired is not True:
+                return False
         # A slow /setup must not let an older /health response borrow a later
         # completion timestamp and overwrite a concurrently committed snapshot.
         # For GPU probes, first-committer-wins across overlapping observation

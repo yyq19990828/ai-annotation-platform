@@ -14,6 +14,7 @@ v0.9.11 PerfHud · 新增 publish_ml_backend_stats: 每 1s 把所有 is_active=t
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict
 import hashlib
 import json
@@ -42,7 +43,15 @@ from app.services.gpu_arbiter import (
     probe_retired_gpu_membership,
     repair_gpu_resource,
 )
-from app.services.gpu_arbiter_store import GPUArbiterStore, GPUBackendDomainMember
+from app.services.gpu_arbiter_store import (
+    GPUArbiterStore,
+    GPUArbiterStoreError,
+    GPUBackendDomainMember,
+)
+from app.services.gpu_membership_activation import (
+    GPUMembershipPromotionResult,
+    promote_gpu_resource_memberships,
+)
 from app.services.ml_backend import MLBackendService
 from app.workers._db import task_session
 from app.services.ml_client import MLBackendClient
@@ -56,6 +65,8 @@ _MANUAL_REPAIR_TASK_LOCK_SECONDS = 90
 _GPU_REPAIR_MAX_CONCURRENCY = 4
 _GPU_REPAIR_BATCH_TIMEOUT_SECONDS = 50
 _GPU_REPAIR_WORK_BUDGET_SECONDS = 45
+_GPU_PROMOTION_RESOURCE_TIMEOUT_SECONDS = 12
+_GPU_REPAIR_FAIL_CLOSED_TIMEOUT_SECONDS = 2
 _RELEASE_TASK_LOCK_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
@@ -280,11 +291,36 @@ def _collection_document(result) -> dict:
     }
 
 
+async def _latch_gpu_resource_not_ready(
+    store: GPUArbiterStore,
+    resource_id: str,
+    allocatable_mb: int,
+    *,
+    reason: str,
+) -> None:
+    result = await store.mark_card_not_ready(
+        resource_id,
+        allocatable_mb,
+        reason=reason,
+    )
+    if result.status != "not_ready":
+        raise GPUArbiterStoreError(
+            f"gpu readiness demotion was not confirmed: {result.status}"
+        )
+
+
 async def _repair_one_gpu_resource(
     factory: async_sessionmaker[AsyncSession],
     store: GPUArbiterStore,
     resource_id: str,
     allocatable_mb: int,
+    *,
+    membership_promoter: Callable[
+        [async_sessionmaker[AsyncSession], str],
+        Awaitable[Sequence[GPUMembershipPromotionResult]],
+    ]
+    | None = None,
+    promotion_timeout_seconds: float = _GPU_PROMOTION_RESOURCE_TIMEOUT_SECONDS,
 ) -> dict:
     started = perf_counter()
     collections: list[dict] = []
@@ -306,11 +342,71 @@ async def _repair_one_gpu_resource(
         if finalized.status == "collected":
             collections.append(_collection_document(finalized))
 
+    force_proof_reset = False
+    readiness_revoked = False
+
+    async def revoke_ready_before_epoch_advance(target_resource_id: str) -> None:
+        nonlocal readiness_revoked
+        if readiness_revoked:
+            return
+        await _latch_gpu_resource_not_ready(
+            store,
+            target_resource_id,
+            allocatable_mb,
+            reason="membership_promotion_in_progress",
+        )
+        readiness_revoked = True
+
+    try:
+        async with asyncio.timeout(promotion_timeout_seconds):
+            if membership_promoter is None:
+                promotion_results = await promote_gpu_resource_memberships(
+                    factory,
+                    resource_id,
+                    readiness_demoter=revoke_ready_before_epoch_advance,
+                )
+            else:
+                promotion_results = await membership_promoter(factory, resource_id)
+        promotions = [asdict(item) for item in promotion_results]
+        force_proof_reset = any(item.requires_proof_reset for item in promotion_results)
+    except TimeoutError:
+        force_proof_reset = True
+        promotions = [
+            {
+                "backend_id": None,
+                "resource_id": resource_id,
+                "membership_epoch": None,
+                "status": "unavailable",
+                "reason": "membership_promotion_timeout",
+                "runtime_epoch": None,
+                "control_epoch": None,
+                "requires_proof_reset": True,
+            }
+        ]
+    except Exception:  # noqa: BLE001 - P3 repair must still run fail-closed
+        force_proof_reset = True
+        promotions = [
+            {
+                "backend_id": None,
+                "resource_id": resource_id,
+                "membership_epoch": None,
+                "status": "unavailable",
+                "reason": "membership_promotion_unavailable",
+                "runtime_epoch": None,
+                "control_epoch": None,
+                "requires_proof_reset": True,
+            }
+        ]
+
     repair = await repair_gpu_resource(
         factory,
         store,
         resource_id,
         allocatable_mb,
+        force_proof_reset=force_proof_reset,
+        readiness_blocker=(
+            "membership_promotion_unconfirmed" if force_proof_reset else None
+        ),
     )
 
     memberships = await _resource_memberships(factory, resource_id)
@@ -353,6 +449,10 @@ async def _repair_one_gpu_resource(
             store,
             resource_id,
             allocatable_mb,
+            force_proof_reset=force_proof_reset,
+            readiness_blocker=(
+                "membership_promotion_unconfirmed" if force_proof_reset else None
+            ),
         )
 
     memberships = await _resource_memberships(factory, resource_id)
@@ -373,6 +473,7 @@ async def _repair_one_gpu_resource(
         "ledger_incarnation": repair.ledger_incarnation,
         "committed_mb": repair.committed_mb,
         "collections": collections,
+        "promotions": promotions,
         "observation": asdict(observation),
         "duration_ms": round((perf_counter() - started) * 1000),
     }
@@ -383,7 +484,14 @@ async def _repair_one_gpu_resource(
     return result
 
 
-async def _repair_gpu_arbiter_resources() -> dict:
+async def _repair_gpu_arbiter_resources(
+    *,
+    membership_promoter: Callable[
+        [async_sessionmaker[AsyncSession], str],
+        Awaitable[Sequence[GPUMembershipPromotionResult]],
+    ]
+    | None = None,
+) -> dict:
     """Repair desired-enforce cards after a complete health scan.
 
     Off/observe are strict no-Redis modes.  Each invocation owns its async engine
@@ -417,9 +525,21 @@ async def _repair_gpu_arbiter_resources() -> dict:
         (len(resources) + _GPU_REPAIR_MAX_CONCURRENCY - 1)
         // _GPU_REPAIR_MAX_CONCURRENCY,
     )
+    repair_wave_budget_seconds = _GPU_REPAIR_WORK_BUDGET_SECONDS / repair_waves
+    fail_closed_timeout_seconds = max(
+        0.001,
+        min(
+            _GPU_REPAIR_FAIL_CLOSED_TIMEOUT_SECONDS,
+            repair_wave_budget_seconds / 4,
+        ),
+    )
     per_resource_timeout_seconds = min(
         30.0,
-        _GPU_REPAIR_WORK_BUDGET_SECONDS / repair_waves,
+        max(0.001, repair_wave_budget_seconds - fail_closed_timeout_seconds),
+    )
+    promotion_timeout_seconds = min(
+        _GPU_PROMOTION_RESOURCE_TIMEOUT_SECONDS,
+        per_resource_timeout_seconds / 3,
     )
 
     def failure_result(resource_id: str, reason: str, started: float) -> dict:
@@ -435,9 +555,35 @@ async def _repair_gpu_arbiter_resources() -> dict:
             "ledger_incarnation": None,
             "committed_mb": None,
             "collections": [],
+            "promotions": [],
             "observation": None,
             "duration_ms": round((perf_counter() - started) * 1000),
         }
+
+    async def fail_closed_failure_result(
+        resource_id: str,
+        allocatable_mb: int,
+        *,
+        reason: str,
+        readiness_reason: str,
+        started: float,
+    ) -> dict:
+        try:
+            async with asyncio.timeout(fail_closed_timeout_seconds):
+                await _latch_gpu_resource_not_ready(
+                    store,
+                    resource_id,
+                    allocatable_mb,
+                    reason=readiness_reason,
+                )
+        except Exception as exc:  # noqa: BLE001 - report uncertain latch
+            reason = f"{reason}: {str(exc) or type(exc).__name__}"
+        result = failure_result(resource_id, reason, started)
+        log.warning(
+            "gpu_arbiter_resource_repair_failed: %s",
+            json.dumps(result, sort_keys=True, separators=(",", ":")),
+        )
+        return result
 
     async def run_one(resource_id: str, allocatable_mb: int) -> dict:
         async with semaphore:
@@ -449,23 +595,31 @@ async def _repair_gpu_arbiter_resources() -> dict:
                         store,
                         resource_id,
                         allocatable_mb,
+                        membership_promoter=membership_promoter,
+                        promotion_timeout_seconds=promotion_timeout_seconds,
                     )
-            except Exception as exc:  # noqa: BLE001 - isolate physical resources
-                result = failure_result(
+            except TimeoutError:
+                return await fail_closed_failure_result(
                     resource_id,
-                    str(exc) or type(exc).__name__,
-                    started,
+                    allocatable_mb,
+                    reason="gpu_resource_repair_timeout",
+                    readiness_reason="gpu_resource_repair_timeout",
+                    started=started,
                 )
-                log.warning(
-                    "gpu_arbiter_resource_repair_failed: %s",
-                    json.dumps(result, sort_keys=True, separators=(",", ":")),
+            except Exception as exc:  # noqa: BLE001 - isolate physical resources
+                return await fail_closed_failure_result(
+                    resource_id,
+                    allocatable_mb,
+                    reason=str(exc) or type(exc).__name__,
+                    readiness_reason="gpu_resource_repair_failed",
+                    started=started,
                 )
-                return result
 
     try:
         tasks = {
             asyncio.create_task(run_one(resource_id, resource.allocatable_mb)): (
                 resource_id,
+                resource.allocatable_mb,
                 perf_counter(),
             )
             for resource_id, resource in resources
@@ -479,13 +633,21 @@ async def _repair_gpu_arbiter_resources() -> dict:
             task.cancel()
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-        for task in pending:
-            resource_id, started = tasks[task]
-            results_by_resource[resource_id] = failure_result(
-                resource_id,
-                "gpu_arbiter_repair_batch_timeout",
-                started,
+        pending_tasks = tuple(pending)
+        pending_results = await asyncio.gather(
+            *(
+                fail_closed_failure_result(
+                    tasks[task][0],
+                    tasks[task][1],
+                    reason="gpu_arbiter_repair_batch_timeout",
+                    readiness_reason="gpu_arbiter_repair_batch_timeout",
+                    started=tasks[task][2],
+                )
+                for task in pending_tasks
             )
+        )
+        for task, result in zip(pending_tasks, pending_results, strict=True):
+            results_by_resource[tasks[task][0]] = result
         results = [results_by_resource[resource_id] for resource_id, _ in resources]
     finally:
         try:

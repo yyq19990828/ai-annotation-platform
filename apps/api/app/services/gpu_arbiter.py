@@ -9,18 +9,22 @@ outside every database lock in this module.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import asdict, dataclass, field as dataclass_field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 import hashlib
+import ipaddress
 import json
+import posixpath
 import re
 import secrets
+import socket
 from typing import Any, Literal, NoReturn
 import uuid
 
+import httpx
 import structlog
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
@@ -70,9 +74,11 @@ _CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
 _GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}\Z")
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
+GPU_LEGACY_MODE_TOKEN_TTL_SECONDS = 30
 
 GPUShadowSessionFactory = Callable[[], AsyncSession]
 GPUFenceSessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+GPUReadinessDemoter = Callable[[str], Awaitable[None]]
 GPUFenceCounter = Literal["generation", "control_epoch"]
 
 
@@ -185,6 +191,30 @@ class GPUFenceExhaustedError(RuntimeError):
 
 class GPUFenceMembershipError(RuntimeError):
     """Fence issuance did not match one active durable resource membership."""
+
+
+class GPULegacyAckBlockedError(RuntimeError):
+    """Cached evidence cannot authorize a legacy-mode membership handshake."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class GPULegacyAckPreparation:
+    """Durable result returned before signing one boot-scoped mode capability."""
+
+    action: Literal["issue", "acknowledged"]
+    backend: MLBackendRegistry = dataclass_field(repr=False)
+    backend_id: uuid.UUID
+    resource_id: str
+    membership_epoch: int
+    boot_id: str
+    runtime_epoch: str
+    control_epoch: str
+    token_expires_at: datetime | None
+    proof_ready: bool
 
 
 async def _lock_gpu_backend_membership(
@@ -465,6 +495,7 @@ class _GPUProofResidency:
     evictable: bool
     generation: str | None
     pool_residencies: tuple[bool | None, ...]
+    boot_id: str
     lifecycle_gate: str
     control_epoch: str | None
     identity: dict[str, str] | None
@@ -741,6 +772,7 @@ def _parse_gpu_proof_residency(value: Any) -> _GPUProofResidency:
         evictable=value["evictable"],
         generation=generation,
         pool_residencies=tuple(pool_residencies),
+        boot_id=boot_id,
         lifecycle_gate=lifecycle_gate,
         control_epoch=control_epoch,
         identity=identity,
@@ -748,15 +780,23 @@ def _parse_gpu_proof_residency(value: Any) -> _GPUProofResidency:
 
 
 async def _lock_gpu_resource_proof_domain(
-    db: AsyncSession, resource_id: str
+    db: AsyncSession,
+    resource_id: str,
+    *,
+    wait_for_lock: bool = True,
 ) -> _LockedGPUProofDomain:
-    await db.execute(
+    lock_function = (
+        "pg_advisory_xact_lock" if wait_for_lock else "pg_try_advisory_xact_lock"
+    )
+    acquired = await db.scalar(
         text(
-            "SELECT pg_advisory_xact_lock("
+            f"SELECT {lock_function}("  # noqa: S608 - fixed internal function name
             "hashtextextended('aap:gpu-resource:' || :resource_id, 0))"
         ),
         {"resource_id": resource_id},
     )
+    if not wait_for_lock and acquired is not True:
+        raise _GPUProofInvalid("gpu_resource_busy")
     memberships = tuple(
         (
             await db.execute(
@@ -811,6 +851,498 @@ async def _lock_gpu_resource_proof_domain(
         registries={item.id: item for item in registries},
         db_now=db_now,
     )
+
+
+@dataclass(frozen=True)
+class _GPULegacyAckEvidence:
+    boot_id: str
+    acknowledged_control_epoch: str | None
+    probe_started_at: datetime
+    proof_ready: bool
+
+
+def _canonical_gpu_backend_endpoint(url: str) -> str | None:
+    if not isinstance(url, str) or not url or url.strip() != url:
+        return None
+    try:
+        parsed = httpx.URL(url if "://" in url else f"http://{url}")
+    except (TypeError, ValueError):
+        return None
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https"}:
+        return None
+    raw_host = parsed.host.lower().rstrip(".")
+    if not raw_host:
+        return None
+    try:
+        host = ipaddress.ip_address(raw_host).compressed
+    except ValueError:
+        try:
+            host = str(ipaddress.IPv4Address(socket.inet_aton(raw_host)))
+        except OSError:
+            host = raw_host
+    port = parsed.port
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    authority = f"[{host}]" if ":" in host else host
+    authority = f"{authority}:{port}"
+    # httpx applies its request URL normalization first.  Decode the request
+    # path, collapse repeated separators, then remove encoded dot segments so
+    # aliases such as /a/../backend and /%62ackend cannot evade comparison.
+    path = posixpath.normpath(re.sub(r"/+", "/", parsed.path))
+    if path == "/":
+        path = ""
+    else:
+        path = path.rstrip("/")
+    return f"{scheme}://{authority}{path}"
+
+
+def _fresh_challenge_bound_boot_id(
+    membership: GPUBackendMembership,
+    registry: MLBackendRegistry | None,
+    *,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> str | None:
+    if (
+        membership.state not in {"pending", "active"}
+        or registry is None
+        or registry.state != "connected"
+        or registry.gpu_resource_id != membership.gpu_resource_id
+        or type(registry.health_meta) is not dict
+    ):
+        return None
+    raw_probe = registry.health_meta.get("gpu_arbiter_probe")
+    raw_residency = registry.health_meta.get("residency")
+    try:
+        probe = _parse_gpu_proof_probe(raw_probe)
+    except _GPUProofInvalid:
+        return None
+    if (
+        probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
+        or probe.raw["gpu_resource_id"] != membership.gpu_resource_id
+        or probe.raw["membership_epoch"] != str(membership.membership_epoch)
+        or probe.raw["membership_state"] != membership.state
+        or registry.last_checked_at is None
+        or registry.last_checked_at.tzinfo is None
+        or registry.last_checked_at.utcoffset() is None
+        or registry.last_checked_at.astimezone(UTC) != probe.observed_at
+        or probe.observed_at > db_now.astimezone(UTC)
+        or db_now.astimezone(UTC) - probe.observed_at > evidence_ttl
+        or type(raw_residency) is not dict
+    ):
+        return None
+    boot_id = raw_residency.get("boot_id")
+    if type(boot_id) is not str or not boot_id or len(boot_id) > 128:
+        return None
+    return boot_id
+
+
+async def _lock_gpu_membership_promotion_barrier(
+    db: AsyncSession,
+    *,
+    wait_for_lock: bool = True,
+) -> None:
+    """Serialize short cross-card alias checks without covering backend HTTP."""
+
+    lock_function = (
+        "pg_advisory_xact_lock" if wait_for_lock else "pg_try_advisory_xact_lock"
+    )
+    acquired = await db.scalar(
+        text(
+            f"SELECT {lock_function}("  # noqa: S608 - fixed internal function name
+            "hashtextextended('aap:gpu-membership-promotion', 0))"
+        )
+    )
+    if not wait_for_lock and acquired is not True:
+        raise _GPUProofInvalid("gpu_promotion_barrier_busy")
+
+
+async def _validate_gpu_membership_aliases(
+    db: AsyncSession,
+    membership: GPUBackendMembership,
+    registry: MLBackendRegistry,
+    evidence: _GPULegacyAckEvidence,
+    *,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> None:
+    current_memberships = tuple(
+        (
+            await db.execute(
+                select(GPUBackendMembership)
+                .where(GPUBackendMembership.state.in_(("pending", "active")))
+                .order_by(
+                    GPUBackendMembership.gpu_resource_id,
+                    GPUBackendMembership.backend_registry_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    backend_ids = [item.backend_registry_id for item in current_memberships]
+    current_registries: tuple[MLBackendRegistry, ...] = ()
+    if backend_ids:
+        current_registries = tuple(
+            (
+                await db.execute(
+                    select(MLBackendRegistry)
+                    .where(MLBackendRegistry.id.in_(backend_ids))
+                    .order_by(MLBackendRegistry.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    registries = {item.id: item for item in current_registries}
+    target_endpoint = _canonical_gpu_backend_endpoint(registry.url)
+    if target_endpoint is None:
+        raise _GPUProofInvalid("registry_endpoint_invalid")
+
+    for other in current_memberships:
+        if other.backend_registry_id == membership.backend_registry_id:
+            continue
+        other_registry = registries.get(other.backend_registry_id)
+        if (
+            other_registry is not None
+            and _canonical_gpu_backend_endpoint(other_registry.url) == target_endpoint
+        ):
+            raise _GPUProofInvalid("lifecycle_endpoint_aliased")
+        if (
+            _fresh_challenge_bound_boot_id(
+                other,
+                other_registry,
+                db_now=db_now,
+                evidence_ttl=evidence_ttl,
+            )
+            == evidence.boot_id
+        ):
+            raise _GPUProofInvalid("lifecycle_boot_id_aliased")
+
+
+def _snapshot_gpu_mode_backend(registry: MLBackendRegistry) -> MLBackendRegistry:
+    """Detach only endpoint fields needed by the post-commit control client."""
+
+    return MLBackendRegistry(
+        id=registry.id,
+        name=registry.name,
+        url=registry.url,
+        state=registry.state,
+        auth_method=registry.auth_method,
+        auth_token=registry.auth_token,
+        extra_params=dict(registry.extra_params),
+        gpu_resource_id=registry.gpu_resource_id,
+        vram_budget_mb=registry.vram_budget_mb,
+        eviction_priority=registry.eviction_priority,
+    )
+
+
+def _validate_stable_legacy_residency(residency: _GPUProofResidency) -> None:
+    idle = (
+        residency.active_requests == 0
+        and residency.builders == 0
+        and residency.borrowers == 0
+        and not residency.draining
+    )
+    pools_complete = all(item is not None for item in residency.pool_residencies)
+    if (
+        residency.lifecycle_gate != "legacy"
+        or residency.generation is not None
+        or residency.evictable
+        or not idle
+        or residency.state not in {"unloaded", "resident"}
+        or residency.gpu_loaded is None
+        or not pools_complete
+    ):
+        raise _GPUProofInvalid("legacy_residency_not_stably_idle")
+    if residency.gpu_loaded is True and (
+        residency.state != "resident"
+        or not any(item is True for item in residency.pool_residencies)
+    ):
+        raise _GPUProofInvalid("legacy_residency_loaded_inconsistent")
+
+
+def _validate_gpu_legacy_ack_evidence(
+    membership: GPUBackendMembership,
+    fence: GPUBackendFence | None,
+    registry: MLBackendRegistry | None,
+    *,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> _GPULegacyAckEvidence:
+    if membership.state not in {"pending", "active"}:
+        raise _GPUProofInvalid("membership_state_invalid")
+    if fence is None:
+        raise _GPUProofInvalid("fence_missing")
+    if registry is None:
+        raise _GPUProofInvalid("registry_missing")
+
+    _strict_nonnegative_int64(
+        fence.generation_high_water, reason="generation_high_water_invalid"
+    )
+    control_epoch_high_water = _strict_nonnegative_int64(
+        fence.control_epoch_high_water,
+        reason="control_epoch_high_water_invalid",
+    )
+    runtime_epoch_high_water = _strict_nonnegative_int64(
+        fence.runtime_epoch_high_water, reason="runtime_epoch_high_water_invalid"
+    )
+    runtime_epoch_baseline = _strict_nonnegative_int64(
+        membership.runtime_epoch_baseline,
+        reason="runtime_epoch_baseline_invalid",
+    )
+    if membership.state == "pending":
+        if runtime_epoch_high_water != runtime_epoch_baseline:
+            raise _GPUProofInvalid("pending_runtime_epoch_mismatch")
+    elif runtime_epoch_high_water <= runtime_epoch_baseline:
+        raise _GPUProofInvalid("active_runtime_epoch_invalid")
+
+    if (
+        registry.state != "connected"
+        or registry.gpu_resource_id != membership.gpu_resource_id
+        or registry.vram_budget_mb != membership.vram_budget_mb
+        or registry.eviction_priority != membership.eviction_priority
+        or _registry_gpu_max_concurrency(registry.extra_params)
+        != membership.max_concurrency
+    ):
+        raise _GPUProofInvalid("registry_claim_mismatch")
+
+    raw_health = registry.health_meta
+    raw_probe = (
+        raw_health.get("gpu_arbiter_probe") if type(raw_health) is dict else None
+    )
+    raw_residency = raw_health.get("residency") if type(raw_health) is dict else None
+    probe = _parse_gpu_proof_probe(raw_probe)
+    actual_capability_sha256 = _health_managed_lifecycle_sha256(raw_health)
+    if (
+        probe.managed_lifecycle_sha256 is None
+        or actual_capability_sha256 is None
+        or actual_capability_sha256 != probe.managed_lifecycle_sha256
+    ):
+        raise _GPUProofInvalid("managed_lifecycle_capability_mismatch")
+    if (
+        probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
+        or probe.raw["gpu_resource_id"] != membership.gpu_resource_id
+        or probe.raw["membership_epoch"] != str(membership.membership_epoch)
+        or probe.raw["membership_state"] != membership.state
+    ):
+        raise _GPUProofInvalid("probe_membership_mismatch")
+    if (
+        registry.last_checked_at is None
+        or registry.last_checked_at.tzinfo is None
+        or registry.last_checked_at.utcoffset() is None
+        or registry.last_checked_at.astimezone(UTC) != probe.observed_at
+    ):
+        raise _GPUProofInvalid("probe_registry_clock_mismatch")
+    db_now_utc = db_now.astimezone(UTC)
+    if probe.observed_at > db_now_utc:
+        raise _GPUProofInvalid("probe_from_future")
+    if db_now_utc - probe.observed_at > evidence_ttl:
+        raise _GPUProofInvalid("probe_expired")
+
+    horizon = fence.token_expiry_high_water
+    if horizon is not None and (horizon.tzinfo is None or horizon.utcoffset() is None):
+        raise _GPUProofInvalid("token_horizon_invalid")
+
+    residency = _parse_gpu_proof_residency(raw_residency)
+    _validate_stable_legacy_residency(residency)
+    identity = residency.identity
+    acknowledged_control_epoch: str | None = None
+    proof_ready = False
+    if membership.state == "pending":
+        if identity is not None or residency.control_epoch is not None:
+            raise _GPUProofInvalid("pending_lifecycle_identity_already_bound")
+    elif identity is None and residency.control_epoch is None:
+        pass
+    elif identity is None or residency.control_epoch is None:
+        raise _GPUProofInvalid("active_lifecycle_identity_incomplete")
+    else:
+        if (
+            identity["backend_registry_id"] != str(membership.backend_registry_id)
+            or identity["gpu_resource_id"] != membership.gpu_resource_id
+        ):
+            raise _GPUProofInvalid("residency_identity_mismatch")
+        if int(residency.control_epoch) > control_epoch_high_water:
+            raise _GPUProofInvalid("residency_control_epoch_ahead")
+        if horizon is None:
+            raise _GPUProofInvalid("token_horizon_missing")
+        if int(residency.control_epoch) == control_epoch_high_water:
+            acknowledged_control_epoch = residency.control_epoch
+            proof_ready = (
+                probe.probe_started_at > horizon.astimezone(UTC)
+                and residency.gpu_loaded is False
+                and all(item is False for item in residency.pool_residencies)
+            )
+
+    return _GPULegacyAckEvidence(
+        boot_id=residency.boot_id,
+        acknowledged_control_epoch=acknowledged_control_epoch,
+        probe_started_at=probe.probe_started_at,
+        proof_ready=proof_ready,
+    )
+
+
+async def prepare_gpu_backend_legacy_ack(
+    session_factory: GPUFenceSessionFactory,
+    backend_registry_id: uuid.UUID,
+    *,
+    gpu_resource_id: str,
+    membership_epoch: int,
+    token_ttl_seconds: int = GPU_LEGACY_MODE_TOKEN_TTL_SECONDS,
+    evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+    readiness_demoter: GPUReadinessDemoter | None = None,
+) -> GPULegacyAckPreparation:
+    """Validate live proof and durably reserve one signed legacy-mode operation.
+
+    The transaction locks the complete physical-resource domain, then activates a
+    pending member and advances its control epoch plus token horizon atomically.
+    Signing and backend HTTP deliberately happen only after this function commits.
+    """
+
+    validate_gpu_resource_id(gpu_resource_id)
+    if (
+        not isinstance(membership_epoch, int)
+        or isinstance(membership_epoch, bool)
+        or membership_epoch <= 0
+        or membership_epoch > _MAX_POSITIVE_INT64
+    ):
+        raise ValueError("membership_epoch must be a positive int64")
+    if (
+        not isinstance(token_ttl_seconds, int)
+        or isinstance(token_ttl_seconds, bool)
+        or token_ttl_seconds <= 0
+        or token_ttl_seconds > 300
+    ):
+        raise ValueError("token_ttl_seconds must be between 1 and 300")
+    if evidence_ttl <= timedelta(0) or evidence_ttl > _PROOF_RESET_MAX_WINDOW:
+        raise ValueError(
+            "evidence_ttl must be positive and no greater than five minutes"
+        )
+
+    readiness_demoted = False
+
+    async def ensure_not_ready(*, required: bool) -> None:
+        nonlocal readiness_demoted
+        if readiness_demoted:
+            return
+        if readiness_demoter is None:
+            if required:
+                raise _GPUProofInvalid("readiness_demotion_unavailable")
+            return
+        await readiness_demoter(gpu_resource_id)
+        readiness_demoted = True
+
+    try:
+        async with session_factory() as db:
+            async with db.begin():
+                locked = await _lock_gpu_resource_proof_domain(
+                    db,
+                    gpu_resource_id,
+                    wait_for_lock=False,
+                )
+                membership = next(
+                    (
+                        item
+                        for item in locked.memberships
+                        if item.backend_registry_id == backend_registry_id
+                        and item.membership_epoch == membership_epoch
+                    ),
+                    None,
+                )
+                if membership is None:
+                    raise _GPUProofInvalid("membership_changed")
+                fence = locked.fences.get(backend_registry_id)
+                registry = locked.registries.get(backend_registry_id)
+                evidence = _validate_gpu_legacy_ack_evidence(
+                    membership,
+                    fence,
+                    registry,
+                    db_now=locked.db_now,
+                    evidence_ttl=evidence_ttl,
+                )
+                assert fence is not None
+                assert registry is not None
+                backend_snapshot = _snapshot_gpu_mode_backend(registry)
+
+                # Redis must be fail-closed before this transaction can advance a
+                # durable epoch/horizon.  Keep only the target resource lock while
+                # awaiting Redis so another card never waits behind this I/O.
+                if not evidence.proof_ready:
+                    await ensure_not_ready(required=True)
+
+                # Every alias writer takes its resource lock before this global
+                # barrier.  Promotion therefore tries the target resource first,
+                # then serializes only the short cross-card scan and PG mutation.
+                await _lock_gpu_membership_promotion_barrier(
+                    db,
+                    wait_for_lock=False,
+                )
+                await _validate_gpu_membership_aliases(
+                    db,
+                    membership,
+                    registry,
+                    evidence,
+                    db_now=locked.db_now,
+                    evidence_ttl=evidence_ttl,
+                )
+
+                if evidence.acknowledged_control_epoch is not None:
+                    return GPULegacyAckPreparation(
+                        action="acknowledged",
+                        backend=backend_snapshot,
+                        backend_id=backend_registry_id,
+                        resource_id=gpu_resource_id,
+                        membership_epoch=membership_epoch,
+                        boot_id=evidence.boot_id,
+                        runtime_epoch=str(fence.runtime_epoch_high_water),
+                        control_epoch=evidence.acknowledged_control_epoch,
+                        token_expires_at=None,
+                        proof_ready=evidence.proof_ready,
+                    )
+
+                horizon = fence.token_expiry_high_water
+                if horizon is not None and (
+                    evidence.probe_started_at <= horizon.astimezone(UTC)
+                ):
+                    raise _GPUProofInvalid("probe_not_after_token_horizon")
+
+                token_exp = int(locked.db_now.timestamp()) + token_ttl_seconds
+                token_expires_at = datetime.fromtimestamp(token_exp, tz=UTC)
+                if membership.state == "pending":
+                    runtime_epoch = (
+                        await _activate_gpu_backend_membership_in_transaction(
+                            db,
+                            backend_registry_id,
+                            gpu_resource_id=gpu_resource_id,
+                            membership_epoch=membership_epoch,
+                        )
+                    )
+                else:
+                    runtime_epoch = fence.runtime_epoch_high_water
+                control_epoch = await _advance_gpu_backend_fence_in_transaction(
+                    db,
+                    backend_registry_id,
+                    "control_epoch",
+                    gpu_resource_id=gpu_resource_id,
+                    membership_epoch=membership_epoch,
+                    token_expires_at=token_expires_at,
+                )
+                return GPULegacyAckPreparation(
+                    action="issue",
+                    backend=backend_snapshot,
+                    backend_id=backend_registry_id,
+                    resource_id=gpu_resource_id,
+                    membership_epoch=membership_epoch,
+                    boot_id=evidence.boot_id,
+                    runtime_epoch=str(runtime_epoch),
+                    control_epoch=str(control_epoch),
+                    token_expires_at=token_expires_at,
+                    proof_ready=False,
+                )
+    except _GPUProofInvalid as exc:
+        await ensure_not_ready(required=False)
+        raise GPULegacyAckBlockedError(exc.reason) from None
 
 
 def _unknown_proof_allocation(
@@ -945,10 +1477,10 @@ def _evaluate_gpu_member_proof(
             raise _GPUProofInvalid("registry_concurrency_mismatch")
 
         probe = _parse_gpu_proof_probe(raw_probe)
-        if (
-            _health_managed_lifecycle_sha256(raw_health)
-            != probe.managed_lifecycle_sha256
-        ):
+        actual_capability_sha256 = _health_managed_lifecycle_sha256(raw_health)
+        if probe.managed_lifecycle_sha256 is None or actual_capability_sha256 is None:
+            raise _GPUProofInvalid("managed_lifecycle_capability_missing")
+        if actual_capability_sha256 != probe.managed_lifecycle_sha256:
             raise _GPUProofInvalid("managed_lifecycle_capability_mismatch")
         if (
             probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
@@ -969,39 +1501,34 @@ def _evaluate_gpu_member_proof(
         if db_now.astimezone(UTC) - probe.observed_at > evidence_ttl:
             raise _GPUProofInvalid("probe_expired")
         horizon = fence.token_expiry_high_water
-        if horizon is not None:
-            if horizon.tzinfo is None or horizon.utcoffset() is None:
-                raise _GPUProofInvalid("token_horizon_invalid")
-            if probe.probe_started_at <= horizon.astimezone(UTC):
-                raise _GPUProofInvalid("probe_not_after_token_horizon")
+        if horizon is None:
+            raise _GPUProofInvalid("token_horizon_missing")
+        if horizon.tzinfo is None or horizon.utcoffset() is None:
+            raise _GPUProofInvalid("token_horizon_invalid")
+        if probe.probe_started_at <= horizon.astimezone(UTC):
+            raise _GPUProofInvalid("probe_not_after_token_horizon")
 
         residency = _parse_gpu_proof_residency(raw_residency)
         identity = residency.identity
-        if identity is not None and (
+        if identity is None:
+            raise _GPUProofInvalid("residency_identity_missing")
+        if (
             identity["backend_registry_id"] != str(membership.backend_registry_id)
             or identity["gpu_resource_id"] != membership.gpu_resource_id
         ):
             raise _GPUProofInvalid("residency_identity_mismatch")
-        if (
-            residency.generation is not None or residency.control_epoch is not None
-        ) and identity is None:
-            raise _GPUProofInvalid("residency_identity_missing")
-        if identity is not None and horizon is None:
-            raise _GPUProofInvalid("token_horizon_missing")
+        if residency.control_epoch is None:
+            raise _GPUProofInvalid("residency_control_epoch_missing")
         if (
             residency.generation is not None
             and int(residency.generation) > generation_high_water
         ):
             raise _GPUProofInvalid("residency_generation_ahead")
-        if (
-            residency.control_epoch is not None
-            and int(residency.control_epoch) > control_epoch_high_water
-        ):
+        residency_control_epoch = int(residency.control_epoch)
+        if residency_control_epoch > control_epoch_high_water:
             raise _GPUProofInvalid("residency_control_epoch_ahead")
-        if residency.lifecycle_gate == "enforce" and (
-            identity is None or residency.control_epoch is None
-        ):
-            raise _GPUProofInvalid("residency_enforce_identity_invalid")
+        if residency_control_epoch < control_epoch_high_water:
+            raise _GPUProofInvalid("residency_control_epoch_stale")
 
         observed_at_ms = _datetime_to_epoch_ms(probe.observed_at)
         evidence_deadline_ms = _datetime_to_epoch_ms(probe.observed_at + evidence_ttl)
@@ -1228,6 +1755,7 @@ async def commit_gpu_proof_reset_from_health(
     *,
     config: Settings = settings,
     evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+    readiness_blocker: str | None = None,
 ) -> GPUReconcileResult:
     """Consume cached live-health proof under the durable resource lock.
 
@@ -1243,6 +1771,12 @@ async def commit_gpu_proof_reset_from_health(
         raise ValueError(
             "evidence_ttl must be positive and no greater than five minutes"
         )
+    if readiness_blocker is not None and (
+        not isinstance(readiness_blocker, str)
+        or not readiness_blocker
+        or len(readiness_blocker) > 256
+    ):
+        raise ValueError("readiness_blocker must be a non-empty short string")
 
     async with session_factory() as db:
         async with db.begin():
@@ -1284,7 +1818,8 @@ async def commit_gpu_proof_reset_from_health(
                 item.state == "active" for item in locked.memberships
             )
             requested_ready = (
-                domain_matches
+                readiness_blocker is None
+                and domain_matches
                 and config_matches
                 and has_active_member
                 and len(locked.fences) == len(locked.memberships)
@@ -1433,6 +1968,8 @@ async def repair_gpu_resource(
     allocatable_mb: int,
     *,
     config: Settings = settings,
+    force_proof_reset: bool = False,
+    readiness_blocker: str | None = None,
 ) -> GPUResourceRepairResult:
     """Bootstrap or repair one desired-enforce resource without backend HTTP.
 
@@ -1446,12 +1983,37 @@ async def repair_gpu_resource(
         raise ValueError("allocatable_mb must be a positive integer")
     if allocatable_mb <= 0:
         raise ValueError("allocatable_mb must be a positive integer")
+    if not isinstance(force_proof_reset, bool):
+        raise ValueError("force_proof_reset must be a boolean")
+    if readiness_blocker is not None and (
+        not isinstance(readiness_blocker, str)
+        or not readiness_blocker
+        or len(readiness_blocker) > 256
+    ):
+        raise ValueError("readiness_blocker must be a non-empty short string")
 
     context = await store.prepared_proof_reset(resource_id)
     action: Literal["already_ready", "bootstrap", "repair", "resume_prepared"] = (
         "resume_prepared" if context is not None else "repair"
     )
     begin_result: GPUReconcileResult | None = None
+
+    if context is None and readiness_blocker is not None:
+        blocked = await store.mark_card_not_ready(
+            resource_id,
+            allocatable_mb,
+            reason=readiness_blocker,
+        )
+        return GPUResourceRepairResult(
+            resource_id=resource_id,
+            action="repair",
+            status=blocked.status,
+            ready=False,
+            reason=blocked.reason,
+            ledger_revision=blocked.ledger_revision,
+            ledger_incarnation=blocked.ledger_incarnation,
+            committed_mb=blocked.committed_mb,
+        )
 
     if context is None:
         async with session_factory() as db:
@@ -1470,7 +2032,8 @@ async def repair_gpu_resource(
                 if snapshot is not None:
                     domain_matches = snapshot.backend_memberships == durable_domain
                     if (
-                        snapshot.ready
+                        not force_proof_reset
+                        and snapshot.ready
                         and snapshot.allocatable_mb == allocatable_mb
                         and domain_matches
                         and all(member.state != "retiring" for member in durable_domain)
@@ -1541,6 +2104,7 @@ async def repair_gpu_resource(
         store,
         context,
         config=config,
+        readiness_blocker=readiness_blocker,
     )
     return GPUResourceRepairResult(
         resource_id=resource_id,

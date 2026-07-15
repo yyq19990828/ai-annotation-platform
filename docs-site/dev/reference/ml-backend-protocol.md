@@ -30,7 +30,7 @@ ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全�
 
 平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
 
-GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威 authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，authority context 也不能抑制 backend 错误或调用取消。后续接入 runtime authority 时还会补充显式 outcome report，用可信响应提交 allocation 终态，不能把 context 的异常退出本身视为最终账本协议。签名器和 lifecycle gate promotion 尚未接通，effective enforce 继续保持关闭。
+GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威 authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，authority context 也不能抑制 backend 错误或调用取消。平台 signer 与 legacy membership promotion 已接入 desired-enforce 周期修复，但它们只建立 post-horizon ready 证明，不会开启业务权威。后续接入 runtime authority 时还会补充显式 outcome report，用可信响应提交 allocation 终态，不能把 context 的异常退出本身视为最终账本协议。Redis admission lease、业务 token 和 enforce gate promotion 尚未接通，effective enforce 继续保持关闭。
 
 派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
 
@@ -159,9 +159,10 @@ GPU backend 应在 `/health` 顶层返回 `compute`：
 
 GPU 健康证明把 `/health` 的随机 challenge 回显与同轮 `/setup` 能力探测放在同一观测窗口内；数据库
 `observed_at` 只在两次远端调用都结束后取得。平台将规范化声明的 SHA-256 写入 challenge probe，并在证明消费时
-重新计算注册表快照中的哈希。缺失或远端非法声明会规范化为 `null/null`，仍允许 P3 重建保守账本：严格空载可
-不写 allocation，严格驻留只按完整预算写入且固定 `evictable=false`；两者都不能据此获得受管激活或驱逐资格。
-持久快照自身非法、快照与 probe 哈希不匹配或 membership epoch/state 漂移才会使该证明 not-ready。
+重新计算注册表快照中的哈希。缺失或远端非法声明会规范化为 `null/null`，仍可保持 connected，但不能激活
+membership 或形成 Redis ready。只有快照与 probe 的非空哈希 exact-match，且后续证明已绑定 active identity、
+当前 control high-water 并越过 token horizon，才能恢复保守账本；快照非法、哈希不匹配或 membership
+epoch/state 漂移均保持 not-ready。
 challenge `/health` 与 `/setup` 请求都携带 `Cache-Control: no-cache`，共享代理必须向 origin 重新验证，不能把
 陈旧缓存当成本轮能力证据。
 并发健康扫描采用保守的 observation-window fence：写回锁内若发现另一轮扫描已在本轮 `probe_started_at` 之后
@@ -245,6 +246,32 @@ lease 与 replay tombstone 全部安全过期后移除旧 key。
 `X-AAP-GPU-Admission-Token`，不携带 generation，也不进入 workload dispatch、shadow decision 或本地
 semaphore。远端 ACK 从原始 JSON 严格解析，重复 key、缺失/额外字段、字符串布尔值/计数等类型转换及不一致的
 response/residency 一律拒绝；平台不会用共享模型的本地构造默认值补齐部分 ACK。
+
+desired mode 为 enforce 的周期修复会在健康扫描之后处理 membership。平台先非阻塞尝试目标物理资源锁；卡锁忙时立即
+fail-closed，不会先占有全局 barrier 让其他卡跟随等待。取得逐卡锁后再非阻塞尝试全局短 promotion barrier；
+正常短竞争会先释放事务并按 deadline + jitter 有界重试，耗尽后才阻断，避免并行多卡互相误降级或饥饿。claim、
+membership insert 与 health proof 写入按逐卡锁→全局 barrier 排序；数据库 trigger 对两级锁均 fail-fast，忙时以
+`40001` 要求整事务重试，避免多资源写事务持有全局 barrier 再等待下一张卡。平台在
+完整物理资源锁域内重验 connected registry claim、exact membership epoch/state、非空受管能力哈希、新鲜 challenge proof
+与稳定空闲的 legacy residency，并在全局 barrier 内扫描所有 pending/active membership：任意两个成员的
+canonical endpoint 相同，或新鲜 challenge-bound proof 回报同一 `boot_id`，都保持阻断；后者不因对端
+capability 失效或当时忙碌而放行。只有 signer 已成功加载，平台才在同一短事务把
+pending membership 推进到 active runtime epoch，并同时推进 control epoch 与 admission token 的 expiry
+high-water。任一 epoch/horizon 推进前，平台必须在仍持有逐卡锁时先将 Redis 卡级 ready 降为 not-ready；只有 Redis 明确返回
+`not_ready` 才视为撤销成功，账本损坏等其他状态一律使数据库事务回滚。事务提交后才构造 `scope=mode`、无 generation、绑定 exact boot/backend/resource 的 30 秒 token，
+再请求 `gate=legacy`。ACK 除严格 wire 外还必须匹配本次 boot、identity、control epoch，并继续报告稳定空闲、
+非 evictable 的 legacy residency。
+
+事务提交后的签名、timeout、拒绝、响应丢失或 ACK 不匹配都不会把 active membership 回滚为 pending；后续周期
+必须先取得新的 exact active proof，并在旧 token horizon 之后用更大 control epoch 恢复。任一成员推进 epoch、ACK 未确认、signer/证明/alias 阻断或
+证明尚不满足 readiness 时，已有卡级 ready 必须在返回结果前降为 not-ready。成功 ACK 不直接授予
+Redis ready 或驱逐权；周期 repair 只在后续 proof 同时具有非空 exact capability、当前 active identity、等于
+durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horizon 时才可恢复 ready。当前 effective enforce 继续关闭，不签业务 token、
+不创建 admission lease，也不发送 reset/enforce gate；`off/observe` 不读取 signer、不执行 membership promotion、
+不调用 `/lifecycle/mode`，也不访问 GPU 仲裁账本。
+逐卡修复的总时间片会预留独立 fail-closed 收尾预算；即使墓碑收尾、promotion 或 proof reset 耗尽主时间片、
+出现普通异常或任务被批次总时限取消，worker 也会在返回失败结果前有界尝试把该卡锁存为 not-ready，避免多卡
+批次中的慢卡沿用旧 ready。
 
 五个 GPU backend 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
 以 legacy gate 启动；非空但无法解析的配置会阻止启动。`/health` 与 `/setup` 始终免 token；legacy gate 下

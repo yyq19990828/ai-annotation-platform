@@ -973,6 +973,151 @@ async def test_gpu_check_health_holds_membership_lock_through_probe_commit(
             )
 
 
+async def test_gpu_health_proof_write_shares_promotion_barrier(
+    test_engine: AsyncEngine,
+    monkeypatch,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    backend_id = uuid.uuid4()
+    resource_id = "node-health/GPU-promotion-barrier"
+    async with factory.begin() as db:
+        db.add(
+            MLBackend(
+                id=backend_id,
+                name="health-promotion-barrier",
+                url=f"http://health-promotion-barrier-{backend_id}.test",
+                state="disconnected",
+                gpu_resource_id=resource_id,
+                vram_budget_mb=1024,
+            )
+        )
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
+            "residency": {"state": "unloaded", "boot_id": "barrier-boot"},
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        raise RuntimeError("setup unavailable")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    holder = factory()
+    transaction = await holder.begin()
+    await holder.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended('aap:gpu-membership-promotion', 0))"
+        )
+    )
+
+    async def run_health() -> bool:
+        async with factory() as db:
+            async with db.begin():
+                return await MLBackendService(db).check_health(backend_id)
+
+    health_task = asyncio.create_task(run_health())
+    try:
+        assert await asyncio.wait_for(health_task, timeout=2) is False
+    finally:
+        await transaction.rollback()
+        await holder.close()
+
+    health_task = asyncio.create_task(run_health())
+    blocked_health_task: asyncio.Task[bool] | None = None
+    resource_holder: AsyncSession | None = None
+    resource_transaction = None
+    try:
+        assert await asyncio.wait_for(health_task, timeout=2) is True
+
+        resource_holder = factory()
+        resource_transaction = await resource_holder.begin()
+        await resource_holder.execute(
+            text(
+                "SELECT pg_advisory_xact_lock("
+                "hashtextextended('aap:gpu-resource:' || :resource_id, 0))"
+            ),
+            {"resource_id": resource_id},
+        )
+        blocked_health_task = asyncio.create_task(run_health())
+        await asyncio.sleep(0.05)
+        assert not blocked_health_task.done()
+        async with factory.begin() as probe:
+            global_barrier_free = await probe.scalar(
+                text(
+                    "SELECT pg_try_advisory_xact_lock("
+                    "hashtextextended('aap:gpu-membership-promotion', 0))"
+                )
+            )
+            assert global_barrier_free is True
+
+        await resource_transaction.rollback()
+        await resource_holder.close()
+        resource_transaction = None
+        resource_holder = None
+        assert await asyncio.wait_for(blocked_health_task, timeout=2) is True
+    finally:
+        if resource_transaction is not None:
+            await resource_transaction.rollback()
+        if resource_holder is not None:
+            await resource_holder.close()
+        for task in (health_task, blocked_health_task):
+            if task is not None and not task.done():
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+        async with factory.begin() as db:
+            await db.execute(
+                text(
+                    "ALTER TABLE ml_backend_registry DISABLE TRIGGER "
+                    "trg_sync_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendMembership).where(
+                    GPUBackendMembership.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendFence).where(
+                    GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
+            await db.execute(
+                text(
+                    "ALTER TABLE ml_backend_registry ENABLE TRIGGER "
+                    "trg_sync_gpu_backend_membership"
+                )
+            )
+
+
 async def test_check_health_rechecks_epoch_after_waiting_on_registry_lock(
     test_engine: AsyncEngine,
     monkeypatch,
@@ -1117,6 +1262,7 @@ async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
     resource_mode: str,
 ) -> None:
     from app.config import GPUArbiterMode, settings
+    from app.services import gpu_membership_activation
     from app.workers import ml_health
 
     resource_id = "node-worker/GPU-mode-gate"
@@ -1135,28 +1281,227 @@ async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
             }
         ),
     )
-    redis_calls = 0
+    calls = {"redis": 0, "signer": 0, "promoter": 0, "mode": 0}
 
-    def fail_if_called(*args, **kwargs):  # noqa: ARG001
-        nonlocal redis_calls
-        redis_calls += 1
+    def fail_redis(*args, **kwargs):  # noqa: ARG001
+        calls["redis"] += 1
         raise AssertionError("off/observe must not create a GPU Redis store")
 
-    monkeypatch.setattr(ml_health.GPUArbiterStore, "from_url", fail_if_called)
+    def fail_signer(*args, **kwargs):  # noqa: ARG001
+        calls["signer"] += 1
+        raise AssertionError("off/observe must not load the GPU signer")
 
-    result = await ml_health._repair_gpu_arbiter_resources()
+    async def fail_promoter(*args, **kwargs):  # noqa: ARG001
+        calls["promoter"] += 1
+        raise AssertionError("off/observe must not promote memberships")
+
+    def fail_mode(*args, **kwargs):  # noqa: ARG001
+        calls["mode"] += 1
+        raise AssertionError("off/observe must not call lifecycle mode")
+
+    monkeypatch.setattr(ml_health.GPUArbiterStore, "from_url", fail_redis)
+    monkeypatch.setattr(
+        gpu_membership_activation.GPUAdmissionTokenSigner,
+        "from_settings",
+        fail_signer,
+    )
+    monkeypatch.setattr(
+        gpu_membership_activation.MLBackendClient,
+        "lifecycle_mode",
+        fail_mode,
+    )
+
+    result = await ml_health._repair_gpu_arbiter_resources(
+        membership_promoter=fail_promoter
+    )
 
     assert result == {
         "skipped": True,
         "reason": "no_desired_enforce_resources",
         "resources": [],
     }
-    assert redis_calls == 0
+    assert calls == {"redis": 0, "signer": 0, "promoter": 0, "mode": 0}
+
+
+@pytest.mark.parametrize(
+    ("promotion_failure", "expected_reason"),
+    (
+        ("error", "membership_promotion_unavailable"),
+        ("timeout", "membership_promotion_timeout"),
+    ),
+)
+async def test_gpu_repair_continues_after_membership_promotion_failure(
+    monkeypatch,
+    promotion_failure: str,
+    expected_reason: str,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.workers import ml_health
+
+    events: list[str] = []
+    observation = object()
+
+    async def no_memberships(factory, resource_id):  # noqa: ARG001
+        return ()
+
+    async def fail_promoter(factory, resource_id):  # noqa: ARG001
+        events.append("promotion")
+        if promotion_failure == "timeout":
+            await asyncio.sleep(0.05)
+        raise RuntimeError("signer or mode unavailable")
+
+    async def fake_repair(
+        factory,
+        store,
+        resource_id,
+        allocatable_mb,
+        *,
+        force_proof_reset,
+        readiness_blocker,
+    ):  # noqa: ARG001
+        events.append(f"repair:{force_proof_reset}:{readiness_blocker}")
+        return SimpleNamespace(
+            action="repair",
+            status="not_ready",
+            ready=False,
+            reason="proof_incomplete",
+            ledger_revision=1,
+            ledger_incarnation="incarnation",
+            committed_mb=0,
+        )
+
+    async def fake_observe(store, resource_id, domain):  # noqa: ARG001
+        events.append("observe")
+        return observation
+
+    real_asdict = ml_health.asdict
+
+    def fake_asdict(value):
+        if value is observation:
+            return {"status": "not_ready"}
+        return real_asdict(value)
+
+    monkeypatch.setattr(ml_health, "_resource_memberships", no_memberships)
+    monkeypatch.setattr(ml_health, "repair_gpu_resource", fake_repair)
+    monkeypatch.setattr(ml_health, "observe_gpu_resource_runtime", fake_observe)
+    monkeypatch.setattr(ml_health, "asdict", fake_asdict)
+
+    result = await ml_health._repair_one_gpu_resource(
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        "node-worker/GPU-promotion-failure",
+        8192,
+        membership_promoter=fail_promoter,
+        promotion_timeout_seconds=(0.01 if promotion_failure == "timeout" else 12),
+    )
+
+    assert events == [
+        "promotion",
+        "repair:True:membership_promotion_unconfirmed",
+        "observe",
+    ]
+    assert result["status"] == "not_ready"
+    assert result["promotions"] == [
+        {
+            "backend_id": None,
+            "resource_id": "node-worker/GPU-promotion-failure",
+            "membership_epoch": None,
+            "status": "unavailable",
+            "reason": expected_reason,
+            "runtime_epoch": None,
+            "control_epoch": None,
+            "requires_proof_reset": True,
+        }
+    ]
+
+
+async def test_gpu_promotion_stops_when_redis_demotion_is_unconfirmed(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.workers import ml_health
+
+    events: list[str] = []
+    observation = object()
+
+    class CorruptStore:
+        async def mark_card_not_ready(self, resource_id, allocatable_mb, *, reason):  # noqa: ARG002
+            events.append("mark_not_ready")
+            return SimpleNamespace(status="ledger_corrupt")
+
+    async def no_memberships(factory, resource_id):  # noqa: ARG001
+        return ()
+
+    async def fake_promoter(factory, resource_id, *, readiness_demoter):  # noqa: ARG001
+        events.append("promotion")
+        await readiness_demoter(resource_id)
+        events.append("epoch_advanced")
+        return ()
+
+    async def fake_repair(
+        factory,
+        store,
+        resource_id,
+        allocatable_mb,
+        *,
+        force_proof_reset,
+        readiness_blocker,
+    ):  # noqa: ARG001
+        events.append(f"repair:{force_proof_reset}:{readiness_blocker}")
+        return SimpleNamespace(
+            action="repair",
+            status="not_ready",
+            ready=False,
+            reason="proof_incomplete",
+            ledger_revision=1,
+            ledger_incarnation="incarnation",
+            committed_mb=0,
+        )
+
+    async def fake_observe(store, resource_id, domain):  # noqa: ARG001
+        events.append("observe")
+        return observation
+
+    real_asdict = ml_health.asdict
+
+    def fake_asdict(value):
+        if value is observation:
+            return {"status": "not_ready"}
+        return real_asdict(value)
+
+    monkeypatch.setattr(ml_health, "_resource_memberships", no_memberships)
+    monkeypatch.setattr(
+        ml_health,
+        "promote_gpu_resource_memberships",
+        fake_promoter,
+    )
+    monkeypatch.setattr(ml_health, "repair_gpu_resource", fake_repair)
+    monkeypatch.setattr(ml_health, "observe_gpu_resource_runtime", fake_observe)
+    monkeypatch.setattr(ml_health, "asdict", fake_asdict)
+
+    result = await ml_health._repair_one_gpu_resource(
+        object(),  # type: ignore[arg-type]
+        CorruptStore(),  # type: ignore[arg-type]
+        "node-worker/GPU-demotion-unconfirmed",
+        8192,
+    )
+
+    assert events == [
+        "promotion",
+        "mark_not_ready",
+        "repair:True:membership_promotion_unconfirmed",
+        "observe",
+    ]
+    assert result["promotions"][0]["reason"] == "membership_promotion_unavailable"
 
 
 async def test_gpu_repair_worker_gives_every_card_time_within_batch(
     monkeypatch,
 ) -> None:
+    from types import SimpleNamespace
+
     from app.config import GPUArbiterMode, settings
     from app.workers import ml_health
 
@@ -1184,7 +1529,13 @@ async def test_gpu_repair_worker_gives_every_card_time_within_batch(
         async def dispose(self) -> None:
             return None
 
+    latched: list[str] = []
+
     class FakeStore:
+        async def mark_card_not_ready(self, resource_id, allocatable_mb, *, reason):  # noqa: ARG002
+            latched.append(resource_id)
+            return SimpleNamespace(status="not_ready")
+
         async def aclose(self) -> None:
             return None
 
@@ -1201,7 +1552,15 @@ async def test_gpu_repair_worker_gives_every_card_time_within_batch(
     )
     started: list[str] = []
 
-    async def slow_repair(factory, store, resource_id, allocatable_mb):  # noqa: ARG001
+    async def slow_repair(
+        factory,
+        store,
+        resource_id,
+        allocatable_mb,
+        *,
+        membership_promoter,
+        promotion_timeout_seconds,
+    ):  # noqa: ARG001
         started.append(resource_id)
         await asyncio.sleep(0.02)
 
@@ -1210,8 +1569,155 @@ async def test_gpu_repair_worker_gives_every_card_time_within_batch(
     result = await ml_health._repair_gpu_arbiter_resources()
 
     assert set(started) == set(resource_ids)
+    assert set(latched) == set(resource_ids)
     assert len(result["resources"]) == len(resource_ids)
     assert all(item["status"] == "unavailable" for item in result["resources"])
+
+
+async def test_gpu_repair_worker_latches_not_ready_after_generic_failure(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.config import GPUArbiterMode, settings
+    from app.workers import ml_health
+
+    resource_id = "node-worker/GPU-generic-failure"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": "GPU-generic-failure",
+                    "allocatable_mb": 8192,
+                    "mode": "enforce",
+                }
+            }
+        ),
+    )
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            return None
+
+    latches: list[tuple[str, str]] = []
+
+    class FakeStore:
+        async def mark_card_not_ready(self, target, allocatable_mb, *, reason):  # noqa: ARG002
+            latches.append((target, reason))
+            return SimpleNamespace(status="not_ready")
+
+        async def aclose(self) -> None:
+            return None
+
+    async def fail_repair(*args, **kwargs):  # noqa: ARG001
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        ml_health, "create_async_engine", lambda *args, **kwargs: FakeEngine()
+    )
+    monkeypatch.setattr(
+        ml_health, "async_sessionmaker", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        ml_health.GPUArbiterStore,
+        "from_url",
+        lambda *args, **kwargs: FakeStore(),
+    )
+    monkeypatch.setattr(ml_health, "_repair_one_gpu_resource", fail_repair)
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert latches == [(resource_id, "gpu_resource_repair_failed")]
+    assert result["resources"][0]["reason"] == "database unavailable"
+    assert result["resources"][0]["ready"] is False
+
+
+async def test_gpu_repair_batch_timeout_latches_every_cancelled_card(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.config import GPUArbiterMode, settings
+    from app.workers import ml_health
+
+    resource_ids = (
+        "node-worker/GPU-batch-timeout-a",
+        "node-worker/GPU-batch-timeout-b",
+    )
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": resource_id.rsplit("/", 1)[-1],
+                    "allocatable_mb": 8192,
+                    "mode": "enforce",
+                }
+                for resource_id in resource_ids
+            }
+        ),
+    )
+    monkeypatch.setattr(ml_health, "_GPU_REPAIR_WORK_BUDGET_SECONDS", 1.0)
+    monkeypatch.setattr(ml_health, "_GPU_REPAIR_BATCH_TIMEOUT_SECONDS", 0.05)
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            return None
+
+    latched: list[str] = []
+
+    class FakeStore:
+        async def mark_card_not_ready(self, resource_id, allocatable_mb, *, reason):  # noqa: ARG002
+            assert reason == "gpu_arbiter_repair_batch_timeout"
+            latched.append(resource_id)
+            return SimpleNamespace(status="not_ready")
+
+        async def aclose(self) -> None:
+            return None
+
+    started: list[str] = []
+
+    async def slow_repair(
+        factory,
+        store,
+        resource_id,
+        allocatable_mb,
+        *,
+        membership_promoter,
+        promotion_timeout_seconds,
+    ):  # noqa: ARG001
+        started.append(resource_id)
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(
+        ml_health, "create_async_engine", lambda *args, **kwargs: FakeEngine()
+    )
+    monkeypatch.setattr(
+        ml_health, "async_sessionmaker", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        ml_health.GPUArbiterStore,
+        "from_url",
+        lambda *args, **kwargs: FakeStore(),
+    )
+    monkeypatch.setattr(ml_health, "_repair_one_gpu_resource", slow_repair)
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert set(started) == set(resource_ids)
+    assert set(latched) == set(resource_ids)
+    assert [item["reason"] for item in result["resources"]] == [
+        "gpu_arbiter_repair_batch_timeout",
+        "gpu_arbiter_repair_batch_timeout",
+    ]
+    assert all(item["ready"] is False for item in result["resources"])
 
 
 def test_build_stats_snapshot_keeps_runtime_load_state():

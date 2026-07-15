@@ -351,7 +351,8 @@ backend body 不能自报成功。严格旧 backend 以 400/422 拒绝未知 que
 
 探活请求前与响应完整返回后分别读取 PostgreSQL `clock_timestamp()`，把 `probe_started_at`、`observed_at`、
 challenge、backend/resource 身份和 membership epoch/state 绑定为证据候选。网络调用后按
-registry→exact membership 顺序锁行并重验 endpoint/auth/resource/epoch/state，直到 registry 写回完成；所有
+registry row→resource advisory→global promotion barrier→exact membership 顺序锁定并重验
+endpoint/auth/resource/epoch/state，直到 registry 写回完成；所有
 会推进 epoch 的配置变更立即清空旧 health，从而阻止配置变化、行锁等待、pending→active 状态窗口与
 A→B→A 竞态写入旧证据。同一 backend 的并发观测窗口按 `probe_started_at` 保守封闭：锁内若已存在
 `last_checked_at >= probe_started_at`，说明另一轮探活在本轮开始后已经提交，本轮即使因慢 setup 获得更晚结束时间
@@ -373,10 +374,37 @@ challenge-bound health 只是证据候选，不是 reset 授权；消费时必�
 `probe_started_at > token_expiry_high_water`，校验证据 TTL、完整 residency 与身份，并把最终 horizon 复核和
 Redis reset 提交置于同一受保护恢复流程。只有绑定 exact active state 的证明可以形成 ready；pending 必须先
 激活并重新探活，retiring 的冻结 health 永远不能授权恢复。严格空闲且 GPU 已卸载时省略 allocation；严格
-resident 按 membership 完整预算重建。canonical managed-lifecycle capability 哈希已经绑定到同轮证明，
-但自报声明本身不能授予激活或驱逐权；在 active membership 与受签 legacy ACK 完成前仍固定为
-non-evictable。瞬态、忙碌、不完整或非法 residency 一律按 Unknown 全额计费并保持 not-ready。不得缓存
+resident 按 membership 完整预算重建。canonical managed-lifecycle capability 哈希已经绑定到同轮证明；
+缺失或 `null/null` 只能保持 connected，不能形成 ready。自报声明本身也不能授予激活或驱逐权；证明还必须
+绑定 exact active identity、与当前 durable high-water 相等的 control epoch，并严格晚于 token horizon。在受签
+legacy ACK 和后续证明完成前仍固定为 non-evictable。瞬态、忙碌、不完整或非法 residency 一律按
+Unknown 全额计费并保持 not-ready。不得缓存
 “已满足 horizon”的布尔值。
+
+desired-enforce 的周期修复在健康扫描之后执行 boot-scoped legacy ACK。它先加载 signer；失败时不得改变
+membership。随后先非阻塞尝试既有逐资源 advisory barrier；目标卡忙时本轮立即 fail-closed，不得先占有全局
+barrier 等待逐卡锁。取得逐卡锁后只能非阻塞尝试全局短 promotion barrier；全局 barrier 的正常短竞争必须先释放
+事务，再按 deadline + jitter 有界重试，只有重试耗尽才作为 blocker，避免四路多卡 promotion 互相误降级或固定顺序
+饥饿。普通 claim、membership insert 与 health proof 写入按逐卡 advisory→全局 barrier 排序；数据库 trigger 对两级锁
+都使用 try-lock，忙时抛出可重试的 `40001` 并回滚整事务，不能让多资源事务在持有全局 barrier 后等待下一张卡。
+该组合既线性化 endpoint/boot 扫描，又不形成跨卡队头阻塞或锁环。promotion 按 UUID 顺序锁定完整 membership/fence 域，以 registry MVCC 快照重验 exact claim、非空
+managed-lifecycle capability hash、新鲜
+pending/active challenge proof 与稳定空闲 legacy residency。全局 barrier 内还必须扫描所有 current membership：
+canonical endpoint 或新鲜 challenge-bound `boot_id` 任一重复都阻断 promotion，且 boot 别名不能被对端的
+capability 错误或忙碌状态掩盖。pending→active、runtime epoch +1、control epoch +1 与本次
+mode token expiry horizon 必须在同一短事务提交；但在任一 epoch/horizon 真正推进前，必须在仍持有逐卡锁时先把 Redis
+卡级 ready 降为 not-ready。只有 Redis 明确返回 `not_ready` 才能证明撤销已 latch；账本损坏或其他返回状态、control/runtime 溢出或任何提交前失败
+都不得推进数据库 high-water。提交后才签发
+无 generation 的 `scope=mode` token 并调用 `gate=legacy`，ACK 必须精确绑定 boot、backend、resource、control
+epoch 与稳定 residency。
+
+提交后的签名失败、timeout、拒绝、响应丢失或 ACK 不一致均不得 active→pending，也不得回退任何 high-water；
+成员保持 active/not-ready，下一轮只能在旧 token horizon 之后取得新的 exact active proof，再用更大 control epoch
+恢复。若 fresh active proof 已回报 exact legacy identity 与等于当前 durable high-water 的 control epoch，可把它视为
+丢失响应后的 ACK 证据，但仍不能绕过 post-horizon readiness。任一成员推进 epoch、ACK 未确认、signer/证明/alias 阻断或证明尚不满足
+readiness 时，已有卡级 ready 必须在返回结果前降为 not-ready，不能继续复用推进前的证明。单卡 partial ACK 与多卡 partial success 均保持
+effective off；本阶段不签 workload/reset token、不创建 Redis admission lease、不切 enforce gate，也不执行驱逐。
+off/observe 路径不加载 signer、不激活 membership、不调用 mode，且不访问 GPU 仲裁 Redis。
 
 Redis reset 使用独立两阶段原语，不能放宽普通 reconcile。begin 必须以 revision + incarnation CAS（完整
 flush 或核心字段损坏时使用严格 no-CAS 分支）轮换 incarnation，将数据库封闭三域固化为持久 prepared marker；
@@ -431,7 +459,9 @@ limit 的全局防重入锁，并对修复批次设置 50 秒总时限，避免�
 `off/observe` 不创建仲裁 Redis client；完整 ready 且数据库/Redis 域一致的卡保持只读，完整 flush、旧 schema、
 证据过期、prepared 重启或 partial corruption 一律走 proof reset。每个 task/event loop 自建并关闭 Redis client
 与数据库 engine，多卡最多四路并行并按波次数量均分 45 秒工作预算，一张卡失败或持续超时不会让固定排序后的
-卡跨轮饥饿。管理 API 同样以最多四路读取 Redis；它与 task result 暴露逐资源
+卡跨轮饥饿。每张卡的工作时间片还必须预留独立的 fail-closed 收尾预算；即使 promotion 前的墓碑收尾、promotion
+或 proof reset 耗尽主时间片，发生普通异常，或被批次总时限取消，也要在返回失败结果前有界尝试把该卡锁存为
+not-ready。管理 API 同样以最多四路读取 Redis；它与 task result 暴露逐资源
 ready/revision/预算、成员/分配状态、lease、两级队列、transition 与 GC 阻塞原因；这些观测永不作为恢复授权。
 P3 闭环本身不提升 effective mode，P1 真实 GPU 验收与 P4 lifecycle/admission 接线完成前仍保持 `off`。
 

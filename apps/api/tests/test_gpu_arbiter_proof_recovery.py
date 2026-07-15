@@ -15,6 +15,7 @@ from aap_protocol_v2.lifecycle import (
 )
 from redis.asyncio import Redis
 from sqlalchemy import delete, select, text, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -230,8 +231,12 @@ def _residency(
         },
         "boot_id": f"boot-{backend_id}",
         "lifecycle_gate": "legacy",
-        "control_epoch": None,
-        "identity": None,
+        "control_epoch": "1",
+        "identity": {
+            "audience": "aap-gpu-lifecycle",
+            "backend_registry_id": str(backend_id),
+            "gpu_resource_id": resource_id,
+        },
     }
 
 
@@ -243,6 +248,8 @@ async def _install_live_health(
     resident_backend_ids: frozenset[uuid.UUID] = frozenset(),
 ) -> dict[uuid.UUID, datetime]:
     started_by_backend: dict[uuid.UUID, datetime] = {}
+    capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+    capability_sha256 = managed_lifecycle_capability_sha256(capability)
     async with factory.begin() as db:
         db_now = await db.scalar(select(text("clock_timestamp()")))
         assert isinstance(db_now, datetime)
@@ -258,11 +265,12 @@ async def _install_live_health(
             started_by_backend[backend_id] = probe_started_at
             resident = backend_id in resident_backend_ids
             fence.generation_high_water = 1 if resident else 0
-            fence.control_epoch_high_water = 1 if resident else 0
+            fence.control_epoch_high_water = 1
             fence.token_expiry_high_water = probe_started_at - timedelta(seconds=1)
             backend.state = "connected"
             backend.last_checked_at = observed_at
             backend.health_meta = {
+                "capabilities": {"managed_lifecycle": capability},
                 "gpu_arbiter_probe": {
                     "protocol_version": "1",
                     "challenge": f"{index + 1:064x}",
@@ -270,7 +278,7 @@ async def _install_live_health(
                     "gpu_resource_id": resource_id,
                     "membership_epoch": str(membership.membership_epoch),
                     "membership_state": membership.state,
-                    "managed_lifecycle_sha256": None,
+                    "managed_lifecycle_sha256": capability_sha256,
                     "probe_started_at": _proof_timestamp(probe_started_at),
                     "observed_at": _proof_timestamp(observed_at),
                 },
@@ -602,6 +610,9 @@ async def test_pending_member_is_conservative_unknown(
         "stale_probe",
         "bool_counter",
         "generation_ahead",
+        "control_epoch_stale",
+        "identity_missing",
+        "capability_missing",
         "capability_hash_mismatch",
         "capability_snapshot_invalid",
         "legacy_probe_schema",
@@ -642,6 +653,15 @@ async def test_proof_recovery_maps_untrusted_evidence_to_unknown(
                     health_meta["residency"]["active_requests"] = False
                 elif invalid_case == "generation_ahead":
                     health_meta["residency"]["generation"] = "2"
+                elif invalid_case == "control_epoch_stale":
+                    fence.control_epoch_high_water = 2
+                elif invalid_case == "identity_missing":
+                    health_meta["residency"]["evictable"] = False
+                    health_meta["residency"]["control_epoch"] = None
+                    health_meta["residency"]["identity"] = None
+                elif invalid_case == "capability_missing":
+                    health_meta.pop("capabilities")
+                    health_meta["gpu_arbiter_probe"]["managed_lifecycle_sha256"] = None
                 elif invalid_case == "capability_hash_mismatch":
                     health_meta["gpu_arbiter_probe"]["managed_lifecycle_sha256"] = (
                         "a" * 64
@@ -872,7 +892,7 @@ async def test_recovery_holds_same_card_locks_through_redis_commit(
 
 
 @pytest.mark.asyncio
-async def test_resource_barrier_blocks_same_card_insert_but_not_other_card(
+async def test_resource_barrier_rejects_same_card_insert_but_not_other_card(
     test_engine: AsyncEngine,
 ) -> None:
     factory, backend_ids = await _create_active_backends(
@@ -922,11 +942,15 @@ async def test_resource_barrier_blocks_same_card_insert_but_not_other_card(
         same_task = asyncio.create_task(insert_backend(same_backend_id, _RESOURCE_A))
         other_task = asyncio.create_task(insert_backend(other_backend_id, _RESOURCE_B))
         await asyncio.wait_for(other_task, timeout=1)
-        with pytest.raises(TimeoutError):
-            await asyncio.wait_for(asyncio.shield(same_task), timeout=0.05)
+        same_outcome = (await asyncio.gather(same_task, return_exceptions=True))[0]
+        assert isinstance(same_outcome, DBAPIError)
+        orig = getattr(same_outcome, "orig", None)
+        assert (
+            getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        ) == "40001"
 
         store.release.set()
-        await asyncio.gather(recovery_task, same_task)
+        await recovery_task
         assert len(store.calls) == 1
     finally:
         store.release.set()
@@ -1165,5 +1189,110 @@ async def test_repair_bootstraps_missing_card_then_leaves_ready_card_read_only(
         )
         assert second.action == "already_ready"
         assert second.ledger_revision == snapshot.ledger_revision
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_repair_revalidates_ready_card_after_control_horizon_advances(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        first = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+        )
+        assert first.ready is True
+
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            db_now = await db.scalar(select(text("clock_timestamp()")))
+            assert fence is not None
+            assert isinstance(db_now, datetime)
+            fence.control_epoch_high_water = 2
+            fence.token_expiry_high_water = db_now + timedelta(seconds=30)
+
+        invalidated = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+            force_proof_reset=True,
+        )
+        assert invalidated.ready is False
+        assert (await proof_store.snapshot(_RESOURCE_A)).ready is False
+
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert fence is not None
+            assert backend is not None
+            assert backend.health_meta is not None
+            fence.control_epoch_high_water = 2
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["control_epoch"] = "2"
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        recovered = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+        )
+        assert recovered.ready is True
+        assert (await proof_store.snapshot(_RESOURCE_A)).ready is True
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_readiness_blocker_demotes_existing_ready_card(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    try:
+        await _install_live_health(factory, backend_ids, resource_id=_RESOURCE_A)
+        ready = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+        )
+        assert ready.ready is True
+
+        blocked = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=_resource_config(_RESOURCE_A),
+            readiness_blocker="membership_promotion_unconfirmed",
+        )
+
+        assert blocked.ready is False
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.ready is False
+        assert snapshot.not_ready_reason == "membership_promotion_unconfirmed"
     finally:
         await _cleanup_backends(factory, backend_ids)
