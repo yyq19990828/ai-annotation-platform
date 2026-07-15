@@ -1,14 +1,15 @@
-"""ADR-0049 static GPU claims and P2 read-only shadow arbitration.
+"""ADR-0049 GPU claims, durable fences, and P2 read-only shadow arbitration.
 
-This module deliberately has no Redis access and performs no admission, eviction, or
-backend calls. P2b evaluates non-authoritative ``would-*`` decisions from a fresh DB
-snapshot; the fenced runtime ledger is added in P3 without changing claim semantics.
+This module deliberately performs no Redis admission, eviction, or backend calls.
+P2b evaluates non-authoritative ``would-*`` decisions from a fresh DB snapshot; P3a
+adds only the PostgreSQL fencing high-water allocator used before future token issue.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 import re
@@ -16,10 +17,12 @@ from typing import Any, Literal
 import uuid
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import GPUArbiterMode, Settings, settings
+from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.schemas.ml_backend import GPUBackendConfigStatus, GPUConfigDiagnostic
 from app.utils.gpu_resource import validate_gpu_resource_id
@@ -44,6 +47,78 @@ _CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 
 GPUShadowSessionFactory = Callable[[], AsyncSession]
+GPUFenceSessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+GPUFenceCounter = Literal["generation", "control_epoch"]
+
+
+class GPUFenceExhaustedError(RuntimeError):
+    """A durable positive-int64 fencing sequence cannot advance safely."""
+
+
+async def _advance_gpu_backend_fence_in_transaction(
+    db: AsyncSession,
+    backend_registry_id: uuid.UUID,
+    counter: GPUFenceCounter,
+) -> int:
+    """Advance one high-water mark with one PostgreSQL UPSERT + RETURNING."""
+
+    if counter == "generation":
+        column = GPUBackendFence.generation_high_water
+        initial_values = {
+            "generation_high_water": 1,
+            "control_epoch_high_water": 0,
+        }
+    elif counter == "control_epoch":
+        column = GPUBackendFence.control_epoch_high_water
+        initial_values = {
+            "generation_high_water": 0,
+            "control_epoch_high_water": 1,
+        }
+    else:  # pragma: no cover - Literal callers are statically constrained
+        raise ValueError(f"unsupported fence counter: {counter}")
+
+    statement = (
+        pg_insert(GPUBackendFence)
+        .values(backend_registry_id=backend_registry_id, **initial_values)
+        .on_conflict_do_update(
+            index_elements=[GPUBackendFence.backend_registry_id],
+            set_={column.key: column + 1, "updated_at": func.now()},
+            where=column < _MAX_POSITIVE_INT64,
+        )
+        .returning(column)
+    )
+    value = (await db.execute(statement)).scalar_one_or_none()
+    if value is None:
+        raise GPUFenceExhaustedError(
+            f"{counter} high-water reached positive int64 maximum"
+        )
+    return int(value)
+
+
+async def advance_gpu_backend_fence(
+    session_factory: GPUFenceSessionFactory,
+    backend_registry_id: uuid.UUID,
+    counter: GPUFenceCounter,
+) -> str:
+    """Durably advance a fence and return only after the short transaction commits.
+
+    Token issuance and Redis writes must happen after this function returns. A later
+    failure intentionally leaves a gap; high-water values are never rolled back or
+    reused.
+    """
+
+    async with session_factory() as db:
+        async with db.begin():
+            value = await _advance_gpu_backend_fence_in_transaction(
+                db, backend_registry_id, counter
+            )
+    return str(value)
+
+
+async def read_gpu_backend_fence(
+    db: AsyncSession, backend_registry_id: uuid.UUID
+) -> GPUBackendFence | None:
+    return await db.get(GPUBackendFence, backend_registry_id)
 
 
 @dataclass(frozen=True)
