@@ -13,6 +13,7 @@ import pytest
 from aap_protocol_v2.lifecycle import (
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    LifecycleModeRequest,
 )
 from fastapi import HTTPException
 
@@ -793,6 +794,91 @@ async def test_read_only_methods_bypass_dispatch_context_in_enforce_test_mode(
     assert await client.health() is True
     assert await client.setup() == {"ok": True}
     assert events == ["/health", "/setup"]
+
+
+def _legacy_mode_ack_payload() -> dict:
+    return {
+        "ok": True,
+        "gate": "legacy",
+        "control_epoch": "8",
+        "residency": {
+            "state": "unloaded",
+            "gpu_loaded": False,
+            "active_requests": 0,
+            "builders": 0,
+            "borrowers": 0,
+            "draining": False,
+            "evictable": False,
+            "generation": None,
+            "pools": {
+                "models": {
+                    "resident": False,
+                    "device": None,
+                    "provider": None,
+                }
+            },
+            "boot_id": "boot-mode-ack",
+            "lifecycle_gate": "legacy",
+            "control_epoch": "8",
+            "identity": {
+                "audience": "aap-gpu-lifecycle",
+                "backend_registry_id": "backend-mode-ack",
+                "gpu_resource_id": RESOURCE_ID,
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_mode_uses_only_signed_control_header(
+    monkeypatch, enforce_dispatch_mode
+) -> None:
+    events: list[str] = []
+
+    def unexpected_dispatch(_request):
+        raise AssertionError("lifecycle mode must remain outside workload dispatch")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        events.append(request.url.path)
+        assert request.method == "POST"
+        assert request.headers[GPU_ADMISSION_TOKEN_HEADER] == "signed-mode-token"
+        assert GPU_GENERATION_HEADER not in request.headers
+        assert json.loads(request.content) == {
+            "gate": "legacy",
+            "control_epoch": "8",
+        }
+        return httpx.Response(200, json=_legacy_mode_ack_payload())
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        _backend(),
+        dispatch_context_factory=unexpected_dispatch,  # type: ignore[arg-type]
+    )
+
+    response = await client.lifecycle_mode(
+        LifecycleModeRequest(gate="legacy", control_epoch="8"),
+        admission_token="signed-mode-token",
+    )
+
+    assert response.gate.value == "legacy"
+    assert response.control_epoch == "8"
+    assert events == ["/lifecycle/mode"]
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_mode_rejects_redirect_with_valid_ack_body(monkeypatch) -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(307, json=_legacy_mode_ack_payload())
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await MLBackendClient(_backend()).lifecycle_mode(
+            LifecycleModeRequest(gate="legacy", control_epoch="8"),
+            admission_token="signed-mode-token",
+        )
+
+    assert exc_info.value.status_code == 502
 
 
 @pytest.mark.asyncio

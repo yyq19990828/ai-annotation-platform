@@ -290,6 +290,119 @@ class LifecycleModeResponse(BaseModel):
         return self
 
 
+_LIFECYCLE_MODE_RESPONSE_KEYS = frozenset({"ok", "gate", "control_epoch", "residency"})
+_BACKEND_RESIDENCY_KEYS = frozenset(
+    {
+        "state",
+        "gpu_loaded",
+        "active_requests",
+        "builders",
+        "borrowers",
+        "draining",
+        "evictable",
+        "generation",
+        "pools",
+        "boot_id",
+        "lifecycle_gate",
+        "control_epoch",
+        "identity",
+    }
+)
+_POOL_RESIDENCY_KEYS = frozenset({"resident", "device", "provider"})
+_BOUND_LIFECYCLE_IDENTITY_KEYS = frozenset(
+    {"audience", "backend_registry_id", "gpu_resource_id"}
+)
+
+
+def _require_exact_json_object(
+    value: object,
+    expected_keys: frozenset[str],
+    *,
+    field: str,
+) -> dict[str, object]:
+    if type(value) is not dict or set(value) != expected_keys:
+        raise ValueError(f"{field} must contain the exact protocol fields")
+    return value
+
+
+def parse_lifecycle_mode_response_json(raw: str | bytes) -> LifecycleModeResponse:
+    """Strictly parse one untrusted remote ``/lifecycle/mode`` response.
+
+    The local wire models retain construction defaults for backend authors.  A
+    platform consumer must not let those defaults, JSON type coercion, or duplicate
+    object keys manufacture a successful acknowledgement from a partial response.
+    """
+
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError("lifecycle mode response must be UTF-8 JSON") from None
+    elif not isinstance(raw, str):
+        raise ValueError("lifecycle mode response must be JSON text")
+
+    class _DuplicateField(ValueError):
+        pass
+
+    def _reject_duplicates(
+        pairs: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise _DuplicateField
+            value[key] = item
+        return value
+
+    try:
+        payload = json.loads(raw, object_pairs_hook=_reject_duplicates)
+    except (TypeError, json.JSONDecodeError, _DuplicateField):
+        raise ValueError("lifecycle mode response must be a JSON object") from None
+
+    response = _require_exact_json_object(
+        payload,
+        _LIFECYCLE_MODE_RESPONSE_KEYS,
+        field="lifecycle mode response",
+    )
+    if response["ok"] is not True:
+        raise ValueError("lifecycle mode response must acknowledge success")
+    residency = _require_exact_json_object(
+        response["residency"],
+        _BACKEND_RESIDENCY_KEYS,
+        field="lifecycle mode residency",
+    )
+    pools = residency["pools"]
+    if type(pools) is not dict:
+        raise ValueError("lifecycle mode residency pools must be a JSON object")
+    for pool_id, pool in pools.items():
+        if type(pool_id) is not str:
+            raise ValueError("lifecycle mode residency pool ids must be strings")
+        _require_exact_json_object(
+            pool,
+            _POOL_RESIDENCY_KEYS,
+            field="lifecycle mode pool residency",
+        )
+    identity = residency["identity"]
+    if identity is None:
+        raise ValueError("lifecycle mode residency identity must be bound")
+    _require_exact_json_object(
+        identity,
+        _BOUND_LIFECYCLE_IDENTITY_KEYS,
+        field="lifecycle mode residency identity",
+    )
+
+    try:
+        canonical = json.dumps(
+            response,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        return LifecycleModeResponse.model_validate_json(canonical, strict=True)
+    except (TypeError, ValueError):
+        raise ValueError("lifecycle mode response is invalid") from None
+
+
 class LifecycleResetResponse(BaseModel):
     """Result of a signed full-pool reset in the legacy gate."""
 
@@ -575,6 +688,7 @@ __all__ = [
     "load_verify_keyring",
     "match_gpu_health_challenge",
     "managed_lifecycle_capability_sha256",
+    "parse_lifecycle_mode_response_json",
     "sign_admission_token",
     "validate_canonical_positive_int64",
     "validate_gpu_health_challenge",

@@ -33,6 +33,7 @@ from aap_protocol_v2.lifecycle import (
     load_verify_keyring,
     match_gpu_health_challenge,
     managed_lifecycle_capability_sha256,
+    parse_lifecycle_mode_response_json,
     sign_admission_token,
     validate_canonical_positive_int64,
     validate_gpu_health_challenge,
@@ -480,6 +481,71 @@ def test_transition_response_models_round_trip() -> None:
     assert unload.model_dump(mode="json")["unloaded_count"] == 2
     assert mode.model_dump(mode="json")["gate"] == "enforce"
     assert reset.model_dump(mode="json")["unloaded_count"] == 2
+
+
+def _legacy_mode_response_payload() -> dict:
+    response = LifecycleModeResponse(
+        gate="legacy",
+        control_epoch="8",
+        residency=_residency(
+            state="unloaded",
+            gpu_loaded=False,
+            evictable=False,
+            generation=None,
+            pools={
+                "models": {"resident": False, "device": None, "provider": None},
+            },
+            lifecycle_gate="legacy",
+            control_epoch="8",
+        ),
+    )
+    return response.model_dump(mode="json")
+
+
+def test_remote_mode_response_parser_accepts_only_complete_strict_json() -> None:
+    payload = _legacy_mode_response_payload()
+    parsed = parse_lifecycle_mode_response_json(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    )
+
+    assert parsed.model_dump(mode="json") == payload
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda payload: payload.pop("ok"),
+        lambda payload: payload.update({"unexpected": True}),
+        lambda payload: payload.update({"ok": False}),
+        lambda payload: payload.update({"ok": "true"}),
+        lambda payload: payload["residency"].update({"active_requests": "0"}),
+        lambda payload: payload["residency"].update({"identity": None}),
+        lambda payload: payload["residency"]["identity"].pop("audience"),
+        lambda payload: payload["residency"]["pools"]["models"].pop("provider"),
+    ),
+)
+def test_remote_mode_response_parser_rejects_partial_or_coerced_json(mutate) -> None:
+    payload = _legacy_mode_response_payload()
+    mutate(payload)
+
+    with pytest.raises(ValueError, match="lifecycle mode"):
+        parse_lifecycle_mode_response_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    (
+        b"\xff",
+        '{"ok":true,"ok":true}',
+        json.dumps(_legacy_mode_response_payload()).replace(
+            '"resident": false',
+            '"resident": false, "resident": false',
+        ),
+    ),
+)
+def test_remote_mode_response_parser_rejects_invalid_or_duplicate_json(raw) -> None:
+    with pytest.raises(ValueError, match="lifecycle mode"):
+        parse_lifecycle_mode_response_json(raw)
 
 
 def test_transition_responses_reject_stale_or_contradictory_residency() -> None:

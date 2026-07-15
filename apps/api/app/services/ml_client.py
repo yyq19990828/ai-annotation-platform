@@ -12,6 +12,9 @@ from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
+    LifecycleModeRequest,
+    LifecycleModeResponse,
+    parse_lifecycle_mode_response_json,
 )
 from fastapi import HTTPException
 
@@ -520,6 +523,38 @@ class MLBackendClient:
             resp = await client.get(f"{self.base_url}/setup", headers=headers)
             resp.raise_for_status()
             return resp.json()
+
+    async def lifecycle_mode(
+        self,
+        request: LifecycleModeRequest,
+        *,
+        admission_token: str,
+    ) -> LifecycleModeResponse:
+        """Send one signed control-plane gate acknowledgement outside dispatch."""
+
+        if (
+            not isinstance(admission_token, str)
+            or not admission_token
+            or admission_token.strip() != admission_token
+        ):
+            raise ValueError("admission_token must be non-empty and canonical")
+        headers = self._headers()
+        headers[GPU_ADMISSION_TOKEN_HEADER] = admission_token
+        async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/lifecycle/mode",
+                json=request.model_dump(mode="json"),
+                headers=headers,
+            )
+            if resp.status_code < 200 or resp.status_code >= 300:
+                if resp.status_code >= 400:
+                    _raise_for_backend_status(resp)
+                raise HTTPException(
+                    status_code=502,
+                    detail="ML backend control endpoint returned a non-success status",
+                )
+            _raise_for_backend_status(resp)
+            return parse_lifecycle_mode_response_json(resp.content)
 
     async def warmup(self, body: dict) -> dict:
         """v0.14.14 协议 §4.4 · 把指定 variant 权重加载到 pool, 不跑 forward.

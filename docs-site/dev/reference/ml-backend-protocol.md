@@ -241,6 +241,11 @@ lease 与 replay tombstone 全部安全过期后移除旧 key。
 和 GPU worker，不得进入 CPU/export/beat、Web 或任何 ML backend。`off/observe` 派发不会读取私钥文件；
 缺失、不可读、重复 key、非法 key 或 active kid 不存在都会让 promotion/enforce 准入保持 fail-closed。
 
+平台调用 `/lifecycle/mode` 使用独立控制 wire：body 为精确的 `gate + control_epoch`，header 只携带
+`X-AAP-GPU-Admission-Token`，不携带 generation，也不进入 workload dispatch、shadow decision 或本地
+semaphore。远端 ACK 从原始 JSON 严格解析，重复 key、缺失/额外字段、字符串布尔值/计数等类型转换及不一致的
+response/residency 一律拒绝；平台不会用共享模型的本地构造默认值补齐部分 ACK。
+
 五个 GPU backend 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
 以 legacy gate 启动；非空但无法解析的配置会阻止启动。`/health` 与 `/setup` 始终免 token；legacy gate 下
 无 header 的 `/predict`、`/predict/interactive`、`/warmup` 和 bodyless `/unload` 保持兼容，但会把驻留标记为

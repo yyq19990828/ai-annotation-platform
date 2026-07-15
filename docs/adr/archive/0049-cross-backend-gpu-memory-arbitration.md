@@ -257,7 +257,9 @@ demotion 会先立即停止新 drain/eviction，同时继续以旧 enforce epoch
 
 mode endpoint 只允许平台控制网络访问；backend 重启后在新的 durable control epoch 握手完成前不具备
 enforce readiness，平台不得派发 enforce workload。off/observe legacy 路径不受此握手阻断。迟到的更小
-control epoch 一律拒绝。
+control epoch 一律拒绝。平台消费 mode ACK 时必须从原始 JSON 严格拒绝重复 key、缺失/额外字段和类型转换，
+并校验 response/residency 的 gate、control epoch、boot 与绑定 identity；共享 schema 的本地构造默认值不得用于
+补齐远端响应。mode 控制请求只携带 admission token，不携带 generation header，也不经过 workload dispatch。
 
 backend 每次进程启动生成随机 `boot_id` 并由 `/health.residency.boot_id` 暴露；所有 mode、reset、workload 与
 transition token 必须绑定该值。平台只能在读取当前 boot_id 后签发 token，因此前一进程尚未过期的 token 在

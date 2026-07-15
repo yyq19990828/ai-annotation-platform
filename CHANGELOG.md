@@ -49,6 +49,7 @@
 
 ### Changed
 
+- **受签 lifecycle mode ACK 使用严格控制 wire**：平台新增不经过 workload dispatch、shadow 或 semaphore 的 `/lifecycle/mode` 客户端，请求只带 admission token 而不带 generation。远端响应从原始 JSON 拒绝重复 key，并严格校验完整 response、residency、pool 与 identity，缺省字段或字符串布尔/计数不再能经模型默认值和类型转换伪造成成功 ACK；该接缝尚不激活 membership 或开启 enforce。
 - **受管生命周期能力纳入 challenge 健康证明**：平台只接受 `/setup.managed_lifecycle` 的完整严格九字段声明，不再用 schema 默认值或类型转换把旧 backend 静默升级；同轮 `/health` 与 `/setup` 完成后才取得数据库观测时间，并将规范能力哈希绑定到 exact membership proof。并发扫描以探测开始时间封闭迟到写回，慢 setup 不能给旧 health 续鲜。缺失或远端非法声明会规范化为无能力，仍只允许空载或完整预算且不可驱逐的保守账本重建；快照篡改或成员漂移则保持 not-ready，且不会提前开启 membership 或 enforce。
 - **GPU admission signer 使用服务级文件 secret 隔离私钥**：平台以严格 JSON 私钥文件和显式 active kid 延迟构造 Ed25519 signer，拒绝重复 key、非规范编码和缺失 active key；`off/observe` 不读取私钥。Compose 只向 API、通用 worker 与 GPU worker 挂载该 secret，ML backend 继续只持公钥环，避免私钥随全局环境扩散到 CPU/export/beat、Web 或推理容器。
 - **ML Backend 的 GPU 驻留变更调用收口到统一派发边界**：平台 API/worker 现在直接消费共享 lifecycle wire，predict、交互预测、warmup、reload 与 unload 共用可注入的 async context，并建立七类结构化仲裁错误、`Retry-After`、受管 generation/token header 与 unload generation body 接缝；生命周期 API 与注册 smoke-test 的加载准入会保留仲裁根因。预测仍先经过进程内背压；semaphore 缓存由 event loop 自身持有，Celery 重复创建 loop 时既不会复用旧 loop 的同步原语，也不会反向保活已关闭 loop。派发以逐卡 effective mode 为准，支持 demotion 与多卡部分灰度；任一卡 effective enforce 时，缺失/未知 claim 和未注册 raw reload 都会在 backend HTTP 前拒绝，只有新鲜可信的显式 CPU backend 可绕过。effective off/observe 保持无权威状态写入与 headerless，生产 effective enforce 仍等待 signer、membership 激活、Redis authority、outcome report 和 gate promotion 接通。
