@@ -515,7 +515,9 @@ class MLBackendClient:
 
     async def setup(self) -> dict:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
-            resp = await client.get(f"{self.base_url}/setup", headers=self._headers())
+            headers = self._headers()
+            headers["Cache-Control"] = "no-cache"
+            resp = await client.get(f"{self.base_url}/setup", headers=headers)
             resp.raise_for_status()
             return resp.json()
 

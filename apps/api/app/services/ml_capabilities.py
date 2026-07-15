@@ -17,6 +17,8 @@ v0.14.9 · 能力声明协议 v2 (多模型目录 + infra):
 
 from __future__ import annotations
 
+from aap_protocol_v2.lifecycle import canonical_managed_lifecycle_capabilities
+
 # v0.14.11 · 受控词表与 task→默认几何统一由 capability_registry SSOT 派生,
 # 协议元数据 (label / summary / suggested_backends) 同源, 供
 # `GET /v1/ml-capabilities/protocol` 直接对外暴露。
@@ -344,6 +346,28 @@ def extract_capabilities(setup: dict | None) -> dict | None:
     else:
         models = [_synthesize_single_model(setup, infra)]
 
+    managed_lifecycle: dict[str, object] | None = None
+    managed_lifecycle_warning: dict | None = None
+    if "managed_lifecycle" in setup:
+        try:
+            managed_lifecycle = canonical_managed_lifecycle_capabilities(
+                setup["managed_lifecycle"]
+            )
+        except (TypeError, ValueError):
+            managed_lifecycle_warning = {
+                "level": "warning",
+                "model_id": None,
+                "field": "managed_lifecycle",
+                "value": "invalid",
+                "message": (
+                    "managed_lifecycle 必须完整、严格匹配受管 GPU 生命周期协议。"
+                ),
+            }
+
+    warnings = _collect_warnings(models)
+    if managed_lifecycle_warning is not None:
+        warnings.append(managed_lifecycle_warning)
+
     caps: dict = {
         # v0.14.12 · 透传 backend 自报的 name (如 "grounded-sam2-backend"), 让前端
         # 能力目录显示「源 backend 名」而非用户取的项目别名 (如 "gsam2.1")。
@@ -352,6 +376,9 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         # v0.14.14 · backend 声明本端是否支持 POST /warmup (协议 §4.4); 前端模型市场
         # "⚡ 预热" 按钮据此置灰. 老 backend 缺字段 = False.
         "warmup_endpoint": bool(setup.get("warmup_endpoint", False)),
+        # ADR-0049 · 远端声明必须显式携带全部冻结字段；平台不能用 Pydantic
+        # 默认值把 partial/legacy backend 静默升级成受管 backend。
+        "managed_lifecycle": managed_lifecycle,
         "models": models,
         "is_interactive": any(m["is_interactive"] for m in models),
         "supported_prompts": _union(models, "supported_prompts"),
@@ -361,7 +388,7 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         "supported_text_outputs": _union(models, "supported_text_outputs"),
         "supported_geometric_outputs": _union(models, "supported_geometric_outputs"),
         # v0.18.29 · 受控词表校验诊断 (越界 task/infra/prompt/geometry); 空 = 全合法。
-        "warnings": _collect_warnings(models),
+        "warnings": warnings,
     }
     caps["modalities"] = derive_modalities(caps)
     return caps

@@ -3,6 +3,8 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import UTC, datetime
+
+from aap_protocol_v2.lifecycle import managed_lifecycle_capability_sha256
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -398,17 +400,6 @@ class MLBackendService:
             healthy, meta = await client.health_meta(
                 gpu_health_challenge=gpu_health_challenge
             )
-        observed_at = await self.db.scalar(select(func.clock_timestamp()))
-        if observed_at is None:
-            return False
-        if probe_started_at is not None and (
-            probe_started_at.tzinfo is None
-            or probe_started_at.utcoffset() is None
-            or observed_at.tzinfo is None
-            or observed_at.utcoffset() is None
-            or observed_at < probe_started_at
-        ):
-            return False
         echoed_challenge: str | None = None
         if meta is not None:
             meta = dict(meta)
@@ -419,7 +410,42 @@ class MLBackendService:
         # snapshot.  Keeping it would let stale CPU/UUID evidence pass GPU diagnostics.
         next_health_meta = None
         next_is_interactive: bool | None = None
+        caps: dict | None = None
         if healthy and meta is not None:
+            # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]。
+            from app.services.ml_capabilities import extract_capabilities
+
+            try:
+                caps = extract_capabilities(await client.setup())
+            except Exception:
+                caps = None
+
+        # GPU proof binds the complete /health + /setup observation window.  A
+        # timestamp captured before setup could authorize a capability that was
+        # never observed within the challenge's evidence interval.
+        observed_at = await self.db.scalar(select(func.clock_timestamp()))
+        if observed_at is None:
+            return False
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            return False
+        if probe_started_at is not None and (
+            probe_started_at.tzinfo is None
+            or probe_started_at.utcoffset() is None
+            or observed_at <= probe_started_at
+        ):
+            return False
+
+        if healthy and meta is not None:
+            managed_lifecycle_sha256: str | None = None
+            if caps is not None:
+                meta = {**meta, "capabilities": caps}
+                # is_interactive 改派生对账: 以 /setup 自报为真值
+                next_is_interactive = caps["is_interactive"]
+                managed_lifecycle = caps.get("managed_lifecycle")
+                if managed_lifecycle is not None:
+                    managed_lifecycle_sha256 = managed_lifecycle_capability_sha256(
+                        managed_lifecycle
+                    )
             if (
                 gpu_health_challenge is not None
                 and echoed_challenge == gpu_health_challenge
@@ -434,20 +460,10 @@ class MLBackendService:
                     "gpu_resource_id": requested_gpu_resource_id,
                     "membership_epoch": str(requested_membership_epoch),
                     "membership_state": requested_membership_state,
+                    "managed_lifecycle_sha256": managed_lifecycle_sha256,
                     "probe_started_at": _proof_timestamp(probe_started_at),
                     "observed_at": _proof_timestamp(observed_at),
                 }
-            # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]。
-            from app.services.ml_capabilities import extract_capabilities
-
-            try:
-                caps = extract_capabilities(await client.setup())
-            except Exception:
-                caps = None
-            if caps is not None:
-                meta = {**meta, "capabilities": caps}
-                # is_interactive 改派生对账: 以 /setup 自报为真值
-                next_is_interactive = caps["is_interactive"]
             next_health_meta = meta
 
         values: dict = {
@@ -470,24 +486,37 @@ class MLBackendService:
             or current_backend.gpu_resource_id != requested_gpu_resource_id
         ):
             return False
+        # A slow /setup must not let an older /health response borrow a later
+        # completion timestamp and overwrite a concurrently committed snapshot.
+        # For GPU probes, first-committer-wins across overlapping observation
+        # windows; a later periodic probe will refresh any conservatively dropped
+        # evidence.  Non-GPU checks retain monotonic completion ordering.
+        commit_order_floor = probe_started_at or observed_at
+        if current_backend.last_checked_at is not None and (
+            current_backend.last_checked_at.tzinfo is None
+            or current_backend.last_checked_at.utcoffset() is None
+            or current_backend.last_checked_at >= commit_order_floor
+        ):
+            return False
         if requested_membership_epoch is not None:
             current_membership = (
                 await self.db.execute(
                     select(
                         GPUBackendMembership.membership_epoch,
                         GPUBackendMembership.state,
-                    ).where(
+                    )
+                    .where(
                         GPUBackendMembership.backend_registry_id == registry_id,
                         GPUBackendMembership.gpu_resource_id
                         == requested_gpu_resource_id,
                         GPUBackendMembership.state.in_(("pending", "active")),
-                    ).with_for_update()
+                    )
+                    .with_for_update()
                 )
             ).one_or_none()
             if (
                 current_membership is None
-                or current_membership.membership_epoch
-                != requested_membership_epoch
+                or current_membership.membership_epoch != requested_membership_epoch
                 or current_membership.state != requested_membership_state
             ):
                 return False

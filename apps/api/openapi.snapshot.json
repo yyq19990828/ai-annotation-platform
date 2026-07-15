@@ -3252,6 +3252,16 @@
             "title": "Is Interactive",
             "type": "boolean"
           },
+          "managed_lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedLifecycleCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modalities": {
             "default": [],
             "items": {
@@ -11728,6 +11738,68 @@
           "connected_backends"
         ],
         "title": "MLIntegrationsOverview",
+        "type": "object"
+      },
+      "ManagedLifecycleCapabilities": {
+        "additionalProperties": false,
+        "description": "Additive ``/setup.managed_lifecycle`` capability declaration.",
+        "properties": {
+          "drain_cancel_endpoint": {
+            "const": "/drain/cancel",
+            "default": "/drain/cancel",
+            "title": "Drain Cancel Endpoint",
+            "type": "string"
+          },
+          "drain_endpoint": {
+            "const": "/drain",
+            "default": "/drain",
+            "title": "Drain Endpoint",
+            "type": "string"
+          },
+          "generation_fencing": {
+            "const": true,
+            "default": true,
+            "title": "Generation Fencing",
+            "type": "boolean"
+          },
+          "generation_header": {
+            "const": "X-AAP-GPU-Generation",
+            "default": "X-AAP-GPU-Generation",
+            "title": "Generation Header",
+            "type": "string"
+          },
+          "mode_endpoint": {
+            "const": "/lifecycle/mode",
+            "default": "/lifecycle/mode",
+            "title": "Mode Endpoint",
+            "type": "string"
+          },
+          "protocol_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Protocol Version",
+            "type": "string"
+          },
+          "reset_endpoint": {
+            "const": "/lifecycle/reset",
+            "default": "/lifecycle/reset",
+            "title": "Reset Endpoint",
+            "type": "string"
+          },
+          "token_header": {
+            "const": "X-AAP-GPU-Admission-Token",
+            "default": "X-AAP-GPU-Admission-Token",
+            "title": "Token Header",
+            "type": "string"
+          },
+          "unload_endpoint": {
+            "const": "/unload",
+            "default": "/unload",
+            "title": "Unload Endpoint",
+            "type": "string"
+          }
+        },
+        "title": "ManagedLifecycleCapabilities",
         "type": "object"
       },
       "Mention": {

@@ -9,6 +9,10 @@ import time
 import uuid
 
 import pytest
+from aap_protocol_v2.lifecycle import (
+    ManagedLifecycleCapabilities,
+    managed_lifecycle_capability_sha256,
+)
 from redis.asyncio import Redis
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -266,6 +270,7 @@ async def _install_live_health(
                     "gpu_resource_id": resource_id,
                     "membership_epoch": str(membership.membership_epoch),
                     "membership_state": membership.state,
+                    "managed_lifecycle_sha256": None,
                     "probe_started_at": _proof_timestamp(probe_started_at),
                     "observed_at": _proof_timestamp(observed_at),
                 },
@@ -428,6 +433,56 @@ async def test_proof_recovery_commits_complete_multi_backend_snapshot_idempotent
 
 
 @pytest.mark.asyncio
+async def test_proof_recovery_accepts_matching_managed_lifecycle_capability(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    store = _RecordingProofStore()
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_ids[0])
+            assert backend is not None
+            assert backend.health_meta is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["capabilities"] = {"managed_lifecycle": capability}
+            health_meta["gpu_arbiter_probe"]["managed_lifecycle_sha256"] = (
+                managed_lifecycle_capability_sha256(capability)
+            )
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+        context = _fake_context(
+            _RESOURCE_A, await _membership_domain(factory, _RESOURCE_A)
+        )
+
+        result = await commit_gpu_proof_reset_from_health(
+            factory,
+            store,  # type: ignore[arg-type]
+            context,
+            config=_resource_config(_RESOURCE_A),
+        )
+
+        assert result.ready is True
+        assert store.calls[-1]["ready"] is True
+        allocations = store.calls[-1]["allocations"]
+        assert len(allocations) == 1
+        assert allocations[0].state is GPUAllocationState.RESIDENT
+        assert allocations[0].evictable is False
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
 async def test_stale_prepared_context_can_still_commit_not_ready(
     test_engine: AsyncEngine,
     proof_store: GPUArbiterStore,
@@ -547,6 +602,9 @@ async def test_pending_member_is_conservative_unknown(
         "stale_probe",
         "bool_counter",
         "generation_ahead",
+        "capability_hash_mismatch",
+        "capability_snapshot_invalid",
+        "legacy_probe_schema",
         "extra_field",
     ),
 )
@@ -584,6 +642,16 @@ async def test_proof_recovery_maps_untrusted_evidence_to_unknown(
                     health_meta["residency"]["active_requests"] = False
                 elif invalid_case == "generation_ahead":
                     health_meta["residency"]["generation"] = "2"
+                elif invalid_case == "capability_hash_mismatch":
+                    health_meta["gpu_arbiter_probe"]["managed_lifecycle_sha256"] = (
+                        "a" * 64
+                    )
+                elif invalid_case == "capability_snapshot_invalid":
+                    health_meta["capabilities"] = {
+                        "managed_lifecycle": {"protocol_version": "1"}
+                    }
+                elif invalid_case == "legacy_probe_schema":
+                    health_meta["gpu_arbiter_probe"].pop("managed_lifecycle_sha256")
                 elif invalid_case == "identity_mismatch":
                     health_meta["residency"]["identity"]["backend_registry_id"] = str(
                         uuid.uuid4()

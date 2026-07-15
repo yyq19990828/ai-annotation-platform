@@ -351,7 +351,9 @@ backend body 不能自报成功。严格旧 backend 以 400/422 拒绝未知 que
 challenge、backend/resource 身份和 membership epoch/state 绑定为证据候选。网络调用后按
 registry→exact membership 顺序锁行并重验 endpoint/auth/resource/epoch/state，直到 registry 写回完成；所有
 会推进 epoch 的配置变更立即清空旧 health，从而阻止配置变化、行锁等待、pending→active 状态窗口与
-A→B→A 竞态写入旧证据。无时区时间或时钟倒退一律拒绝。进入正 runtime epoch 后，直接修改端点、claim、预算、
+A→B→A 竞态写入旧证据。同一 backend 的并发观测窗口按 `probe_started_at` 保守封闭：锁内若已存在
+`last_checked_at >= probe_started_at`，说明另一轮探活在本轮开始后已经提交，本轮即使因慢 setup 获得更晚结束时间
+也必须丢弃，不能用旧 health 覆盖更新 residency/capability。无时区时间、零长度窗口或时钟倒退一律拒绝。进入正 runtime epoch 后，直接修改端点、claim、预算、
 优先级、并发参数或硬删除 registry 会被服务层与数据库 trigger 双重拒绝，必须走受管退役。退役时冻结的
 health 只作诊断快照，不得代替 GC 所需的 live health。
 
@@ -369,7 +371,8 @@ challenge-bound health 只是证据候选，不是 reset 授权；消费时必�
 `probe_started_at > token_expiry_high_water`，校验证据 TTL、完整 residency 与身份，并把最终 horizon 复核和
 Redis reset 提交置于同一受保护恢复流程。只有绑定 exact active state 的证明可以形成 ready；pending 必须先
 激活并重新探活，retiring 的冻结 health 永远不能授权恢复。严格空闲且 GPU 已卸载时省略 allocation；严格
-resident 按 membership 完整预算重建，但在独立 managed-lifecycle capability 声明尚未纳入本次证明前固定为
+resident 按 membership 完整预算重建。canonical managed-lifecycle capability 哈希已经绑定到同轮证明，
+但自报声明本身不能授予激活或驱逐权；在 active membership 与受签 legacy ACK 完成前仍固定为
 non-evictable。瞬态、忙碌、不完整或非法 residency 一律按 Unknown 全额计费并保持 not-ready。不得缓存
 “已满足 horizon”的布尔值。
 

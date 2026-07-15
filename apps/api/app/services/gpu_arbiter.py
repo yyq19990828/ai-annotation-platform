@@ -24,6 +24,7 @@ import uuid
 import structlog
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
+    managed_lifecycle_capability_sha256,
     validate_canonical_positive_int64,
 )
 from fastapi import HTTPException
@@ -67,6 +68,7 @@ _HEALTH_EVIDENCE_FUTURE_SKEW = timedelta(minutes=1)
 _PROOF_RESET_MAX_WINDOW = timedelta(minutes=5)
 _CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
 _GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
+_SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}\Z")
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 
 GPUShadowSessionFactory = Callable[[], AsyncSession]
@@ -448,6 +450,7 @@ class _GPUProofProbe:
     raw: dict[str, Any]
     probe_started_at: datetime
     observed_at: datetime
+    managed_lifecycle_sha256: str | None
 
 
 @dataclass(frozen=True)
@@ -493,6 +496,7 @@ _GPU_PROBE_KEYS = frozenset(
         "gpu_resource_id",
         "membership_epoch",
         "membership_state",
+        "managed_lifecycle_sha256",
         "probe_started_at",
         "observed_at",
     }
@@ -614,6 +618,12 @@ def _parse_gpu_proof_probe(value: Any) -> _GPUProofProbe:
     _parse_canonical_positive_int64(
         value["membership_epoch"], reason="probe_membership_epoch_invalid"
     )
+    managed_lifecycle_sha256 = value["managed_lifecycle_sha256"]
+    if managed_lifecycle_sha256 is not None and (
+        type(managed_lifecycle_sha256) is not str
+        or _SHA256_HEX_RE.fullmatch(managed_lifecycle_sha256) is None
+    ):
+        raise _GPUProofInvalid("probe_managed_lifecycle_sha256_invalid")
     probe_started_at = _parse_canonical_proof_timestamp(value["probe_started_at"])
     observed_at = _parse_canonical_proof_timestamp(value["observed_at"])
     if probe_started_at >= observed_at:
@@ -622,7 +632,25 @@ def _parse_gpu_proof_probe(value: Any) -> _GPUProofProbe:
         raw=dict(value),
         probe_started_at=probe_started_at,
         observed_at=observed_at,
+        managed_lifecycle_sha256=managed_lifecycle_sha256,
     )
+
+
+def _health_managed_lifecycle_sha256(raw_health: Any) -> str | None:
+    if type(raw_health) is not dict:
+        return None
+    raw_capabilities = raw_health.get("capabilities")
+    if raw_capabilities is None:
+        return None
+    if type(raw_capabilities) is not dict:
+        raise _GPUProofInvalid("managed_lifecycle_capabilities_invalid")
+    raw_managed_lifecycle = raw_capabilities.get("managed_lifecycle")
+    if raw_managed_lifecycle is None:
+        return None
+    try:
+        return managed_lifecycle_capability_sha256(raw_managed_lifecycle)
+    except (TypeError, ValueError) as exc:
+        raise _GPUProofInvalid("managed_lifecycle_capability_invalid") from exc
 
 
 def _parse_gpu_proof_residency(value: Any) -> _GPUProofResidency:
@@ -918,6 +946,11 @@ def _evaluate_gpu_member_proof(
 
         probe = _parse_gpu_proof_probe(raw_probe)
         if (
+            _health_managed_lifecycle_sha256(raw_health)
+            != probe.managed_lifecycle_sha256
+        ):
+            raise _GPUProofInvalid("managed_lifecycle_capability_mismatch")
+        if (
             probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
             or probe.raw["gpu_resource_id"] != membership.gpu_resource_id
             or probe.raw["membership_epoch"] != str(membership.membership_epoch)
@@ -1011,9 +1044,9 @@ def _evaluate_gpu_member_proof(
                     budget_mb=membership.vram_budget_mb,
                     generation=residency.generation,
                     eviction_priority=membership.eviction_priority,
-                    # B2b does not yet consume the separate managed-lifecycle
-                    # capability declaration.  Never amplify health self-report
-                    # into eviction authority during proof recovery.
+                    # The capability is challenge-bound, but declaration alone
+                    # does not prove activation or signer-key acceptance.  Keep
+                    # proof recovery non-evictable until signed promotion.
                     evictable=False,
                     max_concurrency=membership.max_concurrency,
                     reservation_lease_id=None,

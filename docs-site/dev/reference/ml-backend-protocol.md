@@ -152,6 +152,21 @@ GPU backend 应在 `/health` 顶层返回 `compute`：
 }
 ```
 
+平台消费远端声明时要求该对象是精确的九字段 JSON object：字段不得缺失或额外增加，
+`generation_fencing` 必须是 JSON boolean，其余字段必须是 JSON string，并继续通过冻结常量校验。
+平台不会用 schema 默认值补齐部分声明，也不会做字符串、数字与布尔值之间的类型转换；缺失或非法声明会落为
+`managed_lifecycle=null` 并产生能力诊断，因此不能参与 enforce promotion。
+
+GPU 健康证明把 `/health` 的随机 challenge 回显与同轮 `/setup` 能力探测放在同一观测窗口内；数据库
+`observed_at` 只在两次远端调用都结束后取得。平台将规范化声明的 SHA-256 写入 challenge probe，并在证明消费时
+重新计算注册表快照中的哈希。缺失或远端非法声明会规范化为 `null/null`，仍允许 P3 重建保守账本：严格空载可
+不写 allocation，严格驻留只按完整预算写入且固定 `evictable=false`；两者都不能据此获得受管激活或驱逐资格。
+持久快照自身非法、快照与 probe 哈希不匹配或 membership epoch/state 漂移才会使该证明 not-ready。
+challenge `/health` 与 `/setup` 请求都携带 `Cache-Control: no-cache`，共享代理必须向 origin 重新验证，不能把
+陈旧缓存当成本轮能力证据。
+并发健康扫描采用保守的 observation-window fence：写回锁内若发现另一轮扫描已在本轮 `probe_started_at` 之后
+提交，就丢弃本轮迟到结果。慢 `/setup` 因而不能借更晚的结束时间给旧 `/health` 续鲜并覆盖更新快照。
+
 只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 已完整宣告
 `managed_lifecycle`。ONNXTools 已实现固定三句柄池的 single-flight、borrower、取消安全 executor、全池清理与
 完整 lifecycle wire，但部署还必须完成真实四 session GPU 回落验证；验证前

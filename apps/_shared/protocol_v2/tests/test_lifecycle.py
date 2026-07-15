@@ -28,9 +28,11 @@ from aap_protocol_v2.lifecycle import (
     ManagedLifecycleCapabilities,
     ManagedUnloadResponse,
     PoolResidency,
+    canonical_managed_lifecycle_capabilities,
     encode_ed25519_public_key,
     load_verify_keyring,
     match_gpu_health_challenge,
+    managed_lifecycle_capability_sha256,
     sign_admission_token,
     validate_canonical_positive_int64,
     validate_gpu_health_challenge,
@@ -99,7 +101,8 @@ def test_generation_and_control_epoch_reject_json_numbers() -> None:
 
 
 def test_managed_lifecycle_capability_payload_matches_adr() -> None:
-    assert ManagedLifecycleCapabilities().model_dump(mode="json") == {
+    payload = ManagedLifecycleCapabilities().model_dump(mode="json")
+    assert payload == {
         "protocol_version": "1",
         "generation_fencing": True,
         "drain_endpoint": "/drain",
@@ -110,6 +113,32 @@ def test_managed_lifecycle_capability_payload_matches_adr() -> None:
         "generation_header": GPU_GENERATION_HEADER,
         "token_header": GPU_ADMISSION_TOKEN_HEADER,
     }
+    assert canonical_managed_lifecycle_capabilities(payload) == payload
+    assert managed_lifecycle_capability_sha256(payload) == (
+        "5d56bb11856728e20ae4b2b50f8bab5a0826af018e6d115b6bba48c8e35c95ea"
+    )
+    assert managed_lifecycle_capability_sha256(dict(reversed(payload.items()))) == (
+        "5d56bb11856728e20ae4b2b50f8bab5a0826af018e6d115b6bba48c8e35c95ea"
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda payload: payload.pop("reset_endpoint"),
+        lambda payload: payload.update({"unexpected": True}),
+        lambda payload: payload.update({"generation_fencing": 1}),
+        lambda payload: payload.update({"protocol_version": 1}),
+    ),
+)
+def test_remote_managed_lifecycle_capability_requires_exact_strict_fields(
+    mutate,
+) -> None:
+    payload = ManagedLifecycleCapabilities().model_dump(mode="json")
+    mutate(payload)
+
+    with pytest.raises((ValueError, ValidationError)):
+        canonical_managed_lifecycle_capabilities(payload)
 
 
 def test_verify_keyring_rejects_duplicate_key_ids() -> None:

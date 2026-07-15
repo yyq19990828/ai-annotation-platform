@@ -3,6 +3,10 @@ from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
+from aap_protocol_v2.lifecycle import (
+    ManagedLifecycleCapabilities,
+    canonical_managed_lifecycle_capabilities,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.utils.gpu_resource import validate_gpu_resource_id
@@ -235,6 +239,17 @@ class BackendCapabilities(BaseModel):
     infra: str = "unknown"
     # v0.14.14 · backend 是否支持 POST /warmup (协议 §4.4). 老 backend 缺字段 = False.
     warmup_endpoint: bool = False
+    # ADR-0049 · strict canonical `/setup.managed_lifecycle`; None means the
+    # backend cannot participate in enforce promotion.
+    managed_lifecycle: ManagedLifecycleCapabilities | None = None
+
+    @field_validator("managed_lifecycle", mode="before")
+    @classmethod
+    def validate_managed_lifecycle(cls, value: object) -> object:
+        if value is None:
+            return None
+        return canonical_managed_lifecycle_capabilities(value)
+
     models: list[ModelCapability] = []
     # 扁平并集 (向后兼容)
     is_interactive: bool = False

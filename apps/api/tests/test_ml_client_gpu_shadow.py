@@ -780,6 +780,8 @@ async def test_read_only_methods_bypass_dispatch_context_in_enforce_test_mode(
         events.append(request.url.path)
         assert GPU_GENERATION_HEADER not in request.headers
         assert GPU_ADMISSION_TOKEN_HEADER not in request.headers
+        if request.url.path == "/setup":
+            assert request.headers["Cache-Control"] == "no-cache"
         return httpx.Response(200, json={"ok": True})
 
     _patch_async_client(monkeypatch, httpx.MockTransport(handler))

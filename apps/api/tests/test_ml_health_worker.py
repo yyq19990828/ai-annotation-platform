@@ -13,7 +13,11 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import delete, text, update
+from aap_protocol_v2.lifecycle import (
+    ManagedLifecycleCapabilities,
+    managed_lifecycle_capability_sha256,
+)
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -355,6 +359,7 @@ async def test_gpu_check_health_persists_challenge_bound_probe(
         "gpu_resource_id",
         "membership_epoch",
         "membership_state",
+        "managed_lifecycle_sha256",
         "probe_started_at",
         "observed_at",
     }
@@ -364,6 +369,7 @@ async def test_gpu_check_health_persists_challenge_bound_probe(
     assert proof["gpu_resource_id"] == resource_id
     assert proof["membership_epoch"] == "1"
     assert proof["membership_state"] == "pending"
+    assert proof["managed_lifecycle_sha256"] is None
     assert proof["probe_started_at"].endswith("Z")
     assert proof["observed_at"].endswith("Z")
     probe_started_at = datetime.fromisoformat(
@@ -372,6 +378,342 @@ async def test_gpu_check_health_persists_challenge_bound_probe(
     observed_at = datetime.fromisoformat(proof["observed_at"].replace("Z", "+00:00"))
     assert probe_started_at < observed_at
     assert fresh.last_checked_at == observed_at
+
+
+async def test_gpu_check_health_binds_strict_capability_after_setup(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    backend = await _make_backend(db_session, url="http://gpu-capability-health/")
+    resource_id = "node-health/GPU-capability"
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(gpu_resource_id=resource_id, vram_budget_mb=1024)
+    )
+    await db_session.refresh(backend)
+    capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+    setup_finished_at: datetime | None = None
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
+            "residency": {
+                "state": "unloaded",
+                "gpu_loaded": False,
+                "active_requests": 0,
+                "builders": 0,
+                "borrowers": 0,
+                "draining": False,
+                "evictable": False,
+                "generation": None,
+                "pools": {
+                    "models": {
+                        "resident": False,
+                        "device": None,
+                        "provider": None,
+                    }
+                },
+                "boot_id": "boot-capability",
+                "lifecycle_gate": "legacy",
+                "control_epoch": None,
+                "identity": None,
+            },
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        nonlocal setup_finished_at
+        setup_finished_at = await db_session.scalar(select(func.clock_timestamp()))
+        return {
+            "name": "managed-backend",
+            "supported_prompts": ["none"],
+            "managed_lifecycle": capability,
+        }
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is True
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.health_meta is not None
+    assert fresh.health_meta["capabilities"]["managed_lifecycle"] == capability
+    proof = fresh.health_meta["gpu_arbiter_probe"]
+    assert proof["managed_lifecycle_sha256"] == (
+        managed_lifecycle_capability_sha256(capability)
+    )
+    probe_started_at = datetime.fromisoformat(
+        proof["probe_started_at"].replace("Z", "+00:00")
+    )
+    observed_at = datetime.fromisoformat(proof["observed_at"].replace("Z", "+00:00"))
+    assert setup_finished_at is not None
+    assert probe_started_at < setup_finished_at <= observed_at
+    assert fresh.last_checked_at == observed_at
+
+
+async def test_gpu_check_health_clears_stale_capability_after_invalid_setup(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    backend = await _make_backend(db_session, url="http://gpu-invalid-capability/")
+    resource_id = "node-health/GPU-invalid-capability"
+    stale_capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(
+            gpu_resource_id=resource_id,
+            vram_budget_mb=1024,
+            health_meta={
+                "capabilities": {"managed_lifecycle": stale_capability},
+                "gpu_arbiter_probe": {
+                    "managed_lifecycle_sha256": (
+                        managed_lifecycle_capability_sha256(stale_capability)
+                    )
+                },
+            },
+        )
+    )
+    await db_session.refresh(backend)
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, {GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge}
+
+    async def fake_setup(self):  # noqa: ARG001
+        return {
+            "name": "partial-managed-backend",
+            "supported_prompts": ["none"],
+            "managed_lifecycle": {"protocol_version": "1"},
+        }
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    assert await MLBackendService(db_session).check_health(backend.id) is True
+    fresh = await MLBackendService(db_session).get(backend.id)
+    assert fresh is not None
+    assert fresh.health_meta is not None
+    capabilities = fresh.health_meta["capabilities"]
+    assert capabilities["managed_lifecycle"] is None
+    assert any(
+        warning["field"] == "managed_lifecycle" for warning in capabilities["warnings"]
+    )
+    assert fresh.health_meta["gpu_arbiter_probe"]["managed_lifecycle_sha256"] is None
+
+
+async def test_gpu_check_health_rejects_zero_length_proof_window(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    backend = await _make_backend(db_session, url="http://gpu-zero-window/")
+    resource_id = "node-health/GPU-zero-window"
+    await db_session.execute(
+        update(MLBackend)
+        .where(MLBackend.id == backend.id)
+        .values(gpu_resource_id=resource_id, vram_budget_mb=1024)
+    )
+    await db_session.refresh(backend)
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, {GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge}
+
+    async def fake_setup(self):  # noqa: ARG001
+        return {"name": "legacy-backend", "supported_prompts": ["none"]}
+
+    fixed_clock = datetime.now(timezone.utc)
+    original_scalar = db_session.scalar
+
+    async def scalar_with_fixed_clock(statement, *args, **kwargs):
+        if "clock_timestamp" in str(statement):
+            return fixed_clock
+        return await original_scalar(statement, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+    monkeypatch.setattr(db_session, "scalar", scalar_with_fixed_clock)
+
+    assert await MLBackendService(db_session).check_health(backend.id) is False
+    await db_session.refresh(backend)
+    assert backend.health_meta is None
+    assert backend.last_checked_at is None
+
+
+async def test_gpu_check_health_rejects_older_health_after_slow_setup(
+    test_engine: AsyncEngine,
+    monkeypatch,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    backend_id = uuid.uuid4()
+    resource_id = "node-health/GPU-overlapping-proof"
+    async with factory.begin() as db:
+        db.add(
+            MLBackend(
+                id=backend_id,
+                name="health-overlapping-proof",
+                url=f"http://health-overlapping-{backend_id}.test",
+                state="disconnected",
+                gpu_resource_id=resource_id,
+                vram_budget_mb=1024,
+            )
+        )
+
+    old_setup_started = asyncio.Event()
+    allow_old_setup = asyncio.Event()
+    capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+
+    def task_label() -> str:
+        task = asyncio.current_task()
+        assert task is not None
+        return task.get_name()
+
+    async def fake_health_meta(
+        self, *, gpu_health_challenge: str | None = None
+    ) -> tuple[bool, dict | None]:  # noqa: ARG001
+        label = task_label()
+        return True, {
+            GPU_HEALTH_CHALLENGE_ECHO_MARKER: gpu_health_challenge,
+            "residency": {
+                "state": "unloaded",
+                "gpu_loaded": False,
+                "active_requests": 0,
+                "builders": 0,
+                "borrowers": 0,
+                "draining": False,
+                "evictable": False,
+                "generation": None,
+                "pools": {},
+                "boot_id": f"boot-{label}",
+                "lifecycle_gate": "legacy",
+                "control_epoch": None,
+                "identity": None,
+            },
+        }
+
+    async def fake_setup(self):  # noqa: ARG001
+        if task_label() == "older-health":
+            old_setup_started.set()
+            await allow_old_setup.wait()
+            return {
+                "name": "older-partial-backend",
+                "supported_prompts": ["none"],
+                "managed_lifecycle": {"protocol_version": "1"},
+            }
+        return {
+            "name": "newer-managed-backend",
+            "supported_prompts": ["none"],
+            "managed_lifecycle": capability,
+        }
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.setup",
+        fake_setup,
+        raising=True,
+    )
+
+    async def run_health() -> bool:
+        async with factory.begin() as db:
+            return await MLBackendService(db).check_health(backend_id)
+
+    older = asyncio.create_task(run_health(), name="older-health")
+    newer: asyncio.Task[bool] | None = None
+    try:
+        await asyncio.wait_for(old_setup_started.wait(), timeout=2)
+        newer = asyncio.create_task(run_health(), name="newer-health")
+        assert await asyncio.wait_for(newer, timeout=2) is True
+        allow_old_setup.set()
+        assert await asyncio.wait_for(older, timeout=2) is False
+
+        async with factory() as db:
+            backend = await db.get(MLBackend, backend_id)
+            assert backend is not None
+            assert backend.health_meta is not None
+            assert backend.health_meta["residency"]["boot_id"] == "boot-newer-health"
+            assert (
+                backend.health_meta["capabilities"]["managed_lifecycle"] == capability
+            )
+            assert backend.health_meta["gpu_arbiter_probe"][
+                "managed_lifecycle_sha256"
+            ] == managed_lifecycle_capability_sha256(capability)
+    finally:
+        allow_old_setup.set()
+        for task in (older, newer):
+            if task is not None and not task.done():
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+        async with factory.begin() as db:
+            await db.execute(
+                text(
+                    "ALTER TABLE ml_backend_registry DISABLE TRIGGER "
+                    "trg_sync_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendMembership).where(
+                    GPUBackendMembership.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_memberships ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_membership"
+                )
+            )
+            await db.execute(
+                delete(GPUBackendFence).where(
+                    GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
+            await db.execute(
+                text(
+                    "ALTER TABLE ml_backend_registry ENABLE TRIGGER "
+                    "trg_sync_gpu_backend_membership"
+                )
+            )
 
 
 async def test_gpu_check_health_rotates_challenge_and_clears_stale_probe_without_echo(

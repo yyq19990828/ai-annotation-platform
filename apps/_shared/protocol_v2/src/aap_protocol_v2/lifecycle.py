@@ -8,6 +8,7 @@ request accounting, or transition replay storage.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 from enum import Enum
@@ -145,6 +146,41 @@ class ManagedLifecycleCapabilities(BaseModel):
     reset_endpoint: Literal["/lifecycle/reset"] = "/lifecycle/reset"
     generation_header: Literal["X-AAP-GPU-Generation"] = GPU_GENERATION_HEADER
     token_header: Literal["X-AAP-GPU-Admission-Token"] = GPU_ADMISSION_TOKEN_HEADER
+
+
+def canonical_managed_lifecycle_capabilities(value: object) -> dict[str, object]:
+    """Strictly validate a remote ``/setup.managed_lifecycle`` declaration.
+
+    Model defaults are useful when a backend publishes its own declaration, but a
+    remote peer must send every frozen field explicitly.  Otherwise an old or
+    partial backend could be upgraded accidentally by platform-side defaults.
+    """
+
+    expected_fields = set(ManagedLifecycleCapabilities.model_fields)
+    if type(value) is not dict or set(value) != expected_fields:
+        raise ValueError(
+            "managed lifecycle capability must contain the exact protocol fields"
+        )
+    if type(value["generation_fencing"]) is not bool or any(
+        type(value[field]) is not str
+        for field in expected_fields - {"generation_fencing"}
+    ):
+        raise ValueError("managed lifecycle capability field types are invalid")
+    capability = ManagedLifecycleCapabilities.model_validate(value, strict=True)
+    return capability.model_dump(mode="json")
+
+
+def managed_lifecycle_capability_sha256(value: object) -> str:
+    """Hash one strict canonical capability for challenge-bound health proof."""
+
+    canonical = canonical_managed_lifecycle_capabilities(value)
+    encoded = json.dumps(
+        canonical,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class PoolResidency(BaseModel):
@@ -534,9 +570,11 @@ __all__ = [
     "ManagedUnloadResponse",
     "PoolResidency",
     "WORKLOAD_ADMISSION_SCOPES",
+    "canonical_managed_lifecycle_capabilities",
     "encode_ed25519_public_key",
     "load_verify_keyring",
     "match_gpu_health_challenge",
+    "managed_lifecycle_capability_sha256",
     "sign_admission_token",
     "validate_canonical_positive_int64",
     "validate_gpu_health_challenge",

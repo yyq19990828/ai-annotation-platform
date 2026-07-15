@@ -4,6 +4,11 @@
 扁平并集、模态派生。
 """
 
+from aap_protocol_v2.lifecycle import ManagedLifecycleCapabilities
+from pydantic import ValidationError
+import pytest
+
+from app.schemas.ml_backend import BackendCapabilities
 from app.services.ml_capabilities import (
     INPUT_VALUES,
     derive_modalities,
@@ -14,6 +19,68 @@ from app.services.ml_capabilities import (
 def test_extract_none_returns_none():
     assert extract_capabilities(None) is None
     assert extract_capabilities({}) is None
+
+
+def test_extract_preserves_only_strict_managed_lifecycle_capability():
+    payload = ManagedLifecycleCapabilities().model_dump(mode="json")
+    caps = extract_capabilities(
+        {
+            "name": "managed-backend",
+            "managed_lifecycle": payload,
+            "supported_prompts": ["none"],
+        }
+    )
+
+    assert caps["managed_lifecycle"] == payload
+    assert not any(
+        warning["field"] == "managed_lifecycle" for warning in caps["warnings"]
+    )
+
+
+def test_extract_does_not_upgrade_missing_or_malformed_managed_lifecycle():
+    missing = extract_capabilities(
+        {"name": "legacy-backend", "supported_prompts": ["none"]}
+    )
+    assert missing["managed_lifecycle"] is None
+    assert not any(
+        warning["field"] == "managed_lifecycle" for warning in missing["warnings"]
+    )
+
+    canonical = ManagedLifecycleCapabilities().model_dump(mode="json")
+    malformed_payloads = [
+        {key: value for key, value in canonical.items() if key != "reset_endpoint"},
+        {**canonical, "unexpected": True},
+        {**canonical, "generation_fencing": 1},
+        None,
+    ]
+    for payload in malformed_payloads:
+        caps = extract_capabilities(
+            {
+                "name": "malformed-backend",
+                "managed_lifecycle": payload,
+                "supported_prompts": ["none"],
+            }
+        )
+        assert caps["managed_lifecycle"] is None
+        assert any(
+            warning["field"] == "managed_lifecycle" and warning["value"] == "invalid"
+            for warning in caps["warnings"]
+        )
+
+
+def test_backend_capability_schema_cannot_fill_partial_managed_lifecycle():
+    capability = ManagedLifecycleCapabilities().model_dump(mode="json")
+    parsed = BackendCapabilities.model_validate({"managed_lifecycle": capability})
+    assert parsed.managed_lifecycle is not None
+    assert parsed.managed_lifecycle.model_dump(mode="json") == capability
+
+    invalid_capabilities = (
+        {"protocol_version": "1"},
+        {**capability, "generation_fencing": 1},
+    )
+    for invalid in invalid_capabilities:
+        with pytest.raises(ValidationError):
+            BackendCapabilities.model_validate({"managed_lifecycle": invalid})
 
 
 def test_extract_passes_through_output_attribute_schema():
