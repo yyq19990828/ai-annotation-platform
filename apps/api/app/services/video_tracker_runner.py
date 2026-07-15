@@ -21,6 +21,7 @@ from app.services.annotation_propagation import _new_track_id
 from app.services.gpu_arbiter import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
+    gpu_arbiter_failure_record,
 )
 from app.services.ml_backend import MLBackendService
 from app.services.raster_mask_storage import (
@@ -828,7 +829,12 @@ async def _load_job_for_update(
 
 
 async def _mark_failed(
-    db: AsyncSession, job_id: uuid.UUID, message: str, publisher: TrackerEventPublisher
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    message: str,
+    publisher: TrackerEventPublisher,
+    *,
+    gpu_arbiter_error: dict | None = None,
 ) -> VideoTrackerJob | None:
     await db.rollback()
     job = await _load_job_for_update(db, job_id)
@@ -840,7 +846,10 @@ async def _mark_failed(
         job.staged_result = None
         job.completed_at = _now()
     await db.commit()
-    await publisher(job.event_channel, _event(job, "job_failed", error=message))
+    event = _event(job, "job_failed", error=message)
+    if gpu_arbiter_error is not None:
+        event["gpu_arbiter_error"] = gpu_arbiter_error
+    await publisher(job.event_channel, event)
     return job
 
 
@@ -851,6 +860,7 @@ async def run_tracker_job(
     publisher: TrackerEventPublisher = publish_tracker_event,
     shadow_session_factory: GPUShadowSessionFactory | None = None,
     dispatch_context_factory: GPUDispatchContextFactory | None = None,
+    failure_recorder: Callable[[dict], None] | None = None,
 ) -> VideoTrackerJob | None:
     job = await _load_job_for_update(db, job_id)
     if job is None:
@@ -1126,4 +1136,16 @@ async def run_tracker_job(
         return job
     except Exception as exc:
         log.exception("video tracker job failed job_id=%s", job_id)
-        return await _mark_failed(db, job_id, str(exc), publisher)
+        gpu_arbiter_error = gpu_arbiter_failure_record(exc)
+        if gpu_arbiter_error is not None and failure_recorder is not None:
+            failure_recorder(gpu_arbiter_error)
+        message = (
+            gpu_arbiter_error["message"] if gpu_arbiter_error is not None else str(exc)
+        )
+        return await _mark_failed(
+            db,
+            job_id,
+            message,
+            publisher,
+            gpu_arbiter_error=gpu_arbiter_error,
+        )

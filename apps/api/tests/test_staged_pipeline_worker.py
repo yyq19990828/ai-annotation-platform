@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import pytest
 from PIL import Image
 
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 from app.workers import tasks as worker_tasks
 
 
@@ -326,6 +327,103 @@ async def test_geometry_stage_class_filter_and_failure(monkeypatch):
     # 下游炸 → 原 2 框保留、无 polygon 追加。
     assert len(results[0].result) == 2
     assert stats[1]["targeted"] == 1 and stats[1]["failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_geometry_stage_records_gpu_arbiter_failure_without_reraising():
+    task = _Task()
+    boxes = [_bbox(10, 10, 20, 20, cls="car")]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+
+    class _RejectedClient:
+        async def predict(self, inputs, context=None):
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.CAPACITY_UNAVAILABLE,
+                message="card full",
+                retry_after_s=3,
+            )
+
+    stages = [
+        {"stage": 0, "parent_stage": None, "ml_backend_id": "root"},
+        {
+            "stage": 1,
+            "parent_stage": 0,
+            "ml_backend_id": "segmenter",
+            "parent_class_filter": ["car"],
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, _RejectedClient()],
+        [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "geometry"],
+    )
+
+    assert results[0].result == boxes
+    assert stats[1]["failed"] == 1
+    assert extra["pipeline"]["gpu_arbiter_failures"] == [
+        {
+            "error_code": "gpu_capacity_unavailable",
+            "status_code": 503,
+            "retry_after_s": 3,
+            "message": "card full",
+            "stage": 1,
+            "ml_backend_id": "segmenter",
+            "count": 1,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_crop_stage_records_gpu_arbiter_failure_and_keeps_parent(monkeypatch):
+    monkeypatch.setattr(
+        worker_tasks,
+        "_load_task_image",
+        lambda task: Image.new("RGB", (1000, 1000), (1, 2, 3)),
+    )
+    task = _Task()
+    boxes = [_bbox(10, 10, 20, 20)]
+    detect = _FakeClient(responses=[[_Result(task.id, boxes)]])
+
+    class _RejectedClient:
+        async def predict(self, inputs, context=None):
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.NOT_READY,
+                message="ledger rebuilding",
+            )
+
+    stages = [
+        {"stage": 0, "parent_stage": None, "ml_backend_id": "root"},
+        {
+            "stage": 2,
+            "parent_stage": 0,
+            "ml_backend_id": "classifier",
+            "write": {"target": "attributes"},
+            "on_failure": "keep_parent",
+        },
+    ]
+    results, extra, stats = await worker_tasks._run_task_pipeline(
+        task,
+        stages,
+        [detect, _RejectedClient()],
+        [None, None],
+        resolve_url=lambda t: "http://x/img.jpg",
+        stage_modes=["crop", "crop"],
+    )
+
+    assert results[0].result == boxes
+    assert stats[2]["failed"] == 1
+    assert extra["pipeline"]["gpu_arbiter_failures"][0] == {
+        "error_code": "gpu_arbiter_not_ready",
+        "status_code": 503,
+        "retry_after_s": None,
+        "message": "ledger rebuilding",
+        "stage": 2,
+        "ml_backend_id": "classifier",
+        "count": 1,
+    }
 
 
 def test_stage_totals_snapshot_shape():

@@ -1271,7 +1271,9 @@ v2.1 推荐 backend 使用结构化错误体。平台代理会保留上游 4xx�
 
 平台调用行为：
 
-- 同步 batch（`/predict` 批量）：worker 捕获并写一行 `failed_predictions`（`apps/api/app/db/models/prediction.py:59-79`），字段 `error_type` = HTTP 状态码，`message` = response body 截断到 4KB。继续下一 batch。
+- 批量 `/predict` 中的 task 级失败会写一行 `failed_predictions` 并继续下一条。普通异常保留原有异常类型与消息；平台 GPU 仲裁在 backend HTTP 前拒绝时，`error_type` 直接保存稳定 `error_code`，`message` 保存干净人类消息，完整的 `status_code` / `retry_after_s` 记录保存在 `FailedPrediction.extra.gpu_arbiter_error`。
+- 跨 Backend 下游阶段仍按 `keep_parent|drop_box` 降级，但仲裁根因会同时写入 `PredictionMeta.extra.pipeline.gpu_arbiter_failures` 和 `AsyncJob.result.gpu_arbiter_failures`。逐帧预标只在作业结果聚合，不为每帧创建无法按原帧上下文重试的 `FailedPrediction`。
+- `gpu_arbiter_failures[].count` 统计被拒绝的派发次数，不是受影响的 task、帧或 ROI 数；摘要按稳定错误码合并并取保守的最大 `retry_after_s`。工作端只记录该窗口，不会自动 sleep 或额外重试。
 - 交互式（`/predict` 单条）：服务层 `predict_interactive` (`ml_client.py`) 透传上游 4xx 与 503；其它上游 5xx / 连接超时映射为 502。前端按 422 / 503 / 500+ 分流：422 显示“参数错误，请检查输入”，503 显示“模型暂不可用，N 秒后重试”，500+ 显示“服务异常”。
 
 ---

@@ -8,6 +8,8 @@ from app.services.gpu_arbiter import (
     GPUArbiterErrorCode,
     GPUDispatchGrant,
     GPUDispatchOutcomeChannel,
+    gpu_arbiter_failure_record,
+    summarize_gpu_arbiter_failures,
     unregistered_gpu_loading_blocked,
 )
 
@@ -44,6 +46,63 @@ def test_dispatch_error_contract(
     assert error.headers == (
         {"Retry-After": str(retry_after_s)} if retry_after_s is not None else None
     )
+    assert gpu_arbiter_failure_record(error) == {
+        "error_code": code.value,
+        "status_code": status_code,
+        "retry_after_s": retry_after_s,
+        "message": "stable message",
+    }
+
+
+def test_dispatch_error_worker_record_uses_code_as_default_message() -> None:
+    error = GPUArbiterDispatchError(GPUArbiterErrorCode.NOT_READY)
+
+    assert gpu_arbiter_failure_record(error) == {
+        "error_code": "gpu_arbiter_not_ready",
+        "status_code": 503,
+        "retry_after_s": None,
+        "message": "gpu_arbiter_not_ready",
+    }
+    assert gpu_arbiter_failure_record(RuntimeError("ordinary")) is None
+
+
+def test_dispatch_error_worker_summary_is_bounded_and_deterministic() -> None:
+    assert summarize_gpu_arbiter_failures(
+        [
+            {
+                "error_code": "gpu_capacity_unavailable",
+                "status_code": 503,
+                "retry_after_s": 2,
+                "message": "first",
+            },
+            {
+                "error_code": "gpu_arbiter_not_ready",
+                "status_code": 503,
+                "retry_after_s": None,
+                "message": "not ready",
+            },
+            {
+                "error_code": "gpu_capacity_unavailable",
+                "status_code": 503,
+                "retry_after_s": 5,
+                "message": "second",
+                "count": 2,
+            },
+        ]
+    ) == [
+        {
+            "error_code": "gpu_arbiter_not_ready",
+            "status_code": 503,
+            "retry_after_s": None,
+            "count": 1,
+        },
+        {
+            "error_code": "gpu_capacity_unavailable",
+            "status_code": 503,
+            "retry_after_s": 5,
+            "count": 3,
+        },
+    ]
 
 
 @pytest.mark.parametrize(

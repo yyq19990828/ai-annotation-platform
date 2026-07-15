@@ -166,6 +166,78 @@ async def test_tracker_worker_marks_unknown_model_failed(db_session, super_admin
     assert annotation.geometry["type"] == "bbox"
 
 
+async def test_tracker_worker_records_gpu_arbiter_failure(
+    db_session, super_admin, monkeypatch
+):
+    from app.services import video_tracker_runner as runner
+    from app.services.gpu_arbiter import (
+        GPUArbiterDispatchError,
+        GPUArbiterErrorCode,
+    )
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="mock_bbox",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
+        prompt={"type": "bbox", "geometry": annotation.geometry},
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    events: list[dict] = []
+    recorded: list[dict] = []
+
+    async def collect(_channel: str, payload: dict) -> None:
+        events.append(payload)
+
+    def reject(_capability):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.CAPACITY_UNAVAILABLE,
+            message="card full",
+            retry_after_s=5,
+        )
+
+    monkeypatch.setattr(runner, "get_tracker_adapter", reject)
+
+    await run_tracker_job(
+        db_session,
+        job.id,
+        publisher=collect,
+        failure_recorder=recorded.append,
+    )
+    await db_session.refresh(job)
+
+    expected = {
+        "error_code": "gpu_capacity_unavailable",
+        "status_code": 503,
+        "retry_after_s": 5,
+        "message": "card full",
+    }
+    assert job.status == "failed"
+    assert job.error_message == "card full"
+    assert recorded == [expected]
+    assert events[-1]["type"] == "job_failed"
+    assert events[-1]["gpu_arbiter_error"] == expected
+
+
 def test_apply_tracker_results_only_backfills_grid_frames():
     """采样开启 (grid_step>1) 时只回填网格帧，off-grid 预测帧丢弃。"""
     from app.services.video_tracker_runner import apply_tracker_results
@@ -764,7 +836,14 @@ async def test_tracker_seed_falls_back_to_last_valid_when_window_all_outside(
 # ── v0.10.49 · worker 按专表最终状态同步 async_jobs（修双写漂移）─────────────
 
 
-async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, status):
+async def _run_worker_with_final_status(
+    db_session,
+    super_admin,
+    monkeypatch,
+    status,
+    *,
+    gpu_arbiter_error=None,
+):
     """seed 专表 job + stub run_tracker_job 返回指定终态，跑 worker 包装层，
     返回它创建/同步的 async_job。验证 cancelled/failed 不被误标 completed。"""
     from sqlalchemy import select
@@ -826,6 +905,8 @@ async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, st
         row.status = status
         if status == VideoTrackerJobStatus.FAILED.value:
             row.error_message = "boom"
+            if gpu_arbiter_error is not None:
+                _kw["failure_recorder"](gpu_arbiter_error)
         await db.commit()
         return row
 
@@ -885,6 +966,28 @@ async def test_worker_syncs_async_job_failed(db_session, super_admin, monkeypatc
     )
     assert aj.status == "failed"
     assert aj.error_message == "boom"
+    assert aj.result == {}
+
+
+async def test_worker_syncs_gpu_arbiter_failure_into_async_job_result(
+    db_session, super_admin, monkeypatch
+):
+    failure = {
+        "error_code": "gpu_capacity_unavailable",
+        "status_code": 503,
+        "retry_after_s": 5,
+        "message": "card full",
+    }
+    aj = await _run_worker_with_final_status(
+        db_session,
+        super_admin,
+        monkeypatch,
+        VideoTrackerJobStatus.FAILED.value,
+        gpu_arbiter_error=failure,
+    )
+
+    assert aj.status == "failed"
+    assert aj.result == {"gpu_arbiter_error": failure}
 
 
 async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeypatch):

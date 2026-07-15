@@ -311,7 +311,107 @@ async def test_run_batch_all_failed_marks_job_failed(
     assert job.result["success_count"] == 0
     assert job.result["failed_count"] == 2
     assert len(job.result["failed_prediction_ids"]) == 2
+    assert "gpu_arbiter_failures" not in job.result
     assert job.error_message
+
+
+@pytest.mark.asyncio
+async def test_run_batch_persists_stable_gpu_arbiter_failures(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    from app.db.models.prediction import FailedPrediction
+    from app.db.models.task import Task
+    from app.services.gpu_arbiter import (
+        GPUArbiterDispatchError,
+        GPUArbiterErrorCode,
+    )
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    tasks = [
+        Task(
+            id=uuid.uuid4(),
+            project_id=proj.id,
+            display_id=f"T-GPU-{i}",
+            file_name=f"{i}.jpg",
+            file_path=f"http://x/{i}.jpg",
+            file_type="image",
+            status="pending",
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(tasks)
+    await db_session.flush()
+
+    class _RejectedClient:
+        def __init__(self, _backend, **_kwargs):
+            pass
+
+        async def predict(self, tasks_payload, context=None):
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+                message="backend busy",
+                retry_after_s=4,
+            )
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _RejectedClient, raising=True
+    )
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(task.id) for task in tasks],
+        prompt="x",
+    )
+
+    failures = list(
+        (
+            await db_session.execute(
+                select(FailedPrediction).where(FailedPrediction.project_id == proj.id)
+            )
+        ).scalars()
+    )
+    assert len(failures) == 2
+    assert {failure.error_type for failure in failures} == {
+        "gpu_backend_concurrency_saturated"
+    }
+    assert {failure.message for failure in failures} == {"backend busy"}
+    assert all(
+        failure.extra["gpu_arbiter_error"]
+        == {
+            "error_code": "gpu_backend_concurrency_saturated",
+            "status_code": 503,
+            "retry_after_s": 4,
+            "message": "backend busy",
+        }
+        for failure in failures
+    )
+    job = (
+        (
+            await db_session.execute(
+                select(AsyncJob).where(
+                    AsyncJob.kind == "batch_predict", AsyncJob.project_id == proj.id
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert job.result["gpu_arbiter_failures"] == [
+        {
+            "error_code": "gpu_backend_concurrency_saturated",
+            "status_code": 503,
+            "retry_after_s": 4,
+            "count": 2,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -416,6 +516,98 @@ async def test_run_batch_stops_on_cooperative_cancel(
     assert [row.type for row in rows] == ["job.cancelled"]
     assert rows[0].payload["done_count"] == 1
     assert rows[0].payload["skipped_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_cancelled_batch_keeps_prior_gpu_arbiter_failure_summary(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    from app.db.models.task import Task
+    from app.services.gpu_arbiter import (
+        GPUArbiterDispatchError,
+        GPUArbiterErrorCode,
+    )
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    tasks = [
+        Task(
+            id=uuid.uuid4(),
+            project_id=proj.id,
+            display_id=f"T-CANCEL-GPU-{i}",
+            file_name=f"{i}.jpg",
+            file_path=f"http://x/{i}.jpg",
+            file_type="image",
+            status="pending",
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(tasks)
+    await db_session.flush()
+
+    class _RejectedClient:
+        def __init__(self, _backend, **_kwargs):
+            pass
+
+        async def predict(self, tasks_payload, context=None):
+            job = (
+                (
+                    await db_session.execute(
+                        select(AsyncJob).where(
+                            AsyncJob.kind == "batch_predict",
+                            AsyncJob.project_id == proj.id,
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            job.payload = {**(job.payload or {}), "cancel_requested": True}
+            await db_session.flush()
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.NOT_READY,
+                message="ledger rebuilding",
+            )
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _RejectedClient, raising=True
+    )
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(task.id) for task in tasks],
+        prompt="x",
+    )
+
+    job = (
+        (
+            await db_session.execute(
+                select(AsyncJob).where(
+                    AsyncJob.kind == "batch_predict", AsyncJob.project_id == proj.id
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert job.status == AsyncJobStatus.CANCELLED.value
+    assert job.result["failed_count"] == 1
+    assert job.result["skipped_count"] == 1
+    assert job.result["gpu_arbiter_failures"] == [
+        {
+            "error_code": "gpu_arbiter_not_ready",
+            "status_code": 503,
+            "retry_after_s": None,
+            "count": 1,
+        }
+    ]
 
 
 @pytest.mark.asyncio

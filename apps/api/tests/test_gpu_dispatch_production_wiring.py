@@ -13,6 +13,7 @@ from app.api.v1.tasks import annotations
 from app.services import ml_backend as ml_backend_module
 from app.services import video_tracker_adapters as tracker_module
 from app.services.ml_backend import MLBackendService
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 from app.services.video_tracker_adapters import (
     MLBackendVideoTrackerAdapter,
     TrackerContext,
@@ -243,4 +244,216 @@ async def test_frame_segment_builds_authority_from_its_own_session_factory(
             "shadow_session_factory": session_factory,
             "dispatch_context_factory": authority_marker,
         }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_frame_segment_aggregates_gpu_arbiter_failures(monkeypatch) -> None:
+    backend = object()
+    task = SimpleNamespace(id=uuid.uuid4())
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            pass
+
+    class FakeDB:
+        async def get(self, model, _row_id):
+            if model.__name__ == "MLBackendRegistry":
+                return backend
+            if model.__name__ == "Task":
+                return task
+            raise AssertionError(f"unexpected model: {model}")
+
+        async def rollback(self) -> None:
+            pass
+
+    class FakeSessionFactory:
+        def __call__(self):
+            class SessionContext:
+                async def __aenter__(self):
+                    return FakeDB()
+
+                async def __aexit__(self, *args):
+                    return False
+
+            return SessionContext()
+
+    class RejectedClient:
+        def __init__(self, _backend, **_kwargs) -> None:
+            pass
+
+        async def predict(self, inputs, context=None):
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+                message="busy",
+                retry_after_s=2,
+            )
+
+    async def not_cancelled(_db, _job_id):
+        return False
+
+    async def no_existing(_db, _task_id):
+        return set()
+
+    async def frame_urls(_db, _ctx, frame_indices):
+        return {
+            frame_index: f"http://x/{frame_index}.jpg" for frame_index in frame_indices
+        }
+
+    async def build_frame_context(_db, received_task):
+        assert received_task is task
+        return object()
+
+    async def no_progress_write(*_args):
+        return None
+
+    session_factory = FakeSessionFactory()
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine",
+        lambda *args, **kwargs: FakeEngine(),
+    )
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.async_sessionmaker",
+        lambda *args, **kwargs: session_factory,
+    )
+    monkeypatch.setattr(
+        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        lambda factory: object(),
+    )
+    monkeypatch.setattr("app.services.ml_client.MLBackendClient", RejectedClient)
+    monkeypatch.setattr(
+        "app.services.video_frame_service.build_context_from_task",
+        build_frame_context,
+    )
+    monkeypatch.setattr(frame_preannotate, "_job_cancelled", not_cancelled)
+    monkeypatch.setattr(frame_preannotate, "_existing_frame_indices", no_existing)
+    monkeypatch.setattr(frame_preannotate, "_read_frame_urls", frame_urls)
+    monkeypatch.setattr(frame_preannotate, "_bump_progress", lambda *_args: (2, 2))
+    monkeypatch.setattr(
+        frame_preannotate, "_publish_frame_progress", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(frame_preannotate, "_write_job_progress", no_progress_write)
+
+    stats = await frame_preannotate._run_segment(
+        segment={"task_id": str(task.id), "frame_indices": [0, 1]},
+        project_id=str(uuid.uuid4()),
+        ml_backend_id=str(uuid.uuid4()),
+        stage0={},
+        job_id=str(uuid.uuid4()),
+        celery_root_task_id=None,
+    )
+
+    assert stats["failed"] == 2
+    assert stats["gpu_arbiter_failures"] == [
+        {
+            "error_code": "gpu_backend_concurrency_saturated",
+            "status_code": 503,
+            "retry_after_s": 2,
+            "count": 2,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_frame_finalize_merges_gpu_arbiter_failures_into_job_result(
+    db_session, monkeypatch
+) -> None:
+    from app.db.models.async_job import AsyncJob, AsyncJobStatus
+
+    job = AsyncJob(
+        kind="batch_predict",
+        status=AsyncJobStatus.RUNNING.value,
+        result={"existing": True},
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            pass
+
+    class FakeSessionFactory:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def __call__(self):
+            class SessionContext:
+                async def __aenter__(self):
+                    return db_session
+
+                async def __aexit__(self, *args):
+                    return False
+
+            return SessionContext()
+
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine",
+        lambda *args, **kwargs: FakeEngine(),
+    )
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.async_sessionmaker",
+        FakeSessionFactory,
+    )
+    monkeypatch.setattr(frame_preannotate, "_bump_progress", lambda *_args: (4, 4))
+    monkeypatch.setattr(
+        frame_preannotate, "_publish_frame_progress", lambda *_args, **_kwargs: None
+    )
+
+    await frame_preannotate._finalize(
+        [
+            {
+                "frames_done": 1,
+                "boxes": 2,
+                "failed": 2,
+                "skipped": 0,
+                "gpu_arbiter_failures": [
+                    {
+                        "error_code": "gpu_capacity_unavailable",
+                        "status_code": 503,
+                        "retry_after_s": 2,
+                        "count": 2,
+                    }
+                ],
+            },
+            {
+                "frames_done": 0,
+                "boxes": 0,
+                "failed": 2,
+                "skipped": 0,
+                "gpu_arbiter_failures": [
+                    {
+                        "error_code": "gpu_arbiter_not_ready",
+                        "status_code": 503,
+                        "retry_after_s": None,
+                        "count": 1,
+                    },
+                    {
+                        "error_code": "gpu_capacity_unavailable",
+                        "status_code": 503,
+                        "retry_after_s": 5,
+                        "count": 1,
+                    },
+                ],
+            },
+        ],
+        project_id=str(uuid.uuid4()),
+        job_id=str(job.id),
+    )
+
+    await db_session.refresh(job)
+    assert job.status == AsyncJobStatus.COMPLETED.value
+    assert job.result["existing"] is True
+    assert job.result["gpu_arbiter_failures"] == [
+        {
+            "error_code": "gpu_arbiter_not_ready",
+            "status_code": 503,
+            "retry_after_s": None,
+            "count": 1,
+        },
+        {
+            "error_code": "gpu_capacity_unavailable",
+            "status_code": 503,
+            "retry_after_s": 5,
+            "count": 3,
+        },
     ]

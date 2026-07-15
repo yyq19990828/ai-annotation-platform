@@ -145,6 +145,53 @@ class GPUArbiterDispatchError(HTTPException):
         )
 
 
+def gpu_arbiter_failure_record(exc: BaseException) -> dict[str, Any] | None:
+    """Return the stable JSON-safe worker record for an arbitration rejection."""
+
+    if not isinstance(exc, GPUArbiterDispatchError):
+        return None
+    message = exc.detail.get("message")
+    if not isinstance(message, str) or not message:
+        message = exc.error_code
+    return {
+        "error_code": exc.error_code,
+        "status_code": exc.status_code,
+        "retry_after_s": exc.retry_after_s,
+        "message": message,
+    }
+
+
+def summarize_gpu_arbiter_failures(
+    failures: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Aggregate dispatch attempts by stable code into a bounded job summary."""
+
+    buckets: dict[str, dict[str, Any]] = {}
+    for failure in failures:
+        error_code = failure.get("error_code")
+        if not isinstance(error_code, str) or not error_code:
+            continue
+        count = failure.get("count", 1)
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            count = 1
+        retry_after_s = failure.get("retry_after_s")
+        bucket = buckets.setdefault(
+            error_code,
+            {
+                "error_code": error_code,
+                "status_code": failure.get("status_code"),
+                "retry_after_s": retry_after_s,
+                "count": 0,
+            },
+        )
+        bucket["count"] += count
+        if isinstance(retry_after_s, int) and not isinstance(retry_after_s, bool):
+            current = bucket["retry_after_s"]
+            if current is None or retry_after_s > current:
+                bucket["retry_after_s"] = retry_after_s
+    return [buckets[error_code] for error_code in sorted(buckets)]
+
+
 GPUDispatchOperation = Literal[
     "predict",
     "predict_interactive",

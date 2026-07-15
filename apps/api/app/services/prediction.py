@@ -474,6 +474,7 @@ class PredictionService:
         error_type: str,
         message: str,
         model_version: str | None = None,
+        extra: dict | None = None,
     ) -> FailedPrediction:
         failed = FailedPrediction(
             id=uuid.uuid4(),
@@ -483,6 +484,7 @@ class PredictionService:
             model_version=model_version,
             error_type=error_type,
             message=message,
+            extra=extra or {},
         )
         self.db.add(failed)
         await self.db.flush()
