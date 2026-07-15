@@ -201,7 +201,7 @@ def _reconcile_allocation(
     *,
     backend_id: str = "backend-a",
     state: GPUAllocationState = GPUAllocationState.UNKNOWN,
-    generation: str = "1",
+    generation: str | None = "1",
     budget_mb: int = 60,
     last_used_at_ms: int = 1,
 ) -> GPUAllocation:
@@ -276,6 +276,272 @@ async def test_reconcile_bootstrap_is_atomic_and_retry_idempotent(
     assert (await first.snapshot(resource_id)).reconcile_deadline_ms == (
         snapshot.reconcile_deadline_ms
     )
+
+
+@pytest.mark.asyncio
+async def test_null_generation_unknown_is_counted_and_blocks_new_work(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-null-generation/index:0"
+    allocation = _reconcile_allocation(generation=None)
+    reconcile_deadline_ms = _future_reconcile_deadline_ms()
+
+    created = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(allocation,),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=reconcile_deadline_ms,
+        repair_id="null-generation-bootstrap",
+    )
+    assert created.status == "reconciled"
+    assert created.committed_mb == allocation.budget_mb
+
+    snapshot = await first.snapshot(resource_id)
+    assert snapshot.ready is True
+    assert snapshot.allocations == (allocation,)
+    assert snapshot.allocations[0].generation is None
+    assert snapshot.allocations[0].evictable is False
+
+    retried = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(allocation,),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=reconcile_deadline_ms,
+        repair_id="null-generation-bootstrap",
+    )
+    assert retried.status == "reconciled"
+    assert retried.idempotent is True
+    assert retried.ledger_revision == snapshot.ledger_revision
+
+    admission = await first.admit(
+        resource_id,
+        **_admission_kwargs("backend-a", "lease-null-generation"),
+    )
+    assert (admission.status, admission.reason) == (
+        "not_ready",
+        "allocation_unknown",
+    )
+    assert (
+        await first.enqueue_backend(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="backend-ticket-null-generation",
+            owner_id="owner-a",
+            ttl_ms=30_000,
+        )
+    ).status == "not_ready"
+    assert (
+        await first.enqueue_card(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="card-ticket-null-generation",
+            owner_id="owner-a",
+            ttl_ms=30_000,
+        )
+    ).status == "not_ready"
+
+    transitioned = await first.transition_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="1",
+        target_state=GPUAllocationState.UNLOADED,
+    )
+    assert transitioned.status == "stale_generation"
+    assert transitioned.generation is None
+    owner = await first.acquire_transition_owner(
+        resource_id,
+        backend_id="backend-a",
+        membership_epoch=1,
+        owner_id="transition-owner",
+        generation="1",
+        operation="evict",
+        ttl_ms=30_000,
+    )
+    assert owner.status == "invalid_transition"
+    assert owner.generation is None
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == snapshot.ledger_revision
+    assert after.allocations == (allocation,)
+    assert after.leases == ()
+    assert (
+        await first.queue_position(
+            resource_id,
+            backend_id="backend-a",
+            ticket_id="backend-ticket-null-generation",
+            card_queue=False,
+        )
+    ).status == "missing"
+    assert (
+        await first.queue_position(
+            resource_id,
+            backend_id="backend-a",
+            ticket_id="card-ticket-null-generation",
+            card_queue=True,
+        )
+    ).status == "missing"
+
+
+@pytest.mark.parametrize(
+    ("allocation", "message"),
+    (
+        (
+            replace(
+                _reconcile_allocation(generation=None),
+                state=GPUAllocationState.RESIDENT,
+            ),
+            "null generation is only valid for unknown allocations",
+        ),
+        (
+            replace(_reconcile_allocation(generation=None), evictable=True),
+            "null-generation unknown allocation cannot be evictable",
+        ),
+    ),
+)
+@pytest.mark.asyncio
+async def test_null_generation_allocation_invariants_are_rejected_before_redis(
+    redis_stores,
+    allocation: GPUAllocation,
+    message: str,
+) -> None:
+    first, _ = redis_stores
+    with pytest.raises(ValueError, match=message):
+        await first.reconcile_card(
+            "node-invalid-null-generation/index:0",
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=_memberships("backend-a"),
+            allocations=(allocation,),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+            repair_id="invalid-null-generation",
+        )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_never_regresses_known_generation_to_null(redis_stores) -> None:
+    first, _ = redis_stores
+    resource_id = "node-generation-regression/index:0"
+    known = _reconcile_allocation(generation="7")
+    await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(known,),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="known-generation-bootstrap",
+    )
+    before = await first.snapshot(resource_id)
+
+    rejected = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(replace(known, generation=None),),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="known-to-null-repair",
+    )
+    assert (rejected.status, rejected.reason) == (
+        "stale_generation",
+        "generation_regression",
+    )
+    assert (await first.snapshot(resource_id)).allocations == (known,)
+
+
+@pytest.mark.asyncio
+async def test_trusted_reconcile_can_replace_null_with_known_generation(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-null-to-known-generation/index:0"
+    unknown = _reconcile_allocation(generation=None)
+    await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(unknown,),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="null-generation-bootstrap",
+    )
+    before = await first.snapshot(resource_id)
+    known = replace(unknown, generation="9", last_used_at_ms=2)
+
+    reconciled = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=_memberships("backend-a"),
+        allocations=(known,),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="null-to-known-repair",
+    )
+    assert reconciled.status == "reconciled"
+    assert (await first.snapshot(resource_id)).allocations == (known,)
+
+
+@pytest.mark.asyncio
+async def test_null_generation_unknown_only_consumes_its_own_card_budget(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-null-generation-sibling/index:0"
+    await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_memberships("backend-a", "backend-b"),
+        allocations=(_reconcile_allocation(generation=None),),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="null-generation-sibling-bootstrap",
+    )
+
+    admitted = await first.admit(
+        resource_id,
+        **_admission_kwargs(
+            "backend-b",
+            "lease-backend-b",
+            budget_mb=40,
+        ),
+    )
+    assert admitted.status == "admitted"
+    assert admitted.committed_mb == 100
+    snapshot = await first.snapshot(resource_id)
+    assert {item.backend_id for item in snapshot.allocations} == {
+        "backend-a",
+        "backend-b",
+    }
 
 
 @pytest.mark.asyncio

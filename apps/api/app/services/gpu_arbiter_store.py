@@ -102,7 +102,7 @@ class GPUAllocation:
     backend_id: str
     state: GPUAllocationState
     budget_mb: int
-    generation: str
+    generation: str | None
     eviction_priority: int
     evictable: bool
     max_concurrency: int
@@ -482,6 +482,17 @@ local function generation_less(left, right)
   end
   return left < right
 end
+local function valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return valid_generation(item.generation)
+end
+local function allocation_generation_regressed(target, current)
+  if current.generation == cjson.null then return false end
+  if target.generation == cjson.null then return true end
+  return generation_less(target.generation, current.generation)
+end
 local function valid_integer(value, minimum, maximum)
   return type(value) == 'number' and value == math.floor(value)
     and value >= minimum and value <= maximum
@@ -520,7 +531,7 @@ local function valid_allocation(item, backend_id)
       or item.reservation_owner_id ~= nil)
   return item and item.backend_id == backend_id and valid_states[item.state]
     and valid_integer(item.budget_mb, 1, 9007199254740991)
-    and valid_generation(item.generation)
+    and valid_allocation_generation(item)
     and valid_integer(item.eviction_priority, -9007199254740991, 9007199254740991)
     and type(item.evictable) == 'boolean'
     and valid_integer(item.max_concurrency, 1, 10000)
@@ -1036,7 +1047,7 @@ for _, backend_id in ipairs(target_order) do
       return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=current_committed, purged_leases=0, reason='unsafe_bootstrap_state'})
     end
   else
-    if generation_less(target.generation, current.generation) then
+    if allocation_generation_regressed(target, current) then
       return cjson.encode({status='stale_generation', ready=false, ledger_revision=tonumber(expected_revision ~= '' and expected_revision or '0'), committed_mb=current_committed, purged_leases=0, reason='generation_regression'})
     end
     local config_changed = target.budget_mb ~= current.budget_mb
@@ -1052,6 +1063,10 @@ for _, backend_id in ipairs(target_order) do
   end
   if target.state == 'unknown' and target.evictable then
     return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=current_committed, purged_leases=0, reason='unknown_cannot_be_evictable'})
+  end
+  if target.generation == cjson.null
+     and (lease_counts[backend_id] or 0) > 0 then
+    return cjson.encode({status='active_leases', ready=false, ledger_revision=tonumber(expected_revision ~= '' and expected_revision or '0'), committed_mb=current_committed, purged_leases=0, reason='null_generation_has_leases'})
   end
   if target.state == 'reserving' or target.state == 'loading' then
     local reservation = leases_by_backend[backend_id]
@@ -1181,6 +1196,12 @@ local function increment_epoch(value)
   end
   if carry == 1 then table.insert(digits, 1, '1') end
   return table.concat(digits)
+end
+local function valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return valid_epoch(item.generation)
 end
 local function valid_revision(value)
   if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
@@ -1456,7 +1477,7 @@ for index = 1, #allocation_entries, 2 do
      or type(allocation.budget_mb) ~= 'number' or allocation.budget_mb < 1
      or allocation.budget_mb > 9007199254740991
      or allocation.budget_mb ~= math.floor(allocation.budget_mb)
-     or not valid_epoch(allocation.generation)
+     or not valid_allocation_generation(allocation)
      or type(allocation.eviction_priority) ~= 'number'
      or allocation.eviction_priority ~= math.floor(allocation.eviction_priority)
      or math.abs(allocation.eviction_priority) > 9007199254740991
@@ -1472,6 +1493,11 @@ for index = 1, #allocation_entries, 2 do
      or (not reservation_state and reservation_present) then
     return response('ledger_corrupt', tonumber(current_revision), incarnation,
       target_domains, 'allocation_domain_invalid')
+  end
+  if allocation.generation == cjson.null
+     and lease_counts[backend_id] > 0 then
+    return response('ledger_corrupt', tonumber(current_revision), incarnation,
+      target_domains, 'null_generation_has_leases')
   end
   if counted_states[allocation.state] then committed = committed + allocation.budget_mb end
 end
@@ -1553,6 +1579,12 @@ local function integrity_valid_generation(value)
   if string.len(value) > 19 then return false end
   return value <= '9223372036854775807'
 end
+local function integrity_valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return integrity_valid_generation(item.generation)
+end
 local function integrity_valid_revision(value)
   if type(value) ~= 'string'
      or not string.match(value, '^[1-9][0-9]*$') then
@@ -1593,7 +1625,7 @@ local function integrity_valid_allocation(item, backend_id)
   return item and item.backend_id == backend_id
     and integrity_valid_states[item.state]
     and integrity_valid_integer(item.budget_mb, 1, 9007199254740991)
-    and integrity_valid_generation(item.generation)
+    and integrity_valid_allocation_generation(item)
     and integrity_valid_integer(item.eviction_priority, -9007199254740991, 9007199254740991)
     and type(item.evictable) == 'boolean'
     and integrity_valid_integer(item.max_concurrency, 1, 10000)
@@ -1825,6 +1857,11 @@ local function inspect_ledger(
       integrity_fault(resource_id, 'lease_domain_exceeded', now)
       return nil, 'ledger_corrupt', 'lease_domain_exceeded'
     end
+    if lease_count > 0 and allocations[backend_id]
+       and allocations[backend_id].generation == cjson.null then
+      integrity_fault(resource_id, 'null_generation_has_leases', now)
+      return nil, 'ledger_corrupt', 'null_generation_has_leases'
+    end
     if backend_id == focus_backend_id then
       local lease_entries = redis.call('HGETALL', lease_keys[backend_id])
       for index = 1, #lease_entries, 2 do
@@ -1967,6 +2004,12 @@ local function generation_greater(left, right)
   end
   return left > right
 end
+local function valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return valid_generation(item.generation)
+end
 local function valid_integer(value, minimum, maximum)
   return type(value) == 'number' and value == math.floor(value)
     and value >= minimum and value <= maximum
@@ -2010,7 +2053,7 @@ local function calculate_committed(key)
     if not allocation or not valid[allocation.state]
        or allocation.backend_id ~= entries[i]
        or not valid_integer(allocation.budget_mb, 1, 9007199254740991)
-       or not valid_generation(allocation.generation)
+       or not valid_allocation_generation(allocation)
        or not valid_integer(allocation.eviction_priority, -9007199254740991, 9007199254740991)
        or type(allocation.evictable) ~= 'boolean'
        or not valid_integer(allocation.max_concurrency, 1, 10000)
@@ -2207,6 +2250,9 @@ if allocation then
       return cjson.encode({status='ledger_corrupt', reason='reservation_lease_mismatch', committed_mb=committed, lease_count=lease_count})
     end
   end
+  if allocation.state == 'unknown' then
+    return cjson.encode({status='not_ready', reason='allocation_unknown', committed_mb=committed, lease_count=lease_count})
+  end
   if tonumber(allocation.budget_mb) ~= tonumber(ARGV[3])
      or tonumber(allocation.eviction_priority) ~= tonumber(ARGV[5])
      or allocation.evictable ~= (ARGV[6] == '1')
@@ -2214,9 +2260,6 @@ if allocation then
     return cjson.encode({status='config_mismatch', reason='allocation_config_mismatch', committed_mb=committed, lease_count=lease_count})
   end
   concurrency_limit = tonumber(allocation.max_concurrency)
-  if allocation.state == 'unknown' then
-    return cjson.encode({status='not_ready', reason='allocation_unknown', committed_mb=committed, lease_count=lease_count})
-  end
   if allocation.state == 'draining' or allocation.state == 'unloading' then
     return cjson.encode({status='transition_in_progress', reason='allocation_' .. allocation.state, committed_mb=committed, lease_count=lease_count})
   end
@@ -2436,6 +2479,12 @@ local function valid_generation(value)
   if string.len(value) > 19 then return false end
   return value <= '9223372036854775807'
 end
+local function valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return valid_generation(item.generation)
+end
 local function valid_integer(value)
   return type(value) == 'number' and value == math.floor(value)
     and value >= 1 and value <= 9007199254740991
@@ -2502,8 +2551,11 @@ local valid_allocation_states = {
 }
 if not allocation or allocation.backend_id ~= ARGV[7]
    or not valid_allocation_states[allocation.state]
-   or not valid_generation(allocation.generation) then
+   or not valid_allocation_generation(allocation) then
   return redis.error_reply('gpu arbiter allocation decode failed')
+end
+if allocation.generation == cjson.null and ARGV[1] ~= 'release' then
+  return cjson.encode({status='not_ready', lease_state=lease.state, hard_deadline_ms=lease.hard_deadline_ms})
 end
 
 local lease_counts = decode(redis.call('HGET', KEYS[2], 'lease_counts'))
@@ -2716,6 +2768,11 @@ if ARGV[1] == 'enqueue' then
   if not ledger then
     return cjson.encode({status=integrity_status, ticket_id=ARGV[2]})
   end
+  local allocation = ledger.allocations[ARGV[3]]
+  if allocation and allocation.state == 'unknown'
+     and allocation.generation == cjson.null then
+    return cjson.encode({status='not_ready', ticket_id=ARGV[2]})
+  end
   inspected_ledger = ledger
 else
   local cached_count = ARGV[5] == 'card'
@@ -2871,6 +2928,12 @@ local function generation_greater(left, right)
   end
   return left > right
 end
+local function valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return valid_generation(item.generation)
+end
 
 if redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[2] then
   return cjson.encode({status='not_ready'})
@@ -2973,7 +3036,7 @@ local function validate_acquire_target()
   if not allocation_raw then return 'missing', nil end
   local allocation = decode(allocation_raw)
   if not allocation or allocation.backend_id ~= ARGV[3]
-     or not valid_generation(allocation.generation)
+     or not valid_allocation_generation(allocation)
      or type(allocation.state) ~= 'string' then
     return 'ledger_corrupt', nil
   end
@@ -3063,6 +3126,11 @@ if current.operation ~= ARGV[6] or current.backend_id ~= ARGV[3] then
 end
 
 if ARGV[1] == 'heartbeat' then
+  local allocation = decode(redis.call('HGET', KEYS[2], ARGV[3]))
+  if allocation and valid_allocation_generation(allocation)
+     and allocation.generation == cjson.null then
+    return cjson.encode({status='not_ready', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
+  end
   current.expires_at_ms = now + tonumber(ARGV[7])
   local encoded = cjson.encode(current)
   redis.call('SET', KEYS[4], encoded, 'PXAT',
@@ -3109,6 +3177,12 @@ local function generation_greater(left, right)
   end
   return left > right
 end
+local function valid_allocation_generation(item)
+  if item.generation == cjson.null then
+    return item.state == 'unknown' and item.evictable == false
+  end
+  return valid_generation(item.generation)
+end
 local function valid_integer(value, minimum, maximum)
   return type(value) == 'number' and value == math.floor(value)
     and value >= minimum and value <= maximum
@@ -3140,7 +3214,7 @@ local function valid_allocation(item, backend_id)
     and (item.reservation_lease_id ~= nil or item.reservation_owner_id ~= nil)
   return item and item.backend_id == backend_id and valid[item.state]
     and valid_integer(item.budget_mb, 1, 9007199254740991)
-    and valid_generation(item.generation)
+    and valid_allocation_generation(item)
     and valid_integer(item.eviction_priority, -9007199254740991, 9007199254740991)
     and type(item.evictable) == 'boolean'
     and valid_integer(item.max_concurrency, 1, 10000)
@@ -3330,6 +3404,17 @@ def _validate_generation(value: str) -> str:
     ):
         raise ValueError("generation must be a canonical positive int64 string")
     return value
+
+
+def _validate_allocation_generation(
+    value: str | None,
+    state: GPUAllocationState,
+) -> str | None:
+    if value is None:
+        if state is not GPUAllocationState.UNKNOWN:
+            raise ValueError("null generation is only valid for unknown allocations")
+        return None
+    return _validate_generation(value)
 
 
 def _validate_membership_epoch(value: int) -> int:
@@ -4635,6 +4720,11 @@ class GPUArbiterStore:
                     (lease.backend_id, lease.lease_id): lease for lease in leases
                 }
                 for allocation in allocations:
+                    if (
+                        allocation.generation is None
+                        and lease_counts[allocation.backend_id] > 0
+                    ):
+                        raise ValueError("null-generation allocation has leases")
                     if allocation.state not in {
                         GPUAllocationState.RESERVING,
                         GPUAllocationState.LOADING,
@@ -4750,12 +4840,16 @@ class GPUArbiterStore:
         if not isinstance(allocation.state, GPUAllocationState):
             raise ValueError("allocation state is invalid")
         budget_mb = _validate_positive_int(allocation.budget_mb, "budget_mb")
-        generation = _validate_generation(allocation.generation)
+        generation = _validate_allocation_generation(
+            allocation.generation, allocation.state
+        )
         eviction_priority = _validate_redis_safe_int(
             allocation.eviction_priority, "eviction_priority"
         )
         if not isinstance(allocation.evictable, bool):
             raise ValueError("allocation evictable must be a boolean")
+        if generation is None and allocation.evictable:
+            raise ValueError("null-generation unknown allocation cannot be evictable")
         max_concurrency = normalize_gpu_backend_max_concurrency(
             allocation.max_concurrency
         )
@@ -4838,6 +4932,8 @@ class GPUArbiterStore:
         if (reservation_lease_id is None) != (reservation_owner_id is None):
             raise ValueError("allocation reservation owner is incomplete")
         state = GPUAllocationState(value["state"])
+        if value["generation"] is None and evictable:
+            raise ValueError("null-generation unknown allocation cannot be evictable")
         has_reservation = reservation_lease_id is not None
         if has_reservation != (
             state in {GPUAllocationState.RESERVING, GPUAllocationState.LOADING}
@@ -4854,7 +4950,7 @@ class GPUArbiterStore:
             backend_id=value["backend_id"],
             state=state,
             budget_mb=budget_mb,
-            generation=_validate_generation(value["generation"]),
+            generation=_validate_allocation_generation(value["generation"], state),
             eviction_priority=priority,
             evictable=evictable,
             max_concurrency=max_concurrency,
