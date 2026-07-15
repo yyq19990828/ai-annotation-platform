@@ -152,6 +152,8 @@ GPUDispatchOperation = Literal[
     "reload",
     "unload",
 ]
+GPUDispatchOutcomeKind = Literal["response_received", "uncertain"]
+GPUDispatchUncertainReason = Literal["request_aborted", "response_not_reported"]
 
 
 @dataclass(frozen=True)
@@ -165,11 +167,61 @@ class GPUDispatchRequest:
 
 
 @dataclass(frozen=True)
+class GPUDispatchOutcome:
+    """One explicit transport outcome; it is not a residency assertion."""
+
+    kind: GPUDispatchOutcomeKind
+    status_code: int | None = None
+    reason: GPUDispatchUncertainReason | None = None
+
+
+class GPUDispatchOutcomeChannel:
+    """Mutable one-shot outcome channel owned by an immutable dispatch grant."""
+
+    def __init__(self) -> None:
+        self._outcome: GPUDispatchOutcome | None = None
+
+    @property
+    def outcome(self) -> GPUDispatchOutcome | None:
+        return self._outcome
+
+    def report_response(self, status_code: int) -> bool:
+        if (
+            not isinstance(status_code, int)
+            or isinstance(status_code, bool)
+            or not 100 <= status_code <= 599
+        ):
+            raise ValueError("status_code must be a valid HTTP status")
+        if self._outcome is not None:
+            return False
+        self._outcome = GPUDispatchOutcome(
+            kind="response_received",
+            status_code=status_code,
+        )
+        return True
+
+    def report_uncertain_if_missing(
+        self,
+        reason: GPUDispatchUncertainReason,
+    ) -> bool:
+        if self._outcome is not None:
+            return False
+        self._outcome = GPUDispatchOutcome(kind="uncertain", reason=reason)
+        return True
+
+
+@dataclass(frozen=True)
 class GPUDispatchGrant:
     """Managed lifecycle headers produced after authoritative admission."""
 
     generation: str
     admission_token: str
+    outcome_channel: GPUDispatchOutcomeChannel = dataclass_field(
+        default_factory=GPUDispatchOutcomeChannel,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         validate_canonical_positive_int64(self.generation)
@@ -178,6 +230,19 @@ class GPUDispatchGrant:
             or self.admission_token.strip() != self.admission_token
         ):
             raise ValueError("admission_token must be non-empty and canonical")
+
+    @property
+    def outcome(self) -> GPUDispatchOutcome | None:
+        return self.outcome_channel.outcome
+
+    def report_response(self, status_code: int) -> bool:
+        return self.outcome_channel.report_response(status_code)
+
+    def report_uncertain_if_missing(
+        self,
+        reason: GPUDispatchUncertainReason,
+    ) -> bool:
+        return self.outcome_channel.report_uncertain_if_missing(reason)
 
 
 GPUDispatchContextFactory = Callable[

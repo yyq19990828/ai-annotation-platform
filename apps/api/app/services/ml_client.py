@@ -236,7 +236,11 @@ class MLBackendClient:
                     yield grant
                 except BaseException as exc:
                     boundary_error = exc
+                    if isinstance(grant, GPUDispatchGrant):
+                        grant.report_uncertain_if_missing("request_aborted")
                     raise
+                else:
+                    grant.report_uncertain_if_missing("response_not_reported")
             if boundary_error is not None:
                 # A faulty authority context must not turn backend errors or
                 # cancellation into an apparent successful dispatch.
@@ -397,6 +401,8 @@ class MLBackendClient:
                             json=payload,
                             headers=self._headers(grant),
                         )
+                        if grant is not None:
+                            grant.report_response(resp.status_code)
                         resp.raise_for_status()
                         data = resp.json()
         except Exception:
@@ -443,6 +449,8 @@ class MLBackendClient:
                                 json={"task": task_data, "context": context},
                                 headers=self._headers(grant),
                             )
+                            if grant is not None:
+                                grant.report_response(resp.status_code)
                             # 上游 4xx 原样透传, 5xx → 502 (见 _raise_for_backend_status)
                             _raise_for_backend_status(resp)
                             data = resp.json()
@@ -485,6 +493,8 @@ class MLBackendClient:
                     f"{self.base_url}/unload",
                     **request_kwargs,
                 )
+                if grant is not None:
+                    grant.report_response(resp.status_code)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -513,6 +523,8 @@ class MLBackendClient:
                     json=body or None,
                     headers=self._headers(grant),
                 )
+                if grant is not None:
+                    grant.report_response(resp.status_code)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -571,6 +583,8 @@ class MLBackendClient:
                     json=body or {},
                     headers=self._headers(grant),
                 )
+                if grant is not None:
+                    grant.report_response(resp.status_code)
                 resp.raise_for_status()
                 return resp.json()
 

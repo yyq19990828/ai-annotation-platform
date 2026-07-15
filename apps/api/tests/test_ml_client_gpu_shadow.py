@@ -11,6 +11,7 @@ import weakref
 import httpx
 import pytest
 from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
     LifecycleModeRequest,
@@ -278,13 +279,16 @@ async def test_all_residency_methods_use_managed_dispatch_context(
 ) -> None:
     events: list[str] = []
     requests: list[httpx.Request] = []
+    outcomes = []
 
     @asynccontextmanager
     async def dispatch(request):
         events.append(f"enter:{request.operation}:{request.scope.value}")
+        grant = GPUDispatchGrant(generation="7", admission_token="signed-token")
         try:
-            yield GPUDispatchGrant(generation="7", admission_token="signed-token")
+            yield grant
         finally:
+            outcomes.append(grant.outcome)
             events.append(f"exit:{request.operation}")
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -326,6 +330,8 @@ async def test_all_residency_methods_use_managed_dispatch_context(
         "exit:unload",
     ]
     assert json.loads(requests[-1].content) == {"generation": "7"}
+    assert [outcome.kind for outcome in outcomes] == ["response_received"] * 5
+    assert [outcome.status_code for outcome in outcomes] == [200] * 5
 
 
 @pytest.mark.asyncio
@@ -665,14 +671,18 @@ async def test_dispatch_context_sees_original_interactive_timeout(
     monkeypatch, enforce_dispatch_mode
 ) -> None:
     observed: list[type[BaseException]] = []
+    outcomes = []
 
     @asynccontextmanager
     async def dispatch(_request):
+        grant = GPUDispatchGrant(generation="1", admission_token="signed-token")
         try:
-            yield GPUDispatchGrant(generation="1", admission_token="signed-token")
+            yield grant
         except BaseException as exc:
             observed.append(type(exc))
             raise
+        finally:
+            outcomes.append(grant.outcome)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("response lost", request=request)
@@ -685,6 +695,8 @@ async def test_dispatch_context_sees_original_interactive_timeout(
 
     assert getattr(exc_info.value, "status_code", None) == 502
     assert observed == [httpx.ReadTimeout]
+    assert outcomes[0].kind == "uncertain"
+    assert outcomes[0].reason == "request_aborted"
 
 
 @pytest.mark.asyncio
@@ -720,14 +732,18 @@ async def test_dispatch_context_sees_explicit_backend_rejection(
     monkeypatch, enforce_dispatch_mode
 ) -> None:
     observed: list[type[BaseException]] = []
+    outcomes = []
 
     @asynccontextmanager
     async def dispatch(_request):
+        grant = GPUDispatchGrant(generation="1", admission_token="signed-token")
         try:
-            yield GPUDispatchGrant(generation="1", admission_token="signed-token")
+            yield grant
         except BaseException as exc:
             observed.append(type(exc))
             raise
+        finally:
+            outcomes.append(grant.outcome)
 
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"detail": "backend draining"})
@@ -739,6 +755,8 @@ async def test_dispatch_context_sees_explicit_backend_rejection(
         await client.predict([{"id": "t1"}])
 
     assert observed == [httpx.HTTPStatusError]
+    assert outcomes[0].kind == "response_received"
+    assert outcomes[0].status_code == 503
 
 
 @pytest.mark.asyncio
@@ -746,14 +764,18 @@ async def test_dispatch_context_sees_interactive_backend_rejection(
     monkeypatch, enforce_dispatch_mode
 ) -> None:
     observed: list[type[BaseException]] = []
+    outcomes = []
 
     @asynccontextmanager
     async def dispatch(_request):
+        grant = GPUDispatchGrant(generation="1", admission_token="signed-token")
         try:
-            yield GPUDispatchGrant(generation="1", admission_token="signed-token")
+            yield grant
         except BaseException as exc:
             observed.append(type(exc))
             raise
+        finally:
+            outcomes.append(grant.outcome)
 
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"detail": "backend draining"})
@@ -766,6 +788,58 @@ async def test_dispatch_context_sees_interactive_backend_rejection(
 
     assert exc_info.value.status_code == 503
     assert observed == [HTTPException]
+    assert outcomes[0].kind == "response_received"
+    assert outcomes[0].status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_dispatch_reports_response_before_json_parsing(
+    monkeypatch, enforce_dispatch_mode
+) -> None:
+    outcomes = []
+
+    @asynccontextmanager
+    async def dispatch(_request):
+        grant = GPUDispatchGrant(generation="1", admission_token="signed-token")
+        try:
+            yield grant
+        finally:
+            outcomes.append(grant.outcome)
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not-json")
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(_backend(), dispatch_context_factory=dispatch)
+
+    with pytest.raises(json.JSONDecodeError):
+        await client.warmup({})
+
+    assert outcomes[0].kind == "response_received"
+    assert outcomes[0].status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_dispatch_missing_response_report_is_uncertain(
+    monkeypatch, enforce_dispatch_mode
+) -> None:
+    outcomes = []
+
+    @asynccontextmanager
+    async def dispatch(_request):
+        grant = GPUDispatchGrant(generation="1", admission_token="signed-token")
+        try:
+            yield grant
+        finally:
+            outcomes.append(grant.outcome)
+
+    client = MLBackendClient(_backend(), dispatch_context_factory=dispatch)
+
+    async with client._gpu_dispatch("warmup", AdmissionScope.WARMUP):
+        pass
+
+    assert outcomes[0].kind == "uncertain"
+    assert outcomes[0].reason == "response_not_reported"
 
 
 @pytest.mark.asyncio
@@ -886,16 +960,20 @@ async def test_dispatch_context_sees_cancellation(
     monkeypatch, enforce_dispatch_mode
 ) -> None:
     observed: list[type[BaseException]] = []
+    outcomes = []
     http_started = asyncio.Event()
     never = asyncio.Event()
 
     @asynccontextmanager
     async def dispatch(_request):
+        grant = GPUDispatchGrant(generation="1", admission_token="signed-token")
         try:
-            yield GPUDispatchGrant(generation="1", admission_token="signed-token")
+            yield grant
         except BaseException as exc:
             observed.append(type(exc))
             raise
+        finally:
+            outcomes.append(grant.outcome)
 
     async def handler(_request: httpx.Request) -> httpx.Response:
         http_started.set()
@@ -912,3 +990,5 @@ async def test_dispatch_context_sees_cancellation(
         await task
 
     assert observed == [asyncio.CancelledError]
+    assert outcomes[0].kind == "uncertain"
+    assert outcomes[0].reason == "request_aborted"
