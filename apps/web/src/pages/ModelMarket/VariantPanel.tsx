@@ -64,7 +64,7 @@ export function VariantPanel({
   isWarming,
 }: {
   projectId: string;
-  backend: MLBackendItem;
+  backend: Pick<MLBackendItem, "id" | "health_meta">;
   onWarm: (target?: VariantWarmTarget) => void;
   isWarming: boolean;
 }) {

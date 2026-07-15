@@ -27,7 +27,7 @@ from app.db.enums import UserRole
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.user import User
-from app.deps import get_db, require_roles
+from app.deps import get_db, get_gpu_shadow_session_factory, require_roles
 from app.schemas.ml_backend import (
     ComputeInfo,
     GPUBackendConfigStatus,
@@ -36,6 +36,7 @@ from app.schemas.ml_backend import (
     HealthMeta,
     MLBackendHealthResponse,
     MLBackendOut,
+    MLBackendUnloadResponse,
     MLBackendRegistryConflictResponse,
     MLBackendRegistryCreate,
     MLBackendRegistryUpdate,
@@ -46,15 +47,19 @@ from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
 from app.services.gpu_arbiter import (
     GPUClaimConfigurationError,
+    GPUShadowSessionFactory,
     build_backend_gpu_config_status,
     build_resource_summaries,
     claimed_budget_by_resource,
+    record_unregistered_gpu_shadow_dispatch,
+    strict_gpu_loaded_evidence,
 )
 from app.services.ml_backend import (
     MLBackendDeleteBlocked,
     MLBackendService,
     MLBackendURLConflict,
 )
+from app.services.ml_client import MLBackendClient
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -270,8 +275,8 @@ class GlobalBackendItem(BaseModel):
     extra_params: dict = Field(default_factory=dict)
     gpu_resource_id: str | None = None
     vram_budget_mb: int | None = None
-    eviction_priority: int = 0
-    gpu_config: GPUBackendConfigStatus
+    eviction_priority: int | None = None
+    gpu_config: GPUBackendConfigStatus | None = None
     health_meta: HealthMeta | dict | None = None
     source_project_id: str
     source_project_name: str
@@ -285,7 +290,7 @@ class GlobalBackendListResponse(BaseModel):
 @router.get("/all", response_model=GlobalBackendListResponse)
 async def list_all_backends(
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+    admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
 ) -> GlobalBackendListResponse:
     """v0.19.0 ADR-0044 · 列全局注册表所有 backend。
 
@@ -299,7 +304,8 @@ async def list_all_backends(
         )
     )
     backends = list(res.scalars().all())
-    totals = claimed_budget_by_resource(backends)
+    can_view_gpu_topology = admin.role == UserRole.SUPER_ADMIN
+    totals = claimed_budget_by_resource(backends) if can_view_gpu_topology else {}
     items: list[GlobalBackendItem] = []
     for backend in backends:
         items.append(
@@ -311,11 +317,33 @@ async def list_all_backends(
                 is_interactive=backend.is_interactive,
                 auth_method=backend.auth_method,
                 extra_params=backend.extra_params or {},
-                gpu_resource_id=backend.gpu_resource_id,
-                vram_budget_mb=backend.vram_budget_mb,
-                eviction_priority=backend.eviction_priority,
-                gpu_config=build_backend_gpu_config_status(backend, totals),
-                health_meta=backend.health_meta,
+                gpu_resource_id=(
+                    backend.gpu_resource_id if can_view_gpu_topology else None
+                ),
+                vram_budget_mb=(
+                    backend.vram_budget_mb if can_view_gpu_topology else None
+                ),
+                eviction_priority=(
+                    backend.eviction_priority if can_view_gpu_topology else None
+                ),
+                gpu_config=(
+                    build_backend_gpu_config_status(backend, totals)
+                    if can_view_gpu_topology
+                    else None
+                ),
+                # 项目管理员仅需能力目录做模态筛选；GPU UUID、residency 与预算拓扑
+                # 仍严格留在超管面。
+                health_meta=(
+                    backend.health_meta
+                    if can_view_gpu_topology
+                    else {
+                        "capabilities": (
+                            backend.health_meta.get("capabilities")
+                            if isinstance(backend.health_meta, dict)
+                            else None
+                        )
+                    }
+                ),
                 source_project_id="",
                 source_project_name=backend.source,
                 last_checked_at=backend.last_checked_at.isoformat()
@@ -343,6 +371,8 @@ class GPUArbiterResourceItem(BaseModel):
 class GPUArbiterResourcesResponse(BaseModel):
     global_desired_mode: Literal["off", "observe", "enforce"]
     runtime_ready: bool
+    observe_runtime_ready: bool
+    enforce_runtime_ready: bool
     resources: list[GPUArbiterResourceItem]
     diagnostics: list[GPUConfigDiagnostic]
 
@@ -358,9 +388,14 @@ async def list_gpu_resources(
         (await db.execute(select(MLBackendRegistry))).scalars().all()
     )
     resources, diagnostics = build_resource_summaries(backends)
+    runtime_ready = not settings.gpu_arbiter_config_errors and all(
+        item["desired_mode"] != "enforce" for item in resources
+    )
     return GPUArbiterResourcesResponse(
         global_desired_mode=settings.gpu_arbiter_mode.value,
-        runtime_ready=False,
+        runtime_ready=runtime_ready,
+        observe_runtime_ready=True,
+        enforce_runtime_ready=False,
         resources=[GPUArbiterResourceItem(**item) for item in resources],
         diagnostics=diagnostics,
     )
@@ -551,6 +586,44 @@ async def check_registry_health(
         backend_id=backend.id,
         backend_name=backend.name,
     )
+
+
+@router.post(
+    "/registry/{registry_id}/unload",
+    response_model=MLBackendUnloadResponse,
+)
+async def unload_registry_backend(
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendUnloadResponse:
+    """全局卸载 backend，不要求它已被任一项目启用。"""
+
+    svc = MLBackendService(db, shadow_session_factory=shadow_session_factory)
+    try:
+        result = await svc.unload(registry_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"backend unload failed: {exc}"
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_backend.unloaded",
+        target_type="ml_backend",
+        target_id=str(registry_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": None, "result": result},
+    )
+    await db.commit()
+    return MLBackendUnloadResponse.model_validate(result)
 
 
 # ─── v0.10.26 · 容器直连观测 (与项目注册解耦) ──────────────────────────────
@@ -754,6 +827,9 @@ async def smoke_test_backend(
     payload: SmokeTestRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> SmokeTestResponse:
     """试启动: 空池时 warm 指定变体验证可加载性, 成功后自动 /unload 还原现场。
@@ -762,9 +838,22 @@ async def smoke_test_backend(
     就证明能启, 避免驱逐在用模型 (不和注册的 backend 冲突)。
     """
     base = payload.url.rstrip("/")
+    registered_backend = (
+        await db.execute(select(MLBackendRegistry).where(MLBackendRegistry.url == base))
+    ).scalar_one_or_none()
+    # 后续是长耗时远程调用与独立 shadow 快照；先释放当前只读事务连接。
+    await db.commit()
     variant = {"sam_variant": payload.sam_variant, "dino_variant": payload.dino_variant}
     generic_variant = payload.variant or None
     audit_detail: dict = {"url": base, **variant, "variant": generic_variant}
+    registered_client = (
+        MLBackendClient(
+            registered_backend,
+            shadow_session_factory=shadow_session_factory,
+        )
+        if registered_backend is not None
+        else None
+    )
 
     async def _audit(result: SmokeTestResponse) -> None:
         await AuditService.log(
@@ -797,11 +886,17 @@ async def smoke_test_backend(
 
         # 1) 看池子是否已有变体常驻。
         try:
-            hresp = await client.get(
-                f"{base}/health", timeout=settings.ml_health_timeout
-            )
-            hresp.raise_for_status()
-            health = hresp.json()
+            if registered_client is not None:
+                healthy, health = await registered_client.health_meta()
+                if not healthy:
+                    raise RuntimeError("registered backend /health 不可达")
+                health = health or {}
+            else:
+                hresp = await client.get(
+                    f"{base}/health", timeout=settings.ml_health_timeout
+                )
+                hresp.raise_for_status()
+                health = hresp.json()
         except Exception as e:  # noqa: BLE001
             r = SmokeTestResponse(
                 ok=False, message="试启动失败：/health 不可达", error=str(e)[:200]
@@ -809,16 +904,123 @@ async def smoke_test_backend(
             await _audit(r)
             return r
 
-        pool = health.get("pool") or {}
+        if not isinstance(health, dict):
+            r = SmokeTestResponse(
+                ok=True,
+                skipped=True,
+                message="容器 /health 格式不可识别，无法证明 GPU 已空；未执行试启动。",
+            )
+            await _audit(r)
+            return r
+
+        raw_pool = health.get("pool")
+        pool_valid = raw_pool is None or isinstance(raw_pool, dict)
+        pool = raw_pool if isinstance(raw_pool, dict) else {}
         # v0.14.14: 优先读协议 PoolStatus.loaded_keys (字符串数组); 老字段
         # loaded_variants (dict 数组) 作 fallback. current_size 直接表示池中数量,
         # 取不到时退到数组长度.
-        loaded_keys = pool.get("loaded_keys") or []
-        loaded_variants = pool.get("loaded_variants") or []
+        raw_loaded_keys = pool.get("loaded_keys")
+        raw_loaded_variants = pool.get("loaded_variants")
+        loaded_keys_valid = raw_loaded_keys is None or isinstance(
+            raw_loaded_keys, list
+        )
+        loaded_variants_valid = raw_loaded_variants is None or isinstance(
+            raw_loaded_variants, list
+        )
+        loaded_keys = raw_loaded_keys if isinstance(raw_loaded_keys, list) else []
+        loaded_variants = (
+            raw_loaded_variants if isinstance(raw_loaded_variants, list) else []
+        )
         current_size = pool.get("current_size")
         if current_size is None:
             current_size = len(loaded_keys) or len(loaded_variants)
-        was_loaded = bool(health.get("loaded")) or current_size > 0
+            current_size_valid = True
+        else:
+            current_size_valid = (
+                isinstance(current_size, int)
+                and not isinstance(current_size, bool)
+                and current_size >= 0
+            )
+            if not current_size_valid:
+                current_size = 0
+        raw_video_pool = health.get("video_pool")
+        video_pool_valid = raw_video_pool is None or isinstance(raw_video_pool, dict)
+        video_pool = raw_video_pool if isinstance(raw_video_pool, dict) else {}
+        raw_video_loaded_keys = video_pool.get("loaded_keys")
+        raw_video_loaded_variants = video_pool.get("loaded_variants")
+        video_loaded_keys_valid = raw_video_loaded_keys is None or isinstance(
+            raw_video_loaded_keys, list
+        )
+        video_loaded_variants_valid = (
+            raw_video_loaded_variants is None
+            or isinstance(raw_video_loaded_variants, list)
+        )
+        video_loaded_keys = (
+            raw_video_loaded_keys
+            if isinstance(raw_video_loaded_keys, list)
+            else []
+        )
+        video_loaded_variants = (
+            raw_video_loaded_variants
+            if isinstance(raw_video_loaded_variants, list)
+            else []
+        )
+        video_current_size = video_pool.get("current_size")
+        if video_current_size is None:
+            video_current_size = len(video_loaded_keys) or len(video_loaded_variants)
+            video_current_size_valid = True
+        else:
+            video_current_size_valid = (
+                isinstance(video_current_size, int)
+                and not isinstance(video_current_size, bool)
+                and video_current_size >= 0
+            )
+            if not video_current_size_valid:
+                video_current_size = 0
+        active_sessions = video_pool.get("active_sessions")
+        active_sessions_valid = active_sessions is None or (
+            isinstance(active_sessions, int)
+            and not isinstance(active_sessions, bool)
+            and active_sessions >= 0
+        )
+        active_sessions = active_sessions if active_sessions_valid else 0
+        active_sessions = active_sessions or 0
+        loaded_flag = health.get("loaded")
+        loaded_flag_valid = loaded_flag is None or isinstance(loaded_flag, bool)
+        legacy_evidence_valid = all(
+            (
+                pool_valid,
+                loaded_keys_valid,
+                loaded_variants_valid,
+                current_size_valid,
+                video_pool_valid,
+                video_loaded_keys_valid,
+                video_loaded_variants_valid,
+                video_current_size_valid,
+                active_sessions_valid,
+                loaded_flag_valid,
+            )
+        ) and (
+            isinstance(loaded_flag, bool)
+            or raw_pool is not None
+            or raw_video_pool is not None
+        )
+
+        residency_present = "residency" in health
+        residency_loaded = strict_gpu_loaded_evidence(health)
+        if residency_present:
+            # 新协议只有 fresh 直连快照中的严格 false 能证明全 pool GPU 已空；
+            # true、null、畸形或内部矛盾都保守跳过，绝不执行 bodyless unload。
+            was_loaded = residency_loaded is not False
+        else:
+            # 旧协议回退同时覆盖 image/video pool 与活跃 video session。
+            was_loaded = (
+                not legacy_evidence_valid
+                or loaded_flag is True
+                or current_size > 0
+                or video_current_size > 0
+                or active_sessions > 0
+            )
 
         if was_loaded:
             # 回兼 SmokeTestResponse.loaded_variant (dict, 老前端期望 {sam, dino} 形态).
@@ -826,18 +1028,40 @@ async def smoke_test_backend(
             # 回落老字段时直接给 dict.
             first_display: dict | None = None
             if loaded_keys:
-                raw_key = (loaded_keys[0] or {}).get("key") or ""
+                first_key = loaded_keys[0]
+                raw_key = (
+                    first_key.get("key") or ""
+                    if isinstance(first_key, dict)
+                    else str(first_key or "")
+                )
                 parsed = _parse_gsam2_image_key(raw_key) if raw_key else None
                 first_display = parsed or ({"key": raw_key} if raw_key else None)
             elif loaded_variants:
-                first_display = loaded_variants[0]
+                first_variant = loaded_variants[0]
+                first_display = (
+                    first_variant
+                    if isinstance(first_variant, dict)
+                    else {"key": str(first_variant)}
+                )
             display_payload = first_display if first_display else loaded_variants
+            if residency_present:
+                occupancy = (
+                    "residency 报告 GPU 仍驻留"
+                    if residency_loaded is True
+                    else "residency 无法严格证明 GPU 已空"
+                )
+            elif video_current_size > 0 or active_sessions > 0:
+                occupancy = "视频模型或会话仍驻留"
+            elif not legacy_evidence_valid:
+                occupancy = "旧协议驻留字段格式不可识别，无法证明 GPU 已空"
+            else:
+                occupancy = f"容器已有变体常驻（{display_payload}）"
             r = SmokeTestResponse(
                 ok=True,
                 skipped=True,
                 loaded_variant=first_display,
                 message=(
-                    f"容器已有变体常驻（{display_payload}），可加载性已证实；"
+                    f"{occupancy}；"
                     "为避免驱逐在用模型，未执行试启动。"
                 ),
             )
@@ -848,9 +1072,17 @@ async def smoke_test_backend(
         body = {k: v for k, v in variant.items() if v}
         start = time.monotonic()
         try:
-            rresp = await client.post(f"{base}/reload", json=body or None)
-            rresp.raise_for_status()
-            reload_data = rresp.json()
+            if registered_backend is not None:
+                assert registered_client is not None
+                reload_data = await registered_client.reload(
+                    sam_variant=payload.sam_variant,
+                    dino_variant=payload.dino_variant,
+                )
+            else:
+                record_unregistered_gpu_shadow_dispatch(base, "reload")
+                rresp = await client.post(f"{base}/reload", json=body or None)
+                rresp.raise_for_status()
+                reload_data = rresp.json()
         except Exception as e:  # noqa: BLE001
             r = SmokeTestResponse(
                 ok=False, message="试启动失败：模型未能加载", error=str(e)[:200]
@@ -862,10 +1094,16 @@ async def smoke_test_backend(
         # 3) 还原现场: 卸载我们刚预热的变体 (空池时 unload 不会动到别人)。
         auto_unloaded = False
         try:
-            uresp = await client.post(
-                f"{base}/unload", timeout=settings.ml_health_timeout
-            )
-            auto_unloaded = uresp.status_code == 200
+            if registered_backend is not None:
+                assert registered_client is not None
+                await registered_client.unload()
+                auto_unloaded = True
+            else:
+                record_unregistered_gpu_shadow_dispatch(base, "unload")
+                uresp = await client.post(
+                    f"{base}/unload", timeout=settings.ml_health_timeout
+                )
+                auto_unloaded = uresp.status_code == 200
         except Exception:  # noqa: BLE001 — 卸载失败不影响「能启起来」结论, idle watcher 兜底
             auto_unloaded = False
 
@@ -882,9 +1120,9 @@ async def smoke_test_backend(
             message=(
                 f"试启动成功（加载 {load_latency_ms}ms）"
                 + (
-                    "，已自动卸载还原。"
+                    "，已发送自动卸载请求；请以 residency 确认显存释放。"
                     if auto_unloaded
-                    else "，但自动卸载失败，idle 超时后会释放。"
+                    else "，但自动卸载未确认；请检查 residency 或 idle 卸载。"
                 )
             ),
         )

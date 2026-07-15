@@ -37,7 +37,9 @@
 
 ### Added
 
-- **ML Backend 注册表新增强类型逐卡显存声明**：超管可为全局 backend 设置稳定 `gpu_resource_id`、保守 `vram_budget_mb` 与驱逐优先级；平台从显式逐卡资源映射校验单体预算，并通过只诊断端点区分配置阻断与允许驱逐的弹性超售。单卡、同机多卡和多主机同号卡均按资源 key 隔离；管理 API 分开报告 desired/effective mode，未完成运行时握手时 effective 保持 `off`，过期或失败的 health 也不会被当作 CPU/UUID 证据。
+- **ML Backend 注册表新增强类型逐卡显存声明**：超管可为全局 backend 设置稳定 `gpu_resource_id`、保守 `vram_budget_mb` 与驱逐优先级；平台从显式逐卡资源映射校验单体预算，并通过只诊断端点区分配置阻断与允许驱逐的弹性超售。单卡、同机多卡和多主机同号卡均按资源 key 隔离；管理 API 分开报告 desired/effective mode，observe 影子派发就绪时 effective 为 `observe`，enforce 在账本与 gate 握手就绪前仍为 `off`。过期或失败的 health 不会被当作 CPU/UUID 证据。
+- **模型市场新增逐卡 GPU 配置与 residency 观测**：超管可编辑 backend 的物理资源、显存预算和驱逐优先级，并查看每张卡的容量、静态超售、desired → effective mode、CPU fallback 与逐池驻留。没有绑定项目的全局 backend 仍可做健康检查与卸载，操作成功文案不再将请求已接受误报为显存已释放。
+- **GPU observe 影子仲裁覆盖真实加载派发口**：predict、交互预测、warmup、reload 与注册 smoke-test 在发送 backend HTTP 前使用同卡静态预算和新鲜 residency 输出非权威 `would-admit|would-evict|would-reject` 决策；legacy unload 只记录请求，不能作为显存减账证据。单卡、同机多卡和多主机同号卡始终按完整资源 key 隔离；旁路查询超时后 fail-open，不会拒绝、排队或驱逐业务请求，enforce 在 Redis 账本与 lifecycle gate 就绪前仍保持关闭。
 - **受管 GPU 生命周期获得共享 wire 与非对称验签契约**：共享 ML Backend 协议新增 canonical generation/control epoch、residency、transition、八类结构化错误和 admission claims schema，并固定使用带 `kid` 的 Ed25519 / EdDSA token；平台签发进程独占私钥，backend 只持可轮换公钥 keyring。
 - **YOLO 成为首个具备受管 GPU 生命周期的 Backend**：模型池现在先预留再构建，并以 borrower 与逐模型使用锁保护 LRU、可变模型状态和全池卸载；请求取消或 build 超时后仍跟踪真实 executor/builder 完成，tracker 会在截断和异常时关闭流。`/health` 暴露可信 residency，加载入口支持 EdDSA admission、generation fencing、replay 防护、drain/cancel、受管 unload、mode/reset 与 legacy 兼容。其他 Backend 与平台仲裁账本尚未接入，enforce 仍保持关闭。
 - **ONNXTools 获得受保护的固定句柄池与受管生命周期纵切**：pipeline、detector、va 冷启动现在 single-flight，并以 borrower、逐句柄使用锁和真实 executor/builder 跟踪防止重复构建、推理中卸载及取消后的隐藏 GPU session。`/health` 聚合四个业务 ORT session 的真实 provider chain，manual、idle、shutdown 与受管 reset/unload 共用全池清理；Docker 依赖固定到已审计上游提交。部署完成真实 GPU 回落验证前不会在 `/setup` 宣告 managed capability，也不会进入自动驱逐集合。
@@ -47,7 +49,7 @@
 
 ### Changed
 
-- **跨 Backend GPU 显存仲裁冻结逐物理资源治理边界**：ADR-0049 已接受按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切和 P2a 静态 claim 已落地，ONNXTools 仍待真实 GPU 回落验收；仲裁 effective 保持 `off`，下一步是 P2b observe 与 P3+ 账本/驱逐。
+- **跨 Backend GPU 显存仲裁按逐物理资源治理**：ADR-0049 按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切、静态 claim 与 observe 影子派发已落地；ONNXTools 仍待真实 GPU 回落验收，Redis 账本、lease、enforce 与真正驱逐仍待实施。
 
 ### Fixed
 

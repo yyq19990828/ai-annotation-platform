@@ -372,7 +372,7 @@ async def _run_segment(
             if backend is None or task is None:
                 return stats
             ctx = await build_context_from_task(db, task)
-            client = MLBackendClient(backend)
+            client = MLBackendClient(backend, shadow_session_factory=SessionLocal)
             context = _build_predict_context(
                 prompt=None,
                 output_mode="box",

@@ -186,7 +186,7 @@ async def test_run_batch_accumulates_total_cost(
     await db_session.flush()
 
     class _StubClient:
-        def __init__(self, _backend):
+        def __init__(self, _backend, **_kwargs):
             self._backend = _backend
 
         async def predict(self, tasks_payload, context=None):
@@ -258,7 +258,7 @@ async def test_run_batch_all_failed_marks_job_failed(
     await db_session.flush()
 
     class _FailingClient:
-        def __init__(self, _backend):
+        def __init__(self, _backend, **_kwargs):
             self._backend = _backend
 
         async def predict(self, tasks_payload, context=None):
@@ -324,7 +324,7 @@ async def test_run_batch_stops_on_cooperative_cancel(
     class _StubClient:
         calls = 0
 
-        def __init__(self, _backend):
+        def __init__(self, _backend, **_kwargs):
             self._backend = _backend
 
         async def predict(self, tasks_payload, context=None):
@@ -426,7 +426,7 @@ async def test_run_batch_merges_params_into_context(
     captured: dict = {}
 
     class _StubClient:
-        def __init__(self, _backend):
+        def __init__(self, _backend, **_kwargs):
             self._backend = _backend
 
         async def predict(self, tasks_payload, context=None):
@@ -493,7 +493,7 @@ async def test_run_batch_passes_model_id_and_task_type_into_context(
     captured: dict = {}
 
     class _StubClient:
-        def __init__(self, _backend):
+        def __init__(self, _backend, **_kwargs):
             self._backend = _backend
 
         async def predict(self, tasks_payload, context=None):
@@ -570,7 +570,7 @@ async def test_run_batch_pure_text_prompt_unchanged_without_v2_args(
     captured: dict = {}
 
     class _StubClient:
-        def __init__(self, _backend):
+        def __init__(self, _backend, **_kwargs):
             self._backend = _backend
 
         async def predict(self, tasks_payload, context=None):

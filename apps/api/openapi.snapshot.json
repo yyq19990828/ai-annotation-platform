@@ -9190,6 +9190,10 @@
             "title": "Diagnostics",
             "type": "array"
           },
+          "enforce_runtime_ready": {
+            "title": "Enforce Runtime Ready",
+            "type": "boolean"
+          },
           "global_desired_mode": {
             "enum": [
               "off",
@@ -9198,6 +9202,10 @@
             ],
             "title": "Global Desired Mode",
             "type": "string"
+          },
+          "observe_runtime_ready": {
+            "title": "Observe Runtime Ready",
+            "type": "boolean"
           },
           "resources": {
             "items": {
@@ -9214,6 +9222,8 @@
         "required": [
           "global_desired_mode",
           "runtime_ready",
+          "observe_runtime_ready",
+          "enforce_runtime_ready",
           "resources",
           "diagnostics"
         ],
@@ -9396,9 +9406,15 @@
             "type": "string"
           },
           "eviction_priority": {
-            "default": 0,
-            "title": "Eviction Priority",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eviction Priority"
           },
           "extra_params": {
             "additionalProperties": true,
@@ -9406,7 +9422,14 @@
             "type": "object"
           },
           "gpu_config": {
-            "$ref": "#/components/schemas/GPUBackendConfigStatus"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GPUBackendConfigStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "gpu_resource_id": {
             "anyOf": [
@@ -9492,7 +9515,6 @@
           "state",
           "is_interactive",
           "auth_method",
-          "gpu_config",
           "source_project_id",
           "source_project_name"
         ],
@@ -11389,6 +11411,54 @@
           }
         },
         "title": "MLBackendReloadRequest",
+        "type": "object"
+      },
+      "MLBackendUnloadResponse": {
+        "additionalProperties": true,
+        "description": "跨 backend 兼容的 legacy `/unload` 响应；额外字段保持透传。",
+        "properties": {
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "residency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResidencyInfo"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residency"
+          },
+          "unloaded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unloaded"
+          }
+        },
+        "title": "MLBackendUnloadResponse",
         "type": "object"
       },
       "MLBackendUpdate": {
@@ -24747,6 +24817,55 @@
         ]
       }
     },
+    "/api/v1/admin/ml-integrations/registry/{registry_id}/unload": {
+      "post": {
+        "description": "全局卸载 backend，不要求它已被任一项目启用。",
+        "operationId": "unload_registry_backend_api_v1_admin_ml_integrations_registry__registry_id__unload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendUnloadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unload Registry Backend",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
     "/api/v1/admin/ml-integrations/runtime-hints": {
       "get": {
         "operationId": "runtime_hints_api_v1_admin_ml_integrations_runtime_hints_get",
@@ -35311,7 +35430,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendUnloadResponse"
+                }
               }
             },
             "description": "Successful Response"

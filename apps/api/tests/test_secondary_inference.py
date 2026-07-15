@@ -46,7 +46,7 @@ def _patch_io(monkeypatch):
 
 def _patch_predict(monkeypatch, results: list[PredictionResult]):
     class _FakeClient:
-        def __init__(self, backend):
+        def __init__(self, backend, **_kwargs):
             pass
 
         async def predict(self, inputs, context=None):
@@ -569,7 +569,7 @@ async def test_prompt_path_sends_legal_output_in_context(
     seen: dict = {}
 
     class _FakeClient:
-        def __init__(self, backend):
+        def __init__(self, backend, **_kwargs):
             pass
 
         async def predict(self, inputs, context=None):
@@ -621,7 +621,7 @@ async def test_backend_timeout_surfaces_as_504_not_500(
     await db_session.flush()
 
     class _TimingOutClient:
-        def __init__(self, backend):
+        def __init__(self, backend, **_kwargs):
             pass
 
         async def predict(self, inputs, context=None):
@@ -667,7 +667,7 @@ async def test_backend_5xx_surfaces_as_502_not_500(
     await db_session.flush()
 
     class _Failing5xxClient:
-        def __init__(self, backend):
+        def __init__(self, backend, **_kwargs):
             pass
 
         async def predict(self, inputs, context=None):

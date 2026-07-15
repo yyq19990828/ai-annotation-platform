@@ -28,6 +28,8 @@ ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全�
 
 **没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 目前只为各进程本地 semaphore 提供同一配置值，能减少单进程压力，但 API 与多个 Celery worker 的并发仍会叠加。后续显存仲裁阶段将由 Redis request lease 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
+平台在 GPU `observe` 模式下会在 predict、交互预测、warmup 和 reload 的真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。该模式不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。只有 enforce 通过 Redis lease、generation fencing 与 lifecycle gate 握手后才发送受管 header。
+
 ---
 
 ## 端点总览

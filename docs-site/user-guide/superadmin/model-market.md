@@ -66,10 +66,13 @@ last_reviewed: 2026-07-11
 > **信任边界**：`/observe` 直连 `ML_BACKEND_OBSERVE_URLS` 里的地址探活，**不带应用层鉴权**——它假定这些地址在可信内网、免鉴权可达。请勿把该变量指向可从不受信网络到达的地址；需要鉴权的 backend 应通过「注册管理」注册（注册项携带 `auth_method` / `auth_token`，走鉴权链路），而非只靠裸 observe URL。
 
 - 每个全局注册 backend 一行（URL 全局唯一），实时指标取对应容器值。
+- 没有任何项目启用的注册 backend 仍会出现；全局健康检查和卸载操作不依赖项目绑定。
 - 观测 URL 没有匹配任何注册 backend 时，会进入「未注册容器」分组，只支持直连 observe / smoke-test。
 - 已注册 backend 可执行健康检查、卸载、默认预热，并展示变体面板。
 - 未注册容器会显示其自报的 `supported_trackers` 与变体目录；若只暴露通用 `supported_variants`，当前只读展示，「试启动」保持 disabled，等待 backend 实现通用 warm 接口。
 - 同一 backend URL 被多个项目启用时，运行时观测按 URL 聚合为一张卡，并列出所有启用项目，避免把同一物理容器重复计数。
+- CPU fallback 与 GPU residency 可同时出现；页面会分开显示。只有新鲜且完整的 `residency.gpu_loaded=false` 才能证明空驻留，`compute=cpu` 不能单独证明显存已释放。
+- 卸载、预热和重载成功只表示请求被 backend 接受；是否真正释放或驻留以后续 `residency` 为准。
 
 ### 3. 注册管理
 
@@ -82,7 +85,8 @@ last_reviewed: 2026-07-11
 | 名称 | backend 名称 |
 | URL | 注册地址（全局唯一） |
 | 来源 | `manual`（超管手动注册）/ `env`（env 配置启动后自动注册） |
-| 类型 | 交互式 / 批量；最大并发 chip（`extra_params.max_concurrency`，缺省不显示） |
+| 类型 | 交互式 / 批量；本地最大并发 chip（`extra_params.max_concurrency`，缺省不显示） |
+| GPU 配置 | 物理资源、预算、desired → effective mode 与 blocker / 弹性超售诊断 |
 | 状态 | 注册记录最近状态与错误片段 |
 | 最近检查 | 上次健康检查时间 |
 | 操作 | 编辑 / 删除 / 健康检查（**仅超管**） |
@@ -91,7 +95,7 @@ last_reviewed: 2026-07-11
 
 **项目启用概览**（**仅超管可见 · 只读**）：列出每个启用了 AI 的项目，以及它当前启用了哪些 backend（已启用 AI 但未启用任何 backend 的项目会标黄提示），每行提供「打开项目设置 →」入口。这里只看不改——项目启用本身在项目设置里做（详见 [启用 ML 后端](../projects/ml-backends)）。
 
-> **角色门控**：超管可在全局注册表做增删改查 + 健康检查，并看到项目启用概览。项目管理员进本 tab 时全局注册表为**只读**（隐藏注册 / 编辑 / 删除），且看不到项目启用概览——项目管理员只在自己的项目设置里勾选启用 backend。
+> **角色门控**：超管可在全局注册表做增删改查 + 健康检查，并看到项目启用概览。项目管理员进本 tab 时全局注册表为**只读**（隐藏注册 / 编辑 / 删除），且看不到项目启用概览与 GPU 物理资源、预算、residency / UUID 等拓扑字段——项目管理员只在自己的项目设置里勾选启用 backend。
 
 运行时指标（GPU、cache、model_version、pool）和生命周期动作已经迁到「运行时观测」。
 
@@ -120,7 +124,7 @@ backend 的变体面板拆成两组：
 
 ## 新建 / 编辑 Backend
 
-点「注册管理」右上角的 **「注册 backend」** 即可新增一条全局 backend 记录；点某行的「编辑」可改其 URL / 名称 / 鉴权 / `extra_params`（含 `max_concurrency`）。注册表单字段与校验详见 [ML Backend 注册](./ml-backend-registry)。env 配置的 backend 启动后会自动出现在列表里（来源 `env`），无需手动注册。
+点「注册管理」右上角的 **「注册 backend」** 即可新增一条全局 backend 记录；点某行的「编辑」可改其 URL / 名称 / 鉴权 / GPU 资源与预算 / 驱逐优先级 / `max_concurrency` 及其他 `extra_params`。注册表单字段与校验详见 [ML Backend 注册](./ml-backend-registry)。env 配置的 backend 启动后会自动出现在列表里（来源 `env`），无需手动注册。
 
 ## 删除
 

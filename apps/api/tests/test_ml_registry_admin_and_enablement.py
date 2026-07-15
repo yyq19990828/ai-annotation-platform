@@ -122,7 +122,11 @@ async def test_create_registry_rejects_unknown_or_oversized_gpu_claim(
     ):
         res = await httpx_client.post(
             "/api/v1/admin/ml-integrations/registry",
-            json={"name": f"bad-{uuid.uuid4()}", "url": f"http://{uuid.uuid4()}:8000", **claim},
+            json={
+                "name": f"bad-{uuid.uuid4()}",
+                "url": f"http://{uuid.uuid4()}:8000",
+                **claim,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 422, res.text
@@ -375,10 +379,12 @@ async def test_gpu_resources_reports_per_card_oversubscription_warning(
     assert res.status_code == 200, res.text
     resource = res.json()["resources"][0]
     assert res.json()["global_desired_mode"] == "observe"
-    assert res.json()["runtime_ready"] is False
+    assert res.json()["runtime_ready"] is True
+    assert res.json()["observe_runtime_ready"] is True
+    assert res.json()["enforce_runtime_ready"] is False
     assert resource["gpu_resource_id"] == resource_id
     assert resource["desired_mode"] == "observe"
-    assert resource["effective_mode"] == "off"
+    assert resource["effective_mode"] == "observe"
     assert resource["claimed_budget_mb"] == 24000
     assert resource["claimed_backend_count"] == 2
     assert resource["status"] == "warning"
@@ -429,9 +435,7 @@ async def test_enforce_desired_mode_is_reported_not_ready_and_never_effective(
         for item in resource["diagnostics"]
     )
 
-    item = next(
-        row for row in backends.json()["items"] if row["id"] == str(backend.id)
-    )
+    item = next(row for row in backends.json()["items"] if row["id"] == str(backend.id))
     assert item["gpu_config"]["desired_mode"] == "enforce"
     assert item["gpu_config"]["effective_mode"] == "off"
     assert item["gpu_config"]["status"] == "blocker"
@@ -577,6 +581,30 @@ async def test_delete_registry_cascades_project_binding(
     assert res.status_code == 204
     # 全局项已删 + 项目绑定 SET NULL
     assert await MLBackendService(db_session).get(b.id) is None
+
+
+async def test_registry_unload_does_not_require_project_binding(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    _, token = super_admin
+    backend = await _seed_registry(db_session, name="unbound-unload")
+    await db_session.commit()
+    calls: list[uuid.UUID] = []
+
+    async def _unload(_self, registry_id: uuid.UUID):
+        calls.append(registry_id)
+        return {"unloaded": True, "residency": {"state": "unloaded"}}
+
+    monkeypatch.setattr(MLBackendService, "unload", _unload)
+
+    res = await httpx_client.post(
+        f"/api/v1/admin/ml-integrations/registry/{backend.id}/unload",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["unloaded"] is True
+    assert calls == [backend.id]
 
 
 # ── 项目启用勾选清单 ──────────────────────────────────────────────────────

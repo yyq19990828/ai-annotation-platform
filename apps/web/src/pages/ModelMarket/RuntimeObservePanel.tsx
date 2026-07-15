@@ -8,7 +8,8 @@ import { useToastStore } from "@/components/ui/Toast";
 import { isCpuFallback, resolveRuntimeCompute } from "@/utils/mlBackendCompute";
 import {
   adminMlIntegrationsApi,
-  type MLBackendItem,
+  type GlobalBackendItem,
+  type GpuInfo,
   type ObserveTarget,
   type SmokeTestRequest,
 } from "@/api/adminMlIntegrations";
@@ -20,12 +21,11 @@ import {
   mlBackendSetupQueryKey,
 } from "@/api/ml-backends";
 import {
-  useMLBackendHealth,
   useMLBackendReload,
-  useMLBackendUnload,
   useMLBackendWarmup,
 } from "@/hooks/useMLBackends";
 import { VariantPanel, type VariantWarmTarget } from "./VariantPanel";
+import { useRegistryHealth, useRegistryUnload } from "./useGlobalRegistry";
 
 const CARD_CLASS =
   "flex flex-col gap-2.5 rounded-md border border-border bg-card p-3";
@@ -40,9 +40,9 @@ const SELECT_CLASS =
   "max-w-[180px] appearance-none rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground";
 
 interface RegisteredRef {
-  projectId: string;        // 路由 unload/reload/warmup 用: 任一启用项目即可 (backend 全局, 操作作用于物理后端)
+  projectId?: string;       // reload/warmup 仍需任一启用项目；health/unload 走全局 registry 路径。
   projectNames: string[];   // 启用了该 backend 的所有项目名 (去重聚合展示)
-  backend: MLBackendItem;
+  backend: GlobalBackendItem;
   observe?: ObserveTarget;
 }
 
@@ -51,6 +51,11 @@ function normalizeUrl(url: string) {
 }
 
 export function RuntimeObservePanel() {
+  const registryQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "all"],
+    queryFn: () => adminMlIntegrationsApi.listAll(),
+    refetchInterval: 60_000,
+  });
   const overviewQ = useQuery({
     queryKey: ["admin", "ml-integrations", "overview"],
     queryFn: () => adminMlIntegrationsApi.overview(),
@@ -68,31 +73,39 @@ export function RuntimeObservePanel() {
     return map;
   }, [observeQ.data]);
 
-  // backend 全局化 (ADR-0044) 后, 同一物理 backend 可被 N 个项目启用, overview 会为
-  // 每个 (project, backend) 各返回一行。这里按 backend url 去重, 每个物理 backend 一张卡,
-  // 把启用它的项目名聚合进 projectNames, 避免重复显示。
-  const registered = useMemo<RegisteredRef[]>(() => {
-    const byUrl = new Map<string, RegisteredRef>();
+  const projectsByBackend = useMemo(() => {
+    const map = new Map<string, { projectId: string; projectNames: string[] }>();
     for (const project of overviewQ.data?.projects ?? []) {
       for (const backend of project.backends) {
-        const key = normalizeUrl(backend.url);
-        const existing = byUrl.get(key);
+        const existing = map.get(backend.id);
         if (existing) {
           if (!existing.projectNames.includes(project.project_name)) {
             existing.projectNames.push(project.project_name);
           }
         } else {
-          byUrl.set(key, {
+          map.set(backend.id, {
             projectId: project.project_id,
             projectNames: [project.project_name],
-            backend,
-            observe: observedByUrl.get(key),
           });
         }
       }
     }
-    return [...byUrl.values()];
-  }, [observedByUrl, overviewQ.data]);
+    return map;
+  }, [overviewQ.data]);
+
+  // /all 是全局注册表真值，确保尚未绑定任何项目的 backend 也可见；/overview 只补项目名称
+  // 和仍需项目路径的预热操作所用 projectId。
+  const registered = useMemo<RegisteredRef[]>(() => {
+    return (registryQ.data?.items ?? []).map((backend) => {
+      const projects = projectsByBackend.get(backend.id);
+      return {
+        projectId: projects?.projectId,
+        projectNames: projects?.projectNames ?? [],
+        backend,
+        observe: observedByUrl.get(normalizeUrl(backend.url)),
+      };
+    });
+  }, [observedByUrl, projectsByBackend, registryQ.data]);
 
   const registeredUrls = useMemo(
     () => new Set(registered.map((ref) => normalizeUrl(ref.backend.url))),
@@ -103,8 +116,8 @@ export function RuntimeObservePanel() {
     [observeQ.data, registeredUrls],
   );
 
-  const loading = overviewQ.isLoading || observeQ.isLoading;
-  const error = overviewQ.error ?? observeQ.error;
+  const loading = registryQ.isLoading || overviewQ.isLoading || observeQ.isLoading;
+  const error = registryQ.error ?? overviewQ.error ?? observeQ.error;
 
   return (
     <div className="mb-4">
@@ -118,7 +131,14 @@ export function RuntimeObservePanel() {
             </span>
           </div>
           <div className="flex items-center gap-2 max-md:w-full max-md:flex-col max-md:items-stretch">
-            <Button size="sm" onClick={() => overviewQ.refetch()} disabled={overviewQ.isFetching}>
+            <Button
+              size="sm"
+              onClick={() => {
+                registryQ.refetch();
+                overviewQ.refetch();
+              }}
+              disabled={registryQ.isFetching || overviewQ.isFetching}
+            >
               <Icon name="refresh" size={11} />
               注册状态
             </Button>
@@ -179,16 +199,16 @@ function RegisteredRuntimeCard({
   backend,
   observe,
 }: {
-  projectId: string;
+  projectId?: string;
   projectNames: string[];
-  backend: MLBackendItem;
+  backend: GlobalBackendItem;
   observe?: ObserveTarget;
 }) {
   const pushToast = useToastStore((s) => s.push);
-  const health = useMLBackendHealth(projectId);
-  const unload = useMLBackendUnload(projectId);
-  const reload = useMLBackendReload(projectId);
-  const warmup = useMLBackendWarmup(projectId);
+  const health = useRegistryHealth();
+  const unload = useRegistryUnload();
+  const reload = useMLBackendReload(projectId ?? "");
+  const warmup = useMLBackendWarmup(projectId ?? "");
 
   const ok = observe?.ok ?? backend.state === "connected";
   const gpu = observe?.gpu_info ?? backend.health_meta?.gpu_info;
@@ -196,11 +216,22 @@ function RegisteredRuntimeCard({
   const videoPool = observe?.video_pool ?? backend.health_meta?.video_pool;
   const modelVersion = observe?.model_version ?? backend.health_meta?.model_version;
   const compute = resolveRuntimeCompute(observe, backend.health_meta?.compute);
+  const cachedHealthFresh = isFreshCachedHealth(backend.state, backend.last_checked_at);
+  const hasDirectResidency = observe?.ok === true && observe.residency != null;
+  const residency = hasDirectResidency
+    ? observe.residency
+    : backend.health_meta?.residency;
+  const residencySource = hasDirectResidency
+    ? "实时直连（仅作旁证）"
+    : cachedHealthFresh
+      ? "缓存 health（新鲜）"
+      : "缓存 health（过期或未知）";
+  const residencyTrusted = hasDirectResidency || cachedHealthFresh;
   const supportsWarmup = backend.health_meta?.capabilities?.warmup_endpoint === true;
   const setupQ = useQuery({
-    queryKey: mlBackendSetupQueryKey(projectId, backend.id),
-    queryFn: () => mlBackendsApi.setup(projectId, backend.id),
-    enabled: supportsWarmup,
+    queryKey: mlBackendSetupQueryKey(projectId ?? "unbound", backend.id),
+    queryFn: () => mlBackendsApi.setup(projectId!, backend.id),
+    enabled: !!projectId && supportsWarmup,
     staleTime: 30_000,
   });
 
@@ -209,7 +240,7 @@ function RegisteredRuntimeCard({
       onSuccess: (res) =>
         pushToast({
           msg: `${backend.name}: ${res.status}`,
-          kind: res.status === "connected" ? "success" : "warning",
+          kind: res.status === "ok" ? "success" : "warning",
         }),
       onError: (e) => pushToast({ msg: "健康检查失败", sub: (e as Error).message }),
     });
@@ -218,13 +249,19 @@ function RegisteredRuntimeCard({
     unload.mutate(backend.id, {
       onSuccess: (res) =>
         pushToast({
-          msg: res.unloaded ? `${backend.name} 已卸载，显存已释放` : `${backend.name} 当前未加载，无需卸载`,
+          msg: res.unloaded
+            ? `${backend.name} 已接受卸载请求，等待 residency 确认`
+            : `${backend.name} 未报告需要卸载`,
           kind: "success",
         }),
       onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message }),
     });
   };
   const onWarm = (target?: VariantWarmTarget) => {
+    if (!projectId) {
+      pushToast({ msg: "请先把 backend 启用到项目，再执行预热", kind: "warning" });
+      return;
+    }
     if (supportsWarmup) {
       const body = buildWarmupBody(target, setupQ.data);
       warmup.mutate(
@@ -232,7 +269,7 @@ function RegisteredRuntimeCard({
         {
           onSuccess: (res) => {
             pushToast({
-              msg: res.cache_hit ? `${backend.name} 已在显存中` : `${backend.name} 已预热到显存`,
+              msg: res.cache_hit ? `${backend.name} 报告命中现有缓存` : `${backend.name} 预热请求成功`,
               kind: "success",
               sub: res.evicted ? `淘汰 ${res.evicted}` : undefined,
             });
@@ -252,7 +289,9 @@ function RegisteredRuntimeCard({
             ? ` (${res.sam_variant}${res.dino_variant ? `/${res.dino_variant}` : ""})`
             : "";
           pushToast({
-            msg: res.reloaded ? `${backend.name} 已预热到显存${tag}` : `${backend.name} 已在显存中${tag}`,
+            msg: res.reloaded
+              ? `${backend.name} 重载请求成功${tag}`
+              : `${backend.name} 报告无需重载${tag}`,
             kind: "success",
           });
         },
@@ -280,7 +319,9 @@ function RegisteredRuntimeCard({
         )}
         <span className="max-w-[220px] truncate text-sm font-semibold">{backend.name}</span>
         <span className="text-xs text-muted-foreground" title={projectNames.join(" / ")}>
-          {projectNames.length > 1
+          {projectNames.length === 0
+            ? "未绑定项目"
+            : projectNames.length > 1
             ? `${projectNames[0]} +${projectNames.length - 1}`
             : projectNames[0]}
         </span>
@@ -294,6 +335,8 @@ function RegisteredRuntimeCard({
 
       {observe && !observe.ok && <div className={NOTE_ERROR_CLASS}>{observe.error ?? "不可达"}</div>}
 
+      <GPUClaimSummary backend={backend} />
+
       <RuntimeMetrics
         modelVersion={modelVersion}
         gpuInfo={gpu}
@@ -301,33 +344,363 @@ function RegisteredRuntimeCard({
         videoPool={videoPool}
         cacheHitRate={observe?.cache?.hit_rate ?? backend.health_meta?.cache?.hit_rate}
       />
+      <ResidencySummary
+        residency={residency}
+        source={residencySource}
+        trusted={residencyTrusted}
+      />
 
       <div className="flex items-center gap-2">
         <Button size="xs" onClick={onHealth} disabled={health.isPending} title="健康检查">
           <Icon name="refresh" size={10} />
           健康检查
         </Button>
-        <Button size="xs" onClick={onUnload} disabled={unload.isPending} title="卸载模型释放显存">
+        <Button size="xs" onClick={onUnload} disabled={unload.isPending} title="发送卸载请求">
           <Icon name="pause" size={10} />
           卸载
         </Button>
         <Button
           size="xs"
           onClick={() => onWarm()}
-          disabled={reload.isPending || warmup.isPending || (supportsWarmup && setupQ.isLoading)}
-          title="预热默认模型"
+          disabled={
+            !projectId ||
+            reload.isPending ||
+            warmup.isPending ||
+            (supportsWarmup && setupQ.isLoading)
+          }
+          title={projectId ? "预热默认模型" : "请先把 backend 启用到项目"}
         >
           <Icon name="play" size={10} />
           预热默认
         </Button>
       </div>
 
-      <VariantPanel
-        projectId={projectId}
-        backend={backend}
-        onWarm={onWarm}
-        isWarming={reload.isPending || warmup.isPending}
-      />
+      {projectId ? (
+        <VariantPanel
+          projectId={projectId}
+          backend={backend}
+          onWarm={onWarm}
+          isWarming={reload.isPending || warmup.isPending}
+        />
+      ) : (
+        <div className="text-2xs text-muted-foreground">
+          尚未启用到项目；全局健康检查和卸载可用，预热需先建立项目启用关系。
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isFreshCachedHealth(state: string, lastCheckedAt: string | null) {
+  if (state !== "connected" || !lastCheckedAt) return false;
+  const checkedAt = Date.parse(lastCheckedAt);
+  if (!Number.isFinite(checkedAt)) return false;
+  const ageMs = Date.now() - checkedAt;
+  return ageMs >= -60_000 && ageMs <= 180_000;
+}
+
+function GPUClaimSummary({ backend }: { backend: GlobalBackendItem }) {
+  const config = backend.gpu_config;
+  if (!config) {
+    return <div className="text-xs text-muted-foreground">GPU 配置仅超级管理员可见</div>;
+  }
+  return (
+    <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant={
+            config.status === "blocker" || config.status === "critical"
+              ? "danger"
+              : config.status === "warning"
+                ? "warning"
+                : config.status === "info"
+                  ? "accent"
+                  : "outline"
+          }
+        >
+          GPU claim {config.status ?? "ok"}
+        </Badge>
+        <span className="mono">{backend.gpu_resource_id ?? "无声明"}</span>
+        {backend.gpu_resource_id && (
+          <>
+            <span>
+              预算 {backend.vram_budget_mb ?? "—"}/{config.allocatable_mb ?? "—"} MiB
+            </span>
+            <span>优先级 {backend.eviction_priority ?? "—"}</span>
+            <span>{config.desired_mode ?? "off"}→{config.effective_mode ?? "off"}</span>
+          </>
+        )}
+      </div>
+      {(config.diagnostics?.length ?? 0) > 0 && (
+        <div className="flex flex-col gap-1 text-2xs">
+          {config.diagnostics!.map((diagnostic, index) => (
+            <span key={`${diagnostic.code}-${index}`}>{diagnostic.message}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RESIDENCY_STATES = new Set([
+  "unloaded",
+  "loading",
+  "resident",
+  "draining",
+  "unloading",
+  "unknown",
+]);
+
+type ResidencyState = "unloaded" | "loading" | "resident" | "draining" | "unloading" | "unknown";
+
+interface NormalizedResidencyPool {
+  id: string;
+  resident: boolean | null;
+  device: string | null;
+  provider: string | null;
+}
+
+interface NormalizedResidency {
+  state: ResidencyState;
+  gpuLoaded: boolean | null;
+  activeRequests: number | null;
+  builders: number | null;
+  borrowers: number | null;
+  draining: boolean | null;
+  evictable: boolean | null;
+  lifecycleGate: string | null;
+  generation: string | null;
+  identityResourceId: string | null;
+  pools: NormalizedResidencyPool[];
+  strictEmpty: boolean;
+  malformed: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseResidency(value: unknown): NormalizedResidency | null {
+  if (!isRecord(value)) return null;
+  const state = value.state;
+  if (typeof state !== "string" || !RESIDENCY_STATES.has(state)) return null;
+
+  let malformed = false;
+  const readBoolean = (key: string): boolean | null => {
+    const raw = value[key];
+    if (raw == null) return null;
+    if (typeof raw === "boolean") return raw;
+    malformed = true;
+    return null;
+  };
+  const readInteger = (key: string): number | null => {
+    const raw = value[key];
+    if (raw == null) return null;
+    if (typeof raw === "number" && Number.isInteger(raw)) return raw;
+    malformed = true;
+    return null;
+  };
+  const readString = (key: string): string | null => {
+    const raw = value[key];
+    if (raw == null) return null;
+    if (typeof raw === "string") return raw;
+    malformed = true;
+    return null;
+  };
+
+  const gpuLoaded = readBoolean("gpu_loaded");
+  const activeRequests = readInteger("active_requests");
+  const builders = readInteger("builders");
+  const borrowers = readInteger("borrowers");
+  const draining = readBoolean("draining");
+  const evictable = readBoolean("evictable");
+  const lifecycleGate = readString("lifecycle_gate");
+  const generation = readString("generation");
+
+  let identityResourceId: string | null = null;
+  if (value.identity != null) {
+    if (!isRecord(value.identity)) {
+      malformed = true;
+    } else if (value.identity.gpu_resource_id != null) {
+      if (typeof value.identity.gpu_resource_id === "string") {
+        identityResourceId = value.identity.gpu_resource_id;
+      } else {
+        malformed = true;
+      }
+    }
+  }
+
+  const pools: NormalizedResidencyPool[] = [];
+  let poolsValid = false;
+  if (isRecord(value.pools)) {
+    poolsValid = true;
+    for (const [id, rawPool] of Object.entries(value.pools)) {
+      if (!isRecord(rawPool)) {
+        malformed = true;
+        poolsValid = false;
+        continue;
+      }
+      const rawResident = rawPool.resident;
+      const resident =
+        rawResident == null
+          ? null
+          : typeof rawResident === "boolean"
+            ? rawResident
+            : null;
+      if (rawResident != null && typeof rawResident !== "boolean") {
+        malformed = true;
+        poolsValid = false;
+      }
+      const device =
+        rawPool.device == null
+          ? null
+          : typeof rawPool.device === "string"
+            ? rawPool.device
+            : null;
+      const provider =
+        rawPool.provider == null
+          ? null
+          : typeof rawPool.provider === "string"
+            ? rawPool.provider
+            : null;
+      if (
+        (rawPool.device != null && typeof rawPool.device !== "string") ||
+        (rawPool.provider != null && typeof rawPool.provider !== "string")
+      ) {
+        malformed = true;
+      }
+      pools.push({ id, resident, device, provider });
+    }
+  } else if (value.pools != null) {
+    malformed = true;
+  }
+
+  const strictEmpty =
+    gpuLoaded === false &&
+    builders === 0 &&
+    borrowers === 0 &&
+    poolsValid &&
+    pools.every((pool) => pool.resident === false);
+
+  return {
+    state: state as ResidencyState,
+    gpuLoaded,
+    activeRequests,
+    builders,
+    borrowers,
+    draining,
+    evictable,
+    lifecycleGate,
+    generation,
+    identityResourceId,
+    pools,
+    strictEmpty,
+    malformed,
+  };
+}
+
+function ResidencySummary({
+  residency: raw,
+  source,
+  trusted,
+}: {
+  residency: unknown;
+  source: string;
+  trusted: boolean;
+}) {
+  if (raw == null) {
+    return <div className="text-2xs text-muted-foreground">未上报 residency · {source}</div>;
+  }
+  const residency = parseResidency(raw);
+  if (!residency) {
+    return (
+      <div className="text-2xs text-status-caution">
+        residency 格式不可识别，仅保留原始观测，不参与 GPU 空闲判断 · {source}
+      </div>
+    );
+  }
+  const gpuLoaded =
+    trusted && residency.gpuLoaded === true
+      ? true
+      : trusted && !residency.malformed && residency.strictEmpty
+        ? false
+        : null;
+  const unmanaged = trusted && gpuLoaded !== false && !residency.generation;
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge
+          variant={
+            residency.state === "resident"
+              ? "success"
+              : residency.state === "unknown"
+                ? "warning"
+                : "outline"
+          }
+        >
+          {residency.state}
+        </Badge>
+        <Badge
+          variant={
+            gpuLoaded === true
+              ? "warning"
+              : gpuLoaded === false
+                ? "success"
+                : "outline"
+          }
+        >
+          {gpuLoaded === true
+            ? "GPU 仍驻留"
+            : gpuLoaded === false
+              ? "GPU 空"
+              : "GPU 驻留未知"}
+        </Badge>
+        {unmanaged && <Badge variant="warning">unmanaged</Badge>}
+        <span className="text-2xs text-muted-foreground">{source}</span>
+      </div>
+      {!trusted && (
+        <div className="text-2xs text-status-caution">
+          residency 证据已过期或来源未知，仅展示原始状态，不据此判断 GPU 空闲。
+        </div>
+      )}
+      {residency.malformed && (
+        <div className="text-2xs text-status-caution">
+          residency 含畸形字段，已安全归一化且不参与 GPU 空闲判断。
+        </div>
+      )}
+      {trusted && residency.gpuLoaded === false && gpuLoaded !== false && !residency.malformed && (
+        <div className="text-2xs text-status-caution">
+          gpu_loaded=false 缺少全 pool、builder 或 borrower 空闲证据，按未知处理。
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-3 text-2xs text-muted-foreground">
+        <span>active {residency.activeRequests ?? "—"}</span>
+        <span>builders {residency.builders ?? "—"}</span>
+        <span>borrowers {residency.borrowers ?? "—"}</span>
+        <span>draining {residency.draining == null ? "—" : String(residency.draining)}</span>
+        <span>evictable {residency.evictable == null ? "—" : String(residency.evictable)}</span>
+        <span>gate {residency.lifecycleGate ?? "—"}</span>
+        <span>generation {residency.generation ?? "—"}</span>
+        {residency.identityResourceId && (
+          <span className="mono">identity {residency.identityResourceId}</span>
+        )}
+      </div>
+      {residency.pools.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-2xs text-muted-foreground">
+          {residency.pools.map((pool) => (
+            <span key={pool.id} className="mono">
+              {pool.id}: {pool.resident === true && trusted
+                ? "GPU"
+                : pool.resident === false && trusted && !residency.malformed
+                  ? "empty"
+                  : "unknown"}
+              {pool.device ? ` · ${pool.device}` : ""}
+              {pool.provider ? ` · ${pool.provider}` : ""}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -522,12 +895,7 @@ function RuntimeMetrics({
   cacheHitRate,
 }: {
   modelVersion?: string | null;
-  gpuInfo?: {
-    device_index?: number | null;
-    memory_used_mb?: number;
-    memory_total_mb?: number;
-    process_memory_mb?: number | null;
-  } | null;
+  gpuInfo?: GpuInfo | null;
   // v0.14.14: 接受 PoolStatus.loaded_keys (优先) 与老 loaded_variants (fallback);
   // 仅用其 length 做"已加载数量"展示, 不解 key 维度.
   pool?: {
@@ -562,6 +930,11 @@ function RuntimeMetrics({
         <span title="卡号 · 整卡已用/总显存 · 本容器自用（torch 保留）">
           GPU{gpuInfo.device_index ?? 0} {gpuInfo.memory_used_mb}/{gpuInfo.memory_total_mb} MB
           {gpuInfo.process_memory_mb != null && ` · 自用 ${gpuInfo.process_memory_mb} MB`}
+        </span>
+      )}
+      {(gpuInfo?.physical_device_token || gpuInfo?.mig_uuid || gpuInfo?.device_uuid) && (
+        <span className="mono" title="backend 上报的物理设备身份">
+          {gpuInfo.physical_device_token ?? gpuInfo.mig_uuid ?? gpuInfo.device_uuid}
         </span>
       )}
       {cacheHitRate != null && <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>}

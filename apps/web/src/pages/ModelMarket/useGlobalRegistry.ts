@@ -15,6 +15,8 @@ import {
 function invalidateRegistryQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "all"] });
   qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "overview"] });
+  qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "gpu-resources"] });
+  qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "observe"] });
 }
 
 export function useCreateRegistry() {
@@ -47,6 +49,14 @@ export function useRegistryHealth() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => adminMlIntegrationsApi.registryHealth(id),
+    onSuccess: () => invalidateRegistryQueries(qc),
+  });
+}
+
+export function useRegistryUnload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => adminMlIntegrationsApi.registryUnload(id),
     onSuccess: () => invalidateRegistryQueries(qc),
   });
 }

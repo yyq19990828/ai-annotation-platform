@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
-from app.services.gpu_arbiter import validate_gpu_claim
+from app.services.gpu_arbiter import GPUShadowSessionFactory, validate_gpu_claim
 from app.services.ml_client import MLBackendClient
 
 
@@ -49,8 +49,14 @@ class MLBackendService:
     `list_enabled_for_project` / `get_enabled` (读 ProjectMLBackend.enabled=true)。
     """
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        shadow_session_factory: GPUShadowSessionFactory | None = None,
+    ) -> None:
         self.db = db
+        self.shadow_session_factory = shadow_session_factory
 
     # ── 全局注册表 ───────────────────────────────────────────────────────────
     async def create_registry(
@@ -247,7 +253,11 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return None
-        return await MLBackendClient(backend).unload()
+        # 远程调用前释放只读事务连接，避免 shadow 短会话与请求会话互相挤占池。
+        await self.db.commit()
+        return await MLBackendClient(
+            backend, shadow_session_factory=self.shadow_session_factory
+        ).unload()
 
     async def reload(
         self,
@@ -259,7 +269,10 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return None
-        return await MLBackendClient(backend).reload(
+        await self.db.commit()
+        return await MLBackendClient(
+            backend, shadow_session_factory=self.shadow_session_factory
+        ).reload(
             sam_variant=sam_variant, dino_variant=dino_variant, task_type=task_type
         )
 
@@ -268,7 +281,10 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return None
-        return await MLBackendClient(backend).warmup(body)
+        await self.db.commit()
+        return await MLBackendClient(
+            backend, shadow_session_factory=self.shadow_session_factory
+        ).warmup(body)
 
     async def check_health(self, registry_id: uuid.UUID) -> bool:
         backend = await self.get(registry_id)

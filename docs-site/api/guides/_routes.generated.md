@@ -30,6 +30,7 @@
 | PUT | `/registry/{registry_id}` |
 | DELETE | `/registry/{registry_id}` |
 | POST | `/registry/{registry_id}/health` |
+| POST | `/registry/{registry_id}/unload` |
 | GET | `/observe` |
 | POST | `/observe/smoke-test` |
 
@@ -544,4 +545,4 @@
 
 ---
 
-_共 52 模块 / 297 路由_
+_共 52 模块 / 298 路由_

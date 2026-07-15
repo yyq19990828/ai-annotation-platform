@@ -818,12 +818,16 @@ async def _run_batch(
         stage_modes: list[str] = []
         for s in stages:
             if s["parent_stage"] is None:
-                stage_clients.append(MLBackendClient(backend))
+                stage_clients.append(
+                    MLBackendClient(backend, shadow_session_factory=SessionLocal)
+                )
                 stage_contexts.append(context)
                 stage_modes.append("crop")
             else:
                 s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
-                stage_clients.append(MLBackendClient(s_backend))
+                stage_clients.append(
+                    MLBackendClient(s_backend, shadow_session_factory=SessionLocal)
+                )
                 stage_modes.append(_resolve_input_mode(s))
                 stage_contexts.append(
                     _build_predict_context(

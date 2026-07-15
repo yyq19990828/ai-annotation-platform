@@ -505,8 +505,11 @@ GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physic
 开关；期望模式取两者中更保守的一个，resource 未显式声明 mode 时按 `off`。静态配置
 层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量
 是允许驱逐的弹性超售告警。管理 API 会分开显示 desired 与 effective mode；
-在 observe 派发、运行时账本和门禁握手完成前，effective 固定为 `off`，
-配置 `observe` 会显示未就绪告警，配置 `enforce` 会显示 blocker，不会伪报已启用强制仲裁。
+`observe` 已在 predict、交互预测、warmup、reload 与注册 smoke-test
+的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
+快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
+绝不拒绝、排队或驱逐业务请求。`enforce` 仍需 Redis 账本与 lifecycle gate
+握手；未就绪时 effective 保持 `off` 并显示 blocker，不会静默降级为 observe。
 管理诊断只使用 `connected` 且 3 分钟内成功探测的 CPU / GPU 身份快照；
 URL 改动、探测失败或快照过期后都按 unknown 保守报告，不会用旧 CPU/UUID 证据跳过 claim blocker。
 

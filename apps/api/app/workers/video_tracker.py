@@ -64,7 +64,11 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                     async_job_id = None
 
             try:
-                result_job = await run_tracker_job(db, uuid.UUID(job_id))
+                result_job = await run_tracker_job(
+                    db,
+                    uuid.UUID(job_id),
+                    shadow_session_factory=SessionLocal,
+                )
             except Exception as e:
                 if async_job_id is not None:
                     try:

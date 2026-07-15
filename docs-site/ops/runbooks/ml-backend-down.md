@@ -82,6 +82,18 @@ curl http://localhost:8001/health
 
 对照 [ML Backend 协议](/dev/reference/ml-backend-protocol) 检查 Backend 实现。
 
+### 情况 E：GPU 资源配置或影子决策异常
+
+1. 在模型市场「注册管理」查看 backend 的 `gpu_resource_id`、显存预算和配置诊断。
+2. 确认 `gpu_resource_id` 精确匹配 `GPU_ARBITER_RESOURCES_JSON` 的 key；不同主机的
+   `index:0` 必须使用不同 resource domain。
+3. 只信任 `connected` 且 3 分钟内的 health。`compute=cpu` 不等于显存已空；
+   还要检查 `residency.gpu_loaded`、builder 与 borrower。
+4. 设置 `GPU_ARBITER_MODE=observe` 时，检索
+   `gpu_arbiter_shadow_decision`。`would-reject` 只是非权威预演，不会阻断当前请求；
+   若业务已失败，仍需继续排查 backend OOM、网络或权重加载错误。
+5. `enforce` 尚未 runtime ready 时 effective 保持 `off`；不要依赖它防止 OOM。
+
 ## 维护窗口 / 避免告警
 
 `MLBackendDown` 由 Prometheus `up{job="ml-backends"} == 0` 持续 5m 触发，target 由 http_sd 从 `ml_backends` 表生成，**仅** `state="disconnected"` 的 backend 被排除。换言之 `state="error"`（health 探活失败）仍在 target 列表中，会按设计触发告警。

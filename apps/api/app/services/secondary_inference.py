@@ -22,6 +22,7 @@ from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.task import Task
+from app.services.gpu_arbiter import GPUShadowSessionFactory
 from app.services.predictions_import import internal_geometry_to_ls_shape
 from app.workers.roi import (
     _box_bbox_pct,
@@ -127,6 +128,7 @@ async def run_secondary_inference(
     class_filter: list[int] | None,
     pad: float,
     user_id: uuid.UUID,
+    shadow_session_factory: GPUShadowSessionFactory | None = None,
 ) -> tuple[Annotation, list[Annotation]]:
     """在选中框 ROI 上跑一次能力, 产物落库。返回 (更新后的原框, 新建子框列表)。
 
@@ -208,7 +210,7 @@ async def run_secondary_inference(
     #    典型诱因: backend 空闲卸载后按需重载 (冷启动本身只需 ~10s), 但多个 GPU backend 同时
     #    驻留模型挤爆显存时, 加载会退化一个数量级 (实测 8s → 160s) 而超时。故文案指向卸载
     #    其它 backend, 而非调大 ML_PREDICT_TIMEOUT (后者只是盖住症状)。
-    client = MLBackendClient(backend)
+    client = MLBackendClient(backend, shadow_session_factory=shadow_session_factory)
     try:
         results = await client.predict(batch.inputs, context=context)
     except httpx.TimeoutException as exc:

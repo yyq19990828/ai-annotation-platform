@@ -1,9 +1,8 @@
 /**
  * v0.19.0 · ADR-0044 · superadmin 全局 ML backend 注册/编辑弹窗。
  *
- * 字段：name / url / 认证 / max_concurrency / extra_params + 测试连接，调用全局注册表端点：
- * 新建 = createRegistry，编辑 = updateRegistry。编辑时数据源（GlobalBackendItem）不含
- * extra_params，故仅当用户实际填写时才下发 extra_params / auth_token，避免把后端已有值覆盖为空。
+ * 字段：name / url / 认证 / GPU 静态 claim / max_concurrency / extra_params + 测试连接，
+ * 调用全局注册表端点：新建 = createRegistry，编辑 = updateRegistry。
  */
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
@@ -14,6 +13,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   adminMlIntegrationsApi,
+  type GPUArbiterResourceItem,
+  type GPUConfigDiagnostic,
   type ProbeResponse,
   type MLBackendRegistryCreatePayload,
   type MLBackendRegistryUpdatePayload,
@@ -26,6 +27,9 @@ export interface GlobalRegistryEditTarget {
   name: string;
   url: string;
   auth_method: string;
+  gpu_resource_id: string | null;
+  vram_budget_mb: number | null;
+  eviction_priority: number;
 }
 
 interface Props {
@@ -41,6 +45,10 @@ const INPUT_CLASS =
 const MONO_INPUT_CLASS = "font-mono text-xs";
 const HELP_CLASS = "mt-1 text-2xs text-muted-foreground";
 
+function resourceOptionLabel(resource: GPUArbiterResourceItem) {
+  return `${resource.gpu_resource_id} · ${resource.claimed_budget_mb}/${resource.allocatable_mb} MiB · ${resource.desired_mode}→${resource.effective_mode}`;
+}
+
 export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
   const isEdit = !!backend;
   const pushToast = useToastStore((s) => s.push);
@@ -54,6 +62,10 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
   const [maxConcurrency, setMaxConcurrency] = useState("");
   const [extraText, setExtraText] = useState("");
   const [extraOpen, setExtraOpen] = useState(false);
+  const [gpuResourceId, setGpuResourceId] = useState("");
+  const [vramBudgetMb, setVramBudgetMb] = useState("");
+  const [evictionPriority, setEvictionPriority] = useState("0");
+  const [gpuDiagnostics, setGpuDiagnostics] = useState<GPUConfigDiagnostic[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const hintsQ = useQuery({
@@ -63,6 +75,16 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
     enabled: open,
   });
   const urlPlaceholder = hintsQ.data?.ml_backend_default_url ?? "http://172.17.0.1:8001";
+  const resourcesQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "gpu-resources"],
+    queryFn: () => adminMlIntegrationsApi.gpuResources(),
+    staleTime: 30_000,
+    enabled: open,
+  });
+  const resources = resourcesQ.data?.resources ?? [];
+  const selectedResource = resources.find((resource) => resource.gpu_resource_id === gpuResourceId);
+  const hasUnknownCurrentResource =
+    !!gpuResourceId && !resourcesQ.isLoading && !selectedResource && backend?.gpu_resource_id === gpuResourceId;
 
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
@@ -96,6 +118,7 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setGpuDiagnostics([]);
     setProbeResult(null);
     if (backend) {
       setName(backend.name);
@@ -106,6 +129,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
       setMaxConcurrency("");
       setExtraText("");
       setExtraOpen(false);
+      setGpuResourceId(backend.gpu_resource_id ?? "");
+      setVramBudgetMb(backend.vram_budget_mb == null ? "" : String(backend.vram_budget_mb));
+      setEvictionPriority(String(backend.eviction_priority));
     } else {
       setName("");
       setUrl("");
@@ -114,13 +140,28 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
       setMaxConcurrency("");
       setExtraText("");
       setExtraOpen(false);
+      setGpuResourceId("");
+      setVramBudgetMb("");
+      setEvictionPriority("0");
     }
   }, [open, backend]);
 
   const submitting = create.isPending || update.isPending;
+  const parsedBudget = Number(vramBudgetMb);
+  const previousBudgetOnResource =
+    backend?.gpu_resource_id === gpuResourceId ? backend.vram_budget_mb ?? 0 : 0;
+  const projectedClaimedBudget = selectedResource
+    ? selectedResource.claimed_budget_mb - previousBudgetOnResource +
+      (Number.isInteger(parsedBudget) && parsedBudget > 0 ? parsedBudget : 0)
+    : null;
+  const projectedOversubscribed =
+    selectedResource != null &&
+    projectedClaimedBudget != null &&
+    projectedClaimedBudget > selectedResource.allocatable_mb;
 
   const onSubmit = async () => {
     setError(null);
+    setGpuDiagnostics([]);
     const trimmedName = name.trim();
     const trimmedUrl = url.trim();
     if (!trimmedName) {
@@ -134,6 +175,31 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
     if (!/^https?:\/\//i.test(trimmedUrl)) {
       setError("URL 需以 http:// 或 https:// 开头");
       return;
+    }
+
+    const priority = Number(evictionPriority);
+    if (
+      !Number.isInteger(priority) ||
+      priority < -2_147_483_648 ||
+      priority > 2_147_483_647
+    ) {
+      setError("驱逐优先级需为 32 位整数");
+      return;
+    }
+
+    let budget: number | null = null;
+    if (gpuResourceId) {
+      budget = Number(vramBudgetMb);
+      if (!Number.isInteger(budget) || budget < 1 || budget > 2_147_483_647) {
+        setError("选择 GPU 资源后，显存预算需为正整数 MiB");
+        return;
+      }
+      if (selectedResource && budget > selectedResource.allocatable_mb) {
+        setError(
+          `显存预算 ${budget} MiB 超过该卡可分配容量 ${selectedResource.allocatable_mb} MiB`,
+        );
+        return;
+      }
     }
 
     // extra_params：仅当用户填了 textarea 或 max_concurrency 时才构造并下发。
@@ -170,6 +236,14 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
         };
         if (extraParams !== undefined) payload.extra_params = extraParams;
         if (token) payload.auth_token = token;
+        if (
+          gpuResourceId !== (backend.gpu_resource_id ?? "") ||
+          budget !== backend.vram_budget_mb
+        ) {
+          payload.gpu_resource_id = gpuResourceId || null;
+          payload.vram_budget_mb = budget;
+        }
+        if (priority !== backend.eviction_priority) payload.eviction_priority = priority;
         await update.mutateAsync({ id: backend.id, payload });
         pushToast({ msg: "已更新全局 backend", kind: "success" });
       } else {
@@ -177,6 +251,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           name: trimmedName,
           url: trimmedUrl,
           auth_method: authMethod,
+          gpu_resource_id: gpuResourceId || null,
+          vram_budget_mb: budget,
+          eviction_priority: priority,
         };
         if (extraParams !== undefined) payload.extra_params = extraParams;
         if (token) payload.auth_token = token;
@@ -185,9 +262,27 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
       }
       onClose();
     } catch (e) {
-      const apiErr = e as { status?: number; message?: string };
+      const apiErr = e as {
+        status?: number;
+        message?: string;
+        detailRaw?: {
+          error_code?: string;
+          message?: string;
+          diagnostics?: GPUConfigDiagnostic[];
+        };
+      };
+      const detail = apiErr.detailRaw;
       if (apiErr.status === 409) {
-        setError(apiErr.message || "该 URL 已被注册（不可重复）");
+        setError(
+          detail?.error_code === "gpu_backend_active"
+            ? detail.message || "backend 仍有活动负载，请先 drain 并卸载后再修改 GPU claim"
+            : detail?.message || apiErr.message || "该 URL 已被注册（不可重复）",
+        );
+        return;
+      }
+      if (apiErr.status === 422 && detail?.error_code === "gpu_config_invalid") {
+        setGpuDiagnostics(detail.diagnostics ?? []);
+        setError(detail.message || "GPU 资源声明无效");
         return;
       }
       setError(apiErr.message ?? "请求失败");
@@ -203,8 +298,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
     >
       <div className="flex flex-col gap-3.5">
         <div>
-          <label className={LABEL_CLASS}>名称</label>
+          <label htmlFor="global-backend-name" className={LABEL_CLASS}>名称</label>
           <input
+            id="global-backend-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="例如 grounded-sam2-prod"
@@ -213,8 +309,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           />
         </div>
         <div>
-          <label className={LABEL_CLASS}>URL</label>
+          <label htmlFor="global-backend-url" className={LABEL_CLASS}>URL</label>
           <input
+            id="global-backend-url"
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
@@ -260,9 +357,105 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           交互能力 / 支持模态（图像 prompt、视频 tracker）将在健康检查时从 backend 自报的{" "}
           <span className="font-mono">/setup</span> 自动探测，无需手填。
         </div>
+        <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
+          <legend className="px-1 text-xs font-semibold text-foreground">GPU 资源声明</legend>
+          <div>
+            <label htmlFor="global-backend-gpu-resource" className={LABEL_CLASS}>
+              物理 GPU 资源
+            </label>
+            <select
+              id="global-backend-gpu-resource"
+              value={gpuResourceId}
+              onChange={(event) => {
+                const next = event.target.value;
+                setGpuResourceId(next);
+                setGpuDiagnostics([]);
+                if (!next) setVramBudgetMb("");
+              }}
+              className={clsx(INPUT_CLASS, MONO_INPUT_CLASS, "cursor-pointer")}
+            >
+              <option value="">无 GPU 声明（不等于已确认 CPU）</option>
+              {hasUnknownCurrentResource && (
+                <option value={gpuResourceId}>{gpuResourceId} · 当前配置中已不存在</option>
+              )}
+              {resources.map((resource) => (
+                <option key={resource.gpu_resource_id} value={resource.gpu_resource_id}>
+                  {resourceOptionLabel(resource)}
+                </option>
+              ))}
+            </select>
+            <div className={HELP_CLASS}>
+              单个 backend 只能绑定一张稳定物理资源；不会从容器内 cuda:0 或 URL 自动推断。
+            </div>
+            {resourcesQ.isLoading && <div className={HELP_CLASS}>正在读取 GPU 资源配置…</div>}
+            {resourcesQ.isError && (
+              <div className="mt-1 text-2xs text-status-danger">
+                GPU 资源配置加载失败：{(resourcesQ.error as Error).message}
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+            <div>
+              <label htmlFor="global-backend-vram-budget" className={LABEL_CLASS}>
+                显存预算（MiB）
+              </label>
+              <input
+                id="global-backend-vram-budget"
+                type="number"
+                min={1}
+                max={2_147_483_647}
+                value={vramBudgetMb}
+                onChange={(event) => {
+                  setVramBudgetMb(event.target.value);
+                  setGpuDiagnostics([]);
+                }}
+                placeholder={gpuResourceId ? "例如 8192" : "先选择物理资源"}
+                disabled={!gpuResourceId}
+                className={INPUT_CLASS}
+              />
+              <div className={HELP_CLASS}>覆盖允许并存的全部 pool、临时 buffer 与安全余量。</div>
+            </div>
+            <div>
+              <label htmlFor="global-backend-eviction-priority" className={LABEL_CLASS}>
+                驱逐优先级
+              </label>
+              <input
+                id="global-backend-eviction-priority"
+                type="number"
+                min={-2_147_483_648}
+                max={2_147_483_647}
+                value={evictionPriority}
+                onChange={(event) => setEvictionPriority(event.target.value)}
+                className={INPUT_CLASS}
+              />
+              <div className={HELP_CLASS}>越大越难被驱逐；它不是请求排队优先级。</div>
+            </div>
+          </div>
+          {selectedResource && (
+            <div className={HELP_CLASS}>
+              可分配 {selectedResource.allocatable_mb} MiB · 当前静态声明合计 {selectedResource.claimed_budget_mb} MiB
+              · 模式 {selectedResource.desired_mode}→{selectedResource.effective_mode}
+            </div>
+          )}
+          {projectedOversubscribed && (
+            <div className="text-2xs text-status-caution">
+              保存后该卡静态预算合计预计为 {projectedClaimedBudget} MiB，超过可分配容量；这是允许驱逐的弹性超售告警，不会阻止保存。
+            </div>
+          )}
+          {gpuDiagnostics.length > 0 && (
+            <ul className="m-0 flex list-none flex-col gap-1 p-0 text-2xs text-status-danger">
+              {gpuDiagnostics.map((diagnostic, index) => (
+                <li key={`${diagnostic.code}-${diagnostic.field ?? ""}-${index}`}>
+                  {diagnostic.field ? `${diagnostic.field}：` : ""}{diagnostic.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </fieldset>
         <div>
-          <label className={LABEL_CLASS}>认证方式</label>
+          <label htmlFor="global-backend-auth-method" className={LABEL_CLASS}>认证方式</label>
           <select
+            id="global-backend-auth-method"
             value={authMethod}
             onChange={(e) => setAuthMethod(e.target.value as "none" | "token")}
             className={clsx(INPUT_CLASS, "cursor-pointer")}
@@ -272,8 +465,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           </select>
           {authMethod === "token" && (
             <div className="mt-2">
-              <label className={LABEL_CLASS}>Token</label>
+              <label htmlFor="global-backend-auth-token" className={LABEL_CLASS}>Token</label>
               <input
+                id="global-backend-auth-token"
                 type="password"
                 value={authToken}
                 onChange={(e) => setAuthToken(e.target.value)}
@@ -284,8 +478,11 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           )}
         </div>
         <div>
-          <label className={LABEL_CLASS}>最大并发（max_concurrency）</label>
+          <label htmlFor="global-backend-max-concurrency" className={LABEL_CLASS}>
+            最大并发（max_concurrency）
+          </label>
           <input
+            id="global-backend-max-concurrency"
             type="number"
             min={1}
             max={32}
@@ -295,7 +492,8 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
             className={clsx(INPUT_CLASS, "w-[120px]")}
           />
           <div className={HELP_CLASS}>
-            单 backend 同时处理的预标请求上限；{isEdit ? "留空保持原值。" : "留空走默认（4）。"}
+            当前仅约束单进程 / 事件循环的同时请求；跨进程全局上限尚未生效。
+            {isEdit ? "留空保持原值。" : "留空走默认（4）。"}
           </div>
         </div>
         <div>

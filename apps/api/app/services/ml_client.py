@@ -1,23 +1,29 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
-import httpx
 from dataclasses import dataclass
 
+import httpx
+import structlog
 from fastapi import HTTPException
 
 from app.config import settings
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.observability.metrics import observe_ml_backend
+from app.services.gpu_arbiter import (
+    GPUShadowSessionFactory,
+    gpu_shadow_observation_enabled,
+    record_gpu_shadow_dispatch,
+)
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # v0.9.12 BUG B-17 · per-backend asyncio.Semaphore 限速. 受 ml_backends.extra_params.max_concurrency
 # 控制 (默认 4, 匹配现有 celery worker --concurrency=4 不破坏既有行为). 改 extra_params 后需 worker
 # 重启才生效 (信号量按 backend_id 永久缓存; 工时换简洁性的取舍, 见 docs-site/dev/architecture/ai-models.md).
 _DEFAULT_MAX_CONCURRENCY = 4
+_GPU_SHADOW_OBSERVER_TIMEOUT_SECONDS = 0.25
 _semaphores: dict[str, asyncio.Semaphore] = {}
 
 
@@ -87,16 +93,53 @@ class PredictionResult:
 
 
 class MLBackendClient:
-    def __init__(self, backend: MLBackendRegistry) -> None:
+    def __init__(
+        self,
+        backend: MLBackendRegistry,
+        *,
+        shadow_session_factory: GPUShadowSessionFactory | None = None,
+    ) -> None:
         self.base_url = backend.url.rstrip("/")
         self.auth_method = backend.auth_method
         self.auth_token = backend.auth_token
         self.backend_id = str(getattr(backend, "id", "")) or None
+        self.gpu_resource_id = getattr(backend, "gpu_resource_id", None)
+        self._shadow_session_factory = shadow_session_factory
         extra = getattr(backend, "extra_params", None) or {}
         self.max_concurrency = int(
             extra.get("max_concurrency", _DEFAULT_MAX_CONCURRENCY)
         )
         self._semaphore = _get_semaphore(self.backend_id, self.max_concurrency)
+
+    async def _observe_gpu_dispatch(self, operation: str) -> None:
+        """Record P2 shadow decisions and fail open without changing the request."""
+
+        if (
+            self.backend_id is None
+            or self._shadow_session_factory is None
+            or not gpu_shadow_observation_enabled(self.gpu_resource_id)
+        ):
+            return
+        try:
+            # API 路径可能仍持有请求事务连接；严格限制旁路查询等待，避免连接池
+            # 饥饿把非权威 observe 变成业务派发阻塞点。
+            async with asyncio.timeout(_GPU_SHADOW_OBSERVER_TIMEOUT_SECONDS):
+                await record_gpu_shadow_dispatch(
+                    self.backend_id,
+                    operation,
+                    self._shadow_session_factory,
+                )
+        except Exception:  # noqa: BLE001 - observe must never block business traffic
+            logger.warning(
+                "gpu_arbiter_shadow_observer_failed",
+                gpu_arbiter={
+                    "backend_id": self.backend_id,
+                    "resource_id": self.gpu_resource_id,
+                    "operation": operation,
+                    "authoritative": False,
+                },
+                exc_info=True,
+            )
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -185,6 +228,7 @@ class MLBackendClient:
             payload["context"] = context
         try:
             async with await self._acquire():
+                await self._observe_gpu_dispatch("predict")
                 async with httpx.AsyncClient(
                     timeout=settings.ml_predict_timeout
                 ) as client:
@@ -227,6 +271,7 @@ class MLBackendClient:
         outcome = "success"
         try:
             async with await self._acquire():
+                await self._observe_gpu_dispatch("predict_interactive")
                 async with httpx.AsyncClient(
                     timeout=settings.ml_predict_timeout
                 ) as client:
@@ -268,6 +313,7 @@ class MLBackendClient:
 
     async def unload(self) -> dict:
         """B-28+ · 让 backend 卸载模型释放显存. backend 必须实现 POST /unload."""
+        await self._observe_gpu_dispatch("unload")
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
             resp = await client.post(f"{self.base_url}/unload", headers=self._headers())
             resp.raise_for_status()
@@ -291,6 +337,7 @@ class MLBackendClient:
             body["dino_variant"] = dino_variant
         if task_type:
             body["task_type"] = task_type
+        await self._observe_gpu_dispatch("reload")
         async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/reload",
@@ -314,6 +361,7 @@ class MLBackendClient:
         响应统一为 {ok, model_load_ms, cache_hit, evicted}. 用 predict 超时配额 (加载
         可能数秒).
         """
+        await self._observe_gpu_dispatch("warmup")
         async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/warmup",

@@ -171,6 +171,29 @@ curl -X POST localhost:8003/warmup \
 
 ---
 
+## GPU 显存影子决策日志
+
+当全局与资源级 mode 合成为 `observe` 时，API 和各 Celery 派发进程会在发送
+predict、交互预测、warmup 或 reload 之前输出 `gpu_arbiter_shadow_decision`。主要字段包括：
+
+- `decision=would-admit|would-evict|would-reject`、`reason`、`operation`；
+- 完整 `resource_id`、`allocatable_mb`、`committed_before_mb`、`projected_mb` 和 `shortfall_mb`；
+- 仅通过新鲜 residency、managed generation / identity 与空闲安全检查的 `candidates`；
+- 保守计费的 `uncertain_backend_ids`、`authoritative=false` 和
+  `candidate_order_authoritative=false`。
+
+候选列表只是当前快照中的可行集，不是最终 LRU 顺序。此模式不会调用驱逐、拒绝或排队；
+手工 legacy unload 另记 `gpu_arbiter_shadow_unload`，并固定
+`releases_allocation=false`。未注册 smoke-test 的直连加载会记
+`gpu_arbiter_shadow_unregistered_dispatch`，用来识别无法绑定物理资源的非受管旁路；
+未注册 unload 另记 `gpu_arbiter_shadow_unregistered_unload`，不带 `would-*` 决策。
+
+旁路查询超过短超时或数据库不可用时会记 `gpu_arbiter_shadow_observer_failed` 并放行业务请求。
+`off` 模式不解析资源配置、不查询影子快照也不产生上述日志。这些日志由各派发进程分别输出，不应把单个 API
+进程的内存或日志片段解读为跨进程全局账本。
+
+---
+
 ## 6. 关键文件索引
 
 | 主题 | 路径 |

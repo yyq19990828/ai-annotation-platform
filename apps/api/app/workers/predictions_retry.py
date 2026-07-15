@@ -197,7 +197,7 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
         }
 
     # 第二阶段：调 backend
-    client = MLBackendClient(backend)
+    client = MLBackendClient(backend, shadow_session_factory=session_factory)
     try:
         results = await client.predict(
             [{"id": str(task.id), "file_path": task.file_path}]

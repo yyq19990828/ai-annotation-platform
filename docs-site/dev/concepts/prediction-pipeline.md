@@ -303,7 +303,9 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
 
 ### backend 来源与显存保护
 
-backend 走**全局注册 + 项目启用**：一个物理 backend 全局只注册一行，项目按需勾选启用，**没有项目级数量上限**（跨 backend 编排天然需 detect + classify ≥ 2，多阶段 DAG 还会更多）。单机显存爆炸由每个全局注册行的 `max_concurrency`（`ml_backends.extra_params.max_concurrency`）并发闸兜底，限制单 backend 同时并行的预测请求数。
+backend 走**全局注册 + 项目启用**：一个物理 backend 全局只注册一行，项目按需勾选启用，**没有项目级数量上限**（跨 backend 编排天然需 detect + classify ≥ 2，多阶段 DAG 还会更多）。每个全局注册行的 `max_concurrency`（`extra_params.max_concurrency`）当前仅限制单进程 / 事件循环的并行请求；API 与多个 Celery worker 仍会叠加。
+
+设置 `GPU_ARBITER_MODE=observe` 后，平台会在所有可加载端点的 HTTP 发送前，按稳定 `gpu_resource_id` 对同卡预算和新鲜 residency 快照计算 `would-*` 决策。该阶段只写结构化日志，旁路查询有严格短超时并在失败时放行业务请求，不会改变请求结果；跨进程全局并发上限要等 Redis request lease 生效。legacy unload 只记录请求，不能作为显存已释放或预算已减账的证据。
 
 ## 代码索引
 

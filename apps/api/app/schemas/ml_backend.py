@@ -311,6 +311,16 @@ class ResidencyInfo(BaseModel):
         extra = "allow"
 
 
+class MLBackendUnloadResponse(BaseModel):
+    """跨 backend 兼容的 legacy `/unload` 响应；额外字段保持透传。"""
+
+    ok: bool | None = None
+    unloaded: bool | int | None = None
+    residency: ResidencyInfo | dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class GPUConfigDiagnostic(BaseModel):
     code: str
     level: Literal["info", "warning", "critical", "blocker"]
