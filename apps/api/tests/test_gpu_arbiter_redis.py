@@ -1865,6 +1865,966 @@ async def test_partial_flush_state_cannot_be_bootstrapped_over(
         await raw.aclose()
 
 
+@pytest.mark.asyncio
+async def test_proof_reset_recovers_card_missing_partial_children(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-proof-reset-partial/index:0"
+    memberships = _memberships("backend-a")
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.hset(keys.leases("backend-a"), "orphan", "not-json")
+
+        prepared = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="partial-reset",
+        )
+        assert (prepared.status, prepared.ready, prepared.ledger_revision) == (
+            "prepared",
+            False,
+            1,
+        )
+        assert await raw.hget(keys.leases("backend-a"), "orphan") == "not-json"
+        with pytest.raises(
+            GPUArbiterStoreError, match="gpu_arbiter_proof_reset_in_progress"
+        ):
+            await first.snapshot(resource_id)
+        context = await second.prepared_proof_reset(resource_id)
+        assert context is not None
+        assert (
+            context.reset_id,
+            context.ledger_revision,
+            context.ledger_incarnation,
+            context.backend_memberships,
+        ) == (
+            "partial-reset",
+            prepared.ledger_revision,
+            prepared.ledger_incarnation,
+            memberships,
+        )
+
+        committed = await second.commit_proof_reset(
+            resource_id,
+            context.allocatable_mb,
+            reset_id=context.reset_id,
+            expected_reset_revision=context.ledger_revision,
+            expected_reset_incarnation=context.ledger_incarnation,
+            backend_memberships=context.backend_memberships,
+            allocations=(
+                _reconcile_allocation(
+                    generation=None,
+                    state=GPUAllocationState.UNKNOWN,
+                ),
+            ),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=hashlib.sha256(b"partial-proof").hexdigest(),
+        )
+        assert (
+            committed.status,
+            committed.reason,
+            committed.ready,
+            committed.ledger_revision,
+        ) == (
+            "not_ready",
+            "proof_incomplete",
+            False,
+            2,
+        )
+        assert committed.ledger_incarnation == prepared.ledger_incarnation
+        assert await raw.exists(keys.leases("backend-a")) == 0
+        snapshot = await first.snapshot(resource_id)
+        assert snapshot.committed_mb == 60
+        assert snapshot.ready is False
+        assert snapshot.allocations[0].generation is None
+        assert snapshot.allocations[0].state is GPUAllocationState.UNKNOWN
+        assert await first.key_ttls(resource_id, backend_id="backend-a") == (-1, -2)
+        assert await second.prepared_proof_reset(resource_id) is None
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_proof_reset_retries_are_read_only_and_fence_new_work(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-proof-reset-retry/index:0"
+    memberships = _memberships("backend-a")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    original = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        prepared = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=original.ledger_revision,
+            expected_ledger_incarnation=original.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="retry-reset",
+        )
+        prepared_card = await raw.hgetall(keys.card)
+        retry = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=original.ledger_revision,
+            expected_ledger_incarnation=original.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="retry-reset",
+        )
+        assert (retry.status, retry.idempotent) == ("prepared", True)
+        assert await raw.hgetall(keys.card) == prepared_card
+
+        conflict = await first.begin_proof_reset(
+            resource_id,
+            101,
+            expected_ledger_revision=original.ledger_revision,
+            expected_ledger_incarnation=original.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="retry-reset",
+        )
+        assert (conflict.status, conflict.reason) == (
+            "config_mismatch",
+            "proof_reset_id_conflict",
+        )
+        assert await raw.hgetall(keys.card) == prepared_card
+
+        allocation = replace(
+            _reconcile_allocation(state=GPUAllocationState.RESIDENT),
+            evictable=True,
+        )
+        deadline = _future_reconcile_deadline_ms()
+        proof_fingerprint = hashlib.sha256(b"retry-proof").hexdigest()
+        committed = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="retry-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=deadline,
+            proof_fingerprint=proof_fingerprint,
+        )
+        committed_card = await raw.hgetall(keys.card)
+        commit_retry = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="retry-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=deadline,
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (commit_retry.status, commit_retry.idempotent) == (
+            "reconciled",
+            True,
+        )
+        assert await raw.hgetall(keys.card) == committed_card
+        begin_retry = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=original.ledger_revision,
+            expected_ledger_incarnation=original.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="retry-reset",
+        )
+        assert (begin_retry.status, begin_retry.reason) == (
+            "stale_revision",
+            "proof_reset_already_committed",
+        )
+        assert await raw.hgetall(keys.card) == committed_card
+        commit_conflict = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="retry-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(replace(allocation, budget_mb=61),),
+            ready=True,
+            evidence_deadline_ms=deadline,
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (commit_conflict.status, commit_conflict.reason) == (
+            "config_mismatch",
+            "proof_reset_id_conflict",
+        )
+        assert await raw.hgetall(keys.card) == committed_card
+
+        allocation_raw = await raw.hget(keys.allocations, "backend-a")
+        assert allocation_raw is not None
+        await raw.hdel(keys.allocations, "backend-a")
+        corrupt_retry = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="retry-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=deadline,
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (corrupt_retry.status, corrupt_retry.reason) == (
+            "ledger_corrupt",
+            "proof_reset_committed_state_invalid",
+        )
+        assert await raw.hgetall(keys.card) == committed_card
+        await raw.hset(keys.allocations, "backend-a", allocation_raw)
+
+        admitted = await first.admit(
+            resource_id,
+            **_admission_kwargs("backend-a", "post-reset-lease"),
+        )
+        assert admitted.admitted
+        stale_retry = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="retry-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=deadline,
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (stale_retry.status, stale_retry.reason) == (
+            "stale_revision",
+            "ledger_changed_after_proof_reset",
+        )
+        assert await raw.hlen(keys.leases("backend-a")) == 1
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_proof_reset_retry_recomputes_expired_ready_deadline(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-proof-reset-expired-retry/index:0"
+    memberships = _memberships("backend-a")
+    prepared = await first.begin_proof_reset(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=memberships,
+        reset_id="expiring-reset",
+    )
+    deadline = _future_reconcile_deadline_ms(1_000)
+    proof_fingerprint = hashlib.sha256(b"expiring-proof").hexdigest()
+    committed = await first.commit_proof_reset(
+        resource_id,
+        100,
+        reset_id="expiring-reset",
+        expected_reset_revision=prepared.ledger_revision,
+        expected_reset_incarnation=prepared.ledger_incarnation,
+        backend_memberships=memberships,
+        allocations=(),
+        ready=True,
+        evidence_deadline_ms=deadline,
+        proof_fingerprint=proof_fingerprint,
+    )
+    assert committed.ready is True
+    await asyncio.sleep(1.1)
+    retry = await first.commit_proof_reset(
+        resource_id,
+        100,
+        reset_id="expiring-reset",
+        expected_reset_revision=prepared.ledger_revision,
+        expected_reset_incarnation=prepared.ledger_incarnation,
+        backend_memberships=memberships,
+        allocations=(),
+        ready=True,
+        evidence_deadline_ms=deadline,
+        proof_fingerprint=proof_fingerprint,
+    )
+    assert (retry.status, retry.reason, retry.ready, retry.idempotent) == (
+        "not_ready",
+        "reconcile_expired",
+        False,
+        True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepared_proof_reset_blocks_every_mutation_family(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-proof-reset-freeze/index:0"
+    memberships = _memberships("backend-a")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.enqueue_backend(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="existing-ticket",
+            owner_id="queue-owner",
+            ttl_ms=30_000,
+        )
+    ).status == "queued"
+    assert (
+        await first.acquire_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="transition-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+        )
+    ).status == "acquired"
+    before = await first.snapshot(resource_id)
+    prepared = await first.begin_proof_reset(
+        resource_id,
+        100,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=memberships,
+        reset_id="freeze-reset",
+    )
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_before = await raw.hgetall(keys.card)
+        children_before = (
+            await raw.hgetall(keys.allocations),
+            await raw.hgetall(keys.leases("backend-a")),
+            await raw.lrange(keys.backend_queue("backend-a"), 0, -1),
+            await raw.get(keys.transition),
+        )
+        assert (
+            await first.mark_card_not_ready(
+                resource_id,
+                100,
+                reason="operator-fail-close",
+            )
+        ).reason == "proof_reset_in_progress"
+        with pytest.raises(
+            GPUArbiterStoreError, match="gpu_arbiter_proof_reset_in_progress"
+        ):
+            await first.configure_card(resource_id, 100, ready=False)
+        assert (
+            await first.reconcile_card(
+                resource_id,
+                100,
+                expected_ledger_revision=prepared.ledger_revision,
+                expected_ledger_incarnation=prepared.ledger_incarnation,
+                backend_memberships=memberships,
+                allocations=(),
+                lease_cleanup=None,
+                ready=True,
+                reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+                repair_id="blocked-repair",
+            )
+        ).reason == "proof_reset_in_progress"
+        assert (
+            await first.evolve_backend_domains(
+                resource_id,
+                expected_ledger_revision=prepared.ledger_revision,
+                expected_ledger_incarnation=prepared.ledger_incarnation,
+                backend_memberships=memberships,
+                evolution_id="blocked-evolution",
+            )
+        ).reason == "proof_reset_in_progress"
+        assert (
+            await first.admit(
+                resource_id,
+                **_admission_kwargs("backend-a", "blocked-lease"),
+            )
+        ).status == "not_ready"
+        assert (
+            await first.heartbeat_lease(
+                resource_id,
+                backend_id="backend-a",
+                lease_id="lease-a",
+                owner_id="owner-a",
+                generation="1",
+                heartbeat_ttl_ms=5_000,
+            )
+        ).status == "not_ready"
+        assert (
+            await first.release_lease(
+                resource_id,
+                backend_id="backend-a",
+                lease_id="lease-a",
+                owner_id="owner-a",
+                generation="1",
+            )
+        ).status == "not_ready"
+        with pytest.raises(
+            GPUArbiterStoreError, match="gpu_arbiter_proof_reset_in_progress"
+        ):
+            await first.sweep_expired_leases(
+                resource_id,
+                backend_id="backend-a",
+            )
+        assert (
+            await first.queue_position(
+                resource_id,
+                backend_id="backend-a",
+                ticket_id="existing-ticket",
+                card_queue=False,
+            )
+        ).status == "not_ready"
+        assert (
+            await first.cancel_queue_ticket(
+                resource_id,
+                backend_id="backend-a",
+                ticket_id="existing-ticket",
+                owner_id="queue-owner",
+                card_queue=False,
+            )
+        ).status == "not_ready"
+        assert (
+            await first.heartbeat_transition_owner(
+                resource_id,
+                backend_id="backend-a",
+                owner_id="transition-owner",
+                generation="2",
+                operation="evict",
+                ttl_ms=5_000,
+            )
+        ).status == "not_ready"
+        assert (
+            await first.release_transition_owner(
+                resource_id,
+                backend_id="backend-a",
+                owner_id="transition-owner",
+                generation="2",
+                operation="evict",
+            )
+        ).status == "not_ready"
+        assert (
+            await first.transition_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_generation="1",
+                target_state=GPUAllocationState.DRAINING,
+                transition_owner_id="transition-owner",
+                transition_operation="evict",
+            )
+        ).status == "not_ready"
+        with pytest.raises(
+            GPUArbiterStoreError, match="gpu_arbiter_proof_reset_in_progress"
+        ):
+            await first.snapshot(resource_id)
+
+        assert await raw.hgetall(keys.card) == card_before
+        assert (
+            await raw.hgetall(keys.allocations),
+            await raw.hgetall(keys.leases("backend-a")),
+            await raw.lrange(keys.backend_queue("backend-a"), 0, -1),
+            await raw.get(keys.transition),
+        ) == children_before
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_proof_reset_validates_cas_domain_and_evidence_deadline(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-proof-reset-validation/index:0"
+    memberships = _memberships("backend-a", "backend-b")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    snapshot = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        card_before = await raw.hgetall(keys.card)
+        missing_cas = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="missing-cas-reset",
+        )
+        assert (missing_cas.status, missing_cas.reason) == (
+            "stale_revision",
+            "proof_reset_cas_required",
+        )
+        assert await raw.hgetall(keys.card) == card_before
+        stale = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=snapshot.ledger_revision + 1,
+            expected_ledger_incarnation=snapshot.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="stale-reset",
+        )
+        assert stale.status == "stale_revision"
+        assert await raw.hgetall(keys.card) == card_before
+
+        incomplete_domain = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=snapshot.ledger_revision,
+            expected_ledger_incarnation=snapshot.ledger_incarnation,
+            backend_memberships=_memberships("backend-a"),
+            reset_id="shrunk-reset",
+        )
+        assert (incomplete_domain.status, incomplete_domain.reason) == (
+            "config_mismatch",
+            "stored_backend_domain_exceeds_closed_domain",
+        )
+        assert await raw.hgetall(keys.card) == card_before
+
+        prepared = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=snapshot.ledger_revision,
+            expected_ledger_incarnation=snapshot.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="deadline-reset",
+        )
+        prepared_card = await raw.hgetall(keys.card)
+        allocation = _reconcile_allocation()
+        proof_fingerprint = hashlib.sha256(b"deadline-proof").hexdigest()
+        await raw.hdel(keys.card, "proof_reset_prepared_at_ms")
+        with pytest.raises(
+            GPUArbiterStoreError, match="proof reset context decode failed"
+        ):
+            await first.prepared_proof_reset(resource_id)
+        corrupt_marker = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="deadline-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (corrupt_marker.status, corrupt_marker.reason) == (
+            "ledger_corrupt",
+            "proof_reset_marker_invalid",
+        )
+        await raw.hset(
+            keys.card,
+            "proof_reset_prepared_at_ms",
+            prepared_card["proof_reset_prepared_at_ms"],
+        )
+        wrong_context = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="deadline-reset",
+            expected_reset_revision=prepared.ledger_revision + 1,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (wrong_context.status, wrong_context.reason) == (
+            "stale_revision",
+            "proof_reset_context_changed",
+        )
+        assert await raw.hgetall(keys.card) == prepared_card
+        changed_domain = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="deadline-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=_memberships("backend-a", "backend-b", epoch=2),
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (changed_domain.status, changed_domain.reason) == (
+            "config_mismatch",
+            "proof_reset_domain_changed",
+        )
+        assert await raw.hgetall(keys.card) == prepared_card
+        with pytest.raises(
+            ValueError, match="unknown allocations cannot be evictable"
+        ):
+            await first.commit_proof_reset(
+                resource_id,
+                100,
+                reset_id="deadline-reset",
+                expected_reset_revision=prepared.ledger_revision,
+                expected_reset_incarnation=prepared.ledger_incarnation,
+                backend_memberships=memberships,
+                allocations=(replace(allocation, evictable=True),),
+                ready=True,
+                evidence_deadline_ms=_future_reconcile_deadline_ms(),
+                proof_fingerprint=proof_fingerprint,
+            )
+        with pytest.raises(ValueError, match="null generation"):
+            await first.commit_proof_reset(
+                resource_id,
+                100,
+                reset_id="deadline-reset",
+                expected_reset_revision=prepared.ledger_revision,
+                expected_reset_incarnation=prepared.ledger_incarnation,
+                backend_memberships=memberships,
+                allocations=(
+                    replace(
+                        allocation,
+                        state=GPUAllocationState.RESIDENT,
+                        generation=None,
+                    ),
+                ),
+                ready=True,
+                evidence_deadline_ms=_future_reconcile_deadline_ms(),
+                proof_fingerprint=proof_fingerprint,
+            )
+        with pytest.raises(ValueError, match="lowercase SHA-256"):
+            await first.commit_proof_reset(
+                resource_id,
+                100,
+                reset_id="deadline-reset",
+                expected_reset_revision=prepared.ledger_revision,
+                expected_reset_incarnation=prepared.ledger_incarnation,
+                backend_memberships=memberships,
+                allocations=(allocation,),
+                ready=True,
+                evidence_deadline_ms=_future_reconcile_deadline_ms(),
+                proof_fingerprint=proof_fingerprint.upper(),
+            )
+        with pytest.raises(ValueError, match="requires an active backend"):
+            await first.commit_proof_reset(
+                resource_id,
+                100,
+                reset_id="deadline-reset",
+                expected_reset_revision=prepared.ledger_revision,
+                expected_reset_incarnation=prepared.ledger_incarnation,
+                backend_memberships=_memberships(
+                    "backend-a",
+                    "backend-b",
+                    state="retiring",
+                ),
+                allocations=(),
+                ready=True,
+                evidence_deadline_ms=_future_reconcile_deadline_ms(),
+                proof_fingerprint=proof_fingerprint,
+            )
+        expired = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="deadline-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=1,
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (expired.status, expired.reason) == (
+            "not_ready",
+            "proof_evidence_expired",
+        )
+        too_far = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="deadline-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(allocation,),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(400_000),
+            proof_fingerprint=proof_fingerprint,
+        )
+        assert (too_far.status, too_far.reason) == (
+            "not_ready",
+            "proof_evidence_expired",
+        )
+        assert await raw.hgetall(keys.card) == prepared_card
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_proof_reset_can_repair_corrupt_core_without_cas_and_is_per_card(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    memberships = _memberships("backend-a")
+    damaged_resource = "node-proof-reset-corrupt/index:0"
+    healthy_resource = "node-proof-reset-corrupt/index:1"
+    await _bootstrap_empty_card(
+        first,
+        damaged_resource,
+        100,
+        memberships=memberships,
+    )
+    await _bootstrap_empty_card(
+        first,
+        healthy_resource,
+        100,
+        memberships=memberships,
+    )
+    keys = first.keys(damaged_resource)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        old_incarnation = await raw.hget(keys.card, "ledger_incarnation")
+        await raw.hdel(keys.card, "ledger_revision")
+        await raw.hset(keys.card, "resource_id", "different-resource/index:0")
+        wrong_identity = await first.begin_proof_reset(
+            damaged_resource,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="wrong-identity-reset",
+        )
+        assert (wrong_identity.status, wrong_identity.reason) == (
+            "ledger_corrupt",
+            "resource_identity_mismatch",
+        )
+        await raw.hdel(keys.card, "resource_id")
+        missing_identity = await first.begin_proof_reset(
+            damaged_resource,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="missing-identity-reset",
+        )
+        assert (missing_identity.status, missing_identity.reason) == (
+            "ledger_corrupt",
+            "resource_identity_missing",
+        )
+        await raw.hset(keys.card, "resource_id", damaged_resource)
+        prepared = await first.begin_proof_reset(
+            damaged_resource,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="corrupt-reset",
+        )
+        assert prepared.status == "prepared"
+        assert prepared.ledger_incarnation != old_incarnation
+        assert (
+            await first.admit(
+                healthy_resource,
+                **_admission_kwargs("backend-a", "healthy-lease"),
+            )
+        ).admitted
+
+        committed = await first.commit_proof_reset(
+            damaged_resource,
+            100,
+            reset_id="corrupt-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(),
+            ready=False,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=hashlib.sha256(b"corrupt-proof").hexdigest(),
+        )
+        assert (committed.status, committed.reason, committed.ready) == (
+            "not_ready",
+            "proof_incomplete",
+            False,
+        )
+        healthy = await first.snapshot(healthy_resource)
+        assert healthy.ready is True
+        assert len(healthy.leases) == 1
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_proof_reset_cleans_closed_domain_and_latches_overcommit(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-proof-reset-overcommit/index:0"
+    memberships = (
+        GPUBackendDomainMember("backend-a", 1, "active"),
+        GPUBackendDomainMember("backend-b", 2, "retiring"),
+    )
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.set(keys.allocations, "wrong-type")
+        await raw.rpush(keys.queue, "old-card-ticket")
+        await raw.set(keys.transition, "old-transition")
+        await raw.set(keys.leases("backend-a"), "wrong-type")
+        await raw.rpush(keys.backend_queue("backend-a"), "old-a-ticket")
+        await raw.hset(keys.leases("backend-b"), "old-b-lease", "invalid")
+        await raw.rpush(keys.backend_queue("backend-b"), "old-b-ticket")
+
+        prepared = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="overcommit-reset",
+        )
+        assert prepared.status == "prepared"
+        assert await raw.get(keys.allocations) == "wrong-type"
+
+        committed = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="overcommit-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(
+                _reconcile_allocation(
+                    backend_id="backend-a",
+                    state=GPUAllocationState.RESIDENT,
+                    budget_mb=70,
+                ),
+                _reconcile_allocation(
+                    backend_id="backend-b",
+                    state=GPUAllocationState.UNKNOWN,
+                    generation=None,
+                    budget_mb=40,
+                ),
+            ),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=hashlib.sha256(b"overcommit-proof").hexdigest(),
+        )
+        assert (committed.status, committed.reason, committed.committed_mb) == (
+            "not_ready",
+            "committed_exceeds_allocatable",
+            110,
+        )
+        assert committed.ready is False
+        assert await raw.exists(keys.queue, keys.transition) == 0
+        assert await raw.exists(
+            keys.leases("backend-a"),
+            keys.backend_queue("backend-a"),
+            keys.leases("backend-b"),
+            keys.backend_queue("backend-b"),
+        ) == 0
+        snapshot = await first.snapshot(resource_id)
+        assert snapshot.backend_ids == ("backend-a", "backend-b")
+        assert snapshot.active_backend_ids == ("backend-a",)
+        assert snapshot.committed_mb == 110
+        assert snapshot.ready is False
+        assert await raw.ttl(keys.card) == -1
+        assert await raw.ttl(keys.allocations) == -1
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_proof_reset_incarnation_fences_full_flush_revision_aba(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-proof-reset-aba/index:0"
+    memberships = _memberships("backend-a")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    assert (
+        await first.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="force-revision-two",
+        )
+    ).ledger_revision == 2
+    old = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.delete(
+            keys.card,
+            keys.allocations,
+            keys.queue,
+            keys.transition,
+            keys.leases("backend-a"),
+            keys.backend_queue("backend-a"),
+        )
+        prepared = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=memberships,
+            reset_id="aba-reset",
+        )
+        committed = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="aba-reset",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=hashlib.sha256(b"aba-proof").hexdigest(),
+        )
+        assert committed.ledger_revision == old.ledger_revision == 2
+        assert committed.ledger_incarnation != old.ledger_incarnation
+
+        stale = await first.reconcile_card(
+            resource_id,
+            100,
+            expected_ledger_revision=old.ledger_revision,
+            expected_ledger_incarnation=old.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+            repair_id="old-context-after-reset",
+        )
+        assert (stale.status, stale.reason) == (
+            "stale_revision",
+            "ledger_incarnation_changed",
+        )
+    finally:
+        await raw.aclose()
+
+
 @pytest.mark.parametrize(
     "corruption",
     (

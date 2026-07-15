@@ -363,6 +363,22 @@ mutation 由 registry row→membership→fence trigger 线性化，服务层不�
 challenge-bound health 只是证据候选，不是 reset 授权；消费时必须重新锁定当前 membership/fence，严格要求
 `probe_started_at > token_expiry_high_water`，校验证据 TTL、完整 residency 与身份，并把最终 horizon 复核和
 Redis reset 提交置于同一受保护恢复流程。不得缓存“已满足 horizon”的布尔值。
+
+Redis reset 使用独立两阶段原语，不能放宽普通 reconcile。begin 必须以 revision + incarnation CAS（完整
+flush 或核心字段损坏时使用严格 no-CAS 分支）轮换 incarnation，将数据库封闭三域固化为持久 prepared marker；
+旧 allocation、lease、两级 queue 与 transition 在此阶段保留，所有普通读写入口均在同一 Lua 原子区内
+fail-closed，连 release、sweep、queue position 等减损写也不得改变固定快照。prepared context 必须可只读恢复，
+使 worker 在响应丢失或进程重启后取得 reset ID、新 revision/incarnation 与原始封闭域，而不是清除 marker 猜测
+重来。
+
+commit 必须 exact-match prepared context、三域与 reset ID，并由 Redis `TIME` 验证绝对证据 deadline；只接受
+Resident 或 non-evictable Unknown 的保守 allocation，删除 all-domain（含 retiring）内全部旧 child 后重写 v2
+账本。Unknown、证明不完整或 committed 超过 allocatable 时只能落 not-ready。成功响应丢失后的 exact commit
+重试必须保持只读，重新复验 card schema、镜像 cache、allocation、所有 child、key TTL 与当前 deadline；即使
+revision 未变，partial deletion/corruption 或证据过期也不能回放 ready。相同 reset ID 在 begin 已提交后不得
+再次开始新 reset。若重启恢复时 durable membership 已演进，只能在数据库锁内确认原域仍一致后 ready commit，
+或先以 prepared 的旧封闭域保守 not-ready 清场再走合法域演进；禁止直接用新域覆盖 prepared marker。
+
 Redis v2 以三份 canonical 文档区分有界 all-domain、携带 positive-int64 epoch/state 的 membership-domain 与
 由 active 成员唯一派生的 active-domain。新 admission、两级 enqueue 与 ticket 消费 exact-match active
 membership epoch；lease、ticket 取消/查询及 transition 收敛只要求成员仍位于 all-domain，因此 active 转
@@ -464,7 +480,8 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
 - P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语、独立 durable
   membership/tombstone、v2 all/membership/active 三域的单调演进与操作权限矩阵，以及 challenge-bound
-  live-health 证据候选已完成；token horizon 消费与 proof reset、retired child/tombstone GC 和
+  live-health 证据候选、Redis 两阶段 proof reset 与 prepared 重启恢复已完成；token horizon 锁内消费、
+  retired child/tombstone GC 和
   bootstrap/repair worker 接通后才算通过。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。

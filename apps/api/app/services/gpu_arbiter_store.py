@@ -25,6 +25,7 @@ from redis.exceptions import RedisError
 _DEFAULT_NAMESPACE = "gpu-arbiter:v1"
 _NAMESPACE_RE = re.compile(r"[A-Za-z0-9:._-]{1,160}\Z")
 _CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
+_SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}\Z")
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 _MAX_REDIS_SAFE_INTEGER = 9_007_199_254_740_991
 _LEDGER_REVISION_REBASE_THRESHOLD = _MAX_REDIS_SAFE_INTEGER - 2_000_000
@@ -223,6 +224,7 @@ class GPUReconcileLeaseCleanup:
 @dataclass(frozen=True)
 class GPUReconcileResult:
     status: Literal[
+        "prepared",
         "reconciled",
         "not_ready",
         "stale_revision",
@@ -240,6 +242,20 @@ class GPUReconcileResult:
     purged_leases: int = 0
     reason: str = ""
     idempotent: bool = False
+
+
+@dataclass(frozen=True)
+class GPUProofResetContext:
+    resource_id: str
+    allocatable_mb: int
+    reset_id: str
+    begin_fingerprint: str
+    ledger_revision: int
+    ledger_incarnation: str
+    prepared_at_ms: int
+    backend_ids: tuple[str, ...]
+    active_backend_ids: tuple[str, ...]
+    backend_memberships: tuple[GPUBackendDomainMember, ...]
 
 
 @dataclass(frozen=True)
@@ -336,6 +352,18 @@ if card_exists and not existing_resource then
     status='ledger_corrupt', reason='resource_identity_missing',
     ledger_revision=0,
     ledger_incarnation=redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+  })
+end
+if existing_resource == ARGV[1]
+   and redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
+  return cjson.encode({
+    status='not_ready', reason='proof_reset_in_progress',
+    ledger_revision=tonumber(
+      redis.call('HGET', KEYS[1], 'ledger_revision') or '0') or 0,
+    ledger_incarnation=redis.call(
+      'HGET', KEYS[1], 'ledger_incarnation') or '',
+    committed_mb=tonumber(
+      redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0
   })
 end
 local revision_raw = redis.call('HGET', KEYS[1], 'ledger_revision')
@@ -454,6 +482,758 @@ return cjson.encode({
   ledger_incarnation=redis.call('HGET', KEYS[1], 'ledger_incarnation'),
   committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0
 })
+"""
+
+
+_BEGIN_PROOF_RESET_LUA = r"""
+local function now_ms()
+  local t = redis.call('TIME')
+  return (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000)
+end
+local function decode(raw)
+  if not raw then return nil end
+  local ok, value = pcall(cjson.decode, raw)
+  if not ok or type(value) ~= 'table' then return nil end
+  return value
+end
+local function table_size(value)
+  local count = 0
+  for _, _ in pairs(value) do count = count + 1 end
+  return count
+end
+local function valid_positive_decimal(value, maximum)
+  if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
+    return false
+  end
+  if string.len(value) < string.len(maximum) then return true end
+  if string.len(value) > string.len(maximum) then return false end
+  return value <= maximum
+end
+local function valid_revision(value)
+  return valid_positive_decimal(value, '9007199254740991')
+end
+local function valid_epoch(value)
+  return valid_positive_decimal(value, '9223372036854775807')
+end
+local function valid_fingerprint(value)
+  return type(value) == 'string' and string.len(value) == 64
+    and string.match(value, '^[0-9a-f]+$') ~= nil
+end
+local function card_type(key)
+  local reply = redis.call('TYPE', key)
+  if type(reply) == 'table' then return reply.ok end
+  return reply
+end
+local function response(
+    status, reason, revision, incarnation, committed, ready, idempotent)
+  return cjson.encode({
+    status=status, reason=reason or '',
+    ledger_revision=revision or 0,
+    ledger_incarnation=incarnation or '',
+    committed_mb=committed or 0,
+    purged_leases=0, ready=ready or false,
+    idempotent=idempotent or false
+  })
+end
+local function validate_domains(domain_raw, membership_raw, active_raw)
+  local domain = decode(domain_raw)
+  local memberships = decode(membership_raw)
+  local active = decode(active_raw)
+  if not domain or not memberships or not active
+     or #domain > 64 or #memberships ~= #domain or #active > #domain
+     or (#domain == 0 and domain_raw ~= '[]')
+     or (#memberships == 0 and membership_raw ~= '[]')
+     or (#active == 0 and active_raw ~= '[]') then
+    return nil
+  end
+  local known = {}
+  local valid_states = {pending=true, active=true, retiring=true}
+  local previous = nil
+  local active_index = 1
+  for index, backend_id in ipairs(domain) do
+    local member = memberships[index]
+    if type(backend_id) ~= 'string' or backend_id == ''
+       or string.len(backend_id) > 128
+       or (previous and backend_id <= previous)
+       or known[backend_id]
+       or type(member) ~= 'table' or table_size(member) ~= 3
+       or member.backend_id ~= backend_id
+       or not valid_epoch(member.membership_epoch)
+       or not valid_states[member.state] then
+      return nil
+    end
+    known[backend_id] = true
+    previous = backend_id
+    if member.state == 'active' then
+      if active[active_index] ~= backend_id then return nil end
+      active_index = active_index + 1
+    end
+  end
+  if active_index ~= #active + 1 then return nil end
+  return {domain=domain, known=known, active=active}
+end
+local function valid_stored_domain(raw)
+  local domain = decode(raw)
+  if not domain or #domain > 64
+     or (#domain == 0 and raw ~= '[]') then
+    return nil
+  end
+  local known = {}
+  local previous = nil
+  for _, backend_id in ipairs(domain) do
+    if type(backend_id) ~= 'string' or backend_id == ''
+       or string.len(backend_id) > 128
+       or (previous and backend_id <= previous)
+       or known[backend_id] then
+      return nil
+    end
+    known[backend_id] = true
+    previous = backend_id
+  end
+  return domain
+end
+
+if not valid_positive_decimal(ARGV[2], '9007199254740991') then
+  return response('ledger_corrupt', 'allocatable_mb_invalid')
+end
+if (ARGV[3] == '') ~= (ARGV[4] == '') then
+  return response('ledger_corrupt', 'proof_reset_cas_incomplete')
+end
+if ARGV[3] ~= '' and not valid_revision(ARGV[3]) then
+  return response('ledger_corrupt', 'expected_ledger_revision_invalid')
+end
+if type(ARGV[4]) ~= 'string' or string.len(ARGV[4]) > 128 then
+  return response('ledger_corrupt', 'expected_ledger_incarnation_invalid')
+end
+if type(ARGV[5]) ~= 'string' or ARGV[5] == ''
+   or string.len(ARGV[5]) > 256 then
+  return response('ledger_corrupt', 'proof_reset_id_invalid')
+end
+if not valid_fingerprint(ARGV[6]) then
+  return response('ledger_corrupt', 'proof_reset_begin_fingerprint_invalid')
+end
+if type(ARGV[7]) ~= 'string' or ARGV[7] == ''
+   or string.len(ARGV[7]) > 128 then
+  return response('ledger_corrupt', 'proposed_incarnation_invalid')
+end
+for index = 9, 13, 2 do
+  if not valid_fingerprint(ARGV[index]) then
+    return response('ledger_corrupt', 'membership_domain_fingerprint_invalid')
+  end
+end
+local target = validate_domains(ARGV[8], ARGV[10], ARGV[12])
+if not target then
+  return response('ledger_corrupt', 'target_membership_domain_invalid')
+end
+if #ARGV ~= 13 + #target.domain or #KEYS ~= 4 + (#target.domain * 2) then
+  return response('ledger_corrupt', 'backend_key_domain_invalid')
+end
+for index, backend_id in ipairs(target.domain) do
+  if ARGV[13 + index] ~= backend_id then
+    return response('ledger_corrupt', 'backend_key_domain_invalid')
+  end
+end
+
+local type_name = card_type(KEYS[1])
+if type_name ~= 'none' and type_name ~= 'hash' then
+  return response('ledger_corrupt', 'card_type_invalid')
+end
+local card_exists = type_name == 'hash'
+local current_resource = card_exists
+  and redis.call('HGET', KEYS[1], 'resource_id') or false
+if card_exists and not current_resource then
+  return response('ledger_corrupt', 'resource_identity_missing')
+end
+if card_exists and current_resource ~= ARGV[1] then
+  return response('ledger_corrupt', 'resource_identity_mismatch')
+end
+
+if card_exists then
+  local proof_state = redis.call('HGET', KEYS[1], 'proof_reset_state')
+  if proof_state == 'prepared' then
+    local current_revision = redis.call('HGET', KEYS[1], 'ledger_revision')
+    local current_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+    if redis.call('HGET', KEYS[1], 'proof_reset_id') ~= ARGV[5] then
+      return response('not_ready', 'proof_reset_in_progress',
+        tonumber(current_revision or '0') or 0, current_incarnation, 0, false, false)
+    end
+    if redis.call('HGET', KEYS[1], 'proof_reset_begin_fingerprint') ~= ARGV[6] then
+      return response('config_mismatch', 'proof_reset_id_conflict',
+        tonumber(current_revision or '0') or 0, current_incarnation, 0, false, false)
+    end
+    if current_revision ~= redis.call('HGET', KEYS[1], 'proof_reset_revision')
+       or current_incarnation ~= redis.call('HGET', KEYS[1], 'proof_reset_incarnation')
+       or redis.call('HGET', KEYS[1], 'allocatable_mb') ~= ARGV[2]
+       or redis.call('HGET', KEYS[1], 'backend_domain') ~= ARGV[8]
+       or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= ARGV[9]
+       or redis.call('HGET', KEYS[1], 'membership_domain') ~= ARGV[10]
+       or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= ARGV[11]
+       or redis.call('HGET', KEYS[1], 'active_backend_domain') ~= ARGV[12]
+       or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= ARGV[13]
+       or redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+       or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
+       or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= '0'
+       or redis.call('HGET', KEYS[1], 'not_ready_reason') ~= 'proof_reset_in_progress'
+       or not valid_positive_decimal(
+         redis.call('HGET', KEYS[1], 'proof_reset_prepared_at_ms'),
+         '9007199254740991')
+       or not valid_revision(current_revision)
+       or current_incarnation == '' or string.len(current_incarnation) > 128 then
+      return response('ledger_corrupt', 'proof_reset_marker_invalid',
+        tonumber(current_revision or '0') or 0, current_incarnation)
+    end
+    return response('prepared', 'proof_reset_in_progress',
+      tonumber(current_revision), current_incarnation, 0, false, true)
+  elseif proof_state then
+    return response('ledger_corrupt', 'proof_reset_state_invalid')
+  end
+
+  if redis.call('HGET', KEYS[1], 'last_proof_reset_id') == ARGV[5] then
+    local current_revision = redis.call('HGET', KEYS[1], 'ledger_revision')
+    local current_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+    if redis.call('HGET', KEYS[1], 'last_proof_reset_begin_fingerprint') ~= ARGV[6] then
+      return response('config_mismatch', 'proof_reset_id_conflict',
+        tonumber(current_revision or '0') or 0, current_incarnation)
+    end
+    return response('stale_revision', 'proof_reset_already_committed',
+      tonumber(current_revision or '0') or 0, current_incarnation,
+      tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0)
+  end
+end
+
+local current_revision = card_exists
+  and redis.call('HGET', KEYS[1], 'ledger_revision') or false
+local current_incarnation = card_exists
+  and redis.call('HGET', KEYS[1], 'ledger_incarnation') or false
+local current_incarnation_valid = type(current_incarnation) == 'string'
+  and current_incarnation ~= '' and string.len(current_incarnation) <= 128
+local core_valid = valid_revision(current_revision) and current_incarnation_valid
+if not card_exists then
+  if ARGV[3] ~= '' then
+    return response('stale_revision', 'card_missing', 0, '')
+  end
+elseif core_valid then
+  if ARGV[3] == '' then
+    return response('stale_revision', 'proof_reset_cas_required',
+      tonumber(current_revision), current_incarnation,
+      tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0)
+  end
+  if current_revision ~= ARGV[3] or current_incarnation ~= ARGV[4] then
+    return response('stale_revision', 'ledger_changed',
+      tonumber(current_revision), current_incarnation,
+      tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0)
+  end
+elseif ARGV[3] ~= '' then
+  return response('ledger_corrupt', 'corrupt_card_requires_no_cas',
+    tonumber(current_revision or '0') or 0, current_incarnation or '')
+end
+if current_incarnation_valid and current_incarnation == ARGV[7] then
+  return response('ledger_corrupt', 'proposed_incarnation_reused',
+    tonumber(current_revision), current_incarnation)
+end
+
+if card_exists then
+  local stored_domain = valid_stored_domain(
+    redis.call('HGET', KEYS[1], 'backend_domain'))
+  if stored_domain then
+    for _, backend_id in ipairs(stored_domain) do
+      if not target.known[backend_id] then
+        return response('config_mismatch',
+          'stored_backend_domain_exceeds_closed_domain',
+          tonumber(current_revision or '0') or 0, current_incarnation or '')
+      end
+    end
+  end
+end
+
+local preserved_fields = {
+  'last_proof_reset_id', 'last_proof_reset_begin_fingerprint',
+  'last_proof_reset_commit_fingerprint', 'last_proof_reset_revision',
+  'last_proof_reset_incarnation', 'last_proof_reset_ready',
+  'last_proof_reset_status', 'last_proof_reset_reason',
+  'last_proof_fingerprint', 'last_proof_deadline_ms'
+}
+local preserved = {}
+if card_exists then
+  for _, field in ipairs(preserved_fields) do
+    local value = redis.call('HGET', KEYS[1], field)
+    if value then
+      table.insert(preserved, field)
+      table.insert(preserved, value)
+    end
+  end
+end
+local prepared_at = now_ms()
+redis.call('DEL', KEYS[1])
+redis.call('HSET', KEYS[1],
+  'resource_id', ARGV[1],
+  'allocatable_mb', ARGV[2],
+  'bootstrap_state', 'not_ready',
+  'reconcile_deadline_ms', '0',
+  'not_ready_reason', 'proof_reset_in_progress',
+  'ledger_version', '2',
+  'ledger_revision', '1',
+  'ledger_incarnation', ARGV[7],
+  'backend_domain', ARGV[8],
+  'backend_domain_fingerprint', ARGV[9],
+  'membership_domain', ARGV[10],
+  'membership_domain_fingerprint', ARGV[11],
+  'active_backend_domain', ARGV[12],
+  'active_backend_domain_fingerprint', ARGV[13],
+  'committed_mb', '0',
+  'allocation_count', '0',
+  'lease_counts', '{}',
+  'card_queue_count', '0',
+  'backend_queue_counts', '{}',
+  'transition_mirror', '',
+  'proof_reset_state', 'prepared',
+  'proof_reset_id', ARGV[5],
+  'proof_reset_begin_fingerprint', ARGV[6],
+  'proof_reset_revision', '1',
+  'proof_reset_incarnation', ARGV[7],
+  'proof_reset_prepared_at_ms', tostring(prepared_at),
+  'updated_at_ms', tostring(prepared_at))
+if #preserved > 0 then redis.call('HSET', KEYS[1], unpack(preserved)) end
+return response('prepared', 'proof_reset_in_progress', 1, ARGV[7], 0, false, false)
+"""
+
+
+_COMMIT_PROOF_RESET_LUA = r"""
+local function now_ms()
+  local t = redis.call('TIME')
+  return (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000)
+end
+local function decode(raw)
+  if not raw then return nil end
+  local ok, value = pcall(cjson.decode, raw)
+  if not ok or type(value) ~= 'table' then return nil end
+  return value
+end
+local function table_size(value)
+  local count = 0
+  for _, _ in pairs(value) do count = count + 1 end
+  return count
+end
+local function valid_integer(value, minimum, maximum)
+  return type(value) == 'number' and value == math.floor(value)
+    and value >= minimum and value <= maximum
+end
+local function valid_positive_decimal(value, maximum)
+  if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
+    return false
+  end
+  if string.len(value) < string.len(maximum) then return true end
+  if string.len(value) > string.len(maximum) then return false end
+  return value <= maximum
+end
+local function valid_revision(value)
+  return valid_positive_decimal(value, '9007199254740991')
+end
+local function valid_generation(value)
+  return valid_positive_decimal(value, '9223372036854775807')
+end
+local function valid_fingerprint(value)
+  return type(value) == 'string' and string.len(value) == 64
+    and string.match(value, '^[0-9a-f]+$') ~= nil
+end
+local function card_type(key)
+  local reply = redis.call('TYPE', key)
+  if type(reply) == 'table' then return reply.ok end
+  return reply
+end
+local function response(
+    status, reason, revision, incarnation, committed, ready, idempotent)
+  return cjson.encode({
+    status=status, reason=reason or '',
+    ledger_revision=revision or 0,
+    ledger_incarnation=incarnation or '',
+    committed_mb=committed or 0,
+    purged_leases=0, ready=ready or false,
+    idempotent=idempotent or false
+  })
+end
+local function validate_domains(domain_raw, membership_raw, active_raw)
+  local domain = decode(domain_raw)
+  local memberships = decode(membership_raw)
+  local active = decode(active_raw)
+  if not domain or not memberships or not active
+     or #domain > 64 or #memberships ~= #domain or #active > #domain
+     or (#domain == 0 and domain_raw ~= '[]')
+     or (#memberships == 0 and membership_raw ~= '[]')
+     or (#active == 0 and active_raw ~= '[]') then
+    return nil
+  end
+  local known = {}
+  local valid_states = {pending=true, active=true, retiring=true}
+  local previous = nil
+  local active_index = 1
+  for index, backend_id in ipairs(domain) do
+    local member = memberships[index]
+    if type(backend_id) ~= 'string' or backend_id == ''
+       or string.len(backend_id) > 128
+       or (previous and backend_id <= previous)
+       or known[backend_id]
+       or type(member) ~= 'table' or table_size(member) ~= 3
+       or member.backend_id ~= backend_id
+       or not valid_generation(member.membership_epoch)
+       or not valid_states[member.state] then
+      return nil
+    end
+    known[backend_id] = true
+    previous = backend_id
+    if member.state == 'active' then
+      if active[active_index] ~= backend_id then return nil end
+      active_index = active_index + 1
+    end
+  end
+  if active_index ~= #active + 1 then return nil end
+  return {domain=domain, known=known, active=active}
+end
+
+local function valid_allocation(allocation, known)
+  local generation_valid = false
+  if type(allocation) == 'table' then
+    generation_valid = valid_generation(allocation.generation)
+      or (allocation.generation == cjson.null and allocation.state == 'unknown')
+  end
+  return type(allocation) == 'table' and table_size(allocation) == 8
+    and type(allocation.backend_id) == 'string'
+    and known[allocation.backend_id]
+    and (allocation.state == 'resident' or allocation.state == 'unknown')
+    and valid_integer(allocation.budget_mb, 1, 9007199254740991)
+    and generation_valid
+    and valid_integer(allocation.eviction_priority,
+      -9007199254740991, 9007199254740991)
+    and type(allocation.evictable) == 'boolean'
+    and (allocation.state ~= 'unknown' or allocation.evictable == false)
+    and valid_integer(allocation.max_concurrency, 1, 10000)
+    and valid_integer(allocation.last_used_at_ms, 1, 9007199254740991)
+end
+local function allocations_equal(left, right)
+  return left and right
+    and left.backend_id == right.backend_id
+    and left.state == right.state
+    and left.budget_mb == right.budget_mb
+    and left.generation == right.generation
+    and left.eviction_priority == right.eviction_priority
+    and left.evictable == right.evictable
+    and left.max_concurrency == right.max_concurrency
+    and left.last_used_at_ms == right.last_used_at_ms
+end
+local function validate_allocations(raw, target)
+  local allocations = decode(raw)
+  if not allocations or #allocations > 64
+     or (#allocations == 0 and raw ~= '[]') then
+    return nil
+  end
+  local seen = {}
+  local by_backend = {}
+  local committed = 0
+  local has_unknown = false
+  for _, allocation in ipairs(allocations) do
+    if not valid_allocation(allocation, target.known)
+       or seen[allocation.backend_id] then
+      return nil
+    end
+    seen[allocation.backend_id] = true
+    by_backend[allocation.backend_id] = allocation
+    if allocation.state == 'unknown' then has_unknown = true end
+    committed = committed + allocation.budget_mb
+    if committed > 9007199254740991 then return nil end
+  end
+  return {
+    items=allocations, by_backend=by_backend,
+    committed=committed, has_unknown=has_unknown
+  }
+end
+local function valid_zero_map(raw, domain)
+  local value = decode(raw)
+  if not value or table_size(value) ~= #domain then return false end
+  for _, backend_id in ipairs(domain) do
+    if value[backend_id] ~= 0 then return false end
+  end
+  return true
+end
+
+if type(ARGV[3]) ~= 'string' or ARGV[3] == '' or string.len(ARGV[3]) > 256 then
+  return response('ledger_corrupt', 'proof_reset_id_invalid')
+end
+if not valid_revision(ARGV[4]) then
+  return response('ledger_corrupt', 'expected_reset_revision_invalid')
+end
+if type(ARGV[5]) ~= 'string' or ARGV[5] == '' or string.len(ARGV[5]) > 128 then
+  return response('ledger_corrupt', 'expected_reset_incarnation_invalid')
+end
+if ARGV[6] ~= '0' and ARGV[6] ~= '1' then
+  return response('ledger_corrupt', 'proof_ready_invalid')
+end
+if not valid_positive_decimal(ARGV[2], '9007199254740991') then
+  return response('ledger_corrupt', 'allocatable_mb_invalid')
+end
+if not valid_positive_decimal(ARGV[7], '9007199254740991') then
+  return response('ledger_corrupt', 'proof_deadline_invalid')
+end
+if not valid_fingerprint(ARGV[8]) or not valid_fingerprint(ARGV[9]) then
+  return response('ledger_corrupt', 'proof_fingerprint_invalid')
+end
+for index = 12, 16, 2 do
+  if not valid_fingerprint(ARGV[index]) then
+    return response('ledger_corrupt', 'membership_domain_fingerprint_invalid')
+  end
+end
+local target = validate_domains(ARGV[11], ARGV[13], ARGV[15])
+if not target then
+  return response('ledger_corrupt', 'target_membership_domain_invalid')
+end
+if #ARGV ~= 16 + #target.domain or #KEYS ~= 4 + (#target.domain * 2) then
+  return response('ledger_corrupt', 'backend_key_domain_invalid')
+end
+for index, backend_id in ipairs(target.domain) do
+  if ARGV[16 + index] ~= backend_id then
+    return response('ledger_corrupt', 'backend_key_domain_invalid')
+  end
+end
+if ARGV[6] == '1' and #target.active == 0 then
+  return response('not_ready', 'active_backend_domain_empty')
+end
+local proof_allocations = validate_allocations(ARGV[10], target)
+if not proof_allocations then
+  return response('ledger_corrupt', 'proof_allocation_invalid')
+end
+local final_ready = ARGV[6] == '1' and not proof_allocations.has_unknown
+  and proof_allocations.committed <= tonumber(ARGV[2])
+local final_status = final_ready and 'reconciled' or 'not_ready'
+local final_reason = ''
+if proof_allocations.committed > tonumber(ARGV[2]) then
+  final_reason = 'committed_exceeds_allocatable'
+elseif not final_ready then
+  final_reason = 'proof_incomplete'
+end
+local function committed_state_valid(marker_revision, marker_incarnation)
+  local expected_bootstrap_state = final_ready and 'ready' or 'not_ready'
+  local expected_deadline = final_ready and ARGV[7] or '0'
+  if marker_revision ~= '2'
+     or redis.call('TTL', KEYS[1]) ~= -1
+     or redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+     or redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[1]
+     or redis.call('HGET', KEYS[1], 'allocatable_mb') ~= ARGV[2]
+     or redis.call('HGET', KEYS[1], 'ledger_revision') ~= marker_revision
+     or redis.call('HGET', KEYS[1], 'ledger_incarnation') ~= marker_incarnation
+     or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= expected_bootstrap_state
+     or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= expected_deadline
+     or redis.call('HGET', KEYS[1], 'not_ready_reason') ~= final_reason
+     or redis.call('HGET', KEYS[1], 'backend_domain') ~= ARGV[11]
+     or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= ARGV[12]
+     or redis.call('HGET', KEYS[1], 'membership_domain') ~= ARGV[13]
+     or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= ARGV[14]
+     or redis.call('HGET', KEYS[1], 'active_backend_domain') ~= ARGV[15]
+     or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= ARGV[16]
+     or redis.call('HGET', KEYS[1], 'committed_mb')
+       ~= tostring(proof_allocations.committed)
+     or redis.call('HGET', KEYS[1], 'allocation_count')
+       ~= tostring(#proof_allocations.items)
+     or not valid_zero_map(
+       redis.call('HGET', KEYS[1], 'lease_counts'), target.domain)
+     or redis.call('HGET', KEYS[1], 'card_queue_count') ~= '0'
+     or not valid_zero_map(
+       redis.call('HGET', KEYS[1], 'backend_queue_counts'), target.domain)
+     or redis.call('HGET', KEYS[1], 'transition_mirror') ~= ''
+     or redis.call('HGET', KEYS[1], 'proof_reset_state')
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_id') ~= ARGV[3]
+     or not valid_fingerprint(redis.call(
+       'HGET', KEYS[1], 'last_proof_reset_begin_fingerprint'))
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_commit_fingerprint') ~= ARGV[9]
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_revision') ~= marker_revision
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_incarnation') ~= marker_incarnation
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_ready')
+       ~= (final_ready and '1' or '0')
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_status') ~= final_status
+     or redis.call('HGET', KEYS[1], 'last_proof_reset_reason') ~= final_reason
+     or redis.call('HGET', KEYS[1], 'last_proof_fingerprint') ~= ARGV[8]
+     or redis.call('HGET', KEYS[1], 'last_proof_deadline_ms') ~= ARGV[7]
+     or not valid_positive_decimal(
+       redis.call('HGET', KEYS[1], 'updated_at_ms'), '9007199254740991') then
+    return false
+  end
+  local allocation_type = card_type(KEYS[2])
+  if #proof_allocations.items == 0 then
+    if allocation_type ~= 'none' then return false end
+  else
+    if allocation_type ~= 'hash' or redis.call('TTL', KEYS[2]) ~= -1
+       or redis.call('HLEN', KEYS[2]) ~= #proof_allocations.items then
+      return false
+    end
+    for backend_id, expected in pairs(proof_allocations.by_backend) do
+      local actual = decode(redis.call('HGET', KEYS[2], backend_id))
+      if not valid_allocation(actual, target.known)
+         or not allocations_equal(actual, expected) then
+        return false
+      end
+    end
+  end
+  if card_type(KEYS[3]) ~= 'none' or card_type(KEYS[4]) ~= 'none' then
+    return false
+  end
+  for index = 5, #KEYS do
+    if card_type(KEYS[index]) ~= 'none' then return false end
+  end
+  return true
+end
+
+local type_name = card_type(KEYS[1])
+if type_name ~= 'hash' then
+  return response(type_name == 'none' and 'not_ready' or 'ledger_corrupt',
+    type_name == 'none' and 'card_missing' or 'card_type_invalid')
+end
+if redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[1] then
+  return response('ledger_corrupt', 'resource_identity_mismatch')
+end
+
+if redis.call('HGET', KEYS[1], 'last_proof_reset_id') == ARGV[3] then
+  local current_revision = redis.call('HGET', KEYS[1], 'ledger_revision')
+  local current_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+  if redis.call('HGET', KEYS[1], 'last_proof_reset_commit_fingerprint') ~= ARGV[9] then
+    return response('config_mismatch', 'proof_reset_id_conflict',
+      tonumber(current_revision or '0') or 0, current_incarnation)
+  end
+  local marker_revision = redis.call('HGET', KEYS[1], 'last_proof_reset_revision')
+  local marker_incarnation = redis.call('HGET', KEYS[1], 'last_proof_reset_incarnation')
+  if not valid_revision(marker_revision) or not marker_incarnation
+     or marker_incarnation == '' or string.len(marker_incarnation) > 128 then
+    return response('ledger_corrupt', 'last_proof_reset_marker_invalid',
+      tonumber(current_revision or '0') or 0, current_incarnation)
+  end
+  if current_revision ~= marker_revision or current_incarnation ~= marker_incarnation then
+    return response('stale_revision', 'ledger_changed_after_proof_reset',
+      tonumber(current_revision or '0') or 0, current_incarnation,
+      tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0') or 0)
+  end
+  local last_status = redis.call('HGET', KEYS[1], 'last_proof_reset_status')
+  local last_ready = redis.call('HGET', KEYS[1], 'last_proof_reset_ready')
+  if (last_status ~= 'reconciled' and last_status ~= 'not_ready')
+     or (last_ready ~= '0' and last_ready ~= '1') then
+    return response('ledger_corrupt', 'last_proof_reset_marker_invalid',
+      tonumber(current_revision), current_incarnation)
+  end
+  if not committed_state_valid(marker_revision, marker_incarnation) then
+    return response('ledger_corrupt', 'proof_reset_committed_state_invalid',
+      tonumber(current_revision), current_incarnation,
+      proof_allocations.committed, false, true)
+  end
+  if last_ready == '1' then
+    local retry_now = now_ms()
+    local retry_deadline = tonumber(ARGV[7])
+    if retry_deadline <= retry_now then
+      return response('not_ready', 'reconcile_expired',
+        tonumber(current_revision), current_incarnation,
+        proof_allocations.committed, false, true)
+    end
+    if retry_deadline > retry_now + 300000 then
+      return response('not_ready', 'reconcile_evidence_invalid',
+        tonumber(current_revision), current_incarnation,
+        proof_allocations.committed, false, true)
+    end
+  end
+  return response(last_status,
+    redis.call('HGET', KEYS[1], 'last_proof_reset_reason') or '',
+    tonumber(current_revision), current_incarnation,
+    proof_allocations.committed,
+    last_ready == '1', true)
+end
+
+local current_revision = redis.call('HGET', KEYS[1], 'ledger_revision')
+local current_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+if redis.call('HGET', KEYS[1], 'proof_reset_state') ~= 'prepared'
+   or redis.call('HGET', KEYS[1], 'proof_reset_id') ~= ARGV[3] then
+  return response('not_ready', 'proof_reset_not_prepared',
+    tonumber(current_revision or '0') or 0, current_incarnation)
+end
+if current_revision ~= ARGV[4] or current_incarnation ~= ARGV[5]
+   or redis.call('HGET', KEYS[1], 'proof_reset_revision') ~= ARGV[4]
+   or redis.call('HGET', KEYS[1], 'proof_reset_incarnation') ~= ARGV[5] then
+  return response('stale_revision', 'proof_reset_context_changed',
+    tonumber(current_revision or '0') or 0, current_incarnation)
+end
+local prepared_at = redis.call('HGET', KEYS[1], 'proof_reset_prepared_at_ms')
+if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+   or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
+   or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= '0'
+   or redis.call('HGET', KEYS[1], 'not_ready_reason') ~= 'proof_reset_in_progress'
+   or not valid_positive_decimal(prepared_at, '9007199254740991') then
+  return response('ledger_corrupt', 'proof_reset_marker_invalid',
+    tonumber(current_revision), current_incarnation)
+end
+local begin_fingerprint = redis.call(
+  'HGET', KEYS[1], 'proof_reset_begin_fingerprint')
+if not valid_fingerprint(begin_fingerprint) then
+  return response('ledger_corrupt', 'proof_reset_marker_invalid',
+    tonumber(current_revision), current_incarnation)
+end
+if redis.call('HGET', KEYS[1], 'allocatable_mb') ~= ARGV[2]
+   or redis.call('HGET', KEYS[1], 'backend_domain') ~= ARGV[11]
+   or redis.call('HGET', KEYS[1], 'backend_domain_fingerprint') ~= ARGV[12]
+   or redis.call('HGET', KEYS[1], 'membership_domain') ~= ARGV[13]
+   or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= ARGV[14]
+   or redis.call('HGET', KEYS[1], 'active_backend_domain') ~= ARGV[15]
+   or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= ARGV[16] then
+  return response('config_mismatch', 'proof_reset_domain_changed',
+    tonumber(current_revision), current_incarnation)
+end
+
+local now = now_ms()
+local deadline = tonumber(ARGV[7])
+if not valid_integer(deadline, 1, 9007199254740991)
+   or deadline <= now or deadline > now + 300000 then
+  return response('not_ready', 'proof_evidence_expired',
+    tonumber(current_revision), current_incarnation)
+end
+local lease_counts = {}
+local backend_queue_counts = {}
+for _, backend_id in ipairs(target.domain) do
+  lease_counts[backend_id] = 0
+  backend_queue_counts[backend_id] = 0
+end
+
+for index = 2, #KEYS do redis.call('DEL', KEYS[index]) end
+redis.call('DEL', KEYS[1])
+for _, allocation in ipairs(proof_allocations.items) do
+  redis.call('HSET', KEYS[2], allocation.backend_id, cjson.encode(allocation))
+end
+redis.call('HSET', KEYS[1],
+  'resource_id', ARGV[1],
+  'allocatable_mb', ARGV[2],
+  'bootstrap_state', final_ready and 'ready' or 'not_ready',
+  'reconcile_deadline_ms', final_ready and ARGV[7] or '0',
+  'not_ready_reason', final_reason,
+  'ledger_version', '2',
+  'ledger_revision', '2',
+  'ledger_incarnation', ARGV[5],
+  'backend_domain', ARGV[11],
+  'backend_domain_fingerprint', ARGV[12],
+  'membership_domain', ARGV[13],
+  'membership_domain_fingerprint', ARGV[14],
+  'active_backend_domain', ARGV[15],
+  'active_backend_domain_fingerprint', ARGV[16],
+  'committed_mb', tostring(proof_allocations.committed),
+  'allocation_count', tostring(#proof_allocations.items),
+  'lease_counts', cjson.encode(lease_counts),
+  'card_queue_count', '0',
+  'backend_queue_counts', cjson.encode(backend_queue_counts),
+  'transition_mirror', '',
+  'last_proof_reset_id', ARGV[3],
+  'last_proof_reset_begin_fingerprint', begin_fingerprint,
+  'last_proof_reset_commit_fingerprint', ARGV[9],
+  'last_proof_reset_revision', '2',
+  'last_proof_reset_incarnation', ARGV[5],
+  'last_proof_reset_ready', final_ready and '1' or '0',
+  'last_proof_reset_status', final_status,
+  'last_proof_reset_reason', final_reason,
+  'last_proof_fingerprint', ARGV[8],
+  'last_proof_deadline_ms', ARGV[7],
+  'updated_at_ms', tostring(now))
+return response(final_status, final_reason, 2, ARGV[5],
+  proof_allocations.committed,
+  final_ready, false)
 """
 
 
@@ -602,6 +1382,17 @@ local expected_incarnation = supplied_expected_incarnation
 local existing_resource = redis.call('HGET', KEYS[1], 'resource_id')
 local current_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
 local idempotent_retry = false
+if existing_resource == ARGV[1]
+   and redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
+  return cjson.encode({
+    status='not_ready', ready=false,
+    ledger_revision=tonumber(
+      redis.call('HGET', KEYS[1], 'ledger_revision') or '0') or 0,
+    ledger_incarnation=current_incarnation,
+    committed_mb=0, purged_leases=0,
+    reason='proof_reset_in_progress'
+  })
+end
 if type(proposed_incarnation) ~= 'string' or proposed_incarnation == ''
    or string.len(proposed_incarnation) > 128 then
   return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, ledger_incarnation=current_incarnation, committed_mb=0, purged_leases=0, reason='proposed_incarnation_invalid'})
@@ -1269,6 +2060,10 @@ end
 if redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[1] then
   return response('not_ready', 0, incarnation, target_domains, 'card_missing_or_mismatched')
 end
+if redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
+  return response('not_ready', tonumber(current_revision or '0') or 0,
+    incarnation, target_domains, 'proof_reset_in_progress')
+end
 if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
   return response('ledger_corrupt', tonumber(current_revision or '0') or 0,
     incarnation, target_domains, 'legacy_schema_requires_proof_reset')
@@ -1652,6 +2447,9 @@ local function integrity_table_size(value)
 end
 local function integrity_fault(resource_id, reason, now)
   if redis.call('HGET', KEYS[1], 'resource_id') == resource_id then
+    if redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
+      return
+    end
     local revision = redis.call('HGET', KEYS[1], 'ledger_revision')
     if integrity_valid_revision(revision) then
       redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
@@ -1682,6 +2480,10 @@ local function inspect_membership_domains(
     membership_raw, membership_fingerprint,
     active_domain_raw, active_domain_fingerprint)
   local now = integrity_now_ms()
+  if redis.call('HGET', KEYS[1], 'resource_id') == resource_id
+     and redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
+    return nil, 'not_ready', 'proof_reset_in_progress'
+  end
   if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
     integrity_fault(resource_id, 'membership_domain_invalid', now)
     return nil, 'ledger_corrupt', 'membership_domain_invalid'
@@ -1760,6 +2562,9 @@ local function inspect_ledger(
   local now = integrity_now_ms()
   if redis.call('HGET', KEYS[1], 'resource_id') ~= resource_id then
     return nil, 'not_ready', 'card_missing_or_mismatched'
+  end
+  if redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
+    return nil, 'not_ready', 'proof_reset_in_progress'
   end
   local ledger_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation')
   if type(ledger_incarnation) ~= 'string' or ledger_incarnation == ''
@@ -2411,6 +3216,7 @@ local function guard_membership_domain(
     domain_raw, domain_fingerprint, membership_raw, membership_fingerprint,
     active_raw, active_fingerprint)
   if redis.call('HGET', card_key, 'resource_id') ~= resource_id
+     or redis.call('HGET', card_key, 'proof_reset_state') == 'prepared'
      or redis.call('HGET', card_key, 'ledger_version') ~= '2'
      or redis.call('HGET', card_key, 'ledger_incarnation') ~= expected_incarnation
      or redis.call('HGET', card_key, 'backend_domain') ~= domain_raw
@@ -2499,6 +3305,10 @@ local function valid_revision(value)
   return value < '9007199254740991'
 end
 
+if redis.call('HGET', KEYS[2], 'resource_id') == ARGV[6]
+   and redis.call('HGET', KEYS[2], 'proof_reset_state') == 'prepared' then
+  return cjson.encode({status='not_ready', reason='proof_reset_in_progress'})
+end
 if not guard_membership_domain(
     KEYS[2], ARGV[6], ARGV[7], ARGV[10],
     ARGV[8], ARGV[9], ARGV[11], ARGV[12], ARGV[13], ARGV[14]) then
@@ -2641,6 +3451,12 @@ local function valid_integer(value)
     and value >= 1 and value <= 9007199254740991
 end
 
+if redis.call('HGET', KEYS[2], 'resource_id') == ARGV[1]
+   and redis.call('HGET', KEYS[2], 'proof_reset_state') == 'prepared' then
+  return cjson.encode({
+    status='not_ready', reason='proof_reset_in_progress', changed=0, total=0
+  })
+end
 if not guard_membership_domain(
     KEYS[2], ARGV[1], ARGV[2], ARGV[5],
     ARGV[3], ARGV[4], ARGV[6], ARGV[7], ARGV[8], ARGV[9]) then
@@ -3550,6 +4366,12 @@ class GPUArbiterStore:
         self._mark_card_not_ready_script = redis.register_script(
             _MARK_CARD_NOT_READY_LUA
         )
+        self._begin_proof_reset_script = redis.register_script(
+            _BEGIN_PROOF_RESET_LUA
+        )
+        self._commit_proof_reset_script = redis.register_script(
+            _COMMIT_PROOF_RESET_LUA
+        )
         self._reconcile_card_script = redis.register_script(_RECONCILE_CARD_LUA)
         self._evolve_backend_domains_script = redis.register_script(
             _EVOLVE_BACKEND_DOMAINS_LUA
@@ -3737,6 +4559,8 @@ class GPUArbiterStore:
             allocatable_mb,
             reason="bootstrap_incomplete",
         )
+        if result.reason == "proof_reset_in_progress":
+            raise GPUArbiterStoreError("gpu_arbiter_proof_reset_in_progress")
         return result.committed_mb
 
     async def mark_card_not_ready(
@@ -3769,6 +4593,336 @@ class GPUArbiterStore:
             ledger_incarnation=str(payload.get("ledger_incarnation", "")),
             committed_mb=int(payload.get("committed_mb", 0)),
             reason=str(payload.get("reason", reason)),
+        )
+
+    async def begin_proof_reset(
+        self,
+        resource_id: str,
+        allocatable_mb: int,
+        *,
+        expected_ledger_revision: int | None,
+        expected_ledger_incarnation: str | None,
+        backend_memberships: Sequence[GPUBackendDomainMember],
+        reset_id: str,
+    ) -> GPUReconcileResult:
+        """Freeze one resource before consuming durable reset proof.
+
+        The supplied membership domain must be the durable closed world for this
+        resource. Child keys are intentionally preserved until ``commit_proof_reset``
+        validates fresh evidence and replaces the ledger atomically.
+        """
+
+        keys = self.keys(resource_id)
+        allocatable_mb = _validate_positive_int(allocatable_mb, "allocatable_mb")
+        _validate_nonempty(reset_id, "reset_id", max_length=256)
+        if expected_ledger_revision is not None:
+            if (
+                isinstance(expected_ledger_revision, bool)
+                or not isinstance(expected_ledger_revision, int)
+                or expected_ledger_revision <= 0
+                or expected_ledger_revision > _MAX_REDIS_SAFE_INTEGER
+            ):
+                raise ValueError(
+                    "expected_ledger_revision must be a positive Redis-safe integer"
+                )
+        if (expected_ledger_revision is None) != (expected_ledger_incarnation is None):
+            raise ValueError(
+                "expected ledger revision and incarnation must be supplied together"
+            )
+        if expected_ledger_incarnation is not None:
+            _validate_nonempty(
+                expected_ledger_incarnation,
+                "expected_ledger_incarnation",
+                max_length=128,
+            )
+        domains = _canonical_backend_domains(backend_memberships)
+        begin_document = {
+            "active_backend_domain": json.loads(
+                domains.active_backend_domain_raw
+            ),
+            "allocatable_mb": allocatable_mb,
+            "backend_domain": json.loads(domains.backend_domain_raw),
+            "expected_ledger_incarnation": expected_ledger_incarnation,
+            "expected_ledger_revision": expected_ledger_revision,
+            "membership_domain": json.loads(domains.membership_domain_raw),
+            "resource_id": resource_id,
+        }
+        begin_fingerprint = hashlib.sha256(
+            json.dumps(
+                begin_document, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        raw = await self._call(
+            lambda: self._begin_proof_reset_script(
+                keys=self._ledger_keys(keys, domains.backend_ids),
+                args=[
+                    resource_id,
+                    allocatable_mb,
+                    expected_ledger_revision or "",
+                    expected_ledger_incarnation or "",
+                    reset_id,
+                    begin_fingerprint,
+                    uuid.uuid4().hex,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                    *domains.backend_ids,
+                ],
+            )
+        )
+        payload = self._decode_result(raw)
+        return GPUReconcileResult(
+            status=payload["status"],
+            ready=bool(payload.get("ready", False)),
+            ledger_revision=int(payload.get("ledger_revision", 0)),
+            ledger_incarnation=str(payload.get("ledger_incarnation", "")),
+            committed_mb=int(payload.get("committed_mb", 0)),
+            purged_leases=int(payload.get("purged_leases", 0)),
+            reason=str(payload.get("reason", "")),
+            idempotent=bool(payload.get("idempotent", False)),
+        )
+
+    async def prepared_proof_reset(
+        self, resource_id: str
+    ) -> GPUProofResetContext | None:
+        """Return the durable prepared context needed to resume after a restart."""
+
+        keys = self.keys(resource_id)
+        card = await self._call(lambda: self._redis.hgetall(keys.card))
+        if not card:
+            return None
+        if card.get("resource_id") != resource_id:
+            raise GPUArbiterStoreError("GPU ledger resource identity mismatch")
+        proof_state = card.get("proof_reset_state")
+        if proof_state is None:
+            return None
+        if proof_state != "prepared":
+            raise GPUArbiterStoreError("GPU proof reset state is invalid")
+        try:
+            ledger_revision = int(card["ledger_revision"])
+            proof_revision = int(card["proof_reset_revision"])
+            if ledger_revision != 1 or proof_revision != ledger_revision:
+                raise ValueError("proof reset revision is invalid")
+            ledger_incarnation = _validate_nonempty(
+                card["ledger_incarnation"],
+                "ledger_incarnation",
+                max_length=128,
+            )
+            if card["proof_reset_incarnation"] != ledger_incarnation:
+                raise ValueError("proof reset incarnation is invalid")
+            allocatable_mb = _validate_positive_int(
+                int(card["allocatable_mb"]), "allocatable_mb"
+            )
+            prepared_at_ms = _validate_positive_int(
+                int(card["proof_reset_prepared_at_ms"]),
+                "proof_reset_prepared_at_ms",
+            )
+            if int(card["updated_at_ms"]) != prepared_at_ms:
+                raise ValueError("proof reset update timestamp is invalid")
+            reset_id = _validate_nonempty(
+                card["proof_reset_id"], "proof_reset_id", max_length=256
+            )
+            begin_fingerprint = card["proof_reset_begin_fingerprint"]
+            if _SHA256_HEX_RE.fullmatch(begin_fingerprint) is None:
+                raise ValueError("proof reset begin fingerprint is invalid")
+            if (
+                card.get("ledger_version") != "2"
+                or card.get("bootstrap_state") != "not_ready"
+                or card.get("reconcile_deadline_ms") != "0"
+                or card.get("not_ready_reason") != "proof_reset_in_progress"
+                or card.get("committed_mb") != "0"
+                or card.get("allocation_count") != "0"
+                or card.get("lease_counts") != "{}"
+                or card.get("card_queue_count") != "0"
+                or card.get("backend_queue_counts") != "{}"
+                or card.get("transition_mirror") != ""
+            ):
+                raise ValueError("proof reset card schema is invalid")
+            membership_values = json.loads(card["membership_domain"])
+            if not isinstance(membership_values, list) or any(
+                not isinstance(item, dict)
+                or set(item) != {"backend_id", "membership_epoch", "state"}
+                or not isinstance(item["membership_epoch"], str)
+                or _CANONICAL_POSITIVE_INT64_RE.fullmatch(
+                    item["membership_epoch"]
+                )
+                is None
+                or int(item["membership_epoch"]) > _MAX_POSITIVE_INT64
+                for item in membership_values
+            ):
+                raise ValueError("proof reset membership domain is invalid")
+            domains = _canonical_backend_domains(
+                tuple(
+                    GPUBackendDomainMember(
+                        backend_id=item["backend_id"],
+                        membership_epoch=int(item["membership_epoch"]),
+                        state=item["state"],
+                    )
+                    for item in membership_values
+                ),
+                ledger_incarnation=ledger_incarnation,
+            )
+            if (
+                card["backend_domain"] != domains.backend_domain_raw
+                or card["backend_domain_fingerprint"]
+                != domains.backend_domain_fingerprint
+                or card["membership_domain"] != domains.membership_domain_raw
+                or card["membership_domain_fingerprint"]
+                != domains.membership_domain_fingerprint
+                or card["active_backend_domain"]
+                != domains.active_backend_domain_raw
+                or card["active_backend_domain_fingerprint"]
+                != domains.active_backend_domain_fingerprint
+            ):
+                raise ValueError("proof reset membership domains are invalid")
+            return GPUProofResetContext(
+                resource_id=resource_id,
+                allocatable_mb=allocatable_mb,
+                reset_id=reset_id,
+                begin_fingerprint=begin_fingerprint,
+                ledger_revision=ledger_revision,
+                ledger_incarnation=ledger_incarnation,
+                prepared_at_ms=prepared_at_ms,
+                backend_ids=domains.backend_ids,
+                active_backend_ids=domains.active_backend_ids,
+                backend_memberships=domains.backend_memberships,
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GPUArbiterStoreError(
+                "GPU proof reset context decode failed"
+            ) from exc
+
+    async def commit_proof_reset(
+        self,
+        resource_id: str,
+        allocatable_mb: int,
+        *,
+        reset_id: str,
+        expected_reset_revision: int,
+        expected_reset_incarnation: str,
+        backend_memberships: Sequence[GPUBackendDomainMember],
+        allocations: Sequence[GPUAllocation],
+        ready: bool,
+        evidence_deadline_ms: int,
+        proof_fingerprint: str,
+    ) -> GPUReconcileResult:
+        """Replace a prepared ledger with one proof-bound conservative snapshot."""
+
+        keys = self.keys(resource_id)
+        allocatable_mb = _validate_positive_int(allocatable_mb, "allocatable_mb")
+        _validate_nonempty(reset_id, "reset_id", max_length=256)
+        if (
+            isinstance(expected_reset_revision, bool)
+            or not isinstance(expected_reset_revision, int)
+            or expected_reset_revision <= 0
+            or expected_reset_revision > _MAX_REDIS_SAFE_INTEGER
+        ):
+            raise ValueError(
+                "expected_reset_revision must be a positive Redis-safe integer"
+            )
+        _validate_nonempty(
+            expected_reset_incarnation,
+            "expected_reset_incarnation",
+            max_length=128,
+        )
+        if not isinstance(ready, bool):
+            raise ValueError("ready must be a boolean")
+        evidence_deadline_ms = _validate_positive_int(
+            evidence_deadline_ms, "evidence_deadline_ms"
+        )
+        if (
+            not isinstance(proof_fingerprint, str)
+            or _SHA256_HEX_RE.fullmatch(proof_fingerprint) is None
+        ):
+            raise ValueError(
+                "proof_fingerprint must be a 64-character lowercase SHA-256 digest"
+            )
+
+        domains = _canonical_backend_domains(backend_memberships)
+        if ready and not domains.active_backend_ids:
+            raise ValueError("ready proof reset requires an active backend")
+        target_allocations: list[dict[str, Any]] = []
+        seen_backend_ids: set[str] = set()
+        known_backend_ids = set(domains.backend_ids)
+        for allocation in allocations:
+            if not isinstance(allocation, GPUAllocation):
+                raise ValueError(
+                    "proof reset allocations must contain GPUAllocation values"
+                )
+            if allocation.state not in {
+                GPUAllocationState.UNKNOWN,
+                GPUAllocationState.RESIDENT,
+            }:
+                raise ValueError(
+                    "proof reset allocations must be unknown or resident"
+                )
+            if allocation.state is GPUAllocationState.UNKNOWN and allocation.evictable:
+                raise ValueError("proof reset unknown allocations cannot be evictable")
+            if allocation.backend_id not in known_backend_ids:
+                raise ValueError("proof reset allocation is outside the backend domain")
+            if allocation.backend_id in seen_backend_ids:
+                raise ValueError("proof reset allocations must be unique by backend")
+            seen_backend_ids.add(allocation.backend_id)
+            target_allocations.append(self._allocation_to_payload(allocation))
+        target_allocations.sort(key=lambda item: item["backend_id"])
+        commit_document = {
+            "active_backend_domain": json.loads(
+                domains.active_backend_domain_raw
+            ),
+            "allocatable_mb": allocatable_mb,
+            "allocations": target_allocations,
+            "backend_domain": json.loads(domains.backend_domain_raw),
+            "evidence_deadline_ms": evidence_deadline_ms,
+            "expected_reset_incarnation": expected_reset_incarnation,
+            "expected_reset_revision": expected_reset_revision,
+            "membership_domain": json.loads(domains.membership_domain_raw),
+            "proof_fingerprint": proof_fingerprint,
+            "ready": ready,
+            "reset_id": reset_id,
+            "resource_id": resource_id,
+        }
+        commit_fingerprint = hashlib.sha256(
+            json.dumps(
+                commit_document, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        raw = await self._call(
+            lambda: self._commit_proof_reset_script(
+                keys=self._ledger_keys(keys, domains.backend_ids),
+                args=[
+                    resource_id,
+                    allocatable_mb,
+                    reset_id,
+                    expected_reset_revision,
+                    expected_reset_incarnation,
+                    "1" if ready else "0",
+                    evidence_deadline_ms,
+                    proof_fingerprint,
+                    commit_fingerprint,
+                    json.dumps(target_allocations, separators=(",", ":")),
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                    *domains.backend_ids,
+                ],
+            )
+        )
+        payload = self._decode_result(raw)
+        return GPUReconcileResult(
+            status=payload["status"],
+            ready=bool(payload.get("ready", False)),
+            ledger_revision=int(payload.get("ledger_revision", 0)),
+            ledger_incarnation=str(payload.get("ledger_incarnation", "")),
+            committed_mb=int(payload.get("committed_mb", 0)),
+            purged_leases=int(payload.get("purged_leases", 0)),
+            reason=str(payload.get("reason", "")),
+            idempotent=bool(payload.get("idempotent", False)),
         )
 
     async def reconcile_card(
@@ -4255,6 +5409,8 @@ class GPUArbiterStore:
             )
         )
         payload = self._decode_result(raw)
+        if payload.get("reason") == "proof_reset_in_progress":
+            raise GPUArbiterStoreError("gpu_arbiter_proof_reset_in_progress")
         return int(payload.get("changed", 0)), int(payload.get("total", 0))
 
     async def enqueue_backend(
@@ -4593,6 +5749,10 @@ class GPUArbiterStore:
             card_before = await self._call(lambda: self._redis.hgetall(keys.card))
             if not card_before or card_before.get("resource_id") != resource_id:
                 raise GPUArbiterStoreError("gpu_arbiter_not_ready")
+            if card_before.get("proof_reset_state") == "prepared":
+                raise GPUArbiterStoreError(
+                    "gpu_arbiter_proof_reset_in_progress"
+                )
             try:
                 revision_before = int(card_before["ledger_revision"])
                 if revision_before <= 0 or revision_before > _MAX_REDIS_SAFE_INTEGER:
@@ -4704,6 +5864,10 @@ class GPUArbiterStore:
                 card_after = await self._call(lambda: self._redis.hgetall(keys.card))
                 if not card_after or card_after.get("resource_id") != resource_id:
                     raise GPUArbiterStoreError("gpu_arbiter_not_ready")
+                if card_after.get("proof_reset_state") == "prepared":
+                    raise GPUArbiterStoreError(
+                        "gpu_arbiter_proof_reset_in_progress"
+                    )
                 incarnation_after = card_after.get("ledger_incarnation")
                 if (
                     card_after.get("ledger_revision") != str(revision_before)
@@ -5013,6 +6177,7 @@ __all__ = [
     "GPUBackendMembershipState",
     "GPUCardSnapshot",
     "GPULeaseMutationResult",
+    "GPUProofResetContext",
     "GPUQueueResult",
     "GPUReconcileLeaseCleanup",
     "GPUReconcileResult",
