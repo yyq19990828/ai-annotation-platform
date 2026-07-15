@@ -1845,3 +1845,94 @@ async def test_resident_dispatch_authority_integrates_db_redis_and_signer(
         )
     finally:
         await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_cold_dispatch_authority_integrates_generation_intent_and_reservation(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+        )
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            health_meta = dict(backend.health_meta)
+            residency = dict(health_meta["residency"])
+            residency["lifecycle_gate"] = "enforce"
+            health_meta["residency"] = residency
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        reconciled = await proof_store.reconcile_card(
+            _RESOURCE_A,
+            8192,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=await _membership_domain(factory, _RESOURCE_A),
+            allocations=(),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=int(time.time() * 1000) + 120_000,
+            repair_id="cold-authority-bootstrap",
+        )
+        assert reconciled.status == "reconciled"
+
+        private_key = Ed25519PrivateKey.generate()
+        signer = GPUAdmissionTokenSigner(
+            active_kid="test",
+            _private_key=private_key,
+        )
+        dispatch = build_gpu_dispatch_context_factory(
+            factory,
+            store_factory=lambda: GPUArbiterStore.from_url(
+                _redis_url(),
+                namespace=proof_store.namespace,
+            ),
+            signer_factory=lambda: signer,
+        )
+        request = GPUDispatchRequest(
+            backend_id=str(backend_id),
+            gpu_resource_id=_RESOURCE_A,
+            operation="predict",
+            scope=AdmissionScope.PREDICT,
+        )
+
+        async with dispatch(request) as grant:
+            claims = verify_admission_token(
+                grant.admission_token,
+                keyring={"test": private_key.public_key()},
+            )
+            assert grant.generation == claims.generation == "1"
+            snapshot = await proof_store.snapshot(_RESOURCE_A)
+            assert snapshot.allocations[0].state is GPUAllocationState.LOADING
+            assert snapshot.allocations[0].reservation_lease_id == claims.jti
+            assert tuple(item.lease_id for item in snapshot.leases) == (claims.jti,)
+            grant.report_response(200)
+
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        assert snapshot.allocations[0].state is GPUAllocationState.UNKNOWN
+        assert snapshot.allocations[0].evictable is False
+        assert snapshot.leases[0].state.value == "uncertain"
+        assert snapshot.transition_present is False
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, backend_id)
+        assert fence is not None
+        assert fence.generation_high_water == 1
+        assert fence.token_expiry_high_water is not None
+        assert fence.token_expiry_high_water >= datetime.fromtimestamp(
+            claims.exp,
+            tz=UTC,
+        )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
