@@ -119,13 +119,14 @@ def _admission_kwargs(
     generation: str = "1",
     max_concurrency: int = 4,
     owner_id: str = "owner-a",
+    eviction_priority: int = 0,
 ) -> dict:
     return {
         "backend_id": backend_id,
         "membership_epoch": 1,
         "budget_mb": budget_mb,
         "generation": generation,
-        "eviction_priority": 0,
+        "eviction_priority": eviction_priority,
         "evictable": True,
         "max_concurrency": max_concurrency,
         "lease_id": lease_id,
@@ -146,6 +147,7 @@ async def _admit_resident(
     generation: str = "1",
     budget_mb: int = 60,
     max_concurrency: int = 4,
+    eviction_priority: int = 0,
 ) -> None:
     assert (
         await store.admit(
@@ -157,6 +159,7 @@ async def _admit_resident(
                 generation=generation,
                 budget_mb=budget_mb,
                 max_concurrency=max_concurrency,
+                eviction_priority=eviction_priority,
             ),
         )
     ).admitted
@@ -5209,6 +5212,362 @@ async def test_generation_cas_and_active_lease_guard_transitions(redis_stores) -
     )
     assert unloaded.status == "transitioned"
     assert unloaded.committed_mb == 0
+
+
+@pytest.mark.asyncio
+async def test_begin_idle_eviction_selects_priority_lru_and_replays_exactly(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-a/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="lease-a",
+        owner_id="owner-a",
+        budget_mb=30,
+        eviction_priority=1,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-b",
+        lease_id="lease-b",
+        owner_id="owner-b",
+        budget_mb=30,
+        eviction_priority=0,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-b",
+            lease_id="lease-b",
+            owner_id="owner-b",
+            generation="1",
+        )
+    ).status == "released"
+
+    stale = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=1,
+        victim_backend_id="backend-a",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (stale.status, stale.reason, stale.victim_backend_id) == (
+        "stale_selection",
+        "victim_order_or_generation_changed",
+        "backend-b",
+    )
+    before = await first.snapshot(resource_id)
+    selected = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=1,
+        victim_backend_id="backend-b",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (selected.status, selected.idempotent) == ("selected", False)
+    assert selected.shortfall_mb == 10
+    assert selected.victim_budget_mb == 30
+    assert selected.owner_expires_at_ms is not None
+    assert selected.owner_hard_deadline_ms is not None
+    assert selected.owner_expires_at_ms < selected.owner_hard_deadline_ms
+    after = await first.snapshot(resource_id)
+    allocations = {item.backend_id: item for item in after.allocations}
+    assert after.ledger_revision == before.ledger_revision + 1
+    assert after.committed_mb == 60
+    assert allocations["backend-b"].state is GPUAllocationState.DRAINING
+    assert allocations["backend-b"].generation == "2"
+
+    retried = await second.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=1,
+        victim_backend_id="backend-b",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (retried.status, retried.idempotent) == ("selected", True)
+    assert retried.owner_expires_at_ms == selected.owner_expires_at_ms
+    assert (await first.snapshot(resource_id)).ledger_revision == after.ledger_revision
+
+    conflict = await second.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=1,
+        victim_backend_id="backend-b",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="other-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert conflict.status == "transition_in_progress"
+    renewed = await first.heartbeat_transition_owner(
+        resource_id,
+        backend_id="backend-b",
+        owner_id="eviction-owner",
+        generation="2",
+        operation="evict",
+        ttl_ms=60_000,
+    )
+    assert renewed.status == "renewed"
+    assert renewed.expires_at_ms == selected.owner_hard_deadline_ms
+    late = await second.admit(
+        resource_id,
+        **_admission_kwargs(
+            "backend-b",
+            "lease-late",
+            budget_mb=30,
+            generation="2",
+            owner_id="late-owner",
+            eviction_priority=0,
+        ),
+    )
+    assert late.status == "transition_in_progress"
+
+
+@pytest.mark.asyncio
+async def test_begin_idle_eviction_uses_lru_then_backend_id_tie_break(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-a/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-b",
+        lease_id="lease-b",
+        owner_id="owner-b",
+        budget_mb=30,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-b",
+            lease_id="lease-b",
+            owner_id="owner-b",
+            generation="1",
+        )
+    ).status == "released"
+    await asyncio.sleep(0.003)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="lease-a",
+        owner_id="owner-a",
+        budget_mb=30,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+
+    lru = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=0,
+        victim_backend_id="backend-a",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (lru.status, lru.victim_backend_id) == (
+        "stale_selection",
+        "backend-b",
+    )
+
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        for backend_id in ("backend-a", "backend-b"):
+            allocation = json.loads(await raw.hget(keys.allocations, backend_id))
+            allocation["last_used_at_ms"] = 1
+            await raw.hset(keys.allocations, backend_id, json.dumps(allocation))
+    finally:
+        await raw.aclose()
+
+    tied = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=0,
+        victim_backend_id="backend-a",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (tied.status, tied.victim_backend_id) == ("selected", "backend-a")
+
+
+@pytest.mark.asyncio
+async def test_begin_idle_eviction_is_side_effect_free_without_safe_capacity(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-a/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="lease-a",
+        owner_id="owner-a",
+        budget_mb=60,
+        eviction_priority=0,
+    )
+    capacity_before = await first.snapshot(resource_id)
+    capacity = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=40,
+        requester_eviction_priority=0,
+        victim_backend_id="backend-a",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert capacity.status == "capacity_available"
+    assert (await first.snapshot(resource_id)).ledger_revision == (
+        capacity_before.ledger_revision
+    )
+
+    busy = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=50,
+        requester_eviction_priority=0,
+        victim_backend_id="backend-a",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (busy.status, busy.reason) == (
+        "victim_busy",
+        "eligible_victim_has_leases",
+    )
+    assert (await first.snapshot(resource_id)).transition_present is False
+
+    resource_id = "node-a/index:1"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="lease-a-small",
+        owner_id="owner-a-small",
+        budget_mb=30,
+        eviction_priority=0,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a-small",
+            owner_id="owner-a-small",
+            generation="1",
+        )
+    ).status == "released"
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-b",
+        lease_id="lease-b",
+        owner_id="owner-b",
+        budget_mb=50,
+        eviction_priority=2,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-b",
+            lease_id="lease-b",
+            owner_id="owner-b",
+            generation="1",
+        )
+    ).status == "released"
+    insufficient_before = await first.snapshot(resource_id)
+    insufficient = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_budget_mb=60,
+        requester_eviction_priority=1,
+        victim_backend_id="backend-a",
+        victim_membership_epoch=1,
+        victim_expected_generation="1",
+        victim_next_generation="2",
+        owner_id="eviction-owner",
+        ttl_ms=30_000,
+        hard_ttl_ms=60_000,
+    )
+    assert (insufficient.status, insufficient.reason) == (
+        "capacity_unavailable",
+        "eligible_capacity_insufficient",
+    )
+    after = await first.snapshot(resource_id)
+    assert after.ledger_revision == insufficient_before.ledger_revision
+    assert after.transition_present is False
+    assert all(item.state is GPUAllocationState.RESIDENT for item in after.allocations)
 
 
 @pytest.mark.asyncio

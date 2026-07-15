@@ -231,6 +231,31 @@ class GPUTransitionOwnerResult:
 
 
 @dataclass(frozen=True)
+class GPUIdleEvictionResult:
+    status: Literal[
+        "selected",
+        "capacity_available",
+        "capacity_unavailable",
+        "victim_busy",
+        "stale_selection",
+        "transition_in_progress",
+        "not_ready",
+        "config_mismatch",
+        "ledger_corrupt",
+    ]
+    reason: str
+    committed_mb: int
+    shortfall_mb: int
+    victim_backend_id: str | None = None
+    victim_generation: str | None = None
+    victim_budget_mb: int | None = None
+    owner_id: str | None = None
+    owner_expires_at_ms: int | None = None
+    owner_hard_deadline_ms: int | None = None
+    idempotent: bool = False
+
+
+@dataclass(frozen=True)
 class GPUReconcileLeaseCleanup:
     observed_idle_at_ms: int
     lease_ids: tuple[str, ...]
@@ -3538,7 +3563,11 @@ local function inspect_ledger(
        or type(transition.operation) ~= 'string' or transition.operation == ''
        or type(transition.require_idle) ~= 'boolean'
        or not integrity_valid_integer(transition.created_at_ms, 1, 9007199254740991)
-       or not integrity_valid_integer(transition.expires_at_ms, 1, 9007199254740991) then
+       or not integrity_valid_integer(transition.expires_at_ms, 1, 9007199254740991)
+       or (transition.hard_deadline_ms ~= nil
+         and (not integrity_valid_integer(
+           transition.hard_deadline_ms, 1, 9007199254740991)
+           or transition.expires_at_ms > transition.hard_deadline_ms)) then
       integrity_fault(resource_id, 'transition_mirror_mismatch', now)
       return nil, 'ledger_corrupt', 'transition_mirror_mismatch'
     end
@@ -3547,7 +3576,11 @@ local function inspect_ledger(
   elseif transition_mirror ~= '' then
     local mirrored = integrity_decode(transition_mirror)
     if not mirrored
-       or not integrity_valid_integer(mirrored.expires_at_ms, 1, 9007199254740991) then
+       or not integrity_valid_integer(mirrored.expires_at_ms, 1, 9007199254740991)
+       or (mirrored.hard_deadline_ms ~= nil
+         and (not integrity_valid_integer(
+           mirrored.hard_deadline_ms, 1, 9007199254740991)
+           or mirrored.expires_at_ms > mirrored.hard_deadline_ms)) then
       integrity_fault(resource_id, 'transition_mirror_invalid', now)
       return nil, 'ledger_corrupt', 'transition_mirror_invalid'
     end
@@ -4684,7 +4717,10 @@ if current and (
     or type(current.operation) ~= 'string' or current.operation == ''
     or type(current.require_idle) ~= 'boolean'
     or type(current.created_at_ms) ~= 'number'
-    or type(current.expires_at_ms) ~= 'number') then
+    or type(current.expires_at_ms) ~= 'number'
+    or (current.hard_deadline_ms ~= nil
+      and (type(current.hard_deadline_ms) ~= 'number'
+        or current.expires_at_ms > current.hard_deadline_ms))) then
   return redis.error_reply('gpu arbiter transition decode failed')
 end
 now = now_ms()
@@ -4764,6 +4800,10 @@ if ARGV[1] == 'acquire' then
         return cjson.encode({status='acquired', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms, idempotent=true})
       end
       current.expires_at_ms = now + tonumber(ARGV[7])
+      if current.hard_deadline_ms ~= nil
+         and current.expires_at_ms > current.hard_deadline_ms then
+        current.expires_at_ms = current.hard_deadline_ms
+      end
       local encoded = cjson.encode(current)
       redis.call('SET', KEYS[4], encoded, 'PXAT',
         tostring(current.expires_at_ms + 1000))
@@ -4827,6 +4867,10 @@ if ARGV[1] == 'revalidate' then
     return cjson.encode({status='not_ready'})
   end
   current.expires_at_ms = now + tonumber(ARGV[7])
+  if current.hard_deadline_ms ~= nil
+     and current.expires_at_ms > current.hard_deadline_ms then
+    current.expires_at_ms = current.hard_deadline_ms
+  end
   local encoded = cjson.encode(current)
   redis.call('SET', KEYS[4], encoded, 'PXAT',
     tostring(current.expires_at_ms + 1000))
@@ -4840,6 +4884,10 @@ elseif ARGV[1] == 'heartbeat' then
     return cjson.encode({status='not_ready', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
   end
   current.expires_at_ms = now + tonumber(ARGV[7])
+  if current.hard_deadline_ms ~= nil
+     and current.expires_at_ms > current.hard_deadline_ms then
+    current.expires_at_ms = current.hard_deadline_ms
+  end
   local encoded = cjson.encode(current)
   redis.call('SET', KEYS[4], encoded, 'PXAT',
     tostring(current.expires_at_ms + 1000))
@@ -4853,6 +4901,201 @@ elseif ARGV[1] == 'release' then
   return cjson.encode({status='released', owner_id=current.owner_id, generation=current.generation})
 end
 return redis.error_reply('unsupported gpu arbiter transition owner operation')
+"""
+)
+
+
+_BEGIN_IDLE_EVICTION_LUA = (
+    _LEDGER_INTEGRITY_LUA
+    + r"""
+local function valid_integer(value, minimum, maximum)
+  return type(value) == 'number' and value == math.floor(value)
+    and value >= minimum and value <= maximum
+end
+local function valid_generation(value)
+  if type(value) ~= 'string' or not string.match(value, '^[1-9][0-9]*$') then
+    return false
+  end
+  if string.len(value) < 19 then return true end
+  if string.len(value) > 19 then return false end
+  return value <= '9223372036854775807'
+end
+local function generation_greater(left, right)
+  if not valid_generation(left) or not valid_generation(right) then return false end
+  if string.len(left) ~= string.len(right) then
+    return string.len(left) > string.len(right)
+  end
+  return left > right
+end
+local function candidate_less(left, right)
+  if left.eviction_priority ~= right.eviction_priority then
+    return left.eviction_priority < right.eviction_priority
+  end
+  if left.last_used_at_ms ~= right.last_used_at_ms then
+    return left.last_used_at_ms < right.last_used_at_ms
+  end
+  return left.backend_id < right.backend_id
+end
+local function response(status, reason, committed, shortfall, victim, owner, idempotent)
+  return cjson.encode({
+    status=status, reason=reason, committed_mb=committed,
+    shortfall_mb=shortfall, victim_backend_id=victim and victim.backend_id or nil,
+    victim_generation=victim and victim.generation or nil,
+    victim_budget_mb=victim and victim.budget_mb or nil,
+    owner_id=owner and owner.owner_id or nil,
+    owner_expires_at_ms=owner and owner.expires_at_ms or nil,
+    owner_hard_deadline_ms=owner and owner.hard_deadline_ms or nil,
+    idempotent=idempotent or false
+  })
+end
+
+local ledger, integrity_status = inspect_ledger(
+  ARGV[1], ARGV[14], ARGV[15], ARGV[17], ARGV[18],
+  ARGV[19], ARGV[20], ARGV[16], false, ARGV[2])
+if not ledger then
+  return response(integrity_status, integrity_status, 0, 0, nil, nil, false)
+end
+local committed = ledger.committed
+local requester_budget = tonumber(ARGV[4])
+local requester_priority = tonumber(ARGV[5])
+if not valid_integer(requester_budget, 1, 9007199254740991)
+   or not valid_integer(requester_priority, -9007199254740991, 9007199254740991)
+   or not valid_generation(ARGV[8]) or not valid_generation(ARGV[9])
+   or not generation_greater(ARGV[9], ARGV[8])
+   or ARGV[11] ~= 'evict'
+   or not valid_integer(tonumber(ARGV[12]), 1, 2147483647)
+   or not valid_integer(tonumber(ARGV[13]), tonumber(ARGV[12]), 2147483647) then
+  return response('config_mismatch', 'eviction_request_invalid', committed, 0, nil, nil, false)
+end
+if not ledger.active_backends[ARGV[2]]
+   or not ledger.active_backends[ARGV[6]]
+   or ledger.memberships[ARGV[2]].membership_epoch ~= ARGV[3]
+   or ledger.memberships[ARGV[6]].membership_epoch ~= ARGV[7]
+   or ARGV[2] == ARGV[6] then
+  return response('config_mismatch', 'eviction_membership_mismatch', committed, 0, nil, nil, false)
+end
+
+local transition = ledger.transition
+if transition then
+  local victim = ledger.allocations[ARGV[6]]
+  local exact = transition.backend_id == ARGV[6]
+    and transition.owner_id == ARGV[10]
+    and transition.generation == ARGV[9]
+    and transition.operation == ARGV[11]
+    and transition.require_idle == true
+    and transition.requester_backend_id == ARGV[2]
+    and transition.requester_membership_epoch == ARGV[3]
+    and transition.requester_budget_mb == requester_budget
+    and transition.requester_eviction_priority == requester_priority
+    and transition.victim_membership_epoch == ARGV[7]
+    and transition.victim_source_generation == ARGV[8]
+    and victim and victim.state == 'draining'
+    and victim.generation == ARGV[9]
+    and victim.evictable == true
+    and ledger.lease_counts[ARGV[6]] == 0
+  if exact then
+    local shortfall = math.max(0, requester_budget - (ledger.allocatable - committed))
+    return response('selected', 'idempotent_idle_eviction', committed, shortfall,
+      victim, transition, true)
+  end
+  return response('transition_in_progress', 'transition_owner_active', committed,
+    0, nil, nil, false)
+end
+
+local requester = ledger.allocations[ARGV[2]]
+if requester then
+  if requester.state ~= 'unloaded' and requester.state ~= 'cpu_fallback' then
+    return response('stale_selection', 'requester_allocation_changed', committed,
+      0, nil, nil, false)
+  end
+  if requester.budget_mb ~= requester_budget
+     or requester.eviction_priority ~= requester_priority then
+    return response('config_mismatch', 'requester_config_mismatch', committed,
+      0, nil, nil, false)
+  end
+end
+if ledger.lease_counts[ARGV[2]] ~= 0 then
+  return response('stale_selection', 'requester_has_leases', committed,
+    0, nil, nil, false)
+end
+if requester_budget > ledger.allocatable then
+  return response('capacity_unavailable', 'request_exceeds_allocatable', committed,
+    requester_budget - ledger.allocatable, nil, nil, false)
+end
+local shortfall = requester_budget - (ledger.allocatable - committed)
+if shortfall <= 0 then
+  return response('capacity_available', 'capacity_already_available', committed,
+    0, nil, nil, false)
+end
+
+local idle = {}
+local idle_capacity = 0
+local possible_capacity = 0
+for backend_id, allocation in pairs(ledger.allocations) do
+  if backend_id ~= ARGV[2]
+     and ledger.active_backends[backend_id]
+     and allocation.state == 'resident'
+     and allocation.evictable == true
+     and allocation.eviction_priority <= requester_priority then
+    possible_capacity = math.min(shortfall,
+      possible_capacity + allocation.budget_mb)
+    if ledger.lease_counts[backend_id] == 0 then
+      table.insert(idle, allocation)
+      idle_capacity = math.min(shortfall, idle_capacity + allocation.budget_mb)
+    end
+  end
+end
+if idle_capacity < shortfall then
+  if possible_capacity >= shortfall then
+    return response('victim_busy', 'eligible_victim_has_leases', committed,
+      shortfall, nil, nil, false)
+  end
+  return response('capacity_unavailable', 'eligible_capacity_insufficient', committed,
+    shortfall, nil, nil, false)
+end
+table.sort(idle, candidate_less)
+local victim = idle[1]
+if not victim or victim.backend_id ~= ARGV[6]
+   or victim.generation ~= ARGV[8] then
+  return response('stale_selection', 'victim_order_or_generation_changed', committed,
+    shortfall, victim, nil, false)
+end
+if not integrity_has_revision_headroom(
+    redis.call('HGET', KEYS[1], 'ledger_revision')) then
+  redis.call('HSET', KEYS[1],
+    'bootstrap_state', 'not_ready',
+    'reconcile_deadline_ms', '0',
+    'not_ready_reason', 'ledger_revision_rebase_required')
+  return response('not_ready', 'ledger_revision_rebase_required', committed,
+    shortfall, nil, nil, false)
+end
+
+local now = ledger.now
+local hard_deadline = now + tonumber(ARGV[13])
+local expires_at = math.min(now + tonumber(ARGV[12]), hard_deadline)
+local owner = {
+  resource_id=ARGV[1], backend_id=ARGV[6], owner_id=ARGV[10],
+  generation=ARGV[9], operation=ARGV[11], require_idle=true,
+  requester_backend_id=ARGV[2], requester_membership_epoch=ARGV[3],
+  requester_budget_mb=requester_budget,
+  requester_eviction_priority=requester_priority,
+  victim_membership_epoch=ARGV[7], victim_source_generation=ARGV[8],
+  created_at_ms=now, expires_at_ms=expires_at,
+  hard_deadline_ms=hard_deadline
+}
+victim.state = 'draining'
+victim.generation = ARGV[9]
+victim.last_used_at_ms = now
+victim.reservation_lease_id = nil
+victim.reservation_owner_id = nil
+local encoded_owner = cjson.encode(owner)
+redis.call('SET', KEYS[4], encoded_owner, 'PXAT', tostring(expires_at + 1000))
+redis.call('HSET', KEYS[1], 'transition_mirror', encoded_owner,
+  'updated_at_ms', tostring(now))
+redis.call('HSET', KEYS[2], ARGV[6], cjson.encode(victim))
+redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
+return response('selected', 'idle_victim_selected', committed, shortfall,
+  victim, owner, false)
 """
 )
 
@@ -5445,6 +5688,9 @@ class GPUArbiterStore:
         self._sweep_leases_script = redis.register_script(_SWEEP_LEASES_LUA)
         self._queue_script = redis.register_script(_QUEUE_LUA)
         self._transition_owner_script = redis.register_script(_TRANSITION_OWNER_LUA)
+        self._begin_idle_eviction_script = redis.register_script(
+            _BEGIN_IDLE_EVICTION_LUA
+        )
         self._transition_script = redis.register_script(_TRANSITION_LUA)
 
     @classmethod
@@ -6903,6 +7149,93 @@ class GPUArbiterStore:
             operation_name=operation,
             ttl_ms=ttl_ms,
             require_idle=require_idle,
+        )
+
+    async def begin_idle_eviction(
+        self,
+        resource_id: str,
+        *,
+        requester_backend_id: str,
+        requester_membership_epoch: int,
+        requester_budget_mb: int,
+        requester_eviction_priority: int,
+        victim_backend_id: str,
+        victim_membership_epoch: int,
+        victim_expected_generation: str,
+        victim_next_generation: str,
+        owner_id: str,
+        ttl_ms: int,
+        hard_ttl_ms: int,
+    ) -> GPUIdleEvictionResult:
+        for value, field in (
+            (requester_backend_id, "requester_backend_id"),
+            (victim_backend_id, "victim_backend_id"),
+            (owner_id, "owner_id"),
+        ):
+            _validate_nonempty(value, field, max_length=256)
+        requester_membership_epoch = _validate_membership_epoch(
+            requester_membership_epoch
+        )
+        victim_membership_epoch = _validate_membership_epoch(victim_membership_epoch)
+        requester_budget_mb = _validate_positive_int(
+            requester_budget_mb, "requester_budget_mb"
+        )
+        requester_eviction_priority = _validate_redis_safe_int(
+            requester_eviction_priority, "requester_eviction_priority"
+        )
+        victim_expected_generation = _validate_generation(victim_expected_generation)
+        victim_next_generation = _validate_generation(victim_next_generation)
+        if int(victim_next_generation) <= int(victim_expected_generation):
+            raise ValueError("victim_next_generation must increase generation")
+        ttl_ms = _validate_ttl_ms(ttl_ms, "ttl_ms")
+        hard_ttl_ms = _validate_ttl_ms(hard_ttl_ms, "hard_ttl_ms")
+        if hard_ttl_ms < ttl_ms:
+            raise ValueError("hard_ttl_ms must be >= ttl_ms")
+
+        keys = self.keys(resource_id)
+        domains = await self._ledger_domain(keys)
+        raw = await self._call(
+            lambda: self._begin_idle_eviction_script(
+                keys=self._ledger_keys(keys, domains.backend_ids),
+                args=[
+                    resource_id,
+                    requester_backend_id,
+                    requester_membership_epoch,
+                    requester_budget_mb,
+                    requester_eviction_priority,
+                    victim_backend_id,
+                    victim_membership_epoch,
+                    victim_expected_generation,
+                    victim_next_generation,
+                    owner_id,
+                    GPU_EVICTION_OPERATION,
+                    ttl_ms,
+                    hard_ttl_ms,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                ],
+            )
+        )
+        payload = self._decode_result(raw)
+        return GPUIdleEvictionResult(
+            status=payload["status"],
+            reason=str(payload.get("reason", "")),
+            committed_mb=int(payload.get("committed_mb", 0)),
+            shortfall_mb=int(payload.get("shortfall_mb", 0)),
+            victim_backend_id=payload.get("victim_backend_id"),
+            victim_generation=payload.get("victim_generation"),
+            victim_budget_mb=self._optional_int(payload.get("victim_budget_mb")),
+            owner_id=payload.get("owner_id"),
+            owner_expires_at_ms=self._optional_int(payload.get("owner_expires_at_ms")),
+            owner_hard_deadline_ms=self._optional_int(
+                payload.get("owner_hard_deadline_ms")
+            ),
+            idempotent=bool(payload.get("idempotent", False)),
         )
 
     async def acquire_cold_admission_owner(
