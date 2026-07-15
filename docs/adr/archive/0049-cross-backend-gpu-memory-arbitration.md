@@ -356,13 +356,22 @@ A→B→A 竞态写入旧证据。无时区时间或时钟倒退一律拒绝。�
 health 只作诊断快照，不得代替 GC 所需的 live health。
 
 签发 capability 前必须锁定 exact active membership。token/activation 使用 membership→fence 锁序；registry
-mutation 由 registry row→membership→fence trigger 线性化，服务层不得反向预锁 membership。需要新 generation/control epoch 时，fence 与令牌时域
+mutation 由 registry row→membership→fence trigger 线性化，服务层不得反向预锁 membership。已有成员行锁
+无法封闭同资源并发 INSERT 的 predicate phantom，因此 registry 的受保护变更、membership 原始 INSERT 与
+proof consumer 必须先取得按完整 `gpu_resource_id` 派生的同一 transaction advisory lock；跨资源迁移按资源
+字符串排序取锁。proof consumer 随后按 backend UUID 顺序锁定该资源全部 membership，再按同序锁定 fence，
+registry 只作 MVCC 读取，避免与已持 registry row 的 trigger 形成反向环；不同资源使用不同 lock key，可并行
+恢复。需要新 generation/control epoch 时，fence 与令牌时域
 在同一事务推进；复用既有 epoch 的普通 workload 使用 horizon-only 更新。两条路径都必须 UPDATE-only
 单调持久化 `token_expiry_high_water`，缺失 fence 视为持久状态损坏，禁止从 1 重建。Redis 连续性丢失后，
 只有该时域已过且取得时域之后的 live-idle health，或完成更强的受签 reset，才可恢复 ready。
 challenge-bound health 只是证据候选，不是 reset 授权；消费时必须重新锁定当前 membership/fence，严格要求
 `probe_started_at > token_expiry_high_water`，校验证据 TTL、完整 residency 与身份，并把最终 horizon 复核和
-Redis reset 提交置于同一受保护恢复流程。不得缓存“已满足 horizon”的布尔值。
+Redis reset 提交置于同一受保护恢复流程。只有绑定 exact active state 的证明可以形成 ready；pending 必须先
+激活并重新探活，retiring 的冻结 health 永远不能授权恢复。严格空闲且 GPU 已卸载时省略 allocation；严格
+resident 按 membership 完整预算重建，但在独立 managed-lifecycle capability 声明尚未纳入本次证明前固定为
+non-evictable。瞬态、忙碌、不完整或非法 residency 一律按 Unknown 全额计费并保持 not-ready。不得缓存
+“已满足 horizon”的布尔值。
 
 Redis reset 使用独立两阶段原语，不能放宽普通 reconcile。begin 必须以 revision + incarnation CAS（完整
 flush 或核心字段损坏时使用严格 no-CAS 分支）轮换 incarnation，将数据库封闭三域固化为持久 prepared marker；
@@ -371,7 +380,9 @@ fail-closed，连 release、sweep、queue position 等减损写也不得改变�
 使 worker 在响应丢失或进程重启后取得 reset ID、新 revision/incarnation 与原始封闭域，而不是清除 marker 猜测
 重来。
 
-commit 必须 exact-match prepared context、三域与 reset ID，并由 Redis `TIME` 验证绝对证据 deadline；只接受
+commit 必须 exact-match prepared context、三域与 reset ID。ready commit 由 Redis `TIME` 验证从固定 live
+health 派生的绝对证据 deadline；not-ready commit 必须使用 canonical deadline `0`，因为它不授予任何权限，
+且 prepared marker 必须能在任意长度的进程重启后保守清场。commit 只接受
 Resident 或 non-evictable Unknown 的保守 allocation，删除 all-domain（含 retiring）内全部旧 child 后重写 v2
 账本。Unknown、证明不完整或 committed 超过 allocatable 时只能落 not-ready。成功响应丢失后的 exact commit
 重试必须保持只读，重新复验 card schema、镜像 cache、allocation、所有 child、key TTL 与当前 deadline；即使
@@ -480,8 +491,8 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P2：强类型静态 claim、配置 blocker、四级告警与 `observe` 模式完成。
 - P3：Redis 原子账本、lease、FIFO、跨 event-loop client 生命周期、fail-closed 重建原语、独立 durable
   membership/tombstone、v2 all/membership/active 三域的单调演进与操作权限矩阵，以及 challenge-bound
-  live-health 证据候选、Redis 两阶段 proof reset 与 prepared 重启恢复已完成；token horizon 锁内消费、
-  retired child/tombstone GC 和
+  live-health 证据候选、Redis 两阶段 proof reset、prepared 重启恢复、逐资源并发屏障、token horizon 锁内
+  消费与严格 residency 证明已完成；retired child/tombstone GC 和
   bootstrap/repair worker 接通后才算通过。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
 - P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。

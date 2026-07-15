@@ -1,8 +1,9 @@
-"""ADR-0049 GPU claims, durable fences, and P2 read-only shadow arbitration.
+"""ADR-0049 GPU claims, durable fences, proof recovery, and shadow arbitration.
 
-This module deliberately performs no Redis admission, eviction, or backend calls.
 P2b evaluates non-authoritative ``would-*`` decisions from a fresh DB snapshot;
-P3a/P3c-2a add durable fencing, exact membership, and token-expiry high-water marks.
+P3a/P3c add durable fencing, exact membership, token-expiry high-water marks, and
+the database-locked consumer for Redis proof reset.  Backend network probes remain
+outside every database lock in this module.
 """
 
 from __future__ import annotations
@@ -12,12 +13,14 @@ from collections.abc import Callable, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+import hashlib
+import json
 import re
 from typing import Any, Literal, NoReturn
 import uuid
 
 import structlog
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import GPUArbiterMode, Settings, settings
@@ -25,6 +28,15 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.schemas.ml_backend import GPUBackendConfigStatus, GPUConfigDiagnostic
+from app.services.gpu_arbiter_store import (
+    GPUAllocation,
+    GPUAllocationState,
+    GPUArbiterStore,
+    GPUBackendDomainMember,
+    GPUProofResetContext,
+    GPUReconcileResult,
+    normalize_gpu_backend_max_concurrency,
+)
 from app.utils.gpu_resource import validate_gpu_resource_id
 
 
@@ -43,7 +55,9 @@ _LEVEL_ORDER = {
 # visible in health_meta but is never used to prove CPU-only or physical identity.
 _HEALTH_EVIDENCE_MAX_AGE = timedelta(minutes=3)
 _HEALTH_EVIDENCE_FUTURE_SKEW = timedelta(minutes=1)
+_PROOF_RESET_MAX_WINDOW = timedelta(minutes=5)
 _CANONICAL_POSITIVE_INT64_RE = re.compile(r"[1-9][0-9]{0,18}\Z")
+_GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 
 GPUShadowSessionFactory = Callable[[], AsyncSession]
@@ -309,6 +323,900 @@ async def read_gpu_backend_fence(
     db: AsyncSession, backend_registry_id: uuid.UUID
 ) -> GPUBackendFence | None:
     return await db.get(GPUBackendFence, backend_registry_id)
+
+
+class _GPUProofInvalid(ValueError):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class _GPUProofProbe:
+    raw: dict[str, Any]
+    probe_started_at: datetime
+    observed_at: datetime
+
+
+@dataclass(frozen=True)
+class _GPUProofResidency:
+    raw: dict[str, Any]
+    state: str
+    gpu_loaded: bool | None
+    active_requests: int
+    builders: int
+    borrowers: int
+    draining: bool
+    evictable: bool
+    generation: str | None
+    pool_residencies: tuple[bool | None, ...]
+    lifecycle_gate: str
+    control_epoch: str | None
+    identity: dict[str, str] | None
+
+
+@dataclass(frozen=True)
+class _GPUProofEvaluation:
+    allocation: GPUAllocation | None
+    complete: bool
+    reason: str
+    evidence_deadline_ms: int | None
+    probe_document: Any
+    residency_document: Any
+
+
+@dataclass(frozen=True)
+class _LockedGPUProofDomain:
+    memberships: tuple[GPUBackendMembership, ...]
+    fences: dict[uuid.UUID, GPUBackendFence]
+    registries: dict[uuid.UUID, MLBackendRegistry]
+    db_now: datetime
+
+
+_GPU_PROBE_KEYS = frozenset(
+    {
+        "protocol_version",
+        "challenge",
+        "backend_registry_id",
+        "gpu_resource_id",
+        "membership_epoch",
+        "membership_state",
+        "probe_started_at",
+        "observed_at",
+    }
+)
+_GPU_RESIDENCY_KEYS = frozenset(
+    {
+        "state",
+        "gpu_loaded",
+        "active_requests",
+        "builders",
+        "borrowers",
+        "draining",
+        "evictable",
+        "generation",
+        "pools",
+        "boot_id",
+        "lifecycle_gate",
+        "control_epoch",
+        "identity",
+    }
+)
+_GPU_POOL_RESIDENCY_KEYS = frozenset({"resident", "device", "provider"})
+_GPU_RESIDENCY_IDENTITY_KEYS = frozenset(
+    {"audience", "backend_registry_id", "gpu_resource_id"}
+)
+_GPU_RESIDENCY_STATES = frozenset(
+    {"unloaded", "loading", "resident", "draining", "unloading", "unknown"}
+)
+
+
+def _canonical_proof_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise _GPUProofInvalid("timestamp_timezone_invalid")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_canonical_proof_timestamp(value: Any) -> datetime:
+    if type(value) is not str or not value.endswith("Z"):
+        raise _GPUProofInvalid("timestamp_format_invalid")
+    try:
+        parsed = datetime.fromisoformat(f"{value[:-1]}+00:00")
+    except ValueError as exc:
+        raise _GPUProofInvalid("timestamp_format_invalid") from exc
+    if _canonical_proof_timestamp(parsed) != value:
+        raise _GPUProofInvalid("timestamp_format_invalid")
+    return parsed
+
+
+def _datetime_to_epoch_ms(value: datetime) -> int:
+    utc_value = value.astimezone(UTC)
+    delta = utc_value - datetime(1970, 1, 1, tzinfo=UTC)
+    return (
+        delta.days * 86_400_000
+        + delta.seconds * 1_000
+        + delta.microseconds // 1_000
+    )
+
+
+def _strict_nonnegative_int64(value: Any, *, reason: str) -> int:
+    if type(value) is not int or value < 0 or value > _MAX_POSITIVE_INT64:
+        raise _GPUProofInvalid(reason)
+    return value
+
+
+def _strict_bool_or_none(value: Any, *, reason: str) -> bool | None:
+    if value is not None and type(value) is not bool:
+        raise _GPUProofInvalid(reason)
+    return value
+
+
+def _strict_string_or_none(value: Any, *, reason: str) -> str | None:
+    if value is not None and type(value) is not str:
+        raise _GPUProofInvalid(reason)
+    return value
+
+
+def _registry_gpu_max_concurrency(extra_params: Any) -> int:
+    if type(extra_params) is not dict:
+        raise _GPUProofInvalid("registry_concurrency_invalid")
+    raw = extra_params.get("max_concurrency", 4)
+    if type(raw) is str and re.fullmatch(r"[1-9][0-9]{0,4}", raw) is not None:
+        raw = int(raw)
+    try:
+        return normalize_gpu_backend_max_concurrency(raw)
+    except ValueError as exc:
+        raise _GPUProofInvalid("registry_concurrency_invalid") from exc
+
+
+def _parse_canonical_positive_int64(value: Any, *, reason: str) -> str:
+    if (
+        type(value) is not str
+        or _CANONICAL_POSITIVE_INT64_RE.fullmatch(value) is None
+        or int(value) > _MAX_POSITIVE_INT64
+    ):
+        raise _GPUProofInvalid(reason)
+    return value
+
+
+def _parse_optional_canonical_positive_int64(
+    value: Any, *, reason: str
+) -> str | None:
+    if value is None:
+        return None
+    return _parse_canonical_positive_int64(value, reason=reason)
+
+
+def _parse_gpu_proof_probe(value: Any) -> _GPUProofProbe:
+    if type(value) is not dict or set(value) != _GPU_PROBE_KEYS:
+        raise _GPUProofInvalid("probe_schema_invalid")
+    if value["protocol_version"] != "1":
+        raise _GPUProofInvalid("probe_protocol_invalid")
+    challenge = value["challenge"]
+    if (
+        type(challenge) is not str
+        or _GPU_HEALTH_CHALLENGE_RE.fullmatch(challenge) is None
+    ):
+        raise _GPUProofInvalid("probe_challenge_invalid")
+    for field in (
+        "backend_registry_id",
+        "gpu_resource_id",
+        "membership_state",
+    ):
+        if type(value[field]) is not str:
+            raise _GPUProofInvalid(f"probe_{field}_invalid")
+    _parse_canonical_positive_int64(
+        value["membership_epoch"], reason="probe_membership_epoch_invalid"
+    )
+    probe_started_at = _parse_canonical_proof_timestamp(value["probe_started_at"])
+    observed_at = _parse_canonical_proof_timestamp(value["observed_at"])
+    if probe_started_at >= observed_at:
+        raise _GPUProofInvalid("probe_clock_order_invalid")
+    return _GPUProofProbe(
+        raw=dict(value),
+        probe_started_at=probe_started_at,
+        observed_at=observed_at,
+    )
+
+
+def _parse_gpu_proof_residency(value: Any) -> _GPUProofResidency:
+    if type(value) is not dict or set(value) != _GPU_RESIDENCY_KEYS:
+        raise _GPUProofInvalid("residency_schema_invalid")
+
+    state = value["state"]
+    if type(state) is not str or state not in _GPU_RESIDENCY_STATES:
+        raise _GPUProofInvalid("residency_state_invalid")
+    gpu_loaded = _strict_bool_or_none(
+        value["gpu_loaded"], reason="residency_gpu_loaded_invalid"
+    )
+    counters = {
+        field: _strict_nonnegative_int64(
+            value[field], reason=f"residency_{field}_invalid"
+        )
+        for field in ("active_requests", "builders", "borrowers")
+    }
+    if type(value["draining"]) is not bool:
+        raise _GPUProofInvalid("residency_draining_invalid")
+    if type(value["evictable"]) is not bool:
+        raise _GPUProofInvalid("residency_evictable_invalid")
+    generation = _parse_optional_canonical_positive_int64(
+        value["generation"], reason="residency_generation_invalid"
+    )
+    control_epoch = _parse_optional_canonical_positive_int64(
+        value["control_epoch"], reason="residency_control_epoch_invalid"
+    )
+    boot_id = value["boot_id"]
+    if type(boot_id) is not str or not boot_id or len(boot_id) > 128:
+        raise _GPUProofInvalid("residency_boot_id_invalid")
+    lifecycle_gate = value["lifecycle_gate"]
+    if type(lifecycle_gate) is not str or lifecycle_gate not in {"legacy", "enforce"}:
+        raise _GPUProofInvalid("residency_lifecycle_gate_invalid")
+
+    pools = value["pools"]
+    if type(pools) is not dict or not pools:
+        raise _GPUProofInvalid("residency_pools_invalid")
+    pool_residencies: list[bool | None] = []
+    for pool_id, pool in pools.items():
+        if type(pool_id) is not str or not pool_id or pool_id.strip() != pool_id:
+            raise _GPUProofInvalid("residency_pool_id_invalid")
+        if type(pool) is not dict or set(pool) != _GPU_POOL_RESIDENCY_KEYS:
+            raise _GPUProofInvalid("residency_pool_schema_invalid")
+        pool_residencies.append(
+            _strict_bool_or_none(
+                pool["resident"], reason="residency_pool_state_invalid"
+            )
+        )
+        _strict_string_or_none(
+            pool["device"], reason="residency_pool_device_invalid"
+        )
+        _strict_string_or_none(
+            pool["provider"], reason="residency_pool_provider_invalid"
+        )
+
+    identity_value = value["identity"]
+    identity: dict[str, str] | None
+    if identity_value is None:
+        identity = None
+    else:
+        if (
+            type(identity_value) is not dict
+            or set(identity_value) != _GPU_RESIDENCY_IDENTITY_KEYS
+            or any(type(item) is not str for item in identity_value.values())
+            or identity_value["audience"] != "aap-gpu-lifecycle"
+        ):
+            raise _GPUProofInvalid("residency_identity_invalid")
+        identity = dict(identity_value)
+
+    if gpu_loaded is False and (
+        counters["builders"] != 0
+        or counters["borrowers"] != 0
+        or any(item is not False for item in pool_residencies)
+    ):
+        raise _GPUProofInvalid("residency_unloaded_inconsistent")
+    if value["evictable"] and (
+        generation is None or identity is None or lifecycle_gate != "enforce"
+    ):
+        raise _GPUProofInvalid("residency_evictable_inconsistent")
+
+    return _GPUProofResidency(
+        raw=dict(value),
+        state=state,
+        gpu_loaded=gpu_loaded,
+        active_requests=counters["active_requests"],
+        builders=counters["builders"],
+        borrowers=counters["borrowers"],
+        draining=value["draining"],
+        evictable=value["evictable"],
+        generation=generation,
+        pool_residencies=tuple(pool_residencies),
+        lifecycle_gate=lifecycle_gate,
+        control_epoch=control_epoch,
+        identity=identity,
+    )
+
+
+async def _lock_gpu_resource_proof_domain(
+    db: AsyncSession, resource_id: str
+) -> _LockedGPUProofDomain:
+    await db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended('aap:gpu-resource:' || :resource_id, 0))"
+        ),
+        {"resource_id": resource_id},
+    )
+    memberships = tuple(
+        (
+            await db.execute(
+                select(GPUBackendMembership)
+                .where(GPUBackendMembership.gpu_resource_id == resource_id)
+                .order_by(GPUBackendMembership.backend_registry_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    backend_ids = [item.backend_registry_id for item in memberships]
+    fences: tuple[GPUBackendFence, ...] = ()
+    registries: tuple[MLBackendRegistry, ...] = ()
+    if backend_ids:
+        fences = tuple(
+            (
+                await db.execute(
+                    select(GPUBackendFence)
+                    .where(GPUBackendFence.backend_registry_id.in_(backend_ids))
+                    .order_by(GPUBackendFence.backend_registry_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Registry mutation already owns its registry row before it waits for the
+        # resource advisory lock.  A plain MVCC read avoids the inverse lock order;
+        # the locked membership prevents that mutation from completing meanwhile.
+        registries = tuple(
+            (
+                await db.execute(
+                    select(MLBackendRegistry)
+                    .where(MLBackendRegistry.id.in_(backend_ids))
+                    .order_by(MLBackendRegistry.id)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    db_now = await db.scalar(select(func.clock_timestamp()))
+    if db_now is None or db_now.tzinfo is None or db_now.utcoffset() is None:
+        raise RuntimeError("PostgreSQL returned an invalid proof clock")
+    return _LockedGPUProofDomain(
+        memberships=memberships,
+        fences={item.backend_registry_id: item for item in fences},
+        registries={item.id: item for item in registries},
+        db_now=db_now,
+    )
+
+
+def _unknown_proof_allocation(
+    membership: GPUBackendMembership,
+    *,
+    generation: str | None,
+    last_used_at_ms: int,
+) -> GPUAllocation:
+    return GPUAllocation(
+        backend_id=str(membership.backend_registry_id),
+        state=GPUAllocationState.UNKNOWN,
+        budget_mb=membership.vram_budget_mb,
+        generation=generation,
+        eviction_priority=membership.eviction_priority,
+        evictable=False,
+        max_concurrency=membership.max_concurrency,
+        reservation_lease_id=None,
+        reservation_owner_id=None,
+        last_used_at_ms=last_used_at_ms,
+    )
+
+
+def _invalid_gpu_proof_evaluation(
+    membership: GPUBackendMembership,
+    context: GPUProofResetContext,
+    *,
+    reason: str,
+    probe_document: Any,
+    residency_document: Any,
+) -> _GPUProofEvaluation:
+    return _GPUProofEvaluation(
+        allocation=_unknown_proof_allocation(
+            membership,
+            generation=None,
+            last_used_at_ms=context.prepared_at_ms,
+        ),
+        complete=False,
+        reason=reason,
+        evidence_deadline_ms=None,
+        probe_document=probe_document,
+        residency_document=residency_document,
+    )
+
+
+def _evaluate_gpu_member_proof(
+    membership: GPUBackendMembership,
+    fence: GPUBackendFence | None,
+    registry: MLBackendRegistry | None,
+    *,
+    context: GPUProofResetContext,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> _GPUProofEvaluation:
+    raw_health = registry.health_meta if registry is not None else None
+    raw_probe = (
+        raw_health.get("gpu_arbiter_probe")
+        if type(raw_health) is dict
+        else None
+    )
+    raw_residency = raw_health.get("residency") if type(raw_health) is dict else None
+
+    if membership.state == "retiring":
+        return _invalid_gpu_proof_evaluation(
+            membership,
+            context,
+            reason="membership_retiring",
+            probe_document=None,
+            residency_document=None,
+        )
+    if membership.state == "pending":
+        # Activation changes the Redis active domain.  A pending candidate must
+        # first activate and obtain a new challenge bound to that exact state;
+        # otherwise a post-commit activation could leave a ready pending-domain
+        # snapshot behind.
+        return _invalid_gpu_proof_evaluation(
+            membership,
+            context,
+            reason="membership_pending",
+            probe_document=raw_probe,
+            residency_document=raw_residency,
+        )
+    if membership.state != "active":
+        return _invalid_gpu_proof_evaluation(
+            membership,
+            context,
+            reason="membership_state_invalid",
+            probe_document=raw_probe,
+            residency_document=raw_residency,
+        )
+    if fence is None:
+        return _invalid_gpu_proof_evaluation(
+            membership,
+            context,
+            reason="fence_missing",
+            probe_document=raw_probe,
+            residency_document=raw_residency,
+        )
+    if registry is None:
+        return _invalid_gpu_proof_evaluation(
+            membership,
+            context,
+            reason="registry_missing",
+            probe_document=None,
+            residency_document=None,
+        )
+
+    try:
+        generation_high_water = _strict_nonnegative_int64(
+            fence.generation_high_water, reason="generation_high_water_invalid"
+        )
+        control_epoch_high_water = _strict_nonnegative_int64(
+            fence.control_epoch_high_water,
+            reason="control_epoch_high_water_invalid",
+        )
+        runtime_epoch_high_water = _strict_nonnegative_int64(
+            fence.runtime_epoch_high_water, reason="runtime_epoch_high_water_invalid"
+        )
+        runtime_epoch_baseline = _strict_nonnegative_int64(
+            membership.runtime_epoch_baseline,
+            reason="runtime_epoch_baseline_invalid",
+        )
+        if runtime_epoch_high_water <= runtime_epoch_baseline:
+            raise _GPUProofInvalid("active_runtime_epoch_invalid")
+
+        if (
+            registry.state != "connected"
+            or registry.gpu_resource_id != membership.gpu_resource_id
+            or registry.vram_budget_mb != membership.vram_budget_mb
+            or registry.eviction_priority != membership.eviction_priority
+        ):
+            raise _GPUProofInvalid("registry_claim_mismatch")
+        registry_max_concurrency = _registry_gpu_max_concurrency(
+            registry.extra_params
+        )
+        if registry_max_concurrency != membership.max_concurrency:
+            raise _GPUProofInvalid("registry_concurrency_mismatch")
+
+        probe = _parse_gpu_proof_probe(raw_probe)
+        if (
+            probe.raw["backend_registry_id"] != str(membership.backend_registry_id)
+            or probe.raw["gpu_resource_id"] != membership.gpu_resource_id
+            or probe.raw["membership_epoch"] != str(membership.membership_epoch)
+            or probe.raw["membership_state"] != membership.state
+        ):
+            raise _GPUProofInvalid("probe_membership_mismatch")
+        if (
+            registry.last_checked_at is None
+            or registry.last_checked_at.tzinfo is None
+            or registry.last_checked_at.utcoffset() is None
+            or registry.last_checked_at.astimezone(UTC) != probe.observed_at
+        ):
+            raise _GPUProofInvalid("probe_registry_clock_mismatch")
+        if probe.observed_at > db_now.astimezone(UTC):
+            raise _GPUProofInvalid("probe_from_future")
+        if db_now.astimezone(UTC) - probe.observed_at > evidence_ttl:
+            raise _GPUProofInvalid("probe_expired")
+        horizon = fence.token_expiry_high_water
+        if horizon is not None:
+            if horizon.tzinfo is None or horizon.utcoffset() is None:
+                raise _GPUProofInvalid("token_horizon_invalid")
+            if probe.probe_started_at <= horizon.astimezone(UTC):
+                raise _GPUProofInvalid("probe_not_after_token_horizon")
+
+        residency = _parse_gpu_proof_residency(raw_residency)
+        identity = residency.identity
+        if identity is not None and (
+            identity["backend_registry_id"] != str(membership.backend_registry_id)
+            or identity["gpu_resource_id"] != membership.gpu_resource_id
+        ):
+            raise _GPUProofInvalid("residency_identity_mismatch")
+        if (
+            residency.generation is not None
+            or residency.control_epoch is not None
+        ) and identity is None:
+            raise _GPUProofInvalid("residency_identity_missing")
+        if identity is not None and horizon is None:
+            raise _GPUProofInvalid("token_horizon_missing")
+        if (
+            residency.generation is not None
+            and int(residency.generation) > generation_high_water
+        ):
+            raise _GPUProofInvalid("residency_generation_ahead")
+        if (
+            residency.control_epoch is not None
+            and int(residency.control_epoch) > control_epoch_high_water
+        ):
+            raise _GPUProofInvalid("residency_control_epoch_ahead")
+        if residency.lifecycle_gate == "enforce" and (
+            identity is None or residency.control_epoch is None
+        ):
+            raise _GPUProofInvalid("residency_enforce_identity_invalid")
+
+        observed_at_ms = _datetime_to_epoch_ms(probe.observed_at)
+        evidence_deadline_ms = _datetime_to_epoch_ms(
+            probe.observed_at + evidence_ttl
+        )
+        idle = (
+            residency.active_requests == 0
+            and residency.builders == 0
+            and residency.borrowers == 0
+            and not residency.draining
+        )
+        pools_complete = all(
+            item is not None for item in residency.pool_residencies
+        )
+        if (
+            idle
+            and pools_complete
+            and residency.gpu_loaded is False
+            and residency.state in {"unloaded", "resident"}
+            and not residency.evictable
+            and all(item is False for item in residency.pool_residencies)
+        ):
+            return _GPUProofEvaluation(
+                allocation=None,
+                complete=True,
+                reason="unloaded",
+                evidence_deadline_ms=evidence_deadline_ms,
+                probe_document=probe.raw,
+                residency_document=residency.raw,
+            )
+        if (
+            idle
+            and pools_complete
+            and residency.state == "resident"
+            and residency.gpu_loaded is True
+            and any(item is True for item in residency.pool_residencies)
+            and residency.generation is not None
+            and identity is not None
+        ):
+            return _GPUProofEvaluation(
+                allocation=GPUAllocation(
+                    backend_id=str(membership.backend_registry_id),
+                    state=GPUAllocationState.RESIDENT,
+                    budget_mb=membership.vram_budget_mb,
+                    generation=residency.generation,
+                    eviction_priority=membership.eviction_priority,
+                    # B2b does not yet consume the separate managed-lifecycle
+                    # capability declaration.  Never amplify health self-report
+                    # into eviction authority during proof recovery.
+                    evictable=False,
+                    max_concurrency=membership.max_concurrency,
+                    reservation_lease_id=None,
+                    reservation_owner_id=None,
+                    last_used_at_ms=observed_at_ms,
+                ),
+                complete=True,
+                reason="resident",
+                evidence_deadline_ms=evidence_deadline_ms,
+                probe_document=probe.raw,
+                residency_document=residency.raw,
+            )
+        return _GPUProofEvaluation(
+            allocation=_unknown_proof_allocation(
+                membership,
+                generation=residency.generation,
+                last_used_at_ms=observed_at_ms,
+            ),
+            complete=False,
+            reason="residency_not_stably_idle",
+            evidence_deadline_ms=evidence_deadline_ms,
+            probe_document=probe.raw,
+            residency_document=residency.raw,
+        )
+    except _GPUProofInvalid as exc:
+        return _invalid_gpu_proof_evaluation(
+            membership,
+            context,
+            reason=exc.reason,
+            probe_document=raw_probe,
+            residency_document=raw_residency,
+        )
+
+
+def _optional_datetime_document(value: datetime | None) -> Any:
+    if value is None:
+        return None
+    try:
+        return _canonical_proof_timestamp(value)
+    except _GPUProofInvalid:
+        return {"invalid_naive_timestamp": value.isoformat()}
+
+
+def _allocation_proof_document(allocation: GPUAllocation | None) -> Any:
+    if allocation is None:
+        return None
+    return {
+        "backend_id": allocation.backend_id,
+        "state": allocation.state.value,
+        "budget_mb": allocation.budget_mb,
+        "generation": allocation.generation,
+        "eviction_priority": allocation.eviction_priority,
+        "evictable": allocation.evictable,
+        "max_concurrency": allocation.max_concurrency,
+        "last_used_at_ms": allocation.last_used_at_ms,
+    }
+
+
+def _gpu_proof_fingerprint(
+    context: GPUProofResetContext,
+    locked: _LockedGPUProofDomain,
+    evaluations: Mapping[uuid.UUID, _GPUProofEvaluation],
+    *,
+    evidence_deadline_ms: int,
+    requested_ready: bool,
+    config_matches: bool,
+) -> str:
+    members: list[dict[str, Any]] = []
+    for membership in locked.memberships:
+        backend_id = membership.backend_registry_id
+        fence = locked.fences.get(backend_id)
+        registry = locked.registries.get(backend_id)
+        evaluation = evaluations[backend_id]
+        members.append(
+            {
+                "membership": {
+                    "backend_registry_id": str(backend_id),
+                    "gpu_resource_id": membership.gpu_resource_id,
+                    "membership_epoch": str(membership.membership_epoch),
+                    "runtime_epoch_baseline": str(
+                        membership.runtime_epoch_baseline
+                    ),
+                    "state": membership.state,
+                    "vram_budget_mb": membership.vram_budget_mb,
+                    "eviction_priority": membership.eviction_priority,
+                    "max_concurrency": membership.max_concurrency,
+                    "retired_at": _optional_datetime_document(
+                        membership.retired_at
+                    ),
+                    "retire_reason": membership.retire_reason,
+                    "retired_generation_high_water": (
+                        membership.retired_generation_high_water
+                    ),
+                    "retired_control_epoch_high_water": (
+                        membership.retired_control_epoch_high_water
+                    ),
+                    "retired_runtime_epoch_high_water": (
+                        membership.retired_runtime_epoch_high_water
+                    ),
+                    "retired_token_expiry_high_water": (
+                        _optional_datetime_document(
+                            membership.retired_token_expiry_high_water
+                        )
+                    ),
+                },
+                "fence": (
+                    None
+                    if fence is None
+                    else {
+                        "generation_high_water": str(
+                            fence.generation_high_water
+                        ),
+                        "control_epoch_high_water": str(
+                            fence.control_epoch_high_water
+                        ),
+                        "runtime_epoch_high_water": str(
+                            fence.runtime_epoch_high_water
+                        ),
+                        "token_expiry_high_water": _optional_datetime_document(
+                            fence.token_expiry_high_water
+                        ),
+                    }
+                ),
+                "registry": (
+                    None
+                    if registry is None
+                    else {
+                        "state": registry.state,
+                        "gpu_resource_id": registry.gpu_resource_id,
+                        "vram_budget_mb": registry.vram_budget_mb,
+                        "eviction_priority": registry.eviction_priority,
+                        "max_concurrency": (
+                            registry.extra_params.get("max_concurrency", 4)
+                            if type(registry.extra_params) is dict
+                            else None
+                        ),
+                        "last_checked_at": _optional_datetime_document(
+                            registry.last_checked_at
+                        ),
+                    }
+                ),
+                "probe": evaluation.probe_document,
+                "residency": evaluation.residency_document,
+                "verdict": {
+                    "complete": evaluation.complete,
+                    "reason": evaluation.reason,
+                    "allocation": _allocation_proof_document(
+                        evaluation.allocation
+                    ),
+                },
+            }
+        )
+
+    document = {
+        "schema": "gpu-arbiter-proof/v1",
+        "reset": {
+            "reset_id": context.reset_id,
+            "resource_id": context.resource_id,
+            "allocatable_mb": context.allocatable_mb,
+            "expected_reset_revision": context.ledger_revision,
+            "expected_reset_incarnation": context.ledger_incarnation,
+            "prepared_at_ms": context.prepared_at_ms,
+            "begin_fingerprint": context.begin_fingerprint,
+            "backend_memberships": [
+                {
+                    "backend_id": item.backend_id,
+                    "membership_epoch": str(item.membership_epoch),
+                    "state": item.state,
+                }
+                for item in context.backend_memberships
+            ],
+            "evidence_deadline_ms": evidence_deadline_ms,
+        },
+        "config_matches": config_matches,
+        "requested_ready": requested_ready,
+        "members": members,
+    }
+    canonical = json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+async def commit_gpu_proof_reset_from_health(
+    session_factory: GPUFenceSessionFactory,
+    store: GPUArbiterStore,
+    context: GPUProofResetContext,
+    *,
+    config: Settings = settings,
+    evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+) -> GPUReconcileResult:
+    """Consume cached live-health proof under the durable resource lock.
+
+    This function performs no backend HTTP call.  The resource barrier, all
+    membership rows, and all fence rows remain locked through the Redis commit, so
+    token horizon advancement and membership creation cannot slip past the final
+    proof check.  Invalid evidence is committed only as conservative not-ready
+    state; Redis remains the atomic ledger linearization point.
+    """
+
+    validate_gpu_resource_id(context.resource_id)
+    if evidence_ttl <= timedelta(0) or evidence_ttl > _PROOF_RESET_MAX_WINDOW:
+        raise ValueError(
+            "evidence_ttl must be positive and no greater than five minutes"
+        )
+
+    async with session_factory() as db:
+        async with db.begin():
+            locked = await _lock_gpu_resource_proof_domain(db, context.resource_id)
+            current_domain = tuple(
+                GPUBackendDomainMember(
+                    backend_id=str(item.backend_registry_id),
+                    membership_epoch=item.membership_epoch,
+                    state=item.state,  # type: ignore[arg-type]
+                )
+                for item in locked.memberships
+            )
+            domain_matches = current_domain == context.backend_memberships
+            configured_resource = config.gpu_arbiter_resources.get(
+                context.resource_id
+            )
+            config_matches = (
+                not config.gpu_arbiter_config_errors
+                and configured_resource is not None
+                and configured_resource.resource_id == context.resource_id
+                and configured_resource.allocatable_mb == context.allocatable_mb
+            )
+
+            evaluations = {
+                item.backend_registry_id: _evaluate_gpu_member_proof(
+                    item,
+                    locked.fences.get(item.backend_registry_id),
+                    locked.registries.get(item.backend_registry_id),
+                    context=context,
+                    db_now=locked.db_now,
+                    evidence_ttl=evidence_ttl,
+                )
+                for item in locked.memberships
+            }
+            allocations = tuple(
+                evaluation.allocation
+                for evaluation in evaluations.values()
+                if evaluation.allocation is not None
+            )
+            has_active_member = any(
+                item.state == "active" for item in locked.memberships
+            )
+            requested_ready = (
+                domain_matches
+                and config_matches
+                and has_active_member
+                and len(locked.fences) == len(locked.memberships)
+                and all(item.complete for item in evaluations.values())
+                and sum(item.budget_mb for item in allocations)
+                <= context.allocatable_mb
+            )
+            if not domain_matches:
+                # The prepared marker owns its original closed domain.  Clear that
+                # snapshot conservatively; a later legal domain evolution can then
+                # reconcile the current durable membership set.
+                allocations = ()
+
+            if requested_ready:
+                proof_deadlines = [
+                    item.evidence_deadline_ms
+                    for item in evaluations.values()
+                    if item.evidence_deadline_ms is not None
+                ]
+                evidence_deadline_ms = min(proof_deadlines)
+            else:
+                # A not-ready rewrite grants no authority and must remain available
+                # after an arbitrarily long restart.  Zero is deterministic across
+                # response-loss retries and is never persisted as a ready deadline.
+                evidence_deadline_ms = 0
+
+            proof_fingerprint = _gpu_proof_fingerprint(
+                context,
+                locked,
+                evaluations,
+                evidence_deadline_ms=evidence_deadline_ms,
+                requested_ready=requested_ready,
+                config_matches=config_matches,
+            )
+            return await store.commit_proof_reset(
+                context.resource_id,
+                context.allocatable_mb,
+                reset_id=context.reset_id,
+                expected_reset_revision=context.ledger_revision,
+                expected_reset_incarnation=context.ledger_incarnation,
+                backend_memberships=context.backend_memberships,
+                allocations=allocations,
+                ready=requested_ready,
+                evidence_deadline_ms=evidence_deadline_ms,
+                proof_fingerprint=proof_fingerprint,
+            )
 
 
 @dataclass(frozen=True)

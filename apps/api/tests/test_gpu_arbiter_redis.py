@@ -2540,6 +2540,19 @@ async def test_proof_reset_validates_cas_domain_and_evidence_deadline(
                 evidence_deadline_ms=_future_reconcile_deadline_ms(),
                 proof_fingerprint=proof_fingerprint,
             )
+        with pytest.raises(ValueError, match="must be zero when ready is false"):
+            await first.commit_proof_reset(
+                resource_id,
+                100,
+                reset_id="deadline-reset",
+                expected_reset_revision=prepared.ledger_revision,
+                expected_reset_incarnation=prepared.ledger_incarnation,
+                backend_memberships=memberships,
+                allocations=(allocation,),
+                ready=False,
+                evidence_deadline_ms=_future_reconcile_deadline_ms(),
+                proof_fingerprint=proof_fingerprint,
+            )
         expired = await first.commit_proof_reset(
             resource_id,
             100,
@@ -2655,7 +2668,7 @@ async def test_proof_reset_can_repair_corrupt_core_without_cas_and_is_per_card(
             backend_memberships=memberships,
             allocations=(),
             ready=False,
-            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            evidence_deadline_ms=0,
             proof_fingerprint=hashlib.sha256(b"corrupt-proof").hexdigest(),
         )
         assert (committed.status, committed.reason, committed.ready) == (

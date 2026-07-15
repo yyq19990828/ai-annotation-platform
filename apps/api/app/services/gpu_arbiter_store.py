@@ -970,7 +970,9 @@ end
 if not valid_positive_decimal(ARGV[2], '9007199254740991') then
   return response('ledger_corrupt', 'allocatable_mb_invalid')
 end
-if not valid_positive_decimal(ARGV[7], '9007199254740991') then
+if (ARGV[6] == '1'
+    and not valid_positive_decimal(ARGV[7], '9007199254740991'))
+   or (ARGV[6] == '0' and ARGV[7] ~= '0') then
   return response('ledger_corrupt', 'proof_deadline_invalid')
 end
 if not valid_fingerprint(ARGV[8]) or not valid_fingerprint(ARGV[9]) then
@@ -1182,8 +1184,9 @@ end
 
 local now = now_ms()
 local deadline = tonumber(ARGV[7])
-if not valid_integer(deadline, 1, 9007199254740991)
-   or deadline <= now or deadline > now + 300000 then
+if ARGV[6] == '1'
+   and (not valid_integer(deadline, 1, 9007199254740991)
+        or deadline <= now or deadline > now + 300000) then
   return response('not_ready', 'proof_evidence_expired',
     tonumber(current_revision), current_incarnation)
 end
@@ -4830,9 +4833,15 @@ class GPUArbiterStore:
         )
         if not isinstance(ready, bool):
             raise ValueError("ready must be a boolean")
-        evidence_deadline_ms = _validate_positive_int(
-            evidence_deadline_ms, "evidence_deadline_ms"
-        )
+        if not ready:
+            if type(evidence_deadline_ms) is not int or evidence_deadline_ms != 0:
+                raise ValueError(
+                    "evidence_deadline_ms must be zero when ready is false"
+                )
+        else:
+            evidence_deadline_ms = _validate_positive_int(
+                evidence_deadline_ms, "evidence_deadline_ms"
+            )
         if (
             not isinstance(proof_fingerprint, str)
             or _SHA256_HEX_RE.fullmatch(proof_fingerprint) is None
