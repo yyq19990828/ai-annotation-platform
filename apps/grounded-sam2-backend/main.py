@@ -45,6 +45,7 @@ from aap_protocol_v2 import (
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
+from aap_protocol_v2.errors import LifecycleErrorCode, LifecycleHTTPError
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     GPU_ADMISSION_TOKEN_HEADER,
@@ -57,6 +58,8 @@ from aap_protocol_v2.lifecycle import (
     ManagedLifecycleCapabilities,
     load_verify_keyring,
     match_gpu_health_challenge,
+    parse_gpu_admission_header_values,
+    parse_gpu_control_token_header_values,
 )
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
@@ -392,16 +395,38 @@ def _model_key(sam_variant: str, dino_variant: str) -> str:
     return f"sam={sam_variant}/dino={dino_variant}"
 
 
+def _managed_lifecycle_headers(request: Request) -> tuple[str | None, str | None]:
+    try:
+        headers = parse_gpu_admission_header_values(
+            request.headers.getlist(GPU_GENERATION_HEADER),
+            request.headers.getlist(GPU_ADMISSION_TOKEN_HEADER),
+        )
+    except ValueError as exc:
+        raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED) from exc
+    return headers if headers is not None else (None, None)
+
+
+def _managed_control_token(request: Request) -> str:
+    try:
+        return parse_gpu_control_token_header_values(
+            request.headers.getlist(GPU_GENERATION_HEADER),
+            request.headers.getlist(GPU_ADMISSION_TOKEN_HEADER),
+        )
+    except ValueError as exc:
+        raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED) from exc
+
+
 async def _begin_workload(
     request: Request,
     scope: AdmissionScope,
 ) -> WorkloadOperation:
+    generation_header, token = _managed_lifecycle_headers(request)
     if _gpu_lifecycle is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     return await _gpu_lifecycle.begin_workload(
         scope,
-        generation_header=request.headers.get(GPU_GENERATION_HEADER),
-        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+        generation_header=generation_header,
+        token=token,
     )
 
 
@@ -924,10 +949,15 @@ async def _request_json(request: Request) -> Any:
 async def unload(request: Request) -> dict[str, Any]:
     """Bodyless legacy unload is image-only; managed unload clears both pools."""
 
+    generation_header, token = _managed_lifecycle_headers(request)
     if _gpu_lifecycle is None:
+        if generation_header is not None:
+            raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED)
         return {"ok": True, "unloaded": False, "loaded": False}
     raw_body = await request.body()
     if not raw_body.strip():
+        if generation_header is not None:
+            raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED)
         return await _gpu_lifecycle.legacy_unload()
     body = _validate_body(
         GenerationTransitionRequest,
@@ -935,14 +965,15 @@ async def unload(request: Request) -> dict[str, Any]:
     )
     response = await _gpu_lifecycle.managed_unload(
         body.generation,
-        generation_header=request.headers.get(GPU_GENERATION_HEADER),
-        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+        generation_header=generation_header,
+        token=token,
     )
     return response.model_dump(mode="json")
 
 
 @app.post("/drain")
 async def drain(request: Request) -> dict[str, Any]:
+    generation_header, token = _managed_lifecycle_headers(request)
     if _gpu_lifecycle is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     body = _validate_body(
@@ -951,14 +982,15 @@ async def drain(request: Request) -> dict[str, Any]:
     )
     response = await _gpu_lifecycle.drain(
         body.generation,
-        generation_header=request.headers.get(GPU_GENERATION_HEADER),
-        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+        generation_header=generation_header,
+        token=token,
     )
     return response.model_dump(mode="json")
 
 
 @app.post("/drain/cancel")
 async def cancel_drain(request: Request) -> dict[str, Any]:
+    generation_header, token = _managed_lifecycle_headers(request)
     if _gpu_lifecycle is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     body = _validate_body(
@@ -967,32 +999,34 @@ async def cancel_drain(request: Request) -> dict[str, Any]:
     )
     response = await _gpu_lifecycle.cancel_drain(
         body.generation,
-        generation_header=request.headers.get(GPU_GENERATION_HEADER),
-        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+        generation_header=generation_header,
+        token=token,
     )
     return response.model_dump(mode="json")
 
 
 @app.post("/lifecycle/mode")
 async def lifecycle_mode(request: Request) -> dict[str, Any]:
+    token = _managed_control_token(request)
     if _gpu_lifecycle is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     body = _validate_body(LifecycleModeRequest, await _request_json(request))
     response = await _gpu_lifecycle.set_mode(
         body,
-        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+        token=token,
     )
     return response.model_dump(mode="json")
 
 
 @app.post("/lifecycle/reset")
 async def lifecycle_reset(request: Request) -> dict[str, Any]:
+    token = _managed_control_token(request)
     if _gpu_lifecycle is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     body = _validate_body(LifecycleResetRequest, await _request_json(request))
     response = await _gpu_lifecycle.reset(
         body,
-        token=request.headers.get(GPU_ADMISSION_TOKEN_HEADER),
+        token=token,
     )
     return response.model_dump(mode="json")
 

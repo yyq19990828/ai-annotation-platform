@@ -13,12 +13,15 @@ import pytest
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     AdmissionTokenClaims,
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
     GPU_HEALTH_CHALLENGE_HEADER,
     GPU_HEALTH_CHALLENGE_QUERY_PARAM,
     encode_ed25519_public_key,
     sign_admission_token,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from starlette.datastructures import Headers
 
 
 class _Session:
@@ -174,6 +177,49 @@ def test_setup_and_health_publish_verified_managed_lifecycle(managed_client) -> 
     assert all(
         pool["resident"] is False for pool in health["residency"]["pools"].values()
     )
+
+
+def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(
+    managed_client,
+) -> None:
+    _main, client, private_key = managed_client
+    boot_id = client.get("/health").json()["residency"]["boot_id"]
+    token = _token(
+        private_key,
+        boot_id,
+        AdmissionScope.WARMUP,
+        generation="1",
+        jti="legacy-header-guard",
+    )
+    workload_headers = [
+        [(GPU_GENERATION_HEADER, "1")],
+        [(GPU_ADMISSION_TOKEN_HEADER, token)],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, token),
+        ],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, token),
+            (GPU_ADMISSION_TOKEN_HEADER, token),
+        ],
+    ]
+
+    for headers in workload_headers:
+        response = client.post("/warmup", headers=headers, content=b"{")
+        assert response.status_code == 403
+        assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
+
+    unload = client.post(
+        "/unload",
+        headers={
+            GPU_GENERATION_HEADER: "1",
+            GPU_ADMISSION_TOKEN_HEADER: token,
+        },
+    )
+    assert unload.status_code == 403
+    assert unload.json()["detail"]["error_code"] == "gpu_admission_denied"
 
 
 def test_legacy_wire_still_warms_and_bodyless_unloads(managed_client) -> None:
@@ -432,7 +478,7 @@ async def test_repeated_cancel_keeps_warmup_active_until_real_builder_finishes(
     monkeypatch.setattr(pool, "builder_for", forbidden_builder_lookup)
 
     class _Request:
-        headers: dict[str, str] = {}
+        headers = Headers()
 
         async def body(self) -> bytes:
             return b'{"model_id":"ocr-det"}'

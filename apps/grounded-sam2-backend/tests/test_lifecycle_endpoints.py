@@ -12,6 +12,8 @@ import httpx
 import pytest
 from aap_protocol_v2.errors import LifecycleErrorCode, LifecycleHTTPError
 from aap_protocol_v2.lifecycle import (
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
     GPU_HEALTH_CHALLENGE_HEADER,
     GPU_HEALTH_CHALLENGE_QUERY_PARAM,
 )
@@ -160,6 +162,48 @@ def test_admission_denial_wins_over_invalid_body(monkeypatch) -> None:
     assert response.status_code == 403
     assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
     assert lifecycle.events == ["begin:warmup"]
+
+
+def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(
+    monkeypatch,
+) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle()
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+    workload_headers = [
+        [(GPU_GENERATION_HEADER, "1")],
+        [(GPU_ADMISSION_TOKEN_HEADER, "signed-token")],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, "signed-token"),
+        ],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, "signed-token"),
+            (GPU_ADMISSION_TOKEN_HEADER, "signed-token"),
+        ],
+    ]
+
+    for headers in workload_headers:
+        response = _run(
+            _request("POST", "/warmup", headers=headers, content=b"{")
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
+
+    unload = _run(
+        _request(
+            "POST",
+            "/unload",
+            headers={
+                GPU_GENERATION_HEADER: "1",
+                GPU_ADMISSION_TOKEN_HEADER: "signed-token",
+            },
+        )
+    )
+    assert unload.status_code == 403
+    assert unload.json()["detail"]["error_code"] == "gpu_admission_denied"
 
 
 def test_predict_keeps_legacy_malformed_json_400(monkeypatch) -> None:

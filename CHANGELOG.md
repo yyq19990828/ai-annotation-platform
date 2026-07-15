@@ -65,6 +65,10 @@
 - **SAM3 全池卸载不再遗留 BF16 权重转换缓存**：vendor 原先把 autocast 永久进入进程上下文，真实推理后即使三池逻辑上已空，PyTorch 仍会持有数 GiB 的转换权重。图像、multiplex 与 PVS 现均使用请求级 autocast，严格清理同时清空 cast cache，卸载驻留真值与物理显存恢复一致。
 - **ML Backend 设备失效观测不再误报可回退性和实际 provider**：共享 torch 设备 latch 现在线程安全且向 CPU 单调，Grounded-SAM2 与 YOLO 只在识别为设备错误且 CPU replacement 成功后提交回退；CUDA runtime 查询本身失败时，两者的 `/health` 仍可用，YOLO 也会在 CPU replacement 后尝试释放 CUDA allocator 缓存。SAM3 image、Multiplex 与 PVS 明确为 GPU-only，模型加载检测到 GPU 不可用时返回可重试的结构化 503。RapidOCR 与 ONNXTools 改为读取已加载业务 session 的实际 primary provider，ONNXTools composite 的检测与分类 session 共用同一份功能探测后的 provider 偏好；空池、缺失或混合 provider 返回 `null`（unknown 语义）。注册表快照与实时 `/observe` 均透传 `compute`，Runtime Observe 与 PerfHUD 的前端消费共用同一 CPU fallback 判定，不再误报显式 CPU、实时空状态或 GPU-only backend。
 
+### Security
+
+- **受管 GPU header 不再降级绕过 legacy 生命周期门禁**：五个 GPU backend 现在只在 generation 与 admission token 都完全缺失时接受 legacy workload；部分、重复或非法 header 会在业务 body 处理前 fail-closed，携带受管 header 的 bodyless unload 也不再忽略凭据后执行兼容清理。
+
 ## [0.22.3] - 2026-07-14
 
 ### Added

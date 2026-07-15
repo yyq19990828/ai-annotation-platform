@@ -14,6 +14,8 @@ import pytest
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     AdmissionTokenClaims,
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
     encode_ed25519_public_key,
     sign_admission_token,
 )
@@ -144,6 +146,63 @@ def test_setup_and_health_publish_managed_lifecycle(managed_client) -> None:
     assert health["residency"]["state"] == "unloaded"
     assert health["residency"]["gpu_loaded"] is False
     assert health["residency"]["lifecycle_gate"] == "legacy"
+
+
+def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(
+    managed_client,
+) -> None:
+    _main, client, private_key = managed_client
+    boot_id = client.get("/health").json()["residency"]["boot_id"]
+    token = _token(
+        private_key,
+        boot_id,
+        AdmissionScope.WARMUP,
+        generation="1",
+        jti="legacy-header-guard",
+    )
+    workload_headers = [
+        [(GPU_GENERATION_HEADER, "1")],
+        [(GPU_ADMISSION_TOKEN_HEADER, token)],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, token),
+        ],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, token),
+            (GPU_ADMISSION_TOKEN_HEADER, token),
+        ],
+    ]
+
+    for headers in workload_headers:
+        response = client.post("/warmup", headers=headers, content=b"{")
+        assert response.status_code == 403
+        assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
+
+    unload = client.post(
+        "/unload",
+        headers={
+            GPU_GENERATION_HEADER: "1",
+            GPU_ADMISSION_TOKEN_HEADER: token,
+        },
+    )
+    assert unload.status_code == 403
+    assert unload.json()["detail"]["error_code"] == "gpu_admission_denied"
+
+    for headers in (
+        [
+            (GPU_ADMISSION_TOKEN_HEADER, "duplicate-token"),
+            (GPU_ADMISSION_TOKEN_HEADER, "duplicate-token"),
+        ],
+        [
+            (GPU_GENERATION_HEADER, "1"),
+            (GPU_ADMISSION_TOKEN_HEADER, "control-token"),
+        ],
+    ):
+        control = client.post("/lifecycle/mode", headers=headers, content=b"{")
+        assert control.status_code == 403
+        assert control.json()["detail"]["error_code"] == "gpu_admission_denied"
 
 
 def test_enforce_rejects_headerless_loading_and_bodyless_unload(managed_client) -> None:

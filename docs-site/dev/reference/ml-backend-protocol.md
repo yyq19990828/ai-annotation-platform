@@ -276,7 +276,11 @@ durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horiz
 五个 GPU backend 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
 以 legacy gate 启动；非空但无法解析的配置会阻止启动。`/health` 与 `/setup` 始终免 token；legacy gate 下
 无 header 的 `/predict`、`/predict/interactive`、`/warmup` 和 bodyless `/unload` 保持兼容，但会把驻留标记为
-unmanaged。enforce gate 下这些加载入口必须携带匹配当前 boot、identity、control epoch 与 generation 的 token。
+unmanaged。workload 与 transition 端点只有在 generation、admission token 两个 header 都完全缺失时才能进入该
+legacy 路径；任一 header 出现后，两者必须各出现且只出现一次，并完成全部受管校验。部分 header、重复 header
+或非法值都会 fail-closed，不能降级为 unmanaged 请求；bodyless `/unload` 携带任一受管 header 时同样拒绝。
+`/lifecycle/mode` 与 `/lifecycle/reset` 只接受唯一 admission token，并拒绝 generation header。enforce gate 下
+加载入口必须携带匹配当前 boot、identity、control epoch 与 generation 的 token。
 
 ONNXTools 的 `residency.pools` 固定包含 `pipeline`、`detector`、`va`。其中 composite pipeline 持两个 ORT
 session，因此三句柄全驻留时共有四个业务 session。逐池 residency 检查完整 `get_providers()` chain；任一

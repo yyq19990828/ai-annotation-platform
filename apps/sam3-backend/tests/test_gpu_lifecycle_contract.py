@@ -161,6 +161,54 @@ async def test_legacy_workload_requires_signed_reset_before_enforce() -> None:
     assert mode.residency.identity is not None
 
 
+@pytest.mark.parametrize(
+    ("generation_header", "token"),
+    [
+        ("1", None),
+        (None, "invalid-token"),
+        ("1", "invalid-token"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_legacy_workload_rejects_partial_or_invalid_managed_headers(
+    generation_header: str | None,
+    token: str | None,
+) -> None:
+    lifecycle, _pool, _key = _domain()
+
+    with pytest.raises(LifecycleHTTPError) as error:
+        await lifecycle.begin_workload(
+            AdmissionScope.PREDICT,
+            generation_header=generation_header,
+            token=token,
+        )
+
+    assert error.value.status_code == 403
+    assert (await lifecycle.residency()).active_requests == 0
+
+
+@pytest.mark.asyncio
+async def test_legacy_workload_rejects_valid_managed_headers_without_open_generation(
+) -> None:
+    lifecycle, _pool, key = _domain()
+
+    with pytest.raises(LifecycleHTTPError) as error:
+        await lifecycle.begin_workload(
+            AdmissionScope.PREDICT,
+            generation_header="1",
+            token=_token(
+                lifecycle,
+                key,
+                AdmissionScope.PREDICT,
+                generation="1",
+                jti="legacy-managed",
+            ),
+        )
+
+    assert error.value.status_code == 403
+    assert (await lifecycle.residency()).active_requests == 0
+
+
 @pytest.mark.asyncio
 async def test_enforce_consumes_workload_jti_and_rejects_wrong_scope_or_boot() -> None:
     lifecycle, _pool, key = _domain()

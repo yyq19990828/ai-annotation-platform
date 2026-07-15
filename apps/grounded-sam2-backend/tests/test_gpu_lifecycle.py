@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+import time
 from typing import Any
 
 import pytest
-from aap_protocol_v2.lifecycle import AdmissionScope, LifecycleState
+from aap_protocol_v2.errors import LifecycleHTTPError
+from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
+    AdmissionTokenClaims,
+    LifecycleState,
+    sign_admission_token,
+)
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from gpu_lifecycle import GroundedSam2GpuLifecycle
 from pool_domain import GroundedSam2Pools
@@ -181,6 +189,79 @@ def test_active_workload_before_pool_acquire_cannot_report_trusted_empty() -> No
         assert residency.active_requests == 0
         assert residency.gpu_loaded is False
         assert residency.state is LifecycleState.UNLOADED
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("generation_header", "token"),
+    [
+        ("1", None),
+        (None, "invalid-token"),
+        ("1", "invalid-token"),
+    ],
+)
+def test_legacy_workload_rejects_partial_or_invalid_managed_headers(
+    generation_header: str | None,
+    token: str | None,
+) -> None:
+    async def scenario() -> None:
+        image = _FakePool(_snapshot())
+        video = _FakePool(_snapshot())
+        lifecycle = GroundedSam2GpuLifecycle(
+            GroundedSam2Pools(image, video),
+            verify_keyring={},
+        )
+
+        with pytest.raises(LifecycleHTTPError) as error:
+            await lifecycle.begin_workload(
+                AdmissionScope.PREDICT,
+                generation_header=generation_header,
+                token=token,
+            )
+
+        assert error.value.status_code == 403
+        assert (await lifecycle.residency()).active_requests == 0
+
+    _run(scenario())
+
+
+def test_legacy_workload_rejects_valid_managed_headers_without_open_generation(
+) -> None:
+    async def scenario() -> None:
+        image = _FakePool(_snapshot())
+        video = _FakePool(_snapshot())
+        private_key = Ed25519PrivateKey.generate()
+        lifecycle = GroundedSam2GpuLifecycle(
+            GroundedSam2Pools(image, video),
+            verify_keyring={"current": private_key.public_key()},
+            boot_id="boot-1",
+        )
+        claims = AdmissionTokenClaims(
+            backend_registry_id="backend-1",
+            gpu_resource_id="node-a/GPU-1",
+            boot_id=lifecycle.boot_id,
+            generation="1",
+            control_epoch="1",
+            scope=AdmissionScope.PREDICT,
+            jti="legacy-managed",
+            exp=int(time.time()) + 60,
+        )
+        token = sign_admission_token(
+            claims,
+            private_key=private_key,
+            kid="current",
+        )
+
+        with pytest.raises(LifecycleHTTPError) as error:
+            await lifecycle.begin_workload(
+                AdmissionScope.PREDICT,
+                generation_header="1",
+                token=token,
+            )
+
+        assert error.value.status_code == 403
+        assert (await lifecycle.residency()).active_requests == 0
 
     _run(scenario())
 

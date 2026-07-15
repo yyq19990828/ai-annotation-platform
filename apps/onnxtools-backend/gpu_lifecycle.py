@@ -235,33 +235,28 @@ class OnnxToolsGpuLifecycle:
                 operation_id = claims.jti
                 managed = True
             else:
-                if (
-                    token_error is None
-                    and claims is not None
-                    and generation is not None
-                ):
-                    try:
-                        self._validate_bound_claim_locked(claims, scope)
-                        self._require_claim_generation(claims, generation)
-                        if generation != self._generation or not self._generation_open:
-                            raise LifecycleHTTPError(
-                                LifecycleErrorCode.GENERATION_CONFLICT
-                            )
-                        self._consume_jti_locked(
-                            claims,
-                            self._fingerprint("workload", scope, generation, claims),
-                            workload=True,
-                        )
-                        managed = True
-                    except LifecycleHTTPError:
-                        managed = False
-                if managed:
-                    operation_id = claims.jti  # type: ignore[union-attr]
-                else:
+                if token is None and generation_header is None:
                     operation_id = f"legacy:{uuid.uuid4().hex}"
                     self._generation = None
                     self._generation_open = False
                     self._unmanaged_tainted = True
+                else:
+                    if token is None or generation_header is None:
+                        raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED)
+                    if token_error is not None:
+                        raise token_error
+                    assert claims is not None and generation is not None
+                    self._validate_bound_claim_locked(claims, scope)
+                    self._require_claim_generation(claims, generation)
+                    if generation != self._generation or not self._generation_open:
+                        raise LifecycleHTTPError(LifecycleErrorCode.GENERATION_CONFLICT)
+                    self._consume_jti_locked(
+                        claims,
+                        self._fingerprint("workload", scope, generation, claims),
+                        workload=True,
+                    )
+                    operation_id = claims.jti
+                    managed = True
 
             self._active[operation_id] = _ActiveOperation()
             return WorkloadOperation(

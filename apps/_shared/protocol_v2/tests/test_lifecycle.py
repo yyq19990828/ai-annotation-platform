@@ -34,6 +34,8 @@ from aap_protocol_v2.lifecycle import (
     match_gpu_health_challenge,
     managed_lifecycle_capability_sha256,
     parse_lifecycle_mode_response_json,
+    parse_gpu_admission_header_values,
+    parse_gpu_control_token_header_values,
     sign_admission_token,
     validate_canonical_positive_int64,
     validate_gpu_health_challenge,
@@ -64,6 +66,56 @@ def test_gpu_health_challenge_wire_names_and_canonical_value() -> None:
     assert GPU_HEALTH_CHALLENGE_QUERY_PARAM == "aap_gpu_health_challenge"
     assert validate_gpu_health_challenge(challenge) == challenge
     assert match_gpu_health_challenge((challenge,), (challenge,)) == challenge
+
+
+def test_gpu_admission_headers_are_absent_or_unique_together() -> None:
+    assert parse_gpu_admission_header_values((), ()) is None
+    assert parse_gpu_admission_header_values(("7",), ("signed-token",)) == (
+        "7",
+        "signed-token",
+    )
+
+
+@pytest.mark.parametrize(
+    ("generation_values", "token_values"),
+    [
+        (("7",), ()),
+        ((), ("signed-token",)),
+        (("7", "7"), ("signed-token",)),
+        (("7", "8"), ("signed-token",)),
+        (("7",), ("signed-token", "signed-token")),
+        (("7",), ("signed-token", "other-token")),
+    ],
+)
+def test_gpu_admission_headers_reject_partial_or_duplicate_values(
+    generation_values: tuple[str, ...],
+    token_values: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValueError, match="exactly once together"):
+        parse_gpu_admission_header_values(generation_values, token_values)
+
+
+def test_gpu_control_header_requires_one_token_without_generation() -> None:
+    assert parse_gpu_control_token_header_values((), ("signed-token",)) == (
+        "signed-token"
+    )
+
+
+@pytest.mark.parametrize(
+    ("generation_values", "token_values"),
+    [
+        ((), ()),
+        (("7",), ("signed-token",)),
+        ((), ("signed-token", "signed-token")),
+        ((), ("signed-token", "other-token")),
+    ],
+)
+def test_gpu_control_header_rejects_missing_duplicate_or_generation_values(
+    generation_values: tuple[str, ...],
+    token_values: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValueError, match="exactly one token only"):
+        parse_gpu_control_token_header_values(generation_values, token_values)
 
 
 @pytest.mark.parametrize(

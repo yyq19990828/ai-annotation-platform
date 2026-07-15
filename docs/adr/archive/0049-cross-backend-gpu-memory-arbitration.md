@@ -287,8 +287,11 @@ managed generation。reset body 与 token control epoch 必须 exact-match；相
 active 时返回 `409 gpu_backend_active`。
 
 off 下无 header 的 predict/warmup/reload 与无 body 的 legacy `/unload` 保持原行为和响应；observe 不阻断；
-enforce 才强制 generation + token。health/setup 始终豁免。off/observe 下任何未通过有效 token + generation 的
-workload 都是 unmanaged：若命中原 managed residency，立即保守 taint 为
+enforce 才要求平台发送 generation + token。health/setup 始终豁免。只有 generation 与 token 两个 header 都
+完全缺失时，workload 才能进入 unmanaged legacy 路径；任一 header 出现后，两者都必须各出现且只出现一次，
+并完成 boot、identity、control epoch、scope、generation 与 JTI 校验。部分、重复或无效 header 必须
+fail-closed，不能降级成 unmanaged workload；bodyless legacy `/unload` 携带任一受管 header 时也必须拒绝。
+真正的 headerless off/observe workload 若命中原 managed residency，立即保守 taint 为
 `generation=null,evictable=false`，直至受签名 reset 可信 full-unload 后以更大 generation 冷启动。进入
 enforce 前必须先把所有 generation=null 的既有 residency 通过 `/lifecycle/reset` 清空并由 health 确认
 `gpu_loaded=false`，不允许直接收编。

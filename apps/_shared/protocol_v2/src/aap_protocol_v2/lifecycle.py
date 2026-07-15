@@ -83,6 +83,30 @@ def match_gpu_health_challenge(
         return None
 
 
+def parse_gpu_admission_header_values(
+    generation_values: Sequence[str],
+    token_values: Sequence[str],
+) -> tuple[str, str] | None:
+    """Require workload lifecycle headers to be absent together or unique together."""
+
+    if not generation_values and not token_values:
+        return None
+    if len(generation_values) != 1 or len(token_values) != 1:
+        raise ValueError("managed lifecycle headers must appear exactly once together")
+    return generation_values[0], token_values[0]
+
+
+def parse_gpu_control_token_header_values(
+    generation_values: Sequence[str],
+    token_values: Sequence[str],
+) -> str:
+    """Require one control token and forbid workload generation headers."""
+
+    if generation_values or len(token_values) != 1:
+        raise ValueError("control lifecycle requests require exactly one token only")
+    return token_values[0]
+
+
 CanonicalPositiveInt64String = Annotated[
     str,
     AfterValidator(validate_canonical_positive_int64),
@@ -689,6 +713,8 @@ __all__ = [
     "match_gpu_health_challenge",
     "managed_lifecycle_capability_sha256",
     "parse_lifecycle_mode_response_json",
+    "parse_gpu_admission_header_values",
+    "parse_gpu_control_token_header_values",
     "sign_admission_token",
     "validate_canonical_positive_int64",
     "validate_gpu_health_challenge",
