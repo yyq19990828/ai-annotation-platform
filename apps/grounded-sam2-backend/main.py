@@ -35,6 +35,7 @@ from aap_backend_runtime import (
     effective_device_value,
     fetch_image,
     versions_payload,
+    validate_single_gpu_device_set,
 )
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
@@ -481,6 +482,7 @@ async def _video_idle_watcher() -> None:
 async def _load_models() -> None:
     global _gpu_lifecycle, _idle_task, _last_request_at, _pool, _pool_domain
     global _prefetch_task, _video_idle_task, _video_pool
+    validate_single_gpu_device_set()
     raw_keyring = os.getenv("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "").strip()
     verify_keyring = load_verify_keyring(raw_keyring) if raw_keyring else {}
     build_serial_lock = asyncio.Lock()

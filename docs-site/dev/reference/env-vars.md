@@ -270,7 +270,7 @@ last_reviewed: 2026-07-16
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `GSAM2_GPU_DEVICE_ID` | `0` | 各 GPU profile backend 固定绑定的物理显卡号 (docker-compose.ml.yml 的 deploy.reservations.devices.device_ids, 同时作为容器内 NVIDIA_VISIBLE_DEVICES)。 默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 占卡 0、SAM3 占卡 1, 双卡机器可错开显存。 单卡机器必须把 SAM3_GPU_DEVICE_ID 覆盖成 0, 否则容器找不到卡 1 起不来。 |
+| `GSAM2_GPU_DEVICE_ID` | `0` | 各 GPU profile backend 固定绑定的物理显卡号 (docker-compose.ml.yml 的 deploy.reservations.devices.device_ids, 同时作为容器内 NVIDIA_VISIBLE_DEVICES)。 默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 占卡 0、SAM3 占卡 1, 双卡机器可错开显存。 单卡机器必须把 SAM3_GPU_DEVICE_ID 覆盖成 0, 否则容器找不到卡 1 起不来。 每个 backend 只允许一个物理 GPU/MIG；0,1、多 UUID 或已暴露 GPU 的 all 会在启动时拒绝。 |
 | `SAM3_GPU_DEVICE_ID` | `1` | — |
 | `YOLO_GPU_DEVICE_ID` | `0` | — |
 | `ONNXTOOLS_GPU_DEVICE_ID` | `0` | — |

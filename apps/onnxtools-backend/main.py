@@ -29,7 +29,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from aap_backend_runtime import versions_payload
+from aap_backend_runtime import validate_single_gpu_device_set, versions_payload
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -283,6 +283,7 @@ async def _idle_watcher() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _handle_pool, _predictor, _gpu_lifecycle, _idle_task
+    validate_single_gpu_device_set()
     raw_keyring = os.environ.get("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "").strip()
     verify_keyring = load_verify_keyring(raw_keyring) if raw_keyring else {}
     # 懒加载:不在启动时加载模型,首次 predict 按 model_id 构造对应句柄。

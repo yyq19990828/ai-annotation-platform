@@ -80,6 +80,8 @@ resource domain 必须由运维显式配置，不能从 backend URL hostname 推
 `GPU_ARBITER_RESOURCES_JSON` 提供 `gpu_resource_id -> {node_id, physical_device_token,
 allocatable_mb, mode}`；`allocatable_mb` 是扣除驱动、CUDA context、桌面 / 系统进程、外部占用和安全余量后的
 可分配容量，不等于显卡标称总显存。
+五个受管 backend 会在创建模型池前检查 NVIDIA/CUDA/ROCm 可见设备变量；逗号列表、
+多 UUID 或已暴露 GPU runtime 的 `all` 会直接拒绝启动，不允许一个 lifecycle domain 暗中持有多张物理卡。
 
 逐卡灰度采用“全局安全开关 + 每资源模式”：`GPU_ARBITER_MODE=off|observe|enforce` 是全局上限和
 紧急回滚开关，默认 `off`；resource 可以在 `GPU_ARBITER_RESOURCES_JSON` 中声明同一三态，缺失时安全地

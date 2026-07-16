@@ -6,7 +6,59 @@ torch 故意惰性 import 在 try 内: onnx / 纯 CPU 环境无 torch 时降级�
 from __future__ import annotations
 
 import gc
+import os
+from collections.abc import Mapping
 from typing import Any
+
+
+_VISIBLE_DEVICE_ENV_NAMES = (
+    "NVIDIA_VISIBLE_DEVICES",
+    "CUDA_VISIBLE_DEVICES",
+    "HIP_VISIBLE_DEVICES",
+    "ROCR_VISIBLE_DEVICES",
+    "GPU_DEVICE_ORDINAL",
+)
+_NO_DEVICE_VALUES = {"", "-1", "none", "void"}
+_NVIDIA_ALL_DEVICE_VALUES = {"all", "nvidia.com/gpu=all"}
+
+
+def _gpu_runtime_device_present() -> bool:
+    """Return whether a container runtime exposed an NVIDIA or ROCm device."""
+
+    return os.path.exists("/dev/nvidiactl") or os.path.exists("/dev/kfd")
+
+
+def validate_single_gpu_device_set(
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Reject an explicit GPU visibility set containing more than one device.
+
+    Managed lifecycle state is scoped to exactly one physical GPU/MIG resource.
+    An unset or explicit no-device value remains valid for CPU deployments.
+    Base CUDA images commonly default to ``all`` even without a GPU runtime, so
+    that value is tolerated only while no GPU device is actually exposed.
+    """
+
+    values = os.environ if environ is None else environ
+    for name in _VISIBLE_DEVICE_ENV_NAMES:
+        raw = values.get(name)
+        if raw is None:
+            continue
+        value = raw.strip()
+        lowered = value.lower()
+        if lowered in _NO_DEVICE_VALUES:
+            continue
+        all_device_values = (
+            _NVIDIA_ALL_DEVICE_VALUES if name == "NVIDIA_VISIBLE_DEVICES" else {"all"}
+        )
+        unbounded_gpu_set = (
+            lowered in all_device_values and _gpu_runtime_device_present()
+        )
+        if raw != value or unbounded_gpu_set or len(value.split(",")) != 1:
+            raise RuntimeError(
+                f"{name} must select at most one GPU/MIG device; "
+                "multi-device sets are unsupported"
+            )
 
 
 def free_gpu_memory() -> None:

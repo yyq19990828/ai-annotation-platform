@@ -5,7 +5,13 @@ from __future__ import annotations
 import sys
 import types
 
-from aap_backend_runtime import free_gpu_memory, gpu_info_snapshot
+import pytest
+
+from aap_backend_runtime import (
+    free_gpu_memory,
+    gpu_info_snapshot,
+    validate_single_gpu_device_set,
+)
 
 
 def test_free_gpu_memory_no_raise() -> None:
@@ -39,9 +45,84 @@ def test_free_gpu_memory_ignores_broken_cuda_cleanup(monkeypatch) -> None:
 def test_free_gpu_memory_ignores_broken_availability_check(monkeypatch) -> None:
     mock_torch = types.ModuleType("torch")
     mock_cuda = types.ModuleType("torch.cuda")
-    mock_cuda.is_available = lambda: (_ for _ in ()).throw(RuntimeError("driver unavailable"))
+    mock_cuda.is_available = lambda: (_ for _ in ()).throw(
+        RuntimeError("driver unavailable")
+    )
     mock_torch.cuda = mock_cuda
     monkeypatch.setitem(sys.modules, "torch", mock_torch)
     monkeypatch.setitem(sys.modules, "torch.cuda", mock_cuda)
 
     free_gpu_memory()
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {},
+        {"NVIDIA_VISIBLE_DEVICES": "0"},
+        {"NVIDIA_VISIBLE_DEVICES": "GPU-abc"},
+        {"NVIDIA_VISIBLE_DEVICES": "MIG-GPU-abc/1/0"},
+        {"CUDA_VISIBLE_DEVICES": "0"},
+        {"NVIDIA_VISIBLE_DEVICES": "none"},
+        {"CUDA_VISIBLE_DEVICES": "-1"},
+    ],
+)
+def test_single_gpu_device_set_accepts_zero_or_one_device(
+    environ: dict[str, str],
+) -> None:
+    validate_single_gpu_device_set(environ)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("NVIDIA_VISIBLE_DEVICES", "0,1"),
+        ("NVIDIA_VISIBLE_DEVICES", "GPU-a,GPU-b"),
+        ("CUDA_VISIBLE_DEVICES", "0, 1"),
+        ("HIP_VISIBLE_DEVICES", "0,1"),
+        ("ROCR_VISIBLE_DEVICES", "0,1"),
+        ("GPU_DEVICE_ORDINAL", "0,1"),
+        ("NVIDIA_VISIBLE_DEVICES", " 0"),
+    ],
+)
+def test_single_gpu_device_set_rejects_multi_or_unbounded_visibility(
+    name: str,
+    value: str,
+) -> None:
+    with pytest.raises(RuntimeError, match="multi-device sets are unsupported"):
+        validate_single_gpu_device_set({name: value})
+
+
+@pytest.mark.parametrize("value", ["all", "nvidia.com/gpu=all"])
+def test_single_gpu_device_set_allows_cuda_image_default_without_runtime(
+    monkeypatch, value: str
+) -> None:
+    monkeypatch.setattr(
+        "aap_backend_runtime.gpu._gpu_runtime_device_present",
+        lambda: False,
+    )
+
+    validate_single_gpu_device_set({"NVIDIA_VISIBLE_DEVICES": value})
+
+
+@pytest.mark.parametrize("value", ["all", "nvidia.com/gpu=all"])
+def test_single_gpu_device_set_rejects_all_with_gpu_runtime(
+    monkeypatch, value: str
+) -> None:
+    monkeypatch.setattr(
+        "aap_backend_runtime.gpu._gpu_runtime_device_present",
+        lambda: True,
+    )
+
+    with pytest.raises(RuntimeError, match="multi-device sets are unsupported"):
+        validate_single_gpu_device_set({"NVIDIA_VISIBLE_DEVICES": value})
+
+
+def test_single_gpu_device_set_checks_every_runtime_visibility_layer() -> None:
+    with pytest.raises(RuntimeError, match="CUDA_VISIBLE_DEVICES"):
+        validate_single_gpu_device_set(
+            {
+                "NVIDIA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "0,1",
+            }
+        )

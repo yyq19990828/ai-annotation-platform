@@ -31,6 +31,7 @@ from aap_backend_runtime import (
     is_device_error,
     latch_cpu,
     versions_payload,
+    validate_single_gpu_device_set,
 )
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
@@ -210,6 +211,7 @@ async def _idle_watcher() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _model_pool, _predictor, _gpu_lifecycle, _idle_task
+    validate_single_gpu_device_set()
     raw_keyring = os.environ.get("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "").strip()
     verify_keyring = load_verify_keyring(raw_keyring) if raw_keyring else {}
     CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
