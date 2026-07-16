@@ -1,15 +1,10 @@
-"""Compatibility facade for the GPU arbitration Redis ledger.
+"""GPU arbitration Redis ledger package.
 
-The implementation has moved to :mod:`app.services.gpu_arbitration.ledger` (types,
-keys, validation, Lua scripts and the ``GPUArbiterStore`` client) as part of the
-v0.23.0 service-domain modularization. This module re-exports the previous public
-symbols with unchanged object identity so legacy ``from app.services.gpu_arbiter_store
-import ...`` paths keep working.
-
-This is a pure re-export facade: it declares no logic and uses no ``import *``.
+Public surface re-exported here mirrors the symbols the legacy
+``app.services.gpu_arbiter_store`` module exposed. The package root stays minimal and
+does NOT eager-import orchestration-only modules; callers import the concrete submodule
+they need (e.g. ``from app.services.gpu_arbitration.ledger.store import GPUArbiterStore``).
 """
-
-from __future__ import annotations
 
 from app.services.gpu_arbitration.ledger.keys import GPUArbiterKeys, gpu_arbiter_keys
 from app.services.gpu_arbitration.ledger.store import GPUArbiterStore

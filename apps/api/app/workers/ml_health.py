@@ -44,7 +44,7 @@ from app.services.gpu_arbiter import (
     probe_retired_gpu_membership,
     repair_gpu_resource,
 )
-from app.services.gpu_arbiter_store import (
+from app.services.gpu_arbitration.ledger import (
     GPUArbiterStore,
     GPUArbiterStoreError,
     GPUBackendDomainMember,

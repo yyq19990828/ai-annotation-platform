@@ -42,7 +42,7 @@ from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.schemas.ml_backend import GPUBackendConfigStatus, GPUConfigDiagnostic
-from app.services.gpu_arbiter_store import (
+from app.services.gpu_arbitration.ledger import (
     GPU_EVICTION_OPERATION,
     GPUAllocation,
     GPUAllocationState,

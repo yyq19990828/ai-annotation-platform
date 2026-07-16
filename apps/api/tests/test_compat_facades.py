@@ -40,8 +40,25 @@ class FacadeSpec:
     symbols: tuple[str, ...] = field(default_factory=tuple)
 
 
-# Add one entry per facade as it lands. Empty until P1.
-FACADE_SPECS: tuple[FacadeSpec, ...] = ()
+# Add one entry per facade as it lands.
+FACADE_SPECS: tuple[FacadeSpec, ...] = (
+    FacadeSpec(
+        facade_module="app.services.gpu_arbiter_store",
+        new_module="app.services.gpu_arbitration.ledger",
+        symbols=(
+            "GPUArbiterStore",
+            "GPUArbiterStoreError",
+            "GPUAllocation",
+            "GPUAllocationState",
+            "GPUBackendDomainMember",
+            "GPUCardSnapshot",
+            "GPU_EVICTION_OPERATION",
+            "GPU_COLD_ADMISSION_OPERATION",
+            "gpu_arbiter_keys",
+            "normalize_gpu_backend_max_concurrency",
+        ),
+    ),
+)
 
 _HAS_FACADES = any(
     __import__("importlib").util.find_spec(spec.facade_module) is not None

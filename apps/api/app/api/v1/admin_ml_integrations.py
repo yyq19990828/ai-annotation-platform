@@ -69,7 +69,7 @@ from app.services.gpu_arbiter import (
     strict_gpu_loaded_evidence,
     unregistered_gpu_loading_blocked,
 )
-from app.services.gpu_arbiter_store import (
+from app.services.gpu_arbitration.ledger import (
     GPUArbiterStore,
     GPUArbiterStoreError,
     GPUBackendDomainMember,
