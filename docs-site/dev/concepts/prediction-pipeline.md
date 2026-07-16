@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-24
+last_reviewed: 2026-07-16
 ---
 
 # 预标注流水线（Prediction Pipeline）
@@ -307,7 +307,15 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
 
 backend 走**全局注册 + 项目启用**：一个物理 backend 全局只注册一行，项目按需勾选启用，**没有项目级数量上限**（跨 backend 编排天然需 detect + classify ≥ 2，多阶段 DAG 还会更多）。每个全局注册行的 `max_concurrency`（`extra_params.max_concurrency`）在 off/observe 下限制单进程 / 事件循环的并行请求，API 与多个 Celery worker 仍会叠加；effective enforce 下则同时作为 Redis request lease 的跨进程上限。
 
-设置 `GPU_ARBITER_MODE=observe` 后，平台会在所有可加载端点的 HTTP 发送前，按稳定 `gpu_resource_id` 对同卡预算和新鲜 residency 快照计算 `would-*` 决策。该阶段只写结构化日志，旁路查询有严格短超时并在失败时放行业务请求，不会改变请求结果。所有生产派发口已注入惰性 authority，effective `enforce` 下可使用 Redis lease 执行 Resident 快路与 cold admission。cold token 暴露后，完整 HTTP 响应会触发新 challenge 探测，并在逐卡持久锁内立即把 Loading 收口为 Resident、CPU fallback、Unloaded 或保守 Unknown。当前 victim 选择、驱逐编排与生产 effective enforce 仍未开启；legacy unload 也不能作为显存已释放或预算已减账的证据。
+设置 `GPU_ARBITER_MODE=observe` 后，平台会在所有可加载端点的 HTTP 发送前，按稳定
+`gpu_resource_id` 对同卡预算和新鲜 residency 快照计算 `would-*` 决策。该阶段只写结构化日志，
+旁路查询有严格短超时并在失败时放行业务请求，不会改变请求结果。所有生产派发口已注入惰性
+authority，effective `enforce` 下可使用 Redis lease 执行 Resident 快路与 cold admission。cold token
+暴露后，完整 HTTP 响应会触发新 challenge 探测，并在逐卡持久锁内立即把 Loading 收口为
+Resident、CPU fallback、Unloaded 或保守 Unknown。容量不足时，authority 会在 target cold intent
+之前按优先级 + LRU 依次驱逐同一完整资源 ID 上的空闲 victim，只在严格 drain ACK、
+新鲜 health proof 与终态 CAS 都成功后释放预算；不确定结果保守收口 Unknown 并停止后续驱逐。
+忙碌 victim 等待与生产 effective enforce 仍未开启；legacy unload 也不能作为显存已释放或预算已减账的证据。
 
 ## 代码索引
 

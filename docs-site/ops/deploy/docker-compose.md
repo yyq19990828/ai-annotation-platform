@@ -512,9 +512,12 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
 快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
 绝不拒绝、排队或驱逐业务请求。`enforce` 仍需 Redis 账本与 lifecycle gate
-握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本并恢复
-prepared 中间态，但不会签发 token、切换 backend gate 或接入 admission。未完成这些后续握手时 effective
-保持 `off` 并显示 blocker，不会静默降级为 observe。`off/observe` 不创建或修复仲裁 Redis key。
+握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本、恢复
+prepared 中间态并完成 legacy membership ACK。派发侧已具备 Redis admission、业务 token、Resident/cold
+authority 与空闲 victim 驱逐编排，但生产 effective mode 仍锁定为 `off`，因此实际请求不会
+进入这条权威路径、签业务 token 或切换 backend enforce gate。busy victim 等待/cancel/cooldown、实物
+多卡验收与 enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
+observe。`off/observe` 不创建或修复仲裁 Redis key。
 当前 PostgreSQL 与 worker 共用应用数据库角色时，tombstone completion receipt 属于受信 worker 的跨存储声明；
 正式启用 `enforce` 前应将 collector 收缩为独立受限角色/过程，并撤销普通应用角色对
 `gpu_backend_memberships` 的直接 DELETE，或在安全评审中明确接受同角色 worker 为完全受信边界。

@@ -37,6 +37,7 @@
 
 ### Added
 
+- **GPU 冷建容量不足时可编排同卡空闲 Backend 驱逐**：惰性 authority 现在只从同一完整 `gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的 victim，按优先级、LRU 与 backend id 稳定排序，并可依次释放多个预算。每个 victim 必须经过持久 generation/owner、严格 drain ACK、新鲜 health proof、受签 full-unload 与幂等终态 CAS；响应丢失只做 exact 重放，任一不确定结果保守收口 Unknown 并停止继续驱逐。预算释放后以新 challenge 重读 target 再进入 cold admission；单卡与逻辑多卡共用同一条逐资源路径。忙碌 victim 等待、取消防抖、实物多卡灰度与生产 effective enforce 仍保持关闭。
 - **GPU 冷建派发可以在响应后立即收敛显存终态**：完整 HTTP 响应后，平台使用新 challenge 重新探测 backend，并在逐卡持久锁内把 Loading 严格分类为 Resident、CPU fallback、Unloaded 或保守 Unknown。只有全池显式空的可信证明才释放显存预算；代际或成员漂移会保留不确定租约等待修复。Redis 响应丢失使用精确 owner/lease/generation 重试，单卡与多卡均按完整物理资源隔离；生产 effective enforce 仍保持关闭。
 - **GPU 冷启准入获得持久 generation 授权地基**：平台只会为具备新鲜 challenge proof、enforce gate、绑定 identity、全池显式空且零活跃的 backend 持久推进新 generation；提交前会在 membership→fence 锁序内二次复验，generation 与保守 token horizon 在同一事务推进，失败代际不回滚。Redis 保留尚未接通，生产 effective enforce 仍保持关闭。
 - **GPU 驱逐控制线具备可验证的锁外 transition wire**：平台可以用成对 generation/token 调用受管 drain、cancel 与 full-pool unload，并在解析前保留完整 HTTP transport outcome。远端 ACK 必须包含精确字段和严格类型，重复 JSON key 或矛盾 residency 均不能作为显存释放证据。该接缝尚未接入生产驱逐，effective enforce 仍保持关闭。

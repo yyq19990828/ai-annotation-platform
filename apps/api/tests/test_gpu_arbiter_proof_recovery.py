@@ -1757,6 +1757,7 @@ async def test_cold_runtime_subject_atomically_advances_generation_and_token_hor
             assert backend.health_meta is not None
             health_meta = json.loads(json.dumps(backend.health_meta))
             health_meta["residency"]["lifecycle_gate"] = "enforce"
+            challenge = health_meta["gpu_arbiter_probe"]["challenge"]
             backend.health_meta = health_meta
             flag_modified(backend, "health_meta")
 
@@ -1765,10 +1766,22 @@ async def test_cold_runtime_subject_atomically_advances_generation_and_token_hor
                 db,
                 backend_id=str(backend_id),
                 gpu_resource_id=_RESOURCE_A,
+                expected_challenge=challenge,
             )
         assert subject.observed_generation is None
         assert subject.generation_high_water == 0
         assert subject.control_epoch == "1"
+        with pytest.raises(
+            GPUColdRuntimeSubjectError,
+            match="cold_runtime_challenge_mismatch",
+        ):
+            async with factory() as db:
+                await read_gpu_cold_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                    expected_challenge="f" * 64,
+                )
 
         token_expires_at = subject.db_now + timedelta(minutes=2)
         for invalid_ttl in (
@@ -2760,6 +2773,7 @@ async def test_idle_eviction_subject_advances_generation_and_horizon_atomically(
         assert subject.generation_high_water == 1
         assert subject.generation == "1"
         assert subject.challenge == challenge
+        assert subject.backend.url
 
         with pytest.raises(
             GPUIdleEvictionRuntimeSubjectError,
@@ -2795,6 +2809,7 @@ async def test_idle_eviction_subject_advances_generation_and_horizon_atomically(
         assert prepared.source_generation == "1"
         assert prepared.generation == "2"
         assert prepared.token_expires_at == token_expires_at
+        assert prepared.backend.url == subject.backend.url
         with pytest.raises(
             GPUIdleEvictionRuntimeSubjectError,
             match="runtime_subject_changed",

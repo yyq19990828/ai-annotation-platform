@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-15
+last_reviewed: 2026-07-16
 ---
 
 # ML Backend 协议契约
@@ -30,7 +30,26 @@ ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全�
 
 平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
 
-GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload 另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威 authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy 路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，不能单独提交 allocation 终态。平台 signer、membership promotion、Redis admission lease、业务 token、Resident 快路与 cold admission 均已接入 authority。cold 请求收到完整响应后会用新 challenge 探测，并在逐资源持久锁内把 Loading 分类为 Resident、CPU fallback、Unloaded 或保守 Unknown；无完整响应时不发探测，只收口 Unknown。victim 选择、驱逐编排与入场门禁尚未完成，effective enforce 继续保持关闭。
+GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload
+另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威
+authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy
+路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。
+当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，
+authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应
+返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、
+取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，
+不能单独提交 allocation 终态。
+
+平台 signer、membership promotion、Redis admission lease、业务 token、Resident 快路、cold admission 与空闲
+victim 驱逐均已接入惰性 authority。cold 请求收到完整响应后会用新 challenge 探测，并在
+逐资源持久锁内把 Loading 分类为 Resident、CPU fallback、Unloaded 或保守 Unknown；无完整
+响应时不发探测，只收口 Unknown。cold 快照容量不足时，authority 只从同一完整
+`gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的空闲 victim，保护严格更高优先级，
+并按优先级、LRU 与 backend id 稳定排序。一个或多个 victim 依次完成受签 `/drain`、
+严格 ACK + 新鲜空闲证明、受签 `/unload` 与全空驻留证明后，才释放预算并以新
+challenge 重读 target cold subject。任一 phase 不确定即保守收口 Unknown 并停止继续驱逐；
+同路由响应丢失只做 exact owner/generation/phase/token 重放。忙碌 victim 的有界等待、cancel-drain、
+cooldown/FIFO 与实物多卡验收仍是后续阶段；生产 effective enforce 继续保持关闭。
 
 派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
 
@@ -265,8 +284,9 @@ high-water。任一 epoch/horizon 推进前，平台必须在仍持有逐卡锁�
 必须先取得新的 exact active proof，并在旧 token horizon 之后用更大 control epoch 恢复。任一成员推进 epoch、ACK 未确认、signer/证明/alias 阻断或
 证明尚不满足 readiness 时，已有卡级 ready 必须在返回结果前降为 not-ready。成功 ACK 不直接授予
 Redis ready 或驱逐权；周期 repair 只在后续 proof 同时具有非空 exact capability、当前 active identity、等于
-durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horizon 时才可恢复 ready。当前 effective enforce 继续关闭，不签业务 token、
-不创建 admission lease，也不发送 reset/enforce gate；`off/observe` 不读取 signer、不执行 membership promotion、
+durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horizon 时才可恢复 ready。由于生产
+effective enforce 继续关闭，实际派发不签业务 token、不创建 admission lease，也不发送
+reset/enforce gate；`off/observe` 不读取 signer、不执行 membership promotion、
 不调用 `/lifecycle/mode`，也不访问 GPU 仲裁账本。
 逐卡修复的总时间片会预留独立 fail-closed 收尾预算；即使墓碑收尾、promotion 或 proof reset 耗尽主时间片、
 出现普通异常或任务被批次总时限取消，worker 也会在返回失败结果前有界尝试把该卡锁存为 not-ready，避免多卡

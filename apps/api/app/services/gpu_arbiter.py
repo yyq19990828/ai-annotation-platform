@@ -713,6 +713,7 @@ class GPUPreparedColdRuntimeSubject:
 class GPUIdleEvictionRuntimeSubject:
     """Exact idle Resident identity eligible for one fenced eviction."""
 
+    backend: MLBackendRegistry = dataclass_field(repr=False, compare=False)
     backend_registry_id: uuid.UUID
     gpu_resource_id: str
     membership_epoch: int
@@ -732,6 +733,7 @@ class GPUIdleEvictionRuntimeSubject:
 class GPUPreparedIdleEvictionRuntimeSubject:
     """Idle victim whose replacement generation and token horizon are durable."""
 
+    backend: MLBackendRegistry = dataclass_field(repr=False, compare=False)
     backend_registry_id: uuid.UUID
     gpu_resource_id: str
     membership_epoch: int
@@ -1187,6 +1189,7 @@ def _validate_gpu_idle_eviction_runtime_subject(
         reason="generation_high_water_invalid",
     )
     return GPUIdleEvictionRuntimeSubject(
+        backend=_snapshot_gpu_mode_backend(registry),
         backend_registry_id=resident.backend_registry_id,
         gpu_resource_id=resident.gpu_resource_id,
         membership_epoch=resident.membership_epoch,
@@ -1223,6 +1226,9 @@ def _idle_eviction_runtime_subject_identity(
 ) -> tuple[Any, ...]:
     return (
         subject.backend_registry_id,
+        subject.backend.url,
+        subject.backend.auth_method,
+        subject.backend.auth_token,
         subject.gpu_resource_id,
         subject.membership_epoch,
         subject.budget_mb,
@@ -1244,6 +1250,7 @@ def _validate_gpu_cold_runtime_subject(
     *,
     db_now: datetime,
     evidence_ttl: timedelta,
+    expected_challenge: str | None = None,
 ) -> GPUColdRuntimeSubject:
     membership_epoch = _strict_nonnegative_int64(
         membership.membership_epoch,
@@ -1291,6 +1298,8 @@ def _validate_gpu_cold_runtime_subject(
     )
     raw_residency = raw_health.get("residency") if type(raw_health) is dict else None
     probe = _parse_gpu_proof_probe(raw_probe)
+    if expected_challenge is not None and probe.raw["challenge"] != expected_challenge:
+        raise _GPUProofInvalid("cold_runtime_challenge_mismatch")
     capability_sha256 = _health_managed_lifecycle_sha256(raw_health)
     if (
         capability_sha256 is None
@@ -1549,6 +1558,7 @@ async def read_gpu_cold_runtime_subject(
     *,
     backend_id: str,
     gpu_resource_id: str,
+    expected_challenge: str | None = None,
     evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
 ) -> GPUColdRuntimeSubject:
     """Read one strict idle-unloaded subject for a fenced cold generation."""
@@ -1559,6 +1569,11 @@ async def read_gpu_cold_runtime_subject(
         evidence_ttl,
         error_type=GPUColdRuntimeSubjectError,
     )
+    if expected_challenge is not None and (
+        not isinstance(expected_challenge, str)
+        or _GPU_HEALTH_CHALLENGE_RE.fullmatch(expected_challenge) is None
+    ):
+        raise GPUColdRuntimeSubjectError("cold_runtime_challenge_invalid")
     row = (
         await db.execute(
             select(
@@ -1600,6 +1615,7 @@ async def read_gpu_cold_runtime_subject(
             registry,
             db_now=db_now,
             evidence_ttl=evidence_ttl,
+            expected_challenge=expected_challenge,
         )
     except _GPUProofInvalid as exc:
         raise GPUColdRuntimeSubjectError(exc.reason) from None
@@ -1677,6 +1693,7 @@ async def prepare_gpu_idle_eviction_runtime_generation(
                 token_expires_at=token_expires_at,
             )
     return GPUPreparedIdleEvictionRuntimeSubject(
+        backend=current_subject.backend,
         backend_registry_id=current_subject.backend_registry_id,
         gpu_resource_id=current_subject.gpu_resource_id,
         membership_epoch=current_subject.membership_epoch,
@@ -1996,7 +2013,10 @@ def _eviction_terminal_durable_reason(
     ):
         return "token_horizon_changed"
     if (
-        registry.gpu_resource_id != expected_subject.gpu_resource_id
+        registry.url != expected_subject.backend.url
+        or registry.auth_method != expected_subject.backend.auth_method
+        or registry.auth_token != expected_subject.backend.auth_token
+        or registry.gpu_resource_id != expected_subject.gpu_resource_id
         or registry.vram_budget_mb != expected_subject.budget_mb
         or registry.eviction_priority != expected_subject.eviction_priority
         or _registry_gpu_max_concurrency(registry.extra_params)
