@@ -186,6 +186,10 @@ generation 是 fencing epoch，不是模型 load id，也不由 backend 自行�
 `control_epoch_high_water`。建立新的 allocation ownership、drain owner 或 cancel 时，平台先原子推进
 generation high-water；建立新的 mode/reset 控制 operation 时先推进 control-epoch high-water；同一
 drain -> unload、mode/reset operation 的后续 token 与幂等重试复用已取得的 epoch。副本随后写入 Redis。
+drain cancel 另持久保留最后一份 exact intent，绑定 source/result generation、membership、
+boot/control/runtime epoch、owner、operation、token expiry、JTI 与稳定 pool-id 集合；只有
+全字段匹配的重试才能复用已取得的 cancel generation，不得在响应丢失或进程重启后
+盲目推进下一代。
 Redis flush、
 API/Celery 重启或所有 backend 同时重启都不能令 high-water 回退；若 durable high-water 不可信，则
 `enforce` 保持 `gpu_arbiter_not_ready`，不得从 1 猜测重建。
@@ -530,7 +534,7 @@ cooldown 与 membership/generation 校验。begin 会保留 victim 的旧 worklo
 阻塞。Draining→Unloading 继续要求 victim lease 为零；不确定终态可在保留 lease 时转 Unknown 并全额计费。
 cancel 的 Redis CAS 必须携带更大结果 generation、匹配仍绑定 drain generation 的 exact owner，且只允许
 Draining→Resident；它保留原 `not_evict_before_ms`，响应丢失重放只读，进入 Unloading 后拒绝迟到 cancel。
-这些原语本身不授权 authority 主动选择 busy victim；durable cancel generation、RESUME token、fresh health
+这些原语本身不授权 authority 主动选择 busy victim；durable cancel intent/generation、RESUME token、fresh health
 证明与 cancellation-safe 编排必须完成后才能接线。
 
 busy-capable victim subject 不把“忙”误作身份放宽：它仍要求 exact fresh challenge、managed

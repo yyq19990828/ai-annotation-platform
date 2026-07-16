@@ -24,6 +24,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import Settings, settings
 from app.db.models.gpu_backend_fence import GPUBackendFence
+from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services import gpu_arbiter as gpu_arbiter_service
@@ -32,6 +33,7 @@ from app.services.gpu_arbiter import (
     GPUColdRuntimeSubjectError,
     GPUDispatchRequest,
     GPUIdleEvictionRuntimeSubjectError,
+    GPUEvictionCancelRuntimeSubjectError,
     GPUPreparedColdRuntimeSubject,
     GPUPreparedIdleEvictionRuntimeSubject,
     GPUResidentRuntimeSubjectError,
@@ -42,9 +44,11 @@ from app.services.gpu_arbiter import (
     commit_gpu_eviction_phase_from_health,
     commit_gpu_proof_reset_from_health,
     prepare_gpu_cold_runtime_generation,
+    prepare_gpu_eviction_cancel_runtime_generation,
     prepare_gpu_idle_eviction_runtime_generation,
     read_gpu_busy_eviction_runtime_subject,
     read_gpu_cold_runtime_subject,
+    read_gpu_eviction_cancel_runtime_subject,
     read_gpu_eviction_drain_health,
     read_gpu_idle_eviction_runtime_subject,
     read_gpu_resident_runtime_subject,
@@ -599,7 +603,8 @@ async def _prepare_selected_idle_eviction(
     victim_id: uuid.UUID,
     requester_id: uuid.UUID,
     resource_id: str,
-) -> tuple[GPUPreparedIdleEvictionRuntimeSubject, str]:
+    allow_busy: bool = False,
+) -> tuple[GPUPreparedIdleEvictionRuntimeSubject, str, int]:
     async with factory() as db:
         victim_membership = await db.get(
             GPUBackendMembership,
@@ -669,16 +674,22 @@ async def _prepare_selected_idle_eviction(
     )
     assert finalized.status == "transitioned"
     await asyncio.sleep(0.002)
-    released = await store.release_lease(
-        resource_id,
-        backend_id=str(victim_id),
-        lease_id=lease_id,
-        owner_id=workload_owner_id,
-        generation="1",
-    )
-    assert released.status == "released"
+    if not allow_busy:
+        released = await store.release_lease(
+            resource_id,
+            backend_id=str(victim_id),
+            lease_id=lease_id,
+            owner_id=workload_owner_id,
+            generation="1",
+        )
+        assert released.status == "released"
     async with factory() as db:
-        subject = await read_gpu_idle_eviction_runtime_subject(
+        read_subject = (
+            read_gpu_busy_eviction_runtime_subject
+            if allow_busy
+            else read_gpu_idle_eviction_runtime_subject
+        )
+        subject = await read_subject(
             db,
             backend_id=str(victim_id),
             gpu_resource_id=resource_id,
@@ -704,9 +715,11 @@ async def _prepare_selected_idle_eviction(
         owner_id=owner_id,
         ttl_ms=30_000,
         hard_ttl_ms=120_000,
+        allow_busy=allow_busy,
     )
     assert selected.status == "selected"
-    return prepared, owner_id
+    assert selected.owner_hard_deadline_ms is not None
+    return prepared, owner_id, selected.owner_hard_deadline_ms
 
 
 def _fake_context(
@@ -3085,6 +3098,180 @@ async def test_busy_eviction_subject_keeps_strict_identity_and_advances_generati
 
 
 @pytest.mark.asyncio
+async def test_busy_eviction_cancel_intent_advances_once_and_replays_exactly(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60, 50),
+    )
+    victim_id, requester_id = backend_ids
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({victim_id}),
+        )
+        (
+            prepared,
+            owner_id,
+            owner_hard_deadline_ms,
+        ) = await _prepare_selected_idle_eviction(
+            factory,
+            proof_store,
+            victim_id=victim_id,
+            requester_id=requester_id,
+            resource_id=_RESOURCE_A,
+            allow_busy=True,
+        )
+        token_expires_at = datetime.fromtimestamp(
+            (owner_hard_deadline_ms - 5_000) / 1000,
+            UTC,
+        )
+
+        with pytest.raises(
+            GPUEvictionCancelRuntimeSubjectError,
+            match="token_expiry_exceeds_owner_deadline",
+        ):
+            await prepare_gpu_eviction_cancel_runtime_generation(
+                factory,
+                prepared,
+                owner_id=owner_id,
+                owner_hard_deadline_ms=owner_hard_deadline_ms,
+                token_expires_at=datetime.fromtimestamp(
+                    (owner_hard_deadline_ms + 1) / 1000,
+                    UTC,
+                ),
+            )
+
+        # A never-exposed durable generation gap is legal.  Cancel advances from
+        # the current high-water while remaining bound to the exact Redis drain.
+        async with factory.begin() as db:
+            fence = await db.get(GPUBackendFence, victim_id)
+            assert fence is not None
+            fence.generation_high_water = int(prepared.generation) + 2
+        expected_cancel_generation = str(int(prepared.generation) + 3)
+
+        first, replayed = await asyncio.gather(
+            prepare_gpu_eviction_cancel_runtime_generation(
+                factory,
+                prepared,
+                owner_id=owner_id,
+                owner_hard_deadline_ms=owner_hard_deadline_ms,
+                token_expires_at=token_expires_at,
+            ),
+            prepare_gpu_eviction_cancel_runtime_generation(
+                factory,
+                prepared,
+                owner_id=owner_id,
+                owner_hard_deadline_ms=owner_hard_deadline_ms,
+                token_expires_at=token_expires_at,
+            ),
+        )
+        assert {first.idempotent, replayed.idempotent} == {False, True}
+        assert (
+            first.drain_generation == replayed.drain_generation == prepared.generation
+        )
+        assert first.generation == replayed.generation == expected_cancel_generation
+        assert first.jti == replayed.jti
+        assert first.owner_id == replayed.owner_id == owner_id
+        assert first.operation == replayed.operation == "evict"
+        assert (
+            first.owner_hard_deadline_ms
+            == replayed.owner_hard_deadline_ms
+            == owner_hard_deadline_ms
+        )
+        assert first.pool_ids == replayed.pool_ids == prepared.pool_ids
+
+        recovered = await read_gpu_eviction_cancel_runtime_subject(
+            factory,
+            backend_id=str(victim_id),
+            gpu_resource_id=_RESOURCE_A,
+            owner_id=owner_id,
+        )
+        assert recovered.idempotent is True
+        assert recovered.generation == first.generation
+        assert recovered.jti == first.jti
+        assert recovered.token_expires_at == first.token_expires_at
+
+        async with factory() as db:
+            fence = await db.get(GPUBackendFence, victim_id)
+            intent = await db.get(GPUBackendCancelIntent, victim_id)
+        assert fence is not None
+        assert intent is not None
+        assert fence.generation_high_water == int(first.generation)
+        assert fence.token_expiry_high_water == max(
+            prepared.token_expires_at,
+            token_expires_at,
+        )
+        assert intent.drain_generation == int(prepared.generation)
+        assert intent.generation == int(first.generation)
+        assert intent.jti == first.jti
+        assert tuple(intent.pool_ids) == prepared.pool_ids
+        assert intent.owner_hard_deadline_ms == owner_hard_deadline_ms
+
+        for changed in (
+            {"owner_id": f"{owner_id}:other"},
+            {"owner_hard_deadline_ms": owner_hard_deadline_ms - 1},
+            {"token_expires_at": token_expires_at + timedelta(seconds=1)},
+        ):
+            kwargs = {
+                "owner_id": owner_id,
+                "owner_hard_deadline_ms": owner_hard_deadline_ms,
+                "token_expires_at": token_expires_at,
+                **changed,
+            }
+            with pytest.raises(
+                GPUEvictionCancelRuntimeSubjectError,
+                match="cancel_intent_conflict",
+            ):
+                await prepare_gpu_eviction_cancel_runtime_generation(
+                    factory,
+                    prepared,
+                    **kwargs,
+                )
+        async with factory() as db:
+            fence_after = await db.get(GPUBackendFence, victim_id)
+        assert fence_after is not None
+        assert fence_after.generation_high_water == int(first.generation)
+        assert fence_after.token_expiry_high_water == max(
+            prepared.token_expires_at,
+            token_expires_at,
+        )
+
+        with pytest.raises(
+            GPUEvictionCancelRuntimeSubjectError,
+            match="cancel_intent_identity_changed",
+        ):
+            await read_gpu_eviction_cancel_runtime_subject(
+                factory,
+                backend_id=str(victim_id),
+                gpu_resource_id=_RESOURCE_A,
+                owner_id=f"{owner_id}:other",
+            )
+        async with factory.begin() as db:
+            intent = await db.get(GPUBackendCancelIntent, victim_id)
+            assert intent is not None
+            prefix = "0" if intent.subject_fingerprint[0] != "0" else "1"
+            intent.subject_fingerprint = prefix + intent.subject_fingerprint[1:]
+        with pytest.raises(
+            GPUEvictionCancelRuntimeSubjectError,
+            match="cancel_intent_source_changed",
+        ):
+            await read_gpu_eviction_cancel_runtime_subject(
+                factory,
+                backend_id=str(victim_id),
+                gpu_resource_id=_RESOURCE_A,
+                owner_id=owner_id,
+            )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
 async def test_busy_eviction_drain_health_classifies_all_activity_domains_read_only(
     test_engine: AsyncEngine,
     monkeypatch: pytest.MonkeyPatch,
@@ -3285,7 +3472,7 @@ async def test_eviction_phase_commit_proves_drain_and_unload_exactly(
             resource_id=_RESOURCE_A,
             resident_backend_ids=frozenset({victim_id}),
         )
-        prepared, owner_id = await _prepare_selected_idle_eviction(
+        prepared, owner_id, _ = await _prepare_selected_idle_eviction(
             factory,
             proof_store,
             victim_id=victim_id,
@@ -3399,7 +3586,7 @@ async def test_eviction_drain_uncertainty_becomes_unknown_without_releasing_budg
             resource_id=_RESOURCE_A,
             resident_backend_ids=frozenset({victim_id}),
         )
-        prepared, owner_id = await _prepare_selected_idle_eviction(
+        prepared, owner_id, _ = await _prepare_selected_idle_eviction(
             factory,
             proof_store,
             victim_id=victim_id,
@@ -3445,7 +3632,7 @@ async def test_eviction_phase_commit_skips_redis_after_durable_control_changes(
             resource_id=_RESOURCE_A,
             resident_backend_ids=frozenset({victim_id}),
         )
-        prepared, owner_id = await _prepare_selected_idle_eviction(
+        prepared, owner_id, _ = await _prepare_selected_idle_eviction(
             factory,
             proof_store,
             victim_id=victim_id,

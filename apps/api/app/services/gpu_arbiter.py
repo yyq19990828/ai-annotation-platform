@@ -36,11 +36,13 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import GPUArbiterMode, Settings, settings
+from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.schemas.ml_backend import GPUBackendConfigStatus, GPUConfigDiagnostic
 from app.services.gpu_arbiter_store import (
+    GPU_EVICTION_OPERATION,
     GPUAllocation,
     GPUAllocationState,
     GPUArbiterStore,
@@ -339,6 +341,14 @@ class GPUIdleEvictionRuntimeSubjectError(RuntimeError):
 
 class GPUBusyEvictionRuntimeSubjectError(RuntimeError):
     """Durable/runtime evidence cannot authorize one busy-capable victim."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class GPUEvictionCancelRuntimeSubjectError(RuntimeError):
+    """Durable state cannot authorize one exact busy-drain cancellation."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -759,6 +769,34 @@ class GPUPreparedIdleEvictionRuntimeSubject:
     runtime_epoch: str
     token_expires_at: datetime
     require_idle: bool
+    db_now: datetime
+
+
+@dataclass(frozen=True)
+class GPUPreparedEvictionCancelRuntimeSubject:
+    """Exact newer generation durably reserved for one drain cancellation."""
+
+    backend: MLBackendRegistry = dataclass_field(repr=False, compare=False)
+    backend_registry_id: uuid.UUID
+    gpu_resource_id: str
+    membership_epoch: int
+    budget_mb: int
+    eviction_priority: int
+    max_concurrency: int
+    boot_id: str
+    source_generation: str
+    drain_generation: str
+    generation: str
+    pool_ids: tuple[str, ...]
+    control_epoch: str
+    runtime_epoch: str
+    owner_id: str
+    operation: str
+    owner_hard_deadline_ms: int
+    drain_token_expires_at: datetime
+    token_expires_at: datetime
+    jti: str
+    idempotent: bool
     db_now: datetime
 
 
@@ -1435,7 +1473,8 @@ def _validate_runtime_subject_inputs(
     error_type: type[GPUResidentRuntimeSubjectError]
     | type[GPUColdRuntimeSubjectError]
     | type[GPUIdleEvictionRuntimeSubjectError]
-    | type[GPUBusyEvictionRuntimeSubjectError] = GPUResidentRuntimeSubjectError,
+    | type[GPUBusyEvictionRuntimeSubjectError]
+    | type[GPUEvictionCancelRuntimeSubjectError] = GPUResidentRuntimeSubjectError,
 ) -> uuid.UUID:
     try:
         backend_registry_id = uuid.UUID(backend_id)
@@ -1802,6 +1841,490 @@ async def prepare_gpu_idle_eviction_runtime_generation(
         require_idle=current_subject.require_idle,
         db_now=current_subject.db_now,
     )
+
+
+def _eviction_cancel_source_fingerprint(
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+) -> str:
+    payload = {
+        "backend_registry_id": str(subject.backend_registry_id),
+        "backend_url": subject.backend.url,
+        "backend_auth_method": subject.backend.auth_method,
+        "backend_auth_token": subject.backend.auth_token,
+        "gpu_resource_id": subject.gpu_resource_id,
+        "membership_epoch": subject.membership_epoch,
+        "budget_mb": subject.budget_mb,
+        "eviction_priority": subject.eviction_priority,
+        "max_concurrency": subject.max_concurrency,
+        "boot_id": subject.boot_id,
+        "source_generation": subject.source_generation,
+        "drain_generation": subject.generation,
+        "pool_ids": list(subject.pool_ids),
+        "control_epoch": subject.control_epoch,
+        "runtime_epoch": subject.runtime_epoch,
+        "token_expires_at": _canonical_proof_timestamp(subject.token_expires_at),
+        "require_idle": subject.require_idle,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validated_eviction_cancel_intent_pool_ids(
+    intent: GPUBackendCancelIntent,
+) -> tuple[str, ...]:
+    value = intent.pool_ids
+    if (
+        type(value) is not list
+        or not value
+        or any(
+            type(pool_id) is not str or not pool_id or pool_id.strip() != pool_id
+            for pool_id in value
+        )
+    ):
+        raise _GPUProofInvalid("cancel_intent_pool_ids_invalid")
+    pool_ids = tuple(value)
+    if pool_ids != tuple(sorted(set(pool_ids))):
+        raise _GPUProofInvalid("cancel_intent_pool_ids_invalid")
+    return pool_ids
+
+
+def _validate_eviction_cancel_intent_durable_state(
+    intent: GPUBackendCancelIntent,
+    fence: GPUBackendFence,
+    *,
+    db_now: datetime,
+) -> tuple[str, ...]:
+    try:
+        source_generation = _strict_nonnegative_int64(
+            intent.source_generation,
+            reason="cancel_intent_generation_invalid",
+        )
+        drain_generation = _strict_nonnegative_int64(
+            intent.drain_generation,
+            reason="cancel_intent_generation_invalid",
+        )
+        generation = _strict_nonnegative_int64(
+            intent.generation,
+            reason="cancel_intent_generation_invalid",
+        )
+        membership_epoch = _strict_nonnegative_int64(
+            intent.membership_epoch,
+            reason="cancel_intent_membership_invalid",
+        )
+        control_epoch = _strict_nonnegative_int64(
+            intent.control_epoch,
+            reason="cancel_intent_epoch_invalid",
+        )
+        runtime_epoch = _strict_nonnegative_int64(
+            intent.runtime_epoch,
+            reason="cancel_intent_epoch_invalid",
+        )
+        durable_generation = _strict_nonnegative_int64(
+            fence.generation_high_water,
+            reason="generation_high_water_invalid",
+        )
+        durable_control_epoch = _strict_nonnegative_int64(
+            fence.control_epoch_high_water,
+            reason="control_epoch_high_water_invalid",
+        )
+        durable_runtime_epoch = _strict_nonnegative_int64(
+            fence.runtime_epoch_high_water,
+            reason="runtime_epoch_high_water_invalid",
+        )
+    except _GPUProofInvalid:
+        raise
+    if (
+        source_generation <= 0
+        or drain_generation <= source_generation
+        or generation <= drain_generation
+        or membership_epoch <= 0
+        or control_epoch <= 0
+        or runtime_epoch <= 0
+    ):
+        raise _GPUProofInvalid("cancel_intent_generation_invalid")
+    if (
+        durable_generation != generation
+        or durable_control_epoch != control_epoch
+        or durable_runtime_epoch != runtime_epoch
+    ):
+        raise _GPUProofInvalid("cancel_intent_fence_changed")
+    if (
+        intent.operation != GPU_EVICTION_OPERATION
+        or not isinstance(intent.owner_id, str)
+        or not intent.owner_id
+        or len(intent.owner_id) > 256
+        or not isinstance(intent.jti, str)
+        or not intent.jti.startswith("transition:")
+        or len(intent.jti) > 256
+        or not isinstance(intent.boot_id, str)
+        or not intent.boot_id
+        or len(intent.boot_id) > 128
+        or not isinstance(intent.subject_fingerprint, str)
+        or _SHA256_HEX_RE.fullmatch(intent.subject_fingerprint) is None
+    ):
+        raise _GPUProofInvalid("cancel_intent_identity_invalid")
+    try:
+        validate_gpu_resource_id(intent.gpu_resource_id)
+    except (TypeError, ValueError) as exc:
+        raise _GPUProofInvalid("cancel_intent_identity_invalid") from exc
+    if (
+        intent.drain_token_expires_at.tzinfo is None
+        or intent.drain_token_expires_at.utcoffset() is None
+        or intent.token_expires_at.tzinfo is None
+        or intent.token_expires_at.utcoffset() is None
+    ):
+        raise _GPUProofInvalid("cancel_intent_token_horizon_invalid")
+    try:
+        owner_hard_deadline = datetime.fromtimestamp(
+            intent.owner_hard_deadline_ms / 1000,
+            UTC,
+        )
+    except (OSError, OverflowError, TypeError, ValueError) as exc:
+        raise _GPUProofInvalid("cancel_intent_owner_deadline_invalid") from exc
+    if (
+        isinstance(intent.owner_hard_deadline_ms, bool)
+        or not isinstance(intent.owner_hard_deadline_ms, int)
+        or intent.owner_hard_deadline_ms <= 0
+        or owner_hard_deadline <= db_now
+        or intent.token_expires_at.astimezone(UTC) > owner_hard_deadline
+    ):
+        raise _GPUProofInvalid("cancel_intent_owner_deadline_invalid")
+    if intent.token_expires_at.astimezone(UTC) <= db_now.astimezone(UTC):
+        raise _GPUProofInvalid("cancel_intent_expired")
+    horizon = fence.token_expiry_high_water
+    if (
+        horizon is None
+        or horizon.tzinfo is None
+        or horizon.utcoffset() is None
+        or horizon.astimezone(UTC)
+        < max(
+            intent.drain_token_expires_at.astimezone(UTC),
+            intent.token_expires_at.astimezone(UTC),
+        )
+    ):
+        raise _GPUProofInvalid("cancel_intent_token_horizon_invalid")
+    return _validated_eviction_cancel_intent_pool_ids(intent)
+
+
+def _prepared_eviction_cancel_subject(
+    source: GPUPreparedIdleEvictionRuntimeSubject,
+    intent: GPUBackendCancelIntent,
+    *,
+    db_now: datetime,
+    idempotent: bool,
+) -> GPUPreparedEvictionCancelRuntimeSubject:
+    return GPUPreparedEvictionCancelRuntimeSubject(
+        backend=source.backend,
+        backend_registry_id=source.backend_registry_id,
+        gpu_resource_id=source.gpu_resource_id,
+        membership_epoch=source.membership_epoch,
+        budget_mb=source.budget_mb,
+        eviction_priority=source.eviction_priority,
+        max_concurrency=source.max_concurrency,
+        boot_id=source.boot_id,
+        source_generation=str(intent.source_generation),
+        drain_generation=str(intent.drain_generation),
+        generation=str(intent.generation),
+        pool_ids=_validated_eviction_cancel_intent_pool_ids(intent),
+        control_epoch=source.control_epoch,
+        runtime_epoch=source.runtime_epoch,
+        owner_id=intent.owner_id,
+        operation=intent.operation,
+        owner_hard_deadline_ms=intent.owner_hard_deadline_ms,
+        drain_token_expires_at=intent.drain_token_expires_at,
+        token_expires_at=intent.token_expires_at,
+        jti=intent.jti,
+        idempotent=idempotent,
+        db_now=db_now,
+    )
+
+
+async def prepare_gpu_eviction_cancel_runtime_generation(
+    session_factory: GPUFenceSessionFactory,
+    expected_subject: GPUPreparedIdleEvictionRuntimeSubject,
+    *,
+    owner_id: str,
+    owner_hard_deadline_ms: int,
+    token_expires_at: datetime,
+) -> GPUPreparedEvictionCancelRuntimeSubject:
+    """Persist or exactly replay one newer busy-drain cancellation generation."""
+
+    if expected_subject.require_idle:
+        raise GPUEvictionCancelRuntimeSubjectError("busy_cancel_required")
+    if not isinstance(owner_id, str) or not owner_id or len(owner_id) > 256:
+        raise ValueError("owner_id must be a non-empty string up to 256 chars")
+    if (
+        isinstance(owner_hard_deadline_ms, bool)
+        or not isinstance(owner_hard_deadline_ms, int)
+        or owner_hard_deadline_ms <= 0
+        or owner_hard_deadline_ms > _MAX_POSITIVE_INT64
+    ):
+        raise ValueError("owner_hard_deadline_ms must be a positive int64")
+    _validate_token_expiry(token_expires_at)
+    fingerprint = _eviction_cancel_source_fingerprint(expected_subject)
+
+    async with session_factory() as db:
+        async with db.begin():
+            locked = await _lock_gpu_resource_proof_domain(
+                db,
+                expected_subject.gpu_resource_id,
+            )
+            membership = next(
+                (
+                    item
+                    for item in locked.memberships
+                    if item.backend_registry_id == expected_subject.backend_registry_id
+                    and item.membership_epoch == expected_subject.membership_epoch
+                    and item.state == "active"
+                ),
+                None,
+            )
+            fence = locked.fences.get(expected_subject.backend_registry_id)
+            registry = locked.registries.get(expected_subject.backend_registry_id)
+            if membership is None or fence is None or registry is None:
+                raise GPUEvictionCancelRuntimeSubjectError("runtime_subject_missing")
+            try:
+                durable_reason = _eviction_terminal_durable_reason(
+                    membership,
+                    fence,
+                    registry,
+                    expected_subject,
+                )
+            except _GPUProofInvalid as exc:
+                durable_reason = exc.reason
+            if durable_reason is not None:
+                raise GPUEvictionCancelRuntimeSubjectError(durable_reason)
+            if token_expires_at <= locked.db_now:
+                raise GPUEvictionCancelRuntimeSubjectError("token_expiry_not_in_future")
+            try:
+                owner_hard_deadline = datetime.fromtimestamp(
+                    owner_hard_deadline_ms / 1000,
+                    UTC,
+                )
+            except (OSError, OverflowError, ValueError) as exc:
+                raise ValueError(
+                    "owner_hard_deadline_ms must fit a UTC datetime"
+                ) from exc
+            if owner_hard_deadline <= locked.db_now:
+                raise GPUEvictionCancelRuntimeSubjectError(
+                    "transition_owner_deadline_expired"
+                )
+            if token_expires_at.astimezone(UTC) > owner_hard_deadline:
+                raise GPUEvictionCancelRuntimeSubjectError(
+                    "token_expiry_exceeds_owner_deadline"
+                )
+
+            intent = await db.scalar(
+                select(GPUBackendCancelIntent)
+                .where(
+                    GPUBackendCancelIntent.backend_registry_id
+                    == expected_subject.backend_registry_id
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            durable_generation = _strict_nonnegative_int64(
+                fence.generation_high_water,
+                reason="generation_high_water_invalid",
+            )
+            expected_drain_generation = int(expected_subject.generation)
+            if (
+                intent is not None
+                and intent.drain_generation == expected_drain_generation
+            ):
+                try:
+                    intent_pool_ids = _validate_eviction_cancel_intent_durable_state(
+                        intent,
+                        fence,
+                        db_now=locked.db_now,
+                    )
+                except _GPUProofInvalid as exc:
+                    raise GPUEvictionCancelRuntimeSubjectError(exc.reason) from None
+                exact = (
+                    intent.gpu_resource_id == expected_subject.gpu_resource_id
+                    and intent.membership_epoch == expected_subject.membership_epoch
+                    and intent.boot_id == expected_subject.boot_id
+                    and intent.control_epoch == int(expected_subject.control_epoch)
+                    and intent.runtime_epoch == int(expected_subject.runtime_epoch)
+                    and intent.source_generation
+                    == int(expected_subject.source_generation)
+                    and intent.owner_id == owner_id
+                    and intent.operation == GPU_EVICTION_OPERATION
+                    and intent.owner_hard_deadline_ms == owner_hard_deadline_ms
+                    and intent.drain_token_expires_at.astimezone(UTC)
+                    == expected_subject.token_expires_at.astimezone(UTC)
+                    and intent.token_expires_at.astimezone(UTC)
+                    == token_expires_at.astimezone(UTC)
+                    and intent_pool_ids == expected_subject.pool_ids
+                    and intent.subject_fingerprint == fingerprint
+                )
+                if not exact:
+                    raise GPUEvictionCancelRuntimeSubjectError("cancel_intent_conflict")
+                return _prepared_eviction_cancel_subject(
+                    expected_subject,
+                    intent,
+                    db_now=locked.db_now,
+                    idempotent=True,
+                )
+
+            if durable_generation < expected_drain_generation:
+                raise GPUEvictionCancelRuntimeSubjectError("generation_changed")
+            if intent is not None and intent.generation >= expected_drain_generation:
+                raise GPUEvictionCancelRuntimeSubjectError("cancel_intent_corrupt")
+            generation = await _advance_gpu_backend_fence_in_transaction(
+                db,
+                expected_subject.backend_registry_id,
+                "generation",
+                gpu_resource_id=expected_subject.gpu_resource_id,
+                membership_epoch=expected_subject.membership_epoch,
+                token_expires_at=token_expires_at,
+            )
+            values = {
+                "gpu_resource_id": expected_subject.gpu_resource_id,
+                "membership_epoch": expected_subject.membership_epoch,
+                "boot_id": expected_subject.boot_id,
+                "control_epoch": int(expected_subject.control_epoch),
+                "runtime_epoch": int(expected_subject.runtime_epoch),
+                "source_generation": int(expected_subject.source_generation),
+                "drain_generation": expected_drain_generation,
+                "generation": generation,
+                "owner_id": owner_id,
+                "operation": GPU_EVICTION_OPERATION,
+                "owner_hard_deadline_ms": owner_hard_deadline_ms,
+                "drain_token_expires_at": expected_subject.token_expires_at,
+                "token_expires_at": token_expires_at,
+                "jti": f"transition:{uuid.uuid4()}",
+                "pool_ids": list(expected_subject.pool_ids),
+                "subject_fingerprint": fingerprint,
+            }
+            if intent is None:
+                intent = GPUBackendCancelIntent(
+                    backend_registry_id=expected_subject.backend_registry_id,
+                    **values,
+                )
+                db.add(intent)
+            else:
+                for field, value in values.items():
+                    setattr(intent, field, value)
+                intent.updated_at = func.now()
+            await db.flush()
+            return _prepared_eviction_cancel_subject(
+                expected_subject,
+                intent,
+                db_now=locked.db_now,
+                idempotent=False,
+            )
+
+
+async def read_gpu_eviction_cancel_runtime_subject(
+    session_factory: GPUFenceSessionFactory,
+    *,
+    backend_id: str,
+    gpu_resource_id: str,
+    owner_id: str,
+) -> GPUPreparedEvictionCancelRuntimeSubject:
+    """Recover one still-live exact cancel intent without its in-memory source."""
+
+    backend_registry_id = _validate_runtime_subject_inputs(
+        backend_id,
+        gpu_resource_id,
+        _HEALTH_EVIDENCE_MAX_AGE,
+        error_type=GPUEvictionCancelRuntimeSubjectError,
+    )
+    if not isinstance(owner_id, str) or not owner_id or len(owner_id) > 256:
+        raise ValueError("owner_id must be a non-empty string up to 256 chars")
+    async with session_factory() as db:
+        async with db.begin():
+            locked = await _lock_gpu_resource_proof_domain(db, gpu_resource_id)
+            membership = next(
+                (
+                    item
+                    for item in locked.memberships
+                    if item.backend_registry_id == backend_registry_id
+                    and item.state == "active"
+                ),
+                None,
+            )
+            fence = locked.fences.get(backend_registry_id)
+            registry = locked.registries.get(backend_registry_id)
+            intent = await db.scalar(
+                select(GPUBackendCancelIntent)
+                .where(
+                    GPUBackendCancelIntent.backend_registry_id == backend_registry_id
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if (
+                membership is None
+                or fence is None
+                or registry is None
+                or intent is None
+            ):
+                raise GPUEvictionCancelRuntimeSubjectError("cancel_intent_missing")
+            try:
+                pool_ids = _validate_eviction_cancel_intent_durable_state(
+                    intent,
+                    fence,
+                    db_now=locked.db_now,
+                )
+            except _GPUProofInvalid as exc:
+                raise GPUEvictionCancelRuntimeSubjectError(exc.reason) from None
+            if (
+                intent.gpu_resource_id != gpu_resource_id
+                or intent.membership_epoch != membership.membership_epoch
+                or intent.owner_id != owner_id
+            ):
+                raise GPUEvictionCancelRuntimeSubjectError(
+                    "cancel_intent_identity_changed"
+                )
+            source = GPUPreparedIdleEvictionRuntimeSubject(
+                backend=_snapshot_gpu_mode_backend(registry),
+                backend_registry_id=backend_registry_id,
+                gpu_resource_id=gpu_resource_id,
+                membership_epoch=membership.membership_epoch,
+                budget_mb=membership.vram_budget_mb,
+                eviction_priority=membership.eviction_priority,
+                max_concurrency=membership.max_concurrency,
+                boot_id=intent.boot_id,
+                source_generation=str(intent.source_generation),
+                generation=str(intent.drain_generation),
+                pool_ids=pool_ids,
+                control_epoch=str(intent.control_epoch),
+                runtime_epoch=str(intent.runtime_epoch),
+                token_expires_at=intent.drain_token_expires_at,
+                require_idle=False,
+                db_now=locked.db_now,
+            )
+            try:
+                durable_reason = _eviction_terminal_durable_reason(
+                    membership,
+                    fence,
+                    registry,
+                    source,
+                )
+            except _GPUProofInvalid as exc:
+                durable_reason = exc.reason
+            if durable_reason is not None:
+                raise GPUEvictionCancelRuntimeSubjectError(durable_reason)
+            if (
+                _eviction_cancel_source_fingerprint(source)
+                != intent.subject_fingerprint
+            ):
+                raise GPUEvictionCancelRuntimeSubjectError(
+                    "cancel_intent_source_changed"
+                )
+            return _prepared_eviction_cancel_subject(
+                source,
+                intent,
+                db_now=locked.db_now,
+                idempotent=True,
+            )
 
 
 async def _lock_gpu_cold_runtime_subject(
