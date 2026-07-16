@@ -4104,6 +4104,8 @@ def _evaluate_gpu_member_proof(
             raise _GPUProofInvalid("probe_not_after_token_horizon")
 
         residency = _parse_gpu_proof_residency(raw_residency)
+        if residency.lifecycle_gate != "enforce":
+            raise _GPUProofInvalid("lifecycle_gate_not_enforced")
         identity = residency.identity
         if identity is None:
             raise _GPUProofInvalid("residency_identity_missing")

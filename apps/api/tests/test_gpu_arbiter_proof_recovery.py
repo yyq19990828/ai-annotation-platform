@@ -258,7 +258,7 @@ def _residency(
             }
         },
         "boot_id": f"boot-{backend_id}",
-        "lifecycle_gate": "legacy",
+        "lifecycle_gate": "enforce",
         "control_epoch": "1",
         "identity": {
             "audience": "aap-gpu-lifecycle",
@@ -1023,6 +1023,7 @@ async def test_pending_member_is_conservative_unknown(
         "bool_counter",
         "generation_ahead",
         "control_epoch_stale",
+        "legacy_gate",
         "identity_missing",
         "capability_missing",
         "capability_hash_mismatch",
@@ -1067,6 +1068,8 @@ async def test_proof_recovery_maps_untrusted_evidence_to_unknown(
                     health_meta["residency"]["generation"] = "2"
                 elif invalid_case == "control_epoch_stale":
                     fence.control_epoch_high_water = 2
+                elif invalid_case == "legacy_gate":
+                    health_meta["residency"]["lifecycle_gate"] = "legacy"
                 elif invalid_case == "identity_missing":
                     health_meta["residency"]["evictable"] = False
                     health_meta["residency"]["control_epoch"] = None

@@ -73,6 +73,7 @@
 
 ### Fixed
 
+- **GPU proof recovery 不再把 legacy gate 提交为可派发 ready**：无论 Backend 当前是空驻留还是已驻留，只有 fresh health 明确证明 exact `enforce` lifecycle gate，才能完成 Redis proof reset；`legacy` 一律保留 Unknown/not-ready，防止 rollout 在 Backend 尚未受管时误开业务派发。
 - **本机 GPU 验收不再套用跨宿主时钟收缩门槛**：单卡与同宿主双卡报告按 runner 进程内 monotonic HTTP 窗口重算；只有跨宿主并发证据才要求 PostgreSQL 时钟探针 RTT 收缩后仍有保守重叠，避免毫秒级快速 warmup 因探针耗时更长而被 verifier 误拒。
 - **GPU 双卡与跨宿主验收不再在请求完成边界误报未执行**：验收器会把 workload 全部返回后立即采集的最终快照纳入 Resident GPU 执行证明；当最后一个轮询样本仍为 Loading、紧随其后的可信快照已为 Resident 时，不会再因采样停止竞态阻断真实通过的并发场景。
 - **GPU 显存实物验收不再因暂停周期性健康扫描而读取陈旧证明**：验收 `run` 现在会在 workload HTTP 前为范围内每个 Backend 持久化新的 challenge-bound health，任一刷新失败均提前阻断，避免只读预检已观测到实时状态，真实 authority 却因数据库旧回执误判 not-ready。
