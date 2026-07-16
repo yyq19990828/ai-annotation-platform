@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+import math
 import secrets
 import time
 import uuid
@@ -54,6 +55,7 @@ from app.services.gpu_arbiter_store import (
     GPUArbiterStore,
     GPUArbiterStoreError,
     GPUCardSnapshot,
+    GPUQueueResult,
 )
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import MLBackendClient
@@ -68,6 +70,9 @@ _GPU_RUNTIME_MIN_TOKEN_WINDOW_SECONDS = 5
 _GPU_RUNTIME_RETRY_AFTER_SECONDS = 1
 _GPU_RUNTIME_COLD_INTENT_TTL_MS = 30_000
 _GPU_RUNTIME_MAX_EVICTION_ATTEMPTS = 128
+_GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS = 0.05
+_GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS = 3600
+_GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS = 6.0
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 _MAX_REDIS_TTL_MS = 2_147_483_647
 _GPU_RUNTIME_SCOPES = {
@@ -117,7 +122,9 @@ def _map_admission_rejection(result: GPUAdmissionResult) -> GPUArbiterDispatchEr
             "GPU backend concurrency is saturated",
             retry_after_s=_GPU_RUNTIME_RETRY_AFTER_SECONDS,
         )
-    if result.status in {"capacity_unavailable", "card_queued"}:
+    if result.status == "card_queued":
+        return _capacity_unavailable("GPU card admission queue is no longer available")
+    if result.status == "capacity_unavailable":
         return _dispatch_error(
             GPUArbiterErrorCode.CAPACITY_UNAVAILABLE,
             "GPU resident capacity is unavailable",
@@ -136,6 +143,392 @@ def _map_admission_rejection(result: GPUAdmissionResult) -> GPUArbiterDispatchEr
         GPUArbiterErrorCode.UNAVAILABLE,
         "GPU arbiter admission failed",
     )
+
+
+def _map_queue_rejection(
+    result: GPUQueueResult,
+    *,
+    card_queue: bool,
+) -> GPUArbiterDispatchError:
+    if result.status == "full":
+        if card_queue:
+            return _capacity_unavailable("GPU card admission queue is full")
+        return _dispatch_error(
+            GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+            "GPU backend admission queue is full",
+            retry_after_s=_GPU_RUNTIME_RETRY_AFTER_SECONDS,
+        )
+    if result.status in {"not_ready", "config_mismatch"}:
+        return _dispatch_error(
+            GPUArbiterErrorCode.NOT_READY,
+            "GPU admission queue is not ready",
+        )
+    return _dispatch_error(
+        GPUArbiterErrorCode.UNAVAILABLE,
+        "GPU admission queue is unavailable",
+    )
+
+
+async def _enqueue_fifo_ticket(
+    store: GPUArbiterStore,
+    resource_id: str,
+    *,
+    backend_id: str,
+    membership_epoch: int,
+    ticket_id: str,
+    owner_id: str,
+    deadline: float,
+    card_queue: bool,
+) -> GPUQueueResult:
+    method = store.enqueue_card if card_queue else store.enqueue_backend
+
+    def kwargs() -> dict:
+        remaining_ms = min(
+            _GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS * 1000,
+            math.ceil((deadline - time.monotonic()) * 1000),
+        )
+        if remaining_ms <= 0:
+            raise _queue_timeout(card_queue=card_queue)
+        return {
+            "backend_id": backend_id,
+            "membership_epoch": membership_epoch,
+            "ticket_id": ticket_id,
+            "owner_id": owner_id,
+            "ttl_ms": remaining_ms,
+        }
+
+    try:
+        result = await method(resource_id, **kwargs())
+    except GPUArbiterDispatchError:
+        raise
+    except Exception:
+        try:
+            result = await method(resource_id, **kwargs())
+        except GPUArbiterDispatchError:
+            raise
+        except Exception as exc:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.UNAVAILABLE,
+                "GPU admission queue result is uncertain",
+            ) from exc
+    if result.status != "queued":
+        raise _map_queue_rejection(result, card_queue=card_queue)
+    if (
+        result.ticket_id != ticket_id
+        or result.position is None
+        or result.position <= 0
+        or result.expires_at_ms is None
+        or result.expires_at_ms <= 0
+    ):
+        raise _dispatch_error(
+            GPUArbiterErrorCode.UNAVAILABLE,
+            "GPU admission queue returned an invalid ticket",
+        )
+    return result
+
+
+async def _read_fifo_position(
+    store: GPUArbiterStore,
+    resource_id: str,
+    *,
+    backend_id: str,
+    ticket_id: str,
+    card_queue: bool,
+) -> GPUQueueResult:
+    kwargs = {
+        "backend_id": backend_id,
+        "ticket_id": ticket_id,
+        "card_queue": card_queue,
+    }
+    try:
+        return await store.queue_position(resource_id, **kwargs)
+    except Exception:
+        try:
+            return await store.queue_position(resource_id, **kwargs)
+        except Exception as exc:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.UNAVAILABLE,
+                "GPU admission queue position is unavailable",
+            ) from exc
+
+
+async def _cancel_fifo_ticket(
+    store: GPUArbiterStore,
+    resource_id: str,
+    *,
+    backend_id: str,
+    ticket_id: str,
+    owner_id: str,
+    card_queue: bool,
+) -> None:
+    kwargs = {
+        "backend_id": backend_id,
+        "ticket_id": ticket_id,
+        "owner_id": owner_id,
+        "card_queue": card_queue,
+    }
+    try:
+        try:
+            result = await store.cancel_queue_ticket(resource_id, **kwargs)
+        except Exception:
+            result = await store.cancel_queue_ticket(resource_id, **kwargs)
+        if result.status not in {"cancelled", "missing"}:
+            logger.warning(
+                "gpu_admission_queue_cleanup_rejected",
+                gpu_arbiter={
+                    "backend_id": backend_id,
+                    "resource_id": resource_id,
+                    "ticket_id": ticket_id,
+                    "queue": "card" if card_queue else "backend",
+                    "status": result.status,
+                },
+            )
+    except Exception:  # noqa: BLE001 - ticket TTL remains the bounded fallback
+        logger.warning(
+            "gpu_admission_queue_cleanup_failed",
+            gpu_arbiter={
+                "backend_id": backend_id,
+                "resource_id": resource_id,
+                "ticket_id": ticket_id,
+                "queue": "card" if card_queue else "backend",
+            },
+            exc_info=True,
+        )
+
+
+def _queue_remaining_seconds(
+    *,
+    deadline: float,
+    expires_at_ms: int,
+) -> float:
+    return min(
+        deadline - time.monotonic(),
+        (expires_at_ms - int(time.time() * 1000)) / 1000,
+    )
+
+
+def _queue_timeout(*, card_queue: bool) -> GPUArbiterDispatchError:
+    if card_queue:
+        return _capacity_unavailable("GPU card admission queue timed out")
+    return _dispatch_error(
+        GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+        "GPU backend admission queue timed out",
+        retry_after_s=_GPU_RUNTIME_RETRY_AFTER_SECONDS,
+    )
+
+
+def _queue_remaining_ttl_ms(
+    *,
+    deadline: float,
+    expires_at_ms: int,
+) -> int:
+    remaining_ms = int(
+        _queue_remaining_seconds(
+            deadline=deadline,
+            expires_at_ms=expires_at_ms,
+        )
+        * 1000
+    )
+    if remaining_ms <= 0:
+        raise _queue_timeout(card_queue=True)
+    return remaining_ms
+
+
+def _eviction_work_remaining_ttl_ms(
+    *,
+    deadline: float,
+    expires_at_ms: int,
+) -> int:
+    remaining_ms = _queue_remaining_ttl_ms(
+        deadline=deadline,
+        expires_at_ms=expires_at_ms,
+    ) - math.ceil(_GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS * 1000)
+    if remaining_ms <= 0:
+        raise _queue_timeout(card_queue=True)
+    return remaining_ms
+
+
+@asynccontextmanager
+async def _bounded_card_admission_step(
+    *,
+    deadline: float,
+    expires_at_ms: int,
+    reserve_seconds: float = 0,
+):
+    remaining = (
+        _queue_remaining_seconds(
+            deadline=deadline,
+            expires_at_ms=expires_at_ms,
+        )
+        - reserve_seconds
+    )
+    if remaining <= 0:
+        raise _queue_timeout(card_queue=True)
+    timeout = asyncio.timeout(remaining)
+    try:
+        async with timeout:
+            yield
+    except TimeoutError as exc:
+        if timeout.expired():
+            raise _queue_timeout(card_queue=True) from exc
+        raise
+
+
+async def _wait_for_card_fifo_head(
+    store: GPUArbiterStore,
+    resource_id: str,
+    *,
+    backend_id: str,
+    ticket: GPUQueueResult,
+    deadline: float,
+    poll_interval_seconds: float,
+) -> None:
+    position = ticket.position
+    assert ticket.expires_at_ms is not None
+    while position != 1:
+        remaining = _queue_remaining_seconds(
+            deadline=deadline,
+            expires_at_ms=ticket.expires_at_ms,
+        )
+        if remaining <= 0:
+            raise _capacity_unavailable("GPU card admission queue timed out")
+        await asyncio.sleep(min(poll_interval_seconds, remaining))
+        if (
+            _queue_remaining_seconds(
+                deadline=deadline,
+                expires_at_ms=ticket.expires_at_ms,
+            )
+            <= 0
+        ):
+            raise _capacity_unavailable("GPU card admission queue timed out")
+        current = await _read_fifo_position(
+            store,
+            resource_id,
+            backend_id=backend_id,
+            ticket_id=ticket.ticket_id,
+            card_queue=True,
+        )
+        if current.status == "missing":
+            raise _capacity_unavailable("GPU card admission queue timed out")
+        if current.status != "queued":
+            raise _map_queue_rejection(current, card_queue=True)
+        if (
+            current.ticket_id != ticket.ticket_id
+            or current.position is None
+            or current.position <= 0
+        ):
+            raise _dispatch_error(
+                GPUArbiterErrorCode.UNAVAILABLE,
+                "GPU admission queue returned an invalid ticket",
+            )
+        position = current.position
+    if (
+        _queue_remaining_seconds(
+            deadline=deadline,
+            expires_at_ms=ticket.expires_at_ms,
+        )
+        <= 0
+    ):
+        raise _capacity_unavailable("GPU card admission queue timed out")
+
+
+async def _call_admit_exact(
+    store: GPUArbiterStore,
+    resource_id: str,
+    **kwargs,
+) -> GPUAdmissionResult:
+    try:
+        return await store.admit(resource_id, **kwargs)
+    except Exception:
+        try:
+            result = await store.admit(resource_id, **kwargs)
+        except Exception as exc:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.UNAVAILABLE,
+                "GPU admission result is uncertain",
+            ) from exc
+        if not result.admitted:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.UNAVAILABLE,
+                "GPU admission result is uncertain",
+            )
+        return result
+
+
+async def _admit_resident_with_fifo(
+    store: GPUArbiterStore,
+    resource_id: str,
+    *,
+    backend_id: str,
+    membership_epoch: int,
+    owner_id: str,
+    admission_kwargs: dict,
+    timeout_ms: int,
+    poll_interval_seconds: float,
+) -> GPUAdmissionResult:
+    admission = await _call_admit_exact(
+        store,
+        resource_id,
+        **admission_kwargs,
+    )
+    if admission.status not in {"concurrency_saturated", "concurrency_queued"}:
+        return admission
+
+    ticket_id = f"backend:{uuid.uuid4()}"
+    ticket_may_exist = True
+    deadline = time.monotonic() + timeout_ms / 1000
+    try:
+        ticket = await _enqueue_fifo_ticket(
+            store,
+            resource_id,
+            backend_id=backend_id,
+            membership_epoch=membership_epoch,
+            ticket_id=ticket_id,
+            owner_id=owner_id,
+            deadline=deadline,
+            card_queue=False,
+        )
+        assert ticket.expires_at_ms is not None
+        while True:
+            remaining = _queue_remaining_seconds(
+                deadline=deadline,
+                expires_at_ms=ticket.expires_at_ms,
+            )
+            if remaining <= 0:
+                return admission
+            admission = await _call_admit_exact(
+                store,
+                resource_id,
+                **admission_kwargs,
+                backend_ticket_id=ticket_id,
+            )
+            if admission.admitted:
+                ticket_may_exist = False
+                return admission
+            if admission.status not in {
+                "concurrency_saturated",
+                "concurrency_queued",
+            }:
+                return admission
+            remaining = _queue_remaining_seconds(
+                deadline=deadline,
+                expires_at_ms=ticket.expires_at_ms,
+            )
+            if remaining <= 0:
+                return admission
+            await asyncio.sleep(min(poll_interval_seconds, remaining))
+    finally:
+        if ticket_may_exist:
+            await _await_cancellation_safe(
+                _cancel_fifo_ticket(
+                    store,
+                    resource_id,
+                    backend_id=backend_id,
+                    ticket_id=ticket_id,
+                    owner_id=owner_id,
+                    card_queue=False,
+                )
+            )
 
 
 async def _read_runtime_subject(
@@ -315,6 +708,36 @@ def _runtime_hard_ttl_ms(
     return hard_ttl_ms
 
 
+def _admission_timeout_ms(
+    config: Settings,
+    *,
+    override_seconds: float | None,
+) -> int:
+    timeout = (
+        config.gpu_arbiter_admission_timeout_seconds
+        if override_seconds is None
+        else override_seconds
+    )
+    if (
+        not isinstance(timeout, (int, float))
+        or isinstance(timeout, bool)
+        or not math.isfinite(timeout)
+        or timeout <= 0
+        or timeout > _GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS
+    ):
+        raise _dispatch_error(
+            GPUArbiterErrorCode.CONFIG_INVALID,
+            "GPU admission timeout is invalid",
+        )
+    timeout_ms = max(1, int(timeout * 1000))
+    if timeout_ms > _MAX_REDIS_TTL_MS:
+        raise _dispatch_error(
+            GPUArbiterErrorCode.CONFIG_INVALID,
+            "GPU admission timeout is invalid",
+        )
+    return timeout_ms
+
+
 def _map_cold_owner_rejection(status: str) -> GPUArbiterDispatchError:
     if status in {"busy", "active_leases"}:
         return _dispatch_error(
@@ -430,6 +853,8 @@ async def _finalize_cold_runtime(
     response_received: bool,
     prepared_subject: GPUPreparedColdRuntimeSubject | None,
     heartbeat_task: asyncio.Task[None] | None,
+    card_ticket_id: str,
+    card_ticket_may_exist: bool,
 ) -> None:
     if lease_may_exist:
         target_state = GPUAllocationState.UNLOADED
@@ -566,6 +991,15 @@ async def _finalize_cold_runtime(
             owner_id=owner_id,
             generation=generation,
         )
+    if card_ticket_may_exist:
+        await _cancel_fifo_ticket(
+            store,
+            subject.gpu_resource_id,
+            backend_id=str(subject.backend_registry_id),
+            ticket_id=card_ticket_id,
+            owner_id=owner_id,
+            card_queue=True,
+        )
     try:
         await store.aclose()
     except Exception:  # noqa: BLE001 - do not replace the business outcome
@@ -588,6 +1022,22 @@ def _idle_victim_hint(
         raise _dispatch_error(
             GPUArbiterErrorCode.NOT_READY,
             "GPU card ledger is not ready",
+        )
+    requester_allocation = next(
+        (
+            allocation
+            for allocation in snapshot.allocations
+            if allocation.backend_id == str(requester.backend_registry_id)
+        ),
+        None,
+    )
+    if requester_allocation is not None and requester_allocation.state not in {
+        GPUAllocationState.UNLOADED,
+        GPUAllocationState.CPU_FALLBACK,
+    }:
+        raise _dispatch_error(
+            GPUArbiterErrorCode.NOT_READY,
+            "GPU cold runtime already has an active allocation",
         )
     free_mb = snapshot.allocatable_mb - snapshot.committed_mb
     if requester.budget_mb <= free_mb:
@@ -958,7 +1408,15 @@ async def _evict_one_idle_victim(
     health_refresher: GPUHealthRefresher,
     hard_ttl_ms: int,
     heartbeat_interval_seconds: float,
+    queue_deadline: float,
+    ticket_expires_at_ms: int,
+    requester_card_ticket_id: str | None = None,
+    requester_queue_owner_id: str | None = None,
 ) -> str:
+    _eviction_work_remaining_ttl_ms(
+        deadline=queue_deadline,
+        expires_at_ms=ticket_expires_at_ms,
+    )
     challenge = secrets.token_hex(32)
     try:
         victim_id = uuid.UUID(victim.backend_id)
@@ -976,6 +1434,10 @@ async def _evict_one_idle_victim(
                 expected_generation=victim.generation or "",
                 challenge=challenge,
             )
+        _eviction_work_remaining_ttl_ms(
+            deadline=queue_deadline,
+            expires_at_ms=ticket_expires_at_ms,
+        )
         prepared = await prepare_gpu_idle_eviction_runtime_generation(
             session_factory,
             idle_subject,
@@ -990,12 +1452,24 @@ async def _evict_one_idle_victim(
         ) from exc
 
     owner_id = f"evict:{uuid.uuid4()}"
-    owner_may_exist = True
+    owner_may_exist = False
     heartbeat_task: asyncio.Task[None] | None = None
     terminal_result: GPUEvictionCommitResult | None = None
     replay_challenge: str | None = None
     phase = "drain"
     try:
+        _eviction_work_remaining_ttl_ms(
+            deadline=queue_deadline,
+            expires_at_ms=ticket_expires_at_ms,
+        )
+        owner_hard_ttl_ms = min(
+            hard_ttl_ms,
+            _queue_remaining_ttl_ms(
+                deadline=queue_deadline,
+                expires_at_ms=ticket_expires_at_ms,
+            ),
+        )
+        owner_ttl_ms = min(_GPU_RUNTIME_COLD_INTENT_TTL_MS, owner_hard_ttl_ms)
         begin_kwargs = {
             "requester_backend_id": str(requester.backend_registry_id),
             "requester_membership_epoch": requester.membership_epoch,
@@ -1006,10 +1480,13 @@ async def _evict_one_idle_victim(
             "victim_expected_generation": prepared.source_generation,
             "victim_next_generation": prepared.generation,
             "owner_id": owner_id,
-            "ttl_ms": _GPU_RUNTIME_COLD_INTENT_TTL_MS,
-            "hard_ttl_ms": hard_ttl_ms,
+            "ttl_ms": owner_ttl_ms,
+            "hard_ttl_ms": owner_hard_ttl_ms,
+            "requester_card_ticket_id": requester_card_ticket_id,
+            "requester_queue_owner_id": requester_queue_owner_id,
         }
         begin_uncertain = False
+        owner_may_exist = True
         try:
             selected = await store.begin_idle_eviction(
                 requester.gpu_resource_id,
@@ -1029,6 +1506,7 @@ async def _evict_one_idle_victim(
                 return "stale"
             if selected.status in {
                 "capacity_unavailable",
+                "card_queued",
                 "victim_busy",
                 "transition_in_progress",
             }:
@@ -1076,7 +1554,7 @@ async def _evict_one_idle_victim(
             owner_id=owner_id,
             generation=prepared.generation,
             operation=GPU_EVICTION_OPERATION,
-            ttl_ms=_GPU_RUNTIME_COLD_INTENT_TTL_MS,
+            ttl_ms=owner_ttl_ms,
         )
         if first_heartbeat.status != "renewed":
             raise _dispatch_error(
@@ -1088,7 +1566,7 @@ async def _evict_one_idle_victim(
                 store,
                 prepared,
                 owner_id=owner_id,
-                heartbeat_ttl_ms=_GPU_RUNTIME_COLD_INTENT_TTL_MS,
+                heartbeat_ttl_ms=owner_ttl_ms,
                 heartbeat_interval_seconds=heartbeat_interval_seconds,
                 hard_deadline_ms=selected.owner_hard_deadline_ms,
             ),
@@ -1216,9 +1694,17 @@ async def _ensure_cold_capacity(
     health_refresher: GPUHealthRefresher,
     hard_ttl_ms: int,
     heartbeat_interval_seconds: float,
+    queue_deadline: float,
+    ticket_expires_at_ms: int,
+    requester_card_ticket_id: str,
+    requester_queue_owner_id: str,
 ) -> bool:
     changed = False
     for _ in range(_GPU_RUNTIME_MAX_EVICTION_ATTEMPTS):
+        _queue_remaining_ttl_ms(
+            deadline=queue_deadline,
+            expires_at_ms=ticket_expires_at_ms,
+        )
         try:
             snapshot = await store.snapshot(requester.gpu_resource_id)
         except Exception as exc:
@@ -1229,16 +1715,29 @@ async def _ensure_cold_capacity(
         victim = _idle_victim_hint(snapshot, requester)
         if victim is None:
             return changed
-        outcome = await _evict_one_idle_victim(
-            session_factory,
-            store,
-            signer,
-            requester,
-            victim,
-            health_refresher=health_refresher,
-            hard_ttl_ms=hard_ttl_ms,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
+        _eviction_work_remaining_ttl_ms(
+            deadline=queue_deadline,
+            expires_at_ms=ticket_expires_at_ms,
         )
+        async with _bounded_card_admission_step(
+            deadline=queue_deadline,
+            expires_at_ms=ticket_expires_at_ms,
+            reserve_seconds=_GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS,
+        ):
+            outcome = await _evict_one_idle_victim(
+                session_factory,
+                store,
+                signer,
+                requester,
+                victim,
+                health_refresher=health_refresher,
+                hard_ttl_ms=hard_ttl_ms,
+                heartbeat_interval_seconds=heartbeat_interval_seconds,
+                queue_deadline=queue_deadline,
+                ticket_expires_at_ms=ticket_expires_at_ms,
+                requester_card_ticket_id=requester_card_ticket_id,
+                requester_queue_owner_id=requester_queue_owner_id,
+            )
         if outcome == "unloaded":
             changed = True
         elif outcome == "capacity_available":
@@ -1261,11 +1760,17 @@ async def _dispatch_cold_runtime(
     health_refresher: GPUHealthRefresher,
     heartbeat_ttl_ms: int,
     heartbeat_interval_seconds: float,
+    admission_timeout_seconds: float | None,
+    queue_poll_interval_seconds: float,
 ):
     generation = _cold_generation_candidate(subject)
     hard_ttl_ms = _runtime_hard_ttl_ms(
         config,
         heartbeat_ttl_ms=heartbeat_ttl_ms,
+    )
+    admission_timeout_ms = _admission_timeout_ms(
+        config,
+        override_seconds=admission_timeout_seconds,
     )
     signer_builder = signer_factory or (
         lambda: GPUAdmissionTokenSigner.from_settings(config)
@@ -1291,8 +1796,11 @@ async def _dispatch_cold_runtime(
 
     lease_id = f"workload:{uuid.uuid4()}"
     owner_id = f"dispatch:{uuid.uuid4()}"
+    card_ticket_id = f"card:{uuid.uuid4()}"
+    ticket_membership_epoch = subject.membership_epoch
     intent_may_exist = False
     lease_may_exist = False
+    card_ticket_may_exist = False
     grant_exposed = False
     grant: GPUDispatchGrant | None = None
     prepared_subject: GPUPreparedColdRuntimeSubject | None = None
@@ -1307,22 +1815,85 @@ async def _dispatch_cold_runtime(
                 "GPU arbiter store is unavailable",
             ) from exc
 
-        capacity_changed = await _ensure_cold_capacity(
-            session_factory,
+        card_ticket_may_exist = True
+        queue_deadline = time.monotonic() + admission_timeout_ms / 1000
+        card_ticket = await _enqueue_fifo_ticket(
             store,
-            signer,
-            subject,
-            health_refresher=health_refresher,
-            hard_ttl_ms=hard_ttl_ms,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
+            subject.gpu_resource_id,
+            backend_id=str(subject.backend_registry_id),
+            membership_epoch=subject.membership_epoch,
+            ticket_id=card_ticket_id,
+            owner_id=owner_id,
+            deadline=queue_deadline,
+            card_queue=True,
         )
+        await _wait_for_card_fifo_head(
+            store,
+            subject.gpu_resource_id,
+            backend_id=str(subject.backend_registry_id),
+            ticket=card_ticket,
+            deadline=queue_deadline,
+            poll_interval_seconds=queue_poll_interval_seconds,
+        )
+        assert card_ticket.expires_at_ms is not None
+        try:
+            async with _bounded_card_admission_step(
+                deadline=queue_deadline,
+                expires_at_ms=card_ticket.expires_at_ms,
+            ):
+                subject = await _read_cold_runtime_subject(
+                    session_factory,
+                    request,
+                )
+        except GPUArbiterDispatchError:
+            raise
+        except GPUColdRuntimeSubjectError as exc:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.NOT_READY,
+                "GPU cold runtime changed while queued",
+            ) from exc
+        except Exception as exc:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.UNAVAILABLE,
+                "GPU cold runtime is unavailable while queued",
+            ) from exc
+        if subject.membership_epoch != ticket_membership_epoch:
+            raise _dispatch_error(
+                GPUArbiterErrorCode.NOT_READY,
+                "GPU cold runtime membership changed while queued",
+            )
+        generation = _cold_generation_candidate(subject)
+
+        async with _bounded_card_admission_step(
+            deadline=queue_deadline,
+            expires_at_ms=card_ticket.expires_at_ms,
+        ):
+            capacity_changed = await _ensure_cold_capacity(
+                session_factory,
+                store,
+                signer,
+                subject,
+                health_refresher=health_refresher,
+                hard_ttl_ms=hard_ttl_ms,
+                heartbeat_interval_seconds=heartbeat_interval_seconds,
+                queue_deadline=queue_deadline,
+                ticket_expires_at_ms=card_ticket.expires_at_ms,
+                requester_card_ticket_id=card_ticket_id,
+                requester_queue_owner_id=owner_id,
+            )
         if capacity_changed:
             challenge = secrets.token_hex(32)
             try:
-                refreshed = await health_refresher(
-                    subject.backend_registry_id,
-                    challenge,
-                )
+                async with _bounded_card_admission_step(
+                    deadline=queue_deadline,
+                    expires_at_ms=card_ticket.expires_at_ms,
+                ):
+                    refreshed = await health_refresher(
+                        subject.backend_registry_id,
+                        challenge,
+                    )
+            except GPUArbiterDispatchError:
+                raise
             except Exception as exc:
                 raise _dispatch_error(
                     GPUArbiterErrorCode.UNAVAILABLE,
@@ -1334,11 +1905,17 @@ async def _dispatch_cold_runtime(
                     "GPU cold runtime is not ready after eviction",
                 )
             try:
-                subject = await _read_cold_runtime_subject(
-                    session_factory,
-                    request,
-                    expected_challenge=challenge,
-                )
+                async with _bounded_card_admission_step(
+                    deadline=queue_deadline,
+                    expires_at_ms=card_ticket.expires_at_ms,
+                ):
+                    subject = await _read_cold_runtime_subject(
+                        session_factory,
+                        request,
+                        expected_challenge=challenge,
+                    )
+            except GPUArbiterDispatchError:
+                raise
             except GPUColdRuntimeSubjectError as exc:
                 raise _dispatch_error(
                     GPUArbiterErrorCode.NOT_READY,
@@ -1349,18 +1926,36 @@ async def _dispatch_cold_runtime(
                     GPUArbiterErrorCode.UNAVAILABLE,
                     "GPU cold runtime is unavailable after eviction",
                 ) from exc
+            if subject.membership_epoch != ticket_membership_epoch:
+                raise _dispatch_error(
+                    GPUArbiterErrorCode.NOT_READY,
+                    "GPU cold runtime membership changed during eviction",
+                )
             generation = _cold_generation_candidate(subject)
 
+        cold_owner_ttl_ms = min(
+            _GPU_RUNTIME_COLD_INTENT_TTL_MS,
+            _queue_remaining_ttl_ms(
+                deadline=queue_deadline,
+                expires_at_ms=card_ticket.expires_at_ms,
+            ),
+        )
         intent_may_exist = True
         try:
-            owner = await store.acquire_cold_admission_owner(
-                subject.gpu_resource_id,
-                backend_id=str(subject.backend_registry_id),
-                membership_epoch=subject.membership_epoch,
-                owner_id=owner_id,
-                generation=generation,
-                ttl_ms=_GPU_RUNTIME_COLD_INTENT_TTL_MS,
-            )
+            async with _bounded_card_admission_step(
+                deadline=queue_deadline,
+                expires_at_ms=card_ticket.expires_at_ms,
+            ):
+                owner = await store.acquire_cold_admission_owner(
+                    subject.gpu_resource_id,
+                    backend_id=str(subject.backend_registry_id),
+                    membership_epoch=subject.membership_epoch,
+                    owner_id=owner_id,
+                    generation=generation,
+                    ttl_ms=cold_owner_ttl_ms,
+                )
+        except GPUArbiterDispatchError:
+            raise
         except Exception as exc:
             raise _dispatch_error(
                 GPUArbiterErrorCode.UNAVAILABLE,
@@ -1371,12 +1966,19 @@ async def _dispatch_cold_runtime(
             raise _map_cold_owner_rejection(owner.status)
 
         try:
-            prepared = await prepare_gpu_cold_runtime_generation(
-                session_factory,
-                subject,
-                token_expires_at=subject.db_now + timedelta(milliseconds=hard_ttl_ms),
-            )
+            async with _bounded_card_admission_step(
+                deadline=queue_deadline,
+                expires_at_ms=card_ticket.expires_at_ms,
+            ):
+                prepared = await prepare_gpu_cold_runtime_generation(
+                    session_factory,
+                    subject,
+                    token_expires_at=subject.db_now
+                    + timedelta(milliseconds=hard_ttl_ms),
+                )
             prepared_subject = prepared
+        except GPUArbiterDispatchError:
+            raise
         except GPUColdRuntimeSubjectError as exc:
             raise _dispatch_error(
                 GPUArbiterErrorCode.NOT_READY,
@@ -1393,15 +1995,28 @@ async def _dispatch_cold_runtime(
                 "GPU cold runtime generation changed",
             )
 
+        cold_owner_ttl_ms = min(
+            _GPU_RUNTIME_COLD_INTENT_TTL_MS,
+            _queue_remaining_ttl_ms(
+                deadline=queue_deadline,
+                expires_at_ms=card_ticket.expires_at_ms,
+            ),
+        )
         try:
-            revalidated = await store.revalidate_cold_admission_owner(
-                subject.gpu_resource_id,
-                backend_id=str(subject.backend_registry_id),
-                membership_epoch=subject.membership_epoch,
-                owner_id=owner_id,
-                generation=generation,
-                ttl_ms=_GPU_RUNTIME_COLD_INTENT_TTL_MS,
-            )
+            async with _bounded_card_admission_step(
+                deadline=queue_deadline,
+                expires_at_ms=card_ticket.expires_at_ms,
+            ):
+                revalidated = await store.revalidate_cold_admission_owner(
+                    subject.gpu_resource_id,
+                    backend_id=str(subject.backend_registry_id),
+                    membership_epoch=subject.membership_epoch,
+                    owner_id=owner_id,
+                    generation=generation,
+                    ttl_ms=cold_owner_ttl_ms,
+                )
+        except GPUArbiterDispatchError:
+            raise
         except Exception as exc:
             raise _dispatch_error(
                 GPUArbiterErrorCode.UNAVAILABLE,
@@ -1424,27 +2039,22 @@ async def _dispatch_cold_runtime(
             "operation": request.operation,
             "heartbeat_ttl_ms": heartbeat_ttl_ms,
             "hard_ttl_ms": hard_ttl_ms,
+            "card_ticket_id": card_ticket_id,
             "require_cold_owner": True,
         }
-        try:
-            admission = await store.admit(
+        async with _bounded_card_admission_step(
+            deadline=queue_deadline,
+            expires_at_ms=card_ticket.expires_at_ms,
+        ):
+            admission = await _call_admit_exact(
+                store,
                 subject.gpu_resource_id,
                 **admission_kwargs,
             )
-        except Exception:
-            try:
-                admission = await store.admit(
-                    subject.gpu_resource_id,
-                    **admission_kwargs,
-                )
-            except Exception as exc:
-                raise _dispatch_error(
-                    GPUArbiterErrorCode.UNAVAILABLE,
-                    "GPU cold admission result is uncertain",
-                ) from exc
         if not admission.admitted:
             lease_may_exist = False
             raise _map_admission_rejection(admission)
+        card_ticket_may_exist = False
         intent_may_exist = False
         if (
             admission.allocation_state is not GPUAllocationState.RESERVING
@@ -1569,6 +2179,8 @@ async def _dispatch_cold_runtime(
                 ),
                 prepared_subject=prepared_subject,
                 heartbeat_task=heartbeat_task,
+                card_ticket_id=card_ticket_id,
+                card_ticket_may_exist=card_ticket_may_exist,
             )
         )
 
@@ -1582,6 +2194,8 @@ def build_gpu_dispatch_context_factory(
     health_refresher: GPUHealthRefresher | None = None,
     heartbeat_ttl_ms: int = _GPU_RUNTIME_HEARTBEAT_TTL_MS,
     heartbeat_interval_seconds: float = _GPU_RUNTIME_HEARTBEAT_INTERVAL_SECONDS,
+    admission_timeout_seconds: float | None = None,
+    queue_poll_interval_seconds: float = _GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS,
 ) -> GPUDispatchContextFactory:
     """Build a lazy per-dispatch authority without opening DB, Redis, or secrets."""
 
@@ -1598,6 +2212,21 @@ def build_gpu_dispatch_context_factory(
         or heartbeat_interval_seconds * 1000 >= heartbeat_ttl_ms
     ):
         raise ValueError("heartbeat interval must be positive and shorter than TTL")
+    if admission_timeout_seconds is not None and (
+        not isinstance(admission_timeout_seconds, (int, float))
+        or isinstance(admission_timeout_seconds, bool)
+        or not math.isfinite(admission_timeout_seconds)
+        or admission_timeout_seconds <= 0
+        or admission_timeout_seconds > _GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS
+    ):
+        raise ValueError("admission_timeout_seconds must be positive and at most 3600")
+    if (
+        not isinstance(queue_poll_interval_seconds, (int, float))
+        or isinstance(queue_poll_interval_seconds, bool)
+        or not math.isfinite(queue_poll_interval_seconds)
+        or queue_poll_interval_seconds <= 0
+    ):
+        raise ValueError("queue_poll_interval_seconds must be positive")
 
     async def refresh_health(backend_id: uuid.UUID, challenge: str) -> bool:
         if health_refresher is not None:
@@ -1643,6 +2272,8 @@ def build_gpu_dispatch_context_factory(
                 health_refresher=refresh_health,
                 heartbeat_ttl_ms=heartbeat_ttl_ms,
                 heartbeat_interval_seconds=float(heartbeat_interval_seconds),
+                admission_timeout_seconds=admission_timeout_seconds,
+                queue_poll_interval_seconds=float(queue_poll_interval_seconds),
             ) as grant:
                 yield grant
             return
@@ -1651,6 +2282,11 @@ def build_gpu_dispatch_context_factory(
                 GPUArbiterErrorCode.UNAVAILABLE,
                 "GPU runtime subject is unavailable",
             ) from exc
+
+        admission_timeout_ms = _admission_timeout_ms(
+            config,
+            override_seconds=admission_timeout_seconds,
+        )
 
         signer_builder = signer_factory or (
             lambda: GPUAdmissionTokenSigner.from_settings(config)
@@ -1686,23 +2322,34 @@ def build_gpu_dispatch_context_factory(
                 heartbeat_ttl_ms=heartbeat_ttl_ms,
             )
             lease_may_exist = True
+            admission_kwargs = {
+                "backend_id": str(subject.backend_registry_id),
+                "membership_epoch": subject.membership_epoch,
+                "budget_mb": subject.budget_mb,
+                "generation": subject.generation,
+                "eviction_priority": subject.eviction_priority,
+                "evictable": False,
+                "max_concurrency": subject.max_concurrency,
+                "lease_id": lease_id,
+                "owner_id": owner_id,
+                "operation": request.operation,
+                "heartbeat_ttl_ms": heartbeat_ttl_ms,
+                "hard_ttl_ms": hard_ttl_ms,
+                "require_resident": True,
+            }
             try:
-                admission = await store.admit(
+                admission = await _admit_resident_with_fifo(
+                    store,
                     subject.gpu_resource_id,
                     backend_id=str(subject.backend_registry_id),
                     membership_epoch=subject.membership_epoch,
-                    budget_mb=subject.budget_mb,
-                    generation=subject.generation,
-                    eviction_priority=subject.eviction_priority,
-                    evictable=False,
-                    max_concurrency=subject.max_concurrency,
-                    lease_id=lease_id,
                     owner_id=owner_id,
-                    operation=request.operation,
-                    heartbeat_ttl_ms=heartbeat_ttl_ms,
-                    hard_ttl_ms=hard_ttl_ms,
-                    require_resident=True,
+                    admission_kwargs=admission_kwargs,
+                    timeout_ms=admission_timeout_ms,
+                    poll_interval_seconds=float(queue_poll_interval_seconds),
                 )
+            except GPUArbiterDispatchError:
+                raise
             except Exception as exc:
                 raise _dispatch_error(
                     GPUArbiterErrorCode.UNAVAILABLE,

@@ -216,6 +216,9 @@ class Settings(BaseSettings):
     # read this file, and GPU backends receive only their public verify keyring.
     gpu_lifecycle_signing_keys_file: str = ""
     gpu_lifecycle_active_signing_kid: str = ""
+    # Slow-path FIFO has its own bound; it must not inherit the much longer
+    # inference timeout or keep a card queue ticket alive indefinitely.
+    gpu_arbiter_admission_timeout_seconds: int = Field(default=30, gt=0, le=3600)
 
     def _parse_gpu_arbiter_resources(
         self,

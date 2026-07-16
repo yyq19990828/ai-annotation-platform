@@ -498,6 +498,7 @@ ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本�
 ```dotenv
 GPU_ARBITER_MODE=off
 GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
+GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS=30
 # 仅在准备 promotion/enforce 时配置；文件权限建议 0400，并由 secret store 投递。
 GPU_LIFECYCLE_SIGNING_KEYS_FILE=/secure/aap-gpu-signing-keys.json
 GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
@@ -508,13 +509,17 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 开关；期望模式取两者中更保守的一个，resource 未显式声明 mode 时按 `off`。静态配置
 层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量
 是允许驱逐的弹性超售告警。管理 API 会分开显示 desired 与 effective mode；
+`GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS` 默认 30 秒，是 card/backend FIFO 共用的独立
+等待上限；它不是 backend 的模型池 build timeout，也不是 busy victim 的 drain timeout。
+空闲 victim 驱逐会在该期限内为 exact 终态清理预留固定窗口；超时返回带
+`Retry-After` 的 503，`off/observe` 下不会入队，因此该值不生效。
 `observe` 已在 predict、交互预测、warmup、reload 与注册 smoke-test
 的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
 快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
 绝不拒绝、排队或驱逐业务请求。`enforce` 仍需 Redis 账本与 lifecycle gate
 握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本、恢复
 prepared 中间态并完成 legacy membership ACK。派发侧已具备 Redis admission、业务 token、Resident/cold
-authority 与空闲 victim 驱逐编排，但生产 effective mode 仍锁定为 `off`，因此实际请求不会
+authority、有界两级 FIFO 与空闲 victim 驱逐编排，但生产 effective mode 仍锁定为 `off`，因此实际请求不会
 进入这条权威路径、签业务 token 或切换 backend enforce gate。busy victim 等待/cancel/cooldown、实物
 多卡验收与 enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
 observe。`off/observe` 不创建或修复仲裁 Redis key。

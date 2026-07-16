@@ -37,6 +37,7 @@
 
 ### Added
 
+- **GPU authority 接通有界两级 FIFO**：Resident 请求只在 backend 全局并发饱和后进入 backend 队列，cold slow path 先取得卡级精确队首，再做容量检查和空闲驱逐。同一 card ticket 贯穿多 victim 与最终准入，只在成功时原子消费；独立超时、固定 ticket TTL、驱逐终态清理预留和取消安全清理使等待不会无界挂起。busy drain、cooldown、实物多卡验收与生产 effective enforce 仍保持关闭。
 - **GPU 冷建容量不足时可编排同卡空闲 Backend 驱逐**：惰性 authority 现在只从同一完整 `gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的 victim，按优先级、LRU 与 backend id 稳定排序，并可依次释放多个预算。每个 victim 必须经过持久 generation/owner、严格 drain ACK、新鲜 health proof、受签 full-unload 与幂等终态 CAS；响应丢失只做 exact 重放，任一不确定结果保守收口 Unknown 并停止继续驱逐。预算释放后以新 challenge 重读 target 再进入 cold admission；单卡与逻辑多卡共用同一条逐资源路径。忙碌 victim 等待、取消防抖、实物多卡灰度与生产 effective enforce 仍保持关闭。
 - **GPU 冷建派发可以在响应后立即收敛显存终态**：完整 HTTP 响应后，平台使用新 challenge 重新探测 backend，并在逐卡持久锁内把 Loading 严格分类为 Resident、CPU fallback、Unloaded 或保守 Unknown。只有全池显式空的可信证明才释放显存预算；代际或成员漂移会保留不确定租约等待修复。Redis 响应丢失使用精确 owner/lease/generation 重试，单卡与多卡均按完整物理资源隔离；生产 effective enforce 仍保持关闭。
 - **GPU 冷启准入获得持久 generation 授权地基**：平台只会为具备新鲜 challenge proof、enforce gate、绑定 identity、全池显式空且零活跃的 backend 持久推进新 generation；提交前会在 membership→fence 锁序内二次复验，generation 与保守 token horizon 在同一事务推进，失败代际不回滚。Redis 保留尚未接通，生产 effective enforce 仍保持关闭。
@@ -62,7 +63,7 @@
 
 ### Fixed
 
-- **GPU FIFO 票据不再能在缺失或过期后绕过队首**：Redis admission 现在要求显式 ticket 必须仍是匹配 backend、owner 与 membership 的存活精确队首；空闲驱逐 begin 也能在同一原子操作内绑定卡级队首并保持多 victim 重放，直到目标冷建准入成功才消费 ticket。authority 主动排队与生产 effective enforce 仍保持关闭。
+- **GPU FIFO 票据不再能在缺失或过期后绕过队首**：Redis admission 现在要求显式 ticket 必须仍是匹配 backend、owner 与 membership 的存活精确队首；空闲驱逐 begin 也能在同一原子操作内绑定卡级队首并保持多 victim 重放，直到目标冷建准入成功才消费 ticket。生产 effective enforce 仍保持关闭。
 - **GPU 冷建 reservation 不再向非 owner 泄漏并发许可**：Redis 准入现在在同一原子区内拒绝其他调用方加入处于 `Reserving/Loading` 的 allocation，仅保留原 reservation lease + owner 的幂等重试。这避免同一模型被重复冷启，也防止第二条 lease 卡住失败回滚。生产 effective enforce 仍保持关闭。
 - **异步 ML 任务不再丢失 GPU 仲裁根因**：批量预标、跨 Backend 下游阶段、逐帧预标、失败重试和视频追踪现在统一保留稳定仲裁错误码、HTTP 状态与可选重试窗口。失败预测明细继续可按根因检索，批量与逐帧任务使用按错误码聚合的有界摘要；逐帧任务不会为每帧制造不可正确重试的失败行，普通 Backend 异常与现有任务终态保持不变。
 - **项目管理员不再能通过项目旧路由改写全局 ML Backend**：全局 backend 的 URL、鉴权、名称与调用参数已与 GPU 资源声明一并收口到超级管理员；项目管理员仍可在项目设置中启用或停用已注册 backend，不会再影响其他项目共享的端点。

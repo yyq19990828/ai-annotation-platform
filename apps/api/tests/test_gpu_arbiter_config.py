@@ -26,6 +26,24 @@ def test_gpu_arbiter_defaults_to_safe_off() -> None:
     assert config.gpu_arbiter_resources == {}
     assert config.gpu_arbiter_config_errors == []
     assert config.gpu_arbiter_desired_mode("missing/index:0") is GPUArbiterMode.OFF
+    assert config.gpu_arbiter_admission_timeout_seconds == 30
+
+
+def test_gpu_arbiter_accepts_bounded_admission_timeout() -> None:
+    config = Settings(_env_file=None, gpu_arbiter_admission_timeout_seconds=7)
+
+    assert config.gpu_arbiter_admission_timeout_seconds == 7
+
+
+@pytest.mark.parametrize("timeout_seconds", (0, 3601))
+def test_gpu_arbiter_rejects_out_of_range_admission_timeout(
+    timeout_seconds: int,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            gpu_arbiter_admission_timeout_seconds=timeout_seconds,
+        )
 
 
 def test_gpu_resources_parse_distinct_cards_and_resource_domains() -> None:

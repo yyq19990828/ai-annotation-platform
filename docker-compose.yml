@@ -142,6 +142,7 @@ services:
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS: ${GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS:-30}
       GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
       GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
       # SAM3 文本 multiplex / PVS 的单窗上限。显式透传 .env，避免 dev compose
@@ -189,6 +190,7 @@ services:
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS: ${GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS:-30}
     volumes:
       - ./data/duckdb:/var/lib/duckdb
       - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro

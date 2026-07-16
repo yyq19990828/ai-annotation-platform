@@ -39,6 +39,7 @@ from app.services.gpu_arbiter_store import (
     GPUCardSnapshot,
     GPUIdleEvictionResult,
     GPULeaseMutationResult,
+    GPUQueueResult,
     GPUTransitionOwnerResult,
     GPUTransitionResult,
 )
@@ -331,14 +332,23 @@ class _RecordingStore:
         heartbeat_status: str = "heartbeated",
         cold_owner_status: str = "acquired",
         cold_revalidate_status: str = "renewed",
+        admission_statuses: list[str] | None = None,
+        card_queue_positions: list[int] | None = None,
     ) -> None:
         self.events = events
         self.admission_status = admission_status
         self.heartbeat_status = heartbeat_status
         self.cold_owner_status = cold_owner_status
         self.cold_revalidate_status = cold_revalidate_status
+        self.admission_statuses = list(admission_statuses or [])
+        self.card_queue_positions = list(card_queue_positions or [1])
         self.admit_attempts = 0
         self.admit_kwargs: dict | None = None
+        self.admit_kwargs_history: list[dict] = []
+        self.backend_enqueue_kwargs: list[dict] = []
+        self.card_enqueue_kwargs: list[dict] = []
+        self.queue_position_kwargs: list[dict] = []
+        self.queue_cancel_kwargs: list[dict] = []
         self.heartbeat_kwargs: list[dict] = []
         self.release_kwargs: list[dict] = []
         self.uncertain_kwargs: list[dict] = []
@@ -355,6 +365,45 @@ class _RecordingStore:
     async def ping(self) -> bool:
         self.events.append("ping")
         return True
+
+    async def enqueue_backend(self, resource_id: str, **kwargs):
+        self.events.append("backend_enqueue")
+        self.backend_enqueue_kwargs.append({"resource_id": resource_id, **kwargs})
+        return GPUQueueResult(
+            status="queued",
+            ticket_id=kwargs["ticket_id"],
+            position=1,
+            expires_at_ms=int(time.time() * 1000) + kwargs["ttl_ms"],
+        )
+
+    async def enqueue_card(self, resource_id: str, **kwargs):
+        self.events.append("card_enqueue")
+        self.card_enqueue_kwargs.append({"resource_id": resource_id, **kwargs})
+        return GPUQueueResult(
+            status="queued",
+            ticket_id=kwargs["ticket_id"],
+            position=self.card_queue_positions[0],
+            expires_at_ms=int(time.time() * 1000) + kwargs["ttl_ms"],
+        )
+
+    async def queue_position(self, resource_id: str, **kwargs):
+        position = self.card_queue_positions[0]
+        if len(self.card_queue_positions) > 1:
+            self.card_queue_positions.pop(0)
+        self.events.append(f"card_position:{position}")
+        self.queue_position_kwargs.append({"resource_id": resource_id, **kwargs})
+        return GPUQueueResult(
+            status="queued",
+            ticket_id=kwargs["ticket_id"],
+            position=position,
+            expires_at_ms=int(time.time() * 1000) + 30_000,
+        )
+
+    async def cancel_queue_ticket(self, resource_id: str, **kwargs):
+        kind = "card" if kwargs["card_queue"] else "backend"
+        self.events.append(f"{kind}_cancel")
+        self.queue_cancel_kwargs.append({"resource_id": resource_id, **kwargs})
+        return GPUQueueResult(status="cancelled", ticket_id=kwargs["ticket_id"])
 
     async def snapshot(self, resource_id: str) -> GPUCardSnapshot:
         return GPUCardSnapshot(
@@ -403,12 +452,18 @@ class _RecordingStore:
         self.events.append("admit")
         self.admit_attempts += 1
         self.admit_kwargs = {"resource_id": resource_id, **kwargs}
-        if self.admission_status == "error" or (
-            self.admission_status == "error_once" and self.admit_attempts == 1
+        self.admit_kwargs_history.append(self.admit_kwargs)
+        admission_status = (
+            self.admission_statuses.pop(0)
+            if self.admission_statuses
+            else self.admission_status
+        )
+        if admission_status == "error" or (
+            admission_status == "error_once" and self.admit_attempts == 1
         ):
             raise RuntimeError("admission response lost")
         now_ms = int(time.time() * 1000)
-        if self.admission_status in {"admitted", "error_once"}:
+        if admission_status in {"admitted", "error_once"}:
             self.hard_deadline_ms = now_ms + 120_000
             return GPUAdmissionResult(
                 status="admitted",
@@ -428,7 +483,7 @@ class _RecordingStore:
                 hard_deadline_ms=self.hard_deadline_ms,
             )
         return GPUAdmissionResult(
-            status=self.admission_status,  # type: ignore[arg-type]
+            status=admission_status,  # type: ignore[arg-type]
             reason="rejected",
             committed_mb=4096,
             lease_count=4,
@@ -838,6 +893,58 @@ def test_resident_authority_builder_is_lazy() -> None:
     assert events == []
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {"admission_timeout_seconds": 0},
+        {"admission_timeout_seconds": float("nan")},
+        {"admission_timeout_seconds": 3601},
+        {"queue_poll_interval_seconds": 0},
+        {"queue_poll_interval_seconds": float("inf")},
+    ),
+)
+def test_resident_authority_rejects_invalid_fifo_timings(kwargs: dict) -> None:
+    with pytest.raises(ValueError):
+        authority_module.build_gpu_dispatch_context_factory(
+            _session_factory([]),
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    ("card_queue", "error_code"),
+    (
+        (False, GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED),
+        (True, GPUArbiterErrorCode.CAPACITY_UNAVAILABLE),
+    ),
+)
+def test_fifo_queue_full_maps_to_retryable_dispatch_error(
+    card_queue: bool,
+    error_code: GPUArbiterErrorCode,
+) -> None:
+    error = authority_module._map_queue_rejection(
+        GPUQueueResult(status="full", ticket_id="ticket:test"),
+        card_queue=card_queue,
+    )
+
+    assert error.error_code == error_code.value
+    assert error.headers == {"Retry-After": "1"}
+
+
+def test_expired_card_ticket_rejection_remains_retryable() -> None:
+    error = authority_module._map_admission_rejection(
+        GPUAdmissionResult(
+            status="card_queued",
+            reason="card_fifo_wait",
+            committed_mb=4096,
+            lease_count=0,
+        )
+    )
+
+    assert error.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+    assert error.headers == {"Retry-After": "1"}
+
+
 @pytest.mark.asyncio
 async def test_resident_authority_orders_horizon_signing_and_release(
     monkeypatch,
@@ -975,7 +1082,8 @@ async def test_resident_authority_cleans_up_same_lease_after_admit_error(
     assert store.admit_kwargs is not None
     assert store.release_kwargs[0]["lease_id"] == store.admit_kwargs["lease_id"]
     assert store.release_kwargs[0]["owner_id"] == store.admit_kwargs["owner_id"]
-    assert events[-3:] == ["admit", "release", "close"]
+    assert store.admit_attempts == 2
+    assert events[-4:] == ["admit", "admit", "release", "close"]
 
 
 @pytest.mark.asyncio
@@ -1061,6 +1169,8 @@ async def test_resident_authority_maps_concurrency_and_rejects_unload_before_io(
         _session_factory(events),
         store_factory=lambda: store,  # type: ignore[arg-type]
         signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=0.001,
+        queue_poll_interval_seconds=0.001,
     )
 
     with pytest.raises(GPUArbiterDispatchError) as caught:
@@ -1084,6 +1194,159 @@ async def test_resident_authority_maps_concurrency_and_rejects_unload_before_io(
             raise AssertionError("unload must not enter workload authority")
     assert unload.value.error_code == GPUArbiterErrorCode.NOT_READY.value
     assert events == []
+
+
+@pytest.mark.asyncio
+async def test_resident_authority_waits_in_backend_fifo_and_consumes_exact_ticket(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _subject()
+    store = _RecordingStore(
+        events,
+        admission_statuses=[
+            "concurrency_saturated",
+            "concurrency_saturated",
+            "admitted",
+        ],
+    )
+    signer = _RecordingSigner(events)
+    _install_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=1,
+        queue_poll_interval_seconds=0.001,
+    )
+
+    async with factory(_request(subject)) as grant:
+        grant.report_response(200)
+
+    assert store.admit_attempts == 3
+    assert len(store.backend_enqueue_kwargs) == 1
+    queued = store.backend_enqueue_kwargs[0]
+    ticket_id = queued["ticket_id"]
+    assert queued["backend_id"] == str(subject.backend_registry_id)
+    assert queued["membership_epoch"] == subject.membership_epoch
+    assert queued["owner_id"] == store.admit_kwargs_history[0]["owner_id"]
+    assert 0 < queued["ttl_ms"] <= 1_000
+    assert "backend_ticket_id" not in store.admit_kwargs_history[0]
+    assert [item["backend_ticket_id"] for item in store.admit_kwargs_history[1:]] == [
+        ticket_id,
+        ticket_id,
+    ]
+    assert store.queue_cancel_kwargs == []
+    assert events.index("backend_enqueue") < events.index("horizon")
+
+
+@pytest.mark.asyncio
+async def test_fifo_enqueue_retry_keeps_original_deadline(monkeypatch) -> None:
+    events: list[str] = []
+    store = _RecordingStore(events)
+    attempts: list[dict] = []
+
+    async def lose_first_enqueue_response(resource_id: str, **kwargs):
+        attempts.append({"resource_id": resource_id, **kwargs})
+        if len(attempts) == 1:
+            await asyncio.sleep(0.02)
+            raise TimeoutError("enqueue response lost")
+        return GPUQueueResult(
+            status="queued",
+            ticket_id=kwargs["ticket_id"],
+            position=1,
+            expires_at_ms=int(time.time() * 1000) + kwargs["ttl_ms"],
+        )
+
+    monkeypatch.setattr(store, "enqueue_backend", lose_first_enqueue_response)
+    ticket = await authority_module._enqueue_fifo_ticket(
+        store,  # type: ignore[arg-type]
+        _RESOURCE_ID,
+        backend_id="backend:test",
+        membership_epoch=3,
+        ticket_id="backend:ticket",
+        owner_id="dispatch:owner",
+        deadline=time.monotonic() + 0.2,
+        card_queue=False,
+    )
+
+    assert ticket.status == "queued"
+    assert len(attempts) == 2
+    assert attempts[0]["ticket_id"] == attempts[1]["ticket_id"]
+    assert attempts[0]["owner_id"] == attempts[1]["owner_id"]
+    assert 0 < attempts[1]["ttl_ms"] < attempts[0]["ttl_ms"] <= 200
+
+
+@pytest.mark.asyncio
+async def test_resident_uncertain_admit_then_rejection_keeps_exact_cleanup(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _subject()
+    store = _RecordingStore(
+        events,
+        admission_statuses=["error", "concurrency_saturated"],
+    )
+    signer = _RecordingSigner(events)
+    _install_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    assert caught.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
+    assert store.admit_attempts == 2
+    assert store.backend_enqueue_kwargs == []
+    assert len(store.release_kwargs) == 1
+    assert (
+        store.release_kwargs[0]["lease_id"]
+        == (store.admit_kwargs_history[0]["lease_id"])
+    )
+    assert (
+        store.release_kwargs[0]["owner_id"]
+        == (store.admit_kwargs_history[0]["owner_id"])
+    )
+    assert events[-2:] == ["release", "close"]
+
+
+@pytest.mark.asyncio
+async def test_resident_backend_fifo_timeout_cancels_ticket_before_store_close(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _subject()
+    store = _RecordingStore(events, admission_status="concurrency_saturated")
+    signer = _RecordingSigner(events)
+    _install_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=0.001,
+        queue_poll_interval_seconds=0.001,
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    assert caught.value.error_code == (
+        GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED.value
+    )
+    assert caught.value.headers == {"Retry-After": "1"}
+    assert len(store.backend_enqueue_kwargs) == 1
+    assert len(store.queue_cancel_kwargs) == 1
+    assert store.queue_cancel_kwargs[0]["card_queue"] is False
+    assert (
+        store.queue_cancel_kwargs[0]["ticket_id"]
+        == (store.backend_enqueue_kwargs[0]["ticket_id"])
+    )
+    assert events[-2:] == ["backend_cancel", "close"]
 
 
 @pytest.mark.asyncio
@@ -1156,6 +1419,7 @@ async def test_cold_authority_orders_generation_reservation_and_loading(
         "signer",
         "store",
         "ping",
+        "card_enqueue",
         "cold_owner",
         "prepare",
         "cold_revalidate",
@@ -1174,6 +1438,11 @@ async def test_cold_authority_orders_generation_reservation_and_loading(
     assert store.admit_kwargs["require_cold_owner"] is True
     assert store.admit_kwargs["evictable"] is False
     assert store.admit_kwargs["generation"] == "8"
+    assert (
+        store.admit_kwargs["card_ticket_id"]
+        == (store.card_enqueue_kwargs[0]["ticket_id"])
+    )
+    assert store.card_enqueue_kwargs[0]["owner_id"] == (store.admit_kwargs["owner_id"])
     assert store.cold_owner_kwargs[0]["owner_id"] == store.admit_kwargs["owner_id"]
     assert store.cold_revalidate_kwargs[0]["owner_id"] == store.admit_kwargs["owner_id"]
     assert signer.claims is not None
@@ -1183,6 +1452,108 @@ async def test_cold_authority_orders_generation_reservation_and_loading(
     assert signer.claims.exp == store.hard_deadline_ms // 1000
     assert len(store.release_kwargs) == 1
     assert store.uncertain_kwargs == []
+
+
+@pytest.mark.asyncio
+async def test_cold_authority_waits_for_card_fifo_head_before_capacity_or_owner(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    store = _RecordingStore(events, card_queue_positions=[2, 2, 1])
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=1,
+        queue_poll_interval_seconds=0.001,
+    )
+
+    async with factory(_request(subject)) as grant:
+        grant.report_response(200)
+
+    assert events.index("card_position:1") < events.index("cold_owner")
+    assert events.count("card_position:2") == 2
+    assert len(store.card_enqueue_kwargs) == 1
+    assert len(store.queue_position_kwargs) == 3
+    assert all(item["card_queue"] is True for item in store.queue_position_kwargs)
+    assert (store.admit_kwargs or {})["card_ticket_id"] == (
+        store.card_enqueue_kwargs[0]["ticket_id"]
+    )
+    assert store.queue_cancel_kwargs == []
+
+
+@pytest.mark.asyncio
+async def test_cold_card_fifo_timeout_cancels_ticket_without_capacity_work(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    store = _RecordingStore(events, card_queue_positions=[2])
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=0.001,
+        queue_poll_interval_seconds=0.001,
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    assert caught.value.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+    assert caught.value.headers == {"Retry-After": "1"}
+    assert "cold_owner" not in events
+    assert "prepare" not in events
+    assert "admit" not in events
+    assert len(store.queue_cancel_kwargs) == 1
+    assert store.queue_cancel_kwargs[0]["card_queue"] is True
+    assert events[-2:] == ["card_cancel", "close"]
+
+
+@pytest.mark.asyncio
+async def test_cold_card_fifo_cancellation_cleans_ticket_before_store_close(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    store = _RecordingStore(events, card_queue_positions=[2])
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=1,
+        queue_poll_interval_seconds=1,
+    )
+
+    async def dispatch() -> None:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    task = asyncio.create_task(dispatch())
+    for _ in range(100):
+        if "card_enqueue" in events:
+            break
+        await asyncio.sleep(0)
+    assert "card_enqueue" in events
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "cold_owner" not in events
+    assert len(store.queue_cancel_kwargs) == 1
+    assert (
+        store.queue_cancel_kwargs[0]["ticket_id"]
+        == (store.card_enqueue_kwargs[0]["ticket_id"])
+    )
+    assert events[-2:] == ["card_cancel", "close"]
 
 
 @pytest.mark.asyncio
@@ -1296,7 +1667,7 @@ async def test_cold_authority_releases_intent_when_revalidation_is_missing(
     assert "prepare" in events
     assert "admit" not in events
     assert "sign" not in events
-    assert events[-2:] == ["cold_release", "close"]
+    assert events[-3:] == ["cold_release", "card_cancel", "close"]
     assert store.cold_release_kwargs[0]["generation"] == "8"
 
 
@@ -1396,13 +1767,58 @@ async def test_cold_authority_rolls_back_when_exact_admission_retry_is_lost(
 
     assert caught.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
     assert store.admit_attempts == 2
-    assert events[-4:] == [
+    assert events[-5:] == [
         "finalize:unloaded",
         "release",
         "cold_release",
+        "card_cancel",
         "close",
     ]
     assert store.uncertain_kwargs == []
+
+
+@pytest.mark.asyncio
+async def test_cold_uncertain_admit_then_rejection_keeps_exact_cleanup(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    store = _RecordingStore(
+        events,
+        admission_statuses=["error", "card_queued"],
+    )
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    assert caught.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
+    assert store.admit_attempts == 2
+    assert len(store.finalize_kwargs) == 1
+    assert store.finalize_kwargs[0]["target_state"] is GPUAllocationState.UNLOADED
+    assert len(store.release_kwargs) == 1
+    assert (
+        store.release_kwargs[0]["lease_id"]
+        == (store.admit_kwargs_history[0]["lease_id"])
+    )
+    assert (
+        store.release_kwargs[0]["owner_id"]
+        == (store.admit_kwargs_history[0]["owner_id"])
+    )
+    assert events[-5:] == [
+        "finalize:unloaded",
+        "release",
+        "cold_release",
+        "card_cancel",
+        "close",
+    ]
 
 
 @pytest.mark.asyncio
@@ -1601,6 +2017,38 @@ def test_idle_victim_hint_uses_priority_lru_and_protects_higher_priority() -> No
     assert caught.value.headers == {"Retry-After": "1"}
 
 
+def test_idle_victim_hint_does_not_evict_for_an_allocated_requester() -> None:
+    requester = _cold_subject()
+    requester_allocation = replace(
+        _allocation(
+            requester.backend_registry_id,
+            budget_mb=requester.budget_mb,
+            generation="8",
+        ),
+        state=GPUAllocationState.RESERVING,
+        evictable=False,
+        reservation_lease_id="workload:existing",
+        reservation_owner_id="dispatch:existing",
+    )
+    victim = _allocation(
+        uuid.UUID(int=6),
+        budget_mb=4096,
+        generation="3",
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        authority_module._idle_victim_hint(
+            _card_snapshot(
+                requester.gpu_resource_id,
+                allocatable_mb=8192,
+                allocations=(requester_allocation, victim),
+            ),
+            requester,
+        )
+
+    assert caught.value.error_code == GPUArbiterErrorCode.NOT_READY.value
+
+
 @pytest.mark.asyncio
 async def test_eviction_heartbeat_fails_at_hard_deadline() -> None:
     events: list[str] = []
@@ -1640,6 +2088,180 @@ async def test_eviction_heartbeat_fails_at_hard_deadline() -> None:
         hard_deadline_ms=int(time.time() * 1000) - 1,
     )
     assert events == []
+
+
+@pytest.mark.asyncio
+async def test_cold_capacity_deadline_stops_before_next_victim(monkeypatch) -> None:
+    events: list[str] = []
+    subject = replace(_cold_subject(), budget_mb=4096)
+    victim = _allocation(
+        uuid.UUID(int=10),
+        budget_mb=2048,
+        generation="6",
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                subject.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+            )
+        ],
+    )
+    signer = _RecordingSigner(events)
+    eviction_attempts = 0
+
+    async def finish_first_victim_after_deadline(*args, **kwargs) -> str:
+        nonlocal eviction_attempts
+        eviction_attempts += 1
+        await asyncio.sleep(0.02)
+        return "unloaded"
+
+    monkeypatch.setattr(
+        authority_module,
+        "_evict_one_idle_victim",
+        finish_first_victim_after_deadline,
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        await authority_module._ensure_cold_capacity(
+            _session_factory(events),
+            store,  # type: ignore[arg-type]
+            signer,  # type: ignore[arg-type]
+            subject,
+            health_refresher=lambda backend_id, challenge: asyncio.sleep(
+                0,
+                result=True,
+            ),
+            hard_ttl_ms=120_000,
+            heartbeat_interval_seconds=5,
+            queue_deadline=time.monotonic()
+            + authority_module._GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS
+            + 0.01,
+            ticket_expires_at_ms=int(time.time() * 1000)
+            + int(authority_module._GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS * 1000)
+            + 1_000,
+            requester_card_ticket_id="card:ticket",
+            requester_queue_owner_id="dispatch:owner",
+        )
+
+    assert caught.value.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+    assert caught.value.headers == {"Retry-After": "1"}
+    assert eviction_attempts == 1
+    assert events.count(f"snapshot:{subject.gpu_resource_id}") == 1
+
+
+@pytest.mark.asyncio
+async def test_cold_eviction_timeout_reserves_owner_for_unknown_cleanup(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = replace(_cold_subject(), budget_mb=4096)
+    victim = _allocation(
+        uuid.UUID(int=15),
+        budget_mb=4096,
+        generation="6",
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                subject.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+            )
+        ],
+    )
+    signer = _ScopeSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    prepared_by_id = _install_eviction_authority_fakes(
+        monkeypatch,
+        events,
+        (victim,),
+        subject.gpu_resource_id,
+    )
+    owner_hard_deadline_ms: int | None = None
+    original_begin = store.begin_idle_eviction
+
+    async def record_owner_deadline(resource_id: str, **kwargs):
+        nonlocal owner_hard_deadline_ms
+        result = await original_begin(resource_id, **kwargs)
+        owner_hard_deadline_ms = result.owner_hard_deadline_ms
+        return result
+
+    monkeypatch.setattr(store, "begin_idle_eviction", record_owner_deadline)
+
+    class BlockingDrainClient:
+        def __init__(self, backend: MLBackendRegistry) -> None:
+            self.backend_id = backend.id
+
+        async def lifecycle_drain(self, grant):
+            events.append(f"drain:{self.backend_id}")
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                events.append(f"drain_cancelled:{self.backend_id}")
+                raise
+
+    monkeypatch.setattr(authority_module, "MLBackendClient", BlockingDrainClient)
+
+    async def commit_unknown(
+        session_factory,
+        arbiter_store,
+        expected_subject: GPUPreparedIdleEvictionRuntimeSubject,
+        *,
+        phase: str,
+        challenge: str | None,
+        owner_id: str,
+    ) -> GPUEvictionCommitResult:
+        events.append(f"commit_cleanup:{expected_subject.backend_registry_id}")
+        assert expected_subject is prepared_by_id[expected_subject.backend_registry_id]
+        assert arbiter_store is store
+        assert phase == "drain"
+        assert challenge is None
+        assert owner_id.startswith("evict:")
+        assert owner_hard_deadline_ms is not None
+        assert int(time.time() * 1000) < owner_hard_deadline_ms
+        return GPUEvictionCommitResult(
+            status="finalized",
+            state=GPUAllocationState.UNKNOWN,
+            reason="eviction_response_uncertain",
+        )
+
+    monkeypatch.setattr(
+        authority_module,
+        "commit_gpu_eviction_phase_from_health",
+        commit_unknown,
+    )
+
+    async def refresh_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        return True
+
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        health_refresher=refresh_health,
+        admission_timeout_seconds=(
+            authority_module._GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS + 0.5
+        ),
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    assert caught.value.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+    assert caught.value.headers == {"Retry-After": "1"}
+    assert f"drain_cancelled:{victim.backend_id}" in events
+    assert f"commit_cleanup:{victim.backend_id}" in events
+    assert f"eviction_release:{victim.backend_id}" in events
+    assert events.index(f"commit_cleanup:{victim.backend_id}") < events.index(
+        f"eviction_release:{victim.backend_id}"
+    )
+    assert "cold_owner" not in events
+    assert events[-2:] == ["card_cancel", "close"]
 
 
 @pytest.mark.asyncio
@@ -1733,6 +2355,14 @@ async def test_cold_authority_evicts_multiple_idle_victims_before_target_owner(
         second_victim.backend_id,
     ]
     assert all(item["resource_id"] == resource_id for item in store.begin_kwargs)
+    card_ticket_id = store.card_enqueue_kwargs[0]["ticket_id"]
+    queue_owner_id = store.card_enqueue_kwargs[0]["owner_id"]
+    assert all(
+        item["requester_card_ticket_id"] == card_ticket_id
+        and item["requester_queue_owner_id"] == queue_owner_id
+        for item in store.begin_kwargs
+    )
+    assert (store.admit_kwargs or {})["card_ticket_id"] == card_ticket_id
     assert all(
         item["resource_id"] == resource_id for item in store.eviction_release_kwargs
     )
@@ -1741,11 +2371,12 @@ async def test_cold_authority_evicts_multiple_idle_victims_before_target_owner(
         events.index(f"eviction_release:{victim.backend_id}") < cold_owner_index
         for victim in (first_victim, second_victim)
     )
-    assert events.count("cold_subject") == 2
+    assert events.count("cold_subject") == 3
     assert events.count(f"eviction_health:{first_victim.backend_id}") == 3
     assert events.count(f"eviction_health:{second_victim.backend_id}") == 3
     assert events.count(f"eviction_health:{subject.backend_registry_id}") == 1
     assert cold_read_challenges == [
+        None,
         None,
         health_challenges[subject.backend_registry_id][0],
     ]
@@ -1827,7 +2458,7 @@ async def test_cold_authority_rereads_target_after_eviction_before_issuing_owner
         nonlocal cold_reads
         cold_reads += 1
         events.append("cold_subject")
-        if cold_reads == 1:
+        if cold_reads <= 2:
             assert expected_challenge is None
             return subject
         assert expected_challenge is not None
@@ -1850,7 +2481,7 @@ async def test_cold_authority_rereads_target_after_eviction_before_issuing_owner
             raise AssertionError("grant must not be exposed")
 
     assert caught.value.error_code == GPUArbiterErrorCode.NOT_READY.value
-    assert cold_reads == 2
+    assert cold_reads == 3
     assert f"eviction_release:{victim.backend_id}" in events
     assert f"eviction_health:{subject.backend_registry_id}" in events
     assert "cold_owner" not in events
@@ -1919,7 +2550,7 @@ async def test_target_health_failure_after_eviction_blocks_cold_owner(
             raise AssertionError("grant must not be exposed")
 
     assert caught.value.error_code == expected_code.value
-    assert events.count("cold_subject") == 1
+    assert events.count("cold_subject") == 2
     assert f"eviction_release:{victim.backend_id}" in events
     assert "cold_owner" not in events
     assert "prepare" not in events
@@ -2267,6 +2898,8 @@ async def test_uncertain_begin_still_runs_conservative_owner_cleanup(
         health_refresher=refresh_health,
         hard_ttl_ms=120_000,
         heartbeat_interval_seconds=5,
+        queue_deadline=time.monotonic() + 120,
+        ticket_expires_at_ms=int(time.time() * 1000) + 120_000,
     )
 
     assert outcome == "capacity_available"
