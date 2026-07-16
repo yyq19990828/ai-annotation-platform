@@ -180,7 +180,9 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
                     await db.rollback()
                     errors += 1
                     log.warning(
-                        "delete unreferenced raster mask %s failed: %s", item["key"], exc
+                        "delete unreferenced raster mask %s failed: %s",
+                        item["key"],
+                        exc,
                     )
     result = {
         "dry_run": dry_run,

@@ -187,7 +187,11 @@ async def _validate_sourceless_target(
         for item in (classes or [])
         if isinstance(item, dict) and item.get("name")
     }
-    if not isinstance(binding, dict) or not binding.get("enabled") or class_name not in allowed:
+    if (
+        not isinstance(binding, dict)
+        or not binding.get("enabled")
+        or class_name not in allowed
+    ):
         raise HTTPException(
             status_code=422,
             detail=(

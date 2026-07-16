@@ -416,7 +416,12 @@ async def test_create_tracker_job_sourceless_rejects_invalid_target(
 
     with pytest.raises(HTTPException) as exc:
         await create_tracker_job(
-            db_session, task=task, ctx=ctx, annotation_id=None, payload=payload, user=user
+            db_session,
+            task=task,
+            ctx=ctx,
+            annotation_id=None,
+            payload=payload,
+            user=user,
         )
     assert exc.value.status_code == 422
 

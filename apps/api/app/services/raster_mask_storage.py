@@ -38,8 +38,7 @@ async def lock_raster_mask_references(
 ) -> list[str]:
     """Serialize reference commits with GC until the current DB transaction ends."""
     references = {
-        str(reference["object_key"]): reference
-        for reference in _mask_references(value)
+        str(reference["object_key"]): reference for reference in _mask_references(value)
     }
     for key in sorted(references):
         await db.execute(
