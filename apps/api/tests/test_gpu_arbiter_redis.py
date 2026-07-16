@@ -2204,7 +2204,7 @@ async def test_proof_reset_retries_are_read_only_and_fence_new_work(
         )
         deadline = _future_reconcile_deadline_ms()
         proof_fingerprint = hashlib.sha256(b"retry-proof").hexdigest()
-        committed = await first.commit_proof_reset(
+        await first.commit_proof_reset(
             resource_id,
             100,
             reset_id="retry-reset",
