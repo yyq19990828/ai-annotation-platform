@@ -17,6 +17,7 @@ from aap_protocol_v2.lifecycle import (
     AdmissionTokenClaims,
     BackendResidency,
     DrainTransitionResponse,
+    LifecycleState,
     ManagedUnloadResponse,
 )
 
@@ -35,6 +36,7 @@ from app.services.gpu_arbiter import (
     GPUFenceSessionFactory,
     GPUIdleEvictionRuntimeSubjectError,
     GPUPreparedColdRuntimeSubject,
+    GPUPreparedEvictionCancelRuntimeSubject,
     GPUPreparedIdleEvictionRuntimeSubject,
     GPUResidentRuntimeSubject,
     GPUResidentRuntimeSubjectError,
@@ -1295,6 +1297,36 @@ def _unload_ack_matches(
     )
 
 
+def _eviction_cancel_ack_matches(
+    subject: GPUPreparedEvictionCancelRuntimeSubject,
+    response: DrainTransitionResponse,
+) -> bool:
+    residency = response.residency
+    identity = residency.identity
+    pool_residencies = tuple(
+        residency.pools[pool_id].resident for pool_id in sorted(residency.pools)
+    )
+    return bool(
+        response.ok is True
+        and response.generation == subject.generation
+        and not response.draining
+        and not response.ready_to_unload
+        and residency.state is LifecycleState.RESIDENT
+        and residency.gpu_loaded is True
+        and not residency.draining
+        and residency.evictable
+        and residency.generation == subject.generation
+        and residency.boot_id == subject.boot_id
+        and residency.control_epoch == subject.control_epoch
+        and identity is not None
+        and identity.backend_registry_id == str(subject.backend_registry_id)
+        and identity.gpu_resource_id == subject.gpu_resource_id
+        and tuple(sorted(residency.pools)) == subject.pool_ids
+        and all(item is not None for item in pool_residencies)
+        and any(item is True for item in pool_residencies)
+    )
+
+
 async def _call_eviction_lifecycle(
     call: Callable[[GPUDispatchGrant], Awaitable[object]],
     *,
@@ -1370,6 +1402,43 @@ def _sign_eviction_grants(
         )
     )
     return drain_token, unload_token
+
+
+def _sign_eviction_cancel_grant(
+    signer: GPUAdmissionTokenSigner,
+    subject: GPUPreparedEvictionCancelRuntimeSubject,
+) -> str:
+    if subject.operation != GPU_EVICTION_OPERATION:
+        raise _dispatch_error(
+            GPUArbiterErrorCode.UNAVAILABLE,
+            "GPU eviction cancel operation is invalid",
+        )
+    token_exp = min(
+        int(subject.token_expires_at.timestamp()),
+        subject.owner_hard_deadline_ms // 1000,
+    )
+    if (
+        token_exp - max(int(time.time()), int(subject.db_now.timestamp()))
+        < _GPU_RUNTIME_MIN_TOKEN_WINDOW_SECONDS
+    ):
+        raise _dispatch_error(
+            GPUArbiterErrorCode.UNAVAILABLE,
+            "GPU eviction cancel owner has no safe token delivery window",
+        )
+    return signer.sign(
+        AdmissionTokenClaims(
+            backend_registry_id=str(subject.backend_registry_id),
+            gpu_resource_id=subject.gpu_resource_id,
+            boot_id=subject.boot_id,
+            generation=subject.generation,
+            control_epoch=subject.control_epoch,
+            scope=AdmissionScope.RESUME,
+            jti=subject.jti,
+            exp=token_exp,
+            owner=subject.owner_id,
+            operation=subject.operation,
+        )
+    )
 
 
 async def _finish_eviction_transition(

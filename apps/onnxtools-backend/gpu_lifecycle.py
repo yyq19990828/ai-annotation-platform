@@ -547,7 +547,10 @@ class OnnxToolsGpuLifecycle:
                 raise LifecycleHTTPError(LifecycleErrorCode.GENERATION_CONFLICT)
             if self._phase != "draining" or self._current_drain is None:
                 raise LifecycleHTTPError(LifecycleErrorCode.TRANSITION_CONFLICT)
-            if claims.owner != self._current_drain.owner:
+            if (
+                claims.owner != self._current_drain.owner
+                or claims.operation != self._current_drain.operation
+            ):
                 raise LifecycleHTTPError(LifecycleErrorCode.TRANSITION_CONFLICT)
 
             self._generation = canonical

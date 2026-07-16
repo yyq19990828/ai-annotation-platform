@@ -2585,7 +2585,9 @@ def _eviction_terminal_durable_reason(
     membership: GPUBackendMembership,
     fence: GPUBackendFence,
     registry: MLBackendRegistry,
-    expected_subject: GPUPreparedIdleEvictionRuntimeSubject,
+    expected_subject: (
+        GPUPreparedIdleEvictionRuntimeSubject | GPUPreparedEvictionCancelRuntimeSubject
+    ),
 ) -> str | None:
     try:
         generation = _strict_nonnegative_int64(
@@ -2646,7 +2648,9 @@ def _eviction_terminal_durable_reason(
 def _read_exact_gpu_eviction_residency(
     membership: GPUBackendMembership,
     registry: MLBackendRegistry,
-    expected_subject: GPUPreparedIdleEvictionRuntimeSubject,
+    expected_subject: (
+        GPUPreparedIdleEvictionRuntimeSubject | GPUPreparedEvictionCancelRuntimeSubject
+    ),
     *,
     challenge: str,
     db_now: datetime,
@@ -2699,6 +2703,105 @@ def _read_exact_gpu_eviction_residency(
     ):
         raise _GPUProofInvalid("eviction_residency_identity_mismatch")
     return residency
+
+
+def _eviction_cancel_durable_reason(
+    membership: GPUBackendMembership,
+    fence: GPUBackendFence,
+    registry: MLBackendRegistry,
+    intent: GPUBackendCancelIntent | None,
+    expected_subject: GPUPreparedEvictionCancelRuntimeSubject,
+    *,
+    db_now: datetime,
+) -> str | None:
+    durable_reason = _eviction_terminal_durable_reason(
+        membership,
+        fence,
+        registry,
+        expected_subject,
+    )
+    if durable_reason is not None:
+        return durable_reason
+    if intent is None:
+        return "cancel_intent_missing"
+    try:
+        pool_ids = _validate_eviction_cancel_intent_durable_state(
+            intent,
+            fence,
+            db_now=db_now,
+        )
+    except _GPUProofInvalid as exc:
+        return exc.reason
+    if (
+        intent.gpu_resource_id != expected_subject.gpu_resource_id
+        or intent.membership_epoch != expected_subject.membership_epoch
+        or intent.boot_id != expected_subject.boot_id
+        or intent.control_epoch != int(expected_subject.control_epoch)
+        or intent.runtime_epoch != int(expected_subject.runtime_epoch)
+        or intent.source_generation != int(expected_subject.source_generation)
+        or intent.drain_generation != int(expected_subject.drain_generation)
+        or intent.generation != int(expected_subject.generation)
+        or intent.owner_id != expected_subject.owner_id
+        or intent.operation != expected_subject.operation
+        or intent.owner_hard_deadline_ms != expected_subject.owner_hard_deadline_ms
+        or intent.drain_token_expires_at.astimezone(UTC)
+        != expected_subject.drain_token_expires_at.astimezone(UTC)
+        or intent.token_expires_at.astimezone(UTC)
+        != expected_subject.token_expires_at.astimezone(UTC)
+        or intent.jti != expected_subject.jti
+        or pool_ids != expected_subject.pool_ids
+    ):
+        return "cancel_intent_changed"
+    source = GPUPreparedIdleEvictionRuntimeSubject(
+        backend=expected_subject.backend,
+        backend_registry_id=expected_subject.backend_registry_id,
+        gpu_resource_id=expected_subject.gpu_resource_id,
+        membership_epoch=expected_subject.membership_epoch,
+        budget_mb=expected_subject.budget_mb,
+        eviction_priority=expected_subject.eviction_priority,
+        max_concurrency=expected_subject.max_concurrency,
+        boot_id=expected_subject.boot_id,
+        source_generation=expected_subject.source_generation,
+        generation=expected_subject.drain_generation,
+        pool_ids=expected_subject.pool_ids,
+        control_epoch=expected_subject.control_epoch,
+        runtime_epoch=expected_subject.runtime_epoch,
+        token_expires_at=expected_subject.drain_token_expires_at,
+        require_idle=False,
+        db_now=db_now,
+    )
+    if _eviction_cancel_source_fingerprint(source) != intent.subject_fingerprint:
+        return "cancel_intent_source_changed"
+    return None
+
+
+def _classify_gpu_eviction_cancel(
+    membership: GPUBackendMembership,
+    registry: MLBackendRegistry,
+    expected_subject: GPUPreparedEvictionCancelRuntimeSubject,
+    *,
+    challenge: str,
+    db_now: datetime,
+    evidence_ttl: timedelta,
+) -> tuple[GPUAllocationState, str]:
+    residency = _read_exact_gpu_eviction_residency(
+        membership,
+        registry,
+        expected_subject,
+        challenge=challenge,
+        db_now=db_now,
+        evidence_ttl=evidence_ttl,
+    )
+    if (
+        residency.state == "resident"
+        and residency.gpu_loaded is True
+        and not residency.draining
+        and residency.evictable
+        and all(item is not None for item in residency.pool_residencies)
+        and any(item is True for item in residency.pool_residencies)
+    ):
+        return GPUAllocationState.RESIDENT, "cancelled_resident"
+    raise _GPUProofInvalid("cancel_residency_unknown")
 
 
 def _gpu_draining_residency_ready(residency: _GPUProofResidency) -> bool:
@@ -2928,6 +3031,126 @@ async def commit_gpu_eviction_phase_from_health(
                 "expected_generation": expected_subject.generation,
                 "target_state": target_state,
                 "transition_owner_id": owner_id,
+            }
+            try:
+                transition = await store.transition_eviction_allocation(
+                    expected_subject.gpu_resource_id,
+                    **transition_kwargs,
+                )
+            except Exception:  # noqa: BLE001 - exact idempotent response-loss retry
+                transition = await store.transition_eviction_allocation(
+                    expected_subject.gpu_resource_id,
+                    **transition_kwargs,
+                )
+            if transition.status != "transitioned":
+                return GPUEvictionCommitResult(
+                    status="rejected",
+                    state=target_state,
+                    reason=f"redis_{transition.status}",
+                )
+            return GPUEvictionCommitResult(
+                status="finalized",
+                state=target_state,
+                reason=reason,
+                idempotent=transition.idempotent,
+            )
+
+
+async def commit_gpu_eviction_cancel_from_health(
+    session_factory: GPUFenceSessionFactory,
+    store: GPUArbiterStore,
+    expected_subject: GPUPreparedEvictionCancelRuntimeSubject,
+    *,
+    ack_confirmed: bool,
+    challenge: str | None,
+    evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
+) -> GPUEvictionCommitResult:
+    """Commit one passive cancel proof; uncertainty can only tighten to Unknown.
+
+    This helper deliberately does not send RESUME or choose between cancel and
+    unload.  The authority must install a Redis branch fence before either active
+    branch is wired.
+    """
+
+    if not isinstance(ack_confirmed, bool):
+        raise ValueError("ack_confirmed must be a boolean")
+    if challenge is not None and _GPU_HEALTH_CHALLENGE_RE.fullmatch(challenge) is None:
+        raise ValueError("challenge must be 64 lowercase hexadecimal characters")
+    _validate_runtime_subject_evidence_ttl(evidence_ttl)
+    async with session_factory() as db:
+        async with db.begin():
+            locked = await _lock_gpu_resource_proof_domain(
+                db,
+                expected_subject.gpu_resource_id,
+            )
+            membership = next(
+                (
+                    item
+                    for item in locked.memberships
+                    if item.backend_registry_id == expected_subject.backend_registry_id
+                    and item.membership_epoch == expected_subject.membership_epoch
+                    and item.state == "active"
+                ),
+                None,
+            )
+            fence = locked.fences.get(expected_subject.backend_registry_id)
+            registry = locked.registries.get(expected_subject.backend_registry_id)
+            intent = await db.scalar(
+                select(GPUBackendCancelIntent)
+                .where(
+                    GPUBackendCancelIntent.backend_registry_id
+                    == expected_subject.backend_registry_id
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if membership is None or fence is None or registry is None:
+                return GPUEvictionCommitResult(
+                    status="stale",
+                    state=GPUAllocationState.UNKNOWN,
+                    reason="runtime_subject_missing",
+                )
+            durable_reason = _eviction_cancel_durable_reason(
+                membership,
+                fence,
+                registry,
+                intent,
+                expected_subject,
+                db_now=locked.db_now,
+            )
+            if durable_reason is not None:
+                return GPUEvictionCommitResult(
+                    status="stale",
+                    state=GPUAllocationState.UNKNOWN,
+                    reason=durable_reason,
+                )
+            try:
+                if not ack_confirmed:
+                    raise _GPUProofInvalid("cancel_ack_uncertain")
+                if challenge is None:
+                    raise _GPUProofInvalid("cancel_health_uncertain")
+                target_state, reason = _classify_gpu_eviction_cancel(
+                    membership,
+                    registry,
+                    expected_subject,
+                    challenge=challenge,
+                    db_now=locked.db_now,
+                    evidence_ttl=evidence_ttl,
+                )
+            except _GPUProofInvalid as exc:
+                target_state = GPUAllocationState.UNKNOWN
+                reason = exc.reason
+            transition_kwargs = {
+                "backend_id": str(expected_subject.backend_registry_id),
+                "expected_state": GPUAllocationState.DRAINING,
+                "expected_generation": expected_subject.drain_generation,
+                "target_state": target_state,
+                "transition_owner_id": expected_subject.owner_id,
+                "next_generation": (
+                    expected_subject.generation
+                    if target_state is GPUAllocationState.RESIDENT
+                    else None
+                ),
             }
             try:
                 transition = await store.transition_eviction_allocation(

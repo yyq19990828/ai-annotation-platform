@@ -27,6 +27,7 @@ from app.services.gpu_arbiter import (
     GPUEvictionCommitResult,
     GPUIdleEvictionRuntimeSubject,
     GPUPreparedColdRuntimeSubject,
+    GPUPreparedEvictionCancelRuntimeSubject,
     GPUPreparedIdleEvictionRuntimeSubject,
     GPUResidentRuntimeSubject,
     GPUResidentRuntimeSubjectError,
@@ -219,6 +220,97 @@ def _prepared_idle_eviction_subject(
     )
 
 
+def _prepared_eviction_cancel_subject() -> GPUPreparedEvictionCancelRuntimeSubject:
+    allocation = _allocation(
+        uuid.uuid4(),
+        budget_mb=2048,
+        generation="7",
+    )
+    source = replace(
+        _idle_eviction_subject(allocation, _RESOURCE_ID, challenge="a" * 64),
+        require_idle=False,
+    )
+    drain = _prepared_idle_eviction_subject(
+        source,
+        token_expires_at=source.db_now + timedelta(seconds=60),
+    )
+    return GPUPreparedEvictionCancelRuntimeSubject(
+        backend=drain.backend,
+        backend_registry_id=drain.backend_registry_id,
+        gpu_resource_id=drain.gpu_resource_id,
+        membership_epoch=drain.membership_epoch,
+        budget_mb=drain.budget_mb,
+        eviction_priority=drain.eviction_priority,
+        max_concurrency=drain.max_concurrency,
+        boot_id=drain.boot_id,
+        source_generation=drain.source_generation,
+        drain_generation=drain.generation,
+        generation=str(int(drain.generation) + 1),
+        pool_ids=drain.pool_ids,
+        control_epoch=drain.control_epoch,
+        runtime_epoch=drain.runtime_epoch,
+        owner_id="evict:cancel-owner",
+        operation="evict",
+        owner_hard_deadline_ms=int(
+            (source.db_now + timedelta(seconds=90)).timestamp() * 1000
+        ),
+        drain_token_expires_at=drain.token_expires_at,
+        token_expires_at=source.db_now + timedelta(seconds=80),
+        jti="transition:durable-cancel-jti",
+        idempotent=False,
+        db_now=source.db_now,
+    )
+
+
+def _cancel_response(
+    subject: GPUPreparedEvictionCancelRuntimeSubject,
+    *,
+    generation: str | None = None,
+    state: str = "resident",
+    gpu_loaded: bool | None = True,
+    draining: bool = False,
+    evictable: bool = True,
+    boot_id: str | None = None,
+    control_epoch: str | None = None,
+    backend_id: str | None = None,
+    resource_id: str | None = None,
+    pools: dict | None = None,
+) -> DrainTransitionResponse:
+    response_generation = generation or subject.generation
+    return DrainTransitionResponse(
+        generation=response_generation,
+        draining=draining,
+        active_requests=2,
+        ready_to_unload=False,
+        residency={
+            "state": state,
+            "gpu_loaded": gpu_loaded,
+            "active_requests": 2,
+            "builders": 1,
+            "borrowers": 1,
+            "draining": draining,
+            "evictable": evictable,
+            "generation": response_generation,
+            "pools": pools
+            or {
+                pool_id: {
+                    "resident": True,
+                    "device": "cuda:0",
+                    "provider": "CUDAExecutionProvider",
+                }
+                for pool_id in subject.pool_ids
+            },
+            "boot_id": boot_id or subject.boot_id,
+            "lifecycle_gate": "enforce",
+            "control_epoch": control_epoch or subject.control_epoch,
+            "identity": {
+                "backend_registry_id": backend_id or str(subject.backend_registry_id),
+                "gpu_resource_id": resource_id or subject.gpu_resource_id,
+            },
+        },
+    )
+
+
 def _drain_response(
     subject: GPUPreparedIdleEvictionRuntimeSubject,
 ) -> DrainTransitionResponse:
@@ -329,6 +421,121 @@ class _ScopeSigner(_RecordingSigner):
     def sign(self, claims: AdmissionTokenClaims) -> str:
         super().sign(claims)
         return f"signed:{claims.scope.value}:{claims.jti}"
+
+
+def test_eviction_cancel_signer_replays_exact_durable_resume_claims() -> None:
+    events: list[str] = []
+    signer = _ScopeSigner(events)
+    subject = _prepared_eviction_cancel_subject()
+
+    first = authority_module._sign_eviction_cancel_grant(signer, subject)
+    replayed = authority_module._sign_eviction_cancel_grant(signer, subject)
+
+    assert first == replayed == f"signed:resume:{subject.jti}"
+    assert signer.claims_history[0] == signer.claims_history[1]
+    claims = signer.claims_history[0]
+    assert claims.scope is AdmissionScope.RESUME
+    assert claims.generation == subject.generation
+    assert claims.jti == subject.jti
+    assert claims.owner == subject.owner_id
+    assert claims.operation == subject.operation == "evict"
+    assert claims.boot_id == subject.boot_id
+    assert claims.control_epoch == subject.control_epoch
+    assert claims.exp == min(
+        int(subject.token_expires_at.timestamp()),
+        subject.owner_hard_deadline_ms // 1000,
+    )
+
+
+def test_eviction_cancel_ack_requires_exact_resident_gpu_identity_and_pools() -> None:
+    subject = _prepared_eviction_cancel_subject()
+    valid = _cancel_response(subject)
+
+    assert valid.residency.active_requests == 2
+    assert valid.residency.builders == 1
+    assert valid.residency.borrowers == 1
+    assert authority_module._eviction_cancel_ack_matches(subject, valid)
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        valid.model_copy(update={"ok": False}),
+    )
+
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, generation=str(int(subject.generation) + 1)),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(
+            subject,
+            state="draining",
+            draining=True,
+            evictable=False,
+        ),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, gpu_loaded=None, evictable=False),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, evictable=False),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, boot_id="other-boot"),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, control_epoch="99"),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, backend_id=str(uuid.uuid4())),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(subject, resource_id="other-node/index:0"),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(
+            subject,
+            pools={
+                "unexpected": {
+                    "resident": True,
+                    "device": "cuda:0",
+                    "provider": None,
+                }
+            },
+        ),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(
+            subject,
+            pools={
+                subject.pool_ids[0]: {
+                    "resident": None,
+                    "device": None,
+                    "provider": None,
+                }
+            },
+        ),
+    )
+    assert not authority_module._eviction_cancel_ack_matches(
+        subject,
+        _cancel_response(
+            subject,
+            pools={
+                subject.pool_ids[0]: {
+                    "resident": False,
+                    "device": "cpu",
+                    "provider": "CPUExecutionProvider",
+                }
+            },
+        ),
+    )
 
 
 class _RecordingStore:

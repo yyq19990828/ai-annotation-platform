@@ -13,6 +13,7 @@ from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     AdmissionTokenClaims,
     LifecycleState,
+    LifecycleModeRequest,
     sign_admission_token,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -88,6 +89,42 @@ class _FakePool:
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _token(
+    lifecycle: GroundedSam2GpuLifecycle,
+    private_key: Ed25519PrivateKey,
+    scope: AdmissionScope,
+    *,
+    generation: str | None = None,
+    jti: str,
+    owner: str = "platform-1",
+    operation: str = "evict",
+) -> str:
+    control = scope in {
+        AdmissionScope.DRAIN,
+        AdmissionScope.UNLOAD,
+        AdmissionScope.RESUME,
+        AdmissionScope.MODE,
+        AdmissionScope.RESET,
+    }
+    claims = AdmissionTokenClaims(
+        backend_registry_id="backend-1",
+        gpu_resource_id="node-a/GPU-1",
+        boot_id=lifecycle.boot_id,
+        generation=generation,
+        control_epoch="1",
+        scope=scope,
+        jti=jti,
+        exp=int(time.time()) + 60,
+        owner=owner if control else None,
+        operation=operation if control else None,
+    )
+    return sign_admission_token(
+        claims,
+        private_key=private_key,
+        kid="current",
+    )
 
 
 @pytest.mark.parametrize(
@@ -281,5 +318,120 @@ def test_partial_idle_unload_keeps_managed_generation_open() -> None:
         assert lifecycle._generation_open is True  # noqa: SLF001
         assert await lifecycle.try_idle_unload("video", idle_before=1.0) == 1
         assert lifecycle._generation_open is False  # noqa: SLF001
+
+    _run(scenario())
+
+
+def test_cancel_binds_original_operation_and_replays_exact_token() -> None:
+    async def scenario() -> None:
+        image = _FakePool(_snapshot())
+        video = _FakePool(_snapshot())
+        private_key = Ed25519PrivateKey.generate()
+        lifecycle = GroundedSam2GpuLifecycle(
+            GroundedSam2Pools(image, video),
+            verify_keyring={"current": private_key.public_key()},
+            evictable_verified=True,
+            boot_id="boot-1",
+        )
+        await lifecycle.set_mode(
+            LifecycleModeRequest(gate="enforce", control_epoch="1"),
+            token=_token(
+                lifecycle,
+                private_key,
+                AdmissionScope.MODE,
+                jti="mode-1",
+                operation="mode-1",
+            ),
+        )
+        workload = await lifecycle.begin_workload(
+            AdmissionScope.PREDICT,
+            generation_header="1",
+            token=_token(
+                lifecycle,
+                private_key,
+                AdmissionScope.PREDICT,
+                generation="1",
+                jti="lease-1",
+            ),
+        )
+        image.state.update(
+            current_size=1,
+            gpu_resident=True,
+            device="cuda:0",
+        )
+        await workload.close()
+        await lifecycle.drain(
+            "2",
+            generation_header="2",
+            token=_token(
+                lifecycle,
+                private_key,
+                AdmissionScope.DRAIN,
+                generation="2",
+                jti="drain-1",
+                owner="owner-1",
+                operation="evict",
+            ),
+        )
+
+        with pytest.raises(LifecycleHTTPError) as wrong_operation:
+            await lifecycle.cancel_drain(
+                "3",
+                generation_header="3",
+                token=_token(
+                    lifecycle,
+                    private_key,
+                    AdmissionScope.RESUME,
+                    generation="3",
+                    jti="resume-wrong-operation",
+                    owner="owner-1",
+                    operation="resume",
+                ),
+            )
+        assert wrong_operation.value.detail["error_code"] == ("gpu_transition_conflict")
+        still_draining = await lifecycle.residency()
+        assert still_draining.draining is True
+        assert still_draining.generation == "2"
+
+        resume_token = _token(
+            lifecycle,
+            private_key,
+            AdmissionScope.RESUME,
+            generation="3",
+            jti="resume-1",
+            owner="owner-1",
+            operation="evict",
+        )
+        resumed = await lifecycle.cancel_drain(
+            "3",
+            generation_header="3",
+            token=resume_token,
+        )
+        replayed = await lifecycle.cancel_drain(
+            "3",
+            generation_header="3",
+            token=resume_token,
+        )
+        assert replayed == resumed
+        assert resumed.draining is False
+        assert resumed.ready_to_unload is False
+        assert resumed.residency.state is LifecycleState.RESIDENT
+        assert resumed.residency.gpu_loaded is True
+
+        with pytest.raises(LifecycleHTTPError) as stale_unload:
+            await lifecycle.managed_unload(
+                "2",
+                generation_header="2",
+                token=_token(
+                    lifecycle,
+                    private_key,
+                    AdmissionScope.UNLOAD,
+                    generation="2",
+                    jti="late-unload",
+                    owner="owner-1",
+                    operation="evict",
+                ),
+            )
+        assert stale_unload.value.detail["error_code"] == "gpu_generation_conflict"
 
     _run(scenario())

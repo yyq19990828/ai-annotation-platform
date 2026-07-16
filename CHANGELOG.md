@@ -37,7 +37,8 @@
 
 ### Added
 
-- **GPU busy drain cancel 获得持久精确重放意图**：平台在签发 RESUME 前，会在 PostgreSQL 同一事务内推进 cancel generation 与 token horizon，并持久绑定 source/result generation、membership/boot/control/runtime 身份、transition owner/hard deadline、`operation=evict`、token expiry/JTI 及稳定 pool-id 集合。并发、响应丢失或进程重启后，只有全字段精确匹配才复用原 generation 和 JTI，身份或时域冲突会 fail-closed，不会通过盲目重试烧掉下一代。RESUME 远端证明与 authority 主动 busy drain 仍保持关闭。
+- **GPU busy drain cancel 获得被动 RESUME 证明闭环**：平台可从持久 cancel intent 稳定重签 exact generation/JTI/owner/`operation=evict` 的 RESUME token，并严格要求 cancel ACK 与新 challenge health 同时证明 result generation 已恢复为 Resident、GPU 仍加载、可驱逐且完整 pool-id 未漂移，active/builder/borrower 非零仍是合法恢复现场。证明成立后才允许 Redis 从原 Draining generation 回切 result generation；ACK 或 health 任一不可信只会保留旧 lease 与预算并收紧为 Unknown，响应丢失只做同一 CAS 重放。该地基不发送真实 RESUME；cancel/unload 跨进程分支 fence 与主动 busy authority 仍保持关闭。
+- **GPU busy drain cancel 获得持久精确重放意图**：平台在签发 RESUME 前，会在 PostgreSQL 同一事务内推进 cancel generation 与 token horizon，并持久绑定 source/result generation、membership/boot/control/runtime 身份、transition owner/hard deadline、`operation=evict`、token expiry/JTI 及稳定 pool-id 集合。并发、响应丢失或进程重启后，只有全字段精确匹配才复用原 generation 和 JTI，身份或时域冲突会 fail-closed，不会通过盲目重试烧掉下一代。真实 RESUME 与 authority 主动 busy drain 仍保持关闭。
 - **GPU busy victim 获得严格现场证明与只读 drain 分类**：busy-capable victim subject 在保持 Resident、evictable、capability、challenge、membership、boot、generation、control/runtime epoch 与 resource identity 精确绑定的同时，允许旧 workload 仍在 active/borrow，并冻结稳定 pool-id 集合防止后续健康回执遗漏 pool。drain generation 的 fresh health 使用单次 MVCC 快照只读分类为 `draining_busy`、`ready_to_unload` 或 `uncertain`；只有 active/builder/borrower 全部清零且 Draining residency 完整可信时才就绪。严格 wire 与 ML client 同时固定了合法 busy drain ACK，但本阶段不调用 Redis transition，也不授权 authority 主动驱逐 busy victim。
 - **GPU busy victim 获得原子 drain 状态机地基**：Redis 驱逐 begin 可在 exact card ticket 队首按既定 priority + LRU 选择仍持有 workload lease 的 Resident，原子保留旧 lease、推进 allocation generation、绑定 transition owner 并进入 Draining。旧 generation lease 仍能 heartbeat/release，新 admission 被关闭，同卡非 victim Resident 快路保持可用；只有 lease 清零才可进入 Unloading。更新 generation 的 cancel CAS 可在保留旧 lease 与原 cooldown 的同时回滚 Resident，结果不确定时可携带 lease 保守落 Unknown，响应丢失精确重放不重复推进。durable cancel generation、双域 health 等待与 authority 主动 busy drain 仍保持关闭。
 - **GPU cooldown 阻断可在卡级队首有界等待**：cold authority 会保留 exact card ticket，按 Redis 快照给出的累计最早时刻等待，再重新读取容量快照后才开始 victim health、代际推进与驱逐。等待同时受 admission deadline 和固定 ticket TTL 约束，不续期，也不会提前消耗驱逐终态清理预留；超时或取消均精确清票，不同物理资源的等待互不阻塞。busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。
@@ -68,6 +69,7 @@
 
 ### Fixed
 
+- **五个 GPU Backend 的 drain cancel 不再接受变更 operation**：YOLO、ONNXTools、RapidOCR、Grounded-SAM2 与 SAM3 现在要求 RESUME token 同时精确匹配原 drain 的 owner 和 operation；仅 owner 相同但 operation 不同会保持 Draining 并返回 transition conflict，同一正确 token 仍可幂等重放，cancel 后迟到 unload 继续由 generation fence 拒绝。
 - **GPU FIFO 票据不再能在缺失或过期后绕过队首**：Redis admission 现在要求显式 ticket 必须仍是匹配 backend、owner 与 membership 的存活精确队首；空闲驱逐 begin 也能在同一原子操作内绑定卡级队首并保持多 victim 重放，直到目标冷建准入成功才消费 ticket。生产 effective enforce 仍保持关闭。
 - **GPU 冷建 reservation 不再向非 owner 泄漏并发许可**：Redis 准入现在在同一原子区内拒绝其他调用方加入处于 `Reserving/Loading` 的 allocation，仅保留原 reservation lease + owner 的幂等重试。这避免同一模型被重复冷启，也防止第二条 lease 卡住失败回滚。生产 effective enforce 仍保持关闭。
 - **异步 ML 任务不再丢失 GPU 仲裁根因**：批量预标、跨 Backend 下游阶段、逐帧预标、失败重试和视频追踪现在统一保留稳定仲裁错误码、HTTP 状态与可选重试窗口。失败预测明细继续可按根因检索，批量与逐帧任务使用按错误码聚合的有界摘要；逐帧任务不会为每帧制造不可正确重试的失败行，普通 Backend 异常与现有任务终态保持不变。

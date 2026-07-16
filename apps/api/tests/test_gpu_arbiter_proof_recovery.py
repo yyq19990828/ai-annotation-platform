@@ -41,6 +41,7 @@ from app.services.gpu_arbiter import (
     activate_gpu_backend_membership,
     collect_gpu_backend_tombstone,
     commit_gpu_cold_terminal_from_health,
+    commit_gpu_eviction_cancel_from_health,
     commit_gpu_eviction_phase_from_health,
     commit_gpu_proof_reset_from_health,
     prepare_gpu_cold_runtime_generation,
@@ -550,6 +551,7 @@ async def _install_eviction_phase_health(
         probe_started_at = db_now - timedelta(milliseconds=2)
         observed_at = db_now - timedelta(milliseconds=1)
         unloaded = phase == "unload"
+        resumed = phase == "resume"
         backend.state = "connected"
         backend.last_checked_at = observed_at
         backend.health_meta = {
@@ -566,15 +568,17 @@ async def _install_eviction_phase_health(
                 "observed_at": _proof_timestamp(observed_at),
             },
             "residency": {
-                "state": "unloaded" if unloaded else "draining",
+                "state": (
+                    "unloaded" if unloaded else "resident" if resumed else "draining"
+                ),
                 "gpu_loaded": not unloaded,
                 "active_requests": (1 if phase == "busy" else 0)
                 if active_requests is None
                 else active_requests,
                 "builders": builders,
                 "borrowers": borrowers,
-                "draining": not unloaded,
-                "evictable": False,
+                "draining": not unloaded and not resumed,
+                "evictable": resumed,
                 "generation": generation,
                 "pools": {
                     "models": {
@@ -3267,6 +3271,273 @@ async def test_busy_eviction_cancel_intent_advances_once_and_replays_exactly(
                 gpu_resource_id=_RESOURCE_A,
                 owner_id=owner_id,
             )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_cancel_commit_requires_ack_and_fresh_resident_health(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60, 50),
+    )
+    victim_id, requester_id = backend_ids
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({victim_id}),
+        )
+        (
+            prepared,
+            owner_id,
+            owner_hard_deadline_ms,
+        ) = await _prepare_selected_idle_eviction(
+            factory,
+            proof_store,
+            victim_id=victim_id,
+            requester_id=requester_id,
+            resource_id=_RESOURCE_A,
+            allow_busy=True,
+        )
+        before = await proof_store.snapshot(_RESOURCE_A)
+        victim_before = next(
+            item for item in before.allocations if item.backend_id == str(victim_id)
+        )
+        cancel_subject = await prepare_gpu_eviction_cancel_runtime_generation(
+            factory,
+            prepared,
+            owner_id=owner_id,
+            owner_hard_deadline_ms=owner_hard_deadline_ms,
+            token_expires_at=datetime.fromtimestamp(
+                (owner_hard_deadline_ms - 5_000) / 1000,
+                UTC,
+            ),
+        )
+        async with factory.begin() as db:
+            intent = await db.get(GPUBackendCancelIntent, victim_id)
+            assert intent is not None
+            original_jti = intent.jti
+            intent.jti = f"{original_jti}:changed"
+        stale_intent = await commit_gpu_eviction_cancel_from_health(
+            factory,
+            proof_store,
+            cancel_subject,
+            ack_confirmed=True,
+            challenge="8" * 64,
+        )
+        assert (stale_intent.status, stale_intent.reason) == (
+            "stale",
+            "cancel_intent_changed",
+        )
+        assert (await proof_store.snapshot(_RESOURCE_A)).allocations[0].state is (
+            GPUAllocationState.DRAINING
+        )
+        async with factory.begin() as db:
+            intent = await db.get(GPUBackendCancelIntent, victim_id)
+            assert intent is not None
+            intent.jti = original_jti
+        challenge = "8" * 64
+        await _install_eviction_phase_health(
+            factory,
+            victim_id,
+            _RESOURCE_A,
+            challenge=challenge,
+            generation=cancel_subject.generation,
+            phase="resume",
+            active_requests=2,
+            builders=1,
+            borrowers=1,
+        )
+
+        original_transition = proof_store.transition_eviction_allocation
+        transition_calls = 0
+
+        async def lose_first_transition_response(*args, **kwargs):
+            nonlocal transition_calls
+            transition_calls += 1
+            result = await original_transition(*args, **kwargs)
+            if transition_calls == 1:
+                raise TimeoutError("simulated Redis response loss")
+            return result
+
+        monkeypatch.setattr(
+            proof_store,
+            "transition_eviction_allocation",
+            lose_first_transition_response,
+        )
+        committed = await commit_gpu_eviction_cancel_from_health(
+            factory,
+            proof_store,
+            cancel_subject,
+            ack_confirmed=True,
+            challenge=challenge,
+        )
+        assert (committed.status, committed.state, committed.reason) == (
+            "finalized",
+            GPUAllocationState.RESIDENT,
+            "cancelled_resident",
+        )
+        assert committed.idempotent is True
+        assert transition_calls == 2
+
+        after = await proof_store.snapshot(_RESOURCE_A)
+        victim_after = next(
+            item for item in after.allocations if item.backend_id == str(victim_id)
+        )
+        assert (
+            victim_after.generation,
+            victim_after.state,
+            victim_after.evictable,
+            victim_after.not_evict_before_ms,
+        ) == (
+            cancel_subject.generation,
+            GPUAllocationState.RESIDENT,
+            True,
+            victim_before.not_evict_before_ms,
+        )
+        assert after.committed_mb == before.committed_mb == 60
+        assert [(item.lease_id, item.generation) for item in after.leases] == [
+            (before.leases[0].lease_id, "1")
+        ]
+
+        replayed = await commit_gpu_eviction_cancel_from_health(
+            factory,
+            proof_store,
+            cancel_subject,
+            ack_confirmed=True,
+            challenge=challenge,
+        )
+        assert (replayed.status, replayed.idempotent) == ("finalized", True)
+        assert transition_calls == 3
+        assert (await proof_store.snapshot(_RESOURCE_A)).ledger_revision == (
+            after.ledger_revision
+        )
+
+        late_unload = await original_transition(
+            _RESOURCE_A,
+            backend_id=str(victim_id),
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation=cancel_subject.drain_generation,
+            target_state=GPUAllocationState.UNLOADING,
+            transition_owner_id=owner_id,
+        )
+        assert late_unload.status == "stale_generation"
+        assert (await proof_store.snapshot(_RESOURCE_A)).allocations == (
+            after.allocations
+        )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.parametrize(
+    ("ack_confirmed", "challenge", "corrupt_pool", "expected_reason"),
+    (
+        (False, "9" * 64, False, "cancel_ack_uncertain"),
+        (True, None, False, "cancel_health_uncertain"),
+        (
+            True,
+            "a" * 64,
+            True,
+            "eviction_residency_identity_mismatch",
+        ),
+    ),
+)
+@pytest.mark.asyncio
+async def test_busy_eviction_cancel_uncertainty_never_reopens_resident(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+    ack_confirmed: bool,
+    challenge: str | None,
+    corrupt_pool: bool,
+    expected_reason: str,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60, 50),
+    )
+    victim_id, requester_id = backend_ids
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({victim_id}),
+        )
+        (
+            prepared,
+            owner_id,
+            owner_hard_deadline_ms,
+        ) = await _prepare_selected_idle_eviction(
+            factory,
+            proof_store,
+            victim_id=victim_id,
+            requester_id=requester_id,
+            resource_id=_RESOURCE_A,
+            allow_busy=True,
+        )
+        cancel_subject = await prepare_gpu_eviction_cancel_runtime_generation(
+            factory,
+            prepared,
+            owner_id=owner_id,
+            owner_hard_deadline_ms=owner_hard_deadline_ms,
+            token_expires_at=datetime.fromtimestamp(
+                (owner_hard_deadline_ms - 5_000) / 1000,
+                UTC,
+            ),
+        )
+        if challenge is not None:
+            await _install_eviction_phase_health(
+                factory,
+                victim_id,
+                _RESOURCE_A,
+                challenge=challenge,
+                generation=cancel_subject.generation,
+                phase="resume",
+                active_requests=1,
+            )
+        if corrupt_pool:
+            async with factory.begin() as db:
+                backend = await db.get(MLBackendRegistry, victim_id)
+                assert backend is not None
+                health_meta = json.loads(json.dumps(backend.health_meta))
+                health_meta["residency"]["pools"]["unexpected"] = health_meta[
+                    "residency"
+                ]["pools"].pop("models")
+                backend.health_meta = health_meta
+                flag_modified(backend, "health_meta")
+
+        result = await commit_gpu_eviction_cancel_from_health(
+            factory,
+            proof_store,
+            cancel_subject,
+            ack_confirmed=ack_confirmed,
+            challenge=challenge,
+        )
+        assert (result.status, result.state, result.reason) == (
+            "finalized",
+            GPUAllocationState.UNKNOWN,
+            expected_reason,
+        )
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        victim = next(
+            item for item in snapshot.allocations if item.backend_id == str(victim_id)
+        )
+        assert (victim.state, victim.generation, victim.evictable) == (
+            GPUAllocationState.UNKNOWN,
+            cancel_subject.drain_generation,
+            False,
+        )
+        assert snapshot.committed_mb == 60
+        assert len(snapshot.leases) == 1
+        assert snapshot.leases[0].generation == "1"
     finally:
         await _cleanup_backends(factory, backend_ids)
 

@@ -206,7 +206,8 @@ generation。managed unload 成功后保留 unloaded generation tombstone，同 
    active/builder/borrower 任一非零时返回冲突并保持 draining；全部归零后，先在短生命周期锁内 CAS 为
    unloading，再在锁外执行全池清理；
 3. 超时或放弃使用 `POST /drain/cancel {"generation":"<newer_g>"}`：只允许从 draining 进入新的
-   generation 并恢复接单；一旦进入 unloading 就不能 cancel，从而使迟到 unload/cancel 均被 fencing 拒绝。
+   generation 并恢复接单；RESUME token 的 owner 与 operation 必须同时精确匹配原 drain；一旦进入
+   unloading 就不能 cancel，从而使迟到 unload/cancel 均被 fencing 拒绝。
 
 响应至少包含：
 
@@ -534,8 +535,12 @@ cooldown 与 membership/generation 校验。begin 会保留 victim 的旧 worklo
 阻塞。Draining→Unloading 继续要求 victim lease 为零；不确定终态可在保留 lease 时转 Unknown 并全额计费。
 cancel 的 Redis CAS 必须携带更大结果 generation、匹配仍绑定 drain generation 的 exact owner，且只允许
 Draining→Resident；它保留原 `not_evict_before_ms`，响应丢失重放只读，进入 Unloading 后拒绝迟到 cancel。
-这些原语本身不授权 authority 主动选择 busy victim；durable cancel intent/generation、RESUME token、fresh health
-证明与 cancellation-safe 编排必须完成后才能接线。
+RESUME token 必须复用 durable intent 的 exact JTI/owner/operation/horizon。只有 strict cancel ACK 与随后新
+challenge health 同时证明 result generation 的 Resident、`gpu_loaded=true`、`evictable=true` 及完整稳定
+pool-id，才可执行上述回切；active/builder/borrower 可非零。任一证明不可信只允许从原 drain generation
+收紧为 Unknown，并保留预算与旧 lease。这些被动原语本身不授权 authority 主动选择 busy victim，也不构成
+cancel/unload 的跨进程串行化；首次发送真实 RESUME 前，Redis transition owner 必须原子冻结唯一分支，使
+Draining→Unloading 与 arm-cancel 只能有一个先成功，再由 cancellation-safe authority 编排双域等待。
 
 busy-capable victim subject 不把“忙”误作身份放宽：它仍要求 exact fresh challenge、managed
 lifecycle capability 摘要、active membership、registry claim、boot、source generation、control/runtime epoch、

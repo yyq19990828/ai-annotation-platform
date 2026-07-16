@@ -463,21 +463,48 @@ async def test_cancel_uses_new_generation_and_fences_late_unload() -> None:
             operation="drain-operation",
         ),
     )
+    with pytest.raises(LifecycleHTTPError) as wrong_operation:
+        await lifecycle.cancel_drain(
+            "3",
+            generation_header="3",
+            token=_token(
+                lifecycle,
+                key,
+                AdmissionScope.RESUME,
+                generation="3",
+                jti="resume-wrong-operation",
+                owner="owner-1",
+                operation="resume-operation",
+            ),
+        )
+    assert wrong_operation.value.detail["error_code"] == "gpu_transition_conflict"
+    still_draining = await lifecycle.residency()
+    assert still_draining.draining is True
+    assert still_draining.generation == "2"
+
+    resume_token = _token(
+        lifecycle,
+        key,
+        AdmissionScope.RESUME,
+        generation="3",
+        jti="resume-1",
+        owner="owner-1",
+        operation="drain-operation",
+    )
     resumed = await lifecycle.cancel_drain(
         "3",
         generation_header="3",
-        token=_token(
-            lifecycle,
-            key,
-            AdmissionScope.RESUME,
-            generation="3",
-            jti="resume-1",
-            owner="owner-1",
-            operation="resume-operation",
-        ),
+        token=resume_token,
     )
     assert resumed.draining is False
     assert resumed.generation == "3"
+    assert (
+        await lifecycle.cancel_drain(
+            "3",
+            generation_header="3",
+            token=resume_token,
+        )
+    ) == resumed
 
     with pytest.raises(LifecycleHTTPError) as stale:
         await lifecycle.managed_unload(

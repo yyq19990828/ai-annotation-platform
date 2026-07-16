@@ -330,7 +330,8 @@ residency 也保持 unknown，直到一次成功的全池清理。
 
 控制端点按以下顺序使用：平台先以 `/lifecycle/mode` 建立 gate；驱逐时用更大 generation 调 `/drain`，待
 active、builder、borrower 全部归零后用同 generation、owner、operation 调带 body 的 `/unload`；放弃驱逐则
-以更新 generation 调 `/drain/cancel`。legacy unmanaged 驻留进入 enforce 前，必须先用更大 control epoch 调
+以更新 generation 调 `/drain/cancel`，其 token 的 owner 与 operation 必须同时精确匹配原 drain；仅 owner
+相同不能授权恢复。legacy unmanaged 驻留进入 enforce 前，必须先用更大 control epoch 调
 `/lifecycle/reset` 完成可信全池清理，再执行 promotion。managed unload 成功后保留 generation tombstone，
 同 generation 不得重新加载。
 
