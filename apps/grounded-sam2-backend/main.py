@@ -637,10 +637,8 @@ async def health() -> dict:
             if used_mb is None or total_mb is None:
                 used_mb = int((total_b - free_b) / 1024**2)
                 total_mb = int(total_b / 1024**2)
-            # 本容器自身视角: 占用的物理卡号 + 本进程 torch 已保留显存 (caching allocator,
-            # 不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
-            # CUDA_VISIBLE_DEVICES 把物理卡重映射为逻辑 0..N-1: 物理卡号 = 列表中第「逻辑 current
-            # device」项 (单卡 "2"→2; 多卡 "2,3"+逻辑1→3); 列表缺失/非法时回落逻辑号。
+            # 本容器自身视角: 单张物理卡身份 + 本进程 torch 已保留显存
+            # (caching allocator，不含 ~数百 MB CUDA 上下文)。memory_used_mb 仍是整卡全局。
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
                 "memory_used_mb": used_mb,

@@ -495,6 +495,12 @@ ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本�
 因 resource domain 不同而互不混淆。优先用 GPU / MIG UUID；只有部署已固定容器与物理
 索引映射时才用 `index:N`。
 
+Compose 会把每个 `*_GPU_DEVICE_ID` 同时用于 device reservation 和容器内部
+`AAP_GPU_PHYSICAL_DEVICE_TOKEN`。这个独立 token 是必要的：NVIDIA container runtime 可能把
+PID 1 看到的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`，而 CUDA 又会把唯一挂载的物理
+卡重编号为逻辑 `cuda:0`。Backend `/health.gpu_info` 优先报告这个 Compose 派生 token，
+避免将宿主卡 1 误报为卡 0。
+
 ```dotenv
 GPU_ARBITER_MODE=off
 GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
@@ -614,8 +620,9 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
 ```
 
 验收物理卡映射时优先检查 `physical_device_token`。容器 runtime 可能把宿主卡 1 重映射成
-逻辑 `cuda:0`，因此 Backend 优先从 `NVIDIA_VISIBLE_DEVICES` 报告宿主物理索引或 UUID，
-不会用容器内 logical current device 猜测宿主卡号。完整验收步骤见
+逻辑 `cuda:0`，甚至把 PID 1 的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`。因此 Backend
+优先报告 Compose 从 device reservation 同源派生的 `AAP_GPU_PHYSICAL_DEVICE_TOKEN`；
+只在该 token 未设置时回落 runtime 可见设备配置，不用 logical current device 猜测宿主卡号。完整验收步骤见
 [GPU 显存仲裁验收 Runbook](/ops/runbooks/gpu-arbitration-acceptance)。
 
 各 backend 的 `/metrics`（GPU 利用率/显存/温度/功耗、推理延迟、cache 命中、容器 CPU/内存）由 Prometheus 的 `ml-backends` job **自动发现并抓取**：该 job 用 `http_sd_config` 从 anno-api 的 `/api/v1/internal/metrics-targets` 拉 target，真相源是 `ml_backend_registry` —— **新 backend 在超管注册即被纳入，无需改 `prometheus.yml`**。指标统一为裸名 + `service` label 区分 backend，Grafana 的 `ML Backends` dashboard 据此渲染。backend 在独立 GPU 机、prometheus 不在同网时，改用该 job 里注释好的 static 兜底。`/cache/stats` 仍单独提供更细的 LRU 内部状态。

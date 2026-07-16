@@ -641,8 +641,10 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。
 
 P5 的机器证据必须绑定 exact node/resource/backend/generation 与宿主物理卡 token。容器 runtime
-把宿主卡重映射为逻辑 `cuda:0` 时，完整 GPU 卡验收以 `NVIDIA_VISIBLE_DEVICES` 中的物理索引或
-GPU UUID 为准，不采信逻辑 current device；MIG 资源另做专项验收，不由卡级 runner 关闭门禁。
+把宿主卡重映射为逻辑 `cuda:0`、甚至把 PID 1 的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void` 时，
+完整 GPU 卡验收以部署时与 device reservation 同源的 `AAP_GPU_PHYSICAL_DEVICE_TOKEN`
+中的物理索引或 GPU UUID 为准，不采信逻辑 current device；MIG 资源另做专项验收，
+不由卡级 runner 关闭门禁。
 无故障主报告从原始 PostgreSQL、Redis、challenge health、`nvidia-smi` 和 HTTP 窗口重算结论；
 故障报告只在注入现场由 `run` 计算，不进入外部 verifier。报告会脱敏 action body，原 manifest
 内容摘要用于关联原文件，不作为签名、body 复验证明或外部信任锚。90% 显存回收率只适用于隔离

@@ -31,8 +31,9 @@ last_reviewed: 2026-07-16
 - lifecycle signer 已配置；Backend `/setup` 与 challenge-bound `/health` 能证明 exact
   backend/resource/boot/control identity。
 - `nvidia-smi --query-gpu=index,uuid,memory.used,memory.total` 可用。
-- 每个 Backend 的 `/health.gpu_info` 必须给出物理身份。容器运行时发生卡号重映射时，
-  `NVIDIA_VISIBLE_DEVICES` 优先于 `CUDA_VISIBLE_DEVICES`；完整 GPU UUID 对应 `device_uuid`，
+- 每个 Backend 的 `/health.gpu_info` 必须给出物理身份。Compose 从同一
+  `*_GPU_DEVICE_ID` 派生的 `AAP_GPU_PHYSICAL_DEVICE_TOKEN` 优先于可被 runtime 重写的
+  `NVIDIA_VISIBLE_DEVICES` 及逻辑 `CUDA_VISIBLE_DEVICES`；完整 GPU UUID 对应 `device_uuid`，
   物理索引对应 `physical_device_token=index:N` 与 `device_index=N`。本卡级 runner 只关闭完整
   GPU 的单卡/多卡门禁；共享 helper 可以报告 `mig_uuid`，但 MIG 实例不能用本流程代替专项验收。
 - manifest action Backend 与资源域内每个现存 allocation Backend 都已注册到声明的唯一

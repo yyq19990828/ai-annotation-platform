@@ -17,8 +17,9 @@ ML backend 运行时共享的**无状态叶子函数**。单一来源, 避免跨
   载荷形状 `{"versions": [model_version], "backend_version": ..., **extra}`。
 - `gpu_info_snapshot() -> dict` — torch CUDA context 视角显存快照 (used/total/free MB 等);
   无 torch / 无 GPU 返回 `{}`，并叠加宿主可见的物理卡身份。
-- `physical_gpu_identity() -> dict` — 从 runtime 可见设备配置解析宿主物理卡 token；优先读取
-  `NVIDIA_VISIBLE_DEVICES`，避免把容器内重映射后的逻辑 `cuda:0` 误当宿主卡 0。
+- `physical_gpu_identity() -> dict` — 从部署时与 device reservation 同源的
+  `AAP_GPU_PHYSICAL_DEVICE_TOKEN` 解析宿主物理卡 token；它未设置时才回落
+  runtime 可见设备配置，避免把重映射后的逻辑 `cuda:0` 误当宿主卡 0。
 - `validate_single_gpu_device_set()` — backend 启动门禁，拒绝逗号多卡列表和已暴露 GPU 的无界 `all` 可见集合。
 
 **不包含** (见 `docs/plans/archive/2026-06-29-v0.20.3-ml-backend-shared-layer-extraction.md`):

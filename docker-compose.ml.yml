@@ -58,6 +58,7 @@ services:
       HF_HOME: /app/.cache/huggingface
       LOG_LEVEL: ${GSAM2_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${GSAM2_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${GSAM2_GPU_DEVICE_ID:-0}
       # B-28+ · 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
       IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-600}
       IDLE_CHECK_INTERVAL: ${IDLE_CHECK_INTERVAL:-60}
@@ -120,6 +121,7 @@ services:
       SAM3_SCORE_THRESHOLD: ${SAM3_SCORE_THRESHOLD:-0.5}
       LOG_LEVEL: ${SAM3_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${SAM3_GPU_DEVICE_ID:-1}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${SAM3_GPU_DEVICE_ID:-1}
       # 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
       # sam3 (开 inst) 显存占用 ~5.8GB FP16, 与 grounded-sam2 并存时强烈建议保留 idle unload.
       # SAM3_ 前缀, 与 grounded-sam2 的 IDLE_UNLOAD_SECONDS 解耦, 两个 backend 可独立调.
@@ -174,6 +176,7 @@ services:
       GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${YOLO_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${YOLO_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${YOLO_GPU_DEVICE_ID:-0}
     volumes:
       - yolo_checkpoints:/app/checkpoints
     deploy:
@@ -215,6 +218,7 @@ services:
       GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${ONNXTOOLS_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${ONNXTOOLS_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${ONNXTOOLS_GPU_DEVICE_ID:-0}
     volumes:
       - ./apps/onnxtools-backend/models:/app/models:ro
     deploy:
@@ -255,6 +259,7 @@ services:
       GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${RAPIDOCR_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${RAPIDOCR_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${RAPIDOCR_GPU_DEVICE_ID:-0}
     volumes:
       - ./apps/rapidocr-backend/models:/app/models:ro
     deploy:

@@ -146,7 +146,8 @@ def test_health_echoes_only_exact_gpu_challenge(managed_client) -> None:
 
 def test_health_reports_physical_gpu_selection(managed_client, monkeypatch) -> None:
     _, client, _ = managed_client
-    monkeypatch.setenv("NVIDIA_VISIBLE_DEVICES", "1")
+    monkeypatch.setenv("AAP_GPU_PHYSICAL_DEVICE_TOKEN", "index:1")
+    monkeypatch.setenv("NVIDIA_VISIBLE_DEVICES", "void")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
 
     assert client.get("/health").json()["gpu_info"] == {

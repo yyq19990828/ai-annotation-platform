@@ -147,6 +147,14 @@ def test_single_gpu_device_set_checks_every_runtime_visibility_layer() -> None:
                 "mig_uuid": "MIG-GPU-abc/1/0",
             },
         ),
+        (
+            {
+                "AAP_GPU_PHYSICAL_DEVICE_TOKEN": "index:1",
+                "NVIDIA_VISIBLE_DEVICES": "void",
+                "CUDA_VISIBLE_DEVICES": "0",
+            },
+            {"physical_device_token": "index:1", "device_index": 1},
+        ),
         ({"NVIDIA_VISIBLE_DEVICES": "none"}, {}),
     ],
 )
@@ -154,3 +162,9 @@ def test_physical_gpu_identity_prefers_container_runtime_selection(
     environ: dict[str, str], expected: dict[str, str | int]
 ) -> None:
     assert physical_gpu_identity(environ) == expected
+
+
+@pytest.mark.parametrize("value", ["", " all", "all", "0,1", "index:x"])
+def test_explicit_physical_gpu_token_is_strict(value: str) -> None:
+    with pytest.raises(RuntimeError, match="AAP_GPU_PHYSICAL_DEVICE_TOKEN"):
+        physical_gpu_identity({"AAP_GPU_PHYSICAL_DEVICE_TOKEN": value})

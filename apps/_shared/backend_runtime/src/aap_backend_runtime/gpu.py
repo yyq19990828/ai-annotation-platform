@@ -20,6 +20,40 @@ _VISIBLE_DEVICE_ENV_NAMES = (
 )
 _NO_DEVICE_VALUES = {"", "-1", "none", "void"}
 _NVIDIA_ALL_DEVICE_VALUES = {"all", "nvidia.com/gpu=all"}
+_PHYSICAL_DEVICE_TOKEN_ENV_NAME = "AAP_GPU_PHYSICAL_DEVICE_TOKEN"
+
+
+def _physical_identity_from_token(
+    raw: str,
+    *,
+    name: str,
+) -> dict[str, str | int]:
+    token = raw.strip()
+    if raw != token or not token or "," in token:
+        raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+    lowered = token.lower()
+    if lowered in _NO_DEVICE_VALUES or lowered in _NVIDIA_ALL_DEVICE_VALUES:
+        raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+    if token.isdigit():
+        device_index = int(token)
+        return {
+            "physical_device_token": f"index:{device_index}",
+            "device_index": device_index,
+        }
+    if token.startswith("index:"):
+        raw_index = token.removeprefix("index:")
+        if not raw_index.isdigit():
+            raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+        device_index = int(raw_index)
+        return {
+            "physical_device_token": token,
+            "device_index": device_index,
+        }
+    if token.startswith("GPU-"):
+        return {"physical_device_token": token, "device_uuid": token}
+    if token.startswith("MIG-"):
+        return {"physical_device_token": token, "mig_uuid": token}
+    raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
 
 
 def _gpu_runtime_device_present() -> bool:
@@ -59,6 +93,12 @@ def validate_single_gpu_device_set(
                 f"{name} must select at most one GPU/MIG device; "
                 "multi-device sets are unsupported"
             )
+    explicit_physical_token = values.get(_PHYSICAL_DEVICE_TOKEN_ENV_NAME)
+    if explicit_physical_token is not None:
+        _physical_identity_from_token(
+            explicit_physical_token,
+            name=_PHYSICAL_DEVICE_TOKEN_ENV_NAME,
+        )
 
 
 def physical_gpu_identity(
@@ -66,13 +106,20 @@ def physical_gpu_identity(
 ) -> dict[str, str | int]:
     """Return the host-visible physical GPU token selected for this process.
 
-    ``NVIDIA_VISIBLE_DEVICES`` is preferred because container runtimes may remap
-    the selected physical GPU to logical CUDA device 0. The result deliberately
-    omits a logical index when the runtime selected a UUID.
+    The Compose-derived explicit token is preferred because container runtimes
+    may rewrite ``NVIDIA_VISIBLE_DEVICES`` and remap the selected physical GPU
+    to logical CUDA device 0. The result deliberately omits a logical index when
+    the runtime selected a UUID.
     """
 
     values = os.environ if environ is None else environ
     validate_single_gpu_device_set(values)
+    explicit_physical_token = values.get(_PHYSICAL_DEVICE_TOKEN_ENV_NAME)
+    if explicit_physical_token is not None:
+        return _physical_identity_from_token(
+            explicit_physical_token,
+            name=_PHYSICAL_DEVICE_TOKEN_ENV_NAME,
+        )
     for name in ("NVIDIA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
         raw = values.get(name)
         if raw is None:
@@ -81,17 +128,7 @@ def physical_gpu_identity(
         lowered = token.lower()
         if lowered in _NO_DEVICE_VALUES or lowered in _NVIDIA_ALL_DEVICE_VALUES:
             continue
-        if token.isdigit():
-            device_index = int(token)
-            return {
-                "physical_device_token": f"index:{device_index}",
-                "device_index": device_index,
-            }
-        if token.startswith("GPU-"):
-            return {"physical_device_token": token, "device_uuid": token}
-        if token.startswith("MIG-"):
-            return {"physical_device_token": token, "mig_uuid": token}
-        return {"physical_device_token": token}
+        return _physical_identity_from_token(token, name=name)
     return {}
 
 
