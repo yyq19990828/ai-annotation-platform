@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 from scripts.validate_gpu_arbitration import (
     ActionSpec,
     BackendEndpoint,
@@ -277,6 +278,34 @@ def test_manifest_rejects_non_whitelisted_or_malformed_action_body() -> None:
     payload["actions"][0]["body"] = {"task": {}}
     with pytest.raises(ValidationError, match="predict body must contain tasks"):
         ValidationManifest.model_validate(payload, strict=True)
+
+
+def test_capacity_rejection_manifest_requires_one_expected_requester() -> None:
+    action = {
+        "id": "reject-a",
+        "role": "requester",
+        "backend_id": _BACKEND_A,
+        "resource_id": _RESOURCE_A,
+        "operation": "warmup",
+        "body": {},
+        "expected_error_code": "gpu_capacity_unavailable",
+    }
+    manifest = _manifest(
+        scenario="single-card-capacity-rejection",
+        actions=[action],
+    )
+    assert manifest.actions[0].expected_error_code == "gpu_capacity_unavailable"
+
+    missing = deepcopy(action)
+    missing.pop("expected_error_code")
+    with pytest.raises(ValidationError, match="capacity-rejection requires"):
+        _manifest(
+            scenario="single-card-capacity-rejection",
+            actions=[missing],
+        )
+
+    with pytest.raises(ValidationError, match="only valid for capacity-rejection"):
+        _manifest(actions=[action])
 
 
 def test_nvidia_smi_parser_keeps_exact_multi_gpu_and_process_identity() -> None:
@@ -707,6 +736,95 @@ def test_run_evaluator_proves_single_card_co_residency() -> None:
     )
 
 
+def test_run_evaluator_proves_capacity_rejection_before_http() -> None:
+    manifest = _manifest(
+        scenario="single-card-capacity-rejection",
+        actions=[
+            {
+                "id": "reject-a",
+                "role": "requester",
+                "backend_id": _BACKEND_A,
+                "resource_id": _RESOURCE_A,
+                "operation": "warmup",
+                "body": {},
+                "expected_error_code": "gpu_capacity_unavailable",
+            }
+        ],
+    )
+    after = {
+        "redis": {
+            "resources": {
+                _RESOURCE_A: _ready_redis_snapshot(
+                    _RESOURCE_A,
+                    [
+                        {
+                            "backend_id": _BACKEND_A,
+                            "state": "unloaded",
+                            "budget_mb": 9000,
+                        },
+                        {
+                            "backend_id": _BACKEND_B,
+                            "state": "resident",
+                            "budget_mb": 14000,
+                            "eviction_priority": 10,
+                        },
+                    ],
+                )
+            }
+        }
+    }
+    before, after = _with_final_truth(after)
+    before["redis"] = deepcopy(after["redis"])
+    actions = [
+        {
+            "id": "reject-a",
+            "role": "requester",
+            "backend_id": _BACKEND_A,
+            "resource_id": _RESOURCE_A,
+            "operation": "warmup",
+            "status": "passed",
+            "expected_error_code": "gpu_capacity_unavailable",
+            "error_code": "gpu_capacity_unavailable",
+            "error_http_status": 503,
+            "started_monotonic_ms": 0.0,
+            "finished_monotonic_ms": 10.0,
+        }
+    ]
+
+    checks = evaluate_run(
+        manifest=manifest,
+        actions=actions,
+        before=before,
+        after=after,
+        baseline_samples=_gpu_samples(),
+        during_samples=[],
+        recovery_samples=_gpu_samples(),
+        fault=None,
+    )
+
+    assert not [check for check in checks if check["status"] != "passed"]
+    drifted = deepcopy(after)
+    drifted["redis"]["resources"][_RESOURCE_A]["snapshot"]["committed_mb"] += 1
+    drifted_checks = evaluate_run(
+        manifest=manifest,
+        actions=actions,
+        before=before,
+        after=drifted,
+        baseline_samples=_gpu_samples(),
+        during_samples=[],
+        recovery_samples=_gpu_samples(),
+        fault=None,
+    )
+    assert (
+        next(
+            check
+            for check in drifted_checks
+            if check["code"] == "single_card_capacity_rejected_before_http"
+        )["status"]
+        == "blocked"
+    )
+
+
 def test_run_evaluator_requires_dual_card_overlap() -> None:
     manifest = _manifest(
         scenario="dual-card",
@@ -1051,6 +1169,46 @@ async def test_run_action_cancels_and_reaps_http_child_on_injected_cancel(
     assert row["grant_generation"] == "1"
     assert request_cancelled.is_set()
     assert fault.hit_action_id == action.id
+
+
+@pytest.mark.asyncio
+async def test_run_action_accepts_exact_capacity_error_before_http() -> None:
+    @asynccontextmanager
+    async def dispatch_factory(_request):
+        if False:
+            yield None
+        raise GPUArbiterDispatchError(GPUArbiterErrorCode.CAPACITY_UNAVAILABLE)
+
+    async def database_clock() -> str:
+        raise AssertionError("capacity rejection must not start HTTP timing")
+
+    action = ActionSpec.model_validate(
+        {
+            "id": "capacity-rejected",
+            "role": "requester",
+            "backend_id": _BACKEND_A,
+            "resource_id": _RESOURCE_A,
+            "operation": "warmup",
+            "body": {},
+            "expected_error_code": "gpu_capacity_unavailable",
+        },
+        strict=True,
+    )
+    row = await _run_action(
+        action,
+        endpoint=BackendEndpoint(
+            _BACKEND_A, _RESOURCE_A, "http://backend.invalid", "none", None
+        ),
+        dispatch_factory=dispatch_factory,
+        database_clock=database_clock,
+        fault=None,
+    )
+
+    assert row["status"] == "passed"
+    assert row["error_code"] == "gpu_capacity_unavailable"
+    assert row["error_http_status"] == 503
+    assert "grant_generation" not in row
+    assert "http_started_monotonic_ms" not in row
 
 
 @pytest.mark.asyncio
@@ -2001,6 +2159,135 @@ def test_verify_rejects_forged_summary_thresholds_and_malformed_input() -> None:
     )
     assert (
         verify_evidence([{}], scenario="single-card-co-residency")["status"] == "failed"
+    )
+
+
+def _capacity_rejection_primary_report() -> dict:
+    manifest = _manifest(
+        scenario="single-card-capacity-rejection",
+        actions=[
+            {
+                "id": "reject-a",
+                "role": "requester",
+                "backend_id": _BACKEND_A,
+                "resource_id": _RESOURCE_A,
+                "operation": "warmup",
+                "body": {},
+                "expected_error_code": "gpu_capacity_unavailable",
+            }
+        ],
+    )
+    after = {
+        "redis": {
+            "resources": {
+                _RESOURCE_A: _ready_redis_snapshot(
+                    _RESOURCE_A,
+                    [
+                        {
+                            "backend_id": _BACKEND_A,
+                            "state": "unloaded",
+                            "budget_mb": 9000,
+                        },
+                        {
+                            "backend_id": _BACKEND_B,
+                            "state": "resident",
+                            "budget_mb": 14000,
+                            "eviction_priority": 10,
+                        },
+                    ],
+                )
+            }
+        }
+    }
+    before, after = _with_final_truth(after)
+    before["redis"] = deepcopy(after["redis"])
+    actions = [
+        {
+            "id": "reject-a",
+            "role": "requester",
+            "backend_id": _BACKEND_A,
+            "resource_id": _RESOURCE_A,
+            "operation": "warmup",
+            "status": "passed",
+            "expected_error_code": "gpu_capacity_unavailable",
+            "error_code": "gpu_capacity_unavailable",
+            "error_http_status": 503,
+            "retry_after_seconds": None,
+            "error": None,
+            "started_at": "2026-07-16T00:00:00Z",
+            "finished_at": "2026-07-16T00:00:00.010000Z",
+            "started_monotonic_ms": 0.0,
+            "finished_monotonic_ms": 10.0,
+        }
+    ]
+    baseline = _gpu_samples()
+    recovery = _gpu_samples()
+    checks = evaluate_run(
+        manifest=manifest,
+        actions=actions,
+        before=before,
+        after=after,
+        baseline_samples=baseline,
+        during_samples=[],
+        recovery_samples=recovery,
+        fault=None,
+    )
+    checks[:0] = [
+        {
+            "code": "run_runtime_proof_refreshed",
+            "status": "passed",
+            "message": "run must persist fresh challenge-bound health before dispatch",
+            "details": {"backend_id": backend_id},
+        }
+        for backend_id in (_BACKEND_A, _BACKEND_B)
+    ]
+    evidence_manifest = _evidence_manifest(manifest)
+    return {
+        "schema": EVIDENCE_SCHEMA,
+        "command": "run",
+        "status": "passed",
+        "run_id": "capacity-rejection-run",
+        "cohort_id": manifest.cohort_id,
+        "node_id": manifest.node_id,
+        "scenario": manifest.scenario,
+        "resources": [resource.model_dump() for resource in manifest.resources],
+        "started_at": "2026-07-16T00:00:00Z",
+        "finished_at": "2026-07-16T00:00:01Z",
+        "manifest_sha256": _sha256_json(manifest.model_dump(mode="json")),
+        "evidence_manifest": evidence_manifest,
+        "evidence_manifest_sha256": _sha256_json(evidence_manifest),
+        "thresholds": _thresholds(),
+        "threshold_applicability": _threshold_applicability(),
+        "checks": checks,
+        "actions": actions,
+        "snapshots": {
+            "baseline_gpu": baseline,
+            "during": [],
+            "before": before,
+            "after": after,
+            "recovery_gpu": recovery,
+        },
+        "faults": [],
+        "cleanup": {"performed": True},
+    }
+
+
+def test_verify_capacity_rejection_requires_no_backend_http() -> None:
+    report = _capacity_rejection_primary_report()
+    assert (
+        verify_evidence([report], scenario="single-card-capacity-rejection")[
+            "status"
+        ]
+        == "passed"
+    )
+
+    forged = deepcopy(report)
+    forged["actions"][0]["http_started_monotonic_ms"] = 0.0
+    assert (
+        verify_evidence([forged], scenario="single-card-capacity-rejection")[
+            "status"
+        ]
+        == "failed"
     )
 
 

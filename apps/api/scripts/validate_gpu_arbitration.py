@@ -47,7 +47,7 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
-from app.services.gpu_arbiter import GPUDispatchRequest
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUDispatchRequest
 from app.services.gpu_arbiter_store import GPUArbiterStore, GPUArbiterStoreError
 from app.utils.gpu_resource import validate_gpu_resource_id
 
@@ -106,6 +106,7 @@ class ActionSpec(BaseModel):
     resource_id: str
     operation: Literal["predict", "predict_interactive", "warmup", "reload"]
     body: dict[str, Any] = Field(default_factory=dict)
+    expected_error_code: Literal["gpu_capacity_unavailable"] | None = None
     delay_ms: int = Field(default=0, ge=0, le=3_600_000)
     timeout_seconds: float = Field(default=600, gt=0, le=3_600)
 
@@ -145,6 +146,7 @@ class ValidationManifest(BaseModel):
     scenario: Literal[
         "single-card-co-residency",
         "single-card-eviction",
+        "single-card-capacity-rejection",
         "dual-card",
         "cross-host",
     ]
@@ -183,6 +185,22 @@ class ValidationManifest(BaseModel):
             raise ValueError("dual-card scenario requires at least two resources")
         if self.scenario == "cross-host" and len(resource_ids) != 1:
             raise ValueError("cross-host scenario requires exactly one local resource")
+        expected_rejections = [
+            action for action in self.actions if action.expected_error_code is not None
+        ]
+        if self.scenario == "single-card-capacity-rejection":
+            if (
+                len(self.actions) != 1
+                or len(expected_rejections) != 1
+                or self.actions[0].role != "requester"
+            ):
+                raise ValueError(
+                    "capacity-rejection requires one requester with an expected error"
+                )
+        elif expected_rejections:
+            raise ValueError(
+                "expected_error_code is only valid for capacity-rejection"
+            )
         return self
 
 
@@ -1518,6 +1536,24 @@ async def _run_action(
                 "error": _safe_error(exc),
             }
         )
+    except GPUArbiterDispatchError as exc:
+        expected = action.expected_error_code
+        matched = bool(
+            expected is not None
+            and exc.error_code == expected
+            and "grant_generation" not in row
+            and "http_started_monotonic_ms" not in row
+        )
+        row.update(
+            {
+                "status": "passed" if matched else "failed",
+                "expected_error_code": expected,
+                "error_code": exc.error_code,
+                "error_http_status": exc.status_code,
+                "retry_after_seconds": exc.retry_after_s,
+                "error": None if matched else _safe_error(exc),
+            }
+        )
     except Exception as exc:  # noqa: BLE001 - evidence records action failure
         injected = bool(
             fault
@@ -1659,6 +1695,11 @@ def _final_truth_checks(
     }
     after_fences = {row["backend_id"]: row for row in after_database.get("fences", [])}
     requested_backend_ids = {action.backend_id for action in manifest.actions}
+    expected_rejection_backend_ids = {
+        action.backend_id
+        for action in manifest.actions
+        if action.expected_error_code is not None
+    }
     before_allocation_backend_ids = {
         allocation["backend_id"]
         for resource in before.get("redis", {}).get("resources", {}).values()
@@ -1744,31 +1785,56 @@ def _final_truth_checks(
         except ValueError:
             residency = {}
         identity = residency.get("identity") or {}
-        allocation_resource_id = allocation_entry[0] if allocation_entry else None
+        allocation_absent_expected = bool(
+            allocation_entry is None and backend_id in expected_rejection_backend_ids
+        )
+        allocation_resource_id = (
+            allocation_entry[0]
+            if allocation_entry
+            else registry.get("gpu_resource_id")
+            if allocation_absent_expected
+            else None
+        )
         allocation = allocation_entry[1] if allocation_entry else {}
         resource = resources_by_id.get(allocation_resource_id)
         physical_gpu = physical_gpus.get(resource.gpu_uuid) if resource else None
-        allocation_generation = allocation.get("generation")
+        allocation_generation = (
+            allocation.get("generation")
+            if allocation_entry
+            else residency.get("generation")
+        )
         try:
             fence_covers_generation = bool(
-                allocation_generation is not None
-                and int(fence.get("generation_high_water", 0))
-                >= int(allocation_generation)
+                (allocation_absent_expected and allocation_generation is None)
+                or (
+                    allocation_generation is not None
+                    and int(fence.get("generation_high_water", 0))
+                    >= int(allocation_generation)
+                )
             )
         except (TypeError, ValueError):
             fence_covers_generation = False
         probe = (registry.get("health") or {}).get("gpu_arbiter_probe") or {}
-        allocation_claim_exact = bool(
-            allocation.get("budget_mb")
-            == membership.get("vram_budget_mb")
-            == registry.get("vram_budget_mb")
-            and allocation.get("eviction_priority")
-            == membership.get("eviction_priority")
-            == registry.get("eviction_priority")
-            and allocation.get("max_concurrency")
-            == membership.get("max_concurrency")
-            == registry.get("max_concurrency")
-        )
+        if allocation_absent_expected:
+            allocation_claim_exact = bool(
+                membership.get("vram_budget_mb") == registry.get("vram_budget_mb")
+                and membership.get("eviction_priority")
+                == registry.get("eviction_priority")
+                and membership.get("max_concurrency")
+                == registry.get("max_concurrency")
+            )
+        else:
+            allocation_claim_exact = bool(
+                allocation.get("budget_mb")
+                == membership.get("vram_budget_mb")
+                == registry.get("vram_budget_mb")
+                and allocation.get("eviction_priority")
+                == membership.get("eviction_priority")
+                == registry.get("eviction_priority")
+                and allocation.get("max_concurrency")
+                == membership.get("max_concurrency")
+                == registry.get("max_concurrency")
+            )
         common_exact = bool(
             registry.get("gpu_resource_id") == allocation_resource_id
             and membership.get("gpu_resource_id") == allocation_resource_id
@@ -1792,7 +1858,7 @@ def _final_truth_checks(
                 gpu_index=physical_gpu.get("index"),
             )
         )
-        state = allocation.get("state")
+        state = "unloaded" if allocation_absent_expected else allocation.get("state")
         if state == "resident":
             pools = residency.get("pools") or {}
             state_exact = bool(
@@ -1826,7 +1892,11 @@ def _final_truth_checks(
             _check(
                 "final_backend_truth_exact",
                 common_exact and state_exact,
-                "final Redis allocation must match strict challenge-bound backend truth",
+                (
+                    "final Redis allocation must match strict challenge-bound backend truth"
+                    if allocation_entry is not None
+                    else "safe allocation absence must match challenge-bound backend truth"
+                ),
                 backend_id=backend_id,
                 resource_id=allocation_resource_id,
                 allocation_state=state,
@@ -1945,7 +2015,24 @@ def evaluate_run(
             and (
                 row.get("status") == "fault_injected"
                 if fault is not None and action_id == fault.hit_action_id
-                else row.get("status") == "passed"
+                else (
+                    row.get("status") == "passed"
+                    and (
+                        (
+                            manifest_actions[action_id].expected_error_code is None
+                            and row.get("expected_error_code") is None
+                        )
+                        or (
+                            row.get("expected_error_code")
+                            == manifest_actions[action_id].expected_error_code
+                            == row.get("error_code")
+                            and row.get("error_http_status") == 503
+                            and row.get("grant_generation") is None
+                            and row.get("http_status") is None
+                            and row.get("http_started_monotonic_ms") is None
+                        )
+                    )
+                )
             )
             for action_id, row in result_actions.items()
         )
@@ -2620,6 +2707,47 @@ def evaluate_run(
                 transition_evidence=transition_evidence,
             )
         )
+    elif fault is None and manifest.scenario == "single-card-capacity-rejection":
+        resource_id = manifest.resources[0].resource_id
+        before_snapshot = (
+            before.get("redis", {})
+            .get("resources", {})
+            .get(resource_id, {})
+            .get("snapshot", {})
+        )
+        after_snapshot = (
+            after.get("redis", {})
+            .get("resources", {})
+            .get(resource_id, {})
+            .get("snapshot", {})
+        )
+        action = manifest.actions[0]
+        result = result_actions.get(action.id, {})
+        allocations_unchanged = (
+            before_snapshot.get("allocations") == after_snapshot.get("allocations")
+            and before_snapshot.get("committed_mb")
+            == after_snapshot.get("committed_mb")
+        )
+        checks.append(
+            _check(
+                "single_card_capacity_rejected_before_http",
+                bool(
+                    result.get("status") == "passed"
+                    and result.get("expected_error_code")
+                    == result.get("error_code")
+                    == "gpu_capacity_unavailable"
+                    and result.get("error_http_status") == 503
+                    and result.get("grant_generation") is None
+                    and result.get("http_status") is None
+                    and result.get("http_started_monotonic_ms") is None
+                    and allocations_unchanged
+                ),
+                "capacity rejection must occur before backend HTTP and preserve allocations",
+                resource_id=resource_id,
+                backend_id=action.backend_id,
+                allocations_unchanged=allocations_unchanged,
+            )
+        )
     return checks
 
 
@@ -2645,6 +2773,8 @@ async def run_validation(
     )
     if (fault_kind is None) != (fault_target is None):
         raise ValueError("--fault and --fault-target must be provided together")
+    if manifest.scenario == "single-card-capacity-rejection" and fault_kind:
+        raise ValueError("capacity-rejection does not allow fault injection")
     fault = (
         FaultController(kind=fault_kind, target=fault_target)  # type: ignore[arg-type]
         if fault_kind and fault_target
@@ -2911,6 +3041,9 @@ _SCENARIO_PRIMARY_CHECKS = {
     "single-card-eviction": frozenset(
         {"single_card_eviction", "single_card_victim_transition_observed"}
     ),
+    "single-card-capacity-rejection": frozenset(
+        {"single_card_capacity_rejected_before_http"}
+    ),
     "dual-card": frozenset(
         {"dual_card_parallel_overlap", "multi_resource_gpu_execution"}
     ),
@@ -2975,6 +3108,37 @@ def _action_http_window_valid(action: Mapping[str, Any]) -> bool:
     )
 
 
+def _primary_action_valid(spec: ActionSpec, action: Mapping[str, Any]) -> bool:
+    if action.get("status") != "passed":
+        return False
+    if spec.expected_error_code is None:
+        return _action_http_window_valid(action)
+    started = action.get("started_monotonic_ms")
+    finished = action.get("finished_monotonic_ms")
+    return bool(
+        action.get("expected_error_code")
+        == action.get("error_code")
+        == spec.expected_error_code
+        and action.get("error_http_status") == 503
+        and not any(
+            key in action
+            for key in (
+                "grant_generation",
+                "http_status",
+                "http_started_monotonic_ms",
+                "http_finished_monotonic_ms",
+            )
+        )
+        and isinstance(started, (int, float))
+        and not isinstance(started, bool)
+        and math.isfinite(float(started))
+        and isinstance(finished, (int, float))
+        and not isinstance(finished, bool)
+        and math.isfinite(float(finished))
+        and float(finished) >= float(started)
+    )
+
+
 def _primary_report_valid(report: Mapping[str, Any]) -> bool:
     if not isinstance(report, Mapping):
         return False
@@ -2990,6 +3154,14 @@ def _primary_report_valid(report: Mapping[str, Any]) -> bool:
         snapshots = report.get("snapshots")
         started_at = _parse_aware_datetime(report.get("started_at"))
         finished_at = _parse_aware_datetime(report.get("finished_at"))
+        action_rows = {
+            action.get("id"): action
+            for action in actions
+            if isinstance(actions, list)
+            and isinstance(action, Mapping)
+            and isinstance(action.get("id"), str)
+        }
+        action_specs = {action.id: action for action in manifest.actions}
         if (
             report.get("schema") != EVIDENCE_SCHEMA
             or report.get("command") != "run"
@@ -3012,11 +3184,11 @@ def _primary_report_valid(report: Mapping[str, Any]) -> bool:
             or finished_at < started_at
             or not isinstance(actions, list)
             or not actions
+            or len(action_rows) != len(actions)
+            or set(action_rows) != set(action_specs)
             or not all(
-                isinstance(action, Mapping)
-                and action.get("status") == "passed"
-                and _action_http_window_valid(action)
-                for action in actions
+                _primary_action_valid(action_specs[action_id], action)
+                for action_id, action in action_rows.items()
             )
             or not isinstance(checks, list)
             or not checks
@@ -3074,6 +3246,7 @@ def verify_evidence(
     scenario: Literal[
         "single-card-co-residency",
         "single-card-eviction",
+        "single-card-capacity-rejection",
         "dual-card",
         "cross-host",
     ],
@@ -3315,6 +3488,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "single-card-co-residency",
             "single-card-eviction",
+            "single-card-capacity-rejection",
             "dual-card",
             "cross-host",
         ),

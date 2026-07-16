@@ -89,10 +89,14 @@ manifest 使用严格 JSON，拒绝额外字段。下面示例验证同一物理
 }
 ```
 
-支持的 `scenario` 为 `single-card-co-residency`、`single-card-eviction`、`dual-card` 和
-`cross-host`。操作支持 `predict`、`predict_interactive`、`warmup`、`reload`；真实验收应选择
+支持的 `scenario` 为 `single-card-co-residency`、`single-card-eviction`、
+`single-card-capacity-rejection`、`dual-card` 和 `cross-host`。操作支持 `predict`、
+`predict_interactive`、`warmup`、`reload`；真实验收应选择
 会覆盖目标模型池的业务 body。`dual-card` 在一份 manifest 中声明至少两张卡；`cross-host`
 则每台主机各用一份只声明本机一张卡的 manifest，并复用相同 `cohort_id`。
+`single-card-capacity-rejection` 只允许一个 `requester` action，且必须声明
+`"expected_error_code": "gpu_capacity_unavailable"`。只有 authority 在 grant 和 Backend HTTP 前
+返回精确 503，且前后 allocation 与 `committed_mb` 完全不变，该 action 才按通过计。
 验证 busy victim 时，victim action 必须命中已经 `Resident` 的模型池；冷建期间的
 `Loading`/builder 是受保护现场，不能用来证明 active drain。
 
@@ -137,8 +141,9 @@ uv run python scripts/validate_gpu_arbitration.py verify \
 ```
 
 退出码 `0` 表示通过，`1` 表示证据验证失败，`2` 表示安全或环境前置条件阻断。
-单卡 `verify` 必须分别选择 `single-card-co-residency` 或 `single-card-eviction`，每次通过只表示
-该子场景的证据一致；容量拒绝证据及三个子场景的组合复核仍属于 B，任何单份报告都不能关闭 B 门禁。
+单卡 `verify` 必须分别选择 `single-card-co-residency`、`single-card-eviction` 或
+`single-card-capacity-rejection`，每次通过只表示该子场景的证据一致；三个子场景的
+组合复核仍属于 B，任何单份报告都不能关闭 B 门禁。
 
 ## 故障注入
 
