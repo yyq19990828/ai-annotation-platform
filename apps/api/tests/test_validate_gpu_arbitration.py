@@ -925,6 +925,29 @@ def test_run_evaluator_requires_dual_card_overlap() -> None:
 
     assert not [check for check in checks if check["status"] != "passed"]
 
+    loading_sample = deepcopy(after)
+    for backend in loading_sample["backends"].values():
+        backend["residency"]["state"] = "loading"
+        backend["residency"]["gpu_loaded"] = None
+    boundary_checks = evaluate_run(
+        manifest=manifest,
+        actions=actions,
+        before=before,
+        after=after,
+        baseline_samples=_gpu_samples(),
+        during_samples=[loading_sample],
+        recovery_samples=_gpu_samples(a=5000, b=6000),
+        fault=None,
+    )
+    assert (
+        next(
+            check
+            for check in boundary_checks
+            if check["code"] == "multi_resource_gpu_execution"
+        )["status"]
+        == "passed"
+    )
+
     removed_peer = deepcopy(after)
     removed_peer["redis"]["resources"][_RESOURCE_B]["snapshot"]["allocations"] = [
         allocation

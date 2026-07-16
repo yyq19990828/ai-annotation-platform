@@ -2493,6 +2493,7 @@ def evaluate_run(
             )
         )
     if fault is None and manifest.scenario == "dual-card":
+        execution_samples = [*during_samples, after]
         overlaps = [
             action_overlap_ms(
                 {
@@ -2519,7 +2520,7 @@ def evaluate_run(
         )
         execution_by_resource = {
             resource.resource_id: _resource_gpu_execution_observed(
-                during_samples,
+                execution_samples,
                 resource_id=resource.resource_id,
                 backend_ids={
                     action.backend_id
@@ -2568,7 +2569,7 @@ def evaluate_run(
             .get("snapshot", {})
         )
         passed = _resource_gpu_execution_observed(
-            during_samples,
+            [*during_samples, after],
             resource_id=resource.resource_id,
             backend_ids=backend_ids,
         ) and any(

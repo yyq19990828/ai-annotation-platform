@@ -72,6 +72,7 @@
 
 ### Fixed
 
+- **GPU 双卡与跨宿主验收不再在请求完成边界误报未执行**：验收器会把 workload 全部返回后立即采集的最终快照纳入 Resident GPU 执行证明；当最后一个轮询样本仍为 Loading、紧随其后的可信快照已为 Resident 时，不会再因采样停止竞态阻断真实通过的并发场景。
 - **GPU 显存实物验收不再因暂停周期性健康扫描而读取陈旧证明**：验收 `run` 现在会在 workload HTTP 前为范围内每个 Backend 持久化新的 challenge-bound health，任一刷新失败均提前阻断，避免只读预检已观测到实时状态，真实 authority 却因数据库旧回执误判 not-ready。
 - **多卡 Backend 不再把宿主卡 1 误报为逻辑卡 0**：Compose 现从各 Backend 既有的 `*_GPU_DEVICE_ID` 派生独立物理卡 token，`/health.gpu_info` 优先消费它。即使 NVIDIA container runtime 把 PID 1 的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`、CUDA 将挂载卡重编号为 `cuda:0`，仍能精确报告宿主 `index:N` 或 GPU/MIG UUID，避免双卡仲裁预检误判资源域。
 - **五个 GPU Backend 的 drain cancel 不再接受变更 operation**：YOLO、ONNXTools、RapidOCR、Grounded-SAM2 与 SAM3 现在要求 RESUME token 同时精确匹配原 drain 的 owner 和 operation；仅 owner 相同但 operation 不同会保持 Draining 并返回 transition conflict，同一正确 token 仍可幂等重放，cancel 后迟到 unload 继续由 generation fence 拒绝。
