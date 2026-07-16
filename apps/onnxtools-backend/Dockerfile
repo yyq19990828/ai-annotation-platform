@@ -48,6 +48,8 @@ RUN python3 -m pip install "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>
 COPY onnxtools-backend/main.py onnxtools-backend/predictor.py \
      onnxtools-backend/schemas.py onnxtools-backend/attribute_schema.py \
      onnxtools-backend/handle_pool.py onnxtools-backend/gpu_lifecycle.py ./
+COPY onnxtools-backend/scripts/validate_managed_lifecycle.py \
+     /app/scripts/validate_managed_lifecycle.py
 
 # 模型目录: rtdetr-2024080100.onnx + va_260612.onnx 由 volume 挂载注入 (见 docker-compose.ml.yml).
 RUN mkdir -p /app/models

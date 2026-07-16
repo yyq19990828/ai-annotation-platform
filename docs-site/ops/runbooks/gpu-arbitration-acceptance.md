@@ -43,6 +43,10 @@ repair Redis 或启停服务。
 - manifest action Backend 与资源域内每个现存 allocation Backend 都已注册到声明的唯一
   `gpu_resource_id`；preflight 会逐一核对 durable fence、challenge health、物理卡身份、预算和并发参数，
   任一存量 Backend 不可信都不会执行 workload。
+- ONNXTools 加入 manifest 前，先按其 README 运行镜像内
+  `scripts/validate_managed_lifecycle.py`，用已批准 SHA-256 的真实检测/属性模型关闭四
+  ORT session 的 CUDA provider 与全池显存回落门禁。文件名可不同，但未经明确批准的
+  结构相似模型不能代替该验收。
 
 先创建一个仓库外证据目录，避免把运行产物混入源码：
 

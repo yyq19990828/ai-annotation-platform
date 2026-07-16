@@ -37,6 +37,32 @@
 
 Dockerfile 固定到已审计的 onnxtools commit，避免 `_onnx_session` ownership 契约随上游 `main` 漂移。新部署完成“空池基线 → 四个业务 session 全部加载 → 全池卸载 → 回到稳定基线”的真实 GPU 验证前，必须保持 `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED=0`。此时 `/setup` 不宣告 managed lifecycle，`/lifecycle/mode` 拒绝切入 enforce，residency 也不会成为自动驱逐依据。
 
+验收器会在加载 CUDA 前校验两个模型的批准 SHA-256 与审批引用，不允许用“结构相似”的未批准模型代替业务模型关闭门禁。在独占验收卡上执行：
+
+```bash
+export VALIDATION_IMAGE_PATH=/absolute/path/to/representative-vehicle.jpg
+export VALIDATION_DET_SHA256=<approved-rtdetr-sha256>
+export VALIDATION_VA_SHA256=<approved-va-sha256>
+export VALIDATION_MODEL_APPROVAL_REF=<approval-record-or-ticket>
+export VALIDATION_GPU_UUID=GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+docker run --rm --gpus '"device=0"' --entrypoint python3 \
+  -e VALIDATION_GPU_UUID \
+  -e VALIDATION_DET_SHA256 \
+  -e VALIDATION_VA_SHA256 \
+  -e VALIDATION_MODEL_APPROVAL_REF \
+  -e VALIDATION_IMAGE_PATH=/validation/vehicle.jpg \
+  -e VALIDATION_IMAGE_ID="$(docker image inspect \
+    ai-annotation-platform-onnxtools-backend:latest --format '{{.Id}}')" \
+  -v "$PWD/apps/onnxtools-backend/models:/app/models:ro" \
+  -v "$VALIDATION_IMAGE_PATH:/validation/vehicle.jpg:ro" \
+  ai-annotation-platform-onnxtools-backend:latest \
+  /app/scripts/validate_managed_lifecycle.py \
+  | tee /tmp/onnxtools-managed-lifecycle-evidence.json
+```
+
+代表图必须让 `vehicle-attr` 复合管道实际产生检测与分类结果。验收器会执行两轮三句柄/四 session 加载与受签全池卸载，拒绝任一 session 退回 CPU，并要求每轮卸载后显存稳定、回收至上下文基线且至少回收 90% 的模型工作集。输出 JSON 记录镜像 ID、物理 GPU UUID、模型/输入摘要、四 session provider chain、显存样本与最终 residency。仅在该证据通过并完成复核后，才能在目标部署中把 `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` 设为 `1`。
+
 ## 环境变量
 
 | 变量 | 默认 | 说明 |
