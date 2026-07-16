@@ -662,9 +662,7 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
     )
     item.width = 3
     item.height = 2
-    item.metadata_ = {
-        "video": {"fps": 10, "frame_count": 5, "width": 3, "height": 2}
-    }
+    item.metadata_ = {"video": {"fps": 10, "frame_count": 5, "width": 3, "height": 2}}
     reference = {
         "encoding": "coco_rle_ref",
         "size": [2, 3],
@@ -692,9 +690,7 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
         geometry={
             "type": "video_track_mask",
             "track_id": "trk-mask",
-            "keyframes": [
-                {"frame_index": 0, "mask": reference, "source": "manual"}
-            ],
+            "keyframes": [{"frame_index": 0, "mask": reference, "source": "manual"}],
             "outside": [{"from": 2, "to": 2, "source": "manual"}],
         },
         z_order=3,
@@ -703,17 +699,19 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
     async def _chunks():
         yield [task], {task_id: [mask]}, {item_id: item}
 
-    data, _ = await _run_video_zip(
-        project, _chunks(), ["yolo-frames-det", "davis"]
-    )
+    data, _ = await _run_video_zip(project, _chunks(), ["yolo-frames-det", "davis"])
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         assert zf.read("davis/ImageSets/2017/val.txt").decode() == "clip-a\n"
         names = zf.namelist()
         assert "davis/Annotations/Full-Resolution/clip-a/00000.png" in names
         assert "davis/Annotations/Full-Resolution/clip-a/00001.png" in names
         assert "davis/Annotations/Full-Resolution/clip-a/00002.png" in names
-        first = Image.open(io.BytesIO(zf.read("davis/Annotations/Full-Resolution/clip-a/00000.png")))
-        middle = Image.open(io.BytesIO(zf.read("davis/Annotations/Full-Resolution/clip-a/00001.png")))
+        first = Image.open(
+            io.BytesIO(zf.read("davis/Annotations/Full-Resolution/clip-a/00000.png"))
+        )
+        middle = Image.open(
+            io.BytesIO(zf.read("davis/Annotations/Full-Resolution/clip-a/00001.png"))
+        )
         assert first.mode == "P"
         assert list(first.getdata()) == [1, 0, 0, 0, 0, 0]
         assert list(middle.getdata()) == [0, 0, 0, 0, 0, 0]
@@ -730,7 +728,7 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
             "start_number": 0,
             "padding": 5,
             "extension": "jpg",
-        }
+        },
     ]
 
 

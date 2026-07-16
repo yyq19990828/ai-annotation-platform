@@ -97,9 +97,7 @@ celery_app.conf.update(
         # v0.8.6 · check_ml_backends_health 历史也漏在路由表外, 同步补上避免 stale celery 队列堆积
         "app.workers.ml_health.check_ml_backends_health": {"queue": "default"},
         # ADR-0049 · 只有独立控制 worker 持有 tombstone collector 数据库凭据。
-        "app.workers.ml_health.repair_gpu_arbiter_resources": {
-            "queue": "gpu.control"
-        },
+        "app.workers.ml_health.repair_gpu_arbiter_resources": {"queue": "gpu.control"},
     },
     # v0.7.0：beat schedule。运维侧需 deploy `celery -A app.workers.celery_app beat` 进程
     # （或 worker --beat 单进程模式）才会触发。

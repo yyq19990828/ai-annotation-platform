@@ -87,7 +87,9 @@ def test_health_meta_preserves_physical_identity_process_memory_and_residency() 
                 "builders": 1,
                 "borrowers": 0,
                 "evictable": False,
-                "pools": {"models": {"resident": None, "provider": "CUDAExecutionProvider"}},
+                "pools": {
+                    "models": {"resident": None, "provider": "CUDAExecutionProvider"}
+                },
             },
         }
     ).model_dump()

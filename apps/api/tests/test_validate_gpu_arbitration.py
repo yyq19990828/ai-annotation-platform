@@ -2298,18 +2298,14 @@ def _capacity_rejection_primary_report() -> dict:
 def test_verify_capacity_rejection_requires_no_backend_http() -> None:
     report = _capacity_rejection_primary_report()
     assert (
-        verify_evidence([report], scenario="single-card-capacity-rejection")[
-            "status"
-        ]
+        verify_evidence([report], scenario="single-card-capacity-rejection")["status"]
         == "passed"
     )
 
     forged = deepcopy(report)
     forged["actions"][0]["http_started_monotonic_ms"] = 0.0
     assert (
-        verify_evidence([forged], scenario="single-card-capacity-rejection")[
-            "status"
-        ]
+        verify_evidence([forged], scenario="single-card-capacity-rejection")["status"]
         == "failed"
     )
 

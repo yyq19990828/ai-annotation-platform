@@ -399,7 +399,9 @@ async def get_video_tracker_mask_content(
     try:
         payload = load_coco_rle(reference)
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=f"mask object is invalid: {exc}") from exc
+        raise HTTPException(
+            status_code=409, detail=f"mask object is invalid: {exc}"
+        ) from exc
     return JSONResponse(
         payload,
         headers={"Cache-Control": "private, max-age=300", "ETag": f'"{sha256}"'},

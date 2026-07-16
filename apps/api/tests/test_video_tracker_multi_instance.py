@@ -444,7 +444,11 @@ async def test_create_tracker_job_with_source_keeps_target_null(
             "type": "video_track_bbox",
             "track_id": "trk_src",
             "keyframes": [
-                {"frame_index": 0, "bbox": {"x": 1, "y": 2, "w": 3, "h": 4}, "source": "manual"}
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 1, "y": 2, "w": 3, "h": 4},
+                    "source": "manual",
+                }
             ],
             "outside": [],
         },
@@ -460,7 +464,12 @@ async def test_create_tracker_job_with_source_keeps_target_null(
         target_class_name="pedestrian",  # 有源时应被忽略
     )
     body = await create_tracker_job(
-        db_session, task=task, ctx=ctx, annotation_id=source.id, payload=payload, user=user
+        db_session,
+        task=task,
+        ctx=ctx,
+        annotation_id=source.id,
+        payload=payload,
+        user=user,
     )
     job = await db_session.get(VideoTrackerJob, body.id)
     assert job.annotation_id == source.id
@@ -803,7 +812,13 @@ class _MultiSourceAdapter:
         for f in range(ctx.from_frame, ctx.to_frame + 1):
             yield TrackerFrameResult(
                 frame_index=f,
-                geometry={"type": "bbox", "x": float(f), "y": 0.0, "w": 10.0, "h": 10.0},
+                geometry={
+                    "type": "bbox",
+                    "x": float(f),
+                    "y": 0.0,
+                    "w": 10.0,
+                    "h": 10.0,
+                },
                 confidence=1.0,
                 outside=False,
                 instance_id="1",

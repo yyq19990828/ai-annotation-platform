@@ -63,7 +63,11 @@ def test_davis_png_honors_outside_but_keeps_occluded_visible_pixels():
 
 def test_davis_rejects_more_than_254_sequence_objects():
     tracks = [
-        (str(index), 0, {"type": "video_track_mask", "track_id": f"trk_{index}", "keyframes": []})
+        (
+            str(index),
+            0,
+            {"type": "video_track_mask", "track_id": f"trk_{index}", "keyframes": []},
+        )
         for index in range(DAVIS_MAX_OBJECTS + 1)
     ]
     with pytest.raises(ValueError, match="at most 254"):

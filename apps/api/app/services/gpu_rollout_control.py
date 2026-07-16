@@ -271,9 +271,7 @@ async def advance_gpu_backend_rollout_control(
                 _validate_reset_ack(response, preparation)
             else:
                 gate = (
-                    "enforce"
-                    if preparation.operation == "mode_enforce"
-                    else "legacy"
+                    "enforce" if preparation.operation == "mode_enforce" else "legacy"
                 )
                 response = await client.lifecycle_mode(
                     LifecycleModeRequest(

@@ -390,7 +390,9 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_dispatch_recorder_uses_short_session_and_emits_structured_decision() -> None:
+async def test_dispatch_recorder_uses_short_session_and_emits_structured_decision() -> (
+    None
+):
     requester = _backend(gpu_loaded=False, budget_mb=8_000)
     peer = _backend(budget_mb=5_000, residency_overrides={"evictable": False})
     sessions = 0
@@ -408,7 +410,9 @@ async def test_dispatch_recorder_uses_short_session_and_emits_structured_decisio
     assert sessions == 1
     assert decision is not None
     assert decision.decision == "would-admit"
-    record = next(item for item in logs if item["event"] == "gpu_arbiter_shadow_decision")
+    record = next(
+        item for item in logs if item["event"] == "gpu_arbiter_shadow_decision"
+    )
     assert record["gpu_arbiter"]["authoritative"] is False
     assert record["gpu_arbiter"]["resource_id"] == "node-a/index:0"
 
@@ -466,7 +470,8 @@ def test_off_fast_path_does_not_parse_resource_configuration() -> None:
             raise AssertionError("off mode must not parse resources")
 
     assert not gpu_shadow_observation_enabled(
-        "node-a/index:0", config=OffConfig()  # type: ignore[arg-type]
+        "node-a/index:0",
+        config=OffConfig(),  # type: ignore[arg-type]
     )
 
 

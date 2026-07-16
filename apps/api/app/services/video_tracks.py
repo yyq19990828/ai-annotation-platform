@@ -400,7 +400,11 @@ def resolved_track_frames(
                     "mask": dict(kf.get("mask") or {}),
                     "source": kf.get("source", "manual"),
                     "occluded": bool(kf.get("occluded", False)),
-                    **({"attributes": kf["attributes"]} if isinstance(kf.get("attributes"), dict) else {}),
+                    **(
+                        {"attributes": kf["attributes"]}
+                        if isinstance(kf.get("attributes"), dict)
+                        else {}
+                    ),
                 }
                 for kf in keyframes
                 if not range_intersects_outside(

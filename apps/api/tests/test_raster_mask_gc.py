@@ -6,9 +6,18 @@ from app.workers.cleanup import _eligible_raster_mask_objects
 def test_raster_mask_gc_keeps_referenced_and_grace_period_objects():
     now = datetime.now(timezone.utc)
     candidates = [
-        {"key": "raster-masks/sha256/aa/aa/referenced.json", "last_modified": now - timedelta(days=3)},
-        {"key": "raster-masks/sha256/bb/bb/recent.json", "last_modified": now - timedelta(hours=2)},
-        {"key": "raster-masks/sha256/cc/cc/orphan.json", "last_modified": now - timedelta(days=2)},
+        {
+            "key": "raster-masks/sha256/aa/aa/referenced.json",
+            "last_modified": now - timedelta(days=3),
+        },
+        {
+            "key": "raster-masks/sha256/bb/bb/recent.json",
+            "last_modified": now - timedelta(hours=2),
+        },
+        {
+            "key": "raster-masks/sha256/cc/cc/orphan.json",
+            "last_modified": now - timedelta(days=2),
+        },
     ]
     eligible = _eligible_raster_mask_objects(
         candidates,

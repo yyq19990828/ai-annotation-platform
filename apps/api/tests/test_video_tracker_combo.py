@@ -51,8 +51,10 @@ def test_combo_seeds_from_discovery_mints_sequential_obj_ids():
 
 def test_combo_seeds_from_discovery_skips_outside_and_empty():
     outside = TrackerFrameResult(
-        frame_index=0, geometry={"type": "bbox", "x": 1.0, "y": 0, "w": 5, "h": 5},
-        instance_id="9", outside=True,
+        frame_index=0,
+        geometry={"type": "bbox", "x": 1.0, "y": 0, "w": 5, "h": 5},
+        instance_id="9",
+        outside=True,
     )
     empty = TrackerFrameResult(frame_index=0, geometry={}, instance_id="8")
     seeds = _combo_seeds_from_discovery(
@@ -125,7 +127,13 @@ class _PvsCaptureAdapter:
                 oid = str(s["obj_id"])
                 yield TrackerFrameResult(
                     frame_index=f,
-                    geometry={"type": "bbox", "x": float(f), "y": 0.0, "w": 5.0, "h": 5.0},
+                    geometry={
+                        "type": "bbox",
+                        "x": float(f),
+                        "y": 0.0,
+                        "w": 5.0,
+                        "h": 5.0,
+                    },
                     confidence=1.0,
                     outside=False,
                     instance_id=oid,

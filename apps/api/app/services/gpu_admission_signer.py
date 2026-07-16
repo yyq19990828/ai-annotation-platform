@@ -128,7 +128,7 @@ class GPUAdmissionTokenSigner:
         for kid, encoded in payload.items():
             if not isinstance(kid, str) or _KEY_ID_RE.fullmatch(kid) is None:
                 raise GPUAdmissionSignerConfigError(
-                    "GPU lifecycle signing key ids must match " "[A-Za-z0-9._-]{1,64}"
+                    "GPU lifecycle signing key ids must match [A-Za-z0-9._-]{1,64}"
                 )
             keyring[kid] = _decode_private_key(kid, encoded)
 

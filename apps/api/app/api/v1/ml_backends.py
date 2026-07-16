@@ -273,8 +273,7 @@ async def update_ml_backend(
                 "error_code": "gpu_config_invalid",
                 "message": str(exc),
                 "diagnostics": [
-                    diagnostic.model_dump(mode="json")
-                    for diagnostic in exc.diagnostics
+                    diagnostic.model_dump(mode="json") for diagnostic in exc.diagnostics
                 ],
             },
         ) from exc

@@ -97,14 +97,18 @@ async def get_annotation_mask_content(
     await assert_project_visible(task.project_id, db, user)
     geometry = annotation.geometry or {}
     if geometry.get("type") != "video_track_mask":
-        raise HTTPException(status_code=422, detail="annotation is not a video mask track")
+        raise HTTPException(
+            status_code=422, detail="annotation is not a video mask track"
+        )
     resolved = resolve_track_at_frame(geometry, frame_index)
     if resolved is None:
         raise HTTPException(status_code=404, detail="mask is outside at this frame")
     try:
         payload = load_coco_rle(resolved["mask"])
     except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=409, detail=f"mask object is invalid: {exc}") from exc
+        raise HTTPException(
+            status_code=409, detail=f"mask object is invalid: {exc}"
+        ) from exc
     return JSONResponse(
         payload,
         headers={

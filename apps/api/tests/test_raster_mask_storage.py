@@ -69,12 +69,16 @@ def test_load_coco_rle_rejects_digest_mismatch():
 
 @pytest.mark.asyncio
 async def test_mask_geometry_context_matches_video_size_and_frame_count():
-    db = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(
-        file_type="video",
-        width=1920,
-        height=1080,
-        metadata_={"video": {"frame_count": 10}},
-    )))
+    db = SimpleNamespace(
+        get=AsyncMock(
+            return_value=SimpleNamespace(
+                file_type="video",
+                width=1920,
+                height=1080,
+                metadata_={"video": {"frame_count": 10}},
+            )
+        )
+    )
     task = SimpleNamespace(dataset_item_id="item-1")
     geometry = {
         "type": "video_track_mask",

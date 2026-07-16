@@ -108,9 +108,7 @@ def backend_requirement_issues(
     missing_prompts = sorted(set(requirement.required_prompts) - prompts)
     missing_tasks = sorted(set(requirement.required_tasks) - model_tasks)
     missing_inputs = sorted(set(requirement.required_inputs) - inputs)
-    missing_geometries = sorted(
-        set(requirement.required_geometries) - geometries
-    )
+    missing_geometries = sorted(set(requirement.required_geometries) - geometries)
     missing_attributes = sorted(
         set(requirement.required_output_attributes) - output_attributes
     )
@@ -124,10 +122,11 @@ def backend_requirement_issues(
         issues.append(f"missing geometries {missing_geometries}")
     if missing_attributes:
         issues.append(f"missing output attributes {missing_attributes}")
-    if requirement.tracker_priority and selected_tracker(capabilities, requirement) is None:
-        issues.append(
-            "missing one of trackers " f"{list(requirement.tracker_priority)}"
-        )
+    if (
+        requirement.tracker_priority
+        and selected_tracker(capabilities, requirement) is None
+    ):
+        issues.append(f"missing one of trackers {list(requirement.tracker_priority)}")
     return issues
 
 
@@ -159,7 +158,9 @@ async def _probe_backend(backend: MLBackendRegistry) -> BackendProbe:
     try:
         healthy, health_meta = await client.health_meta()
         if not healthy:
-            return BackendProbe(backend, False, None, health_meta, "health check failed")
+            return BackendProbe(
+                backend, False, None, health_meta, "health check failed"
+            )
         setup = await client.setup()
         return BackendProbe(backend, True, setup, health_meta)
     except Exception as exc:  # noqa: BLE001 - every candidate must be reported, not abort gather
@@ -207,7 +208,9 @@ def _format_discovery_failure(
     for backend in sorted(backends, key=lambda item: item.url.casefold()):
         details = ", ".join(backend_requirement_issues(backend, requirement))
         observed.append(f"{backend.url} ({details or 'matched'})")
-    suffix = "; observed: " + "; ".join(observed) if observed else "; no backends registered"
+    suffix = (
+        "; observed: " + "; ".join(observed) if observed else "; no backends registered"
+    )
     return f"{requirement.key} requires {requirement.description}{suffix}"
 
 
@@ -224,9 +227,7 @@ async def _live_candidates(db: AsyncSession) -> list[MLBackendRegistry]:
     )
 
 
-async def _stub_candidate(
-    db: AsyncSession, stub_url: str
-) -> list[MLBackendRegistry]:
+async def _stub_candidate(db: AsyncSession, stub_url: str) -> list[MLBackendRegistry]:
     url = stub_url.rstrip("/")
     backend = await db.scalar(
         select(MLBackendRegistry).where(MLBackendRegistry.url == url)
@@ -329,9 +330,7 @@ async def reconcile_screenshot_backends(
         owned_stubs = list(
             (
                 await db.execute(
-                    select(MLBackendRegistry).where(
-                        MLBackendRegistry.source == "seed"
-                    )
+                    select(MLBackendRegistry).where(MLBackendRegistry.source == "seed")
                 )
             ).scalars()
         )

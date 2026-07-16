@@ -454,6 +454,8 @@ async def test_export_aap_json_video_project_task_block(
     assert body["mask_objects"] == {digest: rle}
     assert t0["annotations"][0]["geometry"]["type"] == "video_track_mask"
 
-    video_doc = json.loads(await ExportService(db_session).export_video_tracks(project.id))
+    video_doc = json.loads(
+        await ExportService(db_session).export_video_tracks(project.id)
+    )
     assert video_doc["tracks"][0]["geometry_type"] == "video_track_mask"
     assert video_doc["tracks"][0]["keyframes"][0]["mask"] == mask_ref

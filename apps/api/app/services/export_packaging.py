@@ -98,6 +98,8 @@ def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
         keyframe["mask_rle"] = rle
         keyframe["bbox"] = coco_rle_bbox_norm(rle)
     return hydrated
+
+
 LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
@@ -1268,7 +1270,11 @@ async def _build_video_export_zip(
                     yp = "yolo-frames-det/" if multi else ""
                     labels = build_yolo_frame_det_labels(
                         [
-                            (ann.class_name, track_geometry_by_id[ann.id], ann.attributes or {})
+                            (
+                                ann.class_name,
+                                track_geometry_by_id[ann.id],
+                                ann.attributes or {},
+                            )
                             for ann in track_anns
                         ],
                         [

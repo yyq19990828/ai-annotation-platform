@@ -177,7 +177,12 @@ def _coerce_video_track_geometry(
             "outside": [dict(item) for item in geometry.get("outside") or []],
         }
     if target_kind in {"polygon", "mask"}:
-        return {"type": target_type, "track_id": track_id, "keyframes": [], "outside": []}
+        return {
+            "type": target_type,
+            "track_id": track_id,
+            "keyframes": [],
+            "outside": [],
+        }
     return {
         "type": "video_track_bbox",
         "track_id": track_id,
@@ -679,7 +684,10 @@ def _stage_tracker_results(
         "grid_step": grid_step,
         "output_geometry": output_geometry,
     }
-    if len(json.dumps(staged, separators=(",", ":")).encode()) > MAX_TRACKER_STAGED_BYTES:
+    if (
+        len(json.dumps(staged, separators=(",", ":")).encode())
+        > MAX_TRACKER_STAGED_BYTES
+    ):
         raise ValueError("tracker_candidate_too_large: staged payload exceeds 64 MiB")
     job.staged_result = staged
 
@@ -903,7 +911,9 @@ async def run_tracker_job(
         tracker_capability = "sam3_video_interactive" if is_combo else job.model_key
         backend = await MLBackendService(db).get_tracker_backend_for_capabilities(
             task.project_id,
-            ["sam3_video", "sam3_video_interactive"] if is_combo else [tracker_capability],
+            ["sam3_video", "sam3_video_interactive"]
+            if is_combo
+            else [tracker_capability],
         )
         adapter = get_tracker_adapter(tracker_capability)
 

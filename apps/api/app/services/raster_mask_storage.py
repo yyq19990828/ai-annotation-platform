@@ -33,7 +33,9 @@ async def validate_mask_geometry_for_task(
     height = item.height or video.get("height")
     frame_count = video.get("frame_count")
     if not width or not height:
-        raise ValueError("source video width / height metadata is required for mask tracks")
+        raise ValueError(
+            "source video width / height metadata is required for mask tracks"
+        )
     expected_size = [int(height), int(width)]
     for keyframe in geometry.get("keyframes") or []:
         mask = keyframe.get("mask") or {}
@@ -41,11 +43,15 @@ async def validate_mask_geometry_for_task(
             raise ValueError(f"mask size must match source video {expected_size}")
         frame_index = keyframe.get("frame_index")
         if frame_count is not None and int(frame_index) >= int(frame_count):
-            raise ValueError(f"mask frame_index must be < source frame_count {frame_count}")
+            raise ValueError(
+                f"mask frame_index must be < source frame_count {frame_count}"
+            )
     if frame_count is not None:
         for outside in geometry.get("outside") or []:
             if int(outside.get("to", 0)) >= int(frame_count):
-                raise ValueError(f"outside range must be within source frame_count {frame_count}")
+                raise ValueError(
+                    f"outside range must be within source frame_count {frame_count}"
+                )
 
 
 def canonical_rle_bytes(rle: dict[str, Any]) -> bytes:

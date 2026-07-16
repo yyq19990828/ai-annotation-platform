@@ -188,9 +188,7 @@ PROJECT_SPECS = {
             TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
             for index in range(4)
         ),
-        media_paths=(
-            *(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),
-        ),
+        media_paths=(*(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),),
     ),
     "ocr_demo": ProjectSpec(
         display_id="P-OCR",

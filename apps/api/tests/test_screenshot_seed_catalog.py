@@ -268,9 +268,7 @@ async def _ready_profile(db):
             "capabilities": {
                 "supported_inputs": ["full_image"],
                 "supported_geometric_outputs": ["polygon"],
-                "models": [
-                    {"task": "ocr", "output_attribute_types": ["text"]}
-                ],
+                "models": [{"task": "ocr", "output_attribute_types": ["text"]}],
             }
         },
     )

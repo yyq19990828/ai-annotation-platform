@@ -89,9 +89,7 @@ async def test_env_sync_uses_safe_defaults_and_preserves_existing_claims(
 
     rows = {
         row.url: row
-        for row in (
-            await db_session.execute(select(MLBackendRegistry))
-        ).scalars()
+        for row in (await db_session.execute(select(MLBackendRegistry))).scalars()
     }
     created = rows["http://new-env:8000"]
     assert created.gpu_resource_id is None

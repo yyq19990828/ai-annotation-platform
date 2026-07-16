@@ -38,7 +38,15 @@ async def _make_video_task(db_session, owner_id):
         file_type="video",
         width=3,
         height=2,
-        metadata_={"video": {"duration_ms": 3000, "fps": 30, "frame_count": 90, "width": 3, "height": 2}},
+        metadata_={
+            "video": {
+                "duration_ms": 3000,
+                "fps": 30,
+                "frame_count": 90,
+                "width": 3,
+                "height": 2,
+            }
+        },
     )
     db_session.add(item)
     await db_session.flush()
@@ -1038,7 +1046,13 @@ def test_apply_tracker_results_converts_source_to_mask_track():
         geometry={
             "type": "video_track_bbox",
             "track_id": "track-1",
-            "keyframes": [{"frame_index": 0, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}, "source": "manual"}],
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    "source": "manual",
+                }
+            ],
             "outside": [],
         },
     )
@@ -1053,10 +1067,16 @@ def test_apply_tracker_results_converts_source_to_mask_track():
     apply_tracker_results(
         annotation,
         _job(),
-        [TrackerFrameResult(
-            frame_index=0,
-            geometry={"type": "mask", "mask": reference, "bbox": {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1}},
-        )],
+        [
+            TrackerFrameResult(
+                frame_index=0,
+                geometry={
+                    "type": "mask",
+                    "mask": reference,
+                    "bbox": {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1},
+                },
+            )
+        ],
     )
     assert annotation.annotation_type == "video_track_mask"
     assert annotation.tool_unit_id == "region"
@@ -1083,9 +1103,7 @@ def test_apply_tracker_results_preserves_mask_type_when_all_results_are_outside(
         geometry={
             "type": "video_track_mask",
             "track_id": "track-1",
-            "keyframes": [
-                {"frame_index": 0, "mask": reference, "source": "manual"}
-            ],
+            "keyframes": [{"frame_index": 0, "mask": reference, "source": "manual"}],
             "outside": [],
         },
     )
@@ -1113,7 +1131,12 @@ def test_stage_tracker_results_rejects_oversized_payload_atomically(monkeypatch)
     with pytest.raises(ValueError, match="tracker_candidate_too_large"):
         runner._stage_tracker_results(
             job,
-            [TrackerFrameResult(frame_index=0, geometry={"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1})],
+            [
+                TrackerFrameResult(
+                    frame_index=0,
+                    geometry={"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1},
+                )
+            ],
             1,
             "bbox",
         )
@@ -1135,7 +1158,13 @@ async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
         geometry={
             "type": "video_track_bbox",
             "track_id": "track-1",
-            "keyframes": [{"frame_index": 0, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}, "source": "manual"}],
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    "source": "manual",
+                }
+            ],
         },
     )
     db_session.add(annotation)
@@ -1163,11 +1192,17 @@ async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
         staged_result={
             "grid_step": 1,
             "output_geometry": "mask",
-            "results": [{
-                "frame_index": 1,
-                "geometry": {"type": "mask", "mask": bad_ref, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}},
-                "outside": False,
-            }],
+            "results": [
+                {
+                    "frame_index": 1,
+                    "geometry": {
+                        "type": "mask",
+                        "mask": bad_ref,
+                        "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    },
+                    "outside": False,
+                }
+            ],
         },
     )
     db_session.add(job)

@@ -138,7 +138,9 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
                 deleted += 1
             except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure
                 errors += 1
-                log.warning("delete unreferenced raster mask %s failed: %s", item["key"], exc)
+                log.warning(
+                    "delete unreferenced raster mask %s failed: %s", item["key"], exc
+                )
     result = {
         "dry_run": dry_run,
         "referenced": len(referenced),

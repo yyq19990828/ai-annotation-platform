@@ -233,10 +233,8 @@ class MLBackendClient:
                         assert rollout.dispatch_mode is not None
                         effective_mode = rollout.dispatch_mode
                         if not resource_is_configured:
-                            rollout_boundary_active = (
-                                await gpu_rollout_boundary_active(
-                                    self._shadow_session_factory
-                                )
+                            rollout_boundary_active = await gpu_rollout_boundary_active(
+                                self._shadow_session_factory
                             )
                     else:
                         effective_mode = GPUArbiterMode.OFF

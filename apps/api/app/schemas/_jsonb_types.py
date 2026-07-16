@@ -21,7 +21,14 @@ import re
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 
 # ── v0.13.11 · 点云 lidar 坐标系约定 ──────────────────────────────────
@@ -210,7 +217,14 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
 # polygon 系几何 -> region, 其余 -> bbox。写入 schema 入口映射与 prediction 派生共用。
 RETIRED_AI_INTERACTIVE = "ai_interactive"
 _REGION_GEOMETRY_TYPES = frozenset(
-    {"polygon", "multi_polygon", "mask", "video_polygon", "video_track_polygon", "video_track_mask"}
+    {
+        "polygon",
+        "multi_polygon",
+        "mask",
+        "video_polygon",
+        "video_track_polygon",
+        "video_track_mask",
+    }
 )
 
 

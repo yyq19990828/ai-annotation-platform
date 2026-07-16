@@ -361,15 +361,17 @@ def test_coco_frames_seg_exports_mask_track_as_rle_crowd():
         "outside": [],
     }
     doc = build_coco_frames_seg(
-        [{
-            "seq": "mask-seq",
-            "tracks": [("car", geometry, {}, "mask-1")],
-            "bboxes": [],
-            "frame_count": 1,
-            "step": 1,
-            "img_w": 3,
-            "img_h": 2,
-        }],
+        [
+            {
+                "seq": "mask-seq",
+                "tracks": [("car", geometry, {}, "mask-1")],
+                "bboxes": [],
+                "frame_count": 1,
+                "step": 1,
+                "img_w": 3,
+                "img_h": 2,
+            }
+        ],
         {"car": 0},
         frame_start_number=1,
         include_attributes=True,

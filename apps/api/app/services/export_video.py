@@ -39,7 +39,12 @@ logger = logging.getLogger("app.services.export_video")
 # ``video_rotated_bbox`` / ``video_keypoint`` 是 inert schema（前端不产出、库中无数据），
 # 故不在此列；待其真正落库后再接入导出。
 VIDEO_TRACK_GEOMETRY_TYPES = frozenset(
-    {"video_track_bbox", "video_track_polygon", "video_track_polyline", "video_track_mask"}
+    {
+        "video_track_bbox",
+        "video_track_polygon",
+        "video_track_polyline",
+        "video_track_mask",
+    }
 )
 VIDEO_SINGLE_FRAME_GEOMETRY_TYPES = frozenset(
     {"video_bbox", "video_polygon", "video_polyline"}
@@ -466,7 +471,10 @@ def build_coco_frames_seg(
                         "bbox": bbox,
                         "area": int(sum(int(value) for value in counts[1::2])),
                         "iscrowd": 1,
-                        "segmentation": {"size": list(rle["size"]), "counts": list(counts)},
+                        "segmentation": {
+                            "size": list(rle["size"]),
+                            "counts": list(counts),
+                        },
                     }
                     if include_attributes:
                         attrs = dict(attributes or {})

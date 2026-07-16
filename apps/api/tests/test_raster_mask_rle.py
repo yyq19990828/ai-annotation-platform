@@ -12,8 +12,7 @@ from app.utils.raster_mask_rle import (
 
 
 FIXTURE_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "apps/web/src/__fixtures__/rasterMaskRle.json"
+    Path(__file__).resolve().parents[3] / "apps/web/src/__fixtures__/rasterMaskRle.json"
 )
 FIXTURE = json.loads(FIXTURE_PATH.read_text())
 

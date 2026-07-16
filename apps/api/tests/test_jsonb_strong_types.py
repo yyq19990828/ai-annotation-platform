@@ -393,7 +393,11 @@ def test_video_track_mask_geometry_valid():
             "track_id": "mask-1",
             "keyframes": [
                 {"frame_index": 2, "mask": _mask_ref(), "source": "manual"},
-                {"frame_index": 8, "mask": _mask_ref(sha="b" * 64), "source": "prediction"},
+                {
+                    "frame_index": 8,
+                    "mask": _mask_ref(sha="b" * 64),
+                    "source": "prediction",
+                },
             ],
             "outside": [{"from": 4, "to": 5}],
         }
@@ -404,11 +408,20 @@ def test_video_track_mask_geometry_valid():
 @pytest.mark.parametrize(
     "patch",
     [
-        {"keyframes": [{"frame_index": 2, "mask": _mask_ref()}, {"frame_index": 2, "mask": _mask_ref(sha="b" * 64)}]},
+        {
+            "keyframes": [
+                {"frame_index": 2, "mask": _mask_ref()},
+                {"frame_index": 2, "mask": _mask_ref(sha="b" * 64)},
+            ]
+        },
         {"keyframes": [{"frame_index": True, "mask": _mask_ref()}]},
         {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "size": [4097, 1]}}]},
         {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "runs": 1_000_001}}]},
-        {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "sha256": "b" * 64}}]},
+        {
+            "keyframes": [
+                {"frame_index": 2, "mask": {**_mask_ref(), "sha256": "b" * 64}}
+            ]
+        },
         {"outside": [{"from": 5, "to": 4}]},
     ],
 )

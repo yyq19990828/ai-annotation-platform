@@ -77,9 +77,7 @@ class GPUBackendFence(Base):
     rollout_control_transition_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
-    rollout_control_epoch: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True
-    )
+    rollout_control_epoch: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     rollout_control_membership_epoch: Mapped[int | None] = mapped_column(
         BigInteger, nullable=True
     )

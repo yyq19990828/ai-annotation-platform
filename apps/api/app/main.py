@@ -103,9 +103,8 @@ async def _registry_validation_error_handler(
     """Keep the ADR-0049 GPU config 422 envelope stable after Pydantic validation."""
 
     path = request.url.path
-    is_registry_write = (
-        request.method in {"POST", "PUT"}
-        and path.startswith("/api/v1/admin/ml-integrations/registry")
+    is_registry_write = request.method in {"POST", "PUT"} and path.startswith(
+        "/api/v1/admin/ml-integrations/registry"
     )
     errors = exc.errors()
     gpu_errors = []

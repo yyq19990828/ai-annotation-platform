@@ -4220,10 +4220,7 @@ async def prepare_gpu_backend_rollout_control(
                     rollout is None
                     or rollout.state != expected_state
                     or rollout.transition_id != transition_id
-                    or (
-                        target_gate == "enforce"
-                        and rollout.target_mode != "enforce"
-                    )
+                    or (target_gate == "enforce" and rollout.target_mode != "enforce")
                     or (
                         target_gate == "legacy"
                         and rollout.target_mode not in {"off", "observe"}
@@ -4255,7 +4252,9 @@ async def prepare_gpu_backend_rollout_control(
                     )
                 ):
                     operation = "mode_enforce"
-                elif reset_acknowledged or evidence.residency.lifecycle_gate == "enforce":
+                elif (
+                    reset_acknowledged or evidence.residency.lifecycle_gate == "enforce"
+                ):
                     operation = "mode_enforce"
                 else:
                     operation = "reset"

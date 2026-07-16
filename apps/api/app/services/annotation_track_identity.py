@@ -6,7 +6,12 @@ from app.services.annotation_propagation import _new_track_id
 
 
 COMPACT_VIDEO_TRACK_TYPES = frozenset(
-    {"video_track_bbox", "video_track_polygon", "video_track_polyline", "video_track_mask"}
+    {
+        "video_track_bbox",
+        "video_track_polygon",
+        "video_track_polyline",
+        "video_track_mask",
+    }
 )
 
 

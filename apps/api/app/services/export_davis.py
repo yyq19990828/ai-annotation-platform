@@ -34,7 +34,9 @@ def derive_davis_object_ids(
             f"DAVIS supports at most {DAVIS_MAX_OBJECTS} mask tracks per sequence; "
             "palette index 255 is reserved for void"
         )
-    return derive_track_number([(annotation_id, geometry) for annotation_id, _, geometry in tracks])
+    return derive_track_number(
+        [(annotation_id, geometry) for annotation_id, _, geometry in tracks]
+    )
 
 
 def build_davis_palette_png(

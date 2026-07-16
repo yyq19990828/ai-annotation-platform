@@ -155,14 +155,10 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
     report = await reconcile_screenshot_backends(db_session, mode="live")
 
     assert report["bindings"]["image_demo"]["backend_id"] == str(image.id)
-    assert report["bindings"]["video_demo"]["tracker"] == (
-        "sam3_video_interactive"
-    )
+    assert report["bindings"]["video_demo"]["tracker"] == ("sam3_video_interactive")
     assert report["bindings"]["ocr_demo"]["backend_id"] == str(ocr.id)
     assert projects["pointcloud_demo"].ml_backend_id is None
-    associations = list(
-        (await db_session.execute(select(ProjectMLBackend))).scalars()
-    )
+    associations = list((await db_session.execute(select(ProjectMLBackend))).scalars())
     assert {
         (association.project_id, association.registry_id)
         for association in associations

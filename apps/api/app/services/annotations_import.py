@@ -192,7 +192,9 @@ async def import_aap_json_annotations(
 
             try:
                 validated_geometry = _GEOMETRY_ADAPTER.validate_python(entry.geometry)
-                entry.geometry = validated_geometry.model_dump(by_alias=True, exclude_unset=True)
+                entry.geometry = validated_geometry.model_dump(
+                    by_alias=True, exclude_unset=True
+                )
                 mask_objects = _validate_aap_mask_objects(
                     entry.geometry, envelope.mask_objects
                 )
@@ -208,7 +210,9 @@ async def import_aap_json_annotations(
                 continue
             except ValueError as exc:
                 result.errors.append(
-                    AAPImportErrorEntry(task_match=match_dict, reason=f"invalid geometry: {exc}")
+                    AAPImportErrorEntry(
+                        task_match=match_dict, reason=f"invalid geometry: {exc}"
+                    )
                 )
                 result.skipped += 1
                 continue

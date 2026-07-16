@@ -253,7 +253,11 @@ async def create_tracker_job(
             **seed_prompt,
             **({"sam_variant": payload.sam_variant} if payload.sam_variant else {}),
             **({"text": payload.text} if payload.text else {}),
-            **({"output_geometry": payload.output_geometry} if payload.output_geometry else {}),
+            **(
+                {"output_geometry": payload.output_geometry}
+                if payload.output_geometry
+                else {}
+            ),
             **(
                 {"exemplars": [e.model_dump() for e in payload.exemplars]}
                 if payload.exemplars

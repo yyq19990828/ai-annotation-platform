@@ -38,9 +38,7 @@ def _proof_timestamp(value: datetime) -> str:
 @pytest.fixture
 async def rollout_control_db(
     test_engine: AsyncEngine,
-) -> AsyncIterator[
-    tuple[async_sessionmaker[AsyncSession], uuid.UUID, list[str]]
-]:
+) -> AsyncIterator[tuple[async_sessionmaker[AsyncSession], uuid.UUID, list[str]]]:
     factory = async_sessionmaker(
         test_engine,
         class_=AsyncSession,

@@ -217,8 +217,18 @@ def test_mask_track_uses_nearest_hold_with_earlier_tie_and_endpoint_hold():
         "type": "video_track_mask",
         "track_id": "m1",
         "keyframes": [
-            {"frame_index": 4, "mask": _mask_ref("a"), "source": "manual", "attributes": {"state": "a"}},
-            {"frame_index": 8, "mask": _mask_ref("b"), "source": "prediction", "occluded": True},
+            {
+                "frame_index": 4,
+                "mask": _mask_ref("a"),
+                "source": "manual",
+                "attributes": {"state": "a"},
+            },
+            {
+                "frame_index": 8,
+                "mask": _mask_ref("b"),
+                "source": "prediction",
+                "occluded": True,
+            },
         ],
         "outside": [],
     }
