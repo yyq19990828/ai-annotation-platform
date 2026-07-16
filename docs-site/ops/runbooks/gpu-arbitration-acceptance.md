@@ -3,7 +3,7 @@ title: Runbook：GPU 显存仲裁验收
 audience: [ops, developer]
 type: how-to
 status: active
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-17
 ---
 
 # Runbook：GPU 显存仲裁验收
@@ -23,10 +23,10 @@ last_reviewed: 2026-07-16
 
 `preflight` 是只读操作。`run` 先只读验证除数据库缓存证明外的全部安全门禁，通过后才为范围内
 每个 Backend 重新取得 challenge-bound health 并持久化运行时证明，再执行一次完整预检。
-任一刷新或二次预检失败都会在业务 HTTP 前阻断。随后它
-直接进入真实 dispatch authority，因为生产 effective enforce 在完成灰度门禁前仍关闭。
-证明刷新不会修改 claim、fence、rollout mode 或 Redis 账本；`run` 也不会迁移数据库、
-repair Redis 或启停服务。
+任一刷新或二次预检失败都会在业务 HTTP 前阻断。随后它通过验收专用入口直接执行真实 dispatch
+authority；这条路径独立于生产 release latch，用于在开启逐资源 rollout 前取得证据，不会把生产请求切到
+effective `enforce`。证明刷新不会修改 claim、fence、rollout mode 或 Redis 账本；`run` 也不会迁移
+数据库、repair Redis、修改 release latch 或启停服务。
 
 ## 前置条件
 

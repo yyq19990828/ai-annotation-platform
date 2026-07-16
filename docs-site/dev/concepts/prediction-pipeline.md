@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-17
 ---
 
 # 预标注流水线（Prediction Pipeline）
@@ -315,7 +315,8 @@ authority，effective `enforce` 下可使用 Redis lease 执行 Resident 快路�
 Resident、CPU fallback、Unloaded 或保守 Unknown。容量不足时，authority 会在 target cold intent
 之前按优先级 + LRU 依次驱逐同一完整资源 ID 上的空闲 victim，只在严格 drain ACK、
 新鲜 health proof 与终态 CAS 都成功后释放预算；不确定结果保守收口 Unknown 并停止后续驱逐。
-忙碌 victim 等待与生产 effective enforce 仍未开启；legacy unload 也不能作为显存已释放或预算已减账的证据。
+空闲和 busy victim 的等待、驱逐与取消路径均已接通；effective `enforce` 只有在运维显式开启 release latch、
+且逐资源 rollout 成功收敛为 `enforcing` 后才会生效。legacy unload 仍不能作为显存已释放或预算已减账的证据。
 
 ## 代码索引
 

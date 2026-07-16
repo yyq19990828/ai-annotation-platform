@@ -3,7 +3,7 @@ audience: [super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-17
 ---
 
 # ML Backend 注册（全局注册表）
@@ -28,7 +28,7 @@ ML Backend 是平台对接外部推理服务的契约层。注册表是**全局*
 | GPU 物理资源 | 稳定 `gpu_resource_id` | 从运维显式配置的逐卡资源中选择；留空不等于已确认 CPU |
 | 显存预算 | `vram_budget_mb` | 与 GPU 资源成对填写，正整数 MiB，不得超过该卡 `allocatable_mb` |
 | 驱逐优先级 | `eviction_priority` | 数值越大越难被驱逐，可为负数，不是请求队列优先级 |
-| 最大并发 | `max_concurrency` | 1–32；当前仅是单进程 / 事件循环的本地背压 |
+| 最大并发 | `max_concurrency` | 1–32；effective `off/observe` 是单进程 / 事件循环的本地背压，effective `enforce` 由 Redis request lease 收口为跨进程上限 |
 | 额外参数 | JSON 扩展字段 | 不得与上述强类型字段冲突 |
 
 > **已删除的虚构字段**：`type`（类型选择器）、默认 prompt、默认阈值均**不是**注册表单的真实字段。backend 类型由 backend 自身通过 `/setup` 声明，不在注册时指定。`max_concurrency` 由表单单独填写后保存到 `extra_params` JSONB；其他扩展参数仍在高级 JSON 中编辑。
@@ -111,7 +111,7 @@ GET    /admin/ml-integrations/all                        # 全局列表（新建
 - **观测（observe）**：`GET /admin/ml-integrations/observe` 直连 env 配的 ML Backend 容器，不需要项目注册即可看健康 / 变体目录。
 - **试启动（smoke-test）**：`POST /admin/ml-integrations/observe/smoke-test`，只有新协议 residency 能严格证明所有 pool / builder / borrower 已空时才预热指定变体并自动还原；旧协议会同时保守检查图像池、视频池与活跃会话。
 - **GPU 资源诊断**：超管可查看逐卡容量、静态预算、desired → effective mode 及配置 blocker。`observe` 仅记录影子决策，不会拒绝、排队或驱逐请求。
-- **`max_concurrency`**：写入 `extra_params.max_concurrency`；在 Redis request lease 尚未生效时，不得将它理解为 API 与多 Celery worker 共享的全局上限。
+- **`max_concurrency`**：写入 `extra_params.max_concurrency`；只有逐资源 effective mode 已为 `enforce` 时，它才是 API 与多 Celery worker 共享的全局上限，`off/observe` 下各进程仍分别计数。
 
 ## 相关
 

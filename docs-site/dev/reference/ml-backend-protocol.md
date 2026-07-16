@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-17
 ---
 
 # ML Backend 协议契约
@@ -21,7 +21,7 @@ last_reviewed: 2026-07-16
 
 ## 全局注册表与项目启用
 
-ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。effective `off/observe` 仍由各 API / Celery 进程的本地 semaphore 限流；effective `enforce` authority 则已按 [ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 使用 Redis request lease 执行跨进程上限。生产 effective enforce 仍保持关闭，因此当前生产请求仍只受本地闸限制。两层职责：
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。effective `off/observe` 仍由各 API / Celery 进程的本地 semaphore 限流；effective `enforce` authority 则已按 [ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 使用 Redis request lease 执行跨进程上限。release latch 默认关闭；运维完成本地验收、显式开启 latch，且逐资源 rollout 收敛为 `enforcing` 后，跨进程上限才会生效。两层职责：
 
 - **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
 - **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
@@ -69,8 +69,8 @@ Draining→Unloading 与 cancel 分别在同一逐资源 Redis transition owner 
 ACK + fresh health 提交 Resident 或保守 Unknown。冻结 marker 不随 owner TTL 消失，只能由 exact 分支终态
 释放或 challenge-bound proof reset 清理；缺 key、mirror/branch/deadline 损坏均 fail-closed。DRAIN、双域等待
 与 UNLOAD 受工作 deadline 限制，owner 另保留 30 秒取消收尾窗口。以上状态与等待按完整
-`gpu_resource_id` 分片，单卡、多卡共用同一路径；实物多卡验收仍是后续阶段。
-生产 effective enforce 继续保持关闭。
+`gpu_resource_id` 分片，单卡、多卡共用同一路径。参考环境的实物单卡、多卡与跨宿主门禁均已通过；
+各部署仍须用自身 Backend、模型制品与 GPU 拓扑完成验收，并由运维逐资源启用默认关闭的 release latch。
 五个受管 backend 在启动时同时检查 NVIDIA/CUDA/ROCm 可见设备配置；单索引、单 GPU/MIG UUID
 或显式无设备值可用，逗号多值与已暴露 GPU runtime 的无界 `all` 集合会直接使服务启动失败。
 
@@ -307,8 +307,9 @@ high-water。任一 epoch/horizon 推进前，平台必须在仍持有逐卡锁�
 必须先取得新的 exact active proof，并在旧 token horizon 之后用更大 control epoch 恢复。任一成员推进 epoch、ACK 未确认、signer/证明/alias 阻断或
 证明尚不满足 readiness 时，已有卡级 ready 必须在返回结果前降为 not-ready。成功 ACK 不直接授予
 Redis ready 或驱逐权；周期 repair 只在后续 proof 同时具有非空 exact capability、当前 active identity、等于
-durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horizon 时才可恢复 ready。由于生产
-effective enforce 继续关闭，实际派发不签业务 token、不创建 admission lease。rollout 控制操作会把
+durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horizon 时才可恢复 ready。release latch
+关闭或逐资源尚未收敛为 `enforcing` 时，实际派发不签业务 token、不创建 admission lease；只有 effective
+`enforce` 才进入 Redis authority。rollout 控制操作会把
 `reset|mode_enforce|mode_legacy`、exact transition UUID、membership epoch、boot id、control epoch
 与 token expiry 持久在 Backend fence；进程重启或 HTTP 响应丢失后，只重签这个意图。
 promotion 必须先在 legacy gate 下完成 signed full-reset 并由 post-horizon health 证明空池，

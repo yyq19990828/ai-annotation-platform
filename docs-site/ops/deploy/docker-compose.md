@@ -3,7 +3,7 @@ audience: [ops]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-17
 ---
 
 # 生产部署（Docker Compose）
@@ -544,14 +544,14 @@ Redis 快照时间有界等待。等待不续期，超时或取消会精确清�
 `observe` 已在 predict、交互预测、warmup、reload 与注册 smoke-test
 的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
 快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
-绝不拒绝、排队或驱逐业务请求。`enforce` 仍需 Redis 账本与 lifecycle gate
+绝不拒绝、排队或驱逐业务请求。`enforce` 需要 Redis 账本与 lifecycle gate
 握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本、恢复
 prepared 中间态并完成 legacy membership ACK。派发侧已具备 Redis admission、业务 token、Resident/cold
-authority、有界两级 FIFO 与空闲 victim 驱逐编排，但生产 effective mode 仍锁定为 `off`，因此实际请求不会
-进入这条权威路径、签业务 token 或切换 backend enforce gate。Redis 会原子阻断 cooldown 未到期的
-victim，authority 已能在 exact card ticket 上有界等待；busy victim drain/cancel、实物多卡验收与
-enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
-observe。`off/observe` 不创建或修复仲裁 Redis key。
+authority、有界两级 FIFO，以及空闲和 busy victim 的驱逐、等待与取消编排；参考环境的实物单卡、多卡和
+跨宿主门禁均已通过。每个部署仍须完成本地验收并显式开启
+`GPU_ARBITER_ROLLOUT_ENABLED`，逐资源状态成功推进到 `enforcing` 后，请求才会进入权威路径、签业务
+token 并创建 Redis lease。任一 rollout、证明或账本门禁不满足时，effective mode 保持 `off` 并显示
+blocker，不会静默降级为 `observe`。`off/observe` 不创建或修复仲裁 Redis key。
 
 tombstone collector 必须使用独立数据库登录角色和独立的 `gpu.control` 单并发 worker。普通
 API/Celery 角色不得是 schema owner、superuser 或其他集群管理角色，并且必须没有

@@ -2,7 +2,7 @@
 audience: [super_admin]
 type: reference
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-17
 ---
 
 # ML Backend 性能基准（RTX 3090）
@@ -221,8 +221,8 @@ server 档约慢 35%，精度略高。
 | sam3（图像各任务） | 4.5–5.3GB | ~10s |
 | rapidocr | ~0.7GB（常驻，onnxruntime CUDA） | — |
 
-- **单张 24GB 3090** 上，yolo + gsam2 + rapidocr 轻松共存；叠上 sam3（~5GB）后总量约 10–14GB，仍在 24GB 内。**小显存卡（8–12GB）叠多个 GPU backend 时需谨慎**，多 backend 挤一张卡可能显存竞争、静默退化——详见 `ROADMAP` 的「跨 backend 显存互斥编排」。
-- **重新加载 vs 保活**：idle-unload 默认 600s，闲置超 10 分钟后首个请求要付上表的重新加载（sam3 达 ~10s）。对交互延迟敏感的部署，建议给 backend 保持少量心跳流量、或调低 `IDLE_UNLOAD_SECONDS` 换常驻显存。
+- **单张 24GB 3090** 上，yolo + gsam2 + rapidocr 轻松共存；叠上 sam3（~5GB）后总量约 10–14GB，仍在 24GB 内。**小显存卡（8–12GB）叠多个 GPU backend 时需谨慎**：先按[生产部署中的 GPU 仲裁配置](../../ops/deploy/docker-compose#声明平台可分配的物理-gpu)声明逐卡预算，再按[GPU 显存仲裁验收](../../ops/runbooks/gpu-arbitration-acceptance)验证本部署；release latch 默认关闭，只有完成验收并逐资源启用后才进入全局准入与驱逐。
+- **重新加载 vs 常驻**：idle-unload 默认 600s，闲置超 10 分钟后首个请求要付上表的重新加载（sam3 达 ~10s）。对交互延迟敏感的部署，可调高对应 backend 的 `*_IDLE_UNLOAD_SECONDS`，或设为 `<=0` 关闭定时卸载；代价是显存更久驻留。健康检查不等同于模型池业务访问，不要用无意义心跳代替明确配置。
 - **横向扩展**：单 backend 交互 ~36 rps、批量检测 ~14 rps 见顶后，靠多 GPU / 多 backend 实例横向扩，而非单实例加并发。
 
 ---

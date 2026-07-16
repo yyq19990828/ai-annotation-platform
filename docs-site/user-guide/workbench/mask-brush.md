@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-17
 ---
 
 # Mask 笔刷编辑器
@@ -46,6 +46,8 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 
 ## 视频 Mask 轨迹
 
+<!-- TODO IMAGE_CHECKLIST: images/mask-brush/video-mask-track-edit.gif — 视频 Mask 创建、保持帧编辑与关键帧物化全过程 [auto-gif] -->
+
 在视频任务中按 `M` 或点击「Mask 轨迹」工具：
 
 1. 没有选中 Mask 轨迹时，在当前帧落笔会从空白画布开始；确认后创建一条只有当前帧关键帧的 Mask 轨迹。
@@ -62,7 +64,7 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 | `B` | mask 工具激活时切笔刷（涂） |
 | `E` | mask 工具激活时切橡皮（擦） |
 | `Shift + 滚轮` | 调笔刷半径 ±2px（clamp [1, 200]） |
-| `Enter` | 提交 mask → polygon 落库 / 更新 |
+| `Enter` | 提交当前 Mask；图片任务转为 polygon，视频任务写入 RLE 关键帧 |
 | `Esc` | 取消，丢弃当前 mask buffer |
 | `Ctrl/⌘ + Z` | 视频 Mask 编辑时撤销上一笔 |
 | `Ctrl/⌘ + Shift + Z` / `Ctrl/⌘ + Y` | 视频 Mask 编辑时重做 |
@@ -89,7 +91,8 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 ## 故障排查
 
 - **按 M 不响应**：确认非只读模式（task 已锁定 / 已审完），输入框聚焦时 hotkey 会被吞
-- **Enter 后无 polygon 落库**：mask 尚未涂抹（`dirty` 为假）或涂抹区域过小（转出顶点 < 3）时 `commitToPolygon` 返回 null，工具栏确认按钮置灰（`!active || !dirty`）；Enter 键虽可触发提交流程，但同样会被 null 结果拦截并弹 toast 提示
+- **图片任务 Enter 后无 polygon 落库**：mask 尚未涂抹（`dirty` 为假）或涂抹区域过小（转出顶点 < 3）时 `commitToPolygon` 返回 null，工具栏确认按钮置灰（`!active || !dirty`）；Enter 键虽可触发提交流程，但同样会被 null 结果拦截并弹 toast 提示
+- **视频任务确认后无 Mask 关键帧**：先确认当前帧已产生有效笔迹且任务可编辑；若编辑的是保持帧，成功提交后应在当前帧新增人工关键帧，而不是改写来源关键帧
 - **mask 与 SAM 候选重叠看不清**：mask 是半透红，透明度可在工作台设置的「图片 → Mask 覆盖透明度」调整；SAM 是紫虚线，可按 `E` 临时擦掉 mask 中已被 SAM 覆盖的部分
 
 ## 相关 ADR
