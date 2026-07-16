@@ -194,7 +194,13 @@ predict、交互预测、warmup 或 reload 之前输出 `gpu_arbiter_shadow_deci
 
 ### GPU 资源账本与修复状态
 
-`GET /api/v1/admin/ml-integrations/gpu-resources` 的每个资源包含 `runtime`：账本状态、ready、revision、
+`GET /api/v1/admin/ml-integrations/gpu-resources` 会同时返回 `rollout_enabled` 和逐资源
+`rollout`：PostgreSQL 持久状态、保守 effective/target mode、exact transition/last transition、
+revision 与 blocker。`runtime_ready` 只在 desired、持久 `enforcing` 与 Redis ready 同时成立时
+才为真。持久状态仍为 `promoting/enforcing/demoting/blocked` 却关闭 release latch，会报
+`gpu_rollout_active_while_disabled` blocker，必须先完成安全 demotion。
+
+每个资源的 `runtime` 包含 Redis 账本状态、ready、revision、
 证据 deadline、已承诺预算、durable pending/active/retiring 数、allocation 状态数、lease、卡级/backend 级
 队列以及 transition。`durable_domain_matches=false` 表示 PostgreSQL 封闭成员域与 Redis 不一致，不能仅凭
 Redis 快照继续工作。`prepared` 表示 proof reset 已冻结并可在下一轮恢复；`corrupt/unavailable` 都按
@@ -202,7 +208,8 @@ fail-closed 处理。prepared、disabled 或读取失败时，无法原子证明
 不会用 `0` 误报为空。
 
 每轮完整 backend 健康扫描后会输出逐资源 `gpu_arbiter_resource_repair` 结构化日志，包含 action、status、
-reason、revision、committed、GC collection 结果和耗时。只有 desired mode 为 `enforce` 的资源运行该控制面；
+reason、revision、committed、rollout 结果、GC collection 结果和耗时。release latch 开启后，只有
+desired mode 为 `enforce` 的资源运行该控制面；
 beat 消息过期、长于任务 hard limit 的防重入锁和 50 秒批次总时限共同阻止慢任务跨分钟堆积；多卡最多四路
 并行，并按波次数量均分 45 秒工作预算，确保固定排序后的每张卡都能在本轮获得执行机会。稳定 ready 且不含
 retiring 的卡只读
@@ -212,8 +219,10 @@ retiring 的卡只读
 承受数据库 sibling 域的后续演进；proof reset 轮换 incarnation 后则必须用新鲜证明重新收集。冻结的退役 health
 只用于诊断，不能授权删除 tombstone。
 
-`off/observe` 的 `runtime.status=disabled`，周期 worker 和管理查询都不创建仲裁 Redis client；observe 的
-shadow 日志仍按上一节工作。worker 结果通过 Celery 结果与进程日志暴露，当前不应把 worker 进程内的普通
+release latch 关闭时，周期 worker 不创建仲裁 Redis client。开启后，纯 `off/observe`
+且持久 rollout 已为 `off` 的资源仍返回 `runtime.status=disabled`；若存在未收敛的持久过渡态，
+管理查询会保守读取 Redis runtime 供排障。observe 的 shadow 日志仍按上一节工作。worker 结果通过
+Celery 结果与进程日志暴露，当前不应把 worker 进程内的普通
 Prometheus Gauge 当作 API `/metrics` 可见的跨进程指标。
 
 ---

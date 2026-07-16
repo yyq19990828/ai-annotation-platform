@@ -345,10 +345,25 @@ class GPUConfigDiagnostic(BaseModel):
     backend_id: UUID | None = None
 
 
+GPURolloutState = Literal[
+    "disabled",
+    "uninitialized",
+    "off",
+    "promoting",
+    "enforcing",
+    "demoting",
+    "blocked",
+]
+
+
 class GPUBackendConfigStatus(BaseModel):
     status: Literal["ok", "info", "warning", "critical", "blocker"] = "ok"
     desired_mode: Literal["off", "observe", "enforce"] = "off"
     effective_mode: Literal["off", "observe", "enforce"] = "off"
+    rollout_enabled: bool | None = None
+    rollout_state: GPURolloutState | None = None
+    rollout_revision: int | None = None
+    rollout_blocker_reason: str | None = None
     allocatable_mb: int | None = None
     resource_claimed_budget_mb: int | None = None
     diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)

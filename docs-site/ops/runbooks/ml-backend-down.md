@@ -92,7 +92,10 @@ curl http://localhost:8001/health
 4. 设置 `GPU_ARBITER_MODE=observe` 时，检索
    `gpu_arbiter_shadow_decision`。`would-reject` 只是非权威预演，不会阻断当前请求；
    若业务已失败，仍需继续排查 backend OOM、网络或权重加载错误。
-5. `enforce` 尚未 runtime ready 时 effective 保持 `off`；不要依赖它防止 OOM。
+5. 检查 `/api/v1/admin/ml-integrations/gpu-resources` 的 `rollout` 与 `runtime`。只有持久
+   `state=enforcing`、`effective_mode=enforce` 且 `runtime.ready=true` 时才已就绪。
+   `gpu_rollout_not_ready` 需先修复其 `blocked_reason`；`gpu_rollout_active_while_disabled`
+   表示在持久过渡尚未 demotion 时错误关闭了 release latch，不要清表或清 Redis。
 
 ## 维护窗口 / 避免告警
 

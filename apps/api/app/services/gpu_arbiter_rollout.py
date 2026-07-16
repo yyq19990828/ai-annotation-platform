@@ -60,7 +60,9 @@ class GPUArbiterRolloutDecision:
         return self.dispatch_mode is None
 
 
-def _snapshot(row: GPUArbiterRollout) -> GPUArbiterRolloutSnapshot:
+def gpu_arbiter_rollout_snapshot(
+    row: GPUArbiterRollout,
+) -> GPUArbiterRolloutSnapshot:
     return GPUArbiterRolloutSnapshot(
         resource_id=row.gpu_resource_id,
         state=row.state,  # type: ignore[arg-type]
@@ -173,7 +175,7 @@ async def read_gpu_arbiter_rollout(
     try:
         async with factory() as db:
             row = await db.get(GPUArbiterRollout, resource_id)
-            return _snapshot(row) if row is not None else None
+            return gpu_arbiter_rollout_snapshot(row) if row is not None else None
     except Exception as exc:  # noqa: BLE001 - callers must fail closed on DB loss
         raise GPUArbiterRolloutUnavailable(
             f"GPU rollout state unavailable for {resource_id}"
@@ -260,9 +262,9 @@ async def begin_gpu_arbiter_rollout(
 
         if target_mode is GPUArbiterMode.ENFORCE:
             if row.state == "enforcing":
-                return _snapshot(row)
+                return gpu_arbiter_rollout_snapshot(row)
             if row.state == "promoting" and row.target_mode == "enforce":
-                return _snapshot(row)
+                return gpu_arbiter_rollout_snapshot(row)
             if row.state == "blocked" and row.effective_mode != "off":
                 raise GPUArbiterRolloutConflict(
                     "blocked effective-enforce rollout must demote before promotion"
@@ -277,13 +279,13 @@ async def begin_gpu_arbiter_rollout(
         else:
             if row.state == "off":
                 if row.target_mode == target_mode.value:
-                    return _snapshot(row)
+                    return gpu_arbiter_rollout_snapshot(row)
                 row.target_mode = target_mode.value
                 row.revision += 1
                 await db.flush()
-                return _snapshot(row)
+                return gpu_arbiter_rollout_snapshot(row)
             if row.state == "demoting" and row.target_mode == target_mode.value:
-                return _snapshot(row)
+                return gpu_arbiter_rollout_snapshot(row)
             if row.state not in {"promoting", "enforcing", "blocked"}:
                 raise GPUArbiterRolloutConflict(
                     f"cannot demote GPU rollout from {row.state}"
@@ -297,7 +299,7 @@ async def begin_gpu_arbiter_rollout(
         row.blocker_reason = None
         row.revision += 1
         await db.flush()
-        return _snapshot(row)
+        return gpu_arbiter_rollout_snapshot(row)
 
 
 async def complete_gpu_arbiter_rollout(
@@ -319,7 +321,7 @@ async def complete_gpu_arbiter_rollout(
             "off",
             "enforcing",
         }:
-            return _snapshot(row)
+            return gpu_arbiter_rollout_snapshot(row)
         if row.transition_id != transition_id or row.state not in {
             "promoting",
             "demoting",
@@ -339,7 +341,7 @@ async def complete_gpu_arbiter_rollout(
         row.blocker_reason = None
         row.revision += 1
         await db.flush()
-        return _snapshot(row)
+        return gpu_arbiter_rollout_snapshot(row)
 
 
 async def block_gpu_arbiter_rollout(
@@ -364,7 +366,7 @@ async def block_gpu_arbiter_rollout(
         if row.state == "blocked":
             if row.blocker_reason != normalized_reason:
                 raise GPUArbiterRolloutConflict("GPU rollout blocker already differs")
-            return _snapshot(row)
+            return gpu_arbiter_rollout_snapshot(row)
         if row.state not in {"promoting", "demoting"}:
             raise GPUArbiterRolloutConflict(
                 f"cannot block GPU rollout from {row.state}"
@@ -373,7 +375,7 @@ async def block_gpu_arbiter_rollout(
         row.blocker_reason = normalized_reason
         row.revision += 1
         await db.flush()
-        return _snapshot(row)
+        return gpu_arbiter_rollout_snapshot(row)
 
 
 __all__ = [
@@ -385,6 +387,7 @@ __all__ = [
     "block_gpu_arbiter_rollout",
     "classify_gpu_arbiter_rollout",
     "complete_gpu_arbiter_rollout",
+    "gpu_arbiter_rollout_snapshot",
     "gpu_rollout_boundary_active",
     "read_gpu_arbiter_rollout",
     "resolve_gpu_arbiter_rollout",

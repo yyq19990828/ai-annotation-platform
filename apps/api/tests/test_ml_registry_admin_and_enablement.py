@@ -9,13 +9,29 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest
+from sqlalchemy import delete, text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+)
 
 from app.config import GPUArbiterMode, settings
+from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbiter import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+    GPUResourceRuntimeObservation,
+)
+from app.services.gpu_arbiter_rollout import (
+    begin_gpu_arbiter_rollout,
+    block_gpu_arbiter_rollout,
+    complete_gpu_arbiter_rollout,
+)
 from app.services.ml_backend import MLBackendService
 
 
@@ -66,6 +82,57 @@ def _configure_gpu(
         f'"allocatable_mb":{allocatable_mb},"mode":"{resource_mode}"}}}}',
     )
     return resource_id
+
+
+@pytest.fixture
+async def cleanup_gpu_rollout_rows(
+    test_engine: AsyncEngine,
+    db_session: AsyncSession,
+):
+    resource_ids: list[str] = []
+    yield resource_ids.append
+    if not resource_ids:
+        return
+    await db_session.rollback()
+    async with test_engine.begin() as db:
+        await db.execute(
+            text(
+                "ALTER TABLE gpu_arbiter_rollouts DISABLE TRIGGER "
+                "trg_validate_gpu_arbiter_rollout"
+            )
+        )
+        await db.execute(
+            delete(GPUArbiterRollout).where(
+                GPUArbiterRollout.gpu_resource_id.in_(resource_ids)
+            )
+        )
+        await db.execute(
+            text(
+                "ALTER TABLE gpu_arbiter_rollouts ENABLE TRIGGER "
+                "trg_validate_gpu_arbiter_rollout"
+            )
+        )
+
+
+def _runtime_observation(*, ready: bool) -> GPUResourceRuntimeObservation:
+    return GPUResourceRuntimeObservation(
+        status="ready" if ready else "not_ready",
+        reason="" if ready else "backend_gate_unconfirmed",
+        ready=ready,
+        ledger_revision=7,
+        ledger_incarnation="runtime-incarnation",
+        reconcile_deadline_ms=0,
+        committed_mb=0,
+        backend_count=1,
+        active_backend_count=1,
+        membership_state_counts={"pending": 0, "active": 1, "retiring": 0},
+        allocation_state_counts={},
+        lease_count=0,
+        card_queue_count=0,
+        backend_queue_count=0,
+        transition_present=False,
+        durable_domain_matches=True,
+    )
 
 
 # ── admin 全局 CRUD ──────────────────────────────────────────────────────
@@ -457,7 +524,7 @@ async def test_gpu_resources_requires_superadmin(httpx_client, project_admin):
     assert res.status_code == 403
 
 
-async def test_enforce_desired_mode_is_reported_not_ready_and_never_effective(
+async def test_enforce_desired_mode_reports_disabled_rollout_latch(
     httpx_client, db_session, super_admin, monkeypatch
 ):
     _, token = super_admin
@@ -482,18 +549,146 @@ async def test_enforce_desired_mode_is_reported_not_ready_and_never_effective(
 
     assert resources.status_code == 200, resources.text
     resource = resources.json()["resources"][0]
+    assert resources.json()["rollout_enabled"] is False
     assert resource["desired_mode"] == "enforce"
     assert resource["effective_mode"] == "off"
+    assert resource["rollout"]["state"] == "disabled"
+    assert resource["rollout"]["effective_mode"] == "off"
     assert resource["status"] == "blocker"
     assert any(
-        item["code"] == "gpu_arbiter_runtime_not_ready"
-        for item in resource["diagnostics"]
+        item["code"] == "gpu_rollout_disabled" for item in resource["diagnostics"]
     )
 
     item = next(row for row in backends.json()["items"] if row["id"] == str(backend.id))
     assert item["gpu_config"]["desired_mode"] == "enforce"
     assert item["gpu_config"]["effective_mode"] == "off"
+    assert item["gpu_config"]["rollout_enabled"] is False
+    assert item["gpu_config"]["rollout_state"] == "disabled"
     assert item["gpu_config"]["status"] == "blocker"
+
+
+@pytest.mark.parametrize(
+    (
+        "rollout_state",
+        "rollout_enabled",
+        "runtime_ready",
+        "expected_effective",
+        "expected_code",
+    ),
+    (
+        ("enforcing", True, True, "enforce", None),
+        ("blocked", True, False, "off", "gpu_rollout_not_ready"),
+        ("enforcing", False, False, "off", "gpu_rollout_active_while_disabled"),
+    ),
+)
+async def test_gpu_resources_reports_durable_rollout_and_runtime_truth(
+    httpx_client,
+    db_session,
+    test_engine,
+    super_admin,
+    monkeypatch,
+    cleanup_gpu_rollout_rows,
+    rollout_state: str,
+    rollout_enabled: bool,
+    runtime_ready: bool,
+    expected_effective: str,
+    expected_code: str | None,
+) -> None:
+    _, token = super_admin
+    resource_id = _configure_gpu(
+        monkeypatch,
+        global_mode=GPUArbiterMode.ENFORCE,
+        resource_mode="enforce",
+    )
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_rollout_enabled",
+        rollout_enabled,
+    )
+    backend = await _seed_registry(db_session, name=f"rollout-{rollout_state}")
+    backend.gpu_resource_id = resource_id
+    backend.vram_budget_mb = 10000
+    await db_session.commit()
+
+    factory = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    cleanup_gpu_rollout_rows(resource_id)
+    promotion = await begin_gpu_arbiter_rollout(
+        factory,
+        resource_id,
+        GPUArbiterMode.ENFORCE,
+    )
+    assert promotion.transition_id is not None
+    if rollout_state == "enforcing":
+        await complete_gpu_arbiter_rollout(
+            factory,
+            resource_id,
+            promotion.transition_id,
+        )
+    else:
+        await block_gpu_arbiter_rollout(
+            factory,
+            resource_id,
+            promotion.transition_id,
+            "backend_gate_unconfirmed",
+        )
+
+    class FakeStore:
+        async def aclose(self) -> None:
+            return None
+
+    async def observe(*_args, **_kwargs):
+        return _runtime_observation(ready=runtime_ready)
+
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.GPUArbiterStore.from_url",
+        lambda *_args, **_kwargs: FakeStore(),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.observe_gpu_resource_runtime",
+        observe,
+    )
+
+    resources = await httpx_client.get(
+        "/api/v1/admin/ml-integrations/gpu-resources",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    backends = await httpx_client.get(
+        "/api/v1/admin/ml-integrations/all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resources.status_code == 200, resources.text
+    assert backends.status_code == 200, backends.text
+    body = resources.json()
+    resource = body["resources"][0]
+    assert body["rollout_enabled"] is rollout_enabled
+    assert body["runtime_ready"] is runtime_ready
+    assert body["enforce_runtime_ready"] is runtime_ready
+    assert resource["effective_mode"] == expected_effective
+    assert resource["rollout"]["state"] == rollout_state
+    assert resource["rollout"]["revision"] is not None
+    assert resource["runtime"]["ready"] is runtime_ready
+    if expected_code is None:
+        assert resource["status"] != "blocker"
+    else:
+        assert expected_code in {
+            diagnostic["code"] for diagnostic in resource["diagnostics"]
+        }
+
+    item = next(row for row in backends.json()["items"] if row["id"] == str(backend.id))
+    gpu_config = item["gpu_config"]
+    assert gpu_config["effective_mode"] == expected_effective
+    assert gpu_config["rollout_enabled"] is rollout_enabled
+    assert gpu_config["rollout_state"] == rollout_state
+    assert gpu_config["rollout_revision"] is not None
+    if expected_code is not None:
+        assert expected_code in {
+            diagnostic["code"] for diagnostic in gpu_config["diagnostics"]
+        }
 
 
 async def test_global_list_exposes_missing_claim_and_identity_blockers(

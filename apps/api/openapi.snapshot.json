@@ -9165,6 +9165,9 @@
             "title": "Physical Device Token",
             "type": "string"
           },
+          "rollout": {
+            "$ref": "#/components/schemas/GPUArbiterRolloutItem"
+          },
           "runtime": {
             "$ref": "#/components/schemas/GPUArbiterRuntimeObservationItem"
           },
@@ -9190,6 +9193,7 @@
           "claimed_budget_mb",
           "claimed_backend_count",
           "status",
+          "rollout",
           "runtime"
         ],
         "title": "GPUArbiterResourceItem",
@@ -9228,6 +9232,10 @@
             "title": "Resources",
             "type": "array"
           },
+          "rollout_enabled": {
+            "title": "Rollout Enabled",
+            "type": "boolean"
+          },
           "runtime_ready": {
             "title": "Runtime Ready",
             "type": "boolean"
@@ -9235,6 +9243,7 @@
         },
         "required": [
           "global_desired_mode",
+          "rollout_enabled",
           "runtime_ready",
           "observe_runtime_ready",
           "enforce_runtime_ready",
@@ -9242,6 +9251,110 @@
           "diagnostics"
         ],
         "title": "GPUArbiterResourcesResponse",
+        "type": "object"
+      },
+      "GPUArbiterRolloutItem": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "dispatch_blocked": {
+            "title": "Dispatch Blocked",
+            "type": "boolean"
+          },
+          "effective_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Effective Mode",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_transition_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Transition Id"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "state": {
+            "enum": [
+              "disabled",
+              "uninitialized",
+              "off",
+              "promoting",
+              "enforcing",
+              "demoting",
+              "blocked"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "observe",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Mode"
+          },
+          "transition_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Id"
+          }
+        },
+        "required": [
+          "enabled",
+          "state",
+          "effective_mode",
+          "dispatch_blocked"
+        ],
+        "title": "GPUArbiterRolloutItem",
         "type": "object"
       },
       "GPUArbiterRuntimeObservationItem": {
@@ -9455,6 +9568,59 @@
               }
             ],
             "title": "Resource Claimed Budget Mb"
+          },
+          "rollout_blocker_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout Blocker Reason"
+          },
+          "rollout_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout Enabled"
+          },
+          "rollout_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout Revision"
+          },
+          "rollout_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "disabled",
+                  "uninitialized",
+                  "off",
+                  "promoting",
+                  "enforcing",
+                  "demoting",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout State"
           },
           "status": {
             "default": "ok",

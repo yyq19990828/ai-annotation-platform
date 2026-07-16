@@ -5,7 +5,7 @@ from dataclasses import replace
 import uuid
 
 import pytest
-from sqlalchemy import delete, update
+from sqlalchemy import delete, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -25,6 +25,32 @@ from app.services.gpu_arbiter_rollout import (
 
 def _resource_id() -> str:
     return f"node-rollout/GPU-{uuid.uuid4()}"
+
+
+@pytest.fixture
+async def cleanup_gpu_rollouts(test_engine: AsyncEngine):
+    resource_ids: list[str] = []
+    yield resource_ids.append
+    if not resource_ids:
+        return
+    async with test_engine.begin() as db:
+        await db.execute(
+            text(
+                "ALTER TABLE gpu_arbiter_rollouts DISABLE TRIGGER "
+                "trg_validate_gpu_arbiter_rollout"
+            )
+        )
+        await db.execute(
+            delete(GPUArbiterRollout).where(
+                GPUArbiterRollout.gpu_resource_id.in_(resource_ids)
+            )
+        )
+        await db.execute(
+            text(
+                "ALTER TABLE gpu_arbiter_rollouts ENABLE TRIGGER "
+                "trg_validate_gpu_arbiter_rollout"
+            )
+        )
 
 
 def _rollout(
@@ -86,7 +112,7 @@ def test_rollout_enabled_requires_durable_promotion_before_enforce() -> None:
     assert unpromoted.blocked_reason == "gpu_rollout_promotion_required"
 
 
-def test_rollout_transition_states_block_dispatch_without_losing_effective_mode() -> None:
+def test_transition_states_block_dispatch_and_preserve_effective_mode() -> None:
     promoting = _rollout(
         state="promoting",
         effective_mode=GPUArbiterMode.OFF,
@@ -159,11 +185,13 @@ def test_enforcing_requires_matching_desired_mode_and_demotion_first() -> None:
 @pytest.mark.asyncio
 async def test_rollout_transition_is_durable_idempotent_and_reversible(
     test_engine: AsyncEngine,
+    cleanup_gpu_rollouts,
 ) -> None:
     factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
     resource_id = _resource_id()
+    cleanup_gpu_rollouts(resource_id)
 
     promotion = await begin_gpu_arbiter_rollout(
         factory, resource_id, GPUArbiterMode.ENFORCE
@@ -206,11 +234,13 @@ async def test_rollout_transition_is_durable_idempotent_and_reversible(
 @pytest.mark.asyncio
 async def test_rollout_concurrent_begin_returns_one_transition(
     test_engine: AsyncEngine,
+    cleanup_gpu_rollouts,
 ) -> None:
     factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
     resource_id = _resource_id()
+    cleanup_gpu_rollouts(resource_id)
 
     first, second = await asyncio.gather(
         begin_gpu_arbiter_rollout(factory, resource_id, GPUArbiterMode.ENFORCE),
@@ -224,11 +254,13 @@ async def test_rollout_concurrent_begin_returns_one_transition(
 @pytest.mark.asyncio
 async def test_rollout_blocker_is_exact_and_requires_explicit_recovery(
     test_engine: AsyncEngine,
+    cleanup_gpu_rollouts,
 ) -> None:
     factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
     resource_id = _resource_id()
+    cleanup_gpu_rollouts(resource_id)
     promotion = await begin_gpu_arbiter_rollout(
         factory, resource_id, GPUArbiterMode.ENFORCE
     )
@@ -268,11 +300,13 @@ async def test_rollout_blocker_is_exact_and_requires_explicit_recovery(
 @pytest.mark.asyncio
 async def test_rollout_database_trigger_rejects_raw_skip_and_delete(
     test_engine: AsyncEngine,
+    cleanup_gpu_rollouts,
 ) -> None:
     factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
     resource_id = _resource_id()
+    cleanup_gpu_rollouts(resource_id)
     await begin_gpu_arbiter_rollout(factory, resource_id, GPUArbiterMode.OFF)
 
     async with factory.begin() as db:
@@ -304,6 +338,7 @@ async def test_rollout_database_trigger_rejects_raw_skip_and_delete(
 @pytest.mark.asyncio
 async def test_rollout_global_boundary_includes_transitions_and_enforcing(
     test_engine: AsyncEngine,
+    cleanup_gpu_rollouts,
 ) -> None:
     factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
@@ -314,7 +349,7 @@ async def test_rollout_global_boundary_includes_transitions_and_enforcing(
     assert not await gpu_rollout_boundary_active(factory, config=disabled)
     # Other tests may leave durable rows, so assert the local transition makes
     # the boundary active instead of requiring a globally empty table.
-    await begin_gpu_arbiter_rollout(
-        factory, _resource_id(), GPUArbiterMode.ENFORCE
-    )
+    resource_id = _resource_id()
+    cleanup_gpu_rollouts(resource_id)
+    await begin_gpu_arbiter_rollout(factory, resource_id, GPUArbiterMode.ENFORCE)
     assert await gpu_rollout_boundary_active(factory, config=enabled)

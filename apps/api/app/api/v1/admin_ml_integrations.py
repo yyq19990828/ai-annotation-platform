@@ -23,8 +23,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import GPUArbiterMode, settings
 from app.db.enums import UserRole
+from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
@@ -72,6 +73,12 @@ from app.services.gpu_arbiter_store import (
     GPUArbiterStore,
     GPUArbiterStoreError,
     GPUBackendDomainMember,
+)
+from app.services.gpu_arbiter_rollout import (
+    GPUArbiterRolloutDecision,
+    GPUArbiterRolloutSnapshot,
+    classify_gpu_arbiter_rollout,
+    gpu_arbiter_rollout_snapshot,
 )
 from app.services.ml_backend import (
     GPUBackendManagedMutationBlocked,
@@ -307,6 +314,95 @@ class GlobalBackendListResponse(BaseModel):
     items: list[GlobalBackendItem]
 
 
+_GPU_DIAGNOSTIC_LEVEL_ORDER = {
+    "ok": 0,
+    "info": 1,
+    "warning": 2,
+    "critical": 3,
+    "blocker": 4,
+}
+
+
+def _gpu_rollout_diagnostic(
+    resource_id: str,
+    decision: GPUArbiterRolloutDecision,
+    rollout: GPUArbiterRolloutSnapshot | None,
+    *,
+    backend_id: uuid.UUID | None = None,
+) -> GPUConfigDiagnostic | None:
+    desired = settings.gpu_arbiter_desired_mode(resource_id)
+    if not settings.gpu_arbiter_rollout_enabled:
+        if rollout is not None and rollout.state != "off":
+            return GPUConfigDiagnostic(
+                code="gpu_rollout_active_while_disabled",
+                level="blocker",
+                message=(
+                    f"持久 rollout 仍为 {rollout.state}，不能直接关闭 "
+                    "GPU_ARBITER_ROLLOUT_ENABLED；请先完成安全 demotion"
+                ),
+                resource_id=resource_id,
+                backend_id=backend_id,
+            )
+        if desired is GPUArbiterMode.ENFORCE:
+            return GPUConfigDiagnostic(
+                code="gpu_rollout_disabled",
+                level="blocker",
+                message="GPU rollout 发布闩未开启，effective mode 保持 off",
+                resource_id=resource_id,
+                backend_id=backend_id,
+            )
+        return None
+    if decision.dispatch_blocked:
+        return GPUConfigDiagnostic(
+            code="gpu_rollout_not_ready",
+            level="blocker",
+            message=(
+                f"GPU rollout 尚未就绪：{decision.blocked_reason or decision.state}"
+            ),
+            resource_id=resource_id,
+            backend_id=backend_id,
+        )
+    return None
+
+
+def _apply_backend_rollout_status(
+    status: GPUBackendConfigStatus,
+    resource_id: str,
+    decision: GPUArbiterRolloutDecision,
+    rollout: GPUArbiterRolloutSnapshot | None,
+    *,
+    backend_id: uuid.UUID,
+) -> GPUBackendConfigStatus:
+    status.diagnostics = [
+        item
+        for item in status.diagnostics
+        if item.code != "gpu_arbiter_runtime_not_ready"
+    ]
+    diagnostic = _gpu_rollout_diagnostic(
+        resource_id,
+        decision,
+        rollout,
+        backend_id=backend_id,
+    )
+    if diagnostic is not None:
+        status.diagnostics.append(diagnostic)
+    status.effective_mode = decision.effective_mode.value
+    status.rollout_enabled = settings.gpu_arbiter_rollout_enabled
+    status.rollout_state = rollout.state if rollout is not None else decision.state
+    status.rollout_revision = (
+        rollout.revision if rollout is not None else decision.revision
+    )
+    status.rollout_blocker_reason = decision.blocked_reason or (
+        rollout.blocker_reason if rollout is not None else None
+    )
+    status.status = max(
+        (item.level for item in status.diagnostics),
+        key=_GPU_DIAGNOSTIC_LEVEL_ORDER.__getitem__,
+        default="ok",
+    )
+    return status
+
+
 @router.get("/all", response_model=GlobalBackendListResponse)
 async def list_all_backends(
     db: AsyncSession = Depends(get_db),
@@ -325,9 +421,40 @@ async def list_all_backends(
     )
     backends = list(res.scalars().all())
     can_view_gpu_topology = admin.role == UserRole.SUPER_ADMIN
+    rollout_by_resource: dict[str, GPUArbiterRolloutSnapshot] = {}
+    rollout_decisions: dict[str, GPUArbiterRolloutDecision] = {}
+    if can_view_gpu_topology:
+        rollout_rows = list(
+            (await db.execute(select(GPUArbiterRollout))).scalars().all()
+        )
+        rollout_by_resource = {
+            row.gpu_resource_id: gpu_arbiter_rollout_snapshot(row)
+            for row in rollout_rows
+        }
+        rollout_decisions = {
+            resource_id: classify_gpu_arbiter_rollout(
+                resource_id,
+                settings.gpu_arbiter_desired_mode(resource_id),
+                rollout_by_resource.get(resource_id),
+                rollout_enabled=settings.gpu_arbiter_rollout_enabled,
+            )
+            for resource_id in settings.gpu_arbiter_resources
+        }
     totals = claimed_budget_by_resource(backends) if can_view_gpu_topology else {}
     items: list[GlobalBackendItem] = []
     for backend in backends:
+        gpu_config = None
+        if can_view_gpu_topology:
+            gpu_config = build_backend_gpu_config_status(backend, totals)
+            resource_id = backend.gpu_resource_id
+            if resource_id is not None and resource_id in rollout_decisions:
+                gpu_config = _apply_backend_rollout_status(
+                    gpu_config,
+                    resource_id,
+                    rollout_decisions[resource_id],
+                    rollout_by_resource.get(resource_id),
+                    backend_id=backend.id,
+                )
         items.append(
             GlobalBackendItem(
                 id=str(backend.id),
@@ -346,11 +473,7 @@ async def list_all_backends(
                 eviction_priority=(
                     backend.eviction_priority if can_view_gpu_topology else None
                 ),
-                gpu_config=(
-                    build_backend_gpu_config_status(backend, totals)
-                    if can_view_gpu_topology
-                    else None
-                ),
+                gpu_config=gpu_config,
                 # 项目管理员仅需能力目录做模态筛选；GPU UUID、residency 与预算拓扑
                 # 仍严格留在超管面。
                 health_meta=(
@@ -401,6 +524,26 @@ class GPUArbiterRuntimeObservationItem(BaseModel):
     durable_domain_matches: bool | None = None
 
 
+class GPUArbiterRolloutItem(BaseModel):
+    enabled: bool
+    state: Literal[
+        "disabled",
+        "uninitialized",
+        "off",
+        "promoting",
+        "enforcing",
+        "demoting",
+        "blocked",
+    ]
+    effective_mode: Literal["off", "observe", "enforce"]
+    target_mode: Literal["off", "observe", "enforce"] | None = None
+    dispatch_blocked: bool
+    blocked_reason: str | None = None
+    transition_id: uuid.UUID | None = None
+    last_transition_id: uuid.UUID | None = None
+    revision: int | None = None
+
+
 class GPUArbiterResourceItem(BaseModel):
     gpu_resource_id: str
     node_id: str
@@ -413,11 +556,13 @@ class GPUArbiterResourceItem(BaseModel):
     claimed_backend_count: int
     status: Literal["ok", "info", "warning", "critical", "blocker"]
     diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)
+    rollout: GPUArbiterRolloutItem
     runtime: GPUArbiterRuntimeObservationItem
 
 
 class GPUArbiterResourcesResponse(BaseModel):
     global_desired_mode: Literal["off", "observe", "enforce"]
+    rollout_enabled: bool
     runtime_ready: bool
     observe_runtime_ready: bool
     enforce_runtime_ready: bool
@@ -445,6 +590,19 @@ async def list_gpu_resources(
         .scalars()
         .all()
     )
+    rollout_rows = list((await db.execute(select(GPUArbiterRollout))).scalars().all())
+    rollout_by_resource = {
+        row.gpu_resource_id: gpu_arbiter_rollout_snapshot(row) for row in rollout_rows
+    }
+    rollout_decisions = {
+        resource_id: classify_gpu_arbiter_rollout(
+            resource_id,
+            settings.gpu_arbiter_desired_mode(resource_id),
+            rollout_by_resource.get(resource_id),
+            rollout_enabled=settings.gpu_arbiter_rollout_enabled,
+        )
+        for resource_id in settings.gpu_arbiter_resources
+    }
     domain_by_resource: dict[str, tuple[GPUBackendDomainMember, ...]] = {}
     for membership in memberships:
         domain_by_resource.setdefault(membership.gpu_resource_id, ())
@@ -456,23 +614,83 @@ async def list_gpu_resources(
             ),
         )
     resources, diagnostics = build_resource_summaries(backends)
+    diagnostics = [
+        item for item in diagnostics if item.code != "gpu_arbiter_runtime_not_ready"
+    ]
+    for item in resources:
+        resource_id = item["gpu_resource_id"]
+        rollout = rollout_by_resource.get(resource_id)
+        decision = rollout_decisions[resource_id]
+        item["diagnostics"] = [
+            diagnostic
+            for diagnostic in item["diagnostics"]
+            if diagnostic.code != "gpu_arbiter_runtime_not_ready"
+        ]
+        rollout_diagnostic = _gpu_rollout_diagnostic(
+            resource_id,
+            decision,
+            rollout,
+        )
+        if rollout_diagnostic is not None:
+            item["diagnostics"].append(rollout_diagnostic)
+            diagnostics.append(rollout_diagnostic)
+        item["effective_mode"] = decision.effective_mode.value
+        item["rollout"] = {
+            "enabled": settings.gpu_arbiter_rollout_enabled,
+            "state": rollout.state if rollout is not None else decision.state,
+            "effective_mode": decision.effective_mode.value,
+            "target_mode": (rollout.target_mode.value if rollout is not None else None),
+            "dispatch_blocked": decision.dispatch_blocked,
+            "blocked_reason": (
+                decision.blocked_reason
+                or (rollout.blocker_reason if rollout is not None else None)
+            ),
+            "transition_id": (rollout.transition_id if rollout is not None else None),
+            "last_transition_id": (
+                rollout.last_transition_id if rollout is not None else None
+            ),
+            "revision": rollout.revision if rollout is not None else decision.revision,
+        }
+    for resource_id, rollout in rollout_by_resource.items():
+        if resource_id in settings.gpu_arbiter_resources or rollout.state == "off":
+            continue
+        diagnostics.append(
+            GPUConfigDiagnostic(
+                code="gpu_rollout_resource_unconfigured",
+                level="blocker",
+                message=(
+                    f"持久 rollout {resource_id} 仍为 {rollout.state}，"
+                    "但静态资源配置已缺失"
+                ),
+                resource_id=resource_id,
+            )
+        )
     # Release the read transaction after materializing all ORM data and before any
     # Redis I/O. The dependency keeps the session object alive until serialization,
     # but no DB connection is held while a slow or corrupt card is observed.
     await db.rollback()
     store: GPUArbiterStore | None = None
     try:
-        enforce_items = [
-            item for item in resources if item["desired_mode"] == "enforce"
-        ]
-        if enforce_items:
+        managed_runtime_ids = {
+            item["gpu_resource_id"]
+            for item in resources
+            if settings.gpu_arbiter_rollout_enabled
+            and (
+                item["desired_mode"] == "enforce"
+                or (
+                    rollout_by_resource.get(item["gpu_resource_id"]) is not None
+                    and rollout_by_resource[item["gpu_resource_id"]].state != "off"
+                )
+            )
+        }
+        if managed_runtime_ids:
             store = GPUArbiterStore.from_url(settings.redis_url)
         observation_semaphore = asyncio.Semaphore(4)
 
         async def observe_one(item: dict) -> tuple[dict, GPUResourceRuntimeObservation]:
             resource_id = item["gpu_resource_id"]
             durable_domain = domain_by_resource.get(resource_id, ())
-            if item["desired_mode"] == "enforce":
+            if resource_id in managed_runtime_ids:
                 assert store is not None
                 try:
                     async with observation_semaphore:
@@ -509,22 +727,71 @@ async def list_gpu_resources(
             return item, observation
 
         observed = await asyncio.gather(*(observe_one(item) for item in resources))
+        resource_ready: dict[str, bool] = {}
         for item, observation in observed:
             item["runtime"] = asdict(observation)
+            resource_id = item["gpu_resource_id"]
+            decision = rollout_decisions[resource_id]
+            if (
+                decision.dispatch_mode is GPUArbiterMode.ENFORCE
+                and not observation.ready
+            ):
+                runtime_diagnostic = GPUConfigDiagnostic(
+                    code="gpu_arbiter_runtime_not_ready",
+                    level="blocker",
+                    message=(
+                        "持久 rollout 已 enforcing，但 Redis 账本尚未 ready："
+                        f"{observation.reason or observation.status}"
+                    ),
+                    resource_id=resource_id,
+                )
+                item["diagnostics"].append(runtime_diagnostic)
+                diagnostics.append(runtime_diagnostic)
+            resource_ready[resource_id] = bool(
+                item["desired_mode"] == "enforce"
+                and decision.dispatch_mode is GPUArbiterMode.ENFORCE
+                and observation.ready
+            )
+            item["status"] = max(
+                (diagnostic.level for diagnostic in item["diagnostics"]),
+                key=_GPU_DIAGNOSTIC_LEVEL_ORDER.__getitem__,
+                default="ok",
+            )
     finally:
         if store is not None:
             try:
                 await store.aclose()
             except GPUArbiterStoreError:
                 pass
-    runtime_ready = not settings.gpu_arbiter_config_errors and all(
-        item["desired_mode"] != "enforce" for item in resources
+    desired_enforce_ids = {
+        item["gpu_resource_id"]
+        for item in resources
+        if item["desired_mode"] == "enforce"
+    }
+    enforce_runtime_ready = bool(desired_enforce_ids) and all(
+        resource_ready[resource_id] for resource_id in desired_enforce_ids
+    )
+    runtime_ready = (
+        not settings.gpu_arbiter_config_errors
+        and all(
+            resource_id in settings.gpu_arbiter_resources or rollout.state == "off"
+            for resource_id, rollout in rollout_by_resource.items()
+        )
+        and all(
+            (
+                resource_ready[item["gpu_resource_id"]]
+                if item["desired_mode"] == "enforce"
+                else not rollout_decisions[item["gpu_resource_id"]].dispatch_blocked
+            )
+            for item in resources
+        )
     )
     return GPUArbiterResourcesResponse(
         global_desired_mode=settings.gpu_arbiter_mode.value,
+        rollout_enabled=settings.gpu_arbiter_rollout_enabled,
         runtime_ready=runtime_ready,
         observe_runtime_ready=True,
-        enforce_runtime_ready=False,
+        enforce_runtime_ready=enforce_runtime_ready,
         resources=[GPUArbiterResourceItem(**item) for item in resources],
         diagnostics=diagnostics,
     )
