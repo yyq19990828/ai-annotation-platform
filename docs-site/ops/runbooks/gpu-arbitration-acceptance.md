@@ -21,8 +21,12 @@ last_reviewed: 2026-07-16
 3. 跨宿主同号卡：恰好两台主机各提交一份 `cross-host` 报告；两者使用不同 node/resource
    domain、相同物理卡索引，并用 PostgreSQL 时钟证明执行窗口重叠。
 
-`preflight` 是只读操作。`run` 直接进入真实 dispatch authority，因为生产 effective enforce
-在完成灰度门禁前仍关闭；它不会修改 rollout mode、迁移数据库、repair Redis 或启停服务。
+`preflight` 是只读操作。`run` 先只读验证除数据库缓存证明外的全部安全门禁，通过后才为范围内
+每个 Backend 重新取得 challenge-bound health 并持久化运行时证明，再执行一次完整预检。
+任一刷新或二次预检失败都会在业务 HTTP 前阻断。随后它
+直接进入真实 dispatch authority，因为生产 effective enforce 在完成灰度门禁前仍关闭。
+证明刷新不会修改 claim、fence、rollout mode 或 Redis 账本；`run` 也不会迁移数据库、
+repair Redis 或启停服务。
 
 ## 前置条件
 
@@ -89,6 +93,8 @@ manifest 使用严格 JSON，拒绝额外字段。下面示例验证同一物理
 `cross-host`。操作支持 `predict`、`predict_interactive`、`warmup`、`reload`；真实验收应选择
 会覆盖目标模型池的业务 body。`dual-card` 在一份 manifest 中声明至少两张卡；`cross-host`
 则每台主机各用一份只声明本机一张卡的 manifest，并复用相同 `cohort_id`。
+验证 busy victim 时，victim action 必须命中已经 `Resident` 的模型池；冷建期间的
+`Loading`/builder 是受保护现场，不能用来证明 active drain。
 
 ## 执行与验证
 

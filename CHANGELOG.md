@@ -72,6 +72,7 @@
 
 ### Fixed
 
+- **GPU 显存实物验收不再因暂停周期性健康扫描而读取陈旧证明**：验收 `run` 现在会在 workload HTTP 前为范围内每个 Backend 持久化新的 challenge-bound health，任一刷新失败均提前阻断，避免只读预检已观测到实时状态，真实 authority 却因数据库旧回执误判 not-ready。
 - **多卡 Backend 不再把宿主卡 1 误报为逻辑卡 0**：Compose 现从各 Backend 既有的 `*_GPU_DEVICE_ID` 派生独立物理卡 token，`/health.gpu_info` 优先消费它。即使 NVIDIA container runtime 把 PID 1 的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`、CUDA 将挂载卡重编号为 `cuda:0`，仍能精确报告宿主 `index:N` 或 GPU/MIG UUID，避免双卡仲裁预检误判资源域。
 - **五个 GPU Backend 的 drain cancel 不再接受变更 operation**：YOLO、ONNXTools、RapidOCR、Grounded-SAM2 与 SAM3 现在要求 RESUME token 同时精确匹配原 drain 的 owner 和 operation；仅 owner 相同但 operation 不同会保持 Draining 并返回 transition conflict，同一正确 token 仍可幂等重放，cancel 后迟到 unload 继续由 generation fence 拒绝。
 - **GPU FIFO 票据不再能在缺失或过期后绕过队首**：Redis admission 现在要求显式 ticket 必须仍是匹配 backend、owner 与 membership 的存活精确队首；空闲驱逐 begin 也能在同一原子操作内绑定卡级队首并保持多 victim 重放，直到目标冷建准入成功才消费 ticket。生产 effective enforce 仍保持关闭。

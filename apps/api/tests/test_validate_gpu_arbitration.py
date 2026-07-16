@@ -21,6 +21,7 @@ from scripts.validate_gpu_arbitration import (
     _command_output,
     _database_window_check,
     _evidence_manifest,
+    _preflight_allows_runtime_proof_refresh,
     _safe_endpoint,
     _safe_error,
     _sha256_json,
@@ -36,6 +37,7 @@ from scripts.validate_gpu_arbitration import (
     evaluate_run,
     evaluate_stable_memory,
     parse_nvidia_smi,
+    refresh_runtime_proofs,
     verify_evidence,
 )
 
@@ -335,6 +337,48 @@ def test_run_safety_blocks_production_and_mismatched_confirmation() -> None:
         run_id="run-1",
         confirm_run_id="run-1",
     )
+
+
+@pytest.mark.asyncio
+async def test_run_refreshes_every_runtime_proof_and_fails_closed() -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def refresher(session_factory, backend_id, challenge):
+        assert session_factory == "sessions"
+        calls.append((str(backend_id), challenge))
+        if str(backend_id) == _BACKEND_B:
+            raise TimeoutError("health refresh timed out")
+        return True
+
+    checks = await refresh_runtime_proofs(
+        "sessions",
+        [_BACKEND_B, _BACKEND_A, _BACKEND_A],
+        refresher=refresher,
+    )
+
+    assert [backend_id for backend_id, _challenge in calls] == [
+        _BACKEND_A,
+        _BACKEND_B,
+    ]
+    assert all(len(challenge) == 64 for _backend_id, challenge in calls)
+    assert [check["status"] for check in checks] == ["passed", "blocked"]
+    assert checks[1]["details"]["backend_id"] == _BACKEND_B
+    assert "timed out" in checks[1]["details"]["error"]
+
+
+def test_run_only_refreshes_proofs_after_other_preflight_gates_pass() -> None:
+    cached_proof_only = {
+        "checks": [
+            {"code": "redis_ready", "status": "passed"},
+            {"code": "backend_live_proof", "status": "blocked"},
+        ]
+    }
+    assert _preflight_allows_runtime_proof_refresh(cached_proof_only) is True
+
+    unsafe = deepcopy(cached_proof_only)
+    unsafe["checks"][0]["status"] = "blocked"
+    assert _preflight_allows_runtime_proof_refresh(unsafe) is False
+    assert _preflight_allows_runtime_proof_refresh({"checks": []}) is False
 
 
 def test_endpoint_and_error_evidence_redacts_credentials() -> None:
@@ -1804,6 +1848,15 @@ def _cross_host_report(
         recovery_samples=recovery,
         fault=None,
     )
+    checks.insert(
+        0,
+        {
+            "code": "run_runtime_proof_refreshed",
+            "status": "passed",
+            "message": "run must persist fresh challenge-bound health before dispatch",
+            "details": {"backend_id": backend_id},
+        },
+    )
     evidence_manifest = _evidence_manifest(manifest)
     return {
         "schema": EVIDENCE_SCHEMA,
@@ -1933,6 +1986,19 @@ def test_verify_rejects_forged_summary_thresholds_and_malformed_input() -> None:
         verify_evidence([wrong_command, second], scenario="cross-host")["status"]
         == "failed"
     )
+
+    missing_runtime_proof = deepcopy(first)
+    missing_runtime_proof["checks"] = [
+        check
+        for check in missing_runtime_proof["checks"]
+        if check["code"] != "run_runtime_proof_refreshed"
+    ]
+    assert (
+        verify_evidence([missing_runtime_proof, second], scenario="cross-host")[
+            "status"
+        ]
+        == "failed"
+    )
     assert (
         verify_evidence([{}], scenario="single-card-co-residency")["status"] == "failed"
     )
@@ -2036,6 +2102,15 @@ def _dual_card_primary_report() -> dict:
         recovery_samples=recovery,
         fault=None,
     )
+    checks[:0] = [
+        {
+            "code": "run_runtime_proof_refreshed",
+            "status": "passed",
+            "message": "run must persist fresh challenge-bound health before dispatch",
+            "details": {"backend_id": backend_id},
+        }
+        for backend_id in (_BACKEND_A, _BACKEND_B)
+    ]
     evidence_manifest = _evidence_manifest(manifest)
     return {
         "schema": EVIDENCE_SCHEMA,

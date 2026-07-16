@@ -1340,6 +1340,65 @@ async def collect_preflight(
     return report, endpoints_after
 
 
+async def refresh_runtime_proofs(
+    session_factory,
+    backend_ids: Sequence[str],
+    *,
+    refresher=None,
+) -> list[dict[str, Any]]:
+    """Persist fresh challenge proofs before the mutating validation run."""
+
+    if refresher is None:
+        from app.services.gpu_dispatch_authority import (  # noqa: PLC0415
+            _refresh_gpu_health as refresher,
+        )
+
+    checks: list[dict[str, Any]] = []
+    for backend_id in sorted(set(backend_ids)):
+        try:
+            refreshed = await refresher(
+                session_factory,
+                uuid.UUID(backend_id),
+                secrets.token_hex(32),
+            )
+        except Exception as exc:  # noqa: BLE001 - evidence must fail closed
+            checks.append(
+                _check(
+                    "run_runtime_proof_refreshed",
+                    False,
+                    "run must persist fresh challenge-bound health before dispatch",
+                    backend_id=backend_id,
+                    error=_safe_error(exc),
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    "run_runtime_proof_refreshed",
+                    refreshed is True,
+                    "run must persist fresh challenge-bound health before dispatch",
+                    backend_id=backend_id,
+                )
+            )
+    return checks
+
+
+def _preflight_allows_runtime_proof_refresh(report: Mapping[str, Any]) -> bool:
+    """Allow run to repair only cached proof blockers after all static gates pass."""
+
+    checks = report.get("checks")
+    return bool(
+        isinstance(checks, list)
+        and checks
+        and all(isinstance(check, Mapping) for check in checks)
+        and all(
+            check.get("status") == "passed"
+            or check.get("code") == "backend_live_proof"
+            for check in checks
+        )
+    )
+
+
 def _validate_run_safety(
     *,
     environment: str,
@@ -2603,7 +2662,7 @@ async def run_validation(
             config=config,
             store=store,
         )
-        if preflight["status"] != "passed":
+        if not _preflight_allows_runtime_proof_refresh(preflight):
             return {
                 "schema": EVIDENCE_SCHEMA,
                 "command": "run",
@@ -2626,6 +2685,73 @@ async def run_validation(
                 "snapshots": {},
                 "faults": [],
                 "cleanup": {"performed": False, "reason": "preflight_blocked"},
+            }
+
+        runtime_proof_checks = await refresh_runtime_proofs(
+            session_factory,
+            endpoints,
+        )
+        if not all(check["status"] == "passed" for check in runtime_proof_checks):
+            return {
+                "schema": EVIDENCE_SCHEMA,
+                "command": "run",
+                "status": "blocked",
+                "run_id": run_id,
+                "cohort_id": manifest.cohort_id,
+                "node_id": manifest.node_id,
+                "scenario": manifest.scenario,
+                "resources": _manifest_resources(manifest),
+                "started_at": started_at,
+                "finished_at": _utc_now(),
+                "manifest_sha256": manifest_sha256,
+                "evidence_manifest": evidence_manifest,
+                "evidence_manifest_sha256": evidence_manifest_sha256,
+                "thresholds": _thresholds(),
+                "threshold_applicability": _threshold_applicability(),
+                "checks": [*preflight["checks"], *runtime_proof_checks],
+                "preflight": preflight,
+                "actions": [],
+                "snapshots": {},
+                "faults": [],
+                "cleanup": {
+                    "performed": False,
+                    "reason": "runtime_proof_refresh_blocked",
+                },
+            }
+
+        preflight, endpoints = await collect_preflight(
+            manifest=manifest,
+            manifest_sha256=manifest_sha256,
+            session_factory=session_factory,
+            config=config,
+            store=store,
+        )
+        if preflight["status"] != "passed":
+            return {
+                "schema": EVIDENCE_SCHEMA,
+                "command": "run",
+                "status": "blocked",
+                "run_id": run_id,
+                "cohort_id": manifest.cohort_id,
+                "node_id": manifest.node_id,
+                "scenario": manifest.scenario,
+                "resources": _manifest_resources(manifest),
+                "started_at": started_at,
+                "finished_at": _utc_now(),
+                "manifest_sha256": manifest_sha256,
+                "evidence_manifest": evidence_manifest,
+                "evidence_manifest_sha256": evidence_manifest_sha256,
+                "thresholds": _thresholds(),
+                "threshold_applicability": _threshold_applicability(),
+                "checks": [*runtime_proof_checks, *preflight["checks"]],
+                "preflight": preflight,
+                "actions": [],
+                "snapshots": {},
+                "faults": [],
+                "cleanup": {
+                    "performed": False,
+                    "reason": "post_refresh_preflight_blocked",
+                },
             }
 
         fault_module = None
@@ -2702,16 +2828,19 @@ async def run_validation(
             **after_runtime,
         }
         recovery_samples = await _gpu_samples()
-        checks = evaluate_run(
-            manifest=manifest,
-            actions=actions,
-            before=before,
-            after=after,
-            baseline_samples=baseline_samples,
-            during_samples=during,
-            recovery_samples=recovery_samples,
-            fault=fault,
-        )
+        checks = [
+            *runtime_proof_checks,
+            *evaluate_run(
+                manifest=manifest,
+                actions=actions,
+                before=before,
+                after=after,
+                baseline_samples=baseline_samples,
+                during_samples=during,
+                recovery_samples=recovery_samples,
+                fault=fault,
+            ),
+        ]
         passed = all(check["status"] == "passed" for check in checks)
         return {
             "schema": EVIDENCE_SCHEMA,
@@ -2766,6 +2895,7 @@ async def run_validation(
 
 _PRIMARY_CHECKS = frozenset(
     {
+        "run_runtime_proof_refreshed",
         "actions_completed",
         "run_topology_stable",
         "run_fence_monotonic",
@@ -2904,15 +3034,37 @@ def _primary_report_valid(report: Mapping[str, Any]) -> bool:
             recovery_samples=snapshots["recovery_gpu"],
             fault=None,
         )
+        runtime_backend_ids = sorted(
+            row["backend_id"]
+            for row in snapshots["before"]["database"]["registries"]
+        )
+        if (
+            len(runtime_backend_ids) != len(set(runtime_backend_ids))
+            or any(
+                str(uuid.UUID(backend_id)) != backend_id
+                for backend_id in runtime_backend_ids
+            )
+        ):
+            return False
+        runtime_proof_checks = [
+            _check(
+                "run_runtime_proof_refreshed",
+                True,
+                "run must persist fresh challenge-bound health before dispatch",
+                backend_id=backend_id,
+            )
+            for backend_id in runtime_backend_ids
+        ]
     except Exception:  # noqa: BLE001 - malformed evidence must verify as failed
         return False
     if any(check.get("status") != "passed" for check in recomputed_checks):
         return False
     required_codes = _PRIMARY_CHECKS | _SCENARIO_PRIMARY_CHECKS[manifest.scenario]
-    recomputed_codes = {check.get("code") for check in recomputed_checks}
+    expected_checks = [*runtime_proof_checks, *recomputed_checks]
+    recomputed_codes = {check.get("code") for check in expected_checks}
     return bool(
         required_codes.issubset(recomputed_codes)
-        and _canonical_json(checks) == _canonical_json(recomputed_checks)
+        and _canonical_json(checks) == _canonical_json(expected_checks)
     )
 
 
