@@ -1319,9 +1319,13 @@ def enabled_gpu_rollout_worker(monkeypatch):
         events.append(("block", resource_id))
         return settled
 
+    async def read_all(_factory):
+        return tuple(transitions.values())
+
     monkeypatch.setattr(ml_health, "begin_gpu_arbiter_rollout", begin)
     monkeypatch.setattr(ml_health, "complete_gpu_arbiter_rollout", complete)
     monkeypatch.setattr(ml_health, "block_gpu_arbiter_rollout", block)
+    monkeypatch.setattr(ml_health, "read_gpu_arbiter_rollouts", read_all)
     return events
 
 
@@ -1391,7 +1395,7 @@ async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
 
     assert result == {
         "skipped": True,
-        "reason": "no_desired_enforce_resources",
+        "reason": "no_active_gpu_rollouts",
         "resources": [],
     }
     assert calls == {"redis": 0, "signer": 0, "promoter": 0, "mode": 0}
@@ -1629,7 +1633,14 @@ async def test_gpu_promotion_stops_when_redis_demotion_is_unconfirmed(
     async def no_memberships(factory, resource_id):  # noqa: ARG001
         return ()
 
-    async def fake_promoter(factory, resource_id, *, readiness_demoter):  # noqa: ARG001
+    async def fake_promoter(
+        factory,
+        resource_id,
+        *,
+        readiness_demoter,
+        pending_only,
+    ):  # noqa: ARG001
+        assert pending_only is False
         events.append("promotion")
         await readiness_demoter(resource_id)
         events.append("epoch_advanced")
@@ -1756,7 +1767,9 @@ async def test_gpu_repair_worker_gives_every_card_time_within_batch(
         *,
         membership_promoter,
         promotion_timeout_seconds,
+        rollout_transition_id,
     ):  # noqa: ARG001
+        assert rollout_transition_id is not None
         started.append(resource_id)
         await asyncio.sleep(0.02)
 
@@ -1833,6 +1846,192 @@ async def test_gpu_repair_worker_latches_not_ready_after_generic_failure(
     assert result["resources"][0]["ready"] is False
 
 
+@pytest.mark.parametrize(
+    ("control_status", "repair_ready", "expected_pending", "expected_blocker"),
+    (
+        ("issued", False, True, "rollout_control_awaiting_fresh_health"),
+        ("acknowledged", True, False, None),
+    ),
+)
+async def test_gpu_promotion_waits_for_control_health_before_redis_ready(
+    monkeypatch,
+    control_status: str,
+    repair_ready: bool,
+    expected_pending: bool,
+    expected_blocker: str | None,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.services.gpu_rollout_control import GPURolloutControlResult
+    from app.workers import ml_health
+
+    transition_id = uuid.uuid4()
+    resource_id = "node-worker/GPU-control-sequence"
+    observation = object()
+    repair_calls: list[tuple[bool, str | None]] = []
+
+    async def no_memberships(factory, target_resource_id):  # noqa: ARG001
+        return ()
+
+    async def advance_control(
+        factory,
+        target_resource_id,
+        *,
+        transition_id: uuid.UUID,
+        target_gate: str,
+        readiness_demoter,
+    ):  # noqa: ARG001
+        assert target_resource_id == resource_id
+        assert target_gate == "enforce"
+        return (
+            GPURolloutControlResult(
+                backend_id=str(uuid.uuid4()),
+                resource_id=resource_id,
+                membership_epoch=1,
+                transition_id=str(transition_id),
+                operation="mode_enforce",
+                status=control_status,  # type: ignore[arg-type]
+                reason="control-result",
+                control_epoch="3",
+            ),
+        )
+
+    async def fake_repair(
+        factory,
+        store,
+        target_resource_id,
+        allocatable_mb,
+        *,
+        force_proof_reset,
+        readiness_blocker,
+    ):  # noqa: ARG001
+        repair_calls.append((force_proof_reset, readiness_blocker))
+        return SimpleNamespace(
+            action="repair",
+            status="ready" if repair_ready else "not_ready",
+            ready=repair_ready,
+            reason=readiness_blocker or "",
+            ledger_revision=2,
+            ledger_incarnation="incarnation",
+            committed_mb=0,
+        )
+
+    async def fake_observe(store, target_resource_id, domain):  # noqa: ARG001
+        return observation
+
+    real_asdict = ml_health.asdict
+
+    def fake_asdict(value):
+        if value is observation:
+            return {"status": "ready" if repair_ready else "not_ready"}
+        return real_asdict(value)
+
+    monkeypatch.setattr(ml_health, "_resource_memberships", no_memberships)
+    monkeypatch.setattr(ml_health, "repair_gpu_resource", fake_repair)
+    monkeypatch.setattr(ml_health, "observe_gpu_resource_runtime", fake_observe)
+    monkeypatch.setattr(ml_health, "asdict", fake_asdict)
+
+    result = await ml_health._repair_one_gpu_resource(
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        resource_id,
+        8192,
+        membership_promoter=no_memberships,
+        rollout_transition_id=transition_id,
+        control_advancer=advance_control,
+    )
+
+    assert result["transition_pending"] is expected_pending
+    assert result["ready"] is repair_ready
+    assert result["controls"][0]["status"] == control_status
+    assert repair_calls == [(False, expected_blocker)]
+
+
+@pytest.mark.parametrize(
+    ("control_status", "expected_pending", "expected_complete"),
+    (
+        ("issued", True, False),
+        ("acknowledged", False, True),
+    ),
+)
+async def test_gpu_demotion_waits_for_fresh_legacy_health(
+    control_status: str,
+    expected_pending: bool,
+    expected_complete: bool,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.config import GPUArbiterMode
+    from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
+    from app.services.gpu_rollout_control import GPURolloutControlResult
+    from app.workers import ml_health
+
+    resource_id = "node-worker/GPU-demotion-sequence"
+    transition_id = uuid.uuid4()
+    rollout = GPUArbiterRolloutSnapshot(
+        resource_id=resource_id,
+        state="demoting",
+        effective_mode=GPUArbiterMode.ENFORCE,
+        target_mode=GPUArbiterMode.OBSERVE,
+        transition_id=transition_id,
+        last_transition_id=None,
+        blocker_reason=None,
+        revision=4,
+    )
+
+    class FakeStore:
+        async def mark_card_not_ready(self, *args, **kwargs):  # noqa: ARG002
+            return SimpleNamespace(status="not_ready")
+
+        async def snapshot(self, target_resource_id):
+            assert target_resource_id == resource_id
+            return SimpleNamespace(
+                leases=(),
+                card_queue_count=0,
+                backend_queue_count=0,
+                transition_present=False,
+                ledger_revision=5,
+                ledger_incarnation="incarnation",
+                committed_mb=1024,
+            )
+
+    async def advance_control(
+        factory,
+        target_resource_id,
+        *,
+        transition_id: uuid.UUID,
+        target_gate: str,
+        readiness_demoter,
+    ):  # noqa: ARG001
+        assert target_resource_id == resource_id
+        assert target_gate == "legacy"
+        return (
+            GPURolloutControlResult(
+                backend_id=str(uuid.uuid4()),
+                resource_id=resource_id,
+                membership_epoch=1,
+                transition_id=str(transition_id),
+                operation="mode_legacy",
+                status=control_status,  # type: ignore[arg-type]
+                reason="control-result",
+                control_epoch="4",
+            ),
+        )
+
+    result = await ml_health._demote_one_gpu_resource(
+        object(),  # type: ignore[arg-type]
+        FakeStore(),  # type: ignore[arg-type]
+        resource_id,
+        8192,
+        rollout,
+        control_advancer=advance_control,
+    )
+
+    assert result["transition_pending"] is expected_pending
+    assert result["demotion_complete"] is expected_complete
+    assert result["controls"][0]["status"] == control_status
+
+
 async def test_gpu_repair_batch_timeout_latches_every_cancelled_card(
     monkeypatch,
     enabled_gpu_rollout_worker,
@@ -1890,7 +2089,9 @@ async def test_gpu_repair_batch_timeout_latches_every_cancelled_card(
         *,
         membership_promoter,
         promotion_timeout_seconds,
+        rollout_transition_id,
     ):  # noqa: ARG001
+        assert rollout_transition_id is not None
         started.append(resource_id)
         await asyncio.sleep(1)
 

@@ -21,6 +21,7 @@ import json
 import logging
 import random
 import secrets
+import uuid
 from datetime import datetime, timezone
 from time import perf_counter
 from urllib.parse import urlparse
@@ -53,10 +54,15 @@ from app.services.gpu_arbiter_rollout import (
     begin_gpu_arbiter_rollout,
     block_gpu_arbiter_rollout,
     complete_gpu_arbiter_rollout,
+    read_gpu_arbiter_rollouts,
 )
 from app.services.gpu_membership_activation import (
     GPUMembershipPromotionResult,
     promote_gpu_resource_memberships,
+)
+from app.services.gpu_rollout_control import (
+    GPURolloutControlResult,
+    advance_gpu_resource_rollout_control,
 )
 from app.services.ml_backend import MLBackendService
 from app.workers._db import task_session
@@ -324,7 +330,9 @@ async def _settle_gpu_resource_promotion(
     if rollout.state == "promoting":
         if rollout.transition_id is None:
             raise RuntimeError("GPU rollout promotion identity is missing")
-        if repair_result["ready"] is True:
+        if repair_result.get("transition_pending") is True:
+            pass
+        elif repair_result["ready"] is True:
             settled = await complete_gpu_arbiter_rollout(
                 factory,
                 rollout.resource_id,
@@ -340,6 +348,34 @@ async def _settle_gpu_resource_promotion(
     repair_result["effective_mode"] = settled.effective_mode.value
     repair_result["rollout"] = _rollout_document(settled)
     return repair_result
+
+
+async def _settle_gpu_resource_demotion(
+    factory: async_sessionmaker[AsyncSession],
+    rollout: GPUArbiterRolloutSnapshot,
+    result: dict,
+) -> dict:
+    settled = rollout
+    if rollout.state != "demoting" or rollout.transition_id is None:
+        raise RuntimeError("GPU rollout demotion identity is missing")
+    if result.get("transition_pending") is True:
+        pass
+    elif result.get("demotion_complete") is True:
+        settled = await complete_gpu_arbiter_rollout(
+            factory,
+            rollout.resource_id,
+            rollout.transition_id,
+        )
+    else:
+        settled = await block_gpu_arbiter_rollout(
+            factory,
+            rollout.resource_id,
+            rollout.transition_id,
+            result.get("reason") or "gpu_resource_demotion_unconfirmed",
+        )
+    result["effective_mode"] = settled.effective_mode.value
+    result["rollout"] = _rollout_document(settled)
+    return result
 
 
 async def _latch_gpu_resource_not_ready(
@@ -360,6 +396,15 @@ async def _latch_gpu_resource_not_ready(
         )
 
 
+async def _skip_gpu_membership_promotion(
+    _factory: async_sessionmaker[AsyncSession],
+    _resource_id: str,
+) -> tuple[GPUMembershipPromotionResult, ...]:
+    """Keep a settled enforcing rollout read-only until an explicit demotion."""
+
+    return ()
+
+
 async def _repair_one_gpu_resource(
     factory: async_sessionmaker[AsyncSession],
     store: GPUArbiterStore,
@@ -372,6 +417,9 @@ async def _repair_one_gpu_resource(
     ]
     | None = None,
     promotion_timeout_seconds: float = _GPU_PROMOTION_RESOURCE_TIMEOUT_SECONDS,
+    rollout_transition_id: uuid.UUID | None = None,
+    control_advancer: Callable[..., Awaitable[Sequence[GPURolloutControlResult]]]
+    | None = None,
 ) -> dict:
     started = perf_counter()
     collections: list[dict] = []
@@ -395,6 +443,7 @@ async def _repair_one_gpu_resource(
 
     force_proof_reset = False
     readiness_revoked = False
+    promotion_failed = False
 
     async def revoke_ready_before_epoch_advance(target_resource_id: str) -> None:
         nonlocal readiness_revoked
@@ -415,6 +464,7 @@ async def _repair_one_gpu_resource(
                     factory,
                     resource_id,
                     readiness_demoter=revoke_ready_before_epoch_advance,
+                    pending_only=rollout_transition_id is not None,
                 )
             else:
                 promotion_results = await membership_promoter(factory, resource_id)
@@ -422,6 +472,7 @@ async def _repair_one_gpu_resource(
         force_proof_reset = any(item.requires_proof_reset for item in promotion_results)
     except TimeoutError:
         force_proof_reset = True
+        promotion_failed = True
         promotions = [
             {
                 "backend_id": None,
@@ -436,6 +487,7 @@ async def _repair_one_gpu_resource(
         ]
     except Exception:  # noqa: BLE001 - P3 repair must still run fail-closed
         force_proof_reset = True
+        promotion_failed = True
         promotions = [
             {
                 "backend_id": None,
@@ -449,15 +501,70 @@ async def _repair_one_gpu_resource(
             }
         ]
 
+    controls: list[dict] = []
+    transition_pending = False
+    control_blocker: str | None = None
+    if rollout_transition_id is not None:
+        if promotion_failed:
+            control_blocker = "membership_promotion_unconfirmed"
+        elif promotion_results and {item.status for item in promotion_results} <= {
+            "promoted",
+            "acknowledged",
+        }:
+            transition_pending = True
+        elif promotion_results:
+            control_blocker = "membership_promotion_unconfirmed"
+        else:
+            try:
+                async with asyncio.timeout(promotion_timeout_seconds):
+                    if control_advancer is None:
+                        control_results = await advance_gpu_resource_rollout_control(
+                            factory,
+                            resource_id,
+                            transition_id=rollout_transition_id,
+                            target_gate="enforce",
+                            readiness_demoter=revoke_ready_before_epoch_advance,
+                        )
+                    else:
+                        control_results = await control_advancer(
+                            factory,
+                            resource_id,
+                            transition_id=rollout_transition_id,
+                            target_gate="enforce",
+                            readiness_demoter=revoke_ready_before_epoch_advance,
+                        )
+                controls = [asdict(item) for item in control_results]
+                control_statuses = {item.status for item in control_results}
+                transition_pending = bool(control_statuses & {"issued", "pending"})
+                if control_statuses & {"blocked", "unavailable"}:
+                    transition_pending = False
+                    control_blocker = next(
+                        item.reason
+                        for item in control_results
+                        if item.status in {"blocked", "unavailable"}
+                    )
+            except TimeoutError:
+                control_blocker = "rollout_control_timeout"
+            except Exception:  # noqa: BLE001 - rollout remains fail-closed
+                control_blocker = "rollout_control_unavailable"
+
+    readiness_blocker: str | None
+    if control_blocker is not None:
+        readiness_blocker = control_blocker
+    elif transition_pending:
+        readiness_blocker = "rollout_control_awaiting_fresh_health"
+    elif force_proof_reset:
+        readiness_blocker = "membership_promotion_unconfirmed"
+    else:
+        readiness_blocker = None
+
     repair = await repair_gpu_resource(
         factory,
         store,
         resource_id,
         allocatable_mb,
         force_proof_reset=force_proof_reset,
-        readiness_blocker=(
-            "membership_promotion_unconfirmed" if force_proof_reset else None
-        ),
+        readiness_blocker=readiness_blocker,
     )
 
     memberships = await _resource_memberships(factory, resource_id)
@@ -501,9 +608,7 @@ async def _repair_one_gpu_resource(
             resource_id,
             allocatable_mb,
             force_proof_reset=force_proof_reset,
-            readiness_blocker=(
-                "membership_promotion_unconfirmed" if force_proof_reset else None
-            ),
+            readiness_blocker=readiness_blocker,
         )
 
     memberships = await _resource_memberships(factory, resource_id)
@@ -525,11 +630,127 @@ async def _repair_one_gpu_resource(
         "committed_mb": repair.committed_mb,
         "collections": collections,
         "promotions": promotions,
+        "controls": controls,
+        "transition_pending": transition_pending,
         "observation": asdict(observation),
         "duration_ms": round((perf_counter() - started) * 1000),
     }
     log.info(
         "gpu_arbiter_resource_repair: %s",
+        json.dumps(result, sort_keys=True, separators=(",", ":")),
+    )
+    return result
+
+
+async def _demote_one_gpu_resource(
+    factory: async_sessionmaker[AsyncSession],
+    store: GPUArbiterStore,
+    resource_id: str,
+    allocatable_mb: int,
+    rollout: GPUArbiterRolloutSnapshot,
+    *,
+    control_advancer: Callable[..., Awaitable[Sequence[GPURolloutControlResult]]]
+    | None = None,
+    control_timeout_seconds: float = _GPU_PROMOTION_RESOURCE_TIMEOUT_SECONDS,
+) -> dict:
+    started = perf_counter()
+    assert rollout.transition_id is not None
+    await _latch_gpu_resource_not_ready(
+        store,
+        resource_id,
+        allocatable_mb,
+        reason="rollout_demotion_in_progress",
+    )
+    snapshot = await store.snapshot(resource_id)
+    runtime_quiescent = bool(
+        not snapshot.leases
+        and snapshot.card_queue_count == 0
+        and snapshot.backend_queue_count == 0
+        and not snapshot.transition_present
+    )
+    controls: list[dict] = []
+    transition_pending = not runtime_quiescent
+    demotion_complete = False
+    reason = "demotion_waiting_for_runtime_quiescence"
+
+    async def keep_not_ready(target_resource_id: str) -> None:
+        await _latch_gpu_resource_not_ready(
+            store,
+            target_resource_id,
+            allocatable_mb,
+            reason="rollout_demotion_in_progress",
+        )
+
+    if runtime_quiescent:
+        try:
+            async with asyncio.timeout(control_timeout_seconds):
+                if control_advancer is None:
+                    control_results = await advance_gpu_resource_rollout_control(
+                        factory,
+                        resource_id,
+                        transition_id=rollout.transition_id,
+                        target_gate="legacy",
+                        readiness_demoter=keep_not_ready,
+                    )
+                else:
+                    control_results = await control_advancer(
+                        factory,
+                        resource_id,
+                        transition_id=rollout.transition_id,
+                        target_gate="legacy",
+                        readiness_demoter=keep_not_ready,
+                    )
+            controls = [asdict(item) for item in control_results]
+            statuses = {item.status for item in control_results}
+            if statuses & {"blocked", "unavailable"}:
+                failed = next(
+                    item
+                    for item in control_results
+                    if item.status in {"blocked", "unavailable"}
+                )
+                transition_pending = False
+                reason = failed.reason
+            elif statuses & {"issued", "pending"}:
+                transition_pending = True
+                reason = "legacy_gate_awaiting_fresh_health"
+            else:
+                transition_pending = False
+                demotion_complete = True
+                reason = ""
+        except TimeoutError:
+            transition_pending = False
+            reason = "rollout_control_timeout"
+        except Exception:  # noqa: BLE001 - demotion remains fail-closed
+            transition_pending = False
+            reason = "rollout_control_unavailable"
+
+    result = {
+        "resource_id": resource_id,
+        "desired_mode": rollout.target_mode.value,
+        "effective_mode": rollout.effective_mode.value,
+        "action": "demotion",
+        "status": (
+            "legacy_acknowledged"
+            if demotion_complete
+            else "pending"
+            if transition_pending
+            else "not_ready"
+        ),
+        "ready": False,
+        "reason": reason,
+        "ledger_revision": snapshot.ledger_revision,
+        "ledger_incarnation": snapshot.ledger_incarnation,
+        "committed_mb": snapshot.committed_mb,
+        "collections": [],
+        "promotions": [],
+        "controls": controls,
+        "transition_pending": transition_pending,
+        "demotion_complete": demotion_complete,
+        "observation": None,
+        "duration_ms": round((perf_counter() - started) * 1000),
+    }
+    log.info(
+        "gpu_arbiter_resource_demotion: %s",
         json.dumps(result, sort_keys=True, separators=(",", ":")),
     )
     return result
@@ -543,10 +764,12 @@ async def _repair_gpu_arbiter_resources(
     ]
     | None = None,
 ) -> dict:
-    """Repair desired-enforce cards after a complete health scan.
+    """Advance desired-enforce cards and settle active demotions after health.
 
-    Off/observe are strict no-Redis modes.  Each invocation owns its async engine
-    and Redis client so repeated Celery ``asyncio.run`` loops never share sockets.
+    Settled off/observe cards remain no-Redis; a durable demotion deliberately
+    retains the old ledger until every backend confirms legacy gate.  Each
+    invocation owns its async engine and Redis client so repeated Celery
+    ``asyncio.run`` loops never share sockets.
     """
 
     if settings.gpu_arbiter_config_errors:
@@ -561,20 +784,43 @@ async def _repair_gpu_arbiter_resources(
             "reason": "gpu_rollout_disabled",
             "resources": [],
         }
-    resources = [
-        (resource_id, resource)
-        for resource_id, resource in sorted(settings.gpu_arbiter_resources.items())
-        if settings.gpu_arbiter_desired_mode(resource_id) is GPUArbiterMode.ENFORCE
-    ]
-    if not resources:
+    engine = create_async_engine(settings.database_url, echo=False)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        durable_rollouts = await read_gpu_arbiter_rollouts(factory)
+    except Exception as exc:  # noqa: BLE001 - DB loss must not touch Redis
+        await engine.dispose()
         return {
             "skipped": True,
-            "reason": "no_desired_enforce_resources",
+            "reason": "gpu_rollout_state_unavailable",
+            "detail": str(exc) or type(exc).__name__,
+            "resources": [],
+        }
+    durable_by_resource = {item.resource_id: item for item in durable_rollouts}
+    resource_ids = {
+        resource_id
+        for resource_id in settings.gpu_arbiter_resources
+        if settings.gpu_arbiter_desired_mode(resource_id) is GPUArbiterMode.ENFORCE
+    }
+    resource_ids.update(
+        item.resource_id for item in durable_rollouts if item.state != "off"
+    )
+    resources = [
+        (
+            resource_id,
+            settings.gpu_arbiter_desired_mode(resource_id),
+            settings.gpu_arbiter_resources.get(resource_id),
+        )
+        for resource_id in sorted(resource_ids)
+    ]
+    if not resources:
+        await engine.dispose()
+        return {
+            "skipped": True,
+            "reason": "no_active_gpu_rollouts",
             "resources": [],
         }
 
-    engine = create_async_engine(settings.database_url, echo=False)
-    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     store = GPUArbiterStore.from_url(settings.redis_url)
     semaphore = asyncio.Semaphore(_GPU_REPAIR_MAX_CONCURRENCY)
     repair_waves = max(
@@ -601,13 +847,14 @@ async def _repair_gpu_arbiter_resources(
 
     def failure_result(
         resource_id: str,
+        desired_mode: GPUArbiterMode,
         reason: str,
         started: float,
         rollout: GPUArbiterRolloutSnapshot | None,
     ) -> dict:
         result = {
             "resource_id": resource_id,
-            "desired_mode": "enforce",
+            "desired_mode": desired_mode.value,
             "effective_mode": (
                 rollout.effective_mode.value
                 if rollout is not None
@@ -622,17 +869,18 @@ async def _repair_gpu_arbiter_resources(
             "committed_mb": None,
             "collections": [],
             "promotions": [],
+            "controls": [],
+            "transition_pending": False,
             "observation": None,
             "duration_ms": round((perf_counter() - started) * 1000),
         }
-        result["rollout"] = (
-            _rollout_document(rollout) if rollout is not None else None
-        )
+        result["rollout"] = _rollout_document(rollout) if rollout is not None else None
         return result
 
     async def fail_closed_failure_result(
         resource_id: str,
-        allocatable_mb: int,
+        desired_mode: GPUArbiterMode,
+        allocatable_mb: int | None,
         *,
         reason: str,
         readiness_reason: str,
@@ -641,6 +889,8 @@ async def _repair_gpu_arbiter_resources(
     ) -> dict:
         try:
             async with asyncio.timeout(fail_closed_timeout_seconds):
+                if allocatable_mb is None:
+                    allocatable_mb = (await store.snapshot(resource_id)).allocatable_mb
                 await _latch_gpu_resource_not_ready(
                     store,
                     resource_id,
@@ -650,7 +900,7 @@ async def _repair_gpu_arbiter_resources(
         except Exception as exc:  # noqa: BLE001 - report uncertain latch
             reason = f"{reason}: {str(exc) or type(exc).__name__}"
         settled_rollout = rollout
-        if rollout is not None and rollout.state == "promoting":
+        if rollout is not None and rollout.state in {"promoting", "demoting"}:
             assert rollout.transition_id is not None
             try:
                 async with asyncio.timeout(fail_closed_timeout_seconds):
@@ -660,9 +910,15 @@ async def _repair_gpu_arbiter_resources(
                         rollout.transition_id,
                         reason,
                     )
-            except Exception as exc:  # noqa: BLE001 - promoting remains fail-closed
+            except Exception as exc:  # noqa: BLE001 - transition remains fail-closed
                 reason = f"{reason}: {str(exc) or type(exc).__name__}"
-        result = failure_result(resource_id, reason, started, settled_rollout)
+        result = failure_result(
+            resource_id,
+            desired_mode,
+            reason,
+            started,
+            settled_rollout,
+        )
         log.warning(
             "gpu_arbiter_resource_repair_failed: %s",
             json.dumps(result, sort_keys=True, separators=(",", ":")),
@@ -671,34 +927,78 @@ async def _repair_gpu_arbiter_resources(
 
     rollouts_by_resource: dict[str, GPUArbiterRolloutSnapshot] = {}
 
-    async def run_one(resource_id: str, allocatable_mb: int) -> dict:
+    async def run_one(resource_id: str, desired_mode: GPUArbiterMode, resource) -> dict:
         async with semaphore:
             started = perf_counter()
             rollout: GPUArbiterRolloutSnapshot | None = None
             try:
                 async with asyncio.timeout(per_resource_timeout_seconds):
+                    current = durable_by_resource.get(resource_id)
+                    target_mode = desired_mode
+                    if (
+                        desired_mode is GPUArbiterMode.ENFORCE
+                        and current is not None
+                        and current.effective_mode is GPUArbiterMode.ENFORCE
+                        and current.state in {"demoting", "blocked"}
+                        and current.target_mode is not GPUArbiterMode.ENFORCE
+                    ):
+                        # Finish an already-started rollback before a later cycle
+                        # may promote again; this avoids mixed-gate compensation.
+                        target_mode = current.target_mode
                     rollout = await begin_gpu_arbiter_rollout(
                         factory,
                         resource_id,
-                        GPUArbiterMode.ENFORCE,
+                        target_mode,
                     )
                     rollouts_by_resource[resource_id] = rollout
-                    repair_result = await _repair_one_gpu_resource(
+                    if target_mode is GPUArbiterMode.ENFORCE:
+                        if resource is None:
+                            raise RuntimeError(
+                                "enforce resource configuration is missing"
+                            )
+                        repair_result = await _repair_one_gpu_resource(
+                            factory,
+                            store,
+                            resource_id,
+                            resource.allocatable_mb,
+                            membership_promoter=(
+                                _skip_gpu_membership_promotion
+                                if rollout.state == "enforcing"
+                                else membership_promoter
+                            ),
+                            promotion_timeout_seconds=promotion_timeout_seconds,
+                            rollout_transition_id=rollout.transition_id,
+                        )
+                        return await _settle_gpu_resource_promotion(
+                            factory,
+                            rollout,
+                            repair_result,
+                        )
+                    allocatable_mb = (
+                        resource.allocatable_mb
+                        if resource is not None
+                        else (await store.snapshot(resource_id)).allocatable_mb
+                    )
+                    demotion_result = await _demote_one_gpu_resource(
                         factory,
                         store,
                         resource_id,
                         allocatable_mb,
-                        membership_promoter=membership_promoter,
-                        promotion_timeout_seconds=promotion_timeout_seconds,
+                        rollout,
+                        control_timeout_seconds=promotion_timeout_seconds,
                     )
-                    return await _settle_gpu_resource_promotion(
+                    return await _settle_gpu_resource_demotion(
                         factory,
                         rollout,
-                        repair_result,
+                        demotion_result,
                     )
             except TimeoutError:
+                allocatable_mb = (
+                    resource.allocatable_mb if resource is not None else None
+                )
                 return await fail_closed_failure_result(
                     resource_id,
+                    desired_mode,
                     allocatable_mb,
                     reason="gpu_resource_repair_timeout",
                     readiness_reason="gpu_resource_repair_timeout",
@@ -706,8 +1006,12 @@ async def _repair_gpu_arbiter_resources(
                     rollout=rollout,
                 )
             except Exception as exc:  # noqa: BLE001 - isolate physical resources
+                allocatable_mb = (
+                    resource.allocatable_mb if resource is not None else None
+                )
                 return await fail_closed_failure_result(
                     resource_id,
+                    desired_mode,
                     allocatable_mb,
                     reason=str(exc) or type(exc).__name__,
                     readiness_reason="gpu_resource_repair_failed",
@@ -717,12 +1021,13 @@ async def _repair_gpu_arbiter_resources(
 
     try:
         tasks = {
-            asyncio.create_task(run_one(resource_id, resource.allocatable_mb)): (
+            asyncio.create_task(run_one(resource_id, desired_mode, resource)): (
                 resource_id,
-                resource.allocatable_mb,
+                resource.allocatable_mb if resource is not None else None,
+                desired_mode,
                 perf_counter(),
             )
-            for resource_id, resource in resources
+            for resource_id, desired_mode, resource in resources
         }
         done, pending = await asyncio.wait(
             tasks,
@@ -738,10 +1043,11 @@ async def _repair_gpu_arbiter_resources(
             *(
                 fail_closed_failure_result(
                     tasks[task][0],
+                    tasks[task][2],
                     tasks[task][1],
                     reason="gpu_arbiter_repair_batch_timeout",
                     readiness_reason="gpu_arbiter_repair_batch_timeout",
-                    started=tasks[task][2],
+                    started=tasks[task][3],
                     rollout=rollouts_by_resource.get(tasks[task][0]),
                 )
                 for task in pending_tasks
@@ -749,7 +1055,10 @@ async def _repair_gpu_arbiter_resources(
         )
         for task, result in zip(pending_tasks, pending_results, strict=True):
             results_by_resource[tasks[task][0]] = result
-        results = [results_by_resource[resource_id] for resource_id, _ in resources]
+        results = [
+            results_by_resource[resource_id]
+            for resource_id, _desired_mode, _resource in resources
+        ]
     finally:
         try:
             await store.aclose()

@@ -208,8 +208,8 @@ fail-closed 处理。prepared、disabled 或读取失败时，无法原子证明
 不会用 `0` 误报为空。
 
 每轮完整 backend 健康扫描后会输出逐资源 `gpu_arbiter_resource_repair` 结构化日志，包含 action、status、
-reason、revision、committed、rollout 结果、GC collection 结果和耗时。release latch 开启后，只有
-desired mode 为 `enforce` 的资源运行该控制面；
+reason、revision、committed、rollout 结果、GC collection 结果和耗时。release latch 开启后，
+desired mode 为 `enforce` 的资源以及任意持久状态尚未收敛为 `off` 的资源都运行该控制面；
 beat 消息过期、长于任务 hard limit 的防重入锁和 50 秒批次总时限共同阻止慢任务跨分钟堆积；多卡最多四路
 并行，并按波次数量均分 45 秒工作预算，确保固定排序后的每张卡都能在本轮获得执行机会。稳定 ready 且不含
 retiring 的卡只读
@@ -218,6 +218,11 @@ retiring 的卡只读
 探活。每个 tombstone 由不可复用 `retirement_id` 标识，completion receipt 独立保留七天，并以自身收集结果域
 承受数据库 sibling 域的后续演进；proof reset 轮换 incarnation 后则必须用新鲜证明重新收集。冻结的退役 health
 只用于诊断，不能授权删除 tombstone。
+
+promotion 结果中的 `controls` 会依次显示 reset 与 enforce-mode 的 `issued/pending/acknowledged`；
+`transition_pending=true` 表示正常等待 post-horizon health，不是失败。demotion 先记录
+`demotion_waiting_for_runtime_quiescence`，等 lease、两级 queue 和 transition 都清空后才出现
+`mode_legacy`；只有全部 Backend 变为 `acknowledged` 才完成 off。
 
 release latch 关闭时，周期 worker 不创建仲裁 Redis client。开启后，纯 `off/observe`
 且持久 rollout 已为 `off` 的资源仍返回 `runtime.status=disabled`；若存在未收敛的持久过渡态，

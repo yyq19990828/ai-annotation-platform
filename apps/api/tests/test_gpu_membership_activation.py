@@ -446,6 +446,29 @@ async def test_signer_failure_keeps_pending_and_skips_mode_http(promotion_db) ->
         assert fence.token_expiry_high_water is None
 
 
+async def test_pending_only_resource_promotion_skips_active_members(
+    promotion_db,
+) -> None:
+    factory, backend_ids = promotion_db
+    backend_id = await _create_pending_backend(factory)
+    backend_ids.append(backend_id)
+    await activate_gpu_backend_membership(
+        factory,
+        backend_id,
+        gpu_resource_id=_RESOURCE_A,
+        membership_epoch=1,
+    )
+
+    results = await promote_gpu_resource_memberships(
+        factory,
+        _RESOURCE_A,
+        signer_factory=lambda: pytest.fail("active member must not load signer"),
+        pending_only=True,
+    )
+
+    assert results == ()
+
+
 async def test_mode_failure_does_not_roll_back_durable_activation(promotion_db) -> None:
     factory, backend_ids = promotion_db
     backend_id = await _create_pending_backend(factory)

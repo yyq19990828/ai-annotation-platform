@@ -257,10 +257,14 @@ async def promote_gpu_resource_memberships(
     client_factory: GPUModeClientFactory | None = None,
     mode_timeout_seconds: float = _GPU_MODE_ACK_TIMEOUT_SECONDS,
     readiness_demoter: GPUReadinessDemoter | None = None,
+    pending_only: bool = False,
 ) -> tuple[GPUMembershipPromotionResult, ...]:
     """Promote current members of one card in stable backend UUID order."""
 
     validate_gpu_resource_id(gpu_resource_id)
+    if not isinstance(pending_only, bool):
+        raise ValueError("pending_only must be a boolean")
+    states = ("pending",) if pending_only else ("pending", "active")
     async with session_factory() as db:
         candidates = tuple(
             (
@@ -271,7 +275,7 @@ async def promote_gpu_resource_memberships(
                     )
                     .where(
                         GPUBackendMembership.gpu_resource_id == gpu_resource_id,
-                        GPUBackendMembership.state.in_(("pending", "active")),
+                        GPUBackendMembership.state.in_(states),
                     )
                     .order_by(GPUBackendMembership.backend_registry_id)
                 )

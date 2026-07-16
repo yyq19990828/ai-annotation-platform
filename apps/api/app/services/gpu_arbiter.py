@@ -4362,9 +4362,6 @@ async def prepare_gpu_backend_rollout_control(
                         token_expires_at=horizon,
                         reason="control_health_not_after_token_horizon",
                     )
-                if int(residency.control_epoch) != fence.control_epoch_high_water:
-                    raise _GPUProofInvalid("residency_control_epoch_stale")
-
                 await ensure_not_ready(required=True)
                 token_exp = int(locked.db_now.timestamp()) + token_ttl_seconds
                 token_expires_at = datetime.fromtimestamp(token_exp, tz=UTC)

@@ -313,8 +313,9 @@ effective enforce 继续关闭，实际派发不签业务 token、不创建 admi
 与 token expiry 持久在 Backend fence；进程重启或 HTTP 响应丢失后，只重签这个意图。
 promotion 必须先在 legacy gate 下完成 signed full-reset 并由 post-horizon health 证明空池，
 然后才能以更大 epoch 进入 enforce；demotion 则允许保留已驻留 pool，但必须等 active/builder/
-borrower 全部归零且 fresh health 确认 legacy gate。`off/observe` 不读取 signer、不执行 membership promotion、
-不调用 `/lifecycle/mode`，也不访问 GPU 仲裁账本。
+borrower 全部归零且 fresh health 确认 legacy gate。只有已稳定收敛为 `off/observe`
+且持久 rollout 为 off 的资源才不读 signer、不执行 membership promotion、不调用
+`/lifecycle/mode`、也不访问 GPU 仲裁账本；未收敛的 demotion 仍保留账本并使用 signed control wire。
 逐卡修复的总时间片会预留独立 fail-closed 收尾预算；即使墓碑收尾、promotion 或 proof reset 耗尽主时间片、
 出现普通异常或任务被批次总时限取消，worker 也会在返回失败结果前有界尝试把该卡锁存为 not-ready，避免多卡
 批次中的慢卡沿用旧 ready。

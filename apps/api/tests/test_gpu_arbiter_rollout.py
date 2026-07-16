@@ -20,6 +20,7 @@ from app.services.gpu_arbiter_rollout import (
     complete_gpu_arbiter_rollout,
     gpu_rollout_boundary_active,
     read_gpu_arbiter_rollout,
+    read_gpu_arbiter_rollouts,
 )
 
 
@@ -214,6 +215,8 @@ async def test_rollout_transition_is_durable_idempotent_and_reversible(
     assert enforcing.effective_mode is GPUArbiterMode.ENFORCE
     assert enforcing.last_transition_id == promotion.transition_id
     assert settled_replay == enforcing
+    listed = await read_gpu_arbiter_rollouts(factory)
+    assert enforcing in listed
 
     demotion = await begin_gpu_arbiter_rollout(
         factory, resource_id, GPUArbiterMode.OBSERVE

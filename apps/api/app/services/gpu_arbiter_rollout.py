@@ -182,6 +182,31 @@ async def read_gpu_arbiter_rollout(
         ) from exc
 
 
+async def read_gpu_arbiter_rollouts(
+    factory: async_sessionmaker[AsyncSession],
+) -> tuple[GPUArbiterRolloutSnapshot, ...]:
+    """Read every durable rollout in stable resource order."""
+
+    try:
+        async with factory() as db:
+            rows = tuple(
+                (
+                    await db.execute(
+                        select(GPUArbiterRollout).order_by(
+                            GPUArbiterRollout.gpu_resource_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return tuple(gpu_arbiter_rollout_snapshot(row) for row in rows)
+    except Exception as exc:  # noqa: BLE001 - callers must fail closed on DB loss
+        raise GPUArbiterRolloutUnavailable(
+            "GPU rollout states could not be listed safely"
+        ) from exc
+
+
 async def resolve_gpu_arbiter_rollout(
     factory: async_sessionmaker[AsyncSession],
     resource_id: str,
@@ -390,5 +415,6 @@ __all__ = [
     "gpu_arbiter_rollout_snapshot",
     "gpu_rollout_boundary_active",
     "read_gpu_arbiter_rollout",
+    "read_gpu_arbiter_rollouts",
     "resolve_gpu_arbiter_rollout",
 ]

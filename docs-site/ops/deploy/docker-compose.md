@@ -521,6 +521,9 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 才提交 `enforcing`。逐资源持久状态缺失、处于 promotion/demotion、被阻断或数据库
 不可读都必须在 Backend HTTP 前 fail-closed。
 该开关本身不等于完成 promotion，也不能绕过 Redis ready 与 Backend gate 证明。
+回滚时不要先关闭该开关；先把 resource desired mode 降为 `observe/off`，保持 latch 开启，
+等管理 API 确认持久 rollout 已经收敛为 `off` 后才关闭。demotion 会保留 Redis 账本并
+等待 runtime 静默、signed legacy ACK 和 fresh health，不应通过清表或清 Redis “加速”。
 静态配置
 层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量
 是允许驱逐的弹性超售告警。管理 API 会分开显示 desired 与 effective mode；
