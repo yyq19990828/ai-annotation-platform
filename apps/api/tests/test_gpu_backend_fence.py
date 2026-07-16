@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -63,8 +64,20 @@ async def _cleanup_committed_backend(
             )
         )
         await db.execute(
+            text(
+                "ALTER TABLE gpu_backend_fences DISABLE TRIGGER "
+                "trg_validate_gpu_backend_fence_delete"
+            )
+        )
+        await db.execute(
             delete(GPUBackendFence).where(
                 GPUBackendFence.backend_registry_id == backend_id
+            )
+        )
+        await db.execute(
+            text(
+                "ALTER TABLE gpu_backend_fences ENABLE TRIGGER "
+                "trg_validate_gpu_backend_fence_delete"
             )
         )
 
@@ -387,6 +400,60 @@ async def test_fence_cannot_be_deleted_while_membership_exists(
                     GPUBackendFence.backend_registry_id == backend_id
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_orphan_fence_delete_requires_receipt_and_resource_lock(
+    test_engine: AsyncEngine,
+) -> None:
+    factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    backend_id = uuid.uuid4()
+    resource_id = "node-fence/GPU-orphan-guard"
+    async with factory.begin() as db:
+        db.add(GPUBackendFence(backend_registry_id=backend_id))
+
+    with pytest.raises(IntegrityError):
+        async with factory.begin() as db:
+            await db.execute(
+                delete(GPUBackendFence).where(
+                    GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+
+    receipt = json.dumps(
+        {
+            "backend_id": str(backend_id),
+            "resource_id": resource_id,
+            "membership_epoch": "1",
+            "retirement_id": str(uuid.uuid4()),
+            "fingerprint": "a" * 64,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    async with factory.begin() as db:
+        await db.execute(
+            text(
+                "SELECT pg_advisory_xact_lock("
+                "hashtextextended('aap:gpu-resource:' || :resource_id, 0))"
+            ),
+            {"resource_id": resource_id},
+        )
+        await db.execute(
+            text("SELECT set_config('app.gpu_tombstone_gc_receipt', :receipt, true)"),
+            {"receipt": receipt},
+        )
+        result = await db.execute(
+            delete(GPUBackendFence).where(
+                GPUBackendFence.backend_registry_id == backend_id
+            )
+        )
+        assert result.rowcount == 1
+
+    async with factory() as db:
+        assert await db.get(GPUBackendFence, backend_id) is None
 
 
 @pytest.mark.asyncio

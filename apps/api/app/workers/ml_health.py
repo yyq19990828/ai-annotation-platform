@@ -56,6 +56,10 @@ from app.services.gpu_arbiter_rollout import (
     complete_gpu_arbiter_rollout,
     read_gpu_arbiter_rollouts,
 )
+from app.services.gpu_collector_database import (
+    GPUCollectorDatabase,
+    open_gpu_collector_database,
+)
 from app.services.gpu_membership_activation import (
     GPUMembershipPromotionResult,
     promote_gpu_resource_memberships,
@@ -72,6 +76,7 @@ from app.workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 _HEALTH_TASK_LOCK_KEY = "celery-lock:check-ml-backends-health"
+_GPU_REPAIR_TASK_LOCK_KEY = "celery-lock:repair-gpu-arbiter-resources"
 _PERIODIC_HEALTH_TASK_LOCK_SECONDS = 720
 _MANUAL_REPAIR_TASK_LOCK_SECONDS = 90
 _GPU_REPAIR_MAX_CONCURRENCY = 4
@@ -198,7 +203,12 @@ def _group_backend_rows(
     return list(grouped.values())
 
 
-def _run_with_health_task_lock(operation, *, lock_seconds: int) -> dict:
+def _run_with_task_lock(
+    operation,
+    *,
+    lock_key: str,
+    lock_seconds: int,
+) -> dict:
     owner = secrets.token_hex(32)
     redis = redis_sync.from_url(
         settings.redis_url,
@@ -208,7 +218,7 @@ def _run_with_health_task_lock(operation, *, lock_seconds: int) -> dict:
     )
     try:
         acquired = redis.set(
-            _HEALTH_TASK_LOCK_KEY,
+            lock_key,
             owner,
             nx=True,
             ex=lock_seconds,
@@ -224,7 +234,7 @@ def _run_with_health_task_lock(operation, *, lock_seconds: int) -> dict:
         return asyncio.run(operation())
     finally:
         try:
-            redis.eval(_RELEASE_TASK_LOCK_LUA, 1, _HEALTH_TASK_LOCK_KEY, owner)
+            redis.eval(_RELEASE_TASK_LOCK_LUA, 1, lock_key, owner)
         except Exception as exc:  # noqa: BLE001 - TTL remains the crash fallback
             log.warning("ml_health_task_lock_release_failed: %s", exc)
         redis.close()
@@ -236,16 +246,15 @@ def _run_with_health_task_lock(operation, *, lock_seconds: int) -> dict:
     time_limit=680,
 )
 def check_ml_backends_health() -> dict:
-    return _run_with_health_task_lock(
+    return _run_with_task_lock(
         _run_async,
+        lock_key=_HEALTH_TASK_LOCK_KEY,
         lock_seconds=_PERIODIC_HEALTH_TASK_LOCK_SECONDS,
     )
 
 
 async def _run_async() -> dict:
-    health = await check_all_backends()
-    health["gpu_arbiter"] = await _repair_gpu_arbiter_resources()
-    return health
+    return await check_all_backends()
 
 
 @celery_app.task(
@@ -254,10 +263,11 @@ async def _run_async() -> dict:
     time_limit=75,
 )
 def repair_gpu_arbiter_resources() -> dict:
-    """Run the same post-health repair loop on demand."""
+    """Advance the isolated GPU repair loop."""
 
-    return _run_with_health_task_lock(
+    return _run_with_task_lock(
         _repair_gpu_arbiter_resources,
+        lock_key=_GPU_REPAIR_TASK_LOCK_KEY,
         lock_seconds=_MANUAL_REPAIR_TASK_LOCK_SECONDS,
     )
 
@@ -420,9 +430,11 @@ async def _repair_one_gpu_resource(
     rollout_transition_id: uuid.UUID | None = None,
     control_advancer: Callable[..., Awaitable[Sequence[GPURolloutControlResult]]]
     | None = None,
+    collector_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> dict:
     started = perf_counter()
     collections: list[dict] = []
+    gc_factory = collector_factory or factory
 
     # Complete Redis-collected/DB-pending receipts before a reset can legally
     # reintroduce the still-durable tombstone into the closed domain.
@@ -431,7 +443,7 @@ async def _repair_one_gpu_resource(
         if membership.state != "retiring":
             continue
         finalized = await collect_gpu_backend_tombstone(
-            factory,
+            gc_factory,
             store,
             membership.backend_registry_id,
             resource_id,
@@ -591,7 +603,7 @@ async def _repair_one_gpu_resource(
             )
             continue
         collected = await collect_gpu_backend_tombstone(
-            factory,
+            gc_factory,
             store,
             membership.backend_registry_id,
             resource_id,
@@ -821,6 +833,13 @@ async def _repair_gpu_arbiter_resources(
             "resources": [],
         }
 
+    collector_database: GPUCollectorDatabase | None = None
+    collector_error: str | None = None
+    try:
+        collector_database = await open_gpu_collector_database(factory)
+    except Exception as exc:  # noqa: BLE001 - never expose a credential/DSN
+        collector_error = type(exc).__name__
+
     store = GPUArbiterStore.from_url(settings.redis_url)
     semaphore = asyncio.Semaphore(_GPU_REPAIR_MAX_CONCURRENCY)
     repair_waves = max(
@@ -956,6 +975,11 @@ async def _repair_gpu_arbiter_resources(
                             raise RuntimeError(
                                 "enforce resource configuration is missing"
                             )
+                        if collector_database is None:
+                            raise RuntimeError(
+                                "gpu_collector_isolation_unavailable"
+                                + (f":{collector_error}" if collector_error else "")
+                            )
                         repair_result = await _repair_one_gpu_resource(
                             factory,
                             store,
@@ -968,6 +992,7 @@ async def _repair_gpu_arbiter_resources(
                             ),
                             promotion_timeout_seconds=promotion_timeout_seconds,
                             rollout_transition_id=rollout.transition_id,
+                            collector_factory=collector_database.session_factory,
                         )
                         return await _settle_gpu_resource_promotion(
                             factory,
@@ -1064,6 +1089,8 @@ async def _repair_gpu_arbiter_resources(
             await store.aclose()
         except Exception as exc:  # noqa: BLE001 - task result remains useful
             log.warning("gpu_arbiter_store_close_failed: %s", exc)
+        if collector_database is not None:
+            await collector_database.engine.dispose()
         await engine.dispose()
     return {"skipped": False, "resources": results}
 

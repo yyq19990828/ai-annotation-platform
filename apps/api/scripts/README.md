@@ -38,6 +38,22 @@ manifest 内容摘要，因此 verifier 能校验脱敏后的拓扑/action 元�
 完整 manifest、单卡/双卡/跨宿主步骤、阈值与证据边界见
 [GPU 显存仲裁验收 Runbook](../../../docs-site/ops/runbooks/gpu-arbitration-acceptance.md)。
 
+## configure_gpu_collector_role.sql
+
+为 `gpu.control` tombstone collector 配置独立 PostgreSQL 最小权限。脚本不创建登录角色或处理
+密码；先由 DBA 建立普通应用角色与 collector 角色，再由独立 schema owner 执行：
+
+```bash
+psql -d annotation \
+  -v application_role=annotation_app \
+  -v collector_role=annotation_gpu_collector \
+  -f scripts/configure_gpu_collector_role.sql
+```
+
+脚本会拒绝同角色、普通应用仍有有效 membership/fence DELETE、可 `SET ROLE` 的成员关系、
+collector 越权或高权限角色。
+普通应用角色不能是表 owner；数据库迁移继续使用独立 schema owner。
+
 ## backfill_scenes (v0.14.0)
 
 对历史 dataset 补 `scene_id` + `frame_index`(跨 task 帧序列地基)。

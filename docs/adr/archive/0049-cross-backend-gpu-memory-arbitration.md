@@ -469,14 +469,18 @@ Redis flush 或后续 reset 使 receipt 丢失时必须保留 tombstone 并重�
 registry 已先删除且不存在 completion receipt 时无法取得新的 live health，必须安全保留墓碑。
 
 PostgreSQL 无法在同一事务内独立读取 Redis，因此 transaction-local receipt 是受信 collector 对“已完成 Redis
-复验”的声明，而不是数据库可自行验证的跨存储 capability。触发器仍要求 exact `retirement_id`、资源 advisory
-lock、token horizon 与 receipt shape，足以封住普通 ORM/SQL 误删；若 API、worker 与迁移共用拥有表级 DELETE
-的同一数据库角色，该角色可蓄意伪造声明。开启 `enforce` 前必须把 collector 收缩为独立受限角色/过程并撤销
-普通应用角色的 membership DELETE，或把同角色 worker 明确定义为完全受信边界；当前 `effective=off` 不把这项
-权限假设带入线上仲裁。
+复验”的声明，而不是数据库可自行验证的跨存储 capability。collector 现由独立 `gpu.control` 单并发进程执行，
+凭据只通过该进程可见的只读文件投递；普通 API/Celery 角色与 collector 角色必须不同，前者没有
+membership/fence DELETE，后者只有三张 GPU 真值表的读、membership/fence 行锁所需单列 UPDATE 与
+tombstone/fence DELETE。
+每轮 repair 在删除前通过两条连接核对实际角色和有效权限，任何缺失、同角色或越权都先把资源闩为 not-ready。
+membership 触发器继续要求 exact `retirement_id`、资源 advisory lock、token horizon 与 receipt shape；fence
+触发器另要求同一 receipt/资源锁且 registry 和所有 membership 均已消失。迁移使用与两者分离的 schema owner，
+不再接受共享应用角色作为完全受信边界。
 
-每 60 秒健康扫描完整结束后运行逐资源 bootstrap/repair。beat 消息 55 秒过期，任务使用 TTL 长于 Celery hard
-limit 的全局防重入锁，并对修复批次设置 50 秒总时限，避免慢卡让分钟任务重叠堆积。worker 只处理 desired mode
+健康扫描与逐资源 bootstrap/repair 每 60 秒分别投递到 `default` 和 `gpu.control`。两条 beat 消息均在 55 秒
+过期并使用不同的、TTL 长于各自 Celery hard limit 的防重入锁；修复批次另有 50 秒总时限，避免慢卡让分钟任务
+重叠堆积，也避免长健康扫描饿死 repair。worker 只处理 desired mode
 为 `enforce` 的资源，
 `off/observe` 不创建仲裁 Redis client；完整 ready 且数据库/Redis 域一致的卡保持只读，完整 flush、旧 schema、
 证据过期、prepared 重启或 partial corruption 一律走 proof reset。每个 task/event loop 自建并关闭 Redis client

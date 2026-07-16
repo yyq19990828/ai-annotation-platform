@@ -92,6 +92,7 @@
 
 ### Security
 
+- **GPU tombstone collector 改为独立最小权限控制面**：显存 repair/GC 只投递到 `gpu.control` 单并发 worker，collector 数据库 URL 仅通过该进程可见的只读文件挂载。每轮 enforce repair 会核对普通应用与 collector 的实际 PostgreSQL 角色和有效权限：两者必须不同，普通角色不得直接删除 membership/fence，collector 只能读取/锁定 GPU 真值并完成受证明约束的删除；验证失败会先把资源闩为 not-ready。新增 fence 删除触发器，只有 exact GC receipt、同事务逐卡锁且 registry/membership 均已消失时才允许清理孤立 fence；健康扫描与 repair 使用独立队列和锁，防止控制面饥饿。
 - **受管 GPU header 不再降级绕过 legacy 生命周期门禁**：五个 GPU backend 现在只在 generation 与 admission token 都完全缺失时接受 legacy workload；部分、重复或非法 header 会在业务 body 处理前 fail-closed，携带受管 header 的 bodyless unload 也不再忽略凭据后执行兼容清理。
 
 ## [0.22.3] - 2026-07-14

@@ -212,6 +212,11 @@ class Settings(BaseSettings):
     # behavior even when desired mode is enforce.  Once enabled, every GPU load
     # must resolve the durable per-resource rollout row and fail closed on loss.
     gpu_arbiter_rollout_enabled: bool = False
+    # Tombstone GC is the only path allowed to DELETE durable GPU membership/fence
+    # rows.  The URL stays in a file mounted only into the GPU control worker; all
+    # ordinary application processes continue using ``database_url`` without the
+    # collector credential.
+    gpu_arbiter_collector_database_url_file: str = ""
     # 保留 raw JSON，使 off/observe 能安全启动并在管理端展示配置
     # blocker。解析失败时 resources 为空，逐卡 desired mode 自动回落 off。
     gpu_arbiter_resources_json: Annotated[str, NoDecode] = "{}"

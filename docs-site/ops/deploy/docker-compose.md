@@ -504,6 +504,8 @@ PID 1 看到的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`，而 CUDA 又会把�
 ```dotenv
 GPU_ARBITER_MODE=off
 GPU_ARBITER_ROLLOUT_ENABLED=false
+# 宿主文件只包含 collector 的 postgresql+asyncpg URL，并设为 0400。
+GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE=/secure/aap-gpu-collector-database-url
 GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
 GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS=30
 GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS=30
@@ -550,11 +552,35 @@ authority、有界两级 FIFO 与空闲 victim 驱逐编排，但生产 effectiv
 victim，authority 已能在 exact card ticket 上有界等待；busy victim drain/cancel、实物多卡验收与
 enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
 observe。`off/observe` 不创建或修复仲裁 Redis key。
-当前 PostgreSQL 与 worker 共用应用数据库角色时，tombstone completion receipt 属于受信 worker 的跨存储声明；
-正式启用 `enforce` 前应将 collector 收缩为独立受限角色/过程，并撤销普通应用角色对
-`gpu_backend_memberships` 的直接 DELETE，或在安全评审中明确接受同角色 worker 为完全受信边界。
+
+tombstone collector 必须使用独立数据库登录角色和独立的 `gpu.control` 单并发 worker。普通
+API/Celery 角色不得是 schema owner、superuser 或其他集群管理角色，并且必须没有
+`gpu_backend_memberships`、`gpu_backend_fences` 的有效 DELETE 权限。collector 只取得三张
+GPU 真值表的 SELECT、membership/fence 满足 `SELECT FOR UPDATE` 所需的单列 UPDATE，以及
+membership/fence DELETE；它不得修改 registry、INSERT 或整表 UPDATE。迁移账号必须是第三个
+独立的 schema owner。
+
+先由 DBA 建好两个登录角色并切换普通应用的 `DATABASE_URL`，再以 schema owner 执行仓库脚本：
+
+```bash
+docker compose exec -T postgres psql -U <schema-owner> -d annotation \
+  -v application_role=<application-role> \
+  -v collector_role=<collector-role> \
+  < apps/api/scripts/configure_gpu_collector_role.sql
+```
+
+脚本会在同一事务中撤销普通角色 DELETE、重建 collector 最小权限，并拒绝同角色、继承后的
+越权、可 `SET ROLE` 的成员关系、表所有者或集群高权限角色。将 collector 的完整
+`postgresql+asyncpg` URL 作为单行写入
+`GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE` 指向的宿主文件并设为 `0400`；Compose 只把该文件
+挂载给 `celery-worker-gpu-control`。每轮 enforce repair 都会通过两条独立连接重新核对实际
+`current_user` 和有效权限；文件缺失、角色相同、普通角色仍可 DELETE 或 collector 越权时，
+该卡先闩为 not-ready，repair 不会执行。数据库触发器还要求 fence 删除与 exact GC receipt、
+同事务逐卡 advisory lock、registry/membership 均已消失同时成立。
+
 签名私钥文件使用严格 JSON `kid -> unpadded-base64url(raw 32-byte Ed25519 private seed)`；Compose 只把它
-挂载到 API、通用 worker 与 GPU worker 的 `/run/secrets/gpu_lifecycle_signing_keys`。ML backend 只接收
+挂载到 API、通用 worker、GPU worker 与 `gpu.control` 控制 worker 的
+`/run/secrets/gpu_lifecycle_signing_keys`。ML backend 只接收
 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 公钥环；CPU/export/beat、Web 和 ML backend 均不应取得平台私钥。
 这里有意使用服务级只读 bind 并要求宿主文件为 `0400`：Compose 本地 file secret 会忽略声明的
 `uid/gid/mode` 并在容器内呈现为 `0444`，无法满足同容器非 root 用户不可读的边界。当前应用容器以 root

@@ -709,8 +709,20 @@ async def test_gpu_check_health_rejects_older_health_after_slow_setup(
                 )
             )
             await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
+                )
+            )
+            await db.execute(
                 delete(GPUBackendFence).where(
                     GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
                 )
             )
             await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
@@ -966,8 +978,20 @@ async def test_gpu_check_health_holds_membership_lock_through_probe_commit(
                 )
             )
             await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
+                )
+            )
+            await db.execute(
                 delete(GPUBackendFence).where(
                     GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
                 )
             )
             await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
@@ -1111,8 +1135,20 @@ async def test_gpu_health_proof_write_shares_promotion_barrier(
                 )
             )
             await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
+                )
+            )
+            await db.execute(
                 delete(GPUBackendFence).where(
                     GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
                 )
             )
             await db.execute(delete(MLBackend).where(MLBackend.id == backend_id))
@@ -1229,8 +1265,20 @@ async def test_check_health_rechecks_epoch_after_waiting_on_registry_lock(
                 )
             )
             await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
+                )
+            )
+            await db.execute(
                 delete(GPUBackendFence).where(
                     GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
                 )
             )
 
@@ -1252,14 +1300,71 @@ def test_worker_module_imports_and_registers_task():
     assert "app.workers.ml_health.check_ml_backends_health" in celery_app.tasks
     assert "app.workers.ml_health.repair_gpu_arbiter_resources" in celery_app.tasks
     assert "check-ml-backends-health" in celery_app.conf.beat_schedule
+    assert "repair-gpu-arbiter-resources" in celery_app.conf.beat_schedule
+    assert celery_app.conf.task_routes[
+        "app.workers.ml_health.repair_gpu_arbiter_resources"
+    ] == {"queue": "gpu.control"}
     assert (
         celery_app.conf.beat_schedule["check-ml-backends-health"]["options"]["expires"]
         == 55
     )
+    assert (
+        celery_app.conf.beat_schedule["repair-gpu-arbiter-resources"]["options"][
+            "expires"
+        ]
+        == 55
+    )
+
+
+def test_health_and_gpu_repair_use_independent_task_locks(monkeypatch) -> None:
+    from app.workers import ml_health
+
+    calls: list[tuple[str, str]] = []
+
+    class FakeRedis:
+        def set(self, key, owner, *, nx, ex):  # noqa: ARG002
+            calls.append(("set", key))
+            return True
+
+        def eval(self, script, key_count, key, owner):  # noqa: ARG002
+            calls.append(("release", key))
+            return 1
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        ml_health.redis_sync,
+        "from_url",
+        lambda *args, **kwargs: FakeRedis(),
+    )
+
+    async def operation() -> dict:
+        return {"ok": True}
+
+    assert ml_health._run_with_task_lock(
+        operation,
+        lock_key=ml_health._HEALTH_TASK_LOCK_KEY,
+        lock_seconds=10,
+    ) == {"ok": True}
+    assert ml_health._run_with_task_lock(
+        operation,
+        lock_key=ml_health._GPU_REPAIR_TASK_LOCK_KEY,
+        lock_seconds=10,
+    ) == {"ok": True}
+    assert ml_health._HEALTH_TASK_LOCK_KEY != ml_health._GPU_REPAIR_TASK_LOCK_KEY
+    assert calls == [
+        ("set", ml_health._HEALTH_TASK_LOCK_KEY),
+        ("release", ml_health._HEALTH_TASK_LOCK_KEY),
+        ("set", ml_health._GPU_REPAIR_TASK_LOCK_KEY),
+        ("release", ml_health._GPU_REPAIR_TASK_LOCK_KEY),
+    ]
 
 
 @pytest.fixture
 def enabled_gpu_rollout_worker(monkeypatch):
+    from types import SimpleNamespace
+
     from app.config import GPUArbiterMode, settings
     from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
     from app.workers import ml_health
@@ -1326,6 +1431,18 @@ def enabled_gpu_rollout_worker(monkeypatch):
     monkeypatch.setattr(ml_health, "complete_gpu_arbiter_rollout", complete)
     monkeypatch.setattr(ml_health, "block_gpu_arbiter_rollout", block)
     monkeypatch.setattr(ml_health, "read_gpu_arbiter_rollouts", read_all)
+
+    class FakeCollectorEngine:
+        async def dispose(self) -> None:
+            return None
+
+    async def open_collector(_factory):
+        return SimpleNamespace(
+            session_factory=object(),
+            engine=FakeCollectorEngine(),
+        )
+
+    monkeypatch.setattr(ml_health, "open_gpu_collector_database", open_collector)
     return events
 
 
@@ -1497,6 +1614,7 @@ async def test_gpu_repair_worker_settles_exact_rollout_after_redis_proof(
     )
 
     async def repair(*_args, **_kwargs):
+        assert _kwargs["collector_factory"] is not None
         enabled_gpu_rollout_worker.append(("repair", resource_id))
         return {
             "resource_id": resource_id,
@@ -1768,8 +1886,10 @@ async def test_gpu_repair_worker_gives_every_card_time_within_batch(
         membership_promoter,
         promotion_timeout_seconds,
         rollout_transition_id,
+        collector_factory,
     ):  # noqa: ARG001
         assert rollout_transition_id is not None
+        assert collector_factory is not None
         started.append(resource_id)
         await asyncio.sleep(0.02)
 
@@ -1843,6 +1963,80 @@ async def test_gpu_repair_worker_latches_not_ready_after_generic_failure(
 
     assert latches == [(resource_id, "gpu_resource_repair_failed")]
     assert result["resources"][0]["reason"] == "database unavailable"
+    assert result["resources"][0]["ready"] is False
+
+
+async def test_gpu_repair_fails_closed_when_collector_boundary_is_unavailable(
+    monkeypatch,
+    enabled_gpu_rollout_worker,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.config import GPUArbiterMode, settings
+    from app.services.gpu_collector_database import GPUCollectorDatabaseConfigError
+    from app.workers import ml_health
+
+    resource_id = "node-worker/GPU-collector-unavailable"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": "GPU-collector-unavailable",
+                    "allocatable_mb": 8192,
+                    "mode": "enforce",
+                }
+            }
+        ),
+    )
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            return None
+
+    latches: list[tuple[str, str]] = []
+
+    class FakeStore:
+        async def mark_card_not_ready(self, target, allocatable_mb, *, reason):  # noqa: ARG002
+            latches.append((target, reason))
+            return SimpleNamespace(status="not_ready")
+
+        async def aclose(self) -> None:
+            return None
+
+    async def fail_collector(_factory):
+        raise GPUCollectorDatabaseConfigError("unsafe credential")
+
+    async def unexpected_repair(*args, **kwargs):  # noqa: ARG001
+        raise AssertionError("repair must not run without an isolated collector")
+
+    monkeypatch.setattr(
+        ml_health, "create_async_engine", lambda *args, **kwargs: FakeEngine()
+    )
+    monkeypatch.setattr(
+        ml_health, "async_sessionmaker", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        ml_health.GPUArbiterStore,
+        "from_url",
+        lambda *args, **kwargs: FakeStore(),
+    )
+    monkeypatch.setattr(ml_health, "open_gpu_collector_database", fail_collector)
+    monkeypatch.setattr(
+        ml_health,
+        "_repair_one_gpu_resource",
+        unexpected_repair,
+    )
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert latches == [(resource_id, "gpu_resource_repair_failed")]
+    assert result["resources"][0]["reason"] == (
+        "gpu_collector_isolation_unavailable:GPUCollectorDatabaseConfigError"
+    )
     assert result["resources"][0]["ready"] is False
 
 
@@ -2090,8 +2284,10 @@ async def test_gpu_repair_batch_timeout_latches_every_cancelled_card(
         membership_promoter,
         promotion_timeout_seconds,
         rollout_transition_id,
+        collector_factory,
     ):  # noqa: ARG001
         assert rollout_transition_id is not None
+        assert collector_factory is not None
         started.append(resource_id)
         await asyncio.sleep(1)
 

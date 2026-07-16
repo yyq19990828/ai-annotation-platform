@@ -96,7 +96,10 @@ celery_app.conf.update(
         "app.workers.ml_health.publish_ml_backend_stats": {"queue": "default"},
         # v0.8.6 · check_ml_backends_health 历史也漏在路由表外, 同步补上避免 stale celery 队列堆积
         "app.workers.ml_health.check_ml_backends_health": {"queue": "default"},
-        "app.workers.ml_health.repair_gpu_arbiter_resources": {"queue": "default"},
+        # ADR-0049 · 只有独立控制 worker 持有 tombstone collector 数据库凭据。
+        "app.workers.ml_health.repair_gpu_arbiter_resources": {
+            "queue": "gpu.control"
+        },
     },
     # v0.7.0：beat schedule。运维侧需 deploy `celery -A app.workers.celery_app beat` 进程
     # （或 worker --beat 单进程模式）才会触发。
@@ -147,6 +150,12 @@ celery_app.conf.update(
         # v0.8.6 F2 · ML Backend 周期健康检查：每 60s 扫所有 backend 调 /health，串行 + 0-3s 抖动错峰
         "check-ml-backends-health": {
             "task": "app.workers.ml_health.check_ml_backends_health",
+            "schedule": crontab(minute="*"),
+            "options": {"expires": 55},
+        },
+        # 与健康扫描使用独立队列和锁；repair 会自行取得 challenge-bound fresh health。
+        "repair-gpu-arbiter-resources": {
+            "task": "app.workers.ml_health.repair_gpu_arbiter_resources",
             "schedule": crontab(minute="*"),
             "options": {"expires": 55},
         },

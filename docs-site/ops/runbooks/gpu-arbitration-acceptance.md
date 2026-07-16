@@ -32,6 +32,9 @@ repair Redis 或启停服务。
 
 - 使用独立维护窗口，暂停与验收 Backend、GPU resource 相关的其他任务。
 - PostgreSQL schema 与当前代码 head 一致，Redis 账本为 ready，目标 membership 为 active。
+- `celery-worker-gpu-control` 独立订阅 `gpu.control` 且健康；普通应用与 collector 使用不同
+  PostgreSQL 角色。最近一轮 repair 不得出现 `gpu_collector_isolation_unavailable`，普通角色无
+  membership/fence DELETE，collector 也没有约定外的写权限。
 - lifecycle signer 已配置；Backend `/setup` 与 challenge-bound `/health` 能证明 exact
   backend/resource/boot/control identity。
 - `nvidia-smi --query-gpu=index,uuid,memory.used,memory.total` 可用。
@@ -45,8 +48,9 @@ repair Redis 或启停服务。
   任一存量 Backend 不可信都不会执行 workload。
 - ONNXTools 加入 manifest 前，先按其 README 运行镜像内
   `scripts/validate_managed_lifecycle.py`，用已批准 SHA-256 的真实检测/属性模型关闭四
-  ORT session 的 CUDA provider 与全池显存回落门禁。文件名可不同，但未经明确批准的
-  结构相似模型不能代替该验收。
+  ORT session 的 CUDA provider 与全池显存回落门禁。模型不要求与生产制品完全同名或摘要一致，
+  但代表性模型必须经过明确审批，并保持相同 Backend/ORT/CUDA 加载路径、一个检测加三个属性
+  session 拓扑、受管卸载行为及不低于目标负载的峰值显存；未经批准的结构相似模型不能关闭门禁。
 
 先创建一个仓库外证据目录，避免把运行产物混入源码：
 

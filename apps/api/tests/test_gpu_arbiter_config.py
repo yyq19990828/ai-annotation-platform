@@ -29,6 +29,7 @@ def test_gpu_arbiter_defaults_to_safe_off() -> None:
     assert config.gpu_arbiter_admission_timeout_seconds == 30
     assert config.gpu_arbiter_residency_cooldown_seconds == 30
     assert config.gpu_arbiter_rollout_enabled is False
+    assert config.gpu_arbiter_collector_database_url_file == ""
 
 
 def test_gpu_arbiter_rollout_release_gate_is_explicit() -> None:

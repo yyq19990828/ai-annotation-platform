@@ -132,8 +132,20 @@ async def rollout_control_db(
                 )
             )
             await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences DISABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
+                )
+            )
+            await db.execute(
                 delete(GPUBackendFence).where(
                     GPUBackendFence.backend_registry_id == backend_id
+                )
+            )
+            await db.execute(
+                text(
+                    "ALTER TABLE gpu_backend_fences ENABLE TRIGGER "
+                    "trg_validate_gpu_backend_fence_delete"
                 )
             )
 

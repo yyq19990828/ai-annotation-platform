@@ -128,6 +128,55 @@ services:
       minio:
         condition: service_healthy
 
+  # ADR-0049 · 显存 repair / tombstone GC 控制面。独立队列、单并发，且是唯一持有
+  # collector 数据库凭据的应用进程；普通 API/worker 不挂载该文件。
+  celery-worker-gpu-control:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
+      GPU_ARBITER_ROLLOUT_ENABLED: ${GPU_ARBITER_ROLLOUT_ENABLED:-false}
+      GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE: /run/secrets/gpu_arbiter_collector_database_url
+      GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS: ${GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS:-30}
+      GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
+      GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
+      GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
+    volumes:
+      - ./apps/api:/app
+      - /app/.venv
+      - type: bind
+        source: ${GPU_LIFECYCLE_SIGNING_KEYS_FILE:-/dev/null}
+        target: /run/secrets/gpu_lifecycle_signing_keys
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE:-/dev/null}
+        target: /run/secrets/gpu_arbiter_collector_database_url
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
   # v0.19.5 · GPU 预标 worker. 消费 ml (设备=gpu/未自报的预标) + gpu (视频追踪) 队列, 低并发护显存。
   # 配置照抄 celery-worker, 仅改 -Q 与并发 (CELERY_GPU_CONCURRENCY, 默认 2)。
   celery-worker-gpu:
