@@ -72,6 +72,7 @@ _GPU_RUNTIME_COLD_INTENT_TTL_MS = 30_000
 _GPU_RUNTIME_MAX_EVICTION_ATTEMPTS = 128
 _GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS = 0.05
 _GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS = 3600
+_GPU_RUNTIME_MAX_RESIDENCY_COOLDOWN_SECONDS = 3600
 _GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS = 6.0
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 _MAX_REDIS_TTL_MS = 2_147_483_647
@@ -86,6 +87,12 @@ GPUArbiterStoreFactory = Callable[[], GPUArbiterStore]
 GPUAdmissionSignerFactory = Callable[[], GPUAdmissionTokenSigner]
 GPUHealthRefresher = Callable[[uuid.UUID, str], Awaitable[bool]]
 GPURuntimeLeaseSubject = GPUResidentRuntimeSubject | GPUPreparedColdRuntimeSubject
+
+
+class _GPUVictimCooldownActive(RuntimeError):
+    def __init__(self, retry_at_ms: int) -> None:
+        self.retry_at_ms = retry_at_ms
+        super().__init__("GPU victim residency cooldown is active")
 
 
 def _dispatch_error(
@@ -738,6 +745,30 @@ def _admission_timeout_ms(
     return timeout_ms
 
 
+def _residency_cooldown_ms(
+    config: Settings,
+    *,
+    override_seconds: float | None,
+) -> int:
+    cooldown = (
+        config.gpu_arbiter_residency_cooldown_seconds
+        if override_seconds is None
+        else override_seconds
+    )
+    if (
+        not isinstance(cooldown, (int, float))
+        or isinstance(cooldown, bool)
+        or not math.isfinite(cooldown)
+        or cooldown <= 0
+        or cooldown > _GPU_RUNTIME_MAX_RESIDENCY_COOLDOWN_SECONDS
+    ):
+        raise _dispatch_error(
+            GPUArbiterErrorCode.CONFIG_INVALID,
+            "GPU residency cooldown is invalid",
+        )
+    return max(1, int(cooldown * 1000))
+
+
 def _map_cold_owner_rejection(status: str) -> GPUArbiterDispatchError:
     if status in {"busy", "active_leases"}:
         return _dispatch_error(
@@ -855,6 +886,7 @@ async def _finalize_cold_runtime(
     heartbeat_task: asyncio.Task[None] | None,
     card_ticket_id: str,
     card_ticket_may_exist: bool,
+    resident_cooldown_ms: int,
 ) -> None:
     if lease_may_exist:
         target_state = GPUAllocationState.UNLOADED
@@ -875,6 +907,7 @@ async def _finalize_cold_runtime(
                     challenge=challenge,
                     lease_id=lease_id,
                     owner_id=owner_id,
+                    resident_cooldown_ms=resident_cooldown_ms,
                 )
                 target_state = terminal_result.state
                 terminal_confirmed = terminal_result.status == "finalized"
@@ -916,6 +949,7 @@ async def _finalize_cold_runtime(
                     request_owner_id=owner_id,
                     target_state=target_state,
                     target_evictable=False,
+                    resident_cooldown_ms=0,
                 )
                 terminal_confirmed = transition.status == "transitioned"
                 if not terminal_confirmed:
@@ -1069,7 +1103,30 @@ def _idle_victim_hint(
     shortfall_mb = requester.budget_mb - free_mb
     if sum(item.budget_mb for item in candidates) < shortfall_mb:
         raise _capacity_unavailable("No safe idle GPU victim can satisfy capacity")
-    return candidates[0]
+    ready = tuple(
+        allocation
+        for allocation in candidates
+        if allocation.not_evict_before_ms <= snapshot.observed_at_ms
+    )
+    if sum(item.budget_mb for item in ready) >= shortfall_mb:
+        return ready[0]
+
+    available_mb = 0
+    retry_at_ms = snapshot.observed_at_ms
+    for allocation in sorted(
+        candidates,
+        key=lambda item: (
+            item.not_evict_before_ms,
+            item.eviction_priority,
+            item.last_used_at_ms,
+            item.backend_id,
+        ),
+    ):
+        available_mb += allocation.budget_mb
+        retry_at_ms = max(retry_at_ms, allocation.not_evict_before_ms)
+        if available_mb >= shortfall_mb:
+            raise _GPUVictimCooldownActive(retry_at_ms)
+    raise _capacity_unavailable("No safe idle GPU victim can satisfy capacity")
 
 
 async def _heartbeat_eviction_owner(
@@ -1507,6 +1564,7 @@ async def _evict_one_idle_victim(
             if selected.status in {
                 "capacity_unavailable",
                 "card_queued",
+                "cooldown_active",
                 "victim_busy",
                 "transition_in_progress",
             }:
@@ -1712,7 +1770,12 @@ async def _ensure_cold_capacity(
                 GPUArbiterErrorCode.UNAVAILABLE,
                 "GPU card snapshot is unavailable",
             ) from exc
-        victim = _idle_victim_hint(snapshot, requester)
+        try:
+            victim = _idle_victim_hint(snapshot, requester)
+        except _GPUVictimCooldownActive as exc:
+            raise _capacity_unavailable(
+                "GPU idle victim residency cooldown is active"
+            ) from exc
         if victim is None:
             return changed
         _eviction_work_remaining_ttl_ms(
@@ -1761,6 +1824,7 @@ async def _dispatch_cold_runtime(
     heartbeat_ttl_ms: int,
     heartbeat_interval_seconds: float,
     admission_timeout_seconds: float | None,
+    residency_cooldown_seconds: float | None,
     queue_poll_interval_seconds: float,
 ):
     generation = _cold_generation_candidate(subject)
@@ -1771,6 +1835,10 @@ async def _dispatch_cold_runtime(
     admission_timeout_ms = _admission_timeout_ms(
         config,
         override_seconds=admission_timeout_seconds,
+    )
+    resident_cooldown_ms = _residency_cooldown_ms(
+        config,
+        override_seconds=residency_cooldown_seconds,
     )
     signer_builder = signer_factory or (
         lambda: GPUAdmissionTokenSigner.from_settings(config)
@@ -2181,6 +2249,7 @@ async def _dispatch_cold_runtime(
                 heartbeat_task=heartbeat_task,
                 card_ticket_id=card_ticket_id,
                 card_ticket_may_exist=card_ticket_may_exist,
+                resident_cooldown_ms=resident_cooldown_ms,
             )
         )
 
@@ -2195,6 +2264,7 @@ def build_gpu_dispatch_context_factory(
     heartbeat_ttl_ms: int = _GPU_RUNTIME_HEARTBEAT_TTL_MS,
     heartbeat_interval_seconds: float = _GPU_RUNTIME_HEARTBEAT_INTERVAL_SECONDS,
     admission_timeout_seconds: float | None = None,
+    residency_cooldown_seconds: float | None = None,
     queue_poll_interval_seconds: float = _GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS,
 ) -> GPUDispatchContextFactory:
     """Build a lazy per-dispatch authority without opening DB, Redis, or secrets."""
@@ -2220,6 +2290,14 @@ def build_gpu_dispatch_context_factory(
         or admission_timeout_seconds > _GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS
     ):
         raise ValueError("admission_timeout_seconds must be positive and at most 3600")
+    if residency_cooldown_seconds is not None and (
+        not isinstance(residency_cooldown_seconds, (int, float))
+        or isinstance(residency_cooldown_seconds, bool)
+        or not math.isfinite(residency_cooldown_seconds)
+        or residency_cooldown_seconds <= 0
+        or residency_cooldown_seconds > _GPU_RUNTIME_MAX_RESIDENCY_COOLDOWN_SECONDS
+    ):
+        raise ValueError("residency_cooldown_seconds must be positive and at most 3600")
     if (
         not isinstance(queue_poll_interval_seconds, (int, float))
         or isinstance(queue_poll_interval_seconds, bool)
@@ -2273,6 +2351,7 @@ def build_gpu_dispatch_context_factory(
                 heartbeat_ttl_ms=heartbeat_ttl_ms,
                 heartbeat_interval_seconds=float(heartbeat_interval_seconds),
                 admission_timeout_seconds=admission_timeout_seconds,
+                residency_cooldown_seconds=residency_cooldown_seconds,
                 queue_poll_interval_seconds=float(queue_poll_interval_seconds),
             ) as grant:
                 yield grant

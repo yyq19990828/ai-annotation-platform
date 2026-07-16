@@ -499,6 +499,7 @@ ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本�
 GPU_ARBITER_MODE=off
 GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
 GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS=30
+GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS=30
 # 仅在准备 promotion/enforce 时配置；文件权限建议 0400，并由 secret store 投递。
 GPU_LIFECYCLE_SIGNING_KEYS_FILE=/secure/aap-gpu-signing-keys.json
 GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
@@ -513,6 +514,12 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 等待上限；它不是 backend 的模型池 build timeout，也不是 busy victim 的 drain timeout。
 空闲 victim 驱逐会在该期限内为 exact 终态清理预留固定窗口；超时返回带
 `Retry-After` 的 503，`off/observe` 下不会入队，因此该值不生效。
+`GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS` 默认 30 秒、取值 1..3600 秒。每次新 residency
+只在首次可信 Loading→Resident Redis CAS 中开始该保护窗口；proof reset 重建 Resident 时会以
+prepared 时刻保守恢复同样的窗口，精确重放均不续期。值可以长于 admission timeout；当前 P5b-I
+遇到未到期 victim 会立即返回 503，P5b-II 才会在 admission 预算内持 exact ticket 有界等待。
+升级发现普通 v2 账本时会 fail-close 后重新 proof reset；若旧进程已留下合法 v2 prepared marker，
+恢复器只沿用原 reset 上下文，并在 COMMIT 清除旧 child 后原子写成 v3，不会原地补 allocation 字段。
 `observe` 已在 predict、交互预测、warmup、reload 与注册 smoke-test
 的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
 快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
@@ -520,8 +527,9 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本、恢复
 prepared 中间态并完成 legacy membership ACK。派发侧已具备 Redis admission、业务 token、Resident/cold
 authority、有界两级 FIFO 与空闲 victim 驱逐编排，但生产 effective mode 仍锁定为 `off`，因此实际请求不会
-进入这条权威路径、签业务 token 或切换 backend enforce gate。busy victim 等待/cancel/cooldown、实物
-多卡验收与 enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
+进入这条权威路径、签业务 token 或切换 backend enforce gate。Redis 已能原子阻断 cooldown 未到期的
+victim，但 exact card ticket 上的 cooldown 有界等待、busy victim drain/cancel、实物多卡验收与
+enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
 observe。`off/observe` 不创建或修复仲裁 Redis key。
 当前 PostgreSQL 与 worker 共用应用数据库角色时，tombstone completion receipt 属于受信 worker 的跨存储声明；
 正式启用 `enforce` 前应将 collector 收缩为独立受限角色/过程，并撤销普通应用角色对

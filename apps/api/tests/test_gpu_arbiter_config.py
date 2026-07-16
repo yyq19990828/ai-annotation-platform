@@ -27,12 +27,19 @@ def test_gpu_arbiter_defaults_to_safe_off() -> None:
     assert config.gpu_arbiter_config_errors == []
     assert config.gpu_arbiter_desired_mode("missing/index:0") is GPUArbiterMode.OFF
     assert config.gpu_arbiter_admission_timeout_seconds == 30
+    assert config.gpu_arbiter_residency_cooldown_seconds == 30
 
 
 def test_gpu_arbiter_accepts_bounded_admission_timeout() -> None:
     config = Settings(_env_file=None, gpu_arbiter_admission_timeout_seconds=7)
 
     assert config.gpu_arbiter_admission_timeout_seconds == 7
+
+
+def test_gpu_arbiter_accepts_bounded_residency_cooldown() -> None:
+    config = Settings(_env_file=None, gpu_arbiter_residency_cooldown_seconds=7)
+
+    assert config.gpu_arbiter_residency_cooldown_seconds == 7
 
 
 @pytest.mark.parametrize("timeout_seconds", (0, 3601))
@@ -46,19 +53,30 @@ def test_gpu_arbiter_rejects_out_of_range_admission_timeout(
         )
 
 
+@pytest.mark.parametrize("cooldown_seconds", (0, 3601))
+def test_gpu_arbiter_rejects_out_of_range_residency_cooldown(
+    cooldown_seconds: int,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            gpu_arbiter_residency_cooldown_seconds=cooldown_seconds,
+        )
+
+
 def test_gpu_resources_parse_distinct_cards_and_resource_domains() -> None:
     config = Settings(
         _env_file=None,
         gpu_arbiter_mode="enforce",
         gpu_arbiter_resources_json=(
-            '{'
+            "{"
             '"node-a/index:0":{"node_id":"node-a","physical_device_token":"index:0",'
             '"allocatable_mb":20000,"mode":"enforce"},'
             '"node-a/index:1":{"node_id":"node-a","physical_device_token":"index:1",'
             '"allocatable_mb":21000,"mode":"observe"},'
             '"node-b/index:0":{"node_id":"node-b","physical_device_token":"index:0",'
             '"allocatable_mb":22000,"mode":"enforce"}'
-            '}'
+            "}"
         ),
     )
 
@@ -152,7 +170,9 @@ def test_blank_and_empty_object_resource_config_are_both_safe_empty_sets() -> No
     empty_object = Settings(_env_file=None, gpu_arbiter_resources_json="{}")
 
     assert blank.gpu_arbiter_resources == empty_object.gpu_arbiter_resources == {}
-    assert blank.gpu_arbiter_config_errors == empty_object.gpu_arbiter_config_errors == []
+    assert (
+        blank.gpu_arbiter_config_errors == empty_object.gpu_arbiter_config_errors == []
+    )
 
 
 def test_one_invalid_resource_rejects_the_whole_configuration_snapshot() -> None:

@@ -124,6 +124,7 @@ class GPUAllocation:
     reservation_lease_id: str | None
     reservation_owner_id: str | None
     last_used_at_ms: int
+    not_evict_before_ms: int
 
     @property
     def counted(self) -> bool:
@@ -236,6 +237,7 @@ class GPUIdleEvictionResult:
         "selected",
         "capacity_available",
         "capacity_unavailable",
+        "cooldown_active",
         "card_queued",
         "victim_busy",
         "stale_selection",
@@ -253,6 +255,7 @@ class GPUIdleEvictionResult:
     owner_id: str | None = None
     owner_expires_at_ms: int | None = None
     owner_hard_deadline_ms: int | None = None
+    retry_at_ms: int | None = None
     idempotent: bool = False
 
 
@@ -374,6 +377,7 @@ class GPULeaseMutationResult:
 @dataclass(frozen=True)
 class GPUCardSnapshot:
     resource_id: str
+    observed_at_ms: int
     allocatable_mb: int
     ready: bool
     reconcile_deadline_ms: int
@@ -485,7 +489,7 @@ if card_exists and (
     ledger_incarnation=''
   })
 end
-if card_exists and redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
+if card_exists and redis.call('HGET', KEYS[1], 'ledger_version') ~= '3' then
   local revision = tonumber(revision_raw)
   if revision_raw ~= '9007199254740991' then
     revision = redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
@@ -541,7 +545,7 @@ redis.call('HSET', KEYS[1],
   'bootstrap_state', 'not_ready',
   'reconcile_deadline_ms', '0',
   'not_ready_reason', ARGV[3],
-  'ledger_version', '2',
+  'ledger_version', '3',
   'updated_at_ms', tostring(now_ms()))
 redis.call('HSETNX', KEYS[1], 'committed_mb', '0')
 redis.call('HSETNX', KEYS[1], 'backend_domain', '[]')
@@ -732,6 +736,7 @@ if card_exists then
   if proof_state == 'prepared' then
     local current_revision = redis.call('HGET', KEYS[1], 'ledger_revision')
     local current_incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
+    local prepared_version = redis.call('HGET', KEYS[1], 'ledger_version')
     if redis.call('HGET', KEYS[1], 'proof_reset_id') ~= ARGV[5] then
       return response('not_ready', 'proof_reset_in_progress',
         tonumber(current_revision or '0') or 0, current_incarnation, 0, false, false)
@@ -749,7 +754,7 @@ if card_exists then
        or redis.call('HGET', KEYS[1], 'membership_domain_fingerprint') ~= ARGV[11]
        or redis.call('HGET', KEYS[1], 'active_backend_domain') ~= ARGV[12]
        or redis.call('HGET', KEYS[1], 'active_backend_domain_fingerprint') ~= ARGV[13]
-       or redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+       or (prepared_version ~= '2' and prepared_version ~= '3')
        or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
        or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= '0'
        or redis.call('HGET', KEYS[1], 'not_ready_reason') ~= 'proof_reset_in_progress'
@@ -850,7 +855,7 @@ redis.call('HSET', KEYS[1],
   'bootstrap_state', 'not_ready',
   'reconcile_deadline_ms', '0',
   'not_ready_reason', 'proof_reset_in_progress',
-  'ledger_version', '2',
+  'ledger_version', '3',
   'ledger_revision', '1',
   'ledger_incarnation', ARGV[7],
   'backend_domain', ARGV[8],
@@ -975,7 +980,7 @@ local function valid_allocation(allocation, known)
     generation_valid = valid_generation(allocation.generation)
       or (allocation.generation == cjson.null and allocation.state == 'unknown')
   end
-  return type(allocation) == 'table' and table_size(allocation) == 8
+  return type(allocation) == 'table' and table_size(allocation) == 9
     and type(allocation.backend_id) == 'string'
     and known[allocation.backend_id]
     and (allocation.state == 'resident' or allocation.state == 'unknown')
@@ -987,6 +992,8 @@ local function valid_allocation(allocation, known)
     and (allocation.state ~= 'unknown' or allocation.evictable == false)
     and valid_integer(allocation.max_concurrency, 1, 10000)
     and valid_integer(allocation.last_used_at_ms, 1, 9007199254740991)
+    and valid_integer(allocation.not_evict_before_ms, 0, 9007199254740991)
+    and (allocation.state ~= 'resident' or allocation.not_evict_before_ms > 0)
 end
 local function allocations_equal(left, right)
   return left and right
@@ -998,6 +1005,7 @@ local function allocations_equal(left, right)
     and left.evictable == right.evictable
     and left.max_concurrency == right.max_concurrency
     and left.last_used_at_ms == right.last_used_at_ms
+    and left.not_evict_before_ms == right.not_evict_before_ms
 end
 local function validate_allocations(raw, target)
   local allocations = decode(raw)
@@ -1095,7 +1103,7 @@ local function committed_state_valid(marker_revision, marker_incarnation)
   local expected_deadline = final_ready and ARGV[7] or '0'
   if marker_revision ~= '2'
      or redis.call('TTL', KEYS[1]) ~= -1
-     or redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+     or redis.call('HGET', KEYS[1], 'ledger_version') ~= '3'
      or redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[1]
      or redis.call('HGET', KEYS[1], 'allocatable_mb') ~= ARGV[2]
      or redis.call('HGET', KEYS[1], 'ledger_revision') ~= marker_revision
@@ -1236,7 +1244,8 @@ if current_revision ~= ARGV[4] or current_incarnation ~= ARGV[5]
     tonumber(current_revision or '0') or 0, current_incarnation)
 end
 local prepared_at = redis.call('HGET', KEYS[1], 'proof_reset_prepared_at_ms')
-if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+local prepared_version = redis.call('HGET', KEYS[1], 'ledger_version')
+if (prepared_version ~= '2' and prepared_version ~= '3')
    or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
    or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= '0'
    or redis.call('HGET', KEYS[1], 'not_ready_reason') ~= 'proof_reset_in_progress'
@@ -1287,7 +1296,7 @@ redis.call('HSET', KEYS[1],
   'bootstrap_state', final_ready and 'ready' or 'not_ready',
   'reconcile_deadline_ms', final_ready and ARGV[7] or '0',
   'not_ready_reason', final_reason,
-  'ledger_version', '2',
+  'ledger_version', '3',
   'ledger_revision', '2',
   'ledger_incarnation', ARGV[5],
   'backend_domain', ARGV[11],
@@ -1398,6 +1407,8 @@ local function valid_allocation(item, backend_id)
     and type(item.evictable) == 'boolean'
     and valid_integer(item.max_concurrency, 1, 10000)
     and valid_integer(item.last_used_at_ms, 1, 9007199254740991)
+    and valid_integer(item.not_evict_before_ms, 0, 9007199254740991)
+    and (item.state ~= 'resident' or item.not_evict_before_ms > 0)
     and (not reservation_state or has_reservation)
     and (reservation_state or not reservation_present)
 end
@@ -1452,6 +1463,7 @@ local function allocations_equal(left, right)
     and left.reservation_lease_id == right.reservation_lease_id
     and left.reservation_owner_id == right.reservation_owner_id
     and left.last_used_at_ms == right.last_used_at_ms
+    and left.not_evict_before_ms == right.not_evict_before_ms
 end
 
 local now = now_ms()
@@ -1545,7 +1557,7 @@ if expected_revision ~= '' then
   local allocation_count = tonumber(redis.call('HGET', KEYS[1], 'allocation_count') or '-1')
   local card_queue_count = tonumber(redis.call('HGET', KEYS[1], 'card_queue_count') or '-1')
   local bootstrap_state = redis.call('HGET', KEYS[1], 'bootstrap_state')
-  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '3'
      or not valid_integer(card_allocatable, 1, 9007199254740991)
      or not valid_integer(card_committed, 0, 9007199254740991)
      or not valid_integer(card_deadline, 0, 9007199254740991)
@@ -2001,7 +2013,7 @@ redis.call('HSET', KEYS[1],
   'bootstrap_state', ready and 'ready' or 'not_ready',
   'reconcile_deadline_ms', tostring(deadline),
   'not_ready_reason', reason,
-  'ledger_version', '2',
+  'ledger_version', '3',
   'ledger_incarnation', current_incarnation,
   'committed_mb', tostring(committed),
   'backend_domain', ARGV[10],
@@ -2146,7 +2158,7 @@ if redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
   return response('not_ready', tonumber(current_revision or '0') or 0,
     incarnation, target_domains, 'proof_reset_in_progress')
 end
-if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
+if redis.call('HGET', KEYS[1], 'ledger_version') ~= '3' then
   return response('ledger_corrupt', tonumber(current_revision or '0') or 0,
     incarnation, target_domains, 'legacy_schema_requires_proof_reset')
 end
@@ -2366,6 +2378,11 @@ for index = 1, #allocation_entries, 2 do
      or allocation.last_used_at_ms ~= math.floor(allocation.last_used_at_ms)
      or allocation.last_used_at_ms < 1
      or allocation.last_used_at_ms > 9007199254740991
+     or type(allocation.not_evict_before_ms) ~= 'number'
+     or allocation.not_evict_before_ms ~= math.floor(allocation.not_evict_before_ms)
+     or allocation.not_evict_before_ms < 0
+     or allocation.not_evict_before_ms > 9007199254740991
+     or (allocation.state == 'resident' and allocation.not_evict_before_ms == 0)
      or (reservation_state and not has_reservation)
      or (not reservation_state and reservation_present) then
     return response('ledger_corrupt', tonumber(current_revision), incarnation,
@@ -2758,7 +2775,7 @@ local incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
 if redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
   return response('not_ready', 'proof_reset_in_progress', revision, incarnation)
 end
-if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+if redis.call('HGET', KEYS[1], 'ledger_version') ~= '3'
    or not valid_positive(revision or '', '9007199254740991')
    or incarnation == '' or string.len(incarnation) > 128
    or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
@@ -3017,7 +3034,7 @@ if redis.call('HGET', KEYS[1], 'resource_id') ~= ARGV[1] then
 end
 local revision = redis.call('HGET', KEYS[1], 'ledger_revision')
 local incarnation = redis.call('HGET', KEYS[1], 'ledger_incarnation') or ''
-if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+if redis.call('HGET', KEYS[1], 'ledger_version') ~= '3'
    or redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared'
    or redis.call('HGET', KEYS[1], 'bootstrap_state') ~= 'not_ready'
    or redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') ~= '0'
@@ -3246,6 +3263,8 @@ local function integrity_valid_allocation(item, backend_id)
     and type(item.evictable) == 'boolean'
     and integrity_valid_integer(item.max_concurrency, 1, 10000)
     and integrity_valid_integer(item.last_used_at_ms, 1, 9007199254740991)
+    and integrity_valid_integer(item.not_evict_before_ms, 0, 9007199254740991)
+    and (item.state ~= 'resident' or item.not_evict_before_ms > 0)
     and (not reservation_state or has_reservation)
     and (reservation_state or not reservation_present)
 end
@@ -3305,7 +3324,7 @@ local function inspect_membership_domains(
      and redis.call('HGET', KEYS[1], 'proof_reset_state') == 'prepared' then
     return nil, 'not_ready', 'proof_reset_in_progress'
   end
-  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2' then
+  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '3' then
     integrity_fault(resource_id, 'membership_domain_invalid', now)
     return nil, 'ledger_corrupt', 'membership_domain_invalid'
   end
@@ -3419,7 +3438,7 @@ local function inspect_ledger(
   local cached_committed = tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '-1')
   local cached_allocation_count = tonumber(redis.call('HGET', KEYS[1], 'allocation_count') or '-1')
   local deadline = tonumber(redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') or '-1')
-  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '2'
+  if redis.call('HGET', KEYS[1], 'ledger_version') ~= '3'
      or not integrity_valid_revision(ledger_revision)
      or not integrity_valid_integer(allocatable, 1, 9007199254740991)
      or not integrity_valid_integer(cached_committed, 0, 9007199254740991)
@@ -3696,6 +3715,8 @@ local function calculate_committed(key)
        or type(allocation.evictable) ~= 'boolean'
        or not valid_integer(allocation.max_concurrency, 1, 10000)
        or not valid_integer(allocation.last_used_at_ms, 1, 9007199254740991)
+       or not valid_integer(allocation.not_evict_before_ms, 0, 9007199254740991)
+       or (allocation.state == 'resident' and allocation.not_evict_before_ms == 0)
        or (reservation_state and not has_reservation)
        or (not reservation_state and reservation_present) then
       return nil
@@ -3850,7 +3871,6 @@ if existing_lease then
     end
     if tonumber(allocation.budget_mb) ~= tonumber(ARGV[3])
        or tonumber(allocation.eviction_priority) ~= tonumber(ARGV[5])
-       or allocation.evictable ~= (ARGV[6] == '1')
        or tonumber(allocation.max_concurrency) ~= tonumber(ARGV[7]) then
       return cjson.encode({status='lease_conflict', reason='idempotent_config_mismatch', committed_mb=committed, lease_count=redis.call('HLEN', lease_key)})
     end
@@ -3913,7 +3933,6 @@ if allocation then
   end
   if tonumber(allocation.budget_mb) ~= tonumber(ARGV[3])
      or tonumber(allocation.eviction_priority) ~= tonumber(ARGV[5])
-     or allocation.evictable ~= (ARGV[6] == '1')
      or tonumber(allocation.max_concurrency) ~= tonumber(ARGV[7]) then
     return cjson.encode({status='config_mismatch', reason='allocation_config_mismatch', committed_mb=committed, lease_count=lease_count})
   end
@@ -3949,6 +3968,9 @@ if ARGV[24] == '1' and not cold_owner_matches then
 end
 if ARGV[24] == '1' and increment <= 0 then
   return cjson.encode({status='not_ready', reason='cold_allocation_required', committed_mb=committed, lease_count=lease_count})
+end
+if increment > 0 and ARGV[6] ~= '0' then
+  return cjson.encode({status='config_mismatch', reason='cold_allocation_must_start_non_evictable', committed_mb=committed, lease_count=lease_count})
 end
 if ARGV[23] == '1' and (not allocation or allocation.state ~= 'resident') then
   return cjson.encode({status='not_ready', reason='resident_allocation_required', committed_mb=committed, lease_count=lease_count})
@@ -3992,9 +4014,9 @@ if increment > 0 then
   allocation = {
     backend_id=ARGV[2], state='reserving', budget_mb=tonumber(ARGV[3]),
     generation=ARGV[4], eviction_priority=tonumber(ARGV[5]),
-    evictable=(ARGV[6] == '1'), max_concurrency=tonumber(ARGV[7]),
+    evictable=false, max_concurrency=tonumber(ARGV[7]),
     reservation_lease_id=ARGV[8], reservation_owner_id=ARGV[9],
-    last_used_at_ms=now
+    last_used_at_ms=now, not_evict_before_ms=0
   }
   committed = committed + increment
   if card_head and card_head.ticket_id == ARGV[14] then
@@ -4091,7 +4113,7 @@ local function guard_membership_domain(
     active_raw, active_fingerprint)
   if redis.call('HGET', card_key, 'resource_id') ~= resource_id
      or redis.call('HGET', card_key, 'proof_reset_state') == 'prepared'
-     or redis.call('HGET', card_key, 'ledger_version') ~= '2'
+     or redis.call('HGET', card_key, 'ledger_version') ~= '3'
      or redis.call('HGET', card_key, 'ledger_incarnation') ~= expected_incarnation
      or redis.call('HGET', card_key, 'backend_domain') ~= domain_raw
      or redis.call('HGET', card_key, 'backend_domain_fingerprint') ~= domain_fingerprint
@@ -4236,6 +4258,13 @@ local valid_allocation_states = {
 if not allocation or allocation.backend_id ~= ARGV[7]
    or not valid_allocation_states[allocation.state]
    or not valid_allocation_generation(allocation) then
+  return redis.error_reply('gpu arbiter allocation decode failed')
+end
+if ARGV[1] ~= 'release'
+   and (type(allocation.not_evict_before_ms) ~= 'number'
+     or allocation.not_evict_before_ms ~= math.floor(allocation.not_evict_before_ms)
+     or allocation.not_evict_before_ms < 0
+     or allocation.not_evict_before_ms > 9007199254740991) then
   return redis.error_reply('gpu arbiter allocation decode failed')
 end
 if allocation.generation == cjson.null and ARGV[1] ~= 'release' then
@@ -4937,7 +4966,8 @@ local function candidate_less(left, right)
   end
   return left.backend_id < right.backend_id
 end
-local function response(status, reason, committed, shortfall, victim, owner, idempotent)
+local function response(
+    status, reason, committed, shortfall, victim, owner, idempotent, retry_at)
   return cjson.encode({
     status=status, reason=reason, committed_mb=committed,
     shortfall_mb=shortfall, victim_backend_id=victim and victim.backend_id or nil,
@@ -4946,6 +4976,7 @@ local function response(status, reason, committed, shortfall, victim, owner, ide
     owner_id=owner and owner.owner_id or nil,
     owner_expires_at_ms=owner and owner.expires_at_ms or nil,
     owner_hard_deadline_ms=owner and owner.hard_deadline_ms or nil,
+    retry_at_ms=retry_at,
     idempotent=idempotent or false
   })
 end
@@ -5062,8 +5093,10 @@ if shortfall <= 0 then
     0, nil, nil, false)
 end
 
-local idle = {}
-local idle_capacity = 0
+local idle_ready = {}
+local idle_all = {}
+local idle_ready_capacity = 0
+local idle_total_capacity = 0
 local possible_capacity = 0
 for backend_id, allocation in pairs(ledger.allocations) do
   if backend_id ~= ARGV[2]
@@ -5074,12 +5107,35 @@ for backend_id, allocation in pairs(ledger.allocations) do
     possible_capacity = math.min(shortfall,
       possible_capacity + allocation.budget_mb)
     if ledger.lease_counts[backend_id] == 0 then
-      table.insert(idle, allocation)
-      idle_capacity = math.min(shortfall, idle_capacity + allocation.budget_mb)
+      table.insert(idle_all, allocation)
+      idle_total_capacity = math.min(
+        shortfall, idle_total_capacity + allocation.budget_mb)
+      if allocation.not_evict_before_ms <= ledger.now then
+        table.insert(idle_ready, allocation)
+        idle_ready_capacity = math.min(
+          shortfall, idle_ready_capacity + allocation.budget_mb)
+      end
     end
   end
 end
-if idle_capacity < shortfall then
+if idle_ready_capacity < shortfall then
+  if idle_total_capacity >= shortfall then
+    table.sort(idle_all, function(left, right)
+      if left.not_evict_before_ms ~= right.not_evict_before_ms then
+        return left.not_evict_before_ms < right.not_evict_before_ms
+      end
+      return candidate_less(left, right)
+    end)
+    local available = 0
+    local retry_at = ledger.now
+    for _, allocation in ipairs(idle_all) do
+      available = math.min(shortfall, available + allocation.budget_mb)
+      retry_at = math.max(retry_at, allocation.not_evict_before_ms)
+      if available >= shortfall then break end
+    end
+    return response('cooldown_active', 'eligible_victim_cooldown_active', committed,
+      shortfall, nil, nil, false, retry_at)
+  end
   if possible_capacity >= shortfall then
     return response('victim_busy', 'eligible_victim_has_leases', committed,
       shortfall, nil, nil, false)
@@ -5087,8 +5143,8 @@ if idle_capacity < shortfall then
   return response('capacity_unavailable', 'eligible_capacity_insufficient', committed,
     shortfall, nil, nil, false)
 end
-table.sort(idle, candidate_less)
-local victim = idle[1]
+table.sort(idle_ready, candidate_less)
+local victim = idle_ready[1]
 if not victim or victim.backend_id ~= ARGV[6]
    or victim.generation ~= ARGV[8] then
   return response('stale_selection', 'victim_order_or_generation_changed', committed,
@@ -5197,13 +5253,25 @@ end
 if ARGV[19] ~= '0' and ARGV[19] ~= '1' then
   return cjson.encode({status='invalid_transition', committed_mb=0})
 end
+local resident_cooldown_ms = tonumber(ARGV[21])
+if not valid_integer(resident_cooldown_ms, 0, 2147483647) then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
 local cold_finalize = ARGV[17] == '1'
 local eviction_transition = ARGV[19] == '1'
+if ARGV[4] == 'resident' and not cold_finalize and not eviction_transition then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
 if cold_finalize and (
     (ARGV[4] ~= 'resident' and ARGV[4] ~= 'unknown'
       and ARGV[4] ~= 'unloaded' and ARGV[4] ~= 'cpu_fallback')
     or (ARGV[4] == 'resident' and ARGV[18] ~= '1')
-    or (ARGV[4] ~= 'resident' and ARGV[18] ~= '0')) then
+    or (ARGV[4] ~= 'resident' and ARGV[18] ~= '0')
+    or (ARGV[4] == 'resident' and resident_cooldown_ms == 0)
+    or (ARGV[4] ~= 'resident' and resident_cooldown_ms ~= 0)) then
+  return cjson.encode({status='invalid_transition', committed_mb=0})
+end
+if not cold_finalize and resident_cooldown_ms ~= 0 then
   return cjson.encode({status='invalid_transition', committed_mb=0})
 end
 local eviction_allowed = {
@@ -5237,6 +5305,8 @@ local function valid_allocation(item, backend_id)
     and type(item.evictable) == 'boolean'
     and valid_integer(item.max_concurrency, 1, 10000)
     and valid_integer(item.last_used_at_ms, 1, 9007199254740991)
+    and valid_integer(item.not_evict_before_ms, 0, 9007199254740991)
+    and (item.state ~= 'resident' or item.not_evict_before_ms > 0)
     and (not reservation_state or has_reservation)
     and (reservation_state or not reservation_present)
 end
@@ -5331,6 +5401,10 @@ if cold_finalize and allocation.state == ARGV[4]
   if allocation.evictable ~= (ARGV[18] == '1') then
     return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
   end
+  if (allocation.state == 'resident' and allocation.not_evict_before_ms <= 0)
+     or (allocation.state ~= 'resident' and allocation.not_evict_before_ms ~= 0) then
+    return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
   return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed, idempotent=true})
 end
 
@@ -5415,19 +5489,31 @@ elseif not counted[previous_state] and counted[allocation.state] then
   committed = committed + tonumber(allocation.budget_mb)
 end
 if ARGV[5] ~= '' then allocation.generation = ARGV[5] end
-if cold_finalize then allocation.evictable = (ARGV[18] == '1') end
+local transition_now = now_ms()
+if cold_finalize then
+  allocation.evictable = (ARGV[18] == '1')
+  if allocation.state == 'resident' then
+    if transition_now > 9007199254740991 - resident_cooldown_ms then
+      return cjson.encode({status='invalid_transition', state=previous_state, generation=allocation.generation, committed_mb=ledger.committed})
+    end
+    allocation.not_evict_before_ms = transition_now + resident_cooldown_ms
+  else
+    allocation.not_evict_before_ms = 0
+  end
+end
 if eviction_transition
    and (allocation.state == 'unloaded' or allocation.state == 'unknown') then
   allocation.evictable = false
+  allocation.not_evict_before_ms = 0
 end
 if allocation.state ~= 'reserving' and allocation.state ~= 'loading' then
   allocation.reservation_lease_id = nil
   allocation.reservation_owner_id = nil
 end
-allocation.last_used_at_ms = now_ms()
+allocation.last_used_at_ms = transition_now
 redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
 redis.call('HSET', KEYS[2], ARGV[2], cjson.encode(allocation))
-redis.call('HSET', KEYS[1], 'committed_mb', tostring(committed), 'updated_at_ms', tostring(now_ms()))
+redis.call('HSET', KEYS[1], 'committed_mb', tostring(committed), 'updated_at_ms', tostring(transition_now))
 return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=committed, idempotent=false})
 """
 )
@@ -5457,6 +5543,13 @@ def _validate_redis_safe_int(value: int, field: str) -> int:
         or abs(value) > _MAX_REDIS_SAFE_INTEGER
     ):
         raise ValueError(f"{field} must be a Redis-safe integer")
+    return value
+
+
+def _validate_nonnegative_redis_safe_int(value: int, field: str) -> int:
+    value = _validate_redis_safe_int(value, field)
+    if value < 0:
+        raise ValueError(f"{field} must be a nonnegative Redis-safe integer")
     return value
 
 
@@ -6072,7 +6165,7 @@ class GPUArbiterStore:
             if _SHA256_HEX_RE.fullmatch(begin_fingerprint) is None:
                 raise ValueError("proof reset begin fingerprint is invalid")
             if (
-                card.get("ledger_version") != "2"
+                card.get("ledger_version") not in {"2", "3"}
                 or card.get("bootstrap_state") != "not_ready"
                 or card.get("reconcile_deadline_ms") != "0"
                 or card.get("not_ready_reason") != "proof_reset_in_progress"
@@ -7284,6 +7377,7 @@ class GPUArbiterStore:
             owner_hard_deadline_ms=self._optional_int(
                 payload.get("owner_hard_deadline_ms")
             ),
+            retry_at_ms=self._optional_int(payload.get("retry_at_ms")),
             idempotent=bool(payload.get("idempotent", False)),
         )
 
@@ -7486,6 +7580,8 @@ class GPUArbiterStore:
         transition_owner_id: str | None = None,
         transition_operation: str | None = None,
     ) -> GPUTransitionResult:
+        if target_state is GPUAllocationState.RESIDENT:
+            raise ValueError("Resident cold terminal requires finalize_cold_allocation")
         return await self._transition_allocation_operation(
             resource_id,
             backend_id=backend_id,
@@ -7498,6 +7594,7 @@ class GPUArbiterStore:
             transition_operation=transition_operation,
             cold_finalize=False,
             target_evictable=False,
+            resident_cooldown_ms=0,
             eviction_transition=False,
             expected_source_state=None,
         )
@@ -7512,6 +7609,7 @@ class GPUArbiterStore:
         request_owner_id: str,
         target_state: GPUAllocationState,
         target_evictable: bool,
+        resident_cooldown_ms: int,
     ) -> GPUTransitionResult:
         if target_state not in {
             GPUAllocationState.RESIDENT,
@@ -7524,6 +7622,10 @@ class GPUArbiterStore:
             raise ValueError("target_evictable must be a boolean")
         if target_evictable is not (target_state is GPUAllocationState.RESIDENT):
             raise ValueError("only a Resident cold terminal may be evictable")
+        if target_state is GPUAllocationState.RESIDENT:
+            _validate_ttl_ms(resident_cooldown_ms, "resident_cooldown_ms")
+        elif resident_cooldown_ms != 0:
+            raise ValueError("non-Resident cold terminal cooldown must be zero")
         return await self._transition_allocation_operation(
             resource_id,
             backend_id=backend_id,
@@ -7536,6 +7638,7 @@ class GPUArbiterStore:
             transition_operation=None,
             cold_finalize=True,
             target_evictable=target_evictable,
+            resident_cooldown_ms=resident_cooldown_ms,
             eviction_transition=False,
             expected_source_state=None,
         )
@@ -7581,6 +7684,7 @@ class GPUArbiterStore:
             transition_operation=GPU_EVICTION_OPERATION,
             cold_finalize=False,
             target_evictable=False,
+            resident_cooldown_ms=0,
             eviction_transition=True,
             expected_source_state=expected_state,
         )
@@ -7599,6 +7703,7 @@ class GPUArbiterStore:
         transition_operation: str | None,
         cold_finalize: bool,
         target_evictable: bool,
+        resident_cooldown_ms: int,
         eviction_transition: bool,
         expected_source_state: GPUAllocationState | None,
     ) -> GPUTransitionResult:
@@ -7640,6 +7745,7 @@ class GPUArbiterStore:
                     "1" if target_evictable else "0",
                     "1" if eviction_transition else "0",
                     expected_source_state.value if expected_source_state else "",
+                    str(resident_cooldown_ms),
                 ],
             )
         )
@@ -7670,8 +7776,8 @@ class GPUArbiterStore:
                     "ledger_incarnation",
                     max_length=128,
                 )
-                if card_before.get("ledger_version") != "2":
-                    raise ValueError("ledger schema is not v2")
+                if card_before.get("ledger_version") != "3":
+                    raise ValueError("ledger schema is not v3")
                 domain_raw = card_before["backend_domain"]
                 membership_raw = card_before["membership_domain"]
                 active_domain_raw = card_before["active_backend_domain"]
@@ -7872,6 +7978,7 @@ class GPUArbiterStore:
                         )
                 return GPUCardSnapshot(
                     resource_id=resource_id,
+                    observed_at_ms=redis_now_ms,
                     allocatable_mb=allocatable_mb,
                     ready=(
                         card_after.get("bootstrap_state") == "ready"
@@ -7930,6 +8037,12 @@ class GPUArbiterStore:
         last_used_at_ms = _validate_positive_int(
             allocation.last_used_at_ms, "last_used_at_ms"
         )
+        not_evict_before_ms = _validate_nonnegative_redis_safe_int(
+            allocation.not_evict_before_ms,
+            "not_evict_before_ms",
+        )
+        if allocation.state is GPUAllocationState.RESIDENT and not_evict_before_ms == 0:
+            raise ValueError("Resident allocation cooldown deadline must be positive")
         if (allocation.reservation_lease_id is None) != (
             allocation.reservation_owner_id is None
         ):
@@ -7949,6 +8062,7 @@ class GPUArbiterStore:
             "evictable": allocation.evictable,
             "max_concurrency": max_concurrency,
             "last_used_at_ms": last_used_at_ms,
+            "not_evict_before_ms": not_evict_before_ms,
         }
         if allocation.reservation_lease_id is not None:
             payload["reservation_lease_id"] = _validate_nonempty(
@@ -7996,6 +8110,10 @@ class GPUArbiterStore:
         last_used_at_ms = _validate_positive_int(
             value.get("last_used_at_ms"), "last_used_at_ms"
         )
+        not_evict_before_ms = _validate_nonnegative_redis_safe_int(
+            value.get("not_evict_before_ms"),
+            "not_evict_before_ms",
+        )
         if "max_concurrency" not in value:
             raise ValueError("allocation max_concurrency is missing")
         max_concurrency = normalize_gpu_backend_max_concurrency(
@@ -8006,6 +8124,8 @@ class GPUArbiterStore:
         if (reservation_lease_id is None) != (reservation_owner_id is None):
             raise ValueError("allocation reservation owner is incomplete")
         state = GPUAllocationState(value["state"])
+        if state is GPUAllocationState.RESIDENT and not_evict_before_ms == 0:
+            raise ValueError("Resident allocation cooldown deadline must be positive")
         if value["generation"] is None and evictable:
             raise ValueError("null-generation unknown allocation cannot be evictable")
         has_reservation = reservation_lease_id is not None
@@ -8031,6 +8151,7 @@ class GPUArbiterStore:
             reservation_lease_id=reservation_lease_id,
             reservation_owner_id=reservation_owner_id,
             last_used_at_ms=last_used_at_ms,
+            not_evict_before_ms=not_evict_before_ms,
         )
 
     @staticmethod

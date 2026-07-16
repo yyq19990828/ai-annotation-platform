@@ -630,7 +630,7 @@ async def _prepare_selected_idle_eviction(
         budget_mb=victim_membership.vram_budget_mb,
         generation="1",
         eviction_priority=victim_membership.eviction_priority,
-        evictable=True,
+        evictable=False,
         max_concurrency=victim_membership.max_concurrency,
         lease_id=lease_id,
         owner_id=workload_owner_id,
@@ -639,16 +639,27 @@ async def _prepare_selected_idle_eviction(
         hard_ttl_ms=120_000,
     )
     assert admission.admitted
-    for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
-        transition = await store.transition_allocation(
-            resource_id,
-            backend_id=str(victim_id),
-            expected_generation="1",
-            target_state=state,
-            request_lease_id=lease_id,
-            request_owner_id=workload_owner_id,
-        )
-        assert transition.status == "transitioned"
+    transition = await store.transition_allocation(
+        resource_id,
+        backend_id=str(victim_id),
+        expected_generation="1",
+        target_state=GPUAllocationState.LOADING,
+        request_lease_id=lease_id,
+        request_owner_id=workload_owner_id,
+    )
+    assert transition.status == "transitioned"
+    finalized = await store.finalize_cold_allocation(
+        resource_id,
+        backend_id=str(victim_id),
+        expected_generation="1",
+        request_lease_id=lease_id,
+        request_owner_id=workload_owner_id,
+        target_state=GPUAllocationState.RESIDENT,
+        target_evictable=True,
+        resident_cooldown_ms=1,
+    )
+    assert finalized.status == "transitioned"
+    await asyncio.sleep(0.002)
     released = await store.release_lease(
         resource_id,
         backend_id=str(victim_id),
@@ -809,6 +820,7 @@ async def test_proof_recovery_commits_complete_multi_backend_snapshot_idempotent
         assert allocation.generation == "1"
         assert allocation.budget_mb == 2048
         assert allocation.evictable is False
+        assert allocation.not_evict_before_ms == context.prepared_at_ms + 30_000
     finally:
         await _cleanup_backends(factory, backend_ids)
 
@@ -859,6 +871,7 @@ async def test_proof_recovery_accepts_matching_managed_lifecycle_capability(
         assert len(allocations) == 1
         assert allocations[0].state is GPUAllocationState.RESIDENT
         assert allocations[0].evictable is False
+        assert allocations[0].not_evict_before_ms == context.prepared_at_ms + 30_000
     finally:
         await _cleanup_backends(factory, backend_ids)
 
@@ -1452,6 +1465,7 @@ async def test_redis_gc_receipt_resumes_db_tombstone_and_orphan_fence_finalize(
                 reservation_lease_id=None,
                 reservation_owner_id=None,
                 last_used_at_ms=1,
+                not_evict_before_ms=0,
             ),
         ),
         ready=False,
@@ -1562,6 +1576,84 @@ async def test_repair_bootstraps_missing_card_then_leaves_ready_card_read_only(
         )
         assert second.action == "already_ready"
         assert second.ledger_revision == snapshot.ledger_revision
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_repair_resumes_legacy_v2_prepared_reset_into_v3(
+    test_engine: AsyncEngine,
+    proof_store: GPUArbiterStore,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(1024,),
+    )
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset(backend_ids),
+        )
+        config = _resource_config(_RESOURCE_A)
+        initial = await repair_gpu_resource(
+            factory,
+            proof_store,
+            _RESOURCE_A,
+            8192,
+            config=config,
+        )
+        assert initial.ready is True
+        snapshot = await proof_store.snapshot(_RESOURCE_A)
+        prepared = await proof_store.begin_proof_reset(
+            _RESOURCE_A,
+            8192,
+            expected_ledger_revision=snapshot.ledger_revision,
+            expected_ledger_incarnation=snapshot.ledger_incarnation,
+            backend_memberships=snapshot.backend_memberships,
+            reset_id="legacy-v2-prepared-repair",
+        )
+        assert prepared.status == "prepared"
+
+        raw = Redis.from_url(_redis_url(), decode_responses=True)
+        try:
+            await raw.hset(
+                proof_store.keys(_RESOURCE_A).card,
+                "ledger_version",
+                "2",
+            )
+            context = await proof_store.prepared_proof_reset(_RESOURCE_A)
+            assert context is not None
+
+            resumed = await repair_gpu_resource(
+                factory,
+                proof_store,
+                _RESOURCE_A,
+                8192,
+                config=config,
+            )
+
+            assert (resumed.action, resumed.status, resumed.ready) == (
+                "resume_prepared",
+                "reconciled",
+                True,
+            )
+            assert (
+                await raw.hget(
+                    proof_store.keys(_RESOURCE_A).card,
+                    "ledger_version",
+                )
+                == "3"
+            )
+            recovered = await proof_store.snapshot(_RESOURCE_A)
+            assert recovered.allocations[0].not_evict_before_ms == (
+                context.prepared_at_ms
+                + config.gpu_arbiter_residency_cooldown_seconds * 1000
+            )
+        finally:
+            await raw.aclose()
     finally:
         await _cleanup_backends(factory, backend_ids)
 
@@ -2270,6 +2362,7 @@ async def test_cold_terminal_commit_classifies_exact_post_response_health(
             challenge=challenge,
             lease_id=lease_id,
             owner_id=owner_id,
+            resident_cooldown_ms=30_000,
         )
 
         assert result.status == "finalized"
@@ -2338,6 +2431,7 @@ async def test_cold_terminal_commit_retries_exactly_after_redis_response_loss(
             challenge=challenge,
             lease_id=lease_id,
             owner_id=owner_id,
+            resident_cooldown_ms=30_000,
         )
 
         assert attempts == 2
@@ -2388,6 +2482,7 @@ async def test_cold_terminal_commit_rejects_stale_health_challenge(
             challenge=challenge,
             lease_id=lease_id,
             owner_id=owner_id,
+            resident_cooldown_ms=30_000,
         )
 
         assert result.status == "finalized"
@@ -2443,6 +2538,7 @@ async def test_cold_terminal_commit_skips_redis_when_generation_advanced(
             challenge=challenge,
             lease_id=lease_id,
             owner_id=owner_id,
+            resident_cooldown_ms=30_000,
         )
 
         assert result.status == "stale"
@@ -2476,55 +2572,62 @@ async def test_cold_terminal_commit_preserves_same_card_resident_sibling(
             resident_backend_ids=frozenset({sibling_id}),
         )
         await _enable_cold_runtime_health(factory, target_id)
+        sibling_observed_at_ms = int(time.time() * 1000)
         reconciled = await proof_store.reconcile_card(
             _RESOURCE_A,
             8192,
             expected_ledger_revision=None,
             expected_ledger_incarnation=None,
             backend_memberships=await _membership_domain(factory, _RESOURCE_A),
-            allocations=(),
+            allocations=(
+                GPUAllocation(
+                    backend_id=str(sibling_id),
+                    state=GPUAllocationState.UNKNOWN,
+                    budget_mb=512,
+                    generation="1",
+                    eviction_priority=0,
+                    evictable=False,
+                    max_concurrency=4,
+                    reservation_lease_id=None,
+                    reservation_owner_id=None,
+                    last_used_at_ms=sibling_observed_at_ms,
+                    not_evict_before_ms=0,
+                ),
+            ),
             lease_cleanup=None,
             ready=True,
             reconcile_deadline_ms=int(time.time() * 1000) + 120_000,
             repair_id=f"cold-terminal-sibling-{uuid.uuid4()}",
         )
-        assert reconciled.status == "reconciled"
-        sibling_lease_id = f"workload:{uuid.uuid4()}"
-        sibling_owner_id = f"dispatch:{uuid.uuid4()}"
-        sibling_admission = await proof_store.admit(
+        assert reconciled.status == "reconciled", reconciled.reason
+        unknown_snapshot = await proof_store.snapshot(_RESOURCE_A)
+        reconciled = await proof_store.reconcile_card(
             _RESOURCE_A,
-            backend_id=str(sibling_id),
-            membership_epoch=1,
-            budget_mb=512,
-            generation="1",
-            eviction_priority=0,
-            evictable=False,
-            max_concurrency=4,
-            lease_id=sibling_lease_id,
-            owner_id=sibling_owner_id,
-            operation="predict",
-            heartbeat_ttl_ms=15_000,
-            hard_ttl_ms=120_000,
+            8192,
+            expected_ledger_revision=unknown_snapshot.ledger_revision,
+            expected_ledger_incarnation=unknown_snapshot.ledger_incarnation,
+            backend_memberships=await _membership_domain(factory, _RESOURCE_A),
+            allocations=(
+                GPUAllocation(
+                    backend_id=str(sibling_id),
+                    state=GPUAllocationState.RESIDENT,
+                    budget_mb=512,
+                    generation="1",
+                    eviction_priority=0,
+                    evictable=False,
+                    max_concurrency=4,
+                    reservation_lease_id=None,
+                    reservation_owner_id=None,
+                    last_used_at_ms=sibling_observed_at_ms,
+                    not_evict_before_ms=sibling_observed_at_ms + 30_000,
+                ),
+            ),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=int(time.time() * 1000) + 120_000,
+            repair_id=f"cold-terminal-sibling-resident-{uuid.uuid4()}",
         )
-        assert sibling_admission.admitted
-        for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
-            transitioned = await proof_store.transition_allocation(
-                _RESOURCE_A,
-                backend_id=str(sibling_id),
-                expected_generation="1",
-                target_state=state,
-                request_lease_id=sibling_lease_id,
-                request_owner_id=sibling_owner_id,
-            )
-            assert transitioned.status == "transitioned"
-        released = await proof_store.release_lease(
-            _RESOURCE_A,
-            backend_id=str(sibling_id),
-            lease_id=sibling_lease_id,
-            owner_id=sibling_owner_id,
-            generation="1",
-        )
-        assert released.status == "released"
+        assert reconciled.status == "reconciled", reconciled.reason
         prepared, lease_id, owner_id = await _bootstrap_cold_loading(
             factory,
             proof_store,
@@ -2547,6 +2650,7 @@ async def test_cold_terminal_commit_preserves_same_card_resident_sibling(
             challenge=challenge,
             lease_id=lease_id,
             owner_id=owner_id,
+            resident_cooldown_ms=30_000,
         )
 
         assert result.state is GPUAllocationState.UNLOADED
@@ -2627,6 +2731,7 @@ async def test_cold_terminal_commit_isolated_across_cards(
                 challenge="c" * 64,
                 lease_id=lease_a,
                 owner_id=owner_a,
+                resident_cooldown_ms=30_000,
             ),
             commit_gpu_cold_terminal_from_health(
                 factory_b,
@@ -2635,6 +2740,7 @@ async def test_cold_terminal_commit_isolated_across_cards(
                 challenge="d" * 64,
                 lease_id=lease_b,
                 owner_id=owner_b,
+                resident_cooldown_ms=30_000,
             ),
         )
 

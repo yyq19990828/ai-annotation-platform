@@ -86,6 +86,7 @@ services:
       CONNECTOR_HOST_ALLOWLIST: ${CONNECTOR_HOST_ALLOWLIST:-}
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
       GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
       GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
@@ -143,6 +144,7 @@ services:
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
       GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS: ${GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS:-30}
+      GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
       GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
       GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
       # SAM3 文本 multiplex / PVS 的单窗上限。显式透传 .env，避免 dev compose
@@ -191,6 +193,7 @@ services:
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
       GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS: ${GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS:-30}
+      GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
     volumes:
       - ./data/duckdb:/var/lib/duckdb
       - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
@@ -226,6 +229,7 @@ services:
       MINIO_SECRET_KEY: minioadmin
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
     volumes:
@@ -270,6 +274,7 @@ services:
       MINIO_SECRET_KEY: minioadmin
       GPU_ARBITER_MODE: ${GPU_ARBITER_MODE:-off}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
+      GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
     volumes:
       # v0.10.25 · dev 源码热挂载 (同 celery-worker): 改 beat schedule 只需 restart 不必 rebuild。
       - ./apps/api:/app

@@ -219,6 +219,9 @@ class Settings(BaseSettings):
     # Slow-path FIFO has its own bound; it must not inherit the much longer
     # inference timeout or keep a card queue ticket alive indefinitely.
     gpu_arbiter_admission_timeout_seconds: int = Field(default=30, gt=0, le=3600)
+    # Every newly confirmed Resident allocation gets a Redis-time protection
+    # window before it may participate in victim selection.
+    gpu_arbiter_residency_cooldown_seconds: int = Field(default=30, gt=0, le=3600)
 
     def _parse_gpu_arbiter_resources(
         self,

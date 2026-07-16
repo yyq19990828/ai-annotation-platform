@@ -2381,12 +2381,20 @@ async def commit_gpu_cold_terminal_from_health(
     challenge: str | None,
     lease_id: str,
     owner_id: str,
+    resident_cooldown_ms: int,
     evidence_ttl: timedelta = _HEALTH_EVIDENCE_MAX_AGE,
 ) -> GPUColdTerminalCommitResult:
     """Commit one exposed cold terminal; no response proof forces Unknown."""
 
     if challenge is not None and _GPU_HEALTH_CHALLENGE_RE.fullmatch(challenge) is None:
         raise ValueError("challenge must be 64 lowercase hexadecimal characters")
+    if (
+        isinstance(resident_cooldown_ms, bool)
+        or not isinstance(resident_cooldown_ms, int)
+        or resident_cooldown_ms <= 0
+        or resident_cooldown_ms > 3_600_000
+    ):
+        raise ValueError("resident_cooldown_ms must be between 1 and 3600000")
     _validate_runtime_subject_evidence_ttl(evidence_ttl)
     async with session_factory() as db:
         async with db.begin():
@@ -2445,6 +2453,11 @@ async def commit_gpu_cold_terminal_from_health(
                 "request_owner_id": owner_id,
                 "target_state": target_state,
                 "target_evictable": target_state is GPUAllocationState.RESIDENT,
+                "resident_cooldown_ms": (
+                    resident_cooldown_ms
+                    if target_state is GPUAllocationState.RESIDENT
+                    else 0
+                ),
             }
             try:
                 transition = await store.finalize_cold_allocation(
@@ -2979,6 +2992,7 @@ def _unknown_proof_allocation(
         reservation_lease_id=None,
         reservation_owner_id=None,
         last_used_at_ms=last_used_at_ms,
+        not_evict_before_ms=0,
     )
 
 
@@ -3012,6 +3026,7 @@ def _evaluate_gpu_member_proof(
     context: GPUProofResetContext,
     db_now: datetime,
     evidence_ttl: timedelta,
+    residency_cooldown_ms: int,
 ) -> _GPUProofEvaluation:
     raw_health = registry.health_meta if registry is not None else None
     raw_probe = (
@@ -3196,6 +3211,9 @@ def _evaluate_gpu_member_proof(
                     reservation_lease_id=None,
                     reservation_owner_id=None,
                     last_used_at_ms=observed_at_ms,
+                    not_evict_before_ms=(
+                        context.prepared_at_ms + residency_cooldown_ms
+                    ),
                 ),
                 complete=True,
                 reason="resident",
@@ -3246,6 +3264,7 @@ def _allocation_proof_document(allocation: GPUAllocation | None) -> Any:
         "evictable": allocation.evictable,
         "max_concurrency": allocation.max_concurrency,
         "last_used_at_ms": allocation.last_used_at_ms,
+        "not_evict_before_ms": allocation.not_evict_before_ms,
     }
 
 
@@ -3423,6 +3442,9 @@ async def commit_gpu_proof_reset_from_health(
                     context=context,
                     db_now=locked.db_now,
                     evidence_ttl=evidence_ttl,
+                    residency_cooldown_ms=(
+                        config.gpu_arbiter_residency_cooldown_seconds * 1000
+                    ),
                 )
                 for item in locked.memberships
             }

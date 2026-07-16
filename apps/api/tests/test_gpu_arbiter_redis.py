@@ -127,7 +127,7 @@ def _admission_kwargs(
         "budget_mb": budget_mb,
         "generation": generation,
         "eviction_priority": eviction_priority,
-        "evictable": True,
+        "evictable": False,
         "max_concurrency": max_concurrency,
         "lease_id": lease_id,
         "owner_id": owner_id,
@@ -148,6 +148,8 @@ async def _admit_resident(
     budget_mb: int = 60,
     max_concurrency: int = 4,
     eviction_priority: int = 0,
+    resident_cooldown_ms: int = 1,
+    wait_for_cooldown: bool = True,
 ) -> None:
     assert (
         await store.admit(
@@ -163,17 +165,30 @@ async def _admit_resident(
             ),
         )
     ).admitted
-    for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
-        assert (
-            await store.transition_allocation(
-                resource_id,
-                backend_id=backend_id,
-                expected_generation=generation,
-                target_state=state,
-                request_lease_id=lease_id,
-                request_owner_id=owner_id,
-            )
-        ).status == "transitioned"
+    assert (
+        await store.transition_allocation(
+            resource_id,
+            backend_id=backend_id,
+            expected_generation=generation,
+            target_state=GPUAllocationState.LOADING,
+            request_lease_id=lease_id,
+            request_owner_id=owner_id,
+        )
+    ).status == "transitioned"
+    assert (
+        await store.finalize_cold_allocation(
+            resource_id,
+            backend_id=backend_id,
+            expected_generation=generation,
+            request_lease_id=lease_id,
+            request_owner_id=owner_id,
+            target_state=GPUAllocationState.RESIDENT,
+            target_evictable=True,
+            resident_cooldown_ms=resident_cooldown_ms,
+        )
+    ).status == "transitioned"
+    if wait_for_cooldown:
+        await asyncio.sleep((resident_cooldown_ms / 1000) + 0.001)
 
 
 async def _bootstrap_empty_card(
@@ -207,7 +222,12 @@ def _reconcile_allocation(
     generation: str | None = "1",
     budget_mb: int = 60,
     last_used_at_ms: int = 1,
+    not_evict_before_ms: int | None = None,
 ) -> GPUAllocation:
+    if not_evict_before_ms is None:
+        cooldown_deadline_ms = 1 if state is GPUAllocationState.RESIDENT else 0
+    else:
+        cooldown_deadline_ms = not_evict_before_ms
     return GPUAllocation(
         backend_id=backend_id,
         state=state,
@@ -219,6 +239,7 @@ def _reconcile_allocation(
         reservation_lease_id=None,
         reservation_owner_id=None,
         last_used_at_ms=last_used_at_ms,
+        not_evict_before_ms=cooldown_deadline_ms,
     )
 
 
@@ -432,6 +453,31 @@ async def test_null_generation_allocation_invariants_are_rejected_before_redis(
             ready=True,
             reconcile_deadline_ms=_future_reconcile_deadline_ms(),
             repair_id="invalid-null-generation",
+        )
+
+
+@pytest.mark.asyncio
+async def test_resident_without_cooldown_is_rejected_before_redis(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    with pytest.raises(ValueError, match="cooldown deadline must be positive"):
+        await first.reconcile_card(
+            "node-invalid-resident-cooldown/index:0",
+            100,
+            expected_ledger_revision=None,
+            expected_ledger_incarnation=None,
+            backend_memberships=_memberships("backend-a"),
+            allocations=(
+                _reconcile_allocation(
+                    state=GPUAllocationState.RESIDENT,
+                    not_evict_before_ms=0,
+                ),
+            ),
+            lease_cleanup=None,
+            ready=True,
+            reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+            repair_id="invalid-resident-cooldown",
         )
 
 
@@ -1503,7 +1549,7 @@ async def test_domain_evolution_exact_retry_is_read_only_after_response_loss(
             "ledger_corrupt",
             "legacy_schema_requires_proof_reset",
         )
-        await raw.hset(keys.card, "ledger_version", "2")
+        await raw.hset(keys.card, "ledger_version", "3")
         assert await raw.hgetall(keys.card) == card_after_create
 
         conflict = await first.evolve_backend_domains(
@@ -1730,7 +1776,148 @@ async def test_legacy_ledger_v1_is_latched_not_ready_without_in_place_upgrade(
 
 
 @pytest.mark.asyncio
-async def test_incomplete_v2_domains_are_not_filled_by_mark_not_ready(
+async def test_legacy_ledger_v2_is_latched_not_ready_without_in_place_upgrade(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-legacy-v2/index:0"
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=_memberships("backend-a"),
+    )
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.hset(keys.card, "ledger_version", "2")
+        card_before = await raw.hgetall(keys.card)
+        latched = await first.mark_card_not_ready(
+            resource_id,
+            100,
+            reason="operator_fail_close",
+        )
+
+        assert (latched.status, latched.reason) == (
+            "ledger_corrupt",
+            "legacy_schema_requires_proof_reset",
+        )
+        assert await raw.hget(keys.card, "ledger_version") == "2"
+        card_after = await raw.hgetall(keys.card)
+        assert card_after["bootstrap_state"] == "not_ready"
+        assert card_after["reconcile_deadline_ms"] == "0"
+        assert card_after["not_ready_reason"] == "legacy_schema_requires_proof_reset"
+        assert set(card_after) == set(card_before)
+
+        prepared = await first.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=latched.ledger_revision,
+            expected_ledger_incarnation=latched.ledger_incarnation,
+            backend_memberships=_memberships("backend-a"),
+            reset_id="migrate-v2-to-v3",
+        )
+        assert prepared.status == "prepared"
+        assert await raw.hget(keys.card, "ledger_version") == "3"
+        committed = await first.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id="migrate-v2-to-v3",
+            expected_reset_revision=prepared.ledger_revision,
+            expected_reset_incarnation=prepared.ledger_incarnation,
+            backend_memberships=_memberships("backend-a"),
+            allocations=(),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=hashlib.sha256(b"migrate-v2-to-v3").hexdigest(),
+        )
+        assert (committed.status, committed.ledger_revision) == ("reconciled", 2)
+        assert await raw.hget(keys.card, "ledger_version") == "3"
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_legacy_v2_prepared_proof_reset_resumes_without_in_place_upgrade(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-legacy-v2-prepared/index:0"
+    memberships = _memberships("backend-a")
+    await _bootstrap_empty_card(
+        first,
+        resource_id,
+        100,
+        memberships=memberships,
+    )
+    before = await first.snapshot(resource_id)
+    prepared = await first.begin_proof_reset(
+        resource_id,
+        100,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=memberships,
+        reset_id="resume-v2-prepared",
+    )
+    assert prepared.status == "prepared"
+
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        await raw.hset(keys.card, "ledger_version", "2")
+        card_before_resume = await raw.hgetall(keys.card)
+
+        context = await second.prepared_proof_reset(resource_id)
+        assert context is not None
+        assert (
+            context.reset_id,
+            context.ledger_revision,
+            context.ledger_incarnation,
+        ) == (
+            "resume-v2-prepared",
+            prepared.ledger_revision,
+            prepared.ledger_incarnation,
+        )
+        replayed = await second.begin_proof_reset(
+            resource_id,
+            100,
+            expected_ledger_revision=before.ledger_revision,
+            expected_ledger_incarnation=before.ledger_incarnation,
+            backend_memberships=memberships,
+            reset_id="resume-v2-prepared",
+        )
+        assert (replayed.status, replayed.idempotent) == ("prepared", True)
+        assert await raw.hgetall(keys.card) == card_before_resume
+
+        cooldown_deadline_ms = context.prepared_at_ms + 30_000
+        committed = await second.commit_proof_reset(
+            resource_id,
+            100,
+            reset_id=context.reset_id,
+            expected_reset_revision=context.ledger_revision,
+            expected_reset_incarnation=context.ledger_incarnation,
+            backend_memberships=memberships,
+            allocations=(
+                _reconcile_allocation(
+                    state=GPUAllocationState.RESIDENT,
+                    not_evict_before_ms=cooldown_deadline_ms,
+                ),
+            ),
+            ready=True,
+            evidence_deadline_ms=_future_reconcile_deadline_ms(),
+            proof_fingerprint=hashlib.sha256(b"resume-v2-prepared").hexdigest(),
+        )
+
+        assert (committed.status, committed.ledger_revision) == ("reconciled", 2)
+        assert await raw.hget(keys.card, "ledger_version") == "3"
+        snapshot = await first.snapshot(resource_id)
+        assert snapshot.allocations[0].not_evict_before_ms == cooldown_deadline_ms
+    finally:
+        await raw.aclose()
+
+
+@pytest.mark.asyncio
+async def test_incomplete_v3_domains_are_not_filled_by_mark_not_ready(
     redis_stores,
 ) -> None:
     first, _ = redis_stores
@@ -1756,7 +1943,7 @@ async def test_incomplete_v2_domains_are_not_filled_by_mark_not_ready(
             "ledger_schema_incomplete",
         )
         assert rejected.ledger_revision == revision_before + 1
-        assert await raw.hget(keys.card, "ledger_version") == "2"
+        assert await raw.hget(keys.card, "ledger_version") == "3"
         assert await raw.hget(keys.card, "membership_domain") is None
         assert await raw.hget(keys.card, "active_backend_domain") == '["backend-a"]'
         assert await raw.hget(keys.card, "bootstrap_state") == "not_ready"
@@ -1979,6 +2166,8 @@ async def test_proof_reset_retries_are_read_only_and_fence_new_work(
             reset_id="retry-reset",
         )
         prepared_card = await raw.hgetall(keys.card)
+        assert prepared_card["ledger_version"] == "3"
+        assert prepared_card["ledger_revision"] == "1"
         retry = await first.begin_proof_reset(
             resource_id,
             100,
@@ -2005,7 +2194,10 @@ async def test_proof_reset_retries_are_read_only_and_fence_new_work(
         assert await raw.hgetall(keys.card) == prepared_card
 
         allocation = replace(
-            _reconcile_allocation(state=GPUAllocationState.RESIDENT),
+            _reconcile_allocation(
+                state=GPUAllocationState.RESIDENT,
+                not_evict_before_ms=1234,
+            ),
             evictable=True,
         )
         deadline = _future_reconcile_deadline_ms()
@@ -2023,6 +2215,8 @@ async def test_proof_reset_retries_are_read_only_and_fence_new_work(
             proof_fingerprint=proof_fingerprint,
         )
         committed_card = await raw.hgetall(keys.card)
+        assert committed_card["ledger_version"] == "3"
+        assert committed_card["ledger_revision"] == "2"
         commit_retry = await first.commit_proof_reset(
             resource_id,
             100,
@@ -2040,6 +2234,9 @@ async def test_proof_reset_retries_are_read_only_and_fence_new_work(
             True,
         )
         assert await raw.hgetall(keys.card) == committed_card
+        assert (await first.snapshot(resource_id)).allocations[
+            0
+        ].not_evict_before_ms == 1234
         begin_retry = await first.begin_proof_reset(
             resource_id,
             100,
@@ -3752,17 +3949,28 @@ async def test_cold_admission_owner_serializes_generation_and_reservation(
     assert retry.admitted is True
     assert retry.idempotent is True
 
-    for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
-        assert (
-            await first.transition_allocation(
-                resource_id,
-                backend_id="backend-a",
-                expected_generation="1",
-                target_state=state,
-                request_lease_id="cold-lease",
-                request_owner_id="cold-owner-a",
-            )
-        ).status == "transitioned"
+    assert (
+        await first.transition_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            target_state=GPUAllocationState.LOADING,
+            request_lease_id="cold-lease",
+            request_owner_id="cold-owner-a",
+        )
+    ).status == "transitioned"
+    assert (
+        await first.finalize_cold_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            request_lease_id="cold-lease",
+            request_owner_id="cold-owner-a",
+            target_state=GPUAllocationState.RESIDENT,
+            target_evictable=True,
+            resident_cooldown_ms=1,
+        )
+    ).status == "transitioned"
     other_intent = await second.acquire_cold_admission_owner(
         resource_id,
         backend_id="backend-b",
@@ -4292,8 +4500,12 @@ async def test_finalize_cold_allocation_is_owned_and_idempotent(
         request_owner_id="other-owner",
         target_state=target_state,
         target_evictable=target_evictable,
+        resident_cooldown_ms=(
+            30_000 if target_state is GPUAllocationState.RESIDENT else 0
+        ),
     )
     assert wrong_owner.status == "owner_mismatch"
+    before_finalize = await first.snapshot(resource_id)
     finalized = await first.finalize_cold_allocation(
         resource_id,
         backend_id="backend-a",
@@ -4302,11 +4514,21 @@ async def test_finalize_cold_allocation_is_owned_and_idempotent(
         request_owner_id="cold-owner",
         target_state=target_state,
         target_evictable=target_evictable,
+        resident_cooldown_ms=(
+            30_000 if target_state is GPUAllocationState.RESIDENT else 0
+        ),
     )
     assert finalized.status == "transitioned"
     assert finalized.idempotent is False
     assert finalized.committed_mb == committed_mb
+    terminal_snapshot = await first.snapshot(resource_id)
+    terminal_cooldown = terminal_snapshot.allocations[0].not_evict_before_ms
     if target_state is GPUAllocationState.RESIDENT:
+        assert (
+            before_finalize.observed_at_ms + 30_000
+            <= terminal_cooldown
+            <= terminal_snapshot.observed_at_ms + 30_000
+        )
         assert (
             await first.admit(
                 resource_id,
@@ -4318,6 +4540,11 @@ async def test_finalize_cold_allocation_is_owned_and_idempotent(
                 ),
             )
         ).admitted
+        assert (await first.snapshot(resource_id)).allocations[
+            0
+        ].not_evict_before_ms == terminal_cooldown
+    else:
+        assert terminal_cooldown == 0
     revision = (await first.snapshot(resource_id)).ledger_revision
 
     retried = await second.finalize_cold_allocation(
@@ -4328,6 +4555,9 @@ async def test_finalize_cold_allocation_is_owned_and_idempotent(
         request_owner_id="cold-owner",
         target_state=target_state,
         target_evictable=target_evictable,
+        resident_cooldown_ms=(
+            30_000 if target_state is GPUAllocationState.RESIDENT else 0
+        ),
     )
     assert retried.status == "transitioned"
     assert retried.idempotent is True
@@ -4336,6 +4566,7 @@ async def test_finalize_cold_allocation_is_owned_and_idempotent(
     assert snapshot.ledger_revision == revision
     assert snapshot.allocations[0].state is target_state
     assert snapshot.allocations[0].evictable is target_evictable
+    assert snapshot.allocations[0].not_evict_before_ms == terminal_cooldown
     expected_leases = (
         ("cold-lease", "resident-lease")
         if target_state is GPUAllocationState.RESIDENT
@@ -5229,7 +5460,10 @@ async def test_generation_cas_and_active_lease_guard_transitions(redis_stores) -
             request_owner_id="owner-a",
         )
     ).status == "transitioned"
-    assert (
+    with pytest.raises(
+        ValueError,
+        match="Resident cold terminal requires finalize_cold_allocation",
+    ):
         await first.transition_allocation(
             resource_id,
             backend_id="backend-a",
@@ -5237,6 +5471,17 @@ async def test_generation_cas_and_active_lease_guard_transitions(redis_stores) -
             target_state=GPUAllocationState.RESIDENT,
             request_lease_id="lease-a",
             request_owner_id="owner-a",
+        )
+    assert (
+        await first.finalize_cold_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            request_lease_id="lease-a",
+            request_owner_id="owner-a",
+            target_state=GPUAllocationState.RESIDENT,
+            target_evictable=True,
+            resident_cooldown_ms=1,
         )
     ).status == "transitioned"
     assert (
@@ -5537,6 +5782,124 @@ async def test_begin_idle_eviction_uses_lru_then_backend_id_tie_break(
         hard_ttl_ms=60_000,
     )
     assert (tied.status, tied.victim_backend_id) == ("selected", "backend-a")
+
+
+@pytest.mark.asyncio
+async def test_begin_idle_eviction_waits_for_cumulative_residency_cooldown(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-cooldown/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    for backend_id, cooldown_ms in (("backend-a", 40), ("backend-b", 80)):
+        await _admit_resident(
+            first,
+            resource_id,
+            backend_id=backend_id,
+            lease_id=f"lease-{backend_id}",
+            owner_id=f"owner-{backend_id}",
+            budget_mb=30,
+            resident_cooldown_ms=cooldown_ms,
+            wait_for_cooldown=False,
+        )
+        assert (
+            await first.release_lease(
+                resource_id,
+                backend_id=backend_id,
+                lease_id=f"lease-{backend_id}",
+                owner_id=f"owner-{backend_id}",
+                generation="1",
+            )
+        ).status == "released"
+
+    before = await first.snapshot(resource_id)
+    retry_at_ms = max(
+        allocation.not_evict_before_ms for allocation in before.allocations
+    )
+    kwargs = {
+        "requester_backend_id": "backend-c",
+        "requester_membership_epoch": 1,
+        "requester_budget_mb": 80,
+        "requester_eviction_priority": 0,
+        "victim_backend_id": "backend-a",
+        "victim_membership_epoch": 1,
+        "victim_expected_generation": "1",
+        "victim_next_generation": "2",
+        "owner_id": "cooldown-owner",
+        "ttl_ms": 30_000,
+        "hard_ttl_ms": 60_000,
+    }
+    cooling = await first.begin_idle_eviction(resource_id, **kwargs)
+
+    assert (cooling.status, cooling.reason, cooling.retry_at_ms) == (
+        "cooldown_active",
+        "eligible_victim_cooldown_active",
+        retry_at_ms,
+    )
+    unchanged = await first.snapshot(resource_id)
+    assert unchanged.ledger_revision == before.ledger_revision
+    assert unchanged.transition_present is False
+    assert tuple(
+        (item.backend_id, item.state, item.generation) for item in unchanged.allocations
+    ) == tuple(
+        (item.backend_id, item.state, item.generation) for item in before.allocations
+    )
+
+    await asyncio.sleep(max(0, retry_at_ms - unchanged.observed_at_ms) / 1000 + 0.005)
+    selected = await first.begin_idle_eviction(resource_id, **kwargs)
+    assert (selected.status, selected.victim_backend_id) == (
+        "selected",
+        "backend-a",
+    )
+
+
+@pytest.mark.asyncio
+async def test_begin_idle_eviction_rejects_resident_without_cooldown_deadline(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-invalid-resident-cooldown/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+
+    keys = first.keys(resource_id)
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        allocation = json.loads(await raw.hget(keys.allocations, "backend-a"))
+        allocation["not_evict_before_ms"] = 0
+        corrupted = json.dumps(allocation)
+        await raw.hset(keys.allocations, "backend-a", corrupted)
+
+        rejected = await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-b",
+            requester_membership_epoch=1,
+            requester_budget_mb=60,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="invalid-cooldown-owner",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+        )
+
+        assert rejected.status == "ledger_corrupt"
+        assert await raw.get(keys.transition) is None
+        assert await raw.hget(keys.allocations, "backend-a") == corrupted
+        assert await raw.hget(keys.card, "bootstrap_state") == "not_ready"
+    finally:
+        await raw.aclose()
 
 
 @pytest.mark.asyncio
@@ -6465,9 +6828,14 @@ async def test_corrupt_sibling_allocation_cannot_partially_transition(
         await raw.aclose()
 
 
+@pytest.mark.parametrize(
+    "invalid_value",
+    (None, -1, True, 9_007_199_254_740_992),
+)
 @pytest.mark.asyncio
-async def test_snapshot_rejects_missing_authoritative_allocation_fields(
+async def test_snapshot_rejects_invalid_authoritative_cooldown_field(
     redis_stores,
+    invalid_value: int | bool | None,
 ) -> None:
     first, _ = redis_stores
     resource_id = "node-a/index:0"
@@ -6480,7 +6848,10 @@ async def test_snapshot_rejects_missing_authoritative_allocation_fields(
     raw = Redis.from_url(_redis_url(), decode_responses=True)
     try:
         allocation = json.loads(await raw.hget(allocations_key, "backend-a"))
-        allocation.pop("max_concurrency")
+        if invalid_value is None:
+            allocation.pop("not_evict_before_ms")
+        else:
+            allocation["not_evict_before_ms"] = invalid_value
         await raw.hset(allocations_key, "backend-a", json.dumps(allocation))
         with pytest.raises(GPUArbiterStoreError, match="ledger decode"):
             await first.snapshot(resource_id)
@@ -7032,17 +7403,28 @@ async def test_ttl_durations_cannot_write_unsafe_absolute_deadlines(
             ttl_ms=maximum_ttl_ms,
         )
     ).status == "queued"
-    for state in (GPUAllocationState.LOADING, GPUAllocationState.RESIDENT):
-        assert (
-            await first.transition_allocation(
-                resource_id,
-                backend_id="backend-a",
-                expected_generation="1",
-                target_state=state,
-                request_lease_id="lease-a",
-                request_owner_id="owner-a",
-            )
-        ).status == "transitioned"
+    assert (
+        await first.transition_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            target_state=GPUAllocationState.LOADING,
+            request_lease_id="lease-a",
+            request_owner_id="owner-a",
+        )
+    ).status == "transitioned"
+    assert (
+        await first.finalize_cold_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="1",
+            request_lease_id="lease-a",
+            request_owner_id="owner-a",
+            target_state=GPUAllocationState.RESIDENT,
+            target_evictable=True,
+            resident_cooldown_ms=maximum_ttl_ms,
+        )
+    ).status == "transitioned"
     assert (
         await first.acquire_transition_owner(
             resource_id,

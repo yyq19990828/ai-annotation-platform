@@ -108,6 +108,7 @@ def _allocation(
     generation: str,
     eviction_priority: int = 1,
     last_used_at_ms: int = 1,
+    not_evict_before_ms: int = 1,
 ) -> GPUAllocation:
     return GPUAllocation(
         backend_id=str(backend_id),
@@ -120,6 +121,7 @@ def _allocation(
         reservation_lease_id=None,
         reservation_owner_id=None,
         last_used_at_ms=last_used_at_ms,
+        not_evict_before_ms=not_evict_before_ms,
     )
 
 
@@ -129,9 +131,11 @@ def _card_snapshot(
     allocatable_mb: int,
     allocations: tuple[GPUAllocation, ...],
     transition_present: bool = False,
+    observed_at_ms: int = 1,
 ) -> GPUCardSnapshot:
     return GPUCardSnapshot(
         resource_id=resource_id,
+        observed_at_ms=observed_at_ms,
         allocatable_mb=allocatable_mb,
         ready=True,
         reconcile_deadline_ms=0,
@@ -408,6 +412,7 @@ class _RecordingStore:
     async def snapshot(self, resource_id: str) -> GPUCardSnapshot:
         return GPUCardSnapshot(
             resource_id=resource_id,
+            observed_at_ms=1,
             allocatable_mb=8192,
             ready=True,
             reconcile_deadline_ms=0,
@@ -704,6 +709,7 @@ def _install_cold_authority_fakes(
         challenge: str | None,
         lease_id: str,
         owner_id: str,
+        resident_cooldown_ms: int,
     ):
         committed_state = (
             terminal_state if challenge is not None else GPUAllocationState.UNKNOWN
@@ -714,6 +720,7 @@ def _install_cold_authority_fakes(
         assert store.admit_kwargs is not None
         assert lease_id == store.admit_kwargs["lease_id"]
         assert owner_id == store.admit_kwargs["owner_id"]
+        assert resident_cooldown_ms == 30_000
         return GPUColdTerminalCommitResult(
             status=terminal_status,  # type: ignore[arg-type]
             state=committed_state,
@@ -899,6 +906,9 @@ def test_resident_authority_builder_is_lazy() -> None:
         {"admission_timeout_seconds": 0},
         {"admission_timeout_seconds": float("nan")},
         {"admission_timeout_seconds": 3601},
+        {"residency_cooldown_seconds": 0},
+        {"residency_cooldown_seconds": float("nan")},
+        {"residency_cooldown_seconds": 3601},
         {"queue_poll_interval_seconds": 0},
         {"queue_poll_interval_seconds": float("inf")},
     ),
@@ -1608,10 +1618,12 @@ async def test_cold_authority_heartbeats_through_terminal_commit(monkeypatch) ->
         challenge: str | None,
         lease_id: str,
         owner_id: str,
+        resident_cooldown_ms: int,
     ) -> GPUColdTerminalCommitResult:
         assert passed_store is store
         assert expected_subject.generation == prepared.generation
         assert challenge == "a" * 64
+        assert resident_cooldown_ms == 30_000
         heartbeat_count = events.count("heartbeat")
         for _ in range(100):
             if events.count("heartbeat") > heartbeat_count:
@@ -2015,6 +2027,43 @@ def test_idle_victim_hint_uses_priority_lru_and_protects_higher_priority() -> No
         )
     assert caught.value.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
     assert caught.value.headers == {"Retry-After": "1"}
+
+
+def test_idle_victim_hint_uses_snapshot_redis_time_for_cumulative_cooldown() -> None:
+    requester = replace(
+        _cold_subject(),
+        budget_mb=4096,
+        eviction_priority=1,
+    )
+    first = _allocation(
+        uuid.UUID(int=21),
+        budget_mb=2048,
+        generation="3",
+        eviction_priority=0,
+        last_used_at_ms=10,
+        not_evict_before_ms=120,
+    )
+    second = _allocation(
+        uuid.UUID(int=22),
+        budget_mb=2048,
+        generation="3",
+        eviction_priority=0,
+        last_used_at_ms=20,
+        not_evict_before_ms=140,
+    )
+    snapshot = _card_snapshot(
+        requester.gpu_resource_id,
+        allocatable_mb=4096,
+        allocations=(first, second),
+        observed_at_ms=100,
+    )
+
+    with pytest.raises(authority_module._GPUVictimCooldownActive) as caught:
+        authority_module._idle_victim_hint(snapshot, requester)
+
+    assert caught.value.retry_at_ms == 140
+    expired = replace(snapshot, observed_at_ms=140)
+    assert authority_module._idle_victim_hint(expired, requester) is first
 
 
 def test_idle_victim_hint_does_not_evict_for_an_allocated_requester() -> None:

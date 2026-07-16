@@ -419,19 +419,31 @@ fail-closed，连 release、sweep、queue position 等减损写也不得改变�
 commit 必须 exact-match prepared context、三域与 reset ID。ready commit 由 Redis `TIME` 验证从固定 live
 health 派生的绝对证据 deadline；not-ready commit 必须使用 canonical deadline `0`，因为它不授予任何权限，
 且 prepared marker 必须能在任意长度的进程重启后保守清场。commit 只接受
-Resident 或 non-evictable Unknown 的保守 allocation，删除 all-domain（含 retiring）内全部旧 child 后重写 v2
+Resident 或 non-evictable Unknown 的保守 allocation，删除 all-domain（含 retiring）内全部旧 child 后重写 v3
 账本。Unknown、证明不完整或 committed 超过 allocatable 时只能落 not-ready。成功响应丢失后的 exact commit
 重试必须保持只读，重新复验 card schema、镜像 cache、allocation、所有 child、key TTL 与当前 deadline；即使
 revision 未变，partial deletion/corruption 或证据过期也不能回放 ready。相同 reset ID 在 begin 已提交后不得
 再次开始新 reset。若重启恢复时 durable membership 已演进，只能在数据库锁内确认原域仍一致后 ready commit，
 或先以 prepared 的旧封闭域保守 not-ready 清场再走合法域演进；禁止直接用新域覆盖 prepared marker。
 
-Redis v2 以三份 canonical 文档区分有界 all-domain、携带 positive-int64 epoch/state 的 membership-domain 与
+Redis v3 保留三份 canonical 文档来区分有界 all-domain、携带 positive-int64 epoch/state 的 membership-domain 与
 由 active 成员唯一派生的 active-domain。新 admission、两级 enqueue 与 ticket 消费 exact-match active
 membership epoch；lease、ticket 取消/查询及 transition 收敛只要求成员仍位于 all-domain，因此 active 转
 retiring 后不会失去清理入口。域演进只能在卡已 not-ready 时使用 revision/incarnation CAS：新成员必须先以
 pending@1 加入且 child 为空，既有状态变化遵循持久 membership 的同构规则，all-domain 在 proof-backed GC
-落地前只能单调扩张。响应丢失精确重试保持只读，v1 或缺失三域的账本只会 fail-close，不能静默升级。
+落地前只能单调扩张。每个 allocation 还必须携带 Redis epoch 毫秒表示的
+`not_evict_before_ms`：新的 Reserving/Loading 从 `0` 开始，Resident 必须持有正的绝对截止时间，
+普通 generation transition 不得绕过 cold terminal CAS 直接生成 Resident。正常 cold 路径只有首次可信的
+Loading→Resident terminal CAS 才用同一次 Redis `TIME` 写入
+`last_used_at_ms=now` 与 `not_evict_before_ms=now+cooldown`。proof reset 是保守恢复例外：重建
+Resident 时固定写入 `prepared_at_ms+cooldown`，exact reset replay 同样不得续期。Resident 快路和
+响应丢失后 exact owner/lease/generation/target 的 cold replay 也只读且不得续期；非 Resident cold
+terminal 与已完成驱逐归零。Python 快照选择先按快照中的
+Redis 观测时间过滤，idle eviction Lua 再在原子区复验，未到期时不得推进 generation、owner、transition
+或 revision。v1/v2、缺失三域或缺少 cooldown 字段的账本只会 fail-close，并通过既有
+challenge-bound proof reset 重建，不能原地补字段或静默升级。升级时已经严格进入 prepared 的 v2
+reset 是唯一恢复例外：只能以原 reset ID、revision/incarnation、prepared 时间和封闭三域继续 exact
+replay/commit；BEGIN 不改版本，只有 COMMIT 在清除旧 child 后原子写出 v3。
 partial corruption 仍只能通过封闭域、令牌时域和 live health 共同证明的 reset 修复；retired child 与
 tombstone 必须走独立两阶段 GC。每次退役生成不可复用的 `retirement_id`，避免行删除重建、membership epoch
 重新从 1 开始后误消费旧 receipt。第一阶段只接受绑定 exact retiring identity、晚于冻结 token horizon 的
