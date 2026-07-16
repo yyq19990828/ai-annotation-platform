@@ -10,6 +10,7 @@ import pytest
 from aap_backend_runtime import (
     free_gpu_memory,
     gpu_info_snapshot,
+    physical_gpu_identity,
     validate_single_gpu_device_set,
 )
 
@@ -126,3 +127,30 @@ def test_single_gpu_device_set_checks_every_runtime_visibility_layer() -> None:
                 "CUDA_VISIBLE_DEVICES": "0,1",
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("environ", "expected"),
+    [
+        (
+            {"NVIDIA_VISIBLE_DEVICES": "1", "CUDA_VISIBLE_DEVICES": "0"},
+            {"physical_device_token": "index:1", "device_index": 1},
+        ),
+        (
+            {"NVIDIA_VISIBLE_DEVICES": "GPU-abc", "CUDA_VISIBLE_DEVICES": "0"},
+            {"physical_device_token": "GPU-abc", "device_uuid": "GPU-abc"},
+        ),
+        (
+            {"NVIDIA_VISIBLE_DEVICES": "MIG-GPU-abc/1/0"},
+            {
+                "physical_device_token": "MIG-GPU-abc/1/0",
+                "mig_uuid": "MIG-GPU-abc/1/0",
+            },
+        ),
+        ({"NVIDIA_VISIBLE_DEVICES": "none"}, {}),
+    ],
+)
+def test_physical_gpu_identity_prefers_container_runtime_selection(
+    environ: dict[str, str], expected: dict[str, str | int]
+) -> None:
+    assert physical_gpu_identity(environ) == expected

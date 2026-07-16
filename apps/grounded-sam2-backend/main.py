@@ -34,6 +34,7 @@ import torch
 from aap_backend_runtime import (
     effective_device_value,
     fetch_image,
+    physical_gpu_identity,
     versions_payload,
     validate_single_gpu_device_set,
 )
@@ -640,18 +641,16 @@ async def health() -> dict:
             # 不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
             # CUDA_VISIBLE_DEVICES 把物理卡重映射为逻辑 0..N-1: 物理卡号 = 列表中第「逻辑 current
             # device」项 (单卡 "2"→2; 多卡 "2,3"+逻辑1→3); 列表缺失/非法时回落逻辑号。
-            _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-            _logical = torch.cuda.current_device()
-            _ids = [p.strip() for p in _vis.split(",") if p.strip().isdigit()]
-            device_index = int(_ids[_logical]) if _logical < len(_ids) else _logical
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
-                "device_index": device_index,
                 "memory_used_mb": used_mb,
                 "memory_total_mb": total_mb,
                 "memory_free_mb": max(total_mb - used_mb, 0),
                 "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
             }
+            gpu_info.update(
+                physical_gpu_identity() or {"device_index": torch.cuda.current_device()}
+            )
         except Exception:  # noqa: BLE001 — 显存查询失败不阻塞 /health
             gpu_info = None
     if gpu_info is not None:

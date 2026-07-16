@@ -21,7 +21,11 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from aap_backend_runtime import validate_single_gpu_device_set, versions_payload
+from aap_backend_runtime import (
+    physical_gpu_identity,
+    validate_single_gpu_device_set,
+    versions_payload,
+)
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -203,6 +207,7 @@ async def health() -> dict[str, Any]:
             "effective_provider": pool_snapshot["provider"],
             "cpu_fallback_supported": True,
         },
+        "gpu_info": physical_gpu_identity() or None,
         "residency": residency_payload,
     }
 

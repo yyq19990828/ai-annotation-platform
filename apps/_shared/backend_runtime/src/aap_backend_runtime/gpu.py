@@ -61,6 +61,40 @@ def validate_single_gpu_device_set(
             )
 
 
+def physical_gpu_identity(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str | int]:
+    """Return the host-visible physical GPU token selected for this process.
+
+    ``NVIDIA_VISIBLE_DEVICES`` is preferred because container runtimes may remap
+    the selected physical GPU to logical CUDA device 0. The result deliberately
+    omits a logical index when the runtime selected a UUID.
+    """
+
+    values = os.environ if environ is None else environ
+    validate_single_gpu_device_set(values)
+    for name in ("NVIDIA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
+        raw = values.get(name)
+        if raw is None:
+            continue
+        token = raw.strip()
+        lowered = token.lower()
+        if lowered in _NO_DEVICE_VALUES or lowered in _NVIDIA_ALL_DEVICE_VALUES:
+            continue
+        if token.isdigit():
+            device_index = int(token)
+            return {
+                "physical_device_token": f"index:{device_index}",
+                "device_index": device_index,
+            }
+        if token.startswith("GPU-"):
+            return {"physical_device_token": token, "device_uuid": token}
+        if token.startswith("MIG-"):
+            return {"physical_device_token": token, "mig_uuid": token}
+        return {"physical_device_token": token}
+    return {}
+
+
 def free_gpu_memory() -> None:
     """显式释放 CUDA caching allocator 持有的显存, 让 nvidia-smi 立刻可见下降。
 
@@ -104,13 +138,18 @@ def gpu_info_snapshot() -> dict[str, Any]:
         free_b, total_b = torch.cuda.mem_get_info()
         total_mb = int(total_b / 1024**2)
         free_mb = int(free_b / 1024**2)
-        return {
+        identity = physical_gpu_identity()
+        snapshot: dict[str, Any] = {
             "device_name": torch.cuda.get_device_name(0),
-            "device_index": torch.cuda.current_device(),
             "memory_used_mb": total_mb - free_mb,
             "memory_total_mb": total_mb,
             "memory_free_mb": free_mb,
             "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
         }
+        if identity:
+            snapshot.update(identity)
+        else:
+            snapshot["device_index"] = torch.cuda.current_device()
+        return snapshot
     except Exception:  # noqa: BLE001
         return {}

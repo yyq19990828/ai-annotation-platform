@@ -30,6 +30,7 @@ from aap_backend_runtime import (
     free_gpu_memory,
     is_device_error,
     latch_cpu,
+    physical_gpu_identity,
     versions_payload,
     validate_single_gpu_device_set,
 )
@@ -298,6 +299,7 @@ async def health() -> dict[str, Any]:
         "gpu_temperature_celsius": perf.get("gpu_temperature_celsius"),
         "gpu_power_watts": perf.get("gpu_power_watts"),
     }
+    gpu_info.update(physical_gpu_identity())
     host = {
         "container_cpu_percent": perf.get("container_cpu_percent"),
         "container_memory_percent": perf.get("container_memory_percent"),

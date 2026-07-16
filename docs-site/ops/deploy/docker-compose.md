@@ -600,6 +600,8 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
   "ok": true,
   "gpu": true,
   "gpu_info": {
+    "physical_device_token": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "device_uuid": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     "device_name": "NVIDIA RTX 4060",
     "memory_used_mb": 4280,
     "memory_total_mb": 8188,
@@ -610,6 +612,11 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
   "loaded": true
 }
 ```
+
+验收物理卡映射时优先检查 `physical_device_token`。容器 runtime 可能把宿主卡 1 重映射成
+逻辑 `cuda:0`，因此 Backend 优先从 `NVIDIA_VISIBLE_DEVICES` 报告宿主物理索引或 UUID，
+不会用容器内 logical current device 猜测宿主卡号。完整验收步骤见
+[GPU 显存仲裁验收 Runbook](/ops/runbooks/gpu-arbitration-acceptance)。
 
 各 backend 的 `/metrics`（GPU 利用率/显存/温度/功耗、推理延迟、cache 命中、容器 CPU/内存）由 Prometheus 的 `ml-backends` job **自动发现并抓取**：该 job 用 `http_sd_config` 从 anno-api 的 `/api/v1/internal/metrics-targets` 拉 target，真相源是 `ml_backend_registry` —— **新 backend 在超管注册即被纳入，无需改 `prometheus.yml`**。指标统一为裸名 + `service` label 区分 backend，Grafana 的 `ML Backends` dashboard 据此渲染。backend 在独立 GPU 机、prometheus 不在同网时，改用该 job 里注释好的 static 兜底。`/cache/stats` 仍单独提供更细的 LRU 内部状态。
 

@@ -2,6 +2,42 @@
 
 Dev / ops 用一次性 / 周期性脚本,各自带 `--help`。
 
+## validate_gpu_arbitration
+
+跨 Backend GPU 显存仲裁的非生产验收器。`preflight` 只读采集 PostgreSQL、Redis、backend
+challenge health 与 `nvidia-smi`，并校验 action 与资源域内全部现存 allocation Backend；
+`run` 通过真实 dispatch authority 执行 manifest 中的
+workload，并支持响应丢失、grant 后取消和 health timeout 故障注入；`verify` 从无故障主报告的
+原始快照重算断言，不采信报告中自报的 `passed` 摘要。故障报告在 `run` 进程内完成机器检查，
+当前不作为 `verify` 的输入。
+
+```bash
+cd apps/api
+PYTHONPATH=../_shared/protocol_v2/src:. uv run python \
+  scripts/validate_gpu_arbitration.py preflight \
+  --manifest /tmp/gpu-acceptance/manifest.json \
+  --output /tmp/gpu-acceptance/preflight.json
+
+PYTHONPATH=../_shared/protocol_v2/src:. uv run python \
+  scripts/validate_gpu_arbitration.py run \
+  --manifest /tmp/gpu-acceptance/manifest.json \
+  --run-id acceptance-node-a-01 \
+  --confirm-run-id acceptance-node-a-01 \
+  --output /tmp/gpu-acceptance/run.json
+
+PYTHONPATH=../_shared/protocol_v2/src:. uv run python \
+  scripts/validate_gpu_arbitration.py verify \
+  --scenario single-card-co-residency /tmp/gpu-acceptance/run.json
+```
+
+`run` 拒绝 production，且 `--confirm-run-id` 必须与 `--run-id` 完全一致。它不会迁移数据库、
+修改 rollout mode、repair Redis 或启停服务；但会真实加载、drain、恢复或卸载 manifest 指定的
+backend，必须在隔离维护窗口执行。报告不会写入鉴权 token 或 action 原始业务 body；只记录原始
+manifest 内容摘要，因此 verifier 能校验脱敏后的拓扑/action 元数据，不能脱离原文件还原或复验 body。
+
+完整 manifest、单卡/双卡/跨宿主步骤、阈值与证据边界见
+[GPU 显存仲裁验收 Runbook](../../../docs-site/ops/runbooks/gpu-arbitration-acceptance.md)。
+
 ## backfill_scenes (v0.14.0)
 
 对历史 dataset 补 `scene_id` + `frame_index`(跨 task 帧序列地基)。

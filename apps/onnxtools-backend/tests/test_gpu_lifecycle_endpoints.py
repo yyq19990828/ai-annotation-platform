@@ -139,6 +139,17 @@ def test_health_echoes_only_exact_gpu_challenge(managed_client) -> None:
     assert GPU_HEALTH_CHALLENGE_HEADER not in mismatch.headers
 
 
+def test_health_reports_physical_gpu_selection(managed_client, monkeypatch) -> None:
+    _, client, _ = managed_client
+    monkeypatch.setenv("NVIDIA_VISIBLE_DEVICES", "GPU-physical-a")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+
+    assert client.get("/health").json()["gpu_info"] == {
+        "physical_device_token": "GPU-physical-a",
+        "device_uuid": "GPU-physical-a",
+    }
+
+
 def _workload_headers(
     private_key: Ed25519PrivateKey,
     boot_id: str,

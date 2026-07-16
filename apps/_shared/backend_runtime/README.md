@@ -7,7 +7,7 @@ ML backend 运行时共享的**无状态叶子函数**。单一来源, 避免跨
 
 ## 边界
 
-**包含** (四个纯函数, 同契约、零 per-backend 状态):
+**包含**（同契约、零 per-backend 状态的叶子函数）:
 
 - `fetch_image(file_path, *, timeout=10.0) -> PIL.Image` — 统一 `data:` base64 /
   `http(s)://` presigned URL / 本地绝对路径三种来源, 解码为 RGB `PIL.Image`。
@@ -16,14 +16,17 @@ ML backend 运行时共享的**无状态叶子函数**。单一来源, 避免跨
 - `versions_payload(model_version, backend_version, **extra) -> dict` — 统一 `GET /versions`
   载荷形状 `{"versions": [model_version], "backend_version": ..., **extra}`。
 - `gpu_info_snapshot() -> dict` — torch CUDA context 视角显存快照 (used/total/free MB 等);
-  无 torch / 无 GPU 返回 `{}`。
+  无 torch / 无 GPU 返回 `{}`，并叠加宿主可见的物理卡身份。
+- `physical_gpu_identity() -> dict` — 从 runtime 可见设备配置解析宿主物理卡 token；优先读取
+  `NVIDIA_VISIBLE_DEVICES`，避免把容器内重映射后的逻辑 `cuda:0` 误当宿主卡 0。
 - `validate_single_gpu_device_set()` — backend 启动门禁，拒绝逗号多卡列表和已暴露 GPU 的无界 `all` 可见集合。
 
 **不包含** (见 `docs/plans/archive/2026-06-29-v0.20.3-ml-backend-shared-layer-extraction.md`):
 
 - `model_pool.py` / `observability.py` / FastAPI app 骨架 —— 已各自漂移, 留作复制模板而非共享 import。
-- 各 backend 的 `/health` `gpu_info`: 多叠加 pynvml 整卡视角 + util/温度/功耗 + 自定义
-  device_index 重映射 + 协议嵌套形状, 与 `gpu_info_snapshot` 的通用版差异大, 仍由各自 observability 构造。
+- 各 backend 的 `/health` `gpu_info`: 多叠加 pynvml 整卡视角 + util/温度/功耗 + 协议嵌套形状，
+  与 `gpu_info_snapshot` 的通用版差异大，仍由各自 observability 构造；物理卡 token 则统一复用
+  `physical_gpu_identity()`。
 
 ## 依赖说明
 
@@ -43,5 +46,11 @@ RUN pip install --no-build-isolation -e /app/backend_runtime
 backend 代码:
 
 ```python
-from aap_backend_runtime import fetch_image, free_gpu_memory, versions_payload, gpu_info_snapshot
+from aap_backend_runtime import (
+    fetch_image,
+    free_gpu_memory,
+    gpu_info_snapshot,
+    physical_gpu_identity,
+    versions_payload,
+)
 ```

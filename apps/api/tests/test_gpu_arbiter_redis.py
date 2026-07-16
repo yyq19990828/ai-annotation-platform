@@ -1314,6 +1314,8 @@ async def test_domain_evolution_rejects_oversized_child_domains_before_scanning(
             await raw.llen(keys.backend_queue("backend-a")),
             await raw.hlen(keys.leases("backend-a")),
         )
+        with pytest.raises(GPUArbiterStoreError, match="GPU ledger decode failed"):
+            await first.snapshot(resource_id)
         rejected = await first.evolve_backend_domains(
             resource_id,
             expected_ledger_revision=before.ledger_revision,
@@ -5190,6 +5192,18 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
             card_queue=False,
         )
     ).position == 1
+    backend_queue_snapshot = await first.snapshot(resource_id)
+    assert backend_queue_snapshot.card_queue == ()
+    assert [
+        (
+            ticket.ticket_id,
+            ticket.backend_id,
+            ticket.owner_id,
+            ticket.kind,
+            ticket.membership_epoch,
+        )
+        for ticket in backend_queue_snapshot.backend_queues
+    ] == [("ticket-a", "backend-a", "queue-owner", "backend", 1)]
     assert (
         await first.cancel_queue_ticket(
             resource_id,
@@ -5232,6 +5246,18 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
             card_queue=True,
         )
     ).position == 1
+    card_queue_snapshot = await first.snapshot(resource_id)
+    assert card_queue_snapshot.backend_queues == ()
+    assert [
+        (
+            ticket.ticket_id,
+            ticket.backend_id,
+            ticket.owner_id,
+            ticket.kind,
+            ticket.membership_epoch,
+        )
+        for ticket in card_queue_snapshot.card_queue
+    ] == [("card-ticket", "backend-a", "queue-owner", "card", 1)]
     assert (
         await first.cancel_queue_ticket(
             resource_id,
@@ -5339,6 +5365,36 @@ async def test_queue_ticket_and_transition_owner_require_exact_owner(
         operation="drain",
     )
     assert late_release.status == "owner_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_rejects_queue_ticket_from_future_membership_epoch(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-corrupt-queue-epoch/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    assert (
+        await first.enqueue_backend(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="future-epoch-ticket",
+            owner_id="queue-owner",
+            ttl_ms=30_000,
+        )
+    ).status == "queued"
+    queue_key = first.keys(resource_id).backend_queue("backend-a")
+    raw = Redis.from_url(_redis_url(), decode_responses=True)
+    try:
+        ticket = json.loads(await raw.lindex(queue_key, 0))
+        ticket["membership_epoch"] = "2"
+        await raw.lset(queue_key, 0, json.dumps(ticket, separators=(",", ":")))
+
+        with pytest.raises(GPUArbiterStoreError, match="GPU ledger decode failed"):
+            await first.snapshot(resource_id)
+    finally:
+        await raw.aclose()
 
 
 @pytest.mark.asyncio
@@ -6258,6 +6314,39 @@ async def test_busy_eviction_cancel_rolls_back_with_new_generation_and_leases(
     ).status == "selected"
 
     before_arm = await first.snapshot(resource_id)
+    assert before_arm.transition is not None
+    assert (
+        before_arm.transition["resource_id"],
+        before_arm.transition["backend_id"],
+        before_arm.transition["owner_id"],
+        before_arm.transition["generation"],
+        before_arm.transition["operation"],
+        before_arm.transition["require_idle"],
+        before_arm.transition.get("eviction_branch"),
+    ) == (
+        resource_id,
+        "backend-a",
+        "busy-cancel-owner",
+        "2",
+        "evict",
+        False,
+        None,
+    )
+    keys = first.keys(resource_id)
+    transition_raw = await first._redis.get(keys.transition)
+    assert transition_raw is not None
+    incomplete_transition = json.loads(transition_raw)
+    incomplete_transition.pop("requester_budget_mb")
+    incomplete_raw = json.dumps(incomplete_transition, separators=(",", ":"))
+    await first._redis.set(keys.transition, incomplete_raw, keepttl=True)
+    await first._redis.hset(keys.card, "transition_mirror", incomplete_raw)
+    with pytest.raises(
+        GPUArbiterStoreError, match="GPU eviction transition is incomplete"
+    ):
+        await first.snapshot(resource_id)
+    await first._redis.set(keys.transition, transition_raw, keepttl=True)
+    await first._redis.hset(keys.card, "transition_mirror", transition_raw)
+
     armed = await first.arm_eviction_cancel(
         resource_id,
         backend_id="backend-a",
@@ -6283,6 +6372,14 @@ async def test_busy_eviction_cancel_rolls_back_with_new_generation_and_leases(
     )
     after_arm = await first.snapshot(resource_id)
     assert after_arm.ledger_revision == before_arm.ledger_revision + 1
+    assert after_arm.transition is not None
+    assert after_arm.transition["eviction_branch"] == "cancel"
+    assert await first._redis.pexpire(keys.transition, 30_000)
+    with pytest.raises(
+        GPUArbiterStoreError, match="GPU frozen transition expiry is invalid"
+    ):
+        await first.snapshot(resource_id)
+    assert await first._redis.persist(keys.transition)
     assert (
         await first.release_transition_owner(
             resource_id,

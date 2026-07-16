@@ -145,6 +145,17 @@ class GPURequestLease:
 
 
 @dataclass(frozen=True)
+class GPUQueueTicket:
+    ticket_id: str
+    backend_id: str
+    owner_id: str
+    kind: Literal["backend", "card"]
+    membership_epoch: int
+    enqueued_at_ms: int
+    expires_at_ms: int
+
+
+@dataclass(frozen=True)
 class GPUAdmissionResult:
     status: Literal[
         "admitted",
@@ -412,6 +423,9 @@ class GPUCardSnapshot:
     card_queue_count: int
     backend_queue_count: int
     transition_present: bool
+    card_queue: tuple[GPUQueueTicket, ...] = ()
+    backend_queues: tuple[GPUQueueTicket, ...] = ()
+    transition: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -8137,6 +8151,9 @@ class GPUArbiterStore:
                 ):
                     raise ValueError("backend membership domains are invalid")
                 backend_ids = domains.backend_ids
+                backend_memberships = {
+                    item.backend_id: item for item in domains.backend_memberships
+                }
                 allocation_count = int(
                     await self._call(lambda: self._redis.hlen(keys.allocations))
                 )
@@ -8158,7 +8175,31 @@ class GPUArbiterStore:
                 )
                 leases: list[GPURequestLease] = []
                 lease_counts: dict[str, int] = {}
+                card_queue_count = int(
+                    await self._call(lambda: self._redis.llen(keys.queue))
+                )
+                if not 0 <= card_queue_count <= _MAX_GPU_QUEUE_LENGTH:
+                    raise ValueError("card queue domain exceeds safety limit")
                 backend_queue_counts: dict[str, int] = {}
+                total_queue_count = card_queue_count
+                for backend_id in backend_ids:
+                    queue_count = int(
+                        await self._call(
+                            lambda backend_id=backend_id: self._redis.llen(
+                                keys.backend_queue(backend_id)
+                            )
+                        )
+                    )
+                    if not 0 <= queue_count <= _MAX_GPU_QUEUE_LENGTH:
+                        raise ValueError("backend queue domain exceeds safety limit")
+                    total_queue_count += queue_count
+                    if total_queue_count > _MAX_GPU_QUEUE_LENGTH:
+                        raise ValueError("queue domain exceeds safety limit")
+                    backend_queue_counts[backend_id] = queue_count
+
+                backend_queue_tickets: list[GPUQueueTicket] = []
+                seen_ticket_ids: set[str] = set()
+                queue_window_changed = False
                 for backend_id in backend_ids:
                     lease_count = int(
                         await self._call(
@@ -8183,18 +8224,60 @@ class GPUArbiterStore:
                                 expected_lease_id=lease_id,
                             )
                         )
-                    backend_queue_counts[backend_id] = int(
+                    queue_count = backend_queue_counts[backend_id]
+                    backend_queue_raw = (
                         await self._call(
-                            lambda backend_id=backend_id: self._redis.llen(
-                                keys.backend_queue(backend_id)
+                            lambda backend_id=backend_id, queue_count=queue_count: (
+                                self._redis.lrange(
+                                    keys.backend_queue(backend_id), 0, queue_count - 1
+                                )
                             )
                         )
+                        if queue_count
+                        else []
                     )
-                card_queue_count = int(
-                    await self._call(lambda: self._redis.llen(keys.queue))
+                    if len(backend_queue_raw) != queue_count:
+                        queue_window_changed = True
+                        break
+                    for raw in backend_queue_raw:
+                        ticket = self._queue_ticket_from_json(
+                            raw,
+                            expected_kind="backend",
+                            expected_backend_id=backend_id,
+                            backend_memberships=backend_memberships,
+                        )
+                        if ticket.ticket_id in seen_ticket_ids:
+                            raise ValueError("queue ticket identity is duplicated")
+                        seen_ticket_ids.add(ticket.ticket_id)
+                        backend_queue_tickets.append(ticket)
+                if queue_window_changed:
+                    continue
+                card_queue_raw = (
+                    await self._call(
+                        lambda: self._redis.lrange(keys.queue, 0, card_queue_count - 1)
+                    )
+                    if card_queue_count
+                    else []
                 )
+                if len(card_queue_raw) != card_queue_count:
+                    continue
+                card_queue_tickets: list[GPUQueueTicket] = []
+                for raw in card_queue_raw:
+                    ticket = self._queue_ticket_from_json(
+                        raw,
+                        expected_kind="card",
+                        expected_backend_id=None,
+                        backend_memberships=backend_memberships,
+                    )
+                    if ticket.ticket_id in seen_ticket_ids:
+                        raise ValueError("queue ticket identity is duplicated")
+                    seen_ticket_ids.add(ticket.ticket_id)
+                    card_queue_tickets.append(ticket)
                 transition_raw = await self._call(
                     lambda: self._redis.get(keys.transition)
+                )
+                transition_pttl_ms = int(
+                    await self._call(lambda: self._redis.pttl(keys.transition))
                 )
                 card_after = await self._call(lambda: self._redis.hgetall(keys.card))
                 if not card_after or card_after.get("resource_id") != resource_id:
@@ -8208,11 +8291,24 @@ class GPUArbiterStore:
                 ):
                     continue
                 revision_after = int(card_after["ledger_revision"])
+                card_queue_count_after = int(
+                    await self._call(lambda: self._redis.llen(keys.queue))
+                )
+                backend_queue_counts_after = {
+                    backend_id: int(
+                        await self._call(
+                            lambda backend_id=backend_id: self._redis.llen(
+                                keys.backend_queue(backend_id)
+                            )
+                        )
+                    )
+                    for backend_id in backend_ids
+                }
                 if (
-                    card_queue_count + sum(backend_queue_counts.values())
-                    > _MAX_GPU_QUEUE_LENGTH
+                    card_queue_count_after != card_queue_count
+                    or backend_queue_counts_after != backend_queue_counts
                 ):
-                    raise ValueError("queue domain exceeds safety limit")
+                    continue
                 leases_by_owner = {
                     (lease.backend_id, lease.lease_id): lease for lease in leases
                 }
@@ -8283,69 +8379,31 @@ class GPUArbiterStore:
                     int(redis_time[1]) // 1000
                 )
                 transition_mirror = card_after["transition_mirror"]
+                transition_document: dict[str, Any] | None = None
                 if transition_raw is not None:
                     if transition_raw != transition_mirror:
                         raise GPUArbiterStoreError(
                             "GPU transition mirror drift detected"
                         )
-                    transition_document = json.loads(transition_raw)
-                    if not isinstance(transition_document, dict):
-                        raise GPUArbiterStoreError("GPU transition document is invalid")
-                    if "eviction_branch" in transition_document and (
-                        transition_document["eviction_branch"]
-                        not in {"cancel", "unload"}
-                    ):
-                        raise GPUArbiterStoreError("GPU eviction branch is invalid")
-                    transition_expires_at_ms = transition_document.get("expires_at_ms")
-                    transition_hard_deadline_ms = transition_document.get(
-                        "hard_deadline_ms"
+                    transition_document = self._transition_from_json(
+                        transition_raw,
+                        expected_resource_id=resource_id,
+                        backend_memberships=backend_memberships,
                     )
-                    if (
-                        not isinstance(transition_expires_at_ms, int)
-                        or isinstance(transition_expires_at_ms, bool)
-                        or transition_expires_at_ms < 1
-                        or (
-                            "hard_deadline_ms" in transition_document
-                            and (
-                                not isinstance(transition_hard_deadline_ms, int)
-                                or isinstance(transition_hard_deadline_ms, bool)
-                                or transition_hard_deadline_ms < 1
-                                or transition_expires_at_ms
-                                > transition_hard_deadline_ms
+                    if "eviction_branch" in transition_document:
+                        if transition_pttl_ms != -1:
+                            raise GPUArbiterStoreError(
+                                "GPU frozen transition expiry is invalid"
                             )
-                        )
-                    ):
-                        raise GPUArbiterStoreError("GPU transition deadline is invalid")
+                    elif transition_pttl_ms <= 0:
+                        raise GPUArbiterStoreError("GPU transition expiry is invalid")
                 elif transition_mirror:
-                    mirrored_transition = json.loads(transition_mirror)
-                    if not isinstance(mirrored_transition, dict):
-                        raise GPUArbiterStoreError(
-                            "GPU transition key missing before expiry"
-                        )
-                    if "eviction_branch" in mirrored_transition and (
-                        mirrored_transition["eviction_branch"]
-                        not in {"cancel", "unload"}
-                    ):
-                        raise GPUArbiterStoreError("GPU eviction branch is invalid")
-                    mirrored_expires_at_ms = mirrored_transition.get("expires_at_ms")
-                    mirrored_hard_deadline_ms = mirrored_transition.get(
-                        "hard_deadline_ms"
+                    mirrored_transition = self._transition_from_json(
+                        transition_mirror,
+                        expected_resource_id=resource_id,
+                        backend_memberships=backend_memberships,
                     )
-                    if (
-                        not isinstance(mirrored_expires_at_ms, int)
-                        or isinstance(mirrored_expires_at_ms, bool)
-                        or mirrored_expires_at_ms < 1
-                        or (
-                            "hard_deadline_ms" in mirrored_transition
-                            and (
-                                not isinstance(mirrored_hard_deadline_ms, int)
-                                or isinstance(mirrored_hard_deadline_ms, bool)
-                                or mirrored_hard_deadline_ms < 1
-                                or mirrored_expires_at_ms > mirrored_hard_deadline_ms
-                            )
-                        )
-                    ):
-                        raise GPUArbiterStoreError("GPU transition deadline is invalid")
+                    mirrored_expires_at_ms = mirrored_transition["expires_at_ms"]
                     if (
                         "eviction_branch" in mirrored_transition
                         or mirrored_expires_at_ms > redis_now_ms
@@ -8353,6 +8411,10 @@ class GPUArbiterStore:
                         raise GPUArbiterStoreError(
                             "GPU transition key missing before expiry"
                         )
+                elif transition_pttl_ms != -2:
+                    raise GPUArbiterStoreError(
+                        "GPU transition key changed during snapshot"
+                    )
                 return GPUCardSnapshot(
                     resource_id=resource_id,
                     observed_at_ms=redis_now_ms,
@@ -8377,6 +8439,9 @@ class GPUArbiterStore:
                     card_queue_count=card_queue_count,
                     backend_queue_count=sum(backend_queue_counts.values()),
                     transition_present=transition_raw is not None,
+                    card_queue=tuple(card_queue_tickets),
+                    backend_queues=tuple(backend_queue_tickets),
+                    transition=transition_document,
                 )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise GPUArbiterStoreError("GPU ledger decode failed") from exc
@@ -8572,6 +8637,211 @@ class GPUArbiterStore:
             hard_deadline_ms=hard_deadline_ms,
         )
 
+    @staticmethod
+    def _queue_ticket_from_json(
+        raw: str,
+        *,
+        expected_kind: Literal["backend", "card"],
+        expected_backend_id: str | None,
+        backend_memberships: Mapping[str, GPUBackendDomainMember],
+    ) -> GPUQueueTicket:
+        value = json.loads(raw)
+        expected_fields = {
+            "ticket_id",
+            "backend_id",
+            "owner_id",
+            "kind",
+            "membership_epoch",
+            "enqueued_at_ms",
+            "expires_at_ms",
+        }
+        if not isinstance(value, dict) or set(value) != expected_fields:
+            raise ValueError("queue ticket document is invalid")
+        backend_id = _validate_nonempty(
+            value["backend_id"], "backend_id", max_length=128
+        )
+        membership = backend_memberships.get(backend_id)
+        if membership is None or (
+            expected_backend_id is not None and backend_id != expected_backend_id
+        ):
+            raise ValueError("queue ticket backend identity mismatch")
+        if value["kind"] != expected_kind:
+            raise ValueError("queue ticket kind mismatch")
+        raw_membership_epoch = value["membership_epoch"]
+        if (
+            not isinstance(raw_membership_epoch, str)
+            or _CANONICAL_POSITIVE_INT64_RE.fullmatch(raw_membership_epoch) is None
+        ):
+            raise ValueError("queue ticket membership epoch is invalid")
+        membership_epoch = _validate_membership_epoch(int(raw_membership_epoch))
+        membership_epoch_exact = membership_epoch == membership.membership_epoch
+        retiring_predecessor = (
+            membership.state == "retiring"
+            and membership_epoch < membership.membership_epoch
+        )
+        if not (membership_epoch_exact or retiring_predecessor):
+            raise ValueError("queue ticket membership identity mismatch")
+        enqueued_at_ms = _validate_positive_int(
+            value["enqueued_at_ms"], "enqueued_at_ms"
+        )
+        expires_at_ms = _validate_positive_int(value["expires_at_ms"], "expires_at_ms")
+        if enqueued_at_ms > expires_at_ms:
+            raise ValueError("queue ticket deadlines are invalid")
+        return GPUQueueTicket(
+            ticket_id=_validate_nonempty(
+                value["ticket_id"], "ticket_id", max_length=256
+            ),
+            backend_id=backend_id,
+            owner_id=_validate_nonempty(value["owner_id"], "owner_id", max_length=256),
+            kind=expected_kind,
+            membership_epoch=membership_epoch,
+            enqueued_at_ms=enqueued_at_ms,
+            expires_at_ms=expires_at_ms,
+        )
+
+    @staticmethod
+    def _transition_from_json(
+        raw: str,
+        *,
+        expected_resource_id: str,
+        backend_memberships: Mapping[str, GPUBackendDomainMember],
+    ) -> dict[str, Any]:
+        value = json.loads(raw)
+        required_fields = {
+            "resource_id",
+            "backend_id",
+            "owner_id",
+            "generation",
+            "operation",
+            "require_idle",
+            "created_at_ms",
+            "expires_at_ms",
+        }
+        optional_fields = {
+            "hard_deadline_ms",
+            "eviction_branch",
+            "requester_backend_id",
+            "requester_membership_epoch",
+            "requester_budget_mb",
+            "requester_eviction_priority",
+            "requester_card_ticket_id",
+            "requester_queue_owner_id",
+            "victim_membership_epoch",
+            "victim_source_generation",
+        }
+        if (
+            not isinstance(value, dict)
+            or not required_fields.issubset(value)
+            or not set(value).issubset(required_fields | optional_fields)
+            or value["resource_id"] != expected_resource_id
+        ):
+            raise GPUArbiterStoreError("GPU transition document is invalid")
+        backend_id = _validate_nonempty(
+            value["backend_id"], "backend_id", max_length=128
+        )
+        victim_membership = backend_memberships.get(backend_id)
+        if victim_membership is None:
+            raise ValueError("transition backend identity mismatch")
+        _validate_nonempty(value["owner_id"], "owner_id", max_length=256)
+        _validate_generation(value["generation"])
+        _validate_nonempty(value["operation"], "operation", max_length=256)
+        if not isinstance(value["require_idle"], bool):
+            raise ValueError("transition require_idle is invalid")
+        try:
+            created_at_ms = _validate_positive_int(
+                value["created_at_ms"], "created_at_ms"
+            )
+            expires_at_ms = _validate_positive_int(
+                value["expires_at_ms"], "expires_at_ms"
+            )
+        except ValueError as exc:
+            raise GPUArbiterStoreError("GPU transition deadline is invalid") from exc
+        if created_at_ms > expires_at_ms:
+            raise GPUArbiterStoreError("GPU transition deadline is invalid")
+        hard_deadline_ms = value.get("hard_deadline_ms")
+        if hard_deadline_ms is not None:
+            try:
+                hard_deadline_ms = _validate_positive_int(
+                    hard_deadline_ms, "hard_deadline_ms"
+                )
+            except ValueError as exc:
+                raise GPUArbiterStoreError(
+                    "GPU transition deadline is invalid"
+                ) from exc
+            if expires_at_ms > hard_deadline_ms:
+                raise GPUArbiterStoreError("GPU transition deadline is invalid")
+        branch = value.get("eviction_branch")
+        if "eviction_branch" in value and branch not in {"cancel", "unload"}:
+            raise GPUArbiterStoreError("GPU eviction branch is invalid")
+        eviction_fields = optional_fields - {"eviction_branch"}
+        present_eviction_fields = eviction_fields.intersection(value)
+        if (present_eviction_fields or "eviction_branch" in value) and (
+            present_eviction_fields != eviction_fields
+        ):
+            raise GPUArbiterStoreError("GPU eviction transition is incomplete")
+        if present_eviction_fields and value["operation"] != GPU_EVICTION_OPERATION:
+            raise GPUArbiterStoreError("GPU eviction transition operation is invalid")
+        requester_backend_id = value.get("requester_backend_id")
+        if requester_backend_id is not None:
+            _validate_nonempty(
+                requester_backend_id, "requester_backend_id", max_length=128
+            )
+            requester_membership = backend_memberships.get(requester_backend_id)
+            if requester_membership is None or requester_backend_id == backend_id:
+                raise ValueError("transition requester identity mismatch")
+        for field in (
+            "requester_membership_epoch",
+            "victim_membership_epoch",
+            "victim_source_generation",
+        ):
+            raw_generation = value.get(field)
+            if raw_generation is not None:
+                _validate_generation(raw_generation)
+        if present_eviction_fields:
+            if (
+                int(value["victim_membership_epoch"])
+                != victim_membership.membership_epoch
+            ):
+                raise ValueError("transition victim membership identity mismatch")
+            assert requester_backend_id is not None
+            requester_membership = backend_memberships[requester_backend_id]
+            if (
+                int(value["requester_membership_epoch"])
+                != requester_membership.membership_epoch
+            ):
+                raise ValueError("transition requester membership identity mismatch")
+        requester_budget_mb = value.get("requester_budget_mb")
+        if requester_budget_mb is not None:
+            _validate_positive_int(requester_budget_mb, "requester_budget_mb")
+        requester_eviction_priority = value.get("requester_eviction_priority")
+        if requester_eviction_priority is not None:
+            _validate_redis_safe_int(
+                requester_eviction_priority, "requester_eviction_priority"
+            )
+        requester_card_ticket_id = value.get("requester_card_ticket_id")
+        requester_queue_owner_id = value.get("requester_queue_owner_id")
+        if (requester_card_ticket_id is None) != (requester_queue_owner_id is None):
+            raise ValueError("transition requester queue identity is incomplete")
+        if requester_card_ticket_id is not None:
+            if not isinstance(requester_card_ticket_id, str) or not isinstance(
+                requester_queue_owner_id, str
+            ):
+                raise ValueError("transition requester queue identity is invalid")
+            if bool(requester_card_ticket_id) != bool(requester_queue_owner_id):
+                raise ValueError("transition requester queue identity is incomplete")
+            if requester_card_ticket_id:
+                _validate_nonempty(
+                    requester_card_ticket_id,
+                    "requester_card_ticket_id",
+                    max_length=256,
+                )
+                _validate_nonempty(
+                    requester_queue_owner_id,
+                    "requester_queue_owner_id",
+                    max_length=256,
+                )
+        return dict(value)
+
 
 __all__ = [
     "GPU_COLD_ADMISSION_OPERATION",
@@ -8587,6 +8857,7 @@ __all__ = [
     "GPUCardSnapshot",
     "GPULeaseMutationResult",
     "GPUProofResetContext",
+    "GPUQueueTicket",
     "GPUQueueResult",
     "GPUReconcileLeaseCleanup",
     "GPUReconcileResult",

@@ -635,8 +635,18 @@ release；它只能操作自己的 lease，不能更新 allocation、transition 
   消费、严格 residency 证明、retired child/tombstone 两阶段 GC、逐资源观测与 60 秒 bootstrap/repair worker；
   该阶段完成不改变 effective mode。
 - P4：全部平台派发入口收口，首个 `enforce` 仅驱逐空闲 victim。
-- P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。
+- P5：启用有界 drain、cooldown、防抖以及单卡、多卡和多主机同号卡验证。验收工具门先交付
+  严格 manifest、只读 preflight、非生产真实 authority runner、软件故障注入与机器证据重算；
+  工具通过不等于实物通过，本机单卡/双卡与真实第二宿主同号卡仍是独立门禁。
 - P6：按 `off -> observe -> 单卡 enforce -> 共享卡逐卡灰度` 推进，并验证回滚和生产网络限制。
+
+P5 的机器证据必须绑定 exact node/resource/backend/generation 与宿主物理卡 token。容器 runtime
+把宿主卡重映射为逻辑 `cuda:0` 时，完整 GPU 卡验收以 `NVIDIA_VISIBLE_DEVICES` 中的物理索引或
+GPU UUID 为准，不采信逻辑 current device；MIG 资源另做专项验收，不由卡级 runner 关闭门禁。
+无故障主报告从原始 PostgreSQL、Redis、challenge health、`nvidia-smi` 和 HTTP 窗口重算结论；
+故障报告只在注入现场由 `run` 计算，不进入外部 verifier。报告会脱敏 action body，原 manifest
+内容摘要用于关联原文件，不作为签名、body 复验证明或外部信任锚。90% 显存回收率只适用于隔离
+full-unload 证据，requester 仍驻留的跨 Backend 驱逐不得伪装成已执行该阈值。
 
 P1–P5 的对应验收未通过前不得开启 `enforce`。ONNXTools 在真实运行实例与完整生命周期契约验证完成前保持
 non-evictable，不进入 enforce allowlist。

@@ -11,6 +11,7 @@ from aap_backend_runtime.device import (
 from aap_backend_runtime.gpu import (
     free_gpu_memory,
     gpu_info_snapshot,
+    physical_gpu_identity,
     validate_single_gpu_device_set,
 )
 from aap_backend_runtime.image import fetch_image
@@ -25,6 +26,7 @@ __all__ = [
     "gpu_info_snapshot",
     "is_device_error",
     "latch_cpu",
+    "physical_gpu_identity",
     "require_gpu_device",
     "validate_single_gpu_device_set",
     "versions_payload",

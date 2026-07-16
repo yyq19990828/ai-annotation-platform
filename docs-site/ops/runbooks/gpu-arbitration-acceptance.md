@@ -1,0 +1,205 @@
+---
+title: Runbook：GPU 显存仲裁验收
+audience: [ops, developer]
+type: how-to
+status: active
+last_reviewed: 2026-07-16
+---
+
+# Runbook：GPU 显存仲裁验收
+
+本流程用于在隔离的非生产 GPU 节点验证跨 Backend 显存仲裁。验收器会真实执行 workload，
+可能触发模型加载、drain、恢复和卸载；不要在承载生产流量的节点运行。
+
+## 验收边界
+
+验收分成三组，必须分别保留证据：
+
+1. 单机单卡：同卡多 Backend 共驻、按预算驱逐和拒绝，以及 victim 的完整状态跃迁。
+2. 单机多卡：不同物理资源上的真实 HTTP 执行至少重叠 500 ms，且一张卡的队列、transition
+   或故障不能污染另一张卡。
+3. 跨宿主同号卡：恰好两台主机各提交一份 `cross-host` 报告；两者使用不同 node/resource
+   domain、相同物理卡索引，并用 PostgreSQL 时钟证明执行窗口重叠。
+
+`preflight` 是只读操作。`run` 直接进入真实 dispatch authority，因为生产 effective enforce
+在完成灰度门禁前仍关闭；它不会修改 rollout mode、迁移数据库、repair Redis 或启停服务。
+
+## 前置条件
+
+- 使用独立维护窗口，暂停与验收 Backend、GPU resource 相关的其他任务。
+- PostgreSQL schema 与当前代码 head 一致，Redis 账本为 ready，目标 membership 为 active。
+- lifecycle signer 已配置；Backend `/setup` 与 challenge-bound `/health` 能证明 exact
+  backend/resource/boot/control identity。
+- `nvidia-smi --query-gpu=index,uuid,memory.used,memory.total` 可用。
+- 每个 Backend 的 `/health.gpu_info` 必须给出物理身份。容器运行时发生卡号重映射时，
+  `NVIDIA_VISIBLE_DEVICES` 优先于 `CUDA_VISIBLE_DEVICES`；完整 GPU UUID 对应 `device_uuid`，
+  物理索引对应 `physical_device_token=index:N` 与 `device_index=N`。本卡级 runner 只关闭完整
+  GPU 的单卡/多卡门禁；共享 helper 可以报告 `mig_uuid`，但 MIG 实例不能用本流程代替专项验收。
+- manifest action Backend 与资源域内每个现存 allocation Backend 都已注册到声明的唯一
+  `gpu_resource_id`；preflight 会逐一核对 durable fence、challenge health、物理卡身份、预算和并发参数，
+  任一存量 Backend 不可信都不会执行 workload。
+
+先创建一个仓库外证据目录，避免把运行产物混入源码：
+
+```bash
+install -d -m 700 /tmp/aap-gpu-acceptance
+```
+
+## 编写 manifest
+
+manifest 使用严格 JSON，拒绝额外字段。下面示例验证同一物理卡上的两个 Backend 共驻：
+
+```json
+{
+  "schema_version": 1,
+  "cohort_id": "gpu-acceptance-20260716",
+  "node_id": "gpu-node-a",
+  "scenario": "single-card-co-residency",
+  "resources": [
+    {
+      "resource_id": "gpu-node-a/GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "gpu_uuid": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    }
+  ],
+  "actions": [
+    {
+      "id": "warmup-a",
+      "role": "requester",
+      "backend_id": "11111111-1111-4111-8111-111111111111",
+      "resource_id": "gpu-node-a/GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "operation": "warmup",
+      "body": {},
+      "timeout_seconds": 600
+    },
+    {
+      "id": "warmup-b",
+      "role": "peer",
+      "backend_id": "22222222-2222-4222-8222-222222222222",
+      "resource_id": "gpu-node-a/GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "operation": "warmup",
+      "body": {},
+      "timeout_seconds": 600
+    }
+  ]
+}
+```
+
+支持的 `scenario` 为 `single-card-co-residency`、`single-card-eviction`、`dual-card` 和
+`cross-host`。操作支持 `predict`、`predict_interactive`、`warmup`、`reload`；真实验收应选择
+会覆盖目标模型池的业务 body。`dual-card` 在一份 manifest 中声明至少两张卡；`cross-host`
+则每台主机各用一份只声明本机一张卡的 manifest，并复用相同 `cohort_id`。
+
+## 执行与验证
+
+在 API 虚拟环境中运行：
+
+```bash
+cd apps/api
+export PYTHONPATH=../_shared/protocol_v2/src:.
+
+uv run python scripts/validate_gpu_arbitration.py preflight \
+  --manifest /tmp/aap-gpu-acceptance/node-a.json \
+  --output /tmp/aap-gpu-acceptance/node-a-preflight.json
+
+uv run python scripts/validate_gpu_arbitration.py run \
+  --manifest /tmp/aap-gpu-acceptance/node-a.json \
+  --run-id gpu-node-a-01 \
+  --confirm-run-id gpu-node-a-01 \
+  --output /tmp/aap-gpu-acceptance/node-a-run.json
+
+uv run python scripts/validate_gpu_arbitration.py verify \
+  --scenario single-card-co-residency \
+  /tmp/aap-gpu-acceptance/node-a-run.json \
+  --output /tmp/aap-gpu-acceptance/single-card-verify.json
+```
+
+双卡验收只接受一份 `dual-card` 报告：
+
+```bash
+uv run python scripts/validate_gpu_arbitration.py verify \
+  --scenario dual-card /tmp/aap-gpu-acceptance/dual-card-run.json
+```
+
+跨宿主验收只接受恰好两份报告：
+
+```bash
+uv run python scripts/validate_gpu_arbitration.py verify \
+  --scenario cross-host \
+  /tmp/aap-gpu-acceptance/node-a-cross-host.json \
+  /tmp/aap-gpu-acceptance/node-b-cross-host.json
+```
+
+退出码 `0` 表示通过，`1` 表示证据验证失败，`2` 表示安全或环境前置条件阻断。
+单卡 `verify` 必须分别选择 `single-card-co-residency` 或 `single-card-eviction`，每次通过只表示
+该子场景的证据一致；容量拒绝证据及三个子场景的组合复核仍属于 B，任何单份报告都不能关闭 B 门禁。
+
+## 故障注入
+
+每次故障注入使用新的 `run-id`，且一次只命中一个目标：
+
+```bash
+# fault-target 是 action id
+uv run python scripts/validate_gpu_arbitration.py run \
+  --manifest /tmp/aap-gpu-acceptance/node-a.json \
+  --run-id response-lost-01 --confirm-run-id response-lost-01 \
+  --fault response-lost-after-http --fault-target warmup-a \
+  --output /tmp/aap-gpu-acceptance/response-lost.json
+
+# fault-target 是 action id
+uv run python scripts/validate_gpu_arbitration.py run \
+  --manifest /tmp/aap-gpu-acceptance/node-a.json \
+  --run-id cancel-01 --confirm-run-id cancel-01 \
+  --fault cancel-after-grant --fault-target warmup-a \
+  --output /tmp/aap-gpu-acceptance/cancel.json
+
+# fault-target 是 backend UUID
+uv run python scripts/validate_gpu_arbitration.py run \
+  --manifest /tmp/aap-gpu-acceptance/node-a.json \
+  --run-id health-timeout-01 --confirm-run-id health-timeout-01 \
+  --fault health-timeout \
+  --fault-target 11111111-1111-4111-8111-111111111111 \
+  --output /tmp/aap-gpu-acceptance/health-timeout.json
+```
+
+传输结果不确定时，exact target allocation 必须继续保守计费为 Resident 或 Unknown，且只允许
+exact resource/backend/generation 出现 uncertain/stale lease。health timeout 不得改变 victim 的
+完整 allocation。非目标卡和 peer Backend 必须保持可执行且最终真值一致。
+
+故障报告的检查由 `run` 在注入现场从内存中的 exact fault target 与原始快照计算。当前外部
+`verify` 有意只接受 `faults=[]` 的无故障主报告；故障证据应连同原 manifest、节点日志和原始报告
+一起归档，不能拿来替代单卡、双卡或跨宿主的正常通过报告。
+
+## 固定阈值与证据解释
+
+- 稳定显存窗口：连续 5 个样本、间隔 0.5 秒，同卡最大波动不超过 64 MiB。
+- 并行窗口：不同资源或不同主机的真实 HTTP 执行重叠至少 500 ms。跨宿主报告会用开始、
+  结束两次 PostgreSQL 时钟探针的完整 RTT 向内收缩 HTTP 区间，只接受保守重叠下界。
+- 显存回收率下限：90%，只适用于隔离的 full-unload 生命周期证据。跨 Backend 驱逐完成后
+  requester 仍驻留，整卡显存不会回到空卡基线，因此常规 co-residency/eviction run 不执行该断言；
+  报告的 `threshold_applicability` 会明确标记这一边界。
+
+报告包含脱敏 manifest、原 manifest 内容摘要、数据库控制窗口、Redis
+allocation/lease/queue/transition、challenge health、`nvidia-smi`、HTTP 执行窗口、故障命中与
+清理结果。对于无故障主报告，`verify` 会从原始快照重算全部主断言，并拒绝阈值、脱敏 manifest
+拓扑/action 元数据或摘要字段漂移。action 原始业务 body 不写入报告，因此脱离原 manifest 时只能
+检查其摘要格式，不能独立证明 body 未被替换；内容摘要也不是签名或外部信任锚。需要防止人为
+伪造时，应同时保留两台运行主机的原 manifest、原始报告、系统日志和只读对象存储审计记录。
+
+## 收尾
+
+确认报告中的 `runtime_ephemera_clean` 已通过，且不存在遗留 lease、ticket、queue 或 transition。
+验收器只清理自己创建的 HTTP client、采样器与子进程，不会删除 Redis namespace 或用户数据。
+归档所需证据后删除临时目录：
+
+```bash
+rm -rf /tmp/aap-gpu-acceptance
+```
+
+任何 `blocked`、Unknown、物理身份不一致或跨卡污染都必须先排障；不得把对应资源提升到 enforce。
+
+## 相关文档
+
+- [生产 Docker Compose 部署](/ops/deploy/docker-compose)
+- [ML Backend 不可用](/ops/runbooks/ml-backend-down)
+- [ML Backend 协议](/dev/reference/ml-backend-protocol)
+- [GPU 显存仲裁 ADR](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration)
