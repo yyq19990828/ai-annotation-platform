@@ -981,19 +981,35 @@ def _managed_transition_residency(
     return payload
 
 
-def _drain_ack_payload(*, cancelled: bool = False) -> dict:
+def _drain_ack_payload(
+    *,
+    cancelled: bool = False,
+    active_requests: int = 0,
+    builders: int = 0,
+    borrowers: int = 0,
+) -> dict:
+    residency = _managed_transition_residency(
+        generation="10" if cancelled else "9",
+        state="resident" if cancelled else "draining",
+        gpu_loaded=True,
+        draining=not cancelled,
+    )
+    residency.update(
+        {
+            "active_requests": active_requests,
+            "builders": builders,
+            "borrowers": borrowers,
+        }
+    )
     return {
         "ok": True,
         "generation": "10" if cancelled else "9",
         "draining": not cancelled,
-        "active_requests": 0,
-        "ready_to_unload": not cancelled,
-        "residency": _managed_transition_residency(
-            generation="10" if cancelled else "9",
-            state="resident" if cancelled else "draining",
-            gpu_loaded=True,
-            draining=not cancelled,
+        "active_requests": active_requests,
+        "ready_to_unload": bool(
+            not cancelled and active_requests == 0 and builders == 0 and borrowers == 0
         ),
+        "residency": residency,
     }
 
 
@@ -1112,6 +1128,49 @@ async def test_managed_transition_uses_generation_token_pair_outside_dispatch(
     assert grant.outcome is not None
     assert grant.outcome.kind == "response_received"
     assert grant.outcome.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("active_requests", "builders", "borrowers"),
+    (
+        (1, 0, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+    ),
+)
+@pytest.mark.asyncio
+async def test_lifecycle_drain_accepts_strict_busy_ack(
+    monkeypatch,
+    active_requests: int,
+    builders: int,
+    borrowers: int,
+) -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_drain_ack_payload(
+                active_requests=active_requests,
+                builders=builders,
+                borrowers=borrowers,
+            ),
+        )
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    grant = GPUDispatchGrant(
+        generation="9",
+        admission_token="signed-transition-token",
+    )
+
+    response = await MLBackendClient(_backend()).lifecycle_drain(grant)
+
+    assert response.ready_to_unload is False
+    assert (
+        response.active_requests,
+        response.residency.builders,
+        response.residency.borrowers,
+    ) == (active_requests, builders, borrowers)
+    assert grant.outcome is not None
+    assert grant.outcome.kind == "response_received"
 
 
 @pytest.mark.asyncio

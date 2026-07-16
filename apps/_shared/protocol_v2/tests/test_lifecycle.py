@@ -537,6 +537,45 @@ def test_transition_response_models_round_trip() -> None:
     assert reset.model_dump(mode="json")["unloaded_count"] == 2
 
 
+@pytest.mark.parametrize(
+    ("active_requests", "builders", "borrowers"),
+    (
+        (1, 0, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+    ),
+)
+def test_drain_response_parser_accepts_each_busy_activity_domain(
+    active_requests: int,
+    builders: int,
+    borrowers: int,
+) -> None:
+    payload = DrainTransitionResponse(
+        generation="43",
+        draining=True,
+        active_requests=active_requests,
+        ready_to_unload=False,
+        residency=_residency(
+            state="draining",
+            draining=True,
+            evictable=False,
+            generation="43",
+            active_requests=active_requests,
+            builders=builders,
+            borrowers=borrowers,
+        ),
+    ).model_dump(mode="json")
+
+    parsed = parse_drain_transition_response_json(json.dumps(payload))
+
+    assert parsed.ready_to_unload is False
+    assert (
+        parsed.active_requests,
+        parsed.residency.builders,
+        parsed.residency.borrowers,
+    ) == (active_requests, builders, borrowers)
+
+
 def _legacy_mode_response_payload() -> dict:
     response = LifecycleModeResponse(
         gate="legacy",

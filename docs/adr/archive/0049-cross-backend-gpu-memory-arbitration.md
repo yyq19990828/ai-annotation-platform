@@ -533,6 +533,21 @@ Draining→Resident；它保留原 `not_evict_before_ms`，响应丢失重放只
 这些原语本身不授权 authority 主动选择 busy victim；durable cancel generation、RESUME token、fresh health
 证明与 cancellation-safe 编排必须完成后才能接线。
 
+busy-capable victim subject 不把“忙”误作身份放宽：它仍要求 exact fresh challenge、managed
+lifecycle capability 摘要、active membership、registry claim、boot、source generation、control/runtime epoch、
+resource identity 与 Resident + `gpu_loaded=true` + `evictable=true` 完整成立，但允许
+active/borrower 仍非零，也允许读取时恰好已全部清零。subject 冻结排序后的 pool-id 集合，
+后续 drain/unload health 必须 exact match，防止省略仍驻留的 pool 后伪造完整证明。
+
+drain 后的 backend 域等待使用只读三态分类。每次读取在单个 MVCC 快照内联合
+membership、durable fence、registry health 与数据库时钟，不取整卡 advisory/row lock，也不写
+PostgreSQL 或 Redis。只有 exact drain generation、challenge、capability、boot/control/identity、pool-id
+集合以及 `state=draining` / `draining=true` / `gpu_loaded=true` / `evictable=false` 均成立时，
+才可按 active/builder/borrower 任一非零分类为 `draining_busy`；三者全零且所有 pool
+residency 均可读时才是 `ready_to_unload`。任一 schema、时钟、身份、代际或 pool 证据不完整
+只能得到 `uncertain`。该结果仅证明 backend 域；后续 authority 仍必须独立证明 Redis lease 为零，
+并在真正 Draining→Unloading CAS 中再次复验 exact owner/generation。
+
 drain 推进 generation 后，旧 generation 的合法在途 workload 仍可凭自己的 lease owner token heartbeat 和
 release；它只能操作自己的 lease，不能更新 allocation、transition 或 LRU。
 

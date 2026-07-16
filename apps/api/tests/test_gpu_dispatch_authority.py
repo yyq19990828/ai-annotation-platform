@@ -185,9 +185,11 @@ def _idle_eviction_subject(
         boot_id=f"boot-{backend_id}",
         generation=allocation.generation,
         generation_high_water=int(allocation.generation),
+        pool_ids=("models",),
         control_epoch="5",
         runtime_epoch="2",
         challenge=challenge,
+        require_idle=True,
         db_now=datetime.now(UTC),
     )
 
@@ -208,9 +210,11 @@ def _prepared_idle_eviction_subject(
         boot_id=subject.boot_id,
         source_generation=subject.generation,
         generation=str(int(subject.generation) + 1),
+        pool_ids=subject.pool_ids,
         control_epoch=subject.control_epoch,
         runtime_epoch=subject.runtime_epoch,
         token_expires_at=token_expires_at,
+        require_idle=subject.require_idle,
         db_now=subject.db_now,
     )
 

@@ -26,7 +26,9 @@ from app.config import Settings, settings
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
+from app.services import gpu_arbiter as gpu_arbiter_service
 from app.services.gpu_arbiter import (
+    GPUBusyEvictionRuntimeSubjectError,
     GPUColdRuntimeSubjectError,
     GPUDispatchRequest,
     GPUIdleEvictionRuntimeSubjectError,
@@ -41,7 +43,9 @@ from app.services.gpu_arbiter import (
     commit_gpu_proof_reset_from_health,
     prepare_gpu_cold_runtime_generation,
     prepare_gpu_idle_eviction_runtime_generation,
+    read_gpu_busy_eviction_runtime_subject,
     read_gpu_cold_runtime_subject,
+    read_gpu_eviction_drain_health,
     read_gpu_idle_eviction_runtime_subject,
     read_gpu_resident_runtime_subject,
     record_gpu_backend_token_expiry,
@@ -526,6 +530,9 @@ async def _install_eviction_phase_health(
     generation: str,
     phase: str,
     stored_challenge: str | None = None,
+    active_requests: int | None = None,
+    builders: int = 0,
+    borrowers: int = 0,
 ) -> None:
     capability = ManagedLifecycleCapabilities().model_dump(mode="json")
     capability_sha256 = managed_lifecycle_capability_sha256(capability)
@@ -557,9 +564,11 @@ async def _install_eviction_phase_health(
             "residency": {
                 "state": "unloaded" if unloaded else "draining",
                 "gpu_loaded": not unloaded,
-                "active_requests": 1 if phase == "busy" else 0,
-                "builders": 0,
-                "borrowers": 0,
+                "active_requests": (1 if phase == "busy" else 0)
+                if active_requests is None
+                else active_requests,
+                "builders": builders,
+                "borrowers": borrowers,
                 "draining": not unloaded,
                 "evictable": False,
                 "generation": generation,
@@ -2981,6 +2990,278 @@ async def test_idle_eviction_subject_rejects_nonidle_or_protected_victim(
                     expected_generation="1",
                     challenge=f"{1:064x}",
                 )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_subject_keeps_strict_identity_and_advances_generation(
+    test_engine: AsyncEngine,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60,),
+    )
+    backend_id = backend_ids[0]
+    challenge = f"{1:064x}"
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({backend_id}),
+        )
+        async with factory() as db:
+            quiesced = await read_gpu_busy_eviction_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+                expected_generation="1",
+                challenge=challenge,
+            )
+        assert quiesced.require_idle is False
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["active_requests"] = 2
+            health_meta["residency"]["borrowers"] = 1
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+
+        with pytest.raises(
+            GPUIdleEvictionRuntimeSubjectError,
+            match="idle_eviction_runtime_not_ready",
+        ):
+            async with factory() as db:
+                await read_gpu_idle_eviction_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                    expected_generation="1",
+                    challenge=challenge,
+                )
+
+        async with factory() as db:
+            subject = await read_gpu_busy_eviction_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+                expected_generation="1",
+                challenge=challenge,
+            )
+        assert subject.require_idle is False
+        assert subject.generation == "1"
+        prepared = await prepare_gpu_idle_eviction_runtime_generation(
+            factory,
+            subject,
+            token_expires_at=subject.db_now + timedelta(seconds=120),
+        )
+        assert prepared.require_idle is False
+        assert (prepared.source_generation, prepared.generation) == ("1", "2")
+
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["evictable"] = False
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+        with pytest.raises(
+            GPUBusyEvictionRuntimeSubjectError,
+            match="busy_eviction_runtime_not_ready",
+        ):
+            async with factory() as db:
+                await read_gpu_busy_eviction_runtime_subject(
+                    db,
+                    backend_id=str(backend_id),
+                    gpu_resource_id=_RESOURCE_A,
+                    expected_generation="1",
+                    challenge=challenge,
+                )
+    finally:
+        await _cleanup_backends(factory, backend_ids)
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_drain_health_classifies_all_activity_domains_read_only(
+    test_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory, backend_ids = await _create_active_backends(
+        test_engine,
+        resource_id=_RESOURCE_A,
+        budgets=(60,),
+    )
+    backend_id = backend_ids[0]
+    try:
+        await _install_live_health(
+            factory,
+            backend_ids,
+            resource_id=_RESOURCE_A,
+            resident_backend_ids=frozenset({backend_id}),
+        )
+        async with factory() as db:
+            subject = await read_gpu_busy_eviction_runtime_subject(
+                db,
+                backend_id=str(backend_id),
+                gpu_resource_id=_RESOURCE_A,
+                expected_generation="1",
+                challenge=f"{1:064x}",
+            )
+        prepared = await prepare_gpu_idle_eviction_runtime_generation(
+            factory,
+            subject,
+            token_expires_at=subject.db_now + timedelta(seconds=120),
+        )
+        async with factory() as db:
+            fence_before = await db.get(GPUBackendFence, backend_id)
+            assert fence_before is not None
+            durable_before = (
+                fence_before.generation_high_water,
+                fence_before.token_expiry_high_water,
+            )
+
+        activity_domains = (
+            {"active_requests": 2, "builders": 0, "borrowers": 0},
+            {"active_requests": 0, "builders": 1, "borrowers": 0},
+            {"active_requests": 0, "builders": 0, "borrowers": 1},
+        )
+        for index, counters in enumerate(activity_domains, start=2):
+            challenge = f"{index:064x}"
+            await _install_eviction_phase_health(
+                factory,
+                backend_id,
+                _RESOURCE_A,
+                challenge=challenge,
+                generation=prepared.generation,
+                phase="busy",
+                **counters,
+            )
+            async with factory() as db:
+                classified = await read_gpu_eviction_drain_health(
+                    db,
+                    prepared,
+                    challenge=challenge,
+                )
+            assert classified.status == "draining_busy"
+            assert (
+                classified.active_requests,
+                classified.builders,
+                classified.borrowers,
+            ) == (
+                counters["active_requests"],
+                counters["builders"],
+                counters["borrowers"],
+            )
+
+        ready_challenge = f"{5:064x}"
+        await _install_eviction_phase_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=ready_challenge,
+            generation=prepared.generation,
+            phase="drain",
+        )
+        async with factory() as db:
+            ready = await read_gpu_eviction_drain_health(
+                db,
+                prepared,
+                challenge=ready_challenge,
+            )
+            fence_after = await db.get(GPUBackendFence, backend_id)
+        assert ready.status == "ready_to_unload"
+        assert (ready.active_requests, ready.builders, ready.borrowers) == (0, 0, 0)
+        assert fence_after is not None
+        assert (
+            fence_after.generation_high_water,
+            fence_after.token_expiry_high_water,
+        ) == durable_before
+
+        async with factory() as db:
+            stale_challenge = await read_gpu_eviction_drain_health(
+                db,
+                prepared,
+                challenge="f" * 64,
+            )
+        assert (stale_challenge.status, stale_challenge.reason) == (
+            "uncertain",
+            "eviction_challenge_mismatch",
+        )
+        assert stale_challenge.active_requests is None
+
+        invalid_challenge = f"{6:064x}"
+        await _install_eviction_phase_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=invalid_challenge,
+            generation=str(int(prepared.generation) + 1),
+            phase="busy",
+        )
+        async with factory() as db:
+            uncertain = await read_gpu_eviction_drain_health(
+                db,
+                prepared,
+                challenge=invalid_challenge,
+            )
+        assert (uncertain.status, uncertain.reason) == (
+            "uncertain",
+            "eviction_residency_identity_mismatch",
+        )
+        assert uncertain.active_requests is None
+
+        pool_challenge = f"{7:064x}"
+        await _install_eviction_phase_health(
+            factory,
+            backend_id,
+            _RESOURCE_A,
+            challenge=pool_challenge,
+            generation=prepared.generation,
+            phase="busy",
+        )
+        async with factory.begin() as db:
+            backend = await db.get(MLBackendRegistry, backend_id)
+            assert backend is not None
+            health_meta = json.loads(json.dumps(backend.health_meta))
+            health_meta["residency"]["pools"]["unexpected"] = {
+                "resident": True,
+                "device": "cuda:0",
+                "provider": None,
+            }
+            backend.health_meta = health_meta
+            flag_modified(backend, "health_meta")
+        async with factory() as db:
+            pool_uncertain = await read_gpu_eviction_drain_health(
+                db,
+                prepared,
+                challenge=pool_challenge,
+            )
+        assert (pool_uncertain.status, pool_uncertain.reason) == (
+            "uncertain",
+            "eviction_residency_identity_mismatch",
+        )
+
+        def invalid_registry_concurrency(_extra_params):
+            raise gpu_arbiter_service._GPUProofInvalid("registry_concurrency_invalid")
+
+        monkeypatch.setattr(
+            gpu_arbiter_service,
+            "_registry_gpu_max_concurrency",
+            invalid_registry_concurrency,
+        )
+        async with factory() as db:
+            corrupt_claim = await read_gpu_eviction_drain_health(
+                db,
+                prepared,
+                challenge=pool_challenge,
+            )
+        assert (corrupt_claim.status, corrupt_claim.reason) == (
+            "uncertain",
+            "registry_concurrency_invalid",
+        )
     finally:
         await _cleanup_backends(factory, backend_ids)
 
