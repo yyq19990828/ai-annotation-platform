@@ -49,9 +49,12 @@ victim 驱逐均已接入惰性 authority。cold 请求收到完整响应后会�
 严格 ACK + 新鲜空闲证明、受签 `/unload` 与全空驻留证明后，才释放预算并以新
 challenge 重读 target cold subject。任一 phase 不确定即保守收口 Unknown 并停止继续驱逐；
 同路由响应丢失只做 exact owner/generation/phase/token 重放。FIFO 已接入；新 residency 只在首次可信
-Loading→Resident CAS 中按 Redis `TIME` 写入 `not_evict_before_ms`，Python 快照选择与 Lua 原子选择
-都会排除未到期 victim，精确重放和 Resident 快路不续期。当前 cooldown 阻断仍直接返回结构化 503；
-在 exact card ticket 上有界等待、忙碌 victim 的 drain/cancel 与实物多卡验收仍是后续阶段。
+Loading→Resident CAS 中按 Redis `TIME` 写入 `not_evict_before_ms`；proof reset 重建 Resident 时以固定
+`prepared_at_ms + cooldown` 保守恢复窗口。Python 快照选择与 Lua 原子选择都会排除未到期 victim，
+以上精确重放和 Resident 快路均不续期。cold authority 会继续持有 exact card ticket，
+按 Redis 快照给出的累计最早时刻在 admission deadline 与固定 ticket TTL 内有界等待；等待不续期，
+超时或取消会精确清票，只有 victim 已可驱逐时才为终态清理预留独立窗口。忙碌 victim 的
+drain/cancel 与实物多卡验收仍是后续阶段。
 生产 effective enforce 继续保持关闭。
 
 派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。

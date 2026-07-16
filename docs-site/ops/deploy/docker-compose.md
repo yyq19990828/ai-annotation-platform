@@ -516,8 +516,10 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 `Retry-After` 的 503，`off/observe` 下不会入队，因此该值不生效。
 `GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS` 默认 30 秒、取值 1..3600 秒。每次新 residency
 只在首次可信 Loading→Resident Redis CAS 中开始该保护窗口；proof reset 重建 Resident 时会以
-prepared 时刻保守恢复同样的窗口，精确重放均不续期。值可以长于 admission timeout；当前 P5b-I
-遇到未到期 victim 会立即返回 503，P5b-II 才会在 admission 预算内持 exact ticket 有界等待。
+prepared 时刻保守恢复同样的窗口，精确重放均不续期。值可以长于 admission timeout；遇到未到期
+victim 时，cold authority 会持有 exact card ticket，在 admission deadline 与固定 ticket TTL 内按
+Redis 快照时间有界等待。等待不续期，超时或取消会精确清票；只有 victim 已可驱逐时才开始预留
+驱逐终态清理窗口。
 升级发现普通 v2 账本时会 fail-close 后重新 proof reset；若旧进程已留下合法 v2 prepared marker，
 恢复器只沿用原 reset 上下文，并在 COMMIT 清除旧 child 后原子写成 v3，不会原地补 allocation 字段。
 `observe` 已在 predict、交互预测、warmup、reload 与注册 smoke-test
@@ -527,8 +529,8 @@ prepared 时刻保守恢复同样的窗口，精确重放均不续期。值可�
 握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本、恢复
 prepared 中间态并完成 legacy membership ACK。派发侧已具备 Redis admission、业务 token、Resident/cold
 authority、有界两级 FIFO 与空闲 victim 驱逐编排，但生产 effective mode 仍锁定为 `off`，因此实际请求不会
-进入这条权威路径、签业务 token 或切换 backend enforce gate。Redis 已能原子阻断 cooldown 未到期的
-victim，但 exact card ticket 上的 cooldown 有界等待、busy victim drain/cancel、实物多卡验收与
+进入这条权威路径、签业务 token 或切换 backend enforce gate。Redis 会原子阻断 cooldown 未到期的
+victim，authority 已能在 exact card ticket 上有界等待；busy victim drain/cancel、实物多卡验收与
 enforce gate promotion 完成前，effective 保持 `off` 并显示 blocker，不会静默降级为
 observe。`off/observe` 不创建或修复仲裁 Redis key。
 当前 PostgreSQL 与 worker 共用应用数据库角色时，tombstone completion receipt 属于受信 worker 的跨存储声明；

@@ -1773,9 +1773,18 @@ async def _ensure_cold_capacity(
         try:
             victim = _idle_victim_hint(snapshot, requester)
         except _GPUVictimCooldownActive as exc:
-            raise _capacity_unavailable(
-                "GPU idle victim residency cooldown is active"
-            ) from exc
+            cooldown_wait_seconds = max(
+                0.0,
+                (exc.retry_at_ms - snapshot.observed_at_ms) / 1000,
+            )
+            if cooldown_wait_seconds <= 0:
+                continue
+            async with _bounded_card_admission_step(
+                deadline=queue_deadline,
+                expires_at_ms=ticket_expires_at_ms,
+            ):
+                await asyncio.sleep(cooldown_wait_seconds)
+            continue
         if victim is None:
             return changed
         _eviction_work_remaining_ttl_ms(

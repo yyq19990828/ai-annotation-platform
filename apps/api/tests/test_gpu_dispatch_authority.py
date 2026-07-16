@@ -1567,6 +1567,134 @@ async def test_cold_card_fifo_cancellation_cleans_ticket_before_store_close(
 
 
 @pytest.mark.asyncio
+async def test_cold_cooldown_timeout_waits_then_cleans_exact_ticket(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    victim = _allocation(
+        uuid.UUID(int=41),
+        budget_mb=4096,
+        generation="3",
+        eviction_priority=0,
+        not_evict_before_ms=1_100,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                subject.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+                observed_at_ms=100,
+            )
+        ],
+    )
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=0.2,
+        queue_poll_interval_seconds=0.001,
+    )
+
+    async def dispatch() -> None:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    task = asyncio.create_task(dispatch())
+    for _ in range(100):
+        if f"snapshot:{subject.gpu_resource_id}" in events:
+            break
+        await asyncio.sleep(0)
+    assert f"snapshot:{subject.gpu_resource_id}" in events
+    await asyncio.sleep(0)
+    assert task.done() is False
+
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        await task
+
+    assert caught.value.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+    assert caught.value.headers == {"Retry-After": "1"}
+    assert "cold_owner" not in events
+    assert "prepare" not in events
+    assert "admit" not in events
+    assert store.begin_kwargs == []
+    assert len(store.card_enqueue_kwargs) == 1
+    assert len(store.queue_cancel_kwargs) == 1
+    assert (
+        store.queue_cancel_kwargs[0]["ticket_id"]
+        == store.card_enqueue_kwargs[0]["ticket_id"]
+    )
+    assert events[-2:] == ["card_cancel", "close"]
+
+
+@pytest.mark.asyncio
+async def test_cold_cooldown_cancellation_cleans_ticket_before_store_close(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    victim = _allocation(
+        uuid.UUID(int=42),
+        budget_mb=4096,
+        generation="3",
+        eviction_priority=0,
+        not_evict_before_ms=1_100,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                subject.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+                observed_at_ms=100,
+            )
+        ],
+    )
+    signer = _RecordingSigner(events)
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        store_factory=lambda: store,  # type: ignore[arg-type]
+        signer_factory=lambda: signer,  # type: ignore[arg-type]
+        admission_timeout_seconds=1,
+        queue_poll_interval_seconds=0.001,
+    )
+
+    async def dispatch() -> None:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    task = asyncio.create_task(dispatch())
+    for _ in range(100):
+        if f"snapshot:{subject.gpu_resource_id}" in events:
+            break
+        await asyncio.sleep(0)
+    assert f"snapshot:{subject.gpu_resource_id}" in events
+    await asyncio.sleep(0)
+    assert task.done() is False
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "cold_owner" not in events
+    assert "prepare" not in events
+    assert "admit" not in events
+    assert store.begin_kwargs == []
+    assert len(store.card_enqueue_kwargs) == 1
+    assert len(store.queue_cancel_kwargs) == 1
+    assert (
+        store.queue_cancel_kwargs[0]["ticket_id"]
+        == store.card_enqueue_kwargs[0]["ticket_id"]
+    )
+    assert events[-2:] == ["card_cancel", "close"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("terminal_status", ("finalized", "stale"))
 async def test_cold_authority_keeps_unknown_or_stale_terminal_lease_uncertain(
     monkeypatch,
@@ -2064,6 +2192,191 @@ def test_idle_victim_hint_uses_snapshot_redis_time_for_cumulative_cooldown() -> 
     assert caught.value.retry_at_ms == 140
     expired = replace(snapshot, observed_at_ms=140)
     assert authority_module._idle_victim_hint(expired, requester) is first
+
+
+@pytest.mark.asyncio
+async def test_cold_capacity_waits_for_cumulative_cooldown_with_exact_ticket(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    resource_id = "node-cooldown/index:0"
+    requester = replace(
+        _cold_subject(),
+        gpu_resource_id=resource_id,
+        budget_mb=4096,
+        eviction_priority=1,
+    )
+    first = _allocation(
+        uuid.UUID(int=31),
+        budget_mb=2048,
+        generation="3",
+        eviction_priority=0,
+        last_used_at_ms=10,
+        not_evict_before_ms=120,
+    )
+    second = _allocation(
+        uuid.UUID(int=32),
+        budget_mb=2048,
+        generation="5",
+        eviction_priority=0,
+        last_used_at_ms=20,
+        not_evict_before_ms=140,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                resource_id,
+                allocatable_mb=4096,
+                allocations=(first, second),
+                observed_at_ms=100,
+            ),
+            _card_snapshot(
+                resource_id,
+                allocatable_mb=4096,
+                allocations=(first, second),
+                observed_at_ms=140,
+            ),
+            _card_snapshot(
+                resource_id,
+                allocatable_mb=4096,
+                allocations=(second,),
+                observed_at_ms=140,
+            ),
+            _card_snapshot(
+                resource_id,
+                allocatable_mb=4096,
+                allocations=(),
+                observed_at_ms=140,
+            ),
+        ],
+    )
+    waits: list[float] = []
+    evictions: list[dict] = []
+
+    async def record_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    async def evict_one(*args, **kwargs) -> str:
+        evictions.append(
+            {
+                "victim": args[4],
+                "card_ticket_id": kwargs["requester_card_ticket_id"],
+                "queue_owner_id": kwargs["requester_queue_owner_id"],
+            }
+        )
+        return "unloaded"
+
+    async def no_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        raise AssertionError("cooldown capacity test must not refresh health")
+
+    monkeypatch.setattr(authority_module.asyncio, "sleep", record_sleep)
+    monkeypatch.setattr(authority_module, "_evict_one_idle_victim", evict_one)
+    changed = await authority_module._ensure_cold_capacity(
+        _session_factory(events),
+        store,  # type: ignore[arg-type]
+        _RecordingSigner(events),  # type: ignore[arg-type]
+        requester,
+        health_refresher=no_health,
+        hard_ttl_ms=120_000,
+        heartbeat_interval_seconds=5,
+        queue_deadline=time.monotonic() + 10,
+        ticket_expires_at_ms=int(time.time() * 1000) + 10_000,
+        requester_card_ticket_id="card-ticket",
+        requester_queue_owner_id="queue-owner",
+    )
+
+    assert changed is True
+    assert waits == pytest.approx([0.04])
+    assert [item["victim"] for item in evictions] == [first, second]
+    assert all(
+        item["card_ticket_id"] == "card-ticket"
+        and item["queue_owner_id"] == "queue-owner"
+        for item in evictions
+    )
+
+
+@pytest.mark.asyncio
+async def test_cold_cooldown_wait_isolated_per_gpu_resource() -> None:
+    events: list[str] = []
+    requester_a = replace(
+        _cold_subject(),
+        gpu_resource_id="node-cooldown/index:0",
+    )
+    requester_b = replace(
+        _cold_subject(),
+        backend_registry_id=uuid.uuid4(),
+        gpu_resource_id="node-cooldown/index:1",
+    )
+    victim = _allocation(
+        uuid.UUID(int=33),
+        budget_mb=4096,
+        generation="3",
+        eviction_priority=0,
+        not_evict_before_ms=1_100,
+    )
+    waiting_store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                requester_a.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+                observed_at_ms=100,
+            )
+        ],
+    )
+    free_store = _RecordingStore(events)
+    signer = _RecordingSigner(events)
+    session_factory = _session_factory(events)
+    queue_deadline = time.monotonic() + 1
+    ticket_expires_at_ms = int(time.time() * 1000) + 1_000
+
+    async def no_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        raise AssertionError("isolated cooldown wait must not refresh health")
+
+    waiting = asyncio.create_task(
+        authority_module._ensure_cold_capacity(
+            session_factory,  # type: ignore[arg-type]
+            waiting_store,  # type: ignore[arg-type]
+            signer,  # type: ignore[arg-type]
+            requester_a,
+            health_refresher=no_health,
+            hard_ttl_ms=120_000,
+            heartbeat_interval_seconds=5,
+            queue_deadline=queue_deadline,
+            ticket_expires_at_ms=ticket_expires_at_ms,
+            requester_card_ticket_id="card-a",
+            requester_queue_owner_id="owner-a",
+        )
+    )
+    for _ in range(100):
+        if f"snapshot:{requester_a.gpu_resource_id}" in events:
+            break
+        await asyncio.sleep(0)
+    assert f"snapshot:{requester_a.gpu_resource_id}" in events
+
+    free = await asyncio.wait_for(
+        authority_module._ensure_cold_capacity(
+            session_factory,  # type: ignore[arg-type]
+            free_store,  # type: ignore[arg-type]
+            signer,  # type: ignore[arg-type]
+            requester_b,
+            health_refresher=no_health,
+            hard_ttl_ms=120_000,
+            heartbeat_interval_seconds=5,
+            queue_deadline=queue_deadline,
+            ticket_expires_at_ms=ticket_expires_at_ms,
+            requester_card_ticket_id="card-b",
+            requester_queue_owner_id="owner-b",
+        ),
+        timeout=0.2,
+    )
+    assert free is False
+    assert waiting.done() is False
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
 
 
 def test_idle_victim_hint_does_not_evict_for_an_allocated_requester() -> None:

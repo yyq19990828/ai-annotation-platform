@@ -517,7 +517,11 @@ event loop 的测试证明连接生命周期正确。
 或驱逐的慢路径按卡 FIFO。视频追踪按现有窗口逐次持 lease，不锁整个作业；每窗结束重新参与排队。
 显式携带 queue ticket 的原子操作必须验证它仍是匹配 backend、owner 与 membership 的存活精确队首；
 缺失或过期 ticket 不能把队列为空变成绕过许可。驱逐 begin 只校验、不消费 card ticket，多 victim 每次重验，
-最终 target admission 成功时才原子消费。
+最终 target admission 成功时才原子消费。当容量只能由 cooldown 未到期的 idle victim 提供时，authority
+保持该 exact 队首 ticket，按快照 Redis 时间与累计最早截止时间在卡锁外等待；等待受 admission deadline
+和固定 ticket TTL 双重约束，不续期，也不创建 transition owner 或调用 victim health/lifecycle。到期后必须
+重新读取快照，Lua 仍在驱逐 begin 原子区执行最终 cooldown fence；只有 victim 已可驱逐时才扣除终态清理
+预留，超时或取消则精确清理 ticket。
 drain 推进 generation 后，旧 generation 的合法在途 workload 仍可凭自己的 lease owner token heartbeat 和
 release；它只能操作自己的 lease，不能更新 allocation、transition 或 LRU。
 
