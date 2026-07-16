@@ -105,21 +105,17 @@ export const AI_PRE_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       const newBtn = page.getByRole("button", { name: /新建项目|新建/ }).first();
-      if (await newBtn.count()) {
-        await newBtn.click();
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[data-testid="project-wizard"]', { timeout: 3000 }).catch(() => {});
+      await newBtn.click();
+      await page.waitForTimeout(300);
+      await page.locator('[data-testid="project-wizard"]').waitFor({ timeout: 3000 });
       // step1 需填项目名才能前进（数据类型/工具单位默认已选）
       const nameInput = page.getByPlaceholder(/智能门店货架/).first();
-      if (await nameInput.count()) await nameInput.fill("演示项目-A");
+      await nameInput.fill("演示项目-A");
       // 步骤指示器不可点，逐步点「下一步」到第 4 步「AI 接入」（按钮文本含箭头，正则不锚定）
       for (let i = 0; i < 3; i++) {
         const next = page.getByRole("button", { name: /下一步/ }).first();
-        if ((await next.count()) && (await next.isEnabled().catch(() => false))) {
-          await next.click();
-          await page.waitForTimeout(400);
-        }
+        await next.click();
+        await page.waitForTimeout(400);
       }
       await page.waitForTimeout(200);
     },

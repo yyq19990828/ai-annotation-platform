@@ -36,6 +36,11 @@
       "summary": "点云逐点 mask。"
     },
     {
+      "id": "mask",
+      "label": "raster mask",
+      "summary": "2D 逐像素二值掩码。"
+    },
+    {
       "id": "none",
       "label": "none",
       "summary": "纯分类等无几何输出。"

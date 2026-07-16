@@ -1,8 +1,9 @@
 [project]
 name = "anno-api"
-version = "0.21.33"
+version = "0.22.4"
 requires-python = ">=3.11"
 dependencies = [
+    "aap-protocol-v2",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy[asyncio]>=2.0.0",
@@ -32,6 +33,9 @@ dependencies = [
     # v0.10.16 · DuckDB 离线分析视图（ROADMAP §1.6）。Celery worker 写、API 只读。
     "duckdb>=1.1.0,<2.0.0",
 ]
+
+[tool.uv.sources]
+aap-protocol-v2 = { path = "../_shared/protocol_v2" }
 
 [project.optional-dependencies]
 test = [

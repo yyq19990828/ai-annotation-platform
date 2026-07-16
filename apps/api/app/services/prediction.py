@@ -424,6 +424,9 @@ class PredictionService:
     ) -> Prediction:
         # v0.21.1 · 检测式追踪原生 int track_id → trk_<uuid> (读路径不得再生 uuid, 见 _remap_track_ids)。
         result = _remap_track_ids(result)
+        from app.services.raster_mask_storage import lock_raster_mask_references
+
+        await lock_raster_mask_references(self.db, result)
         prediction = Prediction(
             id=uuid.uuid4(),
             task_id=task_id,
@@ -474,6 +477,7 @@ class PredictionService:
         error_type: str,
         message: str,
         model_version: str | None = None,
+        extra: dict | None = None,
     ) -> FailedPrediction:
         failed = FailedPrediction(
             id=uuid.uuid4(),
@@ -483,6 +487,7 @@ class PredictionService:
             model_version=model_version,
             error_type=error_type,
             message=message,
+            extra=extra or {},
         )
         self.db.add(failed)
         await self.db.flush()

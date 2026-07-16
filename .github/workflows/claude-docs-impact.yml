@@ -1,8 +1,6 @@
 name: Claude Docs Impact
 
-on:
-  pull_request:
-    types: [opened, ready_for_review, reopened]
+on: workflow_dispatch
 
 concurrency:
   group: claude-docs-impact-${{ github.event.pull_request.number }}

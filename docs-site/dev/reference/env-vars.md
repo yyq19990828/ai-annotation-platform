@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-16
 ---
 
 # 环境变量参考
@@ -46,6 +46,7 @@ last_reviewed: 2026-07-11
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO 服务地址（不含协议前缀），Docker 默认 localhost:9000 |
+| `MINIO_PUBLIC_URL` | `/minio` | 浏览器可达的 MinIO 根地址。DEV 用同源 /minio，由 Vite :3000 代理到 localhost:9000，远程浏览器无需额外打通 9000 端口。生产应改为完整外网 URL。 容器中的 ML Backend 访问地址仍由 ML_BACKEND_STORAGE_HOST 独立控制。 |
 | `MINIO_ACCESS_KEY` | `minioadmin` | MinIO 访问密钥（相当于 AWS Access Key ID） 沿用 compose 自带 minio 时，这两项同时作为 minio 容器的 root 凭据（docker-compose.yml 绑定）， 后端/worker 与 minio 容器自动共用同一份；用托管 S3/OSS 时填对方的 AK/SK 即可。 |
 | `MINIO_SECRET_KEY` | `minioadmin` | MinIO 密钥（相当于 AWS Secret Access Key）；生产环境务必更换 |
 | `MINIO_BUCKET` | `annotations` | 存放标注文件（图片、音频等）的桶名称 |
@@ -70,6 +71,19 @@ last_reviewed: 2026-07-11
 |---|---|---|
 | `ML_BACKEND_OBSERVE_URLS` | `—` | 与项目注册解耦: 没有任何项目注册 backend 时, 运维也能在模型市场直连这些容器看 健康度 / 变体目录 / 试启动。留空则回退到 ML_BACKEND_DEFAULT_URL (若其非空)。 例: ML_BACKEND_OBSERVE_URLS=http://172.17.0.1:8001,http://172.17.0.1:8002,http://172.17.0.1:8003 (8001=grounded-sam2, 8002=sam3, 8003=yolo) |
 
+## ADR-0049 · 跨 backend GPU 显存仲裁。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `GPU_ARBITER_MODE` | `off` | 全局 desired mode 是逐卡 desired mode 的上限，默认 off。 observe 在真实派发点记录非权威 would-* 决策，不拒绝、排队或驱逐请求。 enforce 仍需 Redis 账本和 lifecycle gate 握手，未就绪时 effective 保持 off。 |
+| `GPU_ARBITER_ROLLOUT_ENABLED` | `false` | P6 持久 rollout 总门。保持 false 时 worker 不执行 enforce repair，effective enforce 永远不会打开；启用后 health repair 只在 Backend gate 与 Redis ready 证明成立后 提交逐资源 enforcing，GPU 派发对过渡态或数据库不可用在 Backend HTTP 前阻断。 |
+| `GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE` | `—` | 宿主机文件路径；文件内仅一行独立 collector 的 postgresql+asyncpg URL。 该文件只挂载到 gpu.control 单并发控制 worker。普通应用角色必须无 membership/fence DELETE。 off/observe 或尚未启用 rollout 时留空；生产 enforce 前必须完成角色隔离并设置 0400 权限。 |
+| `GPU_ARBITER_RESOURCES_JSON` | `{}` | resource key 必须等于 node_id/physical_device_token；优先使用 GPU/MIG UUID。 只有部署明确固定索引映射时才使用 index:N。allocatable_mb 已扣除系统与安全余量。 例: {"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"observe"}} |
+| `GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS` | `30` | 仅供 enforce authority 的 backend/card slow-path FIFO，独立于推理、build 与 drain timeout。 ticket 使用固定期限且不因轮询续期；驱逐会在期限内预留终态清理窗口；取值 1..3600 秒，off/observe 不入队。 backend/card 超时分别返回 gpu_backend_concurrency_saturated/gpu_capacity_unavailable，均为 503 + Retry-After。 |
+| `GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS` | `30` | 新 residency 的最短保护窗口；只接受 1..3600 秒。未到期 victim 会在 exact card ticket 上按 admission deadline 与固定 ticket TTL 有界等待且不续期；预算耗尽返回 503 + Retry-After， 超时或取消会精确清理票据。 |
+| `GPU_LIFECYCLE_SIGNING_KEYS_FILE` | `—` | Platform signer private seeds stay in a root-readable file, never in an env value. Strict JSON: {"kid":"unpadded-base64url-raw-32-byte-Ed25519-private-seed"}. Leave both values empty while arbitration is off/observe. The file is read lazily only by enforce authority/promotion, and must not be mounted into GPU backends. |
+| `GPU_LIFECYCLE_ACTIVE_SIGNING_KID` | `—` | Select one exact kid from the private key file after backend public-key rollout. |
+
 ## yolo-backend (ultralytics 多任务 det/seg/pose/obb)
 
 | 变量 | 默认值 | 说明 |
@@ -82,6 +96,32 @@ last_reviewed: 2026-07-11
 | `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
 | `YOLO_STRICT_OFFLINE` | `0` | — |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | `—` | Managed GPU lifecycle Ed25519 public-key ring (kid -> unpadded base64url key). Empty keeps the backend in legacy-compatible mode; a non-empty invalid value fails startup. |
+
+## ONNXTools 固定句柄池与受管生命周期
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ONNXTOOLS_DET_MODEL` | `rtdetr-2024080100.onnx` | 检测模型文件名。 |
+| `ONNXTOOLS_VA_MODEL` | `va_260612.onnx` | ONNXTools 车辆属性分类模型文件名。 |
+| `ONNXTOOLS_CONF_THRES` | `0.5` | ONNXTools 检测置信度阈值。 |
+| `ONNXTOOLS_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
+| `ONNXTOOLS_IDLE_UNLOAD_SECONDS` | `600` | 全池空闲卸载阈值（秒）；非正数关闭。 |
+| `ONNXTOOLS_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
+| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成真实 GPU 四 session warmup → full unload → baseline 验证后设为 1。 |
+| `ONNXTOOLS_LOG_LEVEL` | `INFO` | ONNXTools 日志级别。 |
+
+## RapidOCR 动态 composite 引擎池与受管生命周期
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `RAPIDOCR_DEVICE` | `gpu` | 构造设备：gpu 优先 CUDAExecutionProvider，cpu 只构造 CPU session。 |
+| `RAPIDOCR_POOL_CAP` | `3` | composite 引擎数上限；每个引擎固定持有 det/cls/rec 三个 ORT session。 |
+| `RAPIDOCR_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
+| `RAPIDOCR_IDLE_UNLOAD_SECONDS` | `600` | 整池空闲卸载阈值（秒）；非正数关闭。 |
+| `RAPIDOCR_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
+| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0` | 部署级 opt-in；当前参考制品已完成实卡验证，硬件、镜像或模型不匹配时须重新验证。 |
+| `RAPIDOCR_LOG_LEVEL` | `INFO` | RapidOCR 日志级别。 |
 
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
 
@@ -208,6 +248,7 @@ last_reviewed: 2026-07-11
 | `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 排队等显存的超时 (秒), 超时 503; video build 比图片慢, 默认 60. |
 | `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存); 超此值的窗口拒绝. |
 | `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭. |
+| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在 Grounded-SAM2 完成实卡 image/video/双池/full-unload 验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## SAM 3 ML Backend
 
@@ -224,12 +265,14 @@ last_reviewed: 2026-07-11
 | `SAM3_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
+| `SAM3_MODEL_POOL_BUILD_TIMEOUT` | `120` | 三个模型池等待冷构建的超时 (秒); 超时后真实 builder 仍由 backend 跟踪至结束。 |
+| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 image/multiplex/PVS 真实推理与全池显存回落验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## ML Backend GPU 分卡 (多卡机器可选)
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `GSAM2_GPU_DEVICE_ID` | `0` | 各 GPU profile backend 固定绑定的物理显卡号 (docker-compose.ml.yml 的 deploy.reservations.devices.device_ids, 同时作为容器内 NVIDIA_VISIBLE_DEVICES)。 默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 占卡 0、SAM3 占卡 1, 双卡机器可错开显存。 单卡机器必须把 SAM3_GPU_DEVICE_ID 覆盖成 0, 否则容器找不到卡 1 起不来。 |
+| `GSAM2_GPU_DEVICE_ID` | `0` | 各 GPU profile backend 固定绑定的物理显卡号 (docker-compose.ml.yml 的 deploy.reservations.devices.device_ids，并由 Compose 复用为容器内物理卡身份)。 NVIDIA runtime 可能把 PID 1 的 NVIDIA_VISIBLE_DEVICES 重写为 void；后端会 报告 Compose 从同一 *_GPU_DEVICE_ID 派生的 token，不用逻辑 cuda:0 猜测物理卡。 默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 占卡 0、SAM3 占卡 1, 双卡机器可错开显存。 单卡机器必须把 SAM3_GPU_DEVICE_ID 覆盖成 0, 否则容器找不到卡 1 起不来。 每个 backend 只允许一个物理 GPU/MIG；0,1、多 UUID 或已暴露 GPU 的 all 会在启动时拒绝。 |
 | `SAM3_GPU_DEVICE_ID` | `1` | — |
 | `YOLO_GPU_DEVICE_ID` | `0` | — |
 | `ONNXTOOLS_GPU_DEVICE_ID` | `0` | — |

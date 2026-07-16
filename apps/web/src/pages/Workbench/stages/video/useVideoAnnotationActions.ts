@@ -2,8 +2,11 @@ import { useCallback } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import { tasksApi, type AnnotationPayload } from "@/api/tasks";
+import { rasterMasksApi } from "@/api/rasterMasks";
+import type { CocoRle } from "../../stage/shared/geometry/maskRle";
 import type {
   AnnotationResponse,
+  CocoRleMaskRef,
   Geometry,
   VideoBboxGeometry,
   VideoPolygonGeometry,
@@ -11,6 +14,7 @@ import type {
   VideoTrackGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
+  VideoTrackMaskGeometry,
 } from "@/types";
 import { UNKNOWN_CLASS } from "../../stage/colors";
 import { enqueue } from "../../state/offlineQueue";
@@ -24,9 +28,10 @@ import {
   type VideoTrackKeyframeWithAttrs,
 } from "../../state/videoTrackCommands";
 import { isAnyVideoSingleFrame, isAnyVideoTrack, nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
+import { removeOutsideFrame } from "../../stage/videoTrackOutside";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry | VideoTrackMaskGeometry;
 
 interface ToastInput {
   msg: string;
@@ -157,6 +162,39 @@ export function buildVideoPointsTrackCreatePayload(
     // 轨迹多边形归 region、轨迹折线归 polyline (与单帧同单位, 变体不同)。
     tool_unit_id: type === "video_track_polyline" ? "polyline" : "region",
     geometry,
+  };
+}
+
+export function buildVideoMaskTrackCreatePayload(
+  frameIndex: number,
+  mask: CocoRleMaskRef,
+  cls: string,
+): AnnotationPayload {
+  const geometry: VideoTrackMaskGeometry = {
+    type: "video_track_mask",
+    track_id: `trk_${randomId()}`,
+    keyframes: [{ frame_index: frameIndex, mask, source: "manual", occluded: false }],
+  };
+  return {
+    annotation_type: "video_track_mask",
+    class_name: cls || UNKNOWN_CLASS,
+    tool_unit_id: "region",
+    geometry,
+  };
+}
+
+export function upsertVideoMaskKeyframe(
+  geometry: VideoTrackMaskGeometry,
+  frameIndex: number,
+  mask: CocoRleMaskRef,
+): VideoTrackMaskGeometry {
+  const visibleGeometry = removeOutsideFrame(geometry, frameIndex);
+  return {
+    ...visibleGeometry,
+    keyframes: [
+      ...visibleGeometry.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
+      { frame_index: frameIndex, mask, source: "manual" as const, occluded: false },
+    ].sort((a, b) => a.frame_index - b.frame_index),
   };
 }
 
@@ -349,6 +387,47 @@ export function useVideoAnnotationActions({
     );
   }, [enqueueOnError, history, mutations.update, optimisticUpdateAnnotation, taskId]);
 
+  const handleVideoMaskCommit = useCallback(async (
+    rle: CocoRle,
+    frameIndex: number,
+    selected: AnnotationResponse | null,
+  ) => {
+    if (!taskId) throw new Error("Task is not available");
+    const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
+    if (selected?.geometry.type === "video_track_mask") {
+      const geometry = upsertVideoMaskKeyframe(selected.geometry, frameIndex, reference);
+      const command = buildVideoUpdateCommand(selected, geometry);
+      await new Promise<void>((resolve, reject) => {
+        mutations.update.mutate(
+          { annotationId: selected.id, payload: { geometry } },
+          {
+            onSuccess: () => {
+              history.push(command);
+              resolve();
+            },
+            onError: reject,
+          },
+        );
+      });
+      return;
+    }
+    const payload = buildVideoMaskTrackCreatePayload(
+      frameIndex,
+      reference,
+      s.activeClass || UNKNOWN_CLASS,
+    );
+    await new Promise<void>((resolve, reject) => {
+      mutations.create.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          s.setSelectedId(created.id);
+          resolve();
+        },
+        onError: reject,
+      });
+    });
+  }, [history, mutations.create, mutations.update, s, taskId]);
+
   const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
     const before = { class_name: ann.class_name };
     const after = { class_name: className };
@@ -370,7 +449,7 @@ export function useVideoAnnotationActions({
 
   const handleVideoBatchRename = useCallback((annotations: AnnotationResponse[], className: string) => {
     const targets = annotations.filter((ann) =>
-      ann.geometry.type === "video_track_bbox" && ann.class_name !== className,
+      isAnyVideoTrack(ann) && ann.class_name !== className,
     );
     if (!className || targets.length === 0) return;
 
@@ -412,7 +491,7 @@ export function useVideoAnnotationActions({
   }, [history, mutations.update, pushToast, recordRecentClass, s]);
 
   const handleVideoBatchDelete = useCallback((annotations: AnnotationResponse[]) => {
-    const targets = annotations.filter((ann) => ann.geometry.type === "video_track_bbox");
+    const targets = annotations.filter(isAnyVideoTrack);
     if (targets.length === 0) return;
 
     let pending = targets.length;
@@ -625,6 +704,7 @@ export function useVideoAnnotationActions({
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,
+    handleVideoMaskCommit,
     handleVideoRename,
     handleVideoBatchRename,
     handleVideoBatchDelete,

@@ -24,6 +24,7 @@ import os
 import tempfile
 import uuid
 import zipfile
+from copy import deepcopy
 from datetime import datetime, timezone
 from posixpath import splitext
 from typing import AsyncIterator
@@ -63,11 +64,14 @@ from app.services.export_video import (
     build_yolo_frame_seg_labels,
     yolo_seg_line,
 )
+from app.services.export_davis import build_davis_palette_png
 from app.services.project import (
     derive_attribute_schema,
     derive_classes_list,
 )
 from app.services.storage import storage_service
+from app.services.raster_mask_storage import load_coco_rle
+from app.utils.raster_mask_rle import coco_rle_bbox_norm
 from app.services.video_frame_service import derive_sampled_frames, derive_step
 from app.services.video_tracks import derive_track_number
 
@@ -81,7 +85,21 @@ VIDEO_EXPORT_FORMATS = {
     "yolo-frames-seg",
     # 逐帧 COCO 分割：同源多边形，编码为标准 COCO instance segmentation 单文档。
     "coco-frames-seg",
+    "davis",
 }
+
+
+def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
+    if geometry.get("type") != "video_track_mask":
+        return geometry
+    hydrated = deepcopy(geometry)
+    for keyframe in hydrated.get("keyframes") or []:
+        rle = load_coco_rle(keyframe.get("mask") or {})
+        keyframe["mask_rle"] = rle
+        keyframe["bbox"] = coco_rle_bbox_norm(rle)
+    return hydrated
+
+
 LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
@@ -427,6 +445,7 @@ async def build_export_zip(
                     "yolo-frames-det",
                     "yolo-frames-seg",
                     "coco-frames-seg",
+                    "davis",
                 }
                 & set(targets)
             )
@@ -982,7 +1001,6 @@ start_number=1（MOT/YOLO，1-based）或 0（KITTI-only，0-based）。
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -1006,33 +1024,44 @@ def main() -> int:
             print("[x] 视频缺失（先跑 fetch_videos.py）: %s" % rel)
             fail += 1
             continue
-        raw_outputs = it.get("frame_output_dirs") or ["%s/img1" % seq]
-        output_dirs = []
-        for rel_out in raw_outputs:
-            if not rel_out or rel_out in output_dirs:
+        raw_specs = it.get("frame_outputs")
+        if not raw_specs:
+            raw_outputs = it.get("frame_output_dirs") or ["%s/img1" % seq]
+            raw_specs = [
+                {
+                    "dir": rel_out,
+                    "start_number": start,
+                    "padding": 6,
+                    "extension": "jpg",
+                }
+                for rel_out in raw_outputs
+            ]
+        output_specs = []
+        seen_dirs = set()
+        for spec in raw_specs:
+            rel_out = spec.get("dir") if isinstance(spec, dict) else None
+            if not rel_out or rel_out in seen_dirs:
                 continue
-            output_dirs.append(rel_out)
-        if not output_dirs:
+            seen_dirs.add(rel_out)
+            output_specs.append(spec)
+        if not output_specs:
             continue
-        out_dir = os.path.join(HERE, *output_dirs[0].split("/"))
-        os.makedirs(out_dir, exist_ok=True)
         select_expr = "+".join("eq(n\\\\,%d)" % fr for fr in frames)
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
-            "-vf", "select='%s'" % select_expr, "-vsync", "0",
-            "-start_number", str(start),
-            os.path.join(out_dir, "%06d.jpg"),
-        ]
         try:
-            subprocess.run(cmd, check=True)
-            for rel_out in output_dirs[1:]:
-                extra_dir = os.path.join(HERE, *rel_out.split("/"))
-                os.makedirs(extra_dir, exist_ok=True)
-                for frame_no in range(start, start + len(frames)):
-                    name = "%06d.jpg" % frame_no
-                    src = os.path.join(out_dir, name)
-                    if os.path.exists(src):
-                        shutil.copy2(src, os.path.join(extra_dir, name))
+            for spec in output_specs:
+                rel_out = spec["dir"]
+                output_start = int(spec.get("start_number", start))
+                padding = max(1, int(spec.get("padding", 6)))
+                extension = str(spec.get("extension", "jpg")).lstrip(".") or "jpg"
+                out_dir = os.path.join(HERE, *rel_out.split("/"))
+                os.makedirs(out_dir, exist_ok=True)
+                cmd = [
+                    "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
+                    "-vf", "select='%s'" % select_expr, "-vsync", "0",
+                    "-start_number", str(output_start),
+                    os.path.join(out_dir, "%%0%dd.%s" % (padding, extension)),
+                ]
+                subprocess.run(cmd, check=True)
             ok += 1
         except Exception as exc:  # noqa: BLE001
             print("[x] 抽帧失败 %s: %s" % (seq, exc))
@@ -1087,12 +1116,14 @@ async def _build_video_export_zip(
     has_yolo_frames = "yolo-frames-det" in targets
     has_yolo_frames_seg = "yolo-frames-seg" in targets
     has_coco_frames_seg = "coco-frames-seg" in targets
+    has_davis = "davis" in targets
     has_frame_sequences = (
         has_mot
         or has_kitti
         or has_yolo_frames
         or has_yolo_frames_seg
         or has_coco_frames_seg
+        or has_davis
     )
     frame_start_number = (
         1
@@ -1105,6 +1136,8 @@ async def _build_video_export_zip(
     cat_map = {name: i for i, name in enumerate(classes_list)}
     # coco-frames-seg 是单文档：跨 task 累积每序列的帧/几何，chunk 循环后一次性写 annotations.json。
     coco_seq_records: list[dict] = []
+    davis_sequences: list[str] = []
+    davis_sequence_owners: dict[str, uuid.UUID] = {}
 
     manifest_videos: list[dict] = []
     now = datetime.now(timezone.utc)
@@ -1163,12 +1196,20 @@ async def _build_video_export_zip(
                 seq = _video_seq_name(t, item)
                 vmeta = _video_meta(item)
                 source_fps = vmeta.get("fps")
-                img_w = int(vmeta.get("width") or FALLBACK_W)
-                img_h = int(vmeta.get("height") or FALLBACK_H)
+                img_w = int(
+                    (item.width if item else None) or vmeta.get("width") or FALLBACK_W
+                )
+                img_h = int(
+                    (item.height if item else None) or vmeta.get("height") or FALLBACK_H
+                )
                 step = derive_step(source_fps, sampling)
 
                 track_anns = tracks_by_task.get(t.id, [])
                 bbox_anns = bboxes_by_task.get(t.id, [])
+                track_geometry_by_id = {
+                    ann.id: _hydrate_mask_geometry_for_export(ann.geometry or {})
+                    for ann in track_anns
+                }
                 # frame_count：元数据优先，缺失回退最大标注帧 + 1。
                 max_kf = 0
                 for ann in track_anns:
@@ -1183,10 +1224,10 @@ async def _build_video_export_zip(
 
                 if has_mot or has_kitti:
                     numbers = derive_track_number(
-                        [(ann.id, ann.geometry or {}) for ann in track_anns]
+                        [(ann.id, track_geometry_by_id[ann.id]) for ann in track_anns]
                     )
                     track_args = [
-                        (numbers[ann.id], ann.class_name, ann.geometry or {})
+                        (numbers[ann.id], ann.class_name, track_geometry_by_id[ann.id])
                         for ann in track_anns
                     ]
                     if has_mot:
@@ -1229,7 +1270,11 @@ async def _build_video_export_zip(
                     yp = "yolo-frames-det/" if multi else ""
                     labels = build_yolo_frame_det_labels(
                         [
-                            (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                            (
+                                ann.class_name,
+                                track_geometry_by_id[ann.id],
+                                ann.attributes or {},
+                            )
                             for ann in track_anns
                         ],
                         [
@@ -1290,7 +1335,7 @@ async def _build_video_export_zip(
                             "tracks": [
                                 (
                                     ann.class_name,
-                                    ann.geometry or {},
+                                    track_geometry_by_id[ann.id],
                                     ann.attributes or {},
                                     getattr(ann, "track_id", None),
                                 )
@@ -1312,6 +1357,38 @@ async def _build_video_export_zip(
                         }
                     )
 
+                if has_davis:
+                    previous_owner = davis_sequence_owners.get(seq)
+                    if previous_owner is not None and previous_owner != t.id:
+                        raise ValueError(
+                            f"DAVIS sequence name collision after extension removal: {seq}"
+                        )
+                    davis_sequence_owners[seq] = t.id
+                    davis_prefix = "davis/" if multi else ""
+                    mask_tracks = [
+                        (
+                            ann.id,
+                            int(getattr(ann, "z_order", 0) or 0),
+                            track_geometry_by_id[ann.id],
+                        )
+                        for ann in track_anns
+                        if (ann.geometry or {}).get("type") == "video_track_mask"
+                    ]
+                    for output_index, source_frame in enumerate(
+                        derive_sampled_frames(frame_count, step)
+                    ):
+                        zf.writestr(
+                            f"{davis_prefix}Annotations/Full-Resolution/{seq}/{output_index:05d}.png",
+                            build_davis_palette_png(
+                                mask_tracks,
+                                frame_index=source_frame,
+                                width=img_w,
+                                height=img_h,
+                            ),
+                        )
+                        file_count += 1
+                    davis_sequences.append(seq)
+
                 # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
                 dataset_name = _dataset_name_for_task(t, item)
                 video_rel = relative_path_from_file_path(t.file_path, dataset_name)
@@ -1332,6 +1409,27 @@ async def _build_video_export_zip(
                 if has_coco_frames_seg:
                     cp = "coco-frames-seg/" if multi else ""
                     frame_output_dirs.append(f"{cp}images/{seq}")
+                frame_outputs = [
+                    {
+                        "dir": output_dir,
+                        "start_number": frame_start_number,
+                        "padding": 6,
+                        "extension": "jpg",
+                    }
+                    for output_dir in frame_output_dirs
+                ]
+                if has_davis:
+                    davis_prefix = "davis/" if multi else ""
+                    davis_images = f"{davis_prefix}JPEGImages/Full-Resolution/{seq}"
+                    frame_output_dirs.append(davis_images)
+                    frame_outputs.append(
+                        {
+                            "dir": davis_images,
+                            "start_number": 0,
+                            "padding": 5,
+                            "extension": "jpg",
+                        }
+                    )
                 manifest_videos.append(
                     {
                         "sequence": seq,
@@ -1346,6 +1444,7 @@ async def _build_video_export_zip(
                         # 帧号 base：MOT/YOLO 取 1（1-based），KITTI-only 取 0。
                         "frame_start_number": frame_start_number,
                         "frame_output_dirs": frame_output_dirs,
+                        "frame_outputs": frame_outputs,
                     }
                 )
 
@@ -1366,6 +1465,14 @@ async def _build_video_export_zip(
                 ),
             )
             file_count += 1
+
+        if has_davis:
+            davis_prefix = "davis/" if multi else ""
+            sequence_lines = sorted(set(davis_sequences))
+            zf.writestr(
+                f"{davis_prefix}ImageSets/2017/val.txt",
+                "\n".join(sequence_lines) + ("\n" if sequence_lines else ""),
+            )
 
         zf.writestr(
             "manifest.json",

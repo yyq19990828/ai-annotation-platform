@@ -106,6 +106,7 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "用户与权限", link: "/user-guide/superadmin/user-management" },
       { text: "ML Backend 注册", link: "/user-guide/superadmin/ml-backend-registry" },
       { text: "模型市场", link: "/user-guide/superadmin/model-market" },
+      { text: "ML Backend 性能基准", link: "/user-guide/superadmin/ml-backend-performance" },
       { text: "失败预测排查", link: "/user-guide/superadmin/failed-predictions" },
       { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
       { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },

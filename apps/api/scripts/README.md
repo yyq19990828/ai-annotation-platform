@@ -2,6 +2,58 @@
 
 Dev / ops 用一次性 / 周期性脚本,各自带 `--help`。
 
+## validate_gpu_arbitration
+
+跨 Backend GPU 显存仲裁的非生产验收器。`preflight` 只读采集 PostgreSQL、Redis、backend
+challenge health 与 `nvidia-smi`，并校验 action 与资源域内全部现存 allocation Backend；
+`run` 通过真实 dispatch authority 执行 manifest 中的
+workload，并支持响应丢失、grant 后取消和 health timeout 故障注入；`verify` 从无故障主报告的
+原始快照重算断言，不采信报告中自报的 `passed` 摘要。故障报告在 `run` 进程内完成机器检查，
+当前不作为 `verify` 的输入。
+
+```bash
+cd apps/api
+PYTHONPATH=../_shared/protocol_v2/src:. uv run python \
+  scripts/validate_gpu_arbitration.py preflight \
+  --manifest /tmp/gpu-acceptance/manifest.json \
+  --output /tmp/gpu-acceptance/preflight.json
+
+PYTHONPATH=../_shared/protocol_v2/src:. uv run python \
+  scripts/validate_gpu_arbitration.py run \
+  --manifest /tmp/gpu-acceptance/manifest.json \
+  --run-id acceptance-node-a-01 \
+  --confirm-run-id acceptance-node-a-01 \
+  --output /tmp/gpu-acceptance/run.json
+
+PYTHONPATH=../_shared/protocol_v2/src:. uv run python \
+  scripts/validate_gpu_arbitration.py verify \
+  --scenario single-card-co-residency /tmp/gpu-acceptance/run.json
+```
+
+`run` 拒绝 production，且 `--confirm-run-id` 必须与 `--run-id` 完全一致。它不会迁移数据库、
+修改 rollout mode、repair Redis 或启停服务；但会真实加载、drain、恢复或卸载 manifest 指定的
+backend，必须在隔离维护窗口执行。报告不会写入鉴权 token 或 action 原始业务 body；只记录原始
+manifest 内容摘要，因此 verifier 能校验脱敏后的拓扑/action 元数据，不能脱离原文件还原或复验 body。
+
+完整 manifest、单卡/双卡/跨宿主步骤、阈值与证据边界见
+[GPU 显存仲裁验收 Runbook](../../../docs-site/ops/runbooks/gpu-arbitration-acceptance.md)。
+
+## configure_gpu_collector_role.sql
+
+为 `gpu.control` tombstone collector 配置独立 PostgreSQL 最小权限。脚本不创建登录角色或处理
+密码；先由 DBA 建立普通应用角色与 collector 角色，再由独立 schema owner 执行：
+
+```bash
+psql -d annotation \
+  -v application_role=annotation_app \
+  -v collector_role=annotation_gpu_collector \
+  -f scripts/configure_gpu_collector_role.sql
+```
+
+脚本会拒绝同角色、普通应用仍有有效 membership/fence DELETE、可 `SET ROLE` 的成员关系、
+collector 越权或高权限角色。
+普通应用角色不能是表 owner；数据库迁移继续使用独立 schema owner。
+
 ## backfill_scenes (v0.14.0)
 
 对历史 dataset 补 `scene_id` + `frame_index`(跨 task 帧序列地基)。
@@ -54,7 +106,8 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 
 ## 其他脚本
 
-- `seed.py`:dev 账号 + 调用下方各夹具种子(图片 coco8 + 点云 SUSTech/nuScenes),不再造假项目
+- `seed.py`:dev 账号 + 示例项目；`--profile screenshots` 使用严格素材与截图 catalog 契约
+- `seed_assets.py`:按 `seed-assets.toml` 下载固定版本素材，校验大小/SHA-256、安全解压并缓存
 - `seed_coco8.py`:真实 `third-party/coco8`(8 图)→ 图片检测项目 + 每图 Task + YOLO 框走 `import_yolo` 作**预标注**导入(非人工标注)
 - `seed_pointcloud.py`:SUSTechPOINTS 点云 demo + `third-party/nuscenes-mini` scene-0061 → scene 模式项目并按 scene 建包(by_scene split)
 - `seed_scale.py`:大规模压测夹具种子
@@ -62,3 +115,44 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 - `bootstrap_admin.py`:从 ENV 建超管
 - `reset_datasets.py`:清空 datasets + 关联表
 - `dump-openapi.py`:导出 openapi.snapshot.json
+
+## Screenshot seed 素材
+
+素材清单同时记录来源、摘要、仓库许可证和媒体公开文档状态。默认缓存目录为
+`$XDG_CACHE_HOME/ai-annotation-platform/seed-assets`，也可显式指定：
+
+```bash
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_assets.py \
+  --profile screenshots --cache-dir /tmp/aap-seed-assets
+
+# 已有完整缓存时禁止联网
+PYTHONPATH=. uv run python scripts/seed_assets.py \
+  --profile screenshots --cache-dir /tmp/aap-seed-assets --offline
+```
+
+`--asset-dir <path>` 使用 `<path>/<asset-id>/` 下已经解压的本地目录。下载器拒绝摘要或
+大小不符、路径穿越、符号链接、设备文件和超出解压上限的归档。
+
+严格截图 profile 使用固定摘要的 CC0 道路照片、CC BY 城市交通视频、PCL BSD-3-Clause
+RGB-D 扫描和 RapidOCR 示例图；派生素材会先完成许可门禁、摘要校验和确定性转换，再上传
+到对象存储。`demo` 模式不受该门禁影响。
+
+截图 profile 还必须绑定满足场景能力的 ML Backend。真实服务就绪时使用 live 模式；无 GPU
+时先启动 `docker-compose.ml.yml` 的 `screenshot-ml-stub`，再使用 stub 模式：
+
+```bash
+PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode live
+
+PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode stub
+```
+
+stub 默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100`，可用
+`--ml-backend-url` 覆盖。图片、视频和 OCR 项目都会创建唯一启用关联并设置主 backend；
+切回 live 模式时会移除 screenshot seed 自有的 stub registry。
+
+非 production 环境提供只读 `GET /api/v1/__test/seed/catalog`。它按固定逻辑键解析用户、
+项目、任务、批次和运行时 UUID，并硬校验 ML Backend 主绑定、项目启用关联、connected
+状态及场景级能力；数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。

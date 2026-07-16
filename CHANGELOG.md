@@ -8,6 +8,7 @@
 
 | 版本组 | 文件 |
 |--------|------|
+| 0.21.x | [docs/changelogs/0.21.x.md](docs/changelogs/0.21.x.md) |
 | 0.20.x | [docs/changelogs/0.20.x.md](docs/changelogs/0.20.x.md) |
 | 0.19.x | [docs/changelogs/0.19.x.md](docs/changelogs/0.19.x.md) |
 | 0.18.x | [docs/changelogs/0.18.x.md](docs/changelogs/0.18.x.md) |
@@ -35,6 +36,141 @@
 ## [Unreleased]
 
 ### Fixed
+
+- 修复视频 mask 导入、关键帧可见性与批量追踪种子处理，确保无损导入、outside 帧编辑和 mask 多轨延展保持正确。
+- 修复视频追踪入口的模型与目标类别校验：已有轨迹可继续使用 SAM3，画布级无源追踪不会写入缺失或越界标签。
+- 修复视频追踪迁移在存在无源或多源任务时无法回滚的问题；回滚会先移除旧 schema 无法表达的任务。
+- 修复并发复用旧 mask 对象时可能被后台回收的问题；引用写入与回收现在按对象键协调并在删除前做最终引用检查。
+
+## [0.22.4] - 2026-07-17
+
+### Added
+
+- **ONNXTools 真实 GPU 验收收紧为可复核的镜像内门禁**：验收器在触发 CUDA 前必须核对检测/属性模型的批准 SHA-256 和审批引用，未批准的结构相似模型不能关闭门禁。它使用代表性车辆图执行三条业务路由，核对复合管道实际进入属性分类、四个 ORT session 全部以 CUDA 为 primary provider，并连续两轮验证受签 full-pool unload、稳定显存基线与至少 90% 工作集回收。参考镜像、内测检测/属性模型和 RTX 3090 已通过该门禁并冻结 provider、显存与最终 residency 证据；各部署的 capability 仍默认关闭，只有匹配参考证据或重新验收后才可开启。
+- **跨宿主同号卡关闭最终实物门禁**：RTX 3090 节点与 RTX 4060 Laptop GPU 节点各自在物理卡 0 上并行执行 Grounded-SAM2 和 ONNXTools，外部 verifier 在 PostgreSQL 时钟探针 RTT 收缩后重算出 1370.722 ms 的保守重叠；两端的节点、物理 UUID 与 `gpu_resource_id` 均不同。远端完成 HTTP 后注入 `response-lost-after-http` 只会收紧远端精确 generation 坐标，本地资源清空 ephemera、刷新证明后仍通过 preflight。跨宿主隔离、并行与单侧故障门禁已经关闭，release latch 继续默认关闭并由运维逐资源灰度。
+- **GPU enforce 灰度获得持久逐资源 rollout 与安全回滚**：每张物理卡以 PostgreSQL 冻结 `off/promoting/enforcing/demoting/blocked` 状态、保守 effective mode、目标模式和 exact transition identity。release latch 开启后，health worker 按 pending membership 激活、signed full-reset、enforce-mode 与 Redis proof reset 顺序推进，每步都必须等 post-horizon fresh health，Redis ready 也强制绑定 exact `enforce` gate。每个 Backend 的 reset/mode 操作会把 rollout transition、membership、boot、control epoch 和 token horizon 持久到 fence，响应丢失或 worker 重启后可重签同一意图。回滚先停止新准入并锁存 Redis not-ready，等 lease、queue 和 transition 归零后逐 Backend 切回 legacy，全部 fresh health 确认才结束 `demoting`；它不清 Redis，也不假定已驻留模型卸载。单卡成员串行，多卡最多四路并行且故障隔离。业务派发在 Backend HTTP 前读取 rollout 真值，对缺行、过渡态、未知资源越界与数据库失联 fail-closed，而显式 CPU backend 不承担 GPU rollout 数据库依赖。管理面同时展示持久 rollout、解析后 effective mode 和 Redis runtime。外部实物门禁已关闭，生产 release latch 仍按安全默认值关闭并要求运维显式启用。
+- **GPU 显存仲裁获得可重算的非生产验收工具链**：严格 manifest 驱动的 runner 可只读预检 PostgreSQL、Redis、Backend challenge health 与物理 GPU 身份，并在 exact run-id 二次确认后通过真实 authority 执行单卡、多卡或跨宿主 workload。容量拒绝场景只接受 grant 和 Backend HTTP 前的精确 `gpu_capacity_unavailable` 503，并证明账本不变。机器证据冻结有界 queue/transition、显存样本、HTTP 执行窗口和三类软件故障；跨宿主窗口按 PostgreSQL 时钟探针 RTT 收缩为保守重叠下界。外部 verifier 会从无故障主报告的原始快照重算结论，并拒绝伪造摘要、冻结阈值或脱敏后的拓扑/action 元数据漂移，故障报告则在注入现场完成机器检查。五个 Backend 统一报告宿主物理卡 token，避免容器逻辑 `cuda:0` 混淆卡号。工具仅限完整 GPU 的非生产验收，本机与真实第二宿主门禁均已关闭。
+- **GPU Backend 启动时拒绝多卡可见集合**：五个受管 backend 在构造模型池或 ORT session 之前统一检查 NVIDIA/CUDA/ROCm 可见设备配置。单索引、单 GPU/MIG UUID 与显式无设备值保持可用；逗号列表、多 UUID 和已暴露 GPU runtime 的无界 `all` 会直接使服务启动失败，防止单资源 lifecycle 账本误管多张物理卡；CUDA 基础镜像在未挂载 GPU runtime 时的默认 `all` 不影响显式 CPU 部署。
+- **GPU busy victim 主动驱逐获得跨进程互斥编排**：cold authority 仅在空闲候选累计预算不足时选择 busy victim，strict drain ACK 后以新鲜 Redis lease 快照和新 challenge backend health 双域确认归零，再进入受签 full-unload。Redis transition owner 会持久冻结唯一 cancel/unload 分支，两个进程并发时只有一个方向成功；unload 获胜后绝不发送 RESUME。超时、异常或调用方取消会精确重放 durable cancel intent，按“稳定签名 → arm cancel → 真实 RESUME → strict ACK + fresh health → Resident/Unknown CAS”收口。DRAIN、等待和 UNLOAD 使用工作期限，owner 另保留完整 30 秒取消窗口；冻结 marker 只能由 exact 分支终态或 proof reset 清理，损坏与丢 key 均 fail-closed。单卡与多卡沿完整物理资源 ID 隔离，实物单卡、多卡与跨宿主验收均已通过。
+- **GPU busy drain cancel 获得被动 RESUME 证明闭环**：平台可从持久 cancel intent 稳定重签 exact generation/JTI/owner/`operation=evict` 的 RESUME token，并严格要求 cancel ACK 与新 challenge health 同时证明 result generation 已恢复为 Resident、GPU 仍加载、可驱逐且完整 pool-id 未漂移，active/builder/borrower 非零仍是合法恢复现场。证明成立后才允许 Redis 从原 Draining generation 回切 result generation；ACK 或 health 任一不可信只会保留旧 lease 与预算并收紧为 Unknown，响应丢失只做同一 CAS 重放。该证明层不单独发送 RESUME，而由主动驱逐编排在持久分支冻结后调用。
+- **GPU busy drain cancel 获得持久精确重放意图**：平台在签发 RESUME 前，会在 PostgreSQL 同一事务内推进 cancel generation 与 token horizon，并持久绑定 source/result generation、membership/boot/control/runtime 身份、transition owner/hard deadline、`operation=evict`、token expiry/JTI 及稳定 pool-id 集合。并发、响应丢失或进程重启后，只有全字段精确匹配才复用原 generation 和 JTI，身份或时域冲突会 fail-closed，不会通过盲目重试烧掉下一代。真实 RESUME 与 authority 主动 busy drain 仍保持关闭。
+- **GPU busy victim 获得严格现场证明与只读 drain 分类**：busy-capable victim subject 在保持 Resident、evictable、capability、challenge、membership、boot、generation、control/runtime epoch 与 resource identity 精确绑定的同时，允许旧 workload 仍在 active/borrow，并冻结稳定 pool-id 集合防止后续健康回执遗漏 pool。drain generation 的 fresh health 使用单次 MVCC 快照只读分类为 `draining_busy`、`ready_to_unload` 或 `uncertain`；只有 active/builder/borrower 全部清零且 Draining residency 完整可信时才就绪。严格 wire 与 ML client 同时固定了合法 busy drain ACK，但本阶段不调用 Redis transition，也不授权 authority 主动驱逐 busy victim。
+- **GPU busy victim 获得原子 drain 状态机地基**：Redis 驱逐 begin 可在 exact card ticket 队首按既定 priority + LRU 选择仍持有 workload lease 的 Resident，原子保留旧 lease、推进 allocation generation、绑定 transition owner 并进入 Draining。旧 generation lease 仍能 heartbeat/release，新 admission 被关闭，同卡非 victim Resident 快路保持可用；只有 lease 清零才可进入 Unloading。更新 generation 的 cancel CAS 可在保留旧 lease 与原 cooldown 的同时回滚 Resident，结果不确定时可携带 lease 保守落 Unknown，响应丢失精确重放不重复推进。durable cancel generation、双域 health 等待与 authority 主动 busy drain 仍保持关闭。
+- **GPU cooldown 阻断可在卡级队首有界等待**：cold authority 会保留 exact card ticket，按 Redis 快照给出的累计最早时刻等待，再重新读取容量快照后才开始 victim health、代际推进与驱逐。等待同时受 admission deadline 和固定 ticket TTL 约束，不续期，也不会提前消耗驱逐终态清理预留；超时或取消均精确清票，不同物理资源的等待互不阻塞。busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。
+- **GPU 新驻留获得原子 cooldown 保护**：Redis allocation schema 新增绝对保护截止时间，Resident 必须持有正截止时间且不能由普通 transition 绕过 cold finalize 生成。正常 cold 路径只有首次可信的 Loading→Resident 终态 CAS 才用 Redis 时钟开始窗口；proof reset 重建 Resident 时按 prepared 时刻保守恢复窗口，以上精确重放与 Resident 快路均不续期。Python 快照选择和驱逐 Lua 都会排除未到期 victim，Lua 可返回累计释放足够容量的最早时刻且在阻断时不推进任何驱逐状态。普通旧账本只会 fail-close 并经证明重建，不会原地补字段；升级时遗留的合法 v2 prepared reset 只能沿用原上下文 COMMIT 原子收敛为 v3。保护窗口默认 30 秒且可独立配置；busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。
+- **GPU authority 接通有界两级 FIFO**：Resident 请求只在 backend 全局并发饱和后进入 backend 队列，cold slow path 先取得卡级精确队首，再做容量检查和空闲驱逐。同一 card ticket 贯穿 cooldown 等待、多 victim 与最终准入，只在成功时原子消费；独立超时、固定 ticket TTL、驱逐终态清理预留和取消安全清理使等待不会无界挂起。busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。
+- **GPU 冷建容量不足时可编排同卡空闲 Backend 驱逐**：惰性 authority 现在只从同一完整 `gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的 victim，按优先级、LRU 与 backend id 稳定排序，并可依次释放多个预算。每个 victim 必须经过持久 generation/owner、严格 drain ACK、新鲜 health proof、受签 full-unload 与幂等终态 CAS；响应丢失只做 exact 重放，任一不确定结果保守收口 Unknown 并停止继续驱逐。预算释放后以新 challenge 重读 target 再进入 cold admission；单卡与逻辑多卡共用同一条逐资源路径。忙碌 victim 等待、取消防抖、实物多卡灰度与生产 effective enforce 仍保持关闭。
+- **GPU 冷建派发可以在响应后立即收敛显存终态**：完整 HTTP 响应后，平台使用新 challenge 重新探测 backend，并在逐卡持久锁内把 Loading 严格分类为 Resident、CPU fallback、Unloaded 或保守 Unknown。只有全池显式空的可信证明才释放显存预算；代际或成员漂移会保留不确定租约等待修复。Redis 响应丢失使用精确 owner/lease/generation 重试，单卡与多卡均按完整物理资源隔离；生产 effective enforce 仍保持关闭。
+- **GPU 冷启准入获得持久 generation 授权地基**：平台只会为具备新鲜 challenge proof、enforce gate、绑定 identity、全池显式空且零活跃的 backend 持久推进新 generation；提交前会在 membership→fence 锁序内二次复验，generation 与保守 token horizon 在同一事务推进，失败代际不回滚。Redis 保留尚未接通，生产 effective enforce 仍保持关闭。
+- **GPU 驱逐控制线具备可验证的锁外 transition wire**：平台可以用成对 generation/token 调用受管 drain、cancel 与 full-pool unload，并在解析前保留完整 HTTP transport outcome。远端 ACK 必须包含精确字段和严格类型，重复 JSON key 或矛盾 residency 均不能作为显存释放证据。该接缝尚未接入生产驱逐，effective enforce 仍保持关闭。
+- **ML Backend 注册表新增强类型逐卡显存声明**：超管可为全局 backend 设置稳定 `gpu_resource_id`、保守 `vram_budget_mb` 与驱逐优先级；平台从显式逐卡资源映射校验单体预算，并通过只诊断端点区分配置阻断与允许驱逐的弹性超售。单卡、同机多卡和多主机同号卡均按资源 key 隔离；管理 API 分开报告 desired/effective mode，observe 影子派发就绪时 effective 为 `observe`，enforce 在账本与 gate 握手就绪前仍为 `off`。过期或失败的 health 不会被当作 CPU/UUID 证据。
+- **模型市场新增逐卡 GPU 配置与 residency 观测**：超管可编辑 backend 的物理资源、显存预算和驱逐优先级，并查看每张卡的容量、静态超售、desired → effective mode、CPU fallback 与逐池驻留。没有绑定项目的全局 backend 仍可做健康检查与卸载，操作成功文案不再将请求已接受误报为显存已释放。
+- **GPU observe 影子仲裁覆盖真实加载派发口**：predict、交互预测、warmup、reload 与注册 smoke-test 在发送 backend HTTP 前使用同卡静态预算和新鲜 residency 输出非权威 `would-admit|would-evict|would-reject` 决策；legacy unload 只记录请求，不能作为显存减账证据。单卡、同机多卡和多主机同号卡始终按完整资源 key 隔离；旁路查询超时后 fail-open，不会拒绝、排队或驱逐业务请求，enforce 在 Redis 账本与 lifecycle gate 就绪前仍保持关闭。
+- **受管 GPU 生命周期获得共享 wire 与非对称验签契约**：共享 ML Backend 协议新增 canonical generation/control epoch、residency、transition、八类结构化错误和 admission claims schema，并固定使用带 `kid` 的 Ed25519 / EdDSA token；平台签发进程独占私钥，backend 只持可轮换公钥 keyring。
+- **YOLO 成为首个具备受管 GPU 生命周期的 Backend**：模型池现在先预留再构建，并以 borrower 与逐模型使用锁保护 LRU、可变模型状态和全池卸载；请求取消或 build 超时后仍跟踪真实 executor/builder 完成，tracker 会在截断和异常时关闭流。`/health` 暴露可信 residency，加载入口支持 EdDSA admission、generation fencing、replay 防护、drain/cancel、受管 unload、mode/reset 与 legacy 兼容。其他 Backend 与平台仲裁账本尚未接入，enforce 仍保持关闭。
+- **ONNXTools 获得受保护的固定句柄池与受管生命周期纵切**：pipeline、detector、va 冷启动现在 single-flight，并以 borrower、逐句柄使用锁和真实 executor/builder 跟踪防止重复构建、推理中卸载及取消后的隐藏 GPU session。`/health` 聚合四个业务 ORT session 的真实 provider chain，manual、idle、shutdown 与受管 reset/unload 共用全池清理；Docker 依赖固定到已审计上游提交。部署完成真实 GPU 回落验证前不会在 `/setup` 宣告 managed capability，也不会进入自动驱逐集合。
+- **RapidOCR 获得动态 composite 引擎池与受管 GPU 生命周期**：六种权重三件套现在通过 slot 预留、同 key single-flight、borrower 和逐引擎使用锁保护 det/cls/rec 三条 ORT session；LRU 会先完整释放空闲旧引擎再构造替代。`/health` 新增可验证 residency，predict/warmup 接入 admission，并支持 drain/cancel、generation fencing、受管 unload、mode/reset、idle 与 shutdown 全池清理。经确认的设备错误才允许 CPU replacement，部分 CUDA 构造的释放未经全池清理确认时保持 Unknown。参考镜像和模型已通过真实满池 GPU 回落及显式 CPU 推理验证；能力门槛仍由每个部署显式开启。
+- **Grounded-SAM2 获得图像/视频双池受管 GPU 生命周期**：两个变体池现在共享冷构建串行锁，并通过 single-flight、容量预留、borrower 和逐条目使用锁保护 predictor、embedding cache 与 video tracker；请求取消后会继续跟踪真实 executor 和 builder。受管 unload/reset 会完整清理双池，`/health` 聚合三态 residency，predict/warmup/reload 接入 generation fencing、admission、drain/cancel 与 mode/reset。参考镜像与六份 checkpoint 已通过双池 LRU、两轮 generation 冷启及物理显存回落验证；能力门槛仍由每个部署显式开启。
+- **SAM3 获得图像与两类视频三池受管 GPU 生命周期**：image、multiplex 文本追踪和 PVS 点框追踪现在通过独立池与共享冷构建锁管理，single-flight、borrower/use lock 和取消安全 executor 保护真实 owner。`/health` 聚合三池 residency，受管 reset/unload/shutdown 覆盖全部模型与 embedding cache，predict/warmup/reload 接入 admission、generation fencing、drain/cancel 与 mode/reset。参考制品完成图像及两类视频真实推理、两轮冷启与三池物理显存回落验收；部署能力门槛仍默认关闭并需显式验证。
+
+### Changed
+
+- **GPU 受管派发新增显式传输结果回报**：predict、交互预测、warmup、reload 与 unload 现在会在完整 HTTP 响应返回后、状态或 JSON 解析前同步记录结果，因此可以把明确的 4xx/5xx 与未收到完整响应的传输超时、断连、取消区分开。这个回报仅用于后续租约安全收敛，不会把 HTTP 成功误当作显存已驻留或已释放；生产 enforce 仍保持关闭。
+- **受签 lifecycle mode ACK 接入不可逆 membership 激活**：平台新增不经过 workload dispatch、shadow 或 semaphore 的 `/lifecycle/mode` 客户端，请求只带 admission token 而不带 generation。desired-enforce 周期任务会先以新鲜、完整且绑定受管能力的 legacy residency 证明重验当前物理卡，并在全局短 barrier 中阻断任意 current membership 间的 canonical endpoint 或新鲜 boot 别名。promotion 先非阻塞尝试逐卡锁，取得后再非阻塞尝试全局 barrier；逐卡锁忙立即 fail-closed，全局短竞争则先释放事务并以 deadline + jitter 有界重试，耗尽后才阻断。普通 claim、membership insert 与 health proof 写入按逐卡锁→全局 barrier 排序；数据库 trigger 对两级锁均 fail-fast，以 `40001` 要求整事务重试，防止多资源写事务持有全局锁再等待下一张卡。任何成员需要推进时域，或 signer、证明、别名与 ACK 阻断时，平台都会在推进或返回前将 Redis 旧 ready 降为 not-ready；只有 Redis 明确确认 `not_ready` 才允许推进数据库时域。平台随后于同一短事务推进 runtime epoch、激活 membership，并推进 control epoch 与 token 过期上界；提交后才签名并取得严格 ACK。远端响应从原始 JSON 拒绝重复 key，并严格校验完整 response、residency、pool、boot 与 identity，缺省字段或字符串布尔/计数不再能伪造成功确认。签名、网络或 ACK 失败不会回滚 active 状态；整卡超时、普通异常与批次取消也会使用预留时间片再次锁存 not-ready，等待后续新证明以更大 epoch 恢复。`off/observe` 不加载 signer、不调用 mode，也不访问仲裁 Redis。ACK 本身不直接打开 ready；只有晚于 token horizon、绑定当前 active identity 与 exact control high-water 的新证明才能让 Redis 收敛 ready。业务 token、驱逐与 effective enforce 仍关闭。
+- **受管生命周期能力纳入 challenge 健康证明**：平台只接受 `/setup.managed_lifecycle` 的完整严格九字段声明，不再用 schema 默认值或类型转换把旧 backend 静默升级；同轮 `/health` 与 `/setup` 完成后才取得数据库观测时间，并将规范能力哈希绑定到 exact membership proof。并发扫描以探测开始时间封闭迟到写回，慢 setup 不能给旧 health 续鲜。缺失或远端非法声明会规范化为无能力，仍可保持 connected，但不能激活 membership 或形成 Redis ready；快照篡改、成员漂移或缺少 exact signed identity/control 也一律保持 not-ready。
+- **GPU admission signer 使用服务级文件 secret 隔离私钥**：平台以严格 JSON 私钥文件和显式 active kid 延迟构造 Ed25519 signer，拒绝重复 key、非规范编码和缺失 active key；`off/observe` 不读取私钥。Compose 只向 API、通用 worker 与 GPU worker 挂载该 secret，ML backend 继续只持公钥环，避免私钥随全局环境扩散到 CPU/export/beat、Web 或推理容器。
+- **ML Backend 的 GPU 驻留变更调用收口到统一派发边界**：平台 API/worker 现在直接消费共享 lifecycle wire，predict、交互预测、warmup、reload 与 unload 共用可注入的 async context，并建立七类结构化仲裁错误、`Retry-After`、受管 generation/token header 与 unload generation body 接缝；生命周期 API 与注册 smoke-test 的加载准入会保留仲裁根因。预测仍先经过进程内背压；semaphore 缓存由 event loop 自身持有，Celery 重复创建 loop 时既不会复用旧 loop 的同步原语，也不会反向保活已关闭 loop。派发以逐卡 effective mode 为准，支持 demotion 与多卡部分灰度；任一卡 effective enforce 时，缺失/未知 claim 和未注册 raw reload 都会在 backend HTTP 前拒绝，只有新鲜可信的显式 CPU backend 可绕过。effective off/observe 保持无权威状态写入与 headerless；effective enforce 已接通 Redis runtime authority、admission lease、业务 token、outcome report 和 exact enforce gate，外部实物门禁关闭后仍需通过默认关闭的 release latch 由运维显式启用。
+- **跨 Backend GPU 显存仲裁按逐物理资源治理**：ADR-0049 按稳定 `gpu_resource_id` 分片的静态预算准入与优先级加权 LRU 驱逐，统一单卡、多卡共享和多主机同号卡语义，并冻结 residency 真值、request lease、generation fencing、锁外卸载、enforce fail-closed、错误码与阶段门禁。五个 backend 的受管代码纵切、静态 claim、observe 影子派发、持久 fencing 高水位以及 Redis allocation/lease/FIFO/transition 原子账本已经落地；账本重建以 revision + incarnation 双重 CAS、全域镜像校验和有界 deadline fail-closed。独立持久 membership/tombstone 现会在 claim 事务内建立并保留退役证据，RESTRICT fence 不会先于墓碑丢失，pending 成员以 runtime baseline 为基准受控激活，冻结墓碑在 proof-backed GC 前不可改删；签发新 fence 或复用既有 epoch 时都能按 exact membership epoch 单调持久化令牌过期上界，探活写回会按 registry→resource barrier→global promotion barrier→membership 顺序重验 epoch/state。Redis v3 账本把 all-domain、携带 epoch/state 的 membership-domain、active-domain 与 allocation cooldown 纳入同一资源 CAS；新准入和排队只接受 exact active epoch，retiring 成员仍可收敛已有 lease、ticket 与 transition，域变化先 fail-close 再单调扩张，响应丢失重试与旧 schema 均不会绕过门禁。`generation=null` 现只能以 non-evictable Unknown 全额计费，且不能准入、排队或参与普通 generation transition；已知 generation 不会在普通 repair 中退回 null。GPU backend 的 `/health` 现支持 header/query 双通道 challenge 精确回显，平台只把唯一响应回显与数据库时钟、backend/resource 和当前 membership 绑定为实时证据候选；旧 backend 或代理丢失回显时仍可保持 connected，严格拒绝未知 query 的实现会降级到一次普通探活，但兼容响应不能形成仲裁证明。Redis proof reset 现以独立 begin/commit 两阶段原语冻结 prepared 资源，进程重启可恢复持久 context，commit 会按封闭域一次性清理 active/retiring child；Unknown、不完整证明和超额承诺只会落 not-ready，精确重试会重新校验当前 deadline 与完整 post-state，无法用未推进 revision 的 partial corruption 回放 ready。平台证明消费器通过逐资源 advisory barrier 封闭并发新增成员，并在全量 membership→fence 锁内重验 token horizon、严格 residency、identity 与 generation/control 高水位后调用 Redis；pending/retiring 和不可信证据保持 Unknown/not-ready，Resident 即使绑定了独立 lifecycle capability，在完成受签激活前也不会获得驱逐权限。ready deadline 只从固定 live health 派生，not-ready 使用 canonical `0`，陈旧 prepared 不会在重启后永久冻结整卡；同卡串行恢复而异卡仍可并行。retiring 成员现在以不可复用 `retirement_id` 绑定新鲜 live-unloaded 证明；Redis 在复验全封闭域 child 后原子缩域，并写入不绑定后续全局 revision 的 per-target completion receipt，再由数据库锁内删除 exact tombstone 与孤立 fence。per-target receipt 以自身结果域复验，数据库 sibling 域演进不会破坏崩溃恢复，proof reset 后旧 incarnation receipt 也不会阻塞新鲜证明重新收集；冻结 health 或缺失 registry 不会被当作删除证据。每分钟健康扫描后的 task-local repair 同时处理 desired-enforce 与持久非 off rollout 资源，并通过过期消息、防重入锁、批次总时限、四路公平时间片和单卡隔离避免慢卡堆积；管理 API 在释放数据库读事务后以最多四路并发读取 Redis，结构化结果同步暴露逐资源账本、队列和 GC 状态。`off/observe` 不访问仲裁 Redis；collector 已由独立 `gpu.control` 单并发进程和最小权限数据库角色隔离，ONNXTools 参考制品与跨宿主同号卡均已通过实卡验收，外部门禁全部关闭；release latch 继续保持安全默认值并由运维逐资源启用。
+
+### Fixed
+
+- **GPU proof recovery 不再把 legacy gate 提交为可派发 ready**：无论 Backend 当前是空驻留还是已驻留，只有 fresh health 明确证明 exact `enforce` lifecycle gate，才能完成 Redis proof reset；`legacy` 一律保留 Unknown/not-ready，防止 rollout 在 Backend 尚未受管时误开业务派发。
+- **本机 GPU 验收不再套用跨宿主时钟收缩门槛**：单卡与同宿主双卡报告按 runner 进程内 monotonic HTTP 窗口重算；只有跨宿主并发证据才要求 PostgreSQL 时钟探针 RTT 收缩后仍有保守重叠，避免毫秒级快速 warmup 因探针耗时更长而被 verifier 误拒。
+- **GPU 双卡与跨宿主验收不再在请求完成边界误报未执行**：验收器会把 workload 全部返回后立即采集的最终快照纳入 Resident GPU 执行证明；当最后一个轮询样本仍为 Loading、紧随其后的可信快照已为 Resident 时，不会再因采样停止竞态阻断真实通过的并发场景。
+- **GPU 显存实物验收不再因暂停周期性健康扫描而读取陈旧证明**：验收 `run` 现在会在 workload HTTP 前为范围内每个 Backend 持久化新的 challenge-bound health，任一刷新失败均提前阻断，避免只读预检已观测到实时状态，真实 authority 却因数据库旧回执误判 not-ready。
+- **多卡 Backend 不再把宿主卡 1 误报为逻辑卡 0**：Compose 现从各 Backend 既有的 `*_GPU_DEVICE_ID` 派生独立物理卡 token，`/health.gpu_info` 优先消费它。即使 NVIDIA container runtime 把 PID 1 的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`、CUDA 将挂载卡重编号为 `cuda:0`，仍能精确报告宿主 `index:N` 或 GPU/MIG UUID，避免双卡仲裁预检误判资源域。
+- **五个 GPU Backend 的 drain cancel 不再接受变更 operation**：YOLO、ONNXTools、RapidOCR、Grounded-SAM2 与 SAM3 现在要求 RESUME token 同时精确匹配原 drain 的 owner 和 operation；仅 owner 相同但 operation 不同会保持 Draining 并返回 transition conflict，同一正确 token 仍可幂等重放，cancel 后迟到 unload 继续由 generation fence 拒绝。
+- **GPU FIFO 票据不再能在缺失或过期后绕过队首**：Redis admission 现在要求显式 ticket 必须仍是匹配 backend、owner 与 membership 的存活精确队首；空闲驱逐 begin 也能在同一原子操作内绑定卡级队首并保持多 victim 重放，直到目标冷建准入成功才消费 ticket。生产 effective enforce 仍保持关闭。
+- **GPU 冷建 reservation 不再向非 owner 泄漏并发许可**：Redis 准入现在在同一原子区内拒绝其他调用方加入处于 `Reserving/Loading` 的 allocation，仅保留原 reservation lease + owner 的幂等重试。这避免同一模型被重复冷启，也防止第二条 lease 卡住失败回滚。生产 effective enforce 仍保持关闭。
+- **异步 ML 任务不再丢失 GPU 仲裁根因**：批量预标、跨 Backend 下游阶段、逐帧预标、失败重试和视频追踪现在统一保留稳定仲裁错误码、HTTP 状态与可选重试窗口。失败预测明细继续可按根因检索，批量与逐帧任务使用按错误码聚合的有界摘要；逐帧任务不会为每帧制造不可正确重试的失败行，普通 Backend 异常与现有任务终态保持不变。
+- **项目管理员不再能通过项目旧路由改写全局 ML Backend**：全局 backend 的 URL、鉴权、名称与调用参数已与 GPU 资源声明一并收口到超级管理员；项目管理员仍可在项目设置中启用或停用已注册 backend，不会再影响其他项目共享的端点。
+- **YOLO 与 ONNXTools 冷启动取消不再遗留池外 GPU owner**：模型或句柄 builder 现在会等底层 executor、失败清理和状态提交全部结束后才释放 reservation；重复取消也无法打断 unload 真值提交。失败或取消后的未知驻留会阻止继续冷建，直到受管全池清理重新建立可信空状态，避免隐藏对象突破物理显存上限。
+- **YOLO 受管生命周期在重复取消和进程 shutdown 时不再提前丢失真实 owner**：取消冷启动请求会在不再次让出事件循环的情况下登记仍运行的 builder，borrower 释放与 shutdown 即使连续收到取消也会先等待 active、builder、waiter、borrower 和全池清理完成，再向调用方重抛取消，避免健康状态短暂早于真实 GPU 工作归零。
+- **Grounded-SAM2 的淘汰取消与失败清理不再丢失 GPU artifact owner**：替换 builder 在首次调度前取消时，被摘除的 LRU victim 仍由独立 cleanup owner 接管；attachment cleanup 失败会隔离保留强引用供后续 force cleanup 重试，只有所有失败 artifact 与 CUDA 清理均可信完成后才恢复空驻留，避免隐藏显存被误报为已释放。
+- **SAM3 全池卸载不再遗留 BF16 权重转换缓存**：vendor 原先把 autocast 永久进入进程上下文，真实推理后即使三池逻辑上已空，PyTorch 仍会持有数 GiB 的转换权重。图像、multiplex 与 PVS 现均使用请求级 autocast，严格清理同时清空 cast cache，卸载驻留真值与物理显存恢复一致。
+- **ML Backend 设备失效观测不再误报可回退性和实际 provider**：共享 torch 设备 latch 现在线程安全且向 CPU 单调，Grounded-SAM2 与 YOLO 只在识别为设备错误且 CPU replacement 成功后提交回退；CUDA runtime 查询本身失败时，两者的 `/health` 仍可用，YOLO 也会在 CPU replacement 后尝试释放 CUDA allocator 缓存。SAM3 image、Multiplex 与 PVS 明确为 GPU-only，模型加载检测到 GPU 不可用时返回可重试的结构化 503。RapidOCR 与 ONNXTools 改为读取已加载业务 session 的实际 primary provider，ONNXTools composite 的检测与分类 session 共用同一份功能探测后的 provider 偏好；空池、缺失或混合 provider 返回 `null`（unknown 语义）。注册表快照与实时 `/observe` 均透传 `compute`，Runtime Observe 与 PerfHUD 的前端消费共用同一 CPU fallback 判定，不再误报显式 CPU、实时空状态或 GPU-only backend。
+
+### Security
+
+- **GPU tombstone collector 改为独立最小权限控制面**：显存 repair/GC 只投递到 `gpu.control` 单并发 worker，collector 数据库 URL 仅通过该进程可见的只读文件挂载。每轮 enforce repair 会核对普通应用与 collector 的实际 PostgreSQL 角色和有效权限：两者必须不同，普通角色不得直接删除 membership/fence，collector 只能读取/锁定 GPU 真值并完成受证明约束的删除；验证失败会先把资源闩为 not-ready。新增 fence 删除触发器，只有 exact GC receipt、同事务逐卡锁且 registry/membership 均已消失时才允许清理孤立 fence；健康扫描与 repair 使用独立队列和锁，防止控制面饥饿。
+- **受管 GPU header 不再降级绕过 legacy 生命周期门禁**：五个 GPU backend 现在只在 generation 与 admission token 都完全缺失时接受 legacy workload；部分、重复或非法 header 会在业务 body 处理前 fail-closed，携带受管 header 的 bodyless unload 也不再忽略凭据后执行兼容清理。
+
+## [0.22.3] - 2026-07-14
+
+### Added
+- **ML Backend 有效计算设备可观测地基**：五个 ML 后端镜像（yolo / grounded-sam2 / sam3 / rapidocr / onnxtools）在 `/health` 暴露顶层 `compute: {configured_device, effective_device | effective_provider}`，并建立共享 torch 设备探测与初始 ORT provider 功能探测。平台将该字段传入注册表 `health_meta` 与 PerfHUD 实时快照，管理端可显示 GPU 配置与 CPU 生效路径的偏离。该交付建立了 ADR-0049 所需的诊断传输链；具体 fallback 是否成立以各 backend 能力为准，不由一次启动探测推断。
+
+### Changed
+- **视频时间轴两态提升信息密度与窗口辨识度**：展开面板不再为章节、书签、问题、AI 预测、所选轨迹、AI 影响范围与循环区间保留空行，并把播放、逐帧和缩放控件压缩到底部状态栏，不再用大号图标单独占据一整行；缩放 / 适配按钮固定在底栏最右侧，展开 / 收起通过尊重系统动态偏好的平滑过渡衔接，两态也保持同一贴底位置。紧凑态继续呈现语义摘要，并把状态信息移到独立一行，为主时间条保留更多宽度。展开、收起态均显示当前 / 总时长和明确的全片窗口读数，未缩放时也保留完整窗口选区，缩放后可直接判断当前窗口位于全片的哪一段。
+- **视频追踪的目标种子改为逐目标摘要**：种子区现在每个目标单独一行，直接列出点数、框数和具体所在帧，同时标记后续操作会归入的当前目标；多目标与跨帧纠偏不再只显示难以对应的汇总数。
+- **视频追踪模型选择器只显示当前项目真正可执行的模型**：模型列表现在按项目已启用、已连接且能力可达的 ML Backend 过滤，并在模型名后显示提供它的后端；组合追踪只有同一后端同时提供文本发现与点框追踪时才出现。后端也会在排队前拒绝不可执行的真实模型，不再创建随后必然失败的任务。
+- **视频工作台明确分离画布发现、单轨延展与多选延展**：顶部入口改为「发现目标」，单条轨迹卡与右键菜单改为「延展此轨迹」，多选入口改为「批量延展」；追踪面板首屏显示操作作用范围，提交按钮随之变化。文本发现模型与「+ 新目标」只保留在画布级入口，单轨操作不再混入新建多目标语义。
+- **视频 AI 追踪面板改为紧凑的画布检查器**：方向、范围、模型、种子与影响摘要现按任务层级分区，追踪进度和候选审阅共用同一视觉语言；配置面板停靠在中间画布右上角，避免遮挡主要标注区域。入口迁移到顶部 AI 单题按钮左侧并采用相同样式，两个 AI 面板保持互斥；打开后的面板也共用相同的紫色语义边框、渐变头部与表单分区骨架，并与单题面板一样支持画布内拖动、右下角缩放及位置/尺寸偏好恢复。
+- **视频 AI 追踪的 `mock · 测试框` 不再出现在生产界面**：mock 模型只是无 ML backend 时验证流程的开发兜底，此前项目没绑后端时仍会露给用户。现生产构建里彻底隐藏它（无论是否绑后端），仅开发构建保留以便本地无 GPU 验证；绑了真实后端的项目行为不变。
+
+### Fixed
+- **图片与视频画布的缩放浮条贴齐可用区域右侧**：浮条此前仍为已收窄的反馈按钮触发区保留额外空档，看起来悬在画布中间；现在直接以画布容器右边缘为锚点，侧栏宽度变化时也会跟随画布边界。
+- **工作台右下角反馈按钮不再干扰画布与视频时间轴**：BUG / Issue 悬浮按钮的自动唤出区此前远大于实际入口，操作右侧缩放浮条或时间轴控件时可能意外出现并抢占点击；现在只在右下角窄触发带唤出，出现后由按钮自身维持展开，画布控件与时间轴可以保持贴底而不与其冲突。
+- **折叠时间轴上的活动区间恢复可见反馈**：循环区间、章节圈选草稿和 AI 影响范围此前虽然已生效，却会被紧凑态样式隐藏；现在拖动和受控范围在展开、折叠两态下都能立即确认。
+- **视频追踪的「追踪方向」标题不再被分段按钮遮挡**：方向字段现在显式重置原生 `fieldset / legend` 间距并使用正常行高，中文字形下沿可完整显示。
+- **SAM3 文本追踪跨分窗不再从第二窗开始无输出**：multiplex 每个分窗都会新建会话，此前平台虽传入上一窗实例种子，SAM3 文本分支却没有消费，窗首文本暂时未检出时整窗会返回空。后续分窗现在把上一窗所有实例的有效外接框作为正提示与文本一起下发，单实例、多实例及 Mask 轨迹都能继续追踪。
+- **视频 AI 追踪对话框选 SAM3 系模型时不再显示无效的「尺寸」档位**：SAM 尺寸档位（tiny/small/base_plus/large）是 SAM2 checkpoint 概念，此前对所有非 mock 模型都显示，选 SAM3 文本检测 / 点框交互 / 发现追踪时也能选——但这些模型用各自 SAM3 权重、忽略该档位，误导用户以为能调 SAM3 模型大小。现「尺寸」选择器只对 `sam2_video` 显示，提交时也只对它透传 `sam_variant`。
+
+## [0.22.2] - 2026-07-13
+
+### Added
+- **视频 AI 追踪新增「发现追踪」(combo):按文本自动发现目标再逐对象记忆追踪**:选 SAM3「发现追踪 (combo)」并填文本(如 car)后,一个作业内先用 multiplex 在起始帧按文本检测出画面里的多个目标,再把每个目标当作独立种子交给 PVS 逐对象 memory 追踪——兼得「文本自动发现」与「跨帧干净身份」,发现的目标各建独立新轨迹(需指定目标类别)。仅在 sam3 backend 同时声明文本检测与点框交互能力时可选。
+- **视频 AI 追踪支持多选批量:一次延展多条已有轨迹**:在轨迹清单或选中卡里多选 ≥2 条轨迹后,新增「AI 追踪」批量入口一次发起——各源轨迹在同一个作业里被并行追踪,各自回填各自轨迹,只产生一条审阅记录、一次接受(而非按轨迹逐条 fan-out)。对话框摘要显示「延展 N 条轨迹」及类别(同类显类名、混类显「N 类」)。
+- **DEV 截图 seed 使用可追溯的真实场景和期望状态**：`screenshots` profile 从固定来源拉取真实道路图片、城市交通视频、PCL 室内点云与 RapidOCR 示例，经确定性裁剪/转码/无效深度过滤后，按显式媒体路径创建 4 个项目、14 个任务和多状态批次；`--repair` 仅重建能够证明由截图 seed 管理的对象。DEV 媒体改走同源 `/minio` 代理，远程浏览器不再依赖直连 9000 端口或 Docker 私网 IP。
+- **截图 seed 按场景能力绑定 ML Backend**：live 模式通过 `/health` 与 `/setup` 为图片交互、视频追踪和 OCR 项目选择可用 backend，并精确创建项目启用关联和主绑定；无 GPU 环境可启动同协议 stub，catalog 会对连接状态、能力快照、tracker 路由及 OCR 输出契约 fail-closed。
+- **截图场景改由 seed catalog 和真实角色驱动**：Playwright 在导航前统一校验项目、任务、批次、ML Backend 与场景能力，标注员和审核员页面使用真实成员关系；截图时钟、语言、时区、DPR、动画和资源就绪条件现已固定，并提供不覆盖资产的全场景验证模式。
+- **截图资产建立可校验清单与视觉回归基线**：完整矩阵成功后才会原子重建含场景来源、seed、浏览器、SHA-256 和尺寸的 manifest，Markdown、`img` 与 `AutoImage` 引用统一进入严格门禁；8 个高价值真实场景使用同一 catalog 和协议 stub 做 Chromium 像素回归，流程临时产物与重复 GIF 不再进入仓库。
+- **ML Backend 性能基准文档（RTX 3090）**：新增超管文档《ML Backend 性能基准》，实测 grounded-sam2 / sam3 / yolo / rapidocr 各任务的纯推理 / 端到端延迟、重新加载耗时、显存足迹、并发标注吞吐、视频轨迹转播（含 sam3 16 帧分窗口耗时拆解）与模型变体（yolo11 尺寸 / SAM2 档位 / GroundingDINO T·B / OCR mobile·server）对照，供客户做硬件规划与 backend / 模型选型参考。
+
+### Changed
+- **文档站首页改为可验证的真实产品场景叙事**：产品实证区现展示 SAM3 Magic Box 从粗框、候选到人工确认的短流程，并复用 OCR、项目预标注与模型市场截图解释完整 AI 生产链路；移动端与减弱动效环境使用静态海报，文档入口同时补齐独立的部署与运维路径。
+- **用户手册截图已按真实 seed 场景全量刷新**：正式矩阵现包含 60 张自动 PNG、3 张手工 PNG 和 12 个多帧流程 GIF，图片、视频、点云与 OCR 工作台均展示固定来源的真实媒体；发布门禁同时校验当前 seed revision、文档引用、文件摘要、孤儿和重复内容，视频场景会主动恢复统一布局并清理残留追踪候选。
+- **视频工作台工具栏改按单帧与轨迹分组**：选择工具保持独立，SAM 工具归入单帧子组，手工轨迹与 AI 追踪集中到轨迹组；矩形框轨迹改用叠帧方框图标，不再与 SAM 智能点混淆。
+- **视频 AI 追踪发起后对话框内即时显示进度**:此前点「开始追踪」对话框立即关闭,追踪进度只散落在轨迹卡的作业徽标和结果就绪后的审阅条上,发起到出结果之间对话框内毫无反馈。现对话框就地转为「追踪中…」轻量进行态(有分窗回报时显示「第 c/t 窗」),结果就绪自动让位给候选审阅条,失败则收起;「后台继续」可随时关闭对话框而不影响后台追踪,对齐图片侧交互式 AI 的即时反馈。
+
+### Fixed
+- **远程 DEV 工作台不再因 WebSocket 误连而持续重连**：远程浏览器此前会把默认 `localhost:8000` 解释为访问者本机，视频项目还会因实时与媒体链路不可达退回总览。现在远程 DEV 默认通过当前页面同源 `/ws` 和 `/minio` 代理连接，本机调试仍保留直连 API，显式 `VITE_WS_HOST` 配置优先。
+- **视频 AI 追踪对话框不再与右侧「选中卡」视觉相撞**:顶部居中的追踪工具条打开时,右侧浮动的选中标注卡会自动收起为紧凑标签让位(仍显示类别标题作上下文),对话框关闭后复位到用户原本的展开/折叠状态,不改动其持久化偏好。
+
+<!--
+日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：
+Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空组省略）。
+发版时把「## [Unreleased]」重命名为「## [x.y.z] - 日期」，再在其上方留一个空的
+「## [Unreleased]」。0.22.x 版本段累积在本区；进入 0.23.x 后整体移到 docs/changelogs/0.22.x.md。
+-->
+
+## [0.22.1] - 2026-07-13
+
+### Added
+- **DEV 截图 seed 增加可审计素材与 catalog 地基**：版本化清单固定上游来源、摘要、大小和媒体公开状态，下载器提供原子缓存、离线模式与安全解压；非生产环境可通过稳定逻辑键解析截图用户/项目/任务，并在 ML Backend 主绑定、启用关联、连接状态或能力快照缺失时明确失败。
+- **视频 AI 追踪对话框新增「本次影响」摘要**:发起前即显示本次会延展选中轨迹还是新建轨迹、各新建几条;文本检测模式额外提示新目标将继承源轨迹类别,避免「选中 car 轨迹却按文本检测行人」时类别被误标。
+- **视频 AI 追踪新增画布级入口,可不选轨迹直接检测新目标**:左侧工具栏 AI 工具组新增「AI 追踪」按钮,无需先选中轨迹即可发起——用文本(如 car)或点/框种子让 tracker 一次检测并追踪画面里的多个新目标(各建独立新轨迹),新目标类别显式指定、不再借用选中轨迹类别。原「选中轨迹发起延展」路径(Ctrl+B / 右键 / 卡片)完全保留。
+
+### Changed
+- **视频「AI 追踪」功能对外命名统一**:工作台此前混用「AI 传播 / 发起传播 / AI 追踪传播」指代同一个视频追踪能力,既与另一套纯几何的「标注传播」撞名,又让「传播」盖过了实际的多目标追踪语义。现统一为「AI 追踪」(主按钮「开始追踪」、时间轴泳道「AI 追踪」、方向与错误提示同步),交互与后端行为不变。
+
+## [0.22.0] - 2026-07-13
+
+### Added
+- **视频工作台新增原生栅格 Mask 轨迹与 DAVIS 导出**：标注员可用 `M` 在当前帧创建或编辑逐像素 Mask 关键帧，笔刷 / 橡皮支持逐 stroke 撤销重做，帧间按 hold 语义显示并以 alpha 精确选择；SAM2 / SAM3 tracker 可直接产出 Mask 候选，接受前后保持同一 RLE。Mask 使用内容寻址存储并支持 AAP JSON 无损迁移、Video JSON、COCO RLE、bbox-only 外接框降级及标准 DAVIS Full-Resolution palette PNG；导出包内不同 target 可保留各自帧编号规则。
+
+### Fixed
+- **视频 Mask 笔刷现在按视频固有分辨率保存**：视频工作台此前错误复用了尚未初始化的图片舞台尺寸，编辑 buffer 会退化成 1×1；绘制后虽然显示“未保存”，实际没有像素、确认也不会提交。上传后创建轨迹时，等价的元组尺寸也会被误判不匹配并返回 500。现视频任务从 manifest 取得宽高，服务端同时接受规范化后的尺寸序列，笔刷叠加与 Mask 轨迹保存恢复正常。
 - **视频追踪任务刷新后不再卡在「运行中」**：页面刷新时若登录态尚未恢复，运行中的追踪任务不会重连进度通道，UI 会一直显示 running、不冒出「完成待接受」，直到用户手动切走再切回。现登录态到位后会自动补连尚未连接的运行中任务。
 - **跨任务切换不再把上一个任务的 AI 候选挂到新任务画布**：在追踪候选预览请求在途时切到新任务，回来的候选此前会写成孤儿，并可能因视频项目跨任务共用 track / annotation id 而渲染到新任务、令接受 / 丢弃按钮打到旧任务的作业。现按任务归属校验后再写入。
 - **大任务打开 Data Manager「匹配详情」不再拉全表**：匹配抽屉的标注 / 预测候选 / 追踪作业三路查询此前无分页、全量物化进内存再切片，含数万条标注的任务即使只取一页也会内存尖峰、阻塞事件循环。现把分页下推到 SQL（预测候选也只对当前页做昂贵的形状转换），返回结构、总数与排序不变。
@@ -44,573 +180,3 @@
 - **Data Manager 图表柱条在主题切换后正确换色**：任务状态柱条颜色此前被 `useMemo` 空依赖缓存，浅色主题打开图表再切深色时柱条仍是浅色、与深色卡片对比失衡。现跟随主题重算。
 - **从 Data Manager 跳入工作台后不再被 URL 焦点反复拉回**：带 `?focus=…&frame=…` 进入工作台后，用户改选别的标注 / 帧，随后任何标注增删改触发的刷新此前会把选中与帧位置拉回 URL 初值。现 URL 焦点仅在首次命中时应用一次。
 - **`project_task_views` ORM 补齐 0119 新增的复合索引**：`ix_project_task_views_scope_visibility` 此前只存在于迁移、未声明进 ORM，导致测试建表缺索引、`alembic --autogenerate` 与生产库反向漂移。现已在模型侧对齐。
-
-## [0.21.33] - 2026-07-12
-
-### Added
-- **视频项目新增「COCO 逐帧分割」导出（`coco-frames-seg`）**：把视频逐帧多边形导成标准 COCO instance segmentation 单文档（每个采样帧一条 image 记录含空帧、segmentation 为顶点像素坐标、bbox 取外接框、iscrowd=0、可选 `attributes.__track_id`），按项目采样网格抽帧并复用 `fetch_frames.py`；可直接喂 pycocotools / Detectron2 / MMDetection。bbox / polyline 跳过。
-
-### Fixed
-- **视频「YOLO 逐帧分割」现在可从导出弹窗发起**：`yolo-frames-seg` 的后端序列化、打包与格式对照表此前已交付，但导出弹窗缺该选项、前端类型合同也缺字面量，导致用户无法从正常 UI 发起。现视频项目导出目标新增「YOLO 逐帧分割」（保留多边形顶点，bbox / polyline 跳过；按项目采样网格抽帧），图片 / 点云项目不显示该视频专属项。
-
-## [0.21.30] - 2026-07-12
-
-### Added
-- **Data Manager 增加项目聚合、结构化搜索与按模态变化的任务视图**：项目内现在同时显示可见任务基线和当前视图匹配量，并聚合标注来源、真实 AI 待审 shape / tracker job、逻辑轨迹、属性完整度与未解决反馈；可按任务/文件、人工或 AI 来源、轨迹、项目属性值及属性来源搜索。字段、操作符、默认列和 Scene/视频专属信息由项目能力动态决定，普通视频不再显示无意义的 Scene/帧。点击任务行可查看真正命中的标注或 AI 候选，再进入工作台处理；保存视图会记录搜索、筛选、排序和列设置，页面仍保持只读。
-- **Data Manager 增加对象与轨迹探索视图及统计图表**：同一路由可按任务、对象或逻辑轨迹查看项目数据；对象按 active annotation 分页，视频 compact track 与跨任务 Scene track 使用各自正确的聚合粒度。每种粒度拥有独立的搜索、筛选、排序、列和保存视图，并可从详情抽屉精确定位到工作台对象、轨迹与帧。顶部图表使用完整匹配集合的服务端聚合展示状态、来源、类别、几何与轨迹质量，不从当前页抽样；不支持轨迹的项目会隐藏轨迹入口。
-- **Data Manager 聚合图表支持交叉筛选**：在统计面板点击「任务状态 / 标注来源 / 类别 / 几何类型」的柱子，即可把该取值加成一条筛选条件（再次点击同一柱取消），图表与结果表格联动刷新；置信度桶、质量异常、待审模型版本等无对应筛选字段的维度保持只读。
-- **Data Manager 概览 KPI 支持点击下钻**：点「AI 待审」「未解决反馈」概览格即套用对应筛选（再次点击同一格取消），无需手动新建条件。
-- **Data Manager 属性值分布可视化下钻**：单选 / 布尔类属性（如车型：卡车 / 小汽车）在统计面板显示为可点横条图，点某个值即筛出含该属性值的任务；显示名按属性选项自动映射（存 `truck` 也显示「卡车」），下钻注入的是存储值以保证筛选匹配。
-
-### Changed
-- **Data Manager 统计从右侧抽屉改为首屏可折叠面板**：点 header「统计」即在概览条下方就地展开图表与聚合，点柱子交叉筛选后能立刻看到结果表格随之变化；折叠状态跨会话记忆。
-- **Data Manager 统计面板精简聚合区**：移除折叠区里与上方图表重复的状态 / 来源 / 类别等只读 Badge 分布，只保留属性完整度与当前模态；属性值分布升级为图表区可点下钻的横条图。
-- **Data Manager 的 Task 级 AI 信息改为可行动口径**：移除容易混合历史运行的“模型版本”和 prediction 平均“置信度”列，新增低于 50% 的 AI 检测候选待审数；聚合图表改为展示当前待审候选的模型版本与置信度区间，模型版本仍可用于历史追溯筛选。
-- **Data Manager 改为单视口数据工作台**：页面仅保留任务 / 对象 / 轨迹一层粒度切换，压缩项目标题与当前范围摘要；完整聚合移入首屏可折叠统计面板，搜索、排序、列设置、快捷筛选、可编辑条件芯片和可搜索字段选择器集中在结果工具栏。桌面端保留视图侧栏，窄屏改用视图下拉，整页不再随结果变成长页面，滚动只发生在结果表格和面板内。
-- **Data Manager 聚合图表重做，缓解拥挤与误读**：图表区从三列改为两列一图更宽；限制柱条厚度，只有单一取值的分布（如仅“人工”来源）不再被撑满成一整块色块，四张图统一为横条风格；无数据的图折叠成一行提示而非占满整格；配色不再按图序号轮换，排行类维度统一量级色，任务状态改用与列表 Badge 一致的语义色（完成=绿 / 待审=琥珀 / 退回=红）；柱尾直接标注数值并移除竖向网格线，读数更快；关闭悬浮时横跨整行的浅色高亮块与点击时的焦点描边，只保留数值浮窗。
-
-### Fixed
-- **Data Manager 匹配对象抽屉的关闭按钮失效**：当 URL 带 `selected` 参数（如抽屉打开时刷新页面、或深链进入）时，从 URL 恢复抽屉的逻辑会在用户点关闭后立即把它恢复回来，导致点叉号关不掉。改为仅在结果首次加载后恢复一次，之后不再干预用户手动开关。
-- **Data Manager“全部任务”不再暗中附加待标注条件**：此前前端把内置空过滤错误恢复成 `status=pending`，导致左侧总数与表格不一致；现在空过滤保持全部任务，并区分可见总量与当前匹配量。文件名列也不再重复/显示空值。
-- **视频 compact track 的列与 geometry 标识保持一致**：通用创建、接受 prediction、导入、tracker 接受、轨迹聚合/拆分/合并等路径统一双写 `Annotation.track_id` 与 `geometry.track_id`，禁止通过普通 geometry 更新偷换轨迹身份；迁移会幂等修复存量不一致并补项目级 active-track 索引，避免 Data Manager 轨迹搜索漏数。
-- **非视频工作台不再发起视频追踪候选恢复请求**：此前进入点云 / 图像任务时也会无条件请求 `GET /tasks/{id}/video/tracker-jobs/reviewable`，被后端以 400 拒绝并污染控制台（点云 E2E 因此报错）。现在候选恢复与其它视频专属查询一样按任务模态门控，仅视频任务触发。
-- **视频追踪接受 / 丢弃 / 取消失败时给出明确反馈**：接受候选在状态不符（非待审、无暂存结果、源标注已被删）时曾静默返回成功但零改动、审计却记了一次接受；现在与丢弃一致返回冲突，源标注被删的候选会自动丢弃。前端不再吞掉接受 / 丢弃错误——弱网或状态冲突（409）会弹错误 Toast 并保留审阅条，提交期间按钮禁用以防重复点击。待审候选点「取消」也会明确提示改用「丢弃」，而非看似无反应。
-- **视频多目标追踪遮挡后不再把同一物体拆成两条轨迹**：`sam3_video` 多窗传播时，某窗短暂遮挡（整窗无有效结果）曾抹掉跨窗身份边界，导致下一窗所有目标被当作新发现另建轨迹；现在空窗 / 全遮挡窗会保留上一窗边界。
-- **无 primary 标记时主实例按数值而非字典序选取**：实例 id 为 `"2"`、`"10"` 这类时，字典序会把 `"10"` 当最小挑成主实例、回填错目标；改为纯数字按数值比较。
-- **二次推理把 ML backend 的 5xx 翻译成 502**：backend 权重加载 OOM / 模型内部错返回的 500 此前会冒泡成平台侧含糊 500；现在与交互式推理一致翻成 502，指明是 backend 故障而非平台故障。
-- **ROI 二次检测的坐标口径按整批一次判定**：逐检出判定「0-1 还是 0-100」会让百分比口径下恰好各分量 <1 的近原点小目标被误判为归一化、坐标塌到 crop 左上角；改为对同一 crop 的全部检出统一判定。
-- **候选叠加对非数字实例 id 不再显示「NaN 目标」**：`instance_id` 为非数字时配色索引会得到 NaN（候选框无描边、目标标号显示 NaN）；改为数字直用、非数字稳定哈希取色。
-- **二次推理只接受协议受控的输出档位**：错配的 ML backend 自报 `supported_text_outputs=["polygon"]` 之类非法值时，此前会原样透传进 `context.output` 重现「output 非法值」故障；现在过滤到 `box|mask|both`，命中非法即回落协议默认。
-- **ROI 二次检测丢弃退化多边形**：外环为空但带洞的多边形此前仍会被反投影成 `points:[]` 的鬼影 shape，下游 ingest 拒收或渲染异常；现在整体跳过。
-- **评论附件私链恢复严格 5 分钟有效期**：签发评论附件下载链时曾走缓存对齐窗口，可能把有效期拉长到约 15 分钟；这类非缓存私链改为不对齐、按精确有效期签发。
-- **迁移 0117 回滚不再残留未识别的任务状态**：`staged_result` 迁移的 downgrade 此前只删列，回滚后 `pending_review / accepted / discarded` 状态在旧代码里会 Pydantic 422；现在 downgrade 先把这些状态归位到 `completed / cancelled` 再删列。
-- **视频 AI 追踪候选在刷新工作台后可以继续审阅**：此前待接受候选只保存在页面内存中，完整刷新会丢失审阅条，只能找 job id 手工调用 API。现在工作台进入视频任务时会从服务端恢复仍待审或带部分结果的已取消任务，再加载候选预览，接受 / 丢弃流程可以跨页面刷新继续。
-- **视频 AI 追踪运行中的任务刷新后不再从界面消失**：此前整页刷新只恢复待审候选，仍在运行的追踪任务会从 UI 消失、完成时也不再冒候选，用户以为要重发。现在恢复时会额外拉取该任务下运行中（queued/running）的任务并重连 WebSocket（新增 `GET /tasks/{id}/video/tracker-jobs/active`），刷新后仍能继续收进度、完成时正常进入候选审阅。
-- **切换任务时不再串味到其它任务的追踪状态**：追踪 store 是跨任务复用的单例，此前切任务 / 卸载时旧任务的 job、候选、WebSocket 与清理定时器都不释放，导致旧任务的「追踪完成」提示浮到新任务上、旧候选可能借同名标注误显。现在进入某任务恢复前会先把不属于当前任务的 job / 候选 / socket / 定时器清干净，恢复期间若已切走任务，迟到的旧任务结果也会被丢弃。
-- **视频追踪任务管理接口补齐项目范围与状态保护**：项目管理员的任务列表、聚合计数和项目过滤现在严格限制在自己拥有的项目；`discard` 只接受确有暂存结果的待审 / 已取消任务，其它状态返回冲突，不再能把运行中或已接受任务直接改成 discarded。
-- **视频追踪的 Compose 配置会传入实际运行容器**：基础 GPU worker 现在接收 `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`，SAM3 backend 接收 `SAM3_DOWNLOAD_VIDEO`，避免只修改 `.env` 但容器仍使用默认值。
-
-### Security
-- **模型卸载 / 重载端点收口到超级管理员**：`POST /projects/{id}/ml-backends/{bid}/reload · /unload` 此前只要求项目 owner，但二者改写的是「全局 backend 显存驻留 / 常驻变体」——同一物理 backend 被多个项目共用，某项目 owner 触发卸载 / 换变体会驱逐或换掉其他项目正在用的权重、互相干扰。现收紧为**仅超级管理员**（与「运行时观测」面板 super_admin only、admin `observe/smoke-test` 运维基线一致），对现有前端流程零影响（运行时观测 tab 本就仅超管可见）。构造性的 `warmup` 是项目自身预标 / 交互推理的前置，刻意保留在项目 owner。补齐正 / 反鉴权回归测试。
-
-## [0.21.27] - 2026-07-11
-
-### Added
-- **视频 AI 追踪改为「候选 → 接受 / 丢弃」流程（不再直接落库）**：此前发起 AI 追踪后结果直接写入标注，传错了（漂移 / 跟错目标）就污染了数据、只能手动回退。现在追踪结果先作为**候选**暂存——画布以候选框预览、顶部出现「AI 追踪候选 · N 帧」审阅条（含「接受」/「丢弃」），选中卡的 job 徽章显示「待接受」；**接受**才把结果落库（主实例回填选中轨迹、其余各成新轨迹）、**丢弃**则标注零改动。取消追踪也会把已跑的部分留作候选待审。底层：runner 完成 / 取消时把逐帧结果暂存到 `video_tracker_jobs.staged_result`（迁移 0117），新增 `POST /video-tracker-jobs/{id}/accept · /discard` 与 `GET /{id}/preview` 端点。**runner 改动需重启 celery worker 生效。**
-- **SAM 3 视频追踪模型支持预热**：`sam3-backend` 的 `POST /warmup` 现接受 `task="tracker"`，把视频追踪权重
-  （`sam3.1_multiplex`）提前载入显存；运行时观测「视频追踪变体」区对单档视频模型（无 SAM 变体）显示单个「预热」
-  按钮，`/health` 新增 `video_pool` 上报，视频追踪的已加载 / 预热状态与图像池并列可见。变体面板并列展示两份权重——
-  图像权重「SAM 3」（`model_version`）与视频权重「SAM 3.1」（`/setup.video_model_version`，即 `sam3.1_multiplex`）。
-- **多卡机器可为每个 GPU backend 指定物理显卡**：新增 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID`，替代原先由 Docker 自动挑卡的 `count: 1`；默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1，双卡机器可错开显存。**单卡机器需手动把 `SAM3_GPU_DEVICE_ID` 覆盖成 `0`**，否则容器会因找不到卡 1 而启动失败。
-- **视频 AI 追踪新增「SAM3 交互追踪」模型（点/框种子 + 跨帧记忆，多目标）**：AI 追踪对话框新增 `sam3_video_interactive` 选项——不同于既有的 `sam3_video`（文本检测、每帧重检测），它是 **SAM2 式的种子驱动追踪**：在起始帧给一个框（或点）圈定目标，模型用跨帧记忆一路跟随该目标，身份稳定（由调用方指定对象 id，可同时跟多个目标各成一条轨迹）。相比 `sam2_video` 是 SAM3 级的分割质量，且每帧置信度用模型自评的 object score。后端走独立的 PVS 视频模型（权重 `sam3.pt`，与图像 / 文本视频模型各自懒加载 / idle 卸载；显存远轻于文本多目标模型），项目绑定声明该 tracker 的 sam3 backend 后即可在对话框选用。
-- **视频 AI 追踪支持一次产出多条轨迹（多目标落库底座）**：追踪 backend 的每帧结果现可携带 `instance_id`（该次任务内跨窗稳定的对象标识）与 `primary`（标记与用户种子对应的实例）。平台按实例分组落库——主实例回填用户发起追踪的那条标注，其余每个新发现的目标各落成一条**独立轨迹**（继承源标注的类别、标 `source=ai_tracker`、各自独立 `track_id`），画布与时间轴据现有轨迹渲染直接可见、无需前端改动。不带 `instance_id` 的单目标 backend 走原有单轨迹路径、行为不变。此为平台侧底座，真正批量吐多目标的 backend（sam3.1_multiplex 多目标消费）随后续版本接通。
-- **视频 AI 追踪支持在画布落点选目标（`sam3_video_interactive` 点种子）**：PVS 交互追踪此前只能把选中轨迹的**框**当种子；现在「AI 追踪」对话框（模型选 `sam3_video_interactive`）多了「落点选目标」——点一下进入落点态，在画布点目标落**正点**（Alt 落**负点**精修）、显示已落点数与「清空」，发起传播即以这些点驱动 PVS 追踪（不落点则仍用选中轨迹的框）。底层：点经归一化坐标写进 `prompt.seeds[]`（`{obj_id, points:[[x,y,label],...]}`），runner 只在种子窗（含原始种子帧的首窗）透传、后续窗仍靠上一窗末帧框跨窗续追（点锚在种子帧、不重发）。点种子 → PVS 逐帧记忆追随已真机验证（画布点 → 追踪 job 完成、16 帧稳定跟随）。**多目标**：工具条「+ 新目标」可一次圈定多个目标（各点归属不同 `obj_id`），obj 1 回填选中轨迹、obj≥2 各落一条新轨迹；跨窗时 runner 对每个目标各自用其上一窗末帧几何续种（不再过一窗即丢）。**中途纠偏**：落基准点后**导航到别帧再落正/负点**即在多帧累积修正——提交按 obj+帧 分组成多帧 `prompts`（`{obj_id, prompts:[{frame_index, points}]}`），PVS 逐帧播种、后续帧的修正点改善该段追踪；传播范围锚定首个落点帧（导航加点不移动范围），画布只显当前帧的点。多帧种子（f0 基准 + f8 修正）从画布到 job 已真机验证。
-- **视频 AI 追踪的 PVS 交互支持画「修正框」（不止落点）**：`sam3_video_interactive` 的种子采集新增「点 / 框」模式切换——除了落点，还能在画布上画框作为种子 / 纠偏（框是更强的位置锚定，跟丢时重画一个框即可拉回）。点与框可混用、按目标（`obj_id`）与帧分组成 `prompts` 一起下发（每帧一条 prompt 可同时带 `points` 与 `bbox`）；画布上框种子以**实线**描边（区别于虚线的 AI 候选框）、多目标时按 obj 配色 + 标号。计数文案统一为「已落 N 点 · M 框 · K 目标 · J 帧」（各段按需省略）。后端 PVS prompts 协议本就接受 `bbox`（归一化 `{x,y,w,h}`），无需改动。
-- **`sam2_video` 追踪也支持多目标 + 点/框种子（此前仅单目标框种子）**：grounded-sam2 视频 wrapper 此前硬编码 `_OBJ_ID=1`、只跟一个目标、只吃选中轨迹的框。现在解除硬编码，与 `sam3_video_interactive` 同款：在「AI 追踪」对话框选 `sam2_video` 后可落点 / 画框选目标、「+新目标」一次追多个目标（各成一条轨迹）、导航到别帧落修正点 / 框做多帧纠偏。后端逐对象 `add_new_points_or_box(obj_id=…)` + `propagate_in_video` 逐帧逐对象吐结果（`instance_id`=obj_id），平台按 `instance_id` 分组落库（主实例回填选中轨迹、其余各成新轨迹）；每帧每对象置信度沿用 SAM2 自评 object score。无种子时仍退回选中轨迹框（单目标），行为不变。**需重建 grounded-sam2 镜像生效。**
-
-### Changed
-- **`sam3_video` 文本追踪从「单目标」升级为「多目标批量」**：此前用文本发起 AI 追踪只会跟住一个目标（在种子帧挑与选中框最匹配的那个）；现在一次追踪把文本检测到的**所有**目标各成一条轨迹。底层：`sam3.1_multiplex` 每帧检测的全部对象都回传（不再收敛单目标），仅把与选中轨迹对应的那个标为「主实例」；因 multiplex 每窗是独立会话、窗内 obj_id 仅**窗内**稳定，平台在窗边界帧按 IoU **跨窗关联**（未匹配的新对象 → 新轨迹），得到跨窗一致的实例身份。主实例回填选中轨迹、其余各成新 `ai_tracker` 轨迹（走上面的候选流，审阅后落库）。**需重建 sam3-backend 镜像 + 重启 celery worker 生效。**
-- **视频「AI 追踪」工具条交互打磨（稳定布局 + 可读标签 + 多目标/分窗提示）**：① **布局不再抖动**——原先方向/范围/模型/种子/文本/动作挤在一行随内容折行，落点计数或文本框一变宽就把「发起传播」挤到下一行（易误点）；现在主行只留编排（方向/范围/模型/尺寸）+ 动作，种子/文本移到独立第二行，动作位置固定、跨模型的行数可预测（有第二行当且仅当交互 / 文本驱动）。② **方向标签消歧**——`forward`/`backward` 原显示「向后」/「向前」易被读成倒放，改为「更晚帧 →」/「← 更早帧」/「⇆ 双向」并补悬浮说明。③ **模型名可读**——下拉不再显裸 key，改「SAM2 · 框追踪」/「SAM3 · 文本检测追踪」/「SAM3 · 点框交互追踪」/「mock · 测试框」。④ **多目标语义提示**——交互追踪明示「obj1 回填选中轨迹、+新目标各成新轨迹」，文本追踪提示「按描述自动发现多目标」，框追踪提示「跟随所选目标」。⑤ **大范围分窗提示**——按范围帧数粗估窗口数，>1 窗时提示「≈N 窗（大范围分窗处理·粗估）」，避免大区间被误以为卡死。⑥ **多目标种子逐目标配色**——一次追多个目标时，画布上各目标的种子点按 obj 描边环上色 + 右上标号（填充仍绿正/红负），一眼看清哪些点属于哪个目标；单目标维持白边、无标号。
-- **视频「AI 追踪」面板改成与 SAM 交互工具集同款的顶部悬浮工具条**：此前 AI 追踪是一个竖排的浮动表单卡片，与图片工作台 SAM 交互工具（智能点 / 框 / Exemplar）的顶部居中横排工具条形式割裂。现在它采用同一套悬浮工具条外观（圆角 / 边框 / 底色 / 阴影、字段标签与内联下拉风格、竖向分隔符，抽成共享 `workbenchToolbarChrome`），方向 / 范围 / 模型 / 尺寸 / 落点种子横排排布、范围预览与提示折到次行；仍固定在顶部居中、让出底部时间轴、无遮罩（保留范围高亮与 Shift 刷选）。行为、快捷键（Ctrl+B）、提交路径不变。
-- **SAM 2 视频追踪的置信度改用模型自评的 object score（此前写死 0/1）**：`grounded-sam2` 视频追踪此前每帧只按「有无掩码」返回 `1.0` / `0.0`——只有完全跟丢（空掩码）的帧才会被标 outside。现在改用 SAM 2 传播时每帧自评的 object score（sigmoid 后的目标存在性 / 非遮挡置信度）作为 `confidence`，配合平台的低置信阈值（默认 0.15），**模型判为「部分遮挡 / 不确定」但仍吐出掩码的帧也会被自动标成 outside**，减少把漂移 / 半遮挡框当有效标注回填。取不到该分数（vendor 内部结构未来漂移）时回退旧的 `1.0`，不丢结果。
-- **SAM 3 取消图像 / 视频模型的互斥常驻**：此前受单卡 8GB 限制，`sam3-backend` 加载视频追踪模型前会先卸载图像模型
-  （反之亦然）。现取消互斥——24GB 卡容得下 image（~5.8GB）+ video（~3.2GB）并存，二者各自独立懒加载 / idle 卸载，
-  预热或使用其一不再挤掉另一。小显存部署若不需视频，设 `SAM3_DOWNLOAD_VIDEO=0` 不加载视频模型即可。
-- **SAM 3 视频追踪权重默认随镜像一并下载**：`sam3-backend` 启动脚本 `SAM3_DOWNLOAD_VIDEO` 默认值由 `0` 改为 `1`，容器首次启动会一并拉取 `sam3.1_multiplex.pt`（~3.2GB，需额外接受 `facebook/sam3.1` license），下载失败仍只 warn 不影响图像交互路径；仅想用图像交互、不需要视频追踪的部署可设 `SAM3_DOWNLOAD_VIDEO=0` 保留旧行为。
-- **`ai_interactive` 工具单位彻底退役**：该值不再是合法 `ToolUnitId`——SAM 智能点 / 智能框 / Exemplar /
-  Magic Box 按产出几何归 `region`（多边形系）或 `bbox`，「能否使用交互式 AI 工具」仍由项目开关
-  `ai_interactive_enabled` 控制。存量数据由迁移一次性归位：`predictions.tool_unit_id` 分批回填，
-  `projects` / `project_templates` 的 `tool_bindings` 里 `ai_interactive` 单位携带的类别 / 属性
-  合并进 `region` / `bbox`（同名冲突时保留目标单位、跳过来源），而非直接丢弃。
-
-### Fixed
-- **rapidocr 的「语言 / 方向」属性现在能从 ML Backend 预填进项目配置了**：项目设置「类别与属性」里「从 ML Backend
-  预填配置」勾选 rapidocr 的语言 / 方向属性后，下拉选项此前一片空白、保存时还可能报错——因为 rapidocr 的 `/setup` 把
-  select 的 `options` 声明成了纯字符串数组（`["universal","en"]` / `["0","180"]`），而协议要求 `{value,label}` 对象，
-  平台取 `option.value` 得 `undefined`，选项对不上、且属性选项改成 chip 编辑器后的校验对 `undefined.trim()` 崩溃。现
-  rapidocr 按协议声明 `{value,label}`（语言：通用(中英) / 英文；方向：0° / 180°），value 与 `/predict` 实际写入
-  `attributes` 的值严格对齐，故预填、下拉展示、以及工作台里对预测值的自动回填全部恢复。**需重启 rapidocr-backend 生效。**
-- **二次推理（框 ROI 上跑单模型）的 rapidocr 文本识别现在能选模型档位了**：二次推理工具条此前把「版本 / 尺寸 / 语言
-  档位下拉」与档位透传硬门限在几何能力上，OCR 这类属性写回能力拿不到——即便 rapidocr rec/e2e 自报了 version/size/lang
-  变体轴也选不了、调不了。现闸门改看「模型是否声明了变体轴」而非「是否写几何」：声明了轴的能力（含 rapidocr OCR）都渲染
-  档位下拉并把所选档位按协议 v2 透传给后端；无变体轴的能力（如 onnxtools 纯分类）维持老扁平路径、行为不变。
-- **SAM 3 视频文本追踪的框不再偶发被细长毛刺拉宽 / 拉高**：`sam3.1_multiplex` 偶发对目标输出「紧凑车身 + 沿细带
-  8-连通拉出去的毛刺」的掩码——像素数与正常帧相当，却让朴素 min/max 外接框虚高（实测个别帧归一化宽度从 ~0.03 飙到
-  0.26-0.31，把车和远处结构并进一个又宽又稀的框）。现在 mask→几何前先做 3×3 形态学开运算断掉 ≤2px 细带 + 取最大连通域，
-  恢复紧凑框，正常帧不受影响。
-- **AI 追踪的 `sam3_video` 现在真正路由到 sam3-backend（此前静默落到 sam2）**：视频 AI 追踪此前按「项目单一绑定
-  backend」选后端（`get_project_backend`），完全不看所选 tracker——项目绑定 grounded-sam2 时，`sam3_video` 任务也被发去
-  grounded-sam2、按 seed-bbox 追踪并忽略文本，前端则据此把 sam3_video 灰置「未绑定后端」，导致 sam3.1_multiplex 文本检测
-  追踪在平台链路里从未真正跑过。现改为**按能力路由**：runner 用新增的 `get_tracker_backend(project_id, model_key)` 在项目
-  **已启用**的 backend 里挑声明了该 tracker 的那个（`sam3_video`→sam3-backend、`sam2_video`→grounded-sam2；绑定优先、
-  否则首个 connected），前端 tracker 可用性也改看**所有已启用 backend 的 `supported_trackers` 并集**——启用 sam3-backend
-  的项目 sam3_video 不再灰置、可跑真正的 multiplex 文本检测追踪。挑不到支持该 tracker 的 backend 时显式报错，而非静默错投。
-- **sam3_video 文本视频追踪大窗口传播不再 GPU OOM（500）**：`sam3.1_multiplex` 视频前向的显存随窗口帧数近似线性增长
-  （实测 ~0.85GB/帧、16 帧 ~18.9GB、41 帧即在 24GB 卡上 OOM），而 tracker 分窗大小此前与 sam2_video 共用
-  `VIDEO_TRACKER_WINDOW_SIZE_FRAMES=300`——对 sam3_video 意味着单窗可达 300 帧、远超单张 24GB 卡能承受的量级
-  （~35 帧即触顶），长区间 propagate 会 500 OOM。现给 sam3_video 单独的更小分窗
-  `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`（默认 16），runner 按它把 sam3_video 请求切成小窗、由跨窗续追（relay）
-  拼成连续的长程轨迹；sam2_video 的窗口不变（不回归其长程记忆）。sam3-backend 侧兜底 `SAM3_VIDEO_MAX_WINDOW_FRAMES`
-  默认也由 300 降到 16。
-- **视频工作台画布偶发全黑（此前需手动刷新）现在会自动恢复**：标注视频时，作为解码源的隐藏 `<video>` 元素偶发卡在
-  「已发起加载但一直拿不到元数据」的状态（`readyState` 停在 `HAVE_NOTHING`、`networkState` 为 `NETWORK_LOADING`），
-  多因 mp4 的 HTTP range 请求 stall / 连接竞态所致，导致 Konva 背景层无帧可画、画布全黑——而这类 hang **不触发 `<video>`
-  的 `error` 事件**，现有错误处理捕获不到，用户只能手动刷新页面才能恢复。现加了一个加载看门狗：视频源就绪后若持续拿不到
-  元数据，每 5 秒自动 `video.load()` 重踢一次加载（重跑资源选择、中止卡住的请求，等价于「局部刷新」），至多重试 3 次；
-  拿到元数据即自动解除。多次重试仍失败才提示刷新。
-- **SAM 3 视频文本追踪无种子几何时改为挑最高置信目标而非第一个**：`sam3.1_multiplex` 每帧输出的目标置信度数组键名是
-  `out_probs`，而挑目标的兜底逻辑误读成 `output_probs`（一个只存在于 vendor 可视化 helper 里的重编键名），于是永远取到
-  `None`。后果是当追踪请求不带种子框（无 IoU 匹配依据）、或种子帧所有候选掩码为空时，本应「取置信度最高的检测目标」
-  退化成了「取多目标里的第一个」。平台从待传播标注里带种子框、走 IoU 匹配的正常路径不受影响；此兜底仅在无种子的纯文本
-  直检时生效。现已读对键名，兜底恢复按 `out_probs` 取 argmax。（>8GB 显存 GPU 回归 `sam3_video` 逐帧输出解析时发现）
-- **带文本提示的选中框二次推理不再必然失败**：在选中框上跑开集文本检测（YOLOE / YOLO-World /
-  Grounded-SAM 2 / SAM 3 的文本能力）时，平台发往 backend 的 `context.output` 硬编码成协议
-  不认的 `"polygon"`，导致请求恒被拒——YOLO backend 报 500，Grounded-SAM 2 / SAM 3 报 422。
-  现按所选模型自报的 `supported_text_outputs` 取值：检测型出 `box`（建子框），分割型出 `mask`。
-  不带文本提示的二次推理（分类 / OCR / 几何检出）不受影响，此前一直正常。
-- **二次推理超时不再报含糊的 500**：批量推理客户端原样抛出超时异常（worker 靠原始异常分类失败
-  原因），同步的二次推理端点却因此冒泡成 500，掩盖了「重试即可」这个可操作信息。现在翻译为 504
-  并提示显存不足会拖慢模型加载，连接失败则为 502——与交互式推理的语义一致。
-- **二次推理产出的子框 / 属性立即出现在画布与侧栏，不必刷新页面**：成功后只把标注列表标记为过期
-  （`refetchType: "none"`），而工作台里该查询始终有活跃订阅者、标脏并不触发重读，产物要到下次刷新
-  才可见。现在直接用响应体改写缓存——既立即可见，也不会像重新拉取那样用服务端快照覆盖用户正在
-  拖动的几何。
-- **二次推理子框的坐标不再错位并缩成几个像素**：ROI 反投影把下游检出的几何硬当成百分比 `[0,100]`
-  口径处理，而 Grounded-SAM 2 / SAM 3 按协议返回归一化 `[0,1]`（YOLO / onnxtools 才返回百分比）。
-  两者差 100 倍，子框被缩小并塌到父框左上角。现按 backend 实际口径自适应归一，判据与预测导入一致。
-- **带洞 / 多连通的分割子框不再丢失或错位**：ROI 反投影只搬多边形外环 `points`——带洞多边形的
-  `holes` 留在 crop 坐标系里错位，多连通多边形（`polygons` 形态、无顶层 `points`）整条被静默丢弃。
-  现在三种多边形形态的所有环都参与反投影。
-- **YOLO backend 的请求体校验错误返回 422 而非 500**：`/predict` 手工校验请求体时，`ValidationError`
-  未被捕获、冒泡成 500「内部错误」，掩盖了「调用方 wire 写错」的真实性质，与 Grounded-SAM 2 / SAM 3
-  的入参拒绝语义也不一致。
-- **SAM 3 视频文本追踪遇到损坏帧 / 元数据帧数虚报不再静默出错结果**：追踪某个窗口时，若视频在窗口中途解码失败
-  （帧损坏、VFR、或容器元数据虚报的帧数多于实际可解码帧数），此前会静默停在失败处、把已解码的前半段当成完整
-  结果返回；更糟的是当种子帧本身落进未解码区时，会被静默挪到实际最后一帧，导致追踪从一个完全错误的种子帧开始、
-  结果全错却毫无提示。现在窗口被截断只记录一条 warning（尾部少几帧通常无害，不打断正常「拉到视频结尾」的操作），
-  但两种真正有害的情况会显式报错：整窗一帧都没解出、或种子帧不在实际可解码范围内。此外，底层多目标模型在种子帧
-  或逐帧传播过程中偶发返回长度不一致的掩码 / 目标 id 数组时，此前会裸抛 `IndexError` 冒成没有诊断信息的 500，
-  现在改为带上下文（两者实际长度，逐帧时附上出错的源帧号）的明确错误。
-- **视频 AI 追踪「到下一关键帧」预设现在会区分传播方向**：此前选「方向=向前 + 范围=到下一关键帧」时，
-  对话框仍按向后的区间显示、却带着向前方向提交，前后端区间与方向不一致。现在向前传播会正确取「上一关键帧」
-  作为目标区间（无上一关键帧时回退固定跨度），显示区间与提交方向一致。
-- **视频时间轴 Ctrl+滚轮缩放在展开/折叠切换后不再失效**：时间轴展开态与折叠态是两个不同的容器节点，
-  切换后滚轮监听仍绑在已卸载的旧节点上，导致 Ctrl+滚轮缩放静默失灵。现在切换时会把监听重新绑到当前节点。
-- **视频画布折线/多边形绘制到一半切帧会丢弃草稿**：此前在某帧落了几个顶点后拖动进度条切到别的帧再按 `Enter`，
-  这些顶点是原帧的像素坐标，却被提交到了新帧上造成错位。现在切帧会取消未提交的顶点草稿（同帧内正常绘制不受影响）。
-- **视频「续写下一条待续轨迹」现在对点集轨迹也生效**：跨网格帧的续写参考虚影（carry-over ghost）此前只遍历矩形框轨迹，
-  多边形 / 折线轨迹无法作为参考虚影出现在下一帧，`Tab` 续写流对点集轨迹完全失效。现在多边形 / 折线轨迹也会生成参考虚影，
-  并按各自几何画出轮廓 / 折线（而非硬塞成外接框）。
-- **迁移 0115 回填不再全表扫锁写**：`annotations.tool_unit_id` 无索引，原先一条裸 `UPDATE ... WHERE
-  tool_unit_id='ai_interactive'` 在生产大表上是单事务全表顺序扫 + 长时间持锁写。改为按主键游标分批
-  （`LIMIT ... FOR UPDATE`），单批只锁一批行，避免阻塞在线读写。
-- **老项目残留 `ai_interactive` 类别不再静默丢失**：项目设置「类别与属性」保存时，`tool_bindings` 里
-  遗留的 `ai_interactive` key 及其配置此前被直接跳过、保存后无声丢弃。现改为折叠进 `region` / `bbox`
-  单位（与后端迁移同规则），用户配的类别 / 属性得以保留。
-- **遗留客户端上报退役工具单位不再报错**：标注写入 / 预测入库时若仍收到 `tool_unit_id='ai_interactive'`，
-  后端按几何类型归位到 `region` / `bbox` 并记 warning 日志，而非 422 拒绝。
-- **标注时缩略图不再反复重下**：每次提交、跳过或增删标注都会刷新任务列表，此前刷新会给每个对象重新签发一个
-  签名不同的存储 URL。浏览器按完整 URL 做缓存 key，于是列表里所有缩略图缓存集体失效、整批重新下载——画一个框
-  就重下一轮。现在签发时把过期时刻对齐到 10 分钟网格，同一对象在窗口内拿到的 URL 逐字节相同，浏览器直接命中缓存。
-  对象存储放在机械盘上时，这批本不该发生的小文件随机读尤其伤性能。原图、视频帧、点云等所有走签名 URL 的资源同样受益。
-  副作用是 URL 实际有效期在标称值到标称值 + 10 分钟之间浮动（只会延长，不会提前失效）。
-- **模型市场「能力目录」按 backend / infra / 不分组查看时不再空白**：当某个 backend 没有被任何项目启用（例如
-  docker-compose 自带的平台内置 backend），切到「协议能力」以外的分组会显示「暂无可用模型条目」，而同一批 backend
-  在「协议能力」分组下却正常可见。根因是补全平台内置 backend 的兜底分支比对了一个后端从不返回的 `source` 值
-  （`/instances` 实际返回 `env` / `manual`，而前端比的是 `env_only`），整段成了死代码。现改为按注册表 backend id
-  去重补入，未接入任何已启用项目的平台内置 backend 也会出现在非协议分组里；顶部「N 个 backend」计数一并修正。
-- **模型市场「运行时观测」对同一 backend 不再按项目重复显示**：backend 全局化后一个物理 backend 可被多个项目启用，
-  「注册状态」接口会为每个（项目 × backend）各返回一行，运行时观测面板据此为同一个 backend（相同 URL）渲染了多张
-  重复卡片。现按 backend URL 去重，每个物理 backend 只显示一张卡，启用它的多个项目名聚合到卡片上展示。
-- **运行时观测「未注册容器」不再对有变体的 backend 错显「该容器不暴露变体目录」**：`/observe` 抽取变体目录时只读
-  `/setup` 顶层 `supported_variants`，而 rapidocr 等 v2 backend 把变体挂在 `models[].supported_variants` 上（顶层为空），
-  于是被误判为无变体、显示「该容器不暴露变体目录」——实际它带 version / size / lang 等变体。现顶层为空时回落到各
-  model 的 `supported_variants`，按 axis key 去重合并，这类容器会正确展示其变体目录。
-- **运行时观测「未注册容器」现在展示视频追踪能力**：sam3 等 backend 把视频权重挂在 tracker（`supported_trackers`）上、
-  不进图像变体目录（`model_variant` 只列图像权重「SAM 3」），而未注册容器卡片此前只渲染图像变体、不展示
-  `supported_trackers`，看起来像「没暴露视频权重」。现当 backend 声明视频 tracker 时，卡片补一行「支持视频追踪：
-  &lt;tracker&gt;」（注册容器的变体面板早已有独立「视频追踪变体」区）。
-- **运行时观测（注册容器）变体面板把视频追踪权重单列为条目 + 澄清视频池措辞**：sam3 的视频权重（sam3.1_multiplex）
-  挂在 `supported_trackers` 上、不进图像变体目录（「模型版本」只列图像权重「SAM 3」），注册容器变体面板的视频区此前只在
-  没有视频池时显示「该 backend 未上报 video 观测」，看似「没暴露视频权重」。现视频区把 `supported_trackers` 单列为条目
-  （视频权重 / 能力），并把无视频池时的措辞改为「视频追踪模型按需加载，当前未常驻显存，暂无视频池观测（首次追踪时冷启）」。
-- **能力目录卡片「输出属性」不再对只报旧版字段的 backend 空成「—」**：gsam2 / sam3 / yolo 等 backend 只上报旧版扁平
-  `output_attribute_types`（如 `["class"]`）而不填结构化 `output_attribute_schema`，但未接入项目的 backend 走 `/instances`
-  路径时，前端只从（空的）schema 投影属性、丢掉了 backend 直接上报的 `output_attribute_types`，导致这些卡的「输出属性」行
-  显示「—」（项目已启用的同一 backend 却正常显示）。现把展示逻辑统一到卡片一处：`output_attribute_schema` 非空时取其
-  label（更友好，如 rapidocr 的「识别文本 / 语言」），否则回落到扁平 `output_attribute_types`，overview 与 instances 两条
-  路径一致。
-- **能力目录卡片不再显示恒为「—」的空「资源」行**：`device` / `batchable` 已升级为顶部徽标（GPU / 可批量），而现有
-  backend 的 `resource_profile` 通常只含这两项、不报 vram 等余项，导致「资源」行永远是「—」，看起来像资源信息缺失。现
-  backend 未上报任何余项时整行隐藏（设备 / 可批量信息仍在徽标上可见）。
-- **项目管理员打开模型市场不再半坏**：模型市场页对超管和项目管理员都开放，但顶部统计卡与「运行时观测」段依赖
-  super_admin only 的全局 overview / observe 接口，能力目录也会硬阻塞在 overview 的 403 上——项目管理员进去看到的是
-  统计卡归零、运行时观测整块「加载失败」、能力目录也「加载失败」。现按角色收敛：项目管理员只看到能力目录 + 只读注册管理，
-  统计卡与运行时观测 tab 隐藏（不再无谓地每 60s 打一次 403），能力目录退到 `/instances` 单端点视图正常渲染。
-- **无变体模型（如 onnxtools 各 model）现在也能在变体面板预热**：这类 model 无可选变体轴，变体面板此前只显示
-  「该 model 无可选变体」、不给预热按钮，但其 backend `warmup_endpoint=true` 本可预热。现补单个「预热」按钮，与有变体
-  model 的预热行一致。
-
-### Security
-- **项目级 ML Backend 端点收口跨项目越权**：`/projects/{id}/ml-backends/*` 各端点此前只校验调用者的全局角色、
-  不校验其对 URL 中该项目的可见性 / 归属。这让全局角色为 annotator / reviewer 的用户可读取**任意项目**（含自己非成员
-  项目）的 backend 列表 / setup / 能力（并暴露 backend URL），也让任一 project_admin 可对**他人名下项目**增删改 backend、
-  触发 unload / reload / warmup。现读取类端点叠加「项目可见性」校验（super_admin / 项目成员 / owner 之外返回 404），
-  写入与运维类端点叠加「项目 owner」校验（非 super_admin 且非 owner 返回 403）。能力目录 `/ml-capabilities/instances`
-  维持对任意登录用户开放（字段裁剪后的只读公开视图）不变。
-
-## [0.21.24] - 2026-07-08
-
-### Added
-- **视频工作台支持交互式 SAM 分割当前帧**：新增「智能点」（`S`）、「智能框」（`D`）与「示例框」（`E`）三个工具，点选、
-  框选或框一个例子即可分割出多边形，`Tab` 在多个候选间切换、`Enter` 采纳（弹出类别选择器，选定后落为当前帧的多边形标注）、
-  `Esc` 放弃；`Alt` + 点击落负点，用来把误分进来的部分排除掉。示例框会找出当前帧里所有同类目标，一次给出多个候选——采纳其中一个，其余候选留在画布上等你继续采纳；
-  `Alt` + 框则用来排除误检。另有「Magic Box」（`G`，与图片工作台同键）：粗粗框住目标，SAM 把它收紧成贴合的矩形框——
-  框一到就直接问你选类别，不必先按 `Enter`。它产出的是矩形框（归「矩形框」工具单位），其余三个 AI 工具产出多边形（归「多边形」单位），
-  因此项目里只启用矩形框时，Magic Box 仍然可用而另外三个会隐藏。它们分割的是**当前这一帧**，产出单帧多边形（不是跨帧轨迹）。视频帧由浏览器解码后直接送给模型，因此
-  分割结果与你眼下看到的画面一致，切帧会重新开始一次会话。工具是否可用由项目总开关、后端是否支持该交互模式、
-  以及「多边形」工具单位是否启用三者共同决定，与图片工作台一致。画布顶部的交互工具浮条（引擎 / 模型变体 /
-  正负极性切换）在视频侧同样出现，极性切换与 `Alt` 等价。
-- **视频项目新增 `yolo-frames-seg` 导出格式（逐帧分割）**：把多边形标注按顶点导出为 YOLO 分割标签，而不是像
-  `yolo-frames-det` 那样降级成外接框。单帧多边形按所属帧落标签，多边形轨迹按弧长插值展开到每个采样帧；
-  与 det 版共用采样网格、帧号基数与文件名约定，`fetch_frames.py` 照常抽帧。矩形框与折线不产出分割标签
-  （折线不是闭合区域，矩形框请用 `yolo-frames-det`）——与图片项目的 `yolo-seg` 行为一致，行格式也共用同一实现。
-- **项目设置「ML 模型」新增「交互式 AI 工具」总开关**：项目管理员可一键停用工作台的 SAM 点 / 框 / 示例框与 Magic Box。
-  「能否使用 AI 工具」取决于绑定了什么 ML 后端，与几何类别无关，故归入「ML 模型」而非「类别与属性」。工具最终是否可用由
-  三层判定：项目总开关（关则整组隐藏）→ 后端是否支持该交互模式（不支持则置灰并提示）→ 其产出几何所属的工具单位是否启用。
-
-### Removed
-- **`X` / `Shift+X`（循环选中 AI 待审框）已移除**，其功能并入统一的两级键盘循环：`Tab` / `Shift+Tab` 在同类对象内
-  流转（AI 待审 / 人工 / 轨迹），`` ` `` / ``Shift+` `` 跨类跳转。选中 AI 待审框后 `Tab` 就在 AI 待审内循环，
-  与旧 `X` 等效。`X` 键随之释放，回归「按首字母切类别」。
-
-### Changed
-- **视频多边形工具现在可以按 `P` 直达**，与图片工作台同键。此前它在工具栏上标着 `G` 角标，但那个键从未被绑定。
-- **多选轨迹的批量操作栏：显隐、锁定各收成一个切换按钮**。此前「显示 / 隐藏 / 锁定 / 解锁」四个按钮并排，
-  但任一时刻只有其中一半有意义。现在图标与文案随选中轨迹的当前状态翻转（全部已隐藏时才显示为「显示」），
-  与图片工作台、视频单帧的批量卡一致。浮动选中卡与右栏轨迹列表两处同时收敛。
-- **交互式 SAM 的候选多边形自动简化顶点**：SAM 的轮廓是逐像素台阶，一个占半屏的目标能吐出近千个顶点，
-  采纳后满屏顶点句柄、根本没法编辑。现在候选生成时即按目标自身尺度简化——顶点偏移不超过其外接框对角线的
-  0.3%，肉眼无法分辨。实测一片路面从 965 个顶点降到 63 个、面积保真度 99.99%，而一辆车的 24 个顶点几乎不动。
-  预览、采纳、落库看到的是同一份顶点。图片与视频工作台同时生效。
-- **`video_json` 导出的单帧几何行新增 `type` 字段**：与轨迹关键帧的既有约定一致，按几何形状取键——矩形框行带 `bbox`，
-  多边形 / 折线行带 `points`。此前该列表只可能出现矩形框，故每行必有 `bbox`；现在下游需按 `type` 分派。
-- **「AI 交互」不再作为工具单位出现在「类别与属性」与新建项目向导**：它不产出任何独有几何，因此没有独立类别与属性可配。
-  该工具单位已退役为项目级开关（见上）。存量项目中残留的相关配置不再被读取，不影响标注数据。
-- **属性 schema 的「选项」改为 chip 编辑器**：项目设置「类别与属性」及建项目向导里，`下拉单选 / 下拉多选` 属性的选项
-  不再是一行「逗号分隔 value:label」的长文本框（选项一多就横向溢出看不全）。现在每个选项渲染为一枚 chip，
-  点击就地修改 value/label、× 单独删除、空输入框退格删末尾；底部输入框回车新增，也可直接粘贴逗号分隔的一串。
-  右上角「批量编辑」切到 textarea（一行一个 `value:label`），便于粘贴大批选项——**调整行序即调整选项顺序**。
-
-### Fixed
-- **对折线（polyline）轨迹发起 AI 追踪传播会丢光整条轨迹**：传播只识别 bbox 与多边形轨迹，折线轨迹命中兜底分支后被
-  静默改写成一条 `{x:0,y:0,w:0,h:0}` 的空 bbox 轨迹、类型也被改成 `video_track_bbox`，原有折线关键帧全部丢失。
-  现在传播入口对折线轨迹直接返回 400 明确拒绝，前端也灰置了折线轨迹的「发起传播」动作并提示暂不支持。
-- **视频工具栏的快捷键角标此前在撒谎**。多边形标着 `G`、折线标着 `L`、两个轨迹工具标着 `Shift+G` / `Shift+L`，
-  但这些键在视频里都没有绑定到对应工具——按 `L` 甚至会触发播放快进。tooltip 里的「备用 `Alt+4`」到「`Alt+0`」同样是空的
-  （视频只绑到 `Alt+3`）。现在角标只显示真实存在的绑定：多边形拿到 `P`，折线与两个轨迹工具不再标注不存在的键。
-- **视频画布上多选轨迹时，只有最后点中的那条显示选中态**。右栏列表与浮动卡都正确显示「已选 N 条」，
-  唯独画布只高亮一条——批量隐藏 / 锁定 / 删除前，无从确认自己到底选中了哪些。现在选中的轨迹框与
-  轨迹路径线都一并高亮。参考框（ghost）仍只跟随主选中项，不随多选扩散。
-- **视频「轨迹」列表多选时会拖出蓝色文字选区**：按住 `Shift` / `Ctrl` 逐条点选轨迹时，浏览器把连续点击当成文本框选，
-  行内的类别名、轨迹号、关键帧计数都被高亮。该列表现在与「AI 待审 / 人工」列表一样禁用文本选中。
-- **标注详情面板的「当前帧」筛选对多边形 / 折线无效，点它们也跳不到所属帧**：帧归属判定只认矩形框，
-  多边形与折线一律当作「在每一帧」，于是切到「当前帧」后它们仍被全量列出；点击列表行同样解析不出目标帧。
-  六种视频几何现已全部纳入判定（轨迹按插值帧解析，`outside` 区间不显示）。
-- **视频单题 AI 有时报「当前帧尚未就绪」，尽管画面明明看得见**：取帧只认解码后的位图缓存，
-  而画布在缓存未命中时渲染的是视频元素本身，于是两者对「有没有帧」的判断不一致。现在取帧与渲染取同一个源。
-- **视频项目的多边形 / 折线标注导出后全部丢失**：无论单帧（`video_polygon` / `video_polyline`）还是轨迹
-  （`video_track_polygon` / `video_track_polyline`），导出 MOT / KITTI / YOLO-frames-det / video_json 时都拿不到任何一行——
-  打包层按几何类型分组时只认矩形框，其余几何被静默丢弃。这也意味着上一版为多边形轨迹写的「降级为顶点外接框」从未真正生效
-  （数据在更早一步就被丢掉了）。现四种几何都能导出：**bbox-only 格式降级为顶点外接框**，保真格式（video_json / aap_json）
-  保留原始顶点。**注意行为变化**：这些格式的导出文件现在会多出此前缺失的标注行。
-- **单帧多边形导出为全 0 空框的隐患**：单帧多边形几何没有 `x/y/w/h` 字段，一旦进入 bbox-only 格式会被读成
-  `0 0.000000 0.000000 0.000000 0.000000`——一条看似合法的空标注，比直接丢弃更难发现。现与轨迹侧一致降级为顶点外接框。
-- **「AI 交互」开关此前对工作台完全无效**：在「类别与属性」里关掉「AI 交互」后，工作台的 smart-point / smart-box /
-  exemplar / magic-box 依然照常显示、照常可用——这些工具被显式豁免于工具单位过滤，该开关实为装饰。现由新的项目级总开关
-  真正生效。
-- **AI 工具与手绘工具的类别被割裂成两套互不相通的列表**：用 smart-point 画出的多边形此前归入 `ai_interactive` 单位，
-  而手画的同一个多边形归 `region` 单位；类别按工具单位隔离，导致同一类物体必须在两个标签页各配置一遍，否则 AI 标注的
-  类别在「区域」类别体系里成为孤儿。现 AI 工具按其**产出几何**归属单位——smart-point / smart-box / exemplar 产多边形
-  归「区域」，Magic Box 收紧成外接矩形归「矩形框」——与手绘标注共用同一套类别与属性。存量标注按几何类型自动迁移。
-- **属性选项输入时逗号被吞**：旧的单行输入把值 round-trip 成 `options.map(...).join(", ")`，用户刚打下的 `,`
-  会被 `filter(Boolean)` 立即吃掉，必须连着写完下一个选项名才不被吞。
-- **属性选项的显示名不能含冒号**：旧解析 `p.split(":")` 只取前两段，`ratio:宽:高` 会被截断成 `宽`。改为只在
-  第一个冒号处切分。批量编辑模式下显示名还可以含逗号。
-- **属性选项允许空 value / 重复 value 落库**：空 value 会渲染成 `<option value="">`（选了等于没选），重复 value
-  让两个选项无法区分。保存前的 `validateAttributeFields` 现在拦截两者，编辑器也会实时把重复的 chip 标红。
-
-### Security
-- **交互 / 预测端点补齐跨项目 `task` 归属校验**：`interactive-annotating`、`interactive-annotating-frame`、
-  `predict-frame`、`predict-test` 此前只用主键取 `task`、从不校验它是否属于当前 `project_id`——A 项目成员用 A 的
-  backend + B 项目的 `task_id` 即可对 B 的数据发起推理（帧写入 `frame-interactive/<B-task-id>/*`、算力记到错误租户）。
-  现不属于本项目的 `task` 一律 404。
-- **项目级「交互式 AI 工具」开关现在后端也生效**：此前该开关只在前端隐藏工具按钮，任何 API client / 陈旧 tab 直连
-  `interactive-annotating` / `interactive-annotating-frame` / `predict-frame` 仍会返回结果。现这些端点在项目显式
-  关闭该开关时返回 403（默认开，语义与前端 `?? true` 一致）。
-
-### Migration Notes
-- **迁移 `0115` 会对 `annotations` 全表做一次无索引 `UPDATE`**（把 `tool_unit_id='ai_interactive'` 按几何类型改归
-  `region`/`bbox`）。`annotations.tool_unit_id` 未建索引，在**千万级大表**上这是一次全表顺扫 + 单事务行锁，可能阻塞
-  并发写者数分钟。大库升级请挑低峰窗口；必要时先 `CREATE INDEX CONCURRENTLY tmp_ai_interactive ON annotations (id)
-  WHERE tool_unit_id = 'ai_interactive'` 缩小扫描面、跑完再删。`downgrade` 仅删列、不还原 `tool_unit_id`
-  （归入 `region`/`bbox` 本就是语义正确的归属，无需回滚）。
-
-## [0.21.21] - 2026-07-07
-
-### Added
-- **视频工作台单帧 polygon / polyline 标注**：视频某一帧上可用「多边形」(G) / 「折线」(L) 工具逐点画单帧几何
-  (`video_polygon` / `video_polyline`, 与图片工具集同款、非轨迹), 点击落点、Enter/双击提交、Esc 取消, 只在所属帧显示。
-  与轨迹几何正交:原 v0.21.20 的 polygon/polyline **轨迹**工具拆分改名为「多边形轨迹」(Shift+G) /「折线轨迹」(Shift+L)。
-  绘制反馈对齐图片侧:光标橡皮筋预览段 (上一顶点→光标)、白心顶点 (首点更大、进入闭合半径时高亮实心)、
-  多边形半透明填充预览、crosshair 光标;polygon 点击首点即闭合、Backspace 撤销上一顶点。
-- **视频 polygon / polyline 提交后可编辑(单帧 + 轨迹)**:选中后画布上每个顶点显示白心句柄,拖句柄改形(polyVertex);
-  用选择工具拖框内空白处整体平移(polyMove)。编辑经撤销/重做历史,松手即落库(对齐图片工作台的多边形顶点编辑)。
-  **轨迹几何**(多边形轨迹 / 折线轨迹)的编辑按帧感知:在当前帧落成一个 manual 关键帧——精确关键帧替换其顶点,
-  插值帧则物化为新关键帧(与拖动插值帧的矩形框轨迹会生成关键帧同语义)。
-- **视频几何工具单位对齐图片工作台 (独立类别/属性 schema)**：视频的多边形 / 折线不再作为矩形框单位的子开关，
-  而是**独立工具单位**——项目设置「类别与属性」里出现「矩形框 / 轨迹」「多边形」「折线」三个并列 tab，
-  各自维护独立的类别、颜色、排序与属性 schema（对齐图片工作台，互相隔离）。每个视频几何单位内含「单帧 / 轨迹」
-  两个变体子开关（如「单帧多边形 / 多边形轨迹」），复用矩形框单位既有的单帧/轨迹模式。工作台按当前几何工具
-  解析其单位的类别（多边形→region、折线→polyline），创建标注落对应 `tool_unit_id`；未启用某单位则其工具灰置。
-
-### Changed
-- **视频多边形 / 折线工具的可用性改为按几何单位判定**：从「矩形框单位的 `video_modes.polygon/.polyline` 子开关」
-  改为「region / polyline 工具单位是否启用 + 各单位的单帧/轨迹开关」。**存量视频项目需在项目设置里启用**
-  「多边形」/「折线」单位（并配置类别）后，这两个工具才在工作台出现（对齐图片：未启用单位则无对应工具）。
-
-## [0.21.20] - 2026-07-07
-
-### Added
-- **视频追踪协议贯通 text-driven 维度（sam3_video 前哨）**：`tracks/{id}:propagate` 请求新增 `text`（文本 query）与
-  `exemplars`（归一化视觉示例框，复用 sam3 图片侧 Exemplar 形状）显式字段，落库 prompt JSONB 后经 tracker 上下文显式透传
-  到 ML backend；能力协商新增 `text_driven_trackers` 字段，让平台区分「seed-bbox tracker（sam2）」与「text-driven
-  tracker（sam3，需 text/exemplars）」。为文本驱动的视频目标追踪打通协议与能力底座（backend 实现随后落地）。
-- **AI 追踪对话框支持文本驱动**：选中 text-driven tracker（sam3_video）时对话框显示「文本描述」输入框，按描述在每帧检测目标
-  （而非从种子框传播），发起时随请求下发。text-driven tracker 仅在项目 ML backend 声明支持后可选，未声明时在模型下拉
-  中灰置并禁用发起（不做假占位可点）；seed-bbox tracker（sam2_video）行为不变、不显文本框。
-- **视频对象轨迹支持 polygon 几何**：新增 `video_track_polygon` 轨迹类型，关键帧存归一化多边形顶点，帧间按弧长参数化
-  插值（顶点数不等时先重采样到公共参数化 + 旋转对齐，减少形变扭曲）；画布按当前帧解析多边形并以 `<Line>` 渲染（含插值
-  帧虚线 / 选中 / AI 追出角标，与 bbox 轨迹同视觉）。与既有 `video_track_bbox` 平行、存量 bbox 轨迹零迁移。（画布绘制
-  polygon 轨迹的交互工具随后落地。）
-- **视频对象轨迹支持 polyline（开路径折线）几何**：新增 `video_track_polyline` 轨迹类型，与 polygon 平行但为不闭合折线，
-  帧间按开路径弧长参数化插值（首尾端点固定对应、无旋转对齐）；画布以不闭合、不填充的 `<Line>` 渲染。存量轨迹零迁移。
-- **视频画布新增 polygon / polyline 绘制工具**：左侧工具栏新增「多边形」（G）与「折线」（L）工具，逐点点击落顶点、
-  Enter 提交、Esc 取消，绘制过程实时预览（虚线路径 + 顶点圆点）；提交后按当前帧新建对应 `video_track_polygon` /
-  `video_track_polyline` 轨迹（单关键帧）。两工具在项目开启「轨迹」模式时可用，与 bbox / 追踪工具互斥。至此 polygon /
-  polyline 轨迹从数据模型到画布绘制全链路打通。
-- **polygon / polyline 轨迹可导出到 bbox 格式**：导出 MOT / KITTI / YOLO-frames-det 时，polygon/polyline 轨迹逐帧
-  降级为顶点外接框（此前这些 bbox-only 格式读不到 `points`、会把这类轨迹导成全 0 的空框）。真·segmentation 导出
-  （COCO-seg / YOLO-seg）另行落地。
-- **polygon 轨迹 SAM2 追踪保留多边形（mask 回填）**：对 polygon 轨迹发起 AI 追踪时，SAM2 video predictor 每帧算出的
-  mask 不再降级为 bbox 丢弃，而是矢量化为归一化多边形顶点（复用图片栈 `mask_to_polygon`）逐帧回填为 polygon 关键帧；
-  轨迹类型据源几何自动选择（polygon → 输出 polygon，bbox → 维持 bbox 不变）。种子仍取多边形外接框喂 SAM2（其只吃
-  bbox 提示），跨窗续追亦按上一窗多边形外接框重新播种。与 bbox 追踪链路平行，seed-bbox 追踪行为零改变。
-- **sam3.1 文本驱动视频追踪 backend（sam3_video）**：sam3-backend 新增 `sam3.1_multiplex` 视频追踪模型，`/predict` 的
-  `type=video_tracker` 分支按文本 query 在每帧检测目标（multiplex 多目标，首切片按种子框选单目标消费），mask 矢量化为
-  polygon / bbox 逐帧回填；`/setup` 声明 `supported_trackers:[sam3_video]` + `text_driven_trackers:[sam3_video]`，
-  未绑该 backend 的项目文本追踪保持灰置。图像模型与视频模型「互斥常驻」——加载视频前自动卸载图像模型（反之亦然），
-  空闲各自 idle 卸载。至此 v0.21.19 文本视频追踪从协议、UI 到 backend 全链路打通。**显存硬约束**：该 multiplex 模型
-  FP16 加载即约 7GB，8GB 卡前向激活会 OOM（已开 `expandable_segments` 仍不够；`multiplex_count` 被 checkpoint 锁死
-  16 不可调小），**实用需 >8GB 显存的 GPU**。
-
-## [0.21.18] - 2026-07-07
-
-### Added
-- **视频播放组件「展开」态（剪辑器式分行时间线面板）**：控制条新增展开/折叠开关。折叠态（默认）保持紧凑单轨浮层、不长期挡视频；展开态把各类时间轴数据拆成独立带标签的行——标尺（帧号+刻度）、scrubber（cyan 播放头滑块）、章节、书签、Issues、AI 预测密度、标注密度、轨迹、采样网格、AI 传播、Loop 区域，配紧凑居中控件（圆形播放键、首/末帧、逐帧、预测跳转、缩放）与状态条（帧/时间/速率/Loop/窗口读数 + 右侧概览导航条），并有贯穿各行的竖向对齐网格线与播放头线。seek / 刷选 / 缩放逻辑两态共用。
-- **视频时间轴概览导航条**：缩放时间轴后，时间轴下方出现一条代表整段视频的概览条，用高亮方块标出当前可见窗口、并叠一层全段标注密度缩影与播放头位置——一眼看清"正看整段的哪一截、标注都在哪"。拖方块平移、拖方块两边缩放、点空白处把窗口挪过去；status 行同步显示「窗口 F{起}–{止}」读数。
-- **时间轴缩放按钮**：控制条新增 `−`/`+` 缩放按钮（放大用于长视频精细定位），缩放后出现「适配全部」复位按钮——缩放不再只有隐藏的 `Ctrl/⌘+滚轮` 一个入口。
-- **时间轴帧号刻度尺**：时间轴上方新增稀疏帧号刻度（按"整齐"步长自动选档），随缩放窗口重排，给长视频一个帧位参照。
-
-### Changed
-- **视频播放组件布局：时间轴独占整宽一行**：此前控制按钮与时间轴挤在同一行，把轨道压短、不利长视频精细定位。现改为控制条一行、时间轴整宽一行、概览/状态一行，轨道拿到整个面板宽度。
-- **时间轴滚轮缩放作用域扩展到整个播放组件**：`Ctrl/⌘+滚轮` 缩放时间轴此前只在轨道上生效，现在在控制条 / 状态 / 概览条任意处都能触发（缩放锚点仍对齐指针所指帧）；画布缩放的排除区同步从"时间轴轨道"扩大到"整个播放组件"，避免二者同触发条件互抢。
-- **视频时间轴缩放下限与密度精度**：时间轴放大不再无限收窄到少数帧；短视频密度按帧级桶渲染，避免单帧密度在高倍率下看起来跨多帧。选中轨迹时，AI 预测密度与全局标注密度仍常驻显示，轨迹行只额外显示选中轨迹详情。
-- **视频轨迹「AI 传播」统一更名为「AI 追踪」**：选中卡按钮此前已叫「AI 追踪」，但右键菜单、对话框标题、快捷键提示、进度 toast 仍显示旧词「AI 传播」，同一功能两种叫法易混。现全部统一为「AI 追踪」（调追踪模型，区别于纯几何铺帧的「复制后续」）；项目设置里的「AI 传播默认模型」同步改为「AI 追踪默认模型」。
-- **工作台首屏 `GET /me/preferences` 请求收敛**：进入标注工作台时，`useWorkbenchConfig` 的多个挂载实例（shell 主状态 / 画布 / 设置抽屉等）此前各自裸调一次 `GET /me/preferences`，首屏并发 3~4 次相同请求。现接入与 `ai.*` 偏好 hook 共享的 react-query（`["me","preferences"]`），首屏该端点收敛为单次请求；偏好写回后用整份返回值回灌缓存（`setQueryData`），供后续读取复用。跨设备偏好刷新沿用共享 query 的 5 分钟 staleTime。
-
-### Fixed
-- **时间轴反向跨类跳转（`Shift+``）失效**：视频 / 图片工作台按 `Shift+`` 跳到「上一类首对象」此前永不触发（美式键盘 `Shift+`` 产生的按键是 `~` 而非 `` ` ``），正向单按 `` ` `` 正常。现改按物理键位判定，正 / 反向都生效。
-- **视频展开时间轴播放头错位与右侧溢出**：展开态播放条、竖向播放头、标尺与各数据行此前可能使用不同横向坐标盒，导致圆点和播放头线偏移，播放条右侧还可能顶出面板。现统一所有展开态轨道的有效时间轴宽度。
-- **连续 resize 不同章节时前一个调整被回滚**：时间轴章节条 resize 的防抖计时器此前是单槽，200ms 内先后拖动两个不同章节时，前一个的保存会被后一个取消、落库前被刷新回滚。改为按章节分槽，各自独立落库。
-- **视频里采纳 / 拒绝 AI 后「自动前进」可能跳到别的帧**：`A` / `D` 决策后自动前进此前在跨帧候选全集里取下一个，可能选中当前帧根本不可见的预测框（画布上像「什么都没选」）。现按当前帧过滤后再前进。
-- **命名编排库切换编排后可能「以新名保存旧配置」**：全局 Pipeline 库先后加载两条编排时，源模型检查器未随之刷新，保存时可能把前一条的模型 / 变体 / 类别写进后一条。现切换编排时强制重新回填。
-- **项目内保存编排选「组织 / 公共」必定失败**：项目详情页「保存为项目编排」的可见范围下拉此前列出「组织 / 公共」，但两者需要 organization_id / 超管权限（首版无对应 UI），选中必得 400 / 403。现收敛为「项目私有」；跨项目复用请走全局 Pipeline 库。
-- **跨项目移动默认编排会静默降级目标项目的默认**：通过接口把一条默认编排改到另一个项目、且未显式指定是否默认时，此前会把目标项目原有的默认编排顶掉。现「换归属」不再隐式改变「谁是默认」。
-- **视频时间轴横向缩放与画布缩放冲突**：在时间轴上按 `Ctrl/⌘+滚轮` 想精细定位长视频时，画布缩放监听（挂在 window 捕获阶段、仅按容器矩形判断命中）会连同时间轴浮层一起吃到事件，导致画布和时间轴被同时缩放。现画布缩放在指针落于时间轴浮层时直接放行，二者互不干扰。
-- **视频工作台 minimap 缩略图空白只剩蓝框**：缩略图此前用 `<img>` 显示背景，视频项目在缺失 poster 时回退到视频文件地址（`.mp4`），浏览器无法把视频当图片解码，只剩视口蓝框。现视频缩略图改用 `<canvas>` 实时绘制当前帧（暂停贴精确帧、播放随帧刷新），不再依赖 poster。
-- **视频 Tab 切换轨迹只在两条间来回弹、切不到其余轨迹**：当多条轨迹在当前帧都以「参考虚影（ghost）」显示时（当前帧已过各自末关键帧、但上一关键帧仍存在），被选中的那条会从跨帧续写候选里排除、改由单独的选中 ghost 承载，而 Tab 候选列表此前只收了「其余待续 ghost + 当前帧实框」、漏了选中 ghost。于是选中项不属于任何可循环类，Tab 退化成「恒选空间第一条」，在当前选中与第一条之间死循环。现把选中轨迹 ghost 也并入轨迹类，Tab 可覆盖全部待续轨迹。
-- **yolo 后端 GPU 上下文损坏时单帧 / 逐帧推理硬报 500（假 CPU fallback）**：`torch.cuda.is_available()` 只查驱动可见性，GPU 上下文损坏（如宿主机挂起 / 恢复后的 `CUDA error: unknown error`）时它仍返回 True 但任何 CUDA 算子会抛错；旧代码 `model.to(cuda)` 失败只打「fallback CPU」日志却不真搬 CPU，ultralytics 又在推理时按 `is_available()` 自动选回 cuda:0，最终视频「当前帧 AI」等推理硬 500。现加真实显存分配探测（探测失败即退回并 latch CPU）、把有效设备贯通到 predict/track 调用、并在 `/health` 暴露 `effective_device` 供观测 GPU 是否静默退回 CPU。其余四个 ML 后端的同类审计已记入 ROADMAP。
-
-## [0.21.17] - 2026-07-06
-
-### Changed
-- **工作台 AI 偏好首屏请求去重**：交互后端 / 模型 / 二次推理 / 工具参数四类 AI 偏好此前各自在进工作台时并发拉取相同的 `GET /me/preferences`，现收敛到一个共享的按用户缓存数据源，四处消费同一次请求、同一份缓存（偏好读写行为不变）。
-
-## [0.21.16] - 2026-07-06
-
-### Changed
-- **多选 ≥2 条轨迹时浮卡直接出批量卡**：此前在右栏轨迹列表多选 2 条以上轨迹，画布上的选中浮卡只显示「最后选中那条」的单轨迹卡，合并 / 跳连 / 批量删除 / 批量改类 / 显隐 / 锁只能去右栏列表——同一交互对象从选 1 条到选 2 条，操作面板整片换位。现在浮卡在多选 ≥2 条轨迹时直接渲染批量卡，与右栏列表对等（同一批操作、同一禁用判据），跳连仍弹间隙模式对话框。
-- **轨迹「拆」操作术语消歧**：「拆」此前混指两种代价迥异的操作——「拆分轨迹」（在当前帧把一条轨迹切成前后两条）与「转为独立框」（把关键帧转成独立单帧框、会删改源轨迹）。现全站区分：「拆分轨迹」保留剪刀图标专指切两条，其余入口一律改称「…转独立框」并用方框图标（浮卡「拆关键帧 / 拆全帧」→「关键帧 / 全帧转独立框」，关键帧表行与右键「拆…为独立框」→「…转独立框」）。
-
-### Fixed
-- **锁定的轨迹能被浮卡绕过锁「转独立框」**：轨迹锁定本应冻结一切改动，但浮卡「更多」下拉的拆/复制、关键帧表行的「拆此关键帧为独立框」此前只看只读态、不看轨迹锁——锁定轨迹仍可经这些入口转框，而转框会删除或改写源轨迹几何。现全部转框入口统一为「只读 **或** 轨迹锁定即禁用」，与右键菜单一致，锁定轨迹不再能被任一入口转框销毁。
-
-## [0.21.15] - 2026-07-06
-
-### Added
-- **时间轴横向缩放（长视频精细定位）**：视频时间轴此前恒等宽铺满全域，长视频每帧不足 1px，seek / 圈选 / 看密度几乎点不准。现在按住 `Ctrl` / `⌘` 滚动即可以指针所在帧为不动点放大时间轴，放大后普通滚动横向平移；seek、区间刷选（循环 / 建章节 / AI 传播范围）、章节条、书签、关键帧点、人工 / AI 密度条、采样网格刻度全部随可见窗口正确缩放与对齐，窗口外元素自动裁剪。双击时间轴或点控制条「适配全部」按钮回到全览；换视频自动复位。
-- **时间轴刷选直接圈定 AI 传播范围**：打开 AI 传播对话框后，按住 `Shift` 在时间轴上拖一段，即可把这段回填为传播范围（对话框显示「· 自定义」），不必再靠方向 + 范围预设去凑帧号。普通拖动仍是逐帧预览（scrub），改预设/方向即回到预设范围。
-- **视频工作台 AI 候选框文字标签**：此前视频 AI 候选框只有一个虚线矩形、没有任何文字，「标签内容」里的 AI 段（来源 / 置信度）对视频完全不生效、默认什么都不显示。现在视频 AI 候选框顶部显示与图片工作台完全同源的标签（`✦来源 类别 · 置信度`，类别名恒显），受同一套 `labelContent.ai` 与「标签显隐」控制。
-- **点云工作台 3D 框文字标签**：此前点云工作台的 3D 立体框只有类别色、没有任何文字，看框认不出类别/身份，只能选中后去右栏看。现在每个 3D 框顶部悬浮一个文字标签（billboard，始终朝向相机），复用「标签内容」设置的**轨迹**段：类别名恒显，勾选后叠加轨迹号 `#N`、属性；显隐同样受「标签显隐」（始终 / 仅选中 / 不显示）控制。至此点云工作台也接入了统一的标签内容设置（此前该设置只对图片、视频画布生效）。
-
-### Fixed
-- **时间轴拖章节条边界会报错**：在时间轴上拖动章节色条的左右把手改范围时，接口 500 报错、范围改不动。修复后拖动即时生效。
-- **AI 传播影响范围高亮看不到**：AI 传播对话框此前是全屏弹窗，会把底部时间轴连同影响范围高亮一起遮住。现改为顶部浮层，不再遮挡时间轴——传播将影响哪段帧一目了然，`Esc` 可关闭。
-
-## [0.21.14] - 2026-07-06
-
-### Added
-- **AI 传播影响范围在时间轴实时高亮**：打开 AI 传播对话框时，时间轴上会高亮「这次传播将影响哪段帧」，并随方向 / 范围预设的调整实时更新。此前范围只有对话框里一行 `F{from} → F{to}` 文字，现在拖之前就能在时间轴看清影响段。
-
-### Changed
-- **AI 传播默认选真实模型、隐藏测试模型**：在已绑定真实 ML backend 的项目里，AI 传播对话框的模型下拉不再列出测试用的 `mock_bbox`，默认直接落在项目可用的真实追踪模型上（此前默认停在测试模型、易得到假框结果）。未绑定后端 / 测试环境仍保留 `mock_bbox` 可见。
-- **两类传播的命名与图标区分「代价差异」**：轨迹浮卡上原「AI 传播」改称「AI 追踪」（调用追踪模型逐帧预测），「复制后续」换用复制图标并在提示里点明「纯几何铺帧、不调模型」，避免把重操作误当轻操作。
-- **跳连 / 合并禁用时给出具体原因**：按钮点不动时，悬停提示会按当前选择状态说明差在哪（需恰好选 2 条 / 需同类 / 可见帧区间不能重叠），不再是笼统的「只支持…」。
-
-### Fixed
-- **AI 传播快捷键提示与实际按键一致**：浮卡与对话框此前把快捷键写作 `Shift+T`，但实际绑定是 `Ctrl+B`，文案与按键冲突。现全部文案更正为 `Ctrl+B`（不改键位）。
-
-## [0.21.13] - 2026-07-06
-
-### Added
-- **时间轴刷选一键建章节**：此前新建章节只能在侧栏表单里手填起止帧号，要圈一段就得脑算帧数或反复试。现在章节侧栏头多了「圈选」按钮——点亮后在时间轴上按住拖动圈出一段，松手即打开新建表单并预填起止帧，只剩填标题、选色。圈一段后自动退出圈选态。
-- **时间轴章节条拖边界改范围**：章节色条左右边缘各有一把手（悬停显握把、`ew-resize` 光标），拖动即改起/止帧，拖动中实时预览、松手才落库。「看范围」和「改范围」合到了一处，不必再回侧栏表单。命中区分区：边缘拖动改范围、中间点击仍跳转到章节。
-- **时间轴区间选择基建**：把原本只服务「循环播放区间」的时间轴刷选手势抽成带用途标签的通用能力（循环 / 建章节 / 传播范围），供上述章节用法与后续 AI 传播范围联动复用。
-
-### Changed
-- **章节条 ↔ 侧栏行双向高亮**：把鼠标移到时间轴上的章节条，侧栏对应行会同步高亮；反之亦然，两处不再各自为政。
-- **章节侧栏头对齐分组头规范**：章节侧栏标题栏的字重、计数样式与「轨迹 / AI 待审 / 人工」分组头统一。
-- 时间轴循环播放区间的圈选手势（`Shift`+拖）与样式保持不变。
-
-## [0.21.12] - 2026-07-06
-
-### Added
-- **多轨迹跨网格帧续写**：在一个网格帧画了多条轨迹框后切到下一网格帧，此前只有「选中那条」能续写、其余轨迹既无框也无参考框、必须回上一帧或右栏重新选中。现在**上一网格帧有关键帧、当前帧还没画的轨迹**会在当前帧显示淡色参考框（ghost），并且：`Tab` / `Shift+Tab` 会连同这些待续轨迹一起在「轨迹」类里循环；直接点参考框即可选中该轨迹（只选中、不落框）；随后画框即延展它、换帧继续。多轨迹逐条续写不再需要来回切帧或去侧栏点选。
-- **视频设置「续写后自动前进」**（默认关）：开启后，用轨迹工具跨网格帧续写完一条轨迹，会自动选中同帧下一条待续轨迹，连续续写无需逐条 `Tab` / 点选。
-
-### Fixed
-- **轨迹工具同帧再画框不再「吞掉」上一个框**：用轨迹工具画完第一个框后会自动选中该轨迹，此后在**同一帧**再画一个框，旧逻辑会把它当作「重做当前帧关键帧」并静默替换掉第一个框——画第二个物体时第一个框凭空消失。现在，当选中轨迹在**当前帧已有关键帧**时，同帧再画框判为「标第二个物体」，新建独立轨迹而非覆盖；**跨帧**画框（当前帧尚无该轨迹关键帧）仍延展当前轨迹、形成插值，轨迹标注的核心价值不受影响。修正同帧关键帧请拖拽已有框（move/resize），不要重画。
-
-### Changed
-- **「粘轨迹」态显式可视化**：轨迹工具激活且有选中轨迹时，画布顶部常驻一条低对比提示条（`正在延展轨迹 #N class · 画框延展到本帧 / 本帧已有关键帧, 画框新建物体 · 换帧画框继续 · Esc 结束`），文案随当前帧是否已有该轨迹关键帧切换。把此前隐式的「下一次画框归属选中轨迹」模型升级为可见，减少延展/新建的意外。无选中轨迹时不显示。
-
-## [0.21.11] - 2026-07-06
-
-### Added
-- **当前帧对象两级键盘循环**：`Tab` / `Shift+Tab` 升级为「同类流转」——按选中对象所属类别在环内前后循环；新增 `` ` `` / ``Shift+` `` 为「跨类跳转」，在类别间跳到下一/上一非空类的头部。视频三类（AI 待审 / 人工 / 轨迹）、图片两类（AI 待审 / 人工），让「审当前这一批对象」有一致的键盘节奏。旧键 `X`（AI）、`J`/`K`（人工）保留。
-- **选中自动聚焦（可选，默认关）**：开启后，键盘循环或点选对象时，若对象在画布外或过小，自动平移居中并适度放大，把「选中」升级为「焦点」；保守策略——已在视口内且够大则不动，避免把上下文挤出视口。视频 + 图片 2D 工作台通用，由工作台设置「选中自动聚焦」开关控制，默认关（不改选中前不移动视口的现状）。
-- **决策后自动前进（默认开）**：采纳 / 拒绝（`A` / `D`）AI 候选后，自动把选中推进到下一个待决对象，连续审阅无需重新点选；审到最后一个后自动置空。仅移动选中、不缩放视口（视口聚焦由上一项独立控制，两开关组合即「采纳即跳下一个并居中」）。视频 + 图片通用，由工作台设置「决策后自动前进」开关控制。
-
-### Changed
-- **AI 预测视觉语言统一为 violet**：视频时间轴预测密度轨、预测关键帧点/段、画布 AI 追帧角标此前用 amber，右侧栏 roster / AI 面板却用 violet，两套色语言割裂。现全站 AI 预测统一为 violet（`violet-500`/`violet-400`），与 roster 一致。
-- **跳预测帧按钮重设计**：原按钮双塞 chevron+sparkle 两个图标、套厚重琥珀描边框，视觉杂乱。现改 violet 单 chevron（靠强调色区分于逐帧导航），并以细分隔线把「跳预测帧」与「逐帧导航」分组。
-
-### Fixed
-- **视频时间轴密度条比例倒挂**：人工关键帧密度与 AI 候选密度两条 lane 此前**各自独立归一化**（各自的最大 bin 都撑满自己 lane 的高度），导致「1 个关键帧」画得和「8 个候选」一样高甚至更高，柱高完全不反映真实数量占比。现两条 lane 改用**共享计数基准** + 统一柱高上限，柱高真实反映跨 lane 的数量比。
-
-## [0.21.10] - 2026-07-05
-
-### Changed
-- 视频时间轴退役播放头「圆点」：原生 range thumb 圆点既与 AI 预测/关键帧密度条视觉重叠、又与轨道填充右缘冗余，现隐藏 thumb、保留原生进度填充（填充右缘即当前帧位置）。seek 拖拽/键盘不受影响（拖拽走时间轴指针捕获、键盘走 range onChange，均不依赖 thumb 命中）。
-
-### Fixed
-- **视频任务隐藏「运行当前题（按项目编排）」按钮**：该按钮对视频 task 实际会跑**整段**（335 帧全跑）而非其标称的「当前题」——批量预标 payload 无 `frame_index` 字段、后端不接受单帧作用域，而单帧路径 `/predict-frame` 又是单模型、跑不了多阶段编排。故对视频隐藏此入口：视频单帧检测走上方主「运行当前题」（单帧检测），整段/多阶段编排到「AI 预标」批量页。（单帧多阶段编排执行属后端能力，待补。）
-- **「当前题 AI」待审数不再莫名抖动（100→500→100）**：`aiBoxes` 未按 id 去重 + header 待审数对视频取全帧总数（下方候选列表却按当前帧过滤），叠加预测 offset 分页重取期相邻页 shape 重叠，跑一次 AI 后待审数会瞬时冲高再回落、且与列表口径不一致。现 `aiBoxes` 在源头按 id 去重（下游列表/计数/时间轴密度全继承唯一 id），视频 header 待审数改按**当前帧**过滤计数（与候选列表一致）。
-- **视频工作台「当前题 AI」面板恢复单帧检测能力**：视频项目下该面板的模型下拉此前被写死只剩整段 tracker（工作台调用共享配置 hook 时漏传 `executionUnit`），选不到图像检测模型；点「运行当前题」发给 tracker 产出 `video_track_bbox`，又被单帧 reshaper 丢弃 → 静默「新增 0 个候选」，等于点了没用。现工作台恒传 `executionUnit="frame"`，面板放开 YOLO 检测模型、单帧检测正确落 `video_bbox` 候选（后端零改动）。面板加一句指引：整段目标追踪走 Shift+T 种子追踪或「AI 预标」批量页。
-
-## [0.21.9] - 2026-07-05
-
-### Added
-- **committed 轨迹里 AI 追出的关键帧常态可辨**：已采纳的视频轨迹里，AI 追出的关键帧（`source=prediction`）此前在常态编辑态与人工帧渲染完全一致，采纳后回看分不清哪些帧是自己画的、哪些是 AI 补的。现补两处常态视觉线索——① 画布上当前帧是 AI 追帧时，框左上角加一枚 amber 角标（区别于插值帧虚线、人工帧实线）；② 右栏轨迹清单行新增「关键帧来源迷你条」（沿帧区间 bucket 化，紫=AI 追、灰=人工），不展开即可看出 AI 补了哪几段。（时间轴关键帧点、选中卡关键帧表本就按来源着色。）
-- **画布 AI 层渲染检测式轨迹候选（`video_track_bbox`）**：检测式追踪产生的轨迹候选此前只在右栏侧列表可见、画布上不画框，采纳前无法在画布直观审阅。现画布 AI 候选层用 `resolveTrackAtFrame` 解出轨迹在当前帧的框，与逐帧 `video_bbox` 候选同款虚线视觉逐帧渲染，可在画布上核对后再采纳。
-- **视频时间轴新增 AI 预测密度轨 +「跳到下一个/上一个有预测的帧」**：逐帧预标把每帧都落了 `video_bbox` 预测，但这些帧此前在时间轴上无任何标记，审阅时只能一帧帧翻找。现时间轴叠加一条独立的 amber 预测密度轨（bucket 化，与人工密度条不同层），播放控制条新增两枚带 sparkle 的预测帧导航按钮，可在有预测的帧之间直接跳转（`video_bbox` 取帧号、`video_track_bbox` 取关键帧号，去重升序）。
-- 视频工作台右栏「轨迹」分组头新增折叠/展开：点击头收起下方全部轨迹行（计数常驻）。折叠态随账号持久（走 workbench.layout 服务端偏好），刷新/换设备保留，与「AI 待审」「人工」分组同一套管道。
-
-### Changed
-- 视频工作台右栏「轨迹」分组头样式与「AI 待审」「人工」对齐：统一卡片外观（圆角/边框/内边距）、加折叠箭头、标题字重与计数样式统一，「新建轨迹」+ 按钮移至右侧计数旁并收窄以对齐分组头高度。
-
-### Fixed
-- 编排画布输入节点的「数据源」标题在视频项目下被源类型 + 执行单位徽标挤压成逐字竖排（数\据\源）：节点头改为徽标过多时换行、标题不换行、运行态圆点绝对定位到右上角（不再靠标题 flex 撑开），标题恢复正常横排。
-
-<!--
-日常变更（含普通 bug 修复）按 Keep a Changelog 类型分组追加到本段：
-Added / Changed / Deprecated / Removed / Fixed / Security（按此顺序，空组省略）。
-发版时把「## [Unreleased]」重命名为「## [x.y.z] - 日期」，再在其上方留一个空的
-「## [Unreleased]」。0.21.x 版本段累积在本区；进入 0.22.x 后整体移到 docs/changelogs/0.21.x.md。
--->
-
-## [0.21.8] - 2026-07-05
-
-### Changed
-- **逐帧批量预标注改两阶段 fan-out，消除段级重复下载**：v0.21.7 逐帧模式下每个视频 task 的帧被切成若干段，**每段各下载一次整段视频**（335 帧 = 12 段 = 12 次全量下载，视频越大越痛）。现拆为两阶段——阶段 A `extract_frames_task` **每视频只下载一次**源视频、抽全部计划帧落 `VideoFrameCache`（跨视频并行，走 media 队列）；阶段 B 段任务退化为**纯预测、只读缓存帧**（零下载）。实测 tracking_car（335 帧）下载 12→1，段任务零下载。
-
-### Added
-- **逐帧预标 job 跑中实时进度落库**：段任务把 Redis 已完成帧计数按 `done/total` 折算写回 `async_job.progress_pct`（max 防回退，跑中封顶 99、留 100 给收尾）。此前该字段跑中恒 0、到点直接跳 100%，读 DB 的 `/ai-pre/jobs` 列表看不到进度（只 SSE 有）；现列表跑中显真实百分比。
-
-### Fixed
-- 逐帧预标段任务遇个别帧瞬时失败（如后端高并发下 predict 报错）时，依赖段级幂等断点续跑补齐：重跑同 job 跳过已落库帧、只补失败/未跑帧，最终全帧覆盖。注：两阶段化去掉了 per-段抽帧的天然错峰，峰值并发升高，个别帧瞬时失败概率略增，靠上述断点续跑收敛。
-
-## [0.21.7] - 2026-07-03
-
-### Added
-- **单帧分支批量逐帧预标注（execution_unit=frame）**：视频项目现在可以让**图像检测 backend（YOLO det/seg）在整段视频逐帧跑**，每帧落 `VideoBboxGeometry` 单帧框——区别于整段追踪（tracker，跨帧轨迹 video_track）与单题工作台单帧 AI（同步、单帧）。这是把「执行单位」维度落进批量预标的一环：pipeline 从「per-task 一次执行」升级为「per-frame N 次执行」。
-  - **输入节点执行单位顶层分叉**：视频项目的输入节点新增「执行单位」选择器——**整段序列**（源模型只列 tracker，做多目标追踪）/ **逐帧**（源模型只列图像检测，逐帧跑）。选择成为源模型类型的顶层分叉（母计划「输入节点的对等分叉」），据此过滤源模型下拉。全局编排库的输入节点也改为**显式声明** data_type + execution_unit（取代此前从源模型 `supported_inputs` 反推），据声明过滤可选源模型。
-  - **二级 Celery fan-out 执行引擎**：逐帧模式下，每个视频 task 抽全帧后按段（frame chunk）拆成 Celery 子任务，`chord(group(段任务), finalize)` 聚合。段任务抽本段帧（复用帧缓存、幂等）→ 逐帧检测 → `video_bbox(frame_index)` 落库；**段级幂等支持断点续跑**（跳过已落库帧）、段边界 cancel、每任务帧数上限（`FRAME_PREANNOTATE_MAX_FRAMES`，默认 900）+ 每帧框数上限 + 段级 soft 超时护栏；Redis 计数聚合分布式进度，chord 回调收尾 async_job。首版为源单阶段检测（frame × pipeline-depth 多阶段与 frame × track 同属组合爆炸，不在范围）。
-
-## [0.21.6] - 2026-07-03
-
-### Added
-- **检测式视频追踪接入编排画布**：视频项目的编排源模型现在可以直接选 `tracker`（detect-then-track）。此前 `task=tracker` 的模型（`supported_inputs=['video']`）被源模型下拉的两道整图门（`supportsFullImageInput` + `GEOMETRIC_TASKS`）挡在外面，只能靠后端手拼 payload 触发；现在视频项目把 tracker 纳入几何路径的可选模型——变体（series × size）、参数（conf / iou / max_det / 追踪算法 bytetrack/botsort）、类别白名单与检测同构，`buildArgs` 自然发 `task_type='tracker'`。图像项目不受影响（tracker 只对 `data_type` 含 video 的项目放行）。
-
-### Changed
-- **编排「输入节点」收敛为纯数据源，源模型下沉为其子阶段（母计划终态）**：接续 v0.21.5——输入节点此前同时承载「数据源描述」和「源检测模型配置」两职。现彻底拆分：输入节点是深度 0 的纯数据源（只带 `source:{data_type,execution_unit}`，不配模型、不入后端 stage），源检测/追踪模型下沉为输入节点的子阶段（`SOURCE_SID`，后端 stage 0），下游从它继续挂。这让「图像跑检测 / 视频跑追踪 / 视频跑单帧检测」成为输入节点的对等分叉，而非写死在源节点里。受限 DAG 深度模型随之调整：输入节点不再计入模型层（深度 0），一条链的模型阶段为深度 1..3。图像项目编排行为零回归（源模型阶段等价旧「源阶段」，下游加子/改父/键冲突判据不变），旧持久化编排（stage 0 为源模型）加载时按此结构回填。
-- **含 tracker 阶段的批量预标注加 soft 超时**：detect-then-track 整段跑帧耗时远超逐帧检测，新增 `TRACKER_SOFT_TIME_LIMIT_SECONDS`（默认 1800s）——仅对含 tracker 阶段的 job 施加 Celery `soft_time_limit`，与后端 `YOLO_TRACKER_MAX_FRAMES` 帧上限构成双保险，防单个追踪 job 长时间占住 worker。
-
-## [0.21.5] - 2026-07-03
-
-### Added
-- **视频项目可进入预标注编排画布**：视频项目不再在 AI 预标入口被引导卡片挡在编排之外，而是进入与图像项目统一的编排画布，输入节点显示「视频」源类型 + 「整段序列」执行单位徽标。这是把「源类型 + 执行单位」维度落进编排模型的地基——后续检测式视频追踪接入编排即基于此。本版仅开放 `execution_unit=video` 单分支；逐帧（frame）分支 UI 与 tracker 派发接线为后续。
-
-### Changed
-- **编排画布的「源」收敛为一等「输入节点」**：此前源是画布/序列化层合成的「第 0 号 root 阶段」，靠 `ROOT_SID` 哨兵、`kind:"source"` 节点类型、`deriveSourceShape` 反推等五套散落特判维系。现统一为受限 DAG 内一条 `parentSid=null` 的普通节点，携带 `source:{kind,data_type,execution_unit}` 数据源描述：画布不再有 source/stage 两种节点类型（入 handle 由 `parentSid` 决定），源类型（图像 / 视频）与执行单位改由输入节点显式携带而非从模型反推，项目侧 / 全局编排库 / Inspector 的序列化与反序列化统一走输入节点。图像项目编排行为零回归（输入节点等价旧「源阶段」，下游加子 / 改父 / 键冲突判据不变）。旧持久化的项目 / 命名编排模板（stage 0 无 `source` 字段）加载时按输入节点识别，不受影响。
-
-## [0.21.4] - 2026-07-03
-
-### Added
-- **视频工作台单题 AI 预标注**：视频工作台现在可对**当前帧**直接调用图像检测后端（YOLO / grounded-sam2 / sam3 等），把候选落成该帧的框预标注、人工采纳入库。此前视频项目进不了当前题 AI（工具栏 AI 按钮与浮层对视频禁用），因为所有推理路径都在服务端从 task 派生图 URL，而视频 task 的 URL 是整段 mp4、图像后端取不到帧。现新增一条「客户端供图帧」推理路：前端把当前帧解码成 JPEG 随 multipart 上传（`POST /projects/{id}/ml-backends/{backend_id}/predict-frame`），服务端转存对象存储换成后端可拉取的 URL（通用 http URL，不走仅部分后端支持的 data: 捷径）后投递，返回的检测框逐个改写成单帧 `video_bbox`（带 `frame_index`）落一条预测，采纳复用既有 `/predictions/{id}/accept` 机制写成 `VideoBboxGeometry`。候选进右侧 AI 面板列表（支持「当前帧 / 全部」过滤），并**像图片工作台一样直接画在视频画布上**——只在候选所属帧渲染（虚线 + 类色候选框），select 工具下点选候选即弹「采纳 / 忽略」贴框快捷条，采纳落成该帧 `VideoBboxGeometry`、忽略驳回，与图片工作台的画布采纳/驳回一致。区别于整段视频批量预标（投 signed URL 走 worker）与交互式 SAM 视频追踪，这是同步、单帧、客户端供图的即时预标。首版限检测框（`video_bbox`）；分割 / 分类等无对应单帧几何的输出暂跳过。
-
-### Added
-- **检测式视频追踪（detect-then-track）**：视频源经检测模型 + ByteTrack / BoT-SORT 全自动多目标追踪，落成一批轨迹预标注。yolo-backend `/setup` 新增 `track` 模型（`task=tracker`、仅接受 `video` 输入、自报 `bytetrack` / `botsort`，复用检测权重矩阵与 COCO 类别表——追踪不加载新权重，只在推理时外挂关联算法）；`/predict` 的 `type=tracker` 分支用 ultralytics `model.track` 逐帧关联，返回每条已聚合轨迹（原生 track id + 逐帧 0-1 归一 bbox），支持 `conf` / `iou` / 追踪算法 / 类别白名单，首版单次整段追踪并对超长视频按帧数上限截断。平台侧把轨迹落成 `VideoTrackGeometry` 预标注：投递沿用现有批量链路（视频 task 投 signed URL），入库时把后端原生整型 track id 映射成稳定的 `trk_<uuid>` + 语义标签（如 `car_3`），读取路径把嵌套轨迹重塑成逐帧关键帧几何（每帧标记来源为预测）。区别于既有的交互式 SAM 视频追踪（人在环、单对象种子传播），这是无种子、多对象、离线批量的另一条链。
-
-### Removed
-- **标注编组（Ctrl+G / Ctrl+Shift+G)持久化下线**：此前「把 ≥2 个框绑成一个持久组」的能力（`group_id` 平等分组、重开仍是一组、同色虚线外圈）语义弱、场景罕见——相关关系已由父子（parent）、跨帧 track（ADR-0045）、同类 class 三态覆盖。现移除 `POST /annotations/group`、`/annotations/ungroup` 端点与对应 service/schema、前端 Ctrl+G 快捷键与接线、侧栏 group 卡片分桶与画布同色虚线外圈渲染。**批量编辑（选中多框一次改 class/属性/锁定/隐藏）保留**,退化为前端临时多选（`bulk-update`,不再落 `group_id`)。数据结构一并清理：删除 `annotations.group_id` 列及其索引、`tasks.next_group_seq` 列、全局序列 `cross_frame_group_seq`（跨帧对象标识已全部迁移到 `annotations.track_id`）。
-
-### Changed
-- 预标注流水线画布的**源阶段渲染改为按模型任务派生**，不再把「源 = 检测 = 整图」写死：源节点的角色名（目标检测 / 视频追踪）、产物（检测框 / 轨迹）、计数标签与源类型徽标（图像 / 视频）均从模型能力与受控词表推导。为后续检测式视频追踪（video 源）接入铺路——此前六处硬编码会把视频源错误显示成「检测 / 整图」。
-- **跨帧同一对象标识统一到 `track_id`**（ADR-0045）：此前「同一物体跨多帧」用两套 id——静态 box_3d 借 `group_id` 高位段、视频轨迹用 geometry 内 `track_id`。现在统一为 annotation 级的通用 `track_id`（几何类型无关）：跨帧延续（propagate）、关键帧区间插值、3D 工作台的跨帧高亮 / 邻帧叠加 / 逐目标点云对齐、以及导出全部改按 `track_id` 认链。**导出格式随之调整**：COCO `attributes.__group_id` → `__track_id`；LiDAR / nuScenes 的 `instance_token` 按 `track_id` 归并同一实例（MOT / KITTI 早已用 track_id，不变）。存量跨帧链已迁移回填，新链只写 `track_id`。
-
-## [0.21.0] - 2026-07-02
-
-### Added
-
-- **项目预标注编排升级为可命名模板库**：新增 `project_pipelines` 表与 `/project-pipelines`、`/projects/{project_id}/pipelines/apply` 接口，支持 private / organization / public 作用域、copy-on-write 套用、项目默认编排切换和未启用 backend 提前拦截，原有项目内保存的 `preannotate_pipeline` 会回填为项目默认编排。
-- **AI 预标面板接入命名编排库**：项目详情里可以把当前 DAG 保存为命名编排、从可见编排库套用为项目默认，并在套用失败时直接提示缺少启用的 backend；工作台「按项目编排运行当前题」优先读取项目默认命名编排，旧项目列只作为兼容兜底。
-- **智能编排库新增全局 backend/model 池**：`/ai-pre/pipelines` 可直接从 `/ml-capabilities/instances` 的全局模型池选择源模型和下游模型，右侧复用 DAG 画布预览后保存为公共命名编排；项目预标注入口只负责把编排库里的模板套用为当前项目默认，探测失败的 backend 会保留展示但禁用选择。
-- **全局编排页对齐项目编排能力**：`/ai-pre/pipelines` 现在支持多层 DAG（受限 `MAX_DEPTH=3`，可加子/改父/级联删）、右列常挂参数 Inspector 可以配 `roi.pad` / `write.keys` / `label`、模型变体（version/size/lang 轴），以及类别相关字段——源阶段类别白名单从 model 自报 `classes` 勾选、下游父框类别从上游 model 类名勾选、写回属性键从 model `output_attribute_schema` 勾选（均与项目侧同源、均支持自由文本兜底），而 `roi.mode` / `input.mode` / `write.target` 与项目侧一样由所选模型的任务内生派生、只读展示不可手选，保存前预警属性键冲突；可见范围支持公共 / 组织；页面下方新增「命名编排库」列表，展示 `scope in {public, organization}` 编排的 `usage_count`，支持「加载编辑」把 stages 回填画布或删除；项目页可见范围新增「组织」选项。推理阈值 `params` 因不在全局能力池下发，留待编排套用到项目后由项目侧配置。共用画布状态机通过 `usePipelineComposer(context)` 提取、通用 chip 多选提取为 `ChipMultiSelect`，两页保持行为一致。
-- **能力协议新增统一输入类型词表**：`supported_inputs` 现在有后端、共享协议和前端生成物共用的受控词表，并新增 `video` 预留输入类型与 `default_input_type` 字段，后续全局编排选择器和视频检测追踪可以用同一套输入判据。
-
-### Changed
-
-- **多阶段预标注的源阶段成为执行字段来源**：触发预标注时不再让顶层兼容字段覆盖流水线源阶段，源阶段的 backend、模型、任务类型、参数、variant 和类别过滤会一并派生到执行 payload，避免项目主 backend 或旧调用参数成为第二真值。
-- **全局能力实例响应补齐编排所需定位字段**：`/ml-capabilities/instances` 现在返回 `backend_id` 与 `state`，全局编排选择器可以用 registry id 落 `pipeline_stages.ml_backend_id`，并把 `state=error` 的 backend 展示为不可选择而不是静默消失。

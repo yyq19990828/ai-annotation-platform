@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from "react";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, VideoTrackGeometry, VideoTrackMaskGeometry } from "@/types";
 import {
   nearestTrackBbox,
   upsertKeyframe,
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
-import type { VideoTrackAnnotation } from "./videoStageTypes";
+import type { VideoManagedTrackAnnotation } from "./videoStageTypes";
+import { resolveVideoMaskTrackAtFrame } from "./videoStageGeometry";
 
 export type TrackMarkPatch = {
   outside?: boolean;
@@ -17,15 +18,15 @@ export type TrackMarkPatch = {
 export type VideoTrackActions = ReturnType<typeof useVideoTrackActions>;
 
 interface UseVideoTrackActionsArgs {
-  selectedTrack: VideoTrackAnnotation | null;
+  selectedTrack: VideoManagedTrackAnnotation | null;
   frameIndex: number;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
-  onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
+  onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackGeometry | VideoTrackMaskGeometry) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
-  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onPropagateTrack?: (annotation: VideoManagedTrackAnnotation) => void;
 }
 
 export function useVideoTrackActions({
@@ -45,7 +46,9 @@ export function useVideoTrackActions({
   const currentFrameOccluded = Boolean(
     selectedTrack
     && !currentFrameOutside
-    && selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex)?.occluded,
+    && (selectedTrack.geometry.type === "video_track_mask"
+      ? resolveVideoMaskTrackAtFrame(selectedTrack.geometry, frameIndex)?.occluded
+      : selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex)?.occluded),
   );
   const canEditSelectedTrack = Boolean(selectedTrack && !readOnly && !selectedTrackLocked);
 
@@ -60,6 +63,24 @@ export function useVideoTrackActions({
       return;
     }
     const visibleTrack = removeOutsideFrame(selectedTrack.geometry, frameIndex);
+    if (visibleTrack.type === "video_track_mask") {
+      const resolved = resolveVideoMaskTrackAtFrame(visibleTrack, frameIndex);
+      if (!resolved) return;
+      onUpdate(selectedTrack, {
+        ...visibleTrack,
+        keyframes: [
+          ...visibleTrack.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
+          {
+            frame_index: frameIndex,
+            mask: resolved.mask,
+            source: patch.source ?? "manual",
+            occluded: patch.occluded ?? resolved.occluded ?? false,
+            attributes: resolved.attributes,
+          },
+        ].sort((a, b) => a.frame_index - b.frame_index),
+      });
+      return;
+    }
     const bbox = nearestTrackBbox(visibleTrack, frameIndex);
     const keyframePatch = patch.source
       ? { occluded: patch.occluded, source: patch.source }

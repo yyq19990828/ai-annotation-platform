@@ -11,6 +11,8 @@ from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
+from app.services.gpu_arbiter import gpu_arbiter_failure_record
+from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
 from app.services.video_tracker_runner import run_tracker_job
 from app.workers.celery_app import celery_app
 
@@ -20,6 +22,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
     SessionLocal = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+    dispatch_context_factory = build_gpu_dispatch_context_factory(SessionLocal)
     try:
         async with SessionLocal() as db:
             job = await db.get(VideoTrackerJob, uuid.UUID(job_id))
@@ -64,11 +67,37 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                     async_job_id = None
 
             try:
-                result_job = await run_tracker_job(db, uuid.UUID(job_id))
+                gpu_arbiter_error: dict | None = None
+
+                def _record_gpu_arbiter_failure(failure: dict) -> None:
+                    nonlocal gpu_arbiter_error
+                    gpu_arbiter_error = failure
+
+                result_job = await run_tracker_job(
+                    db,
+                    uuid.UUID(job_id),
+                    shadow_session_factory=SessionLocal,
+                    dispatch_context_factory=dispatch_context_factory,
+                    failure_recorder=_record_gpu_arbiter_failure,
+                )
             except Exception as e:
+                gpu_arbiter_error = gpu_arbiter_error or gpu_arbiter_failure_record(e)
                 if async_job_id is not None:
                     try:
-                        await async_job_svc.mark_failed(db, async_job_id, error=str(e))
+                        await async_job_svc.mark_failed(
+                            db,
+                            async_job_id,
+                            error=(
+                                gpu_arbiter_error["message"]
+                                if gpu_arbiter_error is not None
+                                else str(e)
+                            ),
+                            result=(
+                                {"gpu_arbiter_error": gpu_arbiter_error}
+                                if gpu_arbiter_error is not None
+                                else None
+                            ),
+                        )
                         await notify_job_terminal(db, job_id=async_job_id)
                         await db.commit()
                     except Exception:
@@ -88,6 +117,11 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                                 async_job_id,
                                 error=(
                                     result_job.error_message or "tracker job failed"
+                                ),
+                                result=(
+                                    {"gpu_arbiter_error": gpu_arbiter_error}
+                                    if gpu_arbiter_error is not None
+                                    else None
                                 ),
                             )
                         else:

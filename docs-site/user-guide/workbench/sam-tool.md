@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-14
 ---
 
 # AI 工具组
@@ -11,8 +11,6 @@ last_reviewed: 2026-07-11
 > 点 / 框 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
-
-![AI 工具子工具栏](../images/sam/subtoolbar.png)
 
 工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
@@ -31,7 +29,7 @@ last_reviewed: 2026-07-11
 
 ## 工具说明
 
-<!-- screenshot pending: interactive-toolbar.png — 画布顶部交互工具栏全貌（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）。旧 ai-tool-drawer.png 已退役。 -->
+![交互工具栏：引擎、模型档位与连接状态](../images/sam/interactive-toolbar.png)
 
 > 选中点 / 框 / Exemplar 任一交互工具时，画布顶部居中浮出**交互工具栏**（横排布局，取代了旧的贴 ToolDock 右侧竖排抽屉）：左侧是引擎 / 模型 / 档位选择，右侧是工具特定控件（极性 / 输出形态 / 叠加文本 / 阈值），最右边是兼容性警告 + 状态指示。Mask 笔刷工具激活时改显 MaskToolbar，两者互斥。
 
@@ -116,7 +114,7 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 ![悬浮 AI 面板](../images/sam/ai-inspector-panel.png)
 
-点工具栏「AI」打开可拖动的悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。常见字段及项目级默认值：
+点工具栏「AI」打开悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。面板可拖动头部移动、拖右下角缩放，位置和尺寸在刷新后保留。常见字段及项目级默认值：
 
 | 字段 | 后端 | 项目级默认 | 范围 | 说明 |
 |---|---|---|---|---|

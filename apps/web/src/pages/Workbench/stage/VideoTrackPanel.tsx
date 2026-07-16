@@ -38,6 +38,8 @@ interface VideoTrackPanelProps {
   onDeleteTrack?: (annotation: VideoTrackAnnotation) => void;
   onBatchRenameTracks?: (className: string) => void;
   onBatchDeleteTracks?: () => void;
+  /** v0.22.2 · M2 · 批量 AI 追踪: 对多选轨迹一次发起多源追踪 (单 job 各回填各自源)。 */
+  onBatchTrackTracks?: () => void;
   onAggregateSelectedBboxes?: () => void;
   onMergeSelectedTracks?: () => void;
   canMergeSelectedTracks?: boolean;
@@ -146,6 +148,7 @@ export function VideoTrackPanel({
   onDeleteTrack,
   onBatchRenameTracks,
   onBatchDeleteTracks,
+  onBatchTrackTracks,
   onAggregateSelectedBboxes,
   onMergeSelectedTracks,
   canMergeSelectedTracks = false,
@@ -269,6 +272,16 @@ export function VideoTrackPanel({
               </select>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                title="批量延展 · 对选中的多条轨迹一次发起，各自回填原轨迹"
+                aria-label="批量延展轨迹"
+                disabled={batchMutationDisabled || !onBatchTrackTracks}
+                onClick={onBatchTrackTracks}
+              >
+                <Icon name="bot" size={14} />
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"

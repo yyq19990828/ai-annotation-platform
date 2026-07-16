@@ -18,10 +18,11 @@
     "check:changelog": "node scripts/check-changelog-version.mjs",
     "check:frontmatter": "node scripts/check-doc-frontmatter.mjs",
     "check:freshness": "node scripts/check-doc-freshness.mjs",
+    "check:image-manifest": "node scripts/check-image-manifest.mjs --strict",
     "check:orphan-images": "node scripts/check-orphan-images.mjs",
     "check:navigation": "node scripts/check-navigation-coverage.mjs",
     "check:codegen": "node scripts/generate-hotkeys.mjs --check && node scripts/generate-settings.mjs --check",
-    "check:all": "node scripts/check-doc-snippets.mjs && node scripts/check-adr.mjs && node scripts/check-plans-freshness.mjs && node scripts/check-changelog-version.mjs && node scripts/check-doc-frontmatter.mjs && node scripts/check-doc-freshness.mjs && node scripts/check-orphan-images.mjs && node scripts/check-navigation-coverage.mjs && node scripts/generate-hotkeys.mjs --check && node scripts/generate-settings.mjs --check",
+    "check:all": "node scripts/check-doc-snippets.mjs && node scripts/check-adr.mjs && node scripts/check-plans-freshness.mjs && node scripts/check-changelog-version.mjs && node scripts/check-doc-frontmatter.mjs && node scripts/check-doc-freshness.mjs && node scripts/check-image-manifest.mjs --strict && node scripts/check-orphan-images.mjs --strict && node scripts/check-navigation-coverage.mjs && node scripts/generate-hotkeys.mjs --check && node scripts/generate-settings.mjs --check",
     "mirror:adr": "node scripts/mirror-adr.mjs",
     "mirror:changelog": "node scripts/mirror-changelog.mjs"
   },

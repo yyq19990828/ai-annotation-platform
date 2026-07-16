@@ -31,6 +31,12 @@ if os.path.isdir(_VENDOR_ROOT) and _VENDOR_ROOT not in sys.path:
 import numpy as np
 import torch
 
+from aap_backend_runtime import (
+    DeviceUnavailableError,
+    free_gpu_memory,
+    is_device_error,
+    require_gpu_device,
+)
 # 复用 multiplex 封装里的通用几何/IO 静态工具(抽窗解码、mask→几何、临时目录清理),
 # 避免重复实现; 这些与 multiplex 逻辑无关, 纯 OpenCV/几何。
 from video_predictor import SAM3MultiplexVideoTracker, _to_numpy
@@ -75,7 +81,7 @@ class SAM3PVSVideoTracker:
         self, *, max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES
     ) -> None:
         self.max_window_frames = max_window_frames
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = require_gpu_device("cuda")
         self.active_sessions = 0
         self._predictor = self._load_predictor()
 
@@ -87,13 +93,24 @@ class SAM3PVSVideoTracker:
         if not os.path.isfile(_IMAGE_CKPT):
             raise FileNotFoundError(_IMAGE_CKPT)
         logger.info("building sam3 PVS video predictor ckpt=%s", _IMAGE_CKPT)
-        model = build_sam3_video_model(
-            checkpoint_path=_IMAGE_CKPT,
-            bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
-            # 图像/视频权重同容 sam3.pt, tracker 相关键齐, 但整包含非 tracker 键 →
-            # 非严格加载(与官方 notebook 及 multiplex 封装一致)。
-            strict_state_dict_loading=False,
-        )
+        # tracker 内部仍有 CUDA-only 路径；显式锁定 GPU 并在设备失效时直接拒绝。
+        try:
+            model = build_sam3_video_model(
+                checkpoint_path=_IMAGE_CKPT,
+                bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
+                # 图像/视频权重同容 sam3.pt, tracker 相关键齐, 但整包含非 tracker 键 →
+                # 非严格加载(与官方 notebook 及 multiplex 封装一致)。
+                strict_state_dict_loading=False,
+                device=self.device,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if is_device_error(exc):
+                free_gpu_memory()
+                raise DeviceUnavailableError(
+                    "SAM3 PVS video model requires a healthy CUDA device; "
+                    "CPU fallback is not supported"
+                ) from exc
+            raise
         predictor = model.tracker
         # 嫁接 detector 的 backbone 给 tracker(官方 notebook 配方: 二者共享视觉 backbone,
         # build 时 tracker.backbone 被剥离以省显存, 用前接回)。
@@ -103,6 +120,32 @@ class SAM3PVSVideoTracker:
     # ---------- 公开接口 ----------
 
     def propagate(
+        self,
+        video_path: str,
+        from_frame: int,
+        to_frame: int,
+        direction: str,
+        seeds: list[dict[str, Any]],
+        output_geometry: str = "bbox",
+    ) -> list[dict[str, Any]]:
+        """Run one PVS window under a bounded BF16 autocast scope."""
+
+        device_type = self.device.split(":", 1)[0]
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=device_type == "cuda",
+        ):
+            return self._propagate(
+                video_path,
+                from_frame,
+                to_frame,
+                direction,
+                seeds,
+                output_geometry,
+            )
+
+    def _propagate(
         self,
         video_path: str,
         from_frame: int,
@@ -133,10 +176,11 @@ class SAM3PVSVideoTracker:
         reverse = direction == "backward"
         seed_src_frame = hi if reverse else lo
 
-        self.active_sessions += 1
-        tmp_dir = tempfile.mkdtemp(prefix="sam3pvs_")
+        tmp_dir: str | None = None
         state = None
+        self.active_sessions += 1
         try:
+            tmp_dir = tempfile.mkdtemp(prefix="sam3pvs_")
             _fw, _fh, local_count = SAM3MultiplexVideoTracker._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
@@ -201,10 +245,12 @@ class SAM3PVSVideoTracker:
         finally:
             # Sam3TrackerPredictor 无 reset_state; init_state 返回的是普通 dict, 丢引用
             # + empty_cache 即释放其 GPU 张量(会话状态不跨 job 复用)。
+            if isinstance(state, dict):
+                state.clear()
             state = None
-            SAM3MultiplexVideoTracker._cleanup_tmp(tmp_dir)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if tmp_dir is not None:
+                SAM3MultiplexVideoTracker._cleanup_tmp(tmp_dir)
+            free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------

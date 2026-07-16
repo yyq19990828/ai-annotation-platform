@@ -8,19 +8,24 @@
 > 更新流程：
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
-> 2. `pnpm --filter @anno/web screenshots`
-> 3. `git diff docs-site/user-guide/images/` 人眼审阅
-> 4. 满意即 commit；如需调整可编辑 `apps/web/e2e/screenshots/scenes/` 中对应场景的 `prepare` 钩子后再跑
+> 2. 修复截图 seed 并按能力绑定 live backend；无 GPU 时显式使用协议 stub
+> 3. `pnpm --filter @anno/web screenshots:matrix` 和 `pnpm --filter @anno/web screenshots:flows`
+> 4. `git diff docs-site/user-guide/images/` 人眼审阅全部 PNG 和 GIF 正文帧
+> 5. 运行 manifest release gate 和 orphan strict gate 后再提交
 
 ## 拍摄约定
 
-- **分辨率**：1920×1080（页面级）/ 1280×720（GIF 录屏）
+- **分辨率**：desktop 1440×900、mobile 390×664；GIF 录屏 1280×720
 - **格式**：截图 PNG，GIF 用于流程录屏
-- **浏览器**：Chrome / Edge，关闭账号头像 / 时间 / 通知数等动态元素
-- **数据脱敏**：邮箱 `demo@example.com`、姓名 `张三 / 李四 / 王五`、项目名 `演示项目-A`
+- **浏览器**：Playwright 固定版本 Chromium；时区、语言、DPR、时钟和动画由 driver 统一固定
+- **数据来源**：只使用 `screenshots` seed catalog 的固定逻辑键；不从开发库随机选择项目或任务
+- **动态信息**：账号、时间和通知数等不稳定区域由统一 mask 规则处理
 - **标注红框**：引导读者注意的位置用红框（#FF3333，2px）
-- **主题**：统一浅色主题
+- **主题**：默认浅色；只有 scene 显式声明时才生成 dark / mobile 变体
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
+
+当前正式矩阵包含 61 张自动 PNG（58 desktop-light、2 desktop-dark、1 mobile）、
+3 张手工 PNG 和 13 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
@@ -66,12 +71,12 @@
 ### 视频 AI 审阅（对应 `workbench/video-track.md`）
 
 - [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 单条采纳/拒绝入口 [manual]
-- [ ] `images/video-propagate/tracker-review-bar.png` — AI 追踪 job 候选叠加 + 顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 [manual]
-- [ ] `images/video-propagate/multi-target-seeds.gif` — AI 追踪工具条切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 [manual]
+- [ ] `images/video-propagate/tracker-review-bar.png` — 固定一条含至少 2 个目标的 `pending_review` 作业，当前帧同时露出 violet 候选与顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 **[Tier A]** [manual]（需独立场景；现有工作台场景会主动丢弃待审作业）
+- [ ] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 [manual]
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
 - [ ] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 / 点选即续写 →「续写后自动前进」自动跳下一条 [manual]
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
-- [ ] `images/workbench/video-track-multiselect-batch-card.png` — 多选 ≥2 条轨迹时浮卡直接渲染批量卡（与右栏列表对等）；红框：批量卡、批量操作 [manual]
+- [ ] `images/workbench/video-track-multiselect-batch-card.png` — 当前帧同时显示至少 2 条轨迹，`Shift` / `Ctrl` 多选后同时露出画布浮动批量卡、右栏批量工具条和高亮轨迹框；红框：「已选 2 条轨迹」与「批量延展」 **[Tier A]** [manual]（自动化前需补可清理的双轨迹 fixture）
 
 ### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
 
@@ -81,7 +86,7 @@
 ### 两类传播术语（对应 `workbench/video-propagate.md`）
 
 - [ ] `images/video-propagate/track-vs-copy-buttons.png` — 选中卡两类传播按钮对比：「AI 追踪」（bot 图标 · 调 tracker 模型）vs「复制后续」（copy 图标 · 纯几何铺帧）；红框：两按钮 + tooltip [manual]
-- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 传播范围 → 传播对话框顶部浮层化打开（不遮时间轴）+ 影响范围高亮可见 [manual]
+- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 [manual]
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
 
@@ -200,12 +205,13 @@
 - [x] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框）
 - [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） **[Tier B]** 带 status 时客户端筛选清空 mock，不带又混入真实成功 job，需真实 failed 种子数据；失败列表已由 `images/workflows/failed-prediction-recovery-jobs-list.png` 覆盖
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
-- [x] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 max_concurrency/extra_params `[auto]`（深链 `/model-market?tab=registry`）
+- [ ] `images/superadmin/ml-backend/register-form.png` — **重拍现有路径**：注册表单全貌含 GPU 物理资源、显存预算、驱逐优先级、当前预算、desired → effective、max_concurrency 与 extra_params **[Tier A]** `[auto]`（旧图早于 GPU 字段组）
+- [ ] `images/superadmin/ml-backend/gpu-resource-overview.png` — 注册管理 tab 的 GPU 资源总览；红框：runtime ready、全局期望模式、资源 ID、节点 / 物理设备、可分配显存、backend 数、configured / desired / effective 与 blocker **[Tier A]** `[auto]`（需固定 `GPU_ARBITER_RESOURCES_JSON` 或接口 fixture，不能拍空配置）
 - [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
 - [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market/protocol-card-details.png` — 能力目录协议卡复用 ModelCard 的详情态；红框：可接受输入、输出属性/几何、资源/变体、`⚠ 协议` 诊断 badge [manual]
-- [ ] `images/superadmin/model-market-runtime-card.png` — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual]
+- [ ] `images/superadmin/model-market-runtime-card.png` — backend 运行时卡片；红框：GPU claim、资源 ID、显存预算、驱逐优先级、desired → effective、诊断、池状态与卸载 / 预热操作 **[Tier A]** [manual]
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [x] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count `[auto]`（本地无模板呈空态）
@@ -218,22 +224,24 @@
 - [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 [auto]
 - [ ] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线；旧 1×1 占位图已删除，待重拍
 - [ ] `images/keypoint/hand.png` — 21 点手部骨架；旧 1×1 占位图已删除，待重拍
-- [x] `images/sam/subtoolbar.png` — SAM 子工具栏 [auto]
 - [x] `images/sam/text-three-modes.png` — 文字提示三种模式 `[manual]`（旧自动截图场景已移除，现作为保留参考图）
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
 - [x] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
+- [x] `images/workbench/ocr-real-scene.png` — 真实 OCR 图片 + 当前题 AI 模型/参数面板 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，提交转 polygon 落库）
+- [ ] `images/mask-brush/video-mask-track-edit.gif` — 视频帧按 `M` 从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷 / 橡皮修正 → `Enter` 物化第二个人工关键帧；同时露出 Mask、轨迹卡和时间轴关键帧变化 **[Tier A]** `[auto-gif]`（需新增 flow，结束后恢复 screenshot seed）
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，nuScenes-mini）
-- [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，nuScenes-mini）
+- [x] `images/workbench/pointcloud-real-scene.png` — 真实 PCL RGB-D 室内扫描点云工作台 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-DEV）
+- [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，P-PC-DEV）
+- [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [x] `images/polygon/draw-in-progress.gif` — 多边形逐点绘制全过程（落点 + 预览线，Enter 闭合提交）`[auto-gif]`（flows/polygon-draw，P-COCO8）
@@ -242,17 +250,19 @@
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
 - [x] `images/workbench/rotated-bbox.gif` — 拖框生成旋转框（angle=0）全过程 `[auto-gif]`（flows/rotated-bbox，P-COCO8；旋转手柄演示待补，盲拖坐标易空拖出第二框）
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
-- [ ] `images/sam/interactive-toolbar.png` — 画布顶部交互工具栏（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）；旧 `ai-tool-drawer.png` 已退役待替换 `[auto]`（scene: `sam/interactive-toolbar`）
+- [x] `images/sam/interactive-toolbar.png` — 画布顶部交互工具栏（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）`[auto]`（scene: `sam/interactive-toolbar`，P-COCO8 + live backend）
 - [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
 - [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [ ] `images/video-propagate/ai-propagate-toolbar.png` — AI 追踪顶部工具条（更晚/更早/双向、范围、模型、点框种子、尺寸） [manual]
+- [ ] `images/video-propagate/ai-tracking-panel.png` — **重拍现有路径**：画布右上追踪面板展示新版「发现新目标 / 延展当前轨迹 / 批量延展」作用范围、真实 backend 提供方、方向、范围与种子摘要 **[Tier A]** `[auto]`（scene: `workbench/video-ai-tracking-panel`，旧图仍是重构前口径）
+- [ ] `images/video-propagate/ai-tracking-panel-interaction.gif` — **重录现有路径**：顶部打开 → 切换正确作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 **[Tier A]** `[auto-gif]`（flow: `ai-tracker-panel`，旧动图早于单源 / 多源 / 无源重构）
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
 - [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）
+- [x] `images/workbench/video-real-scene.png` — 真实城市交通视频任务工作台 `[auto]`（scene: `workbench/video-real-scene`，P-VIDEO-DEV）
 - [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`
 - [ ] `images/workbench/video-track-compose-dialog.png` — 跳连对话框两种 gap 模式 [manual]
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]

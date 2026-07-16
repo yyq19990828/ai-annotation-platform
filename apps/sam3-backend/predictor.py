@@ -47,6 +47,12 @@ import numpy as np
 import torch
 from PIL import Image
 
+from aap_backend_runtime import (
+    DeviceUnavailableError,
+    free_gpu_memory,
+    is_device_error,
+    require_gpu_device,
+)
 from aap_protocol_v2 import decode_low_res_mask, encode_low_res_mask
 from embedding_cache import CacheEntry, EmbeddingCache
 from mask_utils import MultiPolygonRing, mask_to_multi_polygon
@@ -102,7 +108,7 @@ class SAM3Predictor:
         score_threshold: float = DEFAULT_SCORE_THRESHOLD,
     ) -> None:
         self.checkpoint_dir = checkpoint_dir
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = require_gpu_device("cuda")
         self.embedding_cache = embedding_cache
         self.score_threshold = score_threshold
 
@@ -134,25 +140,41 @@ class SAM3Predictor:
             ckpt_path = candidate
             logger.info("using local checkpoint: %s", ckpt_path)
 
-        model = build_sam3_image_model(
-            checkpoint_path=ckpt_path,
-            load_from_HF=(ckpt_path is None),
-            device=self.device,
-            enable_segmentation=True,
-            enable_inst_interactivity=True,  # v0.18.17: 解锁 point / interactive_box
-            eval_mode=True,
-        )
-        return model
+        try:
+            return build_sam3_image_model(
+                checkpoint_path=ckpt_path,
+                load_from_HF=(ckpt_path is None),
+                device=self.device,
+                enable_segmentation=True,
+                enable_inst_interactivity=True,  # v0.18.17: 解锁 point / interactive_box
+                eval_mode=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if is_device_error(exc):
+                free_gpu_memory()
+                raise DeviceUnavailableError(
+                    "SAM3 image model requires a healthy CUDA device; CPU fallback is not supported"
+                ) from exc
+            raise
 
     def _build_processor(self):
         from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore[import-not-found]
 
-        return Sam3Processor(
-            self._model,
-            resolution=SAM3_RESOLUTION,
-            device=self.device,
-            confidence_threshold=self.score_threshold,
-        )
+        try:
+            return Sam3Processor(
+                self._model,
+                resolution=SAM3_RESOLUTION,
+                device=self.device,
+                confidence_threshold=self.score_threshold,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if is_device_error(exc):
+                self._model = None
+                free_gpu_memory()
+                raise DeviceUnavailableError(
+                    "SAM3 image processor requires a healthy CUDA device; CPU fallback is not supported"
+                ) from exc
+            raise
 
     # ---------- 缓存辅助 ----------
 

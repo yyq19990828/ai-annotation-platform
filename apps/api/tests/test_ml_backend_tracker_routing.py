@@ -66,3 +66,39 @@ async def test_get_tracker_backend_none_when_capable_backend_not_enabled(
     await db_session.flush()
     svc = MLBackendService(db_session)
     assert await svc.get_tracker_backend(proj.id, "sam3_video") is None
+
+
+@pytest.mark.asyncio
+async def test_get_tracker_backend_excludes_disconnected_backend(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id)
+    backend = await _seed(db_session, name="sam3-backend", trackers=["sam3_video"])
+    backend.state = "disconnected"
+    svc = MLBackendService(db_session)
+    await svc.set_enabled(proj.id, backend.id, True)
+
+    assert await svc.get_tracker_backend(proj.id, "sam3_video") is None
+
+
+@pytest.mark.asyncio
+async def test_combo_requires_one_backend_with_both_capabilities(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    proj = await create_project(db_session, owner_id=user.id)
+    discover = await _seed(db_session, name="discover", trackers=["sam3_video"])
+    propagate = await _seed(
+        db_session, name="propagate", trackers=["sam3_video_interactive"]
+    )
+    svc = MLBackendService(db_session)
+    await svc.set_enabled(proj.id, discover.id, True)
+    await svc.set_enabled(proj.id, propagate.id, True)
+
+    assert (
+        await svc.get_tracker_backend_for_capabilities(
+            proj.id, ["sam3_video", "sam3_video_interactive"]
+        )
+        is None
+    )

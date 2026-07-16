@@ -17,13 +17,22 @@ import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import { rasterMasksApi } from "@/api/rasterMasks";
+import { ApiError } from "@/api/client";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import { mlBackendsApi } from "@/api/ml-backends";
-import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
+import type {
+  Annotation,
+  TaskResponse,
+  AnnotationResponse,
+  VideoTrackGeometry,
+  VideoTrackMaskGeometry,
+  MLBackendResponse,
+} from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
@@ -36,6 +45,7 @@ import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
 import { usePredictionPropagation } from "./usePredictionPropagation";
 import { useAiPopoverFrame } from "./useAiPopoverFrame";
+import { useVideoTrackerPanelFrame } from "./useVideoTrackerPanelFrame";
 import { useAnnotationHistory } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -80,7 +90,7 @@ import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
-import { isAnyVideoSingleFrame, isVideoBbox, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isAnyVideoSingleFrame, isVideoBbox, isVideoMaskTrack, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
@@ -127,6 +137,7 @@ import {
   selectProjectPipelineStages,
   buildPredictParams,
   promptOfTool,
+  resolveMaskEditorSize,
   resolveFloatingClassPaletteRect,
   resolveFloatingDiscussionRect,
   resolveFloatingInspectorRect,
@@ -150,6 +161,10 @@ interface WorkbenchShellIssueSection {
   onToggleIssuePinDrop: () => void;
   createModal: ComponentProps<typeof IssueCreateModal>;
 }
+
+type TrackerSourceAnnotation = AnnotationResponse & {
+  geometry: VideoTrackGeometry | VideoTrackMaskGeometry;
+};
 
 interface WorkbenchShellEmptyState {
   kind: "empty";
@@ -235,7 +250,7 @@ export function useWorkbenchShellModel({
   //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
   const backendsQ = useMLBackends(projectId);
   const backends = useMemo(
-    () => (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>,
+    () => (backendsQ.data ?? []) as MLBackendResponse[],
     [backendsQ.data],
   );
   const firstBackendId = backends[0]?.id ?? null;
@@ -406,6 +421,12 @@ export function useWorkbenchShellModel({
   // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
   const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
     useAiPopoverFrame();
+  const {
+    trackerPanelPosition,
+    setTrackerPanelPosition,
+    trackerPanelSize,
+    setTrackerPanelSize,
+  } = useVideoTrackerPanelFrame();
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(
@@ -588,8 +609,15 @@ export function useWorkbenchShellModel({
 
   const trackerJobs = useVideoTrackerJobs(taskId, isVideoTask);
   const [propagateDialog, setPropagateDialog] = useState<{
-    annotation: VideoTrackAnnotation;
+    // v0.22.1 · B · annotation 为 null = 无源检测 (画布级入口发起, 不绑选中轨迹)。
+    annotation: TrackerSourceAnnotation | null;
+    // v0.22.2 · M2 · 多选批量: ≥2 条源轨迹一次延展 (单 job 多源, 后端 annotation_id 存 NULL →
+    // 走 job 级审阅)。多源时 annotation 置 null, sources 持全列表; 单源/无源时 sources 省略。
+    sources?: TrackerSourceAnnotation[];
     submitting: boolean;
+    // v0.22.2 · U8 · 提交成功后置入建成的 tracker job id: 对话框就地转「追踪中…」进行态,
+    // 追踪进度读该 job (jobs[jobId]); 结果就绪 (候选) / 失败时由 effect 关闭对话框复位。
+    jobId?: string;
   } | null>(null);
   // v0.21.27 · U-pvs-1 · PVS 点种子采集接线 (state 已在上方声明): 用户在传播对话框点
   // 「落点选目标」进入采集态, 画布点击落归一化种子点 (复用 smart-point 手势 →
@@ -627,17 +655,28 @@ export function useWorkbenchShellModel({
     if (hasSeed) setSeedObj(seedObj + 1);
   }, [trackerSeeds, trackerSeedBoxes, seedObj]);
 
-  const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
-    setPropagateDialog({ annotation, submitting: false });
-    setPropagateBrush(null);
-    setTrackerSeeds([]);
-    setTrackerSeedBoxes([]);
-    setSeedObj(1);
-    setSeedMode("point");
-    setSeedAnchorFrame(null);
-    setSeedCollecting(false);
-    seedPrevToolRef.current = null;
-  }, []);
+  const openPropagateDialog = useCallback(
+    (source: TrackerSourceAnnotation | TrackerSourceAnnotation[] | null) => {
+      // AI 单题与 AI 追踪共用顶部工具组；打开追踪时先收起单题面板，避免两个浮层叠加。
+      setAiPopoverOpen(false);
+      // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
+      const list = Array.isArray(source) ? source : source ? [source] : [];
+      setPropagateDialog({
+        annotation: list.length === 1 ? list[0] : null,
+        sources: list.length >= 2 ? list : undefined,
+        submitting: false,
+      });
+      setPropagateBrush(null);
+      setTrackerSeeds([]);
+      setTrackerSeedBoxes([]);
+      setSeedObj(1);
+      setSeedMode("point");
+      setSeedAnchorFrame(null);
+      setSeedCollecting(false);
+      seedPrevToolRef.current = null;
+    },
+    [],
+  );
   const closePropagateDialog = useCallback(() => {
     setPropagateDialog(null);
     setTrackerSeeds([]);
@@ -646,6 +685,34 @@ export function useWorkbenchShellModel({
     setSeedAnchorFrame(null);
     stopSeedCollecting();
   }, [stopSeedCollecting]);
+  const togglePropagateDialog = useCallback(() => {
+    if (propagateDialog) {
+      closePropagateDialog();
+      return;
+    }
+    openPropagateDialog(null);
+  }, [closePropagateDialog, openPropagateDialog, propagateDialog]);
+  const toggleAiPopover = useCallback(() => {
+    if (aiPopoverOpen) {
+      setAiPopoverOpen(false);
+      return;
+    }
+    closePropagateDialog();
+    setAiPopoverOpen(true);
+  }, [aiPopoverOpen, closePropagateDialog]);
+  // v0.22.2 · U8 · 提交成功后不立即关闭对话框, 而就地转「追踪中…」进行态 (保留对话框显示进度,
+  // 让位审阅条前给即时反馈)。清掉种子采集态 (与关闭同款), 但保留对话框记录并挂上 job id。
+  const enterTrackingProgress = useCallback(
+    (jobId: string) => {
+      setTrackerSeeds([]);
+      setTrackerSeedBoxes([]);
+      setSeedObj(1);
+      setSeedAnchorFrame(null);
+      stopSeedCollecting();
+      setPropagateDialog((prev) => (prev ? { ...prev, submitting: false, jobId } : prev));
+    },
+    [stopSeedCollecting],
+  );
 
   const handlePropagateSubmit = useCallback(
     async (payload: Parameters<typeof trackerJobs.propagate>[2]) => {
@@ -701,19 +768,41 @@ export function useWorkbenchShellModel({
               },
             }
           : payload;
-        await trackerJobs.propagate(
-          taskId,
-          propagateDialog.annotation.id,
-          withSeeds,
-        );
-        closePropagateDialog();
+        // v0.22.2 · M2 · 多选批量 (≥2 源) → 任务级 track 带 source_annotation_ids, 后端逐源
+        // 读当前帧几何构 seeds, 一个 job 各回填各自源 (annotation_id 存 NULL, 走 job 级审阅)。
+        const batchSources = propagateDialog.sources;
+        const job = batchSources && batchSources.length >= 2
+          ? await trackerJobs.track(taskId, {
+              ...withSeeds,
+              source_annotation_ids: batchSources.map((sd) => sd.id),
+            })
+          : propagateDialog.annotation
+          ? await trackerJobs.propagate(taskId, propagateDialog.annotation.id, withSeeds)
+          : // v0.22.1 · B · 无源检测: 走任务级 track (payload 已含 target_class_name)。
+            await trackerJobs.track(taskId, withSeeds);
+        // v0.22.2 · U8 · 就地转进行态: 不立即关闭, 挂上 job id 让对话框显示「追踪中…」,
+        // 直到结果就绪 (候选) / 失败时由 effect 复位关闭。
+        enterTrackingProgress(job.id);
       } catch (e) {
         setPropagateDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
         throw e;
       }
     },
-    [propagateDialog, taskId, trackerJobs, trackerSeeds, trackerSeedBoxes, closePropagateDialog],
+    [propagateDialog, taskId, trackerJobs, trackerSeeds, trackerSeedBoxes, enterTrackingProgress],
   );
+
+  // v0.22.2 · U8 · 进行态收尾: 对话框挂着的 job 出候选 (结果就绪待审) → 关闭对话框, 让位顶部
+  // 居中的审阅条 (二者同位, 避免叠); job 失败 / 已被终态清理移除 → 同样收起复位。运行中则保持
+  // 「追踪中…」。仅依赖 job id + candidates/jobs 引用, 进度 (windowProgress) 变化不触发关闭。
+  const trackingJobId = propagateDialog?.jobId ?? null;
+  useEffect(() => {
+    if (!trackingJobId) return;
+    const candidateReady = Boolean(trackerJobs.candidates[trackingJobId]);
+    const job = trackerJobs.jobs[trackingJobId];
+    if (candidateReady || !job || job.status === "failed") {
+      closePropagateDialog();
+    }
+  }, [trackingJobId, trackerJobs.candidates, trackerJobs.jobs, closePropagateDialog]);
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
   const videoFps = videoManifest.data?.metadata.fps ?? null;
@@ -934,9 +1023,9 @@ export function useWorkbenchShellModel({
         if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
       }
       const sel = annotationsRef.current.find((ann) => ann.id === s.selectedId);
-      if (!sel || !isVideoTrack(sel)) return;
+      if (!sel || (!isVideoTrack(sel) && !isVideoMaskTrack(sel))) return;
       e.preventDefault();
-      openPropagateDialog(sel as VideoTrackAnnotation);
+      openPropagateDialog(sel);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1077,16 +1166,39 @@ export function useWorkbenchShellModel({
     savedInteractiveBackendId: interactiveBackendPref.savedBackendId ?? null,
     onSaveInteractiveBackend: interactiveBackendPref.save,
   });
-  // v0.21.25 (阶段 R) · tracker 可用性看「项目所有 reachable backend 的 supported_trackers 并集」,
-  // 而非单个绑定/交互 backend——否则项目绑 grounded-sam2 时, sam3-backend 声明的 sam3_video 永远
-  // 被灰置「未绑定后端」。与后端 get_tracker_backend 的按能力路由对齐。
-  const allSupportedTrackers = useMemo(() => {
-    const set = new Set<string>();
-    for (const entry of Object.values(routing.capIndex)) {
-      if (entry.reachable) for (const t of entry.trackers) set.add(t);
+  // tracker 可用性按项目已启用、已连接且 reachable 的 backend 分别计算；保留 provider
+  // 归属，避免把两个 backend 的原子能力误拼成一个可执行 combo。
+  const trackerModelProviders = useMemo(() => {
+    const providers: Record<string, string[]> = {};
+    for (const backend of backends) {
+      const entry = routing.capIndex[backend.id];
+      if (backend.state !== "connected" || !entry?.reachable) continue;
+      for (const tracker of entry.trackers) {
+        (providers[tracker] ??= []).push(backend.name);
+      }
+      if (
+        entry.trackers.includes("sam3_video") &&
+        entry.trackers.includes("sam3_video_interactive")
+      ) {
+        (providers.sam3_video_combo ??= []).push(backend.name);
+      }
     }
+    return providers;
+  }, [backends, routing.capIndex]);
+  const allSupportedTrackers = useMemo(
+    () => Object.keys(trackerModelProviders),
+    [trackerModelProviders],
+  );
+  const allTextDrivenTrackers = useMemo(() => {
+    const set = new Set<string>();
+    for (const backend of backends) {
+      const entry = routing.capIndex[backend.id];
+      if (backend.state !== "connected" || !entry?.reachable) continue;
+      for (const tracker of entry.textDrivenTrackers) set.add(tracker);
+    }
+    if (trackerModelProviders.sam3_video_combo) set.add("sam3_video_combo");
     return [...set];
-  }, [routing.capIndex]);
+  }, [backends, routing.capIndex, trackerModelProviders]);
   // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
@@ -1419,10 +1531,12 @@ export function useWorkbenchShellModel({
   const isLockedForActions = mode === "review"
     ? task?.status === "completed"
     : task?.status === "review" || task?.status === "completed";
-  const maskEditor = useMaskEditor({
-    width: stageGeom.imgW || 1,
-    height: stageGeom.imgH || 1,
-  });
+  const maskEditorSize = resolveMaskEditorSize(
+    isVideoTask,
+    stageGeom,
+    videoManifest.data?.metadata,
+  );
+  const maskEditor = useMaskEditor(maskEditorSize);
 
   const imageActions = useImageAnnotationActions({
     taskId,
@@ -1661,6 +1775,7 @@ export function useWorkbenchShellModel({
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,
+    handleVideoMaskCommit,
     handleVideoRename,
     handleVideoBatchRename,
     handleVideoBatchDelete,
@@ -1686,6 +1801,63 @@ export function useWorkbenchShellModel({
       delete: { mutate: (id, opts) => deleteAnnotationMut.mutate(id, opts) },
     },
   });
+
+  const selectedVideoMask = useMemo(() => {
+    const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
+    return annotation && isVideoMaskTrack(annotation) ? annotation : null;
+  }, [s.selectedId, visibleAnnotationsData]);
+  const selectedVideoMaskFingerprint = selectedVideoMask
+    ? `${selectedVideoMask.id}:${selectedVideoMask.version ?? 0}:${selectedVideoMask.updated_at ?? ""}:${s.videoFrameIndex}`
+    : "";
+  const maskInitFromRle = maskEditor.initFromRle;
+  const maskBeginBlank = maskEditor.beginBlank;
+  const maskCancel = maskEditor.cancel;
+  useEffect(() => {
+    if (!isVideoTask) return;
+    if (s.videoTool !== "mask") {
+      maskCancel();
+      return;
+    }
+    if (!selectedVideoMask) {
+      maskCancel();
+      return;
+    }
+    let cancelled = false;
+    void rasterMasksApi.annotationContent(selectedVideoMask.id, s.videoFrameIndex)
+      .then((rle) => {
+        if (!cancelled) maskInitFromRle(rle);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 404) {
+          maskBeginBlank();
+          return;
+        }
+        maskCancel();
+        pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
+      });
+    return () => { cancelled = true; };
+  }, [isVideoTask, maskBeginBlank, maskCancel, maskInitFromRle, pushToast, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
+
+  const cancelVideoMaskEdit = useCallback(() => {
+    maskEditor.cancel();
+    s.setVideoTool("select");
+  }, [maskEditor, s]);
+  const commitVideoMask = useCallback(() => {
+    const rle = maskEditor.commitToRle();
+    if (!rle || !maskEditor.buffer || maskEditor.buffer.countSet() === 0) {
+      pushToast({ msg: "Mask 为空，未提交", kind: "warning" });
+      return;
+    }
+    void handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask)
+      .then(() => {
+        maskEditor.cancel();
+        s.setVideoTool("select");
+      })
+      .catch((error: unknown) => {
+        pushToast({ msg: "Mask 保存失败", sub: String(error), kind: "error" });
+      });
+  }, [handleVideoMaskCommit, maskEditor, pushToast, s, selectedVideoMask]);
 
   // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
   // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
@@ -2295,6 +2467,7 @@ export function useWorkbenchShellModel({
         onSelectionChange={view === "roster" ? setVideoBatchTracks : undefined}
         trackerJobsByAnnotation={trackerJobs.byAnnotation}
         onPropagateTrack={openPropagateDialog}
+        onBatchTrack={(annotations) => openPropagateDialog(annotations as TrackerSourceAnnotation[])}
         onCancelTrackerJob={trackerJobs.cancel}
         trackColorOverrides={s.trackColorOverrides}
         onSetTrackColor={s.setVideoTrackColor}
@@ -2325,6 +2498,10 @@ export function useWorkbenchShellModel({
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
   const selectedIds = s.selectedIds;
   const selectionCount = selectedIds.length;
+  // v0.22.2 · U7 · AI 追踪对话框 (顶部居中悬浮工具条) 打开时, 让右侧选中卡收起让位, 避免与
+  // 工具条视觉相撞。仅强制渲染折叠态 (经 OR 叠加, 不改用户持久化的 collapsed 偏好): 对话框
+  // 关闭后自动复位到用户偏好, 无需额外记忆。
+  const trackerDialogOpen = Boolean(propagateDialog);
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
     if (!selectionCardEligible || selectionCount < 1) return null;
     const multi = selectionCount > 1;
@@ -2415,7 +2592,7 @@ export function useWorkbenchShellModel({
             onUpdateAttributes={handleUpdateAttributes}
           />
         );
-      } else if (ann && isVideoPointsTrack(ann)) {
+      } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
         // v0.21.26 · 点集轨迹 (polygon / polyline track):简化卡(指标 + 改类 / 显隐 / 锁 / 删整条),
         // 取代此前空白卡。完整关键帧编辑仍归 v0.21.20 多几何 track epic,不复用 bbox 轨迹卡。
         children = (
@@ -2433,6 +2610,8 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onToggleHidden={s.toggleHiddenVideoTrack}
             onToggleLock={s.toggleLockedVideoTrack}
+            onEditMask={isVideoMaskTrack(ann) ? () => s.setVideoTool("mask") : undefined}
+            onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
           />
         );
       } else if (videoBatchTracks.length >= 2) {
@@ -2475,6 +2654,11 @@ export function useWorkbenchShellModel({
             allHidden={allTracksHidden}
             allLocked={allTracksLocked}
             onChangeClass={(cls) => handleVideoBatchRename(videoBatchTracks, cls)}
+            onBatchTrack={
+              isLocked
+                ? undefined
+                : () => openPropagateDialog(videoBatchTracks as TrackerSourceAnnotation[])
+            }
             onToggleHidden={() => setBatchHidden(!allTracksHidden)}
             onToggleLock={() => setBatchLocked(!allTracksLocked)}
             onMerge={() => handleVideoComposeTracks({ operation: "merge_tracks", annotationIds: ids })}
@@ -2525,7 +2709,8 @@ export function useWorkbenchShellModel({
       title,
       position: floatingSelectionPosition,
       onPositionChange: onSelectionPositionChange,
-      collapsed: floatingSelection.collapsed,
+      // v0.22.2 · U7 · 追踪对话框打开时强制折叠让位 (OR 叠加, 不动持久化偏好)。
+      collapsed: floatingSelection.collapsed || trackerDialogOpen,
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
       // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
@@ -2569,6 +2754,8 @@ export function useWorkbenchShellModel({
     s.lockedVideoTrackIds,
     s.toggleHiddenVideoTrack,
     s.toggleLockedVideoTrack,
+    s.setVideoTool,
+    openPropagateDialog,
     handleStartChangeClass,
     handlePatchShapeFlag,
     handleDeleteBox,
@@ -2580,6 +2767,7 @@ export function useWorkbenchShellModel({
     floatingSelectionPosition,
     onSelectionPositionChange,
     floatingSelection.collapsed,
+    trackerDialogOpen,
     collapseSelectionCard,
     expandSelectionCard,
   ]);
@@ -2731,12 +2919,33 @@ export function useWorkbenchShellModel({
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
+  // v0.22.2 · M2 · 多选批量源列表 (≥2 时对话框转多源叙事; 非无源)。
+  const propagateSources = propagateDialog?.sources ?? null;
+  const propagateMultiSource = (propagateSources?.length ?? 0) >= 2;
   // v0.21.27 · 框修正 · 是否多目标 (跨点种子与框种子统计 distinct obj); 决定 overlay 是否逐目标配色。
   const seedMultiObj =
     new Set([
       ...trackerSeeds.map((sd) => sd.obj),
       ...trackerSeedBoxes.map((sb) => sb.obj),
     ]).size > 1;
+  const trackerSeedTargets = [
+    ...new Set([
+      ...trackerSeeds.map((seed) => seed.obj),
+      ...trackerSeedBoxes.map((seed) => seed.obj),
+    ]),
+  ]
+    .sort((a, b) => a - b)
+    .map((targetId) => ({
+      targetId,
+      pointCount: trackerSeeds.filter((seed) => seed.obj === targetId).length,
+      boxCount: trackerSeedBoxes.filter((seed) => seed.obj === targetId).length,
+      frames: [
+        ...new Set([
+          ...trackerSeeds.filter((seed) => seed.obj === targetId).map((seed) => seed.frame),
+          ...trackerSeedBoxes.filter((seed) => seed.obj === targetId).map((seed) => seed.frame),
+        ]),
+      ].sort((a, b) => a - b),
+    }));
 
   // v0.21.28 · 候选/接受: 本任务的待审候选 (candidates 按 jobId, 用 jobs[jobId].taskId 过滤)。
   // 普通计算 (非 hook): 位于早返回之后, 且计算便宜。
@@ -2768,6 +2977,15 @@ export function useWorkbenchShellModel({
             };
           })
       : [];
+  const candidateMasksThisFrame = trackerReviewCandidate
+    ? trackerReviewCandidate.preview.results
+        .filter(
+          (result) => result.frame_index === s.videoFrameIndex
+            && !result.outside
+            && result.geometry.type === "mask",
+        )
+        .map((result) => ({ jobId: trackerReviewCandidate.jobId, result }))
+    : [];
   const propagateDialogNextKeyframe = propagateDialogTrack
     ? [...propagateDialogTrack.geometry.keyframes]
         .map((kf) => kf.frame_index)
@@ -2844,11 +3062,13 @@ export function useWorkbenchShellModel({
       rightSidebarOpen: rightOpen,
       onToggleLeftSidebar: toggleLeftSidebar,
       onToggleRightSidebar: toggleRightSidebar,
-      onRunAi: () => {
-        setAiPopoverOpen((open) => !open);
-      },
+      onRunAi: toggleAiPopover,
+      aiOpen: aiPopoverOpen,
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
       aiDisabled: false,
+      onToggleTracker: isVideoTask ? togglePropagateDialog : undefined,
+      trackerOpen: Boolean(propagateDialog),
+      trackerRunning: Boolean(trackingJobId),
       onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
       onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
@@ -2894,7 +3114,7 @@ export function useWorkbenchShellModel({
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
-            {s.tool === "mask" && (
+            {(isVideoTask ? s.videoTool === "mask" : s.tool === "mask") && (
               <MaskToolbar
                 active={maskEditor.active}
                 mode={maskEditor.mode}
@@ -2902,8 +3122,8 @@ export function useWorkbenchShellModel({
                 dirty={maskEditor.dirty}
                 onSetMode={maskEditor.setMode}
                 onSetRadius={maskEditor.setRadius}
-                onCommit={commitMaskAsPolygon}
-                onCancel={cancelMaskEdit}
+                onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}
+                onCancel={isVideoTask ? cancelVideoMaskEdit : cancelMaskEdit}
               />
             )}
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
@@ -2955,7 +3175,7 @@ export function useWorkbenchShellModel({
                     : []
                   )
                     .map((id) => backends.find((b) => b.id === id))
-                    .filter((b): b is { id: string; name: string } => !!b)
+                    .filter((b): b is MLBackendResponse => !!b)
                 }
                 selectedInteractiveId={interactiveBackendId}
                 onSelectInteractive={routing.setPreferredInteractiveId}
@@ -3053,6 +3273,10 @@ export function useWorkbenchShellModel({
             : candidateBoxesThisFrame.length
               ? candidateBoxesThisFrame
               : undefined,
+        videoMaskCandidates: isVideoTask ? candidateMasksThisFrame : undefined,
+        videoMaskEditor: isVideoTask ? maskEditor : undefined,
+        onVideoMaskCommit: isVideoTask ? commitVideoMask : undefined,
+        onVideoMaskCancel: isVideoTask ? cancelVideoMaskEdit : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
@@ -3395,6 +3619,10 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
+    position: trackerPanelPosition,
+    onPositionChange: setTrackerPanelPosition,
+    size: trackerPanelSize,
+    onSizeChange: setTrackerPanelSize,
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,
@@ -3404,14 +3632,31 @@ export function useWorkbenchShellModel({
     userId: meUserId ?? null,
     samplingStep,
     projectDefaultModel: currentProject?.rendering_config?.trackerDefaultModel ?? null,
-    preferNonMockModel: Boolean(currentProject?.ml_backend_id),
-    // v0.21.19 · 能力协商: backend 声明的 tracker 列表, 用于灰置未声明的 text-driven tracker (sam3_video)。
-    // v0.21.25 (阶段 R): 取所有已启用 backend 的并集 (allSupportedTrackers), 不再局限单个绑定/交互 backend。
+    preferNonMockModel: allSupportedTrackers.length > 0,
+    // 仅把当前项目真正可执行的 tracker 与 provider 下发给选择器。
     supportedTrackers: allSupportedTrackers,
-    textDrivenTrackers: mlCapabilities.capability?.text_driven_trackers,
+    textDrivenTrackers: allTextDrivenTrackers,
+    trackerModelProviders,
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
+    // v0.22.1 · A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
+    sourceTrackClassName: propagateDialogTrack?.class_name ?? null,
+    // v0.22.1 · B · 无源检测模式 (画布级入口无选中轨迹) + 可选目标类别 (项目 classes)。
+    // v0.22.2 · M2 · 多源批量不是无源 (各源自带几何与类别), 故排除。
+    sourceless: !propagateDialogTrack && !propagateMultiSource,
+    availableClasses: currentProject?.classes ?? [],
+    // v0.22.2 · M2 · 多选批量: 源条数 + 去重类别 (混类叙事「N 类」/ 单类「XX」)。
+    sourceCount: propagateMultiSource ? propagateSources!.length : undefined,
+    sourceClassNames: propagateMultiSource
+      ? [...new Set(propagateSources!.map((sd) => sd.class_name))]
+      : undefined,
     submitting: Boolean(propagateDialog?.submitting),
+    // v0.22.2 · U8 · 提交成功后挂上 job id → 对话框就地转「追踪中…」进行态, 进度读该 job 的
+    // 分窗回报; 结果就绪 / 失败时 effect 关闭对话框复位。
+    tracking: Boolean(trackingJobId),
+    trackingWindow: trackingJobId
+      ? trackerJobs.jobs[trackingJobId]?.windowProgress ?? null
+      : null,
     onCancel: closePropagateDialog,
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
@@ -3423,15 +3668,9 @@ export function useWorkbenchShellModel({
     seedBoxCount: trackerSeedBoxes.length,
     seedMode,
     onChangeSeedMode: changeSeedMode,
-    // 目标/帧数跨点与框统计。
-    seedTargetCount: new Set([
-      ...trackerSeeds.map((s) => s.obj),
-      ...trackerSeedBoxes.map((b) => b.obj),
-    ]).size,
-    seedFrameCount: new Set([
-      ...trackerSeeds.map((s) => s.frame),
-      ...trackerSeedBoxes.map((b) => b.frame),
-    ]).size,
+    // 按目标逐行展示点数、框数和所在帧；当前目标即下一个种子的归属。
+    seedTargets: trackerSeedTargets,
+    activeSeedTargetId: seedObj,
     onToggleSeedCollecting: toggleSeedCollecting,
     onNewSeedTarget: newSeedTarget,
     onClearSeeds: () => {

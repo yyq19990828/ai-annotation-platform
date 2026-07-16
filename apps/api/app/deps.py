@@ -12,6 +12,11 @@ from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.core.security import decode_access_token
 from app.core.token_blacklist import is_blacklisted, get_user_generation
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
+from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
 
 bearer_scheme = HTTPBearer()
 
@@ -19,6 +24,18 @@ bearer_scheme = HTTPBearer()
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
+
+
+def get_gpu_shadow_session_factory() -> GPUShadowSessionFactory:
+    """可覆写的 observe 短会话工厂；业务请求 session 不交给旁路关闭。"""
+
+    return async_session
+
+
+def get_gpu_dispatch_context_factory() -> GPUDispatchContextFactory:
+    """可覆写的 workload authority；构造本身不访问 DB、Redis 或私钥。"""
+
+    return build_gpu_dispatch_context_factory(async_session)
 
 
 async def get_current_user(

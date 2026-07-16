@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   adminMlIntegrationsApi,
+  type GPUArbiterResourceItem,
+  type GPUConfigDiagnostic,
   type MLBackendItem,
   type GlobalBackendItem,
 } from "@/api/adminMlIntegrations";
@@ -26,7 +28,7 @@ const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"
 };
 
 const TABLE_CLASS =
-  "w-full min-w-[760px] border-separate border-spacing-0 text-sm [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2";
+  "w-full min-w-[980px] border-separate border-spacing-0 text-sm [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2";
 const TH_CLASS =
   "border-b border-border bg-muted px-3 py-1.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
 const RETRY_BTN_CLASS =
@@ -47,6 +49,7 @@ export function RegisteredBackendsTab() {
   const isSuperAdmin = role === "super_admin";
   return (
     <>
+      {isSuperAdmin && <GPUResourceOverview />}
       <GlobalRegistrySection isSuperAdmin={isSuperAdmin} />
       {isSuperAdmin && <ProjectEnablementOverview />}
     </>
@@ -75,7 +78,15 @@ function GlobalRegistrySection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
     setModalOpen(true);
   };
   const openEdit = (b: GlobalBackendItem) => {
-    setEditTarget({ id: b.id, name: b.name, url: b.url, auth_method: b.auth_method });
+    setEditTarget({
+      id: b.id,
+      name: b.name,
+      url: b.url,
+      auth_method: b.auth_method,
+      gpu_resource_id: b.gpu_resource_id,
+      vram_budget_mb: b.vram_budget_mb,
+      eviction_priority: b.eviction_priority ?? 0,
+    });
     setModalOpen(true);
   };
 
@@ -112,7 +123,7 @@ function GlobalRegistrySection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
 
   const items = data?.items ?? [];
   const headers = isSuperAdmin
-    ? ["名称", "URL", "来源", "类型", "状态", "最近检查", "操作"]
+    ? ["名称", "URL", "来源", "类型", "GPU 配置", "状态", "最近检查", "操作"]
     : ["名称", "URL", "来源", "类型", "状态", "最近检查"];
 
   return (
@@ -192,6 +203,11 @@ function GlobalRegistrySection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
                         )}
                       </div>
                     </td>
+                    {isSuperAdmin && (
+                      <td className="min-w-[230px]">
+                        <BackendGPUConfig backend={b} />
+                      </td>
+                    )}
                     <td className={NOWRAP}>
                       <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
                         {b.state}
@@ -265,6 +281,129 @@ function GlobalRegistrySection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
         </div>
       </Modal>
     </>
+  );
+}
+
+const GPU_STATUS_VARIANT: Record<
+  string,
+  "success" | "accent" | "warning" | "danger" | "outline"
+> = {
+  ok: "success",
+  info: "accent",
+  warning: "warning",
+  critical: "danger",
+  blocker: "danger",
+};
+
+function DiagnosticList({ diagnostics }: { diagnostics: GPUConfigDiagnostic[] }) {
+  if (diagnostics.length === 0) return null;
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1 p-0 text-2xs text-muted-foreground">
+      {diagnostics.map((diagnostic, index) => (
+        <li key={`${diagnostic.code}-${diagnostic.backend_id ?? ""}-${index}`}>
+          <Badge variant={GPU_STATUS_VARIANT[diagnostic.level] ?? "outline"}>
+            {diagnostic.level}
+          </Badge>{" "}
+          {diagnostic.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BackendGPUConfig({ backend }: { backend: GlobalBackendItem }) {
+  const status = backend.gpu_config;
+  if (!status) return <span className="text-muted-foreground">仅超级管理员可见</span>;
+  return (
+    <div className="flex flex-col gap-1.5 text-xs">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant={GPU_STATUS_VARIANT[status.status ?? "ok"] ?? "outline"}>
+          {status.status ?? "ok"}
+        </Badge>
+        <span className="mono max-w-[210px] truncate" title={backend.gpu_resource_id ?? undefined}>
+          {backend.gpu_resource_id ?? "无 GPU 声明"}
+        </span>
+      </div>
+      {backend.gpu_resource_id && (
+        <div className="text-2xs text-muted-foreground">
+          预算 {backend.vram_budget_mb ?? "—"}/{status.allocatable_mb ?? "—"} MiB · 优先级 {backend.eviction_priority}
+          · {status.desired_mode ?? "off"}→{status.effective_mode ?? "off"}
+        </div>
+      )}
+      <DiagnosticList diagnostics={status.diagnostics ?? []} />
+    </div>
+  );
+}
+
+function GPUResourceOverview() {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "ml-integrations", "gpu-resources"],
+    queryFn: () => adminMlIntegrationsApi.gpuResources(),
+    refetchInterval: 60_000,
+  });
+  const resources = data?.resources ?? [];
+
+  return (
+    <Card className="mb-4">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Icon name="activity" size={14} className="text-muted-foreground" />
+          <h3 className="m-0 text-sm font-semibold">GPU 物理资源</h3>
+          {data && (
+            <Badge variant={data.observe_runtime_ready ? "success" : "warning"}>
+              observe runtime {data.observe_runtime_ready ? "ready" : "not ready"}
+            </Badge>
+          )}
+        </div>
+        {data && (
+          <span className="text-xs text-muted-foreground">
+            全局期望 {data.global_desired_mode} · {resources.length} 张资源卡
+          </span>
+        )}
+      </div>
+      {isLoading ? (
+        <div className="p-6 text-center text-sm text-muted-foreground">加载 GPU 资源…</div>
+      ) : isError ? (
+        <div className="p-6 text-center text-status-danger">
+          <div>GPU 资源加载失败：{(error as Error).message}</div>
+          <button className={RETRY_BTN_CLASS} onClick={() => refetch()}>
+            重试
+          </button>
+        </div>
+      ) : resources.length === 0 && (data?.diagnostics.length ?? 0) === 0 ? (
+        <div className="p-6 text-center text-sm text-muted-foreground">
+          尚未配置 GPU_ARBITER_RESOURCES_JSON
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2.5 p-3">
+          {resources.map((resource) => (
+            <GPUResourceRow key={resource.gpu_resource_id} resource={resource} />
+          ))}
+          <DiagnosticList diagnostics={data?.diagnostics ?? []} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function GPUResourceRow({ resource }: { resource: GPUArbiterResourceItem }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border bg-card px-3.5 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={GPU_STATUS_VARIANT[resource.status] ?? "outline"}>{resource.status}</Badge>
+        <span className="mono text-sm font-semibold">{resource.gpu_resource_id}</span>
+        <span className="text-xs text-muted-foreground">节点 {resource.node_id}</span>
+        <span className="mono text-xs text-muted-foreground">{resource.physical_device_token}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>静态声明 {resource.claimed_budget_mb}/{resource.allocatable_mb} MiB</span>
+        <span>{resource.claimed_backend_count} 个 backend</span>
+        <span>configured {resource.configured_mode ?? "未设置"}</span>
+        <span>desired {resource.desired_mode}</span>
+        <span>effective {resource.effective_mode}</span>
+      </div>
+      <DiagnosticList diagnostics={resource.diagnostics ?? []} />
+    </div>
   );
 }
 

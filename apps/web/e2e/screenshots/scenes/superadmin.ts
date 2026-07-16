@@ -24,11 +24,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       const inviteBtn = page.getByRole("button", { name: /邀请成员/ }).first();
-      if (await inviteBtn.count()) {
-        await inviteBtn.click();
-        await page.waitForTimeout(350);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await inviteBtn.click();
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/superadmin/users/invite-modal.png",
@@ -44,23 +41,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     capture: { kind: "fullPage" },
     target: "docs-site/user-guide/images/superadmin/bugs/list.png",
   },
-  {
-    name: "superadmin/bugs/detail-panel",
-    role: "admin",
-    route: () => "/bugs",
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      // 点首行 → 右侧详情面板（布局切到 layoutWithDetail）
-      const firstRow = page.locator("tbody tr").first();
-      if (await firstRow.count()) {
-        await firstRow.click();
-        await page.waitForTimeout(500);
-      }
-      await page.waitForLoadState("networkidle");
-    },
-    capture: { kind: "fullPage" },
-    target: "docs-site/user-guide/images/superadmin/bugs/detail-panel.png",
-  },
+  // NOTE: bugs/detail-panel 与 bugs/status-transitions 同样需要固定 BUG seed，
+  // 不允许在空库时退化为截取列表页。
   {
     name: "superadmin/analytics/overview",
     role: "admin",
@@ -78,7 +60,7 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     route: () => "/admin/analytics",
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
-      await page.waitForSelector('[data-testid="panel-heatmap"]', { timeout: 4000 }).catch(() => {});
+      await page.locator('[data-testid="panel-heatmap"]').waitFor({ timeout: 4000 });
       await page.waitForTimeout(500);
     },
     capture: { kind: "locator", selector: '[data-testid="panel-heatmap"]', padding: 0 },
@@ -125,13 +107,10 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForLoadState("networkidle");
       // 顶栏铃铛按钮（title="通知"）→ 展开 NotificationsPopover
       const bell = page.getByRole("button", { name: "通知", exact: true }).first();
-      if (await bell.count()) {
-        await bell.click();
-        await page.waitForTimeout(400);
-      }
-      await page.waitForSelector('[class*="panelContent"]', { timeout: 3000 }).catch(() => {});
+      await bell.click();
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },
-    capture: { kind: "locator", selector: '[class*="panelContent"]', padding: 0 },
+    capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/notifications/panel-overview.png",
   },
   // ── Tier A 扩展（v0.15.26）：用户 / 审计 / 失败预测 / 健康 / 模型注册 / 模板 / BUG ──
@@ -144,11 +123,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(300);
       // 成员行编辑按钮（title="编辑成员"）
       const editBtn = page.getByRole("button", { name: /编辑成员|编辑/ }).first();
-      if (await editBtn.count()) {
-        await editBtn.click().catch(() => {});
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await editBtn.click();
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/superadmin/users/edit-modal.png",
@@ -161,10 +137,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForLoadState("networkidle");
       // 切「数据组」tab（组创建 + 成员添加）
       const tab = page.getByRole("button", { name: /数据组|用户组/ }).first();
-      if (await tab.count()) {
-        await tab.click().catch(() => {});
-        await page.waitForTimeout(400);
-      }
+      await tab.click();
+      await page.waitForTimeout(400);
       await page.waitForLoadState("networkidle");
     },
     capture: { kind: "fullPage" },
@@ -178,10 +152,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForLoadState("networkidle");
       // 切「角色」tab 展示权限矩阵预览
       const tab = page.getByRole("button", { name: /角色/ }).first();
-      if (await tab.count()) {
-        await tab.click().catch(() => {});
-        await page.waitForTimeout(400);
-      }
+      await tab.click();
+      await page.waitForTimeout(400);
       await page.waitForLoadState("networkidle");
     },
     capture: { kind: "fullPage" },
@@ -196,11 +168,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(500);
       // 首行「详情」按钮 → detail_json Modal
       const detailBtn = page.getByRole("button", { name: /详情/ }).first();
-      if (await detailBtn.count()) {
-        await detailBtn.click().catch(() => {});
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await detailBtn.click();
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png",
@@ -229,13 +198,9 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(400);
-      // 项目行「+ 注册」按钮（文案精确为「注册」）打开 MlBackendFormModal
-      const reg = page.getByRole("button", { name: "注册", exact: true }).first();
-      if (await reg.count()) {
-        await reg.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(300);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      const reg = page.getByRole("button", { name: "注册全局 backend", exact: true });
+      await reg.click({ timeout: 3000 });
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/superadmin/ml-backend/register-form.png",
@@ -249,32 +214,13 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(400);
       // 切「全部」tab 展示四 tab + scope chip + usage_count
       const allTab = page.getByRole("button", { name: /^全部$|全部/ }).first();
-      if (await allTab.count()) {
-        await allTab.click().catch(() => {});
-        await page.waitForTimeout(300);
-      }
+      await allTab.click();
+      await page.waitForTimeout(300);
       await page.waitForLoadState("networkidle");
     },
     capture: { kind: "fullPage" },
     target: "docs-site/user-guide/images/superadmin/public-templates/templates-list.png",
   },
-  {
-    name: "superadmin/bugs/status-transitions",
-    role: "admin",
-    route: () => "/bugs",
-    prepare: async (page) => {
-      await page.waitForLoadState("networkidle");
-      // 点首行打开详情面板（状态切换按钮组所在）
-      const firstRow = page.locator("tbody tr").first();
-      if (await firstRow.count()) {
-        await firstRow.click().catch(() => {});
-        await page.waitForTimeout(500);
-      }
-      await page.waitForLoadState("networkidle");
-    },
-    // 红框高亮状态切换按钮组（含关闭后重开徽标）
-    annotate: [{ selector: '[class*="statusActions"]', style: "rect-red", label: "状态切换" }],
-    capture: { kind: "fullPage" },
-    target: "docs-site/user-guide/images/superadmin/bugs/status-transitions.png",
-  },
+  // NOTE: bugs/status-transitions 不再从 DEV 库任取首条 BUG。若恢复自动截图，
+  // 必须先将固定 BUG 工单纳入 screenshots seed catalog，否则空库会产生假成功。
 ];

@@ -169,6 +169,14 @@ class StorageService:
         ``ml_backends._resolve_task_url`` 抽出共用 (task URL 与 ROI crop URL 共享), 行为逐字一致。
         """
         if settings.ml_backend_storage_host:
+            # generate_download_url 已换成浏览器地址。DEV 同源 /minio 无
+            # host，必须先还原内部绝对 URL，再改成 Docker 网关地址。
+            if settings.minio_public_url:
+                scheme = "https" if settings.minio_use_ssl else "http"
+                internal = f"{scheme}://{settings.minio_endpoint}"
+                public = settings.minio_public_url.rstrip("/")
+                if url.startswith(public + "/"):
+                    url = internal + url[len(public) :]
             return re.sub(
                 r"://[^/]+", f"://{settings.ml_backend_storage_host}", url, count=1
             )

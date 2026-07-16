@@ -30,6 +30,13 @@ export interface ConvertOptions {
   durationSec?: number;
 }
 
+export interface WebmOptions extends ConvertOptions {
+  /** 从转码后视频的第几秒抽取首页静态海报。 */
+  posterAtSec?: number;
+  /** WebM 同步产出的静态海报路径（WebP）。 */
+  posterPath?: string;
+}
+
 /** 检测 ffmpeg 是否可用；返回路径或 null。 */
 export function detectFfmpeg(): string | null {
   const env = process.env.FFMPEG_PATH;
@@ -128,4 +135,59 @@ export async function copyAsWebm(inputPath: string, outputPath: string): Promise
   fs.copyFileSync(inputPath, outputPath);
   const sizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(2);
   console.log(`[recorder] ✓ WebM 复制：${outputPath} (${sizeMB} MB)`);
+}
+
+/**
+ * 裁剪并压缩首页使用的 WebM，同时可抽取一张静态 WebP 海报。
+ * 首页媒体保持 16:9 全界面证据；移动端与 reduced-motion 只加载海报。
+ */
+export async function convertToWebm(
+  inputPath: string,
+  outputPath: string,
+  opts: WebmOptions = {},
+): Promise<void> {
+  const ffmpeg = detectFfmpeg();
+  if (!ffmpeg) {
+    throw new Error("[recorder] ffmpeg 不可用，无法生成首页 WebM");
+  }
+
+  const fps = opts.fps ?? 12;
+  const maxWidth = opts.maxWidth ?? 960;
+  const trim: string[] = [];
+  if (opts.startSec && opts.startSec > 0) trim.push("-ss", String(opts.startSec));
+  if (opts.durationSec && opts.durationSec > 0) trim.push("-t", String(opts.durationSec));
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  const video = spawnSync(ffmpeg, [
+    "-y", ...trim, "-i", inputPath,
+    "-an",
+    "-vf", `fps=${fps},scale=${maxWidth}:-2:flags=lanczos`,
+    "-c:v", "libvpx-vp9",
+    "-crf", "34",
+    "-b:v", "0",
+    "-deadline", "good",
+    "-cpu-used", "2",
+    "-row-mt", "1",
+    outputPath,
+  ], { encoding: "utf8" });
+  if (video.status !== 0) {
+    throw new Error(`ffmpeg WebM 转码失败:\n${video.stderr}`);
+  }
+
+  if (opts.posterPath) {
+    fs.mkdirSync(path.dirname(opts.posterPath), { recursive: true });
+    const poster = spawnSync(ffmpeg, [
+      "-y", "-ss", String(opts.posterAtSec ?? 2.5), "-i", outputPath,
+      "-frames:v", "1",
+      "-c:v", "libwebp",
+      "-quality", "84",
+      opts.posterPath,
+    ], { encoding: "utf8" });
+    if (poster.status !== 0) {
+      throw new Error(`ffmpeg 首页海报抽帧失败:\n${poster.stderr}`);
+    }
+  }
+
+  const sizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(2);
+  console.log(`[recorder] ✓ 首页 WebM：${outputPath} (${sizeMB} MB)`);
 }

@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.10.15
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-13
 ---
 
 # 外部预测导入 / 导出
@@ -41,11 +41,12 @@ last_reviewed: 2026-06-10
 
 #### AAP JSON（平台无损）
 
-平台原生中间格式。本期导入端只消费 `predictions[]`（`annotations[]` 当前只记警告日志、不入库）。最小可用 payload：
+平台原生中间格式。预测导入向导消费 `predictions[]`；独立的标注导入 API 消费 `annotations[]`，并能通过
+`mask_objects` 恢复视频栅格 mask track。最小预测 payload：
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "tasks": [
     {
       "task_match": { "file_path": "animals/cat/001.jpg" },
@@ -65,10 +66,10 @@ last_reviewed: 2026-06-10
 
 - **`schema_version` 必填**，且主版本不能超过平台支持的 major（当前 `1`），否则整文件 422 拒绝。
 - **`task_match` 必须给 `display_id` 或 `file_path` 至少一个**，两者全省略则该 task 块的预测全部跳过。`display_id` 全局唯一最稳；`file_path` 在项目内匹配，带子目录时会自动吸收 dataset 名前缀（库内 `task.file_path` 形如 `{dataset}/animals/cat/001.jpg`，外部相对路径 `animals/cat/001.jpg` 也能命中）。
-- 当前支持的几何类型：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。其他类型（如视频 `video_bbox` / `video_track_bbox`）**暂不导入**，会计入 errors。
+- 预测向导当前支持的几何类型：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。视频轨迹不走预测向导；需要恢复 `video_track_bbox`、`video_track_polygon`、`video_track_polyline` 或 `video_track_mask` 时，使用 AAP JSON 标注导入 API。
 - 一条 `predictions[i]` 可以用 `shapes[]` 把多个 shape 合并写入同一条预测；`shapes` 与单 `geometry` 同时存在时 `shapes` 优先。
 
-坐标用归一化 `[0, 1]`。完整格式规范（含 `tool_bindings` / `attribute_schema` / 各几何字段）见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-v12无损)，本页不重复展开。
+坐标用归一化 `[0, 1]`。完整格式规范（含 `tool_bindings` / `attribute_schema` / `mask_objects` / 各几何字段）见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-13无损)，本页不重复展开。
 
 #### COCO Detection
 
@@ -144,6 +145,6 @@ Dashboard 项目卡片右下角 `⋮` → **「清理预测」**。
 反向链路：把项目里的标注与预测导出成外部格式（COCO / YOLO / AAP JSON 等）。
 
 - 入口在 Dashboard 项目卡片 / 列表行右下角 `⋮` → **「导出标注数据」**，打开导出弹窗，可选导出范围（整个项目 / 单个批次）与一个或多个目标格式。
-- AAP JSON 是无损中间格式，能把 `predictions[]` 连同 `confidence` / `model_version` 一并带出，常用于「导出空项目结构 → 客户用自家模型回填预测 → 再导回」的闭环。
+- AAP JSON 是无损中间格式，能把 `predictions[]` 连同 `confidence` / `model_version` 带出，也能用 `annotations[]` + `mask_objects` 迁移视频栅格 mask track，常用于跨实例迁移与离线回填闭环。
 
 各格式的字段映射、目录结构、回源脚本等细节见 [导出格式参考](../reference/export-formats)。导出后按 task / scene 维度核对任务时，可用 [Data Manager](../projects/data-manager) 的「AI 待审」视图快速定位尚未处理的检测 shape 或视频追踪候选。

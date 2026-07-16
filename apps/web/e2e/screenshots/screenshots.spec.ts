@@ -18,31 +18,29 @@
  * 输出路径规则：
  *   - desktop-light（默认）→ 原 target 路径不加后缀
  *   - desktop-dark          → 追加 .dark 后缀
- *   - tablet                → 追加 .tablet 后缀
  *   - mobile                → 追加 .mobile 后缀
  */
 import { test } from "../fixtures/seed";
-import type { SeedData } from "../fixtures/seed";
-import type { Page } from "@playwright/test";
+import type { ScreenshotSeedCatalog } from "../fixtures/seed";
 import { SCENES } from "./scenes/index";
-import type { Role, MatrixAxis, ScreenshotScene } from "./scenes/index";
+import type { Role } from "./scenes/index";
 import { injectAnnotations } from "./_helpers/annotate";
 import { setupMockState } from "./_helpers/mock-state";
+import { validateScreenshotFixture } from "./catalog";
+import { loadScreenshotCatalog } from "./catalog-runtime";
+import { PROJECT_AXES, resolveOutputPath, shouldRunInProject } from "./matrix";
+import {
+  applyScreenshotTheme,
+  installScreenshotEnvironment,
+  waitForScreenshotReady,
+} from "./environment";
 import path from "path";
 import fs from "fs";
 
 const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/?$/, "");
 const MANIFEST_PATH = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/manifest.json");
-const SCREENSHOT_ADMIN_EMAIL = process.env.SCREENSHOT_ADMIN_EMAIL ?? "admin";
-
-// Playwright project name → MatrixAxis
-const PROJECT_AXIS: Record<string, MatrixAxis> = {
-  "desktop-light": { viewport: "desktop", theme: "light", locale: "zh-CN" },
-  "desktop-dark":  { viewport: "desktop", theme: "dark",  locale: "zh-CN" },
-  "tablet":        { viewport: "tablet",  theme: "light", locale: "zh-CN" },
-  "mobile":        { viewport: "mobile",  theme: "light", locale: "zh-CN" },
-};
+const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 
 // 全局默认 mask 选择器（时间戳 / 头像 / 显式标记元素）
 const DEFAULT_MASK_SELECTORS = [
@@ -51,119 +49,32 @@ const DEFAULT_MASK_SELECTORS = [
   "time[datetime]",
 ];
 
-type ManifestEntry = {
-  auto: boolean;
-  scene: string;
-  lastRun: string;
-  project: string;
-};
-
-function readExistingManifest(): Record<string, ManifestEntry> {
+function readExistingManifest(): Record<string, { auto?: boolean }> {
   if (!fs.existsSync(MANIFEST_PATH)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")) as Record<string, ManifestEntry>;
-  } catch {
-    return {};
-  }
+  const raw = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")) as {
+    schema_version?: number;
+    entries?: Record<string, { auto?: boolean }>;
+  } & Record<string, { auto?: boolean }>;
+  return raw.schema_version === 2 && raw.entries ? raw.entries : raw;
 }
 
-const manifest: Record<string, ManifestEntry> = readExistingManifest();
-
-/** 判断 scene 是否应在当前 Playwright project 中跑 */
-function shouldRunInProject(scene: ScreenshotScene, axis: MatrixAxis): boolean {
-  if (!scene.matrix) {
-    return axis.viewport === "desktop" && axis.theme === "light";
-  }
-  const viewports = scene.matrix.viewports ?? ["desktop"];
-  const themes    = scene.matrix.themes    ?? ["light"];
-  return viewports.includes(axis.viewport) && themes.includes(axis.theme);
-}
-
-/** 根据矩阵轴生成带后缀的输出路径 */
-function resolveOutputPath(scene: ScreenshotScene, axis: MatrixAxis): string {
-  const base = typeof scene.target === "function" ? scene.target(axis) : scene.target;
-  const isDefault =
-    axis.viewport === "desktop" && axis.theme === "light" && axis.locale === "zh-CN";
-  if (isDefault) return base;
-
-  const ext  = path.extname(base);
-  const stem = base.slice(0, -ext.length);
-  const parts = [
-    axis.theme    !== "light"   ? axis.theme    : null,
-    axis.viewport !== "desktop" ? axis.viewport : null,
-    axis.locale   !== "zh-CN"   ? axis.locale   : null,
-  ].filter(Boolean);
-
-  return `${stem}.${parts.join(".")}${ext}`;
-}
-
-async function applyScreenshotTheme(page: Page, theme: "light" | "dark") {
-  await page.evaluate((nextTheme) => {
-    localStorage.setItem("anno.theme", nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
-
-    const raw = localStorage.getItem("auth-storage");
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as {
-        state?: { user?: { preferences?: { ui?: Record<string, unknown> } | null } | null };
-      };
-      const user = parsed.state?.user;
-      if (!user) return;
-      const preferences = user.preferences ?? {};
-      const ui = preferences.ui ?? {};
-      user.preferences = { ...preferences, ui: { ...ui, theme: nextTheme } };
-      localStorage.setItem("auth-storage", JSON.stringify(parsed));
-    } catch {
-      // Corrupt persisted auth should not make screenshot generation fail.
-    }
-  }, theme);
-}
+const existingManifest = readExistingManifest();
 
 test.describe("screenshots automation", () => {
-  let cached: SeedData | null = null;
+  let cached: ScreenshotSeedCatalog | null = null;
 
-  test.beforeAll(async ({ request }) => {
-    const res = await request.get(
-      `${process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000"}/api/v1/__test/seed/peek`,
-    );
-    if (!res.ok()) {
-      throw new Error(`seed/peek failed: ${res.status()} ${await res.text()}`);
-    }
-    const peek = (await res.json()) as {
-      admin_email: string | null;
-      project_id: string | null;
-      task_id: string | null;
-    };
-    const adminEmail = SCREENSHOT_ADMIN_EMAIL || peek.admin_email;
-    if (!adminEmail) {
-      throw new Error(
-        "截图脚本找不到 super_admin 用户。请先跑 `cd apps/api && PYTHONPATH=. uv run python scripts/seed.py`，或设置 SCREENSHOT_ADMIN_EMAIL。",
-      );
-    }
-    cached = {
-      admin_email:     adminEmail,
-      annotator_email: adminEmail,
-      reviewer_email:  adminEmail,
-      project_id:      peek.project_id ?? "",
-      task_ids:        peek.task_id ? [peek.task_id] : [],
-      ml_backend_id:   "",
-    };
-  });
-
-  test.afterAll(() => {
-    // 写 manifest.json（供 M4 文档站组件 + screenshots:lint 使用）
-    fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
-    fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
+  test.beforeAll(() => {
+    cached = loadScreenshotCatalog();
   });
 
   for (const scene of SCENES) {
     test(scene.name, async ({ page, seed }, info) => {
-      if (!cached) throw new Error("seed peek 未完成");
-      const data = cached;
+      if (!cached) throw new Error("screenshot seed catalog 未完成");
+      const catalog = cached;
 
       // 获取当前 Playwright project 对应的矩阵轴
-      const axis = PROJECT_AXIS[info.project.name] ?? PROJECT_AXIS["desktop-light"];
+      const axis = PROJECT_AXES[info.project.name as keyof typeof PROJECT_AXES]
+        ?? PROJECT_AXES["desktop-light"];
 
       // 不在此 project 跑的 scene 直接 skip
       if (!shouldRunInProject(scene, axis)) {
@@ -171,21 +82,13 @@ test.describe("screenshots automation", () => {
         return;
       }
 
-      // 缺关键数据时 skip
-      const route = scene.route(data);
-      if (route.includes(data.project_id || "__NONE__") && !data.project_id) {
-        info.annotations.push({ type: "skipped", description: "无项目数据：跑 seed.py 或新建项目" });
-        test.skip();
-      }
-      if (data.task_ids.length === 0 && route.includes("task=")) {
-        info.annotations.push({ type: "skipped", description: "无任务数据：在项目内上传图片后重跑" });
-        test.skip();
-      }
+      validateScreenshotFixture(scene.name, scene.fixture, catalog);
+      const route = scene.route(catalog);
 
       const emailMap: Record<Role, string> = {
-        admin:     data.admin_email,
-        annotator: data.annotator_email,
-        reviewer:  data.reviewer_email,
+        admin:     catalog.users.admin.email,
+        annotator: catalog.users.annotator.email,
+        reviewer:  catalog.users.reviewer.email,
       };
       const roleEmail = Array.isArray(scene.role)
         ? emailMap[scene.role[0]]
@@ -194,18 +97,13 @@ test.describe("screenshots automation", () => {
       // 激活网络 mock（如有）
       const cleanupMock = await setupMockState(page, scene.mockState);
 
+      await installScreenshotEnvironment(page);
       await seed.injectToken(page, roleEmail);
       await applyScreenshotTheme(page, axis.theme);
       await page.goto(route);
-      if (scene.prepare) await scene.prepare(page, data);
+      if (scene.prepare) await scene.prepare(page, catalog);
       await applyScreenshotTheme(page, axis.theme);
-
-      // 禁用动画，等待网络稳定
-      await page.addStyleTag({
-        content:
-          "*,*::before,*::after{animation-duration:0!important;transition-duration:0!important;}",
-      });
-      await page.waitForLoadState("networkidle");
+      await waitForScreenshotReady(page);
 
       // 注入 SVG 注释 overlay（如有）
       const cleanupAnnotations = await injectAnnotations(page, scene.annotate);
@@ -217,22 +115,33 @@ test.describe("screenshots automation", () => {
       // 确保输出目录存在
       const outRelative = resolveOutputPath(scene, axis);
       const out = `${REPO_ROOT}/${outRelative}`;
-      fs.mkdirSync(path.dirname(out), { recursive: true });
+      if (!VALIDATE_ONLY) {
+        if (existingManifest[outRelative]?.auto === false) {
+          throw new Error(`${scene.name}: ${outRelative} 已标记为 auto:false，拒绝覆盖`);
+        }
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+      }
 
       // 按 capture 模式截图
       const capture = scene.capture;
 
       if (!capture) {
-        await page.screenshot({ path: out, fullPage: false, animations: "disabled", mask: maskLocators });
-      } else if (capture.kind === "fullPage") {
-        await page.screenshot({ path: out, fullPage: true, animations: "disabled", mask: maskLocators });
-      } else if (capture.kind === "locator") {
-        // count() 不重试，立即返回当前 DOM 匹配数；0 → fallback 到 viewport 截图
-        const locator = page.locator(capture.selector);
-        const box = (await locator.count() > 0) ? await locator.boundingBox() : null;
-
-        if (!box) {
+        if (!VALIDATE_ONLY) {
           await page.screenshot({ path: out, fullPage: false, animations: "disabled", mask: maskLocators });
+        }
+      } else if (capture.kind === "fullPage") {
+        if (!VALIDATE_ONLY) {
+          await page.screenshot({ path: out, fullPage: true, animations: "disabled", mask: maskLocators });
+        }
+      } else if (capture.kind === "locator") {
+        const locator = page.locator(capture.selector);
+        await locator.waitFor({ state: "visible", timeout: 10_000 });
+        const box = await locator.boundingBox();
+        if (!box) {
+          throw new Error(`${scene.name}: 截图目标 ${capture.selector} 没有可见边界`);
+        }
+        if (VALIDATE_ONLY) {
+          // locator 的可见性与边界已经在上方验证，无需写文件。
         } else if (capture.padding) {
           await page.screenshot({
             path: out,
@@ -254,22 +163,35 @@ test.describe("screenshots automation", () => {
           });
         }
       } else if (capture.kind === "clip") {
-        await page.screenshot({ path: out, animations: "disabled", mask: maskLocators, clip: capture.rect });
+        if (!VALIDATE_ONLY) {
+          await page.screenshot({ path: out, animations: "disabled", mask: maskLocators, clip: capture.rect });
+        }
       }
 
       // 清理
       await cleanupAnnotations();
       await cleanupMock();
 
-      // 更新 manifest
-      manifest[outRelative] = {
-        auto: true,
-        scene: scene.name,
-        lastRun: new Date().toISOString(),
-        project: info.project.name,
-      };
-
       info.annotations.push({ type: "screenshot", description: outRelative });
+      await info.attach("screenshot-manifest", {
+        body: Buffer.from(JSON.stringify({
+          target: outRelative,
+          scene: scene.name,
+          source: scene.source,
+          capture: capture ?? { kind: "viewport" },
+          fixture: scene.fixture ?? null,
+          seed_revision: catalog.seed_revision,
+          project: info.project.name,
+          viewport: page.viewportSize(),
+          theme: axis.theme,
+          locale: axis.locale,
+          browser: {
+            name: page.context().browser()?.browserType().name() ?? "chromium",
+            version: page.context().browser()?.version() ?? "unknown",
+          },
+        })),
+        contentType: "application/json",
+      });
     });
   }
 });

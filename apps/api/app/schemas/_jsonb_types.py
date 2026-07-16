@@ -21,7 +21,14 @@ import re
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 
 # ── v0.13.11 · 点云 lidar 坐标系约定 ──────────────────────────────────
@@ -210,7 +217,14 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
 # polygon 系几何 -> region, 其余 -> bbox。写入 schema 入口映射与 prediction 派生共用。
 RETIRED_AI_INTERACTIVE = "ai_interactive"
 _REGION_GEOMETRY_TYPES = frozenset(
-    {"polygon", "multi_polygon", "mask", "video_polygon", "video_track_polygon"}
+    {
+        "polygon",
+        "multi_polygon",
+        "mask",
+        "video_polygon",
+        "video_track_polygon",
+        "video_track_mask",
+    }
 )
 
 
@@ -636,6 +650,76 @@ class VideoTrackPolylineGeometry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CocoRleMaskRef(BaseModel):
+    """Immutable content-addressed COCO uncompressed RLE object reference."""
+
+    encoding: Literal["coco_rle_ref"] = "coco_rle_ref"
+    size: tuple[StrictInt, StrictInt]
+    object_key: str = Field(
+        min_length=1,
+        max_length=255,
+        pattern=r"^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\.json$",
+    )
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runs: StrictInt = Field(ge=1, le=1_000_000)
+    bytes: StrictInt = Field(ge=1, le=4 * 1024 * 1024)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("size")
+    @classmethod
+    def _check_size(cls, value: tuple[int, int]) -> tuple[int, int]:
+        height, width = value
+        if height <= 0 or width <= 0:
+            raise ValueError("mask size 必须是正整数 [height, width]")
+        if height > 4096 or width > 4096:
+            raise ValueError("mask width / height 必须 <= 4096")
+        return value
+
+    @model_validator(mode="after")
+    def _check_content_address(self):
+        expected = (
+            f"raster-masks/sha256/{self.sha256[:2]}/{self.sha256[2:4]}/"
+            f"{self.sha256}.json"
+        )
+        if self.object_key != expected:
+            raise ValueError("mask object_key 必须与 sha256 内容地址一致")
+        return self
+
+
+class VideoTrackMaskKeyframe(BaseModel):
+    frame_index: StrictInt = Field(ge=0)
+    mask: CocoRleMaskRef
+    source: Literal["manual", "prediction"] = "manual"
+    occluded: bool = False
+    attributes: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VideoTrackMaskGeometry(BaseModel):
+    """Video raster-mask track; keyframes reference immutable COCO RLE objects."""
+
+    type: Literal["video_track_mask"] = "video_track_mask"
+    track_id: str = Field(min_length=1, max_length=64)
+    semantic_label: str | None = None
+    keyframes: list[VideoTrackMaskKeyframe] = Field(min_length=1, max_length=3000)
+    outside: list[VideoTrackOutsideRange] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _check_track_contract(self):
+        frames = [keyframe.frame_index for keyframe in self.keyframes]
+        if frames != sorted(frames) or len(frames) != len(set(frames)):
+            raise ValueError("mask keyframes 必须按 frame_index 严格递增且唯一")
+        if any(range_.from_ > range_.to for range_ in self.outside):
+            raise ValueError("outside range 必须满足 from <= to")
+        if len(self.model_dump_json().encode()) > 8 * 1024 * 1024:
+            raise ValueError("mask track geometry JSON 必须 <= 8 MiB")
+        return self
+
+
 class PolygonGeometry(BaseModel):
     """单连通域 polygon。
 
@@ -801,6 +885,7 @@ Geometry = Annotated[
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
     | VideoTrackPolylineGeometry
+    | VideoTrackMaskGeometry
     | PolygonGeometry
     | MultiPolygonGeometry
     | RotatedBboxGeometry

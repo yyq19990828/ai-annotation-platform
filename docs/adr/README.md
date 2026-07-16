@@ -90,3 +90,5 @@
 - [0045](0045-track-id-as-annotation-column.md) — 跨帧对象标识 track_id 提升为 annotation 表列（统一 group_id 高位段与 geometry 内 track_id）
 - [0046](0046-project-pipeline-library-and-scopes.md) — 全局 Pipeline 库：持久化命名编排模板 + 三档作用域（private/organization/public，apply copy-on-write）
 - [0047](0047-data-manager-entity-read-model.md) — Data Manager 按 task / object / track 分 grain 查询，不复制权威写模型
+- [0048](archive/0048-video-raster-mask-content-addressed-rle.md) — 视频栅格 mask 使用内容寻址 RLE 对象，不内联进 annotation JSONB
+- [0049](archive/0049-cross-backend-gpu-memory-arbitration.md) — 按物理 GPU 资源进行跨 Backend 显存预算准入与驱逐

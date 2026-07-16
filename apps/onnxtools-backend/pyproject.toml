@@ -7,22 +7,24 @@ requires-python = ">=3.10"
 # onnxtools 由 Dockerfile 用 git 安装（含 inference extra: onnxruntime-gpu / opencv-contrib /
 # supervision 等），不在此声明，避免与运行时 opencv 版本冲突。cv2 由 onnxtools[inference] 提供。
 dependencies = [
+    "cryptography>=43.0.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.5",
+    "PyJWT>=2.10,<3",
     "httpx>=0.27",
     "numpy>=1.24,<3.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "predictor", "schemas", "attribute_schema"]
+py-modules = ["main", "predictor", "schemas", "attribute_schema", "handle_pool", "gpu_lifecycle"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

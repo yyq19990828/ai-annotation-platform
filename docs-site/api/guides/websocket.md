@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-13
 ---
 
 # WebSocket
@@ -21,7 +21,7 @@ last_reviewed: 2026-07-11
 | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT + job 所属 task 可见性 | 单条视频 tracker job 的运行与候选审阅事件。 |
 | `/ws/ml-backend-stats?token=<jwt-or-api-key>` | `super_admin` / `project_admin` | ML backend 运行时指标。 |
 
-本地 API base 为 `ws://localhost:8000`；生产使用同源 `wss://<host>`。这些路径不在 `/api/v1` 下。
+本机 DEV API base 为 `ws://localhost:8000`；远程 DEV 和生产都使用页面同源 `ws(s)://<host>`。这些路径不在 `/api/v1` 下。
 
 ## 连接示例
 

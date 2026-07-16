@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from app.config import settings
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
 from app.services.ml_client import MLBackendClient
 
 if TYPE_CHECKING:
@@ -42,6 +46,8 @@ class TrackerContext:
     source_geometry: dict
     task_data: dict
     ml_backend: "MLBackend | None" = None
+    shadow_session_factory: GPUShadowSessionFactory | None = None
+    dispatch_context_factory: GPUDispatchContextFactory | None = None
     sam_variant: str | None = (
         None  # v0.10.36 · 透传到 backend /predict video_tracker 分支
     )
@@ -100,6 +106,9 @@ def _bbox_from_geometry(geometry: dict) -> dict:
     if geometry.get("type") == "polygon":
         return _bbox_from_points(geometry.get("points") or [])
 
+    if geometry.get("type") == "mask":
+        return dict(geometry.get("bbox") or {})
+
     if geometry.get("type") in {"bbox", "video_bbox"}:
         return {
             "x": float(geometry.get("x", 0)),
@@ -149,7 +158,11 @@ class MLBackendVideoTrackerAdapter:
                 f"{self.model_key} requires a connected project ML backend"
             )
 
-        client = MLBackendClient(backend)
+        client = MLBackendClient(
+            backend,
+            shadow_session_factory=ctx.shadow_session_factory,
+            dispatch_context_factory=ctx.dispatch_context_factory,
+        )
         context: dict = {
             "type": "video_tracker",
             "model_key": self.model_key,

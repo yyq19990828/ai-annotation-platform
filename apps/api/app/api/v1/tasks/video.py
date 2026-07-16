@@ -718,3 +718,59 @@ async def propagate_video_track(
     )
     await db.commit()
     return body
+
+
+@router.post(
+    "/{task_id}/video:track",
+    response_model=VideoTrackerJobOut,
+    status_code=202,
+)
+async def track_video(
+    task_id: uuid.UUID,
+    payload: VideoTrackerPropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.22.1 · B · 任务级追踪 (画布级入口): source_annotation_id 可选——给出即延展该轨迹,
+    缺省则为无源检测 (文本/种子), 新建轨迹类别由 target_class_name 指定。旧的
+    /tracks/{annotation_id}:propagate 仍保留 (延展快捷路径)。"""
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await create_tracker_job(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=payload.source_annotation_id,
+        payload=payload,
+        user=current_user,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_TRACKER_JOB_CREATE,
+        target_type="video_tracker_job",
+        target_id=body.id,
+        request=request,
+        status_code=202,
+        detail={
+            "task_id": str(task.id),
+            "annotation_id": str(payload.source_annotation_id)
+            if payload.source_annotation_id
+            else None,
+            # v0.22.2 · M · 多选批量: 记录批量延展的源轨迹 ids (多源时 annotation_id 为 None)。
+            "source_annotation_ids": [str(a) for a in payload.source_annotation_ids]
+            if payload.source_annotation_ids
+            else None,
+            "dataset_item_id": str(ctx.item.id),
+            "segment_id": str(body.segment_id) if body.segment_id else None,
+            "from_frame": body.from_frame,
+            "to_frame": body.to_frame,
+            "model_key": body.model_key,
+            "direction": body.direction,
+        },
+    )
+    await db.commit()
+    return body

@@ -13,7 +13,7 @@ interface FloatingDockProps {
 }
 
 /**
- * 画布右下角悬浮工具岛（v0.5.3）。
+ * 画布右下角悬浮工具岛。
  * 承载撤销 / 重做 / 缩放-100%-放大 / 适应。
  * 与 Konva viewport 贴合，不占 Topbar 横向空间。
  */
@@ -21,7 +21,7 @@ export function FloatingDock({
   scale, canUndo, canRedo, onUndo, onRedo, onZoomIn, onZoomOut, onFit, showHistory = true,
 }: FloatingDockProps) {
   return (
-    <div className="absolute bottom-3 right-[76px] z-dock flex select-none items-center gap-0.5 rounded-lg border border-border bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
+    <div className="absolute bottom-3 right-3 z-dock flex select-none items-center gap-0.5 rounded-lg border border-border bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
       {showHistory && (
         <>
           <DockButton onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)">

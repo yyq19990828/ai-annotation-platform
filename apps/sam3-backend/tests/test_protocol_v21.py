@@ -61,9 +61,55 @@ def test_normalize_predict_context_invalid_model_variant_returns_standard_422(ma
 
 
 def test_warmup_invalid_model_variant_returns_standard_422(main_module, monkeypatch):
-    monkeypatch.setattr(main_module, "_predictor", MagicMock(device="cpu"))
+    request = types.SimpleNamespace(
+        state=types.SimpleNamespace(gpu_workload=MagicMock())
+    )
+    monkeypatch.setattr(main_module, "_image_pool", object())
+    monkeypatch.setattr(main_module, "_multiplex_pool", object())
+    monkeypatch.setattr(main_module, "_pvs_pool", object())
     with pytest.raises(Exception) as exc:
-        _run(main_module.warmup(main_module.WarmupRequest(variants={"model_variant": "sam3.0"})))
+        _run(
+            main_module.warmup(
+                request,
+                main_module.WarmupRequest(
+                    variants={"model_variant": "sam3.0"}
+                ),
+            )
+        )
     err = exc.value
     assert err.status_code == 422
     assert err.detail["error_code"] == "variant_not_supported"
+
+
+def test_multiplex_collects_all_continuation_seed_bboxes(main_module):
+    ctx = {
+        "seeds": [
+            {"obj_id": 1, "geometry": {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}},
+            {
+                "obj_id": 2,
+                "geometry": {
+                    "type": "mask",
+                    "bbox": {"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.1},
+                },
+            },
+        ],
+        "source_geometry": {"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1},
+    }
+
+    assert main_module._seed_bboxes_from_video_ctx(ctx) == [
+        {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+        {"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.1},
+    ]
+
+
+def test_multiplex_seed_bboxes_fall_back_to_source_geometry(main_module):
+    ctx = {
+        "source_geometry": {
+            "type": "polygon",
+            "points": [[0.2, 0.1], [0.8, 0.3], [0.4, 0.9]],
+        }
+    }
+
+    assert main_module._seed_bboxes_from_video_ctx(ctx) == [
+        {"x": 0.2, "y": 0.1, "w": pytest.approx(0.6), "h": 0.8}
+    ]

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, Geometry } from "@/types";
-import { isVideoPointsTrack, resolvePointsTrackAtFrame } from "../../stage/videoStageGeometry";
+import { isVideoMaskTrack, isVideoPointsTrack, resolvePointsTrackAtFrame, resolveVideoMaskTrackAtFrame } from "../../stage/videoStageGeometry";
 import { IdentityHeader, annotationSourceKind } from "./IdentityHeader";
 import { MetricGrid } from "./MetricGrid";
 import { MetaFooter } from "./MetaFooter";
@@ -30,6 +30,8 @@ export interface VideoPointsTrackCardContentProps {
   onDelete: (id: string) => void;
   onToggleHidden: (trackId: string) => void;
   onToggleLock: (trackId: string) => void;
+  onEditMask?: () => void;
+  onPropagate?: () => void;
 }
 
 /** 秒 → 紧凑时间码 m:ss。 */
@@ -62,20 +64,27 @@ export function VideoPointsTrackCardContent({
   onDelete,
   onToggleHidden,
   onToggleLock,
+  onEditMask,
+  onPropagate,
 }: VideoPointsTrackCardContentProps) {
-  if (!isVideoPointsTrack(annotation)) return null;
+  if (!isVideoPointsTrack(annotation) && !isVideoMaskTrack(annotation)) return null;
   const track = annotation.geometry;
   const frames = track.keyframes.map((kf) => kf.frame_index);
   const firstFrame = frames.length ? Math.min(...frames) : null;
   const lastFrame = frames.length ? Math.max(...frames) : null;
 
-  const resolved = resolvePointsTrackAtFrame(annotation, frameIndex);
+  const resolved = isVideoPointsTrack(annotation) ? resolvePointsTrackAtFrame(annotation, frameIndex) : null;
   const metricsGeom: Geometry | null = resolved
     ? resolved.open
       ? { type: "video_polyline", frame_index: frameIndex, points: resolved.points }
       : { type: "video_polygon", frame_index: frameIndex, points: resolved.points }
     : null;
   const metrics = metricsGeom ? geometryMetrics(metricsGeom, imageWidth, imageHeight) : [];
+  const resolvedMask = isVideoMaskTrack(annotation)
+    ? resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex)
+    : null;
+  const exactMaskKeyframe = isVideoMaskTrack(annotation)
+    && annotation.geometry.keyframes.some((keyframe) => keyframe.frame_index === frameIndex);
 
   const timeLabel = fps ? formatTimecode(frameIndex / fps) : null;
   const frameChip = (
@@ -101,7 +110,11 @@ export function VideoPointsTrackCardContent({
           <span className="mono"> · F{firstFrame}–F{lastFrame}</span>
         )}
         <div className="mt-1 text-2xs">
-          点集轨迹的关键帧逐帧编辑暂未开放,可在画布上拖动顶点改形。
+          {isVideoMaskTrack(annotation)
+            ? resolvedMask
+              ? exactMaskKeyframe ? "当前帧为 Mask 关键帧。" : `当前帧保持 F${resolvedMask.keyframeFrame} 的 Mask；编辑会物化新关键帧。`
+              : "当前帧位于 outside 区间。"
+            : "点集轨迹的关键帧逐帧编辑暂未开放,可在画布上拖动顶点改形。"}
         </div>
       </div>
 
@@ -113,7 +126,31 @@ export function VideoPointsTrackCardContent({
         zOrder={annotation.z_order}
       />
 
-      <ActionBar label="点集轨迹操作">
+      <ActionBar label={isVideoMaskTrack(annotation) ? "Mask 轨迹操作" : "点集轨迹操作"}>
+        {isVideoMaskTrack(annotation) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="编辑当前帧 Mask"
+            disabled={readOnly || locked}
+            onClick={onEditMask}
+          >
+            <Icon name="scissors" size={14} />
+            编辑
+          </Button>
+        )}
+        {isVideoMaskTrack(annotation) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="AI 延展当前 Mask 轨迹"
+            disabled={readOnly || locked}
+            onClick={onPropagate}
+          >
+            <Icon name="sparkles" size={14} />
+            延展轨迹
+          </Button>
+        )}
         {firstFrame !== null && (
           <Button
             variant="ghost"

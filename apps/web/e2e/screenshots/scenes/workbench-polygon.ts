@@ -1,22 +1,16 @@
 import type { ScreenshotScene } from "./_types";
-import { openCoco8Annotate } from "../flows/_canvas";
-
-async function openPolygonWorkbench(
-  page: Parameters<NonNullable<ScreenshotScene["prepare"]>>[0],
-  data: Parameters<NonNullable<ScreenshotScene["prepare"]>>[1],
-) {
-  if (!(await openCoco8Annotate(page, data.admin_email))) {
-    throw new Error("polygon screenshots require seeded image project P-COCO8");
-  }
-}
 
 export const POLYGON_SCENES: ScreenshotScene[] = [
   {
     name: "polygon/vertex-edit",
     role: "annotator",
-    route: () => "/",
-    prepare: async (page, data) => {
-      await openPolygonWorkbench(page, data);
+    fixture: { project: "image_demo", task: "annotating" },
+    route: (catalog) => {
+      const project = catalog.projects.image_demo;
+      return `/projects/${project.id}/annotate?task=${project.tasks.annotating.id}`;
+    },
+    prepare: async (page) => {
+      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
       await page.getByTestId("tool-btn-polygon").click();
     },
     target: "docs-site/user-guide/images/polygon/vertex-edit.png",
@@ -24,9 +18,13 @@ export const POLYGON_SCENES: ScreenshotScene[] = [
   {
     name: "polygon/close-hint",
     role: "annotator",
-    route: () => "/",
-    prepare: async (page, data) => {
-      await openPolygonWorkbench(page, data);
+    fixture: { project: "image_demo", task: "annotating" },
+    route: (catalog) => {
+      const project = catalog.projects.image_demo;
+      return `/projects/${project.id}/annotate?task=${project.tasks.annotating.id}`;
+    },
+    prepare: async (page) => {
+      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
       await page.getByTestId("tool-btn-polygon").click();
     },
     target: "docs-site/user-guide/images/polygon/close-hint.png",

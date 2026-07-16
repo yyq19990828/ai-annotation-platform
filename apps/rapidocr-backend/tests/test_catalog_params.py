@@ -60,3 +60,26 @@ def test_orientation_language_options_match_predict_values():
     rec = {f["key"]: f for f in _schema(catalog.REC_MODEL_ID)}
     assert {o["value"] for o in rec["orientation"]["options"]} == {"0", "180"}
     assert {o["value"] for o in rec["language"]["options"]} == {"universal", "en"}
+
+
+def test_legal_variants_form_exactly_six_composite_engine_keys():
+    keys = {
+        catalog.resolve(
+            catalog.E2E_MODEL_ID,
+            {"version": version, "size": size, "lang": lang},
+        ).pool_key
+        for version, size, lang in catalog._REC_COMBOS  # noqa: SLF001
+    }
+    assert len(keys) == 6
+
+
+def test_route_flags_do_not_split_an_identical_composite_engine_key():
+    variants = {"version": "v5", "size": "mobile", "lang": "universal"}
+    det = catalog.resolve(catalog.DET_MODEL_ID, variants)
+    rec = catalog.resolve(catalog.REC_MODEL_ID, variants)
+    e2e = catalog.resolve(catalog.E2E_MODEL_ID, variants)
+
+    assert det.pool_key == rec.pool_key == e2e.pool_key
+    assert (det.use_det, det.use_cls, det.use_rec) == (True, False, False)
+    assert (rec.use_det, rec.use_cls, rec.use_rec) == (False, True, True)
+    assert (e2e.use_det, e2e.use_cls, e2e.use_rec) == (True, True, True)

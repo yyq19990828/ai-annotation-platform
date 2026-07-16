@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from unittest.mock import MagicMock
 
 import pytest
+from aap_protocol_v2.lifecycle import (
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -23,12 +26,12 @@ def _stub_modules() -> None:
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(tmp_path_factory):
     """启动 FastAPI TestClient. lifespan 内会建一个真实 ModelPool, 但 build_model 是
     mock (sys.modules ultralytics MagicMock), 不会真的拉权重."""
     # CHECKPOINTS_DIR 默认 /app/checkpoints, 在测试机上不可写; 改指向 tmp.
-    tmp = tempfile.mkdtemp(prefix="yolo-test-")
-    os.environ["YOLO_CHECKPOINTS_DIR"] = tmp
+    tmp = tmp_path_factory.mktemp("yolo-test-")
+    os.environ["YOLO_CHECKPOINTS_DIR"] = str(tmp)
     # main 已被其他测试 import 过, 用 importlib.reload 让 env 重新生效.
     import importlib
     import main
@@ -102,3 +105,138 @@ def test_health_pool_loaded_key_string_uses_series_size_task(client) -> None:
     pool = client.get("/health").json()["pool"]
     keys = [e["key"] for e in pool["loaded_keys"]]
     assert "yolo11/s/detection" in keys
+
+
+def test_health_declares_cpu_fallback_capability(client) -> None:
+    compute = client.get("/health").json()["compute"]
+    assert compute["cpu_fallback_supported"] is True
+
+
+def test_health_echoes_only_exact_gpu_challenge(client) -> None:
+    challenge = "ab" * 32
+    response = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: challenge},
+    )
+    assert response.status_code == 200
+    assert response.headers[GPU_HEALTH_CHALLENGE_HEADER] == challenge
+    assert response.headers["cache-control"] == "no-store"
+
+    ordinary = client.get("/health")
+    assert GPU_HEALTH_CHALLENGE_HEADER not in ordinary.headers
+    mismatch = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: "cd" * 32},
+    )
+    assert mismatch.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in mismatch.headers
+
+    duplicate_query = client.get(
+        "/health",
+        headers={GPU_HEALTH_CHALLENGE_HEADER: challenge},
+        params=[
+            (GPU_HEALTH_CHALLENGE_QUERY_PARAM, challenge),
+            (GPU_HEALTH_CHALLENGE_QUERY_PARAM, challenge),
+        ],
+    )
+    assert duplicate_query.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in duplicate_query.headers
+
+    duplicate_header = client.get(
+        "/health",
+        headers=[
+            (GPU_HEALTH_CHALLENGE_HEADER, challenge),
+            (GPU_HEALTH_CHALLENGE_HEADER, challenge),
+        ],
+        params={GPU_HEALTH_CHALLENGE_QUERY_PARAM: challenge},
+    )
+    assert duplicate_header.status_code == 200
+    assert GPU_HEALTH_CHALLENGE_HEADER not in duplicate_header.headers
+
+
+def test_health_survives_cuda_runtime_failure(client, monkeypatch) -> None:
+    import main
+
+    def _broken_cuda_check():
+        raise RuntimeError("CUDA error: unknown error")
+
+    monkeypatch.setattr(main.torch.cuda, "is_available", _broken_cuda_check)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["gpu_info"]["device_index"] is None
+    assert response.json()["gpu_info"]["process_memory_mb"] is None
+
+
+def test_managed_cleanup_propagates_cuda_runtime_failure(monkeypatch) -> None:
+    import main
+
+    monkeypatch.setattr(main.torch.cuda, "is_available", lambda: True)
+
+    def _broken_empty_cache() -> None:
+        raise RuntimeError("CUDA allocator unavailable")
+
+    monkeypatch.setattr(main.torch.cuda, "empty_cache", _broken_empty_cache)
+
+    with pytest.raises(RuntimeError, match="allocator unavailable"):
+        main._strict_free_gpu_memory()
+
+
+def test_model_move_commits_latch_after_cpu_replacement(monkeypatch) -> None:
+    import main
+
+    events: list[str] = []
+
+    class _Model:
+        def to(self, device):
+            events.append(f"to:{device}")
+            if device == "cuda":
+                raise RuntimeError("CUDA error: unknown error")
+            return self
+
+    monkeypatch.setattr(main, "effective_device", lambda _configured: "cuda")
+    monkeypatch.setattr(main, "free_gpu_memory", lambda: events.append("cleanup"))
+    monkeypatch.setattr(main, "latch_cpu", lambda _reason: events.append("latch"))
+
+    model = _Model()
+    assert main._move_model_to_effective_device(model) is model
+    assert events == ["to:cuda", "to:cpu", "cleanup", "latch"]
+
+
+def test_model_move_cpu_failure_does_not_commit_latch(monkeypatch) -> None:
+    import main
+
+    latched: list[str] = []
+
+    class _Model:
+        def to(self, device):
+            if device == "cuda":
+                raise RuntimeError("CUDA error: unknown error")
+            raise RuntimeError("CPU move failed")
+
+    monkeypatch.setattr(main, "effective_device", lambda _configured: "cuda")
+    monkeypatch.setattr(main, "latch_cpu", latched.append)
+
+    with pytest.raises(RuntimeError, match="CPU move failed"):
+        main._move_model_to_effective_device(_Model())
+    assert latched == []
+
+
+def test_model_move_non_device_error_is_not_retried(monkeypatch) -> None:
+    import main
+
+    devices: list[str] = []
+
+    class _Model:
+        def to(self, device):
+            devices.append(device)
+            raise ValueError("invalid model")
+
+    monkeypatch.setattr(main, "effective_device", lambda _configured: "cuda")
+
+    with pytest.raises(ValueError, match="invalid model"):
+        main._move_model_to_effective_device(_Model())
+    assert devices == ["cuda"]

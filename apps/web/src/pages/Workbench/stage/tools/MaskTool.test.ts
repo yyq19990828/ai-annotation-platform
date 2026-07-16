@@ -13,13 +13,21 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
     dirty: false,
     buffer: null,
     revision: 0,
+    canUndo: false,
+    canRedo: false,
     beginBlank: vi.fn(),
     initFromPolygon: vi.fn(),
+    initFromRle: vi.fn(),
     paintAt: vi.fn(),
+    beginStroke: vi.fn(),
+    endStroke: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
     setMode: vi.fn(),
     setRadius: vi.fn(),
     cancel: vi.fn(),
     commitToPolygon: vi.fn(() => null),
+    commitToRle: vi.fn(() => null),
   };
 }
 

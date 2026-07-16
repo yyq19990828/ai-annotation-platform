@@ -4,8 +4,9 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv
+COPY apps/_shared/protocol_v2 /_shared/protocol_v2
 COPY apps/api/pyproject.toml .
-RUN uv pip install --system -r pyproject.toml
+RUN uv pip install --system /_shared/protocol_v2 -r pyproject.toml
 COPY apps/api/ .
 RUN chmod +x /app/scripts/entrypoint.sh
 EXPOSE 8000

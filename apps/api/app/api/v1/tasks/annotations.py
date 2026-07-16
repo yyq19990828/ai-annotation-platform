@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import (
     get_db,
     get_current_user,
+    get_gpu_dispatch_context_factory,
+    get_gpu_shadow_session_factory,
     require_roles,
     require_scopes,
 )
@@ -35,6 +37,10 @@ from app.schemas.annotation import (
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
 from app.services.ml_backend import MLBackendService
 from app.services.pipeline_validation import check_capability_violations
 from app.services.secondary_inference import run_secondary_inference
@@ -267,6 +273,12 @@ async def secondary_inference(
     data: SecondaryInferenceRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     """v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。
@@ -333,6 +345,8 @@ async def secondary_inference(
         class_filter=data.class_filter,
         pad=data.pad,
         user_id=current_user.id,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
     )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await AuditService.log(

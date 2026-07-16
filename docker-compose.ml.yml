@@ -1,4 +1,4 @@
-# ML Backend 叠加文件 · 3 个 GPU 推理 backend（grounded-sam2 / sam3 / yolo）。
+# ML Backend 叠加文件 · GPU 推理 backend + 截图协议 stub。
 #
 # 从 docker-compose.yml 拆出：这三者都是 profile-gated 的独立 HTTP 服务，
 # 与核心 infra（postgres/redis/minio/celery）无 depends_on、不共享数据卷，
@@ -8,15 +8,34 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu      up -d grounded-sam2-backend
 #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 up -d sam3-backend
 #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo up -d yolo-backend
+#   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile screenshots up -d screenshot-ml-stub
 #
 # 嫌每次敲两个 -f 麻烦, 可在 shell / .env 固化:
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml
 # 之后 `docker compose --profile gpu up -d grounded-sam2-backend` 即可（profile-gated 不影响默认 `up`）。
 #
-# 三个 backend 完全独立的 profile（gpu / gpu-sam3 / gpu-yolo），用户按显存预算自由组合启动。
-# 端口: grounded-sam2 → 8001 · sam3 → 8002 · yolo → 8003 · onnxtools → 8004。
+# 各 backend 使用独立 profile，用户可按显存预算组合 GPU 服务，或只启动 CPU 截图 stub。
+# 端口: grounded-sam2 → 8001 · sam3 → 8002 · yolo → 8003 · onnxtools → 8004 · stub → 9100。
 
 services:
+  # 截图/视觉回归专用 CPU 协议 stub。平台宿主进程与 Celery 容器都通过已发布端口访问，
+  # registry URL 默认复用 ML_BACKEND_STORAGE_HOST 的主机部分并改用 9100；也可在 seed 命令覆盖。
+  screenshot-ml-stub:
+    build:
+      context: ./docs-site/dev/examples/mock-v2-backend
+    profiles: ["screenshots"]
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:9100/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # v0.9.0+ Grounded-SAM-2 ML Backend (GroundingDINO + SAM 2.1).
   # 默认 GPU profile, dev 无 GPU 笔记本不会被拉起; 启用方式:
   #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up grounded-sam2-backend
@@ -39,6 +58,7 @@ services:
       HF_HOME: /app/.cache/huggingface
       LOG_LEVEL: ${GSAM2_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${GSAM2_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${GSAM2_GPU_DEVICE_ID:-0}
       # B-28+ · 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
       IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-600}
       IDLE_CHECK_INTERVAL: ${IDLE_CHECK_INTERVAL:-60}
@@ -61,6 +81,9 @@ services:
       VIDEO_TRACKER_MAX_WINDOW_FRAMES: ${VIDEO_TRACKER_MAX_WINDOW_FRAMES:-300}
       # video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭.
       VIDEO_IDLE_UNLOAD_SECONDS: ${VIDEO_IDLE_UNLOAD_SECONDS:-600}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
+      # 实卡完成 image/video/双池/full-unload 验收前保持 0，不发布 enforce 能力。
+      GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED: ${GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED:-0}
     volumes:
       - gsam2_checkpoints:/app/checkpoints
       - gsam2_hf_cache:/app/.cache/huggingface
@@ -98,11 +121,17 @@ services:
       SAM3_SCORE_THRESHOLD: ${SAM3_SCORE_THRESHOLD:-0.5}
       LOG_LEVEL: ${SAM3_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${SAM3_GPU_DEVICE_ID:-1}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${SAM3_GPU_DEVICE_ID:-1}
       # 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
       # sam3 (开 inst) 显存占用 ~5.8GB FP16, 与 grounded-sam2 并存时强烈建议保留 idle unload.
       # SAM3_ 前缀, 与 grounded-sam2 的 IDLE_UNLOAD_SECONDS 解耦, 两个 backend 可独立调.
       SAM3_IDLE_UNLOAD_SECONDS: ${SAM3_IDLE_UNLOAD_SECONDS:-600}
       SAM3_IDLE_CHECK_INTERVAL: ${SAM3_IDLE_CHECK_INTERVAL:-60}
+      # 三个 GPU 根共享冷构建串行锁；超时只结束等待者，真实 builder 仍受 pool 跟踪。
+      SAM3_MODEL_POOL_BUILD_TIMEOUT: ${SAM3_MODEL_POOL_BUILD_TIMEOUT:-120}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
+      # image/multiplex/PVS 全池实卡验收前保持 0，不发布 enforce 能力。
+      SAM3_MANAGED_LIFECYCLE_VERIFIED: ${SAM3_MANAGED_LIFECYCLE_VERIFIED:-0}
       # v0.21.19 §PR3 · sam3.1_multiplex 视频模型显存吃紧 (单卡 8GB 几乎占满), 用
       # expandable_segments 减碎片, 挤出激活空间避免 OOM (报错信息即建议此项)。
       # 注: 该模型 FP16 加载即 ~7GB, 8GB 卡前向激活仍会 OOM——需 >8GB 显存实用。
@@ -144,8 +173,10 @@ services:
       YOLO_IDLE_UNLOAD_SECONDS: ${YOLO_IDLE_UNLOAD_SECONDS:-600}
       YOLO_IDLE_CHECK_INTERVAL: ${YOLO_IDLE_CHECK_INTERVAL:-60}
       YOLO_STRICT_OFFLINE: ${YOLO_STRICT_OFFLINE:-0}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${YOLO_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${YOLO_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${YOLO_GPU_DEVICE_ID:-0}
     volumes:
       - yolo_checkpoints:/app/checkpoints
     deploy:
@@ -164,7 +195,7 @@ services:
 
   # v0.18.0 · onnxtools-backend (rtdetr 检测 + va 车辆属性, 二阶段预标).
   #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-onnxtools up onnxtools-backend
-  # 单一固定 pipeline (无 variant/pool); 纯批量预标 (supported_prompts=['none']).
+  # 三个固定 lazy handle (pipeline/detector/va); 纯批量预标 (supported_prompts=['none']).
   # 模型由 bind mount 注入 (不打进镜像), 起栈前先复制 (见 apps/onnxtools-backend/README.md):
   #   cp /home/tyjt/Desktop/onnxtools/models/{rtdetr-2024080100,va_260612}.onnx apps/onnxtools-backend/models/
   # onnxruntime-gpu 缺 GPU/cuDNN 时自动 fallback CPU, 功能仍可用 (仅变慢).
@@ -180,8 +211,14 @@ services:
       ONNXTOOLS_DET_MODEL: ${ONNXTOOLS_DET_MODEL:-rtdetr-2024080100.onnx}
       ONNXTOOLS_VA_MODEL: ${ONNXTOOLS_VA_MODEL:-va_260612.onnx}
       ONNXTOOLS_CONF_THRES: ${ONNXTOOLS_CONF_THRES:-0.5}
+      ONNXTOOLS_BUILD_TIMEOUT: ${ONNXTOOLS_BUILD_TIMEOUT:-30}
+      ONNXTOOLS_IDLE_UNLOAD_SECONDS: ${ONNXTOOLS_IDLE_UNLOAD_SECONDS:-600}
+      ONNXTOOLS_IDLE_CHECK_INTERVAL: ${ONNXTOOLS_IDLE_CHECK_INTERVAL:-60}
+      ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED: ${ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED:-0}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${ONNXTOOLS_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${ONNXTOOLS_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${ONNXTOOLS_GPU_DEVICE_ID:-0}
     volumes:
       - ./apps/onnxtools-backend/models:/app/models:ro
     deploy:
@@ -202,7 +239,8 @@ services:
   #   docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapidocr up rapidocr-backend
   # 13 个 onnx 由 bind mount 注入 (不打进镜像), 起栈前先下载 (见 apps/rapidocr-backend/README.md):
   #   python3 apps/rapidocr-backend/download_models.py
-  # base 与瘦身后 onnxtools 共享 nvidia/cuda cudnn9 runtime; 缺 GPU 时 onnxruntime 自动 fallback CPU.
+  # base 与瘦身后 onnxtools 共享 nvidia/cuda cudnn9 runtime；此 profile 始终申请 NVIDIA 设备。
+  # backend 的显式 CPU 模式需通过不含下方 device reservation 的独立启动方式运行。
   rapidocr-backend:
     build:
       context: ./apps
@@ -214,8 +252,14 @@ services:
       RAPIDOCR_MODEL_DIR: /app/models
       RAPIDOCR_DEVICE: ${RAPIDOCR_DEVICE:-gpu}
       RAPIDOCR_POOL_CAP: ${RAPIDOCR_POOL_CAP:-3}
+      RAPIDOCR_BUILD_TIMEOUT: ${RAPIDOCR_BUILD_TIMEOUT:-30}
+      RAPIDOCR_IDLE_UNLOAD_SECONDS: ${RAPIDOCR_IDLE_UNLOAD_SECONDS:-600}
+      RAPIDOCR_IDLE_CHECK_INTERVAL: ${RAPIDOCR_IDLE_CHECK_INTERVAL:-60}
+      RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED: ${RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED:-0}
+      GPU_LIFECYCLE_VERIFY_KEYS_JSON: ${GPU_LIFECYCLE_VERIFY_KEYS_JSON:-}
       LOG_LEVEL: ${RAPIDOCR_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${RAPIDOCR_GPU_DEVICE_ID:-0}
+      AAP_GPU_PHYSICAL_DEVICE_TOKEN: ${RAPIDOCR_GPU_DEVICE_ID:-0}
     volumes:
       - ./apps/rapidocr-backend/models:/app/models:ro
     deploy:

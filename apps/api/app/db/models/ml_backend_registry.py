@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    String,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
+    String,
     UniqueConstraint,
     func,
 )
@@ -24,6 +26,24 @@ class MLBackendRegistry(Base):
     """
 
     __tablename__ = "ml_backend_registry"
+    __table_args__ = (
+        CheckConstraint(
+            "(gpu_resource_id IS NULL) = (vram_budget_mb IS NULL)",
+            name="ck_ml_backend_registry_gpu_claim_pair",
+        ),
+        CheckConstraint(
+            "vram_budget_mb IS NULL OR vram_budget_mb > 0",
+            name="ck_ml_backend_registry_vram_budget_positive",
+        ),
+        CheckConstraint(
+            "gpu_resource_id IS NULL OR ("
+            "gpu_resource_id = btrim(gpu_resource_id) AND "
+            "gpu_resource_id !~ '[[:space:],]' AND "
+            "position('/' in gpu_resource_id) > 1 AND "
+            "position('/' in gpu_resource_id) < char_length(gpu_resource_id))",
+            name="ck_ml_backend_registry_gpu_resource_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -36,6 +56,15 @@ class MLBackendRegistry(Base):
     auth_method: Mapped[str] = mapped_column(String(20), default="none")
     auth_token: Mapped[str | None] = mapped_column(String(500))
     extra_params: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # ADR-0049 · 一个 registry backend 本期只能 claim 一个稳定物理 GPU/MIG
+    # resource。CPU / 尚未完成 GPU 配置的存量行保持 null/null，不猜卡。
+    gpu_resource_id: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, index=True
+    )
+    vram_budget_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    eviction_priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     # 能力快照单份真值: check_health 对注册项探测、写回此行
     health_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # 'manual' = superadmin 在 ModelMarket 注册; 'env' = 启动钩子按 env URL 自动 upsert

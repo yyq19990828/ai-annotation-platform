@@ -99,6 +99,9 @@ function annotationToolMeta(
   if (geometry.type === "video_track_polyline") {
     return { label: "轨迹(折线)", detail: `${geometry.keyframes.length} 关键帧` };
   }
+  if (geometry.type === "video_track_mask") {
+    return { label: "轨迹(栅格掩码)", detail: `${geometry.keyframes.length} 关键帧` };
+  }
   if (geometry.type === "video_polygon") {
     return { label: "多边形", detail: `F${geometry.frame_index} · ${geometry.points.length} 点` };
   }

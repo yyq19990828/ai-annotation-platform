@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-13
 ---
 
 # 任务与标注
@@ -140,6 +140,34 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 ```
 
 `video_track_bbox.keyframes[]` 只保存关键帧；插值帧由前端按需计算，不会展开写入 `annotations` 表。旧 `video_bbox` 数据仍可读取和显示。
+
+逐像素视频轨迹使用 `video_track_mask`。关键帧内只保存内容寻址引用；帧间按最近关键帧保持，不做像素插值：
+
+```json
+{
+  "annotation_type": "video_track_mask",
+  "tool_unit_id": "region",
+  "class_name": "person",
+  "geometry": {
+    "type": "video_track_mask",
+    "track_id": "trk_...",
+    "keyframes": [{
+      "frame_index": 0,
+      "source": "manual",
+      "mask": {
+        "encoding": "coco_rle_ref",
+        "size": [1080, 1920],
+        "object_key": "raster-masks/sha256/...json",
+        "sha256": "...",
+        "runs": 312,
+        "bytes": 3727
+      }
+    }]
+  }
+}
+```
+
+客户端先 `POST /api/v1/tasks/{task_id}/mask-content` 上传 `{encoding:"coco_rle",size,counts}` 获得引用，再创建或更新 annotation。读取当前解析帧用 `GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}`；outside 帧返回 404。
 
 ## 视频轨迹转独立框
 

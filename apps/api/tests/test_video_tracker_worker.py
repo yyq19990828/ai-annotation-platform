@@ -36,7 +36,17 @@ async def _make_video_task(db_session, owner_id):
         file_name="clip.mp4",
         file_path="videos/clip.mp4",
         file_type="video",
-        metadata_={"video": {"duration_ms": 3000, "fps": 30, "frame_count": 90}},
+        width=3,
+        height=2,
+        metadata_={
+            "video": {
+                "duration_ms": 3000,
+                "fps": 30,
+                "frame_count": 90,
+                "width": 3,
+                "height": 2,
+            }
+        },
     )
     db_session.add(item)
     await db_session.flush()
@@ -162,6 +172,78 @@ async def test_tracker_worker_marks_unknown_model_failed(db_session, super_admin
     assert job.status == "failed"
     assert "Unsupported tracker model" in (job.error_message or "")
     assert annotation.geometry["type"] == "bbox"
+
+
+async def test_tracker_worker_records_gpu_arbiter_failure(
+    db_session, super_admin, monkeypatch
+):
+    from app.services import video_tracker_runner as runner
+    from app.services.gpu_arbiter import (
+        GPUArbiterDispatchError,
+        GPUArbiterErrorCode,
+    )
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="mock_bbox",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
+        prompt={"type": "bbox", "geometry": annotation.geometry},
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    events: list[dict] = []
+    recorded: list[dict] = []
+
+    async def collect(_channel: str, payload: dict) -> None:
+        events.append(payload)
+
+    def reject(_capability):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.CAPACITY_UNAVAILABLE,
+            message="card full",
+            retry_after_s=5,
+        )
+
+    monkeypatch.setattr(runner, "get_tracker_adapter", reject)
+
+    await run_tracker_job(
+        db_session,
+        job.id,
+        publisher=collect,
+        failure_recorder=recorded.append,
+    )
+    await db_session.refresh(job)
+
+    expected = {
+        "error_code": "gpu_capacity_unavailable",
+        "status_code": 503,
+        "retry_after_s": 5,
+        "message": "card full",
+    }
+    assert job.status == "failed"
+    assert job.error_message == "card full"
+    assert recorded == [expected]
+    assert events[-1]["type"] == "job_failed"
+    assert events[-1]["gpu_arbiter_error"] == expected
 
 
 def test_apply_tracker_results_only_backfills_grid_frames():
@@ -427,8 +509,10 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     await db_session.commit()
     monkeypatch.setattr(settings, "video_tracker_window_size_frames", 2)
     calls: list[dict] = []
+    authority_marker = object()
 
     async def fake_predict_interactive(self, task_data, context):
+        assert self._dispatch_context_factory is authority_marker
         calls.append(context)
         return PredictionResult(
             task_id=task_data["id"],
@@ -450,7 +534,12 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     async def collect(_channel: str, _payload: dict) -> None:
         return None
 
-    await run_tracker_job(db_session, job.id, publisher=collect)
+    await run_tracker_job(
+        db_session,
+        job.id,
+        publisher=collect,
+        dispatch_context_factory=authority_marker,  # type: ignore[arg-type]
+    )
     await db_session.refresh(job)
     await db_session.refresh(annotation)
 
@@ -755,7 +844,14 @@ async def test_tracker_seed_falls_back_to_last_valid_when_window_all_outside(
 # ── v0.10.49 · worker 按专表最终状态同步 async_jobs（修双写漂移）─────────────
 
 
-async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, status):
+async def _run_worker_with_final_status(
+    db_session,
+    super_admin,
+    monkeypatch,
+    status,
+    *,
+    gpu_arbiter_error=None,
+):
     """seed 专表 job + stub run_tracker_job 返回指定终态，跑 worker 包装层，
     返回它创建/同步的 async_job。验证 cancelled/failed 不被误标 completed。"""
     from sqlalchemy import select
@@ -797,12 +893,28 @@ async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, st
     )
     db_session.add(job)
     await db_session.commit()
+    authority_marker = object()
+    built_from: list[object] = []
+
+    def _build_authority(session_factory):
+        built_from.append(session_factory)
+        return authority_marker
+
+    monkeypatch.setattr(
+        worker_mod,
+        "build_gpu_dispatch_context_factory",
+        _build_authority,
+    )
 
     async def _stub_run(db, job_id, **_kw):
+        assert _kw["shadow_session_factory"] is built_from[0]
+        assert _kw["dispatch_context_factory"] is authority_marker
         row = await db.get(VideoTrackerJob, job_id)
         row.status = status
         if status == VideoTrackerJobStatus.FAILED.value:
             row.error_message = "boom"
+            if gpu_arbiter_error is not None:
+                _kw["failure_recorder"](gpu_arbiter_error)
         await db.commit()
         return row
 
@@ -832,6 +944,7 @@ async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, st
     monkeypatch.setattr(worker_mod, "async_sessionmaker", _Factory)
 
     await worker_mod._run_video_tracker_job(str(job.id), "celery-vt")
+    assert len(built_from) == 1
 
     aj = (
         (
@@ -861,6 +974,28 @@ async def test_worker_syncs_async_job_failed(db_session, super_admin, monkeypatc
     )
     assert aj.status == "failed"
     assert aj.error_message == "boom"
+    assert aj.result == {}
+
+
+async def test_worker_syncs_gpu_arbiter_failure_into_async_job_result(
+    db_session, super_admin, monkeypatch
+):
+    failure = {
+        "error_code": "gpu_capacity_unavailable",
+        "status_code": 503,
+        "retry_after_s": 5,
+        "message": "card full",
+    }
+    aj = await _run_worker_with_final_status(
+        db_session,
+        super_admin,
+        monkeypatch,
+        VideoTrackerJobStatus.FAILED.value,
+        gpu_arbiter_error=failure,
+    )
+
+    assert aj.status == "failed"
+    assert aj.result == {"gpu_arbiter_error": failure}
 
 
 async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeypatch):
@@ -868,3 +1003,217 @@ async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeyp
         db_session, super_admin, monkeypatch, VideoTrackerJobStatus.COMPLETED.value
     )
     assert aj.status == "completed"
+
+
+def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
+    from app.services.video_tracker_runner import _materialize_tracker_mask_result
+
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    monkeypatch.setattr(
+        "app.services.video_tracker_runner.store_coco_rle", lambda rle: reference
+    )
+    result = _materialize_tracker_mask_result(
+        TrackerFrameResult(
+            frame_index=3,
+            geometry={
+                "type": "mask",
+                "rle": {"encoding": "coco_rle", "size": [2, 3], "counts": [2, 2, 2]},
+            },
+        )
+    )
+    assert result.geometry["mask"] == reference
+    assert result.geometry["bbox"] == {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1}
+
+
+def test_apply_tracker_results_converts_source_to_mask_track():
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    annotation = Annotation(
+        id=uuid.uuid4(),
+        task_id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        annotation_type="video_track_bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        track_id="track-1",
+        geometry={
+            "type": "video_track_bbox",
+            "track_id": "track-1",
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    "source": "manual",
+                }
+            ],
+            "outside": [],
+        },
+    )
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    apply_tracker_results(
+        annotation,
+        _job(),
+        [
+            TrackerFrameResult(
+                frame_index=0,
+                geometry={
+                    "type": "mask",
+                    "mask": reference,
+                    "bbox": {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1},
+                },
+            )
+        ],
+    )
+    assert annotation.annotation_type == "video_track_mask"
+    assert annotation.tool_unit_id == "region"
+    assert annotation.geometry["keyframes"] == [
+        {"frame_index": 0, "mask": reference, "source": "prediction", "occluded": False}
+    ]
+
+
+def test_apply_tracker_results_preserves_mask_type_when_all_results_are_outside():
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    reference = {
+        "encoding": "coco_rle_ref",
+        "size": [2, 3],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    annotation = Annotation(
+        annotation_type="video_track_mask",
+        tool_unit_id="region",
+        class_name="car",
+        geometry={
+            "type": "video_track_mask",
+            "track_id": "track-1",
+            "keyframes": [{"frame_index": 0, "mask": reference, "source": "manual"}],
+            "outside": [],
+        },
+    )
+    apply_tracker_results(
+        annotation,
+        _job(),
+        [TrackerFrameResult(frame_index=1, geometry={}, outside=True)],
+        output_geometry="mask",
+    )
+
+    assert annotation.annotation_type == "video_track_mask"
+    assert annotation.geometry["type"] == "video_track_mask"
+    assert annotation.geometry["keyframes"][0]["mask"] == reference
+    assert annotation.geometry["outside"] == [
+        {"from": 1, "to": 1, "source": "prediction"}
+    ]
+
+
+def test_stage_tracker_results_rejects_oversized_payload_atomically(monkeypatch):
+    from app.services import video_tracker_runner as runner
+
+    job = _job()
+    job.staged_result = None
+    monkeypatch.setattr(runner, "MAX_TRACKER_STAGED_BYTES", 32)
+    with pytest.raises(ValueError, match="tracker_candidate_too_large"):
+        runner._stage_tracker_results(
+            job,
+            [
+                TrackerFrameResult(
+                    frame_index=0,
+                    geometry={"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1},
+                )
+            ],
+            1,
+            "bbox",
+        )
+    assert job.staged_result is None
+
+
+async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_track_bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={
+            "type": "video_track_bbox",
+            "track_id": "track-1",
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    "source": "manual",
+                }
+            ],
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    bad_ref = {
+        "encoding": "coco_rle_ref",
+        "size": [9, 9],
+        "object_key": "raster-masks/sha256/aa/aa/" + "a" * 64 + ".json",
+        "sha256": "a" * 64,
+        "runs": 3,
+        "bytes": 58,
+    }
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=1,
+        prompt={"output_geometry": "mask"},
+        event_channel="video-tracker-job:test",
+        staged_result={
+            "grid_step": 1,
+            "output_geometry": "mask",
+            "results": [
+                {
+                    "frame_index": 1,
+                    "geometry": {
+                        "type": "mask",
+                        "mask": bad_ref,
+                        "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    },
+                    "outside": False,
+                }
+            ],
+        },
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    async def _noop(_channel: str, _payload: dict) -> None:
+        return None
+
+    with pytest.raises(ValueError, match="mask size must match source video"):
+        await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await db_session.refresh(annotation)
+    await db_session.refresh(job)
+    assert annotation.geometry["type"] == "video_track_bbox"
+    assert job.status == VideoTrackerJobStatus.PENDING_REVIEW.value

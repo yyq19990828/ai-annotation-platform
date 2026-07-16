@@ -40,6 +40,8 @@ export interface BackendCapEntry {
   isInteractive: boolean;
   /** 支持的视频 tracker (本期不消费, 仅入索引)。 */
   trackers: string[];
+  /** 其中需要文本 prompt 的 tracker。 */
+  textDrivenTrackers: string[];
   /** /setup 拉取成功 (false 时从候选排除, 自动降级)。 */
   reachable: boolean;
 }
@@ -50,9 +52,17 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
   let textCapable = false;
   let isInteractive = false;
   const trackers = new Set<string>();
+  const textDrivenTrackers = new Set<string>();
 
   if (!cap) {
-    return { prompts, textCapable, isInteractive, trackers: [], reachable: false };
+    return {
+      prompts,
+      textCapable,
+      isInteractive,
+      trackers: [],
+      textDrivenTrackers: [],
+      reachable: false,
+    };
   }
 
   const models = Array.isArray(cap.models) ? cap.models : [];
@@ -69,6 +79,7 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
       if (mInteractive) isInteractive = true;
       addPrompts(mInteractive, m.supported_prompts);
       for (const t of m.supported_trackers ?? []) trackers.add(t);
+      for (const t of m.text_driven_trackers ?? []) textDrivenTrackers.add(t);
     }
   } else {
     // 老式单 model 后端 (sam3 等): 用顶层字段。is_interactive 缺省视为交互 (向后兼容)。
@@ -77,8 +88,16 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
     addPrompts(topInteractive, cap.supported_prompts);
   }
   for (const t of cap.supported_trackers ?? []) trackers.add(t);
+  for (const t of cap.text_driven_trackers ?? []) textDrivenTrackers.add(t);
 
-  return { prompts, textCapable, isInteractive, trackers: [...trackers], reachable: true };
+  return {
+    prompts,
+    textCapable,
+    isInteractive,
+    trackers: [...trackers],
+    textDrivenTrackers: [...textDrivenTrackers],
+    reachable: true,
+  };
 }
 
 export type CapIndex = Record<string, BackendCapEntry>;
@@ -95,11 +114,11 @@ export function capFingerprint(cap: MLBackendCapability | undefined): string {
     return models
       .map(
         (m) =>
-          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}`,
+          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}/${(m.text_driven_trackers ?? []).join(",")}`,
       )
       .join(";");
   }
-  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}`;
+  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}/${(cap.text_driven_trackers ?? []).join(",")}`;
 }
 
 /** reachable 且支持该 prompt 的候选后端 (按注册顺序)。 */

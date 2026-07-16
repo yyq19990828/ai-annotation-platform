@@ -30,6 +30,7 @@ export const opsSidebar: DefaultTheme.SidebarItem[] = [
     collapsed: true,
     items: [
       { text: "Celery Worker 卡死", link: "/ops/runbooks/celery-worker-stuck" },
+      { text: "GPU 显存仲裁验收", link: "/ops/runbooks/gpu-arbitration-acceptance" },
       { text: "ML Backend 不可用", link: "/ops/runbooks/ml-backend-down" },
       { text: "视频帧服务", link: "/ops/runbooks/video-frame-service" },
       { text: "PG 连接池耗尽", link: "/ops/runbooks/postgres-connection-pool-exhausted" },

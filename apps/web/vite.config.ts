@@ -9,6 +9,7 @@ import { cspNoncePlugin } from "./vite-plugins/csp-nonce";
 // （如点云分支隔离栈 8010），用 API_PROXY_TARGET 覆盖，默认仍指 8000。
 const apiTarget = process.env.API_PROXY_TARGET || "http://127.0.0.1:8000";
 const wsTarget = apiTarget.replace(/^http/, "ws");
+const minioTarget = process.env.MINIO_PROXY_TARGET || "http://127.0.0.1:9000";
 
 // vitest 字段在 vite 6 的 UserConfig 类型里未直接合并，用类型断言放过。
 // `/// <reference types="vitest" />` 已注入运行时 schema。
@@ -48,6 +49,13 @@ const config: Parameters<typeof defineConfig>[0] = {
       "/ws": {
         target: wsTarget,
         ws: true,
+      },
+      // DEV 媒体走与页面同源的 /minio，远程浏览器只需能访问 Vite
+      // 端口。转发前去掉前缀，保持 S3 签名的 canonical resource 不变。
+      "/minio": {
+        target: minioTarget,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/minio/, ""),
       },
     },
   },

@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAuthStore } from "@/stores/authStore";
+import { isCpuFallback } from "@/utils/mlBackendCompute";
 import { useMLBackendStats, type BackendSnapshot, type BackendHistory } from "./useMLBackendStats";
 import { useBrowserStats } from "./useBrowserStats";
 import { usePerfHudStore } from "./usePerfHudStore";
@@ -156,6 +157,12 @@ function BackendPanel({
       <div className={styles.backendMeta}>
         {bindings.length > 0 ? <span>{bindings.map(formatBinding).join(" · ")}</span> : null}
         {snap.gpu_info?.device_name ? <span>{snap.gpu_info.device_name}</span> : null}
+        {/* GPU 静默退回 CPU 指示；torch / ORT 共用同一判定。 */}
+        {isCpuFallback(snap.compute) && (
+          <span className="text-status-caution" title="GPU 配置但已退回 CPU">
+            · ⚠ CPU
+          </span>
+        )}
         {snap.url_host ? <span>· {snap.url_host}</span> : null}
         {loadLabel ? <span>· {loadLabel}</span> : null}
         {idleAge ? <span>· {idleAge}</span> : null}

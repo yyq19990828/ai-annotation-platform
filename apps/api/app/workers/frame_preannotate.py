@@ -344,6 +344,13 @@ async def _run_segment(
 
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.task import Task
+    from app.services.gpu_dispatch_authority import (
+        build_gpu_dispatch_context_factory,
+    )
+    from app.services.gpu_arbiter import (
+        gpu_arbiter_failure_record,
+        summarize_gpu_arbiter_failures,
+    )
     from app.services.ml_client import MLBackendClient
     from app.services.prediction import PredictionService, to_video_bbox_result
     from app.services.video_frame_service import build_context_from_task
@@ -357,6 +364,7 @@ async def _run_segment(
     SessionLocal = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
+    dispatch_context_factory = build_gpu_dispatch_context_factory(SessionLocal)
 
     stats = {
         "task_id": task_id,
@@ -365,6 +373,7 @@ async def _run_segment(
         "failed": 0,
         "skipped": 0,
     }
+    gpu_arbiter_failures: list[dict] = []
     try:
         async with SessionLocal() as db:
             backend = await db.get(MLBackend, uuid.UUID(ml_backend_id))
@@ -372,7 +381,11 @@ async def _run_segment(
             if backend is None or task is None:
                 return stats
             ctx = await build_context_from_task(db, task)
-            client = MLBackendClient(backend)
+            client = MLBackendClient(
+                backend,
+                shadow_session_factory=SessionLocal,
+                dispatch_context_factory=dispatch_context_factory,
+            )
             context = _build_predict_context(
                 prompt=None,
                 output_mode="box",
@@ -428,11 +441,19 @@ async def _run_segment(
                     await db.commit()
                     stats["frames_done"] += 1
                     stats["boxes"] += len(video_items)
-                except Exception:
+                except Exception as exc:
                     await db.rollback()
                     stats["failed"] += 1
+                    failure = gpu_arbiter_failure_record(exc)
+                    if failure is not None:
+                        gpu_arbiter_failures.append(failure)
     finally:
         await engine.dispose()
+
+    if gpu_arbiter_failures:
+        stats["gpu_arbiter_failures"] = summarize_gpu_arbiter_failures(
+            gpu_arbiter_failures
+        )
 
     # 进度推进 (已处理帧 = 成功 + 跳过 + 失败): 让分母对齐规划总帧数。
     processed = stats["frames_done"] + stats["skipped"] + stats["failed"]
@@ -591,11 +612,18 @@ async def _finalize(segment_stats: list[dict], *, project_id: str, job_id: str) 
 
     from app.db.models.async_job import AsyncJob
     from app.services import async_job as async_job_svc
+    from app.services.gpu_arbiter import summarize_gpu_arbiter_failures
 
     frames_done = sum(int(s.get("frames_done", 0)) for s in segment_stats if s)
     boxes = sum(int(s.get("boxes", 0)) for s in segment_stats if s)
     failed = sum(int(s.get("failed", 0)) for s in segment_stats if s)
     skipped = sum(int(s.get("skipped", 0)) for s in segment_stats if s)
+    gpu_arbiter_failures = summarize_gpu_arbiter_failures(
+        failure
+        for stats in segment_stats
+        if stats
+        for failure in stats.get("gpu_arbiter_failures", [])
+    )
 
     engine = create_async_engine(settings.database_url, echo=False)
     SessionLocal = async_sessionmaker(
@@ -614,6 +642,8 @@ async def _finalize(segment_stats: list[dict], *, project_id: str, job_id: str) 
                     "execution_unit": "frame",
                 }
             )
+            if gpu_arbiter_failures:
+                merged["gpu_arbiter_failures"] = gpu_arbiter_failures
             await async_job_svc.mark_complete(db, uuid.UUID(job_id), result=merged)
             await db.commit()
     finally:

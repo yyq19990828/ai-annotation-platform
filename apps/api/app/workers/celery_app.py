@@ -74,6 +74,7 @@ celery_app.conf.update(
         "app.workers.media.cleanup_video_frame_assets": {"queue": "media"},
         "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
+        "app.workers.cleanup.purge_unreferenced_raster_masks": {"queue": "cleanup"},
         # v0.10.16 · DuckDB 同步 + async_jobs 清理走 cleanup 队列
         "app.workers.analytics.sync_to_duckdb": {"queue": "cleanup"},
         "app.workers.async_jobs_cleanup.purge_old_async_jobs": {"queue": "cleanup"},
@@ -95,6 +96,8 @@ celery_app.conf.update(
         "app.workers.ml_health.publish_ml_backend_stats": {"queue": "default"},
         # v0.8.6 · check_ml_backends_health 历史也漏在路由表外, 同步补上避免 stale celery 队列堆积
         "app.workers.ml_health.check_ml_backends_health": {"queue": "default"},
+        # ADR-0049 · 只有独立控制 worker 持有 tombstone collector 数据库凭据。
+        "app.workers.ml_health.repair_gpu_arbiter_resources": {"queue": "gpu.control"},
     },
     # v0.7.0：beat schedule。运维侧需 deploy `celery -A app.workers.celery_app beat` 进程
     # （或 worker --beat 单进程模式）才会触发。
@@ -102,6 +105,10 @@ celery_app.conf.update(
         "purge-soft-deleted-attachments": {
             "task": "app.workers.cleanup.purge_soft_deleted_attachments",
             "schedule": crontab(hour=3, minute=0),  # 每日 03:00 UTC
+        },
+        "purge-unreferenced-raster-masks": {
+            "task": "app.workers.cleanup.purge_unreferenced_raster_masks",
+            "schedule": crontab(hour=3, minute=20),
         },
         # v0.8.1 · 自助注销冷静期到期处理（每日 04:00 UTC）
         "process-deactivation-requests": {
@@ -142,6 +149,13 @@ celery_app.conf.update(
         "check-ml-backends-health": {
             "task": "app.workers.ml_health.check_ml_backends_health",
             "schedule": crontab(minute="*"),
+            "options": {"expires": 55},
+        },
+        # 与健康扫描使用独立队列和锁；repair 会自行取得 challenge-bound fresh health。
+        "repair-gpu-arbiter-resources": {
+            "task": "app.workers.ml_health.repair_gpu_arbiter_resources",
+            "schedule": crontab(minute="*"),
+            "options": {"expires": 55},
         },
         # v0.9.11 PerfHud · ML Backend 实时统计推送：每 1s 拉所有 active backend /health → publish 到
         # ml-backend-stats:global. 仅在 WS 订阅者计数 > 0 时执行实拉, 0 订阅者时短路 skip 节省 GPU 成本.

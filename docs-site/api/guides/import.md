@@ -59,7 +59,7 @@ image_height=<optional COCO fallback height>
 
 ## AAP JSON 格式
 
-详见 [用户文档 · AAP JSON v1.2](../../user-guide/reference/export-formats#aap-json-v12无损) + [ADR-0024](../../dev/adr/archive/0024-aap-json-format).
+详见 [用户文档 · AAP JSON](../../user-guide/reference/export-formats#aap-json-13无损) + [ADR-0024](../../dev/adr/archive/0024-aap-json-format)。预测导入消费 `predictions[]`；标注导入接口消费 `annotations[]`，并通过 `mask_objects` 恢复内容寻址的栅格 mask。
 
 最小可导入示例：
 

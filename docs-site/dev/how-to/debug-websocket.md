@@ -3,7 +3,7 @@ audience: [dev]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-13
 ---
 
 # How-to：调试 WebSocket
@@ -67,14 +67,15 @@ curl -s http://127.0.0.1:8000/health  # API 在线
 
 如果直连 :8000 能拿到 OPEN + msg，但通过 :3000 vite proxy 卡 CONNECTING，就是 vite proxy 问题。
 
-**修复**：前端统一通过 `buildWsUrl()` 在开发态直连 API；`VITE_WS_HOST` 可覆盖默认 `localhost:8000`，便于并行 worktree 使用不同 API 端口：
+**修复**：前端统一通过 `buildWsUrl()` 选择连接地址：本机 `localhost` 开发态直连 API，从 LAN、Tailscale 或其它主机访问 DEV 页面时走页面同源 `/ws` 代理。`VITE_WS_HOST` 可显式覆盖，便于并行 worktree 使用不同 API 端口：
 
 ```ts
-const host = import.meta.env.VITE_WS_HOST || "localhost:8000";
+const host = import.meta.env.VITE_WS_HOST
+  || (isLoopback(window.location.hostname) ? "localhost:8000" : window.location.host);
 const url = `${proto}://${host}/ws/<name>?token=...`;
 ```
 
-新增 ws hook 时**沿用此模式**，不要直接用 `window.location.host`。
+新增 ws hook 时**沿用 `buildWsUrl()`**，不要在 hook 内重复拼接 host。
 
 ### 3. uvicorn `--reload` 改完 .py 后卡住不重启
 

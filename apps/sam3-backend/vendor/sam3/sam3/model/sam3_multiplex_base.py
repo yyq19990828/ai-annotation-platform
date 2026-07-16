@@ -168,8 +168,9 @@ class Sam3MultiplexTrackerPredictor(nn.Module):
         self.per_obj_inference = per_obj_inference
         self.fill_hole_area = fill_hole_area
         # use bfloat16 inference for Flash Attention kernel
+        # Autocast is scoped by the embedding service around each inference so
+        # its cast cache can be released together with the managed model.
         self.bf16_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        self.bf16_context.__enter__()  # keep using for the entire model process
 
     def __getattr__(self, name):
         # Expose all attributes of the underlying model
@@ -2854,5 +2855,6 @@ class Sam3MultiplexPredictorWrapper(Sam3MultiplexTrackerPredictor):
         self.is_multiplex_dynamic = is_multiplex_dynamic
 
         # use bfloat16 inference for Flash Attention kernel
+        # Autocast is scoped by the embedding service around each inference so
+        # its cast cache can be released together with the managed model.
         self.bf16_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        self.bf16_context.__enter__()

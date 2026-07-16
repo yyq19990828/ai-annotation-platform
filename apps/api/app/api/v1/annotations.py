@@ -24,11 +24,13 @@ from fastapi import (
     Request,
     UploadFile,
 )
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
+from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -47,6 +49,8 @@ from app.schemas.annotation import (
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
+from app.services.raster_mask_storage import load_coco_rle, store_coco_rle
+from app.services.video_tracks import resolve_track_at_frame
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -72,6 +76,79 @@ def _assert_task_editable(task: Task, user: User | None) -> None:
         status_code=409,
         detail={"reason": "task_locked", "status": task.status},
     )
+
+
+@router.get(
+    "/annotations/{annotation_id}/mask-content/{frame_index}",
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_annotation_mask_content(
+    annotation_id: uuid.UUID,
+    frame_index: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JSONResponse:
+    annotation = await db.get(Annotation, annotation_id)
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="annotation not found")
+    task = await db.get(Task, annotation.task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    await assert_project_visible(task.project_id, db, user)
+    geometry = annotation.geometry or {}
+    if geometry.get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=422, detail="annotation is not a video mask track"
+        )
+    resolved = resolve_track_at_frame(geometry, frame_index)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="mask is outside at this frame")
+    try:
+        payload = load_coco_rle(resolved["mask"])
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409, detail=f"mask object is invalid: {exc}"
+        ) from exc
+    return JSONResponse(
+        payload,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "ETag": f'"{resolved["mask"]["sha256"]}"',
+        },
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/mask-content",
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def upload_task_mask_content(
+    task_id: uuid.UUID,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles(*_ANNOTATORS)),
+) -> dict:
+    task = await db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    await assert_project_visible(task.project_id, db, user)
+    _assert_task_editable(task, user)
+    try:
+        size = payload.get("size")
+        if task.dataset_item_id is not None:
+            item = await db.get(DatasetItem, task.dataset_item_id)
+            if item is not None:
+                video = (item.metadata_ or {}).get("video")
+                video = video if isinstance(video, dict) else {}
+                width = item.width or video.get("width")
+                height = item.height or video.get("height")
+                if width and height and size != [int(height), int(width)]:
+                    raise ValueError(
+                        f"mask size must match source video [{height}, {width}]"
+                    )
+        return store_coco_rle(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 async def _load_single_task_for_ids(
@@ -188,7 +265,10 @@ async def import_annotations(
     from app.services.async_job_notify import notify_job_terminal
     from app.services.annotations_import import import_aap_json_annotations
 
-    raw = await file.read()
+    max_import_bytes = 64 * 1024 * 1024
+    raw = await file.read(max_import_bytes + 1)
+    if len(raw) > max_import_bytes:
+        raise HTTPException(status_code=413, detail="AAP JSON import must be <= 64 MiB")
 
     # async_jobs 双写（dry_run 不记录）
     aj_id: uuid.UUID | None = None

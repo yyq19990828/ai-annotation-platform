@@ -20,6 +20,10 @@ import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
+import {
+  collectMarkdownImageReferences,
+  walkFiles,
+} from "../../scripts/image-reference-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT   = path.resolve(__dirname, "../..");
@@ -40,16 +44,7 @@ const DUPLICATE_ALLOWLIST = new Map([
 ]);
 
 // ── 收集 images/ 下所有图片文件（绝对路径）─────────────────────────
-function* walk(dir, test) {
-  if (!fs.existsSync(dir)) return;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(full, test);
-    else if (test(entry.name)) yield full;
-  }
-}
-
-const imageFiles = [...walk(IMAGES_ROOT, (n) => IMG_EXT.test(n))];
+const imageFiles = [...walkFiles(IMAGES_ROOT, (name) => IMG_EXT.test(name))];
 const imageFileSet = new Set(imageFiles);
 
 // ── 重复内容：不同路径的图片文件具有相同 SHA-256 ──────────────────
@@ -74,23 +69,18 @@ for (const [hash, files] of filesByHash) {
 duplicateGroups.sort((a, b) => a.files[0].localeCompare(b.files[0]));
 allowedDuplicateGroups.sort((a, b) => a.files[0].localeCompare(b.files[0]));
 
-// ── 收集所有 Markdown 引用并解析为绝对路径（记来源 md）──────────────
-const referenced = new Map(); // 绝对路径 → 来源 md（相对仓库根）
-for (const mdPath of walk(DOCS_ROOT, (n) => n.endsWith(".md"))) {
-  const content = fs.readFileSync(mdPath, "utf8");
-  const rel = path.relative(REPO_ROOT, mdPath).replace(/\\/g, "/");
-  const imgRe = /!\[.*?\]\(([^)]+)\)|<img[^>]+src=["']([^"']+)["']/g;
-  let m;
-  while ((m = imgRe.exec(content)) !== null) {
-    const src = (m[1] || m[2] || "").trim();
-    if (src.startsWith("http") || !IMG_EXT.test(src)) continue;
-    const mdDir = path.dirname(mdPath);
-    const abs = src.startsWith("/")
-      ? path.join(DOCS_ROOT, src) // 根绝对路径相对 docs-site 根（vitepress public 约定）
-      : path.resolve(mdDir, src);
-    if (!referenced.has(abs)) referenced.set(abs, rel);
-  }
-}
+// ── 收集所有 Markdown / img / AutoImage 引用─────────────────────
+const referenceRecords = collectMarkdownImageReferences({
+  scanRoot: DOCS_ROOT,
+  repoRoot: REPO_ROOT,
+  docsRoot: DOCS_ROOT,
+});
+const referenced = new Map(
+  [...referenceRecords.values()].map((record) => [
+    record.absolute,
+    [...record.sources].sort()[0],
+  ]),
+);
 
 // ── 孤儿：磁盘有图但无任何文档引用 ────────────────────────────────
 const orphans = imageFiles

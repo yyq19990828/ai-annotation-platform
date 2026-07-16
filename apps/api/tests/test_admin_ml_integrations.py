@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 from tests.factory import create_project
 
 
@@ -53,7 +54,18 @@ async def test_overview_groups_backends_by_project(
 
     from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 
-    b1 = MLBackendRegistry(name="b1", url="http://x:9000", state="connected")
+    b1 = MLBackendRegistry(
+        name="b1",
+        url="http://x:9000",
+        state="connected",
+        health_meta={
+            "compute": {
+                "configured_device": "cuda",
+                "effective_provider": "CPUExecutionProvider",
+                "cpu_fallback_supported": True,
+            }
+        },
+    )
     b2 = MLBackendRegistry(name="b2", url="http://y:9000", state="disconnected")
     db_session.add(b1)
     db_session.add(b2)
@@ -88,6 +100,13 @@ async def test_overview_groups_backends_by_project(
         assert len(body["projects"]) == 1
         assert body["projects"][0]["project_name"] == "P1"
         assert len(body["projects"][0]["backends"]) == 2
+        b1_out = next(
+            item for item in body["projects"][0]["backends"] if item["name"] == "b1"
+        )
+        assert (
+            b1_out["health_meta"]["compute"]["effective_provider"]
+            == "CPUExecutionProvider"
+        )
 
 
 @pytest.mark.asyncio
@@ -311,6 +330,11 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
                 "model_version": "mv",
                 "pool": {"cap": 1, "loaded_variants": []},
                 "gpu_info": {"memory_used_mb": 1},
+                "compute": {
+                    "configured_device": "cuda",
+                    "effective_device": "cpu",
+                    "cpu_fallback_supported": True,
+                },
             },
         ),
         ("get", "/setup"): _FakeResp(
@@ -347,6 +371,12 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
     assert t["supports_variants"] is True
     assert t["variant_catalog"]["sam_variant"] == ["tiny", "large"]
     assert t["supported_variants"][0]["key"] == "series"
+    assert t["compute"] == {
+        "configured_device": "cuda",
+        "effective_device": "cpu",
+        "effective_provider": None,
+        "cpu_fallback_supported": True,
+    }
     assert t["registered"] is True
     assert "manual" in (t["registered_label"] or "")
 
@@ -567,6 +597,361 @@ async def test_smoke_test_warms_and_unloads_empty_pool(httpx_client, super_admin
     assert body["reloaded"] is True
     assert body["auto_unloaded"] is True
     assert body["loaded_variant"]["sam_variant"] == "large"
+
+
+@pytest.mark.asyncio
+async def test_unregistered_smoke_test_blocks_raw_load_in_effective_enforce(
+    httpx_client, super_admin, monkeypatch
+):
+    _, token = super_admin
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.unregistered_gpu_loading_blocked",
+        lambda: True,
+    )
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200, {"ok": True, "loaded": False, "pool": {"loaded_variants": []}}
+        ),
+    }
+
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://unregistered:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 503
+    assert res.json()["detail"] == {
+        "error_code": "gpu_config_invalid",
+        "message": (
+            "effective enforce 下未注册 URL 只能执行只读 health/setup；"
+            "请先注册 backend 并完成受管身份绑定"
+        ),
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "health",
+    [
+        {
+            "ok": True,
+            "loaded": False,
+            "pool": {"loaded_variants": []},
+            "residency": {
+                "state": "resident",
+                "gpu_loaded": True,
+                "builders": 0,
+                "borrowers": 0,
+                "pools": {"video": {"resident": True}},
+            },
+        },
+        {
+            "ok": True,
+            "loaded": False,
+            "pool": {"loaded_variants": []},
+            "residency": {
+                "state": "unloaded",
+                "gpu_loaded": False,
+                "builders": 1,
+                "borrowers": 0,
+                "pools": {"image": {"resident": False}},
+            },
+        },
+        {
+            "ok": True,
+            "loaded": False,
+            "pool": {"loaded_variants": []},
+            "video_pool": {
+                "current_size": 1,
+                "loaded_keys": [{"key": "sam2"}],
+                "active_sessions": 1,
+            },
+        },
+        {
+            "ok": True,
+            "loaded": False,
+            "pool": {"loaded_variants": []},
+            "video_pool": {"current_size": "unknown", "active_sessions": {}},
+        },
+    ],
+)
+async def test_smoke_test_never_warms_when_full_residency_is_not_proven_empty(
+    httpx_client, super_admin, health
+):
+    _, token = super_admin
+    routes = {("get", "/health"): _FakeResp(200, health)}
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://obs1:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["skipped"] is True
+    assert body["auto_unloaded"] is False
+    assert "未执行试启动" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_registered_smoke_test_uses_unified_ml_client(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+
+    _, token = super_admin
+    backend = MLBackendRegistry(
+        name="registered-smoke",
+        url="http://obs1:8001",
+        state="connected",
+        auth_method="none",
+        extra_params={},
+    )
+    db_session.add(backend)
+    await db_session.commit()
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.unregistered_gpu_loading_blocked",
+        lambda: True,
+    )
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_health_meta(self):
+        calls.append(("health", {}))
+        return True, {"loaded": False, "pool": {"loaded_variants": []}}
+
+    async def fake_reload(self, **kwargs):
+        calls.append(("reload", kwargs))
+        return {
+            "ok": True,
+            "reloaded": True,
+            "sam_variant": kwargs["sam_variant"],
+            "dino_variant": kwargs["dino_variant"],
+        }
+
+    async def fake_unload(self):
+        calls.append(("unload", {}))
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.health_meta",
+        fake_health_meta,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.reload", fake_reload
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.unload", fake_unload
+    )
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200, {"ok": True, "loaded": False, "pool": {"loaded_variants": []}}
+        ),
+    }
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://obs1:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 200, res.text
+    assert calls == [
+        ("health", {}),
+        ("reload", {"sam_variant": "large", "dino_variant": "B"}),
+        ("unload", {}),
+    ]
+    assert "residency" in res.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_registered_smoke_test_preserves_gpu_arbiter_error_contract(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+
+    _, token = super_admin
+    backend = MLBackendRegistry(
+        name="registered-smoke-rejected",
+        url="http://obs-rejected:8001",
+        state="connected",
+        auth_method="none",
+        extra_params={},
+    )
+    db_session.add(backend)
+    await db_session.commit()
+    unload_calls = 0
+
+    async def fake_health_meta(self):
+        return True, {"loaded": False, "pool": {"loaded_variants": []}}
+
+    async def fake_reload(self, **_kwargs):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+            message="lease full",
+            retry_after_s=7,
+        )
+
+    async def fake_unload(self):
+        nonlocal unload_calls
+        unload_calls += 1
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.health_meta",
+        fake_health_meta,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.reload", fake_reload
+    )
+    monkeypatch.setattr(
+        "app.api.v1.admin_ml_integrations.MLBackendClient.unload", fake_unload
+    )
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient",
+        _fake_client({}),
+    ):
+        response = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={
+                "url": "http://obs-rejected:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 503, response.text
+    assert response.json() == {
+        "detail": {
+            "error_code": "gpu_backend_concurrency_saturated",
+            "message": "lease full",
+        }
+    }
+    assert response.headers["Retry-After"] == "7"
+    assert unload_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_project_admin_all_response_masks_physical_gpu_topology(
+    httpx_client, db_session, project_admin
+):
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+
+    _, token = project_admin
+    backend = MLBackendRegistry(
+        name="masked-gpu",
+        url="http://masked-gpu:9000",
+        state="connected",
+        gpu_resource_id="node-secret/GPU-secret",
+        vram_budget_mb=12_000,
+        eviction_priority=7,
+        health_meta={
+            "capabilities": {"modalities": ["image"]},
+            "gpu_info": {"device_uuid": "GPU-secret"},
+            "residency": {
+                "state": "resident",
+                "gpu_loaded": True,
+                "identity": {"gpu_resource_id": "node-secret/GPU-secret"},
+            },
+        },
+    )
+    db_session.add(backend)
+    await db_session.commit()
+
+    res = await httpx_client.get(
+        "/api/v1/admin/ml-integrations/all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert res.status_code == 200
+    item = next(row for row in res.json()["items"] if row["id"] == str(backend.id))
+    assert item["gpu_resource_id"] is None
+    assert item["vram_budget_mb"] is None
+    assert item["eviction_priority"] is None
+    assert item["gpu_config"] is None
+    assert item["health_meta"].get("gpu_info") is None
+    assert item["health_meta"].get("residency") is None
+    assert item["health_meta"]["capabilities"]["modalities"] == ["image"]
+
+
+@pytest.mark.asyncio
+async def test_registry_unload_injects_shadow_factory_and_preserves_numeric_result(
+    httpx_client,
+    app_module,
+    db_session,
+    super_admin,
+    monkeypatch,
+):
+    from app.config import GPUArbiterMode, settings
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+    from app.deps import get_gpu_shadow_session_factory
+
+    _, token = super_admin
+    backend = MLBackendRegistry(
+        name="injectable-shadow",
+        url="http://injectable-shadow:9000",
+        state="connected",
+        auth_method="none",
+        extra_params={},
+        gpu_resource_id="node-a/index:0",
+        vram_budget_mb=8_000,
+    )
+    db_session.add(backend)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.OBSERVE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        '{"node-a/index:0":{"node_id":"node-a",'
+        '"physical_device_token":"index:0","allocatable_mb":20000,'
+        '"mode":"observe"}}',
+    )
+
+    marker = object()
+    observed: list[tuple[str, str, object]] = []
+
+    async def fake_record(backend_id, operation, session_factory):
+        observed.append((backend_id, operation, session_factory))
+
+    routes = {("post", "/unload"): _FakeResp(200, {"ok": True, "unloaded": 2})}
+    monkeypatch.setattr(
+        "app.services.ml_client.record_gpu_shadow_dispatch", fake_record
+    )
+    app_module.dependency_overrides[get_gpu_shadow_session_factory] = lambda: marker
+    try:
+        with patch("app.services.ml_client.httpx.AsyncClient", _fake_client(routes)):
+            res = await httpx_client.post(
+                f"/api/v1/admin/ml-integrations/registry/{backend.id}/unload",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        app_module.dependency_overrides.pop(get_gpu_shadow_session_factory, None)
+
+    assert res.status_code == 200, res.text
+    assert res.json()["unloaded"] == 2
+    assert type(res.json()["unloaded"]) is int
+    assert observed == [(str(backend.id), "unload", marker)]
 
 
 @pytest.mark.asyncio

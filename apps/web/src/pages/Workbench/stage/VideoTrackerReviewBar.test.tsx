@@ -31,7 +31,7 @@ describe("VideoTrackerReviewBar", () => {
     );
     const bar = screen.getByTestId("video-tracker-review-bar");
     expect(bar.textContent).toContain("16 帧");
-    expect(bar.textContent).toContain("2 目标");
+    expect(bar.textContent).toContain("2 个目标");
     fireEvent.click(screen.getByTestId("tracker-review-accept"));
     expect(onAccept).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId("tracker-review-discard"));

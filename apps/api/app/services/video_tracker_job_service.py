@@ -19,9 +19,13 @@ from app.schemas.video_tracker_job import (
     VideoTrackerPropagateRequest,
 )
 from app.services.scheduler import is_privileged_for_project
+from app.services.ml_backend import MLBackendService
+from app.services.raster_mask_storage import load_coco_rle
 from app.services.video_frame_service import VideoContext
 from app.services.video_segment_service import ensure_segments
-from app.services.video_tracks import is_polyline_track
+from app.services.video_tracker_adapters import registered_tracker_models
+from app.services.video_tracks import is_polyline_track, resolve_track_at_frame
+from app.utils.raster_mask_rle import coco_rle_bbox_norm
 
 
 log = logging.getLogger(__name__)
@@ -142,30 +146,143 @@ def _job_out(row: VideoTrackerJob) -> VideoTrackerJobOut:
     return VideoTrackerJobOut.model_validate(row, from_attributes=True)
 
 
+def _seed_geometry_at_frame(annotation: Annotation, from_frame: int) -> dict:
+    """多源 seed 的源几何: 视频轨迹取 from_frame 处的几何 (转成 backend 可解析的 result-style
+    geometry), 取不到 (非轨迹 / outside / 无该帧) 则回退整条 annotation.geometry。
+
+    backend _seed_bbox_from_video_ctx 吃 {type: bbox/polygon, ...} 或 video_track_*, 但不吃
+    resolve_track_at_frame 返回的裸关键帧 (无 type、bbox 嵌套) → bbox/polygon 帧转 result-style。
+    """
+    geometry = annotation.geometry or {}
+    resolved = resolve_track_at_frame(geometry, from_frame)
+    if resolved is None:
+        return geometry
+    if resolved.get("points") is not None:
+        return {"type": "polygon", "points": resolved["points"]}
+    if resolved.get("bbox") is not None:
+        return {"type": "bbox", **resolved["bbox"]}
+    if resolved.get("mask") is not None:
+        bbox = coco_rle_bbox_norm(load_coco_rle(resolved["mask"]))
+        if bbox:
+            return {"type": "bbox", **bbox}
+    return geometry
+
+
+async def _validate_sourceless_target(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    class_name: str | None,
+    tool_unit_id: str | None,
+) -> None:
+    if not class_name or not tool_unit_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Sourceless tracking requires target_class_name and target_tool_unit_id",
+        )
+    project = await db.get(Project, project_id)
+    binding = (project.tool_bindings or {}).get(tool_unit_id) if project else None
+    classes = binding.get("classes") if isinstance(binding, dict) else None
+    allowed = {
+        item.get("name")
+        for item in (classes or [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    if (
+        not isinstance(binding, dict)
+        or not binding.get("enabled")
+        or class_name not in allowed
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"target class '{class_name}' is not configured for tool unit "
+                f"'{tool_unit_id}'"
+            ),
+        )
+
+
 async def create_tracker_job(
     db: AsyncSession,
     *,
     task: Task,
     ctx: VideoContext,
-    annotation_id: uuid.UUID,
+    annotation_id: uuid.UUID | None,
     payload: VideoTrackerPropagateRequest,
     user: User,
 ) -> VideoTrackerJobOut:
     _assert_frame_range(ctx, payload.from_frame, payload.to_frame)
-    annotation = await _load_annotation(db, task, annotation_id)
-    # polyline 轨迹传播暂不支持: runner 只识别 polygon/bbox track, polyline 会命中 bbox
-    # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
-    if is_polyline_track(annotation.geometry or {}):
-        raise HTTPException(status_code=400, detail="polyline 轨迹传播暂不支持")
+    known_models = set(registered_tracker_models()) | {"sam3_video_combo"}
+    if payload.model_key not in known_models:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported tracker model: {payload.model_key}",
+        )
+    if payload.model_key != "mock_bbox":
+        required = (
+            ["sam3_video", "sam3_video_interactive"]
+            if payload.model_key == "sam3_video_combo"
+            else [payload.model_key]
+        )
+        backend = await MLBackendService(db).get_tracker_backend_for_capabilities(
+            task.project_id, required
+        )
+        if backend is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "No connected project ML backend supports tracker model: "
+                    f"{payload.model_key}"
+                ),
+            )
+    # v0.22.2 · M · 多选批量: source_annotation_ids 有 ≥1 条 → 多源分支。各源在 from_frame 处
+    # 的几何写成带 source_annotation_id + obj_id (1..N) 的 seed; annotation_id 强制 NULL (§8 ·
+    # 多源不认单主, accept 各 obj 各回填各源, 见 _seed_source_map)。obj_id 与 instance_id ==
+    # str(obj_id) 契约一致。单数 source_annotation_id (单源延展) / 无源路径保持现状不变。
+    multi_source_ids = payload.source_annotation_ids or []
+    seed_prompt: dict = {}
+    if multi_source_ids:
+        annotation_id = None
+        seeds: list[dict] = []
+        for obj_id, sid in enumerate(multi_source_ids, start=1):
+            source = await _load_annotation(db, task, sid)
+            if is_polyline_track(source.geometry or {}):
+                raise HTTPException(status_code=400, detail="polyline 轨迹追踪暂不支持")
+            seeds.append(
+                {
+                    "obj_id": obj_id,
+                    "source_annotation_id": str(sid),
+                    "geometry": _seed_geometry_at_frame(source, payload.from_frame),
+                }
+            )
+        seed_prompt = {"seeds": seeds}
+    # v0.22.1 · B · 源轨迹可选: 无源检测 (annotation_id is None) 不加载 source / 不查 polyline,
+    # 新建轨迹类别由 payload.target_* 显式指定。有源延展保留 polyline 400 拒绝。
+    elif annotation_id is not None:
+        annotation = await _load_annotation(db, task, annotation_id)
+        # polyline 轨迹追踪暂不支持: runner 只识别 polygon/bbox track, polyline 会命中 bbox
+        # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
+        if is_polyline_track(annotation.geometry or {}):
+            raise HTTPException(status_code=400, detail="polyline 轨迹追踪暂不支持")
+    sourceless = annotation_id is None and not multi_source_ids
+    if sourceless:
+        await _validate_sourceless_target(
+            db,
+            task.project_id,
+            payload.target_class_name,
+            payload.target_tool_unit_id,
+        )
     privileged = await _is_privileged(db, task, user)
     segment_id = await _assert_segment_lock(
         db, ctx, payload, user, privileged=privileged
     )
 
+    # v0.22.1 · B · 无源检测 (无单主且非多源) 才存显式目标类别; 有源延展 / 多源批量各自继承源。
     row = VideoTrackerJob(
         task_id=task.id,
         dataset_item_id=ctx.item.id,
         annotation_id=annotation_id,
+        target_class_name=payload.target_class_name if sourceless else None,
+        target_tool_unit_id=payload.target_tool_unit_id if sourceless else None,
         segment_id=segment_id,
         created_by=user.id,
         status=VideoTrackerJobStatus.QUEUED.value,
@@ -178,8 +295,15 @@ async def create_tracker_job(
         # 经 TrackerContext 显式字段透传到 backend (见 video_tracker_adapters context)。
         prompt={
             **(payload.prompt or {}),
+            # v0.22.2 · M · 多源 seeds (各 obj_id ↔ 各源) 覆盖 payload.prompt 里同名键。
+            **seed_prompt,
             **({"sam_variant": payload.sam_variant} if payload.sam_variant else {}),
             **({"text": payload.text} if payload.text else {}),
+            **(
+                {"output_geometry": payload.output_geometry}
+                if payload.output_geometry
+                else {}
+            ),
             **(
                 {"exemplars": [e.model_dump() for e in payload.exemplars]}
                 if payload.exemplars

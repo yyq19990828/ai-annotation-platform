@@ -24,14 +24,17 @@ import { computed } from "vue";
 let manifest: Record<string, {
   auto: boolean;
   scene?: string;
+  source?: string;
   lastRun?: string;
+  generated_at?: string;
   note?: string;
 }> = {};
 
 try {
   // @ts-ignore — 由 vitepress config alias 指向 outputs/manifest.json
   const mod = await import("virtual:screenshot-manifest");
-  manifest = mod.default ?? mod;
+  const raw = mod.default ?? mod;
+  manifest = raw.schema_version === 2 ? raw.entries : raw;
 } catch {
   // manifest 未配置时静默降级
 }
@@ -58,8 +61,15 @@ const manifestKey = computed(() => {
 const entry = computed(() => manifest[manifestKey.value]);
 
 const lastRunDate = computed(() => {
-  const r = entry.value?.lastRun;
+  const r = entry.value?.generated_at ?? entry.value?.lastRun;
   return r ? r.slice(0, 10) : null;
+});
+
+const sceneSourceUrl = computed(() => {
+  const source = entry.value?.source;
+  return source
+    ? `https://github.com/yyq19990828/ai-annotation-platform/blob/main/${source}`
+    : null;
 });
 
 // 图片实际路径：仓库路径和相对路径都归一到站点的 /user-guide/images/ 目录
@@ -85,9 +95,9 @@ const imgSrc = computed(() => {
           <span v-if="lastRunDate"> · {{ lastRunDate }}</span>
         </span>
         <span v-else class="badge badge-manual">✏ 手动维护</span>
-        <span v-if="entry.auto && entry.scene" class="scene-link">
+        <span v-if="entry.auto && sceneSourceUrl" class="scene-link">
           <a
-            :href="`https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/web/e2e/screenshots/scenes/${entry.scene.split('/')[0]}.ts`"
+            :href="sceneSourceUrl"
             target="_blank"
             rel="noopener"
           >

@@ -1,0 +1,475 @@
+"""Resolve the screenshot seed profile to runtime IDs and validate readiness."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.annotation import Annotation
+from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+from app.db.models.prediction import Prediction
+from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
+from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
+from app.db.models.user import User
+from app.services.ml_backend import MLBackendService
+from app.services.screenshot_seed_backends import (
+    backend_requirement_issues,
+    selected_tracker,
+)
+from app.services.screenshot_seed_spec import (
+    BACKEND_REQUIREMENTS,
+    PROJECT_SPECS,
+    SEED_MANAGED_BY,
+    SEED_REVISION,
+    USER_SPECS,
+    ProjectSpec,
+)
+from app.services.storage import storage_service
+
+
+SCHEMA_VERSION = 1
+
+
+class ScreenshotSeedCatalogError(RuntimeError):
+    def __init__(self, issues: list[str]):
+        super().__init__("screenshot seed profile is not ready")
+        self.issues = issues
+
+
+def _task_payload(task: Task) -> dict[str, Any]:
+    return {
+        "id": str(task.id),
+        "display_id": task.display_id,
+        "file_name": task.file_name,
+        "file_path": task.file_path,
+        "status": task.status,
+    }
+
+
+def _storage_object_digest(file_path: str) -> str:
+    response = storage_service.client.get_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=file_path,
+    )
+    body = response["Body"]
+    digest = hashlib.sha256()
+    try:
+        for chunk in iter(lambda: body.read(1024 * 1024), b""):
+            digest.update(chunk)
+    finally:
+        body.close()
+    return digest.hexdigest()
+
+
+async def _resolve_backend(
+    db: AsyncSession,
+    project: Project,
+    spec: ProjectSpec,
+    issues: list[str],
+) -> dict[str, Any] | None:
+    if spec.required_backend is None:
+        return None
+
+    prefix = project.display_id
+    requirement = BACKEND_REQUIREMENTS[spec.required_backend]
+    if not project.ai_enabled:
+        issues.append(f"{prefix}: ai_enabled must be true")
+    if requirement.interactive and not project.ai_interactive_enabled:
+        issues.append(f"{prefix}: ai_interactive_enabled must be true")
+    if project.ml_backend_id is None:
+        issues.append(f"{prefix}: primary ML backend is not bound")
+
+    service = MLBackendService(db)
+    backend = await service.get_project_backend(project.id)
+    if backend is None:
+        issues.append(f"{prefix}: no enabled project ML backend resolves")
+        return None
+    if project.ml_backend_id != backend.id:
+        issues.append(
+            f"{prefix}: resolved ML backend is not the declared primary backend"
+        )
+    capabilities = (backend.health_meta or {}).get("capabilities")
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    for detail in backend_requirement_issues(backend, requirement):
+        issues.append(f"{prefix}: ML backend {detail}")
+    tracker = selected_tracker(capabilities, requirement)
+    if tracker is not None:
+        if await service.get_tracker_backend(project.id, tracker) is None:
+            issues.append(
+                f"{prefix}: tracker capability does not resolve through project binding"
+            )
+
+    return {
+        "id": str(backend.id),
+        "name": backend.name,
+        "state": backend.state,
+        "is_interactive": backend.is_interactive,
+        "requirement": requirement.key,
+        "selected_tracker": tracker,
+        "capabilities": capabilities,
+    }
+
+
+async def _resolve_dataset_and_tasks(
+    db: AsyncSession,
+    project: Project,
+    logical_key: str,
+    spec: ProjectSpec,
+    users: dict[str, User],
+    issues: list[str],
+) -> tuple[Dataset | None, dict[str, Task], dict[str, dict[str, Any]]]:
+    prefix = project.display_id
+    datasets = list(
+        (
+            await db.execute(
+                select(Dataset)
+                .join(ProjectDataset, ProjectDataset.dataset_id == Dataset.id)
+                .where(ProjectDataset.project_id == project.id)
+            )
+        ).scalars()
+    )
+    expected = [
+        dataset for dataset in datasets if dataset.display_id == spec.dataset_display_id
+    ]
+    if len(datasets) != 1 or len(expected) != 1:
+        issues.append(
+            f"{prefix}: expected exactly dataset {spec.dataset_display_id} and no other links"
+        )
+        return None, {}, {}
+    dataset = expected[0]
+    marker = (dataset.metadata_ or {}).get("seed")
+    if not isinstance(marker, dict) or any(
+        (
+            marker.get("managed_by") != SEED_MANAGED_BY,
+            marker.get("profile") != "screenshots",
+            marker.get("logical_key") != logical_key,
+            marker.get("revision") != SEED_REVISION,
+            not isinstance(marker.get("asset_sha256"), str),
+            len(marker.get("asset_sha256", "")) != 64,
+        )
+    ):
+        issues.append(
+            f"{spec.dataset_display_id}: screenshot seed ownership marker is stale"
+        )
+    if (
+        logical_key == "pointcloud_demo"
+        and (dataset.metadata_ or {}).get("axis_convention") != "opencv_camera"
+    ):
+        issues.append(
+            f"{spec.dataset_display_id}: axis_convention must be opencv_camera"
+        )
+
+    dataset_items = list(
+        (
+            await db.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == dataset.id)
+            )
+        ).scalars()
+    )
+    expected_media_paths = set(spec.media_paths) or {
+        task_spec.file_path for task_spec in spec.tasks
+    }
+    actual_media_paths = {item.file_path for item in dataset_items}
+    if (
+        len(dataset_items) != len(actual_media_paths)
+        or actual_media_paths != expected_media_paths
+    ):
+        issues.append(
+            f"{spec.dataset_display_id}: screenshot seed media set is not exact"
+        )
+    if dataset.file_count != len(dataset_items):
+        issues.append(f"{spec.dataset_display_id}: file_count is stale")
+    for item in dataset_items:
+        if not item.file_path.startswith(spec.storage_prefix) or not item.content_hash:
+            issues.append(
+                f"{spec.dataset_display_id}: media {item.file_path} has invalid metadata"
+            )
+            continue
+        try:
+            object_digest = await asyncio.to_thread(
+                _storage_object_digest, item.file_path
+            )
+        except Exception as exc:  # noqa: BLE001 - report storage failure as an issue
+            issues.append(
+                f"{spec.dataset_display_id}: media {item.file_path} is unavailable in "
+                f"storage ({type(exc).__name__})"
+            )
+            continue
+        if object_digest != item.content_hash:
+            issues.append(
+                f"{spec.dataset_display_id}: media {item.file_path} digest is stale"
+            )
+
+    tasks: dict[str, Task] = {}
+    payload: dict[str, dict[str, Any]] = {}
+    resolved_task_ids: set = set()
+    for task_spec in spec.tasks:
+        item_rows = list(
+            (
+                await db.execute(
+                    select(DatasetItem).where(
+                        DatasetItem.dataset_id == dataset.id,
+                        DatasetItem.file_path == task_spec.file_path,
+                    )
+                )
+            ).scalars()
+        )
+        if len(item_rows) != 1 or not item_rows[0].content_hash:
+            issues.append(
+                f"{prefix}: task {task_spec.key} must resolve one hashed item at "
+                f"{task_spec.file_path}"
+            )
+            continue
+        task_rows = list(
+            (
+                await db.execute(
+                    select(Task).where(
+                        Task.project_id == project.id,
+                        Task.dataset_item_id == item_rows[0].id,
+                    )
+                )
+            ).scalars()
+        )
+        if len(task_rows) != 1:
+            issues.append(f"{prefix}: task {task_spec.key} must resolve exactly once")
+            continue
+        task = task_rows[0]
+        tasks[task_spec.key] = task
+        payload[task_spec.key] = _task_payload(task)
+        resolved_task_ids.add(task.id)
+        if task.status != task_spec.status:
+            issues.append(
+                f"{prefix}: task {task_spec.key} must have status {task_spec.status}"
+            )
+        expected_assignee = (
+            users.get(task_spec.assignee_key) if task_spec.assignee_key else None
+        )
+        expected_reviewer = (
+            users.get(task_spec.reviewer_key) if task_spec.reviewer_key else None
+        )
+        if expected_assignee is not None and task.assignee_id != expected_assignee.id:
+            issues.append(f"{prefix}: task {task_spec.key} has the wrong assignee")
+        if task_spec.assignee_key is None and task.assignee_id is not None:
+            issues.append(f"{prefix}: task {task_spec.key} must be unassigned")
+        if expected_reviewer is not None and task.reviewer_id != expected_reviewer.id:
+            issues.append(f"{prefix}: task {task_spec.key} has the wrong reviewer")
+        if task_spec.reviewer_key is None and task.reviewer_id is not None:
+            issues.append(f"{prefix}: task {task_spec.key} must have no reviewer")
+
+        prediction_rows = list(
+            (
+                await db.execute(
+                    select(Prediction).where(Prediction.task_id == task.id)
+                )
+            ).scalars()
+        )
+        expected_prediction = (
+            logical_key == "image_demo" and task_spec.key == "predicted"
+        )
+        if len(prediction_rows) != int(expected_prediction):
+            issues.append(
+                f"{prefix}: task {task_spec.key} prediction count must be "
+                f"{int(expected_prediction)}"
+            )
+        elif expected_prediction and prediction_rows[0].model_version != (
+            f"screenshot-seed:{SEED_REVISION}"
+        ):
+            issues.append(f"{prefix}: task predicted has a stale seed prediction")
+
+        annotation_count = (
+            await db.scalar(
+                select(func.count())
+                .select_from(Annotation)
+                .where(Annotation.task_id == task.id)
+            )
+            or 0
+        )
+        if annotation_count != int(task_spec.annotation):
+            issues.append(
+                f"{prefix}: task {task_spec.key} annotation count must be "
+                f"{int(task_spec.annotation)}"
+            )
+        if task.total_predictions != len(prediction_rows):
+            issues.append(f"{prefix}: task {task_spec.key} prediction counter is stale")
+        if task.total_annotations != annotation_count:
+            issues.append(f"{prefix}: task {task_spec.key} annotation counter is stale")
+
+    project_task_ids = set(
+        (
+            await db.execute(select(Task.id).where(Task.project_id == project.id))
+        ).scalars()
+    )
+    if project_task_ids != resolved_task_ids:
+        issues.append(f"{prefix}: project contains unexpected or missing tasks")
+    return dataset, tasks, payload
+
+
+async def _resolve_batches(
+    db: AsyncSession,
+    project: Project,
+    spec: ProjectSpec,
+    tasks: dict[str, Task],
+    issues: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not spec.batches:
+        return {}
+    rows = list(
+        (
+            await db.execute(
+                select(TaskBatch).where(TaskBatch.project_id == project.id)
+            )
+        ).scalars()
+    )
+    expected_ids = {batch_spec.display_id for batch_spec in spec.batches}
+    if {batch.display_id for batch in rows} != expected_ids or len(rows) != len(
+        spec.batches
+    ):
+        issues.append(f"{project.display_id}: screenshot seed batch set is not exact")
+    by_display_id = {batch.display_id: batch for batch in rows}
+    payload: dict[str, dict[str, Any]] = {}
+    for batch_spec in spec.batches:
+        batch = by_display_id.get(batch_spec.display_id)
+        if batch is None:
+            issues.append(
+                f"{project.display_id}: batch {batch_spec.display_id} is missing"
+            )
+            continue
+        if batch.status != batch_spec.status:
+            issues.append(
+                f"{project.display_id}: batch {batch_spec.display_id} must have status "
+                f"{batch_spec.status}"
+            )
+        expected_task_ids = {
+            tasks[task_spec.key].id
+            for task_spec in spec.tasks
+            if task_spec.batch_key == batch_spec.key and task_spec.key in tasks
+        }
+        actual_task_ids = set(
+            (
+                await db.execute(select(Task.id).where(Task.batch_id == batch.id))
+            ).scalars()
+        )
+        if actual_task_ids != expected_task_ids:
+            issues.append(
+                f"{project.display_id}: batch {batch_spec.display_id} task membership is stale"
+            )
+        payload[batch_spec.key] = {
+            "id": str(batch.id),
+            "display_id": batch.display_id,
+            "status": batch.status,
+        }
+    return payload
+
+
+async def _resolve_project(
+    db: AsyncSession,
+    logical_key: str,
+    spec: ProjectSpec,
+    users: dict[str, User],
+    issues: list[str],
+) -> dict[str, Any] | None:
+    projects = list(
+        (
+            await db.execute(
+                select(Project).where(Project.display_id == spec.display_id)
+            )
+        ).scalars()
+    )
+    if len(projects) != 1:
+        issues.append(f"{spec.display_id}: project is missing or duplicated")
+        return None
+    project = projects[0]
+    if project.data_type != spec.data_type:
+        issues.append(
+            f"{spec.display_id}: data_type must be {spec.data_type}, got {project.data_type}"
+        )
+
+    dataset, tasks, task_payload = await _resolve_dataset_and_tasks(
+        db, project, logical_key, spec, users, issues
+    )
+    batches = await _resolve_batches(db, project, spec, tasks, issues)
+
+    if spec.require_members:
+        members = list(
+            (
+                await db.execute(
+                    select(ProjectMember).where(ProjectMember.project_id == project.id)
+                )
+            ).scalars()
+        )
+        for role_key, member_role in (
+            ("annotator", "annotator"),
+            ("reviewer", "reviewer"),
+        ):
+            user = users.get(role_key)
+            if user is not None and not any(
+                member.user_id == user.id and member.role == member_role
+                for member in members
+            ):
+                issues.append(
+                    f"{spec.display_id}: {role_key} project membership is missing"
+                )
+
+    backend = await _resolve_backend(db, project, spec, issues)
+    dataset_payload = {}
+    if dataset is not None:
+        dataset_payload[dataset.display_id] = {
+            "id": str(dataset.id),
+            "name": dataset.name,
+            "file_count": dataset.file_count,
+        }
+    return {
+        "id": str(project.id),
+        "display_id": project.display_id,
+        "name": project.name,
+        "data_type": project.data_type,
+        "datasets": dataset_payload,
+        "tasks": task_payload,
+        "batches": batches,
+        "ml_backend": backend,
+    }
+
+
+async def build_screenshot_seed_catalog(db: AsyncSession) -> dict[str, Any]:
+    issues: list[str] = []
+    users: dict[str, User] = {}
+    user_payload: dict[str, dict[str, str]] = {}
+    for logical_key, (email, role) in USER_SPECS.items():
+        rows = list(
+            (await db.execute(select(User).where(User.email == email))).scalars()
+        )
+        if len(rows) != 1:
+            issues.append(f"user {logical_key} ({email}) is missing or duplicated")
+            continue
+        user = rows[0]
+        if user.role != role:
+            issues.append(f"user {email} must have role {role}, got {user.role}")
+        if not user.is_active:
+            issues.append(f"user {email} must be active")
+        users[logical_key] = user
+        user_payload[logical_key] = {
+            "id": str(user.id),
+            "email": user.email,
+            "role": user.role,
+        }
+
+    project_payload: dict[str, Any] = {}
+    for logical_key, spec in PROJECT_SPECS.items():
+        project = await _resolve_project(db, logical_key, spec, users, issues)
+        if project is not None:
+            project_payload[logical_key] = project
+
+    if issues:
+        raise ScreenshotSeedCatalogError(issues)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "seed_revision": SEED_REVISION,
+        "users": user_payload,
+        "projects": project_payload,
+    }

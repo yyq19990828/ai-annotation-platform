@@ -33,7 +33,7 @@ last_reviewed: 2026-06-10
 ## 排查流程
 
 1. **拿 job_id**：从失败 tab 列表点击展开
-2. **看 error 字段**：通常包含 ML Backend 返回的 status code + body 摘要
+2. **看 error 字段**：普通 Backend 失败显示异常类型与消息；GPU 仲裁拒绝直接显示稳定 `gpu_*` 错误码和干净消息。如需区分容量、并发、drain 超时或账本不可用，再对照异步作业结果中的 `gpu_arbiter_failures`（含 HTTP 状态和可选重试窗口）
 3. **对照 async_jobs 时间戳**：
    - `created_at` → `started_at` 间隔大 → broker / worker 拥堵
    - `started_at` → `completed_at` 间隔大 → 推理超时

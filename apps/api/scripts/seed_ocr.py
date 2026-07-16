@@ -8,6 +8,7 @@
 """
 
 import asyncio
+import hashlib
 import uuid
 from pathlib import Path
 
@@ -31,15 +32,22 @@ OCR_TOOL_BINDINGS: dict = {
             "fields": [
                 {"key": "text", "type": "text", "label": "识别文本"},
                 {
-                    "key": "language", "type": "select", "label": "语言",
+                    "key": "language",
+                    "type": "select",
+                    "label": "语言",
                     "options": [
                         {"label": "通用(中英)", "value": "universal"},
                         {"label": "英文", "value": "en"},
                     ],
                 },
                 {
-                    "key": "orientation", "type": "select", "label": "方向",
-                    "options": [{"label": "0", "value": "0"}, {"label": "180", "value": "180"}],
+                    "key": "orientation",
+                    "type": "select",
+                    "label": "方向",
+                    "options": [
+                        {"label": "0", "value": "0"},
+                        {"label": "180", "value": "180"},
+                    ],
                 },
             ]
         },
@@ -57,15 +65,20 @@ async def _ensure_admin(db) -> uuid.UUID:
     if admin:
         return admin.id
     admin = User(
-        email=ADMIN_EMAIL, name="Admin",
-        password_hash=hash_password(ADMIN_PASSWORD), role="super_admin", is_active=True,
+        email=ADMIN_EMAIL,
+        name="Admin",
+        password_hash=hash_password(ADMIN_PASSWORD),
+        role="super_admin",
+        is_active=True,
     )
     db.add(admin)
     await db.flush()
     return admin.id
 
 
-async def seed_ocr(db, *, owner_id: uuid.UUID) -> dict | None:
+async def seed_ocr(
+    db, *, owner_id: uuid.UUID, image: Path | None = None
+) -> dict | None:
     from PIL import Image
     from sqlalchemy import select
 
@@ -74,13 +87,15 @@ async def seed_ocr(db, *, owner_id: uuid.UUID) -> dict | None:
     from app.services.dataset import build_tasks_for_link
     from app.services.storage import storage_service
 
-    existing = await db.scalar(select(Project).where(Project.display_id == PROJECT_DISPLAY_ID))
+    existing = await db.scalar(
+        select(Project).where(Project.display_id == PROJECT_DISPLAY_ID)
+    )
     if existing is not None:
         return {"project": PROJECT_DISPLAY_ID, "skipped": True}
 
-    if not TEXT_IMG.exists():
-        print(f"缺测试图 {TEXT_IMG}，跳过")
-        return None
+    image = image or TEXT_IMG
+    if not image.exists():
+        raise FileNotFoundError(f"OCR 测试图缺失: {image}")
 
     project = Project(
         display_id=PROJECT_DISPLAY_ID,
@@ -95,23 +110,38 @@ async def seed_ocr(db, *, owner_id: uuid.UUID) -> dict | None:
     db.add(project)
 
     ds = Dataset(
-        display_id=DATASET_DISPLAY_ID, name="ocr-dev", data_type="image",
-        description="RapidOCR ch_en_num 文字图 dev 夹具", created_by=owner_id,
+        display_id=DATASET_DISPLAY_ID,
+        name="ocr-dev",
+        data_type="image",
+        description="RapidOCR ch_en_num 文字图 dev 夹具",
+        created_by=owner_id,
     )
     db.add(ds)
     await db.flush()
 
     bucket = storage_service.datasets_bucket
-    with Image.open(TEXT_IMG) as im:
+    with Image.open(image) as im:
         w_px, h_px = im.size
-    key = f"{DATASET_FOLDER}/{TEXT_IMG.name}"
+    key = f"{DATASET_FOLDER}/{image.name}"
+    payload = image.read_bytes()
     storage_service.client.put_object(
-        Bucket=bucket, Key=key, Body=TEXT_IMG.read_bytes(), ContentType="image/jpeg",
+        Bucket=bucket,
+        Key=key,
+        Body=payload,
+        ContentType="image/jpeg",
     )
-    db.add(DatasetItem(
-        dataset_id=ds.id, file_name=TEXT_IMG.name, file_path=key,
-        file_type="image", file_size=TEXT_IMG.stat().st_size, width=w_px, height=h_px,
-    ))
+    db.add(
+        DatasetItem(
+            dataset_id=ds.id,
+            file_name=image.name,
+            file_path=key,
+            file_type="image",
+            file_size=image.stat().st_size,
+            content_hash=hashlib.sha256(payload).hexdigest(),
+            width=w_px,
+            height=h_px,
+        )
+    )
     ds.file_count = 1
     db.add(ProjectDataset(project_id=project.id, dataset_id=ds.id))
     await db.flush()

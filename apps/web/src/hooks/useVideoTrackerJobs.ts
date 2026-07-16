@@ -18,7 +18,8 @@ const REMOVE_AFTER_DONE_MS = 1500;
 export interface VideoTrackerJobState {
   jobId: string;
   taskId: string;
-  annotationId: string;
+  // v0.22.1 · B · 无源检测 job 无 annotationId (画布级发起)。
+  annotationId: string | null;
   status: VideoTrackerJobStatus;
   fromFrame: number;
   toFrame: number;
@@ -503,6 +504,19 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     [],
   );
 
+  // v0.22.1 · B · 无源检测发起 (画布级入口, 不绑选中轨迹)。
+  const track = useCallback(
+    async (
+      taskId: string,
+      payload: Parameters<typeof videoTrackerApi.track>[1],
+    ) => {
+      const job = await videoTrackerApi.track(taskId, payload);
+      if (tokenRef.current) trackerStore.addJob(job, tokenRef.current);
+      return job;
+    },
+    [],
+  );
+
   const cancel = useCallback((jobId: string) => trackerStore.cancel(jobId), []);
   const accept = useCallback((jobId: string) => trackerStore.accept(jobId), []);
   const discard = useCallback((jobId: string) => trackerStore.discard(jobId), []);
@@ -514,6 +528,9 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const byAnnotation = useMemo(() => {
     const map: Record<string, VideoTrackerJobState> = {};
     for (const job of Object.values(jobs)) {
+      // v0.22.1 · B · 无源 job (annotationId=null) 不进 annotation 索引 (画布按选中轨迹取
+      // 候选时不误命中); 其审阅走 job 级 review bar。
+      if (!job.annotationId) continue;
       const existing = map[job.annotationId];
       if (!existing || existing.receivedAt < job.receivedAt) {
         map[job.annotationId] = job;
@@ -526,10 +543,12 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const candidateByAnnotation = useMemo(() => {
     const map: Record<string, VideoTrackerJobPreview> = {};
     for (const preview of Object.values(candidates)) {
+      // v0.22.1 · B · 无源候选无 annotation_id, 不进 annotation 索引 (走 job 级审阅)。
+      if (!preview.annotation_id) continue;
       map[preview.annotation_id] = preview;
     }
     return map;
   }, [candidates]);
 
-  return { jobs, byAnnotation, candidates, candidateByAnnotation, submitting, propagate, cancel, accept, discard };
+  return { jobs, byAnnotation, candidates, candidateByAnnotation, submitting, propagate, track, cancel, accept, discard };
 }

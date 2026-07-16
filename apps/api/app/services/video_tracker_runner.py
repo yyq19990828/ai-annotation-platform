@@ -5,7 +5,7 @@ import logging
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -18,17 +18,35 @@ from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.annotation_propagation import _new_track_id
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+    gpu_arbiter_failure_record,
+)
 from app.services.ml_backend import MLBackendService
+from app.services.raster_mask_storage import (
+    load_coco_rle,
+    store_coco_rle,
+    validate_mask_geometry_for_task,
+    lock_raster_mask_references,
+)
 from app.services.video_tracker_adapters import (
     TrackerContext,
     TrackerFrameResult,
     get_tracker_adapter,
 )
 from app.services.video_tracks import is_polygon_track
+from app.services.video_tracks import is_mask_track, resolve_track_at_frame
+from app.utils.raster_mask_rle import coco_rle_bbox_norm
 
 log = logging.getLogger(__name__)
 
 TrackerEventPublisher = Callable[[str, dict], Awaitable[None]]
+MAX_TRACKER_STAGED_BYTES = 64 * 1024 * 1024
+
+# v0.22.2 · B-combo · 发现趟窗口帧数。multiplex 需多帧传播才在种子帧填充 obj_id (单帧窗
+# 不出检测), 故发现趟跑这么多帧但只取种子帧的框铸种; 取小值以压低 multiplex 显存与耗时。
+COMBO_DISCOVERY_WINDOW_FRAMES = 5
 
 
 class TrackerJobStateConflict(ValueError):
@@ -81,13 +99,45 @@ def _normalize_points(geometry: dict) -> list[list[float]]:
     return [[float(p[0]), float(p[1])] for p in points if len(p) >= 2]
 
 
+def _materialize_tracker_mask_result(result: TrackerFrameResult) -> TrackerFrameResult:
+    geometry = result.geometry or {}
+    if geometry.get("type") != "mask":
+        return result
+    rle = geometry.get("rle")
+    if not isinstance(rle, dict):
+        raise ValueError("tracker mask result requires geometry.rle")
+    reference = store_coco_rle(rle)
+    bbox = coco_rle_bbox_norm(rle)
+    return replace(
+        result,
+        geometry={"type": "mask", "mask": reference, "bbox": bbox},
+        outside=result.outside or not bbox,
+    )
+
+
+def _tracker_result_json_bytes(result: TrackerFrameResult) -> int:
+    return len(
+        json.dumps(_serialize_results([result])[0], separators=(",", ":")).encode()
+    )
+
+
+def _mask_track_seed_geometry(geometry: dict, frame_index: int) -> dict:
+    resolved = resolve_track_at_frame(geometry, frame_index)
+    if resolved is None:
+        return geometry
+    rle = load_coco_rle(resolved.get("mask") or {})
+    bbox = coco_rle_bbox_norm(rle)
+    return {"type": "bbox", **bbox} if bbox else geometry
+
+
 def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     size = max(1, int(settings.video_tracker_window_size_frames))
     # sam3 两档视频模型都用更小分窗(不动 sam2 的窗口, 避免回归其长程记忆):
     # - sam3_video(multiplex): 视频前向显存随窗口线性增长, 大窗 OOM@24GB。
     # - sam3_video_interactive(PVS): backend wrapper 上限 SAM3_PVS_MAX_WINDOW_FRAMES(默认 16),
     #   超限会被 backend 拒; PVS 是 SAM2 式 memory 传播、显存轻于 multiplex, 但先与之齐。
-    if job.model_key in ("sam3_video", "sam3_video_interactive"):
+    # v0.22.2 · B-combo · sam3_video_combo 追踪趟走 PVS, 用与 PVS 齐的小分窗。
+    if job.model_key in ("sam3_video", "sam3_video_interactive", "sam3_video_combo"):
         size = min(size, max(1, int(settings.video_tracker_sam3_window_size_frames)))
     windows = []
     start = job.from_frame
@@ -111,25 +161,29 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
     }
 
 
-def _coerce_video_track_geometry(annotation: Annotation, job: VideoTrackerJob) -> dict:
+def _coerce_video_track_geometry(
+    annotation: Annotation, job: VideoTrackerJob, target_kind: str
+) -> dict:
     geometry = annotation.geometry or {}
     track_id = str(annotation.track_id or geometry.get("track_id") or _new_track_id())
-    # v0.21.20 · polygon track: 保留 points 关键帧 + 类型, 回填走多边形路径。
-    if geometry.get("type") == "video_track_polygon":
+    target_type = {
+        "polygon": "video_track_polygon",
+        "mask": "video_track_mask",
+    }.get(target_kind, "video_track_bbox")
+    if geometry.get("type") == target_type:
         return {
-            "type": "video_track_polygon",
+            "type": target_type,
             "track_id": track_id,
             "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
             "outside": [dict(item) for item in geometry.get("outside") or []],
         }
-    if geometry.get("type") == "video_track_bbox":
+    if target_kind in {"polygon", "mask"}:
         return {
-            "type": "video_track_bbox",
+            "type": target_type,
             "track_id": track_id,
-            "keyframes": [dict(item) for item in geometry.get("keyframes") or []],
-            "outside": [dict(item) for item in geometry.get("outside") or []],
+            "keyframes": [],
+            "outside": [],
         }
-
     return {
         "type": "video_track_bbox",
         "track_id": track_id,
@@ -159,9 +213,29 @@ def apply_tracker_results(
     job: VideoTrackerJob,
     results: list[TrackerFrameResult],
     grid_step: int = 1,
+    output_geometry: str | None = None,
 ) -> None:
-    geometry = _coerce_video_track_geometry(annotation, job)
-    is_polygon = geometry.get("type") == "video_track_polygon"
+    result_kind = next(
+        (
+            result.geometry.get("type")
+            for result in results
+            if not result.outside and isinstance(result.geometry, dict)
+        ),
+        None,
+    )
+    if output_geometry in {"bbox", "polygon", "mask"}:
+        target_kind = output_geometry
+    else:
+        target_kind = (
+            "mask"
+            if result_kind == "mask"
+            else "polygon"
+            if result_kind == "polygon"
+            else "bbox"
+        )
+    geometry = _coerce_video_track_geometry(annotation, job, target_kind)
+    is_polygon = target_kind == "polygon"
+    is_mask = target_kind == "mask"
     keyframes = geometry["keyframes"]
     manual_frames = {
         int(item.get("frame_index", 0))
@@ -186,7 +260,15 @@ def apply_tracker_results(
             continue
         if result.frame_index in manual_frames:
             continue
-        if is_polygon:
+        if is_mask:
+            reference = result.geometry.get("mask")
+            bbox = result.geometry.get("bbox") or {}
+            if not isinstance(reference, dict) or float(bbox.get("w", 0)) <= 0:
+                outside_frames.append(result.frame_index)
+                prediction_by_frame.pop(result.frame_index, None)
+                continue
+            shape_field = {"mask": dict(reference)}
+        elif is_polygon:
             points = _normalize_points(result.geometry)
             if len(points) < 3:
                 # 退化多边形(顶点<3)当 outside 处理, 避免写坏 schema。
@@ -223,9 +305,9 @@ def apply_tracker_results(
 
     annotation.geometry = geometry
     annotation.track_id = str(geometry["track_id"])
-    annotation.annotation_type = (
-        "video_track_polygon" if is_polygon else "video_track_bbox"
-    )
+    annotation.annotation_type = geometry["type"]
+    if is_mask:
+        annotation.tool_unit_id = "region"
     annotation.version = int(annotation.version or 1) + 1
 
 
@@ -266,6 +348,17 @@ def _partition_results_by_instance(
     return primary, extras
 
 
+# v0.22.2 · M · 多选批量: 单源延展时从结果推断主实例 id, 构造单源 source_map 的键。
+_SOLE_SOURCE_KEY = "__sole__"
+
+
+def _primary_instance_id(results: list[TrackerFrameResult]) -> str | None:
+    """单源延展时推断与用户种子对应的主实例 id (primary 标记 → 最小 id → None 全无 id)。
+    复用 _partition_results_by_instance 的主实例判定, 供构造单源 source_map。"""
+    primary, _ = _partition_results_by_instance(results)
+    return primary[0].instance_id if primary else None
+
+
 def _instance_seed_obj_id(instance_id: str, fallback: int) -> int:
     """把 instance_id 还原成 backend 播种用的 obj_id。PVS 的 instance_id 就是 str(obj_id),
     直接 int; 非数字 (老 backend 兜底) 按序补 fallback。"""
@@ -277,13 +370,44 @@ def _continuation_seeds(last_geom_by_instance: dict[str, dict]) -> list[dict]:
 
     v0.21.27 · U-pvs-1 · seed-驱动 tracker (PVS) 每窗是独立会话, 若只续主实例, 非主实例
     过一窗即丢。这里对**每个**实例各下发一条 seed (obj_id 与其 instance_id 一致 → 跨窗身份
-    稳定); backend seeds 支持 geometry (自动取外接框)。text-驱动 (multiplex) backend 不读
-    seeds、按 text 每窗重检测, 收到本 seeds 无害忽略。
+    稳定); backend seeds 支持 geometry (自动取外接框)。text-驱动 multiplex 同样把这些框作为
+    下一窗正提示，并继续按 text 发现目标。
     """
     return [
         {"obj_id": _instance_seed_obj_id(iid, idx + 1), "geometry": geom}
         for idx, (iid, geom) in enumerate(sorted(last_geom_by_instance.items()))
     ]
+
+
+# ── v0.22.2 · B-combo · multiplex 发现 → PVS 种子铸造 ──────────────────────
+# combo (sam3_video_combo) 两趟编排的桥: 发现趟 (multiplex 按 text 在种子帧检测) 的
+# per-obj 结果 → 追踪趟 (PVS) 的逐对象种子。发现对象**无源** → 种子不带
+# source_annotation_id, 落库走成熟的无源新建 (source_map 为空 → 全部 _new_discovered_track)。
+
+
+def _combo_seeds_from_discovery(
+    discovery_results: list["TrackerFrameResult"],
+    *,
+    seed_frame: int,
+) -> list[dict]:
+    """发现趟结果 → PVS 种子 (逐对象一条, obj_id=1..N, geometry=发现框)。
+
+    multiplex 需多帧传播才会在**种子帧**填充检测 (单帧窗不出 obj_id), 故发现趟跑一小窗但
+    只取 seed_frame 这一帧的 per-obj 框铸种 (传播帧仅为让模型锁定对象)。按 instance_id 稳定
+    排序后逐个铸成 PVS 种子 (obj_id 连续从 1 起, 与 _instance_seed_obj_id 契约一致), geometry
+    直接用发现框 (PVS backend seeds 支持 geometry, 自动取外接框)。outside / 空框跳过。种子
+    不带 source_annotation_id → 落库全部新建。
+    """
+    seeds: list[dict] = []
+    obj = 1
+    for result in sorted(
+        discovery_results, key=lambda r: (r.instance_id or "", r.frame_index)
+    ):
+        if result.frame_index != seed_frame or result.outside or not result.geometry:
+            continue
+        seeds.append({"obj_id": obj, "geometry": result.geometry})
+        obj += 1
+    return seeds
 
 
 # ── v0.21.28 · B-mx · text-multiplex 跨窗 IoU 关联 ─────────────────────────
@@ -303,6 +427,14 @@ def _bbox_of_geometry(geom: dict) -> tuple[float, float, float, float]:
         if not xs or not ys:
             return (0.0, 0.0, 0.0, 0.0)
         return (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+    if geom.get("type") == "mask":
+        bbox = geom.get("bbox") or {}
+        return (
+            float(bbox.get("x", 0.0)),
+            float(bbox.get("y", 0.0)),
+            float(bbox.get("w", 0.0)),
+            float(bbox.get("h", 0.0)),
+        )
     return (
         float(geom.get("x", 0.0)),
         float(geom.get("y", 0.0)),
@@ -373,24 +505,81 @@ def _associate_multiplex_window(
     return remapped
 
 
-def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
-    """为一个新发现的实例建一条空 video_track annotation (阶段 0)。
+@dataclass(frozen=True)
+class _TrackTarget:
+    """新建轨迹的归属模板: 有源延展取自源轨迹, 无源检测取自 job 的显式目标类别。"""
 
-    归属策略 (epic 已定): 继承 source 的 label (class_name/tool_unit_id) 与项目/任务/
-    归属人, 标 source="ai_tracker" (与批量预标 prediction_based 区分, 不被批量清理误删),
-    新 track_id 走统一工厂 _new_track_id()。几何先空, 由 apply_tracker_results 填预测帧。
-    """
-    track_id = _new_track_id()
-    geom_type = "video_track_polygon" if is_polygon else "video_track_bbox"
-    return Annotation(
-        id=uuid.uuid4(),
+    task_id: uuid.UUID
+    project_id: uuid.UUID
+    user_id: uuid.UUID | None
+    class_name: str
+    tool_unit_id: str
+
+
+def _target_from_source(source: Annotation) -> _TrackTarget:
+    return _TrackTarget(
         task_id=source.task_id,
         project_id=source.project_id,
         user_id=source.user_id,
+        class_name=source.class_name,
+        tool_unit_id=source.tool_unit_id,
+    )
+
+
+def _target_from_job(job: VideoTrackerJob, task: Task) -> _TrackTarget:
+    # v0.22.1 · B · 无源检测: 类别由 job.target_* 显式指定 (缺省兜底空类 / bbox 单位)。
+    return _TrackTarget(
+        task_id=job.task_id,
+        project_id=task.project_id,
+        user_id=job.created_by,
+        class_name=job.target_class_name or "",
+        tool_unit_id=job.target_tool_unit_id or "bbox",
+    )
+
+
+def _seed_source_map(job: VideoTrackerJob) -> dict[str, uuid.UUID]:
+    """从 job.prompt.seeds 读 {instance_id: 源 annotation id} —— v0.22.2 · M · 多选批量。
+
+    每个 seed 可带 source_annotation_id (该 obj 延展哪条已有轨迹); 无该字段的 seed
+    (无源检测 / B-combo 发现) 不入映射。instance_id 契约 = str(obj_id)。
+    """
+    seeds = ((job.prompt or {}).get("seeds")) or []
+    mapping: dict[str, uuid.UUID] = {}
+    for seed in seeds:
+        if not isinstance(seed, dict):
+            continue
+        src = seed.get("source_annotation_id")
+        obj_id = seed.get("obj_id")
+        if not src or obj_id is None:
+            continue
+        try:
+            mapping[str(obj_id)] = uuid.UUID(str(src))
+        except (ValueError, TypeError):
+            continue
+    return mapping
+
+
+def _new_discovered_track(target: _TrackTarget, output_geometry: str) -> Annotation:
+    """为一个新发现的实例建一条空 video_track annotation。
+
+    归属由 _TrackTarget 提供 (有源继承源 label, 无源用 job 显式目标类别), 标
+    source="ai_tracker" (与批量预标 prediction_based 区分, 不被批量清理误删), 新 track_id
+    走统一工厂 _new_track_id()。几何先空, 由 apply_tracker_results 填预测帧。
+    """
+    track_id = _new_track_id()
+    geom_type = {
+        "polygon": "video_track_polygon",
+        "mask": "video_track_mask",
+    }.get(output_geometry, "video_track_bbox")
+    return Annotation(
+        id=uuid.uuid4(),
+        task_id=target.task_id,
+        project_id=target.project_id,
+        user_id=target.user_id,
         source="ai_tracker",
         annotation_type=geom_type,
-        tool_unit_id=source.tool_unit_id,
-        class_name=source.class_name,
+        tool_unit_id="region" if output_geometry == "mask" else target.tool_unit_id,
+        class_name=target.class_name,
         geometry={
             "type": geom_type,
             "track_id": track_id,
@@ -403,26 +592,51 @@ def _new_discovered_track(source: Annotation, is_polygon: bool) -> Annotation:
 
 def _persist_tracker_results(
     db: AsyncSession,
-    source: Annotation,
+    source_map: dict[str, Annotation],
+    target: _TrackTarget,
     job: VideoTrackerJob,
     results: list[TrackerFrameResult],
     grid_step: int,
     output_geometry: str,
 ) -> list[Annotation]:
-    """落库逐帧结果: 主实例回填源 annotation, 每个新 instance 各建并回填一条 track。
+    """落库逐帧结果: 按 instance_id 分组, 命中 source_map 的实例回填对应源 annotation,
+    未命中的每个 instance 各建一条新 track。
 
-    返回新建的 annotation 列表 (调用方负责 commit)。单实例时 extras 为空, 退化为对源
-    annotation 调一次 apply_tracker_results —— 与阶段 0 之前完全一致。
+    source_map 语义 (instance_id → 源 annotation):
+    - 单源延展 (0.22.1 及以前): 恰一个条目 {主实例 id: 源};
+    - 多源批量 (v0.22.2 · M · 多选): N 个条目 {obj_id: 各自源}, 各回填各源;
+    - 无源检测 / B-combo 发现: 空映射, 全部新建 (归属取自 target)。
+
+    无 instance_id 的老单实例 backend: 整体回填 source_map 的唯一源 (若有), 否则新建 ——
+    与既有单 track 行为等价, 零回归。返回新建的 annotation 列表 (调用方负责 commit)。
     """
-    primary, extras = _partition_results_by_instance(results)
-    apply_tracker_results(source, job, primary, grid_step)
-    is_polygon = output_geometry == "polygon"
     created: list[Annotation] = []
-    for instance_id in sorted(extras):
-        new_ann = _new_discovered_track(source, is_polygon)
-        db.add(new_ann)
-        apply_tracker_results(new_ann, job, extras[instance_id], grid_step)
-        created.append(new_ann)
+    if all(r.instance_id is None for r in results):
+        sole_source = next(iter(source_map.values()), None)
+        if sole_source is not None:
+            apply_tracker_results(sole_source, job, results, grid_step, output_geometry)
+        else:
+            main_ann = _new_discovered_track(target, output_geometry)
+            db.add(main_ann)
+            apply_tracker_results(main_ann, job, results, grid_step, output_geometry)
+            created.append(main_ann)
+        return created
+
+    by_instance: dict[str, list[TrackerFrameResult]] = {}
+    for result in results:
+        by_instance.setdefault(result.instance_id or "", []).append(result)
+    for instance_id in sorted(by_instance):
+        inst_results = by_instance[instance_id]
+        source = source_map.get(instance_id)
+        if source is not None:
+            apply_tracker_results(source, job, inst_results, grid_step, output_geometry)
+        else:
+            new_ann = _new_discovered_track(target, output_geometry)
+            db.add(new_ann)
+            apply_tracker_results(
+                new_ann, job, inst_results, grid_step, output_geometry
+            )
+            created.append(new_ann)
     return created
 
 
@@ -466,11 +680,17 @@ def _stage_tracker_results(
     """把逐帧结果暂存进 job.staged_result (候选), **不碰 annotation**。用户接受时反序列化后
     走 _persist_tracker_results 落库。grid_step / output_geometry 一并存, 供 accept 复用同一
     落库逻辑 (无需在 accept 时重新推导)。"""
-    job.staged_result = {
+    staged = {
         "results": _serialize_results(results),
         "grid_step": grid_step,
         "output_geometry": output_geometry,
     }
+    if (
+        len(json.dumps(staged, separators=(",", ":")).encode())
+        > MAX_TRACKER_STAGED_BYTES
+    ):
+        raise ValueError("tracker_candidate_too_large: staged payload exceeds 64 MiB")
+    job.staged_result = staged
 
 
 async def accept_tracker_job(
@@ -499,26 +719,80 @@ async def accept_tracker_job(
         raise TrackerJobStateConflict(
             f"Video tracker job cannot be accepted from status {current_status}"
         )
-    annotation = await db.get(Annotation, job.annotation_id)
-    if annotation is None or not annotation.is_active:
-        # 源 annotation 已软删 (多标注员协作常见): 自动丢弃孤儿候选, 别让它一直挂在
-        # pending_review, 并以 409 告知前端清理审阅条。
-        job.status = VideoTrackerJobStatus.DISCARDED.value
-        job.staged_result = None
-        await db.commit()
-        await db.refresh(job)
-        await publisher(job.event_channel, _event(job, "job_discarded"))
-        raise TrackerJobStateConflict(
-            "Source annotation no longer exists; candidate discarded"
+    # v0.22.1 · B · 源轨迹可选 (无源检测 → 全新建); v0.22.2 · M · 多选批量: prompt.seeds
+    # 每条可带 source_annotation_id (obj_id ↔ 源轨迹), 各实例回填各自源。
+    results = _deserialize_results(rows)
+    task = await db.get(Task, job.task_id)
+    if task is None:
+        await db.rollback()
+        raise ValueError("Task not found")
+    seed_sources = _seed_source_map(job)
+    source_map: dict[str, Annotation] = {}
+    if seed_sources:
+        # 多源批量: 各 instance 回填各自源; 某源在 job 期间被软删 → 该源 per-source 降级
+        # (跳过映射 → 该 instance 落新建), 不整 job 失败。
+        for instance_id, ann_id in seed_sources.items():
+            ann = await db.get(Annotation, ann_id)
+            if ann is not None and ann.is_active:
+                source_map[instance_id] = ann
+        target = (
+            _target_from_source(next(iter(source_map.values())))
+            if source_map
+            else _target_from_job(job, task)
         )
-    _persist_tracker_results(
+    elif job.annotation_id is not None:
+        # 单源延展 (0.22.1 及以前): 主实例回填源; 整源软删 → 丢弃孤儿候选 (409 告知前端)。
+        annotation = await db.get(Annotation, job.annotation_id)
+        if annotation is None or not annotation.is_active:
+            job.status = VideoTrackerJobStatus.DISCARDED.value
+            job.staged_result = None
+            await db.commit()
+            await db.refresh(job)
+            await publisher(job.event_channel, _event(job, "job_discarded"))
+            raise TrackerJobStateConflict(
+                "Source annotation no longer exists; candidate discarded"
+            )
+        primary_iid = _primary_instance_id(results)
+        source_map = {
+            primary_iid if primary_iid is not None else _SOLE_SOURCE_KEY: annotation
+        }
+        target = _target_from_source(annotation)
+    else:
+        # 无源检测 (画布级文本/种子发起): 全部新建, 归属取 job 显式目标类别。
+        target = _target_from_job(job, task)
+    created = _persist_tracker_results(
         db,
-        annotation,
+        source_map,
+        target,
         job,
-        _deserialize_results(rows),
+        results,
         int(staged.get("grid_step", 1)),
         staged.get("output_geometry", "bbox"),
     )
+    try:
+        for src in source_map.values():
+            await validate_mask_geometry_for_task(db, task, src.geometry or {})
+        for created_annotation in created:
+            await validate_mask_geometry_for_task(
+                db, task, created_annotation.geometry or {}
+            )
+        await lock_raster_mask_references(
+            db,
+            [
+                *(src.geometry or {} for src in source_map.values()),
+                *(annotation.geometry or {} for annotation in created),
+            ],
+        )
+    except ValueError:
+        await db.rollback()
+        raise
+    # v0.22.2 · M · 记录本 job 触及的轨迹 id (回填源 + 新建) 供前端刷新/审计。落 job.prompt JSONB
+    # (免 DB 迁移); accept 后 job 终态, prompt 不再被 runner 读, 写此键安全。JSONB 须重赋新 dict
+    # 才能让 SQLAlchemy 检测到脏 (同一 dict 引用 in-place 改不触发 UPDATE)。
+    touched = [str(src.id) for src in source_map.values()] + [
+        str(created_annotation.id) for created_annotation in created
+    ]
+    job.prompt = {**(job.prompt or {}), "touched_annotation_ids": touched}
     job.status = VideoTrackerJobStatus.ACCEPTED.value
     await db.commit()
     await db.refresh(job)
@@ -571,7 +845,12 @@ async def _load_job_for_update(
 
 
 async def _mark_failed(
-    db: AsyncSession, job_id: uuid.UUID, message: str, publisher: TrackerEventPublisher
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    message: str,
+    publisher: TrackerEventPublisher,
+    *,
+    gpu_arbiter_error: dict | None = None,
 ) -> VideoTrackerJob | None:
     await db.rollback()
     job = await _load_job_for_update(db, job_id)
@@ -580,9 +859,13 @@ async def _mark_failed(
     if job.status != VideoTrackerJobStatus.CANCELLED.value:
         job.status = VideoTrackerJobStatus.FAILED.value
         job.error_message = message[:2000]
+        job.staged_result = None
         job.completed_at = _now()
     await db.commit()
-    await publisher(job.event_channel, _event(job, "job_failed", error=message))
+    event = _event(job, "job_failed", error=message)
+    if gpu_arbiter_error is not None:
+        event["gpu_arbiter_error"] = gpu_arbiter_error
+    await publisher(job.event_channel, event)
     return job
 
 
@@ -591,6 +874,9 @@ async def run_tracker_job(
     job_id: uuid.UUID,
     *,
     publisher: TrackerEventPublisher = publish_tracker_event,
+    shadow_session_factory: GPUShadowSessionFactory | None = None,
+    dispatch_context_factory: GPUDispatchContextFactory | None = None,
+    failure_recorder: Callable[[dict], None] | None = None,
 ) -> VideoTrackerJob | None:
     job = await _load_job_for_update(db, job_id)
     if job is None:
@@ -609,8 +895,12 @@ async def run_tracker_job(
     await publisher(job.event_channel, _event(job, "job_started"))
 
     try:
-        annotation = await db.get(Annotation, job.annotation_id)
-        if annotation is None or not annotation.is_active:
+        # v0.22.1 · B · 源轨迹可选: 无源检测 (job.annotation_id is None) 时不加载 source,
+        # 种子来自 prompt (text/seeds), 主实例落库时新建。
+        annotation = (
+            await db.get(Annotation, job.annotation_id) if job.annotation_id else None
+        )
+        if job.annotation_id and (annotation is None or not annotation.is_active):
             raise ValueError("Annotation not found")
         task = await db.get(Task, job.task_id)
         if task is None:
@@ -620,12 +910,20 @@ async def run_tracker_job(
             raise ValueError("Dataset item not found")
         from app.api.v1.ml_backends import _resolve_task_url
 
+        # v0.22.2 · B-combo · sam3_video_combo = multiplex 发现 → PVS 追踪 两趟编排。
+        # 两趟都在 sam3-backend (声明 sam3_video + sam3_video_interactive); 后端按 PVS 能力
+        # 解析 (同一 backend), 追踪趟 adapter 用 PVS, 发现趟另取 multiplex adapter (见下)。
+        is_combo = job.model_key == "sam3_video_combo"
         # v0.21.25 (阶段 R) · 按 tracker 能力选后端而非项目单一绑定: sam3_video 挑声明了
         # sam3_video 的 backend(sam3-backend), 而非静默落到项目绑定的 grounded-sam2。
-        backend = await MLBackendService(db).get_tracker_backend(
-            task.project_id, job.model_key
+        tracker_capability = "sam3_video_interactive" if is_combo else job.model_key
+        backend = await MLBackendService(db).get_tracker_backend_for_capabilities(
+            task.project_id,
+            ["sam3_video", "sam3_video_interactive"]
+            if is_combo
+            else [tracker_capability],
         )
-        adapter = get_tracker_adapter(job.model_key)
+        adapter = get_tracker_adapter(tracker_capability)
 
         # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
         from app.db.models.project import Project
@@ -638,6 +936,7 @@ async def run_tracker_job(
         )
 
         results: list[TrackerFrameResult] = []
+        staged_bytes = 0
         total = max(1, job.to_frame - job.from_frame + 1)
         progress = 0
         task_data = {
@@ -652,7 +951,12 @@ async def run_tracker_job(
         # each subsequent window seeds from the previous window's last
         # non-outside frame geometry so the tracker keeps following a moving
         # target instead of restarting from the original box every window.
-        last_geometry = annotation.geometry or {}
+        source_geometry = (annotation.geometry or {}) if annotation else {}
+        last_geometry = (
+            _mask_track_seed_geometry(source_geometry, job.from_frame)
+            if is_mask_track(source_geometry)
+            else source_geometry
+        )
         # v0.21.27 · U-pvs-1 · 多目标跨窗续追: 记每个实例的末帧 (非 outside) 几何, 后续窗对
         # 每个实例各用其上一窗末帧几何 + 同一 obj_id 重播种 (否则非主实例过一窗即丢)。仅当
         # 有多实例 (backend 发了 ≥2 个 instance_id) 时启用; 单目标 / None-instance 不触发。
@@ -664,8 +968,16 @@ async def run_tracker_job(
         mp_prev_boundary: dict[str, dict] = {}
         mp_next_global = [1]
         # v0.21.20 · polygon track: 让 backend 逐帧保留 mask 矢量化的多边形而非降 bbox。
-        output_geometry = (
-            "polygon" if is_polygon_track(annotation.geometry or {}) else "bbox"
+        output_geometry = (job.prompt or {}).get("output_geometry") or (
+            (
+                "mask"
+                if is_mask_track(annotation.geometry or {})
+                else "polygon"
+                if is_polygon_track(annotation.geometry or {})
+                else "bbox"
+            )
+            if annotation
+            else "bbox"
         )
 
         tracker_windows = _tracker_windows(job)
@@ -673,6 +985,52 @@ async def run_tracker_job(
         # 只在种子窗 (首窗, 含原始种子帧) 下发: points 锚在种子帧, 后续窗靠 last_geometry
         # (上一窗末帧框) 续追, 不重发点种子。缺省无 seeds 时行为与 B-pvs 框种子完全一致。
         prompt_seeds = (job.prompt or {}).get("seeds")
+
+        # v0.22.2 · B-combo · 发现趟 (先于追踪窗循环, 串行 → 中间 idle 可卸载 multiplex 再载
+        # PVS, 避两模型同容峰值)。multiplex 在种子帧按 text 检测 → per-obj 框 → 铸成 PVS 种子
+        # (无源, 落库全新建)。发现不到目标即失败 (无种子无法追踪)。
+        if is_combo:
+            discovery_text = (job.prompt or {}).get("text")
+            if not discovery_text:
+                raise ValueError("sam3_video_combo requires prompt.text for discovery")
+            # 发现窗从种子帧向后铺 COMBO_DISCOVERY_WINDOW_FRAMES 帧 (受 job 范围与 backend
+            # 窗上限约束); multiplex 传播这几帧后在种子帧填充 obj_id, 只取种子帧的框铸种。
+            disc_span = min(
+                COMBO_DISCOVERY_WINDOW_FRAMES,
+                max(1, int(settings.video_tracker_sam3_window_size_frames)),
+            )
+            disc_to = min(job.to_frame, job.from_frame + disc_span - 1)
+            discovery_ctx = TrackerContext(
+                job_id=job.id,
+                task_id=task.id,
+                project_id=task.project_id,
+                dataset_item_id=job.dataset_item_id,
+                annotation_id=job.annotation_id,
+                from_frame=job.from_frame,
+                to_frame=disc_to,
+                direction="forward",
+                prompt=job.prompt or {},
+                source_geometry={},
+                task_data=task_data,
+                ml_backend=backend,
+                shadow_session_factory=shadow_session_factory,
+                dispatch_context_factory=dispatch_context_factory,
+                text=discovery_text,
+                exemplars=(job.prompt or {}).get("exemplars"),
+                output_geometry=output_geometry,
+            )
+            discovery_adapter = get_tracker_adapter("sam3_video")
+            discovery_results = [
+                _materialize_tracker_mask_result(r)
+                async for r in discovery_adapter.propagate(discovery_ctx)
+            ]
+            prompt_seeds = _combo_seeds_from_discovery(
+                discovery_results, seed_frame=job.from_frame
+            )
+            if not prompt_seeds:
+                raise ValueError(
+                    f"sam3_video_combo discovery found no objects for text: {discovery_text!r}"
+                )
 
         for win_idx, (from_frame, to_frame) in enumerate(tracker_windows):
             # 种子窗下发原始点/框种子; 后续窗若多实例则各自续种 (见 _continuation_seeds),
@@ -696,6 +1054,8 @@ async def run_tracker_job(
                 source_geometry=last_geometry,
                 task_data=task_data,
                 ml_backend=backend,
+                shadow_session_factory=shadow_session_factory,
+                dispatch_context_factory=dispatch_context_factory,
                 sam_variant=(job.prompt or {}).get("sam_variant"),  # v0.10.36
                 # v0.21.19 · text-driven 追踪的 text/exemplars 从 prompt JSONB 读出透传。
                 text=(job.prompt or {}).get("text"),
@@ -709,6 +1069,12 @@ async def run_tracker_job(
             # 窗内 obj_id → 全局 instance_id) 后再并入 results。非 multiplex 时缓冲即透传。
             window_results: list[TrackerFrameResult] = []
             async for result in adapter.propagate(ctx):
+                result = _materialize_tracker_mask_result(result)
+                staged_bytes += _tracker_result_json_bytes(result)
+                if staged_bytes > MAX_TRACKER_STAGED_BYTES:
+                    raise ValueError(
+                        "tracker_candidate_too_large: staged payload exceeds 64 MiB"
+                    )
                 await db.refresh(job)
                 if (
                     job.cancel_requested_at is not None
@@ -722,6 +1088,7 @@ async def run_tracker_job(
                     results.extend(window_results)
                     if results:
                         _stage_tracker_results(job, results, grid_step, output_geometry)
+                        await lock_raster_mask_references(db, job.staged_result)
                     job.status = VideoTrackerJobStatus.CANCELLED.value
                     job.completed_at = job.completed_at or _now()
                     await db.commit()
@@ -771,6 +1138,7 @@ async def run_tracker_job(
             # v0.21.28 · 取消也暂存部分结果 (候选)。
             if results:
                 _stage_tracker_results(job, results, grid_step, output_geometry)
+                await lock_raster_mask_references(db, job.staged_result)
             job.status = VideoTrackerJobStatus.CANCELLED.value
             job.completed_at = job.completed_at or _now()
             await db.commit()
@@ -780,6 +1148,7 @@ async def run_tracker_job(
         # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
         # PENDING_REVIEW = 追踪完、结果已暂存、committed annotations 未改。
         _stage_tracker_results(job, results, grid_step, output_geometry)
+        await lock_raster_mask_references(db, job.staged_result)
         job.status = VideoTrackerJobStatus.PENDING_REVIEW.value
         job.completed_at = _now()
         await db.commit()
@@ -788,4 +1157,16 @@ async def run_tracker_job(
         return job
     except Exception as exc:
         log.exception("video tracker job failed job_id=%s", job_id)
-        return await _mark_failed(db, job_id, str(exc), publisher)
+        gpu_arbiter_error = gpu_arbiter_failure_record(exc)
+        if gpu_arbiter_error is not None and failure_recorder is not None:
+            failure_recorder(gpu_arbiter_error)
+        message = (
+            gpu_arbiter_error["message"] if gpu_arbiter_error is not None else str(exc)
+        )
+        return await _mark_failed(
+            db,
+            job_id,
+            message,
+            publisher,
+            gpu_arbiter_error=gpu_arbiter_error,
+        )

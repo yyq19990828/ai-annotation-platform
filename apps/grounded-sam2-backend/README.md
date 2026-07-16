@@ -1,8 +1,6 @@
 # grounded-sam2-backend
 
-> v0.9.x AI 基座的 ML Backend — 把 [`IDEA-Research/Grounded-SAM-2`](https://github.com/IDEA-Research/Grounded-SAM-2) 打包成独立 GPU 服务，遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md)。
->
-> 当前版本：**v0.9.1 (M1 — embedding 缓存 + Prometheus)**。后续 v0.9.2 ~ v0.9.5 在 [`ROADMAP/archive/0.9.x.md`](../../ROADMAP/archive/0.9.x.md) 切片。
+> 把 [`IDEA-Research/Grounded-SAM-2`](https://github.com/IDEA-Research/Grounded-SAM-2) 打包成独立 GPU 服务，遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md)。
 
 ---
 
@@ -10,9 +8,10 @@
 
 | Prompt | 链路 | 用途 |
 |---|---|---|
-| `context.type=point` | SAM 2.1 image_predictor 直接出 mask | 工作台 `S` 工具单点交互（v0.9.2 接） |
-| `context.type=bbox` | SAM 2.1 image_predictor 直接出 mask | 工作台 `S` 工具拖框交互（v0.9.2 接） |
-| `context.type=text` | GroundingDINO → boxes → SAM 2.1 → mask | 文本批量预标 / `/ai-pre`（v0.9.4 接） |
+| `context.type=point` | SAM 2.1 image_predictor 直接出 mask | 工作台单点/多点交互分割 |
+| `context.type=interactive_box` | SAM 2.1 image_predictor 直接出 mask | 工作台单框交互分割 |
+| `context.type=text` | GroundingDINO → boxes → SAM 2.1 → mask | 文本批量预标 |
+| `context.type=video_tracker` | SAM 2.1 video predictor 窗口传播 | 视频框、多边形或 mask 跟踪 |
 
 返回数据均为 `polygonlabels`（归一化 [0,1] 顶点列表）+ score + model_version + inference_time_ms。
 
@@ -25,10 +24,16 @@ apps/grounded-sam2-backend/
 ├── pyproject.toml          Python 3.10 依赖锁 (不含 torch/torchvision, 由 base image 锁定)
 ├── Dockerfile              基于 pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel (与官仓对齐)
 ├── .dockerignore
-├── main.py                 FastAPI app + 6 端点 (含 /metrics、/cache/stats)
+├── main.py                 FastAPI app + 推理、观测和受管生命周期端点
 ├── predictor.py            三种 prompt 推理 + mask→polygon 内联 + cache snapshot/restore
-├── embedding_cache.py      SAM 2 image embedding LRU 缓存 (v0.9.1)
-├── observability.py        Prometheus Counter/Histogram/Gauge (v0.9.1)
+├── video_predictor.py      SAM 2 视频跟踪封装
+├── managed_pool.py         取消安全的通用 LRU 所有权内核
+├── model_pool.py           图像 predictor + embedding cache 池
+├── video_pool.py           视频 tracker 池
+├── pool_domain.py          图像/视频双池生命周期聚合
+├── gpu_lifecycle.py        drain、generation、admission 与全量卸载状态机
+├── embedding_cache.py      SAM 2 image embedding LRU 缓存
+├── observability.py        Prometheus Counter/Histogram/Gauge
 ├── schemas.py              Pydantic schema (协议对齐)
 ├── tests/                  pytest 单测 (无 GPU 即可跑)
 ├── checkpoints/            权重落盘点 (启动时下载, 挂 volume)
@@ -97,8 +102,11 @@ curl -X POST http://localhost:8001/predict \
 | `BOX_THRESHOLD` | `0.35` | 0.20 ~ 0.50 | 召回不足下调 |
 | `TEXT_THRESHOLD` | `0.25` | 0.20 ~ 0.40 | 短语 prompt 默认 0.25 |
 | `EMBEDDING_CACHE_SIZE` | `16` | 8 ~ 64 | tiny 单条 ≈ 4 MB；large ≈ 24 MB；按 GPU 显存调 |
+| `MODEL_POOL_CAP` | `1` | ≥ 1 | 图像变体并存上限；满池仅驱逐无 borrower 的 LRU |
+| `VIDEO_MODEL_POOL_CAP` | `1` | ≥ 1 | 视频变体独立并存上限 |
+| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | `0` / `1` | 实卡完成全量卸载验收后才发布受管能力 |
 
-切换后**重启容器**生效（v0.9.x 不做运行时多变体共存）。变体切换会自动让缓存失效（cache key 含 `sam_variant`）。
+请求可通过 `context.model_variants` 在运行期选择变体。图像池与视频池的容量和 LRU 独立，但共享冷构建串行锁，避免两套重模型同时抢占显存。
 
 ---
 
@@ -111,8 +119,14 @@ GET  /health        → {"ok": true, "gpu": true, "model_version": "...", "loade
 GET  /setup         → {"name", "labels": [], "is_interactive": true, "params": {...}}
 GET  /versions      → {"versions": ["grounded-sam2-dinoT-sam2.1tiny"]}
 POST /predict       → 交互式 (task+context) 或 批量 (tasks[])
-GET  /metrics       → Prometheus exposition (text/plain; v0.9.1)
-GET  /cache/stats   → {"size": N, "capacity": 16, "hits": ..., "misses": ..., "hit_rate": 0.85, "variant": "tiny"} (v0.9.1)
+POST /warmup        → 预热图像或视频变体
+POST /reload        → 兼容型变体预热
+POST /unload        → 空 body 仅卸载图像池；generation body 受管卸载双池
+POST /drain         → 停止接收当前 generation 的新 workload
+POST /drain/cancel  → 取消 drain
+POST /lifecycle/mode、/lifecycle/reset → 受管模式切换与可信全量复位
+GET  /metrics       → Prometheus exposition (text/plain)
+GET  /cache/stats   → 图像池各变体 embedding cache 的聚合统计
 ```
 
 `POST /predict` 按 body shape 自动分流：
@@ -141,7 +155,7 @@ GET  /cache/stats   → {"size": N, "capacity": 16, "hits": ..., "misses": ..., 
 | 3090 24GB | 100-200 ms | < 30 ms |
 | A100 40GB | 50-100 ms | < 20 ms |
 
-**v0.9.1 已落 LRU embedding 缓存**：cache key = `sha1(url_path|sam_variant)`（剥掉 MinIO presigned 的 query string，跨 TTL 滚动稳定）。同图二次 point/bbox 点击直接 restore SAM 内部 `_features`/`_orig_hw` 而不再 `set_image()`，并跳过 `_fetch_image()`；text 路径仍需 DINO 走原图，但 SAM 端同样命中。详见 [`docs-site/dev/concepts/ai-models.md`](../../docs-site/dev/concepts/ai-models.md)。
+LRU embedding 缓存的 key 为 `sha1(url_path|sam_variant)`（剥掉 MinIO presigned 的 query string，跨 TTL 滚动稳定）。同图二次 point/interactive_box 点击直接 restore SAM 内部 `_features`/`_orig_hw` 而不再 `set_image()`，并跳过图片下载；text 路径仍需 DINO 走原图，但 SAM 端同样命中。缓存与 predictor 属于同一个池条目，驱逐或卸载时一起释放。
 
 ---
 
@@ -169,11 +183,3 @@ GET  /cache/stats   → {"size": N, "capacity": 16, "hits": ..., "misses": ..., 
 **ProjectSettings 测试连接红灯**：`http://grounded-sam2-backend:8001` 是 docker 内部地址；如平台 api 在 host 跑（dev 模式），改为 `http://localhost:8001`。
 
 ---
-
-## 后续切片
-
-- v0.9.1 M1：embedding LRU 缓存 + Prometheus + `/cache/stats` ✅
-- v0.9.2 M2：工作台 `S` 工具 + 文本入口前端
-- v0.9.3 M3：mask→polygon tolerance 调参 + 抽到 `apps/_shared/mask_utils/`
-- v0.9.4 M4：`/ai-pre` 文本批量预标 UI
-- v0.9.5 M5：显存监控 / ADR-0010 / ADR-0011 / `docs-site/dev/deploy.md` GPU 节点章节

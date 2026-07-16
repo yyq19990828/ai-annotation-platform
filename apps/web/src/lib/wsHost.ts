@@ -8,16 +8,32 @@
  *   const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
  *   const url = `${proto}://${host}/ws/...?token=${encodeURIComponent(t)}`;
  *
- * dev 直连后端端口是为绕开 vite proxy `/ws` 在 4+ 并发 WS upgrade 时偶尔卡死 server.upgrade
- * 回调的已知问题 (vite 上游 issue 待提). production 走 nginx 反向代理 (相对 host).
+ * 本机 DEV 直连后端端口，绕开 vite proxy `/ws` 在多连接并发 upgrade 时的已知问题。
+ * 远程 DEV 浏览器不能把 `localhost:8000` 当成平台主机，因此改走页面同源 Vite `/ws`
+ * 代理。production 同样走页面同源反向代理。
  *
  * v0.13.3 · dev host 默认 localhost:8000,但多 worktree 并行时各分支后端端口不同
  * (如点云隔离栈 8010,与 HTTP 的 API_PROXY_TARGET 同源),用 `VITE_WS_HOST` 覆盖。
  */
 
-export function getWsHost(): string {
+type WsLocation = Pick<Location, "host" | "hostname">;
+
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(hostname)
+  );
+}
+
+export function getWsHost(
+  location: WsLocation = window.location,
+  configuredHost: string | undefined = import.meta.env.VITE_WS_HOST,
+): string {
   if (!import.meta.env.DEV) return window.location.host;
-  return import.meta.env.VITE_WS_HOST || "localhost:8000";
+  if (configuredHost) return configuredHost;
+  return isLoopbackHostname(location.hostname) ? "localhost:8000" : location.host;
 }
 
 export function getWsProtocol(): "ws" | "wss" {

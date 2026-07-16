@@ -159,6 +159,10 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.prediction import FailedPrediction
     from app.db.models.task import Task
+    from app.services.gpu_dispatch_authority import (
+        build_gpu_dispatch_context_factory,
+    )
+    from app.services.gpu_arbiter import gpu_arbiter_failure_record
     from app.services.ml_client import MLBackendClient
     from app.services.notification import NotificationService
     from app.services.prediction import PredictionService
@@ -197,7 +201,11 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
         }
 
     # 第二阶段：调 backend
-    client = MLBackendClient(backend)
+    client = MLBackendClient(
+        backend,
+        shadow_session_factory=session_factory,
+        dispatch_context_factory=build_gpu_dispatch_context_factory(session_factory),
+    )
     try:
         results = await client.predict(
             [{"id": str(task.id), "file_path": task.file_path}]
@@ -209,10 +217,22 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
         log.warning(
             "retry_failed_prediction: backend call failed id=%s err=%s", failed_id, exc
         )
+        gpu_arbiter_error = gpu_arbiter_failure_record(exc)
         async with session_factory() as db:
-            await _bump_retry_counter(db, fid)
+            await _bump_retry_counter(db, fid, gpu_arbiter_error=gpu_arbiter_error)
             await db.commit()
-        return {"status": "failed", "failed_id": failed_id, "reason": str(exc)[:200]}
+        result = {
+            "status": "failed",
+            "failed_id": failed_id,
+            "reason": (
+                gpu_arbiter_error["message"]
+                if gpu_arbiter_error is not None
+                else str(exc)
+            )[:200],
+        }
+        if gpu_arbiter_error is not None:
+            result["gpu_arbiter_error"] = gpu_arbiter_error
+        return result
 
     # 第三阶段：写 predictions + 删 failed + 推 succeeded
     async with session_factory() as db:
@@ -239,11 +259,21 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     }
 
 
-async def _bump_retry_counter(db: AsyncSession, fid: uuid.UUID) -> None:
+async def _bump_retry_counter(
+    db: AsyncSession,
+    fid: uuid.UUID,
+    *,
+    gpu_arbiter_error: dict | None = None,
+) -> None:
     from app.db.models.prediction import FailedPrediction
 
     fp = await db.get(FailedPrediction, fid)
     if fp:
         fp.retry_count = (fp.retry_count or 0) + 1
         fp.last_retry_at = datetime.now(timezone.utc)
+        if gpu_arbiter_error is not None:
+            fp.extra = {
+                **(fp.extra or {}),
+                "last_gpu_arbiter_error": gpu_arbiter_error,
+            }
         await db.flush()

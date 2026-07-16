@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-24
+last_reviewed: 2026-07-17
 ---
 
 # 预标注流水线（Prediction Pipeline）
@@ -284,6 +284,8 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
 - **运行中实时快照**：按 5% 步长把当前累加 `pipeline_stages` 随进度推上 WS `project:{id}:preannotate`（复用现有通道，不新增）。前端阶段卡实时下放，显「待运行 / 运行中 / 已完成」徽标 + 计数 +`ProgressBar`。
 - **终态真值**：`async_jobs.result.pipeline_stages` 落库（job 终态写一次）。WS 重连或运行后回看一律走终态字段，不丢。
 
+若 GPU 仲裁在下游派发前拒绝，阶段仍按配置的 `keep_parent|drop_box` 处理，同时把完整根因记入 `PredictionMeta.extra.pipeline.gpu_arbiter_failures`。作业终态的 `async_jobs.result.gpu_arbiter_failures` 则按稳定错误码聚合 `status_code` / `retry_after_s` / `count`；`count` 表示被拒绝的派发次数，不替代 `pipeline_stages[].failed` 的受影响 ROI 计数。
+
 ### 拓扑落库与可追溯
 
 `_pipeline_topology` 把 stages 配置派生为可审计拓扑落 `PredictionMeta.extra.pipeline`：
@@ -303,7 +305,18 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
 
 ### backend 来源与显存保护
 
-backend 走**全局注册 + 项目启用**：一个物理 backend 全局只注册一行，项目按需勾选启用，**没有项目级数量上限**（跨 backend 编排天然需 detect + classify ≥ 2，多阶段 DAG 还会更多）。单机显存爆炸由每个全局注册行的 `max_concurrency`（`ml_backends.extra_params.max_concurrency`）并发闸兜底，限制单 backend 同时并行的预测请求数。
+backend 走**全局注册 + 项目启用**：一个物理 backend 全局只注册一行，项目按需勾选启用，**没有项目级数量上限**（跨 backend 编排天然需 detect + classify ≥ 2，多阶段 DAG 还会更多）。每个全局注册行的 `max_concurrency`（`extra_params.max_concurrency`）在 off/observe 下限制单进程 / 事件循环的并行请求，API 与多个 Celery worker 仍会叠加；effective enforce 下则同时作为 Redis request lease 的跨进程上限。
+
+设置 `GPU_ARBITER_MODE=observe` 后，平台会在所有可加载端点的 HTTP 发送前，按稳定
+`gpu_resource_id` 对同卡预算和新鲜 residency 快照计算 `would-*` 决策。该阶段只写结构化日志，
+旁路查询有严格短超时并在失败时放行业务请求，不会改变请求结果。所有生产派发口已注入惰性
+authority，effective `enforce` 下可使用 Redis lease 执行 Resident 快路与 cold admission。cold token
+暴露后，完整 HTTP 响应会触发新 challenge 探测，并在逐卡持久锁内立即把 Loading 收口为
+Resident、CPU fallback、Unloaded 或保守 Unknown。容量不足时，authority 会在 target cold intent
+之前按优先级 + LRU 依次驱逐同一完整资源 ID 上的空闲 victim，只在严格 drain ACK、
+新鲜 health proof 与终态 CAS 都成功后释放预算；不确定结果保守收口 Unknown 并停止后续驱逐。
+空闲和 busy victim 的等待、驱逐与取消路径均已接通；effective `enforce` 只有在运维显式开启 release latch、
+且逐资源 rollout 成功收敛为 `enforcing` 后才会生效。legacy unload 仍不能作为显存已释放或预算已减账的证据。
 
 ## 代码索引
 

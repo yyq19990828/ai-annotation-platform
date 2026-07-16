@@ -19,9 +19,16 @@ const paths = [
   {
     no: "#03 / BUILD",
     title: "开发与集成",
-    desc: "API、SDK、部署拓扑和 ML Backend 协议。",
+    desc: "API、SDK、扩展机制和 ML Backend 协议。",
     link: "DEVELOPER DOCS ↗",
     href: withBase("/dev/"),
+  },
+  {
+    no: "#04 / RUN",
+    title: "部署与运维",
+    desc: "部署拓扑、可观测性、安全策略与故障处置。",
+    link: "OPERATIONS ↗",
+    href: withBase("/ops/"),
   },
 ];
 </script>
@@ -31,7 +38,7 @@ const paths = [
     <div class="paper-top">
       <div>
         <span class="section-no">03 / CHOOSE YOUR PATH</span>
-        <h2 class="reveal">DOCUMENTATION<br />AS A WORKSPACE.</h2>
+        <h2 class="reveal"><span class="paper-title-word">DOCUMENTATION</span><br />AS A WORKSPACE.</h2>
       </div>
       <p class="paper-note">
         不是功能清单。每个入口都回答：你是谁、要完成什么、下一步在哪里。

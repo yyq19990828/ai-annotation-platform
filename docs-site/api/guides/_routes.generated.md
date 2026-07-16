@@ -25,10 +25,12 @@
 | POST | `/probe` |
 | GET | `/runtime-hints` |
 | GET | `/all` |
+| GET | `/gpu-resources` |
 | POST | `/registry` |
 | PUT | `/registry/{registry_id}` |
 | DELETE | `/registry/{registry_id}` |
 | POST | `/registry/{registry_id}/health` |
+| POST | `/registry/{registry_id}/unload` |
 | GET | `/observe` |
 | POST | `/observe/smoke-test` |
 
@@ -74,6 +76,8 @@
 
 | Method | Path |
 |---|---|
+| GET | `/annotations/{annotation_id}/mask-content/{frame_index}` |
+| POST | `/tasks/{task_id}/mask-content` |
 | POST | `/annotations/bulk-update` |
 | POST | `/projects/{project_id}/annotations/import` |
 
@@ -495,6 +499,7 @@
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
 | POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
+| POST | `/{task_id}/video:track` |
 
 ## `users.py`
 
@@ -518,6 +523,7 @@
 | POST | `/{job_id}/accept` |
 | POST | `/{job_id}/discard` |
 | GET | `/{job_id}/preview` |
+| GET | `/{job_id}/mask-content/{sha256}` |
 
 ## `videos.py`
 
@@ -539,4 +545,4 @@
 
 ---
 
-_共 52 模块 / 292 路由_
+_共 52 模块 / 298 路由_

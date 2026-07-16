@@ -43,6 +43,7 @@ from app.schemas._jsonb_types import (
     VideoTrackPolygonKeyframe,
     VideoTrackPolylineGeometry,
     VideoTrackPolylineKeyframe,
+    VideoTrackMaskGeometry,
 )
 
 
@@ -372,6 +373,67 @@ def test_video_track_polygon_geometry_in_union():
         }
     )
     assert isinstance(parsed, VideoTrackPolygonGeometry)
+
+
+def _mask_ref(*, sha: str = "a" * 64) -> dict:
+    return {
+        "encoding": "coco_rle_ref",
+        "size": [1080, 1920],
+        "object_key": f"raster-masks/sha256/{sha[:2]}/{sha[2:4]}/{sha}.json",
+        "sha256": sha,
+        "runs": 953,
+        "bytes": 3659,
+    }
+
+
+def test_video_track_mask_geometry_valid():
+    geometry = VideoTrackMaskGeometry.model_validate(
+        {
+            "type": "video_track_mask",
+            "track_id": "mask-1",
+            "keyframes": [
+                {"frame_index": 2, "mask": _mask_ref(), "source": "manual"},
+                {
+                    "frame_index": 8,
+                    "mask": _mask_ref(sha="b" * 64),
+                    "source": "prediction",
+                },
+            ],
+            "outside": [{"from": 4, "to": 5}],
+        }
+    )
+    assert geometry.keyframes[0].mask.encoding == "coco_rle_ref"
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {
+            "keyframes": [
+                {"frame_index": 2, "mask": _mask_ref()},
+                {"frame_index": 2, "mask": _mask_ref(sha="b" * 64)},
+            ]
+        },
+        {"keyframes": [{"frame_index": True, "mask": _mask_ref()}]},
+        {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "size": [4097, 1]}}]},
+        {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "runs": 1_000_001}}]},
+        {
+            "keyframes": [
+                {"frame_index": 2, "mask": {**_mask_ref(), "sha256": "b" * 64}}
+            ]
+        },
+        {"outside": [{"from": 5, "to": 4}]},
+    ],
+)
+def test_video_track_mask_geometry_rejects_invalid_contract(patch):
+    payload = {
+        "type": "video_track_mask",
+        "track_id": "mask-1",
+        "keyframes": [{"frame_index": 2, "mask": _mask_ref()}],
+        **patch,
+    }
+    with pytest.raises(ValidationError):
+        VideoTrackMaskGeometry.model_validate(payload)
 
 
 # ── ClassConfigEntry alias（v0.9.5）────────────────────────────────

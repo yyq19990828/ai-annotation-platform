@@ -10,6 +10,9 @@ import type {
   VideoTrackPolygonKeyframe,
   VideoTrackPolylineGeometry,
   VideoTrackPolylineKeyframe,
+  VideoTrackMaskGeometry,
+  VideoTrackMaskKeyframe,
+  CocoRleMaskRef,
 } from "@/types";
 import type { VideoFrameEntry, VideoStageGeom } from "./videoStageTypes";
 import { runReferenceKalman } from "./videoReferenceKalman";
@@ -101,6 +104,12 @@ export function isVideoPolylineTrack(
   return ann.geometry.type === "video_track_polyline";
 }
 
+export function isVideoMaskTrack(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoTrackMaskGeometry } {
+  return ann.geometry.type === "video_track_mask";
+}
+
 /**
  * v0.21.26 · 视频几何「联合」判定 helper —— 消除管理层(选中卡 / 右键菜单 / 删除)各处
  * 散落的 bbox-only 硬编码。渲染层早已全类型覆盖(videoFrameViews),这些 helper 让选中后的
@@ -123,7 +132,40 @@ export function isVideoPointsSingleFrame(
 
 /** 任意视频轨迹几何 (bbox / polygon / polyline track)。 */
 export function isAnyVideoTrack(ann: AnnotationResponse): boolean {
-  return isVideoTrack(ann) || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann);
+  return isVideoTrack(ann) || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann) || isVideoMaskTrack(ann);
+}
+
+export type ResolvedMaskFrame = {
+  mask: CocoRleMaskRef;
+  source: VideoTrackMaskKeyframe["source"];
+  occluded?: boolean;
+  attributes?: Record<string, unknown> | null;
+  keyframeFrame: number;
+};
+
+export function resolveVideoMaskTrackAtFrame(
+  track: VideoTrackMaskGeometry,
+  frameIndex: number,
+): ResolvedMaskFrame | null {
+  const outside = effectiveOutsideRanges(track);
+  if (isFrameInOutsideRanges(outside, frameIndex)) return null;
+  const visible = track.keyframes.filter((keyframe) => !isFrameInOutsideRanges(outside, keyframe.frame_index));
+  if (visible.length === 0) return null;
+  const selected = visible.reduce((best, candidate) => {
+    const bestDistance = Math.abs(best.frame_index - frameIndex);
+    const candidateDistance = Math.abs(candidate.frame_index - frameIndex);
+    return candidateDistance < bestDistance
+      || (candidateDistance === bestDistance && candidate.frame_index < best.frame_index)
+      ? candidate
+      : best;
+  });
+  return {
+    mask: selected.mask,
+    source: selected.source,
+    occluded: selected.occluded,
+    attributes: selected.attributes,
+    keyframeFrame: selected.frame_index,
+  };
 }
 
 /** 点集轨迹 (polygon / polyline track), 排除 bbox track (bbox track 有完整关键帧卡)。 */
@@ -636,9 +678,9 @@ export function shortTrackId(trackId: string) {
  * 返回 `Map<annotationId, number>`。
  */
 export function deriveTrackNumber(
-  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry }>,
+  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry | VideoTrackMaskGeometry }>,
 ): Map<string, number> {
-  const firstFrame = (geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => {
+  const firstFrame = (geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry | VideoTrackMaskGeometry) => {
     const frames = geometry.keyframes.map((kf) => kf.frame_index);
     return frames.length > 0 ? Math.min(...frames) : 0;
   };

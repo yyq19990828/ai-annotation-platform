@@ -3,7 +3,7 @@ audience: [ops]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-17
 ---
 
 # 生产部署（Docker Compose）
@@ -189,7 +189,7 @@ v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权�
 | `SAM3_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒自动卸载释放显存（sam3 ~7GB FP16，与 grounded-sam2 并存时强烈建议保留）；`<=0` 关闭。前缀与 grounded-sam2 的 `IDLE_*` 解耦，可独立调。 |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | 空闲判断轮询间隔（秒）。 |
-| `SAM3_GPU_DEVICE_ID` | `1` | Compose 绑定的物理 GPU。默认与其它 backend 错开到卡 1；单卡机器必须改为 `0`。 |
+| `SAM3_GPU_DEVICE_ID` | `1` | Compose 绑定的物理 GPU。默认与其它 backend 错开到卡 1；单卡机器必须改为 `0`。每个 backend 只能绑定一个 GPU/MIG，多值或已暴露 GPU 的 `all` 会在启动时被拒绝。 |
 
 > 镜像基础 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（比 grounded-sam2 的 2.3.1-cuda12.1 更新，注意宿主 nvidia 驱动需支持 CUDA 12.8）。`docker-compose.ml.yml` 会显式透传 `SAM3_DOWNLOAD_VIDEO`；修改 `.env` 后需 recreate `sam3-backend`。
 
@@ -488,6 +488,108 @@ A: 接入方实现的 `/health` 没在 `ml_health_timeout`（10s）内返回。�
 
 ML backend（grounded-sam2-backend / sam3-backend 等）需要 nvidia GPU。本节给出 docker-compose 最小落地。
 
+### 声明平台可分配的物理 GPU
+
+平台不用容器内 `cuda:0` 猜测物理卡。每张 GPU 或 MIG 资源都要用稳定 key
+`<resource_domain>/<physical_device_token>` 显式声明；同一主机的卡 0 / 卡 1 和不同主机的卡 0
+因 resource domain 不同而互不混淆。优先用 GPU / MIG UUID；只有部署已固定容器与物理
+索引映射时才用 `index:N`。
+
+Compose 会把每个 `*_GPU_DEVICE_ID` 同时用于 device reservation 和容器内部
+`AAP_GPU_PHYSICAL_DEVICE_TOKEN`。这个独立 token 是必要的：NVIDIA container runtime 可能把
+PID 1 看到的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`，而 CUDA 又会把唯一挂载的物理
+卡重编号为逻辑 `cuda:0`。Backend `/health.gpu_info` 优先报告这个 Compose 派生 token，
+避免将宿主卡 1 误报为卡 0。
+
+```dotenv
+GPU_ARBITER_MODE=off
+GPU_ARBITER_ROLLOUT_ENABLED=false
+# 宿主文件只包含 collector 的 postgresql+asyncpg URL，并设为 0400。
+GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE=/secure/aap-gpu-collector-database-url
+GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
+GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS=30
+GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS=30
+# 仅在准备 promotion/enforce 时配置；文件权限建议 0400，并由 secret store 投递。
+GPU_LIFECYCLE_SIGNING_KEYS_FILE=/secure/aap-gpu-signing-keys.json
+GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
+```
+
+`allocatable_mb` 是扣除驱动 / CUDA context、桌面或系统进程、平台外占用和安全余量后的可分配
+容量，不是显卡标称总显存。`GPU_ARBITER_MODE` 是全局上限，resource 的 `mode` 是逐卡
+开关；期望模式取两者中更保守的一个，resource 未显式声明 mode 时按 `off`。静态配置
+`GPU_ARBITER_ROLLOUT_ENABLED` 是独立的发布闩，默认 `false`。关闭时即使 desired 为
+`enforce`，worker 也不执行 enforce repair，实际模式保持 `off`，且派发不读取 rollout
+表；开启后 health worker 先持久进入 `promoting`，只有 Backend gate 与 Redis ready 都已证明时
+才提交 `enforcing`。逐资源持久状态缺失、处于 promotion/demotion、被阻断或数据库
+不可读都必须在 Backend HTTP 前 fail-closed。
+该开关本身不等于完成 promotion，也不能绕过 Redis ready 与 Backend gate 证明。
+回滚时不要先关闭该开关；先把 resource desired mode 降为 `observe/off`，保持 latch 开启，
+等管理 API 确认持久 rollout 已经收敛为 `off` 后才关闭。demotion 会保留 Redis 账本并
+等待 runtime 静默、signed legacy ACK 和 fresh health，不应通过清表或清 Redis “加速”。
+静态配置
+层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量
+是允许驱逐的弹性超售告警。管理 API 会分开显示 desired 与 effective mode；
+`GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS` 默认 30 秒，是 card/backend FIFO 共用的独立
+等待上限；它不是 backend 的模型池 build timeout，也不是 busy victim 的 drain timeout。
+空闲 victim 驱逐会在该期限内为 exact 终态清理预留固定窗口；超时返回带
+`Retry-After` 的 503，`off/observe` 下不会入队，因此该值不生效。
+`GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS` 默认 30 秒、取值 1..3600 秒。每次新 residency
+只在首次可信 Loading→Resident Redis CAS 中开始该保护窗口；proof reset 重建 Resident 时会以
+prepared 时刻保守恢复同样的窗口，精确重放均不续期。值可以长于 admission timeout；遇到未到期
+victim 时，cold authority 会持有 exact card ticket，在 admission deadline 与固定 ticket TTL 内按
+Redis 快照时间有界等待。等待不续期，超时或取消会精确清票；只有 victim 已可驱逐时才开始预留
+驱逐终态清理窗口。
+升级发现普通 v2 账本时会 fail-close 后重新 proof reset；若旧进程已留下合法 v2 prepared marker，
+恢复器只沿用原 reset 上下文，并在 COMMIT 清除旧 child 后原子写成 v3，不会原地补 allocation 字段。
+`observe` 已在 predict、交互预测、warmup、reload 与注册 smoke-test
+的真实加载派发前生成非权威 `would-admit|would-evict|would-reject`
+快照；legacy unload 只记录请求且不减账。旁路数据库查询使用严格短超时并 fail-open，
+绝不拒绝、排队或驱逐业务请求。`enforce` 需要 Redis 账本与 lifecycle gate
+握手；desired 为 `enforce` 时，健康 worker 会先按物理资源 bootstrap/repair fail-closed 账本、恢复
+prepared 中间态并完成 legacy membership ACK。派发侧已具备 Redis admission、业务 token、Resident/cold
+authority、有界两级 FIFO，以及空闲和 busy victim 的驱逐、等待与取消编排；参考环境的实物单卡、多卡和
+跨宿主门禁均已通过。每个部署仍须完成本地验收并显式开启
+`GPU_ARBITER_ROLLOUT_ENABLED`，逐资源状态成功推进到 `enforcing` 后，请求才会进入权威路径、签业务
+token 并创建 Redis lease。任一 rollout、证明或账本门禁不满足时，effective mode 保持 `off` 并显示
+blocker，不会静默降级为 `observe`。`off/observe` 不创建或修复仲裁 Redis key。
+
+tombstone collector 必须使用独立数据库登录角色和独立的 `gpu.control` 单并发 worker。普通
+API/Celery 角色不得是 schema owner、superuser 或其他集群管理角色，并且必须没有
+`gpu_backend_memberships`、`gpu_backend_fences` 的有效 DELETE 权限。collector 只取得三张
+GPU 真值表的 SELECT、membership/fence 满足 `SELECT FOR UPDATE` 所需的单列 UPDATE，以及
+membership/fence DELETE；它不得修改 registry、INSERT 或整表 UPDATE。迁移账号必须是第三个
+独立的 schema owner。
+
+先由 DBA 建好两个登录角色并切换普通应用的 `DATABASE_URL`，再以 schema owner 执行仓库脚本：
+
+```bash
+docker compose exec -T postgres psql -U <schema-owner> -d annotation \
+  -v application_role=<application-role> \
+  -v collector_role=<collector-role> \
+  < apps/api/scripts/configure_gpu_collector_role.sql
+```
+
+脚本会在同一事务中撤销普通角色 DELETE、重建 collector 最小权限，并拒绝同角色、继承后的
+越权、可 `SET ROLE` 的成员关系、表所有者或集群高权限角色。将 collector 的完整
+`postgresql+asyncpg` URL 作为单行写入
+`GPU_ARBITER_COLLECTOR_DATABASE_URL_FILE` 指向的宿主文件并设为 `0400`；Compose 只把该文件
+挂载给 `celery-worker-gpu-control`。每轮 enforce repair 都会通过两条独立连接重新核对实际
+`current_user` 和有效权限；文件缺失、角色相同、普通角色仍可 DELETE 或 collector 越权时，
+该卡先闩为 not-ready，repair 不会执行。数据库触发器还要求 fence 删除与 exact GC receipt、
+同事务逐卡 advisory lock、registry/membership 均已消失同时成立。
+
+签名私钥文件使用严格 JSON `kid -> unpadded-base64url(raw 32-byte Ed25519 private seed)`；Compose 只把它
+挂载到 API、通用 worker、GPU worker 与 `gpu.control` 控制 worker 的
+`/run/secrets/gpu_lifecycle_signing_keys`。ML backend 只接收
+`GPU_LIFECYCLE_VERIFY_KEYS_JSON` 公钥环；CPU/export/beat、Web 和 ML backend 均不应取得平台私钥。
+这里有意使用服务级只读 bind 并要求宿主文件为 `0400`：Compose 本地 file secret 会忽略声明的
+`uid/gid/mode` 并在容器内呈现为 `0444`，无法满足同容器非 root 用户不可读的边界。当前应用容器以 root
+运行；若以后改成非 root，需同步调整宿主文件 owner，不能放宽权限。
+轮换必须先扩展所有 backend 的公钥环，再切 active kid，待旧 token、lease 与 replay tombstone 安全收敛后
+才能移除旧 key。desired `enforce` 但 effective 尚未提升时，普通业务派发仍不会读取或使用 signer。
+管理诊断只使用 `connected` 且 3 分钟内成功探测的 CPU / GPU 身份快照；
+URL 改动、探测失败或快照过期后都按 unknown 保守报告，不会用旧 CPU/UUID 证据跳过 claim blocker。
+
 ### docker compose 启用 GPU service
 
 五个 backend 定义在叠加文件 `docker-compose.ml.yml`（从基础 `docker-compose.yml` 拆出，profile-gated 且与核心 infra 无 depends_on），各有独立 profile，可单独启用也可并存。启用时须同时 `-f` 两个文件：
@@ -517,7 +619,7 @@ docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapi
 要点：
 
 - 镜像基础：grounded-sam2 = `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`，sam3 = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（**devel 必需**：GroundingDINO 算子要 nvcc 现场编译；sam3 的 CUDA 12.8 要求宿主驱动够新）
-- nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit。默认 grounded-sam2 / yolo / onnxtools / rapidocr 用卡 0，sam3 用卡 1；单卡机器设置 `SAM3_GPU_DEVICE_ID=0`。
+- nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit。默认 grounded-sam2 / yolo / onnxtools / rapidocr 用卡 0，sam3 用卡 1；单卡机器设置 `SAM3_GPU_DEVICE_ID=0`。任一 `*_GPU_DEVICE_ID` 都必须是单个索引或 UUID，不接受逗号列表和已暴露 GPU runtime 的 `all`。
 - healthcheck `start_period`：grounded-sam2 `120s`（冷启加载 ~80-100s）、sam3 `180s`（首次启动默认下载图像 + 视频约 6.6GB gated 权重）
 - 显存 / 变体相关 env 见 §2.8（grounded-sam2）与 §2.8.1（sam3）；两者 `IDLE_*` / `MODEL_POOL_*` 前缀解耦，可独立调
 
@@ -541,6 +643,8 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
   "ok": true,
   "gpu": true,
   "gpu_info": {
+    "physical_device_token": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "device_uuid": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     "device_name": "NVIDIA RTX 4060",
     "memory_used_mb": 4280,
     "memory_total_mb": 8188,
@@ -551,6 +655,12 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
   "loaded": true
 }
 ```
+
+验收物理卡映射时优先检查 `physical_device_token`。容器 runtime 可能把宿主卡 1 重映射成
+逻辑 `cuda:0`，甚至把 PID 1 的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`。因此 Backend
+优先报告 Compose 从 device reservation 同源派生的 `AAP_GPU_PHYSICAL_DEVICE_TOKEN`；
+只在该 token 未设置时回落 runtime 可见设备配置，不用 logical current device 猜测宿主卡号。完整验收步骤见
+[GPU 显存仲裁验收 Runbook](/ops/runbooks/gpu-arbitration-acceptance)。
 
 各 backend 的 `/metrics`（GPU 利用率/显存/温度/功耗、推理延迟、cache 命中、容器 CPU/内存）由 Prometheus 的 `ml-backends` job **自动发现并抓取**：该 job 用 `http_sd_config` 从 anno-api 的 `/api/v1/internal/metrics-targets` 拉 target，真相源是 `ml_backend_registry` —— **新 backend 在超管注册即被纳入，无需改 `prometheus.yml`**。指标统一为裸名 + `service` label 区分 backend，Grafana 的 `ML Backends` dashboard 据此渲染。backend 在独立 GPU 机、prometheus 不在同网时，改用该 job 里注释好的 static 兜底。`/cache/stats` 仍单独提供更细的 LRU 内部状态。
 

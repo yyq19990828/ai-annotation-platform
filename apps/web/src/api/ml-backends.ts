@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type { MLBackendResponse } from "@/types";
 import type { OutputAttributeSchemaItem } from "./mlCapabilities";
+import type { MLBackendUnloadResponse } from "./generated/types.gen";
 
 // v0.19.0 · ADR-0044 全局 ML 注册表: backend 上提为全局表, 项目层退化为「启用关联 + 变体覆盖」。
 // `available` 端点列出全部全局 backend + 本项目启用态/覆盖; 一行 = 一个全局 backend。
@@ -219,7 +220,7 @@ export const mlBackendsApi = {
     ),
 
   unload: (projectId: string, backendId: string) =>
-    apiClient.post<{ ok: boolean; unloaded: boolean; loaded: boolean }>(
+    apiClient.post<MLBackendUnloadResponse>(
       `/projects/${projectId}/ml-backends/${backendId}/unload`,
     ),
 

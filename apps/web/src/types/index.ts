@@ -306,6 +306,28 @@ export type VideoTrackPolylineGeometry = {
   keyframes: VideoTrackPolylineKeyframe[];
   outside?: VideoTrackOutsideRange[];
 };
+export type CocoRleMaskRef = {
+  encoding: "coco_rle_ref";
+  size: [number, number];
+  object_key: string;
+  sha256: string;
+  runs: number;
+  bytes: number;
+};
+export type VideoTrackMaskKeyframe = {
+  frame_index: number;
+  mask: CocoRleMaskRef;
+  source: "manual" | "prediction";
+  occluded?: boolean;
+  attributes?: Record<string, unknown> | null;
+};
+export type VideoTrackMaskGeometry = {
+  type: "video_track_mask";
+  track_id: string;
+  semantic_label?: string | null;
+  keyframes: VideoTrackMaskKeyframe[];
+  outside?: VideoTrackOutsideRange[];
+};
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
  * hole. 新 prediction (mask 单连通带空洞) 在此填 hole 顶点列表 (内环, 与外环 evenodd
@@ -384,6 +406,7 @@ export type Geometry =
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry
+  | VideoTrackMaskGeometry
   | PolygonGeometry
   | MultiPolygonGeometry
   | RotatedBboxGeometry

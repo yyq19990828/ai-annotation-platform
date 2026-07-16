@@ -130,10 +130,12 @@ worker 会按三种模式选任务：
 失败时写：
 
 - `FailedPrediction`
+- GPU 仲裁拒绝时，`error_type` 为稳定仲裁错误码，`extra.gpu_arbiter_error` 保留 `status_code` / `retry_after_s` / 干净消息；普通 Backend 异常保持原有字段语义
 
 整批运行级别还会写：
 
 - `AsyncJob(kind=batch_predict)`,多阶段下额外写 `result.pipeline_stages`(终态逐阶段统计 `{detected, targeted, ok, failed, skipped_geometry}`,WS 重连/运行后回看都走它,不丢)
+- 存在 GPU 仲裁拒绝时，`result.gpu_arbiter_failures` 按错误码给出有界聚合摘要；逐帧执行单元只落作业摘要，不生成无法按帧重试的失败行
 
 其中 `AsyncJob` 会记录：
 

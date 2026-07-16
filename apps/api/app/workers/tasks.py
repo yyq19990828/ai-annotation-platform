@@ -285,6 +285,7 @@ async def _run_task_pipeline(
         merge_classify_attributes,
         remap_geometry_to_image,
     )
+    from app.services.gpu_arbiter import gpu_arbiter_failure_record
 
     url = resolve_url(task)
     results = await stage_clients[0].predict(
@@ -300,6 +301,7 @@ async def _run_task_pipeline(
     image = _load_task_image(task) if needs_image else None
     delivery = "presigned" if upload_crop is not None else "data_uri"
     enriched_keys: set[str] = set()
+    gpu_arbiter_failures: list[dict] = []
     root_stage = stages[0]["stage"]
     # stats / stage_outputs 均按真实 stage 号键入 (与 meta 对齐, 支持前端按 depth 缩进)。
     stats: dict[int, dict] = {root_stage: {"detected": 0}}
@@ -370,6 +372,19 @@ async def _run_task_pipeline(
                 except Exception as exc:  # noqa: BLE001
                     stats[snum]["failed"] += len(geo.prompts)
                     stage_outputs[snum] = []
+                    failure = gpu_arbiter_failure_record(exc)
+                    if failure is not None:
+                        backend_id = stage.get("ml_backend_id")
+                        gpu_arbiter_failures.append(
+                            {
+                                **failure,
+                                "stage": snum,
+                                "ml_backend_id": (
+                                    str(backend_id) if backend_id is not None else None
+                                ),
+                                "count": 1,
+                            }
+                        )
                     logger.warning(
                         "[ai-pre] stage %s 下游 box-seg 失败: %s: %s",
                         snum,
@@ -445,6 +460,19 @@ async def _run_task_pipeline(
             except Exception as exc:  # noqa: BLE001
                 # 阶段级失败: keep_parent=保留上游框属性留空; drop_box=丢这些父框。
                 stats[snum]["failed"] += len(targeted)
+                failure = gpu_arbiter_failure_record(exc)
+                if failure is not None:
+                    backend_id = stage.get("ml_backend_id")
+                    gpu_arbiter_failures.append(
+                        {
+                            **failure,
+                            "stage": snum,
+                            "ml_backend_id": (
+                                str(backend_id) if backend_id is not None else None
+                            ),
+                            "count": 1,
+                        }
+                    )
                 if target != "attributes":
                     stage_outputs[snum] = []
                 # drop_box 的 targeted 是本阶段 parent_boxes 的下标, 而 dropped 恒作用于
@@ -475,6 +503,8 @@ async def _run_task_pipeline(
             "stages": _pipeline_topology(stages, depths),
         }
     }
+    if gpu_arbiter_failures:
+        extra["pipeline"]["gpu_arbiter_failures"] = gpu_arbiter_failures
     return results, extra, stats
 
 
@@ -526,6 +556,13 @@ async def _run_batch(
     from app.db.models.task_batch import TaskBatch
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
+    from app.services.gpu_dispatch_authority import (
+        build_gpu_dispatch_context_factory,
+    )
+    from app.services.gpu_arbiter import (
+        gpu_arbiter_failure_record,
+        summarize_gpu_arbiter_failures,
+    )
     from app.services.ml_client import MLBackendClient
     from app.services.prediction import PredictionService
 
@@ -538,6 +575,7 @@ async def _run_batch(
     success_count = 0
     failed_count = 0
     failed_prediction_ids: list[str] = []
+    gpu_arbiter_failures: list[dict] = []
     project_name: str | None = None
     # v0.9.11 · 累加每条 prediction.meta.total_cost; job 完成时写 async_job.result.total_cost.
     # grounded-sam2-backend 当前不返回 cost (留 0.0), LLM-backed backend (sam3 / future) 自然到位.
@@ -667,6 +705,20 @@ async def _run_batch(
             processed_count = success_count + failed_count
             skipped_count = max(0, total - processed_count)
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
+            result = {
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "failed_prediction_ids": failed_prediction_ids,
+                "done_count": processed_count,
+                "skipped_count": skipped_count,
+                "cancelled_at_index": cancelled_at_index,
+                "duration_ms": duration_ms,
+                "total_cost": f"{running_total_cost:.4f}",
+            }
+            if gpu_arbiter_failures:
+                result["gpu_arbiter_failures"] = summarize_gpu_arbiter_failures(
+                    gpu_arbiter_failures
+                )
             if total > 0:
                 await async_job_svc.update_progress(
                     db, async_job_id, int((processed_count / total) * 100)
@@ -674,16 +726,7 @@ async def _run_batch(
             await async_job_svc.mark_cancelled(
                 db,
                 async_job_id,
-                result={
-                    "success_count": success_count,
-                    "failed_count": failed_count,
-                    "failed_prediction_ids": failed_prediction_ids,
-                    "done_count": processed_count,
-                    "skipped_count": skipped_count,
-                    "cancelled_at_index": cancelled_at_index,
-                    "duration_ms": duration_ms,
-                    "total_cost": f"{running_total_cost:.4f}",
-                },
+                result=result,
             )
             await notify_job_terminal(db, job_id=async_job_id)
             await db.commit()
@@ -811,6 +854,7 @@ async def _run_batch(
 
         box_thr = float(project.box_threshold) if project is not None else None
         text_thr = float(project.text_threshold) if project is not None else None
+        dispatch_context_factory = build_gpu_dispatch_context_factory(SessionLocal)
         stage_clients: list[MLBackendClient] = []
         stage_contexts: list[dict | None] = []
         # v0.18.14 · 每阶段投递模式 (crop|geometry), 按 write.target 推断 (input.mode 可覆盖)。
@@ -818,12 +862,24 @@ async def _run_batch(
         stage_modes: list[str] = []
         for s in stages:
             if s["parent_stage"] is None:
-                stage_clients.append(MLBackendClient(backend))
+                stage_clients.append(
+                    MLBackendClient(
+                        backend,
+                        shadow_session_factory=SessionLocal,
+                        dispatch_context_factory=dispatch_context_factory,
+                    )
+                )
                 stage_contexts.append(context)
                 stage_modes.append("crop")
             else:
                 s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
-                stage_clients.append(MLBackendClient(s_backend))
+                stage_clients.append(
+                    MLBackendClient(
+                        s_backend,
+                        shadow_session_factory=SessionLocal,
+                        dispatch_context_factory=dispatch_context_factory,
+                    )
+                )
                 stage_modes.append(_resolve_input_mode(s))
                 stage_contexts.append(
                     _build_predict_context(
@@ -875,6 +931,11 @@ async def _run_batch(
                     stage_modes=stage_modes,
                 )
                 _accumulate_stage_stats(stage_stats)
+                gpu_arbiter_failures.extend(
+                    (pipeline_extra or {})
+                    .get("pipeline", {})
+                    .get("gpu_arbiter_failures", [])
+                )
                 for pred_result in results:
                     await pred_svc.create_from_ml_result(
                         task_id=task.id,
@@ -895,12 +956,28 @@ async def _run_batch(
                 await db.commit()
                 success_count += 1
             except Exception as exc:
+                gpu_arbiter_error = gpu_arbiter_failure_record(exc)
+                if gpu_arbiter_error is not None:
+                    gpu_arbiter_failures.append(gpu_arbiter_error)
                 failed = await pred_svc.create_failed(
                     task_id=task.id,
                     project_id=uuid.UUID(project_id),
                     ml_backend_id=backend.id,
-                    error_type=type(exc).__name__,
-                    message=str(exc),
+                    error_type=(
+                        gpu_arbiter_error["error_code"]
+                        if gpu_arbiter_error is not None
+                        else type(exc).__name__
+                    ),
+                    message=(
+                        gpu_arbiter_error["message"]
+                        if gpu_arbiter_error is not None
+                        else str(exc)
+                    ),
+                    extra=(
+                        {"gpu_arbiter_error": gpu_arbiter_error}
+                        if gpu_arbiter_error is not None
+                        else None
+                    ),
                 )
                 failed_prediction_ids.append(str(failed.id))
                 await db.commit()
@@ -961,6 +1038,10 @@ async def _run_batch(
         if pipeline_stage_totals:
             result_stats["pipeline_stages"] = _stage_totals_snapshot(
                 pipeline_stage_totals
+            )
+        if gpu_arbiter_failures:
+            result_stats["gpu_arbiter_failures"] = summarize_gpu_arbiter_failures(
+                gpu_arbiter_failures
             )
         if all_failed:
             await async_job_svc.mark_failed(

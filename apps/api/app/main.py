@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.config import settings
 from app.api.v1.router import api_router
 from app.api.v1.ws import router as ws_router, close_redis_pool as _close_ws_redis_pool
@@ -92,6 +95,72 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _registry_validation_error_handler(
+    request: Request, exc: RequestValidationError
+):
+    """Keep the ADR-0049 GPU config 422 envelope stable after Pydantic validation."""
+
+    path = request.url.path
+    is_registry_write = request.method in {"POST", "PUT"} and path.startswith(
+        "/api/v1/admin/ml-integrations/registry"
+    )
+    errors = exc.errors()
+    gpu_errors = []
+    if is_registry_write:
+        for error in errors:
+            location = tuple(str(part) for part in error.get("loc", ()))
+            message = str(error.get("msg", "GPU 资源配置无效"))
+            gpu_fields = (
+                "gpu_resource_id",
+                "vram_budget_mb",
+                "eviction_priority",
+            )
+            if any(field in location for field in gpu_fields) or any(
+                field in message for field in gpu_fields
+            ):
+                gpu_errors.append((location, message))
+    if not gpu_errors:
+        return await request_validation_exception_handler(request, exc)
+
+    diagnostics = []
+    for location, message in gpu_errors:
+        field = next(
+            (
+                candidate
+                for candidate in (
+                    "gpu_resource_id",
+                    "vram_budget_mb",
+                    "eviction_priority",
+                )
+                if candidate in location or candidate in message
+            ),
+            "gpu_resource_id",
+        )
+        diagnostics.append(
+            {
+                "code": "gpu_config_invalid",
+                "level": "blocker",
+                "message": message.removeprefix("Value error, "),
+                "field": field,
+                "resource_id": None,
+                "backend_id": None,
+            }
+        )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "error_code": "gpu_config_invalid",
+                "message": diagnostics[0]["message"],
+                "diagnostics": diagnostics,
+            }
+        },
+    )
+
+
+app.add_exception_handler(RequestValidationError, _registry_validation_error_handler)
 
 # 中间件注册顺序：先注册 → 后执行（dispatch 包装）。
 # AuditMiddleware 在 CORS 之后注册，保证 CORS preflight 不被审计。

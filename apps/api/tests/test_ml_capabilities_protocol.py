@@ -24,7 +24,7 @@ async def test_protocol_returns_full_catalog(httpx_client, auth_headers):
     assert len(data["tasks"]) == 9
     assert len(data["infras"]) == 6
     assert len(data["modalities"]) == 3
-    assert len(data["geometries"]) == 8
+    assert len(data["geometries"]) == 9
 
     # task id 与 SSOT 一致, 顺序保留
     assert [t["id"] for t in data["tasks"]] == list(reg.TASK_VALUES)

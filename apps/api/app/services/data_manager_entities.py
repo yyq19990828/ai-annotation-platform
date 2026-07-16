@@ -34,6 +34,7 @@ COMPACT_TRACK_TYPES = {
     "video_track_bbox",
     "video_track_polygon",
     "video_track_polyline",
+    "video_track_mask",
 }
 
 

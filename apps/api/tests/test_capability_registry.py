@@ -73,8 +73,8 @@ def test_modality_aligned_with_derive_modalities():
 
 
 def test_geometry_count_and_ids():
-    assert len(reg.GEOMETRIES) == 8
-    assert "bbox" in reg.GEOMETRY_VALUES and "none" in reg.GEOMETRY_VALUES
+    assert len(reg.GEOMETRIES) == 9
+    assert {"bbox", "mask", "none"}.issubset(reg.GEOMETRY_VALUES)
 
 
 def test_all_tasks_have_non_empty_metadata():

@@ -10,6 +10,7 @@ v0.9.6 · 加 /probe (无 DB 副作用的 health check) + /runtime-hints (前端
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import re
 import time
 from typing import Literal
@@ -22,21 +23,70 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import GPUArbiterMode, settings
 from app.db.enums import UserRole
+from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
+from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.user import User
-from app.deps import get_db, require_roles
+from app.deps import (
+    get_db,
+    get_gpu_dispatch_context_factory,
+    get_gpu_shadow_session_factory,
+    require_roles,
+)
 from app.schemas.ml_backend import (
-    MLBackendCreate,
+    ComputeInfo,
+    GPUBackendConfigStatus,
+    GPUConfigDiagnostic,
+    GPUConfigErrorResponse,
+    HealthMeta,
     MLBackendHealthResponse,
     MLBackendOut,
-    MLBackendUpdate,
+    MLBackendUnloadResponse,
+    MLBackendRegistryConflictResponse,
+    MLBackendRegistryCreate,
+    MLBackendRegistryUpdate,
+    RequestValidationErrorResponse,
+    ResidencyInfo,
 )
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
-from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
+from app.services.gpu_arbiter import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+    GPUClaimConfigurationError,
+    GPUDispatchContextFactory,
+    GPUResourceRuntimeObservation,
+    GPUShadowSessionFactory,
+    build_backend_gpu_config_status,
+    build_resource_summaries,
+    claimed_budget_by_resource,
+    disabled_gpu_resource_runtime_observation,
+    observe_gpu_resource_runtime,
+    record_unregistered_gpu_shadow_dispatch,
+    strict_gpu_loaded_evidence,
+    unregistered_gpu_loading_blocked,
+)
+from app.services.gpu_arbiter_store import (
+    GPUArbiterStore,
+    GPUArbiterStoreError,
+    GPUBackendDomainMember,
+)
+from app.services.gpu_arbiter_rollout import (
+    GPUArbiterRolloutDecision,
+    GPUArbiterRolloutSnapshot,
+    classify_gpu_arbiter_rollout,
+    gpu_arbiter_rollout_snapshot,
+)
+from app.services.ml_backend import (
+    GPUBackendManagedMutationBlocked,
+    MLBackendDeleteBlocked,
+    MLBackendService,
+    MLBackendURLConflict,
+)
+from app.services.ml_client import MLBackendClient
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -250,7 +300,11 @@ class GlobalBackendItem(BaseModel):
     is_interactive: bool
     auth_method: str
     extra_params: dict = Field(default_factory=dict)
-    health_meta: dict | None = None
+    gpu_resource_id: str | None = None
+    vram_budget_mb: int | None = None
+    eviction_priority: int | None = None
+    gpu_config: GPUBackendConfigStatus | None = None
+    health_meta: HealthMeta | dict | None = None
     source_project_id: str
     source_project_name: str
     last_checked_at: str | None = None
@@ -260,10 +314,99 @@ class GlobalBackendListResponse(BaseModel):
     items: list[GlobalBackendItem]
 
 
+_GPU_DIAGNOSTIC_LEVEL_ORDER = {
+    "ok": 0,
+    "info": 1,
+    "warning": 2,
+    "critical": 3,
+    "blocker": 4,
+}
+
+
+def _gpu_rollout_diagnostic(
+    resource_id: str,
+    decision: GPUArbiterRolloutDecision,
+    rollout: GPUArbiterRolloutSnapshot | None,
+    *,
+    backend_id: uuid.UUID | None = None,
+) -> GPUConfigDiagnostic | None:
+    desired = settings.gpu_arbiter_desired_mode(resource_id)
+    if not settings.gpu_arbiter_rollout_enabled:
+        if rollout is not None and rollout.state != "off":
+            return GPUConfigDiagnostic(
+                code="gpu_rollout_active_while_disabled",
+                level="blocker",
+                message=(
+                    f"持久 rollout 仍为 {rollout.state}，不能直接关闭 "
+                    "GPU_ARBITER_ROLLOUT_ENABLED；请先完成安全 demotion"
+                ),
+                resource_id=resource_id,
+                backend_id=backend_id,
+            )
+        if desired is GPUArbiterMode.ENFORCE:
+            return GPUConfigDiagnostic(
+                code="gpu_rollout_disabled",
+                level="blocker",
+                message="GPU rollout 发布闩未开启，effective mode 保持 off",
+                resource_id=resource_id,
+                backend_id=backend_id,
+            )
+        return None
+    if decision.dispatch_blocked:
+        return GPUConfigDiagnostic(
+            code="gpu_rollout_not_ready",
+            level="blocker",
+            message=(
+                f"GPU rollout 尚未就绪：{decision.blocked_reason or decision.state}"
+            ),
+            resource_id=resource_id,
+            backend_id=backend_id,
+        )
+    return None
+
+
+def _apply_backend_rollout_status(
+    status: GPUBackendConfigStatus,
+    resource_id: str,
+    decision: GPUArbiterRolloutDecision,
+    rollout: GPUArbiterRolloutSnapshot | None,
+    *,
+    backend_id: uuid.UUID,
+) -> GPUBackendConfigStatus:
+    status.diagnostics = [
+        item
+        for item in status.diagnostics
+        if item.code != "gpu_arbiter_runtime_not_ready"
+    ]
+    diagnostic = _gpu_rollout_diagnostic(
+        resource_id,
+        decision,
+        rollout,
+        backend_id=backend_id,
+    )
+    if diagnostic is not None:
+        status.diagnostics.append(diagnostic)
+    status.effective_mode = decision.effective_mode.value
+    status.rollout_enabled = settings.gpu_arbiter_rollout_enabled
+    status.rollout_state = rollout.state if rollout is not None else decision.state
+    status.rollout_revision = (
+        rollout.revision if rollout is not None else decision.revision
+    )
+    status.rollout_blocker_reason = decision.blocked_reason or (
+        rollout.blocker_reason if rollout is not None else None
+    )
+    status.status = max(
+        (item.level for item in status.diagnostics),
+        key=_GPU_DIAGNOSTIC_LEVEL_ORDER.__getitem__,
+        default="ok",
+    )
+    return status
+
+
 @router.get("/all", response_model=GlobalBackendListResponse)
 async def list_all_backends(
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+    admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
 ) -> GlobalBackendListResponse:
     """v0.19.0 ADR-0044 · 列全局注册表所有 backend。
 
@@ -276,8 +419,42 @@ async def list_all_backends(
             MLBackendRegistry.last_checked_at.desc().nullslast()
         )
     )
+    backends = list(res.scalars().all())
+    can_view_gpu_topology = admin.role == UserRole.SUPER_ADMIN
+    rollout_by_resource: dict[str, GPUArbiterRolloutSnapshot] = {}
+    rollout_decisions: dict[str, GPUArbiterRolloutDecision] = {}
+    if can_view_gpu_topology:
+        rollout_rows = list(
+            (await db.execute(select(GPUArbiterRollout))).scalars().all()
+        )
+        rollout_by_resource = {
+            row.gpu_resource_id: gpu_arbiter_rollout_snapshot(row)
+            for row in rollout_rows
+        }
+        rollout_decisions = {
+            resource_id: classify_gpu_arbiter_rollout(
+                resource_id,
+                settings.gpu_arbiter_desired_mode(resource_id),
+                rollout_by_resource.get(resource_id),
+                rollout_enabled=settings.gpu_arbiter_rollout_enabled,
+            )
+            for resource_id in settings.gpu_arbiter_resources
+        }
+    totals = claimed_budget_by_resource(backends) if can_view_gpu_topology else {}
     items: list[GlobalBackendItem] = []
-    for backend in res.scalars().all():
+    for backend in backends:
+        gpu_config = None
+        if can_view_gpu_topology:
+            gpu_config = build_backend_gpu_config_status(backend, totals)
+            resource_id = backend.gpu_resource_id
+            if resource_id is not None and resource_id in rollout_decisions:
+                gpu_config = _apply_backend_rollout_status(
+                    gpu_config,
+                    resource_id,
+                    rollout_decisions[resource_id],
+                    rollout_by_resource.get(resource_id),
+                    backend_id=backend.id,
+                )
         items.append(
             GlobalBackendItem(
                 id=str(backend.id),
@@ -287,7 +464,29 @@ async def list_all_backends(
                 is_interactive=backend.is_interactive,
                 auth_method=backend.auth_method,
                 extra_params=backend.extra_params or {},
-                health_meta=backend.health_meta,
+                gpu_resource_id=(
+                    backend.gpu_resource_id if can_view_gpu_topology else None
+                ),
+                vram_budget_mb=(
+                    backend.vram_budget_mb if can_view_gpu_topology else None
+                ),
+                eviction_priority=(
+                    backend.eviction_priority if can_view_gpu_topology else None
+                ),
+                gpu_config=gpu_config,
+                # 项目管理员仅需能力目录做模态筛选；GPU UUID、residency 与预算拓扑
+                # 仍严格留在超管面。
+                health_meta=(
+                    backend.health_meta
+                    if can_view_gpu_topology
+                    else {
+                        "capabilities": (
+                            backend.health_meta.get("capabilities")
+                            if isinstance(backend.health_meta, dict)
+                            else None
+                        )
+                    }
+                ),
                 source_project_id="",
                 source_project_name=backend.source,
                 last_checked_at=backend.last_checked_at.isoformat()
@@ -298,6 +497,306 @@ async def list_all_backends(
     return GlobalBackendListResponse(items=items)
 
 
+class GPUArbiterRuntimeObservationItem(BaseModel):
+    status: Literal[
+        "disabled",
+        "missing",
+        "prepared",
+        "ready",
+        "not_ready",
+        "corrupt",
+        "unavailable",
+    ]
+    reason: str
+    ready: bool
+    ledger_revision: int | None = None
+    ledger_incarnation: str | None = None
+    reconcile_deadline_ms: int | None = None
+    committed_mb: int | None = None
+    backend_count: int
+    active_backend_count: int
+    membership_state_counts: dict[str, int]
+    allocation_state_counts: dict[str, int]
+    lease_count: int | None
+    card_queue_count: int | None
+    backend_queue_count: int | None
+    transition_present: bool | None
+    durable_domain_matches: bool | None = None
+
+
+class GPUArbiterRolloutItem(BaseModel):
+    enabled: bool
+    state: Literal[
+        "disabled",
+        "uninitialized",
+        "off",
+        "promoting",
+        "enforcing",
+        "demoting",
+        "blocked",
+    ]
+    effective_mode: Literal["off", "observe", "enforce"]
+    target_mode: Literal["off", "observe", "enforce"] | None = None
+    dispatch_blocked: bool
+    blocked_reason: str | None = None
+    transition_id: uuid.UUID | None = None
+    last_transition_id: uuid.UUID | None = None
+    revision: int | None = None
+
+
+class GPUArbiterResourceItem(BaseModel):
+    gpu_resource_id: str
+    node_id: str
+    physical_device_token: str
+    allocatable_mb: int
+    configured_mode: Literal["off", "observe", "enforce"] | None = None
+    desired_mode: Literal["off", "observe", "enforce"]
+    effective_mode: Literal["off", "observe", "enforce"]
+    claimed_budget_mb: int
+    claimed_backend_count: int
+    status: Literal["ok", "info", "warning", "critical", "blocker"]
+    diagnostics: list[GPUConfigDiagnostic] = Field(default_factory=list)
+    rollout: GPUArbiterRolloutItem
+    runtime: GPUArbiterRuntimeObservationItem
+
+
+class GPUArbiterResourcesResponse(BaseModel):
+    global_desired_mode: Literal["off", "observe", "enforce"]
+    rollout_enabled: bool
+    runtime_ready: bool
+    observe_runtime_ready: bool
+    enforce_runtime_ready: bool
+    resources: list[GPUArbiterResourceItem]
+    diagnostics: list[GPUConfigDiagnostic]
+
+
+@router.get("/gpu-resources", response_model=GPUArbiterResourcesResponse)
+async def list_gpu_resources(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> GPUArbiterResourcesResponse:
+    """Return typed physical resources and static claim diagnostics; no side effects."""
+
+    backends = list((await db.execute(select(MLBackendRegistry))).scalars().all())
+    memberships = list(
+        (
+            await db.execute(
+                select(GPUBackendMembership).order_by(
+                    GPUBackendMembership.gpu_resource_id,
+                    GPUBackendMembership.backend_registry_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    rollout_rows = list((await db.execute(select(GPUArbiterRollout))).scalars().all())
+    rollout_by_resource = {
+        row.gpu_resource_id: gpu_arbiter_rollout_snapshot(row) for row in rollout_rows
+    }
+    rollout_decisions = {
+        resource_id: classify_gpu_arbiter_rollout(
+            resource_id,
+            settings.gpu_arbiter_desired_mode(resource_id),
+            rollout_by_resource.get(resource_id),
+            rollout_enabled=settings.gpu_arbiter_rollout_enabled,
+        )
+        for resource_id in settings.gpu_arbiter_resources
+    }
+    domain_by_resource: dict[str, tuple[GPUBackendDomainMember, ...]] = {}
+    for membership in memberships:
+        domain_by_resource.setdefault(membership.gpu_resource_id, ())
+        domain_by_resource[membership.gpu_resource_id] += (
+            GPUBackendDomainMember(
+                backend_id=str(membership.backend_registry_id),
+                membership_epoch=membership.membership_epoch,
+                state=membership.state,  # type: ignore[arg-type]
+            ),
+        )
+    resources, diagnostics = build_resource_summaries(backends)
+    diagnostics = [
+        item for item in diagnostics if item.code != "gpu_arbiter_runtime_not_ready"
+    ]
+    for item in resources:
+        resource_id = item["gpu_resource_id"]
+        rollout = rollout_by_resource.get(resource_id)
+        decision = rollout_decisions[resource_id]
+        item["diagnostics"] = [
+            diagnostic
+            for diagnostic in item["diagnostics"]
+            if diagnostic.code != "gpu_arbiter_runtime_not_ready"
+        ]
+        rollout_diagnostic = _gpu_rollout_diagnostic(
+            resource_id,
+            decision,
+            rollout,
+        )
+        if rollout_diagnostic is not None:
+            item["diagnostics"].append(rollout_diagnostic)
+            diagnostics.append(rollout_diagnostic)
+        item["effective_mode"] = decision.effective_mode.value
+        item["rollout"] = {
+            "enabled": settings.gpu_arbiter_rollout_enabled,
+            "state": rollout.state if rollout is not None else decision.state,
+            "effective_mode": decision.effective_mode.value,
+            "target_mode": (rollout.target_mode.value if rollout is not None else None),
+            "dispatch_blocked": decision.dispatch_blocked,
+            "blocked_reason": (
+                decision.blocked_reason
+                or (rollout.blocker_reason if rollout is not None else None)
+            ),
+            "transition_id": (rollout.transition_id if rollout is not None else None),
+            "last_transition_id": (
+                rollout.last_transition_id if rollout is not None else None
+            ),
+            "revision": rollout.revision if rollout is not None else decision.revision,
+        }
+    for resource_id, rollout in rollout_by_resource.items():
+        if resource_id in settings.gpu_arbiter_resources or rollout.state == "off":
+            continue
+        diagnostics.append(
+            GPUConfigDiagnostic(
+                code="gpu_rollout_resource_unconfigured",
+                level="blocker",
+                message=(
+                    f"持久 rollout {resource_id} 仍为 {rollout.state}，"
+                    "但静态资源配置已缺失"
+                ),
+                resource_id=resource_id,
+            )
+        )
+    # Release the read transaction after materializing all ORM data and before any
+    # Redis I/O. The dependency keeps the session object alive until serialization,
+    # but no DB connection is held while a slow or corrupt card is observed.
+    await db.rollback()
+    store: GPUArbiterStore | None = None
+    try:
+        managed_runtime_ids = {
+            item["gpu_resource_id"]
+            for item in resources
+            if settings.gpu_arbiter_rollout_enabled
+            and (
+                item["desired_mode"] == "enforce"
+                or (
+                    rollout_by_resource.get(item["gpu_resource_id"]) is not None
+                    and rollout_by_resource[item["gpu_resource_id"]].state != "off"
+                )
+            )
+        }
+        if managed_runtime_ids:
+            store = GPUArbiterStore.from_url(settings.redis_url)
+        observation_semaphore = asyncio.Semaphore(4)
+
+        async def observe_one(item: dict) -> tuple[dict, GPUResourceRuntimeObservation]:
+            resource_id = item["gpu_resource_id"]
+            durable_domain = domain_by_resource.get(resource_id, ())
+            if resource_id in managed_runtime_ids:
+                assert store is not None
+                try:
+                    async with observation_semaphore:
+                        async with asyncio.timeout(3):
+                            observation = await observe_gpu_resource_runtime(
+                                store,
+                                resource_id,
+                                durable_domain,
+                            )
+                except TimeoutError:
+                    state_counts = {"pending": 0, "active": 0, "retiring": 0}
+                    for member in durable_domain:
+                        state_counts[member.state] += 1
+                    observation = GPUResourceRuntimeObservation(
+                        status="unavailable",
+                        reason="gpu_arbiter_observation_timeout",
+                        ready=False,
+                        ledger_revision=None,
+                        ledger_incarnation=None,
+                        reconcile_deadline_ms=None,
+                        committed_mb=None,
+                        backend_count=0,
+                        active_backend_count=0,
+                        membership_state_counts=state_counts,
+                        allocation_state_counts={},
+                        lease_count=None,
+                        card_queue_count=None,
+                        backend_queue_count=None,
+                        transition_present=None,
+                        durable_domain_matches=None,
+                    )
+            else:
+                observation = disabled_gpu_resource_runtime_observation(durable_domain)
+            return item, observation
+
+        observed = await asyncio.gather(*(observe_one(item) for item in resources))
+        resource_ready: dict[str, bool] = {}
+        for item, observation in observed:
+            item["runtime"] = asdict(observation)
+            resource_id = item["gpu_resource_id"]
+            decision = rollout_decisions[resource_id]
+            if (
+                decision.dispatch_mode is GPUArbiterMode.ENFORCE
+                and not observation.ready
+            ):
+                runtime_diagnostic = GPUConfigDiagnostic(
+                    code="gpu_arbiter_runtime_not_ready",
+                    level="blocker",
+                    message=(
+                        "持久 rollout 已 enforcing，但 Redis 账本尚未 ready："
+                        f"{observation.reason or observation.status}"
+                    ),
+                    resource_id=resource_id,
+                )
+                item["diagnostics"].append(runtime_diagnostic)
+                diagnostics.append(runtime_diagnostic)
+            resource_ready[resource_id] = bool(
+                item["desired_mode"] == "enforce"
+                and decision.dispatch_mode is GPUArbiterMode.ENFORCE
+                and observation.ready
+            )
+            item["status"] = max(
+                (diagnostic.level for diagnostic in item["diagnostics"]),
+                key=_GPU_DIAGNOSTIC_LEVEL_ORDER.__getitem__,
+                default="ok",
+            )
+    finally:
+        if store is not None:
+            try:
+                await store.aclose()
+            except GPUArbiterStoreError:
+                pass
+    desired_enforce_ids = {
+        item["gpu_resource_id"]
+        for item in resources
+        if item["desired_mode"] == "enforce"
+    }
+    enforce_runtime_ready = bool(desired_enforce_ids) and all(
+        resource_ready[resource_id] for resource_id in desired_enforce_ids
+    )
+    runtime_ready = (
+        not settings.gpu_arbiter_config_errors
+        and all(
+            resource_id in settings.gpu_arbiter_resources or rollout.state == "off"
+            for resource_id, rollout in rollout_by_resource.items()
+        )
+        and all(
+            (
+                resource_ready[item["gpu_resource_id"]]
+                if item["desired_mode"] == "enforce"
+                else not rollout_decisions[item["gpu_resource_id"]].dispatch_blocked
+            )
+            for item in resources
+        )
+    )
+    return GPUArbiterResourcesResponse(
+        global_desired_mode=settings.gpu_arbiter_mode.value,
+        rollout_enabled=settings.gpu_arbiter_rollout_enabled,
+        runtime_ready=runtime_ready,
+        observe_runtime_ready=True,
+        enforce_runtime_ready=enforce_runtime_ready,
+        resources=[GPUArbiterResourceItem(**item) for item in resources],
+        diagnostics=diagnostics,
+    )
+
+
 # ─── v0.19.0 ADR-0044 · superadmin 全局注册表 CRUD ──────────────────────────
 #
 # backend 是全局资源 (一物理 backend = 一 registry 行 = 一能力快照 = 一并发闸)。
@@ -306,9 +805,17 @@ async def list_all_backends(
 # 守卫 + projects/predictions FK SET NULL 级联。
 
 
-@router.post("/registry", response_model=MLBackendOut, status_code=201)
+@router.post(
+    "/registry",
+    response_model=MLBackendOut,
+    status_code=201,
+    responses={
+        409: {"model": MLBackendRegistryConflictResponse},
+        422: {"model": GPUConfigErrorResponse | RequestValidationErrorResponse},
+    },
+)
 async def create_registry(
-    data: MLBackendCreate,
+    data: MLBackendRegistryCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
@@ -319,17 +826,35 @@ async def create_registry(
     if existing is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"该 URL 已注册为全局 backend ({existing.name})",
+            detail={
+                "error_code": "ml_backend_url_conflict",
+                "message": f"该 URL 已注册为全局 backend ({existing.name})",
+            },
         )
-    backend = await svc.create_registry(
-        name=data.name,
-        url=data.url,
-        source="manual",
-        is_interactive=data.is_interactive,
-        auth_method=data.auth_method,
-        auth_token=data.auth_token,
-        extra_params=data.extra_params,
-    )
+    try:
+        backend = await svc.create_registry(
+            name=data.name,
+            url=data.url,
+            source="manual",
+            is_interactive=data.is_interactive,
+            auth_method=data.auth_method,
+            auth_token=data.auth_token,
+            extra_params=data.extra_params,
+            gpu_resource_id=data.gpu_resource_id,
+            vram_budget_mb=data.vram_budget_mb,
+            eviction_priority=data.eviction_priority,
+        )
+    except GPUClaimConfigurationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "gpu_config_invalid",
+                "message": str(exc),
+                "diagnostics": [
+                    diagnostic.model_dump(mode="json") for diagnostic in exc.diagnostics
+                ],
+            },
+        ) from exc
     await AuditService.log(
         db,
         actor=admin,
@@ -345,10 +870,17 @@ async def create_registry(
     return MLBackendOut.model_validate(backend, from_attributes=True)
 
 
-@router.put("/registry/{registry_id}", response_model=MLBackendOut)
+@router.put(
+    "/registry/{registry_id}",
+    response_model=MLBackendOut,
+    responses={
+        409: {"model": MLBackendRegistryConflictResponse},
+        422: {"model": GPUConfigErrorResponse | RequestValidationErrorResponse},
+    },
+)
 async def update_registry(
     registry_id: uuid.UUID,
-    data: MLBackendUpdate,
+    data: MLBackendRegistryUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
@@ -356,7 +888,35 @@ async def update_registry(
     """编辑全局 backend 的端点固有属性 (name/url/auth/extra_params/is_interactive)。"""
     svc = MLBackendService(db)
     updates = data.model_dump(exclude_unset=True)
-    backend = await svc.update(registry_id, **updates)
+    try:
+        backend = await svc.update(registry_id, **updates)
+    except GPUClaimConfigurationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "gpu_config_invalid",
+                "message": str(exc),
+                "diagnostics": [
+                    diagnostic.model_dump(mode="json") for diagnostic in exc.diagnostics
+                ],
+            },
+        ) from exc
+    except MLBackendURLConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_url_conflict",
+                "message": f"该 URL 已注册为全局 backend ({exc.backend_name})",
+            },
+        ) from exc
+    except GPUBackendManagedMutationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "gpu_backend_retirement_required",
+                "message": str(exc),
+            },
+        ) from exc
     if backend is None:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(
@@ -391,6 +951,14 @@ async def delete_registry(
             status_code=409,
             detail=f"该 backend 上仍有 {exc.running_jobs} 个运行中的预标任务, 无法删除",
         ) from exc
+    except GPUBackendManagedMutationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "gpu_backend_retirement_required",
+                "message": str(exc),
+            },
+        ) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(
@@ -424,6 +992,53 @@ async def check_registry_health(
         backend_id=backend.id,
         backend_name=backend.name,
     )
+
+
+@router.post(
+    "/registry/{registry_id}/unload",
+    response_model=MLBackendUnloadResponse,
+)
+async def unload_registry_backend(
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> MLBackendUnloadResponse:
+    """全局卸载 backend，不要求它已被任一项目启用。"""
+
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
+    try:
+        result = await svc.unload(registry_id)
+    except GPUArbiterDispatchError:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"backend unload failed: {exc}"
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_backend.unloaded",
+        target_type="ml_backend",
+        target_id=str(registry_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": None, "result": result},
+    )
+    await db.commit()
+    return MLBackendUnloadResponse.model_validate(result)
 
 
 # ─── v0.10.26 · 容器直连观测 (与项目注册解耦) ──────────────────────────────
@@ -464,6 +1079,8 @@ class ObserveTarget(BaseModel):
     pool: dict | None = None
     video_pool: dict | None = None  # v0.10.36 · 视频追踪显存池
     cache: dict | None = None
+    compute: ComputeInfo | None = None
+    residency: ResidencyInfo | dict | None = None
     variant_catalog: VariantCatalog | None = None
     supported_variants: list[dict] = []
     supported_trackers: list[
@@ -565,6 +1182,8 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         pool=health.get("pool"),
         video_pool=health.get("video_pool"),  # v0.10.36
         cache=health.get("cache"),
+        compute=health.get("compute"),
+        residency=health.get("residency"),
         variant_catalog=catalog,
         supported_variants=supported_variants,
         supports_variants=catalog is not None or bool(supported_variants),
@@ -623,6 +1242,12 @@ async def smoke_test_backend(
     payload: SmokeTestRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> SmokeTestResponse:
     """试启动: 空池时 warm 指定变体验证可加载性, 成功后自动 /unload 还原现场。
@@ -631,9 +1256,23 @@ async def smoke_test_backend(
     就证明能启, 避免驱逐在用模型 (不和注册的 backend 冲突)。
     """
     base = payload.url.rstrip("/")
+    registered_backend = (
+        await db.execute(select(MLBackendRegistry).where(MLBackendRegistry.url == base))
+    ).scalar_one_or_none()
+    # 后续是长耗时远程调用与独立 shadow 快照；先释放当前只读事务连接。
+    await db.commit()
     variant = {"sam_variant": payload.sam_variant, "dino_variant": payload.dino_variant}
     generic_variant = payload.variant or None
     audit_detail: dict = {"url": base, **variant, "variant": generic_variant}
+    registered_client = (
+        MLBackendClient(
+            registered_backend,
+            shadow_session_factory=shadow_session_factory,
+            dispatch_context_factory=dispatch_context_factory,
+        )
+        if registered_backend is not None
+        else None
+    )
 
     async def _audit(result: SmokeTestResponse) -> None:
         await AuditService.log(
@@ -666,11 +1305,17 @@ async def smoke_test_backend(
 
         # 1) 看池子是否已有变体常驻。
         try:
-            hresp = await client.get(
-                f"{base}/health", timeout=settings.ml_health_timeout
-            )
-            hresp.raise_for_status()
-            health = hresp.json()
+            if registered_client is not None:
+                healthy, health = await registered_client.health_meta()
+                if not healthy:
+                    raise RuntimeError("registered backend /health 不可达")
+                health = health or {}
+            else:
+                hresp = await client.get(
+                    f"{base}/health", timeout=settings.ml_health_timeout
+                )
+                hresp.raise_for_status()
+                health = hresp.json()
         except Exception as e:  # noqa: BLE001
             r = SmokeTestResponse(
                 ok=False, message="试启动失败：/health 不可达", error=str(e)[:200]
@@ -678,16 +1323,118 @@ async def smoke_test_backend(
             await _audit(r)
             return r
 
-        pool = health.get("pool") or {}
+        if not isinstance(health, dict):
+            r = SmokeTestResponse(
+                ok=True,
+                skipped=True,
+                message="容器 /health 格式不可识别，无法证明 GPU 已空；未执行试启动。",
+            )
+            await _audit(r)
+            return r
+
+        raw_pool = health.get("pool")
+        pool_valid = raw_pool is None or isinstance(raw_pool, dict)
+        pool = raw_pool if isinstance(raw_pool, dict) else {}
         # v0.14.14: 优先读协议 PoolStatus.loaded_keys (字符串数组); 老字段
         # loaded_variants (dict 数组) 作 fallback. current_size 直接表示池中数量,
         # 取不到时退到数组长度.
-        loaded_keys = pool.get("loaded_keys") or []
-        loaded_variants = pool.get("loaded_variants") or []
+        raw_loaded_keys = pool.get("loaded_keys")
+        raw_loaded_variants = pool.get("loaded_variants")
+        loaded_keys_valid = raw_loaded_keys is None or isinstance(raw_loaded_keys, list)
+        loaded_variants_valid = raw_loaded_variants is None or isinstance(
+            raw_loaded_variants, list
+        )
+        loaded_keys = raw_loaded_keys if isinstance(raw_loaded_keys, list) else []
+        loaded_variants = (
+            raw_loaded_variants if isinstance(raw_loaded_variants, list) else []
+        )
         current_size = pool.get("current_size")
         if current_size is None:
             current_size = len(loaded_keys) or len(loaded_variants)
-        was_loaded = bool(health.get("loaded")) or current_size > 0
+            current_size_valid = True
+        else:
+            current_size_valid = (
+                isinstance(current_size, int)
+                and not isinstance(current_size, bool)
+                and current_size >= 0
+            )
+            if not current_size_valid:
+                current_size = 0
+        raw_video_pool = health.get("video_pool")
+        video_pool_valid = raw_video_pool is None or isinstance(raw_video_pool, dict)
+        video_pool = raw_video_pool if isinstance(raw_video_pool, dict) else {}
+        raw_video_loaded_keys = video_pool.get("loaded_keys")
+        raw_video_loaded_variants = video_pool.get("loaded_variants")
+        video_loaded_keys_valid = raw_video_loaded_keys is None or isinstance(
+            raw_video_loaded_keys, list
+        )
+        video_loaded_variants_valid = raw_video_loaded_variants is None or isinstance(
+            raw_video_loaded_variants, list
+        )
+        video_loaded_keys = (
+            raw_video_loaded_keys if isinstance(raw_video_loaded_keys, list) else []
+        )
+        video_loaded_variants = (
+            raw_video_loaded_variants
+            if isinstance(raw_video_loaded_variants, list)
+            else []
+        )
+        video_current_size = video_pool.get("current_size")
+        if video_current_size is None:
+            video_current_size = len(video_loaded_keys) or len(video_loaded_variants)
+            video_current_size_valid = True
+        else:
+            video_current_size_valid = (
+                isinstance(video_current_size, int)
+                and not isinstance(video_current_size, bool)
+                and video_current_size >= 0
+            )
+            if not video_current_size_valid:
+                video_current_size = 0
+        active_sessions = video_pool.get("active_sessions")
+        active_sessions_valid = active_sessions is None or (
+            isinstance(active_sessions, int)
+            and not isinstance(active_sessions, bool)
+            and active_sessions >= 0
+        )
+        active_sessions = active_sessions if active_sessions_valid else 0
+        active_sessions = active_sessions or 0
+        loaded_flag = health.get("loaded")
+        loaded_flag_valid = loaded_flag is None or isinstance(loaded_flag, bool)
+        legacy_evidence_valid = all(
+            (
+                pool_valid,
+                loaded_keys_valid,
+                loaded_variants_valid,
+                current_size_valid,
+                video_pool_valid,
+                video_loaded_keys_valid,
+                video_loaded_variants_valid,
+                video_current_size_valid,
+                active_sessions_valid,
+                loaded_flag_valid,
+            )
+        ) and (
+            isinstance(loaded_flag, bool)
+            or raw_pool is not None
+            or raw_video_pool is not None
+        )
+
+        residency_present = "residency" in health
+        residency_loaded = strict_gpu_loaded_evidence(health)
+        if residency_present:
+            # 新协议只有 fresh 直连快照中的严格 false 能证明全 pool GPU 已空；
+            # true、null、畸形或内部矛盾都保守跳过，绝不执行 bodyless unload。
+            was_loaded = residency_loaded is not False
+        else:
+            # 旧协议回退同时覆盖 image/video pool 与活跃 video session。
+            was_loaded = (
+                not legacy_evidence_valid
+                or loaded_flag is True
+                or current_size > 0
+                or video_current_size > 0
+                or active_sessions > 0
+            )
 
         if was_loaded:
             # 回兼 SmokeTestResponse.loaded_variant (dict, 老前端期望 {sam, dino} 形态).
@@ -695,31 +1442,69 @@ async def smoke_test_backend(
             # 回落老字段时直接给 dict.
             first_display: dict | None = None
             if loaded_keys:
-                raw_key = (loaded_keys[0] or {}).get("key") or ""
+                first_key = loaded_keys[0]
+                raw_key = (
+                    first_key.get("key") or ""
+                    if isinstance(first_key, dict)
+                    else str(first_key or "")
+                )
                 parsed = _parse_gsam2_image_key(raw_key) if raw_key else None
                 first_display = parsed or ({"key": raw_key} if raw_key else None)
             elif loaded_variants:
-                first_display = loaded_variants[0]
+                first_variant = loaded_variants[0]
+                first_display = (
+                    first_variant
+                    if isinstance(first_variant, dict)
+                    else {"key": str(first_variant)}
+                )
             display_payload = first_display if first_display else loaded_variants
+            if residency_present:
+                occupancy = (
+                    "residency 报告 GPU 仍驻留"
+                    if residency_loaded is True
+                    else "residency 无法严格证明 GPU 已空"
+                )
+            elif video_current_size > 0 or active_sessions > 0:
+                occupancy = "视频模型或会话仍驻留"
+            elif not legacy_evidence_valid:
+                occupancy = "旧协议驻留字段格式不可识别，无法证明 GPU 已空"
+            else:
+                occupancy = f"容器已有变体常驻（{display_payload}）"
             r = SmokeTestResponse(
                 ok=True,
                 skipped=True,
                 loaded_variant=first_display,
-                message=(
-                    f"容器已有变体常驻（{display_payload}），可加载性已证实；"
-                    "为避免驱逐在用模型，未执行试启动。"
-                ),
+                message=(f"{occupancy}；为避免驱逐在用模型，未执行试启动。"),
             )
             await _audit(r)
             return r
+
+        if registered_backend is None and unregistered_gpu_loading_blocked():
+            raise GPUArbiterDispatchError(
+                GPUArbiterErrorCode.CONFIG_INVALID,
+                message=(
+                    "effective enforce 下未注册 URL 只能执行只读 health/setup；"
+                    "请先注册 backend 并完成受管身份绑定"
+                ),
+            )
 
         # 2) 空池: warm 指定变体。
         body = {k: v for k, v in variant.items() if v}
         start = time.monotonic()
         try:
-            rresp = await client.post(f"{base}/reload", json=body or None)
-            rresp.raise_for_status()
-            reload_data = rresp.json()
+            if registered_backend is not None:
+                assert registered_client is not None
+                reload_data = await registered_client.reload(
+                    sam_variant=payload.sam_variant,
+                    dino_variant=payload.dino_variant,
+                )
+            else:
+                record_unregistered_gpu_shadow_dispatch(base, "reload")
+                rresp = await client.post(f"{base}/reload", json=body or None)
+                rresp.raise_for_status()
+                reload_data = rresp.json()
+        except GPUArbiterDispatchError:
+            raise
         except Exception as e:  # noqa: BLE001
             r = SmokeTestResponse(
                 ok=False, message="试启动失败：模型未能加载", error=str(e)[:200]
@@ -731,10 +1516,16 @@ async def smoke_test_backend(
         # 3) 还原现场: 卸载我们刚预热的变体 (空池时 unload 不会动到别人)。
         auto_unloaded = False
         try:
-            uresp = await client.post(
-                f"{base}/unload", timeout=settings.ml_health_timeout
-            )
-            auto_unloaded = uresp.status_code == 200
+            if registered_backend is not None:
+                assert registered_client is not None
+                await registered_client.unload()
+                auto_unloaded = True
+            else:
+                record_unregistered_gpu_shadow_dispatch(base, "unload")
+                uresp = await client.post(
+                    f"{base}/unload", timeout=settings.ml_health_timeout
+                )
+                auto_unloaded = uresp.status_code == 200
         except Exception:  # noqa: BLE001 — 卸载失败不影响「能启起来」结论, idle watcher 兜底
             auto_unloaded = False
 
@@ -751,9 +1542,9 @@ async def smoke_test_backend(
             message=(
                 f"试启动成功（加载 {load_latency_ms}ms）"
                 + (
-                    "，已自动卸载还原。"
+                    "，已发送自动卸载请求；请以 residency 确认显存释放。"
                     if auto_unloaded
-                    else "，但自动卸载失败，idle 超时后会释放。"
+                    else "，但自动卸载未确认；请检查 residency 或 idle 卸载。"
                 )
             ),
         )

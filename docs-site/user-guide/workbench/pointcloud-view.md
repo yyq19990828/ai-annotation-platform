@@ -10,6 +10,8 @@ last_reviewed: 2026-06-11
 
 3D 点云项目（`data_type=lidar`）进入 Three.js 3D 舞台后，工作台中心是主 3D 视图，悬浮在四周的相机面板按物理朝向贴边显示标定的相机图。本页讲**怎么看点云**——视角导航、相机面板与上色 / 深度；绘制和编辑 3D 框见 [3D 立体框标注](./3d-box)。
 
+![真实室内 RGB-D 扫描点云任务工作台](../images/workbench/pointcloud-real-scene.png)
+
 ## 视图导航
 
 ![拖动主 3D 视图旋转点云：左键按住拖拽即沿轨道环绕（orbit）观察](../images/workbench/pointcloud-view-orbit.gif)

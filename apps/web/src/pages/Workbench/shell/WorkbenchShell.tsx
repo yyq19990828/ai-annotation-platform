@@ -34,9 +34,15 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   return (
     <>
-      <WorkbenchLayout {...model.layout} />
-      <VideoTrackerPropagateDialog {...model.propagateDialog} />
-      <VideoTrackerReviewBar {...model.trackerReview} />
+      <WorkbenchLayout
+        {...model.layout}
+        stageOverlay={(
+          <>
+            <VideoTrackerPropagateDialog {...model.propagateDialog} />
+            <VideoTrackerReviewBar {...model.trackerReview} />
+          </>
+        )}
+      />
       {model.issueSection && (() => {
         // 落点模式(armed)进行中强制保持露出,否则用户移开光标会丢失高亮指示。
         const fabShown = fabRevealed || model.issueSection.issuePinDropArmed;
@@ -50,6 +56,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onClick={model.issueSection.onOpenList}
             className={cn(ISSUE_FAB_CLASS, "bottom-20", hiddenCls)}
             data-testid="issue-fab"
+            data-workbench-fab
           >
             <Icon name="flag" size={14} />
             {model.issueSection.openIssueCount > 0 && (
@@ -69,6 +76,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                 hiddenCls,
               )}
               data-testid="issue-pin-fab"
+              data-workbench-fab
               data-armed={model.issueSection.issuePinDropArmed ? "true" : "false"}
             >
               <Icon name="crosshair" size={14} />

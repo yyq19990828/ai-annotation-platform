@@ -1,13 +1,6 @@
-import { Button } from "@/components/ui/Button";
-// v0.21.28 · 候选/接受流审阅条: 与 AI 追踪对话框 / SAM 交互工具条同款顶部悬浮 chrome。
-import {
-  TOOLBAR_CHROME_CLASS,
-  TOOLBAR_DIVIDER,
-} from "../shell/workbenchToolbarChrome";
+import { Bot, Check, Trash2 } from "lucide-react";
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+import { Button } from "@/components/ui/Button";
 
 export interface VideoTrackerReviewBarProps {
   /** 有待审候选时显示。 */
@@ -43,19 +36,23 @@ export function VideoTrackerReviewBar({
     <div
       role="dialog"
       aria-label="AI 追踪候选审阅"
+      aria-live="polite"
       data-testid="video-tracker-review-bar"
-      className={cn(
-        "fixed left-1/2 top-16 z-workbench-modal max-w-[calc(100%-1.5rem)] -translate-x-1/2",
-        TOOLBAR_CHROME_CLASS,
-      )}
+      className="absolute left-1/2 top-3 z-workbench-modal w-[min(38rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xl"
     >
-      <div className="flex items-center gap-2.5">
-        <b className="whitespace-nowrap text-xs">AI 追踪候选</b>
-        <span className="whitespace-nowrap text-2xs text-muted-foreground">
-          {frameCount} 帧{targetCount > 1 ? ` · ${targetCount} 目标` : ""} · 审阅后落库
-        </span>
-        {TOOLBAR_DIVIDER}
-        <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-info-soft text-status-info">
+            <Bot className="size-4" />
+          </span>
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2 className="text-sm font-semibold tracking-tight">AI 追踪候选</h2>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              已生成 {frameCount} 帧{targetCount > 1 ? `，${targetCount} 个目标` : ""}，确认后才会写入轨迹。
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -63,20 +60,23 @@ export function VideoTrackerReviewBar({
             disabled={submitting}
             data-testid="tracker-review-discard"
           >
+            <Trash2 data-icon="inline-start" />
             丢弃
           </Button>
           <Button
+            variant="primary"
             size="sm"
             onClick={onAccept}
             disabled={submitting}
             data-testid="tracker-review-accept"
           >
+            <Check data-icon="inline-start" />
             接受
           </Button>
         </div>
       </div>
-      <div className="text-2xs text-muted-foreground">
-        画布以候选框预览; 接受落库、丢弃则标注零改动。
+      <div className="border-t border-border bg-muted/30 px-4 py-2 text-2xs leading-relaxed text-muted-foreground">
+        画布中已显示候选结果。丢弃不会改动原有标注。
       </div>
     </div>
   );

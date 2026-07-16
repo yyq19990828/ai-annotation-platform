@@ -11,6 +11,7 @@ import type {
   VideoPolylineGeometry,
   VideoSamplingConfig,
   VideoTrackGeometry,
+  VideoTrackMaskGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
 } from "@/types";
@@ -29,7 +30,8 @@ import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/videoStageControls";
 import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
-import type { VideoTrackAnnotation, VideoSamPrompt } from "../stage/videoStageTypes";
+import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../stage/videoStageTypes";
+import type { VideoMaskCandidate } from "../stage/videoMaskFrames";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
 // v0.13.2 · 点云 3D 模块 lazy import：three(~600KB)只在打开 lidar 任务时加载，不进主 bundle。
@@ -42,7 +44,7 @@ import type { ImageContextMenuClipboardActions } from "../stage/imageStageContex
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 
 /**
  * v0.10.39 · WorkbenchStageHostProps 按语义嵌套:
@@ -114,6 +116,10 @@ interface WorkbenchStageHostVideoProps {
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
+  videoMaskCandidates?: VideoMaskCandidate[];
+  videoMaskEditor?: UseMaskEditorReturn;
+  onVideoMaskCommit?: () => void;
+  onVideoMaskCancel?: () => void;
   /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool 同语义)。 */
   samPolarity?: "positive" | "negative";
   spacePan: boolean;
@@ -148,7 +154,7 @@ interface WorkbenchStageHostVideoProps {
   onVideoComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onToggleHiddenVideoTrack?: (trackId: string) => void;
   onToggleLockedVideoTrack?: (trackId: string) => void;
-  onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
+  onPropagateVideoTrack?: (annotation: VideoManagedTrackAnnotation) => void;
   // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回)。
   aiBoxes?: AiBox[];
   onAcceptPrediction?: (b: AiBox) => void;
@@ -329,6 +335,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       samActiveIdx: videoSamActiveIdx,
       samSessionPoints: videoSamSessionPoints,
       samSessionBoxes: videoSamSessionBoxes,
+      videoMaskCandidates,
+      videoMaskEditor,
+      onVideoMaskCommit,
+      onVideoMaskCancel,
       samPolarity: videoSamPolarity,
       spacePan: videoSpacePan,
       onSpacePanDragStart: onVideoSpacePanDragStart,
@@ -482,6 +492,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             samActiveIdx={videoSamActiveIdx}
             samSessionPoints={videoSamSessionPoints}
             samSessionBoxes={videoSamSessionBoxes}
+            maskCandidates={videoMaskCandidates}
+            maskEditor={videoMaskEditor}
+            onMaskCommit={onVideoMaskCommit}
+            onMaskCancel={onVideoMaskCancel}
             samPolarity={videoSamPolarity}
             spacePan={videoSpacePan}
             onSpacePanDragStart={onVideoSpacePanDragStart}

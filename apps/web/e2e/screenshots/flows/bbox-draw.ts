@@ -3,44 +3,34 @@
  *
  * 输出：outputs/flows/bbox-draw.gif → docs-site/.../bbox/draw-in-progress.gif
  *
- * P-COCO8 内置 bbox 工具单位（seed_coco8.py）。选「矩形」工具(id=box) → 在画布按下拖动松开
+ * screenshot catalog 的 image_demo 内置 bbox 工具单位。选「矩形」工具(id=box) → 在画布按下拖动松开
  * 生成一个矩形（geometry.type=bbox）→ 选中态展示 8 个控制手柄（4 角 + 4 边）。
  * 画布是 Konva canvas，手柄无 DOM 句柄，全程用 page.mouse 坐标操作。
  *
- * 不走 seed/peek（它当前可能返回视频项目 P-VIDEO-DEV，进的是视频工作台没有 tool-btn-box），
- * 改用 admin token 按 display_id='P-COCO8' 解析图片项目 + 首个 task，与视频/点云 flow 同思路。
+ * 项目和任务由 screenshot catalog 的 image_demo.annotating 稳定定位。
  *
  * 返回 { drawStartMs, drawEndMs }：绘制段起止时间戳，供 finalize 裁掉开头(隐藏预测/选工具)
- * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 flows.spec 的 afterAll 经 psql 清理。
+ * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 flows.spec 的 afterAll 重建截图 seed 清理。
  */
 import type { Page } from "@playwright/test";
-import { hidePredictions, openCoco8Annotate } from "./_canvas";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { hidePredictions, openImageAnnotate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-export async function runBboxDraw(page: Page, adminEmail: string): Promise<DrawWindow | null> {
-  if (!(await openCoco8Annotate(page, adminEmail))) {
-    console.warn("[bbox-draw] 无法解析 P-COCO8（seed_coco8 未跑?），跳过");
-    return null;
-  }
+export async function runBboxDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
+  await openImageAnnotate(page, catalog);
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏满屏预测框 → 选矩形工具
   await hidePredictions(page);
 
   const btn = page.getByTestId("tool-btn-box");
-  if (!(await btn.count())) {
-    console.warn("[bbox-draw] 无 tool-btn-box（项目未绑定 bbox?），跳过");
-    return null;
-  }
   await btn.click();
   await page.waitForTimeout(900);
 
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
-  if (!box) {
-    console.warn("[bbox-draw] 无 workbench-stage 边界，跳过");
-    return null;
-  }
+  if (!box) throw new Error("[bbox-draw] workbench-stage 没有可见边界");
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   const halfW = 130;
@@ -61,8 +51,7 @@ export async function runBboxDraw(page: Page, adminEmail: string): Promise<DrawW
 
   const drawEndMs = Date.now();
 
-  // 等 autosave 把新框落库（清理由 flows.spec 的 afterAll 经 psql 完成）
-  await page.waitForLoadState("networkidle").catch(() => {});
+  // 等 autosave 把新框落库（清理由 flows.spec 的 afterAll 重建截图 seed 完成）
   await page.waitForTimeout(1200);
 
   return { drawStartMs, drawEndMs };

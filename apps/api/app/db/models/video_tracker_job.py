@@ -41,10 +41,11 @@ class VideoTrackerJob(Base):
         nullable=False,
         index=True,
     )
-    annotation_id: Mapped[uuid.UUID] = mapped_column(
+    # v0.22.1 · B · 源轨迹可选: 无源检测 (画布级文本/种子发起) 时为空, 主实例也走新建。
+    annotation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("annotations.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     segment_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -53,6 +54,9 @@ class VideoTrackerJob(Base):
         nullable=True,
         index=True,
     )
+    # v0.22.1 · B · 无源检测新建轨迹用的显式类别 (缺省继承源轨迹); 有源延展时为空。
+    target_class_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    target_tool_unit_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

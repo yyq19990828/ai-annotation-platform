@@ -28,7 +28,10 @@ ai-annotation-platform 的第三个 ML backend（v0.14.12）—— 基于 [ultra
 | `GET /setup`   | 协议 v2 多模型目录（4 model × series × size variants） |
 | `GET /versions`| backend / ultralytics 版本 |
 | `POST /predict`| 批量预测；入参 `context.{type, variants, params}` + `tasks[]` |
-| `POST /unload` | 手动释放显存（运维用） |
+| `POST /warmup` | 受 borrower 保护的模型预热 |
+| `POST /drain` / `/drain/cancel` | 受签名 generation fencing 控制的排空 / 恢复 |
+| `POST /unload` | 无 body 保留 legacy 兼容；带 generation body 时执行受管全池卸载 |
+| `POST /lifecycle/mode` / `/lifecycle/reset` | gate 握手与 unmanaged 驻留可信清场 |
 | `GET /metrics` | Prometheus |
 
 详见 [`docs-site/dev/reference/ml-backend-protocol.md`](../../docs-site/dev/reference/ml-backend-protocol.md) §4.1。
@@ -44,6 +47,7 @@ ai-annotation-platform 的第三个 ML backend（v0.14.12）—— 基于 [ultra
 | `YOLO_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期(秒) |
 | `YOLO_STRICT_OFFLINE` | `0` | 1 时缺权重报 400, 不去 GH download |
 | `YOLO_CHECKPOINTS_DIR` | `/app/checkpoints` | 权重落盘位置 |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | 空 | Ed25519 验签公钥 keyring JSON；空值只启用 legacy gate |
 | `LOG_LEVEL` | `INFO` | python logging |
 
 ## 部署

@@ -1,5 +1,23 @@
 import { apiClient } from "./client";
 import type { MLBackendSupportedVariantGroup } from "./ml-backends";
+import type {
+  GPUArbiterResourcesResponse,
+  GPUBackendConfigStatus,
+  GpuInfo,
+  MLBackendUnloadResponse,
+  ResidencyInfo,
+} from "./generated/types.gen";
+import type { MLBackendCompute } from "@/utils/mlBackendCompute";
+
+export type {
+  GPUArbiterResourceItem,
+  GPUArbiterResourcesResponse,
+  GPUBackendConfigStatus,
+  GPUConfigDiagnostic,
+  GpuInfo,
+  MLBackendUnloadResponse,
+  ResidencyInfo,
+} from "./generated/types.gen";
 
 export interface BucketSummary {
   name: string;
@@ -70,14 +88,7 @@ export interface VideoPoolMeta {
 }
 
 export interface BackendHealthMeta {
-  gpu_info?: {
-    device_name?: string;
-    device_index?: number | null;
-    memory_used_mb?: number;
-    memory_total_mb?: number;
-    memory_free_mb?: number;
-    process_memory_mb?: number | null;
-  } | null;
+  gpu_info?: GpuInfo | null;
   cache?: {
     hit_rate?: number;
     hits?: number;
@@ -92,6 +103,10 @@ export interface BackendHealthMeta {
   video_pool?: VideoPoolMeta | null;
   /** v0.10.37 · /setup 能力快照 (epic 阶段 1); check_health 探 /setup 后落库。 */
   capabilities?: BackendCapabilities | null;
+  /** v0.22.3 WS4 · 有效计算设备观测 (GPU 静默退回 CPU 告警用)。 */
+  compute?: MLBackendCompute | null;
+  /** ADR-0049 · 全 pool/session 的物理 GPU 驻留真值；第三方旧响应允许保留原始对象。 */
+  residency?: ResidencyInfo | Record<string, unknown> | null;
 }
 
 // v0.10.37 · backend /setup 能力快照 (epic 阶段 1); modalities 为派生视图 (image/video)。
@@ -170,6 +185,10 @@ export interface GlobalBackendItem {
   is_interactive: boolean;
   auth_method: string;
   extra_params: Record<string, unknown>;
+  gpu_resource_id: string | null;
+  vram_budget_mb: number | null;
+  eviction_priority: number | null;
+  gpu_config: GPUBackendConfigStatus | null;
   health_meta: BackendHealthMeta | null;
   source_project_id: string;
   source_project_name: string;
@@ -191,6 +210,9 @@ export interface MLBackendOut {
   is_interactive: boolean;
   auth_method: string;
   extra_params: Record<string, unknown>;
+  gpu_resource_id: string | null;
+  vram_budget_mb: number | null;
+  eviction_priority: number;
   health_meta?: BackendHealthMeta | null;
   error_message: string | null;
   last_checked_at: string | null;
@@ -205,6 +227,9 @@ export interface MLBackendRegistryCreatePayload {
   auth_method?: "none" | "token";
   auth_token?: string | null;
   extra_params?: Record<string, unknown>;
+  gpu_resource_id?: string | null;
+  vram_budget_mb?: number | null;
+  eviction_priority?: number;
 }
 
 // update 与 create 同字段, 但全部可选 (仅下发改动字段)。
@@ -228,13 +253,7 @@ export interface ObserveTarget {
   latency_ms: number;
   status_code?: number | null;
   error?: string | null;
-  gpu_info?: {
-    device_name?: string;
-    device_index?: number | null;
-    memory_used_mb?: number;
-    memory_total_mb?: number;
-    process_memory_mb?: number | null;
-  } | null;
+  gpu_info?: GpuInfo | null;
   model_version?: string | null;
   pool?: BackendPoolMeta | null;
   /** v0.10.36 · video tracker 独立显存池观测。 */
@@ -242,6 +261,8 @@ export interface ObserveTarget {
   /** v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空 = 不支持视频追踪。 */
   supported_trackers?: string[];
   cache?: { hit_rate?: number; buckets?: Record<string, CacheBucketStat> } | null;
+  compute?: MLBackendCompute | null;
+  residency?: ResidencyInfo | Record<string, unknown> | null;
   variant_catalog?: VariantCatalog | null;
   supported_variants?: MLBackendSupportedVariantGroup[];
   supports_variants: boolean;
@@ -282,6 +303,9 @@ export const adminMlIntegrationsApi = {
   /** v0.9.7 · 全局 backend 去重列表, 用于 Wizard step 4 dropdown. */
   listAll: () =>
     apiClient.get<GlobalBackendListResponse>("/admin/ml-integrations/all"),
+  /** ADR-0049 · 逐物理卡静态容量、模式和配置诊断。 */
+  gpuResources: () =>
+    apiClient.get<GPUArbiterResourcesResponse>("/admin/ml-integrations/gpu-resources"),
   /** v0.10.26 · 直连观测 env 配的后端容器 (健康/变体目录/registered 标记). */
   observe: () => apiClient.get<ObserveResponse>("/admin/ml-integrations/observe"),
   /** v0.10.26 · 试启动: 空池时 warm→自动 unload 验证可加载性. */
@@ -299,4 +323,7 @@ export const adminMlIntegrationsApi = {
   /** v0.19.0 · 对全局 backend 触发一次健康检查. */
   registryHealth: (id: string) =>
     apiClient.post<RegistryHealthResponse>(`/admin/ml-integrations/registry/${id}/health`),
+  /** ADR-0049 · 不依赖项目绑定的全局 backend 手工卸载。 */
+  registryUnload: (id: string) =>
+    apiClient.post<MLBackendUnloadResponse>(`/admin/ml-integrations/registry/${id}/unload`),
 };

@@ -1,9 +1,12 @@
 import json
+from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 from pydantic_settings import BaseSettings, NoDecode
+
+from app.utils.gpu_resource import validate_physical_device_token
 
 # repo root .env (apps/api/app/config.py → ../../.. = repo root)
 # 容器布局是 /app/app/config.py 只有 3 层 parents, parents[3] 越界 IndexError;
@@ -22,12 +25,70 @@ _REPO_ROOT_DUCKDB = (
 )
 
 
+class GPUArbiterMode(str, Enum):
+    """Platform-side GPU arbitration rollout mode, ordered by strictness."""
+
+    OFF = "off"
+    OBSERVE = "observe"
+    ENFORCE = "enforce"
+
+
+_GPU_ARBITER_MODE_ORDER = {
+    GPUArbiterMode.OFF: 0,
+    GPUArbiterMode.OBSERVE: 1,
+    GPUArbiterMode.ENFORCE: 2,
+}
+
+
+def _json_without_duplicate_keys(raw: str) -> object:
+    """Decode JSON while rejecting duplicate keys at every object level."""
+
+    def _object_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError(f"JSON 存在重复 key: {key}")
+            value[key] = item
+        return value
+
+    return json.loads(raw, object_pairs_hook=_object_pairs)
+
+
+class GPUArbiterResource(BaseModel):
+    """One explicitly configured physical GPU/MIG resource."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    node_id: str = Field(strict=True, min_length=1, max_length=255)
+    physical_device_token: str = Field(strict=True, min_length=1, max_length=255)
+    allocatable_mb: int = Field(strict=True, gt=0, le=2_147_483_647)
+    # Missing resource mode is intentionally safer than inheriting the global mode.
+    mode: GPUArbiterMode | None = None
+
+    @field_validator("node_id", "physical_device_token")
+    @classmethod
+    def _validate_identity_component(cls, value: str, info) -> str:
+        if value != value.strip() or any(ch.isspace() for ch in value):
+            raise ValueError(f"{info.field_name} 不得包含空白")
+        if "," in value:
+            raise ValueError(f"{info.field_name} 不得包含逗号")
+        if info.field_name == "node_id" and "/" in value:
+            raise ValueError("node_id 不得包含 /")
+        if info.field_name == "physical_device_token":
+            validate_physical_device_token(value)
+        return value
+
+    @property
+    def resource_id(self) -> str:
+        return f"{self.node_id}/{self.physical_device_token}"
+
+
 class Settings(BaseSettings):
     app_name: str = "AI 标注平台 API"
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.21.33"
+    app_version: str = "0.22.4"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -109,7 +170,9 @@ class Settings(BaseSettings):
     minio_import_bucket: str = "import"
     minio_export_bucket: str = "export"
     minio_use_ssl: bool = False
-    minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
+    # 浏览器可达的签名 URL 根地址：可为绝对 URL，也可为 DEV 同源前缀
+    # (/minio，由 Vite 代理到对象存储)。
+    minio_public_url: str = ""
 
     # v0.9.4 · 当 ML backend 在 docker compose 网内、平台 api 在 host 进程时,
     # SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge gateway
@@ -140,6 +203,77 @@ class Settings(BaseSettings):
                 return json.loads(v)
             return [u.strip() for u in v.split(",") if u.strip()]
         return v
+
+    # v0.22.4 · ADR-0049 · 跨 backend GPU 显存仲裁的唯一 desired-state 配置。
+    # 全局 mode 是上限 / 紧急回滚开关；每张卡仍必须在 resources JSON 中
+    # 显式声明 mode，缺失按 off，防止全局切换意外提升所有卡。
+    gpu_arbiter_mode: GPUArbiterMode = GPUArbiterMode.OFF
+    # P6 release latch.  False preserves the pre-rollout zero-DB-read dispatch
+    # behavior even when desired mode is enforce.  Once enabled, every GPU load
+    # must resolve the durable per-resource rollout row and fail closed on loss.
+    gpu_arbiter_rollout_enabled: bool = False
+    # Tombstone GC is the only path allowed to DELETE durable GPU membership/fence
+    # rows.  The URL stays in a file mounted only into the GPU control worker; all
+    # ordinary application processes continue using ``database_url`` without the
+    # collector credential.
+    gpu_arbiter_collector_database_url_file: str = ""
+    # 保留 raw JSON，使 off/observe 能安全启动并在管理端展示配置
+    # blocker。解析失败时 resources 为空，逐卡 desired mode 自动回落 off。
+    gpu_arbiter_resources_json: Annotated[str, NoDecode] = "{}"
+    # Platform-only Ed25519 private seeds are read lazily from a mounted file by
+    # enforce authority/promotion code.  off/observe startup and dispatch never
+    # read this file, and GPU backends receive only their public verify keyring.
+    gpu_lifecycle_signing_keys_file: str = ""
+    gpu_lifecycle_active_signing_kid: str = ""
+    # Slow-path FIFO has its own bound; it must not inherit the much longer
+    # inference timeout or keep a card queue ticket alive indefinitely.
+    gpu_arbiter_admission_timeout_seconds: int = Field(default=30, gt=0, le=3600)
+    # Every newly confirmed Resident allocation gets a Redis-time protection
+    # window before it may participate in victim selection.
+    gpu_arbiter_residency_cooldown_seconds: int = Field(default=30, gt=0, le=3600)
+
+    def _parse_gpu_arbiter_resources(
+        self,
+    ) -> tuple[dict[str, GPUArbiterResource], list[str]]:
+        raw = self.gpu_arbiter_resources_json.strip()
+        if not raw:
+            return {}, []
+        try:
+            decoded = _json_without_duplicate_keys(raw)
+            if not isinstance(decoded, dict):
+                raise ValueError("GPU_ARBITER_RESOURCES_JSON 必须是 JSON object")
+            resources = TypeAdapter(dict[str, GPUArbiterResource]).validate_python(
+                decoded
+            )
+            for resource_id, resource in resources.items():
+                if resource_id != resource.resource_id:
+                    raise ValueError(
+                        "GPU resource key 必须精确等于 "
+                        f"node_id/physical_device_token: {resource.resource_id}"
+                    )
+            return resources, []
+        except (TypeError, ValueError) as exc:
+            return {}, [str(exc)]
+
+    @property
+    def gpu_arbiter_resources(self) -> dict[str, GPUArbiterResource]:
+        return self._parse_gpu_arbiter_resources()[0]
+
+    @property
+    def gpu_arbiter_config_errors(self) -> list[str]:
+        return self._parse_gpu_arbiter_resources()[1]
+
+    def gpu_arbiter_desired_mode(self, resource_id: str) -> GPUArbiterMode:
+        """Return desired mode after applying the global ceiling; unknown is off."""
+
+        resource = self.gpu_arbiter_resources.get(resource_id)
+        if resource is None:
+            return GPUArbiterMode.OFF
+        resource_mode = resource.mode or GPUArbiterMode.OFF
+        return min(
+            (self.gpu_arbiter_mode, resource_mode),
+            key=_GPU_ARBITER_MODE_ORDER.__getitem__,
+        )
 
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10

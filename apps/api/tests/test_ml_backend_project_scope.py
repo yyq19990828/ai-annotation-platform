@@ -4,9 +4,11 @@
 require_roles 校验「全局角色」, 未校验 URL 里的 project_id 是否对调用者可见/归其所有,
 形成跨项目越权面:
   · 读端点 (list/setup/capabilities/interactive): 全局 annotator/reviewer 可读任意项目;
-  · 写端点 (create/update/delete/unload/...): 任一 project_admin 可改他人名下项目。
+  · 项目启用写端点: 任一 project_admin 可改他人名下项目。
+  · 全局注册行写端点 (create/update/unload/...): project_admin 可改全局共享状态。
 
-修复: 读端点叠加 require_project_visible, 写端点叠加 require_project_owner。
+修复: 读端点叠加 require_project_visible，项目启用叠加
+require_project_owner；会新建或修改全局注册行的端点只允许 super_admin。
 本模块锁定该行为 (正/反各一)。
 """
 
@@ -17,6 +19,7 @@ import uuid
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
 
 
 async def _seed_project(db, owner_id) -> Project:
@@ -95,6 +98,29 @@ async def test_list_backends_ok_for_member_annotator(
     assert len(resp.json()) == 1
 
 
+async def test_project_backend_list_keeps_malformed_health_meta_observable(
+    httpx_client_bound, super_admin, db_session
+):
+    """第三方历史坏 health JSON 不能让项目 backend 列表整体 500。"""
+    owner, token = super_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    backend.health_meta = {
+        "compute": [],
+        "gpu_info": "unreadable",
+        "residency": {},
+    }
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj.id}/ml-backends",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()[0]["health_meta"]["residency"] == {}
+
+
 # ── 写端点: require_project_owner ────────────────────────────────────
 
 
@@ -115,10 +141,10 @@ async def test_create_backend_denied_for_non_owner_project_admin(
     assert resp.status_code == 403, resp.text
 
 
-async def test_create_backend_ok_for_owning_project_admin(
+async def test_create_backend_denied_for_owning_project_admin(
     httpx_client_bound, project_admin, db_session
 ):
-    """owner project_admin 给自己项目加 backend → 201 (未被过度收紧)。"""
+    """create 会写全局注册行，项目 owner 也不能执行。"""
     pm, pm_token = project_admin
     proj = await _seed_project(db_session, pm.id)
     await db_session.commit()
@@ -128,7 +154,7 @@ async def test_create_backend_ok_for_owning_project_admin(
         json={"name": "sam3", "url": "http://sam3-own/", "is_interactive": True},
         headers={"Authorization": f"Bearer {pm_token}"},
     )
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 403, resp.text
 
 
 # ── 共享全局态运维端点: unload/reload 收口到 super_admin ────────────────────
@@ -212,6 +238,43 @@ async def test_reload_allowed_for_super_admin(
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 200, resp.text
+
+
+async def test_residency_routes_preserve_gpu_arbiter_error_contract(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    owner, admin_token = super_admin
+    proj = await _seed_project(db_session, owner.id)
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def _reject(*_args, **_kwargs):
+        raise GPUArbiterDispatchError(
+            GPUArbiterErrorCode.BACKEND_CONCURRENCY_SATURATED,
+            message="lease full",
+            retry_after_s=7,
+        )
+
+    for method in ("unload", "reload", "warmup"):
+        monkeypatch.setattr(
+            f"app.services.ml_backend.MLBackendService.{method}",
+            _reject,
+        )
+
+    for operation in ("unload", "reload", "warmup"):
+        response = await httpx_client_bound.post(
+            f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/{operation}",
+            json={} if operation != "unload" else None,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 503, response.text
+        assert response.json() == {
+            "detail": {
+                "error_code": "gpu_backend_concurrency_saturated",
+                "message": "lease full",
+            }
+        }
+        assert response.headers["Retry-After"] == "7"
 
 
 # ── warmup: 刻意保留 project_owner (未随 unload/reload 收口) ─────────────────

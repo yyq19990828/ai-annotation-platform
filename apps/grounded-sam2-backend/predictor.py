@@ -35,6 +35,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
 from aap_protocol_v2 import decode_low_res_mask, encode_low_res_mask
 from embedding_cache import CacheEntry, EmbeddingCache
 from mask_utils import MultiPolygonRing, mask_to_multi_polygon
@@ -103,24 +104,24 @@ class GroundedSAM2Predictor:
         self.dino_variant = dino_variant
         self.box_threshold = box_threshold
         self.text_threshold = text_threshold
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = effective_device("cuda")
         self.embedding_cache = embedding_cache
+        self.cleanup_uncertain = False
 
-        self._sam_predictor = self._load_sam()
-        self._dino_model = self._load_dino()
+        self._sam_predictor, self._dino_model = self._load_models()
 
     # ---------- 模型加载 ----------
 
-    def _load_sam(self):
+    def _build_sam(self, device: str):
         from sam2.build_sam import build_sam2  # type: ignore[import-not-found]
         from sam2.sam2_image_predictor import SAM2ImagePredictor  # type: ignore[import-not-found]
 
         cfg_name, ckpt_name = SAM2_CONFIGS[self.sam_variant]
         ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
-        sam2_model = build_sam2(cfg_name, ckpt_path, device=self.device)
+        sam2_model = build_sam2(cfg_name, ckpt_path, device=device)
         return SAM2ImagePredictor(sam2_model)
 
-    def _load_dino(self):
+    def _build_dino(self, device: str):
         # vendor/grounded-sam-2/ 仓库内 GroundingDINO 通过 grounding_dino 子目录暴露 inference utils.
         from groundingdino.util.inference import load_model  # type: ignore[import-not-found]
 
@@ -132,7 +133,36 @@ class GroundedSAM2Predictor:
             f"/app/vendor/grounded-sam-2/grounding_dino/groundingdino/config/{cfg_name}",
         )
         ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
-        return load_model(cfg_path, ckpt_path, device=self.device)
+        return load_model(cfg_path, ckpt_path, device=device)
+
+    def _load_models(self):
+        """以 SAM + DINO 整体为一次设备提交，避免混合 GPU/CPU predictor。"""
+        if self.device == "cpu":
+            return self._build_sam("cpu"), self._build_dino("cpu")
+
+        gpu_sam = None
+        try:
+            gpu_sam = self._build_sam(self.device)
+            gpu_dino = self._build_dino(self.device)
+            return gpu_sam, gpu_dino
+        except Exception as exc:  # noqa: BLE001
+            if not is_device_error(exc):
+                raise
+            # A device build may allocate hidden CUDA state before raising.  Keep
+            # residency Unknown until a later full-pool cleanup has completed.
+            self.cleanup_uncertain = True
+            # 不在 CPU replacement 完整成功前改写进程 latch；先丢弃可能
+            # 已在 GPU 上构建的 SAM，再用同一设备重建两个组件。
+            gpu_sam = None
+            free_gpu_memory()
+            try:
+                cpu_sam = self._build_sam("cpu")
+                cpu_dino = self._build_dino("cpu")
+            except Exception as cpu_exc:  # noqa: BLE001
+                raise cpu_exc from exc
+            self.device = "cpu"
+            latch_cpu(f"GPU model build failed; CPU replacement committed: {exc}")
+            return cpu_sam, cpu_dino
 
     # ---------- SAM 内部状态 snapshot / restore ----------
     #

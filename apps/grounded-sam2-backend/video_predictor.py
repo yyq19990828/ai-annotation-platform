@@ -25,7 +25,7 @@ vendor SAM2 video API 关键事实 (以实际 vendor 代码为准, commit 见 sy
   - propagate_in_video(state, start_frame_idx, max_frame_num_to_track, reverse):
     yield (frame_idx, obj_ids, video_res_masks); masks 是原始视频分辨率的 logits
     (shape [num_obj, 1, H, W]), >0 为前景。
-  - 会话清理: reset_state(state) 反向清理 + del state + torch.cuda.empty_cache()。
+  - 会话清理: reset_state(state) 反向清理 + del state + 共享 best-effort CUDA 缓存清理。
 
 坐标归一化约定照搬 predictor.py: 像素 / (w 或 h), clamp 到 [0,1], 与 _box_to_rect_label 同源。
 """
@@ -47,7 +47,9 @@ import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
 import torch
 
+from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
+from mask_utils.rle import encode_coco_rle
 
 logger = logging.getLogger("grounded-sam2-backend.video")
 
@@ -82,12 +84,28 @@ class SAM2VideoTracker:
     ) -> None:
         self.sam_variant = sam_variant
         self.max_window_frames = max_window_frames
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = effective_device("cuda")
+        self.cleanup_uncertain = False
         self._predictor = self._load_video_predictor()
         # 当前活跃会话数 (0/1; 单 worker 串行, 仅用于 /health 观测)。
         self.active_sessions = 0
 
     def _load_video_predictor(self):
+        if self.device == "cpu":
+            return self._build_for_device("cpu")
+        try:
+            predictor = self._build_for_device(self.device)
+        except Exception as exc:  # noqa: BLE001
+            if not is_device_error(exc):
+                raise
+            self.cleanup_uncertain = True
+            free_gpu_memory()
+            predictor = self._build_for_device("cpu")
+            self.device = "cpu"
+            latch_cpu(f"GPU video predictor build failed; CPU replacement committed: {exc}")
+        return predictor
+
+    def _build_for_device(self, device: str):
         from sam2.build_sam import build_sam2_video_predictor  # type: ignore[import-not-found]
 
         cfg_name, ckpt_name = SAM2_CONFIGS[self.sam_variant]
@@ -96,7 +114,7 @@ class SAM2VideoTracker:
             # 与图片池一致: checkpoint 未预置交给 main.py 翻成 503。
             raise FileNotFoundError(ckpt_path)
         logger.info("building video predictor variant=%s ckpt=%s", self.sam_variant, ckpt_name)
-        return build_sam2_video_predictor(cfg_name, ckpt_path, device=self.device)
+        return build_sam2_video_predictor(cfg_name, ckpt_path, device=device)
 
     # ---------- 公开接口 ----------
 
@@ -136,10 +154,11 @@ class SAM2VideoTracker:
         # 窗首帧 (源帧号): forward 从 lo, backward 从 hi。
         seed_src_frame = hi if reverse else lo
 
-        self.active_sessions += 1
-        tmp_dir = tempfile.mkdtemp(prefix="sam2vid_")
+        tmp_dir: str | None = None
         inference_state = None
+        self.active_sessions += 1
         try:
+            tmp_dir = tempfile.mkdtemp(prefix="sam2vid_")
             # 1) 只解码窗内帧到临时 JPEG 目录, 窗内重编号 0..span-1。
             frame_w, frame_h, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
@@ -175,7 +194,13 @@ class SAM2VideoTracker:
                 id_list = self._obj_ids_to_list(obj_ids)
                 for i, oid in enumerate(id_list):
                     mask = masks[i] if i < masks.shape[0] else masks[0]
-                    if output_geometry == "polygon":
+                    if output_geometry == "mask":
+                        outside = not bool(mask.any())
+                        geometry = {
+                            "type": "mask",
+                            "rle": encode_coco_rle(mask.reshape(-1), frame_w, frame_h),
+                        }
+                    elif output_geometry == "polygon":
                         geometry, outside = self._mask_to_polygon_geometry(
                             mask, frame_w, frame_h
                         )
@@ -203,6 +228,10 @@ class SAM2VideoTracker:
                 key=lambda r: (r["frame_index"], r["instance_id"]), reverse=reverse
             )
             return results
+        except BaseException:
+            if inference_state is None and self.device != "cpu":
+                self.cleanup_uncertain = True
+            raise
         finally:
             # 会话状态反向清理 + 释放显存; 模型权重保留供下个 job。
             if inference_state is not None:
@@ -210,10 +239,11 @@ class SAM2VideoTracker:
                     self._predictor.reset_state(inference_state)
                 except Exception:  # noqa: BLE001
                     logger.exception("reset_state failed; dropping inference_state")
+                    self.cleanup_uncertain = True
                 del inference_state
-            self._cleanup_tmp(tmp_dir)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if tmp_dir is not None:
+                self._cleanup_tmp(tmp_dir)
+            free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------

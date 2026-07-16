@@ -1,4 +1,7 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +12,11 @@ import {
 import { getTrackColor } from "./colors";
 import { buildFrameTimebase } from "./frameTimebase";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+
+const overlayCss = readFileSync(
+  resolve(process.cwd(), "src/pages/Workbench/stage/VideoPlaybackOverlay.module.css"),
+  "utf8",
+);
 
 const timebase = buildFrameTimebase({
   duration_ms: 1000,
@@ -86,21 +94,167 @@ describe("VideoPlaybackOverlay", () => {
     expect(getByTestId("video-playback-rate")).toHaveTextContent("-2x");
   });
 
-  it("starts collapsed and expands into the detailed timeline panel on demand", () => {
-    const { getByTestId, getByText, queryByText } = renderOverlay();
+  it("starts with an accessible collapsed summary and hides empty optional lanes when expanded", async () => {
+    const user = userEvent.setup();
+    const { getByTestId, getByText, queryByTestId, queryByText } = renderOverlay({
+      currentFrameEntryCount: 4,
+    });
+    const toggle = getByTestId("video-timeline-toggle");
 
-    expect(getByTestId("video-timeline-expand")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", "video-timeline-details");
+    expect(toggle).toHaveAccessibleName("展开时间轴详情");
+    expect(getByTestId("video-current-frame-entry-count")).toHaveTextContent("当前帧 4 个标注");
+    expect(getByTestId("video-time-readout")).toHaveTextContent("00:00.000 / 00:01.000");
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–9");
+    expect(getByTestId("video-timeline-window-overview")).toBeInTheDocument();
     expect(queryByText("AI 预测密度")).toBeNull();
 
-    fireEvent.click(getByTestId("video-timeline-expand"));
+    await user.click(toggle);
 
-    expect(getByTestId("video-timeline-collapse")).toBeInTheDocument();
-    expect(getByText("AI 预测密度")).toBeInTheDocument();
+    const expandedToggle = getByTestId("video-timeline-toggle");
+    expect(expandedToggle).toHaveAttribute("aria-expanded", "true");
+    expect(expandedToggle).toHaveAccessibleName("收起时间轴详情");
+    expect(expandedToggle).toHaveFocus();
+    expect(getByTestId("video-timeline-details")).toBeInTheDocument();
     expect(getByText("标注密度")).toBeInTheDocument();
-    expect(getByText("AI 传播")).toBeInTheDocument();
-    expect(getByText("Loop 区域")).toBeInTheDocument();
+    expect(queryByTestId("video-timeline-lane-chapters")).toBeNull();
+    expect(queryByTestId("video-timeline-lane-bookmarks")).toBeNull();
+    expect(queryByTestId("video-timeline-lane-issues")).toBeNull();
+    expect(queryByTestId("video-timeline-lane-predictions")).toBeNull();
+    expect(queryByTestId("video-timeline-lane-track")).toBeNull();
+    expect(queryByTestId("video-timeline-lane-propagation")).toBeNull();
+    expect(queryByTestId("video-timeline-lane-loop")).toBeNull();
     expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
-    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口 F0–9");
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–9");
+
+    await user.click(expandedToggle);
+
+    const collapsedToggle = getByTestId("video-timeline-toggle");
+    expect(collapsedToggle).toHaveAttribute("aria-expanded", "false");
+    expect(collapsedToggle).toHaveFocus();
+  });
+
+  it("merges compact playback controls into the expanded bottom bar", () => {
+    const { getByTestId } = renderOverlay();
+
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+
+    const bottomBar = getByTestId("video-timeline-bottom-bar");
+    const playbackControls = within(bottomBar).getByTestId("video-playback-controls");
+    const zoomControls = within(bottomBar).getByTestId("video-timeline-zoom-controls");
+    const toggle = within(bottomBar).getByTestId("video-timeline-toggle");
+    expect(playbackControls).toBeInTheDocument();
+    expect(within(bottomBar).getByTitle("播放 / 暂停 (Space)")).toBeInTheDocument();
+    expect(within(bottomBar).getByTestId("video-timeline-navigator")).toBeInTheDocument();
+    expect(within(playbackControls).queryByTestId("video-timeline-zoom-in")).toBeNull();
+    expect(zoomControls.nextElementSibling).toBe(toggle);
+    expect(overlayCss).toMatch(
+      /\.(?:expandedControls \.controlButton|zoomControls \.controlButton)[^{]*\{[^}]*width:\s*24px;[^}]*height:\s*24px;/s,
+    );
+    expect(overlayCss).not.toMatch(/\.expandedControls\s*\{[^}]*background:/s);
+    expect(overlayCss).toMatch(/\.overlayExpanded\s*\{[^}]*bottom:\s*12px;/s);
+  });
+
+  it("uses a view transition for expand and collapse when motion is allowed", () => {
+    const startViewTransition = vi.fn((update: () => void) => {
+      update();
+      return {
+        finished: Promise.resolve(),
+        ready: Promise.resolve(),
+        updateCallbackDone: Promise.resolve(),
+        skipTransition: vi.fn(),
+      };
+    });
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: startViewTransition,
+    });
+
+    try {
+      const { getByTestId } = renderOverlay();
+      fireEvent.click(getByTestId("video-timeline-toggle"));
+
+      expect(startViewTransition).toHaveBeenCalledOnce();
+      expect(getByTestId("video-playback-overlay")).toHaveAttribute("data-state", "expanded");
+      expect(overlayCss).toMatch(/view-transition-name:\s*video-timeline-overlay/);
+      expect(overlayCss).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    } finally {
+      Reflect.deleteProperty(document, "startViewTransition");
+    }
+  });
+
+  it("shows populated optional lanes when expanded", () => {
+    const selectedTrackTimeline: VideoTrackTimeline = {
+      trackId: "trk",
+      keyframes: [{ frame: 0, source: "manual", occluded: false }],
+      outside: [],
+      interpolated: [],
+    };
+    const { getByTestId, getByText } = renderOverlay({
+      chapters: [{ id: "chapter", startFrame: 1, endFrame: 4, title: "路口" }],
+      bookmarks: [{ id: "bookmark", frameIndex: 2, label: "转弯", createdAt: 1 }],
+      issueFrames: [3],
+      predictionDensity: [{ index: 0, from: 0, to: 1, count: 1 }],
+      selectedTrackTimeline,
+      propagateRange: { startFrame: 2, endFrame: 6 },
+      loopRegion: { startFrame: 1, endFrame: 5 },
+    });
+
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+
+    expect(getByTestId("video-timeline-lane-chapters")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-bookmarks")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-issues")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-predictions")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-track")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-propagation")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-loop")).toBeInTheDocument();
+    expect(getByText("问题")).toBeInTheDocument();
+    expect(getByText("所选轨迹")).toBeInTheDocument();
+    expect(getByText("AI 影响范围")).toBeInTheDocument();
+    expect(getByText("循环区间")).toBeInTheDocument();
+  });
+
+  it("keeps the full-window selection visible and carries zoom context into the collapsed summary", () => {
+    const { getByTestId } = renderOverlay({ maxFrame: 100 });
+
+    const collapsedSelection = getByTestId("video-timeline-collapsed-window-selection");
+    expect(collapsedSelection).toHaveAttribute("data-full-window", "true");
+    expect(collapsedSelection.style.getPropertyValue("--timeline-left")).toBe("0%");
+    expect(collapsedSelection.style.getPropertyValue("--timeline-width")).toBe("100%");
+
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+    expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute("data-full-window", "true");
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–100");
+
+    fireEvent.click(getByTestId("video-timeline-zoom-in"));
+    expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute("data-full-window", "false");
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：F20–80");
+
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+    const zoomedCollapsedSelection = getByTestId("video-timeline-collapsed-window-selection");
+    expect(zoomedCollapsedSelection).toHaveAttribute("data-full-window", "false");
+    expect(zoomedCollapsedSelection.style.getPropertyValue("--timeline-left")).toBe("20%");
+    expect(zoomedCollapsedSelection.style.getPropertyValue("--timeline-width")).toBe("60%");
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：F20–80");
+
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+    fireEvent.click(getByTestId("video-timeline-zoom-reset"));
+    expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute("data-full-window", "true");
+    expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–100");
+  });
+
+  it("keeps collapsed metadata on a separate row so the timeline remains dominant", () => {
+    expect(overlayCss).toMatch(
+      /\.overlayCollapsed\s*\{[^}]*grid-template-areas:\s*"play timeline toggle"\s*"status status status"/s,
+    );
+    expect(overlayCss).toMatch(
+      /\.collapsedTimelineShell\s*\{[^}]*grid-area:\s*timeline;[^}]*min-width:\s*280px;/s,
+    );
   });
 
   it("keeps manual and prediction density visible when a track is selected", () => {
@@ -116,7 +270,7 @@ describe("VideoPlaybackOverlay", () => {
       predictionDensity: [{ index: 1, from: 1, to: 1, count: 1 }],
     });
 
-    fireEvent.click(getByTestId("video-timeline-expand"));
+    fireEvent.click(getByTestId("video-timeline-toggle"));
 
     expect(getByTestId("video-timeline-density").querySelector("span")).toBeInTheDocument();
     expect(getByTestId("video-timeline-prediction-density").querySelector("span")).toBeInTheDocument();
@@ -404,6 +558,28 @@ describe("VideoPlaybackOverlay", () => {
     );
     const band = getByTestId("video-propagate-range");
     expect(band.style.getPropertyValue("--timeline-left")).toBe(`${(2 / 9) * 100}%`);
+  });
+
+  it("keeps active range feedback in the collapsed timeline summary", () => {
+    const { getByTestId } = renderOverlay({
+      loopRegion: { startFrame: 1, endFrame: 5 },
+      propagateRange: { startFrame: 2, endFrame: 7 },
+    });
+    const summary = getByTestId("video-timeline-summary-overlays");
+
+    expect(within(summary).getByTestId("video-loop-region")).toBeInTheDocument();
+    expect(within(summary).getByTestId("video-propagate-range")).toBeInTheDocument();
+  });
+
+  it("does not hide collapsed active-range feedback in CSS", () => {
+    const hiddenSelectors = [...overlayCss.matchAll(/([^{}]+)\{[^{}]*display:\s*none;?[^{}]*\}/g)]
+      .map((match) => match[1])
+      .filter((selectors) => selectors.includes(".overlayCollapsed"))
+      .join(",");
+
+    expect(hiddenSelectors).not.toMatch(
+      /\.(loopRegion|propagateRegion|chapterDraftRegion|propagateDraftRegion)\b/,
+    );
   });
 
   // v0.21.13 WS4 · 时间轴章节条 hover 上报 + 受控高亮 (与侧栏行双向联动)。

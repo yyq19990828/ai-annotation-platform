@@ -1,14 +1,29 @@
 from __future__ import annotations
 
+import re
+import secrets
 import uuid
 from datetime import UTC, datetime
-from sqlalchemy import select
+
+from aap_protocol_v2.lifecycle import managed_lifecycle_capability_sha256
+from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
+from app.db.models.gpu_backend_fence import GPUBackendFence
+from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
-from app.services.ml_client import MLBackendClient
+from app.services.gpu_arbiter import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+    validate_gpu_claim,
+)
+from app.services.ml_client import (
+    GPU_HEALTH_CHALLENGE_ECHO_MARKER,
+    MLBackendClient,
+)
 
 
 class MLBackendDeleteBlocked(Exception):
@@ -19,6 +34,62 @@ class MLBackendDeleteBlocked(Exception):
         self.running_jobs = running_jobs
 
 
+class MLBackendURLConflict(Exception):
+    """A different global registry row already owns the normalized URL."""
+
+    def __init__(self, backend_name: str) -> None:
+        super().__init__(f"ML backend URL already registered by {backend_name}")
+        self.backend_name = backend_name
+
+
+class GPUBackendManagedMutationBlocked(Exception):
+    """A backend that entered a managed runtime must use managed retirement."""
+
+
+def _gpu_membership_constraint_name(exc: IntegrityError) -> str | None:
+    for source in (exc.orig, getattr(exc.orig, "__cause__", None)):
+        if source is None:
+            continue
+        name = getattr(source, "constraint_name", None)
+        if isinstance(name, str):
+            return name
+        diag = getattr(source, "diag", None)
+        name = getattr(diag, "constraint_name", None)
+        if isinstance(name, str):
+            return name
+    return None
+
+
+def _raise_managed_mutation_for_integrity(exc: IntegrityError) -> None:
+    constraint_name = _gpu_membership_constraint_name(exc)
+    if constraint_name is not None and constraint_name.startswith(
+        "ck_gpu_backend_membership_"
+    ):
+        raise GPUBackendManagedMutationBlocked(
+            "managed GPU backend requires retirement before mutation"
+        ) from exc
+    raise exc
+
+
+_REGISTRY_MUTABLE_FIELDS = {
+    "name",
+    "url",
+    "is_interactive",
+    "auth_method",
+    "auth_token",
+    "extra_params",
+    "gpu_resource_id",
+    "vram_budget_mb",
+    "eviction_priority",
+}
+
+
+def _proof_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("proof timestamps must be timezone-aware")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
 class MLBackendService:
     """v0.19.0 ADR-0044 · backend 上提为全局注册表(MLBackendRegistry) + 项目启用关联
     (ProjectMLBackend)。本服务既管全局注册项(superadmin)，也管项目级启用/覆盖。
@@ -27,13 +98,29 @@ class MLBackendService:
     `list_enabled_for_project` / `get_enabled` (读 ProjectMLBackend.enabled=true)。
     """
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        shadow_session_factory: GPUShadowSessionFactory | None = None,
+        dispatch_context_factory: GPUDispatchContextFactory | None = None,
+    ) -> None:
         self.db = db
+        self.shadow_session_factory = shadow_session_factory
+        self.dispatch_context_factory = dispatch_context_factory
 
     # ── 全局注册表 ───────────────────────────────────────────────────────────
     async def create_registry(
         self, name: str, url: str, source: str = "manual", **kwargs
     ) -> MLBackendRegistry:
+        unknown = set(kwargs) - (_REGISTRY_MUTABLE_FIELDS - {"name", "url"})
+        if unknown:
+            raise TypeError(f"unsupported ML backend fields: {sorted(unknown)}")
+        validate_gpu_claim(
+            kwargs.get("gpu_resource_id"),
+            kwargs.get("vram_budget_mb"),
+            extra_params=kwargs.get("extra_params"),
+        )
         row = MLBackendRegistry(
             id=uuid.uuid4(), name=name, url=url.rstrip("/"), source=source, **kwargs
         )
@@ -65,27 +152,91 @@ class MLBackendService:
         row = await self.get(registry_id)
         if not row:
             return None
+        unknown = set(kwargs) - _REGISTRY_MUTABLE_FIELDS
+        if unknown:
+            raise TypeError(f"unsupported ML backend fields: {sorted(unknown)}")
+
+        if "url" in kwargs:
+            url = kwargs["url"]
+            if not isinstance(url, str) or not url:
+                raise ValueError("url must not be null or empty")
+            normalized_url = url.rstrip("/")
+            conflict = await self.get_by_url(normalized_url)
+            if conflict is not None and conflict.id != row.id:
+                raise MLBackendURLConflict(conflict.name)
+            kwargs["url"] = normalized_url
+
+        protected_values = {
+            "url": row.url,
+            "auth_method": row.auth_method,
+            "auth_token": row.auth_token,
+            "extra_params": row.extra_params,
+            "gpu_resource_id": row.gpu_resource_id,
+            "vram_budget_mb": row.vram_budget_mb,
+            "eviction_priority": row.eviction_priority,
+        }
+        protected_change = any(
+            field in kwargs and kwargs[field] != previous
+            for field, previous in protected_values.items()
+        )
+        if protected_change:
+            fence = await self.db.get(GPUBackendFence, registry_id)
+            if fence is not None and fence.runtime_epoch_high_water > 0:
+                raise GPUBackendManagedMutationBlocked(
+                    "managed GPU backend requires retirement before mutation"
+                )
+
+        next_resource_id = kwargs.get("gpu_resource_id", row.gpu_resource_id)
+        next_budget_mb = kwargs.get("vram_budget_mb", row.vram_budget_mb)
+        next_extra_params = kwargs.get("extra_params", row.extra_params)
+        validate_gpu_claim(
+            next_resource_id,
+            next_budget_mb,
+            extra_params=next_extra_params,
+        )
+        if "eviction_priority" in kwargs and kwargs["eviction_priority"] is None:
+            raise ValueError("eviction_priority must not be null")
+
         for key, value in kwargs.items():
-            if hasattr(row, key):
-                setattr(row, key, value)
-        await self.db.flush()
+            setattr(row, key, value)
+        if protected_change:
+            # Any membership/config epoch change invalidates the cached residency
+            # evidence, even when the endpoint and physical resource stay the same.
+            row.state = "disconnected"
+            row.health_meta = None
+            row.last_checked_at = None
+            row.error_message = None
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            _raise_managed_mutation_for_integrity(exc)
         return row
+
+    async def _count_running_predictions(self, registry_id: uuid.UUID) -> int:
+        """Legacy deletion guard only; never an allocation or active-lease truth."""
+
+        running = await self.db.execute(
+            select(AsyncJob.id).where(
+                AsyncJob.kind == "batch_predict",
+                AsyncJob.payload["ml_backend_id"].astext == str(registry_id),
+                AsyncJob.status == AsyncJobStatus.RUNNING.value,
+            )
+        )
+        return len(list(running.scalars().all()))
 
     async def delete(self, registry_id: uuid.UUID) -> bool:
         row = await self.get(registry_id)
         if not row:
             return False
         # prediction job 仍在跑则拒删 (payload.ml_backend_id 现存 registry id)
-        running = await self.db.execute(
-            select(AsyncJob).where(
-                AsyncJob.kind == "batch_predict",
-                AsyncJob.payload["ml_backend_id"].astext == str(registry_id),
-                AsyncJob.status == AsyncJobStatus.RUNNING.value,
-            )
-        )
-        running_jobs = list(running.scalars().all())
+        running_jobs = await self._count_running_predictions(registry_id)
         if running_jobs:
-            raise MLBackendDeleteBlocked(len(running_jobs))
+            raise MLBackendDeleteBlocked(running_jobs)
+        fence = await self.db.get(GPUBackendFence, registry_id)
+        if fence is not None and fence.runtime_epoch_high_water > 0:
+            raise GPUBackendManagedMutationBlocked(
+                "managed GPU backend requires retirement before delete"
+            )
         # 级联: 解绑 projects.ml_backend_id (SET NULL 语义); project_ml_backend 关联
         # 由 FK ondelete=CASCADE 自动清。历史 prediction.ml_backend_id 同样 SET NULL。
         bound_projects = await self.db.execute(
@@ -94,7 +245,10 @@ class MLBackendService:
         for project in bound_projects.scalars():
             project.ml_backend_id = None
         await self.db.delete(row)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            _raise_managed_mutation_for_integrity(exc)
         return True
 
     # ── 项目启用关联 ─────────────────────────────────────────────────────────
@@ -178,7 +332,13 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return None
-        return await MLBackendClient(backend).unload()
+        # 远程调用前释放只读事务连接，避免 shadow 短会话与请求会话互相挤占池。
+        await self.db.commit()
+        return await MLBackendClient(
+            backend,
+            shadow_session_factory=self.shadow_session_factory,
+            dispatch_context_factory=self.dispatch_context_factory,
+        ).unload()
 
     async def reload(
         self,
@@ -190,7 +350,12 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return None
-        return await MLBackendClient(backend).reload(
+        await self.db.commit()
+        return await MLBackendClient(
+            backend,
+            shadow_session_factory=self.shadow_session_factory,
+            dispatch_context_factory=self.dispatch_context_factory,
+        ).reload(
             sam_variant=sam_variant, dino_variant=dino_variant, task_type=task_type
         )
 
@@ -199,18 +364,80 @@ class MLBackendService:
         backend = await self.get(registry_id)
         if not backend:
             return None
-        return await MLBackendClient(backend).warmup(body)
+        await self.db.commit()
+        return await MLBackendClient(
+            backend,
+            shadow_session_factory=self.shadow_session_factory,
+            dispatch_context_factory=self.dispatch_context_factory,
+        ).warmup(body)
 
-    async def check_health(self, registry_id: uuid.UUID) -> bool:
+    async def check_health(
+        self,
+        registry_id: uuid.UUID,
+        *,
+        gpu_health_challenge: str | None = None,
+    ) -> bool:
+        if gpu_health_challenge is not None and (
+            not isinstance(gpu_health_challenge, str)
+            or re.fullmatch(r"[0-9a-f]{64}", gpu_health_challenge) is None
+        ):
+            raise ValueError(
+                "gpu_health_challenge must be 64 lowercase hexadecimal characters"
+            )
         backend = await self.get(registry_id)
         if not backend:
             return False
+        requested_url = backend.url
+        requested_auth_method = backend.auth_method
+        requested_auth_token = backend.auth_token
+        requested_gpu_resource_id = backend.gpu_resource_id
+        requested_membership_epoch: int | None = None
+        requested_membership_state: str | None = None
+        probe_started_at: datetime | None = None
+        if requested_gpu_resource_id is not None:
+            requested_membership = (
+                await self.db.execute(
+                    select(
+                        GPUBackendMembership.membership_epoch,
+                        GPUBackendMembership.state,
+                    ).where(
+                        GPUBackendMembership.backend_registry_id == registry_id,
+                        GPUBackendMembership.gpu_resource_id
+                        == requested_gpu_resource_id,
+                        GPUBackendMembership.state.in_(("pending", "active")),
+                    )
+                )
+            ).one_or_none()
+            if requested_membership is None:
+                return False
+            requested_membership_epoch = requested_membership.membership_epoch
+            requested_membership_state = requested_membership.state
+            gpu_health_challenge = gpu_health_challenge or secrets.token_hex(32)
+            probe_started_at = await self.db.scalar(select(func.clock_timestamp()))
+            if probe_started_at is None:
+                return False
+        elif gpu_health_challenge is not None:
+            raise ValueError("gpu_health_challenge requires a GPU backend membership")
         client = MLBackendClient(backend)
         # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到全局注册行
-        healthy, meta = await client.health_meta()
-        backend.state = "connected" if healthy else "error"
-        backend.last_checked_at = datetime.now(UTC)
+        if gpu_health_challenge is None:
+            healthy, meta = await client.health_meta()
+        else:
+            healthy, meta = await client.health_meta(
+                gpu_health_challenge=gpu_health_challenge
+            )
+        echoed_challenge: str | None = None
         if meta is not None:
+            meta = dict(meta)
+            echoed = meta.pop(GPU_HEALTH_CHALLENGE_ECHO_MARKER, None)
+            if isinstance(echoed, str):
+                echoed_challenge = echoed
+        # A failed or metadata-free probe invalidates the previous device/identity
+        # snapshot.  Keeping it would let stale CPU/UUID evidence pass GPU diagnostics.
+        next_health_meta = None
+        next_is_interactive: bool | None = None
+        caps: dict | None = None
+        if healthy and meta is not None:
             # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]。
             from app.services.ml_capabilities import extract_capabilities
 
@@ -218,12 +445,138 @@ class MLBackendService:
                 caps = extract_capabilities(await client.setup())
             except Exception:
                 caps = None
+
+        # GPU proof binds the complete /health + /setup observation window.  A
+        # timestamp captured before setup could authorize a capability that was
+        # never observed within the challenge's evidence interval.
+        observed_at = await self.db.scalar(select(func.clock_timestamp()))
+        if observed_at is None:
+            return False
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            return False
+        if probe_started_at is not None and (
+            probe_started_at.tzinfo is None
+            or probe_started_at.utcoffset() is None
+            or observed_at <= probe_started_at
+        ):
+            return False
+
+        if healthy and meta is not None:
+            managed_lifecycle_sha256: str | None = None
             if caps is not None:
                 meta = {**meta, "capabilities": caps}
                 # is_interactive 改派生对账: 以 /setup 自报为真值
-                backend.is_interactive = caps["is_interactive"]
-            backend.health_meta = meta
-        await self.db.flush()
+                next_is_interactive = caps["is_interactive"]
+                managed_lifecycle = caps.get("managed_lifecycle")
+                if managed_lifecycle is not None:
+                    managed_lifecycle_sha256 = managed_lifecycle_capability_sha256(
+                        managed_lifecycle
+                    )
+            if (
+                gpu_health_challenge is not None
+                and echoed_challenge == gpu_health_challenge
+                and probe_started_at is not None
+                and requested_membership_epoch is not None
+                and requested_membership_state is not None
+            ):
+                meta["gpu_arbiter_probe"] = {
+                    "protocol_version": "1",
+                    "challenge": gpu_health_challenge,
+                    "backend_registry_id": str(registry_id),
+                    "gpu_resource_id": requested_gpu_resource_id,
+                    "membership_epoch": str(requested_membership_epoch),
+                    "membership_state": requested_membership_state,
+                    "managed_lifecycle_sha256": managed_lifecycle_sha256,
+                    "probe_started_at": _proof_timestamp(probe_started_at),
+                    "observed_at": _proof_timestamp(observed_at),
+                }
+            next_health_meta = meta
+
+        values: dict = {
+            "state": "connected" if healthy else "error",
+            "last_checked_at": observed_at,
+            "health_meta": next_health_meta,
+        }
+        if next_is_interactive is not None:
+            values["is_interactive"] = next_is_interactive
+        current_backend = await self.db.scalar(
+            select(MLBackendRegistry)
+            .where(MLBackendRegistry.id == registry_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if current_backend is None or (
+            current_backend.url != requested_url
+            or current_backend.auth_method != requested_auth_method
+            or current_backend.auth_token != requested_auth_token
+            or current_backend.gpu_resource_id != requested_gpu_resource_id
+        ):
+            return False
+        if requested_membership_epoch is not None:
+            # Keep registry -> resource -> try-global -> membership ordering.
+            # Promotion uses the same resource -> try-global prefix; neither side
+            # waits on the global barrier while holding a card lock.
+            await self.db.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtextextended('aap:gpu-resource:' || :resource_id, 0))"
+                ),
+                {"resource_id": requested_gpu_resource_id},
+            )
+            promotion_barrier_acquired = await self.db.scalar(
+                text(
+                    "SELECT pg_try_advisory_xact_lock("
+                    "hashtextextended('aap:gpu-membership-promotion', 0))"
+                )
+            )
+            if promotion_barrier_acquired is not True:
+                return False
+        # A slow /setup must not let an older /health response borrow a later
+        # completion timestamp and overwrite a concurrently committed snapshot.
+        # For GPU probes, first-committer-wins across overlapping observation
+        # windows; a later periodic probe will refresh any conservatively dropped
+        # evidence.  Non-GPU checks retain monotonic completion ordering.
+        commit_order_floor = probe_started_at or observed_at
+        if current_backend.last_checked_at is not None and (
+            current_backend.last_checked_at.tzinfo is None
+            or current_backend.last_checked_at.utcoffset() is None
+            or current_backend.last_checked_at >= commit_order_floor
+        ):
+            return False
+        if requested_membership_epoch is not None:
+            current_membership = (
+                await self.db.execute(
+                    select(
+                        GPUBackendMembership.membership_epoch,
+                        GPUBackendMembership.state,
+                    )
+                    .where(
+                        GPUBackendMembership.backend_registry_id == registry_id,
+                        GPUBackendMembership.gpu_resource_id
+                        == requested_gpu_resource_id,
+                        GPUBackendMembership.state.in_(("pending", "active")),
+                    )
+                    .with_for_update()
+                )
+            ).one_or_none()
+            if (
+                current_membership is None
+                or current_membership.membership_epoch != requested_membership_epoch
+                or current_membership.state != requested_membership_state
+            ):
+                return False
+        result = await self.db.execute(
+            update(MLBackendRegistry)
+            .where(MLBackendRegistry.id == registry_id)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        # The post-probe row lock and membership recheck form the commit-time fence
+        # without holding a DB lock across the backend network call.
+        if result.rowcount != 1:
+            await self.db.refresh(backend)
+            return False
+        await self.db.refresh(backend)
         return healthy
 
     async def get_interactive_backend(
@@ -260,25 +613,36 @@ class MLBackendService:
     async def get_tracker_backend(
         self, project_id: uuid.UUID, model_key: str
     ) -> MLBackendRegistry | None:
-        """按 tracker 能力选后端：项目已启用的 backend 里挑 `supported_trackers` 含 model_key 的。
+        return await self.get_tracker_backend_for_capabilities(project_id, [model_key])
 
-        绑定优先（项目显式绑定的 backend 若支持该 tracker 则用它），否则取首个 connected 的。
+    async def get_tracker_backend_for_capabilities(
+        self, project_id: uuid.UUID, model_keys: list[str]
+    ) -> MLBackendRegistry | None:
+        """选择同时支持全部 tracker 能力的已连接项目后端。
+
+        绑定优先（项目显式绑定的 backend 若支持全部 tracker 则用它），否则取首个 connected 的。
         与 `get_project_backend` 的区别：后者只按「单一绑定 / 交互 fallback」选、不看 tracker——
         一项目同时启用多个 tracker-capable backend 时（如 grounded-sam2[sam2_video] +
         sam3-backend[sam3_video]），会把所有 tracker（含 sam3_video）都发给绑定那个，导致
         sam3_video 静默落到 sam2。本方法按 `health_meta.capabilities.supported_trackers`
         路由，消除该错配。
 
-        返回 None：没有已启用 backend 声明该 tracker（如 mock_bbox 不由任何 backend 声明，
-        或项目未启用对应 backend）——交由 adapter 侧处理（mock 无需 backend；真 tracker 报错）。
+        返回 None：没有已启用且 connected 的 backend 同时声明全部能力。组合追踪因此不会把
+        发现与传播错误拼到两个不同后端，也不会把任务排队后才因断连失败。
         """
+
+        required = set(model_keys)
+        if not required:
+            return None
 
         def _supports(backend: MLBackendRegistry) -> bool:
             caps = (backend.health_meta or {}).get("capabilities") or {}
-            return model_key in (caps.get("supported_trackers") or [])
+            return required.issubset(set(caps.get("supported_trackers") or []))
 
         supporting = [
-            b for b in await self.list_enabled_for_project(project_id) if _supports(b)
+            b
+            for b in await self.list_enabled_for_project(project_id)
+            if b.state == "connected" and _supports(b)
         ]
         if not supporting:
             return None
@@ -288,5 +652,4 @@ class MLBackendService:
             for b in supporting:
                 if b.id == bound_id:
                     return b
-        connected = [b for b in supporting if b.state == "connected"]
-        return (connected or supporting)[0]
+        return supporting[0]

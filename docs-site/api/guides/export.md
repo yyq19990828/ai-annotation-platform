@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-13
 ---
 
 # 导出
@@ -21,12 +21,12 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 
 | 参数 | 取值 | 说明 |
 |---|---|---|
-| `targets` | 可重复，多选 | `coco` / `yolo-det` / `yolo-obb` / `yolo-seg` / `aap_json` / `video_json` / `yolo-frames-det` / `mot` / `kitti`；`voc` 仅可单选（与其它混选返 400），走同步 blob 下载 |
+| `targets` | 可重复，多选 | 图片目标、`aap_json`，以及视频专属 `video_json` / `yolo-frames-det` / `yolo-frames-seg` / `coco-frames-seg` / `davis` / `mot` / `kitti`；`voc` 仅可单选 |
 | `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
 | `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
 | `axis_frame` | `iso` / `source` | 仅影响导出中的 `box_3d` 几何；默认 `iso`（平台归一化 ISO 8855 PSR），`source` 反向映射回数据集 `axis_convention` 源系 |
 
-非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标（`video_json` / `yolo-frames-det` / `aap_json` / `mot` / `kitti`），选图片目标会返回 400。
+非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标，选图片目标会返回 400。
 
 导出会按项目当前类别 / 属性定义做兜底收敛：`class_name` 已不在当前类别集合内的标注不会进入任何导出格式；`annotation.attributes` 只保留当前 attribute schema 内的用户属性 key。这样即使尚未执行 cleanup，导出文件的 schema 与 data 也保持一致。
 
@@ -40,6 +40,9 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 | **yolo-seg** | YOLO 分割 txt（polygon / mask 归一化多边形） |
 | **aap_json** | 平台原生无损中间格式（双数组 annotations / predictions） |
 | **yolo-frames-det** | `video-track` 专用逐帧 YOLO 检测集，按采样网格抽帧，合并 `video_bbox` 与 `video_track_bbox` 摊平框 |
+| **yolo-frames-seg** | 视频逐帧 polygon 分割标签；bbox / polyline / mask 跳过 |
+| **coco-frames-seg** | 视频标准 COCO instance segmentation；polygon 与 RLE mask |
+| **davis** | 视频 Full-Resolution palette PNG；对象 ID 1–254、255 保留 void |
 | **mot** | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号 |
 | **kitti** | KITTI Tracking 2D label 文本 |
 | **voc** | Pascal VOC XML（仅同步单选） |

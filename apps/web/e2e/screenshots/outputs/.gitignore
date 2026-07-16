@@ -1,2 +1,3 @@
-# 录制中间产物：webm 源（gif 由其转出，已跟踪 gif + docs-site 副本，webm 不入库）
-*.webm
+# 流程录制中间产物；最终 GIF 只保留 docs-site/user-guide/images 副本。
+flows/
+*.tmp

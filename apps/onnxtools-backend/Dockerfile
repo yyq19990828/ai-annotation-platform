@@ -40,13 +40,16 @@ RUN python3 -m pip install --no-build-isolation -e /app/protocol_v2
 COPY _shared/backend_runtime/ /app/backend_runtime/
 RUN python3 -m pip install --no-build-isolation -e /app/backend_runtime
 
-# backend 自身轻依赖 + onnxtools (git 装 main, 带 inference extra: onnxruntime-gpu/opencv/supervision).
-# VehicleAttributePipeline 已合入 onnxtools main; 迭代 onnxtools 后重新 build (pip 缓存失效).
+# backend 自身轻依赖 + onnxtools。固定已审计提交，避免依赖私有 ORT session
+# ownership 字段的 residency / cleanup 契约随上游 main 漂移。
 RUN python3 -m pip install "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5" "httpx>=0.27" "numpy>=1.24,<3.0" \
-    && python3 -m pip install "onnxtools[inference] @ git+https://github.com/yyq19990828/onnxtools.git@main"
+    && python3 -m pip install "onnxtools[inference] @ git+https://github.com/yyq19990828/onnxtools.git@102fcfeb08fc00f865c334a181bfd0bb518e5ed8"
 
 COPY onnxtools-backend/main.py onnxtools-backend/predictor.py \
-     onnxtools-backend/schemas.py onnxtools-backend/attribute_schema.py ./
+     onnxtools-backend/schemas.py onnxtools-backend/attribute_schema.py \
+     onnxtools-backend/handle_pool.py onnxtools-backend/gpu_lifecycle.py ./
+COPY onnxtools-backend/scripts/validate_managed_lifecycle.py \
+     /app/scripts/validate_managed_lifecycle.py
 
 # 模型目录: rtdetr-2024080100.onnx + va_260612.onnx 由 volume 挂载注入 (见 docker-compose.ml.yml).
 RUN mkdir -p /app/models

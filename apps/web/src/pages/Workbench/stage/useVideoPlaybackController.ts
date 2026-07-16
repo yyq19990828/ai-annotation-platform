@@ -371,10 +371,16 @@ export function useVideoPlaybackController({
     readOnly,
     hiddenTrackIds: hiddenTrackIds as Set<string>,
     lockedTrackIds: lockedTrackIds as Set<string>,
-    onUpdate,
+    onUpdate: (annotation, geometry) => {
+      if (geometry.type === "video_track_bbox") onUpdate(annotation, geometry);
+    },
     onToggleHiddenTrack,
     onToggleLockedTrack,
-    onPropagateTrack,
+    onPropagateTrack: onPropagateTrack
+      ? (annotation) => {
+          if (annotation.geometry.type === "video_track_bbox") onPropagateTrack(annotation as VideoTrackAnnotation);
+        }
+      : undefined,
   });
 
   const selectedTrackCurrentKeyframe = useMemo(

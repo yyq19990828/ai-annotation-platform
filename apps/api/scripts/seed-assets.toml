@@ -1,0 +1,263 @@
+schema_version = 1
+
+[[assets]]
+id = "coco8"
+profiles = ["demo"]
+urls = ["https://github.com/ultralytics/assets/releases/download/v0.0.0/coco8.zip"]
+sha256 = "54c67fe9ef88313e021ec0e92b73c200167bb0a86633e8df8658d832cca828c9"
+size_bytes = 443158
+max_bytes = 500000
+max_unpacked_bytes = 3000000
+archive = "zip"
+root = "coco8"
+required_files = [
+  "images/train/000000000009.jpg",
+  "images/val/000000000036.jpg",
+  "labels/train/000000000009.txt",
+  "labels/val/000000000036.txt",
+]
+source = "https://github.com/ultralytics/assets/releases/tag/v0.0.0"
+
+[assets.license]
+artifact_spdx = "GPL-3.0-only"
+media_status = "per-file license required"
+notice_url = "https://cocodataset.org/#termsofuse"
+attribution = "COCO images retain the licenses selected by their Flickr authors."
+public_docs_status = "blocked"
+public_docs_notes = "The eight images include NC and ND licenses; keep this asset out of public screenshot profiles."
+
+[[assets]]
+id = "tracking-video"
+profiles = ["demo"]
+urls = ["https://raw.githubusercontent.com/IDEA-Research/Grounded-SAM-2/b7a9c29f196edff0eb54dbe14588d7ae5e3dde28/assets/tracking_car.mp4"]
+sha256 = "a4c3ee6aeca7f5085cc49408d572e3e3df7cab65ead15701996724827ef99c10"
+size_bytes = 12253807
+max_bytes = 13000000
+max_unpacked_bytes = 13000000
+archive = "none"
+filename = "tracking_car.mp4"
+root = "."
+required_files = ["tracking_car.mp4"]
+source = "https://github.com/IDEA-Research/Grounded-SAM-2/tree/b7a9c29f196edff0eb54dbe14588d7ae5e3dde28/assets"
+
+[assets.license]
+artifact_spdx = "Apache-2.0"
+media_status = "repository license only"
+notice_url = "https://github.com/IDEA-Research/Grounded-SAM-2/blob/b7a9c29f196edff0eb54dbe14588d7ae5e3dde28/LICENSE"
+attribution = "Grounded-SAM-2 contributors"
+public_docs_status = "review_required"
+public_docs_notes = "The repository is Apache-2.0, but the video has no separate provenance or license notice."
+
+[[assets]]
+id = "rapidocr-image"
+profiles = ["demo", "screenshots"]
+urls = ["https://raw.githubusercontent.com/RapidAI/RapidOCR/d4bf8f2b96f1f4747ec7d9b2b7e919e4f904c0d6/python/tests/test_files/ch_en_num.jpg"]
+sha256 = "b94c1bf68af9ceb3c550b86931d7b48d4181c26c9f5ace2492e64042f36a02ca"
+size_bytes = 70680
+max_bytes = 100000
+max_unpacked_bytes = 100000
+archive = "none"
+filename = "ch_en_num.jpg"
+root = "."
+required_files = ["ch_en_num.jpg"]
+source = "https://github.com/RapidAI/RapidOCR/tree/d4bf8f2b96f1f4747ec7d9b2b7e919e4f904c0d6/python/tests/test_files"
+
+[assets.license]
+artifact_spdx = "Apache-2.0"
+media_status = "used by the upstream README example"
+notice_url = "https://github.com/RapidAI/RapidOCR/blob/d4bf8f2b96f1f4747ec7d9b2b7e919e4f904c0d6/LICENSE"
+attribution = "RapidOCR contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep source attribution with published screenshot documentation."
+
+[[assets]]
+id = "auckland-traffic-1"
+profiles = ["screenshots"]
+urls = ["https://upload.wikimedia.org/wikipedia/commons/e/e4/Cars_in_traffic_in_Auckland%2C_New_Zealand_-_copyright-free_photo_released_to_public_domain.jpg"]
+sha256 = "ed42679283b7b29fdef3ab32025b6a8ddf342725480451ce5210fc86f2c796a4"
+size_bytes = 6686563
+max_bytes = 7000000
+max_unpacked_bytes = 7000000
+archive = "none"
+filename = "auckland-traffic-1.jpg"
+root = "."
+required_files = ["auckland-traffic-1.jpg"]
+source = "https://commons.wikimedia.org/wiki/File:Cars_in_traffic_in_Auckland,_New_Zealand_-_copyright-free_photo_released_to_public_domain.jpg"
+
+[assets.license]
+artifact_spdx = "CC0-1.0"
+media_status = "author released the photograph into the public domain"
+notice_url = "https://commons.wikimedia.org/wiki/File:Cars_in_traffic_in_Auckland,_New_Zealand_-_copyright-free_photo_released_to_public_domain.jpg"
+attribution = "Kiwiev / Wikimedia Commons"
+public_docs_status = "approved"
+public_docs_notes = "The screenshot profile creates deterministic crops from the original CC0 photograph."
+
+[[assets]]
+id = "auckland-traffic-2"
+profiles = ["screenshots"]
+urls = ["https://upload.wikimedia.org/wikipedia/commons/b/b5/Auckland_traffic_-_copyright-free_photo_released_to_public_domain.jpg"]
+sha256 = "c742938335496aa6b5b87e4d07c4efaeb9610751d7415bbc4a8d3b6fc0b9ba53"
+size_bytes = 7083329
+max_bytes = 7500000
+max_unpacked_bytes = 7500000
+archive = "none"
+filename = "auckland-traffic-2.jpg"
+root = "."
+required_files = ["auckland-traffic-2.jpg"]
+source = "https://commons.wikimedia.org/wiki/File:Auckland_traffic_-_copyright-free_photo_released_to_public_domain.jpg"
+
+[assets.license]
+artifact_spdx = "CC0-1.0"
+media_status = "author released the photograph into the public domain"
+notice_url = "https://commons.wikimedia.org/wiki/File:Auckland_traffic_-_copyright-free_photo_released_to_public_domain.jpg"
+attribution = "Kiwiev / Wikimedia Commons"
+public_docs_status = "approved"
+public_docs_notes = "The screenshot profile creates deterministic crops from the original CC0 photograph."
+
+[[assets]]
+id = "street-traffic-video"
+profiles = ["screenshots"]
+urls = ["https://upload.wikimedia.org/wikipedia/commons/7/70/Street_traffic.webm"]
+sha256 = "e5facb24baf755f0c1193999d823e99f6032661ad2bdef5cc28cc1cbbfde03e2"
+size_bytes = 26490572
+max_bytes = 27000000
+max_unpacked_bytes = 27000000
+archive = "none"
+filename = "street-traffic.webm"
+root = "."
+required_files = ["street-traffic.webm"]
+source = "https://commons.wikimedia.org/wiki/File:Street_traffic.webm"
+
+[assets.license]
+artifact_spdx = "CC-BY-3.0"
+media_status = "license and source reviewed by Wikimedia Commons"
+notice_url = "https://commons.wikimedia.org/wiki/File:Street_traffic.webm"
+attribution = "Editor / Wikimedia Commons, CC BY 3.0"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the attribution in screenshot documentation that publishes frames from this clip."
+
+[[assets]]
+id = "pcl-pairwise-capture-1"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0001.pcd"]
+sha256 = "b3bf4f1ca7200e665c86e9ce28c142c7b058de64455713a36f555b0003f773de"
+size_bytes = 972688
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0001.pcd"
+root = "."
+required_files = ["capture0001.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "pcl-pairwise-capture-2"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0002.pcd"]
+sha256 = "42e1c94ccd55e3c007c22736091d4151bf23c1f45b12b384a0168ad438a396fd"
+size_bytes = 964377
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0002.pcd"
+root = "."
+required_files = ["capture0002.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "pcl-pairwise-capture-3"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0003.pcd"]
+sha256 = "0f0b017ac0c43649383eeb5fc4580d4e589a313f7a087c7a7612f46b7bc12c29"
+size_bytes = 978555
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0003.pcd"
+root = "."
+required_files = ["capture0003.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "pcl-pairwise-capture-4"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0004.pcd"]
+sha256 = "31dcf57d076e054e1a828057930beab7dd12676bf2ed364405311b309c4c34a8"
+size_bytes = 996256
+max_bytes = 1000000
+max_unpacked_bytes = 1000000
+archive = "none"
+filename = "capture0004.pcd"
+root = "."
+required_files = ["capture0004.pcd"]
+source = "https://github.com/PointCloudLibrary/data/tree/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise"
+
+[assets.license]
+artifact_spdx = "BSD-3-Clause"
+media_status = "version-pinned file from the Point Cloud Library data repository"
+notice_url = "https://github.com/PointCloudLibrary/data/blob/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/LICENSE"
+attribution = "Point Cloud Library contributors"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Keep the repository attribution with published point-cloud screenshots."
+
+[[assets]]
+id = "sustechpoints-example"
+profiles = ["demo"]
+urls = ["https://codeload.github.com/naurril/SUSTechPOINTS/tar.gz/20eda5d14692fd837ac694cfdfbf2477a284abd3"]
+sha256 = "103ee51be8afce538a0f8fc2f5c568cb2ab5d484fdf4ad5c8b3bbccd6583c7d0"
+size_bytes = 12123957
+max_bytes = 13000000
+max_unpacked_bytes = 50000000
+archive = "tar.gz"
+root = "SUSTechPOINTS-20eda5d14692fd837ac694cfdfbf2477a284abd3/data/example"
+required_files = [
+  "lidar/000950.pcd",
+  "lidar/000965.pcd",
+  "lidar/000970.pcd",
+  "lidar/000975.pcd",
+  "camera/front/000965.jpg",
+  "camera/front/000970.jpg",
+  "camera/front/000975.jpg",
+  "camera/left/000965.jpg",
+  "camera/left/000970.jpg",
+  "camera/left/000975.jpg",
+  "camera/right/000965.jpg",
+  "camera/right/000970.jpg",
+  "camera/right/000975.jpg",
+  "calib/camera/front.json",
+  "calib/camera/left.json",
+  "calib/camera/right.json",
+]
+source = "https://github.com/naurril/SUSTechPOINTS/tree/20eda5d14692fd837ac694cfdfbf2477a284abd3/data/example"
+
+[assets.license]
+artifact_spdx = "GPL-3.0-only"
+media_status = "repository license only"
+notice_url = "https://github.com/naurril/SUSTechPOINTS/blob/20eda5d14692fd837ac694cfdfbf2477a284abd3/LICENSE"
+attribution = "SUSTechPOINTS contributors"
+public_docs_status = "review_required"
+public_docs_notes = "The sample PCD and camera media have no separate provenance or license notice."

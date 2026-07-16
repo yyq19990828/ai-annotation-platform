@@ -3,12 +3,12 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-14
 ---
 
 # 视频标注工作台
 
-视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、单帧 bbox / polygon / polyline / rotated bbox、bbox / polygon / polyline compact 轨迹、outside / occluded 语义、矩形轨迹 split / merge / join / bbox 转换、交互式单帧 AI、异步视频 tracker 候选审阅、时间轴关键帧与 prediction 分布、bitmap cache、minimap、评论锚点和工作台诊断快照。
+视频工作台当前支持视频元数据与 manifest、帧时间表、单帧预览缓存、逐帧播放与 J/K/L jog、单帧 bbox / polygon / polyline / rotated bbox、bbox / polygon / polyline / raster mask compact 轨迹、outside / occluded 语义、矩形轨迹组合与转换、交互式单帧 AI、原生 mask tracker 候选审阅、时间轴关键帧与 held 区间、bitmap cache、minimap、评论锚点和工作台诊断快照。
 
 `video_track_*` 一条 annotation 保存一个对象轨迹和 compact keyframes，前端按需显示关键帧与插值结果；单帧 `video_*` geometry 仍是一等标注。矩形框轨迹拥有完整关键帧编辑、组合、转换与 AI 追踪；polygon / polyline 轨迹当前提供渲染、顶点变形与基础管理。视频 stage 复用 Workbench 外壳、任务锁、离线队列、评论、审核与导出入口。
 
@@ -143,6 +143,7 @@ pnpm --filter @anno/web video:bench
 | `video_rotated_bbox` | 单帧旋转框 | 渲染、选择、改类、删除 |
 | `video_track_bbox` | bbox compact 轨迹 | 完整关键帧编辑、outside / occluded、组合、转换、AI 追踪 |
 | `video_track_polygon` / `video_track_polyline` | 点集 compact 轨迹 | 渲染 / 插值、指标、首帧定位、显隐、锁定、改类、整条删除 |
+| `video_track_mask` | 内容寻址 RLE compact 轨迹 | alpha 渲染 / picking、brush / erase、held 关键帧、outside / occluded、AI 追踪、DAVIS / COCO 导出 |
 
 后端 `Geometry` union 还包含 `video_keypoint`，但当前视频工具栏没有对应创建入口。前端通过 `videoTool` 与工具单位的 `video_modes` 决定写单帧 geometry 还是 compact track keyframe。
 
@@ -202,6 +203,18 @@ pnpm --filter @anno/web video:bench
 - `video_bbox` 可由视频矩形框工具直接创建，也可由 track 转换 API 生成。
 
 点集轨迹与 bbox 轨迹使用相同的 `track_id / outside / keyframes[]` 外壳，但关键帧保存 `points` 而非 `bbox`；polygon 闭合，polyline 不闭合。点集插值要求相邻关键帧顶点可对应，当前工作台先开放渲染与管理层，关键帧表和完整逐帧编辑仍只属于 bbox 轨迹。
+
+Mask 轨迹关键帧保存 `{frame_index, mask, source, occluded?, attributes?}`。`mask` 是 `coco_rle_ref`，包含 `[height,width]`、对象键、SHA-256、runs 和 canonical bytes；像素内容不重复嵌进 annotation JSONB。当前帧解析采用最近关键帧保持、距离相同时选更早帧，`outside` 优先。前端只解码可见帧，缓存键包含 annotation version、resolved keyframe 与内容哈希，淘汰、版本变化或切 task 时关闭 `ImageBitmap`。选择与右键使用 row-major alpha 命中，不用外接框冒充像素命中。
+
+内容端点：
+
+```http
+POST /api/v1/tasks/{task_id}/mask-content
+GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}
+GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
+```
+
+写入端点校验 RLE、视频尺寸和任务可编辑性后返回不可变引用；annotation 读取端点按当前帧解析并返回带 ETag 的 RLE；job 端点只暴露该 job staged result 实际引用的对象。
 
 ## Track 转独立框 API
 
@@ -348,7 +361,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
 - `V` / `B` / `T` 切换视频选择 / 矩形框 / 轨迹工具
 - `P` 进入视频多边形绘制；智能点 / 智能框 / Exemplar / Magic Box 使用视频侧各自直达键
-- `Ctrl+B` 选中 bbox 轨迹时打开 AI 追踪工具条
+- `Ctrl+B` 选中 bbox 轨迹时打开 AI 追踪检查器
 - `←` / `→` 上一帧 / 下一帧；采样开启时按网格跳
 - `Shift + ←/→` 采样开启时源帧 ±1 微调
 - `,` / `.` 选中 `video_track_bbox` 时跳上 / 下可见关键帧
@@ -362,7 +375,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Esc` 取消选择
 - `1-9` 有选中视频对象时改其 `class_name`；无选中时切 active class
 
-视频任务使用自己的 polygon / polyline 与交互式 AI 工具入口：智能点、智能框、Exemplar 在当前帧生成 `video_polygon`，Magic Box 生成 `video_bbox`；切帧会清理帧绑定的瞬态候选。图片专用 canvas 工具不会直接挂进视频 Stage。左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
+视频任务使用自己的 polygon / polyline 与交互式 AI 工具入口：智能点、智能框、Exemplar 在当前帧生成 `video_polygon`，Magic Box 生成 `video_bbox`；切帧会清理帧绑定的瞬态候选。图片专用 canvas 工具不会直接挂进视频 Stage。视频 AI 追踪配置面板与 job 审阅条由 `WorkbenchShell` 经 `stageOverlay` 渲染；配置面板以中间 stage 为局部定位容器，使拖动、缩放和边界夹取始终限定在画布内。左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
 
 视频创建、追加关键帧、重命名、改类、track 转 bbox 等动作由 `useVideoAnnotationActions` 维护。跨 Stage 的 class picker / 改类 / SAM 接受 / 批量改类弹窗由 `WorkbenchOverlays` 渲染，不再挂在 `ImageStage.overlay` 上。
 

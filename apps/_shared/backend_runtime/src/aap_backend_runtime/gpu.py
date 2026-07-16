@@ -6,7 +6,130 @@ torch 故意惰性 import 在 try 内: onnx / 纯 CPU 环境无 torch 时降级�
 from __future__ import annotations
 
 import gc
+import os
+from collections.abc import Mapping
 from typing import Any
+
+
+_VISIBLE_DEVICE_ENV_NAMES = (
+    "NVIDIA_VISIBLE_DEVICES",
+    "CUDA_VISIBLE_DEVICES",
+    "HIP_VISIBLE_DEVICES",
+    "ROCR_VISIBLE_DEVICES",
+    "GPU_DEVICE_ORDINAL",
+)
+_NO_DEVICE_VALUES = {"", "-1", "none", "void"}
+_NVIDIA_ALL_DEVICE_VALUES = {"all", "nvidia.com/gpu=all"}
+_PHYSICAL_DEVICE_TOKEN_ENV_NAME = "AAP_GPU_PHYSICAL_DEVICE_TOKEN"
+
+
+def _physical_identity_from_token(
+    raw: str,
+    *,
+    name: str,
+) -> dict[str, str | int]:
+    token = raw.strip()
+    if raw != token or not token or "," in token:
+        raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+    lowered = token.lower()
+    if lowered in _NO_DEVICE_VALUES or lowered in _NVIDIA_ALL_DEVICE_VALUES:
+        raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+    if token.isdigit():
+        device_index = int(token)
+        return {
+            "physical_device_token": f"index:{device_index}",
+            "device_index": device_index,
+        }
+    if token.startswith("index:"):
+        raw_index = token.removeprefix("index:")
+        if not raw_index.isdigit():
+            raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+        device_index = int(raw_index)
+        return {
+            "physical_device_token": token,
+            "device_index": device_index,
+        }
+    if token.startswith("GPU-"):
+        return {"physical_device_token": token, "device_uuid": token}
+    if token.startswith("MIG-"):
+        return {"physical_device_token": token, "mig_uuid": token}
+    raise RuntimeError(f"{name} must select exactly one physical GPU/MIG token")
+
+
+def _gpu_runtime_device_present() -> bool:
+    """Return whether a container runtime exposed an NVIDIA or ROCm device."""
+
+    return os.path.exists("/dev/nvidiactl") or os.path.exists("/dev/kfd")
+
+
+def validate_single_gpu_device_set(
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Reject an explicit GPU visibility set containing more than one device.
+
+    Managed lifecycle state is scoped to exactly one physical GPU/MIG resource.
+    An unset or explicit no-device value remains valid for CPU deployments.
+    Base CUDA images commonly default to ``all`` even without a GPU runtime, so
+    that value is tolerated only while no GPU device is actually exposed.
+    """
+
+    values = os.environ if environ is None else environ
+    for name in _VISIBLE_DEVICE_ENV_NAMES:
+        raw = values.get(name)
+        if raw is None:
+            continue
+        value = raw.strip()
+        lowered = value.lower()
+        if lowered in _NO_DEVICE_VALUES:
+            continue
+        all_device_values = (
+            _NVIDIA_ALL_DEVICE_VALUES if name == "NVIDIA_VISIBLE_DEVICES" else {"all"}
+        )
+        unbounded_gpu_set = (
+            lowered in all_device_values and _gpu_runtime_device_present()
+        )
+        if raw != value or unbounded_gpu_set or len(value.split(",")) != 1:
+            raise RuntimeError(
+                f"{name} must select at most one GPU/MIG device; "
+                "multi-device sets are unsupported"
+            )
+    explicit_physical_token = values.get(_PHYSICAL_DEVICE_TOKEN_ENV_NAME)
+    if explicit_physical_token is not None:
+        _physical_identity_from_token(
+            explicit_physical_token,
+            name=_PHYSICAL_DEVICE_TOKEN_ENV_NAME,
+        )
+
+
+def physical_gpu_identity(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str | int]:
+    """Return the host-visible physical GPU token selected for this process.
+
+    The Compose-derived explicit token is preferred because container runtimes
+    may rewrite ``NVIDIA_VISIBLE_DEVICES`` and remap the selected physical GPU
+    to logical CUDA device 0. The result deliberately omits a logical index when
+    the runtime selected a UUID.
+    """
+
+    values = os.environ if environ is None else environ
+    validate_single_gpu_device_set(values)
+    explicit_physical_token = values.get(_PHYSICAL_DEVICE_TOKEN_ENV_NAME)
+    if explicit_physical_token is not None:
+        return _physical_identity_from_token(
+            explicit_physical_token,
+            name=_PHYSICAL_DEVICE_TOKEN_ENV_NAME,
+        )
+    for name in ("NVIDIA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
+        raw = values.get(name)
+        if raw is None:
+            continue
+        token = raw.strip()
+        lowered = token.lower()
+        if lowered in _NO_DEVICE_VALUES or lowered in _NVIDIA_ALL_DEVICE_VALUES:
+            continue
+        return _physical_identity_from_token(token, name=name)
+    return {}
 
 
 def free_gpu_memory() -> None:
@@ -20,8 +143,15 @@ def free_gpu_memory() -> None:
         import torch  # noqa: PLC0415
     except Exception:  # noqa: BLE001
         return
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    try:
+        available = torch.cuda.is_available()
+    except Exception:  # noqa: BLE001
+        return
+    if available:
+        try:
+            torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             torch.cuda.ipc_collect()
         except Exception:  # noqa: BLE001
@@ -45,13 +175,18 @@ def gpu_info_snapshot() -> dict[str, Any]:
         free_b, total_b = torch.cuda.mem_get_info()
         total_mb = int(total_b / 1024**2)
         free_mb = int(free_b / 1024**2)
-        return {
+        identity = physical_gpu_identity()
+        snapshot: dict[str, Any] = {
             "device_name": torch.cuda.get_device_name(0),
-            "device_index": torch.cuda.current_device(),
             "memory_used_mb": total_mb - free_mb,
             "memory_total_mb": total_mb,
             "memory_free_mb": free_mb,
             "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
         }
+        if identity:
+            snapshot.update(identity)
+        else:
+            snapshot["device_index"] = torch.cuda.current_device()
+        return snapshot
     except Exception:  # noqa: BLE001
         return {}

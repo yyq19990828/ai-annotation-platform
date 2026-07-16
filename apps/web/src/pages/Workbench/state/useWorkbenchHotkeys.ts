@@ -323,7 +323,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         videoMode,
         samplingActive,
         hasSelectedVideoTrack: videoMode && !!s.selectedId && annotationsRef.current.some(
-          (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track_bbox",
+          (ann) => ann.id === s.selectedId
+            && (ann.geometry.type === "video_track_bbox" || ann.geometry.type === "video_track_mask"),
         ),
       });
       if (!action) return;

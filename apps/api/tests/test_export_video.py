@@ -344,6 +344,46 @@ def test_coco_frames_seg_empty_frames_keep_image_records():
     assert doc["annotations"] == []
 
 
+def test_coco_frames_seg_exports_mask_track_as_rle_crowd():
+    rle = {"encoding": "coco_rle", "size": [2, 3], "counts": [2, 2, 2]}
+    geometry = {
+        "type": "video_track_mask",
+        "track_id": "mask-1",
+        "keyframes": [
+            {
+                "frame_index": 0,
+                "mask": {"encoding": "coco_rle_ref"},
+                "mask_rle": rle,
+                "bbox": {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1},
+                "source": "manual",
+            }
+        ],
+        "outside": [],
+    }
+    doc = build_coco_frames_seg(
+        [
+            {
+                "seq": "mask-seq",
+                "tracks": [("car", geometry, {}, "mask-1")],
+                "bboxes": [],
+                "frame_count": 1,
+                "step": 1,
+                "img_w": 3,
+                "img_h": 2,
+            }
+        ],
+        {"car": 0},
+        frame_start_number=1,
+        include_attributes=True,
+    )
+    annotation = doc["annotations"][0]
+    assert annotation["segmentation"] == {"size": [2, 3], "counts": [2, 2, 2]}
+    assert annotation["bbox"] == [1.0, 0.0, 1.0, 2.0]
+    assert annotation["area"] == 2
+    assert annotation["iscrowd"] == 1
+    assert annotation["attributes"]["__track_id"] == "mask-1"
+
+
 def test_coco_frames_seg_skips_bbox_and_polyline():
     bbox = {
         "type": "video_bbox",

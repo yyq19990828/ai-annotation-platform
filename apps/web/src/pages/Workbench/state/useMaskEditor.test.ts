@@ -38,6 +38,21 @@ describe("useMaskEditor · 初始态", () => {
 });
 
 describe("useMaskEditor · beginBlank / initFromPolygon", () => {
+  it("initFromRle / commitToRle 保持像素合同", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 3, height: 2 }));
+    const rle = { encoding: "coco_rle" as const, size: [2, 3] as [number, number], counts: [1, 2, 2, 1] };
+    act(() => { result.current.initFromRle(rle); });
+    expect(result.current.buffer?.countSet()).toBe(3);
+    expect(result.current.commitToRle()).toEqual(rle);
+  });
+
+  it("initFromRle 拒绝尺寸不匹配", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 3, height: 2 }));
+    expect(() => act(() => {
+      result.current.initFromRle({ encoding: "coco_rle", size: [3, 2], counts: [6] });
+    })).toThrow(/does not match/);
+  });
+
   it("beginBlank 进入 active；buffer 全 0", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
     act(() => { result.current.beginBlank(); });
@@ -131,5 +146,28 @@ describe("useMaskEditor · cancel / commitToPolygon", () => {
   it("commitToPolygon 非 active 时返回 null", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
     expect(result.current.commitToPolygon()).toBeNull();
+  });
+});
+
+describe("useMaskEditor · stroke undo / redo", () => {
+  it("records one history step for a complete pointer stroke", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 8, height: 8, initialRadius: 1 }));
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(2, 2);
+      result.current.paintAt(3, 2);
+      result.current.endStroke();
+    });
+    expect(result.current.canUndo).toBe(true);
+    const painted = result.current.buffer?.countSet() ?? 0;
+    expect(painted).toBeGreaterThan(0);
+
+    act(() => result.current.undo());
+    expect(result.current.buffer?.countSet()).toBe(0);
+    expect(result.current.canRedo).toBe(true);
+
+    act(() => result.current.redo());
+    expect(result.current.buffer?.countSet()).toBe(painted);
   });
 });

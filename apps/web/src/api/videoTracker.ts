@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { CocoRleMaskRef } from "@/types";
 
 export type VideoTrackerDirection = "forward" | "backward" | "bidirectional";
 export type VideoTrackerJobStatus =
@@ -17,7 +18,7 @@ export interface VideoTrackerJob {
   id: string;
   task_id: string;
   dataset_item_id: string;
-  annotation_id: string;
+  annotation_id: string | null;
   segment_id: string | null;
   created_by: string | null;
   status: VideoTrackerJobStatus;
@@ -54,12 +55,30 @@ export interface VideoTrackerPropagatePayload {
   // v0.21.19: text-driven 追踪 (sam3_video) 的文本 query + 可选视觉示例框。
   text?: string;
   exemplars?: VideoTrackerExemplar[];
+  output_geometry?: "bbox" | "polygon" | "mask";
+  // v0.22.1 · B · 无源检测 (画布级发起): source_annotation_id 缺省 = 无源, 新建轨迹类别
+  // 由 target_class_name/target_tool_unit_id 显式指定。有源延展时留空 (从 path / 继承源)。
+  source_annotation_id?: string | null;
+  target_class_name?: string | null;
+  target_tool_unit_id?: string | null;
+  // v0.22.2 · M2 · 多选批量: ≥2 条已有轨迹一次延展 (单 job 多源)。后端逐源读当前帧几何构
+  // prompt.seeds[] (obj_id + source_annotation_id), 各回填各自源。给出时 track 走多源分支。
+  source_annotation_ids?: string[] | null;
 }
 
 /** v0.21.28 · 候选预览: job 暂存的逐帧结果, 供接受前渲染候选叠加。 */
+export type VideoTrackerPreviewGeometry =
+  | { type: "bbox"; x: number; y: number; w: number; h: number }
+  | { type: "polygon"; points: [number, number][] }
+  | {
+      type: "mask";
+      mask: CocoRleMaskRef;
+      bbox?: { x: number; y: number; w: number; h: number };
+    };
+
 export interface VideoTrackerPreviewResult {
   frame_index: number;
-  geometry: Record<string, unknown>;
+  geometry: VideoTrackerPreviewGeometry;
   confidence?: number | null;
   outside?: boolean;
   instance_id?: string | null;
@@ -69,7 +88,7 @@ export interface VideoTrackerPreviewResult {
 export interface VideoTrackerJobPreview {
   job_id: string;
   status: VideoTrackerJobStatus;
-  annotation_id: string;
+  annotation_id: string | null;
   results: VideoTrackerPreviewResult[];
   grid_step: number;
   output_geometry: string;
@@ -81,6 +100,10 @@ export const videoTrackerApi = {
       `/tasks/${taskId}/video/tracks/${annotationId}:propagate`,
       payload,
     ),
+  // v0.22.1 · B · 任务级追踪 (画布级入口, 源可选): payload.source_annotation_id 给出即延展
+  // 该轨迹, 缺省则为无源检测。
+  track: (taskId: string, payload: VideoTrackerPropagatePayload) =>
+    apiClient.post<VideoTrackerJob>(`/tasks/${taskId}/video:track`, payload),
   get: (jobId: string) =>
     apiClient.get<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   reviewable: (taskId: string) =>
@@ -97,6 +120,10 @@ export const videoTrackerApi = {
   // v0.21.28 · 候选/接受流。
   preview: (jobId: string) =>
     apiClient.get<VideoTrackerJobPreview>(`/video-tracker-jobs/${jobId}/preview`),
+  maskContent: (jobId: string, sha256: string) =>
+    apiClient.get<import("@/pages/Workbench/stage/shared/geometry/maskRle").CocoRle>(
+      `/video-tracker-jobs/${jobId}/mask-content/${sha256}`,
+    ),
   accept: (jobId: string) =>
     apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/accept`, {}),
   discard: (jobId: string) =>

@@ -140,6 +140,19 @@ describe("WorkbenchLayout", () => {
     );
   });
 
+  it("在中间画布定位容器内渲染 stage overlay", () => {
+    render(
+      <WorkbenchLayout
+        {...baseProps}
+        stageOverlay={<div data-testid="stage-overlay" />}
+      />,
+    );
+
+    const stage = screen.getByTestId("stage-host");
+    const overlay = screen.getByTestId("stage-overlay");
+    expect(overlay.parentElement).toBe(stage.parentElement);
+  });
+
   it("renders detached inspector in a floating shell while keeping discussion embedded", () => {
     const onMergeBack = vi.fn();
     const onClose = vi.fn();

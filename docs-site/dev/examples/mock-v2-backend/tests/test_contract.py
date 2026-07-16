@@ -32,6 +32,7 @@ def test_setup_declares_protocol_v21_and_warmup() -> None:
     assert body["compat_protocol_versions"] == ["2.0"]
     assert body["warmup_endpoint"] is True
     assert body["infra"] == "onnx"
+    assert body["is_interactive"] is True
 
 
 def test_setup_models_catalog() -> None:
@@ -39,7 +40,8 @@ def test_setup_models_catalog() -> None:
     ids = {m["id"] for m in models}
     assert ids == {
         "yolo-detect", "yolo-segment", "yolo-pose", "yolo-obb",
-        "yolo-classify", "ppocr", "doclayout",
+        "yolo-classify", "ppocr", "doclayout", "screenshot-interactive",
+        "screenshot-tracker",
     }
     for m in models:
         assert m["task"]
@@ -49,6 +51,12 @@ def test_setup_models_catalog() -> None:
     assert by_id["yolo-detect"]["infra"] == "pytorch"
     assert by_id["ppocr"]["infra"] == "paddle"
     assert by_id["ppocr"]["output_attribute_types"] == ["text", "language"]
+    assert by_id["screenshot-interactive"]["supported_prompts"] == [
+        "point", "interactive_box", "exemplar",
+    ]
+    assert by_id["screenshot-tracker"]["supported_trackers"] == [
+        "sam3_video_interactive", "sam2_video",
+    ]
 
 
 def test_setup_yolo_entries_carry_v2_1_variant_fields() -> None:
@@ -103,6 +111,27 @@ def test_predict_ocr_carries_attributes_text() -> None:
     )
     shapes = resp.json()["results"][0]["result"]
     assert all("text" in s["attributes"] for s in shapes)
+
+
+def test_predict_video_tracker_returns_frame_geometry() -> None:
+    resp = client.post(
+        "/predict",
+        json={
+            "task": {"id": "t1", "file_path": "clip.mp4"},
+            "context": {
+                "type": "video_tracker",
+                "from_frame": 2,
+                "to_frame": 4,
+                "source_geometry": {
+                    "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4,
+                },
+            },
+        },
+    )
+    assert resp.status_code == 200
+    result = resp.json()["result"]
+    assert [item["frame_index"] for item in result] == [2, 3, 4]
+    assert all(item["geometry"]["type"] == "bbox" for item in result)
 
 
 def test_predict_legacy_context_variants_normalized() -> None:

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-13
 ---
 
 # 标注模块
@@ -110,10 +110,14 @@ graph TD
 | `keypoint` | 关键点 (COCO 范式) | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
 | `video_bbox` | 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
 | `video_track_bbox` | 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
+| `video_track_polygon` / `video_track_polyline` | 视频点集轨迹 | compact points keyframes 与 outside |
+| `video_track_mask` | 视频栅格 Mask 轨迹 | compact `coco_rle_ref` keyframes；内容在对象存储 |
 
 `keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在项目设置「类别与属性」里的 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
 
 `video_track_bbox` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
+
+`video_track_mask` 沿用相同的 track 外壳，但关键帧保存内容寻址 RLE 引用。创建 / 更新必须同时通过 Pydantic 强类型与 task 的视频尺寸 / 帧数上下文校验；读取对象还会复核 SHA-256、canonical bytes、runs 和 size。Mask 帧间采用 hold 解析，不写展开帧；对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过 grace period 的内容。
 
 ### 属性 schema 与派生渲染
 

@@ -23,10 +23,12 @@ vi.mock("@/components/ui/Toast", async () => {
 // ── adminMlIntegrationsApi mock ───────────────────────────────────────────────
 const mockOverview = vi.fn();
 const mockListAll = vi.fn();
+const mockGpuResources = vi.fn();
 vi.mock("@/api/adminMlIntegrations", () => ({
   adminMlIntegrationsApi: {
     overview: () => mockOverview(),
     listAll: () => mockListAll(),
+    gpuResources: () => mockGpuResources(),
   },
 }));
 
@@ -61,6 +63,17 @@ function makeGlobalItem(overrides: Record<string, unknown> = {}) {
     is_interactive: true,
     auth_method: "none",
     extra_params: {},
+    gpu_resource_id: "node-a/index:0",
+    vram_budget_mb: 8192,
+    eviction_priority: 0,
+    gpu_config: {
+      status: "ok",
+      desired_mode: "observe",
+      effective_mode: "observe",
+      allocatable_mb: 20_000,
+      resource_claimed_budget_mb: 8192,
+      diagnostics: [],
+    },
     health_meta: null,
     source_project_id: "p-1",
     source_project_name: "env",
@@ -118,9 +131,18 @@ describe("RegisteredBackendsTab", () => {
     mockHealthMutate.mockReset();
     mockOverview.mockReset();
     mockListAll.mockReset();
+    mockGpuResources.mockReset();
     mockRole = "super_admin";
     mockListAll.mockResolvedValue({ items: [] });
     mockOverview.mockResolvedValue(makeOverview());
+    mockGpuResources.mockResolvedValue({
+      global_desired_mode: "observe",
+      runtime_ready: true,
+      observe_runtime_ready: true,
+      enforce_runtime_ready: false,
+      resources: [],
+      diagnostics: [],
+    });
   });
 
   it("全局表加载态 → 显示加载中文本", () => {
@@ -165,6 +187,77 @@ describe("RegisteredBackendsTab", () => {
     expect(screen.getAllByText(/并发/).length).toBe(1);
   });
 
+  it("显示 backend 静态 GPU claim，并明确区分 desired/effective", async () => {
+    mockListAll.mockResolvedValue({ items: [makeGlobalItem()] });
+    renderUI();
+    await screen.findByText("node-a/index:0");
+    expect(screen.getByText(/预算 8192\/20000 MiB/)).toBeInTheDocument();
+    expect(screen.getByText(/observe→observe/)).toBeInTheDocument();
+  });
+
+  it("超管逐卡展示单卡、多卡/多节点隔离资源与诊断", async () => {
+    mockGpuResources.mockResolvedValue({
+      global_desired_mode: "observe",
+      runtime_ready: true,
+      observe_runtime_ready: true,
+      enforce_runtime_ready: false,
+      resources: [
+        {
+          gpu_resource_id: "node-a/index:0",
+          node_id: "node-a",
+          physical_device_token: "index:0",
+          allocatable_mb: 20_000,
+          configured_mode: "observe",
+          desired_mode: "observe",
+          effective_mode: "observe",
+          claimed_budget_mb: 24_000,
+          claimed_backend_count: 2,
+          status: "warning",
+          diagnostics: [
+            {
+              code: "gpu_resource_oversubscribed",
+              level: "warning",
+              message: "该卡存在弹性超售",
+            },
+          ],
+        },
+        {
+          gpu_resource_id: "node-a/index:1",
+          node_id: "node-a",
+          physical_device_token: "index:1",
+          allocatable_mb: 20_000,
+          configured_mode: "off",
+          desired_mode: "off",
+          effective_mode: "off",
+          claimed_budget_mb: 8_000,
+          claimed_backend_count: 1,
+          status: "ok",
+          diagnostics: [],
+        },
+        {
+          gpu_resource_id: "node-b/index:0",
+          node_id: "node-b",
+          physical_device_token: "index:0",
+          allocatable_mb: 24_000,
+          configured_mode: "observe",
+          desired_mode: "observe",
+          effective_mode: "observe",
+          claimed_budget_mb: 4_000,
+          claimed_backend_count: 1,
+          status: "ok",
+          diagnostics: [],
+        },
+      ],
+      diagnostics: [],
+    });
+    renderUI();
+    expect(await screen.findByText("node-a/index:0")).toBeInTheDocument();
+    expect(screen.getByText("node-a/index:1")).toBeInTheDocument();
+    expect(screen.getByText("node-b/index:0")).toBeInTheDocument();
+    expect(screen.getByText("该卡存在弹性超售")).toBeInTheDocument();
+    expect(screen.getByText("observe runtime ready")).toBeInTheDocument();
+  });
+
   it("点击注册全局 backend → 打开 GlobalBackendFormModal", async () => {
     mockListAll.mockResolvedValue({ items: [makeGlobalItem()] });
     renderUI();
@@ -177,17 +270,29 @@ describe("RegisteredBackendsTab", () => {
 
   it("项目管理员 → 全局表只读 (无注册/编辑/删除) + 看不到项目启用概览", async () => {
     mockRole = "project_admin";
-    mockListAll.mockResolvedValue({ items: [makeGlobalItem()] });
+    mockListAll.mockResolvedValue({
+      items: [
+        makeGlobalItem({
+          gpu_resource_id: null,
+          vram_budget_mb: null,
+          eviction_priority: null,
+          gpu_config: null,
+        }),
+      ],
+    });
     renderUI();
     await screen.findByText("grounded-sam2");
     expect(screen.queryByRole("button", { name: /注册全局 backend/ })).not.toBeInTheDocument();
     expect(screen.queryByTitle("编辑")).not.toBeInTheDocument();
     expect(screen.queryByTitle("删除")).not.toBeInTheDocument();
     expect(screen.getByText(/注册由超级管理员维护/)).toBeInTheDocument();
+    expect(screen.queryByText("GPU 配置")).not.toBeInTheDocument();
+    expect(screen.queryByText("node-a/index:0")).not.toBeInTheDocument();
     // 项目启用概览仅超管可见
     expect(screen.queryByText("项目启用概览")).not.toBeInTheDocument();
     // 项目管理员不应触发超管专属 overview 查询
     expect(mockOverview).not.toHaveBeenCalled();
+    expect(mockGpuResources).not.toHaveBeenCalled();
   });
 
   it("超管 → 项目启用概览只读渲染项目名与已启用 backend chip", async () => {

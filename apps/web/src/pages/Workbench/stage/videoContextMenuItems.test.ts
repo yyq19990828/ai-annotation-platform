@@ -76,6 +76,7 @@ describe("buildVideoContextMenuItems", () => {
     const items = buildVideoContextMenuItems({ ...base, selectedAnnotation: t, contextMenuTargetId: "trk1" });
     const ids = items.filter((i) => !i.divider).map((i) => i.id);
     expect(ids).toEqual(["outside", "occluded", "locked", "hidden", "propagate", "class", "split-frame", "delete-keyframe", "delete-track"]);
+    expect(items.find((item) => item.id === "propagate")?.label).toBe("AI 延展此轨迹");
   });
 
   it("track 锁定 → 标记/拆帧/删轨迹禁用,锁定项仍可用", () => {

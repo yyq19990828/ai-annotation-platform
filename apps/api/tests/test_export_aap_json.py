@@ -124,7 +124,7 @@ async def test_export_aap_json_project_envelope(
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
 
-    assert body["schema_version"] == "1.2"
+    assert body["schema_version"] == "1.3"
     assert body["exported_from"]["project_display_id"] == project.display_id
     assert body["project"]["annotation_guide"] == "# 测试指引\n请标注所有车辆."
     assert body["project"]["type_key"] == "image-det"
@@ -181,7 +181,7 @@ async def test_export_aap_json_empty_project(
     await db_session.flush()
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
-    assert body["schema_version"] == "1.2"
+    assert body["schema_version"] == "1.3"
     assert body["tasks"] == []
 
 
@@ -347,6 +347,7 @@ async def test_aap_task_block_media_type_defaults_and_serialization():
 async def test_export_aap_json_video_project_task_block(
     super_admin,
     db_session: AsyncSession,
+    monkeypatch,
 ):
     """v0.10.31 · 视频项目导出: task block 带 media_type=video + video 子块
     (sampling + fps/frame_count 等帧元数据)."""
@@ -407,8 +408,39 @@ async def test_export_aap_json_video_project_task_block(
     db_session.add(task)
     await db_session.flush()
 
+    digest = "a" * 64
+    mask_ref = {
+        "encoding": "coco_rle_ref",
+        "size": [1080, 1920],
+        "object_key": f"raster-masks/sha256/aa/aa/{digest}.json",
+        "sha256": digest,
+        "runs": 1,
+        "bytes": 61,
+    }
+    db_session.add(
+        Annotation(
+            task_id=task.id,
+            project_id=project.id,
+            user_id=user.id,
+            source="manual",
+            annotation_type="video_track_mask",
+            tool_unit_id="region",
+            class_name="car",
+            geometry={
+                "type": "video_track_mask",
+                "track_id": "mask-1",
+                "keyframes": [{"frame_index": 0, "mask": mask_ref, "source": "manual"}],
+                "outside": [],
+            },
+            track_id="mask-1",
+        )
+    )
+    await db_session.flush()
+    rle = {"encoding": "coco_rle", "size": [1080, 1920], "counts": [1080 * 1920]}
+    monkeypatch.setattr("app.services.export.load_coco_rle", lambda reference: rle)
+
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
-    assert body["schema_version"] == "1.2"
+    assert body["schema_version"] == "1.3"
     assert len(body["tasks"]) == 1
     t0 = body["tasks"][0]
     assert t0["media_type"] == "video"
@@ -419,3 +451,11 @@ async def test_export_aap_json_video_project_task_block(
     assert t0["video"]["duration_ms"] == 10000
     assert t0["video"]["width"] == 1920
     assert t0["video"]["height"] == 1080
+    assert body["mask_objects"] == {digest: rle}
+    assert t0["annotations"][0]["geometry"]["type"] == "video_track_mask"
+
+    video_doc = json.loads(
+        await ExportService(db_session).export_video_tracks(project.id)
+    )
+    assert video_doc["tracks"][0]["geometry_type"] == "video_track_mask"
+    assert video_doc["tracks"][0]["keyframes"][0]["mask"] == mask_ref

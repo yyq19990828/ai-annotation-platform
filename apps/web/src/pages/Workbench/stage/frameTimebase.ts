@@ -5,6 +5,7 @@ export interface FrameTimebase {
   frameCount: number;
   source: "ffprobe" | "estimated";
   ptsMs: number[] | null;
+  durationMs?: number | null;
 }
 
 const DEFAULT_FPS = 30;
@@ -45,14 +46,26 @@ export function buildFrameTimebase(
       timetableFrameCount ??
       1,
   );
+  const durationMs = typeof metadata?.duration_ms === "number" &&
+    Number.isFinite(metadata.duration_ms) &&
+    metadata.duration_ms > 0
+    ? metadata.duration_ms
+    : null;
   if (timetable?.source === "ffprobe" && timetable.frames.length > 0) {
     const ptsMs: number[] = [];
     for (const frame of timetable.frames) {
       if (frame.frame_index >= 0) ptsMs[frame.frame_index] = frame.pts_ms;
     }
-    return { fps, frameCount, source: "ffprobe", ptsMs };
+    return { fps, frameCount, source: "ffprobe", ptsMs, durationMs };
   }
-  return { fps, frameCount, source: "estimated", ptsMs: null };
+  return { fps, frameCount, source: "estimated", ptsMs: null, durationMs };
+}
+
+export function frameTimebaseDuration(timebase: FrameTimebase): number {
+  if (timebase.durationMs && Number.isFinite(timebase.durationMs)) {
+    return timebase.durationMs / 1000;
+  }
+  return timebase.frameCount / timebase.fps;
 }
 
 export function frameToTime(frameIndex: number, timebase: FrameTimebase): number {

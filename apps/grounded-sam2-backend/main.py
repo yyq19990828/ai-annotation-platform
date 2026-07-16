@@ -27,10 +27,17 @@ import functools
 import logging
 import os
 import time
+from typing import Any, Callable
 
 import httpx
 import torch
-from aap_backend_runtime import fetch_image, free_gpu_memory, versions_payload
+from aap_backend_runtime import (
+    effective_device_value,
+    fetch_image,
+    physical_gpu_identity,
+    versions_payload,
+    validate_single_gpu_device_set,
+)
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
@@ -40,13 +47,35 @@ from aap_protocol_v2 import (
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
-from fastapi import FastAPI, HTTPException, Request
+from aap_protocol_v2.errors import LifecycleErrorCode, LifecycleHTTPError
+from aap_protocol_v2.lifecycle import (
+    AdmissionScope,
+    GPU_ADMISSION_TOKEN_HEADER,
+    GPU_GENERATION_HEADER,
+    GPU_HEALTH_CHALLENGE_HEADER,
+    GPU_HEALTH_CHALLENGE_QUERY_PARAM,
+    GenerationTransitionRequest,
+    LifecycleModeRequest,
+    LifecycleResetRequest,
+    ManagedLifecycleCapabilities,
+    load_verify_keyring,
+    match_gpu_health_challenge,
+    parse_gpu_admission_header_values,
+    parse_gpu_control_token_header_values,
+)
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, ValidationError
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from embedding_cache import EmbeddingCache, compute_cache_key
-from model_pool import ModelPool
+from gpu_lifecycle import GroundedSam2GpuLifecycle, WorkloadOperation
+from model_pool import (
+    ModelBuildTimeout,
+    ModelPool,
+    ModelPoolBusyError,
+)
 from observability import (
     init_perfhud_collectors,
     record_cache,
@@ -57,13 +86,15 @@ from observability import (
     update_cache_size,
 )
 from predictor import (
+    CHECKPOINT_DIR,
     DEFAULT_SIMPLIFY_TOLERANCE,
     DINO_CONFIGS,
     SAM2_CONFIGS,
     GroundedSAM2Predictor,
 )
+from pool_domain import GroundedSam2Pools
 from schemas import BatchPredictResponse, PredictionResult, WarmupRequest, WarmupResponse
-from video_pool import VideoPool
+from video_pool import VideoBuildTimeout, VideoPool, VideoPoolBusyError
 from video_predictor import SAM2VideoTracker
 
 logger = logging.getLogger("grounded-sam2-backend")
@@ -88,11 +119,44 @@ VIDEO_MODEL_POOL_BUILD_TIMEOUT = float(os.getenv("VIDEO_MODEL_POOL_BUILD_TIMEOUT
 VIDEO_TRACKER_MAX_WINDOW_FRAMES = int(os.getenv("VIDEO_TRACKER_MAX_WINDOW_FRAMES", "300"))
 # video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时, 不连带).
 VIDEO_IDLE_UNLOAD_SECONDS = float(os.getenv("VIDEO_IDLE_UNLOAD_SECONDS", "600"))
+# Code support and deployment verification are separate.  The backend does not
+# advertise or enter enforce mode until real-card load/unload evidence exists.
+MANAGED_LIFECYCLE_VERIFIED = os.getenv(
+    "GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED",
+    "0",
+).lower() in {"1", "true", "yes"}
 
 # v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
 
 app = FastAPI(title="grounded-sam2-backend", version=BACKEND_VERSION)
+
+
+class _ManagedAdmissionRoute(APIRoute):
+    """Admit workload routes before FastAPI reads or validates their bodies."""
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+        scope = {
+            "/predict": AdmissionScope.PREDICT,
+            "/warmup": AdmissionScope.WARMUP,
+            "/reload": AdmissionScope.RELOAD,
+        }.get(self.path)
+        if scope is None:
+            return original
+
+        async def admitted(request: Request):
+            operation = await _begin_workload(request, scope)
+            request.state.gpu_workload = operation
+            try:
+                return await original(request)
+            finally:
+                await operation.close()
+
+        return admitted
+
+
+app.router.route_class = _ManagedAdmissionRoute
 
 
 @app.exception_handler(ValueError)
@@ -153,13 +217,48 @@ def _build_predictor(
     )
 
 
-_pool = ModelPool(
-    cap=MODEL_POOL_CAP,
-    build_predictor=_build_predictor,
-    free_gpu_memory=free_gpu_memory,
-    embedding_cache_size=EMBEDDING_CACHE_SIZE,
-    build_timeout=MODEL_POOL_BUILD_TIMEOUT,
-)
+def _strict_free_gpu_memory() -> None:
+    """Release managed CUDA allocator state without hiding a failed cleanup."""
+
+    if not torch.cuda.is_available():
+        return
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+
+
+def _require_model_file(path: str, *, role: str) -> None:
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"{role} not provisioned: {path}")
+
+
+def _preflight_image_model(sam_variant: str, dino_variant: str) -> None:
+    _sam_config, sam_checkpoint = SAM2_CONFIGS[sam_variant]
+    dino_config, dino_checkpoint = DINO_CONFIGS[dino_variant]
+    dino_config_path = os.getenv(
+        "DINO_CONFIG_PATH",
+        "/app/vendor/grounded-sam-2/grounding_dino/groundingdino/config/"
+        f"{dino_config}",
+    )
+    _require_model_file(
+        os.path.join(CHECKPOINT_DIR, sam_checkpoint),
+        role="SAM checkpoint",
+    )
+    _require_model_file(dino_config_path, role="GroundingDINO config")
+    _require_model_file(
+        os.path.join(CHECKPOINT_DIR, dino_checkpoint),
+        role="GroundingDINO checkpoint",
+    )
+
+
+def _preflight_video_model(sam_variant: str) -> None:
+    _sam_config, sam_checkpoint = SAM2_CONFIGS[sam_variant]
+    _require_model_file(
+        os.path.join(CHECKPOINT_DIR, sam_checkpoint),
+        role="SAM video checkpoint",
+    )
+
+
+_pool: ModelPool | None = None
 
 
 def _build_video_tracker(sam_variant: str) -> SAM2VideoTracker:
@@ -170,13 +269,9 @@ def _build_video_tracker(sam_variant: str) -> SAM2VideoTracker:
     )
 
 
-_video_pool = VideoPool(
-    cap=VIDEO_MODEL_POOL_CAP,
-    build_tracker=_build_video_tracker,
-    free_gpu_memory=free_gpu_memory,
-    build_timeout=VIDEO_MODEL_POOL_BUILD_TIMEOUT,
-    idle_unload_seconds=VIDEO_IDLE_UNLOAD_SECONDS,
-)
+_video_pool: VideoPool | None = None
+_pool_domain: GroundedSam2Pools | None = None
+_gpu_lifecycle: GroundedSam2GpuLifecycle | None = None
 _video_idle_task: asyncio.Task | None = None
 
 
@@ -302,43 +397,62 @@ def _model_key(sam_variant: str, dino_variant: str) -> str:
     return f"sam={sam_variant}/dino={dino_variant}"
 
 
-async def _get_predictor(
-    sam_variant: str, dino_variant: str
-) -> tuple[GroundedSAM2Predictor, bool, int | None]:
-    """v0.14.14: 返回 (predictor, cache_hit, model_load_ms).
-
-    pool 满 + 排队超时, 或变体 checkpoint 未预置, 翻成 503.
-    """
-    global _last_request_at
+def _managed_lifecycle_headers(request: Request) -> tuple[str | None, str | None]:
     try:
-        predictor, cache_hit, load_ms = await _pool.get(sam_variant, dino_variant)
-    except RuntimeError as exc:
-        raise ModelUnavailableError(_model_key(sam_variant, dino_variant), str(exc)) from exc
-    except FileNotFoundError as exc:
-        # 该变体的 checkpoint 未落盘 (entrypoint 只预拉了 PREFETCH 列表内的变体).
-        raise ModelUnavailableError(
-            _model_key(sam_variant, dino_variant),
-            (
-                f"checkpoint not provisioned: {exc}; "
-                "把该变体加入 PREFETCH_SAM_VARIANTS / PREFETCH_DINO_VARIANTS 后重建容器, "
-                "或手动下载 checkpoint 到 CHECKPOINT_DIR."
-            ),
-        ) from exc
-    _last_request_at = time.monotonic()
-    return predictor, cache_hit, load_ms
+        headers = parse_gpu_admission_header_values(
+            request.headers.getlist(GPU_GENERATION_HEADER),
+            request.headers.getlist(GPU_ADMISSION_TOKEN_HEADER),
+        )
+    except ValueError as exc:
+        raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED) from exc
+    return headers if headers is not None else (None, None)
+
+
+def _managed_control_token(request: Request) -> str:
+    try:
+        return parse_gpu_control_token_header_values(
+            request.headers.getlist(GPU_GENERATION_HEADER),
+            request.headers.getlist(GPU_ADMISSION_TOKEN_HEADER),
+        )
+    except ValueError as exc:
+        raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED) from exc
+
+
+async def _begin_workload(
+    request: Request,
+    scope: AdmissionScope,
+) -> WorkloadOperation:
+    generation_header, token = _managed_lifecycle_headers(request)
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    return await _gpu_lifecycle.begin_workload(
+        scope,
+        generation_header=generation_header,
+        token=token,
+    )
+
+
+def _request_operation(request: Request) -> WorkloadOperation:
+    operation = getattr(request.state, "gpu_workload", None)
+    if operation is None:
+        raise RuntimeError("workload admission operation is missing")
+    return operation
 
 
 async def _idle_watcher() -> None:
-    """周期检查最近请求时间; 超过 IDLE_UNLOAD_SECONDS 清空整池."""
+    """Keep the image pool's idle threshold independent from the video pool."""
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
-            if not _pool.loaded or IDLE_UNLOAD_SECONDS <= 0:
+            if IDLE_UNLOAD_SECONDS <= 0 or _gpu_lifecycle is None:
                 continue
-            idle_for = time.monotonic() - _last_request_at
-            if idle_for >= IDLE_UNLOAD_SECONDS:
-                logger.info("idle %0.fs; clearing pool", idle_for)
-                _pool.clear_all(reason="idle_timeout")
+            idle_before = time.monotonic() - IDLE_UNLOAD_SECONDS
+            count = await _gpu_lifecycle.try_idle_unload(
+                "image",
+                idle_before=idle_before,
+            )
+            if count:
+                logger.info("idle unloaded %d image variants", count)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -350,7 +464,15 @@ async def _video_idle_watcher() -> None:
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
-            _video_pool.maybe_idle_unload()
+            if VIDEO_IDLE_UNLOAD_SECONDS <= 0 or _gpu_lifecycle is None:
+                continue
+            idle_before = time.monotonic() - VIDEO_IDLE_UNLOAD_SECONDS
+            count = await _gpu_lifecycle.try_idle_unload(
+                "video",
+                idle_before=idle_before,
+            )
+            if count:
+                logger.info("idle unloaded %d video variants", count)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -359,10 +481,39 @@ async def _video_idle_watcher() -> None:
 
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _idle_task, _last_request_at, _prefetch_task, _video_idle_task
+    global _gpu_lifecycle, _idle_task, _last_request_at, _pool, _pool_domain
+    global _prefetch_task, _video_idle_task, _video_pool
+    validate_single_gpu_device_set()
+    raw_keyring = os.getenv("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "").strip()
+    verify_keyring = load_verify_keyring(raw_keyring) if raw_keyring else {}
+    build_serial_lock = asyncio.Lock()
+    _pool = ModelPool(
+        cap=MODEL_POOL_CAP,
+        build_predictor=_build_predictor,
+        free_gpu_memory=_strict_free_gpu_memory,
+        embedding_cache_size=EMBEDDING_CACHE_SIZE,
+        preflight_model=_preflight_image_model,
+        build_timeout=MODEL_POOL_BUILD_TIMEOUT,
+        build_serial_lock=build_serial_lock,
+    )
+    _video_pool = VideoPool(
+        cap=VIDEO_MODEL_POOL_CAP,
+        build_tracker=_build_video_tracker,
+        free_gpu_memory=_strict_free_gpu_memory,
+        preflight_model=_preflight_video_model,
+        build_timeout=VIDEO_MODEL_POOL_BUILD_TIMEOUT,
+        idle_unload_seconds=VIDEO_IDLE_UNLOAD_SECONDS,
+        build_serial_lock=build_serial_lock,
+    )
+    _pool_domain = GroundedSam2Pools(_pool, _video_pool)
+    _gpu_lifecycle = GroundedSam2GpuLifecycle(
+        _pool_domain,
+        verify_keyring=verify_keyring,
+        evictable_verified=MANAGED_LIFECYCLE_VERIFIED,
+    )
     logger.info(
         "loading default variant: dino=%s sam=%s box_th=%.2f text_th=%.2f "
-        "cache_size=%d pool_cap=%d idle_unload=%.0fs",
+        "cache_size=%d pool_cap=%d idle_unload=%.0fs managed_verified=%s",
         DINO_VARIANT,
         SAM_VARIANT,
         BOX_THRESHOLD,
@@ -370,6 +521,7 @@ async def _load_models() -> None:
         EMBEDDING_CACHE_SIZE,
         MODEL_POOL_CAP,
         IDLE_UNLOAD_SECONDS,
+        MANAGED_LIFECYCLE_VERIFIED,
     )
     # 不再启动急加载默认变体: 未注册 / 无流量时会白占显存 (与下方 video 池同理).
     # 纯懒加载 — 首个推理请求经 _get_predictor → _pool.get 触发冷启; 需暖启点模型市场「预热默认」。
@@ -389,7 +541,8 @@ async def _load_models() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    global _idle_task, _prefetch_task, _video_idle_task
+    global _gpu_lifecycle, _idle_task, _pool, _pool_domain, _prefetch_task
+    global _video_idle_task, _video_pool
     for task_name in ("_idle_task", "_prefetch_task", "_video_idle_task"):
         task = globals()[task_name]
         if task is not None:
@@ -399,17 +552,76 @@ async def _shutdown() -> None:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
             globals()[task_name] = None
+    if _gpu_lifecycle is not None:
+        await _gpu_lifecycle.shutdown()
+    _gpu_lifecycle = None
+    _pool_domain = None
+    _pool = None
+    _video_pool = None
     shutdown_perfhud_collectors()
 
 
-@app.get("/health")
-def health() -> dict:
+def _legacy_pool_status(snapshot: dict[str, Any]) -> dict[str, Any]:
+    loaded_keys = [
+        {key: value for key, value in item.items() if key != "borrowers"}
+        for item in snapshot["loaded_keys"]
+    ]
+    return {
+        "cap": snapshot["cap"],
+        "current_size": snapshot["current_size"],
+        "loaded_keys": loaded_keys,
+        "last_evict": snapshot["last_evict"],
+    }
+
+
+def _echo_gpu_health_challenge(request: Request, response: Response) -> None:
+    challenge = match_gpu_health_challenge(
+        request.headers.getlist(GPU_HEALTH_CHALLENGE_HEADER),
+        request.query_params.getlist(GPU_HEALTH_CHALLENGE_QUERY_PARAM),
+    )
+    if challenge is not None:
+        response.headers[GPU_HEALTH_CHALLENGE_HEADER] = challenge
+        response.headers["Cache-Control"] = "no-store"
+
+
+@app.get("/health", dependencies=[Depends(_echo_gpu_health_challenge)])
+async def health() -> dict:
     """v0.9.5 · 加 GPU 显存 + cache 指标，便于运维实时观察。
 
     旧前端字段保留：`gpu` 仍是 truthy（True/False），`model_version` / `loaded` 不变；
     新增 `gpu_info` / `cache` 子对象，老前端忽略。
     """
-    available = torch.cuda.is_available()
+    if _gpu_lifecycle is not None and _pool is not None:
+        aggregate, residency = await _gpu_lifecycle.snapshot_and_residency()
+        image_snapshot = aggregate["pools"]["image"]
+        video_snapshot = aggregate["pools"]["video"]
+        cache = await _pool.aggregate_cache_stats()
+        residency_payload = residency.model_dump(mode="json")
+    else:
+        image_snapshot = {
+            "cap": MODEL_POOL_CAP,
+            "current_size": 0,
+            "loaded_keys": [],
+            "last_evict": None,
+            "device": None,
+        }
+        video_snapshot = {
+            "cap": VIDEO_MODEL_POOL_CAP,
+            "current_size": 0,
+            "loaded_keys": [],
+            "last_evict": None,
+            "active_sessions": 0,
+            "idle_seconds": 0.0,
+            "idle_unload_seconds": VIDEO_IDLE_UNLOAD_SECONDS,
+            "device": None,
+        }
+        cache = {"size": 0, "hits": 0, "misses": 0, "hit_rate": 0.0, "buckets": {}}
+        residency_payload = None
+
+    try:
+        available = bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001 — CUDA 运行时损坏不应拖垮 /health
+        available = False
     gpu_info: dict | None = None
     # v0.9.11 PerfHud · 同步采样 GPU util/温度/功耗 + 容器 CPU/RAM (无 GPU 环境字段为 None)
     perf = sample_perfhud()
@@ -425,22 +637,18 @@ def health() -> dict:
             if used_mb is None or total_mb is None:
                 used_mb = int((total_b - free_b) / 1024**2)
                 total_mb = int(total_b / 1024**2)
-            # 本容器自身视角: 占用的物理卡号 + 本进程 torch 已保留显存 (caching allocator,
-            # 不含 ~数百 MB CUDA 上下文). memory_used_mb 仍是整卡全局。
-            # CUDA_VISIBLE_DEVICES 把物理卡重映射为逻辑 0..N-1: 物理卡号 = 列表中第「逻辑 current
-            # device」项 (单卡 "2"→2; 多卡 "2,3"+逻辑1→3); 列表缺失/非法时回落逻辑号。
-            _vis = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-            _logical = torch.cuda.current_device()
-            _ids = [p.strip() for p in _vis.split(",") if p.strip().isdigit()]
-            device_index = int(_ids[_logical]) if _logical < len(_ids) else _logical
+            # 本容器自身视角: 单张物理卡身份 + 本进程 torch 已保留显存
+            # (caching allocator，不含 ~数百 MB CUDA 上下文)。memory_used_mb 仍是整卡全局。
             gpu_info = {
                 "device_name": torch.cuda.get_device_name(0),
-                "device_index": device_index,
                 "memory_used_mb": used_mb,
                 "memory_total_mb": total_mb,
                 "memory_free_mb": max(total_mb - used_mb, 0),
                 "process_memory_mb": int(torch.cuda.memory_reserved() / 1024**2),
             }
+            gpu_info.update(
+                physical_gpu_identity() or {"device_index": torch.cuda.current_device()}
+            )
         except Exception:  # noqa: BLE001 — 显存查询失败不阻塞 /health
             gpu_info = None
     if gpu_info is not None:
@@ -456,14 +664,33 @@ def health() -> dict:
         "gpu": available,
         "gpu_info": gpu_info,
         "host": host,
-        "cache": _pool.aggregate_cache_stats(),
+        "cache": cache,
         "model_version": MODEL_VERSION,
-        "loaded": _pool.loaded,
+        "loaded": image_snapshot["current_size"] > 0,
         # v0.14.14 协议 §4.3 PoolStatus (cap/current_size/loaded_keys[]/last_evict).
-        "pool": _pool.pool_status(),
+        "pool": _legacy_pool_status(image_snapshot),
         # v0.14.15 · video tracker 独立池同样使用 PoolStatus.loaded_keys 协议形态.
-        "video_pool": _video_pool.health(),
+        "video_pool": {
+            **_legacy_pool_status(video_snapshot),
+            "active_sessions": video_snapshot["active_sessions"],
+            "idle_seconds": video_snapshot["idle_seconds"],
+            "idle_unload_seconds": video_snapshot["idle_unload_seconds"],
+        },
         "provisioning": _provisioning,
+        # 五镜像统一有效设备观测 (torch 系 effective_device / ORT 系 effective_provider)。
+        # configured_device = 环境配置 (本 backend 不读 *_DEVICE env, predictor 锁 "cuda");
+        # effective_device = 真实探测生效设备 (None=尚未加载, "cpu"=GPU 配置但已静默退回,
+        # 供观测「GPU 静默退化」根因排查)。
+        "compute": {
+            "configured_device": "cuda",
+            "effective_device": effective_device_value(),
+            "pool_devices": {
+                "image": image_snapshot["device"],
+                "video": video_snapshot["device"],
+            },
+            "cpu_fallback_supported": True,
+        },
+        "residency": residency_payload,
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
@@ -641,7 +868,7 @@ def setup() -> dict:
             "supported_prompts": ["bbox"],
             # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
             "supported_inputs": ["bbox_prompt", "full_image"],
-            "supported_geometric_outputs": ["bbox"],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             # 有状态视频追踪, 跨帧串行不可批量。output_attribute_types 留空。
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam2_video"],
@@ -675,6 +902,10 @@ def setup() -> dict:
             "params": base["params"],
         },
     ]
+    if MANAGED_LIFECYCLE_VERIFIED:
+        base["managed_lifecycle"] = ManagedLifecycleCapabilities().model_dump(
+            mode="json"
+        )
     return base
 
 
@@ -684,22 +915,119 @@ def versions() -> dict:
 
 
 @app.get("/metrics", include_in_schema=False)
-def metrics() -> Response:
-    update_cache_size(_pool.total_cache_size())
+async def metrics() -> Response:
+    update_cache_size(await _pool.total_cache_size() if _pool is not None else 0)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/cache/stats")
-def cache_stats() -> dict:
-    return _pool.aggregate_cache_stats()
+async def cache_stats() -> dict:
+    if _pool is None:
+        return {"size": 0, "hits": 0, "misses": 0, "hit_rate": 0.0, "buckets": {}}
+    return await _pool.aggregate_cache_stats()
+
+
+def _validate_body(model_type: Any, body: Any) -> Any:
+    try:
+        return model_type.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_url=False),
+        ) from exc
+
+
+async def _request_json(request: Request) -> Any:
+    try:
+        return await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid JSON request body") from exc
 
 
 @app.post("/unload")
-async def unload() -> dict:
-    """主动卸载整池释放显存. 已为空闲状态时返回 ok=true, unloaded=false."""
-    unloaded = _pool.clear_all(reason="manual")
-    free_gpu_memory()
-    return {"ok": True, "unloaded": unloaded, "loaded": _pool.loaded}
+async def unload(request: Request) -> dict[str, Any]:
+    """Bodyless legacy unload is image-only; managed unload clears both pools."""
+
+    generation_header, token = _managed_lifecycle_headers(request)
+    if _gpu_lifecycle is None:
+        if generation_header is not None:
+            raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED)
+        return {"ok": True, "unloaded": False, "loaded": False}
+    raw_body = await request.body()
+    if not raw_body.strip():
+        if generation_header is not None:
+            raise LifecycleHTTPError(LifecycleErrorCode.ADMISSION_DENIED)
+        return await _gpu_lifecycle.legacy_unload()
+    body = _validate_body(
+        GenerationTransitionRequest,
+        await _request_json(request),
+    )
+    response = await _gpu_lifecycle.managed_unload(
+        body.generation,
+        generation_header=generation_header,
+        token=token,
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/drain")
+async def drain(request: Request) -> dict[str, Any]:
+    generation_header, token = _managed_lifecycle_headers(request)
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(
+        GenerationTransitionRequest,
+        await _request_json(request),
+    )
+    response = await _gpu_lifecycle.drain(
+        body.generation,
+        generation_header=generation_header,
+        token=token,
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/drain/cancel")
+async def cancel_drain(request: Request) -> dict[str, Any]:
+    generation_header, token = _managed_lifecycle_headers(request)
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(
+        GenerationTransitionRequest,
+        await _request_json(request),
+    )
+    response = await _gpu_lifecycle.cancel_drain(
+        body.generation,
+        generation_header=generation_header,
+        token=token,
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/lifecycle/mode")
+async def lifecycle_mode(request: Request) -> dict[str, Any]:
+    token = _managed_control_token(request)
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(LifecycleModeRequest, await _request_json(request))
+    response = await _gpu_lifecycle.set_mode(
+        body,
+        token=token,
+    )
+    return response.model_dump(mode="json")
+
+
+@app.post("/lifecycle/reset")
+async def lifecycle_reset(request: Request) -> dict[str, Any]:
+    token = _managed_control_token(request)
+    if _gpu_lifecycle is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    body = _validate_body(LifecycleResetRequest, await _request_json(request))
+    response = await _gpu_lifecycle.reset(
+        body,
+        token=token,
+    )
+    return response.model_dump(mode="json")
 
 
 class ReloadRequest(BaseModel):
@@ -715,13 +1043,16 @@ class ReloadRequest(BaseModel):
 
 
 @app.post("/reload")
-async def reload(req: ReloadRequest | None = None) -> dict:
+async def reload(request: Request, req: ReloadRequest | None = None) -> dict:
     """主动 (重新) 加载变体进 pool. 已加载该变体时 reloaded=false.
 
     v0.10.26 · 接受可选 {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);
     缺省回退 env 默认变体. 非法变体 422 (同 predict 的 _resolve_variant 校验).
     v0.10.36 · task_type="video" 改预热独立 video tracker 池 (不用 dino).
     """
+    if _pool is None or _video_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    operation = _request_operation(request)
     task_type = (req.task_type if req else None) or "image"
 
     # v0.10.36 · video 分支: 预热独立 video tracker 池 (单维 sam_variant, 无 dino).
@@ -729,17 +1060,22 @@ async def reload(req: ReloadRequest | None = None) -> dict:
         sv = (req.sam_variant if req else None) or SAM_VARIANT
         if sv not in SAM2_CONFIGS:
             raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
-        already = _video_pool.is_loaded(sv)
         try:
-            await _video_pool.get(sv)
-        except RuntimeError as exc:
+            cache_hit, _load_ms, _evicted = await _video_pool.warmup(sv)
+        except VideoBuildTimeout as exc:
+            operation.track_future(exc.builder)
+            raise ModelUnavailableError(sv, str(exc)) from exc
+        except VideoPoolBusyError as exc:
             raise ModelUnavailableError(sv, str(exc)) from exc
         except FileNotFoundError as exc:
             raise ModelUnavailableError(sv, f"video checkpoint not provisioned: {exc}") from exc
+        except asyncio.CancelledError:
+            operation.track_future(_video_pool.builder_for_now(sv))
+            raise
         return {
             "ok": True,
             "loaded": True,
-            "reloaded": not already,
+            "reloaded": not cache_hit,
             "sam_variant": sv,
             "task_type": "video",
         }
@@ -756,12 +1092,25 @@ async def reload(req: ReloadRequest | None = None) -> dict:
         raise VariantNotSupportedError("sam_variant", sv, sorted(SAM2_CONFIGS))
     if dv not in DINO_CONFIGS:
         raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
-    already = _pool.is_loaded(sv, dv)
-    _predictor, _cache_hit, _load_ms = await _get_predictor(sv, dv)
+    try:
+        cache_hit, _load_ms, _evicted = await _pool.warmup(sv, dv)
+    except ModelBuildTimeout as exc:
+        operation.track_future(exc.builder)
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except ModelPoolBusyError as exc:
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise ModelUnavailableError(
+            _model_key(sv, dv),
+            f"checkpoint not provisioned: {exc}",
+        ) from exc
+    except asyncio.CancelledError:
+        operation.track_future(_pool.builder_for_now(sv, dv))
+        raise
     return {
         "ok": True,
         "loaded": True,
-        "reloaded": not already,
+        "reloaded": not cache_hit,
         "sam_variant": sv,
         "dino_variant": dv,
         "task_type": "image",
@@ -772,7 +1121,7 @@ async def reload(req: ReloadRequest | None = None) -> dict:
 
 
 @app.post("/warmup", response_model=WarmupResponse)
-async def warmup(req: WarmupRequest) -> WarmupResponse:
+async def warmup(request: Request, req: WarmupRequest) -> WarmupResponse:
     """v0.14.14 协议 §4.4 · 加载指定 (sam_variant, dino_variant) 权重到 pool, 不跑 forward.
 
     task 路由 (issue claude[bot] P1, 与 /reload 行为对齐):
@@ -782,6 +1131,9 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     缺失的 axis 回退 backend env 默认 (SAM_VARIANT / DINO_VARIANT). 池满按 LRU 淘汰最旧 key,
     evicted 字段回填给前端 toast.
     """
+    if _pool is None or _video_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    operation = _request_operation(request)
     variants = req.variants or {}
     sv = variants.get("sam_variant") or SAM_VARIANT
     if sv not in SAM2_CONFIGS:
@@ -791,12 +1143,18 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     if req.task == "tracker":
         try:
             cache_hit, load_ms, evicted = await _video_pool.warmup(sv)
-        except RuntimeError as exc:
+        except VideoBuildTimeout as exc:
+            operation.track_future(exc.builder)
+            raise ModelUnavailableError(sv, str(exc)) from exc
+        except VideoPoolBusyError as exc:
             raise ModelUnavailableError(sv, str(exc)) from exc
         except FileNotFoundError as exc:
             raise ModelUnavailableError(
                 sv, f"video checkpoint not provisioned: {exc}"
             ) from exc
+        except asyncio.CancelledError:
+            operation.track_future(_video_pool.builder_for_now(sv))
+            raise
         return WarmupResponse(
             ok=True,
             model_load_ms=load_ms,
@@ -809,10 +1167,16 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
         raise VariantNotSupportedError("dino_variant", dv, sorted(DINO_CONFIGS))
     try:
         cache_hit, load_ms, evicted = await _pool.warmup(sv, dv)
-    except RuntimeError as exc:
+    except ModelBuildTimeout as exc:
+        operation.track_future(exc.builder)
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except ModelPoolBusyError as exc:
         raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
     except FileNotFoundError as exc:
         raise ModelUnavailableError(_model_key(sv, dv), f"checkpoint not provisioned: {exc}") from exc
+    except asyncio.CancelledError:
+        operation.track_future(_pool.builder_for_now(sv, dv))
+        raise
     return WarmupResponse(
         ok=True,
         model_load_ms=load_ms,
@@ -821,8 +1185,43 @@ async def warmup(req: WarmupRequest) -> WarmupResponse:
     )
 
 
-async def _run_prompt(
-    file_path: str, ctx: dict
+async def _run_executor_to_completion(
+    call: Callable[[], Any],
+    operation: WorkloadOperation | None,
+) -> Any:
+    """Keep a real executor owner alive across repeated request cancellation."""
+
+    future = asyncio.get_running_loop().run_in_executor(None, call)
+    if operation is not None:
+        operation.track_future(future)
+    cancelled = False
+    while not future.done():
+        try:
+            await asyncio.shield(future)
+        except asyncio.CancelledError:
+            cancelled = True
+        except BaseException:
+            break
+    try:
+        result = future.result()
+    except BaseException as exc:
+        if cancelled:
+            raise asyncio.CancelledError from exc
+        raise
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+def _run_prompt_sync(
+    file_path: str,
+    ctx: dict,
+    sv: str,
+    dv: str,
+    p: GroundedSAM2Predictor,
+    cache: EmbeddingCache,
+    pool_cache_hit: bool,
+    model_load_ms: int | None,
 ) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
     """v0.14.14 返回 (results, embedding_hit, sam_variant, dino_variant,
     pool_cache_hit, model_load_ms, mask_input_next).
@@ -832,9 +1231,6 @@ async def _run_prompt(
     - model_load_ms: 本次 pool miss 的 build 耗时, 命中时 None
     - mask_input_next: v0.18.18 · point 精修单 mask 阶段的 low-res logits 回灌, 其余恒 None
     """
-    sv, dv = _resolve_variant(ctx)
-    p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
-    cache = _pool.cache_for(sv, dv)
     ptype = ctx.get("type")
     cache_key = compute_cache_key(file_path, sv)
 
@@ -915,6 +1311,54 @@ async def _run_prompt(
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
 
+async def _run_prompt(
+    file_path: str,
+    ctx: dict,
+    operation: WorkloadOperation | None = None,
+) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
+    global _last_request_at
+
+    if _pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    sv, dv = _resolve_variant(ctx)
+    try:
+        async with _pool.borrow(sv, dv) as lease:
+            _last_request_at = time.monotonic()
+            return await _run_executor_to_completion(
+                functools.partial(
+                    _run_prompt_sync,
+                    file_path,
+                    ctx,
+                    sv,
+                    dv,
+                    lease.predictor,
+                    lease.cache,
+                    lease.cache_hit,
+                    lease.model_load_ms,
+                ),
+                operation,
+            )
+    except ModelBuildTimeout as exc:
+        if operation is not None:
+            operation.track_future(exc.builder)
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except ModelPoolBusyError as exc:
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise ModelUnavailableError(
+            _model_key(sv, dv),
+            (
+                f"checkpoint not provisioned: {exc}; "
+                "把该变体加入 PREFETCH_SAM_VARIANTS / PREFETCH_DINO_VARIANTS 后重建容器, "
+                "或手动下载 checkpoint 到 CHECKPOINT_DIR."
+            ),
+        ) from exc
+    except asyncio.CancelledError:
+        if operation is not None:
+            operation.track_future(_pool.builder_for_now(sv, dv))
+        raise
+
+
 def _parse_box_prompts(raw: object) -> list[tuple[list[float], int]]:
     """校验并解析 geometry-prompt 批量入参 ``tasks[].prompts[]``。
 
@@ -934,16 +1378,21 @@ def _parse_box_prompts(raw: object) -> list[tuple[list[float], int]]:
     return out
 
 
-async def _run_box_seg(
-    file_path: str, prompts: list[tuple[list[float], int]], ctx: dict
+def _run_box_seg_sync(
+    file_path: str,
+    prompts: list[tuple[list[float], int]],
+    ctx: dict,
+    sv: str,
+    dv: str,
+    p: GroundedSAM2Predictor,
+    cache: EmbeddingCache,
+    pool_cache_hit: bool,
+    model_load_ms: int | None,
 ) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
     """v0.18.12 · 框→mask 批量分割: 全图 set_image 一次, N 框共享 embedding。
 
     返回签名与 :func:`_run_prompt` 对齐(results 各带 parent_box_idx); 末位 mask_input_next 恒 None。
     """
-    sv, dv = _resolve_variant(ctx)
-    p, pool_cache_hit, model_load_ms = await _get_predictor(sv, dv)
-    cache = _pool.cache_for(sv, dv)
     cache_key = compute_cache_key(file_path, sv)
     simplify_tol = ctx.get("simplify_tolerance")
     if simplify_tol is not None:
@@ -963,12 +1412,58 @@ async def _run_box_seg(
     return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
 
-def _observe(prompt_type: str, hit: bool, started: float) -> int:
+async def _run_box_seg(
+    file_path: str,
+    prompts: list[tuple[list[float], int]],
+    ctx: dict,
+    operation: WorkloadOperation | None = None,
+) -> tuple[list[dict], bool, str, str, bool, int | None, str | None]:
+    global _last_request_at
+
+    if _pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    sv, dv = _resolve_variant(ctx)
+    try:
+        async with _pool.borrow(sv, dv) as lease:
+            _last_request_at = time.monotonic()
+            return await _run_executor_to_completion(
+                functools.partial(
+                    _run_box_seg_sync,
+                    file_path,
+                    prompts,
+                    ctx,
+                    sv,
+                    dv,
+                    lease.predictor,
+                    lease.cache,
+                    lease.cache_hit,
+                    lease.model_load_ms,
+                ),
+                operation,
+            )
+    except ModelBuildTimeout as exc:
+        if operation is not None:
+            operation.track_future(exc.builder)
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except ModelPoolBusyError as exc:
+        raise ModelUnavailableError(_model_key(sv, dv), str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise ModelUnavailableError(
+            _model_key(sv, dv),
+            f"checkpoint not provisioned: {exc}",
+        ) from exc
+    except asyncio.CancelledError:
+        if operation is not None:
+            operation.track_future(_pool.builder_for_now(sv, dv))
+        raise
+
+
+async def _observe(prompt_type: str, hit: bool, started: float) -> int:
     elapsed = time.perf_counter() - started
     cache_status = "hit" if hit else "miss"
     record_cache(prompt_type, hit)
     record_inference(prompt_type, cache_status, elapsed)
-    update_cache_size(_pool.total_cache_size())
+    update_cache_size(await _pool.total_cache_size() if _pool is not None else 0)
     return int(elapsed * 1000)
 
 
@@ -1107,7 +1602,41 @@ def _video_local_path(file_path: str) -> str:
     )
 
 
-async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str]:
+def _run_video_tracker_sync(
+    tracker: SAM2VideoTracker,
+    file_path: str,
+    from_frame: int,
+    to_frame: int,
+    direction: str,
+    seeds: list[dict[str, Any]],
+    output_geometry: str,
+) -> list[dict[str, Any]]:
+    """Download, propagate, and remove the source under one real thread owner."""
+
+    local_path = _video_local_path(file_path)
+    cleanup = local_path != file_path
+    try:
+        return tracker.propagate(
+            local_path,
+            from_frame,
+            to_frame,
+            direction,
+            seeds,
+            output_geometry=output_geometry,
+        )
+    finally:
+        if cleanup:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+
+
+async def _run_video_tracker(
+    file_path: str,
+    ctx: dict,
+    operation: WorkloadOperation | None = None,
+) -> tuple[list[dict], str]:
     """sam2_video tracker: 取 video pool tracker, 窗内传播 seed bbox。
 
     返回 (result 列表, sam_variant)。OOM / timeout 等不吞, 让 api 落 error_message
@@ -1133,49 +1662,52 @@ async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str
     # v0.21.20 · polygon track 回填: 平台按源几何类型下发 output_geometry, "polygon" 时
     # 每帧保留 mask 矢量化为多边形而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。
     output_geometry = ctx.get("output_geometry") or "bbox"
-    if output_geometry not in ("bbox", "polygon"):
+    if output_geometry not in ("bbox", "polygon", "mask"):
         raise HTTPException(
             status_code=422,
-            detail=f"video_tracker output_geometry must be bbox|polygon, got {output_geometry!r}",
+            detail=f"video_tracker output_geometry must be bbox|polygon|mask, got {output_geometry!r}",
         )
 
-    try:
-        tracker = await _video_pool.get(sv)
-    except RuntimeError as exc:
-        raise ModelUnavailableError(sv, str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise ModelUnavailableError(sv, f"video checkpoint not provisioned: {exc}") from exc
-
-    local_path = _video_local_path(file_path)
-    cleanup = local_path != file_path
+    if _video_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
     started = time.perf_counter()
     try:
-        loop = asyncio.get_running_loop()
-        # propagate 是 CPU/GPU 阻塞调用, 丢到 executor 避免堵事件循环 (含 /health).
-        result = await loop.run_in_executor(
-            None,
-            functools.partial(
-                tracker.propagate,
-                local_path,
-                from_frame,
-                to_frame,
-                direction,
-                seeds,
-                output_geometry=output_geometry,
-            ),
-        )
-    finally:
-        if cleanup:
-            try:
-                os.unlink(local_path)
-            except OSError:
-                pass
+        async with _video_pool.borrow(sv) as lease:
+            result = await _run_executor_to_completion(
+                functools.partial(
+                    _run_video_tracker_sync,
+                    lease.tracker,
+                    file_path,
+                    from_frame,
+                    to_frame,
+                    direction,
+                    seeds,
+                    output_geometry,
+                ),
+                operation,
+            )
+    except VideoBuildTimeout as exc:
+        if operation is not None:
+            operation.track_future(exc.builder)
+        raise ModelUnavailableError(sv, str(exc)) from exc
+    except VideoPoolBusyError as exc:
+        raise ModelUnavailableError(sv, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise ModelUnavailableError(
+            sv,
+            f"video checkpoint not provisioned: {exc}",
+        ) from exc
+    except asyncio.CancelledError:
+        if operation is not None:
+            operation.track_future(_video_pool.builder_for_now(sv))
+        raise
     record_video_tracker(sv, len(result), time.perf_counter() - started)
     return result, sv
 
 
 @app.post("/predict")
 async def predict(request: Request):
+    operation = _request_operation(request)
     body = await request.json()
     started = time.perf_counter()
 
@@ -1185,7 +1717,11 @@ async def predict(request: Request):
         ctx = body.get("context") or {}
         # v0.10.35 §B · video_tracker 分支 (走独立 video pool, 不进图片缓存路径).
         if ctx.get("type") == "video_tracker":
-            result, sv = await _run_video_tracker(task["file_path"], ctx)
+            result, sv = await _run_video_tracker(
+                task["file_path"],
+                ctx,
+                operation,
+            )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return PredictionResult(
                 result=result,
@@ -1194,9 +1730,9 @@ async def predict(request: Request):
             ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
         result, hit, sv, dv, pool_cache_hit, model_load_ms, mask_input_next = await _run_prompt(
-            task["file_path"], ctx
+            task["file_path"], ctx, operation
         )
-        elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
+        elapsed_ms = await _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
             result=result,
             score=max((r.get("score") or 0.0) for r in result) if result else None,
@@ -1234,18 +1770,18 @@ async def predict(request: Request):
                 if box_prompts:
                     prompts = _parse_box_prompts(box_prompts)
                     result, hit, sv, dv, pool_cache_hit, model_load_ms, _ = await _run_box_seg(
-                        t["file_path"], prompts, ctx
+                        t["file_path"], prompts, ctx, operation
                     )
                 else:
                     result, hit, sv, dv, pool_cache_hit, model_load_ms, _ = await _run_prompt(
-                        t["file_path"], ctx
+                        t["file_path"], ctx, operation
                     )
             except HTTPException:
                 raise
             except Exception as exc:  # noqa: BLE001 — 单图失败降级，不中断整批
                 logger.exception("predict failed for task=%s: %s", t.get("id"), exc)
                 result, hit = [], False
-            elapsed_ms = _observe(obs_type, hit, t_started)
+            elapsed_ms = await _observe(obs_type, hit, t_started)
             results.append(
                 PredictionResult(
                     task=t.get("id"),

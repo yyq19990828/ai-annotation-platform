@@ -2,6 +2,7 @@ import type {
   AnnotationResponse,
   VideoBboxGeometry,
   VideoTrackGeometry,
+  VideoTrackMaskGeometry,
   VideoTrackKeyframe,
   VideoTrackOutsideRange,
 } from "@/types";
@@ -12,6 +13,9 @@ export type VideoPoint = { x: number; y: number };
 export type VideoStageGeometry = VideoBboxGeometry | VideoTrackGeometry;
 export type VideoBboxAnnotation = AnnotationResponse & { geometry: VideoBboxGeometry };
 export type VideoTrackAnnotation = AnnotationResponse & { geometry: VideoTrackGeometry };
+export type VideoManagedTrackAnnotation = AnnotationResponse & {
+  geometry: VideoTrackGeometry | VideoTrackMaskGeometry;
+};
 export type VideoResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 export type VideoFrameEntry = {

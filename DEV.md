@@ -49,7 +49,7 @@ ai-annotation-platform/
 ├── docs-site/                   # VitePress 用户手册 + 开发文档 + API
 ├── docs/                        # ADR / changelogs / plans / research
 ├── docker-compose.yml           # 本地基础服务（postgres/redis/minio/celery + 监控 profile）
-├── docker-compose.ml.yml        # GPU ML Backend 叠加（grounded-sam2 / sam3 / yolo）
+├── docker-compose.ml.yml        # ML Backend 叠加（GPU 推理服务 + 截图协议 stub）
 └── .env.example                 # 环境变量模板
 ```
 
@@ -284,7 +284,7 @@ docker compose --env-file .env.production \
 ```
 
 > 开发态不带 `-f docker-compose.prod.yml`，api/web 仍跑宿主机。
-> 单独构建镜像：`docker build -f infra/docker/Dockerfile.web -t anno-web .` / `docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/`。
+> 单独构建镜像：`docker build -f infra/docker/Dockerfile.web -t anno-web .` / `docker build -f infra/docker/Dockerfile.api -t anno-api .`。API 镜像需要仓库根目录作为 context，以复制 `apps/_shared/protocol_v2`。
 
 ## 测试与文档
 
@@ -311,14 +311,12 @@ pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物�
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
 
-## 截图自动化（v0.8.7+）
+## 截图自动化
 
 用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，
-不进 CI（避免 baseline drift / flaky），由 maintainer 手动触发。
-
-> **不破坏 dev 数据**：v0.8.7 起截图脚本走 `seed/peek` 只读窥探现有用户 / 项目 /
-> 任务，不再 TRUNCATE 整库。已积累的数据集 / 项目 / 标注会保留。E2E spec
-> （`pnpm test:e2e`）仍走 `seed/reset` 保证可重入，与截图独立。
+不进默认 CI，由 maintainer 手动触发。截图脚本只使用 `screenshots`
+seed profile 和只读 catalog，不会随机选取开发库里的项目。`--repair` 只收敛带截图
+seed 标记的对象，用户自建项目不受影响。
 
 ### 前置条件
 
@@ -329,42 +327,88 @@ cd apps/api && uv run uvicorn app.main:app --port 8000     # 另开窗口
 pnpm dev:web                                               # 另开窗口，:3000
 pnpm exec playwright install chromium                      # 首次需下载浏览器
 
-# 首次还需要至少一个 super_admin 账号 + 一个项目，否则截图脚本会报缺数据
-cd apps/api && PYTHONPATH=. uv run python scripts/seed.py  # 创建 admin/pm/qa/anno + 2 示例项目 + 点云项目 P-PC-DEV(owner=admin,需 MinIO,缺则跳过)
+# 有 GPU/真实 backend：按能力发现并绑定图片、视频、OCR backend
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode live
 ```
+
+没有 GPU 时使用协议 stub。它仍经过 `/health`、`/setup`、全局 registry、项目启用关联和
+主 backend 绑定，不会在数据库里伪造“已连接”状态：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile screenshots up -d --build screenshot-ml-stub
+
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode stub
+```
+
+stub 地址默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100` 端口，确保宿主 API
+和 Celery 容器都能访问；Docker 网关不同时可显式传
+`--ml-backend-url http://<gateway>:9100`。seed 会按能力而非 backend 名称选择：图片要求
+point、interactive box 与 exemplar，视频要求交互 tracker，OCR 要求整图输入及文本属性输出。
+任一能力、连接、启用关联或主绑定缺失都会退出非零。
 
 ### 触发
 
 ```bash
-pnpm --filter web screenshots
+SCREENSHOT_VALIDATE_ONLY=1 pnpm --filter web screenshots  # 只验证场景，不写 PNG/manifest
+pnpm --filter web screenshots                              # 生成 desktop-light 正式图
+pnpm --filter web screenshots:dark                         # 显式声明的深色场景
+pnpm --filter web screenshots:matrix                       # desktop-light/dark/mobile
+pnpm --filter web screenshots:flows                        # 流程 GIF，需 ffmpeg
+pnpm --filter web screenshots:regression                   # 比较 9 张高价值视觉基线
+pnpm --filter web screenshots:regression:update            # 有意 UI 变化后更新基线
 ```
 
-跑完会向 `docs-site/user-guide/images/` 写入 13 张 PNG（getting-started / bbox /
-polygon / projects / review / export 六类）。`git diff docs-site/user-guide/images/`
-人眼审阅，满意即 commit。
+当前完整矩阵有 61 个自动截图目标：58 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
+另有 3 张手工 PNG 和 13 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
+人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
+流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
+
+```bash
+pnpm --filter web screenshots:lint
+node docs-site/scripts/check-image-manifest.mjs --release
+node docs-site/scripts/check-orphan-images.mjs --strict
+```
 
 **E2E 跑过后想恢复 dev 账号**：`pnpm test:e2e` 内部仍会 TRUNCATE 重建 fixture（含
-`@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑 seed.py 即可（与首次相同命令；
-peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
+`@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑上面的 screenshots seed
+命令即可恢复 catalog 中的固定账号、项目、任务、批次与 backend 绑定。
 
 ### 改场景
 
-- 14 个场景配置：`apps/web/e2e/screenshots/scenes.ts` —— 修 `route` / `prepare`
-  钩子（高亮元素 / 切 tab / 打开 modal）后再跑。
-- 主入口：`apps/web/e2e/screenshots/screenshots.spec.ts` —— 改视口 / 注入 CSS；
-  `beforeAll` 调用 `/api/v1/__test/seed/peek` 拿首个 admin / project / task。
+- 58 个 desktop-light 场景按功能放在 `apps/web/e2e/screenshots/scenes/`；新增项目场景
+  必须声明 `fixture` 并通过 catalog 逻辑键生成 `route`。
+- 主入口 `apps/web/e2e/screenshots/screenshots.spec.ts` 在浏览器导航前校验项目、任务、
+  批次、backend 和场景能力，并分别使用 `admin`、`anno` 和 `qa` 的真实身份。
 - 独立 config：`apps/web/playwright.screenshots.config.ts` —— 与默认 `playwright.config.ts`
   分离（默认 `testMatch: ["**/tests/**/*.spec.ts"]` 不收录 screenshots）。
-- keypoint 两张（human-pose / hand）暂跳过 —— 等非 image-det 工作台落地。
-- 部分场景（`bbox/iou.png` 双框 / `bbox/bulk-edit.png` 多选 / `export/progress.png`
-  真实 50% 进度）需 maintainer 在 dev 数据库里造数据（手工标 + 半提交）后再跑覆盖。
+- 用 `SCREENSHOT_VALIDATE_ONLY=1` 开发场景：它仍执行登录、导航、能力与 locator
+  检查，但不覆盖正式资产或 manifest。
 
 ### 已知坑
 
+- **远程浏览器只显示模糊占位图**：根 `.env` 保持 `MINIO_PUBLIC_URL=/minio`，
+  DEV 会让签名媒体走页面同源的 `:3000/minio` 并由 Vite 转发到 MinIO，远程机器
+  只需打通 3000 端口。若返回 `localhost:9000` 或宿主机 `:9000`，会分别命中
+  访问者自己或受跨网段端口策略影响。`ML_BACKEND_STORAGE_HOST` 是容器的另一层
+  地址，可以继续使用 Docker 网关。修改 `.env` 或 Vite 代理配置后重启 API/Web。
+- **截图 seed 报 backend 能力不足**：live 模式只接受当前可达且能力快照覆盖截图场景的
+  registry，不按名称猜测。确认目标 backend 已启动并被 API 同步；无 GPU 时启动
+  `screenshot-ml-stub` 后改用 `--ml-backend-mode stub`。不要把浏览器的 `/minio`
+  地址拿来配置 backend，后者必须同时对宿主 API 和 Celery 容器可达。
+- **远程工作台一直「重连中」**：DEV 中的 WebSocket 默认跟随页面同源，由
+  Vite 将 `:3000/ws` 升级并转发到本机 API。只有本机打开页面时才直连
+  `localhost:8000`。不要把 Docker 默认 IP 或服务器端 `localhost` 发给远程浏览器；
+  如果确需覆盖，使用对远程浏览器可达的 `VITE_WS_HOST`。
+- **seed repair 后点项目被退回总览**：`--repair` 可能为 seed 自有项目生成新 UUID。
+  旧页签或已缓存的项目卡片仍指向旧 UUID 时会跳回总览；修复数据后强制刷新
+  项目总览一次。
 - **中文路径**：仓库根含中文（`AI标注平台设计/`）时，`import.meta.url` 会 percent-encode；
   `screenshots.spec.ts` 已 `decodeURIComponent` 兜底，写到正确位置而非 `AI%E6%A0%87...` 镜像目录。
-- **flaky 时间敏感 UI**：当前未注入 `page.clock`，dashboard 日期 / 头像随机色可能每次微变；
-  如需稳定 baseline 后续接 `playwright clock.install` + 固定 fixture。
+- **时间或动画导致截图漂移**：截图 driver 已固定测试时钟、语言、时区、DPR 并禁用动画；
+  新场景还必须等待字体、图片解码和具体业务 ready selector，不要依赖单纯延时。
 
 ## 测试账号
 

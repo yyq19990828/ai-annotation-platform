@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-08
+last_reviewed: 2026-07-17
 ---
 
 # ML Backend 协议契约
@@ -21,12 +21,60 @@ last_reviewed: 2026-06-08
 
 ## 全局注册表与项目启用
 
-ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照 = 一个并发限速闸；项目侧只做「启用」。两层职责：
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。effective `off/observe` 仍由各 API / Celery 进程的本地 semaphore 限流；effective `enforce` authority 则已按 [ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 使用 Redis request lease 执行跨进程上限。release latch 默认关闭；运维完成本地验收、显式开启 latch，且逐资源 rollout 收敛为 `enforcing` 后，跨进程上限才会生效。两层职责：
 
 - **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
 - **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
 
-**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；显存保护改由全局行的 `max_concurrency` 并发闸兜底（同一物理 backend 全局一个 semaphore，不会被「多项目各持一个独立 semaphore」绕过）。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
+**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 同时作为本地 semaphore 配置与 enforce Redis lease 上限。off/observe 下 API 与多个 Celery worker 的并发仍会叠加；enforce 下才由 Redis 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
+
+平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
+
+GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload
+另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威
+authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy
+路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。
+当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，
+authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应
+返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、
+取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，
+不能单独提交 allocation 终态。
+
+平台 signer、membership promotion、Redis admission lease、业务 token、Resident 快路、cold admission 与空闲
+victim 驱逐均已接入惰性 authority。cold 请求收到完整响应后会用新 challenge 探测，并在
+逐资源持久锁内把 Loading 分类为 Resident、CPU fallback、Unloaded 或保守 Unknown；无完整
+响应时不发探测，只收口 Unknown。cold 快照容量不足时，authority 只从同一完整
+`gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的空闲 victim，保护严格更高优先级，
+并按优先级、LRU 与 backend id 稳定排序。一个或多个 victim 依次完成受签 `/drain`、
+严格 ACK + 新鲜空闲证明、受签 `/unload` 与全空驻留证明后，才释放预算并以新
+challenge 重读 target cold subject。任一 phase 不确定即保守收口 Unknown 并停止继续驱逐；
+同路由响应丢失只做 exact owner/generation/phase/token 重放。FIFO 已接入；新 residency 只在首次可信
+Loading→Resident CAS 中按 Redis `TIME` 写入 `not_evict_before_ms`；proof reset 重建 Resident 时以固定
+`prepared_at_ms + cooldown` 保守恢复窗口。Python 快照选择与 Lua 原子选择都会排除未到期 victim，
+以上精确重放和 Resident 快路均不续期。cold authority 会继续持有 exact card ticket，
+按 Redis 快照给出的累计最早时刻在 admission deadline 与固定 ticket TTL 内有界等待；等待不续期，
+超时或取消会精确清票，只有 victim 已可驱逐时才为终态清理预留独立窗口。忙碌 victim 的
+Redis 原子地基已能在保留旧 lease 时关闭新 admission、进入 Draining，并支持零 lease 后 Unloading、
+更新 generation 的 Resident cancel CAS 与携带 lease 的保守 Unknown。authority 仅在空闲候选累计预算不足时
+选择 busy victim；严格 drain ACK 后，每轮分别读取新鲜 Redis lease 快照与新 challenge backend health，
+只有两域同时归零才进入 Unloading。busy-capable victim proof 严格绑定 fresh challenge、capability、membership、boot、
+generation、control/runtime epoch、resource identity 与稳定 pool-id 集合，同时允许旧
+workload 仍在 active/borrow。drain 后的 fresh health 仅使用单次 MVCC 快照只读区分
+`draining_busy`、`ready_to_unload` 与 `uncertain`；它不写 PostgreSQL/Redis，也不代替
+Redis lease-zero 门禁。
+
+Draining→Unloading 与 cancel 分别在同一逐资源 Redis transition owner 上原子冻结持久 `unload` / `cancel`
+分支；只有一个分支能成功，unload 已获胜时平台绝不发送 RESUME。工作超时、异常或调用方取消时，平台先以
+完全相同参数持久写入或重放 cancel intent，稳定签名后 arm cancel，再调用真实 `/drain/cancel`，最后用 strict
+ACK + fresh health 提交 Resident 或保守 Unknown。冻结 marker 不随 owner TTL 消失，只能由 exact 分支终态
+释放或 challenge-bound proof reset 清理；缺 key、mirror/branch/deadline 损坏均 fail-closed。DRAIN、双域等待
+与 UNLOAD 受工作 deadline 限制，owner 另保留 30 秒取消收尾窗口。以上状态与等待按完整
+`gpu_resource_id` 分片，单卡、多卡共用同一路径。参考环境的实物单卡、多卡与跨宿主门禁均已通过；
+各部署仍须用自身 Backend、模型制品与 GPU 拓扑完成验收，并由运维逐资源启用默认关闭的 release latch。
+五个受管 backend 在启动时同时检查 NVIDIA/CUDA/ROCm 可见设备配置；单索引、单 GPU/MIG UUID
+或显式无设备值可用，逗号多值与已暴露 GPU runtime 的无界 `all` 集合会直接使服务启动失败。
+
+派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
 
 ---
 
@@ -40,7 +88,9 @@ ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全�
 | `/warmup` | POST | 显式预热模型权重到 pool | ⚪ | `MLBackendClient.warmup` |
 | `/versions` | GET | 列出可用模型版本 | ⚪ | `MLBackendClient.get_versions` (`ml_client.py:90`) |
 
-base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；末尾 `/` 会被平台自动 `rstrip` (`ml_client.py:21`)。
+base URL 由超级管理员在「模型市场 → 注册管理」录入；项目管理员只在
+项目设置中启用已注册 backend。末尾 `/` 会被平台自动 `rstrip`
+(`ml_client.py:21`)。
 
 ---
 
@@ -49,7 +99,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 `MLBackend.auth_method` 二选一（`ml_backend.py:22`）：
 
 - `none`（默认）— 平台不发送任何认证头。
-- `token` — 平台在所有请求加 `Authorization: Bearer <auth_token>`（`ml_client.py:25-29`）。`auth_token` 在 ProjectSettings 录入，存 PG 加密列，仅服务端可见。
+- `token` — 平台在所有请求加 `Authorization: Bearer <auth_token>`（`ml_client.py:25-29`）。`auth_token` 在全局注册表单录入，存入 PG 且不在 API 响应中回传。
 
 未来扩展（如 mTLS、HMAC 签名）走新 `auth_method` 值，不破坏现有 backend。
 
@@ -71,7 +121,248 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > **`pool` 子对象**（backend 统一为 `PoolStatus` 结构，详见 §4.3）：`{ cap, current_size, loaded_keys: [{key, loaded_at, last_used_at, hit_count}], last_evict: {key, at, reason} | null }`。`key` 是 backend-defined 的 opaque 字符串（yolo `{series}/{size}/{task}`、gsam2 `sam=X/dino=Y`、sam3 `sam3`），前端只做相等比较。`last_evict.reason` 受控为 `lru | manual | idle_timeout`。平台把健康快照缓存到 `ml_backend_registry.health_meta.pool`，模型市场列表用 `loaded_keys[]` 反查每行 variant 的运行时态。**未统一的老 backend**回的 `pool` 字段结构各家各异，平台层向后兼容；新接入的 backend 必须按 §4.3 落地。<!-- since v0.14.14 (PoolStatus 统一) -->
 
-> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。`/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`。
+### 1.1 GPU 仲裁实时健康挑战
+
+绑定了 `gpu_resource_id` 的 backend 在平台周期探活、以及 cold 派发收到完整 HTTP 响应后的立即探活中，会收到同一个随机 challenge：
+
+- Header：`X-AAP-GPU-Health-Challenge`
+- Query：`aap_gpu_health_challenge`
+- 值：固定 64 位小写十六进制字符串
+
+平台同时发送 header、query 和 `Cache-Control: no-cache`。backend 只有在 header 与 query 各出现一次、值完全
+一致且格式合法时，才在响应 header 中精确回显 `X-AAP-GPU-Health-Challenge`，并发送
+`Cache-Control: no-store`。challenge 缺失、重复、非法或不一致时，`/health` 仍保持原有响应语义，但不得
+回显。旧 backend 或中间代理不支持该契约时，HTTP 200 仍表示已连接，只是不能形成 GPU 仲裁证明。若严格的
+旧 backend 因未知 query 返回 400/422，平台只重试一次不带 challenge 与缓存指令的普通 `/health`；该兼容
+响应即使携带同名 header 也永远不能升级为证明，原有 Authorization 仍会保留。
+
+平台只接受唯一且精确的响应 header 回显；backend JSON body 不能自行声明回显成功。命中后，健康服务使用
+PostgreSQL `clock_timestamp()` 分别记录网络请求开始前的 `probe_started_at` 和响应完整返回后的
+`observed_at`，并把 challenge、backend/resource 身份及 membership epoch/state 一并写入
+`health_meta.gpu_arbiter_probe`。写回前会依次锁定注册表行和 exact membership 行并重新核对 epoch/state，
+使成员状态不能插入最终复核与写回之间；端点或成员配置在探测期间发生变化时丢弃响应。数据库返回无时区
+时间或 `observed_at < probe_started_at` 时同样 fail-closed。
+
+`gpu_arbiter_probe` 只是实时证据候选，不单独授权减记显存或重置 Redis 账本。消费方还必须重新读取当前
+membership/fence，校验证据时效与完整 residency，并把最终核验和账本提交放在同一个受保护的流程中。周期 proof reset 额外要求 `probe_started_at > token_expiry_high_water`；cold 响应后终态对账则以「challenge 在完整响应后才生成」绑定该次调用，并要求 durable generation 仍与 prepared generation 精确相等。退役记录中的历史 health 只能用于诊断。
+
+### 1.2 `compute` 计算设备观测
+
+GPU backend 应在 `/health` 顶层返回 `compute`：
+
+```json
+{
+  "compute": {
+    "configured_device": "cuda",
+    "effective_device": "cpu",
+    "effective_provider": null,
+    "cpu_fallback_supported": true
+  }
+}
+```
+
+- `configured_device` 表示部署意图或模型/session 构造偏好，常见值为 `cpu`、`cuda`、`cuda:0` 或 `gpu`。
+- torch backend 使用 `effective_device` 表示进程已确认的构造/回退路径；ORT backend 使用 `effective_provider`。另一字段应省略或为 `null`。
+- `null` 表示尚未加载业务模型、无法完整检查，或多个已加载 session / pool 的生效设备不一致；不得用配置偏好补成 CUDA。
+- ORT 的 `effective_provider` 是已加载业务 session 的一致 primary provider（`session.get_providers()[0]`）。启动探测、`use_cuda` 或构造时 provider 列表只是偏好，不是该字段的真值。
+- `cpu_fallback_supported=false` 表示 GPU-only；模型加载检测到 GPU 不可用时 backend 应返回结构化 503，不得伪造 CPU 重试。字段缺失或为 `null` 表示旧 backend 的能力未知；平台只对显式 `false` 抑制 fallback 告警。未加载时 `effective_device` 仍为 `null`。
+
+平台仅在“已知配置 GPU + 实际为 CPU + 未显式声明不支持 fallback”时显示 CPU 回退警示；显式 CPU、unknown 和 `null` 均不告警。实时 `/health` 返回可解析的 HTTP 200 时以实时 `compute` 为准，即使 backend 自报 degraded 或值为 `null`；只有实时 HTTP 探测不可达/失败时才使用注册表缓存。torch 的进程级 latch 不能枚举旧 pool，因此 `effective_device=cpu` 与仍有 GPU pool 驻留可以同时成立。`compute` 是诊断信号，不证明 GPU 权重、tensor 或 cache 已释放，不能单独作为显存驻留或账本减账依据。
+
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，部分 backend 实现）：无 lifecycle body 的 `/unload` 是 legacy best-effort 行为，不能统一证明全部 image/video/variant/session pool 已清空。例如 Grounded-SAM2 仍只清 image pool，不能作为显存仲裁减账凭据。YOLO、ONNXTools 与 RapidOCR 的 bodyless legacy 路径会走各自全池清理，但仍只用于向后兼容；没有 generation、fencing 与受管响应，不能作为减账证据。Grounded-SAM2 的 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.model_variants`）；也接受可选 `"task_type": "image" | "video"`（默认 `image`，向后兼容）：`task_type="video"` 时**只认 `sam_variant`**（video tracker 不用 DINO），预热**独立 video 池** `VideoPool`，返回 `{ ok, loaded, reloaded, sam_variant, task_type: "video" }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板按图像 / 视频两组分别走此链路。新 backend 应优先实现 §4.4 `/warmup`；接入方不得把未完成受管契约的 legacy unload 声明为可驱逐能力。
+
+### 1.3 受管 GPU 生命周期（能力协商）
+
+共享协议包已经定义受管生命周期的 wire schema、header、错误词表与 admission token 验签 codec。backend
+只有在完整实现 active / builder / borrower 保护、全池释放、generation fencing、token replay 防护和全部控制端点后，
+才可在 `/setup` 增加：
+
+```json
+{
+  "managed_lifecycle": {
+    "protocol_version": "1",
+    "generation_fencing": true,
+    "drain_endpoint": "/drain",
+    "drain_cancel_endpoint": "/drain/cancel",
+    "unload_endpoint": "/unload",
+    "mode_endpoint": "/lifecycle/mode",
+    "reset_endpoint": "/lifecycle/reset",
+    "generation_header": "X-AAP-GPU-Generation",
+    "token_header": "X-AAP-GPU-Admission-Token"
+  }
+}
+```
+
+平台消费远端声明时要求该对象是精确的九字段 JSON object：字段不得缺失或额外增加，
+`generation_fencing` 必须是 JSON boolean，其余字段必须是 JSON string，并继续通过冻结常量校验。
+平台不会用 schema 默认值补齐部分声明，也不会做字符串、数字与布尔值之间的类型转换；缺失或非法声明会落为
+`managed_lifecycle=null` 并产生能力诊断，因此不能参与 enforce promotion。
+
+GPU 健康证明把 `/health` 的随机 challenge 回显与同轮 `/setup` 能力探测放在同一观测窗口内；数据库
+`observed_at` 只在两次远端调用都结束后取得。平台将规范化声明的 SHA-256 写入 challenge probe，并在证明消费时
+重新计算注册表快照中的哈希。缺失或远端非法声明会规范化为 `null/null`，仍可保持 connected，但不能激活
+membership 或形成 Redis ready。只有快照与 probe 的非空哈希 exact-match，且后续证明已绑定 active identity、
+当前 control high-water 并越过 token horizon，才能恢复保守账本；快照非法、哈希不匹配或 membership
+epoch/state 漂移均保持 not-ready。
+challenge `/health` 与 `/setup` 请求都携带 `Cache-Control: no-cache`，共享代理必须向 origin 重新验证，不能把
+陈旧缓存当成本轮能力证据。
+并发健康扫描采用保守的 observation-window fence：写回锁内若发现另一轮扫描已在本轮 `probe_started_at` 之后
+提交，就丢弃本轮迟到结果。慢 `/setup` 因而不能借更晚的结束时间给旧 `/health` 续鲜并覆盖更新快照。
+
+只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 已完整宣告
+`managed_lifecycle`。ONNXTools 已实现固定三句柄池的 single-flight、borrower、取消安全 executor、全池清理与
+完整 lifecycle wire，但部署还必须完成真实四 session GPU 回落验证；验证前
+`ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED=0`，`/setup` 不宣告该能力、`/lifecycle/mode` 拒绝切入
+enforce，且 `evictable=false`。RapidOCR 也已实现动态 composite 引擎池、完整 lifecycle
+wire 与全池清理；仓库参考镜像和模型已完成真实满池 GPU 回落与显式 CPU 路径验证。
+该门槛仍按部署 opt-in，默认 `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、硬件与
+验证证据匹配或重新完成同等验证后才设为 `1`，否则继续隐藏能力并拒绝 enforce。
+Grounded-SAM2 已实现 image/video 双池的 single-flight、borrower、共享冷构建锁、取消安全 executor、
+三态 residency 与 managed full-pool cleanup；bodyless legacy `/unload` 仍只清 image pool。仓库参考镜像、
+六份 checkpoint 与物理 GPU 已完成真实 image/video load→LRU→full-unload 回落验证。该门槛仍按部署
+opt-in，默认 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、模型与硬件匹配或重新完成
+同等验证后才设为 `1`，否则隐藏能力、拒绝 enforce 且 `evictable=false`。
+SAM3 已实现 image、multiplex video 与 PVS video 三池 single-flight、borrower/use lock、
+共享冷构建锁、取消安全 executor、三态 residency 和 managed full-pool cleanup。三条推理
+路径使用请求级 BF16 autocast，卸载不保留 vendor 的转换权重缓存。部署门槛默认
+`SAM3_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、权重和硬件与已冻结证据匹配，或重新完成
+图像与两类视频真实推理、两轮 generation 冷启和物理显存回落验收后才设为 `1`，
+否则隐藏能力、拒绝 enforce 且 `evictable=false`。
+
+`/health` 在实现后新增顶层 `residency`，并保留原有 `compute`、`loaded`、`pool` 等兼容字段：
+
+```json
+{
+  "residency": {
+    "state": "resident",
+    "gpu_loaded": true,
+    "active_requests": 0,
+    "builders": 0,
+    "borrowers": 0,
+    "draining": false,
+    "evictable": true,
+    "generation": "42",
+    "pools": {
+      "models": {"resident": true, "device": "cuda:0", "provider": null}
+    },
+    "boot_id": "<random-per-process-boot-id>",
+    "lifecycle_gate": "enforce",
+    "control_epoch": "7",
+    "identity": {
+      "audience": "aap-gpu-lifecycle",
+      "backend_registry_id": "<registry-id>",
+      "gpu_resource_id": "<resource-id>"
+    }
+  }
+}
+```
+
+`state` 只允许 `unloaded|loading|resident|draining|unloading|unknown`。`generation` 与 `control_epoch`
+必须是 `1..9223372036854775807` 的无前导零十进制字符串，JSON number、零、符号、空白与越界值均拒绝。
+`gpu_loaded` 和逐 pool `resident` 可为 `null`，表示无法可信判断。逐 pool `resident` 专指 GPU residency；
+纯 CPU handle 报告 `resident=false`，并通过 `device=cpu` 或 CPU provider 表达。只有所有 pool 的 GPU
+residency 都显式为 `false`，且 GPU session/cache、builder 与 borrower 均已安全收敛时，backend 才能报告
+`gpu_loaded=false`。
+
+受管 workload / transition 使用独立 header，不复用 `Authorization`：
+
+```text
+X-AAP-GPU-Generation: 42
+X-AAP-GPU-Admission-Token: <compact EdDSA JWS>
+```
+
+token 固定为 Ed25519 / EdDSA compact JWS，protected header 为 `alg=EdDSA`、`typ=aap-gpu+jwt` 并携带
+`kid`；`aud` 固定为 `aap-gpu-lifecycle`。平台 signer 独占私钥，backend 只持可重叠轮换的 Ed25519
+公钥 keyring。未知 `kid`、其他算法/type、过期、错误 audience/scope/boot/identity 或重放统一拒绝；用户登录
+JWT key 不得复用。轮换必须先把新旧公钥共同部署到 backend，再切 signer 的 active `kid`，最后等旧 token、
+lease 与 replay tombstone 全部安全过期后移除旧 key。
+
+平台签发进程通过 `GPU_LIFECYCLE_SIGNING_KEYS_FILE` 延迟读取私钥文件，并用
+`GPU_LIFECYCLE_ACTIVE_SIGNING_KID` 选择当前签名 key。文件是严格 JSON
+`kid -> unpadded-base64url(raw 32-byte Ed25519 private seed)`；只应以只读 secret 挂载给 API、通用 worker
+和 GPU worker，不得进入 CPU/export/beat、Web 或任何 ML backend。`off/observe` 派发不会读取私钥文件；
+缺失、不可读、重复 key、非法 key 或 active kid 不存在都会让 promotion/enforce 准入保持 fail-closed。
+
+平台调用 `/lifecycle/mode` 使用独立控制 wire：body 为精确的 `gate + control_epoch`，header 只携带
+`X-AAP-GPU-Admission-Token`，不携带 generation，也不进入 workload dispatch、shadow decision 或本地
+semaphore。远端 ACK 从原始 JSON 严格解析，重复 key、缺失/额外字段、字符串布尔值/计数等类型转换及不一致的
+response/residency 一律拒绝；平台不会用共享模型的本地构造默认值补齐部分 ACK。
+
+desired mode 为 enforce 的周期修复会在健康扫描之后处理 membership。平台先非阻塞尝试目标物理资源锁；卡锁忙时立即
+fail-closed，不会先占有全局 barrier 让其他卡跟随等待。取得逐卡锁后再非阻塞尝试全局短 promotion barrier；
+正常短竞争会先释放事务并按 deadline + jitter 有界重试，耗尽后才阻断，避免并行多卡互相误降级或饥饿。claim、
+membership insert 与 health proof 写入按逐卡锁→全局 barrier 排序；数据库 trigger 对两级锁均 fail-fast，忙时以
+`40001` 要求整事务重试，避免多资源写事务持有全局 barrier 再等待下一张卡。平台在
+完整物理资源锁域内重验 connected registry claim、exact membership epoch/state、非空受管能力哈希、新鲜 challenge proof
+与稳定空闲的 legacy residency，并在全局 barrier 内扫描所有 pending/active membership：任意两个成员的
+canonical endpoint 相同，或新鲜 challenge-bound proof 回报同一 `boot_id`，都保持阻断；后者不因对端
+capability 失效或当时忙碌而放行。只有 signer 已成功加载，平台才在同一短事务把
+pending membership 推进到 active runtime epoch，并同时推进 control epoch 与 admission token 的 expiry
+high-water。任一 epoch/horizon 推进前，平台必须在仍持有逐卡锁时先将 Redis 卡级 ready 降为 not-ready；只有 Redis 明确返回
+`not_ready` 才视为撤销成功，账本损坏等其他状态一律使数据库事务回滚。事务提交后才构造 `scope=mode`、无 generation、绑定 exact boot/backend/resource 的 30 秒 token，
+再请求 `gate=legacy`。ACK 除严格 wire 外还必须匹配本次 boot、identity、control epoch，并继续报告稳定空闲、
+非 evictable 的 legacy residency。
+
+事务提交后的签名、timeout、拒绝、响应丢失或 ACK 不匹配都不会把 active membership 回滚为 pending；后续周期
+必须先取得新的 exact active proof，并在旧 token horizon 之后用更大 control epoch 恢复。任一成员推进 epoch、ACK 未确认、signer/证明/alias 阻断或
+证明尚不满足 readiness 时，已有卡级 ready 必须在返回结果前降为 not-ready。成功 ACK 不直接授予
+Redis ready 或驱逐权；周期 repair 只在后续 proof 同时具有非空 exact capability、当前 active identity、等于
+durable high-water 的 control epoch，且 `probe_started_at` 严格晚于 horizon 时才可恢复 ready。release latch
+关闭或逐资源尚未收敛为 `enforcing` 时，实际派发不签业务 token、不创建 admission lease；只有 effective
+`enforce` 才进入 Redis authority。rollout 控制操作会把
+`reset|mode_enforce|mode_legacy`、exact transition UUID、membership epoch、boot id、control epoch
+与 token expiry 持久在 Backend fence；进程重启或 HTTP 响应丢失后，只重签这个意图。
+promotion 必须先在 legacy gate 下完成 signed full-reset 并由 post-horizon health 证明空池，
+然后才能以更大 epoch 进入 enforce；demotion 则允许保留已驻留 pool，但必须等 active/builder/
+borrower 全部归零且 fresh health 确认 legacy gate。只有已稳定收敛为 `off/observe`
+且持久 rollout 为 off 的资源才不读 signer、不执行 membership promotion、不调用
+`/lifecycle/mode`、也不访问 GPU 仲裁账本；未收敛的 demotion 仍保留账本并使用 signed control wire。
+逐卡修复的总时间片会预留独立 fail-closed 收尾预算；即使墓碑收尾、promotion 或 proof reset 耗尽主时间片、
+出现普通异常或任务被批次总时限取消，worker 也会在返回失败结果前有界尝试把该卡锁存为 not-ready，避免多卡
+批次中的慢卡沿用旧 ready。
+
+五个 GPU backend 从 `GPU_LIFECYCLE_VERIFY_KEYS_JSON` 读取 `kid -> unpadded-base64url-public-key` JSON。空值允许 backend
+以 legacy gate 启动；非空但无法解析的配置会阻止启动。`/health` 与 `/setup` 始终免 token；legacy gate 下
+无 header 的 `/predict`、`/predict/interactive`、`/warmup` 和 bodyless `/unload` 保持兼容，但会把驻留标记为
+unmanaged。workload 与 transition 端点只有在 generation、admission token 两个 header 都完全缺失时才能进入该
+legacy 路径；任一 header 出现后，两者必须各出现且只出现一次，并完成全部受管校验。部分 header、重复 header
+或非法值都会 fail-closed，不能降级为 unmanaged 请求；bodyless `/unload` 携带任一受管 header 时同样拒绝。
+`/lifecycle/mode` 与 `/lifecycle/reset` 只接受唯一 admission token，并拒绝 generation header。enforce gate 下
+加载入口必须携带匹配当前 boot、identity、control epoch 与 generation 的 token。
+
+ONNXTools 的 `residency.pools` 固定包含 `pipeline`、`detector`、`va`。其中 composite pipeline 持两个 ORT
+session，因此三句柄全驻留时共有四个业务 session。逐池 residency 检查完整 `get_providers()` chain；任一
+CUDA/TensorRT provider 即为 GPU 驻留，全部已知且仅 CPU 才为 false，私有 session 路径缺失、builder 或清理失败
+保持 unknown。诊断字段 `compute.effective_provider` 仍只在所有已加载 session primary provider 一致时有值，不能
+代替 residency。
+
+RapidOCR 的 `residency.pools` 只暴露稳定聚合 ID `engines`，六种动态权重三件套 key
+保留在兼容字段 `pool.loaded_keys`。每个 composite engine 无条件持有 det/cls/rec 三个 ORT
+session，默认容量三个 engine，因此满池最多九个业务 session。池在构造前预留 slot，
+同 key single-flight，只淘汰无 borrower/waiter 的最旧 entry，并在 replacement build 前先释放受害者。
+启动软检查不构造临时 session，真实 provider 只从受 admission 保护的业务引擎读取。
+仅确认为设备错误时才尝试 CPU replacement；CUDA composite 部分构造失败后即使 CPU 替代成功，
+residency 也保持 unknown，直到一次成功的全池清理。
+
+控制端点按以下顺序使用：平台先以 `/lifecycle/mode` 建立 gate；驱逐时用更大 generation 调 `/drain`，待
+active、builder、borrower 全部归零后用同 generation、owner、operation 调带 body 的 `/unload`；放弃驱逐则
+以更新 generation 调 `/drain/cancel`，其 token 的 owner 与 operation 必须同时精确匹配原 drain；仅 owner
+相同不能授权恢复。legacy unmanaged 驻留进入 enforce 前，必须先用更大 control epoch 调
+`/lifecycle/reset` 完成可信全池清理，再执行 promotion。managed unload 成功后保留 generation tombstone，
+同 generation 不得重新加载。
+
+backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}`：
+
+| 场景 | HTTP / `error_code` |
+|---|---|
+| draining 拒绝新 workload | `503 gpu_backend_draining`，可带 `Retry-After` |
+| active 时请求 unload/reset | `409 gpu_backend_active` |
+| 旧 generation | `409 gpu_generation_conflict` |
+| 非法或冲突 transition | `409 gpu_transition_conflict` |
+| generation 格式错误 | `422 gpu_generation_invalid` |
+| header/body/token generation 不一致 | `422 gpu_generation_mismatch` |
+| token 缺失、验签失败、过期或重放 | `403 gpu_admission_denied` |
+| 全池清理失败 | `500 gpu_unload_failed`，residency 保持 unknown |
 
 ---
 
@@ -235,16 +526,17 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 > **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用。平台按模型窗口配置拆分长区间，并从项目已启用 backend 中按 `/setup.supported_trackers` 选择能力匹配项；项目主后端支持该 tracker 时优先，否则选择其它 connected 匹配 backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video` / `sam3_video_interactive`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt`、`source_geometry` 和种子驱动模型使用的 `seeds`。其中 `sam3_video_interactive` 是 SAM3 的 **PVS 交互追踪**（点/框 seed + 跨帧 memory），与 `sam2_video` 同为 caller 指定 obj_id 的种子驱动多目标；`sam3_video` 则是 multiplex 文本开集检测。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside?, instance_id?, primary? }`；低于平台阈值的 `confidence` 标为 outside。`instance_id` / `primary` 用于 job 内多目标身份，单目标 backend 可整体省略。
 >
 > 落地细节：
-> - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
+> - **输出几何**：`context.output_geometry` 受控取 `bbox / polygon / mask`。`mask` 返回 `{type:"mask", rle:{encoding:"coco_rle", size:[h,w], counts:[...]}}`；counts 使用 COCO column-major runs，平台会校验并转换为内容寻址引用。空 mask 用 `outside=true`，不能返回全零 bbox 冒充对象。
+> - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），按 `output_geometry` 直接返回 mask、polygon 或外接 bbox。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/archive/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
-> - **`sam_variant`**：请求链路可传——AI 传播对话框选 SAM 尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
-> - **种子输入 `context.seeds[]`（点 / 框 / 多目标）**：`sam2_video` 与 `sam3_video_interactive` 都接受 `context.seeds[]`——每条可用 `{obj_id?, bbox?, points?}` 单帧简写或 `{obj_id, prompts:[{frame_index, points?, bbox?}, ...]}` 多帧写法。坐标归一化到 [0,1]，点 `label` 1=正点 / 0=负点，缺 `obj_id` 按序补 1..N。backend 应优先显式 seeds，缺省时才用 `source_geometry` 单框兜底。平台从 `job.prompt.seeds` 读取并经 `TrackerContext.seeds` 透传；首窗下发原始提示，后续窗按各实例续种。
+> - **`sam_variant`**：请求链路可传——AI 追踪面板为 SAM2 选尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
+> - **种子输入 `context.seeds[]`（点 / 框 / 多目标）**：`sam2_video` 与 `sam3_video_interactive` 接受完整点 / 框种子——每条可用 `{obj_id?, bbox?, points?}` 单帧简写或 `{obj_id, prompts:[{frame_index, points?, bbox?}, ...]}` 多帧写法。`sam3_video` multiplex 消费每条 seed 的 `bbox` 或可转成外接框的 `geometry`，在新分窗的种子帧把这些框作为正提示与 `text` 组合；不消费点或多帧纠偏。坐标归一化到 [0,1]，点 `label` 1=正点 / 0=负点，缺 `obj_id` 按序补 1..N。backend 应优先显式 seeds，缺省时才用 `source_geometry` 单框兜底。平台从 `job.prompt.seeds` 读取并经 `TrackerContext.seeds` 透传；首窗下发原始提示，后续窗按各实例续种。
 >   - **多帧 prompt（中途纠偏）**：seed 还可写成 `{obj_id, prompts:[{frame_index, points?/bbox?}, ...]}`——`frame_index` 是**绝对源帧**，各 prompt 在其（局部）帧对该 obj 播种，PVS memory 逐帧累积，后续帧的修正点（含负点）改善该段追踪。仍从窗种子帧传播，故须保证种子帧有基准 prompt；`prompts` 优先于单帧 `bbox`/`points`。落在窗 `[lo,hi]` 外的 `frame_index` 被钳进窗内。多帧种子（f0 原始点 + f5 修正点）已真机验证。
 > - **跨窗续追（平台侧）**：首窗用原始 keyframe 或 `seeds[]`；后续窗为**每个实例**取上一窗最后一个非 outside geometry，并用相同 obj id 重新播种，避免非主实例过窗丢失。只有单实例时继续用 `source_geometry` 兜底。
 > - **多目标身份与落库（平台侧）**：每条结果可带 job 作用域的 `instance_id` 与 `primary`。种子驱动模型直接使用 caller 指定 obj id；文本 multiplex 每窗独立检测，平台在窗口边界帧按 IoU 把局部 id 映射为全局稳定 id。`instance_id` 不是数据库 `group_id`，也不等于最终 `track_id`。用户接受 job 后，主实例回填源 annotation（保留其 `track_id`），其余 `instance_id` 各创建一条继承源类别的新 annotation 与新 `track_id`；无 instance id 的老 backend 继续走单实例路径。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
 >
-> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。**文本驱动的 tracker**（如 `sam3_video`，其 propagate 需 `text` / `exemplars` 而非仅 seed bbox）在此之外再声明 `text_driven_trackers`（`supported_trackers` 的子集）：前端仅在选中此类 tracker 时才显示「文本描述」输入框并强制填写；声明为文本驱动但未列入 `supported_trackers` 的项在传播对话框里灰置不可选。
+> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`，平台动态消费并用于模态校验。**文本驱动的 tracker**（如 `sam3_video`，其 propagate 需 `text` / `exemplars` 而非仅 seed bbox）在此之外再声明 `text_driven_trackers`（`supported_trackers` 的子集）：前端仅在选中此类 tracker 时才显示「文本描述」输入框并强制填写；模型选择器只列出项目已启用、已连接且能力可达的 backend 所声明的 tracker。组合模型的全部原子能力必须由同一个 backend 提供。
 >
 > **视频单帧交互式（平台中继）**：视频工作台在**单帧**上用智能点 / 框时，走平台端点 `POST /projects/{pid}/ml-backends/{bid}/interactive-annotating-frame`（multipart：`frame` JPEG + `task_id` + `frame_index` + `context` JSON 串）——它先把当前帧上传对象存储，再以该帧图片 URL 调 backend 的 `predict_interactive`。**backend 无需为视频做任何特殊处理**，看到的就是一次普通的图片交互式预测；`frame_index` 仅用于存储 key 命名、不参与坐标变换，候选瞬态返回、不落库（区别于走批量 `/predict` 会落 Prediction 的 `predict-frame`）。
 >
@@ -509,7 +801,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **`supported_geometric_outputs`（几何输出，复用现有字段）** —— 枚举与 `TOOL_UNIT_IDS` 对齐：
 
-`bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `none`。
+`bbox` / `rotated_bbox` / `polygon` / `polyline` / `keypoint` / `mask` / `none`。
 （3D 的 `lidar_box_3d` / `point_mask_3d` 暂不在本版 backend 范围，留位。）
 
 **`output_attribute_types`（属性输出，半开放）** —— `text`（OCR 文本） / `language` / `orientation` / `class`（分类标签）。其余按需扩展；layout 版面类别走 `class_name`（而非 attribute）。平台消费：画布对 `text` / `language` / `orientation` 校验项目是否有承接位（缺则非阻断警告「采纳后该属性丢失」，`class` 因 taxonomy 几乎恒在而跳过）；编排分类下游阶段若模型自报此字段却不含 `class`，派发期 422（见 §2.1.1）。
@@ -740,7 +1032,7 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 **真实 OCR 参考实现**：[`apps/rapidocr-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/rapidocr-backend) —— RapidOCR(ONNX) backend，`ocr` 任务族首个真实推理实现。把一条 OCR 流水线拆为原子能力（`ocr-det` 检测 + `ocr-rec` 识别）+ 端到端 composite（`ocr-e2e`），详见 §4.1.8。`/setup.models[]` 三条目走 version × size × lang 多轴 `variants`，权重 bind-mount 注入（`download_models.py` 拉取）。可作为「单 backend 把流水线拆成原子 + 编排入口」与 OCR 富属性（text/orientation/language）落点的参考。
 
-**协议形态参考实现（无真实推理）**：[`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend) —— `/setup` 暴露 YOLO 风格多任务 `models[]`（detection / segmentation / keypoint / obb / classification）+ PaddleOCR / DocLayout 条目，每条带 `task` / `infra` / 几何 / 多轴 `variants`；`/predict` 按 `context.type`（task_type）返回固定 demo 结果，OCR 条目带 `attributes.text`。无真实推理，可直接 `uvicorn main:app --port 9100` 起来做协议 v2 冒烟与接入验证；其 PaddleOCR 条目的真实形态即上文 `rapidocr` backend。
+**协议形态参考实现（无真实推理）**：[`docs-site/dev/examples/mock-v2-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/mock-v2-backend) —— `/setup` 暴露 YOLO 风格多任务 `models[]`、PaddleOCR / DocLayout、点 / 框 / exemplar 交互分割及视频 tracker 条目；`/predict` 按 `context.type` 返回固定几何、OCR 文本属性或逐帧追踪结果。可直接 `uvicorn main:app --port 9100` 启动，也可通过 `docker-compose.ml.yml` 的 `screenshots` profile 作为截图与视觉回归协议 stub；所有能力仍由平台正常探测和绑定。
 
 **最小 v1 参考实现**：见下文 echo-ml-backend。
 
@@ -1028,7 +1320,9 @@ v2.1 推荐 backend 使用结构化错误体。平台代理会保留上游 4xx�
 
 平台调用行为：
 
-- 同步 batch（`/predict` 批量）：worker 捕获并写一行 `failed_predictions`（`apps/api/app/db/models/prediction.py:59-79`），字段 `error_type` = HTTP 状态码，`message` = response body 截断到 4KB。继续下一 batch。
+- 批量 `/predict` 中的 task 级失败会写一行 `failed_predictions` 并继续下一条。普通异常保留原有异常类型与消息；平台 GPU 仲裁在 backend HTTP 前拒绝时，`error_type` 直接保存稳定 `error_code`，`message` 保存干净人类消息，完整的 `status_code` / `retry_after_s` 记录保存在 `FailedPrediction.extra.gpu_arbiter_error`。
+- 跨 Backend 下游阶段仍按 `keep_parent|drop_box` 降级，但仲裁根因会同时写入 `PredictionMeta.extra.pipeline.gpu_arbiter_failures` 和 `AsyncJob.result.gpu_arbiter_failures`。逐帧预标只在作业结果聚合，不为每帧创建无法按原帧上下文重试的 `FailedPrediction`。
+- `gpu_arbiter_failures[].count` 统计被拒绝的派发次数，不是受影响的 task、帧或 ROI 数；摘要按稳定错误码合并并取保守的最大 `retry_after_s`。工作端只记录该窗口，不会自动 sleep 或额外重试。
 - 交互式（`/predict` 单条）：服务层 `predict_interactive` (`ml_client.py`) 透传上游 4xx 与 503；其它上游 5xx / 连接超时映射为 502。前端按 422 / 503 / 500+ 分流：422 显示“参数错误，请检查输入”，503 显示“模型暂不可用，N 秒后重试”，500+ 显示“服务异常”。
 
 ---

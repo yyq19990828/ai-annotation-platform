@@ -48,8 +48,9 @@ class Sam3MultiplexVideoPredictor(Sam3BasePredictor):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         # use bfloat16 inference for Flash Attention kernel
+        # The embedding service owns a request-scoped autocast context. A
+        # process-scoped enter keeps BF16 weight casts alive after eviction.
         self.bf16_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        self.bf16_context.__enter__()
 
         if warm_up:
             self.model._warm_up_complete = False

@@ -15,7 +15,9 @@ vi.mock("../state/useWorkbenchShellModel", () => ({
   useWorkbenchShellModel: (...args: unknown[]) => mockUseWorkbenchShellModel(...args),
 }));
 vi.mock("./WorkbenchLayout", () => ({
-  WorkbenchLayout: () => <div data-testid="layout" />,
+  WorkbenchLayout: ({ stageOverlay }: { stageOverlay?: React.ReactNode }) => (
+    <div data-testid="layout">{stageOverlay}</div>
+  ),
 }));
 vi.mock("./WorkbenchSkeleton", () => ({
   WorkbenchSkeleton: () => <div data-testid="skeleton" />,

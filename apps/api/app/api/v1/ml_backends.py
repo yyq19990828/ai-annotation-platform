@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
     get_db,
+    get_gpu_dispatch_context_factory,
+    get_gpu_shadow_session_factory,
     require_roles,
     require_project_visible,
     require_project_owner,
@@ -22,6 +24,7 @@ from app.schemas.ml_backend import (
     MLBackendUpdate,
     MLBackendOut,
     MLBackendHealthResponse,
+    MLBackendUnloadResponse,
     MLBackendReloadRequest,
     InteractiveRequest,
     BackendCapabilities,
@@ -29,7 +32,17 @@ from app.schemas.ml_backend import (
     ProjectMLBackendList,
     ProjectMLBackendEnablement,
 )
-from app.services.ml_backend import MLBackendService
+from app.services.gpu_arbiter import (
+    GPUArbiterDispatchError,
+    GPUClaimConfigurationError,
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
+from app.services.ml_backend import (
+    GPUBackendManagedMutationBlocked,
+    MLBackendService,
+    MLBackendURLConflict,
+)
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
 from app.services.prediction import PredictionService, to_video_bbox_result
@@ -77,7 +90,7 @@ async def create_ml_backend(
     data: MLBackendCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     # v0.19.0 ADR-0044 · 「为项目添加 backend」= 按 url 复用/新建全局注册项 + 为本项目启用。
     # 不再有 max_ml_backends_per_project 上限 (显存保护交全局行 extra_params.max_concurrency)。
@@ -243,7 +256,7 @@ async def update_ml_backend(
     data: MLBackendUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     svc = MLBackendService(db)
     if not await svc.is_enabled(project_id, backend_id):
@@ -251,7 +264,35 @@ async def update_ml_backend(
     _setup_cache.pop(backend_id, None)
     updates = data.model_dump(exclude_unset=True)
     # 更新作用于全局注册行 (auth/url/extra_params 等端点固有属性)。
-    backend = await svc.update(backend_id, **updates)
+    try:
+        backend = await svc.update(backend_id, **updates)
+    except GPUClaimConfigurationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "gpu_config_invalid",
+                "message": str(exc),
+                "diagnostics": [
+                    diagnostic.model_dump(mode="json") for diagnostic in exc.diagnostics
+                ],
+            },
+        ) from exc
+    except MLBackendURLConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_url_conflict",
+                "message": f"该 URL 已注册为全局 backend ({exc.backend_name})",
+            },
+        ) from exc
+    except GPUBackendManagedMutationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "gpu_backend_retirement_required",
+                "message": str(exc),
+            },
+        ) from exc
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(
@@ -301,14 +342,20 @@ async def delete_ml_backend(
     await db.commit()
 
 
-@router.post("/{backend_id}/unload")
+@router.post("/{backend_id}/unload", response_model=MLBackendUnloadResponse)
 async def unload_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
-):
+) -> MLBackendUnloadResponse:
     """B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502.
 
     鉴权 super_admin only · /unload 作用于「全局 backend 显存驻留」(一物理 backend 被多个
@@ -316,9 +363,15 @@ async def unload_ml_backend(
     平台管理员, 与前端「运行时观测」面板 (super_admin only) 及 admin observe/smoke-test 的
     运维基线一致; 不叠加 require_project_owner —— 全局操作按 backend_id 定位, 与 path 里的
     project 无归属关系。构造性的 /warmup 仍保留在 project_owner (见该端点注释)。"""
-    svc = MLBackendService(db)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     try:
         result = await svc.unload(backend_id)
+    except GPUArbiterDispatchError:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend unload failed: {exc}")
     if result is None:
@@ -334,7 +387,7 @@ async def unload_ml_backend(
         detail={"project_id": str(project_id), "result": result},
     )
     await db.commit()
-    return result
+    return MLBackendUnloadResponse.model_validate(result)
 
 
 @router.post("/{backend_id}/reload")
@@ -344,6 +397,12 @@ async def reload_ml_backend(
     request: Request,
     body: MLBackendReloadRequest | None = None,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     """B-28+ · 触发 backend 重新加载模型. 已加载则 noop.
@@ -354,7 +413,11 @@ async def reload_ml_backend(
     鉴权 super_admin only · /reload 会改写「全局 backend 常驻变体」(同 backend 被多项目共用),
     切变体等于换掉其他项目正在用的权重, 属破坏性驻留操作, 与 /unload 同基线收口到平台管理员
     (对齐 super_admin only 的「运行时观测」面板)。"""
-    svc = MLBackendService(db)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     sam_variant = body.sam_variant if body else None
     dino_variant = body.dino_variant if body else None
     task_type = body.task_type if body else None
@@ -365,6 +428,8 @@ async def reload_ml_backend(
             dino_variant=dino_variant,
             task_type=task_type,
         )
+    except GPUArbiterDispatchError:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend reload failed: {exc}")
     if result is None:
@@ -398,6 +463,12 @@ async def warmup_ml_backend(
     request: Request,
     body: dict | None = None,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     """v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.
@@ -412,9 +483,15 @@ async def warmup_ml_backend(
     上其他项目常驻的模型, 属可接受代价 —— 它是本项目用模型的必要前提, 且 backend 侧有
     max_concurrency / idle 淘汰兜底。只有会直接驱逐/换掉他人在用权重的 unload/reload 才收口
     到平台管理员。"""
-    svc = MLBackendService(db)
+    svc = MLBackendService(
+        db,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     try:
         result = await svc.warmup(backend_id, body or {})
+    except GPUArbiterDispatchError:
+        raise
     except httpx.HTTPStatusError as exc:
         # 透传 backend 上游的业务错误 (4xx 变体非法 / 5xx OOM / weight missing).
         status = exc.response.status_code
@@ -605,6 +682,12 @@ async def predict_test(
     backend_id: uuid.UUID,
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = MLBackendService(db)
@@ -613,8 +696,13 @@ async def predict_test(
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     task = await _get_task_in_project(db, task_id, project_id)
+    await db.commit()
 
-    client = ml_client_module.MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     results = await client.predict(
         [{"id": str(task.id), "file_path": _resolve_task_url(task)}]
     )
@@ -635,6 +723,12 @@ async def interactive_annotating(
     backend_id: uuid.UUID,
     body: InteractiveRequest,
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(
         require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
     ),
@@ -656,8 +750,13 @@ async def interactive_annotating(
     # /setup.params 动态渲染、每用户独立调整, 并随 context 透传。平台不再注入项目级 DINO
     # 阈值 (那会把 gsam2 专属参数塞给 sam3 等不支持的后端); 各 backend 缺省值由自身 /setup 决定。
     context = dict(body.context or {})
+    await db.commit()
 
-    client = ml_client_module.MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
         context=context,
@@ -685,6 +784,12 @@ async def predict_frame(
     frame_index: int = Form(...),
     config: str = Form("{}"),
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(
         require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
     ),
@@ -747,8 +852,13 @@ async def predict_frame(
     frame_url = storage.upload_crop_bytes(
         jpeg_bytes, f"frame-predict/{task_id}/{frame_index}.jpg"
     )
+    await db.commit()
 
-    client = ml_client_module.MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     results = await client.predict(
         [{"id": str(task.id), "file_path": frame_url}], context=context
     )
@@ -788,6 +898,12 @@ async def interactive_annotating_frame(
     frame_index: int = Form(...),
     context: str = Form("{}"),
     db: AsyncSession = Depends(get_db),
+    shadow_session_factory: GPUShadowSessionFactory = Depends(
+        get_gpu_shadow_session_factory
+    ),
+    dispatch_context_factory: GPUDispatchContextFactory = Depends(
+        get_gpu_dispatch_context_factory
+    ),
     current_user: User = Depends(
         require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
     ),
@@ -834,10 +950,15 @@ async def interactive_annotating_frame(
     frame_url = storage.upload_crop_bytes(
         jpeg_bytes, f"frame-interactive/{task_id}/{frame_index}.jpg"
     )
+    await db.commit()
 
     # 与 interactive_annotating 一致: 不注入项目级 DINO 阈值 (那是 gsam2 专属, 塞给 sam3
     # 等后端会出错); 推理参数由前端按 /setup.params 渲染后随 context 透传。
-    client = ml_client_module.MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(
+        backend,
+        shadow_session_factory=shadow_session_factory,
+        dispatch_context_factory=dispatch_context_factory,
+    )
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": frame_url},
         context=ctx,

@@ -25,6 +25,10 @@ from app.db.models.dataset import (
 )
 from app.db.models.scene_pose import SceneFramePose
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
+from app.db.models.gpu_backend_fence import GPUBackendFence
+from app.db.models.gpu_backend_membership import GPUBackendMembership
+from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.db.models.video_chapter import VideoChapter
@@ -74,6 +78,10 @@ __all__ = [
     "SceneFramePose",
     "MLBackendRegistry",
     "ProjectMLBackend",
+    "GPUBackendCancelIntent",
+    "GPUArbiterRollout",
+    "GPUBackendFence",
+    "GPUBackendMembership",
     "Prediction",
     "PredictionMeta",
     "FailedPrediction",

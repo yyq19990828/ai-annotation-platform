@@ -12,16 +12,11 @@ export const EXPORT_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       const moreBtn = page.getByTitle("更多操作").first();
-      if (await moreBtn.count()) {
-        await moreBtn.click();
-        await page.waitForTimeout(250);
-      }
+      await moreBtn.click();
+      await page.waitForTimeout(250);
       const exportItem = page.getByText("导出标注数据").first();
-      if (await exportItem.count()) {
-        await exportItem.click();
-        await page.waitForTimeout(350);
-      }
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+      await exportItem.click();
+      await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/export/format-select.png",

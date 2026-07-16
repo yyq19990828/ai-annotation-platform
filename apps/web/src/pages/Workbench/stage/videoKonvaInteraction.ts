@@ -20,7 +20,8 @@ import {
   upsertPointsKeyframe,
 } from "./videoStageGeometry";
 import { moveVertex } from "./shared/geometry/polygon";
-import { pickTopVideoEntryAt } from "./videoStagePicking";
+import { pickTopVideoEntryAt, pickTopVideoMaskAt } from "./videoStagePicking";
+import type { VideoMaskRenderRecord } from "./videoMaskFrames";
 import {
   clientToVideoNorm,
   videoNormToClient,
@@ -215,6 +216,8 @@ export interface UseVideoKonvaInteractionParams {
   annotations: readonly AnnotationResponse[];
   /** 当前帧可命中的框(含 track 解析帧 + legacy bbox),归一化 geom。 */
   entries: VideoPickable[];
+  /** 已解码的提交态掩码；命中按 alpha，而不是外接框。 */
+  maskEntries: VideoMaskRenderRecord[];
   /** 选中轨迹当前帧无框时的参考 ghost(可拖出关键帧),归一化 geom。 */
   ghost: VideoPickable | null;
   /**
@@ -385,6 +388,11 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     // v0.21.23 · AI 工具下不做命中拾取: 点在已有标注上也应发 SAM 提示 (对齐图片侧)。
     if (isSamProbeTool(p.videoTool)) {
       beginDraw(native);
+      return;
+    }
+    const maskHit = pickTopVideoMaskAt(p.maskEntries, pt);
+    if (maskHit) {
+      p.onSelect(maskHit.id, { shift: native.shiftKey || native.metaKey || native.ctrlKey });
       return;
     }
     // z 序:carryOver(最低) → entries → 选中 ghost(最高);pickTop 逆序取「最后命中」为 top,

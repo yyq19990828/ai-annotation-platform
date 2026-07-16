@@ -16,10 +16,25 @@ export const useFabRevealStore = create<FabRevealStore>((set) => ({
 
 export const useFabRevealed = (): boolean => useFabRevealStore((s) => s.revealed);
 
-// 右下角触发区:覆盖三个按钮的横向 × 纵向范围(略放大,便于光标命中)。
-const ZONE_W = 180;
-const ZONE_H = 240;
+// 右下角只保留一条窄唤出带；按钮出现后由按钮自身维持展开。
+// 这样画布右侧缩放浮条可以贴边，指针经过「适应」也不会误唤出反馈按钮。
+const ZONE_W = 64;
+const ZONE_H = 48;
 const HIDE_DELAY_MS = 450;
+
+export function isPointerInFabRevealZone(
+  clientX: number,
+  clientY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): boolean {
+  return clientX >= viewportWidth - ZONE_W && clientY >= viewportHeight - ZONE_H;
+}
+
+export function isPointerOverFabTarget(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && target.closest("[data-bug-fab], [data-workbench-fab]") !== null;
+}
 
 /**
  * 在工作台顶层调用一次:监听全局指针,光标进入右下角指定区域 → 露出按钮列,
@@ -29,9 +44,12 @@ export function useFabAutoHideDriver(): void {
   const hideTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
-      const inZone =
-        e.clientX >= window.innerWidth - ZONE_W &&
-        e.clientY >= window.innerHeight - ZONE_H;
+      const inZone = isPointerInFabRevealZone(
+        e.clientX,
+        e.clientY,
+        window.innerWidth,
+        window.innerHeight,
+      ) || isPointerOverFabTarget(e.target);
       const { revealed, set } = useFabRevealStore.getState();
       if (inZone) {
         if (hideTimer.current !== undefined) {

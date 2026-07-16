@@ -962,6 +962,7 @@
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
+                "video_track_mask": "#/components/schemas/VideoTrackMaskGeometry",
                 "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                 "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
               },
@@ -994,6 +995,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackMaskGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1656,6 +1660,7 @@
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                 "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
+                "video_track_mask": "#/components/schemas/VideoTrackMaskGeometry",
                 "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                 "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
               },
@@ -1688,6 +1693,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackMaskGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1945,6 +1953,7 @@
                     "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                     "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
                     "video_track_bbox": "#/components/schemas/VideoTrackGeometry",
+                    "video_track_mask": "#/components/schemas/VideoTrackMaskGeometry",
                     "video_track_polygon": "#/components/schemas/VideoTrackPolygonGeometry",
                     "video_track_polyline": "#/components/schemas/VideoTrackPolylineGeometry"
                   },
@@ -1977,6 +1986,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoTrackMaskGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/PolygonGeometry"
@@ -3239,6 +3251,16 @@
             "default": false,
             "title": "Is Interactive",
             "type": "boolean"
+          },
+          "managed_lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedLifecycleCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "modalities": {
             "default": [],
@@ -5930,6 +5952,65 @@
         "title": "ClassRenameRequest",
         "type": "object"
       },
+      "CocoRleMaskRef": {
+        "additionalProperties": false,
+        "description": "Immutable content-addressed COCO uncompressed RLE object reference.",
+        "properties": {
+          "bytes": {
+            "maximum": 4194304.0,
+            "minimum": 1.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "encoding": {
+            "const": "coco_rle_ref",
+            "default": "coco_rle_ref",
+            "title": "Encoding",
+            "type": "string"
+          },
+          "object_key": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\\.json$",
+            "title": "Object Key",
+            "type": "string"
+          },
+          "runs": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Runs",
+            "type": "integer"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Size",
+            "type": "array"
+          }
+        },
+        "required": [
+          "size",
+          "object_key",
+          "sha256",
+          "runs",
+          "bytes"
+        ],
+        "title": "CocoRleMaskRef",
+        "type": "object"
+      },
       "CommentAnchor": {
         "additionalProperties": false,
         "description": "评论锚点。v0.9.35 起用于视频 review 的帧级定位。",
@@ -6024,6 +6105,58 @@
           "expires_in"
         ],
         "title": "CommentAttachmentUploadInitResponse",
+        "type": "object"
+      },
+      "ComputeInfo": {
+        "additionalProperties": true,
+        "description": "Backend 有效计算设备观测 (五镜像统一)。\n\ntorch 系 (yolo/gsam2/sam3) 填 ``effective_device`` (\"cuda\"/\"cpu\"/None),\nORT 系 (rapidocr/onnxtools) 填 ``effective_provider`` (如 \"CPUExecutionProvider\"/\n\"CUDAExecutionProvider\")。``configured_device`` 为配置意图或构造偏好; 只有已知 GPU\n配置 (\"gpu\"/\"cuda\"/\"cuda:*\") 的有效设备已落到 CPU 时, 前端才显示「⚠ CPU 回退」。\n该对象仅作诊断，不代表所有 GPU pool/session 已释放。",
+        "properties": {
+          "configured_device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured Device"
+          },
+          "cpu_fallback_supported": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Fallback Supported"
+          },
+          "effective_device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Device"
+          },
+          "effective_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Provider"
+          }
+        },
+        "title": "ComputeInfo",
         "type": "object"
       },
       "ConnectorAllowlistOut": {
@@ -8965,6 +9098,647 @@
         "title": "FramePose",
         "type": "object"
       },
+      "GPUArbiterResourceItem": {
+        "properties": {
+          "allocatable_mb": {
+            "title": "Allocatable Mb",
+            "type": "integer"
+          },
+          "claimed_backend_count": {
+            "title": "Claimed Backend Count",
+            "type": "integer"
+          },
+          "claimed_budget_mb": {
+            "title": "Claimed Budget Mb",
+            "type": "integer"
+          },
+          "configured_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "observe",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured Mode"
+          },
+          "desired_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Desired Mode",
+            "type": "string"
+          },
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/GPUConfigDiagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "effective_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Effective Mode",
+            "type": "string"
+          },
+          "gpu_resource_id": {
+            "title": "Gpu Resource Id",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "physical_device_token": {
+            "title": "Physical Device Token",
+            "type": "string"
+          },
+          "rollout": {
+            "$ref": "#/components/schemas/GPUArbiterRolloutItem"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/GPUArbiterRuntimeObservationItem"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "info",
+              "warning",
+              "critical",
+              "blocker"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gpu_resource_id",
+          "node_id",
+          "physical_device_token",
+          "allocatable_mb",
+          "desired_mode",
+          "effective_mode",
+          "claimed_budget_mb",
+          "claimed_backend_count",
+          "status",
+          "rollout",
+          "runtime"
+        ],
+        "title": "GPUArbiterResourceItem",
+        "type": "object"
+      },
+      "GPUArbiterResourcesResponse": {
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/GPUConfigDiagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "enforce_runtime_ready": {
+            "title": "Enforce Runtime Ready",
+            "type": "boolean"
+          },
+          "global_desired_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Global Desired Mode",
+            "type": "string"
+          },
+          "observe_runtime_ready": {
+            "title": "Observe Runtime Ready",
+            "type": "boolean"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/GPUArbiterResourceItem"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "rollout_enabled": {
+            "title": "Rollout Enabled",
+            "type": "boolean"
+          },
+          "runtime_ready": {
+            "title": "Runtime Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "global_desired_mode",
+          "rollout_enabled",
+          "runtime_ready",
+          "observe_runtime_ready",
+          "enforce_runtime_ready",
+          "resources",
+          "diagnostics"
+        ],
+        "title": "GPUArbiterResourcesResponse",
+        "type": "object"
+      },
+      "GPUArbiterRolloutItem": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "dispatch_blocked": {
+            "title": "Dispatch Blocked",
+            "type": "boolean"
+          },
+          "effective_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Effective Mode",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_transition_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Transition Id"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "state": {
+            "enum": [
+              "disabled",
+              "uninitialized",
+              "off",
+              "promoting",
+              "enforcing",
+              "demoting",
+              "blocked"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "observe",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Mode"
+          },
+          "transition_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Id"
+          }
+        },
+        "required": [
+          "enabled",
+          "state",
+          "effective_mode",
+          "dispatch_blocked"
+        ],
+        "title": "GPUArbiterRolloutItem",
+        "type": "object"
+      },
+      "GPUArbiterRuntimeObservationItem": {
+        "properties": {
+          "active_backend_count": {
+            "title": "Active Backend Count",
+            "type": "integer"
+          },
+          "allocation_state_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Allocation State Counts",
+            "type": "object"
+          },
+          "backend_count": {
+            "title": "Backend Count",
+            "type": "integer"
+          },
+          "backend_queue_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Queue Count"
+          },
+          "card_queue_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Queue Count"
+          },
+          "committed_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed Mb"
+          },
+          "durable_domain_matches": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durable Domain Matches"
+          },
+          "lease_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Count"
+          },
+          "ledger_incarnation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Incarnation"
+          },
+          "ledger_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Revision"
+          },
+          "membership_state_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Membership State Counts",
+            "type": "object"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "reconcile_deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconcile Deadline Ms"
+          },
+          "status": {
+            "enum": [
+              "disabled",
+              "missing",
+              "prepared",
+              "ready",
+              "not_ready",
+              "corrupt",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transition_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Present"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "ready",
+          "backend_count",
+          "active_backend_count",
+          "membership_state_counts",
+          "allocation_state_counts",
+          "lease_count",
+          "card_queue_count",
+          "backend_queue_count",
+          "transition_present"
+        ],
+        "title": "GPUArbiterRuntimeObservationItem",
+        "type": "object"
+      },
+      "GPUBackendConfigStatus": {
+        "properties": {
+          "allocatable_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocatable Mb"
+          },
+          "desired_mode": {
+            "default": "off",
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Desired Mode",
+            "type": "string"
+          },
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/GPUConfigDiagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "effective_mode": {
+            "default": "off",
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Effective Mode",
+            "type": "string"
+          },
+          "resource_claimed_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Claimed Budget Mb"
+          },
+          "rollout_blocker_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout Blocker Reason"
+          },
+          "rollout_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout Enabled"
+          },
+          "rollout_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout Revision"
+          },
+          "rollout_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "disabled",
+                  "uninitialized",
+                  "off",
+                  "promoting",
+                  "enforcing",
+                  "demoting",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout State"
+          },
+          "status": {
+            "default": "ok",
+            "enum": [
+              "ok",
+              "info",
+              "warning",
+              "critical",
+              "blocker"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "GPUBackendConfigStatus",
+        "type": "object"
+      },
+      "GPUConfigDiagnostic": {
+        "properties": {
+          "backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Id"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "level": {
+            "enum": [
+              "info",
+              "warning",
+              "critical",
+              "blocker"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          }
+        },
+        "required": [
+          "code",
+          "level",
+          "message"
+        ],
+        "title": "GPUConfigDiagnostic",
+        "type": "object"
+      },
+      "GPUConfigErrorDetail": {
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/GPUConfigDiagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "error_code": {
+            "const": "gpu_config_invalid",
+            "default": "gpu_config_invalid",
+            "title": "Error Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "GPUConfigErrorDetail",
+        "type": "object"
+      },
+      "GPUConfigErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/GPUConfigErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "GPUConfigErrorResponse",
+        "type": "object"
+      },
       "GlobalBackendItem": {
         "description": "v0.9.7 · CreateProjectWizard step 4 dropdown 用的 backend 概要项.",
         "properties": {
@@ -8972,13 +9746,48 @@
             "title": "Auth Method",
             "type": "string"
           },
+          "eviction_priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eviction Priority"
+          },
           "extra_params": {
             "additionalProperties": true,
             "title": "Extra Params",
             "type": "object"
           },
+          "gpu_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GPUBackendConfigStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
           "health_meta": {
             "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthMeta"
+              },
               {
                 "additionalProperties": true,
                 "type": "object"
@@ -9027,6 +9836,17 @@
           "url": {
             "title": "Url",
             "type": "string"
+          },
+          "vram_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Budget Mb"
           }
         },
         "required": [
@@ -9059,7 +9879,19 @@
         "type": "object"
       },
       "GpuInfo": {
+        "additionalProperties": true,
         "properties": {
+          "device_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Index"
+          },
           "device_name": {
             "anyOf": [
               {
@@ -9070,6 +9902,17 @@
               }
             ],
             "title": "Device Name"
+          },
+          "device_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Uuid"
           },
           "gpu_power_watts": {
             "anyOf": [
@@ -9136,6 +9979,39 @@
               }
             ],
             "title": "Memory Used Mb"
+          },
+          "mig_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mig Uuid"
+          },
+          "physical_device_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Device Token"
+          },
+          "process_memory_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Memory Mb"
           }
         },
         "title": "GpuInfo",
@@ -9446,6 +10322,16 @@
               }
             ]
           },
+          "compute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "gpu_info": {
             "anyOf": [
               {
@@ -9476,6 +10362,21 @@
               }
             ],
             "title": "Model Version"
+          },
+          "residency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResidencyInfo"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residency"
           }
         },
         "title": "HealthMeta",
@@ -10393,7 +11294,6 @@
           },
           "extra_params": {
             "additionalProperties": true,
-            "default": {},
             "title": "Extra Params",
             "type": "object"
           },
@@ -10464,10 +11364,26 @@
             ],
             "title": "Error Message"
           },
+          "eviction_priority": {
+            "default": 0,
+            "title": "Eviction Priority",
+            "type": "integer"
+          },
           "extra_params": {
             "additionalProperties": true,
             "title": "Extra Params",
             "type": "object"
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
           },
           "health_meta": {
             "anyOf": [
@@ -10475,9 +11391,14 @@
                 "$ref": "#/components/schemas/HealthMeta"
               },
               {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Health Meta"
           },
           "id": {
             "format": "uuid",
@@ -10528,6 +11449,17 @@
           "url": {
             "title": "Url",
             "type": "string"
+          },
+          "vram_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Budget Mb"
           }
         },
         "required": [
@@ -10543,6 +11475,245 @@
           "updated_at"
         ],
         "title": "MLBackendOut",
+        "type": "object"
+      },
+      "MLBackendRegistryConflictDetail": {
+        "properties": {
+          "active_workloads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Workloads"
+          },
+          "error_code": {
+            "enum": [
+              "ml_backend_url_conflict",
+              "gpu_backend_active",
+              "gpu_backend_retirement_required"
+            ],
+            "title": "Error Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "MLBackendRegistryConflictDetail",
+        "type": "object"
+      },
+      "MLBackendRegistryConflictResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/MLBackendRegistryConflictDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "MLBackendRegistryConflictResponse",
+        "type": "object"
+      },
+      "MLBackendRegistryCreate": {
+        "additionalProperties": false,
+        "description": "Superadmin-only global registry payload with a strong-typed GPU claim.",
+        "properties": {
+          "auth_method": {
+            "default": "none",
+            "title": "Auth Method",
+            "type": "string"
+          },
+          "auth_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Token"
+          },
+          "eviction_priority": {
+            "default": 0,
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
+            "title": "Eviction Priority",
+            "type": "integer"
+          },
+          "extra_params": {
+            "additionalProperties": true,
+            "title": "Extra Params",
+            "type": "object"
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "vram_budget_mb": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Budget Mb"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "MLBackendRegistryCreate",
+        "type": "object"
+      },
+      "MLBackendRegistryUpdate": {
+        "additionalProperties": false,
+        "description": "Superadmin-only partial update; the service validates the merged claim.",
+        "properties": {
+          "auth_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Method"
+          },
+          "auth_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Token"
+          },
+          "eviction_priority": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eviction Priority"
+          },
+          "extra_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Params"
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
+          "is_interactive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Interactive"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "vram_budget_mb": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Budget Mb"
+          }
+        },
+        "title": "MLBackendRegistryUpdate",
         "type": "object"
       },
       "MLBackendReloadRequest": {
@@ -10582,6 +11753,54 @@
           }
         },
         "title": "MLBackendReloadRequest",
+        "type": "object"
+      },
+      "MLBackendUnloadResponse": {
+        "additionalProperties": true,
+        "description": "跨 backend 兼容的 legacy `/unload` 响应；额外字段保持透传。",
+        "properties": {
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "residency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResidencyInfo"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residency"
+          },
+          "unloaded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unloaded"
+          }
+        },
+        "title": "MLBackendUnloadResponse",
         "type": "object"
       },
       "MLBackendUpdate": {
@@ -10685,6 +11904,68 @@
           "connected_backends"
         ],
         "title": "MLIntegrationsOverview",
+        "type": "object"
+      },
+      "ManagedLifecycleCapabilities": {
+        "additionalProperties": false,
+        "description": "Additive ``/setup.managed_lifecycle`` capability declaration.",
+        "properties": {
+          "drain_cancel_endpoint": {
+            "const": "/drain/cancel",
+            "default": "/drain/cancel",
+            "title": "Drain Cancel Endpoint",
+            "type": "string"
+          },
+          "drain_endpoint": {
+            "const": "/drain",
+            "default": "/drain",
+            "title": "Drain Endpoint",
+            "type": "string"
+          },
+          "generation_fencing": {
+            "const": true,
+            "default": true,
+            "title": "Generation Fencing",
+            "type": "boolean"
+          },
+          "generation_header": {
+            "const": "X-AAP-GPU-Generation",
+            "default": "X-AAP-GPU-Generation",
+            "title": "Generation Header",
+            "type": "string"
+          },
+          "mode_endpoint": {
+            "const": "/lifecycle/mode",
+            "default": "/lifecycle/mode",
+            "title": "Mode Endpoint",
+            "type": "string"
+          },
+          "protocol_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Protocol Version",
+            "type": "string"
+          },
+          "reset_endpoint": {
+            "const": "/lifecycle/reset",
+            "default": "/lifecycle/reset",
+            "title": "Reset Endpoint",
+            "type": "string"
+          },
+          "token_header": {
+            "const": "X-AAP-GPU-Admission-Token",
+            "default": "X-AAP-GPU-Admission-Token",
+            "title": "Token Header",
+            "type": "string"
+          },
+          "unload_endpoint": {
+            "const": "/unload",
+            "default": "/unload",
+            "title": "Unload Endpoint",
+            "type": "string"
+          }
+        },
+        "title": "ManagedLifecycleCapabilities",
         "type": "object"
       },
       "Mention": {
@@ -11527,6 +12808,16 @@
             ],
             "title": "Cache"
           },
+          "compute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error": {
             "anyOf": [
               {
@@ -11596,6 +12887,21 @@
               }
             ],
             "title": "Registered Label"
+          },
+          "residency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResidencyInfo"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residency"
           },
           "status_code": {
             "anyOf": [
@@ -12143,6 +13449,46 @@
           "points"
         ],
         "title": "PolylineGeometry",
+        "type": "object"
+      },
+      "PoolResidencyInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "resident": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resident"
+          }
+        },
+        "title": "PoolResidencyInfo",
         "type": "object"
       },
       "PreannotateProjectSummary": {
@@ -16182,6 +17528,24 @@
         "title": "RegistrationDayPoint",
         "type": "object"
       },
+      "RequestValidationErrorResponse": {
+        "description": "FastAPI's default request validation envelope for non-GPU fields.",
+        "properties": {
+          "detail": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "RequestValidationErrorResponse",
+        "type": "object"
+      },
       "ResendVerificationRequest": {
         "properties": {
           "email": {
@@ -16216,6 +17580,200 @@
           "new_password"
         ],
         "title": "ResetPasswordRequest",
+        "type": "object"
+      },
+      "ResidencyIdentityInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience"
+          },
+          "backend_registry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Registry Id"
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          }
+        },
+        "title": "ResidencyIdentityInfo",
+        "type": "object"
+      },
+      "ResidencyInfo": {
+        "additionalProperties": true,
+        "description": "Backend-reported physical GPU residency; independent from compute intent.",
+        "properties": {
+          "active_requests": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Requests"
+          },
+          "boot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boot Id"
+          },
+          "borrowers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Borrowers"
+          },
+          "builders": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builders"
+          },
+          "control_epoch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Epoch"
+          },
+          "draining": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draining"
+          },
+          "evictable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evictable"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "gpu_loaded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Loaded"
+          },
+          "identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResidencyIdentityInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle_gate": {
+            "anyOf": [
+              {
+                "enum": [
+                  "legacy",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifecycle Gate"
+          },
+          "pools": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PoolResidencyInfo"
+            },
+            "title": "Pools",
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "unloaded",
+              "loading",
+              "resident",
+              "draining",
+              "unloading",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ResidencyInfo",
         "type": "object"
       },
       "RetryResponse": {
@@ -21291,6 +22849,102 @@
         "title": "VideoTrackKeyframe",
         "type": "object"
       },
+      "VideoTrackMaskGeometry": {
+        "additionalProperties": false,
+        "description": "Video raster-mask track; keyframes reference immutable COCO RLE objects.",
+        "properties": {
+          "keyframes": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackMaskKeyframe"
+            },
+            "maxItems": 3000,
+            "minItems": 1,
+            "title": "Keyframes",
+            "type": "array"
+          },
+          "outside": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackOutsideRange"
+            },
+            "title": "Outside",
+            "type": "array"
+          },
+          "semantic_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Label"
+          },
+          "track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "video_track_mask",
+            "default": "video_track_mask",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "keyframes"
+        ],
+        "title": "VideoTrackMaskGeometry",
+        "type": "object"
+      },
+      "VideoTrackMaskKeyframe": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "mask": {
+            "$ref": "#/components/schemas/CocoRleMaskRef"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "mask"
+        ],
+        "title": "VideoTrackMaskKeyframe",
+        "type": "object"
+      },
       "VideoTrackOutsideRange": {
         "additionalProperties": false,
         "properties": {
@@ -21580,9 +23234,16 @@
       "VideoTrackerJobListItem": {
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "completed_at": {
             "anyOf": [
@@ -21726,7 +23387,6 @@
           "task_id",
           "project_id",
           "dataset_item_id",
-          "annotation_id",
           "status",
           "model_key",
           "direction",
@@ -21740,9 +23400,16 @@
       "VideoTrackerJobOut": {
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "cancel_requested_at": {
             "anyOf": [
@@ -21890,6 +23557,21 @@
             "title": "To Frame",
             "type": "integer"
           },
+          "touched_annotation_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Touched Annotation Ids"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -21907,7 +23589,6 @@
           "id",
           "task_id",
           "dataset_item_id",
-          "annotation_id",
           "status",
           "model_key",
           "direction",
@@ -21923,9 +23604,16 @@
         "description": "v0.21.28 · 候选预览: job 暂存的逐帧结果, 供前端在接受前渲染候选叠加。",
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "grid_step": {
             "default": 1,
@@ -21967,8 +23655,7 @@
         },
         "required": [
           "job_id",
-          "status",
-          "annotation_id"
+          "status"
         ],
         "title": "VideoTrackerJobPreview",
         "type": "object"
@@ -22114,6 +23801,22 @@
             "title": "Model Key",
             "type": "string"
           },
+          "output_geometry": {
+            "anyOf": [
+              {
+                "enum": [
+                  "bbox",
+                  "polygon",
+                  "mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Geometry"
+          },
           "prompt": {
             "additionalProperties": true,
             "title": "Prompt",
@@ -22141,6 +23844,57 @@
               }
             ],
             "title": "Segment Id"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "source_annotation_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Ids"
+          },
+          "target_class_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Class Name"
+          },
+          "target_tool_unit_id": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Tool Unit Id"
           },
           "text": {
             "anyOf": [
@@ -22744,7 +24498,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.21.33"
+    "version": "0.22.4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -23062,6 +24816,33 @@
         ]
       }
     },
+    "/api/v1/admin/ml-integrations/gpu-resources": {
+      "get": {
+        "description": "Return typed physical resources and static claim diagnostics; no side effects.",
+        "operationId": "list_gpu_resources_api_v1_admin_ml_integrations_gpu_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GPUArbiterResourcesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Gpu Resources",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
     "/api/v1/admin/ml-integrations/observe": {
       "get": {
         "description": "直连观测 env 配的后端容器: 并发探测各 URL 的 /health + /setup, 标注是否已被注册。",
@@ -23217,7 +24998,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MLBackendCreate"
+                "$ref": "#/components/schemas/MLBackendRegistryCreate"
               }
             }
           },
@@ -23234,15 +25015,33 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendRegistryConflictResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GPUConfigErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RequestValidationErrorResponse"
+                    }
+                  ],
+                  "title": "Response 422 Create Registry Api V1 Admin Ml Integrations Registry Post"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -23316,7 +25115,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MLBackendUpdate"
+                "$ref": "#/components/schemas/MLBackendRegistryUpdate"
               }
             }
           },
@@ -23333,15 +25132,33 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendRegistryConflictResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GPUConfigErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RequestValidationErrorResponse"
+                    }
+                  ],
+                  "title": "Response 422 Update Registry Api V1 Admin Ml Integrations Registry  Registry Id  Put"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -23399,6 +25216,55 @@
           }
         ],
         "summary": "Check Registry Health",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/registry/{registry_id}/unload": {
+      "post": {
+        "description": "全局卸载 backend，不要求它已被任一项目启用。",
+        "operationId": "unload_registry_backend_api_v1_admin_ml_integrations_registry__registry_id__unload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendUnloadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unload Registry Backend",
         "tags": [
           "admin-ml-integrations"
         ]
@@ -24023,6 +25889,61 @@
         "summary": "Get Annotation History",
         "tags": [
           "annotation-history"
+        ]
+      }
+    },
+    "/api/v1/annotations/{annotation_id}/mask-content/{frame_index}": {
+      "get": {
+        "operationId": "get_annotation_mask_content_api_v1_annotations__annotation_id__mask_content__frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Annotation Mask Content",
+        "tags": [
+          "annotations"
         ]
       }
     },
@@ -31507,7 +33428,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -31515,7 +33436,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -32436,7 +34357,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -32444,7 +34365,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -33913,7 +35834,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MLBackendUnloadResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -37151,6 +39074,68 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/mask-content": {
+      "post": {
+        "operationId": "upload_task_mask_content_api_v1_tasks__task_id__mask_content_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Task Mask Content Api V1 Tasks  Task Id  Mask Content Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Task Mask Content",
+        "tags": [
+          "annotations"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/neighbor-annotations": {
       "get": {
         "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」。\nv0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)过滤。\n非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。\n\nv0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态\n(`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)\n仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。",
@@ -38854,6 +40839,65 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/video:track": {
+      "post": {
+        "description": "v0.22.1 · B · 任务级追踪 (画布级入口): source_annotation_id 可选——给出即延展该轨迹,\n缺省则为无源检测 (文本/种子), 新建轨迹类别由 target_class_name 指定。旧的\n/tracks/{annotation_id}:propagate 仍保留 (延展快捷路径)。",
+        "operationId": "track_video_api_v1_tasks__task_id__video_track_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackerPropagateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Track Video",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/withdraw": {
       "post": {
         "description": "v0.6.5: 标注员撤回质检提交。\n前提：status=review、assignee == 当前用户、reviewer_claimed_at IS NULL。\n审核员一旦 claim 就锁死撤回入口，避免与审核动作打架。",
@@ -39680,6 +41724,61 @@
           }
         ],
         "summary": "Discard Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}": {
+      "get": {
+        "operationId": "get_video_tracker_mask_content_api_v1_video_tracker_jobs__job_id__mask_content__sha256__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Tracker Mask Content",
         "tags": [
           "video-tracker-jobs"
         ]

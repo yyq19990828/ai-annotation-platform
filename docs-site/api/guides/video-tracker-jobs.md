@@ -2,33 +2,67 @@
 audience: [dev]
 type: how-to
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-17
 ---
 
 # Video Tracker Jobs
 
-Video Tracker Job API 用于视频工作台里的异步 AI 传播。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，调用 accept 后才写入 annotation。
+Video Tracker Job API 用于视频工作台里的异步 AI 追踪。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，调用 accept 后才写入 annotation。
 
 ## 创建追踪任务
 
+任务级入口统一承载单源延展、多源批量延展和无源发现：
+
 ```http
-POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
+POST /api/v1/tasks/{task_id}/video:track
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-最小请求：
+通过源字段选择模式：
+
+| 模式 | 请求字段 | 类别与落库语义 |
+|---|---|---|
+| 单源延展 | 只传 `source_annotation_id` | 继承源轨迹的类别与工具单位；主实例接受后回填该源轨迹 |
+| 多源批量延展 | 只传非空 `source_annotation_ids` | 每个源自动成为独立种子，并在接受后各自回填对应源轨迹 |
+| 无源发现 | 两个源字段都不传 | 必须传 `target_class_name` 与 `target_tool_unit_id`；接受后全部新建轨迹 |
+
+客户端不要同时传单数和复数源字段；当前服务会在复数列表非空时进入多源分支。单源最小请求：
 
 ```json
 {
   "from_frame": 0,
   "to_frame": 120,
   "model_key": "sam2_video",
-  "direction": "forward"
+  "direction": "forward",
+  "output_geometry": "mask",
+  "source_annotation_id": "11111111-1111-4111-8111-111111111111"
 }
 ```
 
-种子驱动的多目标 / 多帧请求：
+多源批量延展只需给出源轨迹列表；服务会读取每条源轨迹在 `from_frame` 的几何并分配稳定的 `obj_id`：
+
+```json
+{
+  "from_frame": 0,
+  "to_frame": 120,
+  "model_key": "sam3_video_interactive",
+  "direction": "forward",
+  "output_geometry": "mask",
+  "source_annotation_ids": [
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222"
+  ]
+}
+```
+
+单源延展还有一个路径参数形式的快捷入口，适合已有客户端继续使用：
+
+```http
+POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
+```
+
+单源请求也可以在 `prompt.seeds` 中补充多目标、多帧提示；与源轨迹匹配的主实例会回填源，其余实例新建轨迹：
 
 ```json
 {
@@ -67,6 +101,8 @@ Content-Type: application/json
   "model_key": "sam3_video",
   "direction": "forward",
   "text": "the red car",
+  "target_class_name": "car",
+  "target_tool_unit_id": "bbox",
   "exemplars": [
     { "bbox": [0.10, 0.20, 0.32, 0.58], "label": true },
     { "bbox": [0.62, 0.18, 0.81, 0.55], "label": false }
@@ -74,9 +110,9 @@ Content-Type: application/json
 }
 ```
 
-工作台的文本追踪工具条当前只收集 `text`；视觉示例适用于直接调用此 API 的客户端。`frame_index` 与范围字段始终使用绝对源帧。
+工作台的文本追踪面板当前只收集 `text`；视觉示例适用于直接调用此 API 的客户端。`frame_index` 与范围字段始终使用绝对源帧。
 
-创建端点要求 task 对当前用户可见、annotation 属于该 task，并且普通标注员持有覆盖整个范围的有效 video segment lock。请求不能跨 segment。
+创建端点要求 task 对当前用户可见且可编辑，并且普通标注员持有覆盖整个范围的有效 video segment lock；请求不能跨 segment。单源 / 多源模式下，每条源 annotation 都必须属于该 task，折线轨迹暂不支持；无源模式下，目标类别必须存在于项目已启用的 `target_tool_unit_id` 绑定中。
 
 响应是 `VideoTrackerJobOut`，其中 `event_channel` 可用于订阅 WebSocket：
 
@@ -115,6 +151,12 @@ GET /api/v1/video-tracker-jobs/{job_id}/preview
 
 preview 只表示暂存候选，不代表 annotation 已经改变。没有 staged result 时 `results` 为空数组。
 
+Mask preview 的 geometry 为 `{type:"mask", mask:coco_rle_ref, bbox?}`。内容通过下列鉴权端点读取，客户端应以 job id + instance id + frame + SHA-256 作为 staged cache identity：
+
+```http
+GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
+```
+
 ## 接受、丢弃与取消
 
 ```http
@@ -125,7 +167,7 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 
 这些写操作要求当前用户是 job 创建者，或对项目拥有特权角色：
 
-- `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。主实例回填源轨迹，额外实例各创建新轨迹；已接受时幂等返回。
+- `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。单源模式把主实例回填源轨迹，额外实例新建；多源模式按 `instance_id` 把各实例回填各自源轨迹，未映射实例新建，某个源在运行期间被删除时仅该实例降级为新建；无源模式全部新建。已接受时幂等返回，响应的 `touched_annotation_ids` 列出本次回填和新建的轨迹。
 - `discard`：只允许带暂存结果的 `pending_review` / `cancelled` job，清空 staged result，annotation 保持不变；已丢弃时幂等返回，其它状态返回 `409`。
 - `DELETE`：请求停止 queued / running job。已计算的部分结果可能保留为 candidate，之后仍可接受或丢弃。
 

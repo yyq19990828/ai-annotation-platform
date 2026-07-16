@@ -49,6 +49,7 @@ from app.services.video_tracks import (
     resolved_track_frames,
     sorted_keyframes,
 )
+from app.services.raster_mask_storage import load_coco_rle
 
 
 def _sanitize_export_geometry(
@@ -495,6 +496,7 @@ class ExportService:
                     for kf in sorted_keyframes(geometry)
                 ]
                 track = {
+                    "geometry_type": geometry.get("type"),
                     "annotation_id": str(ann.id),
                     "task_id": str(ann.task_id),
                     "task_display_id": task.display_id,
@@ -917,6 +919,7 @@ class ExportService:
             batch_display_id = batch.display_id if batch else None
 
         task_blocks: list[AAPTaskBlock] = []
+        mask_objects: dict[str, dict] = {}
         for t in tasks:
             ann_entries: list[AAPAnnotationEntry] = []
             for ann in ann_by_task.get(t.id, []):
@@ -925,6 +928,12 @@ class ExportService:
                     dataset_convention=axis_by_task.get(t.id),
                     axis_frame=axis_frame,
                 )
+                if geometry.get("type") == "video_track_mask":
+                    for keyframe in geometry.get("keyframes") or []:
+                        reference = keyframe.get("mask") or {}
+                        digest = reference.get("sha256")
+                        if digest and digest not in mask_objects:
+                            mask_objects[digest] = load_coco_rle(reference)
                 ann_entries.append(
                     AAPAnnotationEntry(
                         geometry=geometry,
@@ -1019,6 +1028,7 @@ class ExportService:
                 rendering_config=project.rendering_config or {},
                 annotation_guide=getattr(project, "annotation_guide", None),
             ),
+            mask_objects=mask_objects,
             tasks=task_blocks,
         )
 

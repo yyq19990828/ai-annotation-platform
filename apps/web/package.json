@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.21.33",
+  "version": "0.22.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,10 +20,11 @@
     "test:e2e": "playwright test",
     "screenshots": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light",
     "screenshots:dark": "playwright test --config=playwright.screenshots.config.ts --project=desktop-dark",
-    "screenshots:matrix": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light --project=desktop-dark --project=tablet --project=mobile",
+    "screenshots:matrix": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light --project=desktop-dark --project=mobile",
     "screenshots:flows": "playwright test --config=playwright.screenshots.config.ts --project=flows",
     "screenshots:regression": "playwright test --config=playwright.screenshots.config.ts --project=regression",
-    "screenshots:lint": "node scripts/screenshots-lint.mjs",
+    "screenshots:regression:update": "playwright test --config=playwright.screenshots.config.ts --project=regression --update-snapshots",
+    "screenshots:lint": "node scripts/screenshots-lint.mjs --strict",
     "size": "node scripts/check-bundle-size.mjs",
     "video:bench": "node scripts/video-bench/run-video-bench.mjs",
     "image:bench": "node scripts/image-bench/run-image-bench.mjs"

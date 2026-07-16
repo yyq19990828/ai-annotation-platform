@@ -64,7 +64,7 @@ def test_interactive_request_default_context_empty_dict():
 
 import pytest  # noqa: E402
 
-from app.schemas.ml_backend import MLBackendCreate, MLBackendUpdate  # noqa: E402
+from app.schemas.ml_backend import ComputeInfo, MLBackendCreate, MLBackendUpdate  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -107,3 +107,13 @@ def test_ml_backend_update_allows_url_none():
     m = MLBackendUpdate(name="rename")
     assert m.url is None
     assert m.name == "rename"
+
+
+def test_compute_info_preserves_gpu_only_capability():
+    compute = ComputeInfo(
+        configured_device="cuda",
+        effective_device=None,
+        cpu_fallback_supported=False,
+    )
+
+    assert compute.model_dump()["cpu_fallback_supported"] is False

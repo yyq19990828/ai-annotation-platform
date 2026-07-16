@@ -36,7 +36,14 @@ import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
 import torch
 
+from aap_backend_runtime import (
+    DeviceUnavailableError,
+    free_gpu_memory,
+    is_device_error,
+    require_gpu_device,
+)
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
+from mask_utils.rle import encode_coco_rle
 
 logger = logging.getLogger("sam3-backend.video")
 
@@ -64,8 +71,9 @@ class SAM3MultiplexVideoTracker:
     def __init__(self, *, use_fa3: bool = _USE_FA3,
                  max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES) -> None:
         self.max_window_frames = max_window_frames
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = require_gpu_device("cuda")
         self.active_sessions = 0
+        self.cleanup_uncertain = False
         self._predictor = self._load_predictor(use_fa3)
 
     def _load_predictor(self, use_fa3: bool):
@@ -79,12 +87,22 @@ class SAM3MultiplexVideoTracker:
                     _VIDEO_CKPT, use_fa3)
         # max_num_objects / multiplex_count 锁定 16 (checkpoint 按此训练, 调小会
         # state_dict 形状不匹配加载失败)——不暴露为可调项。
-        predictor = build_sam3_multiplex_video_predictor(
-            checkpoint_path=_VIDEO_CKPT,
-            bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
-            use_fa3=use_fa3,
-            warm_up=False,
-        )
+        # vendor builder 无 device= 形参且内部硬绑 CUDA；SAM3 本期明确为 GPU-only。
+        try:
+            predictor = build_sam3_multiplex_video_predictor(
+                checkpoint_path=_VIDEO_CKPT,
+                bpe_path=_BPE_PATH if os.path.isfile(_BPE_PATH) else None,
+                use_fa3=use_fa3,
+                warm_up=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if is_device_error(exc):
+                free_gpu_memory()
+                raise DeviceUnavailableError(
+                    "SAM3 multiplex video model requires a healthy CUDA device; "
+                    "CPU fallback is not supported"
+                ) from exc
+            raise
         _patch_init_state_kwargs(predictor)
         return predictor
 
@@ -99,12 +117,43 @@ class SAM3MultiplexVideoTracker:
         text: str,
         seed_bbox: dict[str, float] | None = None,
         output_geometry: str = "bbox",
+        seed_bboxes: list[dict[str, float]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run one multiplex window under a bounded BF16 autocast scope."""
+
+        device_type = self.device.split(":", 1)[0]
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=device_type == "cuda",
+        ):
+            return self._propagate(
+                video_path,
+                from_frame,
+                to_frame,
+                direction,
+                text,
+                seed_bbox,
+                output_geometry,
+                seed_bboxes,
+            )
+
+    def _propagate(
+        self,
+        video_path: str,
+        from_frame: int,
+        to_frame: int,
+        direction: str,
+        text: str,
+        seed_bbox: dict[str, float] | None = None,
+        output_geometry: str = "bbox",
+        seed_bboxes: list[dict[str, float]] | None = None,
     ) -> list[dict[str, Any]]:
         """在 [from_frame, to_frame] 窗内按 text 检测+追踪目标, 返回逐帧几何。
 
         text: 文本 query (必填; SAM3 每帧按此检测目标)。
-        seed_bbox: 归一化 {x,y,w,h}; 用于在种子帧从 multiplex 多目标里挑目标 obj_id
-                   (单目标消费)。None 时取种子帧最高分目标。
+        seed_bbox: 首个归一化 {x,y,w,h}; 用于选择主实例。
+        seed_bboxes: 上一分窗逐实例续追框；与 text 一起作为种子帧正框提示。
         output_geometry: "polygon"→mask 矢量化多边形; 否则 mask 外接框 bbox。
         """
         if not text or not text.strip():
@@ -119,10 +168,11 @@ class SAM3MultiplexVideoTracker:
         reverse = direction == "backward"
         seed_src_frame = hi if reverse else lo
 
-        self.active_sessions += 1
-        tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
+        tmp_dir: str | None = None
         session_id = None
+        self.active_sessions += 1
         try:
+            tmp_dir = tempfile.mkdtemp(prefix="sam3vid_")
             # 窗口不完整只 warn (见 _extract_window_jpegs); 但下面两种截断必须硬失败:
             _fw, _fh, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
@@ -146,10 +196,22 @@ class SAM3MultiplexVideoTracker:
                 dict(type="start_session", resource_path=tmp_dir)
             )["session_id"]
 
-            # 种子帧加文本 prompt → multiplex 多目标输出。
+            # 首窗只传 text 做开放目标发现；后续窗同时传入上一窗逐实例末框，避免新 session
+            # 在窗首文本暂时未检出时整窗变空。
+            prompt_request: dict[str, Any] = dict(
+                type="add_prompt",
+                session_id=session_id,
+                frame_index=local_seed,
+                text=text.strip(),
+            )
+            if seed_bboxes:
+                prompt_request["bounding_boxes"] = [
+                    [bbox["x"], bbox["y"], bbox["w"], bbox["h"]]
+                    for bbox in seed_bboxes
+                ]
+                prompt_request["bounding_box_labels"] = [1] * len(seed_bboxes)
             seed_out = self._predictor.handle_request(
-                dict(type="add_prompt", session_id=session_id,
-                     frame_index=local_seed, text=text.strip())
+                prompt_request
             )["outputs"]
             # v0.21.28 · B-mx · 多目标批量吐: 不再 _pick_target_obj 收敛单目标, 逐帧把**全部**
             # 检测对象各出一条结果 (instance_id = 窗内 obj_id)。仅在种子帧挑出与 seed_bbox /
@@ -205,10 +267,11 @@ class SAM3MultiplexVideoTracker:
                         dict(type="close_session", session_id=session_id)
                     )
                 except Exception:  # noqa: BLE001
+                    self.cleanup_uncertain = True
                     logger.exception("close_session failed")
-            self._cleanup_tmp(tmp_dir)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if tmp_dir is not None:
+                self._cleanup_tmp(tmp_dir)
+            free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------
@@ -295,6 +358,11 @@ class SAM3MultiplexVideoTracker:
     def _mask_geometry(mask: np.ndarray, output_geometry: str) -> tuple[dict, bool]:
         """mask → geometry; 空/退化 → outside。"""
         h, w = mask.shape[:2]
+        if output_geometry == "mask":
+            return {
+                "type": "mask",
+                "rle": encode_coco_rle(mask.reshape(-1), w, h),
+            }, not bool(mask.any())
         if output_geometry == "polygon":
             points = mask_to_polygon(mask, _POLYGON_TOLERANCE, normalize_to=(w, h))
             if len(points) < 3:

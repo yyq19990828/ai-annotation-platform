@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { buildFrameTimebase, frameToSeekTime, frameToTime, timeToFrame } from "./frameTimebase";
+import {
+  buildFrameTimebase,
+  frameTimebaseDuration,
+  frameToSeekTime,
+  frameToTime,
+  timeToFrame,
+} from "./frameTimebase";
 import type { TaskVideoFrameTimetableResponse, VideoMetadata } from "@/types";
 
 const metadata: VideoMetadata = {
-  duration_ms: 1000,
+  duration_ms: 1250,
   fps: 10,
   frame_count: 10,
   width: 100,
@@ -24,10 +30,17 @@ describe("frameTimebase", () => {
     const timebase = buildFrameTimebase(metadata);
 
     expect(frameToTime(3, timebase)).toBe(0.3);
+    expect(frameTimebaseDuration(timebase)).toBe(1.25);
     expect(frameToSeekTime(3, timebase)).toBe(0.325);
     expect(timeToFrame(frameToSeekTime(3, timebase), timebase)).toBe(3);
     expect(timeToFrame(0.32, timebase)).toBe(3);
     expect(timeToFrame(99, timebase)).toBe(9);
+  });
+
+  it("falls back to frame count and fps when media duration is unavailable", () => {
+    const timebase = buildFrameTimebase({ ...metadata, duration_ms: null });
+
+    expect(frameTimebaseDuration(timebase)).toBe(1);
   });
 
   it("uses ffprobe pts values and nearest-frame lookup", () => {

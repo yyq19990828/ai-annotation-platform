@@ -5,6 +5,8 @@ import {
   buildVideoCreatePayload,
   buildVideoPointsCreatePayload,
   buildVideoPointsTrackCreatePayload,
+  buildVideoMaskTrackCreatePayload,
+  upsertVideoMaskKeyframe,
   buildVideoUpdateCommand,
 } from "./useVideoAnnotationActions";
 
@@ -91,6 +93,38 @@ describe("video annotation actions helpers", () => {
         source: "manual",
         occluded: false,
       },
+    ]);
+  });
+
+  it("builds and materializes video mask track keyframes", () => {
+    const sha = "a".repeat(64);
+    const mask = {
+      encoding: "coco_rle_ref" as const,
+      size: [8, 12] as [number, number],
+      object_key: `raster-masks/sha256/aa/aa/${sha}.json`,
+      sha256: sha,
+      runs: 3,
+      bytes: 42,
+    };
+    const payload = buildVideoMaskTrackCreatePayload(4, mask, "Car");
+    expect(payload).toMatchObject({
+      annotation_type: "video_track_mask",
+      tool_unit_id: "region",
+      geometry: {
+        type: "video_track_mask",
+        keyframes: [{ frame_index: 4, mask, source: "manual", occluded: false }],
+      },
+    });
+    const geometry = {
+      ...(payload.geometry as import("@/types").VideoTrackMaskGeometry),
+      outside: [{ from: 5, to: 9, source: "manual" as const }],
+    };
+    const updated = upsertVideoMaskKeyframe(geometry, 7, { ...mask, sha256: "b".repeat(64) });
+    expect(updated.keyframes.map((keyframe) => keyframe.frame_index)).toEqual([4, 7]);
+    expect(updated.keyframes[1].source).toBe("manual");
+    expect(updated.outside).toEqual([
+      { from: 5, to: 6, source: "manual" },
+      { from: 8, to: 9, source: "manual" },
     ]);
   });
 
