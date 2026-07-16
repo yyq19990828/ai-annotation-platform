@@ -3089,7 +3089,11 @@ def _conservative_database_http_window(
     return conservative_started, conservative_finished
 
 
-def _action_http_window_valid(action: Mapping[str, Any]) -> bool:
+def _action_http_window_valid(
+    action: Mapping[str, Any],
+    *,
+    require_database_window: bool,
+) -> bool:
     started = action.get("http_started_monotonic_ms")
     finished = action.get("http_finished_monotonic_ms")
     status = action.get("http_status")
@@ -3105,15 +3109,23 @@ def _action_http_window_valid(action: Mapping[str, Any]) -> bool:
         and not isinstance(finished, bool)
         and math.isfinite(float(finished))
         and float(finished) >= float(started)
-        and database_window is not None
+        and (not require_database_window or database_window is not None)
     )
 
 
-def _primary_action_valid(spec: ActionSpec, action: Mapping[str, Any]) -> bool:
+def _primary_action_valid(
+    spec: ActionSpec,
+    action: Mapping[str, Any],
+    *,
+    require_database_window: bool,
+) -> bool:
     if action.get("status") != "passed":
         return False
     if spec.expected_error_code is None:
-        return _action_http_window_valid(action)
+        return _action_http_window_valid(
+            action,
+            require_database_window=require_database_window,
+        )
     started = action.get("started_monotonic_ms")
     finished = action.get("finished_monotonic_ms")
     return bool(
@@ -3188,7 +3200,11 @@ def _primary_report_valid(report: Mapping[str, Any]) -> bool:
             or len(action_rows) != len(actions)
             or set(action_rows) != set(action_specs)
             or not all(
-                _primary_action_valid(action_specs[action_id], action)
+                _primary_action_valid(
+                    action_specs[action_id],
+                    action,
+                    require_database_window=manifest.scenario == "cross-host",
+                )
                 for action_id, action in action_rows.items()
             )
             or not isinstance(checks, list)
@@ -3389,7 +3405,11 @@ def verify_evidence(
         actions = [
             action
             for action in report.get("actions", [])
-            if isinstance(action, Mapping) and _action_http_window_valid(action)
+            if isinstance(action, Mapping)
+            and _action_http_window_valid(
+                action,
+                require_database_window=False,
+            )
         ]
         overlaps = [
             max(

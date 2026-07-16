@@ -2456,6 +2456,11 @@ def test_verify_dual_card_recomputes_http_overlap() -> None:
     report = _dual_card_primary_report()
     assert verify_evidence([report], scenario="dual-card")["status"] == "passed"
 
+    fast_local = deepcopy(report)
+    fast_local["actions"][0]["http_started_database_probe_rtt_ms"] = 800.0
+    fast_local["actions"][0]["http_finished_database_probe_rtt_ms"] = 800.0
+    assert verify_evidence([fast_local], scenario="dual-card")["status"] == "passed"
+
     forged = deepcopy(report)
     forged["actions"][1]["http_started_monotonic_ms"] = 1001.0
     forged["actions"][1]["http_finished_monotonic_ms"] = 1500.0
