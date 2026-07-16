@@ -208,6 +208,10 @@ class Settings(BaseSettings):
     # 全局 mode 是上限 / 紧急回滚开关；每张卡仍必须在 resources JSON 中
     # 显式声明 mode，缺失按 off，防止全局切换意外提升所有卡。
     gpu_arbiter_mode: GPUArbiterMode = GPUArbiterMode.OFF
+    # P6 release latch.  False preserves the pre-rollout zero-DB-read dispatch
+    # behavior even when desired mode is enforce.  Once enabled, every GPU load
+    # must resolve the durable per-resource rollout row and fail closed on loss.
+    gpu_arbiter_rollout_enabled: bool = False
     # 保留 raw JSON，使 off/observe 能安全启动并在管理端展示配置
     # blocker。解析失败时 resources 为空，逐卡 desired mode 自动回落 off。
     gpu_arbiter_resources_json: Annotated[str, NoDecode] = "{}"

@@ -25,6 +25,10 @@ from app.services.gpu_arbiter import (
     GPUArbiterErrorCode,
     GPUDispatchGrant,
 )
+from app.services.gpu_arbiter_rollout import (
+    GPUArbiterRolloutDecision,
+    GPUArbiterRolloutUnavailable,
+)
 from app.services.ml_client import MLBackendClient, _get_semaphore
 
 
@@ -70,6 +74,11 @@ def enforce_dispatch_mode(monkeypatch):
         "app.services.ml_client.effective_gpu_arbiter_mode",
         lambda _resource_id: GPUArbiterMode.ENFORCE,
     )
+
+
+@pytest.fixture
+def durable_rollout_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "gpu_arbiter_rollout_enabled", True)
 
 
 def _transport(events: list[str], *, block: asyncio.Event | None = None):
@@ -441,6 +450,260 @@ async def test_desired_enforce_without_effective_enforce_keeps_legacy_wire(
         _backend(),
         dispatch_context_factory=unexpected_dispatch,  # type: ignore[arg-type]
     )
+
+    await client.warmup({})
+
+    assert events == ["http:/warmup"]
+
+
+@pytest.mark.asyncio
+async def test_durable_enforcing_rollout_enters_managed_authority(
+    monkeypatch, enforce_dispatch_mode, durable_rollout_enabled
+) -> None:
+    session_factory = object()
+    resolved: list[tuple[object, str]] = []
+    dispatches = 0
+
+    async def resolve(factory, resource_id):
+        resolved.append((factory, resource_id))
+        return GPUArbiterRolloutDecision(
+            resource_id=resource_id,
+            state="enforcing",
+            effective_mode=GPUArbiterMode.ENFORCE,
+            dispatch_mode=GPUArbiterMode.ENFORCE,
+            blocked_reason=None,
+            revision=3,
+        )
+
+    @asynccontextmanager
+    async def dispatch(_request):
+        nonlocal dispatches
+        dispatches += 1
+        yield GPUDispatchGrant(generation="11", admission_token="rollout-token")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers[GPU_GENERATION_HEADER] == "11"
+        assert request.headers[GPU_ADMISSION_TOKEN_HEADER] == "rollout-token"
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr("app.services.ml_client.resolve_gpu_arbiter_rollout", resolve)
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        _backend(),
+        shadow_session_factory=session_factory,  # type: ignore[arg-type]
+        dispatch_context_factory=dispatch,
+    )
+
+    await client.warmup({})
+
+    assert resolved == [(session_factory, RESOURCE_ID)]
+    assert dispatches == 1
+
+
+@pytest.mark.asyncio
+async def test_durable_rollout_transition_blocks_before_backend_http(
+    monkeypatch, enforce_dispatch_mode, durable_rollout_enabled
+) -> None:
+    async def resolve(_factory, resource_id):
+        return GPUArbiterRolloutDecision(
+            resource_id=resource_id,
+            state="promoting",
+            effective_mode=GPUArbiterMode.OFF,
+            dispatch_mode=None,
+            blocked_reason="gpu_rollout_promoting",
+            revision=2,
+        )
+
+    http_calls = 0
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal http_calls
+        http_calls += 1
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr("app.services.ml_client.resolve_gpu_arbiter_rollout", resolve)
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        _backend(),
+        shadow_session_factory=object(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as exc_info:
+        await client.warmup({})
+
+    assert exc_info.value.error_code == GPUArbiterErrorCode.NOT_READY.value
+    assert exc_info.value.detail["message"] == "gpu_rollout_promoting"
+    assert http_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_durable_rollout_database_loss_blocks_before_backend_http(
+    monkeypatch, enforce_dispatch_mode, durable_rollout_enabled
+) -> None:
+    async def unavailable(_factory, _resource_id):
+        raise GPUArbiterRolloutUnavailable("GPU rollout state unavailable")
+
+    http_calls = 0
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal http_calls
+        http_calls += 1
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(
+        "app.services.ml_client.resolve_gpu_arbiter_rollout", unavailable
+    )
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        _backend(),
+        shadow_session_factory=object(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as exc_info:
+        await client.reload()
+
+    assert exc_info.value.error_code == GPUArbiterErrorCode.UNAVAILABLE.value
+    assert http_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_durable_rollout_requires_session_factory_before_gpu_dispatch(
+    monkeypatch, enforce_dispatch_mode, durable_rollout_enabled
+) -> None:
+    http_calls = 0
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal http_calls
+        http_calls += 1
+        return httpx.Response(200, json={"ok": True})
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(_backend())
+
+    with pytest.raises(GPUArbiterDispatchError) as exc_info:
+        await client.reload()
+
+    assert exc_info.value.error_code == GPUArbiterErrorCode.NOT_READY.value
+    assert http_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_durable_rollout_unknown_resource_checks_global_boundary(
+    monkeypatch, enforce_dispatch_mode, durable_rollout_enabled
+) -> None:
+    backend = _backend()
+    backend.gpu_resource_id = "node-z/index:9"
+    boundary_checks = 0
+    http_calls = 0
+
+    async def resolve(_factory, resource_id):
+        return GPUArbiterRolloutDecision(
+            resource_id=resource_id,
+            state="uninitialized",
+            effective_mode=GPUArbiterMode.OFF,
+            dispatch_mode=GPUArbiterMode.OFF,
+            blocked_reason=None,
+            revision=None,
+        )
+
+    async def boundary(_factory):
+        nonlocal boundary_checks
+        boundary_checks += 1
+        return True
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal http_calls
+        http_calls += 1
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr("app.services.ml_client.resolve_gpu_arbiter_rollout", resolve)
+    monkeypatch.setattr("app.services.ml_client.gpu_rollout_boundary_active", boundary)
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        backend,
+        shadow_session_factory=object(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(GPUArbiterDispatchError) as exc_info:
+        await client.reload()
+
+    assert exc_info.value.error_code == GPUArbiterErrorCode.CONFIG_INVALID.value
+    assert boundary_checks == 1
+    assert http_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_durable_enforced_card_does_not_capture_known_off_card(
+    monkeypatch, durable_rollout_enabled
+) -> None:
+    card_b = "node-a/index:1"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        '{"node-a/index:0":{"node_id":"node-a",'
+        '"physical_device_token":"index:0","allocatable_mb":20000,'
+        '"mode":"enforce"},"node-a/index:1":{"node_id":"node-a",'
+        '"physical_device_token":"index:1","allocatable_mb":20000,'
+        '"mode":"off"}}',
+    )
+    backend = _backend()
+    backend.gpu_resource_id = card_b
+    events: list[str] = []
+
+    async def resolve(_factory, resource_id):
+        return GPUArbiterRolloutDecision(
+            resource_id=resource_id,
+            state="off",
+            effective_mode=GPUArbiterMode.OFF,
+            dispatch_mode=GPUArbiterMode.OFF,
+            blocked_reason=None,
+            revision=1,
+        )
+
+    async def unexpected_boundary(_factory):
+        raise AssertionError("known off card must not inherit another card's boundary")
+
+    monkeypatch.setattr("app.services.ml_client.resolve_gpu_arbiter_rollout", resolve)
+    monkeypatch.setattr(
+        "app.services.ml_client.gpu_rollout_boundary_active", unexpected_boundary
+    )
+    _patch_async_client(monkeypatch, _transport(events))
+    client = MLBackendClient(
+        backend,
+        shadow_session_factory=object(),  # type: ignore[arg-type]
+    )
+
+    await client.reload()
+
+    assert events == ["http:/reload"]
+
+
+@pytest.mark.asyncio
+async def test_durable_rollout_explicit_cpu_skips_rollout_database(
+    monkeypatch, durable_rollout_enabled
+) -> None:
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.OFF)
+    monkeypatch.setattr(settings, "gpu_arbiter_resources_json", "{}")
+    backend = _backend()
+    backend.gpu_resource_id = None
+    backend.vram_budget_mb = None
+    backend.state = "connected"
+    backend.last_checked_at = datetime.now(UTC)
+    backend.health_meta = {"compute": {"configured_device": "cpu"}}
+    events: list[str] = []
+
+    async def unexpected(*_args, **_kwargs):
+        raise AssertionError("explicit CPU dispatch must not read GPU rollout state")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.resolve_gpu_arbiter_rollout", unexpected
+    )
+    monkeypatch.setattr(
+        "app.services.ml_client.gpu_rollout_boundary_active", unexpected
+    )
+    _patch_async_client(monkeypatch, _transport(events))
+    client = MLBackendClient(backend)
 
     await client.warmup({})
 

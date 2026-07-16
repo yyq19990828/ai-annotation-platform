@@ -28,6 +28,13 @@ def test_gpu_arbiter_defaults_to_safe_off() -> None:
     assert config.gpu_arbiter_desired_mode("missing/index:0") is GPUArbiterMode.OFF
     assert config.gpu_arbiter_admission_timeout_seconds == 30
     assert config.gpu_arbiter_residency_cooldown_seconds == 30
+    assert config.gpu_arbiter_rollout_enabled is False
+
+
+def test_gpu_arbiter_rollout_release_gate_is_explicit() -> None:
+    config = Settings(_env_file=None, gpu_arbiter_rollout_enabled="true")
+
+    assert config.gpu_arbiter_rollout_enabled is True
 
 
 def test_gpu_arbiter_accepts_bounded_admission_timeout() -> None:

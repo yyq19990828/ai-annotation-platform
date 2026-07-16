@@ -42,6 +42,11 @@ from app.services.gpu_arbiter import (
     record_gpu_shadow_dispatch,
     validate_gpu_claim,
 )
+from app.services.gpu_arbiter_rollout import (
+    GPUArbiterRolloutUnavailable,
+    gpu_rollout_boundary_active,
+    resolve_gpu_arbiter_rollout,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -195,11 +200,57 @@ class MLBackendClient:
 
         resources = settings.gpu_arbiter_resources
         resource_is_configured = self.gpu_resource_id in resources
-        effective_mode = (
-            effective_gpu_arbiter_mode(self.gpu_resource_id)
-            if self.gpu_resource_id is not None
-            else GPUArbiterMode.OFF
+        unclaimed_explicit_cpu = (
+            self.gpu_resource_id is None
+            and self.vram_budget_mb is None
+            and backend_is_trusted_explicit_cpu(self._backend)
         )
+        rollout_boundary_active = False
+        if settings.gpu_arbiter_rollout_enabled:
+            if unclaimed_explicit_cpu:
+                effective_mode = GPUArbiterMode.OFF
+            else:
+                if self._shadow_session_factory is None:
+                    raise GPUArbiterDispatchError(
+                        GPUArbiterErrorCode.NOT_READY,
+                        message="GPU rollout resolver is not configured",
+                    )
+                try:
+                    if self.gpu_resource_id is not None:
+                        rollout = await resolve_gpu_arbiter_rollout(
+                            self._shadow_session_factory,
+                            self.gpu_resource_id,
+                        )
+                        if rollout.dispatch_blocked:
+                            raise GPUArbiterDispatchError(
+                                GPUArbiterErrorCode.NOT_READY,
+                                message=rollout.blocked_reason
+                                or "GPU rollout transition is not ready",
+                            )
+                        assert rollout.dispatch_mode is not None
+                        effective_mode = rollout.dispatch_mode
+                        if not resource_is_configured:
+                            rollout_boundary_active = (
+                                await gpu_rollout_boundary_active(
+                                    self._shadow_session_factory
+                                )
+                            )
+                    else:
+                        effective_mode = GPUArbiterMode.OFF
+                        rollout_boundary_active = await gpu_rollout_boundary_active(
+                            self._shadow_session_factory
+                        )
+                except GPUArbiterRolloutUnavailable as exc:
+                    raise GPUArbiterDispatchError(
+                        GPUArbiterErrorCode.UNAVAILABLE,
+                        message=str(exc),
+                    ) from exc
+        else:
+            effective_mode = (
+                effective_gpu_arbiter_mode(self.gpu_resource_id)
+                if self.gpu_resource_id is not None
+                else GPUArbiterMode.OFF
+            )
         if effective_mode is GPUArbiterMode.ENFORCE:
             try:
                 validate_gpu_claim(
@@ -252,15 +303,14 @@ class MLBackendClient:
                 raise boundary_error
             return
 
-        unclaimed_explicit_cpu = (
-            self.gpu_resource_id is None
-            and self.vram_budget_mb is None
-            and backend_is_trusted_explicit_cpu(self._backend)
-        )
         if (
             not resource_is_configured
             and not unclaimed_explicit_cpu
-            and any_gpu_resource_effectively_enforced()
+            and (
+                rollout_boundary_active
+                if settings.gpu_arbiter_rollout_enabled
+                else any_gpu_resource_effectively_enforced()
+            )
         ):
             raise GPUArbiterDispatchError(
                 GPUArbiterErrorCode.CONFIG_INVALID,

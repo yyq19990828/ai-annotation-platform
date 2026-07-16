@@ -503,6 +503,7 @@ PID 1 看到的 `NVIDIA_VISIBLE_DEVICES` 重写为 `void`，而 CUDA 又会把�
 
 ```dotenv
 GPU_ARBITER_MODE=off
+GPU_ARBITER_ROLLOUT_ENABLED=false
 GPU_ARBITER_RESOURCES_JSON={"gpu-node-a/GPU-xxx":{"node_id":"gpu-node-a","physical_device_token":"GPU-xxx","allocatable_mb":22000,"mode":"off"}}
 GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS=30
 GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS=30
@@ -514,6 +515,11 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 `allocatable_mb` 是扣除驱动 / CUDA context、桌面或系统进程、平台外占用和安全余量后的可分配
 容量，不是显卡标称总显存。`GPU_ARBITER_MODE` 是全局上限，resource 的 `mode` 是逐卡
 开关；期望模式取两者中更保守的一个，resource 未显式声明 mode 时按 `off`。静态配置
+`GPU_ARBITER_ROLLOUT_ENABLED` 是独立的发布闩，默认 `false`。关闭时即使 desired 为
+`enforce`，实际模式也保持 `off`，且派发不读取 rollout 表；开启后，逐资源持久状态缺失、
+处于 promotion/demotion、被阻断或数据库不可读都必须在 Backend HTTP 前 fail-closed。
+该开关本身不等于完成 promotion，也不能绕过 Redis ready 与 Backend gate 证明。
+静态配置
 层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量
 是允许驱逐的弹性超售告警。管理 API 会分开显示 desired 与 effective mode；
 `GPU_ARBITER_ADMISSION_TIMEOUT_SECONDS` 默认 30 秒，是 card/backend FIFO 共用的独立
