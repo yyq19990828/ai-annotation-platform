@@ -16,9 +16,12 @@ from aap_protocol_v2.lifecycle import (
     GenerationTransitionRequest,
     LifecycleModeRequest,
     LifecycleModeResponse,
+    LifecycleResetRequest,
+    LifecycleResetResponse,
     ManagedUnloadResponse,
     parse_drain_transition_response_json,
     parse_lifecycle_mode_response_json,
+    parse_lifecycle_reset_response_json,
     parse_managed_unload_response_json,
 )
 from fastapi import HTTPException
@@ -622,6 +625,40 @@ class MLBackendClient:
                 )
             _raise_for_backend_status(resp)
             return parse_lifecycle_mode_response_json(resp.content)
+
+    async def lifecycle_reset(
+        self,
+        request: LifecycleResetRequest,
+        *,
+        admission_token: str,
+    ) -> LifecycleResetResponse:
+        """Send one signed full-pool reset outside workload dispatch."""
+
+        if (
+            not isinstance(admission_token, str)
+            or not admission_token
+            or admission_token.strip() != admission_token
+        ):
+            raise ValueError("admission_token must be non-empty and canonical")
+        headers = self._headers()
+        headers[GPU_ADMISSION_TOKEN_HEADER] = admission_token
+        async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/lifecycle/reset",
+                json=request.model_dump(mode="json"),
+                headers=headers,
+            )
+            if resp.status_code < 200 or resp.status_code >= 300:
+                if resp.status_code >= 400:
+                    _raise_for_backend_status(resp)
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "ML backend control endpoint returned a non-success status"
+                    ),
+                )
+            _raise_for_backend_status(resp)
+            return parse_lifecycle_reset_response_json(resp.content)
 
     async def _managed_generation_transition(
         self,

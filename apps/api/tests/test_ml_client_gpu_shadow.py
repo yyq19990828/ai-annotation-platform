@@ -15,6 +15,7 @@ from aap_protocol_v2.lifecycle import (
     GPU_ADMISSION_TOKEN_HEADER,
     GPU_GENERATION_HEADER,
     LifecycleModeRequest,
+    LifecycleResetRequest,
 )
 from fastapi import HTTPException
 
@@ -1244,6 +1245,20 @@ def _managed_transition_residency(
     return payload
 
 
+def _lifecycle_reset_ack_payload() -> dict:
+    payload = _legacy_mode_ack_payload()
+    return {
+        "ok": True,
+        "control_epoch": "9",
+        "unloaded": True,
+        "unloaded_count": 1,
+        "residency": {
+            **payload["residency"],
+            "control_epoch": "9",
+        },
+    }
+
+
 def _drain_ack_payload(
     *,
     cancelled: bool = False,
@@ -1341,6 +1356,33 @@ async def test_lifecycle_mode_rejects_redirect_with_valid_ack_body(monkeypatch) 
         )
 
     assert exc_info.value.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_reset_uses_only_signed_control_header(monkeypatch) -> None:
+    def unexpected_dispatch(_request):
+        raise AssertionError("lifecycle reset must remain outside workload dispatch")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/lifecycle/reset"
+        assert request.headers[GPU_ADMISSION_TOKEN_HEADER] == "signed-reset-token"
+        assert GPU_GENERATION_HEADER not in request.headers
+        assert json.loads(request.content) == {"control_epoch": "9"}
+        return httpx.Response(200, json=_lifecycle_reset_ack_payload())
+
+    _patch_async_client(monkeypatch, httpx.MockTransport(handler))
+    client = MLBackendClient(
+        _backend(),
+        dispatch_context_factory=unexpected_dispatch,  # type: ignore[arg-type]
+    )
+
+    response = await client.lifecycle_reset(
+        LifecycleResetRequest(control_epoch="9"),
+        admission_token="signed-reset-token",
+    )
+
+    assert response.unloaded is True
+    assert response.control_epoch == "9"
 
 
 @pytest.mark.parametrize(

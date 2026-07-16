@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,24 @@ class GPUBackendFence(Base):
         CheckConstraint(
             "runtime_epoch_high_water >= 0",
             name="ck_gpu_backend_fences_runtime_epoch_nonnegative",
+        ),
+        CheckConstraint(
+            "(rollout_control_operation IS NULL "
+            "AND rollout_control_transition_id IS NULL "
+            "AND rollout_control_epoch IS NULL "
+            "AND rollout_control_membership_epoch IS NULL "
+            "AND rollout_control_boot_id IS NULL "
+            "AND rollout_control_token_expires_at IS NULL) OR "
+            "(rollout_control_operation IN "
+            "('reset', 'mode_enforce', 'mode_legacy') "
+            "AND rollout_control_transition_id IS NOT NULL "
+            "AND rollout_control_epoch > 0 "
+            "AND rollout_control_membership_epoch > 0 "
+            "AND rollout_control_boot_id IS NOT NULL "
+            "AND rollout_control_boot_id = btrim(rollout_control_boot_id) "
+            "AND rollout_control_boot_id <> '' "
+            "AND rollout_control_token_expires_at IS NOT NULL)",
+            name="ck_gpu_backend_fences_rollout_control_shape",
         ),
     )
 
@@ -48,6 +66,27 @@ class GPUBackendFence(Base):
     # Redis continuity loss may recover only after this horizon and post-horizon
     # live-idle evidence (or a stronger signed reset).
     token_expiry_high_water: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Exact latest rollout control intent.  Keeping the operation beside the
+    # monotonic high-water lets a restarted worker replay reset/mode with the
+    # same epoch and distinguish a reset ACK from an older legacy-mode ACK.
+    rollout_control_operation: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    rollout_control_transition_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    rollout_control_epoch: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    rollout_control_membership_epoch: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    rollout_control_boot_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    rollout_control_token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

@@ -35,6 +35,7 @@ from aap_protocol_v2.lifecycle import (
     managed_lifecycle_capability_sha256,
     parse_drain_transition_response_json,
     parse_lifecycle_mode_response_json,
+    parse_lifecycle_reset_response_json,
     parse_gpu_admission_header_values,
     parse_gpu_control_token_header_values,
     parse_managed_unload_response_json,
@@ -639,6 +640,50 @@ def test_remote_mode_response_parser_rejects_partial_or_coerced_json(mutate) -> 
 def test_remote_mode_response_parser_rejects_invalid_or_duplicate_json(raw) -> None:
     with pytest.raises(ValueError, match="lifecycle mode"):
         parse_lifecycle_mode_response_json(raw)
+
+
+def _lifecycle_reset_response_payload() -> dict:
+    return LifecycleResetResponse(
+        control_epoch="44",
+        unloaded=True,
+        unloaded_count=1,
+        residency=_residency(
+            state="unloaded",
+            gpu_loaded=False,
+            evictable=False,
+            generation=None,
+            lifecycle_gate="legacy",
+            control_epoch="44",
+            pools={
+                "models": {"resident": False, "device": None, "provider": None},
+            },
+        ),
+    ).model_dump(mode="json")
+
+
+def test_remote_reset_response_parser_accepts_complete_strict_json() -> None:
+    payload = _lifecycle_reset_response_payload()
+
+    parsed = parse_lifecycle_reset_response_json(json.dumps(payload))
+
+    assert parsed.model_dump(mode="json") == payload
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda payload: payload.pop("unloaded"),
+        lambda payload: payload.update({"unloaded": "true"}),
+        lambda payload: payload["residency"].update({"builders": "0"}),
+        lambda payload: payload.update({"unexpected": True}),
+    ),
+)
+def test_remote_reset_response_parser_rejects_partial_or_coerced_json(mutate) -> None:
+    payload = _lifecycle_reset_response_payload()
+    mutate(payload)
+
+    with pytest.raises(ValueError, match="lifecycle reset"):
+        parse_lifecycle_reset_response_json(json.dumps(payload))
 
 
 def _drain_transition_response_payload() -> dict:

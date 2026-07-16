@@ -315,6 +315,9 @@ class LifecycleModeResponse(BaseModel):
 
 
 _LIFECYCLE_MODE_RESPONSE_KEYS = frozenset({"ok", "gate", "control_epoch", "residency"})
+_LIFECYCLE_RESET_RESPONSE_KEYS = frozenset(
+    {"ok", "control_epoch", "unloaded", "unloaded_count", "residency"}
+)
 _DRAIN_TRANSITION_RESPONSE_KEYS = frozenset(
     {
         "ok",
@@ -482,6 +485,26 @@ class LifecycleResetResponse(BaseModel):
             ):
                 raise ValueError("successful reset requires trusted unloaded residency")
         return self
+
+
+def parse_lifecycle_reset_response_json(raw: str | bytes) -> LifecycleResetResponse:
+    """Strictly parse one untrusted remote ``/lifecycle/reset`` response."""
+
+    response = _parse_managed_response_payload(
+        raw,
+        response_name="lifecycle reset response",
+        response_keys=_LIFECYCLE_RESET_RESPONSE_KEYS,
+    )
+    try:
+        canonical = json.dumps(
+            response,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        return LifecycleResetResponse.model_validate_json(canonical, strict=True)
+    except (TypeError, ValueError):
+        raise ValueError("lifecycle reset response is invalid") from None
 
 
 class DrainTransitionResponse(BaseModel):
@@ -807,6 +830,7 @@ __all__ = [
     "match_gpu_health_challenge",
     "managed_lifecycle_capability_sha256",
     "parse_lifecycle_mode_response_json",
+    "parse_lifecycle_reset_response_json",
     "parse_drain_transition_response_json",
     "parse_gpu_admission_header_values",
     "parse_gpu_control_token_header_values",
