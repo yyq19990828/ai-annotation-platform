@@ -9,6 +9,7 @@ import pytest
 
 from app.services.raster_mask_storage import (
     load_coco_rle,
+    lock_raster_mask_references,
     store_coco_rle,
     validate_mask_geometry_for_task,
 )
@@ -65,6 +66,30 @@ def test_load_coco_rle_rejects_digest_mismatch():
     storage.client.get_object.return_value = {"Body": stream}
     with pytest.raises(ValueError, match="digest mismatch"):
         load_coco_rle(reference, storage=storage)
+
+
+@pytest.mark.asyncio
+async def test_reference_locks_are_sorted_deduplicated_and_verified(monkeypatch):
+    import app.services.raster_mask_storage as module
+
+    db = SimpleNamespace(execute=AsyncMock())
+    refs = [
+        {"object_key": "raster-masks/sha256/b.json", "sha256": "b"},
+        {"object_key": "raster-masks/sha256/a.json", "sha256": "a"},
+        {"object_key": "raster-masks/sha256/b.json", "sha256": "b"},
+    ]
+    load = MagicMock()
+    monkeypatch.setattr(module, "load_coco_rle", load)
+
+    assert await lock_raster_mask_references(db, {"items": refs}) == [
+        "raster-masks/sha256/a.json",
+        "raster-masks/sha256/b.json",
+    ]
+    assert [call.args[1]["key"] for call in db.execute.await_args_list] == [
+        "aap:raster-mask:raster-masks/sha256/a.json",
+        "aap:raster-mask:raster-masks/sha256/b.json",
+    ]
+    assert [call.args[0]["sha256"] for call in load.call_args_list] == ["a", "b"]
 
 
 @pytest.mark.asyncio

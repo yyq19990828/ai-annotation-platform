@@ -28,8 +28,12 @@ from app.schemas.aap_json import (
 )
 from app.schemas._jsonb_types import Geometry
 from app.services.annotation_track_identity import prepare_compact_track_identity
-from app.services.raster_mask_storage import validate_mask_geometry_for_task
-from app.services.raster_mask_storage import build_rle_reference, store_coco_rle
+from app.services.raster_mask_storage import (
+    build_rle_reference,
+    lock_raster_mask_references,
+    store_coco_rle,
+    validate_mask_geometry_for_task,
+)
 from app.services.task_matcher import resolve_task
 
 logger = logging.getLogger(__name__)
@@ -250,14 +254,16 @@ async def import_aap_json_annotations(
             if entry.user_id is not None:
                 attributes["_imported_user_id"] = str(entry.user_id)
 
-            if not dry_run:
-                for mask_object in mask_objects:
-                    store_coco_rle(mask_object)
-
             # 7. dry_run: 只计数不入库
             if dry_run:
                 result.imported += 1
                 continue
+
+            if mask_objects:
+                await lock_raster_mask_references(db, entry.geometry, verify=False)
+                for mask_object in mask_objects:
+                    store_coco_rle(mask_object)
+                await lock_raster_mask_references(db, entry.geometry)
 
             # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
             #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）

@@ -4,6 +4,7 @@ import hashlib
 import json
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.dataset import DatasetItem
@@ -13,6 +14,41 @@ from app.utils.raster_mask_rle import validate_coco_rle
 
 MAX_RLE_OBJECT_BYTES = 4 * 1024 * 1024
 RLE_OBJECT_PREFIX = "raster-masks/sha256"
+
+
+def _mask_references(value: Any) -> list[dict[str, Any]]:
+    references: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        key = value.get("object_key")
+        if isinstance(key, str) and key.startswith(f"{RLE_OBJECT_PREFIX}/"):
+            references.append(value)
+        for child in value.values():
+            references.extend(_mask_references(child))
+    elif isinstance(value, list):
+        for child in value:
+            references.extend(_mask_references(child))
+    return references
+
+
+async def lock_raster_mask_references(
+    db: AsyncSession,
+    value: Any,
+    *,
+    verify: bool = True,
+) -> list[str]:
+    """Serialize reference commits with GC until the current DB transaction ends."""
+    references = {
+        str(reference["object_key"]): reference
+        for reference in _mask_references(value)
+    }
+    for key in sorted(references):
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"aap:raster-mask:{key}"},
+        )
+        if verify:
+            load_coco_rle(references[key])
+    return sorted(references)
 
 
 async def validate_mask_geometry_for_task(

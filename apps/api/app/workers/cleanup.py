@@ -15,6 +15,7 @@ from sqlalchemy import select, text, update
 from app.db.models.annotation_comment import AnnotationComment
 from app.workers._db import task_session
 from app.services.storage import storage_service
+from app.services.raster_mask_storage import lock_raster_mask_references
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -95,6 +96,31 @@ _MASK_REFERENCE_QUERIES = (
     """,
 )
 
+_MASK_REFERENCE_EXISTS_QUERIES = (
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM annotations, LATERAL jsonb_path_query(geometry, '$.**.object_key') value
+        WHERE is_active IS TRUE AND value #>> '{}' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM predictions, LATERAL jsonb_path_query(result, '$.**.object_key') value
+        WHERE value #>> '{}' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM video_tracker_jobs,
+             LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
+        WHERE staged_result IS NOT NULL AND value #>> '{}' = :key
+    )
+    """,
+)
+
 
 async def _referenced_raster_mask_keys(db) -> set[str]:
     referenced: set[str] = set()
@@ -102,6 +128,13 @@ async def _referenced_raster_mask_keys(db) -> set[str]:
         rows = (await db.execute(text(query))).scalars().all()
         referenced.update(str(key) for key in rows if key)
     return referenced
+
+
+async def _is_raster_mask_key_referenced(db, key: str) -> bool:
+    for query in _MASK_REFERENCE_EXISTS_QUERIES:
+        if bool((await db.execute(text(query), {"key": key})).scalar()):
+            return True
+    return False
 
 
 def _eligible_raster_mask_objects(
@@ -126,21 +159,29 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     async with task_session() as db:
         referenced = await _referenced_raster_mask_keys(db)
-
-    candidates = storage_service.list_objects("raster-masks/sha256/")
-    deletable = _eligible_raster_mask_objects(candidates, referenced, cutoff)
-    deleted = 0
-    errors = 0
-    if not dry_run:
-        for item in deletable:
-            try:
-                storage_service.delete_object(item["key"])
-                deleted += 1
-            except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure
-                errors += 1
-                log.warning(
-                    "delete unreferenced raster mask %s failed: %s", item["key"], exc
-                )
+        candidates = storage_service.list_objects("raster-masks/sha256/")
+        deletable = _eligible_raster_mask_objects(candidates, referenced, cutoff)
+        deleted = 0
+        errors = 0
+        if not dry_run:
+            for item in deletable:
+                try:
+                    key = item["key"]
+                    await lock_raster_mask_references(
+                        db,
+                        {"object_key": key},
+                        verify=False,
+                    )
+                    if not await _is_raster_mask_key_referenced(db, key):
+                        storage_service.delete_object(key)
+                        deleted += 1
+                    await db.commit()
+                except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure
+                    await db.rollback()
+                    errors += 1
+                    log.warning(
+                        "delete unreferenced raster mask %s failed: %s", item["key"], exc
+                    )
     result = {
         "dry_run": dry_run,
         "referenced": len(referenced),

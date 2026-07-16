@@ -28,6 +28,7 @@ from app.services.raster_mask_storage import (
     load_coco_rle,
     store_coco_rle,
     validate_mask_geometry_for_task,
+    lock_raster_mask_references,
 )
 from app.services.video_tracker_adapters import (
     TrackerContext,
@@ -775,6 +776,13 @@ async def accept_tracker_job(
             await validate_mask_geometry_for_task(
                 db, task, created_annotation.geometry or {}
             )
+        await lock_raster_mask_references(
+            db,
+            [
+                *(src.geometry or {} for src in source_map.values()),
+                *(annotation.geometry or {} for annotation in created),
+            ],
+        )
     except ValueError:
         await db.rollback()
         raise
@@ -1080,6 +1088,7 @@ async def run_tracker_job(
                     results.extend(window_results)
                     if results:
                         _stage_tracker_results(job, results, grid_step, output_geometry)
+                        await lock_raster_mask_references(db, job.staged_result)
                     job.status = VideoTrackerJobStatus.CANCELLED.value
                     job.completed_at = job.completed_at or _now()
                     await db.commit()
@@ -1129,6 +1138,7 @@ async def run_tracker_job(
             # v0.21.28 · 取消也暂存部分结果 (候选)。
             if results:
                 _stage_tracker_results(job, results, grid_step, output_geometry)
+                await lock_raster_mask_references(db, job.staged_result)
             job.status = VideoTrackerJobStatus.CANCELLED.value
             job.completed_at = job.completed_at or _now()
             await db.commit()
@@ -1138,6 +1148,7 @@ async def run_tracker_job(
         # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
         # PENDING_REVIEW = 追踪完、结果已暂存、committed annotations 未改。
         _stage_tracker_results(job, results, grid_step, output_geometry)
+        await lock_raster_mask_references(db, job.staged_result)
         job.status = VideoTrackerJobStatus.PENDING_REVIEW.value
         job.completed_at = _now()
         await db.commit()
