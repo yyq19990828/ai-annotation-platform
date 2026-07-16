@@ -197,6 +197,7 @@ class GPUTransitionResult:
         "missing",
         "stale_generation",
         "invalid_transition",
+        "branch_conflict",
         "active_leases",
         "owner_mismatch",
         "not_ready",
@@ -256,6 +257,24 @@ class GPUIdleEvictionResult:
     owner_expires_at_ms: int | None = None
     owner_hard_deadline_ms: int | None = None
     retry_at_ms: int | None = None
+    idempotent: bool = False
+
+
+@dataclass(frozen=True)
+class GPUEvictionBranchResult:
+    status: Literal[
+        "armed",
+        "missing",
+        "stale_generation",
+        "owner_mismatch",
+        "branch_conflict",
+        "invalid_transition",
+        "not_ready",
+        "ledger_corrupt",
+    ]
+    branch: Literal["cancel", "unload"] | None = None
+    state: GPUAllocationState | None = None
+    generation: str | None = None
     idempotent: bool = False
 
 
@@ -1769,11 +1788,19 @@ if transition_raw then
      or not valid_generation(transition.generation)
      or type(transition.operation) ~= 'string' or transition.operation == ''
      or type(transition.require_idle) ~= 'boolean'
+     or (transition.eviction_branch ~= nil
+       and transition.eviction_branch ~= 'cancel'
+       and transition.eviction_branch ~= 'unload')
      or not valid_integer(transition.created_at_ms, 1, 9007199254740991)
-     or not valid_integer(transition.expires_at_ms, 1, 9007199254740991) then
+     or not valid_integer(transition.expires_at_ms, 1, 9007199254740991)
+     or (transition.hard_deadline_ms ~= nil
+       and (not valid_integer(
+         transition.hard_deadline_ms, 1, 9007199254740991)
+         or transition.expires_at_ms > transition.hard_deadline_ms)) then
     return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=0, committed_mb=current_committed, purged_leases=0, reason='transition_invalid'})
   end
-  if transition.expires_at_ms > transition_now then
+  if transition.eviction_branch ~= nil
+     or transition.expires_at_ms > transition_now then
     local current_deadline = tonumber(
       redis.call('HGET', KEYS[1], 'reconcile_deadline_ms') or '0')
     local current_ready = redis.call('HGET', KEYS[1], 'bootstrap_state') == 'ready'
@@ -1787,10 +1814,19 @@ if transition_raw then
 elseif transition_mirror ~= '' then
   local mirrored_transition = decode(transition_mirror)
   if not mirrored_transition
-     or not valid_integer(mirrored_transition.expires_at_ms, 1, 9007199254740991) then
+     or not valid_integer(mirrored_transition.expires_at_ms, 1, 9007199254740991)
+     or (mirrored_transition.eviction_branch ~= nil
+       and mirrored_transition.eviction_branch ~= 'cancel'
+       and mirrored_transition.eviction_branch ~= 'unload')
+     or (mirrored_transition.hard_deadline_ms ~= nil
+       and (not valid_integer(
+         mirrored_transition.hard_deadline_ms, 1, 9007199254740991)
+         or mirrored_transition.expires_at_ms
+           > mirrored_transition.hard_deadline_ms)) then
     return cjson.encode({status='ledger_corrupt', ready=false, ledger_revision=tonumber(expected_revision), committed_mb=current_committed, purged_leases=0, reason='transition_mirror_invalid'})
   end
-  if mirrored_transition.expires_at_ms > transition_now then
+  if mirrored_transition.eviction_branch ~= nil
+     or mirrored_transition.expires_at_ms > transition_now then
     return cjson.encode({status='partial_state', ready=false, ledger_revision=tonumber(expected_revision), committed_mb=current_committed, purged_leases=0, reason='transition_key_missing_before_expiry'})
   end
 end
@@ -2407,7 +2443,10 @@ if transition_mirror == false or (transition_raw and transition_raw ~= transitio
 end
 if transition_raw then
   local transition = decode(transition_raw)
-  if not transition or not current_domains.known[transition.backend_id] then
+  if not transition or not current_domains.known[transition.backend_id]
+     or (transition.eviction_branch ~= nil
+       and transition.eviction_branch ~= 'cancel'
+       and transition.eviction_branch ~= 'unload') then
     return response('ledger_corrupt', tonumber(current_revision), incarnation,
       target_domains, 'transition_domain_invalid')
   end
@@ -2749,6 +2788,9 @@ local function validate_runtime_state(ledger_domains, key_domains, target_id, po
        or not integrity_valid_generation(transition.generation)
        or type(transition.operation) ~= 'string' or transition.operation == ''
        or type(transition.require_idle) ~= 'boolean'
+       or (transition.eviction_branch ~= nil
+         and transition.eviction_branch ~= 'cancel'
+         and transition.eviction_branch ~= 'unload')
        or not integrity_valid_integer(
             transition.created_at_ms, 1, 9007199254740991)
        or not integrity_valid_integer(
@@ -3177,6 +3219,9 @@ if transition_raw then
      or not integrity_valid_generation(transition.generation)
      or type(transition.operation) ~= 'string' or transition.operation == ''
      or type(transition.require_idle) ~= 'boolean'
+     or (transition.eviction_branch ~= nil
+       and transition.eviction_branch ~= 'cancel'
+       and transition.eviction_branch ~= 'unload')
      or not integrity_valid_integer(
           transition.created_at_ms, 1, 9007199254740991)
      or not integrity_valid_integer(
@@ -3582,6 +3627,9 @@ local function inspect_ledger(
        or not integrity_valid_generation(transition.generation)
        or type(transition.operation) ~= 'string' or transition.operation == ''
        or type(transition.require_idle) ~= 'boolean'
+       or (transition.eviction_branch ~= nil
+         and transition.eviction_branch ~= 'cancel'
+         and transition.eviction_branch ~= 'unload')
        or not integrity_valid_integer(transition.created_at_ms, 1, 9007199254740991)
        or not integrity_valid_integer(transition.expires_at_ms, 1, 9007199254740991)
        or (transition.hard_deadline_ms ~= nil
@@ -3592,11 +3640,17 @@ local function inspect_ledger(
       return nil, 'ledger_corrupt', 'transition_mirror_mismatch'
     end
     local transition_now = integrity_now_ms()
-    if transition.expires_at_ms <= transition_now then transition = nil end
+    if transition.eviction_branch == nil
+       and transition.expires_at_ms <= transition_now then
+      transition = nil
+    end
   elseif transition_mirror ~= '' then
     local mirrored = integrity_decode(transition_mirror)
     if not mirrored
        or not integrity_valid_integer(mirrored.expires_at_ms, 1, 9007199254740991)
+       or (mirrored.eviction_branch ~= nil
+         and mirrored.eviction_branch ~= 'cancel'
+         and mirrored.eviction_branch ~= 'unload')
        or (mirrored.hard_deadline_ms ~= nil
          and (not integrity_valid_integer(
            mirrored.hard_deadline_ms, 1, 9007199254740991)
@@ -3604,7 +3658,8 @@ local function inspect_ledger(
       integrity_fault(resource_id, 'transition_mirror_invalid', now)
       return nil, 'ledger_corrupt', 'transition_mirror_invalid'
     end
-    if mirrored.expires_at_ms > integrity_now_ms() then
+    if mirrored.eviction_branch ~= nil
+       or mirrored.expires_at_ms > integrity_now_ms() then
       integrity_fault(resource_id, 'transition_key_missing_before_expiry', now)
       return nil, 'ledger_corrupt', 'transition_key_missing_before_expiry'
     end
@@ -4729,11 +4784,15 @@ else
     return cjson.encode({status='ledger_corrupt'})
   elseif not raw and mirror and mirror ~= '' then
     local mirrored = decode(mirror)
-    if not mirrored or type(mirrored.expires_at_ms) ~= 'number' then
+    if not mirrored or type(mirrored.expires_at_ms) ~= 'number'
+       or (mirrored.eviction_branch ~= nil
+         and mirrored.eviction_branch ~= 'cancel'
+         and mirrored.eviction_branch ~= 'unload') then
       integrity_fault(ARGV[2], 'transition_mirror_invalid', now)
       return cjson.encode({status='ledger_corrupt'})
     end
-    if mirrored.expires_at_ms > now_ms() then
+    if mirrored.eviction_branch ~= nil
+       or mirrored.expires_at_ms > now_ms() then
       integrity_fault(ARGV[2], 'transition_key_missing_before_expiry', now)
       return cjson.encode({status='ledger_corrupt'})
     end
@@ -4746,15 +4805,28 @@ if current and (
     or not valid_generation(current.generation)
     or type(current.operation) ~= 'string' or current.operation == ''
     or type(current.require_idle) ~= 'boolean'
+    or (current.eviction_branch ~= nil
+      and current.eviction_branch ~= 'cancel'
+      and current.eviction_branch ~= 'unload')
     or type(current.created_at_ms) ~= 'number'
     or type(current.expires_at_ms) ~= 'number'
     or (current.hard_deadline_ms ~= nil
       and (type(current.hard_deadline_ms) ~= 'number'
         or current.expires_at_ms > current.hard_deadline_ms))) then
-  return redis.error_reply('gpu arbiter transition decode failed')
+  integrity_fault(ARGV[2], 'transition_invalid', now)
+  return cjson.encode({status='ledger_corrupt'})
 end
 now = now_ms()
-if current and current.expires_at_ms <= now then current = nil end
+if current and current.eviction_branch == nil
+   and current.expires_at_ms <= now then
+  current = nil
+end
+if current and current.eviction_branch ~= nil
+   and current.hard_deadline_ms ~= nil
+   and current.hard_deadline_ms <= now
+   and ARGV[1] ~= 'release' then
+  return cjson.encode({status='invalid_transition', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
+end
 
 local function validate_acquire_target()
   local allocation_raw = redis.call('HGET', KEYS[2], ARGV[3])
@@ -4835,8 +4907,12 @@ if ARGV[1] == 'acquire' then
         current.expires_at_ms = current.hard_deadline_ms
       end
       local encoded = cjson.encode(current)
-      redis.call('SET', KEYS[4], encoded, 'PXAT',
-        tostring(current.expires_at_ms + 1000))
+      if current.eviction_branch ~= nil then
+        redis.call('SET', KEYS[4], encoded)
+      else
+        redis.call('SET', KEYS[4], encoded, 'PXAT',
+          tostring(current.expires_at_ms + 1000))
+      end
       redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
       redis.call('HSET', KEYS[1], 'transition_mirror', encoded)
       return cjson.encode({status='acquired', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms, idempotent=true})
@@ -4902,8 +4978,12 @@ if ARGV[1] == 'revalidate' then
     current.expires_at_ms = current.hard_deadline_ms
   end
   local encoded = cjson.encode(current)
-  redis.call('SET', KEYS[4], encoded, 'PXAT',
-    tostring(current.expires_at_ms + 1000))
+  if current.eviction_branch ~= nil then
+    redis.call('SET', KEYS[4], encoded)
+  else
+    redis.call('SET', KEYS[4], encoded, 'PXAT',
+      tostring(current.expires_at_ms + 1000))
+  end
   redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
   redis.call('HSET', KEYS[1], 'transition_mirror', encoded)
   return cjson.encode({status='renewed', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
@@ -4919,12 +4999,30 @@ elseif ARGV[1] == 'heartbeat' then
     current.expires_at_ms = current.hard_deadline_ms
   end
   local encoded = cjson.encode(current)
-  redis.call('SET', KEYS[4], encoded, 'PXAT',
-    tostring(current.expires_at_ms + 1000))
+  if current.eviction_branch ~= nil then
+    redis.call('SET', KEYS[4], encoded)
+  else
+    redis.call('SET', KEYS[4], encoded, 'PXAT',
+      tostring(current.expires_at_ms + 1000))
+  end
   redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
   redis.call('HSET', KEYS[1], 'transition_mirror', encoded)
   return cjson.encode({status='renewed', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
 elseif ARGV[1] == 'release' then
+  if current.eviction_branch ~= nil then
+    local allocation = decode(redis.call('HGET', KEYS[2], ARGV[3]))
+    if not allocation or not valid_allocation_generation(allocation)
+       or allocation.backend_id ~= ARGV[3] then
+      return cjson.encode({status='ledger_corrupt', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
+    end
+    local terminal = (current.eviction_branch == 'cancel'
+        and (allocation.state == 'resident' or allocation.state == 'unknown'))
+      or (current.eviction_branch == 'unload'
+        and (allocation.state == 'unloaded' or allocation.state == 'unknown'))
+    if not terminal then
+      return cjson.encode({status='invalid_transition', owner_id=current.owner_id, generation=current.generation, expires_at_ms=current.expires_at_ms})
+    end
+  end
   redis.call('DEL', KEYS[4])
   redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
   redis.call('HSET', KEYS[1], 'transition_mirror', '')
@@ -5196,6 +5294,86 @@ return response('selected', 'idle_victim_selected', committed, shortfall,
 )
 
 
+_ARM_EVICTION_CANCEL_LUA = (
+    _LEDGER_INTEGRITY_LUA
+    + r"""
+local function response(status, branch, state, generation, idempotent)
+  return cjson.encode({
+    status=status, branch=branch or cjson.null, state=state or cjson.null,
+    generation=generation or cjson.null, idempotent=idempotent or false
+  })
+end
+
+local ledger, integrity_status = inspect_ledger(
+  ARGV[1], ARGV[5], ARGV[6], ARGV[8], ARGV[9],
+  ARGV[10], ARGV[11], ARGV[7], false, ARGV[2])
+if not ledger then
+  return response(integrity_status, nil, nil, nil, false)
+end
+
+local transition = ledger.transition
+if not transition then
+  return response('missing', nil, nil, nil, false)
+end
+if transition.owner_id ~= ARGV[4] then
+  return response('owner_mismatch', transition.eviction_branch,
+    nil, transition.generation, false)
+end
+if transition.generation ~= ARGV[3] then
+  return response('stale_generation', transition.eviction_branch,
+    nil, transition.generation, false)
+end
+if transition.resource_id ~= ARGV[1]
+   or transition.backend_id ~= ARGV[2]
+   or transition.operation ~= 'evict'
+   or transition.require_idle ~= false then
+  return response('invalid_transition', transition.eviction_branch,
+    nil, transition.generation, false)
+end
+if transition.eviction_branch == 'unload' then
+  return response('branch_conflict', 'unload', nil,
+    transition.generation, false)
+end
+
+local allocation = ledger.allocations[ARGV[2]]
+if not allocation then
+  return response('missing', transition.eviction_branch, nil, nil, false)
+end
+if allocation.generation ~= ARGV[3] then
+  return response('stale_generation', transition.eviction_branch,
+    allocation.state, allocation.generation, false)
+end
+if allocation.state ~= 'draining' or allocation.evictable ~= true then
+  return response('invalid_transition', transition.eviction_branch,
+    allocation.state, allocation.generation, false)
+end
+if transition.eviction_branch == 'cancel' then
+  return response('armed', 'cancel', allocation.state,
+    allocation.generation, true)
+end
+if not integrity_has_revision_headroom(
+    redis.call('HGET', KEYS[1], 'ledger_revision')) then
+  redis.call('HSET', KEYS[1],
+    'bootstrap_state', 'not_ready',
+    'reconcile_deadline_ms', '0',
+    'not_ready_reason', 'ledger_revision_rebase_required')
+  return response('not_ready', nil, allocation.state,
+    allocation.generation, false)
+end
+
+transition.eviction_branch = 'cancel'
+local encoded = cjson.encode(transition)
+redis.call('SET', KEYS[4], encoded)
+redis.call('HSET', KEYS[1],
+  'transition_mirror', encoded,
+  'updated_at_ms', tostring(ledger.now))
+redis.call('HINCRBY', KEYS[1], 'ledger_revision', 1)
+return response('armed', 'cancel', allocation.state,
+  allocation.generation, false)
+"""
+)
+
+
 _TRANSITION_LUA = (
     _LEDGER_INTEGRITY_LUA
     + r"""
@@ -5284,6 +5462,25 @@ local eviction_allowed = {
   draining={resident=true, unloading=true, unknown=true},
   unloading={unloaded=true, unknown=true}
 }
+local function eviction_branch_matches(transition, source_state, target_state)
+  if source_state == 'resident' and target_state == 'draining' then
+    return transition.eviction_branch == nil
+  end
+  if transition.require_idle == true then
+    return transition.eviction_branch == nil
+  end
+  if source_state == 'draining' and target_state == 'unloading' then
+    return transition.eviction_branch == 'unload'
+  end
+  if source_state == 'draining'
+     and (target_state == 'resident' or target_state == 'unknown') then
+    return transition.eviction_branch == 'cancel'
+  end
+  if source_state == 'unloading' then
+    return transition.eviction_branch == 'unload'
+  end
+  return false
+end
 local eviction_changes_generation =
   (ARGV[20] == 'resident' and ARGV[4] == 'draining')
   or (ARGV[20] == 'draining' and ARGV[4] == 'resident')
@@ -5388,6 +5585,9 @@ if eviction_transition and allocation.state == ARGV[4] then
      or transition.generation ~= owner_generation then
     return cjson.encode({status='owner_mismatch', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
   end
+  if not eviction_branch_matches(transition, ARGV[20], ARGV[4]) then
+    return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+  end
   local requires_zero_leases = allocation.state == 'unloading'
     or allocation.state == 'unloaded'
   local requires_idle = ARGV[20] == 'resident' and ARGV[4] == 'draining'
@@ -5465,6 +5665,8 @@ end
 local transition_owned = allocation.state == 'resident'
   or allocation.state == 'draining' or allocation.state == 'unloading'
 local transition_requires_idle = false
+local transition_owner = nil
+local arm_unload_branch = false
 if transition_owned then
   local transition = ledger.transition
   local owner_generation = allocation.generation
@@ -5480,7 +5682,33 @@ if transition_owned then
      or transition.generation ~= owner_generation then
     return cjson.encode({status='owner_mismatch', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
   end
+  transition_owner = transition
   transition_requires_idle = transition.require_idle == true
+  if eviction_transition then
+    if allocation.state == 'resident' and ARGV[4] == 'draining' then
+      if transition.eviction_branch ~= nil then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
+    elseif transition.require_idle == true then
+      if transition.eviction_branch ~= nil then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
+    elseif allocation.state == 'draining' and ARGV[4] == 'unloading' then
+      if transition.eviction_branch == 'cancel' then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
+      arm_unload_branch = transition.eviction_branch == nil
+    elseif allocation.state == 'draining'
+       and (ARGV[4] == 'resident' or ARGV[4] == 'unknown') then
+      if transition.eviction_branch ~= 'cancel' then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
+    elseif allocation.state == 'unloading' then
+      if transition.eviction_branch ~= 'unload' then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
+    end
+  end
 end
 
 if lease_count > 0 and (
@@ -5503,6 +5731,12 @@ for i = 1, #entries, 2 do
     return cjson.encode({status='ledger_corrupt', committed_mb=committed})
   end
   if counted[item.state] then committed = committed + tonumber(item.budget_mb) end
+end
+if arm_unload_branch then
+  transition_owner.eviction_branch = 'unload'
+  local encoded_transition = cjson.encode(transition_owner)
+  redis.call('SET', KEYS[4], encoded_transition)
+  redis.call('HSET', KEYS[1], 'transition_mirror', encoded_transition)
 end
 local previous_state = allocation.state
 allocation.state = ARGV[4]
@@ -5841,6 +6075,9 @@ class GPUArbiterStore:
         self._transition_owner_script = redis.register_script(_TRANSITION_OWNER_LUA)
         self._begin_idle_eviction_script = redis.register_script(
             _BEGIN_IDLE_EVICTION_LUA
+        )
+        self._arm_eviction_cancel_script = redis.register_script(
+            _ARM_EVICTION_CANCEL_LUA
         )
         self._transition_script = redis.register_script(_TRANSITION_LUA)
 
@@ -7408,6 +7645,56 @@ class GPUArbiterStore:
             idempotent=bool(payload.get("idempotent", False)),
         )
 
+    async def arm_eviction_cancel(
+        self,
+        resource_id: str,
+        *,
+        backend_id: str,
+        expected_generation: str,
+        transition_owner_id: str,
+    ) -> GPUEvictionBranchResult:
+        """Atomically freeze the cancel branch for one busy draining owner."""
+
+        _validate_nonempty(backend_id, "backend_id", max_length=128)
+        expected_generation = _validate_generation(expected_generation)
+        _validate_nonempty(
+            transition_owner_id,
+            "transition_owner_id",
+            max_length=256,
+        )
+        keys = self.keys(resource_id)
+        domains = await self._ledger_domain(keys)
+        raw = await self._call(
+            lambda: self._arm_eviction_cancel_script(
+                keys=self._ledger_keys(keys, domains.backend_ids),
+                args=[
+                    resource_id,
+                    backend_id,
+                    expected_generation,
+                    transition_owner_id,
+                    domains.backend_domain_raw,
+                    domains.backend_domain_fingerprint,
+                    domains.ledger_incarnation,
+                    domains.membership_domain_raw,
+                    domains.membership_domain_fingerprint,
+                    domains.active_backend_domain_raw,
+                    domains.active_backend_domain_fingerprint,
+                ],
+            )
+        )
+        payload = self._decode_result(raw)
+        branch = payload.get("branch")
+        if branch not in {None, "cancel", "unload"}:
+            raise GPUArbiterStoreError("GPU eviction branch is invalid")
+        state = payload.get("state")
+        return GPUEvictionBranchResult(
+            status=payload["status"],
+            branch=branch,
+            state=GPUAllocationState(state) if state else None,
+            generation=payload.get("generation"),
+            idempotent=bool(payload.get("idempotent", False)),
+        )
+
     async def acquire_cold_admission_owner(
         self,
         resource_id: str,
@@ -8001,11 +8288,67 @@ class GPUArbiterStore:
                         raise GPUArbiterStoreError(
                             "GPU transition mirror drift detected"
                         )
+                    transition_document = json.loads(transition_raw)
+                    if not isinstance(transition_document, dict):
+                        raise GPUArbiterStoreError("GPU transition document is invalid")
+                    if "eviction_branch" in transition_document and (
+                        transition_document["eviction_branch"]
+                        not in {"cancel", "unload"}
+                    ):
+                        raise GPUArbiterStoreError("GPU eviction branch is invalid")
+                    transition_expires_at_ms = transition_document.get("expires_at_ms")
+                    transition_hard_deadline_ms = transition_document.get(
+                        "hard_deadline_ms"
+                    )
+                    if (
+                        not isinstance(transition_expires_at_ms, int)
+                        or isinstance(transition_expires_at_ms, bool)
+                        or transition_expires_at_ms < 1
+                        or (
+                            "hard_deadline_ms" in transition_document
+                            and (
+                                not isinstance(transition_hard_deadline_ms, int)
+                                or isinstance(transition_hard_deadline_ms, bool)
+                                or transition_hard_deadline_ms < 1
+                                or transition_expires_at_ms
+                                > transition_hard_deadline_ms
+                            )
+                        )
+                    ):
+                        raise GPUArbiterStoreError("GPU transition deadline is invalid")
                 elif transition_mirror:
                     mirrored_transition = json.loads(transition_mirror)
+                    if not isinstance(mirrored_transition, dict):
+                        raise GPUArbiterStoreError(
+                            "GPU transition key missing before expiry"
+                        )
+                    if "eviction_branch" in mirrored_transition and (
+                        mirrored_transition["eviction_branch"]
+                        not in {"cancel", "unload"}
+                    ):
+                        raise GPUArbiterStoreError("GPU eviction branch is invalid")
+                    mirrored_expires_at_ms = mirrored_transition.get("expires_at_ms")
+                    mirrored_hard_deadline_ms = mirrored_transition.get(
+                        "hard_deadline_ms"
+                    )
                     if (
-                        not isinstance(mirrored_transition, dict)
-                        or int(mirrored_transition["expires_at_ms"]) > redis_now_ms
+                        not isinstance(mirrored_expires_at_ms, int)
+                        or isinstance(mirrored_expires_at_ms, bool)
+                        or mirrored_expires_at_ms < 1
+                        or (
+                            "hard_deadline_ms" in mirrored_transition
+                            and (
+                                not isinstance(mirrored_hard_deadline_ms, int)
+                                or isinstance(mirrored_hard_deadline_ms, bool)
+                                or mirrored_hard_deadline_ms < 1
+                                or mirrored_expires_at_ms > mirrored_hard_deadline_ms
+                            )
+                        )
+                    ):
+                        raise GPUArbiterStoreError("GPU transition deadline is invalid")
+                    if (
+                        "eviction_branch" in mirrored_transition
+                        or mirrored_expires_at_ms > redis_now_ms
                     ):
                         raise GPUArbiterStoreError(
                             "GPU transition key missing before expiry"

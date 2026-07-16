@@ -506,11 +506,11 @@ event loop 的测试证明连接生命周期正确。
    `(eviction_priority asc, last_used_at asc)` 选择足够受害者；为每个 victim 持久取得新 generation，绑定
    transition owner 并在 Redis 标记 `Draining`；
 7. 卡锁外调用 backend `/drain`，只有明确成功后才等待平台 lease、backend active、builder 与 borrower
-   全部归零。首个 enforce 阶段只选择已经空闲的 victim，但仍必须先完成 `/drain`，消除检查后新请求插入；
-   后续阶段才对 busy victim 做有界等待；
+   全部归零。空闲 victim 仍优先；仅当空闲候选累计预算不足时，才允许选择 busy victim 并在锁外有界等待；
 8. 同 generation 调用受管 `/unload`，再进入短原子区以 transition owner + generation CAS 提交卸载结果并
-   为 target 预留；旧 owner 的迟到结果无效。drain 超时先用更新 generation 调用 `/drain/cancel`；只有
-   cancel 响应与账本 CAS 都可信成功才回滚 Resident，否则转 Unknown 并保守计费；
+   为 target 预留；旧 owner 的迟到结果无效。drain 超时或调用方取消先持久写入更新 generation 的 cancel
+   intent，再冻结 cancel 分支并调用 `/drain/cancel`；只有 strict ACK、新鲜 health 与账本 CAS 都可信成功
+   才回滚 Resident，否则转 Unknown 并保守计费；
 9. backend workload 明确完成，或明确未被 backend 接受时，才以 lease owner token 幂等 release request
    lease。timeout/cancel/断连时停止 owner heartbeat并把 lease 标记 uncertain/stale，继续占全局并发与
    allocation；只有 token 已过期且 health 可信确认 active/builder/borrower 全为 0 后，reconcile 才能清理。
@@ -538,9 +538,25 @@ Draining→Resident；它保留原 `not_evict_before_ms`，响应丢失重放只
 RESUME token 必须复用 durable intent 的 exact JTI/owner/operation/horizon。只有 strict cancel ACK 与随后新
 challenge health 同时证明 result generation 的 Resident、`gpu_loaded=true`、`evictable=true` 及完整稳定
 pool-id，才可执行上述回切；active/builder/borrower 可非零。任一证明不可信只允许从原 drain generation
-收紧为 Unknown，并保留预算与旧 lease。这些被动原语本身不授权 authority 主动选择 busy victim，也不构成
-cancel/unload 的跨进程串行化；首次发送真实 RESUME 前，Redis transition owner 必须原子冻结唯一分支，使
-Draining→Unloading 与 arm-cancel 只能有一个先成功，再由 cancellation-safe authority 编排双域等待。
+收紧为 Unknown，并保留预算与旧 lease。
+
+busy eviction 的 transition owner 另持久保存 `eviction_branch=cancel|unload`。lease-zero
+Draining→Unloading 必须在同一个 Lua CAS 中先冻结 `unload` 再推进状态；cancel 则必须在发送真实 RESUME
+前以 exact resource/backend/owner/drain-generation 原子冻结 `cancel`。两者并发时只有一个成功，失败方返回
+branch conflict，`unload` 已获胜时绝不发送 RESUME。分支一旦冻结，transition key 不再随 owner TTL 自动删除；
+hard deadline 后禁止接管与 heartbeat，但仍允许 exact owner 提交该分支的保守终态。只有 cancel 分支的
+Resident/Unknown、unload 分支的 Unloaded/Unknown 完成后才能释放 owner；或者由既有两阶段、证明约束的
+proof reset 原子清除。持久 key 缺失、mirror 漂移、非法分支或 deadline schema 损坏都把该卡标为 not-ready，
+不能把过期误作分支未选择。
+
+authority 每轮分别读取新鲜 Redis 快照与新 challenge backend drain health；只有 victim lease 为零且 backend
+分类为 `ready_to_unload` 才尝试上述 unload CAS，不在等待期持有数据库行锁、advisory lock 或卡锁。DRAIN、
+双域等待与 UNLOAD 受 admission/ticket 和 token 的较早工作 deadline 限制；busy owner 在工作 deadline 之外
+固定保留 30 秒 cancellation-safe 收尾窗口。超时、异常或调用方取消时，authority 以完全相同参数精确重放
+durable cancel intent，稳定签名后先 arm cancel、再发送 RESUME、最后用 strict ACK + fresh health 提交
+Resident/Unknown。任何不确定结果保留持久分支交给 proof recovery，不提前释放预算或旧 lease。所有状态、
+分支和等待仍按完整 `gpu_resource_id` 分片；单卡与多卡使用同一路径，一张卡的冻结 owner 不占用另一张卡的
+应用层 transition owner 或 FIFO。
 
 busy-capable victim subject 不把“忙”误作身份放宽：它仍要求 exact fresh challenge、managed
 lifecycle capability 摘要、active membership、registry claim、boot、source generation、control/runtime epoch、

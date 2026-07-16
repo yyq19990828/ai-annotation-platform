@@ -25,6 +25,7 @@ from app.services.gpu_arbiter import (
     GPUColdTerminalCommitResult,
     GPUDispatchRequest,
     GPUEvictionCommitResult,
+    GPUEvictionDrainHealth,
     GPUIdleEvictionRuntimeSubject,
     GPUPreparedColdRuntimeSubject,
     GPUPreparedEvictionCancelRuntimeSubject,
@@ -38,9 +39,12 @@ from app.services.gpu_arbiter_store import (
     GPUAllocationState,
     GPUArbiterStoreError,
     GPUCardSnapshot,
+    GPUEvictionBranchResult,
     GPUIdleEvictionResult,
     GPULeaseMutationResult,
     GPUQueueResult,
+    GPURequestLease,
+    GPURequestLeaseState,
     GPUTransitionOwnerResult,
     GPUTransitionResult,
 )
@@ -133,6 +137,7 @@ def _card_snapshot(
     allocations: tuple[GPUAllocation, ...],
     transition_present: bool = False,
     observed_at_ms: int = 1,
+    leases: tuple[GPURequestLease, ...] = (),
 ) -> GPUCardSnapshot:
     return GPUCardSnapshot(
         resource_id=resource_id,
@@ -147,11 +152,30 @@ def _card_snapshot(
         active_backend_ids=tuple(item.backend_id for item in allocations),
         backend_memberships=(),
         allocations=allocations,
-        leases=(),
+        leases=leases,
         not_ready_reason=None,
         card_queue_count=0,
         backend_queue_count=0,
         transition_present=transition_present,
+    )
+
+
+def _workload_lease(
+    allocation: GPUAllocation,
+    *,
+    lease_id: str = "victim-lease",
+) -> GPURequestLease:
+    assert allocation.generation is not None
+    return GPURequestLease(
+        lease_id=lease_id,
+        backend_id=allocation.backend_id,
+        owner_id="victim-owner",
+        generation=allocation.generation,
+        operation="predict",
+        state=GPURequestLeaseState.ACTIVE,
+        created_at_ms=1,
+        heartbeat_deadline_ms=10_000,
+        hard_deadline_ms=20_000,
     )
 
 
@@ -346,6 +370,47 @@ def _drain_response(
     )
 
 
+def _busy_drain_response(
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+    *,
+    active_requests: int = 1,
+    builders: int = 0,
+    borrowers: int = 0,
+) -> DrainTransitionResponse:
+    ready = active_requests == 0 and builders == 0 and borrowers == 0
+    return DrainTransitionResponse(
+        generation=subject.generation,
+        draining=True,
+        active_requests=active_requests,
+        ready_to_unload=ready,
+        residency={
+            "state": "draining",
+            "gpu_loaded": True,
+            "active_requests": active_requests,
+            "builders": builders,
+            "borrowers": borrowers,
+            "draining": True,
+            "evictable": False,
+            "generation": subject.generation,
+            "pools": {
+                pool_id: {
+                    "resident": True,
+                    "device": "cuda:0",
+                    "provider": "CUDAExecutionProvider",
+                }
+                for pool_id in subject.pool_ids
+            },
+            "boot_id": subject.boot_id,
+            "lifecycle_gate": "enforce",
+            "control_epoch": subject.control_epoch,
+            "identity": {
+                "backend_registry_id": str(subject.backend_registry_id),
+                "gpu_resource_id": subject.gpu_resource_id,
+            },
+        },
+    )
+
+
 def _unload_response(
     subject: GPUPreparedIdleEvictionRuntimeSubject,
 ) -> ManagedUnloadResponse:
@@ -473,6 +538,7 @@ def test_eviction_cancel_ack_requires_exact_resident_gpu_identity_and_pools() ->
             evictable=False,
         ),
     )
+
     assert not authority_module._eviction_cancel_ack_matches(
         subject,
         _cancel_response(subject, gpu_loaded=None, evictable=False),
@@ -536,6 +602,98 @@ def test_eviction_cancel_ack_requires_exact_resident_gpu_identity_and_pools() ->
             },
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("active_requests", "builders", "borrowers"),
+    ((2, 0, 0), (0, 1, 0), (0, 0, 1), (0, 0, 0)),
+)
+def test_busy_drain_ack_accepts_activity_but_requires_exact_draining_identity(
+    active_requests: int,
+    builders: int,
+    borrowers: int,
+) -> None:
+    subject = _prepared_idle_eviction_subject(
+        replace(
+            _idle_eviction_subject(
+                _allocation(uuid.uuid4(), budget_mb=2048, generation="7"),
+                _RESOURCE_ID,
+                challenge="a" * 64,
+            ),
+            require_idle=False,
+        ),
+        token_expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+    valid = _busy_drain_response(
+        subject,
+        active_requests=active_requests,
+        builders=builders,
+        borrowers=borrowers,
+    )
+
+    assert authority_module._busy_drain_ack_matches(subject, valid)
+    assert not authority_module._busy_drain_ack_matches(
+        subject,
+        valid.model_copy(update={"ok": False}),
+    )
+    assert not authority_module._busy_drain_ack_matches(
+        subject,
+        valid.model_copy(
+            update={
+                "residency": valid.residency.model_copy(
+                    update={
+                        "pools": {
+                            "unexpected": next(iter(valid.residency.pools.values()))
+                        }
+                    }
+                )
+            }
+        ),
+    )
+
+
+def test_busy_drain_ack_rejects_generation_identity_and_counter_drift() -> None:
+    subject = _prepared_idle_eviction_subject(
+        replace(
+            _idle_eviction_subject(
+                _allocation(uuid.uuid4(), budget_mb=2048, generation="7"),
+                _RESOURCE_ID,
+                challenge="a" * 64,
+            ),
+            require_idle=False,
+        ),
+        token_expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+    valid = _busy_drain_response(subject, active_requests=2)
+
+    assert not authority_module._busy_drain_ack_matches(
+        subject,
+        valid.model_copy(update={"generation": "99"}),
+    )
+    assert not authority_module._busy_drain_ack_matches(
+        subject,
+        valid.model_copy(update={"active_requests": 1}),
+    )
+    for residency_update in (
+        {"generation": "99"},
+        {"boot_id": "other-boot"},
+        {"control_epoch": "99"},
+        {
+            "identity": valid.residency.identity.model_copy(
+                update={"gpu_resource_id": "other-node/index:0"}
+            )
+        },
+    ):
+        assert not authority_module._busy_drain_ack_matches(
+            subject,
+            valid.model_copy(
+                update={
+                    "residency": valid.residency.model_copy(
+                        update=residency_update,
+                    )
+                }
+            ),
+        )
 
 
 class _RecordingStore:
@@ -1085,6 +1243,555 @@ def _session_factory(events: list[str]):
         yield object()
 
     return sessions
+
+
+@pytest.mark.parametrize("ready_order", ("redis_first", "backend_first"))
+@pytest.mark.asyncio
+async def test_busy_eviction_wait_requires_redis_and_backend_domains(
+    monkeypatch,
+    ready_order: str,
+) -> None:
+    events: list[str] = []
+    victim = _allocation(uuid.UUID(int=51), budget_mb=4096, generation="7")
+    source = replace(
+        _idle_eviction_subject(victim, _RESOURCE_ID, challenge="a" * 64),
+        require_idle=False,
+    )
+    prepared = _prepared_idle_eviction_subject(
+        source,
+        token_expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+    draining = replace(
+        victim,
+        state=GPUAllocationState.DRAINING,
+        generation=prepared.generation,
+    )
+    lease = _workload_lease(victim)
+    if ready_order == "redis_first":
+        snapshots = [
+            _card_snapshot(
+                _RESOURCE_ID,
+                allocatable_mb=4096,
+                allocations=(draining,),
+                transition_present=True,
+            ),
+            _card_snapshot(
+                _RESOURCE_ID,
+                allocatable_mb=4096,
+                allocations=(draining,),
+                transition_present=True,
+            ),
+        ]
+        health_statuses = ["draining_busy", "ready_to_unload"]
+    else:
+        snapshots = [
+            _card_snapshot(
+                _RESOURCE_ID,
+                allocatable_mb=4096,
+                allocations=(draining,),
+                transition_present=True,
+                leases=(lease,),
+            ),
+            _card_snapshot(
+                _RESOURCE_ID,
+                allocatable_mb=4096,
+                allocations=(draining,),
+                transition_present=True,
+            ),
+        ]
+        health_statuses = ["ready_to_unload", "ready_to_unload"]
+    store = _EvictionStore(events, snapshots)
+    challenges: list[str] = []
+
+    async def refresh_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        assert backend_id == prepared.backend_registry_id
+        challenges.append(challenge)
+        return True
+
+    async def read_health(
+        session_factory,
+        subject,
+        *,
+        challenge: str,
+    ) -> GPUEvictionDrainHealth:
+        assert subject is prepared
+        assert challenge == challenges[-1]
+        status = health_statuses.pop(0)
+        return GPUEvictionDrainHealth(status=status, reason=status)
+
+    monkeypatch.setattr(
+        authority_module,
+        "_read_busy_eviction_drain_health",
+        read_health,
+    )
+    challenge = await authority_module._wait_for_busy_eviction_ready(
+        _session_factory(events),
+        store,  # type: ignore[arg-type]
+        prepared,
+        health_refresher=refresh_health,
+        heartbeat_task=None,
+        queue_deadline=time.monotonic() + 10,
+        ticket_expires_at_ms=int(time.time() * 1000) + 10_000,
+        work_hard_deadline_ms=int(time.time() * 1000) + 10_000,
+        poll_interval_seconds=0.001,
+    )
+
+    assert challenge == challenges[-1]
+    assert len(challenges) == 2
+    assert health_statuses == []
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_wait_is_bounded_by_work_deadline(monkeypatch) -> None:
+    events: list[str] = []
+    victim = _allocation(uuid.UUID(int=52), budget_mb=4096, generation="7")
+    prepared = _prepared_idle_eviction_subject(
+        replace(
+            _idle_eviction_subject(victim, _RESOURCE_ID, challenge="a" * 64),
+            require_idle=False,
+        ),
+        token_expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+    draining = replace(
+        victim,
+        state=GPUAllocationState.DRAINING,
+        generation=prepared.generation,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                _RESOURCE_ID,
+                allocatable_mb=4096,
+                allocations=(draining,),
+                transition_present=True,
+            )
+        ],
+    )
+
+    async def blocked_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        await asyncio.Event().wait()
+        return True
+
+    started = time.monotonic()
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        await authority_module._wait_for_busy_eviction_ready(
+            _session_factory(events),
+            store,  # type: ignore[arg-type]
+            prepared,
+            health_refresher=blocked_health,
+            heartbeat_task=None,
+            queue_deadline=time.monotonic() + 10,
+            ticket_expires_at_ms=int(time.time() * 1000) + 10_000,
+            work_hard_deadline_ms=int(time.time() * 1000) + 20,
+            poll_interval_seconds=1,
+        )
+
+    assert caught.value.error_code == GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+    assert time.monotonic() - started < 1
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_owner_keeps_full_cancel_horizon(monkeypatch) -> None:
+    events: list[str] = []
+    requester = replace(_cold_subject(), budget_mb=4096)
+    victim = _allocation(uuid.UUID(int=53), budget_mb=4096, generation="7")
+    source = replace(
+        _idle_eviction_subject(victim, requester.gpu_resource_id, challenge="a" * 64),
+        require_idle=False,
+    )
+    prepared = _prepared_idle_eviction_subject(
+        source,
+        token_expires_at=source.db_now + timedelta(seconds=1),
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                requester.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+                leases=(_workload_lease(victim),),
+            )
+        ],
+    )
+    begin_kwargs: dict = {}
+    prepared_expiries: list[datetime] = []
+
+    async def read_busy(db, **kwargs):
+        assert kwargs["backend_id"] == victim.backend_id
+        assert kwargs["gpu_resource_id"] == requester.gpu_resource_id
+        return source
+
+    async def prepare_busy(session_factory, expected_subject, *, token_expires_at):
+        assert expected_subject is source
+        prepared_expiries.append(token_expires_at)
+        return replace(prepared, token_expires_at=token_expires_at)
+
+    async def capacity_available(resource_id: str, **kwargs):
+        begin_kwargs.update(kwargs)
+        return GPUIdleEvictionResult(
+            status="capacity_available",
+            reason="capacity_available",
+            committed_mb=0,
+            shortfall_mb=0,
+        )
+
+    monkeypatch.setattr(
+        authority_module,
+        "read_gpu_busy_eviction_runtime_subject",
+        read_busy,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "prepare_gpu_idle_eviction_runtime_generation",
+        prepare_busy,
+    )
+    monkeypatch.setattr(store, "begin_idle_eviction", capacity_available)
+
+    outcome = await authority_module._evict_one_idle_victim(
+        _session_factory(events),
+        store,  # type: ignore[arg-type]
+        _RecordingSigner(events),  # type: ignore[arg-type]
+        requester,
+        victim,
+        health_refresher=lambda backend_id, challenge: asyncio.sleep(0, result=True),
+        hard_ttl_ms=1_000,
+        heartbeat_interval_seconds=5,
+        queue_deadline=time.monotonic() + 120,
+        ticket_expires_at_ms=int(time.time() * 1000) + 120_000,
+        allow_busy=True,
+    )
+
+    assert outcome == "capacity_available"
+    assert begin_kwargs["hard_ttl_ms"] == 31_000
+    assert begin_kwargs["allow_busy"] is True
+    assert prepared_expiries == [source.db_now + timedelta(seconds=1)]
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_end_to_end_waits_then_unloads(monkeypatch) -> None:
+    events: list[str] = []
+    requester = replace(_cold_subject(), budget_mb=4096)
+    victim = _allocation(uuid.UUID(int=54), budget_mb=4096, generation="7")
+    source = replace(
+        _idle_eviction_subject(victim, requester.gpu_resource_id, challenge="a" * 64),
+        require_idle=False,
+    )
+    prepared = _prepared_idle_eviction_subject(
+        source,
+        token_expires_at=source.db_now + timedelta(seconds=60),
+    )
+    draining = replace(
+        victim,
+        state=GPUAllocationState.DRAINING,
+        generation=prepared.generation,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                requester.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(draining,),
+                transition_present=True,
+            )
+        ],
+    )
+
+    async def read_busy(db, **kwargs):
+        events.append("read_busy")
+        assert kwargs["backend_id"] == victim.backend_id
+        return source
+
+    async def prepare_busy(session_factory, expected_subject, *, token_expires_at):
+        events.append("prepare_busy")
+        assert expected_subject is source
+        return replace(prepared, token_expires_at=token_expires_at)
+
+    async def read_ready_health(
+        session_factory,
+        expected_subject,
+        *,
+        challenge: str,
+    ) -> GPUEvictionDrainHealth:
+        events.append("read_drain_health")
+        assert expected_subject.generation == prepared.generation
+        return GPUEvictionDrainHealth(
+            status="ready_to_unload",
+            reason="ready_to_unload",
+        )
+
+    async def commit_phase(
+        session_factory,
+        passed_store,
+        expected_subject,
+        *,
+        phase: str,
+        challenge: str | None,
+        owner_id: str,
+    ) -> GPUEvictionCommitResult:
+        events.append(f"commit_{phase}")
+        assert passed_store is store
+        assert expected_subject.generation == prepared.generation
+        assert challenge is not None
+        return GPUEvictionCommitResult(
+            status="finalized",
+            state=(
+                GPUAllocationState.UNLOADING
+                if phase == "drain"
+                else GPUAllocationState.UNLOADED
+            ),
+            reason=phase,
+        )
+
+    class BusyEvictionClient:
+        def __init__(self, backend: MLBackendRegistry) -> None:
+            assert backend.id == prepared.backend_registry_id
+
+        async def lifecycle_drain(self, grant):
+            events.append("drain")
+            grant.report_response(200)
+            return _busy_drain_response(prepared, active_requests=1)
+
+        async def lifecycle_unload(self, grant):
+            events.append("unload")
+            grant.report_response(200)
+            return _unload_response(prepared)
+
+    async def refresh_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        events.append("health")
+        assert backend_id == prepared.backend_registry_id
+        return True
+
+    monkeypatch.setattr(
+        authority_module,
+        "read_gpu_busy_eviction_runtime_subject",
+        read_busy,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "prepare_gpu_idle_eviction_runtime_generation",
+        prepare_busy,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "_read_busy_eviction_drain_health",
+        read_ready_health,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "commit_gpu_eviction_phase_from_health",
+        commit_phase,
+    )
+    monkeypatch.setattr(authority_module, "MLBackendClient", BusyEvictionClient)
+
+    outcome = await authority_module._evict_one_idle_victim(
+        _session_factory(events),
+        store,  # type: ignore[arg-type]
+        _ScopeSigner(events),  # type: ignore[arg-type]
+        requester,
+        victim,
+        health_refresher=refresh_health,
+        hard_ttl_ms=120_000,
+        heartbeat_interval_seconds=5,
+        queue_deadline=time.monotonic() + 120,
+        ticket_expires_at_ms=int(time.time() * 1000) + 120_000,
+        allow_busy=True,
+        poll_interval_seconds=0.001,
+    )
+
+    assert outcome == "unloaded"
+    assert store.begin_kwargs[0]["allow_busy"] is True
+    assert events.index("drain") < events.index("read_drain_health")
+    assert events.index("read_drain_health") < events.index("commit_drain")
+    assert events.index("commit_drain") < events.index("unload")
+    assert events.index("unload") < events.index("commit_unload")
+    assert store.eviction_release_kwargs[-1]["generation"] == prepared.generation
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_cancel_orders_durable_intent_arm_resume_and_proof(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    cancel_subject = _prepared_eviction_cancel_subject()
+    drain_subject = GPUPreparedIdleEvictionRuntimeSubject(
+        backend=cancel_subject.backend,
+        backend_registry_id=cancel_subject.backend_registry_id,
+        gpu_resource_id=cancel_subject.gpu_resource_id,
+        membership_epoch=cancel_subject.membership_epoch,
+        budget_mb=cancel_subject.budget_mb,
+        eviction_priority=cancel_subject.eviction_priority,
+        max_concurrency=cancel_subject.max_concurrency,
+        boot_id=cancel_subject.boot_id,
+        source_generation=cancel_subject.source_generation,
+        generation=cancel_subject.drain_generation,
+        pool_ids=cancel_subject.pool_ids,
+        control_epoch=cancel_subject.control_epoch,
+        runtime_epoch=cancel_subject.runtime_epoch,
+        token_expires_at=cancel_subject.drain_token_expires_at,
+        require_idle=False,
+        db_now=cancel_subject.db_now,
+    )
+    prepare_attempts = 0
+
+    async def prepare_cancel(*args, **kwargs):
+        nonlocal prepare_attempts
+        prepare_attempts += 1
+        events.append("prepare_cancel")
+        assert args[1] is drain_subject
+        assert kwargs["owner_id"] == cancel_subject.owner_id
+        if prepare_attempts == 1:
+            raise TimeoutError("lost durable cancel intent response")
+        return cancel_subject
+
+    class CancelStore:
+        arm_attempts = 0
+
+        async def arm_eviction_cancel(self, resource_id: str, **kwargs):
+            self.arm_attempts += 1
+            events.append("arm_cancel")
+            assert resource_id == cancel_subject.gpu_resource_id
+            assert kwargs["expected_generation"] == cancel_subject.drain_generation
+            if self.arm_attempts == 1:
+                raise TimeoutError("lost arm response")
+            return GPUEvictionBranchResult(
+                status="armed",
+                branch="cancel",
+                state=GPUAllocationState.DRAINING,
+                generation=cancel_subject.drain_generation,
+                idempotent=True,
+            )
+
+    class CancelClient:
+        def __init__(self, backend: MLBackendRegistry) -> None:
+            assert backend.id == cancel_subject.backend_registry_id
+
+        async def lifecycle_cancel_drain(self, grant):
+            events.append("resume")
+            grant.report_response(200)
+            assert grant.generation == cancel_subject.generation
+            return _cancel_response(cancel_subject)
+
+    async def refresh_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        events.append("health")
+        assert backend_id == cancel_subject.backend_registry_id
+        return True
+
+    async def commit_cancel(*args, **kwargs):
+        events.append("commit_cancel")
+        assert args[2] is cancel_subject
+        assert kwargs["ack_confirmed"] is True
+        assert kwargs["challenge"] is not None
+        return GPUEvictionCommitResult(
+            status="finalized",
+            state=GPUAllocationState.RESIDENT,
+            reason="cancelled_resident",
+        )
+
+    monkeypatch.setattr(
+        authority_module,
+        "prepare_gpu_eviction_cancel_runtime_generation",
+        prepare_cancel,
+    )
+    monkeypatch.setattr(authority_module, "MLBackendClient", CancelClient)
+    monkeypatch.setattr(
+        authority_module,
+        "commit_gpu_eviction_cancel_from_health",
+        commit_cancel,
+    )
+    signer = _ScopeSigner(events)
+    result, branch = await authority_module._cancel_busy_eviction(
+        _session_factory(events),
+        CancelStore(),  # type: ignore[arg-type]
+        signer,  # type: ignore[arg-type]
+        drain_subject,
+        health_refresher=refresh_health,
+        owner_id=cancel_subject.owner_id,
+        owner_hard_deadline_ms=cancel_subject.owner_hard_deadline_ms,
+    )
+
+    assert result is not None and result.state is GPUAllocationState.RESIDENT
+    assert branch == "cancel"
+    assert events == [
+        "prepare_cancel",
+        "prepare_cancel",
+        "sign",
+        "arm_cancel",
+        "arm_cancel",
+        "resume",
+        "health",
+        "commit_cancel",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_cancel_never_sends_resume_after_unload_branch_wins(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    cancel_subject = _prepared_eviction_cancel_subject()
+    drain_subject = GPUPreparedIdleEvictionRuntimeSubject(
+        backend=cancel_subject.backend,
+        backend_registry_id=cancel_subject.backend_registry_id,
+        gpu_resource_id=cancel_subject.gpu_resource_id,
+        membership_epoch=cancel_subject.membership_epoch,
+        budget_mb=cancel_subject.budget_mb,
+        eviction_priority=cancel_subject.eviction_priority,
+        max_concurrency=cancel_subject.max_concurrency,
+        boot_id=cancel_subject.boot_id,
+        source_generation=cancel_subject.source_generation,
+        generation=cancel_subject.drain_generation,
+        pool_ids=cancel_subject.pool_ids,
+        control_epoch=cancel_subject.control_epoch,
+        runtime_epoch=cancel_subject.runtime_epoch,
+        token_expires_at=cancel_subject.drain_token_expires_at,
+        require_idle=False,
+        db_now=cancel_subject.db_now,
+    )
+
+    async def prepare_cancel(*args, **kwargs):
+        events.append("prepare_cancel")
+        return cancel_subject
+
+    class ConflictStore:
+        async def arm_eviction_cancel(self, resource_id: str, **kwargs):
+            events.append("arm_cancel")
+            return GPUEvictionBranchResult(
+                status="branch_conflict",
+                branch="unload",
+                state=GPUAllocationState.UNLOADING,
+                generation=cancel_subject.drain_generation,
+            )
+
+    class ForbiddenClient:
+        def __init__(self, backend: MLBackendRegistry) -> None:
+            raise AssertionError("unload branch must fence real RESUME")
+
+    async def no_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        raise AssertionError("unload branch must skip cancel health")
+
+    monkeypatch.setattr(
+        authority_module,
+        "prepare_gpu_eviction_cancel_runtime_generation",
+        prepare_cancel,
+    )
+    monkeypatch.setattr(authority_module, "MLBackendClient", ForbiddenClient)
+    signer = _ScopeSigner(events)
+    result, branch = await authority_module._cancel_busy_eviction(
+        _session_factory(events),
+        ConflictStore(),  # type: ignore[arg-type]
+        signer,  # type: ignore[arg-type]
+        drain_subject,
+        health_refresher=no_health,
+        owner_id=cancel_subject.owner_id,
+        owner_hard_deadline_ms=cancel_subject.owner_hard_deadline_ms,
+    )
+
+    assert result is None
+    assert branch == "unload"
+    assert events == ["prepare_cancel", "sign", "arm_cancel"]
 
 
 def test_resident_authority_builder_is_lazy() -> None:
@@ -2505,6 +3212,119 @@ async def test_cold_capacity_waits_for_cumulative_cooldown_with_exact_ticket(
         and item["queue_owner_id"] == "queue-owner"
         for item in evictions
     )
+
+
+@pytest.mark.asyncio
+async def test_cold_capacity_uses_busy_victim_only_when_idle_capacity_is_insufficient(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    requester = replace(_cold_subject(), budget_mb=4096, eviction_priority=1)
+    victim = _allocation(
+        uuid.UUID(int=41),
+        budget_mb=4096,
+        generation="3",
+        eviction_priority=0,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            _card_snapshot(
+                requester.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(victim,),
+                leases=(_workload_lease(victim),),
+            ),
+            _card_snapshot(
+                requester.gpu_resource_id,
+                allocatable_mb=4096,
+                allocations=(),
+            ),
+        ],
+    )
+    calls: list[dict] = []
+
+    async def evict_one(*args, **kwargs) -> str:
+        calls.append(kwargs)
+        return "unloaded"
+
+    async def no_health(backend_id: uuid.UUID, challenge: str) -> bool:
+        raise AssertionError("busy selection test delegates health to eviction")
+
+    monkeypatch.setattr(authority_module, "_evict_one_idle_victim", evict_one)
+    changed = await authority_module._ensure_cold_capacity(
+        _session_factory(events),
+        store,  # type: ignore[arg-type]
+        _RecordingSigner(events),  # type: ignore[arg-type]
+        requester,
+        health_refresher=no_health,
+        hard_ttl_ms=120_000,
+        heartbeat_interval_seconds=5,
+        queue_deadline=time.monotonic() + 10,
+        ticket_expires_at_ms=int(time.time() * 1000) + 10_000,
+        requester_card_ticket_id="card-ticket",
+        requester_queue_owner_id="queue-owner",
+    )
+
+    assert changed is True
+    assert len(calls) == 1
+    assert calls[0]["allow_busy"] is True
+
+
+@pytest.mark.asyncio
+async def test_cold_capacity_does_not_treat_not_ready_as_busy_fallback(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    requester = replace(_cold_subject(), budget_mb=4096, eviction_priority=1)
+    victim = _allocation(
+        uuid.UUID(int=43),
+        budget_mb=4096,
+        generation="3",
+        eviction_priority=0,
+    )
+    store = _EvictionStore(
+        events,
+        [
+            replace(
+                _card_snapshot(
+                    requester.gpu_resource_id,
+                    allocatable_mb=4096,
+                    allocations=(victim,),
+                    leases=(_workload_lease(victim),),
+                ),
+                ready=False,
+            )
+        ],
+    )
+
+    async def forbidden_eviction(*args, **kwargs) -> str:
+        raise AssertionError("not-ready cards must not enter busy victim selection")
+
+    monkeypatch.setattr(
+        authority_module,
+        "_evict_one_idle_victim",
+        forbidden_eviction,
+    )
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        await authority_module._ensure_cold_capacity(
+            _session_factory(events),
+            store,  # type: ignore[arg-type]
+            _RecordingSigner(events),  # type: ignore[arg-type]
+            requester,
+            health_refresher=lambda backend_id, challenge: asyncio.sleep(
+                0,
+                result=True,
+            ),
+            hard_ttl_ms=120_000,
+            heartbeat_interval_seconds=5,
+            queue_deadline=time.monotonic() + 10,
+            ticket_expires_at_ms=int(time.time() * 1000) + 10_000,
+            requester_card_ticket_id="card-ticket",
+            requester_queue_owner_id="queue-owner",
+        )
+
+    assert caught.value.error_code == GPUArbiterErrorCode.NOT_READY.value
 
 
 @pytest.mark.asyncio

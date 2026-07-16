@@ -6142,6 +6142,7 @@ async def test_begin_busy_eviction_preserves_leases_and_closes_new_admission(
             transition_owner_id="busy-eviction-owner",
         )
     ).status == "active_leases"
+    assert await first._redis.pttl(first.keys(resource_id).transition) > 0
     assert (
         await first.release_lease(
             resource_id,
@@ -6161,6 +6162,17 @@ async def test_begin_busy_eviction_preserves_leases_and_closes_new_admission(
             transition_owner_id="busy-eviction-owner",
         )
     ).status == "transitioned"
+    assert await first._redis.pttl(first.keys(resource_id).transition) == -1
+    blocked_cancel = await second.arm_eviction_cancel(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="2",
+        transition_owner_id="busy-eviction-owner",
+    )
+    assert (blocked_cancel.status, blocked_cancel.branch) == (
+        "branch_conflict",
+        "unload",
+    )
     assert (
         await second.transition_eviction_allocation(
             resource_id,
@@ -6244,6 +6256,53 @@ async def test_busy_eviction_cancel_rolls_back_with_new_generation_and_leases(
             allow_busy=True,
         )
     ).status == "selected"
+
+    before_arm = await first.snapshot(resource_id)
+    armed = await first.arm_eviction_cancel(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="2",
+        transition_owner_id="busy-cancel-owner",
+    )
+    assert (armed.status, armed.branch, armed.idempotent) == (
+        "armed",
+        "cancel",
+        False,
+    )
+    assert await first._redis.pttl(first.keys(resource_id).transition) == -1
+    replayed_arm = await second.arm_eviction_cancel(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="2",
+        transition_owner_id="busy-cancel-owner",
+    )
+    assert (replayed_arm.status, replayed_arm.branch, replayed_arm.idempotent) == (
+        "armed",
+        "cancel",
+        True,
+    )
+    after_arm = await first.snapshot(resource_id)
+    assert after_arm.ledger_revision == before_arm.ledger_revision + 1
+    assert (
+        await first.release_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="busy-cancel-owner",
+            generation="2",
+            operation="evict",
+        )
+    ).status == "invalid_transition"
+    assert (
+        await first.heartbeat_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="busy-cancel-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+        )
+    ).status == "renewed"
+    assert await first._redis.pttl(first.keys(resource_id).transition) == -1
 
     cancelled = await first.transition_eviction_allocation(
         resource_id,
@@ -6355,6 +6414,15 @@ async def test_busy_eviction_uncertainty_keeps_leases_in_unknown(redis_stores) -
         )
     ).status == "selected"
 
+    assert (
+        await first.arm_eviction_cancel(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="busy-unknown-owner",
+        )
+    ).status == "armed"
+
     unknown = await first.transition_eviction_allocation(
         resource_id,
         backend_id="backend-a",
@@ -6406,6 +6474,734 @@ async def test_busy_eviction_uncertainty_keeps_leases_in_unknown(redis_stores) -
     assert after_release.leases == ()
     assert after_release.allocations[0].state is GPUAllocationState.UNKNOWN
     assert after_release.committed_mb == 60
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_cancel_and_unload_freeze_exactly_one_branch(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    for index in range(8):
+        resource_id = f"node-busy-branch-race-{index}/index:0"
+        owner_id = f"busy-race-owner-{index}"
+        await _bootstrap_empty_card(first, resource_id, 100)
+        await _admit_resident(first, resource_id)
+        assert (
+            await first.release_lease(
+                resource_id,
+                backend_id="backend-a",
+                lease_id="lease-a",
+                owner_id="owner-a",
+                generation="1",
+            )
+        ).status == "released"
+        assert (
+            await first.begin_idle_eviction(
+                resource_id,
+                requester_backend_id="backend-c",
+                requester_membership_epoch=1,
+                requester_budget_mb=50,
+                requester_eviction_priority=0,
+                victim_backend_id="backend-a",
+                victim_membership_epoch=1,
+                victim_expected_generation="1",
+                victim_next_generation="2",
+                owner_id=owner_id,
+                ttl_ms=30_000,
+                hard_ttl_ms=60_000,
+                allow_busy=True,
+            )
+        ).status == "selected"
+        before = await first.snapshot(resource_id)
+
+        cancel_result, unload_result = await asyncio.gather(
+            first.arm_eviction_cancel(
+                resource_id,
+                backend_id="backend-a",
+                expected_generation="2",
+                transition_owner_id=owner_id,
+            ),
+            second.transition_eviction_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_state=GPUAllocationState.DRAINING,
+                expected_generation="2",
+                target_state=GPUAllocationState.UNLOADING,
+                transition_owner_id=owner_id,
+            ),
+        )
+        assert await first._redis.pttl(first.keys(resource_id).transition) == -1
+        after_branch = await first.snapshot(resource_id)
+        assert after_branch.ledger_revision == before.ledger_revision + 1
+
+        cancel_won = cancel_result.status == "armed"
+        unload_won = unload_result.status == "transitioned"
+        assert cancel_won is not unload_won
+        if cancel_won:
+            assert unload_result.status == "branch_conflict"
+            terminal = await first.transition_eviction_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_state=GPUAllocationState.DRAINING,
+                expected_generation="2",
+                target_state=GPUAllocationState.RESIDENT,
+                next_generation="3",
+                transition_owner_id=owner_id,
+            )
+        else:
+            assert (cancel_result.status, cancel_result.branch) == (
+                "branch_conflict",
+                "unload",
+            )
+            terminal = await first.transition_eviction_allocation(
+                resource_id,
+                backend_id="backend-a",
+                expected_state=GPUAllocationState.UNLOADING,
+                expected_generation="2",
+                target_state=GPUAllocationState.UNLOADED,
+                transition_owner_id=owner_id,
+            )
+        assert terminal.status == "transitioned"
+        assert (
+            await first.release_transition_owner(
+                resource_id,
+                backend_id="backend-a",
+                owner_id=owner_id,
+                generation="2",
+                operation="evict",
+            )
+        ).status == "released"
+
+
+@pytest.mark.asyncio
+async def test_busy_eviction_branches_are_isolated_per_gpu_resource(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_cancel = "node-busy-branch-isolation/index:0"
+    resource_unload = "node-busy-branch-isolation/index:1"
+    await asyncio.gather(
+        _bootstrap_empty_card(first, resource_cancel, 100),
+        _bootstrap_empty_card(second, resource_unload, 100),
+    )
+    await asyncio.gather(
+        _admit_resident(first, resource_cancel),
+        _admit_resident(
+            second,
+            resource_unload,
+            backend_id="backend-b",
+            lease_id="lease-b",
+            owner_id="owner-b",
+        ),
+    )
+    assert (
+        await second.release_lease(
+            resource_unload,
+            backend_id="backend-b",
+            lease_id="lease-b",
+            owner_id="owner-b",
+            generation="1",
+        )
+    ).status == "released"
+    selected_cancel, selected_unload = await asyncio.gather(
+        first.begin_idle_eviction(
+            resource_cancel,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="branch-isolation-cancel",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+            allow_busy=True,
+        ),
+        second.begin_idle_eviction(
+            resource_unload,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-b",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="branch-isolation-unload",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+            allow_busy=True,
+        ),
+    )
+    assert (selected_cancel.status, selected_unload.status) == (
+        "selected",
+        "selected",
+    )
+
+    cancel_branch, unload_branch = await asyncio.gather(
+        first.arm_eviction_cancel(
+            resource_cancel,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="branch-isolation-cancel",
+        ),
+        second.transition_eviction_allocation(
+            resource_unload,
+            backend_id="backend-b",
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNLOADING,
+            transition_owner_id="branch-isolation-unload",
+        ),
+    )
+    assert (cancel_branch.status, cancel_branch.branch) == ("armed", "cancel")
+    assert unload_branch.status == "transitioned"
+    assert (
+        await first.transition_eviction_allocation(
+            resource_cancel,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNLOADING,
+            transition_owner_id="branch-isolation-cancel",
+        )
+    ).status == "branch_conflict"
+    late_cancel = await second.arm_eviction_cancel(
+        resource_unload,
+        backend_id="backend-b",
+        expected_generation="2",
+        transition_owner_id="branch-isolation-unload",
+    )
+    assert (late_cancel.status, late_cancel.branch) == (
+        "branch_conflict",
+        "unload",
+    )
+
+    cancelled, unloaded = await asyncio.gather(
+        first.transition_eviction_allocation(
+            resource_cancel,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation="2",
+            target_state=GPUAllocationState.RESIDENT,
+            next_generation="3",
+            transition_owner_id="branch-isolation-cancel",
+        ),
+        second.transition_eviction_allocation(
+            resource_unload,
+            backend_id="backend-b",
+            expected_state=GPUAllocationState.UNLOADING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNLOADED,
+            transition_owner_id="branch-isolation-unload",
+        ),
+    )
+    assert cancelled.state is GPUAllocationState.RESIDENT
+    assert unloaded.state is GPUAllocationState.UNLOADED
+    released_cancel, released_unload = await asyncio.gather(
+        first.release_transition_owner(
+            resource_cancel,
+            backend_id="backend-a",
+            owner_id="branch-isolation-cancel",
+            generation="2",
+            operation="evict",
+        ),
+        second.release_transition_owner(
+            resource_unload,
+            backend_id="backend-b",
+            owner_id="branch-isolation-unload",
+            generation="2",
+            operation="evict",
+        ),
+    )
+    assert (released_cancel.status, released_unload.status) == (
+        "released",
+        "released",
+    )
+
+
+@pytest.mark.asyncio
+async def test_frozen_cancel_branch_survives_owner_deadline_until_terminal(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-busy-frozen-cancel/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="frozen-cancel-owner",
+            ttl_ms=100,
+            hard_ttl_ms=150,
+            allow_busy=True,
+        )
+    ).status == "selected"
+    assert (
+        await first.arm_eviction_cancel(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="frozen-cancel-owner",
+        )
+    ).status == "armed"
+
+    await asyncio.sleep(0.2)
+
+    keys = first.keys(resource_id)
+    assert await first._redis.pttl(keys.transition) == -1
+    blocked_unload = await second.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.DRAINING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNLOADING,
+        transition_owner_id="frozen-cancel-owner",
+    )
+    assert blocked_unload.status == "branch_conflict"
+    assert (
+        await second.acquire_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            owner_id="replacement-owner",
+            generation="3",
+            operation="evict",
+            ttl_ms=30_000,
+        )
+    ).status == "invalid_transition"
+    assert (
+        await first.heartbeat_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="frozen-cancel-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+        )
+    ).status == "invalid_transition"
+    assert await first._redis.pttl(keys.transition) == -1
+
+    assert (
+        await first.transition_eviction_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNKNOWN,
+            transition_owner_id="frozen-cancel-owner",
+        )
+    ).status == "transitioned"
+    assert (
+        await first.release_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="frozen-cancel-owner",
+            generation="2",
+            operation="evict",
+        )
+    ).status == "released"
+    assert await first._redis.exists(keys.transition) == 0
+
+
+@pytest.mark.asyncio
+async def test_frozen_unload_branch_survives_owner_deadline_until_terminal(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-busy-frozen-unload/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="frozen-unload-owner",
+            ttl_ms=100,
+            hard_ttl_ms=150,
+            allow_busy=True,
+        )
+    ).status == "selected"
+    assert (
+        await first.transition_eviction_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.DRAINING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNLOADING,
+            transition_owner_id="frozen-unload-owner",
+        )
+    ).status == "transitioned"
+
+    await asyncio.sleep(0.2)
+
+    keys = first.keys(resource_id)
+    assert await first._redis.pttl(keys.transition) == -1
+    blocked_cancel = await second.arm_eviction_cancel(
+        resource_id,
+        backend_id="backend-a",
+        expected_generation="2",
+        transition_owner_id="frozen-unload-owner",
+    )
+    assert (blocked_cancel.status, blocked_cancel.branch) == (
+        "branch_conflict",
+        "unload",
+    )
+    assert (
+        await first.heartbeat_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="frozen-unload-owner",
+            generation="2",
+            operation="evict",
+            ttl_ms=30_000,
+        )
+    ).status == "invalid_transition"
+    assert (
+        await first.release_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="frozen-unload-owner",
+            generation="2",
+            operation="evict",
+        )
+    ).status == "invalid_transition"
+    assert (
+        await first.transition_eviction_allocation(
+            resource_id,
+            backend_id="backend-a",
+            expected_state=GPUAllocationState.UNLOADING,
+            expected_generation="2",
+            target_state=GPUAllocationState.UNKNOWN,
+            transition_owner_id="frozen-unload-owner",
+        )
+    ).status == "transitioned"
+    assert (
+        await first.release_transition_owner(
+            resource_id,
+            backend_id="backend-a",
+            owner_id="frozen-unload-owner",
+            generation="2",
+            operation="evict",
+        )
+    ).status == "released"
+    assert await first._redis.exists(keys.transition) == 0
+
+
+@pytest.mark.parametrize("invalid_branch", ("invalid", None))
+@pytest.mark.asyncio
+async def test_frozen_branch_corruption_fails_closed_until_proof_reset(
+    redis_stores,
+    invalid_branch: str | None,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-busy-frozen-corrupt/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="frozen-corrupt-owner",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+            allow_busy=True,
+        )
+    ).status == "selected"
+    assert (
+        await first.arm_eviction_cancel(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="frozen-corrupt-owner",
+        )
+    ).status == "armed"
+    marked = await first.mark_card_not_ready(
+        resource_id,
+        100,
+        reason="membership_change",
+    )
+    keys = first.keys(resource_id)
+    transition = json.loads(await first._redis.get(keys.transition))
+    transition["eviction_branch"] = invalid_branch
+    corrupted = json.dumps(transition, sort_keys=True, separators=(",", ":"))
+    await first._redis.set(keys.transition, corrupted)
+    await first._redis.hset(keys.card, "transition_mirror", corrupted)
+
+    evolved = await second.evolve_backend_domains(
+        resource_id,
+        expected_ledger_revision=marked.ledger_revision,
+        expected_ledger_incarnation=marked.ledger_incarnation,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
+        evolution_id="corrupt-branch-evolution",
+    )
+    assert (evolved.status, evolved.reason) == (
+        "ledger_corrupt",
+        "transition_domain_invalid",
+    )
+    with pytest.raises(GPUArbiterStoreError, match="GPU eviction branch is invalid"):
+        await first.snapshot(resource_id)
+
+    prepared = await first.begin_proof_reset(
+        resource_id,
+        100,
+        expected_ledger_revision=marked.ledger_revision,
+        expected_ledger_incarnation=marked.ledger_incarnation,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
+        reset_id="corrupt-branch-reset",
+    )
+    assert prepared.status == "prepared"
+    committed = await first.commit_proof_reset(
+        resource_id,
+        100,
+        reset_id="corrupt-branch-reset",
+        expected_reset_revision=prepared.ledger_revision,
+        expected_reset_incarnation=prepared.ledger_incarnation,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
+        allocations=(
+            _reconcile_allocation(
+                backend_id="backend-a",
+                state=GPUAllocationState.UNKNOWN,
+                generation="2",
+            ),
+        ),
+        ready=False,
+        evidence_deadline_ms=0,
+        proof_fingerprint=hashlib.sha256(b"corrupt-branch-proof").hexdigest(),
+    )
+    assert (committed.status, committed.ready, committed.committed_mb) == (
+        "not_ready",
+        False,
+        60,
+    )
+    assert await first._redis.exists(keys.transition) == 0
+    recovered = await first.snapshot(resource_id)
+    assert recovered.transition_present is False
+    assert recovered.allocations[0].state is GPUAllocationState.UNKNOWN
+
+
+@pytest.mark.parametrize("owner_action", ("heartbeat", "release"))
+@pytest.mark.asyncio
+async def test_invalid_frozen_branch_owner_actions_fail_closed(
+    redis_stores,
+    owner_action: str,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-busy-frozen-owner-corrupt/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="frozen-owner-corrupt",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+            allow_busy=True,
+        )
+    ).status == "selected"
+    assert (
+        await first.arm_eviction_cancel(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="frozen-owner-corrupt",
+        )
+    ).status == "armed"
+    keys = first.keys(resource_id)
+    transition = json.loads(await first._redis.get(keys.transition))
+    transition["eviction_branch"] = "invalid"
+    corrupted = json.dumps(transition, sort_keys=True, separators=(",", ":"))
+    await first._redis.set(keys.transition, corrupted)
+    await first._redis.hset(keys.card, "transition_mirror", corrupted)
+
+    owner_kwargs = {
+        "backend_id": "backend-a",
+        "owner_id": "frozen-owner-corrupt",
+        "generation": "2",
+        "operation": "evict",
+    }
+    if owner_action == "heartbeat":
+        result = await second.heartbeat_transition_owner(
+            resource_id,
+            ttl_ms=30_000,
+            **owner_kwargs,
+        )
+    else:
+        result = await second.release_transition_owner(
+            resource_id,
+            **owner_kwargs,
+        )
+    assert result.status == "ledger_corrupt"
+    card = await first._redis.hgetall(keys.card)
+    assert card["bootstrap_state"] == "not_ready"
+    assert card["not_ready_reason"] == "transition_invalid"
+
+
+@pytest.mark.asyncio
+async def test_frozen_branch_invalid_hard_deadline_fails_closed(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-busy-frozen-deadline-corrupt/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="frozen-deadline-corrupt",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+            allow_busy=True,
+        )
+    ).status == "selected"
+    assert (
+        await first.arm_eviction_cancel(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="frozen-deadline-corrupt",
+        )
+    ).status == "armed"
+    before = await first.snapshot(resource_id)
+    keys = first.keys(resource_id)
+    transition = json.loads(await first._redis.get(keys.transition))
+    transition["hard_deadline_ms"] = transition["expires_at_ms"] - 1
+    corrupted = json.dumps(transition, sort_keys=True, separators=(",", ":"))
+    await first._redis.set(keys.transition, corrupted)
+    await first._redis.hset(keys.card, "transition_mirror", corrupted)
+
+    with pytest.raises(
+        GPUArbiterStoreError,
+        match="GPU transition deadline is invalid",
+    ):
+        await first.snapshot(resource_id)
+    reconciled = await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=before.ledger_revision,
+        expected_ledger_incarnation=before.ledger_incarnation,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
+        allocations=before.allocations,
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(),
+        repair_id="frozen-deadline-corrupt-repair",
+    )
+    assert (reconciled.status, reconciled.reason) == (
+        "ledger_corrupt",
+        "transition_invalid",
+    )
+
+
+@pytest.mark.parametrize("owner_action", ("heartbeat", "release"))
+@pytest.mark.asyncio
+async def test_missing_expired_frozen_branch_key_fails_closed(
+    redis_stores,
+    owner_action: str,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-busy-frozen-missing/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(first, resource_id)
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=0,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="frozen-missing-owner",
+            ttl_ms=100,
+            hard_ttl_ms=150,
+            allow_busy=True,
+        )
+    ).status == "selected"
+    assert (
+        await first.arm_eviction_cancel(
+            resource_id,
+            backend_id="backend-a",
+            expected_generation="2",
+            transition_owner_id="frozen-missing-owner",
+        )
+    ).status == "armed"
+    keys = first.keys(resource_id)
+    await first._redis.delete(keys.transition)
+    await asyncio.sleep(0.2)
+
+    owner_kwargs = {
+        "backend_id": "backend-a",
+        "owner_id": "frozen-missing-owner",
+        "generation": "2",
+        "operation": "evict",
+    }
+    if owner_action == "heartbeat":
+        rejected = await second.heartbeat_transition_owner(
+            resource_id,
+            ttl_ms=30_000,
+            **owner_kwargs,
+        )
+    else:
+        rejected = await second.release_transition_owner(
+            resource_id,
+            **owner_kwargs,
+        )
+    assert rejected.status == "ledger_corrupt"
+    card = await first._redis.hgetall(keys.card)
+    assert card["bootstrap_state"] == "not_ready"
+    assert card["not_ready_reason"] == "transition_key_missing_before_expiry"
 
 
 @pytest.mark.asyncio

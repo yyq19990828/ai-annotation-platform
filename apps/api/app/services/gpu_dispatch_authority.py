@@ -32,7 +32,9 @@ from app.services.gpu_arbiter import (
     GPUDispatchContextFactory,
     GPUDispatchGrant,
     GPUDispatchRequest,
+    GPUBusyEvictionRuntimeSubjectError,
     GPUEvictionCommitResult,
+    GPUEvictionDrainHealth,
     GPUFenceSessionFactory,
     GPUIdleEvictionRuntimeSubjectError,
     GPUPreparedColdRuntimeSubject,
@@ -41,10 +43,14 @@ from app.services.gpu_arbiter import (
     GPUResidentRuntimeSubject,
     GPUResidentRuntimeSubjectError,
     commit_gpu_cold_terminal_from_health,
+    commit_gpu_eviction_cancel_from_health,
     commit_gpu_eviction_phase_from_health,
+    prepare_gpu_eviction_cancel_runtime_generation,
     prepare_gpu_idle_eviction_runtime_generation,
     prepare_gpu_cold_runtime_generation,
+    read_gpu_busy_eviction_runtime_subject,
     read_gpu_cold_runtime_subject,
+    read_gpu_eviction_drain_health,
     read_gpu_idle_eviction_runtime_subject,
     read_gpu_resident_runtime_subject,
     record_gpu_resident_runtime_token_expiry,
@@ -76,6 +82,8 @@ _GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS = 0.05
 _GPU_RUNTIME_MAX_ADMISSION_TIMEOUT_SECONDS = 3600
 _GPU_RUNTIME_MAX_RESIDENCY_COOLDOWN_SECONDS = 3600
 _GPU_RUNTIME_EVICTION_CLEANUP_RESERVE_SECONDS = 6.0
+_GPU_RUNTIME_EVICTION_CANCEL_HORIZON_SECONDS = 30.0
+_GPU_RUNTIME_NO_SAFE_IDLE_VICTIM = "No safe idle GPU victim can satisfy capacity"
 _MAX_POSITIVE_INT64 = 9_223_372_036_854_775_807
 _MAX_REDIS_TTL_MS = 2_147_483_647
 _GPU_RUNTIME_SCOPES = {
@@ -1050,9 +1058,11 @@ def _capacity_unavailable(message: str) -> GPUArbiterDispatchError:
     )
 
 
-def _idle_victim_hint(
+def _eviction_victim_hint(
     snapshot: GPUCardSnapshot,
     requester: GPUColdRuntimeSubject,
+    *,
+    allow_busy: bool,
 ) -> GPUAllocation | None:
     if not snapshot.ready:
         raise _dispatch_error(
@@ -1094,7 +1104,7 @@ def _idle_victim_hint(
             and allocation.evictable
             and allocation.generation is not None
             and allocation.eviction_priority <= requester.eviction_priority
-            and allocation.backend_id not in leased_backends
+            and (allow_busy or allocation.backend_id not in leased_backends)
         ),
         key=lambda allocation: (
             allocation.eviction_priority,
@@ -1104,7 +1114,7 @@ def _idle_victim_hint(
     )
     shortfall_mb = requester.budget_mb - free_mb
     if sum(item.budget_mb for item in candidates) < shortfall_mb:
-        raise _capacity_unavailable("No safe idle GPU victim can satisfy capacity")
+        raise _capacity_unavailable(_GPU_RUNTIME_NO_SAFE_IDLE_VICTIM)
     ready = tuple(
         allocation
         for allocation in candidates
@@ -1128,7 +1138,14 @@ def _idle_victim_hint(
         retry_at_ms = max(retry_at_ms, allocation.not_evict_before_ms)
         if available_mb >= shortfall_mb:
             raise _GPUVictimCooldownActive(retry_at_ms)
-    raise _capacity_unavailable("No safe idle GPU victim can satisfy capacity")
+    raise _capacity_unavailable(_GPU_RUNTIME_NO_SAFE_IDLE_VICTIM)
+
+
+def _idle_victim_hint(
+    snapshot: GPUCardSnapshot,
+    requester: GPUColdRuntimeSubject,
+) -> GPUAllocation | None:
+    return _eviction_victim_hint(snapshot, requester, allow_busy=False)
 
 
 async def _heartbeat_eviction_owner(
@@ -1280,6 +1297,39 @@ def _drain_ack_ready(
             generation=response.generation,
             residency=response.residency,
         )
+    )
+
+
+def _busy_drain_ack_matches(
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+    response: DrainTransitionResponse,
+) -> bool:
+    residency = response.residency
+    pool_residencies = tuple(
+        residency.pools[pool_id].resident for pool_id in sorted(residency.pools)
+    )
+    ready = (
+        residency.active_requests == 0
+        and residency.builders == 0
+        and residency.borrowers == 0
+    )
+    return bool(
+        response.ok is True
+        and response.draining
+        and response.active_requests == residency.active_requests
+        and response.ready_to_unload is ready
+        and residency.state is LifecycleState.DRAINING
+        and residency.gpu_loaded is True
+        and residency.draining
+        and not residency.evictable
+        and _eviction_ack_identity_matches(
+            subject,
+            generation=response.generation,
+            residency=residency,
+        )
+        and tuple(sorted(residency.pools)) == subject.pool_ids
+        and all(item is not None for item in pool_residencies)
+        and any(item is True for item in pool_residencies)
     )
 
 
@@ -1441,6 +1491,358 @@ def _sign_eviction_cancel_grant(
     )
 
 
+async def _read_busy_eviction_drain_health(
+    session_factory: GPUFenceSessionFactory,
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+    *,
+    challenge: str,
+) -> GPUEvictionDrainHealth:
+    async with session_factory() as db:
+        return await read_gpu_eviction_drain_health(
+            db,
+            subject,
+            challenge=challenge,
+        )
+
+
+async def _wait_for_busy_eviction_ready(
+    session_factory: GPUFenceSessionFactory,
+    store: GPUArbiterStore,
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+    *,
+    health_refresher: GPUHealthRefresher,
+    heartbeat_task: asyncio.Task[None] | None,
+    queue_deadline: float,
+    ticket_expires_at_ms: int,
+    work_hard_deadline_ms: int,
+    poll_interval_seconds: float,
+) -> str:
+    while True:
+        _raise_if_heartbeat_failed(heartbeat_task)
+        queue_remaining_ms = _eviction_work_remaining_ttl_ms(
+            deadline=queue_deadline,
+            expires_at_ms=ticket_expires_at_ms,
+        )
+        work_remaining_ms = work_hard_deadline_ms - int(time.time() * 1000)
+        if work_remaining_ms <= 0:
+            raise _capacity_unavailable("GPU busy eviction work deadline reached")
+        remaining_ms = min(queue_remaining_ms, work_remaining_ms)
+        try:
+            async with asyncio.timeout(remaining_ms / 1000):
+                try:
+                    snapshot = await store.snapshot(subject.gpu_resource_id)
+                except Exception as exc:
+                    raise _dispatch_error(
+                        GPUArbiterErrorCode.UNAVAILABLE,
+                        "GPU busy eviction ledger is unavailable",
+                    ) from exc
+                allocation = next(
+                    (
+                        item
+                        for item in snapshot.allocations
+                        if item.backend_id == str(subject.backend_registry_id)
+                    ),
+                    None,
+                )
+                if (
+                    not snapshot.transition_present
+                    or allocation is None
+                    or allocation.state is not GPUAllocationState.DRAINING
+                    or allocation.generation != subject.generation
+                ):
+                    raise _capacity_unavailable("GPU busy victim drain state changed")
+                redis_ready = not any(
+                    lease.backend_id == str(subject.backend_registry_id)
+                    for lease in snapshot.leases
+                )
+                challenge = await _refresh_eviction_health(
+                    health_refresher,
+                    subject,
+                    phase="busy_wait",
+                )
+                if challenge is None:
+                    raise _capacity_unavailable("GPU busy victim health is unavailable")
+                try:
+                    health = await _read_busy_eviction_drain_health(
+                        session_factory,
+                        subject,
+                        challenge=challenge,
+                    )
+                except Exception as exc:
+                    raise _dispatch_error(
+                        GPUArbiterErrorCode.UNAVAILABLE,
+                        "GPU busy victim drain proof is unavailable",
+                    ) from exc
+                if health.status == "uncertain":
+                    raise _capacity_unavailable(
+                        "GPU busy victim drain proof is uncertain"
+                    )
+                if redis_ready and health.status == "ready_to_unload":
+                    return challenge
+                await asyncio.sleep(
+                    min(
+                        poll_interval_seconds,
+                        remaining_ms / 1000,
+                    )
+                )
+        except TimeoutError as exc:
+            raise _capacity_unavailable(
+                "GPU busy eviction work deadline reached"
+            ) from exc
+
+
+async def _cancel_busy_eviction(
+    session_factory: GPUFenceSessionFactory,
+    store: GPUArbiterStore,
+    signer: GPUAdmissionTokenSigner,
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+    *,
+    health_refresher: GPUHealthRefresher,
+    owner_id: str,
+    owner_hard_deadline_ms: int,
+) -> tuple[GPUEvictionCommitResult | None, str | None]:
+    prepare_kwargs = {
+        "owner_id": owner_id,
+        "owner_hard_deadline_ms": owner_hard_deadline_ms,
+        "token_expires_at": datetime.fromtimestamp(
+            owner_hard_deadline_ms / 1000,
+            UTC,
+        ),
+    }
+    try:
+        try:
+            cancel_subject = await prepare_gpu_eviction_cancel_runtime_generation(
+                session_factory,
+                subject,
+                **prepare_kwargs,
+            )
+        except Exception:
+            cancel_subject = await prepare_gpu_eviction_cancel_runtime_generation(
+                session_factory,
+                subject,
+                **prepare_kwargs,
+            )
+        cancel_token = _sign_eviction_cancel_grant(signer, cancel_subject)
+    except Exception:  # noqa: BLE001 - open owner expires into proof reset
+        logger.warning(
+            "gpu_eviction_cancel_prepare_failed",
+            gpu_arbiter={
+                "backend_id": str(subject.backend_registry_id),
+                "resource_id": subject.gpu_resource_id,
+                "generation": subject.generation,
+                "owner_id": owner_id,
+            },
+            exc_info=True,
+        )
+        return None, None
+
+    arm_kwargs = {
+        "backend_id": str(subject.backend_registry_id),
+        "expected_generation": subject.generation,
+        "transition_owner_id": owner_id,
+    }
+    try:
+        try:
+            armed = await store.arm_eviction_cancel(
+                subject.gpu_resource_id,
+                **arm_kwargs,
+            )
+        except Exception:
+            armed = await store.arm_eviction_cancel(
+                subject.gpu_resource_id,
+                **arm_kwargs,
+            )
+    except Exception:  # noqa: BLE001 - uncertain branch forbids RESUME
+        logger.warning(
+            "gpu_eviction_cancel_arm_failed",
+            gpu_arbiter={
+                "backend_id": str(subject.backend_registry_id),
+                "resource_id": subject.gpu_resource_id,
+                "generation": subject.generation,
+                "owner_id": owner_id,
+            },
+            exc_info=True,
+        )
+        return None, None
+    if armed.status != "armed" or armed.branch != "cancel":
+        if armed.status == "branch_conflict" and armed.branch == "unload":
+            return None, "unload"
+        logger.warning(
+            "gpu_eviction_cancel_arm_rejected",
+            gpu_arbiter={
+                "backend_id": str(subject.backend_registry_id),
+                "resource_id": subject.gpu_resource_id,
+                "generation": subject.generation,
+                "owner_id": owner_id,
+                "status": armed.status,
+                "branch": armed.branch,
+            },
+        )
+        return None, None
+
+    client = MLBackendClient(subject.backend)
+    cancel_response, _ = await _call_eviction_lifecycle(
+        client.lifecycle_cancel_drain,
+        generation=cancel_subject.generation,
+        admission_token=cancel_token,
+        hard_deadline_ms=owner_hard_deadline_ms,
+    )
+    ack_confirmed = isinstance(
+        cancel_response,
+        DrainTransitionResponse,
+    ) and _eviction_cancel_ack_matches(cancel_subject, cancel_response)
+    challenge = None
+    if ack_confirmed:
+        challenge = await _refresh_eviction_health(
+            health_refresher,
+            subject,
+            phase="cancel",
+        )
+    try:
+        try:
+            result = await commit_gpu_eviction_cancel_from_health(
+                session_factory,
+                store,
+                cancel_subject,
+                ack_confirmed=ack_confirmed,
+                challenge=challenge,
+            )
+        except Exception:
+            result = await commit_gpu_eviction_cancel_from_health(
+                session_factory,
+                store,
+                cancel_subject,
+                ack_confirmed=ack_confirmed,
+                challenge=challenge,
+            )
+    except Exception:  # noqa: BLE001 - frozen branch awaits proof reset
+        logger.warning(
+            "gpu_eviction_cancel_commit_failed",
+            gpu_arbiter={
+                "backend_id": str(subject.backend_registry_id),
+                "resource_id": subject.gpu_resource_id,
+                "drain_generation": subject.generation,
+                "cancel_generation": cancel_subject.generation,
+                "owner_id": owner_id,
+            },
+            exc_info=True,
+        )
+        return None, "cancel"
+    return result, "cancel"
+
+
+async def _finish_busy_eviction_transition(
+    session_factory: GPUFenceSessionFactory,
+    store: GPUArbiterStore,
+    signer: GPUAdmissionTokenSigner,
+    subject: GPUPreparedIdleEvictionRuntimeSubject,
+    *,
+    health_refresher: GPUHealthRefresher,
+    owner_id: str,
+    owner_hard_deadline_ms: int,
+    phase: str,
+    terminal_result: GPUEvictionCommitResult | None,
+    replay_challenge: str | None,
+    heartbeat_task: asyncio.Task[None] | None,
+) -> None:
+    if phase == "unload" or (
+        terminal_result is not None
+        and terminal_result.status == "finalized"
+        and terminal_result.state is GPUAllocationState.UNLOADING
+    ):
+        await _finish_eviction_transition(
+            session_factory,
+            store,
+            subject,
+            owner_id=owner_id,
+            phase="unload",
+            terminal_result=terminal_result,
+            replay_challenge=replay_challenge,
+            heartbeat_task=heartbeat_task,
+        )
+        return
+    if (
+        terminal_result is not None
+        and terminal_result.status == "finalized"
+        and terminal_result.state
+        in {
+            GPUAllocationState.RESIDENT,
+            GPUAllocationState.UNKNOWN,
+            GPUAllocationState.UNLOADED,
+        }
+    ):
+        await _stop_eviction_heartbeat(heartbeat_task)
+        await _release_eviction_owner(store, subject, owner_id=owner_id)
+        return
+
+    if replay_challenge is not None:
+        try:
+            replayed = await commit_gpu_eviction_phase_from_health(
+                session_factory,
+                store,
+                subject,
+                phase="drain",
+                challenge=replay_challenge,
+                owner_id=owner_id,
+            )
+            if (
+                replayed.status == "finalized"
+                and replayed.state is GPUAllocationState.UNLOADING
+            ):
+                await _finish_eviction_transition(
+                    session_factory,
+                    store,
+                    subject,
+                    owner_id=owner_id,
+                    phase="unload",
+                    terminal_result=replayed,
+                    replay_challenge=None,
+                    heartbeat_task=heartbeat_task,
+                )
+                return
+        except Exception:  # noqa: BLE001 - cancel branch remains the fallback
+            logger.warning(
+                "gpu_busy_eviction_drain_replay_failed",
+                gpu_arbiter={
+                    "backend_id": str(subject.backend_registry_id),
+                    "resource_id": subject.gpu_resource_id,
+                    "generation": subject.generation,
+                    "owner_id": owner_id,
+                },
+                exc_info=True,
+            )
+
+    cancel_result, branch = await _cancel_busy_eviction(
+        session_factory,
+        store,
+        signer,
+        subject,
+        health_refresher=health_refresher,
+        owner_id=owner_id,
+        owner_hard_deadline_ms=owner_hard_deadline_ms,
+    )
+    if branch == "unload":
+        await _finish_eviction_transition(
+            session_factory,
+            store,
+            subject,
+            owner_id=owner_id,
+            phase="unload",
+            terminal_result=None,
+            replay_challenge=None,
+            heartbeat_task=heartbeat_task,
+        )
+        return
+    await _stop_eviction_heartbeat(heartbeat_task)
+    if (
+        cancel_result is not None
+        and cancel_result.status == "finalized"
+        and cancel_result.state
+        in {GPUAllocationState.RESIDENT, GPUAllocationState.UNKNOWN}
+    ):
+        await _release_eviction_owner(store, subject, owner_id=owner_id)
+
+
 async def _finish_eviction_transition(
     session_factory: GPUFenceSessionFactory,
     store: GPUArbiterStore,
@@ -1538,10 +1940,22 @@ async def _evict_one_idle_victim(
     ticket_expires_at_ms: int,
     requester_card_ticket_id: str | None = None,
     requester_queue_owner_id: str | None = None,
+    allow_busy: bool = False,
+    poll_interval_seconds: float = _GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS,
 ) -> str:
-    _eviction_work_remaining_ttl_ms(
+    initial_queue_work_ttl_ms = _eviction_work_remaining_ttl_ms(
         deadline=queue_deadline,
         expires_at_ms=ticket_expires_at_ms,
+    )
+    cancel_horizon_ms = (
+        math.ceil(_GPU_RUNTIME_EVICTION_CANCEL_HORIZON_SECONDS * 1000)
+        if allow_busy
+        else 0
+    )
+    initial_work_ttl_ms = min(
+        hard_ttl_ms,
+        initial_queue_work_ttl_ms,
+        _MAX_REDIS_TTL_MS - cancel_horizon_ms,
     )
     challenge = secrets.token_hex(32)
     try:
@@ -1553,13 +1967,22 @@ async def _evict_one_idle_victim(
         raise _capacity_unavailable("GPU idle victim health is unavailable")
     try:
         async with session_factory() as db:
-            idle_subject = await read_gpu_idle_eviction_runtime_subject(
-                db,
-                backend_id=victim.backend_id,
-                gpu_resource_id=requester.gpu_resource_id,
-                expected_generation=victim.generation or "",
-                challenge=challenge,
-            )
+            if allow_busy:
+                idle_subject = await read_gpu_busy_eviction_runtime_subject(
+                    db,
+                    backend_id=victim.backend_id,
+                    gpu_resource_id=requester.gpu_resource_id,
+                    expected_generation=victim.generation or "",
+                    challenge=challenge,
+                )
+            else:
+                idle_subject = await read_gpu_idle_eviction_runtime_subject(
+                    db,
+                    backend_id=victim.backend_id,
+                    gpu_resource_id=requester.gpu_resource_id,
+                    expected_generation=victim.generation or "",
+                    challenge=challenge,
+                )
         _eviction_work_remaining_ttl_ms(
             deadline=queue_deadline,
             expires_at_ms=ticket_expires_at_ms,
@@ -1567,9 +1990,15 @@ async def _evict_one_idle_victim(
         prepared = await prepare_gpu_idle_eviction_runtime_generation(
             session_factory,
             idle_subject,
-            token_expires_at=idle_subject.db_now + timedelta(milliseconds=hard_ttl_ms),
+            token_expires_at=idle_subject.db_now
+            + timedelta(
+                milliseconds=(initial_work_ttl_ms if allow_busy else hard_ttl_ms)
+            ),
         )
-    except GPUIdleEvictionRuntimeSubjectError as exc:
+    except (
+        GPUBusyEvictionRuntimeSubjectError,
+        GPUIdleEvictionRuntimeSubjectError,
+    ) as exc:
         raise _capacity_unavailable("GPU idle victim changed before eviction") from exc
     except Exception as exc:
         raise _dispatch_error(
@@ -1582,19 +2011,28 @@ async def _evict_one_idle_victim(
     heartbeat_task: asyncio.Task[None] | None = None
     terminal_result: GPUEvictionCommitResult | None = None
     replay_challenge: str | None = None
+    owner_hard_deadline_ms: int | None = None
+    work_hard_deadline_ms: int | None = None
     phase = "drain"
     try:
-        _eviction_work_remaining_ttl_ms(
-            deadline=queue_deadline,
-            expires_at_ms=ticket_expires_at_ms,
-        )
-        owner_hard_ttl_ms = min(
-            hard_ttl_ms,
-            _queue_remaining_ttl_ms(
-                deadline=queue_deadline,
-                expires_at_ms=ticket_expires_at_ms,
-            ),
-        )
+        if allow_busy:
+            work_ttl_ms = min(
+                initial_work_ttl_ms,
+                _eviction_work_remaining_ttl_ms(
+                    deadline=queue_deadline,
+                    expires_at_ms=ticket_expires_at_ms,
+                ),
+            )
+            owner_hard_ttl_ms = work_ttl_ms + cancel_horizon_ms
+        else:
+            owner_hard_ttl_ms = min(
+                hard_ttl_ms,
+                _queue_remaining_ttl_ms(
+                    deadline=queue_deadline,
+                    expires_at_ms=ticket_expires_at_ms,
+                ),
+            )
+            work_ttl_ms = owner_hard_ttl_ms
         owner_ttl_ms = min(_GPU_RUNTIME_COLD_INTENT_TTL_MS, owner_hard_ttl_ms)
         begin_kwargs = {
             "requester_backend_id": str(requester.backend_registry_id),
@@ -1610,6 +2048,7 @@ async def _evict_one_idle_victim(
             "hard_ttl_ms": owner_hard_ttl_ms,
             "requester_card_ticket_id": requester_card_ticket_id,
             "requester_queue_owner_id": requester_queue_owner_id,
+            "allow_busy": allow_busy,
         }
         begin_uncertain = False
         owner_may_exist = True
@@ -1660,13 +2099,17 @@ async def _evict_one_idle_victim(
                 GPUArbiterErrorCode.UNAVAILABLE,
                 "GPU eviction selection receipt is invalid",
             )
+        owner_hard_deadline_ms = selected.owner_hard_deadline_ms
+        work_hard_deadline_ms = owner_hard_deadline_ms - cancel_horizon_ms
+        if work_hard_deadline_ms <= int(time.time() * 1000):
+            raise _capacity_unavailable("GPU eviction work deadline reached")
 
         try:
             drain_token, unload_token = _sign_eviction_grants(
                 signer,
                 prepared,
                 owner_id=owner_id,
-                owner_hard_deadline_ms=selected.owner_hard_deadline_ms,
+                owner_hard_deadline_ms=work_hard_deadline_ms,
             )
         except GPUArbiterDispatchError:
             raise
@@ -1704,29 +2147,48 @@ async def _evict_one_idle_victim(
             client.lifecycle_drain,
             generation=prepared.generation,
             admission_token=drain_token,
-            hard_deadline_ms=selected.owner_hard_deadline_ms,
+            hard_deadline_ms=work_hard_deadline_ms,
         )
-        if not isinstance(
-            drain_response, DrainTransitionResponse
-        ) or not _drain_ack_ready(
-            prepared,
+        drain_ack_matches = isinstance(
             drain_response,
-        ):
-            terminal_result = await commit_gpu_eviction_phase_from_health(
+            DrainTransitionResponse,
+        ) and (
+            _busy_drain_ack_matches(prepared, drain_response)
+            if allow_busy
+            else _drain_ack_ready(prepared, drain_response)
+        )
+        if not drain_ack_matches:
+            if not allow_busy:
+                terminal_result = await commit_gpu_eviction_phase_from_health(
+                    session_factory,
+                    store,
+                    prepared,
+                    phase="drain",
+                    challenge=None,
+                    owner_id=owner_id,
+                )
+            raise _capacity_unavailable("GPU idle victim did not acknowledge drain")
+
+        if allow_busy:
+            drain_challenge = await _wait_for_busy_eviction_ready(
                 session_factory,
                 store,
                 prepared,
-                phase="drain",
-                challenge=None,
-                owner_id=owner_id,
+                health_refresher=health_refresher,
+                heartbeat_task=heartbeat_task,
+                queue_deadline=queue_deadline,
+                ticket_expires_at_ms=ticket_expires_at_ms,
+                work_hard_deadline_ms=work_hard_deadline_ms,
+                poll_interval_seconds=poll_interval_seconds,
             )
-            raise _capacity_unavailable("GPU idle victim did not acknowledge drain")
-
-        drain_challenge = await _refresh_eviction_health(
-            health_refresher,
-            prepared,
-            phase="drain",
-        )
+        else:
+            drain_challenge = await _refresh_eviction_health(
+                health_refresher,
+                prepared,
+                phase="drain",
+            )
+        if allow_busy and int(time.time() * 1000) >= work_hard_deadline_ms:
+            raise _capacity_unavailable("GPU busy eviction work deadline reached")
         replay_challenge = drain_challenge
         terminal_result = await commit_gpu_eviction_phase_from_health(
             session_factory,
@@ -1750,7 +2212,7 @@ async def _evict_one_idle_victim(
             client.lifecycle_unload,
             generation=prepared.generation,
             admission_token=unload_token,
-            hard_deadline_ms=selected.owner_hard_deadline_ms,
+            hard_deadline_ms=work_hard_deadline_ms,
         )
         unload_ack_matches = isinstance(
             unload_response,
@@ -1798,18 +2260,37 @@ async def _evict_one_idle_victim(
         ) from exc
     finally:
         if owner_may_exist:
-            await _await_cancellation_safe(
-                _finish_eviction_transition(
-                    session_factory,
-                    store,
-                    prepared,
-                    owner_id=owner_id,
-                    phase=phase,
-                    terminal_result=terminal_result,
-                    replay_challenge=replay_challenge,
-                    heartbeat_task=heartbeat_task,
+            if allow_busy and owner_hard_deadline_ms is not None:
+                await _await_cancellation_safe(
+                    _finish_busy_eviction_transition(
+                        session_factory,
+                        store,
+                        signer,
+                        prepared,
+                        health_refresher=health_refresher,
+                        owner_id=owner_id,
+                        owner_hard_deadline_ms=owner_hard_deadline_ms,
+                        phase=phase,
+                        terminal_result=terminal_result,
+                        replay_challenge=replay_challenge,
+                        heartbeat_task=heartbeat_task,
+                    )
                 )
-            )
+            elif allow_busy:
+                await _await_cancellation_safe(_stop_eviction_heartbeat(heartbeat_task))
+            else:
+                await _await_cancellation_safe(
+                    _finish_eviction_transition(
+                        session_factory,
+                        store,
+                        prepared,
+                        owner_id=owner_id,
+                        phase=phase,
+                        terminal_result=terminal_result,
+                        replay_challenge=replay_challenge,
+                        heartbeat_task=heartbeat_task,
+                    )
+                )
 
 
 async def _ensure_cold_capacity(
@@ -1825,6 +2306,7 @@ async def _ensure_cold_capacity(
     ticket_expires_at_ms: int,
     requester_card_ticket_id: str,
     requester_queue_owner_id: str,
+    queue_poll_interval_seconds: float = _GPU_RUNTIME_QUEUE_POLL_INTERVAL_SECONDS,
 ) -> bool:
     changed = False
     for _ in range(_GPU_RUNTIME_MAX_EVICTION_ATTEMPTS):
@@ -1839,8 +2321,23 @@ async def _ensure_cold_capacity(
                 GPUArbiterErrorCode.UNAVAILABLE,
                 "GPU card snapshot is unavailable",
             ) from exc
+        allow_busy = False
         try:
-            victim = _idle_victim_hint(snapshot, requester)
+            try:
+                victim = _idle_victim_hint(snapshot, requester)
+            except GPUArbiterDispatchError as exc:
+                if (
+                    exc.error_code != GPUArbiterErrorCode.CAPACITY_UNAVAILABLE.value
+                    or not isinstance(exc.detail, dict)
+                    or exc.detail.get("message") != _GPU_RUNTIME_NO_SAFE_IDLE_VICTIM
+                ):
+                    raise
+                victim = _eviction_victim_hint(
+                    snapshot,
+                    requester,
+                    allow_busy=True,
+                )
+                allow_busy = True
         except _GPUVictimCooldownActive as exc:
             cooldown_wait_seconds = max(
                 0.0,
@@ -1878,6 +2375,8 @@ async def _ensure_cold_capacity(
                 ticket_expires_at_ms=ticket_expires_at_ms,
                 requester_card_ticket_id=requester_card_ticket_id,
                 requester_queue_owner_id=requester_queue_owner_id,
+                allow_busy=allow_busy,
+                poll_interval_seconds=queue_poll_interval_seconds,
             )
         if outcome == "unloaded":
             changed = True
@@ -2026,6 +2525,7 @@ async def _dispatch_cold_runtime(
                 ticket_expires_at_ms=card_ticket.expires_at_ms,
                 requester_card_ticket_id=card_ticket_id,
                 requester_queue_owner_id=owner_id,
+                queue_poll_interval_seconds=queue_poll_interval_seconds,
             )
         if capacity_changed:
             challenge = secrets.token_hex(32)

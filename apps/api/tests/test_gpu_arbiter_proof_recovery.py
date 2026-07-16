@@ -3343,6 +3343,14 @@ async def test_busy_eviction_cancel_commit_requires_ack_and_fresh_resident_healt
             intent = await db.get(GPUBackendCancelIntent, victim_id)
             assert intent is not None
             intent.jti = original_jti
+        assert (
+            await proof_store.arm_eviction_cancel(
+                _RESOURCE_A,
+                backend_id=str(victim_id),
+                expected_generation=cancel_subject.drain_generation,
+                transition_owner_id=owner_id,
+            )
+        ).status == "armed"
         challenge = "8" * 64
         await _install_eviction_phase_health(
             factory,
@@ -3493,6 +3501,14 @@ async def test_busy_eviction_cancel_uncertainty_never_reopens_resident(
                 UTC,
             ),
         )
+        assert (
+            await proof_store.arm_eviction_cancel(
+                _RESOURCE_A,
+                backend_id=str(victim_id),
+                expected_generation=cancel_subject.drain_generation,
+                transition_owner_id=owner_id,
+            )
+        ).status == "armed"
         if challenge is not None:
             await _install_eviction_phase_health(
                 factory,
