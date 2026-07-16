@@ -54,7 +54,10 @@ Loading→Resident CAS 中按 Redis `TIME` 写入 `not_evict_before_ms`；proof 
 以上精确重放和 Resident 快路均不续期。cold authority 会继续持有 exact card ticket，
 按 Redis 快照给出的累计最早时刻在 admission deadline 与固定 ticket TTL 内有界等待；等待不续期，
 超时或取消会精确清票，只有 victim 已可驱逐时才为终态清理预留独立窗口。忙碌 victim 的
-drain/cancel 与实物多卡验收仍是后续阶段。
+Redis 原子地基已能在保留旧 lease 时关闭新 admission、进入 Draining，并支持零 lease 后 Unloading、
+更新 generation 的 Resident cancel CAS 与携带 lease 的保守 Unknown；这些原语尚未接入 authority。
+durable cancel generation、backend active/builder/borrower 双域等待、主动 drain/cancel 与实物多卡验收
+仍是后续阶段。
 生产 effective enforce 继续保持关闭。
 
 派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。

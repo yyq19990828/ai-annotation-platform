@@ -4989,6 +4989,11 @@ if not ledger then
 end
 local committed = ledger.committed
 local has_card_ticket = ARGV[21] ~= '' or ARGV[22] ~= ''
+if ARGV[23] ~= '0' and ARGV[23] ~= '1' then
+  return response('config_mismatch', 'allow_busy_invalid', committed,
+    0, nil, nil, false)
+end
+local allow_busy = ARGV[23] == '1'
 if has_card_ticket and (ARGV[21] == '' or ARGV[22] == '') then
   return response('config_mismatch', 'card_ticket_identity_incomplete', committed,
     0, nil, nil, false)
@@ -5019,7 +5024,7 @@ if transition then
     and transition.owner_id == ARGV[10]
     and transition.generation == ARGV[9]
     and transition.operation == ARGV[11]
-    and transition.require_idle == true
+    and transition.require_idle == (not allow_busy)
     and transition.requester_backend_id == ARGV[2]
     and transition.requester_membership_epoch == ARGV[3]
     and transition.requester_budget_mb == requester_budget
@@ -5031,7 +5036,7 @@ if transition then
     and victim and victim.state == 'draining'
     and victim.generation == ARGV[9]
     and victim.evictable == true
-    and ledger.lease_counts[ARGV[6]] == 0
+    and (allow_busy or ledger.lease_counts[ARGV[6]] == 0)
   if exact then
     local shortfall = math.max(0, requester_budget - (ledger.allocatable - committed))
     return response('selected', 'idempotent_idle_eviction', committed, shortfall,
@@ -5093,10 +5098,10 @@ if shortfall <= 0 then
     0, nil, nil, false)
 end
 
-local idle_ready = {}
-local idle_all = {}
-local idle_ready_capacity = 0
-local idle_total_capacity = 0
+local eligible_ready = {}
+local eligible_all = {}
+local eligible_ready_capacity = 0
+local eligible_total_capacity = 0
 local possible_capacity = 0
 for backend_id, allocation in pairs(ledger.allocations) do
   if backend_id ~= ARGV[2]
@@ -5106,21 +5111,21 @@ for backend_id, allocation in pairs(ledger.allocations) do
      and allocation.eviction_priority <= requester_priority then
     possible_capacity = math.min(shortfall,
       possible_capacity + allocation.budget_mb)
-    if ledger.lease_counts[backend_id] == 0 then
-      table.insert(idle_all, allocation)
-      idle_total_capacity = math.min(
-        shortfall, idle_total_capacity + allocation.budget_mb)
+    if allow_busy or ledger.lease_counts[backend_id] == 0 then
+      table.insert(eligible_all, allocation)
+      eligible_total_capacity = math.min(
+        shortfall, eligible_total_capacity + allocation.budget_mb)
       if allocation.not_evict_before_ms <= ledger.now then
-        table.insert(idle_ready, allocation)
-        idle_ready_capacity = math.min(
-          shortfall, idle_ready_capacity + allocation.budget_mb)
+        table.insert(eligible_ready, allocation)
+        eligible_ready_capacity = math.min(
+          shortfall, eligible_ready_capacity + allocation.budget_mb)
       end
     end
   end
 end
-if idle_ready_capacity < shortfall then
-  if idle_total_capacity >= shortfall then
-    table.sort(idle_all, function(left, right)
+if eligible_ready_capacity < shortfall then
+  if eligible_total_capacity >= shortfall then
+    table.sort(eligible_all, function(left, right)
       if left.not_evict_before_ms ~= right.not_evict_before_ms then
         return left.not_evict_before_ms < right.not_evict_before_ms
       end
@@ -5128,7 +5133,7 @@ if idle_ready_capacity < shortfall then
     end)
     local available = 0
     local retry_at = ledger.now
-    for _, allocation in ipairs(idle_all) do
+    for _, allocation in ipairs(eligible_all) do
       available = math.min(shortfall, available + allocation.budget_mb)
       retry_at = math.max(retry_at, allocation.not_evict_before_ms)
       if available >= shortfall then break end
@@ -5136,15 +5141,15 @@ if idle_ready_capacity < shortfall then
     return response('cooldown_active', 'eligible_victim_cooldown_active', committed,
       shortfall, nil, nil, false, retry_at)
   end
-  if possible_capacity >= shortfall then
+  if not allow_busy and possible_capacity >= shortfall then
     return response('victim_busy', 'eligible_victim_has_leases', committed,
       shortfall, nil, nil, false)
   end
   return response('capacity_unavailable', 'eligible_capacity_insufficient', committed,
     shortfall, nil, nil, false)
 end
-table.sort(idle_ready, candidate_less)
-local victim = idle_ready[1]
+table.sort(eligible_ready, candidate_less)
+local victim = eligible_ready[1]
 if not victim or victim.backend_id ~= ARGV[6]
    or victim.generation ~= ARGV[8] then
   return response('stale_selection', 'victim_order_or_generation_changed', committed,
@@ -5165,7 +5170,7 @@ local hard_deadline = now + tonumber(ARGV[13])
 local expires_at = math.min(now + tonumber(ARGV[12]), hard_deadline)
 local owner = {
   resource_id=ARGV[1], backend_id=ARGV[6], owner_id=ARGV[10],
-  generation=ARGV[9], operation=ARGV[11], require_idle=true,
+  generation=ARGV[9], operation=ARGV[11], require_idle=(not allow_busy),
   requester_backend_id=ARGV[2], requester_membership_epoch=ARGV[3],
   requester_budget_mb=requester_budget,
   requester_eviction_priority=requester_priority,
@@ -5276,16 +5281,19 @@ if not cold_finalize and resident_cooldown_ms ~= 0 then
 end
 local eviction_allowed = {
   resident={draining=true},
-  draining={unloading=true, unknown=true},
+  draining={resident=true, unloading=true, unknown=true},
   unloading={unloaded=true, unknown=true}
 }
+local eviction_changes_generation =
+  (ARGV[20] == 'resident' and ARGV[4] == 'draining')
+  or (ARGV[20] == 'draining' and ARGV[4] == 'resident')
 if eviction_transition and (
     cold_finalize or ARGV[20] == ''
     or not eviction_allowed[ARGV[20]]
     or not eviction_allowed[ARGV[20]][ARGV[4]]
     or ARGV[8] == '' or ARGV[9] ~= 'evict'
-    or (ARGV[20] == 'resident' and ARGV[5] == '')
-    or (ARGV[20] ~= 'resident' and ARGV[5] ~= '')) then
+    or (eviction_changes_generation and ARGV[5] == '')
+    or (not eviction_changes_generation and ARGV[5] ~= '')) then
   return cjson.encode({status='invalid_transition', committed_mb=0})
 end
 local function valid_allocation(item, backend_id)
@@ -5363,7 +5371,11 @@ end
 
 if eviction_transition and allocation.state == ARGV[4] then
   local result_generation = ARGV[3]
-  if ARGV[20] == 'resident' then result_generation = ARGV[5] end
+  if ARGV[5] ~= '' then result_generation = ARGV[5] end
+  local owner_generation = result_generation
+  if ARGV[20] == 'draining' and ARGV[4] == 'resident' then
+    owner_generation = ARGV[3]
+  end
   local transition = ledger.transition
   local terminal = allocation.state == 'unloaded' or allocation.state == 'unknown'
   if allocation.generation ~= result_generation then
@@ -5373,12 +5385,19 @@ if eviction_transition and allocation.state == ARGV[4] then
      or transition.backend_id ~= ARGV[2]
      or transition.owner_id ~= ARGV[8]
      or transition.operation ~= ARGV[9]
-     or transition.generation ~= result_generation then
+     or transition.generation ~= owner_generation then
     return cjson.encode({status='owner_mismatch', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
   end
-  if lease_count > 0
+  local requires_zero_leases = allocation.state == 'unloading'
+    or allocation.state == 'unloaded'
+  local requires_idle = ARGV[20] == 'resident' and ARGV[4] == 'draining'
+    and transition.require_idle == true
+  if ((requires_zero_leases or requires_idle) and lease_count > 0)
      or (terminal and allocation.evictable ~= false)
      or (not terminal and allocation.evictable ~= true) then
+    if lease_count > 0 then
+      return cjson.encode({status='active_leases', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+    end
     return cjson.encode({status='invalid_transition', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
   end
   return cjson.encode({status='transitioned', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed, idempotent=true})
@@ -5445,10 +5464,14 @@ end
 
 local transition_owned = allocation.state == 'resident'
   or allocation.state == 'draining' or allocation.state == 'unloading'
+local transition_requires_idle = false
 if transition_owned then
   local transition = ledger.transition
   local owner_generation = allocation.generation
-  if ARGV[5] ~= '' then owner_generation = ARGV[5] end
+  if ARGV[5] ~= ''
+     and not (allocation.state == 'draining' and ARGV[4] == 'resident') then
+    owner_generation = ARGV[5]
+  end
   if not transition or ARGV[8] == '' or ARGV[9] == ''
      or transition.resource_id ~= ARGV[1]
      or transition.backend_id ~= ARGV[2]
@@ -5457,14 +5480,14 @@ if transition_owned then
      or transition.generation ~= owner_generation then
     return cjson.encode({status='owner_mismatch', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
   end
+  transition_requires_idle = transition.require_idle == true
 end
 
-if (allocation.state == 'draining' and ARGV[4] == 'unloading'
-    or allocation.state == 'unloading' and ARGV[4] == 'unloaded')
-   and lease_count > 0 then
-  return cjson.encode({status='active_leases', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
-end
-if eviction_transition and lease_count > 0 then
+if lease_count > 0 and (
+    (allocation.state == 'draining' and ARGV[4] == 'unloading')
+    or (allocation.state == 'unloading' and ARGV[4] == 'unloaded')
+    or (eviction_transition and allocation.state == 'resident'
+      and ARGV[4] == 'draining' and transition_requires_idle)) then
   return cjson.encode({status='active_leases', state=allocation.state, generation=allocation.generation, committed_mb=tonumber(redis.call('HGET', KEYS[1], 'committed_mb') or '0')})
 end
 if workload_owned and (ARGV[4] == 'unloaded' or ARGV[4] == 'cpu_fallback')
@@ -7294,9 +7317,12 @@ class GPUArbiterStore:
         owner_id: str,
         ttl_ms: int,
         hard_ttl_ms: int,
+        allow_busy: bool = False,
         requester_card_ticket_id: str | None = None,
         requester_queue_owner_id: str | None = None,
     ) -> GPUIdleEvictionResult:
+        if not isinstance(allow_busy, bool):
+            raise ValueError("allow_busy must be a boolean")
         for value, field in (
             (requester_backend_id, "requester_backend_id"),
             (victim_backend_id, "victim_backend_id"),
@@ -7360,6 +7386,7 @@ class GPUArbiterStore:
                     domains.active_backend_domain_fingerprint,
                     requester_card_ticket_id or "",
                     requester_queue_owner_id or "",
+                    "1" if allow_busy else "0",
                 ],
             )
         )
@@ -7657,6 +7684,7 @@ class GPUArbiterStore:
         allowed = {
             GPUAllocationState.RESIDENT: {GPUAllocationState.DRAINING},
             GPUAllocationState.DRAINING: {
+                GPUAllocationState.RESIDENT,
                 GPUAllocationState.UNLOADING,
                 GPUAllocationState.UNKNOWN,
             },
@@ -7667,11 +7695,17 @@ class GPUArbiterStore:
         }
         if target_state not in allowed.get(expected_state, set()):
             raise ValueError("eviction allocation transition is invalid")
-        if expected_state is GPUAllocationState.RESIDENT:
-            if next_generation is None:
-                raise ValueError("Resident eviction requires next_generation")
-        elif next_generation is not None:
-            raise ValueError("only Resident eviction may change generation")
+        changes_generation = (
+            expected_state is GPUAllocationState.RESIDENT
+            and target_state is GPUAllocationState.DRAINING
+        ) or (
+            expected_state is GPUAllocationState.DRAINING
+            and target_state is GPUAllocationState.RESIDENT
+        )
+        if changes_generation and next_generation is None:
+            raise ValueError("eviction generation transition requires next_generation")
+        if not changes_generation and next_generation is not None:
+            raise ValueError("eviction target must not change generation")
         return await self._transition_allocation_operation(
             resource_id,
             backend_id=backend_id,

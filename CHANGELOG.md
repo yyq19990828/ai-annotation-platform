@@ -37,6 +37,7 @@
 
 ### Added
 
+- **GPU busy victim 获得原子 drain 状态机地基**：Redis 驱逐 begin 可在 exact card ticket 队首按既定 priority + LRU 选择仍持有 workload lease 的 Resident，原子保留旧 lease、推进 allocation generation、绑定 transition owner 并进入 Draining。旧 generation lease 仍能 heartbeat/release，新 admission 被关闭，同卡非 victim Resident 快路保持可用；只有 lease 清零才可进入 Unloading。更新 generation 的 cancel CAS 可在保留旧 lease 与原 cooldown 的同时回滚 Resident，结果不确定时可携带 lease 保守落 Unknown，响应丢失精确重放不重复推进。durable cancel generation、双域 health 等待与 authority 主动 busy drain 仍保持关闭。
 - **GPU cooldown 阻断可在卡级队首有界等待**：cold authority 会保留 exact card ticket，按 Redis 快照给出的累计最早时刻等待，再重新读取容量快照后才开始 victim health、代际推进与驱逐。等待同时受 admission deadline 和固定 ticket TTL 约束，不续期，也不会提前消耗驱逐终态清理预留；超时或取消均精确清票，不同物理资源的等待互不阻塞。busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。
 - **GPU 新驻留获得原子 cooldown 保护**：Redis allocation schema 新增绝对保护截止时间，Resident 必须持有正截止时间且不能由普通 transition 绕过 cold finalize 生成。正常 cold 路径只有首次可信的 Loading→Resident 终态 CAS 才用 Redis 时钟开始窗口；proof reset 重建 Resident 时按 prepared 时刻保守恢复窗口，以上精确重放与 Resident 快路均不续期。Python 快照选择和驱逐 Lua 都会排除未到期 victim，Lua 可返回累计释放足够容量的最早时刻且在阻断时不推进任何驱逐状态。普通旧账本只会 fail-close 并经证明重建，不会原地补字段；升级时遗留的合法 v2 prepared reset 只能沿用原上下文 COMMIT 原子收敛为 v3。保护窗口默认 30 秒且可独立配置；busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。
 - **GPU authority 接通有界两级 FIFO**：Resident 请求只在 backend 全局并发饱和后进入 backend 队列，cold slow path 先取得卡级精确队首，再做容量检查和空闲驱逐。同一 card ticket 贯穿 cooldown 等待、多 victim 与最终准入，只在成功时原子消费；独立超时、固定 ticket TTL、驱逐终态清理预留和取消安全清理使等待不会无界挂起。busy drain、实物多卡验收与生产 effective enforce 仍保持关闭。

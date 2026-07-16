@@ -522,6 +522,17 @@ event loop 的测试证明连接生命周期正确。
 和固定 ticket TTL 双重约束，不续期，也不创建 transition owner 或调用 victim health/lifecycle。到期后必须
 重新读取快照，Lua 仍在驱逐 begin 原子区执行最终 cooldown fence；只有 victim 已可驱逐时才扣除终态清理
 预留，超时或取消则精确清理 ticket。
+
+Redis busy-drain 原子地基允许调用方显式放宽 idle 前置条件，但仍复用同一 exact card ticket、priority/LRU、
+cooldown 与 membership/generation 校验。begin 会保留 victim 的旧 workload lease，把 allocation generation
+推进到 drain generation、写入 `require_idle=false` 的 transition owner 并原子进入 Draining；新 admission
+随即关闭，旧 lease 仍只能 heartbeat/release，同卡非 victim 的 Resident 快路不被卡级 transition 无条件
+阻塞。Draining→Unloading 继续要求 victim lease 为零；不确定终态可在保留 lease 时转 Unknown 并全额计费。
+cancel 的 Redis CAS 必须携带更大结果 generation、匹配仍绑定 drain generation 的 exact owner，且只允许
+Draining→Resident；它保留原 `not_evict_before_ms`，响应丢失重放只读，进入 Unloading 后拒绝迟到 cancel。
+这些原语本身不授权 authority 主动选择 busy victim；durable cancel generation、RESUME token、fresh health
+证明与 cancellation-safe 编排必须完成后才能接线。
+
 drain 推进 generation 后，旧 generation 的合法在途 workload 仍可凭自己的 lease owner token heartbeat 和
 release；它只能操作自己的 lease，不能更新 allocation、transition 或 LRU。
 
