@@ -236,6 +236,7 @@ class GPUIdleEvictionResult:
         "selected",
         "capacity_available",
         "capacity_unavailable",
+        "card_queued",
         "victim_busy",
         "stale_selection",
         "transition_in_progress",
@@ -3958,11 +3959,11 @@ local backend_head, backend_live, backend_queue_error = read_queue(
 if backend_queue_error then
   return cjson.encode({status='ledger_corrupt', reason='backend_queue_decode_failed', committed_mb=committed, lease_count=lease_count})
 end
-if backend_head and (
-  ARGV[13] == '' or backend_head.ticket_id ~= ARGV[13]
-  or backend_head.owner_id ~= ARGV[9] or backend_head.backend_id ~= ARGV[2]
-  or backend_head.membership_epoch ~= ARGV[22]
-) then
+if (ARGV[13] ~= '' and (
+    not backend_head or backend_head.ticket_id ~= ARGV[13]
+    or backend_head.owner_id ~= ARGV[9] or backend_head.backend_id ~= ARGV[2]
+    or backend_head.membership_epoch ~= ARGV[22]))
+   or (ARGV[13] == '' and backend_head) then
   return cjson.encode({status='concurrency_queued', reason='backend_fifo_wait', committed_mb=committed, lease_count=lease_count})
 end
 if lease_count >= concurrency_limit then
@@ -3978,11 +3979,11 @@ if increment > 0 then
   if card_queue_error then
     return cjson.encode({status='ledger_corrupt', reason='card_queue_decode_failed', committed_mb=committed, lease_count=lease_count})
   end
-  if card_head and (
-    ARGV[14] == '' or card_head.ticket_id ~= ARGV[14]
-    or card_head.owner_id ~= ARGV[9] or card_head.backend_id ~= ARGV[2]
-    or card_head.membership_epoch ~= ARGV[22]
-  ) then
+  if (ARGV[14] ~= '' and (
+      not card_head or card_head.ticket_id ~= ARGV[14]
+      or card_head.owner_id ~= ARGV[9] or card_head.backend_id ~= ARGV[2]
+      or card_head.membership_epoch ~= ARGV[22]))
+     or (ARGV[14] == '' and card_head) then
     return cjson.encode({status='card_queued', reason='card_fifo_wait', committed_mb=committed, lease_count=lease_count})
   end
   if committed + increment > allocatable then
@@ -4956,6 +4957,11 @@ if not ledger then
   return response(integrity_status, integrity_status, 0, 0, nil, nil, false)
 end
 local committed = ledger.committed
+local has_card_ticket = ARGV[21] ~= '' or ARGV[22] ~= ''
+if has_card_ticket and (ARGV[21] == '' or ARGV[22] == '') then
+  return response('config_mismatch', 'card_ticket_identity_incomplete', committed,
+    0, nil, nil, false)
+end
 local requester_budget = tonumber(ARGV[4])
 local requester_priority = tonumber(ARGV[5])
 if not valid_integer(requester_budget, 1, 9007199254740991)
@@ -4987,6 +4993,8 @@ if transition then
     and transition.requester_membership_epoch == ARGV[3]
     and transition.requester_budget_mb == requester_budget
     and transition.requester_eviction_priority == requester_priority
+    and transition.requester_card_ticket_id == ARGV[21]
+    and transition.requester_queue_owner_id == ARGV[22]
     and transition.victim_membership_epoch == ARGV[7]
     and transition.victim_source_generation == ARGV[8]
     and victim and victim.state == 'draining'
@@ -4999,6 +5007,32 @@ if transition then
       victim, transition, true)
   end
   return response('transition_in_progress', 'transition_owner_active', committed,
+    0, nil, nil, false)
+end
+
+local card_head = nil
+local seen_card_tickets = {}
+local card_entries = redis.call('LRANGE', KEYS[3], 0, -1)
+for _, raw in ipairs(card_entries) do
+  local ticket = integrity_decode(raw)
+  if not integrity_valid_ticket(ticket, 'card', '', ledger.known_backends)
+     or seen_card_tickets[ticket.ticket_id] then
+    integrity_fault(ARGV[1], 'card_queue_invalid', ledger.now)
+    return response('ledger_corrupt', 'card_queue_invalid', committed,
+      0, nil, nil, false)
+  end
+  seen_card_tickets[ticket.ticket_id] = true
+  if not card_head and ticket.expires_at_ms > ledger.now then
+    card_head = ticket
+  end
+end
+if (has_card_ticket and (
+    not card_head or card_head.ticket_id ~= ARGV[21]
+    or card_head.backend_id ~= ARGV[2]
+    or card_head.owner_id ~= ARGV[22]
+    or card_head.membership_epoch ~= ARGV[3]))
+   or (not has_card_ticket and card_head) then
+  return response('card_queued', 'card_fifo_wait', committed,
     0, nil, nil, false)
 end
 
@@ -5079,6 +5113,7 @@ local owner = {
   requester_backend_id=ARGV[2], requester_membership_epoch=ARGV[3],
   requester_budget_mb=requester_budget,
   requester_eviction_priority=requester_priority,
+  requester_card_ticket_id=ARGV[21], requester_queue_owner_id=ARGV[22],
   victim_membership_epoch=ARGV[7], victim_source_generation=ARGV[8],
   created_at_ms=now, expires_at_ms=expires_at,
   hard_deadline_ms=hard_deadline
@@ -7166,6 +7201,8 @@ class GPUArbiterStore:
         owner_id: str,
         ttl_ms: int,
         hard_ttl_ms: int,
+        requester_card_ticket_id: str | None = None,
+        requester_queue_owner_id: str | None = None,
     ) -> GPUIdleEvictionResult:
         for value, field in (
             (requester_backend_id, "requester_backend_id"),
@@ -7173,6 +7210,16 @@ class GPUArbiterStore:
             (owner_id, "owner_id"),
         ):
             _validate_nonempty(value, field, max_length=256)
+        if (requester_card_ticket_id is None) != (requester_queue_owner_id is None):
+            raise ValueError(
+                "requester_card_ticket_id and requester_queue_owner_id must be paired"
+            )
+        for value, field in (
+            (requester_card_ticket_id, "requester_card_ticket_id"),
+            (requester_queue_owner_id, "requester_queue_owner_id"),
+        ):
+            if value is not None:
+                _validate_nonempty(value, field, max_length=256)
         requester_membership_epoch = _validate_membership_epoch(
             requester_membership_epoch
         )
@@ -7218,6 +7265,8 @@ class GPUArbiterStore:
                     domains.membership_domain_fingerprint,
                     domains.active_backend_domain_raw,
                     domains.active_backend_domain_fingerprint,
+                    requester_card_ticket_id or "",
+                    requester_queue_owner_id or "",
                 ],
             )
         )

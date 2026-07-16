@@ -4841,6 +4841,94 @@ async def test_backend_fifo_prevents_new_requests_bypassing_waiters(
 
 
 @pytest.mark.asyncio
+async def test_missing_or_expired_ticket_cannot_bypass_empty_fifo(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-ticket-presence/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="lease-initial",
+        owner_id="owner-initial",
+        budget_mb=60,
+        max_concurrency=1,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-initial",
+            owner_id="owner-initial",
+            generation="1",
+        )
+    ).status == "released"
+
+    missing_backend = await first.admit(
+        resource_id,
+        backend_ticket_id="missing-backend-ticket",
+        require_resident=True,
+        **_admission_kwargs(
+            "backend-a",
+            "lease-missing-ticket",
+            owner_id="owner-missing-ticket",
+            budget_mb=60,
+            max_concurrency=1,
+        ),
+    )
+    assert (missing_backend.status, missing_backend.reason) == (
+        "concurrency_queued",
+        "backend_fifo_wait",
+    )
+
+    assert (
+        await first.enqueue_backend(
+            resource_id,
+            backend_id="backend-a",
+            membership_epoch=1,
+            ticket_id="expired-backend-ticket",
+            owner_id="owner-expired-ticket",
+            ttl_ms=1,
+        )
+    ).status == "queued"
+    await asyncio.sleep(0.005)
+    expired_backend = await first.admit(
+        resource_id,
+        backend_ticket_id="expired-backend-ticket",
+        require_resident=True,
+        **_admission_kwargs(
+            "backend-a",
+            "lease-expired-ticket",
+            owner_id="owner-expired-ticket",
+            budget_mb=60,
+            max_concurrency=1,
+        ),
+    )
+    assert (expired_backend.status, expired_backend.reason) == (
+        "concurrency_queued",
+        "backend_fifo_wait",
+    )
+
+    missing_card = await first.admit(
+        resource_id,
+        card_ticket_id="missing-card-ticket",
+        **_admission_kwargs(
+            "backend-b",
+            "lease-missing-card-ticket",
+            owner_id="owner-missing-card-ticket",
+            budget_mb=40,
+        ),
+    )
+    assert (missing_card.status, missing_card.reason) == (
+        "card_queued",
+        "card_fifo_wait",
+    )
+    assert len((await first.snapshot(resource_id)).leases) == 0
+
+
+@pytest.mark.asyncio
 async def test_queue_ticket_and_transition_owner_require_exact_owner(
     redis_stores,
 ) -> None:
@@ -5568,6 +5656,114 @@ async def test_begin_idle_eviction_is_side_effect_free_without_safe_capacity(
     assert after.ledger_revision == insufficient_before.ledger_revision
     assert after.transition_present is False
     assert all(item.state is GPUAllocationState.RESIDENT for item in after.allocations)
+
+
+@pytest.mark.asyncio
+async def test_begin_idle_eviction_requires_exact_live_card_fifo_head(
+    redis_stores,
+) -> None:
+    first, second = redis_stores
+    resource_id = "node-eviction-fifo/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        backend_id="backend-a",
+        lease_id="victim-lease",
+        owner_id="victim-owner",
+        budget_mb=60,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="victim-lease",
+            owner_id="victim-owner",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await first.enqueue_card(
+            resource_id,
+            backend_id="backend-c",
+            membership_epoch=1,
+            ticket_id="card-head",
+            owner_id="dispatch-head",
+            ttl_ms=30_000,
+        )
+    ).position == 1
+    assert (
+        await second.enqueue_card(
+            resource_id,
+            backend_id="backend-b",
+            membership_epoch=1,
+            ticket_id="card-second",
+            owner_id="dispatch-second",
+            ttl_ms=30_000,
+        )
+    ).position == 2
+
+    common = {
+        "requester_budget_mb": 50,
+        "requester_eviction_priority": 0,
+        "victim_backend_id": "backend-a",
+        "victim_membership_epoch": 1,
+        "victim_expected_generation": "1",
+        "victim_next_generation": "2",
+        "owner_id": "eviction-owner",
+        "ttl_ms": 30_000,
+        "hard_ttl_ms": 60_000,
+    }
+    missing = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_card_ticket_id="missing-card-ticket",
+        requester_queue_owner_id="dispatch-head",
+        **common,
+    )
+    assert (missing.status, missing.reason) == ("card_queued", "card_fifo_wait")
+    out_of_order = await second.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-b",
+        requester_membership_epoch=1,
+        requester_card_ticket_id="card-second",
+        requester_queue_owner_id="dispatch-second",
+        **common,
+    )
+    assert (out_of_order.status, out_of_order.reason) == (
+        "card_queued",
+        "card_fifo_wait",
+    )
+    assert (await first.snapshot(resource_id)).transition_present is False
+
+    selected = await first.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_card_ticket_id="card-head",
+        requester_queue_owner_id="dispatch-head",
+        **common,
+    )
+    assert selected.status == "selected"
+    assert selected.victim_backend_id == "backend-a"
+    replayed = await second.begin_idle_eviction(
+        resource_id,
+        requester_backend_id="backend-c",
+        requester_membership_epoch=1,
+        requester_card_ticket_id="card-head",
+        requester_queue_owner_id="dispatch-head",
+        **common,
+    )
+    assert (replayed.status, replayed.idempotent) == ("selected", True)
+    assert (
+        await first.queue_position(
+            resource_id,
+            backend_id="backend-c",
+            ticket_id="card-head",
+            card_queue=True,
+        )
+    ).position == 1
 
 
 @pytest.mark.asyncio

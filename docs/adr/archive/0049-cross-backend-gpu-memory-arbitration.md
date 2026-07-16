@@ -503,6 +503,9 @@ event loop 的测试证明连接生命周期正确。
 
 已 resident 且不参与 drain 的 backend 不因同卡另一个慢请求无条件 head-of-line blocking。需要新 allocation
 或驱逐的慢路径按卡 FIFO。视频追踪按现有窗口逐次持 lease，不锁整个作业；每窗结束重新参与排队。
+显式携带 queue ticket 的原子操作必须验证它仍是匹配 backend、owner 与 membership 的存活精确队首；
+缺失或过期 ticket 不能把队列为空变成绕过许可。驱逐 begin 只校验、不消费 card ticket，多 victim 每次重验，
+最终 target admission 成功时才原子消费。
 drain 推进 generation 后，旧 generation 的合法在途 workload 仍可凭自己的 lease owner token heartbeat 和
 release；它只能操作自己的 lease，不能更新 allocation、transition 或 LRU。
 
