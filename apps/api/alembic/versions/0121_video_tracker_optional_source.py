@@ -37,6 +37,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The previous schema cannot represent sourceless or multi-source jobs.
+    op.execute("DELETE FROM video_tracker_jobs WHERE annotation_id IS NULL")
     op.drop_column("video_tracker_jobs", "target_tool_unit_id")
     op.drop_column("video_tracker_jobs", "target_class_name")
     op.alter_column(

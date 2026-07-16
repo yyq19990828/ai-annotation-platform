@@ -115,10 +115,17 @@ describe("video annotation actions helpers", () => {
         keyframes: [{ frame_index: 4, mask, source: "manual", occluded: false }],
       },
     });
-    const geometry = payload.geometry as import("@/types").VideoTrackMaskGeometry;
+    const geometry = {
+      ...(payload.geometry as import("@/types").VideoTrackMaskGeometry),
+      outside: [{ from: 5, to: 9, source: "manual" as const }],
+    };
     const updated = upsertVideoMaskKeyframe(geometry, 7, { ...mask, sha256: "b".repeat(64) });
     expect(updated.keyframes.map((keyframe) => keyframe.frame_index)).toEqual([4, 7]);
     expect(updated.keyframes[1].source).toBe("manual");
+    expect(updated.outside).toEqual([
+      { from: 5, to: 6, source: "manual" },
+      { from: 8, to: 9, source: "manual" },
+    ]);
   });
 
   it("uses videoKeyframe history command for single-keyframe track edits", () => {

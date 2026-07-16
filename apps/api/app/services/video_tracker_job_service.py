@@ -20,10 +20,12 @@ from app.schemas.video_tracker_job import (
 )
 from app.services.scheduler import is_privileged_for_project
 from app.services.ml_backend import MLBackendService
+from app.services.raster_mask_storage import load_coco_rle
 from app.services.video_frame_service import VideoContext
 from app.services.video_segment_service import ensure_segments
 from app.services.video_tracker_adapters import registered_tracker_models
 from app.services.video_tracks import is_polyline_track, resolve_track_at_frame
+from app.utils.raster_mask_rle import coco_rle_bbox_norm
 
 
 log = logging.getLogger(__name__)
@@ -159,7 +161,40 @@ def _seed_geometry_at_frame(annotation: Annotation, from_frame: int) -> dict:
         return {"type": "polygon", "points": resolved["points"]}
     if resolved.get("bbox") is not None:
         return {"type": "bbox", **resolved["bbox"]}
+    if resolved.get("mask") is not None:
+        bbox = coco_rle_bbox_norm(load_coco_rle(resolved["mask"]))
+        if bbox:
+            return {"type": "bbox", **bbox}
     return geometry
+
+
+async def _validate_sourceless_target(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    class_name: str | None,
+    tool_unit_id: str | None,
+) -> None:
+    if not class_name or not tool_unit_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Sourceless tracking requires target_class_name and target_tool_unit_id",
+        )
+    project = await db.get(Project, project_id)
+    binding = (project.tool_bindings or {}).get(tool_unit_id) if project else None
+    classes = binding.get("classes") if isinstance(binding, dict) else None
+    allowed = {
+        item.get("name")
+        for item in (classes or [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    if not isinstance(binding, dict) or not binding.get("enabled") or class_name not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"target class '{class_name}' is not configured for tool unit "
+                f"'{tool_unit_id}'"
+            ),
+        )
 
 
 async def create_tracker_job(
@@ -224,13 +259,20 @@ async def create_tracker_job(
         # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
         if is_polyline_track(annotation.geometry or {}):
             raise HTTPException(status_code=400, detail="polyline 轨迹追踪暂不支持")
+    sourceless = annotation_id is None and not multi_source_ids
+    if sourceless:
+        await _validate_sourceless_target(
+            db,
+            task.project_id,
+            payload.target_class_name,
+            payload.target_tool_unit_id,
+        )
     privileged = await _is_privileged(db, task, user)
     segment_id = await _assert_segment_lock(
         db, ctx, payload, user, privileged=privileged
     )
 
     # v0.22.1 · B · 无源检测 (无单主且非多源) 才存显式目标类别; 有源延展 / 多源批量各自继承源。
-    sourceless = annotation_id is None and not multi_source_ids
     row = VideoTrackerJob(
         task_id=task.id,
         dataset_item_id=ctx.item.id,

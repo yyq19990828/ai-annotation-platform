@@ -846,7 +846,7 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(summary).toContain("2 类");
   });
 
-  it("单轨延展隐藏会发现新目标的文本模型", () => {
+  it("单轨延展保留可用的 sam3 文本模型", () => {
     render(
       <VideoTrackerPropagateDialog
         {...baseProps}
@@ -859,7 +859,8 @@ describe("VideoTrackerPropagateDialog", () => {
       />,
     );
     const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
-    expect(Array.from(modelSelect.options).map((option) => option.value)).not.toContain("sam3_video");
+    expect(Array.from(modelSelect.options).map((option) => option.value)).toContain("sam3_video");
+    expect(modelSelect.value).toBe("sam3_video");
     expect(screen.getByTestId("tracker-impact-summary").textContent).toContain("延展当前轨迹");
   });
 

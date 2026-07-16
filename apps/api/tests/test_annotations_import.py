@@ -532,7 +532,10 @@ async def test_import_annotations_batch_transitions_suppressed(
 
 
 async def test_aap_mask_objects_must_match_content_addressed_reference():
-    from app.services.annotations_import import _validate_aap_mask_objects
+    from app.services.annotations_import import (
+        _GEOMETRY_ADAPTER,
+        _validate_aap_mask_objects,
+    )
     from app.services.raster_mask_storage import build_rle_reference
 
     rle = {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]}
@@ -542,9 +545,16 @@ async def test_aap_mask_objects_must_match_content_addressed_reference():
         "track_id": "mask-1",
         "keyframes": [{"frame_index": 0, "mask": reference}],
     }
+    geometry = _GEOMETRY_ADAPTER.validate_python(geometry).model_dump(
+        mode="json", by_alias=True, exclude_unset=True
+    )
     assert _validate_aap_mask_objects(geometry, {reference["sha256"]: rle}) == [rle]
     with pytest.raises(ValueError, match="missing"):
         _validate_aap_mask_objects(geometry, {})
+    mismatched = {**reference, "runs": reference["runs"] + 1}
+    geometry["keyframes"][0]["mask"] = mismatched
+    with pytest.raises(ValueError, match="metadata mismatch"):
+        _validate_aap_mask_objects(geometry, {reference["sha256"]: rle})
 
 
 async def test_import_annotations_multi_geometry_kinds(

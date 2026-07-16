@@ -378,9 +378,7 @@ export function VideoTrackerPropagateDialog({
       supportedTrackers,
     );
     if (sourceless) return available;
-    return available.filter(
-      (model) => model.value !== "sam3_video" && model.value !== "sam3_video_combo",
-    );
+    return available.filter((model) => model.value !== "sam3_video_combo");
   }, [preferNonMockModel, sourceless, supportedTrackers]);
 
   // text-driven 判定用于显示目标描述；可执行性已由 modelOptions 按项目后端能力过滤。

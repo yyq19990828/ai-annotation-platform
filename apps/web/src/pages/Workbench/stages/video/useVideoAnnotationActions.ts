@@ -28,6 +28,7 @@ import {
   type VideoTrackKeyframeWithAttrs,
 } from "../../state/videoTrackCommands";
 import { isAnyVideoSingleFrame, isAnyVideoTrack, nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
+import { removeOutsideFrame } from "../../stage/videoTrackOutside";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry | VideoTrackMaskGeometry;
@@ -187,10 +188,11 @@ export function upsertVideoMaskKeyframe(
   frameIndex: number,
   mask: CocoRleMaskRef,
 ): VideoTrackMaskGeometry {
+  const visibleGeometry = removeOutsideFrame(geometry, frameIndex);
   return {
-    ...geometry,
+    ...visibleGeometry,
     keyframes: [
-      ...geometry.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
+      ...visibleGeometry.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
       { frame_index: frameIndex, mask, source: "manual" as const, occluded: false },
     ].sort((a, b) => a.frame_index - b.frame_index),
   };

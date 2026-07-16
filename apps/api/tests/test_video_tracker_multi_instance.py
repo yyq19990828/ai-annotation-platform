@@ -96,6 +96,12 @@ async def _make_video_task(db_session, owner_id):
         type_label="视频 · 时序追踪",
         owner_id=owner_id,
         classes=["car"],
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [{"name": "car"}, {"name": "pedestrian"}],
+            }
+        },
     )
     dataset = Dataset(
         display_id=f"D-MI-{uuid.uuid4().hex[:6]}",
@@ -386,6 +392,62 @@ async def test_create_tracker_job_sourceless_stores_target_category(
     assert job.annotation_id is None
     assert job.target_class_name == "pedestrian"
     assert job.target_tool_unit_id == "bbox"
+
+
+async def test_create_tracker_job_sourceless_rejects_invalid_target(
+    db_session, super_admin
+):
+    from fastapi import HTTPException
+
+    from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_tracker_job_service import create_tracker_job
+
+    user, _ = super_admin
+    task, _item = await _make_video_task(db_session, user.id)
+    ctx = await build_context_from_task(db_session, task)
+    payload = VideoTrackerPropagateRequest(
+        from_frame=0,
+        to_frame=3,
+        model_key="mock_bbox",
+        target_class_name="not-configured",
+        target_tool_unit_id="bbox",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await create_tracker_job(
+            db_session, task=task, ctx=ctx, annotation_id=None, payload=payload, user=user
+        )
+    assert exc.value.status_code == 422
+
+
+def test_mask_track_seed_geometry_is_hydrated_to_bbox(monkeypatch):
+    from types import SimpleNamespace
+
+    import app.services.video_tracker_job_service as service
+
+    reference = {"object_key": "raster-masks/sha256/x", "sha256": "x"}
+    annotation = SimpleNamespace(
+        geometry={
+            "type": "video_track_mask",
+            "track_id": "mask-track",
+            "keyframes": [{"frame_index": 0, "mask": reference}],
+        }
+    )
+    monkeypatch.setattr(service, "load_coco_rle", lambda value: {"rle": value})
+    monkeypatch.setattr(
+        service,
+        "coco_rle_bbox_norm",
+        lambda _rle: {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+    )
+
+    assert service._seed_geometry_at_frame(annotation, 0) == {
+        "type": "bbox",
+        "x": 0.1,
+        "y": 0.2,
+        "w": 0.3,
+        "h": 0.4,
+    }
 
 
 async def test_create_tracker_job_rejects_unavailable_real_model(
