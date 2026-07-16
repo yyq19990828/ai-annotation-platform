@@ -516,8 +516,10 @@ GPU_LIFECYCLE_ACTIVE_SIGNING_KID=production-current
 容量，不是显卡标称总显存。`GPU_ARBITER_MODE` 是全局上限，resource 的 `mode` 是逐卡
 开关；期望模式取两者中更保守的一个，resource 未显式声明 mode 时按 `off`。静态配置
 `GPU_ARBITER_ROLLOUT_ENABLED` 是独立的发布闩，默认 `false`。关闭时即使 desired 为
-`enforce`，实际模式也保持 `off`，且派发不读取 rollout 表；开启后，逐资源持久状态缺失、
-处于 promotion/demotion、被阻断或数据库不可读都必须在 Backend HTTP 前 fail-closed。
+`enforce`，worker 也不执行 enforce repair，实际模式保持 `off`，且派发不读取 rollout
+表；开启后 health worker 先持久进入 `promoting`，只有 Backend gate 与 Redis ready 都已证明时
+才提交 `enforcing`。逐资源持久状态缺失、处于 promotion/demotion、被阻断或数据库
+不可读都必须在 Backend HTTP 前 fail-closed。
 该开关本身不等于完成 promotion，也不能绕过 Redis ready 与 Backend gate 证明。
 静态配置
 层只会拒绝缺字段、未知资源和单 backend 预算超卡；同卡多个 backend 的预算和超容量

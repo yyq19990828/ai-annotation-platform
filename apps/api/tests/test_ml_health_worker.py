@@ -1258,12 +1258,80 @@ def test_worker_module_imports_and_registers_task():
     )
 
 
+@pytest.fixture
+def enabled_gpu_rollout_worker(monkeypatch):
+    from app.config import GPUArbiterMode, settings
+    from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
+    from app.workers import ml_health
+
+    monkeypatch.setattr(settings, "gpu_arbiter_rollout_enabled", True)
+    transitions: dict[str, GPUArbiterRolloutSnapshot] = {}
+    events: list[tuple[str, str]] = []
+
+    async def begin(_factory, resource_id, target_mode):
+        assert target_mode is GPUArbiterMode.ENFORCE
+        transition_id = uuid.uuid4()
+        rollout = GPUArbiterRolloutSnapshot(
+            resource_id=resource_id,
+            state="promoting",
+            effective_mode=GPUArbiterMode.OFF,
+            target_mode=GPUArbiterMode.ENFORCE,
+            transition_id=transition_id,
+            last_transition_id=None,
+            blocker_reason=None,
+            revision=2,
+        )
+        transitions[resource_id] = rollout
+        events.append(("begin", resource_id))
+        return rollout
+
+    async def complete(_factory, resource_id, transition_id):
+        rollout = transitions[resource_id]
+        assert rollout.transition_id == transition_id
+        settled = GPUArbiterRolloutSnapshot(
+            resource_id=resource_id,
+            state="enforcing",
+            effective_mode=GPUArbiterMode.ENFORCE,
+            target_mode=GPUArbiterMode.ENFORCE,
+            transition_id=None,
+            last_transition_id=transition_id,
+            blocker_reason=None,
+            revision=rollout.revision + 1,
+        )
+        transitions[resource_id] = settled
+        events.append(("complete", resource_id))
+        return settled
+
+    async def block(_factory, resource_id, transition_id, reason):
+        rollout = transitions[resource_id]
+        assert rollout.transition_id == transition_id
+        settled = GPUArbiterRolloutSnapshot(
+            resource_id=resource_id,
+            state="blocked",
+            effective_mode=GPUArbiterMode.OFF,
+            target_mode=GPUArbiterMode.ENFORCE,
+            transition_id=transition_id,
+            last_transition_id=None,
+            blocker_reason=reason,
+            revision=rollout.revision + 1,
+        )
+        transitions[resource_id] = settled
+        events.append(("block", resource_id))
+        return settled
+
+    monkeypatch.setattr(ml_health, "begin_gpu_arbiter_rollout", begin)
+    monkeypatch.setattr(ml_health, "complete_gpu_arbiter_rollout", complete)
+    monkeypatch.setattr(ml_health, "block_gpu_arbiter_rollout", block)
+    return events
+
+
 @pytest.mark.parametrize(
     ("global_mode", "resource_mode"),
     (("off", "enforce"), ("observe", "enforce"), ("enforce", "observe")),
 )
 async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
     monkeypatch,
+    enabled_gpu_rollout_worker,
     global_mode: str,
     resource_mode: str,
 ) -> None:
@@ -1327,6 +1395,127 @@ async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
         "resources": [],
     }
     assert calls == {"redis": 0, "signer": 0, "promoter": 0, "mode": 0}
+
+
+async def test_gpu_repair_worker_does_not_prepare_enforce_while_rollout_disabled(
+    monkeypatch,
+) -> None:
+    from app.config import GPUArbiterMode, settings
+    from app.workers import ml_health
+
+    resource_id = "node-worker/GPU-release-latch"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(settings, "gpu_arbiter_rollout_enabled", False)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": "GPU-release-latch",
+                    "allocatable_mb": 8192,
+                    "mode": "enforce",
+                }
+            }
+        ),
+    )
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("disabled rollout must not open DB or Redis repair")
+
+    monkeypatch.setattr(ml_health, "create_async_engine", unexpected)
+    monkeypatch.setattr(ml_health.GPUArbiterStore, "from_url", unexpected)
+    monkeypatch.setattr(ml_health, "begin_gpu_arbiter_rollout", unexpected)
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert result == {
+        "skipped": True,
+        "reason": "gpu_rollout_disabled",
+        "resources": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("ready", "expected_state", "expected_effective", "expected_event"),
+    (
+        (True, "enforcing", "enforce", "complete"),
+        (False, "blocked", "off", "block"),
+    ),
+)
+async def test_gpu_repair_worker_settles_exact_rollout_after_redis_proof(
+    monkeypatch,
+    enabled_gpu_rollout_worker,
+    ready: bool,
+    expected_state: str,
+    expected_effective: str,
+    expected_event: str,
+) -> None:
+    from app.config import GPUArbiterMode, settings
+    from app.workers import ml_health
+
+    resource_id = f"node-worker/GPU-rollout-{expected_state}"
+    monkeypatch.setattr(settings, "gpu_arbiter_mode", GPUArbiterMode.ENFORCE)
+    monkeypatch.setattr(
+        settings,
+        "gpu_arbiter_resources_json",
+        json.dumps(
+            {
+                resource_id: {
+                    "node_id": "node-worker",
+                    "physical_device_token": f"GPU-rollout-{expected_state}",
+                    "allocatable_mb": 8192,
+                    "mode": "enforce",
+                }
+            }
+        ),
+    )
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            return None
+
+    class FakeStore:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        ml_health, "create_async_engine", lambda *_args, **_kwargs: FakeEngine()
+    )
+    monkeypatch.setattr(
+        ml_health, "async_sessionmaker", lambda *_args, **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        ml_health.GPUArbiterStore,
+        "from_url",
+        lambda *_args, **_kwargs: FakeStore(),
+    )
+
+    async def repair(*_args, **_kwargs):
+        enabled_gpu_rollout_worker.append(("repair", resource_id))
+        return {
+            "resource_id": resource_id,
+            "desired_mode": "enforce",
+            "effective_mode": "off",
+            "action": "repair",
+            "status": "ready" if ready else "not_ready",
+            "ready": ready,
+            "reason": "" if ready else "backend_gate_unconfirmed",
+        }
+
+    monkeypatch.setattr(ml_health, "_repair_one_gpu_resource", repair)
+
+    result = await ml_health._repair_gpu_arbiter_resources()
+
+    assert enabled_gpu_rollout_worker == [
+        ("begin", resource_id),
+        ("repair", resource_id),
+        (expected_event, resource_id),
+    ]
+    resource = result["resources"][0]
+    assert resource["rollout"]["state"] == expected_state
+    assert resource["effective_mode"] == expected_effective
 
 
 @pytest.mark.parametrize(
@@ -1505,6 +1694,7 @@ async def test_gpu_promotion_stops_when_redis_demotion_is_unconfirmed(
 
 async def test_gpu_repair_worker_gives_every_card_time_within_batch(
     monkeypatch,
+    enabled_gpu_rollout_worker,
 ) -> None:
     from types import SimpleNamespace
 
@@ -1582,6 +1772,7 @@ async def test_gpu_repair_worker_gives_every_card_time_within_batch(
 
 async def test_gpu_repair_worker_latches_not_ready_after_generic_failure(
     monkeypatch,
+    enabled_gpu_rollout_worker,
 ) -> None:
     from types import SimpleNamespace
 
@@ -1644,6 +1835,7 @@ async def test_gpu_repair_worker_latches_not_ready_after_generic_failure(
 
 async def test_gpu_repair_batch_timeout_latches_every_cancelled_card(
     monkeypatch,
+    enabled_gpu_rollout_worker,
 ) -> None:
     from types import SimpleNamespace
 
