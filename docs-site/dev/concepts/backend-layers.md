@@ -45,7 +45,7 @@ services/
 
 `gpu_arbitration` 内部按职责分层：`contracts`（dispatch 请求/grant/错误与失败记录）和 `policy`（mode/claim/shadow 决策）是 cycle-safe 叶模块；`fences`、`proofs`、`control_preparation`、`reconciliation`、`retirement`、`diagnostics` 依次构建在低层之上；`dispatch`、`membership_activation`、`rollout_control` 是允许依赖 `ml_client` 的高层编排模块。`ml_client` 只依赖 `contracts`、`policy`、`rollout_state`。
 
-所有旧平铺路径（`gpu_arbiter`、`gpu_admission_signer`、`gpu_arbiter_rollout`、`gpu_collector_database`、`gpu_dispatch_authority`、`gpu_membership_activation`、`gpu_rollout_control`、`gpu_arbiter_store` 以及 Video/Export/Data Manager 的等价物）都是纯兼容 facade，只保留模块说明、显式 re-export 和 `__all__`。新生产代码必须直接导入领域模块，不得经由纯 facade 回流。
+`app.services.*` 是应用内部实现，不是公共 API。领域 package 是唯一的实现和导入边界；旧平铺路径已在 v0.23.2 中物理删除，永久守卫（`tests/test_compat_facades.py` 的 `REMOVED_MODULE_SPECS`、`tests/test_domain_package_architecture.py` 的 `REMOVED_MODULES` 与 `scripts/check_removed_service_modules.mjs`）阻止旧路径以任何形式回流。
 
 ## 模型（db/models）
 

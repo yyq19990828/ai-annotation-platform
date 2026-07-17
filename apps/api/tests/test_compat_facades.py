@@ -640,7 +640,8 @@ REMOVED_MODULE_SPECS: tuple[FacadeSpec, ...] = (
             "app.workers.ml_health",
             "scripts.validate_gpu_arbitration",
         ),
-    ),)
+    ),
+)
 
 _EXPECTED_FACADES: set[str] = set()
 
@@ -916,9 +917,7 @@ def test_facade_no_import_star(spec: FacadeSpec) -> None:
 _REMOVED_FACADES = {spec.facade_module for spec in REMOVED_MODULE_SPECS}
 
 
-@pytest.mark.parametrize(
-    "spec", REMOVED_MODULE_SPECS, ids=lambda s: s.facade_module
-)
+@pytest.mark.parametrize("spec", REMOVED_MODULE_SPECS, ids=lambda s: s.facade_module)
 def test_removed_module_not_importable(spec: FacadeSpec) -> None:
     """Every removed module must fail to import in all forms."""
     import importlib.util
@@ -945,9 +944,7 @@ def test_removed_module_not_importable(spec: FacadeSpec) -> None:
         __import__(old, fromlist=[first_symbol])
 
 
-@pytest.mark.parametrize(
-    "spec", REMOVED_MODULE_SPECS, ids=lambda s: s.facade_module
-)
+@pytest.mark.parametrize("spec", REMOVED_MODULE_SPECS, ids=lambda s: s.facade_module)
 def test_removed_module_cold_import_fails(spec: FacadeSpec) -> None:
     """A cold subprocess confirms the module is gone without test-order side effects."""
     old = spec.facade_module
