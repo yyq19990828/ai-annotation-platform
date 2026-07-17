@@ -30,7 +30,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.services.export_packaging import _rotated_corners_norm
+from app.services.exporting.packaging import _rotated_corners_norm
 from app.services.prediction import to_internal_shape
 from app.services.predictions_import import internal_geometry_to_ls_shape
 

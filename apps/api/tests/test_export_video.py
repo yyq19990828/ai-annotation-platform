@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from app.services.export_video import (
+from app.services.exporting.video import (
     build_coco_frames_seg,
     build_yolo_frame_det_labels,
     build_kitti_labels,

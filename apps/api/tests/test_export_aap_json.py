@@ -24,7 +24,7 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas.aap_json import AAPTaskBlock, AAPTaskMatch
 from app.services.display_id import next_display_id
-from app.services.export import ExportService
+from app.services.exporting.service import ExportService
 from tests.factory import create_project
 
 pytestmark = pytest.mark.asyncio
@@ -437,7 +437,7 @@ async def test_export_aap_json_video_project_task_block(
     )
     await db_session.flush()
     rle = {"encoding": "coco_rle", "size": [1080, 1920], "counts": [1080 * 1920]}
-    monkeypatch.setattr("app.services.export.load_coco_rle", lambda reference: rle)
+    monkeypatch.setattr("app.services.exporting.service.load_coco_rle", lambda reference: rle)
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
     assert body["schema_version"] == "1.3"

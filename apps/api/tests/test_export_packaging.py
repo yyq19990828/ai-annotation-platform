@@ -19,7 +19,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.services.export_packaging import (
+from app.services.exporting.packaging import (
     _build_video_export_zip,
     clean_export_targets,
     relative_path_from_file_path,
@@ -87,7 +87,7 @@ def test_clean_export_targets_aap_json_valid_for_both_modalities():
 
 async def test_video_yolo_frames_zip_writes_grid_labels_and_manifest(monkeypatch):
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id = uuid.uuid4()
@@ -334,7 +334,7 @@ async def test_polygon_geometries_reach_yolo_frames_det_as_bounding_boxes(monkey
     空标注，比直接丢弃更坏。
     """
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -366,7 +366,7 @@ async def test_polygon_geometries_reach_yolo_frames_det_as_bounding_boxes(monkey
 async def test_polyline_single_frame_reaches_yolo_frames_det(monkeypatch):
     """开路径 polyline 同样降级为顶点外接框（不闭合不影响外接框）。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -404,7 +404,7 @@ async def test_polyline_single_frame_reaches_yolo_frames_det(monkeypatch):
 async def test_polygon_track_reaches_mot_gt(monkeypatch):
     """polygon track 也要进 MOT gt.txt（此前打包层丢弃 → gt.txt 空）。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -435,7 +435,7 @@ async def test_polygon_track_reaches_mot_gt(monkeypatch):
 async def test_yolo_frames_seg_keeps_polygon_vertices(monkeypatch):
     """seg 导出保留原始顶点；同一几何在 det 里是外接框，在 seg 里是多边形。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -464,7 +464,7 @@ async def test_yolo_frames_seg_keeps_polygon_vertices(monkeypatch):
 async def test_yolo_frames_seg_expands_polygon_track_per_frame(monkeypatch):
     """polygon track 按帧展开为 seg 行；outside 帧不产出。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -491,7 +491,7 @@ async def test_yolo_frames_seg_expands_polygon_track_per_frame(monkeypatch):
 async def test_yolo_frames_seg_skips_bbox_and_polyline(monkeypatch):
     """对齐图片侧 yolo-seg：矩形框与折线不产出 seg 行（折线非闭合区域）。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -556,7 +556,7 @@ def test_clean_export_targets_rejects_yolo_frames_seg_for_image_project():
 async def test_coco_frames_seg_writes_single_coco_doc(monkeypatch):
     """单 target 时 annotations.json 落包根：像素 segmentation、空帧 image、结构契约完整。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -611,7 +611,7 @@ async def test_coco_frames_seg_writes_single_coco_doc(monkeypatch):
 async def test_coco_frames_seg_multi_target_subdir_and_frame_dirs(monkeypatch):
     """多 target 时落 coco-frames-seg/ 子目录，且 manifest 带 images 抽帧目录。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -653,7 +653,7 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))
@@ -677,7 +677,7 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
         "counts": [0, 1, 5],
     }
     monkeypatch.setattr(
-        "app.services.export_packaging.load_coco_rle", lambda _reference: rle
+        "app.services.exporting.packaging.load_coco_rle", lambda _reference: rle
     )
     mask = Annotation(
         id=uuid.uuid4(),
@@ -734,7 +734,7 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
 
 async def test_davis_zip_rejects_sequence_name_collisions(monkeypatch):
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     project_id, item_id, dataset_id, task_id = (uuid.uuid4() for _ in range(4))

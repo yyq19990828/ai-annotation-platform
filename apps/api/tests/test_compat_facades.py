@@ -73,6 +73,21 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
         new_module="app.services.video_tracking.runner",
         symbols=("run_tracker_job", "TrackerJobStateConflict", "accept_tracker_job"),
     ),
+    FacadeSpec(
+        facade_module="app.services.export",
+        new_module="app.services.exporting.service",
+        symbols=("ExportService", "UnsupportedExportError"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.export_packaging",
+        new_module="app.services.exporting.packaging",
+        symbols=("build_export_zip", "clean_export_targets", "ALL_EXPORT_TARGETS"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.export_cache",
+        new_module="app.services.exporting.cache",
+        symbols=("compute_cache_key", "lookup", "record"),
+    ),
 )
 
 _HAS_FACADES = any(

@@ -11,13 +11,13 @@ import pytest
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.task import Task
-from app.services.export_lidar import (
+from app.services.exporting.lidar import (
     LidarFrameExportCtx,
     build_kitti_lidar_label_lines,
     build_nuscenes_frame_records,
     build_pointmask_label_bytes,
 )
-from app.services.export_packaging import build_export_zip, clean_export_targets
+from app.services.exporting.packaging import build_export_zip, clean_export_targets
 from app.services.task_dataset_link import link_items
 from tests.factory import create_project
 
@@ -155,7 +155,7 @@ async def test_lidar_export_zip_writes_standard_targets(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda key, **_kwargs: f"signed://{key}",
     )
     user, _ = super_admin
