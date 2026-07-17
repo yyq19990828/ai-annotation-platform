@@ -2,7 +2,8 @@
 
 Extracted from the legacy ``data_manager.py``. ``build_data_manager_schema`` and its
 helpers depend only on DB models, schemas and config — no views, service or filters —
-so ``entity_filters`` can import it without forming a cycle.
+so ``entity_filters`` can import it without forming a cycle. Builtin task-view keys
+are derived directly from project configuration, independent of module import order.
 """
 
 from __future__ import annotations
@@ -25,19 +26,6 @@ from app.schemas.data_manager import (
 from app.services.project_kind import project_kind
 
 
-# Provider hook for builtin view keys (set by views.py to avoid a cycle).
-def _default_view_keys(_project):
-    return []
-
-
-_view_keys_provider = _default_view_keys
-
-
-def _set_view_keys_provider(fn):
-    global _view_keys_provider
-    _view_keys_provider = fn
-
-
 _TEXT_OPS = ["eq", "ne", "in"]
 
 
@@ -45,6 +33,9 @@ _NUMBER_OPS = ["eq", "ne", "gt", "gte", "lt", "lte", "in"]
 
 
 _EXISTS_OPS = ["exists", "eq", "in"]
+
+
+_BASE_TASK_VIEW_KEYS = ["all", "pending", "review", "feedback-open", "ai-review"]
 
 
 _BASE_COLUMNS = [
@@ -115,6 +106,23 @@ def _track_capable(project: Project) -> bool:
         or binding["video_modes"].get("track", True)
         for _, binding in _enabled_bindings(project)
     )
+
+
+def builtin_view_keys(project: Project) -> list[str]:
+    """Return builtin task-view keys without importing the high-level views module."""
+    keys = list(_BASE_TASK_VIEW_KEYS)
+    has_required_attributes = any(
+        isinstance(field, dict) and field.get("required") and field.get("key")
+        for _, binding in _enabled_bindings(project)
+        for field in ((binding.get("attribute_schema") or {}).get("fields") or [])
+    )
+    if has_required_attributes:
+        keys.append("missing-required-attributes")
+    if project.data_type == "video":
+        keys.extend(["tracker-review", "with-tracks"])
+    if project.scene_mode:
+        keys.append("interpolated")
+    return keys
 
 
 def build_data_manager_schema(
@@ -489,7 +497,7 @@ def build_data_manager_schema(
         ),
         DataManagerMetricOut(key="feedback", label="未解决反馈", group="质量"),
     ]
-    builtin_views = _view_keys_provider(project)
+    builtin_views = builtin_view_keys(project)
 
     if entity_scope in {"objects", "tracks"}:
         excluded = {

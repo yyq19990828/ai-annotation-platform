@@ -727,7 +727,7 @@ async def test_video_tracker_job_create_get_cancel(
         id = "tracker-celery-task"
 
     def _fake_send_task(name, args=None, queue=None, **kwargs):
-        assert name == "run_video_tracker_job"
+        assert name == "app.workers.video_tracker.run_video_tracker_job"
         assert queue == "gpu"
         queued_jobs.append(args[0])
         return FakeAsyncResult()

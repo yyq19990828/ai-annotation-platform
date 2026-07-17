@@ -3,13 +3,13 @@
 Extracted from the legacy ``task_views.py``. The filter/visibility primitives now live
 in :mod:`data_management.task_filters` and the pending-count metric expressions in
 :mod:`data_management.task_metrics`; this module imports them at the top level (no
-function-local imports, no cycle). It also registers itself as the builtin-view-keys
-provider for the primitive schema module (which cannot import views without forming a
-cycle).
+function-local imports, no cycle). Builtin view keys live in the primitive schema
+module, so direct schema calls do not depend on this module being imported first.
 """
 
 from __future__ import annotations
 
+from app.services.data_management.schema import builtin_view_keys  # noqa: F401
 from app.services.data_management.task_filters import (  # noqa: F401
     _STRING_OPS,
     _NUMERIC_OPS,
@@ -291,10 +291,6 @@ def builtin_views(
         }
         for item in views
     ]
-
-
-def builtin_view_keys(project: Project) -> list[str]:
-    return [str(view["key"]) for view in builtin_views(project.id, project)]
 
 
 def validate_filter(
@@ -842,9 +838,3 @@ def _validate_payload(
     validate_filter(filter_json, project=project)
     validate_sort(sort_json)
     validate_columns(columns_json)
-
-
-# Register the builtin-view-keys provider for the primitive schema module.
-from app.services.data_management.schema import _set_view_keys_provider  # noqa: E402
-
-_set_view_keys_provider(builtin_view_keys)

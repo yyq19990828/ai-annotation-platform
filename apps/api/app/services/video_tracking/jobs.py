@@ -322,11 +322,14 @@ async def create_tracker_job(
     try:
         # v0.23.0 · dispatch by task name via the global Celery app instead of importing
         # the worker module, so the video_tracking domain package has no service → worker
-        # reverse dependency. ``run_video_tracker_job`` is registered in app.workers.video_tracker.
+        # reverse dependency. Celery registers the task under its fully qualified
+        # module path (also used by task_routes in workers/celery_app.py).
         from celery import current_app
 
         result = current_app.send_task(
-            "run_video_tracker_job", args=[str(row.id)], queue="gpu"
+            "app.workers.video_tracker.run_video_tracker_job",
+            args=[str(row.id)],
+            queue="gpu",
         )
         row.celery_task_id = result.id
         await db.commit()

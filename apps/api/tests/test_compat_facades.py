@@ -96,7 +96,12 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
     FacadeSpec(
         facade_module="app.services.task_views",
         new_module="app.services.data_management.views",
-        symbols=("TaskViewService", "compile_filter", "visible_tasks_stmt"),
+        symbols=(
+            "TaskViewService",
+            "builtin_view_keys",
+            "compile_filter",
+            "visible_tasks_stmt",
+        ),
     ),
 )
 
@@ -133,6 +138,65 @@ def test_facade_identity(spec: FacadeSpec) -> None:
 
 class _Missing:
     """Sentinel for missing attributes."""
+
+
+def test_data_manager_schema_cold_direct_import_has_builtin_view_keys() -> None:
+    """Direct schema imports must not rely on views.py registration side effects."""
+    probe = textwrap.dedent(
+        """
+        import sys
+        import uuid
+
+        from app.db.models.project import Project
+        from app.services.data_management.schema import build_data_manager_schema
+
+        assert "app.services.data_management.views" not in sys.modules
+        project = Project(
+            id=uuid.uuid4(),
+            owner_id=uuid.uuid4(),
+            display_id="P-DM-COLD",
+            name="cold schema",
+            type_label="Video tracking",
+            type_key="video-track",
+            data_type="video",
+            scene_mode=False,
+            tool_bindings={
+                "bbox": {
+                    "enabled": True,
+                    "classes": ["car"],
+                    "attribute_schema": {
+                        "fields": [
+                            {"key": "color", "type": "select", "required": True}
+                        ]
+                    },
+                }
+            },
+        )
+        schema = build_data_manager_schema(project)
+        assert {
+            "all",
+            "pending",
+            "review",
+            "feedback-open",
+            "ai-review",
+            "missing-required-attributes",
+            "tracker-review",
+            "with-tracks",
+        } <= set(schema.builtin_views)
+        assert "app.services.data_management.views" not in sys.modules
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=_PROJECT_ROOT_PYTHONPATH,
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": _PROJECT_ROOT_PYTHONPATH, "PATH": ""},
+    )
+    assert result.returncode == 0, (
+        "cold direct schema import failed:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
 
 
 @pytest.mark.parametrize("spec", FACADE_SPECS, ids=lambda s: s.facade_module)
