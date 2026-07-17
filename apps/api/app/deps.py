@@ -12,7 +12,7 @@ from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.core.security import decode_access_token
 from app.core.token_blacklist import is_blacklisted, get_user_generation
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
 )

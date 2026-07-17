@@ -12,7 +12,10 @@ from dataclasses import dataclass, field
 import pytest
 from PIL import Image
 
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+)
 from app.workers import tasks as worker_tasks
 
 

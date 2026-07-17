@@ -46,9 +46,12 @@ from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUDispatchRequest
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUDispatchRequest,
+)
 from app.services.gpu_arbitration.ledger import GPUArbiterStore, GPUArbiterStoreError
+from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 from app.utils.gpu_resource import validate_gpu_resource_id
 
 
@@ -198,9 +201,7 @@ class ValidationManifest(BaseModel):
                     "capacity-rejection requires one requester with an expected error"
                 )
         elif expected_rejections:
-            raise ValueError(
-                "expected_error_code is only valid for capacity-rejection"
-            )
+            raise ValueError("expected_error_code is only valid for capacity-rejection")
         return self
 
 
@@ -1410,8 +1411,7 @@ def _preflight_allows_runtime_proof_refresh(report: Mapping[str, Any]) -> bool:
         and checks
         and all(isinstance(check, Mapping) for check in checks)
         and all(
-            check.get("status") == "passed"
-            or check.get("code") == "backend_live_proof"
+            check.get("status") == "passed" or check.get("code") == "backend_live_proof"
             for check in checks
         )
     )
@@ -1820,8 +1820,7 @@ def _final_truth_checks(
                 membership.get("vram_budget_mb") == registry.get("vram_budget_mb")
                 and membership.get("eviction_priority")
                 == registry.get("eviction_priority")
-                and membership.get("max_concurrency")
-                == registry.get("max_concurrency")
+                and membership.get("max_concurrency") == registry.get("max_concurrency")
             )
         else:
             allocation_claim_exact = bool(
@@ -2724,11 +2723,11 @@ def evaluate_run(
         )
         action = manifest.actions[0]
         result = result_actions.get(action.id, {})
-        allocations_unchanged = (
-            before_snapshot.get("allocations") == after_snapshot.get("allocations")
-            and before_snapshot.get("committed_mb")
-            == after_snapshot.get("committed_mb")
-        )
+        allocations_unchanged = before_snapshot.get(
+            "allocations"
+        ) == after_snapshot.get("allocations") and before_snapshot.get(
+            "committed_mb"
+        ) == after_snapshot.get("committed_mb")
         checks.append(
             _check(
                 "single_card_capacity_rejected_before_http",
@@ -3224,15 +3223,11 @@ def _primary_report_valid(report: Mapping[str, Any]) -> bool:
             fault=None,
         )
         runtime_backend_ids = sorted(
-            row["backend_id"]
-            for row in snapshots["before"]["database"]["registries"]
+            row["backend_id"] for row in snapshots["before"]["database"]["registries"]
         )
-        if (
-            len(runtime_backend_ids) != len(set(runtime_backend_ids))
-            or any(
-                str(uuid.UUID(backend_id)) != backend_id
-                for backend_id in runtime_backend_ids
-            )
+        if len(runtime_backend_ids) != len(set(runtime_backend_ids)) or any(
+            str(uuid.UUID(backend_id)) != backend_id
+            for backend_id in runtime_backend_ids
         ):
             return False
         runtime_proof_checks = [

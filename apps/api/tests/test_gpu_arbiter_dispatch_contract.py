@@ -3,16 +3,16 @@ from __future__ import annotations
 import pytest
 
 from app.config import GPUArbiterMode, Settings
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
     GPUDispatchGrant,
     GPUDispatchOutcomeChannel,
-    unregistered_gpu_loading_blocked,
-)
-from app.services.gpu_arbitration.contracts import (
     gpu_arbiter_failure_record,
     summarize_gpu_arbiter_failures,
+)
+from app.services.gpu_arbitration.diagnostics import (
+    unregistered_gpu_loading_blocked,
 )
 
 

@@ -12,7 +12,10 @@ from app.api.v1 import admin_ml_integrations, ml_backends
 from app.api.v1.tasks import annotations
 from app.services import ml_backend as ml_backend_module
 from app.services.ml_backend import MLBackendService
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+)
 from app.services.video_tracking import adapters as tracker_impl_module
 from app.services.video_tracking.adapters import (
     MLBackendVideoTrackerAdapter,

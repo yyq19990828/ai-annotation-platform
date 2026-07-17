@@ -37,7 +37,7 @@ from app.schemas.annotation import (
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
 )

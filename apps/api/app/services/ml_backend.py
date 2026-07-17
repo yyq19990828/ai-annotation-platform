@@ -15,11 +15,11 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
-    validate_gpu_claim,
 )
+from app.services.gpu_arbitration.policy import validate_gpu_claim
 from app.services.ml_client import (
     GPU_HEALTH_CHALLENGE_ECHO_MARKER,
     MLBackendClient,

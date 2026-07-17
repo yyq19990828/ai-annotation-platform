@@ -53,21 +53,27 @@ from app.schemas.ml_backend import (
 )
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
-    GPUClaimConfigurationError,
     GPUDispatchContextFactory,
-    GPUResourceRuntimeObservation,
     GPUShadowSessionFactory,
+)
+from app.services.gpu_arbitration.diagnostics import (
     build_backend_gpu_config_status,
     build_resource_summaries,
     claimed_budget_by_resource,
+    record_unregistered_gpu_shadow_dispatch,
+    unregistered_gpu_loading_blocked,
+)
+from app.services.gpu_arbitration.policy import (
+    GPUClaimConfigurationError,
+    strict_gpu_loaded_evidence,
+)
+from app.services.gpu_arbitration.reconciliation import (
+    GPUResourceRuntimeObservation,
     disabled_gpu_resource_runtime_observation,
     observe_gpu_resource_runtime,
-    record_unregistered_gpu_shadow_dispatch,
-    strict_gpu_loaded_evidence,
-    unregistered_gpu_loading_blocked,
 )
 from app.services.gpu_arbitration.ledger import (
     GPUArbiterStore,

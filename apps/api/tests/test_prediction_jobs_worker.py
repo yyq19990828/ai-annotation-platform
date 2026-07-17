@@ -321,7 +321,7 @@ async def test_run_batch_persists_stable_gpu_arbiter_failures(
 ):
     from app.db.models.prediction import FailedPrediction
     from app.db.models.task import Task
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
     )
@@ -523,7 +523,7 @@ async def test_cancelled_batch_keeps_prior_gpu_arbiter_failure_summary(
     db_session: AsyncSession, monkeypatch, super_admin
 ):
     from app.db.models.task import Task
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
     )

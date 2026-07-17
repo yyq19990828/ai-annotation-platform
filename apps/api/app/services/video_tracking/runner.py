@@ -19,11 +19,11 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.annotation_propagation import _new_track_id
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
+    gpu_arbiter_failure_record,
 )
-from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record
 from app.services.ml_backend import MLBackendService
 from app.services.raster_mask_storage import (
     load_coco_rle,

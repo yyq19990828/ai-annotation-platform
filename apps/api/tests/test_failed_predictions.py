@@ -367,7 +367,7 @@ async def test_retry_worker_tracks_backend_failure_in_async_jobs(
 async def test_retry_worker_preserves_gpu_arbiter_failure_in_job_and_source(
     db_session, super_admin, monkeypatch
 ):
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
     )

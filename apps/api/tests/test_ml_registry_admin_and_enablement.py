@@ -22,9 +22,11 @@ from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
+)
+from app.services.gpu_arbitration.reconciliation import (
     GPUResourceRuntimeObservation,
 )
 from app.services.gpu_arbitration.rollout_state import (

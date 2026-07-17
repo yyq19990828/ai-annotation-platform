@@ -19,7 +19,10 @@ import uuid
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+)
 
 
 async def _seed_project(db, owner_id) -> Project:

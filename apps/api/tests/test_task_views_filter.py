@@ -1,6 +1,6 @@
 """Pure unit tests for the Data Manager task-view filter/sort/column compiler.
 
-These exercise the SQL whitelist surface (app.services.task_views) without a DB:
+These exercise the SQL whitelist surface (app.services.data_management) without a DB:
 compile_filter / validate_* build SQLAlchemy expressions, so we only assert that
 allowed inputs compile and disallowed inputs raise HTTP 422.
 """

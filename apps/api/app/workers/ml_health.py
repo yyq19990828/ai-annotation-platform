@@ -37,12 +37,14 @@ from sqlalchemy.ext.asyncio import (
 from app.config import GPUArbiterMode, settings
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
-from app.services.gpu_arbiter import (
-    collect_gpu_backend_tombstone,
-    effective_gpu_arbiter_mode,
+from app.services.gpu_arbitration.policy import effective_gpu_arbiter_mode
+from app.services.gpu_arbitration.reconciliation import (
     observe_gpu_resource_runtime,
-    probe_retired_gpu_membership,
     repair_gpu_resource,
+)
+from app.services.gpu_arbitration.retirement import (
+    collect_gpu_backend_tombstone,
+    probe_retired_gpu_membership,
 )
 from app.services.gpu_arbitration.ledger import (
     GPUArbiterStore,

@@ -32,12 +32,12 @@ from app.schemas.ml_backend import (
     ProjectMLBackendList,
     ProjectMLBackendEnablement,
 )
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
-    GPUClaimConfigurationError,
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
 )
+from app.services.gpu_arbitration.policy import GPUClaimConfigurationError
 from app.services.ml_backend import (
     GPUBackendManagedMutationBlocked,
     MLBackendService,

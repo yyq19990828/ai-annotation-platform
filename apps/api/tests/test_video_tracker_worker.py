@@ -178,7 +178,7 @@ async def test_tracker_worker_records_gpu_arbiter_failure(
     db_session, super_admin, monkeypatch
 ):
     from app.services.video_tracking import runner as runner
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
     )

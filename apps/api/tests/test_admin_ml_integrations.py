@@ -6,7 +6,10 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+)
 from tests.factory import create_project
 
 

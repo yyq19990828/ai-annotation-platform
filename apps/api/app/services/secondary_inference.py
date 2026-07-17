@@ -22,7 +22,7 @@ from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.task import Task
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
 )
