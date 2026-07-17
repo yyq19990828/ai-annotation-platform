@@ -343,6 +343,117 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
             "scripts.validate_gpu_arbitration",
         ),
     ),
+)
+
+# Modules physically deleted in v0.23.2. Each entry records the old facade path,
+# the replacement modules (positive controls), and the frozen symbols that must
+# NO LONGER be importable from the old path. The negative-import tests below
+# verify every removed module is truly gone.
+REMOVED_MODULE_SPECS: tuple[FacadeSpec, ...] = (
+    FacadeSpec(
+        facade_module="app.services.data_manager",
+        public_module="app.services.data_management.service",
+        exports=(
+            _exports(
+                "app.services.data_management.service",
+                "DataManagerService",
+            ),
+            _exports(
+                "app.services.data_management.schema",
+                "build_data_manager_schema",
+            ),
+            _exports(
+                "app.services.data_management.task_metrics",
+                "LOW_CONFIDENCE_THRESHOLD",
+                "low_confidence_pending_prediction_shapes_expr",
+                "pending_prediction_shapes_expr",
+                "pending_tracker_jobs_expr",
+            ),
+        ),
+        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.task_views",
+        public_module="app.services.data_management.views",
+        exports=(
+            _exports(
+                "app.services.data_management.task_filters",
+                "apply_task_visibility",
+                "compile_filter",
+                "visible_tasks_stmt",
+            ),
+            _exports(
+                "app.services.data_management.views",
+                "DEFAULT_COLUMNS",
+                "TaskViewService",
+                "apply_sort",
+                "builtin_views",
+                "compile_annotation_match_filter",
+                "invalid_filter_fields",
+                "validate_columns",
+                "validate_filter",
+                "validate_sort",
+            ),
+            _exports(
+                "app.services.data_management.schema",
+                "builtin_view_keys",
+            ),
+        ),
+        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.data_manager_cursor",
+        public_module="app.services.data_management.cursor",
+        exports=(
+            _exports(
+                "app.services.data_management.cursor",
+                "decode_cursor",
+                "encode_cursor",
+                "keyset_after",
+            ),
+        ),
+        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.data_manager_entities",
+        public_module="app.services.data_management.entities",
+        exports=(
+            _exports(
+                "app.services.data_management.entities",
+                "COMPACT_TRACK_TYPES",
+                "DataManagerObjectService",
+                "object_from_row",
+                "task_dataset_item_id_expr",
+            ),
+        ),
+        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.data_manager_entity_filter",
+        public_module="app.services.data_management.entity_filters",
+        exports=(
+            _exports(
+                "app.services.data_management.entity_filters",
+                "builtin_entity_views",
+                "compile_entity_filter",
+                "count_entity_filters",
+                "invalid_entity_filter_fields",
+                "validate_entity_view",
+            ),
+        ),
+        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.data_manager_tracks",
+        public_module="app.services.data_management.tracks",
+        exports=(
+            _exports(
+                "app.services.data_management.tracks",
+                "DataManagerTrackService",
+            ),
+        ),
+        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
+    ),
     FacadeSpec(
         facade_module="app.services.video_tracker_adapters",
         public_module="app.services.video_tracking.adapters",
@@ -533,117 +644,6 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
     ),
 )
 
-# Modules physically deleted in v0.23.2. Each entry records the old facade path,
-# the replacement modules (positive controls), and the frozen symbols that must
-# NO LONGER be importable from the old path. The negative-import tests below
-# verify every removed module is truly gone.
-REMOVED_MODULE_SPECS: tuple[FacadeSpec, ...] = (
-    FacadeSpec(
-        facade_module="app.services.data_manager",
-        public_module="app.services.data_management.service",
-        exports=(
-            _exports(
-                "app.services.data_management.service",
-                "DataManagerService",
-            ),
-            _exports(
-                "app.services.data_management.schema",
-                "build_data_manager_schema",
-            ),
-            _exports(
-                "app.services.data_management.task_metrics",
-                "LOW_CONFIDENCE_THRESHOLD",
-                "low_confidence_pending_prediction_shapes_expr",
-                "pending_prediction_shapes_expr",
-                "pending_tracker_jobs_expr",
-            ),
-        ),
-        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
-    ),
-    FacadeSpec(
-        facade_module="app.services.task_views",
-        public_module="app.services.data_management.views",
-        exports=(
-            _exports(
-                "app.services.data_management.task_filters",
-                "apply_task_visibility",
-                "compile_filter",
-                "visible_tasks_stmt",
-            ),
-            _exports(
-                "app.services.data_management.views",
-                "DEFAULT_COLUMNS",
-                "TaskViewService",
-                "apply_sort",
-                "builtin_views",
-                "compile_annotation_match_filter",
-                "invalid_filter_fields",
-                "validate_columns",
-                "validate_filter",
-                "validate_sort",
-            ),
-            _exports(
-                "app.services.data_management.schema",
-                "builtin_view_keys",
-            ),
-        ),
-        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
-    ),
-    FacadeSpec(
-        facade_module="app.services.data_manager_cursor",
-        public_module="app.services.data_management.cursor",
-        exports=(
-            _exports(
-                "app.services.data_management.cursor",
-                "decode_cursor",
-                "encode_cursor",
-                "keyset_after",
-            ),
-        ),
-        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
-    ),
-    FacadeSpec(
-        facade_module="app.services.data_manager_entities",
-        public_module="app.services.data_management.entities",
-        exports=(
-            _exports(
-                "app.services.data_management.entities",
-                "COMPACT_TRACK_TYPES",
-                "DataManagerObjectService",
-                "object_from_row",
-                "task_dataset_item_id_expr",
-            ),
-        ),
-        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
-    ),
-    FacadeSpec(
-        facade_module="app.services.data_manager_entity_filter",
-        public_module="app.services.data_management.entity_filters",
-        exports=(
-            _exports(
-                "app.services.data_management.entity_filters",
-                "builtin_entity_views",
-                "compile_entity_filter",
-                "count_entity_filters",
-                "invalid_entity_filter_fields",
-                "validate_entity_view",
-            ),
-        ),
-        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
-    ),
-    FacadeSpec(
-        facade_module="app.services.data_manager_tracks",
-        public_module="app.services.data_management.tracks",
-        exports=(
-            _exports(
-                "app.services.data_management.tracks",
-                "DataManagerTrackService",
-            ),
-        ),
-        consumer_modules=("app.api.v1.data_manager", "app.api.v1.task_views"),
-    ),
-)
-
 _EXPECTED_FACADES = {
     "app.services.gpu_arbiter_store",
     "app.services.gpu_arbiter",
@@ -653,15 +653,6 @@ _EXPECTED_FACADES = {
     "app.services.gpu_dispatch_authority",
     "app.services.gpu_membership_activation",
     "app.services.gpu_rollout_control",
-    "app.services.video_tracker_adapters",
-    "app.services.video_tracker_job_service",
-    "app.services.video_tracker_runner",
-    "app.services.export",
-    "app.services.export_packaging",
-    "app.services.export_cache",
-    "app.services.export_video",
-    "app.services.export_lidar",
-    "app.services.export_davis",
 }
 
 _HAS_FACADES = any(
@@ -698,7 +689,7 @@ def test_all_compatibility_facades_are_registered() -> None:
     """The data-driven suite must not silently omit a landed legacy facade."""
     assert {spec.facade_module for spec in FACADE_SPECS} == _EXPECTED_FACADES
     all_names = [name for spec in FACADE_SPECS for name in spec.expected_names]
-    assert len(all_names) == 201
+    assert len(all_names) == 139
     for spec in FACADE_SPECS:
         assert len(spec.expected_names) == len(set(spec.expected_names)), (
             f"frozen manifest duplicates a name for {spec.facade_module}"

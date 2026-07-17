@@ -43,15 +43,6 @@ CURRENT_COMPAT_FACADES = (
     "app.services.gpu_dispatch_authority",
     "app.services.gpu_membership_activation",
     "app.services.gpu_rollout_control",
-    "app.services.video_tracker_adapters",
-    "app.services.video_tracker_job_service",
-    "app.services.video_tracker_runner",
-    "app.services.export",
-    "app.services.export_cache",
-    "app.services.export_davis",
-    "app.services.export_lidar",
-    "app.services.export_packaging",
-    "app.services.export_video",
 )
 
 # Modules permanently deleted in v0.23.2. The architecture guard treats these
@@ -64,6 +55,15 @@ REMOVED_MODULES = (
     "app.services.data_manager_entity_filter",
     "app.services.data_manager_tracks",
     "app.services.task_views",
+    "app.services.video_tracker_adapters",
+    "app.services.video_tracker_job_service",
+    "app.services.video_tracker_runner",
+    "app.services.export",
+    "app.services.export_cache",
+    "app.services.export_davis",
+    "app.services.export_lidar",
+    "app.services.export_packaging",
+    "app.services.export_video",
 )
 
 _LEGACY_CALL_REFERENCE_ALLOWLIST: dict[tuple[str, str, str], str] = {}

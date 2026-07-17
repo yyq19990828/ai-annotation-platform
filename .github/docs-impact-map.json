@@ -201,9 +201,6 @@
       "codeMatchers": [
         "apps/api/app/api/v1/video_tracker_jobs.py",
         "apps/api/app/db/models/video_tracker_job.py",
-        "apps/api/app/services/video_tracker_adapters.py",
-        "apps/api/app/services/video_tracker_job_service.py",
-        "apps/api/app/services/video_tracker_runner.py",
         "apps/api/app/services/video_tracking/",
         "apps/api/app/workers/video_tracker.py",
         "apps/web/src/pages/Workbench/stage/",
@@ -331,12 +328,6 @@
       "name": "Export services, packaging, cache, and format adapters",
       "codeMatchers": [
         "apps/api/app/services/exporting/",
-        "apps/api/app/services/export.py",
-        "apps/api/app/services/export_packaging.py",
-        "apps/api/app/services/export_cache.py",
-        "apps/api/app/services/export_video.py",
-        "apps/api/app/services/export_lidar.py",
-        "apps/api/app/services/export_davis.py",
         "apps/api/app/workers/export.py"
       ],
       "recommendDocs": [
