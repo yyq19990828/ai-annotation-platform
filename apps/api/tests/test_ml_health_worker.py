@@ -1973,7 +1973,9 @@ async def test_gpu_repair_fails_closed_when_collector_boundary_is_unavailable(
     from types import SimpleNamespace
 
     from app.config import GPUArbiterMode, settings
-    from app.services.gpu_collector_database import GPUCollectorDatabaseConfigError
+    from app.services.gpu_arbitration.collector_database import (
+        GPUCollectorDatabaseConfigError,
+    )
     from app.workers import ml_health
 
     resource_id = "node-worker/GPU-collector-unavailable"

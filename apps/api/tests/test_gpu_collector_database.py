@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings
-from app.services.gpu_collector_database import (
+from app.services.gpu_arbitration.collector_database import (
     GPUCollectorDatabaseConfigError,
     load_gpu_collector_database_url,
     validate_gpu_collector_role_boundary,

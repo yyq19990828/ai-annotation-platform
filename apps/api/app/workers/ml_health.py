@@ -56,7 +56,7 @@ from app.services.gpu_arbitration.rollout_state import (
     complete_gpu_arbiter_rollout,
     read_gpu_arbiter_rollouts,
 )
-from app.services.gpu_collector_database import (
+from app.services.gpu_arbitration.collector_database import (
     GPUCollectorDatabase,
     open_gpu_collector_database,
 )
