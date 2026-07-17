@@ -23,7 +23,7 @@ from app.schemas.task_view import (
     ProjectTaskViewUpdate,
 )
 from app.schemas.data_manager import DataManagerEntityScope
-from app.services.data_manager_entity_filter import (
+from app.services.data_management.entity_filters import (
     builtin_entity_views,
     count_entity_filters,
     invalid_entity_filter_fields,
