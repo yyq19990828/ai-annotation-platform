@@ -88,6 +88,16 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
         new_module="app.services.exporting.cache",
         symbols=("compute_cache_key", "lookup", "record"),
     ),
+    FacadeSpec(
+        facade_module="app.services.data_manager",
+        new_module="app.services.data_management.service",
+        symbols=("DataManagerService", "build_data_manager_schema"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.task_views",
+        new_module="app.services.data_management.views",
+        symbols=("TaskViewService", "compile_filter", "visible_tasks_stmt"),
+    ),
 )
 
 _HAS_FACADES = any(

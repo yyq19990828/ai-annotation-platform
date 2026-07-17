@@ -29,8 +29,8 @@ from app.services.data_manager_entity_filter import (
     invalid_entity_filter_fields,
 )
 from app.services.audit import AuditAction, AuditService
-from app.services.data_manager import build_data_manager_schema
-from app.services.task_views import (
+from app.services.data_management.schema import build_data_manager_schema
+from app.services.data_management.views import (
     TaskViewService,
     builtin_views,
     invalid_filter_fields,
