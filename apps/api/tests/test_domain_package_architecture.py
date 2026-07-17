@@ -34,16 +34,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # Facades that already have a canonical domain-package replacement. First-party code
 # may exercise these paths only in the compatibility contract test; all production,
 # worker, script and ordinary test imports must use the new modules directly.
-CURRENT_COMPAT_FACADES = (
-    "app.services.gpu_arbiter_store",
-    "app.services.gpu_arbiter",
-    "app.services.gpu_admission_signer",
-    "app.services.gpu_arbiter_rollout",
-    "app.services.gpu_collector_database",
-    "app.services.gpu_dispatch_authority",
-    "app.services.gpu_membership_activation",
-    "app.services.gpu_rollout_control",
-)
+CURRENT_COMPAT_FACADES: tuple[str, ...] = ()
 
 # Modules permanently deleted in v0.23.2. The architecture guard treats these
 # the same as compat facades (forbids domain packages from importing them) but
@@ -64,6 +55,14 @@ REMOVED_MODULES = (
     "app.services.export_lidar",
     "app.services.export_packaging",
     "app.services.export_video",
+    "app.services.gpu_arbiter_store",
+    "app.services.gpu_arbiter",
+    "app.services.gpu_admission_signer",
+    "app.services.gpu_arbiter_rollout",
+    "app.services.gpu_collector_database",
+    "app.services.gpu_dispatch_authority",
+    "app.services.gpu_membership_activation",
+    "app.services.gpu_rollout_control",
 )
 
 _LEGACY_CALL_REFERENCE_ALLOWLIST: dict[tuple[str, str, str], str] = {}

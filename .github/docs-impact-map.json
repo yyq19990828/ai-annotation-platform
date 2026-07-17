@@ -300,15 +300,7 @@
       "id": "gpu-arbitration-domain",
       "name": "GPU arbitration contracts, policy, ledger, and orchestration",
       "codeMatchers": [
-        "apps/api/app/services/gpu_arbitration/",
-        "apps/api/app/services/gpu_arbiter.py",
-        "apps/api/app/services/gpu_arbiter_store.py",
-        "apps/api/app/services/gpu_admission_signer.py",
-        "apps/api/app/services/gpu_arbiter_rollout.py",
-        "apps/api/app/services/gpu_collector_database.py",
-        "apps/api/app/services/gpu_dispatch_authority.py",
-        "apps/api/app/services/gpu_membership_activation.py",
-        "apps/api/app/services/gpu_rollout_control.py"
+        "apps/api/app/services/gpu_arbitration/"
       ],
       "recommendDocs": [
         "docs-site/dev/concepts/backend-layers.md",
