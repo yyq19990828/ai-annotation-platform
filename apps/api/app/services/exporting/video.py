@@ -25,7 +25,7 @@ import logging
 from app.services.video_frame_service import derive_sampled_frames
 from app.services.video_tracks import resolved_track_frames
 
-logger = logging.getLogger("app.services.export_video")
+logger = logging.getLogger("app.services.exporting.video")
 
 # 视频导出的几何白名单（唯一真源，export.py / export_packaging.py 共用）。
 #

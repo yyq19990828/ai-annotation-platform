@@ -36,6 +36,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 全部第一方代码（9 个生产文件、17 个测试文件、1 个校验脚本）不再从 `gpu_arbiter` facade 导入，改为直接导入 `gpu_arbitration` 下按职责划分的子模块（contracts/policy/fences/proofs/control_preparation/reconciliation/retirement/diagnostics）。`gpu_arbiter` facade 注册为第 23 个兼容 facade（完整 `__all__`、identity 与双向冷导入守卫），为 v0.23.2 物理删除做准备。导出视频 logger namespace 从 `app.services.export_video` 迁至 `app.services.exporting.video`（事件名、level、字段不变）。新增永久 removed-module 扫描器、`.dockerignore` 与迁移清单。
+
 ## [0.23.1] - 2026-07-17
 
 ### Changed

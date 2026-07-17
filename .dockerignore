@@ -1,0 +1,19 @@
+# Build context hygiene for production API/web images.
+# Keeps cached bytecode, virtualenvs, coverage and build artifacts out of the
+# image layer so removed legacy modules cannot survive as stale .pyc.
+**/__pycache__/
+**/*.py[cod]
+**/*.pyi
+apps/api/.venv/
+apps/web/node_modules/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/coverage/
+**/dist/
+**/.next/
+**/build/
+**/*.egg-info/
+.git/

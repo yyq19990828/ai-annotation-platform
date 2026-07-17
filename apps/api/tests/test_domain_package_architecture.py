@@ -53,13 +53,7 @@ CURRENT_COMPAT_FACADES = (
     "app.services.task_views",
 )
 
-_LEGACY_CALL_REFERENCE_ALLOWLIST = {
-    (
-        "apps/api/app/services/exporting/video.py",
-        "logging.getLogger",
-        "app.services.export_video",
-    ): "preserve the existing logger namespace until the v0.23.2 cutover",
-}
+_LEGACY_CALL_REFERENCE_ALLOWLIST: dict[tuple[str, str, str], str] = {}
 _LEGACY_CALL_SCAN_EXEMPT_FILES = {
     "apps/api/tests/test_compat_facades.py": (
         "the compatibility contract intentionally imports every facade in cold processes"
