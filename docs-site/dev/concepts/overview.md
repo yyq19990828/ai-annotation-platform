@@ -33,7 +33,7 @@ graph LR
 app/
 ├── api/v1/         # HTTP 路由（薄）
 ├── services/       # 业务逻辑（核心）
-│   ├── gpu_arbitration/ # GPU 契约、策略与 ledger
+│   ├── gpu_arbitration/ # GPU 契约、策略、ledger、proof、fence 与编排
 │   ├── video_tracking/  # 视频追踪编排
 │   ├── exporting/       # 导出与格式打包
 │   └── data_management/ # Data Manager 查询与服务

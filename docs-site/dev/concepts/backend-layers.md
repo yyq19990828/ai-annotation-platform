@@ -35,7 +35,7 @@ HTTP → 路由 (api/v1) → 服务 (services) → 模型 (db/models)
 
 ```text
 services/
-├── gpu_arbitration/  # 契约、策略和 Redis ledger
+├── gpu_arbitration/  # 契约、策略、ledger、proof、fence 与 orchestration
 ├── video_tracking/   # adapter、job 与 runner
 ├── exporting/       # 导出服务、打包和格式实现
 └── data_management/  # schema、查询 primitive 和高层服务
@@ -43,7 +43,9 @@ services/
 
 领域内依赖保持单向：稳定契约和 primitive 不反向导入高层 orchestration，package `__init__.py` 不为了使用便利而 eager-import 整个高层图。服务不得反向导入 `app.api` 或 `app.workers`；需要派发 Celery 任务时使用稳定注册名，或由路由层调用 worker 边界。
 
-已完成迁移的 Redis ledger、Video、Export 与 Data Manager 旧平铺路径是纯兼容 facade，只保留模块说明、显式 re-export 和 `__all__`。GPU orchestration 的平铺模块仍处于过渡态并承载实现；新生产代码必须直接导入已经落地的领域模块，不得经由纯 facade 回流。
+`gpu_arbitration` 内部按职责分层：`contracts`（dispatch 请求/grant/错误与失败记录）和 `policy`（mode/claim/shadow 决策）是 cycle-safe 叶模块；`fences`、`proofs`、`control_preparation`、`reconciliation`、`retirement`、`diagnostics` 依次构建在低层之上；`dispatch`、`membership_activation`、`rollout_control` 是允许依赖 `ml_client` 的高层编排模块。`ml_client` 只依赖 `contracts`、`policy`、`rollout_state`。
+
+所有旧平铺路径（`gpu_arbiter`、`gpu_admission_signer`、`gpu_arbiter_rollout`、`gpu_collector_database`、`gpu_dispatch_authority`、`gpu_membership_activation`、`gpu_rollout_control`、`gpu_arbiter_store` 以及 Video/Export/Data Manager 的等价物）都是纯兼容 facade，只保留模块说明、显式 re-export 和 `__all__`。新生产代码必须直接导入领域模块，不得经由纯 facade 回流。
 
 ## 模型（db/models）
 
