@@ -119,12 +119,12 @@ def test_facade_identity(spec: FacadeSpec) -> None:
     for name in spec.symbols:
         old_obj = getattr(facade, name, _Missing)
         new_obj = getattr(new, name, _Missing)
-        assert (
-            old_obj is not _Missing
-        ), f"{spec.facade_module}.{name} missing from facade"
-        assert (
-            new_obj is not _Missing
-        ), f"{spec.new_module}.{name} missing from new module"
+        assert old_obj is not _Missing, (
+            f"{spec.facade_module}.{name} missing from facade"
+        )
+        assert new_obj is not _Missing, (
+            f"{spec.new_module}.{name} missing from new module"
+        )
         assert old_obj is new_obj, (
             f"{spec.facade_module}.{name} is not {spec.new_module}.{name} "
             "(identity must match; facade must re-export, not wrap)"

@@ -437,7 +437,9 @@ async def test_export_aap_json_video_project_task_block(
     )
     await db_session.flush()
     rle = {"encoding": "coco_rle", "size": [1080, 1920], "counts": [1080 * 1920]}
-    monkeypatch.setattr("app.services.exporting.service.load_coco_rle", lambda reference: rle)
+    monkeypatch.setattr(
+        "app.services.exporting.service.load_coco_rle", lambda reference: rle
+    )
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
     assert body["schema_version"] == "1.3"

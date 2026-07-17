@@ -842,9 +842,9 @@ async def test_runner_associates_window_local_ids_across_windows(
     # 源轨迹 (primary=left): 4 帧全为 left 几何 (x≈0.1), 不混入 right (x≈0.5)。
     src_kfs = sorted(source.geometry["keyframes"], key=lambda k: k["frame_index"])
     assert [k["frame_index"] for k in src_kfs] == [0, 1, 2, 3]
-    assert all(
-        k["bbox"]["x"] < 0.3 for k in src_kfs if k.get("bbox")
-    ), "源轨迹应全是 left 目标, 关联把跨窗 id 互换的 left 帧归回一条"
+    assert all(k["bbox"]["x"] < 0.3 for k in src_kfs if k.get("bbox")), (
+        "源轨迹应全是 left 目标, 关联把跨窗 id 互换的 left 帧归回一条"
+    )
 
     # right → 恰 1 条新 ai_tracker 轨迹 (非 2 条: 证明未因 id 互换分裂), 4 帧全 right (x≈0.5)。
     from sqlalchemy import select
