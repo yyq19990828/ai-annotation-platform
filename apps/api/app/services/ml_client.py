@@ -29,15 +29,17 @@ from fastapi import HTTPException
 from app.config import GPUArbiterMode, settings
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.observability.metrics import observe_ml_backend
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
-    GPUClaimConfigurationError,
     GPUDispatchContextFactory,
     GPUDispatchGrant,
     GPUDispatchOperation,
     GPUDispatchRequest,
     GPUShadowSessionFactory,
+)
+from app.services.gpu_arbitration.policy import (
+    GPUClaimConfigurationError,
     any_gpu_resource_effectively_enforced,
     backend_is_trusted_explicit_cpu,
     effective_gpu_arbiter_mode,
