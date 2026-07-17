@@ -355,13 +355,7 @@
       "id": "data-management-domain",
       "name": "Data Manager schema, entity queries, views, and pagination",
       "codeMatchers": [
-        "apps/api/app/services/data_management/",
-        "apps/api/app/services/data_manager.py",
-        "apps/api/app/services/task_views.py",
-        "apps/api/app/services/data_manager_cursor.py",
-        "apps/api/app/services/data_manager_entities.py",
-        "apps/api/app/services/data_manager_entity_filter.py",
-        "apps/api/app/services/data_manager_tracks.py"
+        "apps/api/app/services/data_management/"
       ],
       "recommendDocs": [
         "docs-site/dev/reference/data-manager-query.md",

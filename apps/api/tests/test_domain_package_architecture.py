@@ -36,6 +36,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # worker, script and ordinary test imports must use the new modules directly.
 CURRENT_COMPAT_FACADES = (
     "app.services.gpu_arbiter_store",
+    "app.services.gpu_arbiter",
+    "app.services.gpu_admission_signer",
+    "app.services.gpu_arbiter_rollout",
+    "app.services.gpu_collector_database",
+    "app.services.gpu_dispatch_authority",
+    "app.services.gpu_membership_activation",
+    "app.services.gpu_rollout_control",
     "app.services.video_tracker_adapters",
     "app.services.video_tracker_job_service",
     "app.services.video_tracker_runner",
@@ -45,6 +52,12 @@ CURRENT_COMPAT_FACADES = (
     "app.services.export_lidar",
     "app.services.export_packaging",
     "app.services.export_video",
+)
+
+# Modules permanently deleted in v0.23.2. The architecture guard treats these
+# the same as compat facades (forbids domain packages from importing them) but
+# they additionally must not exist at all.
+REMOVED_MODULES = (
     "app.services.data_manager",
     "app.services.data_manager_cursor",
     "app.services.data_manager_entities",
@@ -192,7 +205,7 @@ def _matching_legacy_facade(reference: str) -> str | None:
     return next(
         (
             facade
-            for facade in CURRENT_COMPAT_FACADES
+            for facade in (*CURRENT_COMPAT_FACADES, *REMOVED_MODULES)
             if reference == facade or reference.startswith(facade + ".")
         ),
         None,
@@ -447,6 +460,8 @@ def test_repo_has_no_first_party_legacy_facade_references() -> None:
     offenders: list[str] = []
     used_call_allowlist: set[tuple[str, str, str]] = set()
     for path in _tracked_python_files():
+        if not path.exists():
+            continue  # deleted but not yet committed
         relative = path.relative_to(_REPO_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for line, kind, reference in _legacy_references(

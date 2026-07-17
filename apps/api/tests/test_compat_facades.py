@@ -531,6 +531,13 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
             "app.workers.export",
         ),
     ),
+)
+
+# Modules physically deleted in v0.23.2. Each entry records the old facade path,
+# the replacement modules (positive controls), and the frozen symbols that must
+# NO LONGER be importable from the old path. The negative-import tests below
+# verify every removed module is truly gone.
+REMOVED_MODULE_SPECS: tuple[FacadeSpec, ...] = (
     FacadeSpec(
         facade_module="app.services.data_manager",
         public_module="app.services.data_management.service",
@@ -655,12 +662,6 @@ _EXPECTED_FACADES = {
     "app.services.export_video",
     "app.services.export_lidar",
     "app.services.export_davis",
-    "app.services.data_manager",
-    "app.services.task_views",
-    "app.services.data_manager_cursor",
-    "app.services.data_manager_entities",
-    "app.services.data_manager_entity_filter",
-    "app.services.data_manager_tracks",
 }
 
 _HAS_FACADES = any(
@@ -697,7 +698,7 @@ def test_all_compatibility_facades_are_registered() -> None:
     """The data-driven suite must not silently omit a landed legacy facade."""
     assert {spec.facade_module for spec in FACADE_SPECS} == _EXPECTED_FACADES
     all_names = [name for spec in FACADE_SPECS for name in spec.expected_names]
-    assert len(all_names) == 233
+    assert len(all_names) == 201
     for spec in FACADE_SPECS:
         assert len(spec.expected_names) == len(set(spec.expected_names)), (
             f"frozen manifest duplicates a name for {spec.facade_module}"
@@ -931,3 +932,90 @@ def test_facade_no_import_star(spec: FacadeSpec) -> None:
             f"__all__ {sorted(public_names)!r}"
         )
     assert not offenders, f"{spec.facade_module}: " + "; ".join(offenders)
+
+
+# ---------------------------------------------------------------------------
+# Negative guards for physically removed modules (v0.23.2).
+# ---------------------------------------------------------------------------
+
+_REMOVED_FACADES = {spec.facade_module for spec in REMOVED_MODULE_SPECS}
+
+
+@pytest.mark.parametrize(
+    "spec", REMOVED_MODULE_SPECS, ids=lambda s: s.facade_module
+)
+def test_removed_module_not_importable(spec: FacadeSpec) -> None:
+    """Every removed module must fail to import in all forms."""
+    import importlib.util
+
+    old = spec.facade_module
+    assert importlib.util.find_spec(old) is None, f"{old} still has a module spec"
+
+    # Direct import must fail
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(old)
+
+    # from app.services import <name> must not expose the attribute
+    if old.startswith("app.services."):
+        name = old.rsplit(".", 1)[-1]
+        import app.services as pkg  # noqa: PLC0415
+
+        assert not hasattr(pkg, name), (
+            f"app.services.{name} still accessible as package attribute"
+        )
+
+    # A frozen symbol must not be importable from the old path
+    first_symbol = spec.expected_names[0]
+    with pytest.raises(ModuleNotFoundError):
+        __import__(old, fromlist=[first_symbol])
+
+
+@pytest.mark.parametrize(
+    "spec", REMOVED_MODULE_SPECS, ids=lambda s: s.facade_module
+)
+def test_removed_module_cold_import_fails(spec: FacadeSpec) -> None:
+    """A cold subprocess confirms the module is gone without test-order side effects."""
+    old = spec.facade_module
+    probe = textwrap.dedent(
+        f"""
+        import importlib, importlib.util, sys
+        # The old module must not be importable.
+        assert importlib.util.find_spec("{old}") is None
+        try:
+            importlib.import_module("{old}")
+            raise SystemExit("import should have failed")
+        except ModuleNotFoundError:
+            pass
+        # Positive control: the replacement modules must still import.
+        for module in {[g.module for g in spec.exports]}:
+            importlib.import_module(module)
+        # Positive control: a real consumer must still import.
+        for consumer in {list(spec.consumer_modules)}:
+            importlib.import_module(consumer)
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=_PROJECT_ROOT_PYTHONPATH,
+        capture_output=True,
+        text=True,
+        env=_child_env(),
+    )
+    assert result.returncode == 0, (
+        f"cold import probe for removed module {old} failed:\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+
+
+def test_removed_modules_count_matches_manifest() -> None:
+    """The removed-module manifest count must match the fixture JSON."""
+    import json
+
+    manifest_path = Path(__file__).parent / "_fixtures" / "removed_service_modules.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_old_paths = {m["facade_module"] for m in manifest["modules"]}
+    # Every removed spec must be in the manifest; the manifest may have more
+    # entries (modules not yet deleted).
+    assert _REMOVED_FACADES.issubset(manifest_old_paths), (
+        f"removed specs not in manifest: {_REMOVED_FACADES - manifest_old_paths}"
+    )
