@@ -285,7 +285,7 @@ async def _run_task_pipeline(
         merge_classify_attributes,
         remap_geometry_to_image,
     )
-    from app.services.gpu_arbiter import gpu_arbiter_failure_record
+    from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record
 
     url = resolve_url(task)
     results = await stage_clients[0].predict(
@@ -559,7 +559,7 @@ async def _run_batch(
     from app.services.gpu_dispatch_authority import (
         build_gpu_dispatch_context_factory,
     )
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         gpu_arbiter_failure_record,
         summarize_gpu_arbiter_failures,
     )

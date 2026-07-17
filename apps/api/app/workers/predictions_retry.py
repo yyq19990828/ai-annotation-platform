@@ -162,7 +162,7 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     from app.services.gpu_dispatch_authority import (
         build_gpu_dispatch_context_factory,
     )
-    from app.services.gpu_arbiter import gpu_arbiter_failure_record
+    from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record
     from app.services.ml_client import MLBackendClient
     from app.services.notification import NotificationService
     from app.services.prediction import PredictionService

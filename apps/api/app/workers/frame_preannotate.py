@@ -347,7 +347,7 @@ async def _run_segment(
     from app.services.gpu_dispatch_authority import (
         build_gpu_dispatch_context_factory,
     )
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         gpu_arbiter_failure_record,
         summarize_gpu_arbiter_failures,
     )
@@ -612,7 +612,7 @@ async def _finalize(segment_stats: list[dict], *, project_id: str, job_id: str) 
 
     from app.db.models.async_job import AsyncJob
     from app.services import async_job as async_job_svc
-    from app.services.gpu_arbiter import summarize_gpu_arbiter_failures
+    from app.services.gpu_arbitration.contracts import summarize_gpu_arbiter_failures
 
     frames_done = sum(int(s.get("frames_done", 0)) for s in segment_stats if s)
     boxes = sum(int(s.get("boxes", 0)) for s in segment_stats if s)

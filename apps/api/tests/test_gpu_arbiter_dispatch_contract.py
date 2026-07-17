@@ -8,9 +8,11 @@ from app.services.gpu_arbiter import (
     GPUArbiterErrorCode,
     GPUDispatchGrant,
     GPUDispatchOutcomeChannel,
+    unregistered_gpu_loading_blocked,
+)
+from app.services.gpu_arbitration.contracts import (
     gpu_arbiter_failure_record,
     summarize_gpu_arbiter_failures,
-    unregistered_gpu_loading_blocked,
 )
 
 

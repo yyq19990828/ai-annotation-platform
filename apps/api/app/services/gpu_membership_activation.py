@@ -20,12 +20,12 @@ from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 from app.services.gpu_arbiter import (
-    GPUFenceSessionFactory,
     GPULegacyAckBlockedError,
     GPULegacyAckPreparation,
     GPUReadinessDemoter,
     prepare_gpu_backend_legacy_ack,
 )
+from app.services.gpu_arbitration.fences import GPUFenceSessionFactory
 from app.services.ml_client import MLBackendClient
 from app.utils.gpu_resource import validate_gpu_resource_id
 

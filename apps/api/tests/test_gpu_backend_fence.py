@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.fences import (
     GPUFenceExhaustedError,
     GPUFenceMembershipError,
     activate_gpu_backend_membership,

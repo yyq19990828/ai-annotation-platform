@@ -27,7 +27,9 @@ from sqlalchemy.ext.asyncio import (
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
-from app.services.gpu_arbiter import _activate_gpu_backend_membership_in_transaction
+from app.services.gpu_arbitration.fences import (
+    _activate_gpu_backend_membership_in_transaction,
+)
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import GPU_HEALTH_CHALLENGE_ECHO_MARKER
 
