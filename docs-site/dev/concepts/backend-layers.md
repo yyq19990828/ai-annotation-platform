@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-17
 ---
 
 # 后端分层
@@ -30,6 +30,20 @@ HTTP → 路由 (api/v1) → 服务 (services) → 模型 (db/models)
 - 业务逻辑核心：状态机、规则、跨表事务
 - 可调 db 也可调外部 HTTP（结合 httpx）
 - 单测主要打这里
+
+规模较大的业务不再堆在 `services/` 根目录的单个平铺文件中，而是放入领域 package：
+
+```text
+services/
+├── gpu_arbitration/  # 契约、策略和 Redis ledger
+├── video_tracking/   # adapter、job 与 runner
+├── exporting/       # 导出服务、打包和格式实现
+└── data_management/  # schema、查询 primitive 和高层服务
+```
+
+领域内依赖保持单向：稳定契约和 primitive 不反向导入高层 orchestration，package `__init__.py` 不为了使用便利而 eager-import 整个高层图。服务不得反向导入 `app.api` 或 `app.workers`；需要派发 Celery 任务时使用稳定注册名，或由路由层调用 worker 边界。
+
+已完成迁移的 Redis ledger、Video、Export 与 Data Manager 旧平铺路径是纯兼容 facade，只保留模块说明、显式 re-export 和 `__all__`。GPU orchestration 的平铺模块仍处于过渡态并承载实现；新生产代码必须直接导入已经落地的领域模块，不得经由纯 facade 回流。
 
 ## 模型（db/models）
 
@@ -65,3 +79,5 @@ HTTP → 路由 (api/v1) → 服务 (services) → 模型 (db/models)
 | 服务 | `tests/test_<service>_service.py` 直接调函数 |
 | 模型 | 不单独测，由路由 / 服务测试覆盖 |
 | Workers | `tests/test_<task>.py`，用 eager mode |
+
+领域结构额外由 `tests/test_domain_package_architecture.py` 检查依赖方向、相对导入、package root 和模块环；`tests/test_compat_facades.py` 对每个兼容 facade 的全部公开符号执行 identity 与冷导入验证。

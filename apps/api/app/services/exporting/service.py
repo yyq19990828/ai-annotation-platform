@@ -24,6 +24,7 @@ from app.services.project import (
     derive_classes_list,
     sanitize_annotation_attributes,
 )
+from app.services.prediction import to_internal_shape
 from app.services.axis_convention import (
     AxisFrame,
     transform_box_geometry_axis_frame,
@@ -886,8 +887,6 @@ class ExportService:
         prediction.confidence、annotation.source、annotation_guide、classes_config.
         双数组 annotations[] / predictions[] 分开 (不混 type 字段).
         """
-        from app.services.prediction import to_internal_shape
-
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return json.dumps({})

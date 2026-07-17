@@ -66,7 +66,7 @@ Data Manager 最初以 task 为唯一结果 grain。它可以回答“哪些任�
 
 ## Notes
 
-- 实现代码：`apps/api/app/services/data_manager_entities.py`、`data_manager_tracks.py`、`data_manager_entity_filter.py`、`apps/web/src/pages/Projects/data-manager/`
+- 实现代码：`apps/api/app/services/data_management/entities.py`、`data_management/tracks.py`、`data_management/entity_filters.py`、`data_management/cursor.py`、`apps/web/src/pages/Projects/data-manager/`
 - 迁移：`0119_project_task_view_entity_scope.py`、`0120_data_manager_entity_indexes.py`
 - 基准：`apps/api/scripts/benchmark_data_manager_entities.sql`
 - 相关 ADR：[ADR-0045](0045-track-id-as-annotation-column.md)

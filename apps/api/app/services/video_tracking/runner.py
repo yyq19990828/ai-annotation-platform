@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
+from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.annotation_propagation import _new_track_id
@@ -30,6 +31,8 @@ from app.services.raster_mask_storage import (
     validate_mask_geometry_for_task,
     lock_raster_mask_references,
 )
+from app.services.storage import resolve_task_url
+from app.services.video_frame_service import derive_step
 from app.services.video_tracking.adapters import (
     TrackerContext,
     TrackerFrameResult,
@@ -908,8 +911,6 @@ async def run_tracker_job(
         item = await db.get(DatasetItem, job.dataset_item_id)
         if item is None:
             raise ValueError("Dataset item not found")
-        from app.services.storage import resolve_task_url
-
         # v0.22.2 · B-combo · sam3_video_combo = multiplex 发现 → PVS 追踪 两趟编排。
         # 两趟都在 sam3-backend (声明 sam3_video + sam3_video_interactive); 后端按 PVS 能力
         # 解析 (同一 backend), 追踪趟 adapter 用 PVS, 发现趟另取 multiplex adapter (见下)。
@@ -926,9 +927,6 @@ async def run_tracker_job(
         adapter = get_tracker_adapter(tracker_capability)
 
         # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
-        from app.db.models.project import Project
-        from app.services.video_frame_service import derive_step
-
         project = await db.get(Project, task.project_id)
         source_fps = ((item.metadata_ or {}).get("video") or {}).get("fps")
         grid_step = derive_step(

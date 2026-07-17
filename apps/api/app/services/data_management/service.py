@@ -66,6 +66,7 @@ from app.schemas.data_manager import (
     DataManagerSummaryResponse,
 )
 from app.services.project_kind import project_kind
+from app.services.prediction import to_internal_shape
 from app.services.scheduler import is_privileged_for_project
 from app.services.data_management.views import (
     compile_annotation_match_filter,
@@ -596,8 +597,6 @@ class DataManagerService:
             remaining_limit = limit - len(items)
 
         if _filter_has_field(filter_json, "ai.pending_prediction_shape_count"):
-            from app.services.prediction import to_internal_shape
-
             accepted_rows = await self.db.execute(
                 select(Annotation.parent_prediction_id, Annotation.attributes).where(
                     Annotation.task_id == task_id,

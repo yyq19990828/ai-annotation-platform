@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-17
 ---
 
 # WebSocket 协议
@@ -198,7 +198,7 @@ JWT query param，并按 task 可见性二次校验：服务端用 `decode_acces
 
 ### 6.2 事件序列
 
-publisher: `apps/api/app/services/video_tracker_runner.py`；channel: `video-tracker-job:{job_id}`。
+publisher: `apps/api/app/services/video_tracking/runner.py`；channel: `video-tracker-job:{job_id}`。
 
 ```mermaid
 stateDiagram-v2

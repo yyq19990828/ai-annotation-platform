@@ -204,6 +204,7 @@
         "apps/api/app/services/video_tracker_adapters.py",
         "apps/api/app/services/video_tracker_job_service.py",
         "apps/api/app/services/video_tracker_runner.py",
+        "apps/api/app/services/video_tracking/",
         "apps/api/app/workers/video_tracker.py",
         "apps/web/src/pages/Workbench/stage/",
         "apps/web/src/pages/ModelMarket/VideoTrackerJobsPage.tsx"
@@ -278,6 +279,98 @@
         "docs-site/dev/reference/ml-backend-protocol.md",
         "docs-site/api/guides/ml-backend.md",
         "docs-site/ops/runbooks/ml-backend-down.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "service-domain-architecture",
+      "name": "Service domain packages, dependency direction, and compatibility facades",
+      "codeMatchers": [
+        "apps/api/tests/test_compat_facades.py",
+        "apps/api/tests/test_domain_package_architecture.py"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/backend-layers.md",
+        "docs-site/dev/concepts/overview.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/backend-layers.md",
+        "docs-site/dev/concepts/overview.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "gpu-arbitration-domain",
+      "name": "GPU arbitration contracts, policy, ledger, and orchestration",
+      "codeMatchers": [
+        "apps/api/app/services/gpu_arbitration/",
+        "apps/api/app/services/gpu_arbiter.py",
+        "apps/api/app/services/gpu_arbiter_store.py",
+        "apps/api/app/services/gpu_admission_signer.py",
+        "apps/api/app/services/gpu_arbiter_rollout.py",
+        "apps/api/app/services/gpu_collector_database.py",
+        "apps/api/app/services/gpu_dispatch_authority.py",
+        "apps/api/app/services/gpu_membership_activation.py",
+        "apps/api/app/services/gpu_rollout_control.py"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/backend-layers.md",
+        "docs-site/dev/reference/ml-backend-protocol.md",
+        "docs-site/ops/runbooks/gpu-arbitration-acceptance.md",
+        "docs/adr/archive/0049-cross-backend-gpu-memory-arbitration.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/backend-layers.md",
+        "docs-site/dev/reference/ml-backend-protocol.md",
+        "docs-site/ops/runbooks/gpu-arbitration-acceptance.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "exporting-domain",
+      "name": "Export services, packaging, cache, and format adapters",
+      "codeMatchers": [
+        "apps/api/app/services/exporting/",
+        "apps/api/app/services/export.py",
+        "apps/api/app/services/export_packaging.py",
+        "apps/api/app/services/export_cache.py",
+        "apps/api/app/services/export_video.py",
+        "apps/api/app/services/export_lidar.py",
+        "apps/api/app/services/export_davis.py",
+        "apps/api/app/workers/export.py"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/data-flow.md",
+        "docs-site/api/guides/export.md",
+        "docs-site/user-guide/reference/export-formats.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/data-flow.md",
+        "docs-site/api/guides/export.md",
+        "docs-site/user-guide/reference/export-formats.md",
+        "docs-site/dev/reference/lidar-export-formats.md"
+      ]
+    },
+    {
+      "id": "data-management-domain",
+      "name": "Data Manager schema, entity queries, views, and pagination",
+      "codeMatchers": [
+        "apps/api/app/services/data_management/",
+        "apps/api/app/services/data_manager.py",
+        "apps/api/app/services/task_views.py",
+        "apps/api/app/services/data_manager_cursor.py",
+        "apps/api/app/services/data_manager_entities.py",
+        "apps/api/app/services/data_manager_entity_filter.py",
+        "apps/api/app/services/data_manager_tracks.py"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/reference/data-manager-query.md",
+        "docs-site/user-guide/projects/data-manager.md",
+        "docs/adr/0047-data-manager-entity-read-model.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/reference/data-manager-query.md",
+        "docs-site/user-guide/projects/data-manager.md",
         "docs/adr/"
       ]
     },
