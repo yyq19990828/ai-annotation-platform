@@ -1367,7 +1367,7 @@ async def refresh_runtime_proofs(
     """Persist fresh challenge proofs before the mutating validation run."""
 
     if refresher is None:
-        from app.services.gpu_dispatch_authority import (  # noqa: PLC0415
+        from app.services.gpu_arbitration.dispatch import (  # noqa: PLC0415
             _refresh_gpu_health as refresher,
         )
 
@@ -2763,7 +2763,7 @@ async def run_validation(
     session_factory,
     config: Settings,
 ) -> dict[str, Any]:
-    from app.services.gpu_dispatch_authority import (  # noqa: PLC0415
+    from app.services.gpu_arbitration.dispatch import (  # noqa: PLC0415
         build_gpu_dispatch_context_factory,
     )
 
@@ -2887,7 +2887,7 @@ async def run_validation(
 
         fault_module = None
         if fault is not None and fault.kind == "health-timeout":
-            from app.services import gpu_dispatch_authority as fault_module  # noqa: PLC0415
+            from app.services.gpu_arbitration import dispatch as fault_module  # noqa: PLC0415
 
         async def refresh_health(backend_id: uuid.UUID, challenge: str) -> bool:
             if fault is not None and fault.hit_health(backend_id):

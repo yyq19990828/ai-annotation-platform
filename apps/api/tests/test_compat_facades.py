@@ -113,8 +113,6 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
         ),
         consumer_modules=(
             "app.api.v1.admin_ml_integrations",
-            "app.services.gpu_arbiter",
-            "app.services.gpu_dispatch_authority",
             "app.workers.ml_health",
         ),
     ),
@@ -129,9 +127,9 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
             ),
         ),
         consumer_modules=(
-            "app.services.gpu_dispatch_authority",
-            "app.services.gpu_membership_activation",
-            "app.services.gpu_rollout_control",
+            "app.services.gpu_arbitration.dispatch",
+            "app.services.gpu_arbitration.membership_activation",
+            "app.services.gpu_arbitration.rollout_control",
             "scripts.validate_gpu_arbitration",
         ),
     ),
@@ -173,6 +171,49 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
                 "load_gpu_collector_database_url",
                 "open_gpu_collector_database",
                 "validate_gpu_collector_role_boundary",
+            ),
+        ),
+        consumer_modules=("app.workers.ml_health",),
+    ),
+    FacadeSpec(
+        facade_module="app.services.gpu_dispatch_authority",
+        public_module="app.services.gpu_arbitration.dispatch",
+        exports=(
+            _exports(
+                "app.services.gpu_arbitration.dispatch",
+                "build_gpu_dispatch_context_factory",
+            ),
+        ),
+        consumer_modules=(
+            "app.deps",
+            "app.workers.frame_preannotate",
+            "app.workers.predictions_retry",
+            "app.workers.tasks",
+            "app.workers.video_tracker",
+        ),
+    ),
+    FacadeSpec(
+        facade_module="app.services.gpu_membership_activation",
+        public_module="app.services.gpu_arbitration.membership_activation",
+        exports=(
+            _exports(
+                "app.services.gpu_arbitration.membership_activation",
+                "GPUMembershipPromotionResult",
+                "promote_gpu_backend_membership",
+                "promote_gpu_resource_memberships",
+            ),
+        ),
+        consumer_modules=("app.workers.ml_health",),
+    ),
+    FacadeSpec(
+        facade_module="app.services.gpu_rollout_control",
+        public_module="app.services.gpu_arbitration.rollout_control",
+        exports=(
+            _exports(
+                "app.services.gpu_arbitration.rollout_control",
+                "GPURolloutControlResult",
+                "advance_gpu_backend_rollout_control",
+                "advance_gpu_resource_rollout_control",
             ),
         ),
         consumer_modules=("app.workers.ml_health",),
@@ -476,6 +517,9 @@ _EXPECTED_FACADES = {
     "app.services.gpu_admission_signer",
     "app.services.gpu_arbiter_rollout",
     "app.services.gpu_collector_database",
+    "app.services.gpu_dispatch_authority",
+    "app.services.gpu_membership_activation",
+    "app.services.gpu_rollout_control",
     "app.services.video_tracker_adapters",
     "app.services.video_tracker_job_service",
     "app.services.video_tracker_runner",
@@ -527,7 +571,7 @@ def test_all_compatibility_facades_are_registered() -> None:
     """The data-driven suite must not silently omit a landed legacy facade."""
     assert {spec.facade_module for spec in FACADE_SPECS} == _EXPECTED_FACADES
     all_names = [name for spec in FACADE_SPECS for name in spec.expected_names]
-    assert len(all_names) == 143
+    assert len(all_names) == 150
     for spec in FACADE_SPECS:
         assert len(spec.expected_names) == len(set(spec.expected_names)), (
             f"frozen manifest duplicates a name for {spec.facade_module}"

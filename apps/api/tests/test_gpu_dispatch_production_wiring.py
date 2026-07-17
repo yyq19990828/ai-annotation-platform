@@ -218,7 +218,7 @@ async def test_frame_segment_builds_authority_from_its_own_session_factory(
         lambda *args, **kwargs: session_factory,
     )
     monkeypatch.setattr(
-        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        "app.services.gpu_arbitration.dispatch.build_gpu_dispatch_context_factory",
         build_authority,
     )
     monkeypatch.setattr("app.services.ml_client.MLBackendClient", FakeClient)
@@ -317,7 +317,7 @@ async def test_frame_segment_aggregates_gpu_arbiter_failures(monkeypatch) -> Non
         lambda *args, **kwargs: session_factory,
     )
     monkeypatch.setattr(
-        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        "app.services.gpu_arbitration.dispatch.build_gpu_dispatch_context_factory",
         lambda factory: object(),
     )
     monkeypatch.setattr("app.services.ml_client.MLBackendClient", RejectedClient)

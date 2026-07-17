@@ -60,11 +60,11 @@ from app.services.gpu_arbitration.collector_database import (
     GPUCollectorDatabase,
     open_gpu_collector_database,
 )
-from app.services.gpu_membership_activation import (
+from app.services.gpu_arbitration.membership_activation import (
     GPUMembershipPromotionResult,
     promote_gpu_resource_memberships,
 )
-from app.services.gpu_rollout_control import (
+from app.services.gpu_arbitration.rollout_control import (
     GPURolloutControlResult,
     advance_gpu_resource_rollout_control,
 )

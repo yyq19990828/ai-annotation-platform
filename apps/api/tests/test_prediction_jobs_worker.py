@@ -193,7 +193,7 @@ async def test_run_batch_accumulates_total_cost(
         return authority_marker
 
     monkeypatch.setattr(
-        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        "app.services.gpu_arbitration.dispatch.build_gpu_dispatch_context_factory",
         build_authority,
     )
 

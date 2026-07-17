@@ -244,7 +244,7 @@ async def test_retry_worker_tracks_success_in_async_jobs(
         return authority_marker
 
     monkeypatch.setattr(
-        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        "app.services.gpu_arbitration.dispatch.build_gpu_dispatch_context_factory",
         build_authority,
     )
 

@@ -159,7 +159,7 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.prediction import FailedPrediction
     from app.db.models.task import Task
-    from app.services.gpu_dispatch_authority import (
+    from app.services.gpu_arbitration.dispatch import (
         build_gpu_dispatch_context_factory,
     )
     from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record

@@ -344,7 +344,7 @@ async def _run_segment(
 
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.task import Task
-    from app.services.gpu_dispatch_authority import (
+    from app.services.gpu_arbitration.dispatch import (
         build_gpu_dispatch_context_factory,
     )
     from app.services.gpu_arbitration.contracts import (

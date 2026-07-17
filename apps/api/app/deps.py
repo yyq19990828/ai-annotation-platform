@@ -16,7 +16,7 @@ from app.services.gpu_arbiter import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
 )
-from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
+from app.services.gpu_arbitration.dispatch import build_gpu_dispatch_context_factory
 
 bearer_scheme = HTTPBearer()
 

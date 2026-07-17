@@ -12,7 +12,7 @@ from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStat
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
 from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record
-from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
+from app.services.gpu_arbitration.dispatch import build_gpu_dispatch_context_factory
 from app.services.video_tracking.runner import run_tracker_job
 from app.workers.celery_app import celery_app
 

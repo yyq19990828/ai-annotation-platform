@@ -556,7 +556,7 @@ async def _run_batch(
     from app.db.models.task_batch import TaskBatch
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
-    from app.services.gpu_dispatch_authority import (
+    from app.services.gpu_arbitration.dispatch import (
         build_gpu_dispatch_context_factory,
     )
     from app.services.gpu_arbitration.contracts import (

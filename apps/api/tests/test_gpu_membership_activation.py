@@ -26,7 +26,7 @@ from app.services.gpu_arbiter import (
     activate_gpu_backend_membership,
     advance_gpu_backend_fence,
 )
-from app.services.gpu_membership_activation import (
+from app.services.gpu_arbitration.membership_activation import (
     promote_gpu_backend_membership,
     promote_gpu_resource_memberships,
 )

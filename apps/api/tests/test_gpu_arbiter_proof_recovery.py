@@ -59,7 +59,7 @@ from app.services.gpu_arbiter import (
     repair_gpu_resource,
 )
 from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
-from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
+from app.services.gpu_arbitration.dispatch import build_gpu_dispatch_context_factory
 from app.services.gpu_arbitration.ledger import (
     GPUAllocation,
     GPUAllocationState,
