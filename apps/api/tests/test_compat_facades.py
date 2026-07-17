@@ -119,6 +119,23 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
         ),
     ),
     FacadeSpec(
+        facade_module="app.services.gpu_admission_signer",
+        public_module="app.services.gpu_arbitration.signing",
+        exports=(
+            _exports(
+                "app.services.gpu_arbitration.signing",
+                "GPUAdmissionSignerConfigError",
+                "GPUAdmissionTokenSigner",
+            ),
+        ),
+        consumer_modules=(
+            "app.services.gpu_dispatch_authority",
+            "app.services.gpu_membership_activation",
+            "app.services.gpu_rollout_control",
+            "scripts.validate_gpu_arbitration",
+        ),
+    ),
+    FacadeSpec(
         facade_module="app.services.video_tracker_adapters",
         public_module="app.services.video_tracking.adapters",
         exports=(
@@ -414,6 +431,7 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
 
 _EXPECTED_FACADES = {
     "app.services.gpu_arbiter_store",
+    "app.services.gpu_admission_signer",
     "app.services.video_tracker_adapters",
     "app.services.video_tracker_job_service",
     "app.services.video_tracker_runner",
@@ -465,7 +483,7 @@ def test_all_compatibility_facades_are_registered() -> None:
     """The data-driven suite must not silently omit a landed legacy facade."""
     assert {spec.facade_module for spec in FACADE_SPECS} == _EXPECTED_FACADES
     all_names = [name for spec in FACADE_SPECS for name in spec.expected_names]
-    assert len(all_names) == 123
+    assert len(all_names) == 125
     for spec in FACADE_SPECS:
         assert len(spec.expected_names) == len(set(spec.expected_names)), (
             f"frozen manifest duplicates a name for {spec.facade_module}"

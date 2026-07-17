@@ -36,6 +36,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- GPU 准入签名实现 `gpu_admission_signer.py` 迁入领域包 `app.services.gpu_arbitration.signing`，原路径降级为纯兼容 facade（对象 identity、签名与冷导入双向守卫不变）；第一方生产代码、测试与校验脚本改用新路径。属 GPU 编排领域化收口的第一步，行为零变化。
+
 ## [0.23.0] - 2026-07-17
 
 ### Changed

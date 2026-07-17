@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.config import Settings
-from app.services.gpu_admission_signer import (
+from app.services.gpu_arbitration.signing import (
     GPUAdmissionSignerConfigError,
     GPUAdmissionTokenSigner,
 )

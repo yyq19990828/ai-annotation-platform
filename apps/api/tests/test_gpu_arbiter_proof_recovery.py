@@ -57,7 +57,7 @@ from app.services.gpu_arbiter import (
     record_gpu_resident_runtime_token_expiry,
     repair_gpu_resource,
 )
-from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
+from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
 from app.services.gpu_arbitration.ledger import (
     GPUAllocation,

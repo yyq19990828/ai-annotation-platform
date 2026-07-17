@@ -22,7 +22,7 @@ from aap_protocol_v2.lifecycle import (
 )
 
 from app.config import Settings, settings
-from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
+from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 from app.services.gpu_arbiter import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
