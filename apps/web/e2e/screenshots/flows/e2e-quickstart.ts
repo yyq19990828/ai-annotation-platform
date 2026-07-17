@@ -6,6 +6,10 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingWorkbenchLayout,
+} from "./_workbench-layout";
 
 export async function runE2eQuickstart(page: Page, catalog: ScreenshotSeedCatalog): Promise<void> {
   // ── Step 1：登录 ─────────────────────────────────────────────
@@ -17,11 +21,13 @@ export async function runE2eQuickstart(page: Page, catalog: ScreenshotSeedCatalo
   await page.getByRole("button", { name: "登录" }).click();
   await page.waitForURL(/\/dashboard/, { timeout: 10_000 });
   await page.waitForTimeout(800);
+  await installRecordingWorkbenchLayout(page, "none");
 
   // ── Step 2：进入标注工作台 ───────────────────────────────────
   const project = catalog.projects.image_demo;
   await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.clean.id}`);
   await page.getByTestId("workbench-stage").waitFor({ state: "visible", timeout: 10_000 });
+  await waitForRecordingWorkbenchLayout(page, "none");
   await page.waitForTimeout(1000);
 
   // ── Step 3：激活 bbox 工具 ───────────────────────────────────

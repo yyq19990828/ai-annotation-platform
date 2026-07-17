@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { withBase } from "vitepress";
-import ocrUrl from "../../../../user-guide/images/workbench/ocr-real-scene.png";
+import ocrUrl from "../../../../user-guide/images/workbench/ocr-real-scene.gif";
 import prelabelUrl from "../../../../user-guide/images/projects/ai-pre-config-panel.png";
 import modelMarketUrl from "../../../../user-guide/images/superadmin/model-market/list.png";
 
@@ -40,7 +40,7 @@ const scenes: ProofScene[] = [
     href: withBase("/user-guide/projects/ai-preannotate"),
     kind: "image",
     src: ocrUrl,
-    alt: "OCR 真实场景工作台及当前任务 AI 参数面板",
+    alt: "真实 OCR 当前题从启动推理到生成文本多边形候选",
   },
   {
     no: "03",

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { withBase } from "vitepress";
 // 静态导入让 Vite 处理资源哈希与 base 前缀，子路径部署（DOCS_BASE）也正确。
-import dashboardUrl from "../../../../user-guide/images/getting-started/role-dashboard-overview.png";
+import ocrInferenceUrl from "../../../../user-guide/images/workbench/ocr-real-scene.gif";
 
 const getStartedHref = withBase("/user-guide/getting-started");
 
@@ -75,9 +75,9 @@ function openSearch(): void {
       </div>
 
       <div class="hero-figure">
-        <img :src="dashboardUrl" alt="角色仪表盘界面预览" />
-        <i class="bbox a" data-label="task queue" aria-hidden="true"></i>
-        <i class="bbox b" data-label="quality" aria-hidden="true"></i>
+        <img :src="ocrInferenceUrl" alt="真实 RapidOCR 当前题推理生成文本候选" />
+        <i class="bbox a" data-label="ocr candidate" aria-hidden="true"></i>
+        <i class="bbox b" data-label="text result" aria-hidden="true"></i>
       </div>
     </div>
 

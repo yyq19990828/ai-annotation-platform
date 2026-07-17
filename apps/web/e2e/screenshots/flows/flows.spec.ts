@@ -26,6 +26,8 @@ import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive } from "./sam-interactive";
+import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
+import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif, convertToWebm } from "../_helpers/recorder";
 import { installScreenshotEnvironment } from "../environment";
 import { loadScreenshotCatalog } from "../catalog-runtime";
@@ -41,6 +43,7 @@ const HOME_MEDIA = path.join(REPO_ROOT, "docs-site/public/home");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 
 let cached: ScreenshotSeedCatalog | null = null;
+const ocrCleanupRecords: OcrCleanupRecord[] = [];
 
 test.beforeAll(() => {
   cached = loadScreenshotCatalog();
@@ -50,6 +53,9 @@ test.beforeAll(() => {
 // 重建自己管理的固定项目，不再按几何类型猜测并删除数据。
 test.afterAll(() => {
   if (!cached) return;
+  // 推理完成时已清一次；整组结束再幂等清理一次可变业务痕迹，
+  // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
+  for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
   const backends = Object.values(cached.projects)
     .map((project) => project.ml_backend?.name)
     .filter((name): name is string => Boolean(name));
@@ -72,6 +78,23 @@ test.afterAll(() => {
     },
   );
 });
+
+function cleanupOcrRecording(record: OcrCleanupRecord): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/cleanup_screenshot_ocr_flow.py",
+      "--project-id", record.projectId,
+      "--task-id", record.taskId,
+      "--celery-task-id", record.celeryTaskId,
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: { ...process.env, PYTHONPATH: "." },
+      stdio: "inherit",
+    },
+  );
+}
 
 async function finalize(
   page: Page,
@@ -185,6 +208,7 @@ test.describe("flow recordings", () => {
     // 首页视频保留候选虚线与 toast 的自然动效，因此不安装面向静态 PNG 的
     // fixed-time / reduced-motion 截图环境。
     await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runSamInteractive(page, cached);
     await finalizeHomepageWebm(page, "ai-assisted-annotation", drawTrim(win, t0));
   });
@@ -193,6 +217,7 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.reviewer.email);
+    await installRecordingWorkbenchLayout(page, "both");
     await runReviewReject(page, cached);
     await finalize(page, "review-reject");
   });
@@ -213,11 +238,34 @@ test.describe("flow recordings", () => {
     await finalize(page, "ai-pre-variant-selector", path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"));
   });
 
+  test("ocr-inference — 真实 RapidOCR 当前题推理", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000);
+    const t0 = Date.now();
+    // 保留推理中 badge / loader 的自然动效，不安装静态 PNG 专用的禁动环境。
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await installRecordingWorkbenchLayout(page, "both");
+    let cleanupRecord: OcrCleanupRecord | null = null;
+    const win = await runOcrInference(page, cached, (record) => {
+      cleanupRecord = record;
+      ocrCleanupRecords.push(record);
+    });
+    if (!cleanupRecord) throw new Error("[ocr-inference] 未记录无痕清理标识");
+    cleanupOcrRecording(cleanupRecord);
+    await finalize(
+      page,
+      "ocr-real-scene",
+      path.join(DOCS_IMAGES, "workbench/ocr-real-scene.gif"),
+      { fps: 6, maxWidth: 860, ...drawTrim(win, t0) },
+    );
+  });
+
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runRotatedBbox(page, cached);
     await finalize(
       page,
@@ -232,6 +280,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runBboxDraw(page, cached);
     await finalize(
       page,
@@ -246,6 +295,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolylineDraw(page, cached);
     await finalize(
       page,
@@ -260,6 +310,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolygonDraw(page, cached);
     await finalize(
       page,
@@ -274,6 +325,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runMaskDraw(page, cached);
     await finalize(
       page,
@@ -288,6 +340,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoTrack(page, cached);
     await finalize(
       page,
@@ -304,6 +357,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runAiTrackerPanel(page, cached);
     await finalize(
       page,
@@ -319,6 +373,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudControls(page, cached);
     await finalize(
       page,
@@ -335,6 +390,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudView(page, cached);
     await finalize(
       page,
@@ -352,6 +408,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoDraw(page, cached);
     await finalize(
       page,
@@ -367,6 +424,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runHotkeyCheatSheet(page, cached);
     await finalize(
       page,

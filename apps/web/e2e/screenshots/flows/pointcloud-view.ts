@@ -7,29 +7,13 @@
  * 任何工具、不落标注)：默认模式下 OrbitControls 左键 = ROTATE, 在 pc-viewport 内左键拖拽即沿轨道
  * 环绕点云, 再滚轮拉近一档。设置走 localStorage(每次全新 context 默认态), 故无需 afterAll 清理。
  *
- * 录制聚焦点云本身, 故先收起左右边栏(任务列表 / 标注详情)再拖拽, 让 3D 视口占满画面。
+ * 录制聚焦点云本身，左右边栏由 flows.spec 的偏好沙箱在导航前关闭。
  *
  * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(导航/解析/点云加载等待 + 收边栏)。
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
-
-/**
- * 收起工作台左右边栏(任务列表 / 标注详情), 让 3D 视口占满画面。
- * 两个切换钮在 Topbar, 展开时 title 为「收起任务列表」/「收起标注详情」(收起后变「展开…」),
- * 按 title 点击只在仍展开时命中, 幂等。收起后视口变宽, 等一拍让 3D 场景重新适应尺寸。
- */
-async function collapseSidebars(page: Page): Promise<void> {
-  for (const title of ["收起任务列表", "收起标注详情"]) {
-    const btn = page.getByTitle(title);
-    if (await btn.count()) {
-      await btn.first().click();
-      await page.waitForTimeout(300);
-    }
-  }
-  await page.waitForTimeout(500);
-}
 
 /** 在 pc-viewport 内做一次左键拖拽(orbit), from→to 之间分 steps 步平滑移动。 */
 async function dragOrbit(
@@ -68,9 +52,6 @@ export async function runPointcloudView(
   const viewport = page.getByTestId("pc-viewport");
   await viewport.waitFor({ timeout: 20_000 });
   await page.waitForTimeout(4000);
-
-  // 收起左右边栏, 画面聚焦点云(默认展开, 点 Topbar 切换钮收起; 收起后视口重新适应窗口)。
-  await collapseSidebars(page);
 
   const box = await viewport.boundingBox();
   if (!box) throw new Error("[pointcloud-view] pc-viewport 没有可见边界");

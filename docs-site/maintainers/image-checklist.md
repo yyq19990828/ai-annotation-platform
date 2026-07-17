@@ -25,7 +25,7 @@
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
 
 当前正式矩阵包含 61 张自动 PNG（58 desktop-light、2 desktop-dark、1 mobile）、
-3 张手工 PNG 和 13 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
+3 张手工 PNG 和 14 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
@@ -229,7 +229,8 @@
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
 - [x] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
-- [x] `images/workbench/ocr-real-scene.png` — 真实 OCR 图片 + 当前题 AI 模型/参数面板 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
+- [x] `images/workbench/ocr-real-scene.gif` — 真实 RapidOCR 当前题从派发、推理中到生成文本多边形候选 `[auto-gif]`（flows/ocr-inference，P-OCR）
+- [x] `images/workbench/ocr-real-scene.png` — OCR 面板无脚本静态备用图 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，提交转 polygon 落库）
