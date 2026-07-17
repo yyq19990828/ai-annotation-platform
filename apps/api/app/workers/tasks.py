@@ -784,7 +784,7 @@ async def _run_batch(
 
         pred_svc = PredictionService(db)
 
-        from app.api.v1.ml_backends import _resolve_task_url
+        from app.services.storage import resolve_task_url as _resolve_task_url
 
         # v0.18.1 · 阶段化: 归一化 stages (缺省=单阶段, 由平铺参数合成, 与现状逐字等价)。
         # 为每个阶段构造 client + context: 源阶段 (parent_stage=None) 复用上面的 context;

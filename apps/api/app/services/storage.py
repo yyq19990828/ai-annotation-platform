@@ -4,11 +4,15 @@ import io
 import logging
 import re
 import time
+from typing import TYPE_CHECKING
 
 import boto3
 from botocore.exceptions import ClientError
 
 from app.config import settings
+
+if TYPE_CHECKING:
+    from app.db.models.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -404,3 +408,23 @@ class StorageService:
 
 
 storage_service = StorageService()
+
+
+def resolve_task_url(task: "Task") -> str:
+    """把 task.file_path (MinIO 对象 key) 转成 ML backend 可访问的 presigned URL。
+
+    SAM backend 协议要求 file_path 是 http(s):// URL 或本地路径; tasks 表里存的是 key,
+    必须先签发 presigned URL。当平台 api 跑在 host 进程而 ML backend 在 docker 网内时,
+    再把 host 替换为 ``settings.ml_backend_storage_host`` (容器可达地址)。
+
+    v0.23.0 · 从 ``app.api.v1.ml_backends._resolve_task_url`` 下沉到 service 层,
+    让 router、worker 与 video tracker runner 共用同一 helper, 消除 service → API
+    反向依赖。行为与原 router 内私有函数逐字一致。
+    """
+    bucket = (
+        storage_service.datasets_bucket
+        if task.dataset_item_id
+        else storage_service.bucket
+    )
+    url = storage_service.generate_download_url(task.file_path, bucket=bucket)
+    return storage_service.rewrite_host_for_ml_backend(url)

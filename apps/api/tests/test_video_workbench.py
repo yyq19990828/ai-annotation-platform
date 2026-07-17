@@ -19,7 +19,7 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas._jsonb_types import Geometry
 from app.schemas.task import VideoMetadata
-from app.services.export import ExportService, UnsupportedExportError
+from app.services.exporting.service import ExportService, UnsupportedExportError
 from app.workers.media import (
     FFMPEG_CHUNK_TIMEOUT_SECONDS,
     FFMPEG_POSTER_TIMEOUT_SECONDS,

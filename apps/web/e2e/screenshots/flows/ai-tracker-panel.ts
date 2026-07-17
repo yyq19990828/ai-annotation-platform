@@ -1,7 +1,7 @@
 /**
  * 流程录制：AI 追踪面板——顶部打开、拖动、缩放、重开恢复与 AI 单题互斥。
  *
- * 本 flow 只改浏览器本地 UI 偏好，不发起 tracker job，不修改标注数据。
+ * 本 flow 不发起 tracker job，不修改标注数据；账号级偏好写入由录制沙箱隔离。
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";

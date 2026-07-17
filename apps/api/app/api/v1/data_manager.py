@@ -21,10 +21,13 @@ from app.schemas.data_manager import (
     DataManagerTrackDetailResponse,
     DataManagerTrackQueryResponse,
 )
-from app.services.data_manager import DataManagerService, build_data_manager_schema
-from app.services.data_manager_entities import DataManagerObjectService
-from app.services.data_manager_entity_filter import validate_entity_view
-from app.services.data_manager_tracks import DataManagerTrackService
+from app.services.data_management.service import (
+    DataManagerService,
+    build_data_manager_schema,
+)
+from app.services.data_management.entities import DataManagerObjectService
+from app.services.data_management.entity_filters import validate_entity_view
+from app.services.data_management.tracks import DataManagerTrackService
 
 
 router = APIRouter()

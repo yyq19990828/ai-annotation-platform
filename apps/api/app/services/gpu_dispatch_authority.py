@@ -55,7 +55,7 @@ from app.services.gpu_arbiter import (
     read_gpu_resident_runtime_subject,
     record_gpu_resident_runtime_token_expiry,
 )
-from app.services.gpu_arbiter_store import (
+from app.services.gpu_arbitration.ledger import (
     GPU_EVICTION_OPERATION,
     GPUAdmissionResult,
     GPUAllocation,

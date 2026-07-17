@@ -726,9 +726,15 @@ async def test_video_tracker_job_create_get_cancel(
     class FakeAsyncResult:
         id = "tracker-celery-task"
 
+    def _fake_send_task(name, args=None, queue=None, **kwargs):
+        assert name == "app.workers.video_tracker.run_video_tracker_job"
+        assert queue == "gpu"
+        queued_jobs.append(args[0])
+        return FakeAsyncResult()
+
     monkeypatch.setattr(
-        "app.workers.video_tracker.run_video_tracker_job.delay",
-        lambda job_id: queued_jobs.append(job_id) or FakeAsyncResult(),
+        "celery.current_app.send_task",
+        _fake_send_task,
     )
 
     segments_resp = await httpx_client_bound.get(

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-17
 ---
 
 # 数据流
@@ -105,24 +105,29 @@ sequenceDiagram
   participant DB
   participant S as MinIO
 
-  Admin->>A: GET /api/v1/projects/{id}/export?format=coco
+  Admin->>A: POST /api/v1/projects/{id}/export?targets=coco
   Note right of A: projects.py:export_project<br/>audit_logs(action='project.export')
-  A->>R: 入队 export_project(...)
-  A-->>Admin: 202 + export_job_id
+  A->>DB: 创建 async_jobs(kind='export')
+  A->>R: 派发 app.workers.export.run_export
+  A-->>Admin: 202 + job_id
   C->>DB: 拉取所有 annotations + tasks
-  C->>C: 拼装 COCO JSON / YOLO txt / VOC xml
-  Note right of C: services/export/* 各 format 适配器
-  C->>S: 上传 zip 到 datasets bucket
-  C->>DB: 更新 export_job.status='done', file_url=...
-  Admin->>A: GET /api/v1/exports/{id}
-  A-->>Admin: presigned download URL
+  C->>C: 拼装所选格式并生成 ZIP
+  Note right of C: services/exporting/* 格式适配与打包
+  C->>S: 上传 ZIP 到 export bucket
+  C->>DB: 写 export_artifacts 缓存<br/>完成 async_jobs.result
+  Admin->>A: GET /api/v1/async-jobs/{job_id}
+  A-->>Admin: status + result.download_url
 ```
 
 代码索引：
-- 端点：`apps/api/app/api/v1/projects.py` (导出/列表/下载)
+- 项目导出端点：`apps/api/app/api/v1/projects.py:export_project`
+- 批次导出端点：`apps/api/app/api/v1/batches.py:export_batch`
+- 作业状态与下载 URL：`apps/api/app/api/v1/async_jobs.py:get_async_job`
 - 审计：所有导出写 `AuditAction.PROJECT_EXPORT` / `BATCH_EXPORT`
-- Worker：`apps/api/app/workers/tasks.py`（export_project 任务）
-- 格式适配：`apps/api/app/services/export/`
+- Worker：`apps/api/app/workers/export.py`（`app.workers.export.run_export` 任务）
+- 导出服务与格式适配：`apps/api/app/services/exporting/`
+
+VOC 保留同步 ZIP 响应；其余目标走上述异步作业与缓存链路。
 
 ---
 

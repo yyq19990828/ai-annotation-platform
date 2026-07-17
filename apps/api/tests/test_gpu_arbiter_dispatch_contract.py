@@ -203,7 +203,7 @@ def test_unregistered_loading_gate_stays_closed_during_demotion(
         ),
     )
     monkeypatch.setattr(
-        "app.services.gpu_arbiter.effective_gpu_arbiter_mode",
+        "app.services.gpu_arbitration.policy.effective_gpu_arbiter_mode",
         lambda _resource_id, *, config: GPUArbiterMode.ENFORCE,
     )
 

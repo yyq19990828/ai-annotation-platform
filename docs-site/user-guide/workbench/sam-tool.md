@@ -3,12 +3,12 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-17
 ---
 
 # AI 工具组
 
-> 点 / 框 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
+> 智能点 / 智能框 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
 
@@ -29,21 +29,29 @@ last_reviewed: 2026-07-14
 
 ## 工具说明
 
-![交互工具栏：引擎、模型档位与连接状态](../images/sam/interactive-toolbar.png)
-
-> 选中点 / 框 / Exemplar 任一交互工具时，画布顶部居中浮出**交互工具栏**（横排布局，取代了旧的贴 ToolDock 右侧竖排抽屉）：左侧是引擎 / 模型 / 档位选择，右侧是工具特定控件（极性 / 输出形态 / 叠加文本 / 阈值），最右边是兼容性警告 + 状态指示。Mask 笔刷工具激活时改显 MaskToolbar，两者互斥。
+选中任一交互工具时，画布顶部居中浮出对应的**交互工具栏**：左侧是引擎 / 模型 / 档位选择，右侧随工具显示极性、输出形态、叠加文本或阈值，最右边是兼容性警告与连接状态。下面按工具栏循环顺序逐一说明；Mask 笔刷激活时改显 MaskToolbar，两者互斥。
 
 ### 智能点（Smart Point）— 单击让 SAM 找边缘
+
+![智能点交互工具条](../images/sam/smart-point-toolbar.png)
 
 - **单击**：在目标上点一下 → SAM 把这个东西的轮廓找出来（positive point）
 - **Alt + 单击**：负向点，告诉 SAM「这块不要」做减法
 - 工具激活时**交互工具栏**显示极性切换圆按钮，按 `=` / `+` 切正向，按 `-` 切负向
 
+![智能点落在真实车辆上并生成轮廓候选](../images/sam/smart-point-interaction.gif)
+
 ### 智能框（Smart Box）— 拖框作 bbox prompt
+
+![智能框交互工具条](../images/sam/interactive-toolbar.png)
 
 拖框，SAM 把框内主要前景的 polygon 找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
+![智能框对齐真实车辆并生成轮廓候选](../images/sam/smart-box-interaction.gif)
+
 ### Magic Box — 拖框 → SAM 收紧到对象紧凑外接矩形
+
+![Magic Box 交互工具条](../images/sam/magic-box-toolbar.png)
 
 拖框时不要求精准，拖一个**大致包住目标**的框就行;SAM 跑 mask → 自动取 mask 的紧凑外接矩形 → **直接落 bbox 标注**(不经过候选层确认)。
 
@@ -56,29 +64,15 @@ last_reviewed: 2026-07-14
 
 **注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的多边形归 `region`。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
-### 文本预标「找全图」— AI 面板(批量线)
-
-> 文本提示不再是工具栏交互工具。给词→全图找所有实例属**批量能力**,在悬浮 **AI 面板**(点工具栏「AI」打开)或**批量预标页**使用。
-
-在 AI 面板的 Prompt 输入框填英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO、SAM 3 PCS、YOLO-World 或 YOLOE 会按当前 model 能力批量返回候选。
-
-输出形态三选一(由后端 `supported_text_outputs` 决定可见性):
-
-![文本提示三种输出形态](../images/sam/text-three-modes.png)
-
-- `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
-- `○ 掩膜`：mask → polygon（image-seg 项目默认）
-- `⊕ 全部`：同实例配对 box + polygon
-
-变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。
-
-输出形态会按账号记住上次显式选择:优先使用本会话选择,再使用账号记忆,最后按项目 `type_key` 智能默认(image-det → 框,其它 → 掩膜)。
+![Magic Box 粗框后由真实 SAM3 收紧并确认类别](../images/sam/magic-box-interaction.gif)
 
 ### Exemplar 示例（视觉示例）
 
-![Exemplar 输出形态](../images/sam/exemplar-output-mode.png)
+![Exemplar 示例交互工具条](../images/sam/exemplar-output-mode.png)
 
 拖框圈出图中**已有的一个示例实例**，支持 exemplar 的 backend 会返回**全图相似实例**。SAM 3 PCS 支持正/负框、文本概念叠加和阈值重筛；YOLOE visual prompt 支持多正框和阈值，但没有负框与文本概念叠加。工具栏会读取 `/setup.exemplar_capabilities` 自动隐藏当前 backend 不支持的控件。
+
+![Exemplar 框选真实车辆并返回全图相似候选](../images/sam/exemplar-interaction.gif)
 
 这不是一发定生死——拖第一个框后进入**迭代 refine 会话**，可以一边看结果一边收紧：
 
@@ -97,6 +91,24 @@ last_reviewed: 2026-07-14
 - 不容易用英文描述的形态（特定造型部件 / 罕见品类）
 
 > 与「智能框」手势相同（拖框），但意图不同：智能框是「就找这块的轮廓」，Exemplar 是「找全图所有跟这块相似的」。激活的工具决定路由。
+
+### 文本预标「找全图」— AI 面板(批量线)
+
+> 文本提示不再是工具栏交互工具。给词→全图找所有实例属**批量能力**,在悬浮 **AI 面板**(点工具栏「AI」打开)或**批量预标页**使用。
+
+在 AI 面板的 Prompt 输入框填英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO、SAM 3 PCS、YOLO-World 或 YOLOE 会按当前 model 能力批量返回候选。
+
+输出形态三选一(由后端 `supported_text_outputs` 决定可见性):
+
+![文本提示三种输出形态](../images/sam/text-three-modes.png)
+
+- `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
+- `○ 掩膜`：mask → polygon（image-seg 项目默认）
+- `⊕ 全部`：同实例配对 box + polygon
+
+变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。
+
+输出形态会按账号记住上次显式选择:优先使用本会话选择,再使用账号记忆,最后按项目 `type_key` 智能默认(image-det → 框,其它 → 掩膜)。
 
 ## 候选确认
 

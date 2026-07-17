@@ -11,10 +11,9 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.services.task_views import (
-    _MAX_IN_VALUES,
+from app.services.data_management.task_filters import _MAX_IN_VALUES, compile_filter
+from app.services.data_management.views import (
     apply_sort,
-    compile_filter,
     validate_columns,
     validate_filter,
     validate_sort,

@@ -5,7 +5,7 @@
  *
  * 数据来自 screenshots seed 的 pointcloud_demo（真实 RGB-D 室内扫描）。这些控件不在画面浮条上，
  * 而在「工作台设置」抽屉的「点云」分类里(toggle/slider)。
- * 本 flow 纯切设置不落标注, 设置走 localStorage(每次全新 context 默认态), 故无需 afterAll 清理。
+ * 本 flow 纯切设置不落标注；账号级偏好 PATCH 由 flows.spec 的录制沙箱在内存中响应，不写回服务端。
  *
  * 点云 PCD 由前端按需加载并经 WebGL(headless 走 SwiftShader)渲染, 故进入后多等一段让点云就绪。
  *

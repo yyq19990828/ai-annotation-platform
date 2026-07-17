@@ -20,8 +20,8 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.services.export import ExportService
-from app.services.export_packaging import build_export_zip
+from app.services.exporting.service import ExportService
+from app.services.exporting.packaging import build_export_zip
 
 pytestmark = pytest.mark.asyncio
 
@@ -139,7 +139,7 @@ async def test_build_export_zip_streamed_to_disk(super_admin, db_session, monkey
     """落盘多目标（yolo+coco）：返回磁盘路径 + size 一致；镜像目录 / manifest /
     COCO 真值像素坐标正确。"""
     monkeypatch.setattr(
-        "app.services.export_packaging.storage_service.generate_download_url",
+        "app.services.exporting.packaging.storage_service.generate_download_url",
         lambda *args, **kwargs: "signed-url",
     )
     user, _ = super_admin

@@ -16,8 +16,8 @@ from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
-from app.services.video_tracker_adapters import TrackerContext, TrackerFrameResult
-from app.services.video_tracker_runner import (
+from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
+from app.services.video_tracking.runner import (
     _partition_results_by_instance,
     accept_tracker_job,
     discard_tracker_job,
@@ -215,7 +215,7 @@ async def test_runner_lands_extra_instances_as_new_tracks(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _MultiInstanceAdapter(extra_ids=["obj1", "obj2"])
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
     # 无声明 sam3_video 的已启用 backend → get_tracker_backend 返回 None; stub adapter
@@ -324,7 +324,7 @@ async def test_runner_sourceless_detection_lands_all_as_new_tracks(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _MultiInstanceAdapter(extra_ids=["obj1"])
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
 
@@ -371,7 +371,7 @@ async def test_create_tracker_job_sourceless_stores_target_category(
     显式目标类别落到 target_class_name/target_tool_unit_id。"""
     from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
     from app.services.video_frame_service import build_context_from_task
-    from app.services.video_tracker_job_service import create_tracker_job
+    from app.services.video_tracking.jobs import create_tracker_job
 
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
@@ -401,7 +401,7 @@ async def test_create_tracker_job_sourceless_rejects_invalid_target(
 
     from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
     from app.services.video_frame_service import build_context_from_task
-    from app.services.video_tracker_job_service import create_tracker_job
+    from app.services.video_tracking.jobs import create_tracker_job
 
     user, _ = super_admin
     task, _item = await _make_video_task(db_session, user.id)
@@ -429,7 +429,7 @@ async def test_create_tracker_job_sourceless_rejects_invalid_target(
 def test_mask_track_seed_geometry_is_hydrated_to_bbox(monkeypatch):
     from types import SimpleNamespace
 
-    import app.services.video_tracker_job_service as service
+    import app.services.video_tracking.jobs as service
 
     reference = {"object_key": "raster-masks/sha256/x", "sha256": "x"}
     annotation = SimpleNamespace(
@@ -463,7 +463,7 @@ async def test_create_tracker_job_rejects_unavailable_real_model(
 
     from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
     from app.services.video_frame_service import build_context_from_task
-    from app.services.video_tracker_job_service import create_tracker_job
+    from app.services.video_tracking.jobs import create_tracker_job
 
     user, _ = super_admin
     task, _item = await _make_video_task(db_session, user.id)
@@ -496,7 +496,7 @@ async def test_create_tracker_job_with_source_keeps_target_null(
     """有源延展: source_annotation_id 给出时 target_* 留空 (继承源, 不写显式类别)。"""
     from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
     from app.services.video_frame_service import build_context_from_task
-    from app.services.video_tracker_job_service import create_tracker_job
+    from app.services.video_tracking.jobs import create_tracker_job
 
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
@@ -638,7 +638,7 @@ async def test_runner_discard_leaves_annotation_untouched(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _MultiInstanceAdapter(extra_ids=["obj1"])
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
 
@@ -690,7 +690,7 @@ def _mr(
 
 
 def test_associate_multiplex_window_matches_by_iou_and_births_new():
-    from app.services.video_tracker_runner import _associate_multiplex_window
+    from app.services.video_tracking.runner import _associate_multiplex_window
 
     prev = {
         "1": {"type": "bbox", "x": 0.10, "y": 0.0, "w": 0.1, "h": 0.1},
@@ -713,7 +713,7 @@ def test_associate_multiplex_window_matches_by_iou_and_births_new():
 
 def test_associate_multiplex_window_empty_window_keeps_boundary():
     # 空窗 (backend 空窗返回) 不应抹掉跨窗边界, 否则下一窗全部实例被当作新发现。
-    from app.services.video_tracker_runner import _associate_multiplex_window
+    from app.services.video_tracking.runner import _associate_multiplex_window
 
     prev = {
         "1": {"type": "bbox", "x": 0.10, "y": 0.0, "w": 0.1, "h": 0.1},
@@ -729,7 +729,7 @@ def test_associate_multiplex_window_empty_window_keeps_boundary():
 
 def test_associate_multiplex_window_all_outside_keeps_boundary():
     # 短暂遮挡 → 整窗全 outside (无几何) 时同样保留边界, 避免同物体遮挡后被拆两条轨迹。
-    from app.services.video_tracker_runner import _associate_multiplex_window
+    from app.services.video_tracking.runner import _associate_multiplex_window
 
     prev = {"1": {"type": "bbox", "x": 0.10, "y": 0.0, "w": 0.1, "h": 0.1}}
     before = {k: dict(v) for k, v in prev.items()}
@@ -793,7 +793,7 @@ async def test_runner_associates_window_local_ids_across_windows(
     db_session, super_admin, monkeypatch
 ):
     """窗内 id 跨窗重排时, 平台 IoU 关联把同一物理目标的帧归到一条全局轨迹 (不因 id 互换分裂)。"""
-    from app.services.video_tracker_runner import accept_tracker_job
+    from app.services.video_tracking.runner import accept_tracker_job
 
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
@@ -829,7 +829,7 @@ async def test_runner_associates_window_local_ids_across_windows(
     )  # 两窗 (0,1)(2,3)
     adapter = _WindowLocalMultiplexAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+        "app.services.video_tracking.runner.get_tracker_adapter", lambda _k: adapter
     )
 
     async def collect(_c: str, _p: dict) -> None:
@@ -963,7 +963,7 @@ async def test_runner_multi_source_backfills_each_own_track(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _MultiSourceAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+        "app.services.video_tracking.runner.get_tracker_adapter", lambda _k: adapter
     )
 
     async def collect(_c: str, _p: dict) -> None:
@@ -1016,7 +1016,7 @@ async def test_accept_multi_source_orphan_degrades_to_new_track(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _MultiSourceAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+        "app.services.video_tracking.runner.get_tracker_adapter", lambda _k: adapter
     )
 
     async def collect(_c: str, _p: dict) -> None:
@@ -1067,7 +1067,7 @@ async def test_create_tracker_job_multi_source_builds_seeds(db_session, super_ad
     prompt.seeds 每源一条 (obj_id 1..N + source_annotation_id + from_frame 处几何)。"""
     from app.schemas.video_tracker_job import VideoTrackerPropagateRequest
     from app.services.video_frame_service import build_context_from_task
-    from app.services.video_tracker_job_service import create_tracker_job
+    from app.services.video_tracking.jobs import create_tracker_job
 
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
@@ -1162,8 +1162,8 @@ async def test_track_video_endpoint_multi_source_builds_job(
         id = "tracker-celery-task"
 
     monkeypatch.setattr(
-        "app.workers.video_tracker.run_video_tracker_job.delay",
-        lambda job_id: FakeAsyncResult(),
+        "celery.current_app.send_task",
+        lambda name, args=None, queue=None, **kwargs: FakeAsyncResult(),
     )
 
     resp = await httpx_client_bound.post(
@@ -1225,7 +1225,7 @@ async def test_accept_multi_source_touched_covers_sources_and_created(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _MultiSourcePlusDiscoveryAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter", lambda _k: adapter
+        "app.services.video_tracking.runner.get_tracker_adapter", lambda _k: adapter
     )
 
     async def collect(_c: str, _p: dict) -> None:

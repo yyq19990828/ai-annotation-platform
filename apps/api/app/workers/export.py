@@ -31,8 +31,8 @@ from app.db.models.async_job import AsyncJob
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services import async_job as async_job_svc
-from app.services import export_cache
-from app.services.export_packaging import (
+from app.services.exporting import cache as export_cache
+from app.services.exporting.packaging import (
     PRESIGN_EXPIRES_SECONDS,
     build_export_zip,
 )

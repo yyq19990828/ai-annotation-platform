@@ -1,0 +1,103 @@
+"""Compute SHA-256 of the 15 final GPU-arbiter Redis Lua scripts.
+
+The GPU Redis ledger registers exactly 15 Lua scripts via ``redis.register_script``.
+Each *final* script body is the fully-composed string (shared preamble + body) that
+Redis actually sees. P0 freezes their SHA-256; P1 must reproduce every value after the
+``gpu_arbiter_store`` module is split into the ``gpu_arbitration.ledger`` package.
+
+Usage
+-----
+    uv run python scripts/freeze_gpu_ledger_lua.py            # print table
+    uv run python scripts/freeze_gpu_ledger_lua.py --json      # machine-readable
+    uv run python scripts/freeze_gpu_ledger_lua.py --check <file>   # compare to golden
+
+The 15 final script names mirror the constants defined in
+``app.services.gpu_arbitration.ledger.scripts`` (moved from the legacy flat module).
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+# Attribute name on GPUArbiterStore -> final composed Lua string to freeze.
+# Order matches GPUArbiterStore.__init__ registration order (15 entries).
+SCRIPT_SPECS: list[tuple[str, str]] = [
+    ("mark_card_not_ready_script", "_MARK_CARD_NOT_READY_LUA"),
+    ("begin_proof_reset_script", "_BEGIN_PROOF_RESET_LUA"),
+    ("commit_proof_reset_script", "_COMMIT_PROOF_RESET_LUA"),
+    ("reconcile_card_script", "_RECONCILE_CARD_LUA"),
+    ("evolve_backend_domains_script", "_EVOLVE_BACKEND_DOMAINS_LUA"),
+    ("collect_retired_backend_script", "_COLLECT_RETIRED_BACKEND_LUA"),
+    ("verify_tombstone_gc_script", "_VERIFY_TOMBSTONE_GC_LUA"),
+    ("admit_script", "_ADMIT_LUA"),
+    ("lease_script", "_LEASE_LUA"),
+    ("sweep_leases_script", "_SWEEP_LEASES_LUA"),
+    ("queue_script", "_QUEUE_LUA"),
+    ("transition_owner_script", "_TRANSITION_OWNER_LUA"),
+    ("begin_idle_eviction_script", "_BEGIN_IDLE_EVICTION_LUA"),
+    ("arm_eviction_cancel_script", "_ARM_EVICTION_CANCEL_LUA"),
+    ("transition_script", "_TRANSITION_LUA"),
+]
+
+
+def compute_digest(module) -> list[dict[str, str]]:
+    """Return one {name, source_const, sha256, length} per final script."""
+    rows: list[dict[str, str]] = []
+    for _attr, const in SCRIPT_SPECS:
+        body = getattr(module, const)
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        rows.append(
+            {
+                "name": const,
+                "sha256": digest,
+                "length": str(len(body)),
+            }
+        )
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of a table",
+    )
+    parser.add_argument(
+        "--check",
+        metavar="FILE",
+        help="compare computed digests to a golden JSON file; exit 1 on mismatch",
+    )
+    args = parser.parse_args(argv)
+
+    from app.services.gpu_arbitration.ledger import scripts as lua_sources
+
+    rows = compute_digest(lua_sources)
+
+    if args.check:
+        golden = json.loads(Path(args.check).read_text(encoding="utf-8"))
+        if golden == rows:
+            print(f"OK: {len(rows)} Lua digests match {args.check}")
+            return 0
+        print(f"MISMATCH against {args.check}", file=sys.stderr)
+        for got, want in zip(rows, golden):
+            if got != want:
+                print(f"  - {got['name']}: got {got['sha256']}, want {want['sha256']}")
+        return 1
+
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+
+    print(f"{'#':>2}  {'name':<32}  {'length':>7}  sha256")
+    for i, row in enumerate(rows, 1):
+        print(f"{i:>2}  {row['name']:<32}  {row['length']:>7}  {row['sha256']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

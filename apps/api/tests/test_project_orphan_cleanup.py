@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.db.models.annotation import Annotation
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.services.export import ExportService
+from app.services.exporting.service import ExportService
 
 
 def _tool_bindings() -> dict:

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-07-17
 ---
 
 # 系统全景
@@ -33,6 +33,10 @@ graph LR
 app/
 ├── api/v1/         # HTTP 路由（薄）
 ├── services/       # 业务逻辑（核心）
+│   ├── gpu_arbitration/ # GPU 契约、策略与 ledger
+│   ├── video_tracking/  # 视频追踪编排
+│   ├── exporting/       # 导出与格式打包
+│   └── data_management/ # Data Manager 查询与服务
 ├── db/
 │   ├── models/     # SQLAlchemy
 │   └── session.py  # 引擎与连接池
@@ -43,6 +47,8 @@ app/
 ├── utils/
 └── main.py         # FastAPI 入口
 ```
+
+已迁移完成的 Redis ledger、Video、Export 与 Data Manager 平铺旧模块仅作显式 re-export 兼容层；GPU orchestration 平铺模块仍是待归位的过渡实现。应用、worker 和测试的新调用点直接依赖已经落地的领域 package，避免纯兼容路径成为第二实现边界。
 
 详见 [后端分层](./backend-layers)。
 

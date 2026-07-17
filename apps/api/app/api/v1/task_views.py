@@ -23,14 +23,14 @@ from app.schemas.task_view import (
     ProjectTaskViewUpdate,
 )
 from app.schemas.data_manager import DataManagerEntityScope
-from app.services.data_manager_entity_filter import (
+from app.services.data_management.entity_filters import (
     builtin_entity_views,
     count_entity_filters,
     invalid_entity_filter_fields,
 )
 from app.services.audit import AuditAction, AuditService
-from app.services.data_manager import build_data_manager_schema
-from app.services.task_views import (
+from app.services.data_management.schema import build_data_manager_schema
+from app.services.data_management.views import (
     TaskViewService,
     builtin_views,
     invalid_filter_fields,

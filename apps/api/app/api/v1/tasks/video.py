@@ -56,7 +56,7 @@ from app.services.video_segment_service import (
     list_segments as list_video_segments,
     release_segment,
 )
-from app.services.video_tracker_job_service import (
+from app.services.video_tracking.jobs import (
     create_tracker_job,
     list_active_tracker_jobs,
     list_reviewable_tracker_jobs,

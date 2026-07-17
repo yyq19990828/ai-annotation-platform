@@ -18,23 +18,6 @@ import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
 
-/**
- * 收起工作台左右边栏（任务列表 / 标注详情），让录制聚焦视频画面。
- * 两个切换钮在 Topbar，展开时 title 为「收起任务列表」/「收起标注详情」（收起后变「展开…」），
- * 按 title 点击只在仍展开时命中，幂等。必须在读 video-konva-stage 的 boundingBox 之前收起，
- * 否则画框落点按收起前的窄画布算，收起后画布变宽会错位。
- */
-async function collapseSidebars(page: Page): Promise<void> {
-  for (const title of ["收起任务列表", "收起标注详情"]) {
-    const btn = page.getByTitle(title);
-    if (await btn.count()) {
-      await btn.first().click();
-      await page.waitForTimeout(300);
-    }
-  }
-  await page.waitForTimeout(400);
-}
-
 export async function runVideoDraw(
   page: Page,
   catalog: ScreenshotSeedCatalog,
@@ -45,9 +28,6 @@ export async function runVideoDraw(
 
   await page.getByTestId("video-timeline-shell").waitFor({ timeout: 15_000 });
   await page.waitForTimeout(2500);
-
-  // 收起左右边栏，画面聚焦视频本身（须在下面读 boundingBox 前收起，否则画框落点错位）。
-  await collapseSidebars(page);
 
   // 选 track(跨帧轨迹)工具:画框会建/扩展 track 关键帧并自动插值。
   const trackBtn = page.getByTestId("video-tool-btn-track");

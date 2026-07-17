@@ -47,6 +47,28 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     target: "docs-site/user-guide/images/mask-brush/toolbar-overview.png",
   },
   {
+    name: "sam/smart-point-toolbar",
+    role: "annotator",
+    fixture: {
+      project: "image_demo",
+      task: "annotating",
+      backend: "image_interactive",
+      capabilities: ["prompt:point", "output:polygon"],
+    },
+    route: (catalog) => imageTaskRoute(catalog, "annotating"),
+    prepare: async (page) => {
+      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
+      const button = page.getByTestId("tool-btn-smart-point");
+      await button.waitFor({ state: "visible" });
+      if (!(await button.isEnabled())) throw new Error("sam/smart-point-toolbar: smart-point 被禁用");
+      await button.click();
+      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+      await page.waitForTimeout(200);
+    },
+    capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    target: "docs-site/user-guide/images/sam/smart-point-toolbar.png",
+  },
+  {
     name: "sam/interactive-toolbar",
     role: "annotator",
     fixture: {
@@ -67,6 +89,28 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
     target: "docs-site/user-guide/images/sam/interactive-toolbar.png",
+  },
+  {
+    name: "sam/magic-box-toolbar",
+    role: "annotator",
+    fixture: {
+      project: "image_demo",
+      task: "annotating",
+      backend: "image_interactive",
+      capabilities: ["prompt:interactive_box", "output:bbox"],
+    },
+    route: (catalog) => imageTaskRoute(catalog, "annotating"),
+    prepare: async (page) => {
+      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
+      const button = page.getByTestId("tool-btn-magic-box");
+      await button.waitFor({ state: "visible" });
+      if (!(await button.isEnabled())) throw new Error("sam/magic-box-toolbar: magic-box 被禁用");
+      await button.click();
+      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+      await page.waitForTimeout(200);
+    },
+    capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    target: "docs-site/user-guide/images/sam/magic-box-toolbar.png",
   },
   {
     name: "sam/exemplar-output-mode",

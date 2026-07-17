@@ -13,9 +13,8 @@ import pytest
 from redis.asyncio import Redis
 from redis.cluster import key_slot
 
-from app.services import gpu_arbiter_store as gpu_arbiter_store_module
 from app.config import settings
-from app.services.gpu_arbiter_store import (
+from app.services.gpu_arbitration.ledger import (
     GPUAllocation,
     GPUAllocationState,
     GPUArbiterStore,
@@ -27,6 +26,8 @@ from app.services.gpu_arbiter_store import (
     gpu_arbiter_keys,
     normalize_gpu_backend_max_concurrency,
 )
+from app.services.gpu_arbitration.ledger import store as gpu_arbiter_store_module
+from app.services.gpu_arbitration.ledger.types import _LEDGER_REVISION_REBASE_THRESHOLD
 
 
 _TEST_BACKEND_DOMAIN = (
@@ -8440,7 +8441,7 @@ async def test_revision_headroom_rejects_new_queue_work_without_mutation(
     keys = first.keys(resource_id)
     raw = Redis.from_url(_redis_url(), decode_responses=True)
     try:
-        new_work_limit = gpu_arbiter_store_module._LEDGER_REVISION_REBASE_THRESHOLD
+        new_work_limit = _LEDGER_REVISION_REBASE_THRESHOLD
         await raw.hset(keys.card, "ledger_revision", str(new_work_limit))
 
         rejected = await first.enqueue_backend(
@@ -8472,7 +8473,7 @@ async def test_last_headroom_admission_can_finish_owned_cleanup(
         await raw.hset(
             keys.card,
             "ledger_revision",
-            str(gpu_arbiter_store_module._LEDGER_REVISION_REBASE_THRESHOLD - 1),
+            str(_LEDGER_REVISION_REBASE_THRESHOLD - 1),
         )
         await _admit_resident(first, resource_id)
         heartbeat = await first.heartbeat_lease(
@@ -8503,7 +8504,7 @@ async def test_cutoff_response_loss_retries_confirm_existing_ownership(
     redis_stores,
 ) -> None:
     first, _ = redis_stores
-    cutoff = gpu_arbiter_store_module._LEDGER_REVISION_REBASE_THRESHOLD
+    cutoff = _LEDGER_REVISION_REBASE_THRESHOLD
     raw = Redis.from_url(_redis_url(), decode_responses=True)
     try:
         admission_resource = "node-cutoff-admission-retry/index:0"
@@ -8624,7 +8625,7 @@ async def test_reconcile_rotates_incarnation_and_rebases_revision_headroom(
     keys = first.keys(resource_id)
     raw = Redis.from_url(_redis_url(), decode_responses=True)
     try:
-        rebase_boundary = gpu_arbiter_store_module._LEDGER_REVISION_REBASE_THRESHOLD - 1
+        rebase_boundary = _LEDGER_REVISION_REBASE_THRESHOLD - 1
         await raw.hset(keys.card, "ledger_revision", str(rebase_boundary))
 
         rebased = await first.reconcile_card(

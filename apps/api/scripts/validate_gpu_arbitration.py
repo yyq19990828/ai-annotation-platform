@@ -48,7 +48,7 @@ from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
 from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUDispatchRequest
-from app.services.gpu_arbiter_store import GPUArbiterStore, GPUArbiterStoreError
+from app.services.gpu_arbitration.ledger import GPUArbiterStore, GPUArbiterStoreError
 from app.utils.gpu_resource import validate_gpu_resource_id
 
 

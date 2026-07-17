@@ -3,7 +3,7 @@ import io
 import pytest
 from PIL import Image
 
-from app.services.export_davis import (
+from app.services.exporting.davis import (
     DAVIS_MAX_OBJECTS,
     build_davis_palette_png,
     davis_palette,

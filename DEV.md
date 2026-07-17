@@ -361,8 +361,8 @@ pnpm --filter web screenshots:regression                   # 比较 9 张高价�
 pnpm --filter web screenshots:regression:update            # 有意 UI 变化后更新基线
 ```
 
-当前完整矩阵有 61 个自动截图目标：58 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
-另有 3 张手工 PNG 和 13 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
+当前完整矩阵有 63 个自动截图目标：60 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
+另有 3 张手工 PNG 和 18 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
 人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
 流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
 
@@ -378,7 +378,7 @@ node docs-site/scripts/check-orphan-images.mjs --strict
 
 ### 改场景
 
-- 58 个 desktop-light 场景按功能放在 `apps/web/e2e/screenshots/scenes/`；新增项目场景
+- 60 个 desktop-light 场景按功能放在 `apps/web/e2e/screenshots/scenes/`；新增项目场景
   必须声明 `fixture` 并通过 catalog 逻辑键生成 `route`。
 - 主入口 `apps/web/e2e/screenshots/screenshots.spec.ts` 在浏览器导航前校验项目、任务、
   批次、backend 和场景能力，并分别使用 `admin`、`anno` 和 `qa` 的真实身份。

@@ -1091,7 +1091,7 @@ def _validate_export_targets(
     targets: list[str], data_type: str | None = None
 ) -> list[str]:
     """v0.10.43 · 校验并去重导出目标，非法转 400。v0.10.47 · 按 data_type 过滤模态。"""
-    from app.services.export_packaging import clean_export_targets
+    from app.services.exporting.packaging import clean_export_targets
 
     try:
         return clean_export_targets(targets, data_type)
@@ -1140,7 +1140,7 @@ async def export_project(
             raise HTTPException(
                 status_code=400, detail="voc 格式只能单独导出，不能与其它目标混选"
             )
-        from app.services.export import ExportService, UnsupportedExportError
+        from app.services.exporting.service import ExportService, UnsupportedExportError
 
         svc = ExportService(db)
         try:

@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-17
 ---
 
 # AI 预标
@@ -100,7 +100,9 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 OCR 与文档版面预标走和几何检测（YOLO）、文本检测（gsam2/sam3）**完全相同的 model-first 配置**：「模型任务」下拉列出 backend 自报的所有可批量预标的模型，OCR 端到端 / 检测模型与几何检测器并列出现，按选中模型自动决定要不要文本 prompt、要不要变体面板。
 
-![真实 OCR 图片在工作台当前题 AI 面板中的模型与参数](../images/workbench/ocr-real-scene.png)
+![真实 OCR 图片在工作台运行当前题推理并生成文本候选](../images/workbench/ocr-real-scene.gif)
+
+<noscript><img src="../images/workbench/ocr-real-scene.png" alt="OCR 当前题 AI 面板静态备用图" /></noscript>
 
 同一能力也可从工作台「当前题 AI」面板对正在标注的图片直接运行；项目必须先绑定支持 OCR 输出契约的 ML Backend。
 

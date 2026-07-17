@@ -33,7 +33,7 @@ from app.services.gpu_arbiter import (
     GPUResidentRuntimeSubject,
     GPUResidentRuntimeSubjectError,
 )
-from app.services.gpu_arbiter_store import (
+from app.services.gpu_arbitration.ledger import (
     GPUAdmissionResult,
     GPUAllocation,
     GPUAllocationState,

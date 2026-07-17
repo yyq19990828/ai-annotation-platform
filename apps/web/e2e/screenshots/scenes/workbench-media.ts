@@ -1,4 +1,15 @@
 import type { ScreenshotScene } from "./_types";
+import type { Page } from "@playwright/test";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingWorkbenchLayout,
+} from "../flows/_workbench-layout";
+
+async function reloadWithSidebarLayout(page: Page, mode: "both" | "none"): Promise<void> {
+  await installRecordingWorkbenchLayout(page, mode);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForRecordingWorkbenchLayout(page, mode);
+}
 
 export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
   {
@@ -15,18 +26,10 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       return `/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`;
     },
     prepare: async (page) => {
+      await reloadWithSidebarLayout(page, "both");
       await page.getByTestId("video-timeline-shell").waitFor({ state: "visible", timeout: 15_000 });
       await page.getByTestId("video-konva-stage").waitFor({ state: "visible", timeout: 10_000 });
       await page.getByText("实时同步", { exact: true }).waitFor({ timeout: 5000 });
-
-      // 录制型 flow 会收起边栏并把该偏好保存到账号；正式静态图必须显式恢复统一布局。
-      for (const title of ["展开任务列表", "展开标注详情"]) {
-        const button = page.getByTitle(title);
-        if (await button.count()) {
-          await button.first().click();
-          await page.waitForTimeout(300);
-        }
-      }
 
       // 后台追踪若在 seed repair 前刚好完成，候选审阅条可能晚到；静态场景只展示干净工作台。
       const trackerReview = page.getByTestId("video-tracker-review-bar");
@@ -57,16 +60,9 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       return `/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`;
     },
     prepare: async (page) => {
+      await reloadWithSidebarLayout(page, "both");
       await page.getByTestId("video-timeline-shell").waitFor({ state: "visible", timeout: 15_000 });
       await page.getByTestId("video-konva-stage").waitFor({ state: "visible", timeout: 10_000 });
-
-      for (const title of ["展开任务列表", "展开标注详情"]) {
-        const button = page.getByTitle(title);
-        if (await button.count()) {
-          await button.first().click();
-          await page.waitForTimeout(300);
-        }
-      }
 
       const trackerReview = page.getByTestId("video-tracker-review-bar");
       if (await trackerReview.isVisible()) {
@@ -92,6 +88,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       return `/projects/${project.id}/annotate?task=${project.tasks.frame_000.id}`;
     },
     prepare: async (page) => {
+      await reloadWithSidebarLayout(page, "both");
       await page.getByTestId("pc-viewport").waitFor({ state: "visible", timeout: 20_000 });
       await page.waitForTimeout(1800);
     },

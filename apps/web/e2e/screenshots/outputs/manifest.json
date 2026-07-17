@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-13T17:40:39.860Z",
+  "generated_at": "2026-07-17T03:19:58.241Z",
   "seed_profile": "screenshots",
   "seed_revision": "screenshots-2026-07-d",
-  "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
+  "source_commit": "62a76d517d2c58ba05bfd000ca8f2872afe1c0ec",
   "projects": [
     "desktop-light",
     "desktop-dark",
@@ -1122,6 +1122,84 @@
       "width": 422,
       "height": 56
     },
+    "docs-site/user-guide/images/sam/magic-box-toolbar.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/sam/magic-box-toolbar.png",
+      "scene": "sam/magic-box-toolbar",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"interactive-toolbar\"]",
+        "padding": 8
+      },
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating",
+        "backend": "image_interactive",
+        "capabilities": [
+          "prompt:interactive_box",
+          "output:bbox"
+        ]
+      },
+      "seed_profile": "screenshots",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "62a76d517d2c58ba05bfd000ca8f2872afe1c0ec",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-07-17T03:19:58.241Z",
+      "provenance": "current-run",
+      "sha256": "d8a1857785464bba1443eb2506610a1541948dd5cd99eefd6609324d5345f64b",
+      "width": 433,
+      "height": 56
+    },
+    "docs-site/user-guide/images/sam/smart-point-toolbar.png": {
+      "auto": true,
+      "target": "docs-site/user-guide/images/sam/smart-point-toolbar.png",
+      "scene": "sam/smart-point-toolbar",
+      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
+      "capture": {
+        "kind": "locator",
+        "selector": "[data-testid=\"interactive-toolbar\"]",
+        "padding": 8
+      },
+      "fixture": {
+        "project": "image_demo",
+        "task": "annotating",
+        "backend": "image_interactive",
+        "capabilities": [
+          "prompt:point",
+          "output:polygon"
+        ]
+      },
+      "seed_profile": "screenshots",
+      "seed_revision": "screenshots-2026-07-d",
+      "source_commit": "62a76d517d2c58ba05bfd000ca8f2872afe1c0ec",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "locale": "zh-CN",
+      "generated_at": "2026-07-17T03:19:58.241Z",
+      "provenance": "current-run",
+      "sha256": "94db758d1fc1ade9fb04b7352a386dee97ea2208781ff261cfadc090b2a26740",
+      "width": 493,
+      "height": 56
+    },
     "docs-site/user-guide/images/sam/text-three-modes.png": {
       "auto": false,
       "target": "docs-site/user-guide/images/sam/text-three-modes.png",
@@ -1864,7 +1942,7 @@
       },
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "source_commit": "6d3c5cca73aafadbffd725edb6188def5d7471be",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1876,9 +1954,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-07-17T04:43:14.454Z",
       "provenance": "current-run",
-      "sha256": "8688e386a67794233581fa48eac71bf1d02a95d7d76cdd65a3118bab39ea99d5",
+      "sha256": "5eb14f6469cae8a5d73ecad0a03afb6ed07e9e19218030b586c9c778454a624d",
       "width": 1440,
       "height": 900
     },
@@ -1900,7 +1978,7 @@
       },
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "50de33182a4a3088b92969cd26450906dd89cbfe",
+      "source_commit": "6d3c5cca73aafadbffd725edb6188def5d7471be",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1912,9 +1990,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T17:40:39.860Z",
+      "generated_at": "2026-07-17T04:43:06.454Z",
       "provenance": "current-run",
-      "sha256": "cb28172b1dff5f470fcd1885a5c485b88a7a46375b1d76c8e805bd7d6677f4f3",
+      "sha256": "d832673471563b63645e868625f189c3c8697daf6d3e646be86d943e7c667f6b",
       "width": 1440,
       "height": 900
     },
