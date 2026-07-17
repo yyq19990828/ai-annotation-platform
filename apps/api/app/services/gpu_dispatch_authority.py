@@ -26,13 +26,16 @@ from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 from app.services.gpu_arbiter import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
-    GPUColdRuntimeSubject,
-    GPUColdRuntimeSubjectError,
-    GPUColdTerminalCommitResult,
     GPUDispatchContextFactory,
     GPUDispatchGrant,
     GPUDispatchRequest,
+)
+from app.services.gpu_arbitration.fences import GPUFenceSessionFactory
+from app.services.gpu_arbitration.proofs import (
     GPUBusyEvictionRuntimeSubjectError,
+    GPUColdRuntimeSubject,
+    GPUColdRuntimeSubjectError,
+    GPUColdTerminalCommitResult,
     GPUEvictionCommitResult,
     GPUEvictionDrainHealth,
     GPUIdleEvictionRuntimeSubjectError,
@@ -44,9 +47,9 @@ from app.services.gpu_arbiter import (
     commit_gpu_cold_terminal_from_health,
     commit_gpu_eviction_cancel_from_health,
     commit_gpu_eviction_phase_from_health,
+    prepare_gpu_cold_runtime_generation,
     prepare_gpu_eviction_cancel_runtime_generation,
     prepare_gpu_idle_eviction_runtime_generation,
-    prepare_gpu_cold_runtime_generation,
     read_gpu_busy_eviction_runtime_subject,
     read_gpu_cold_runtime_subject,
     read_gpu_eviction_drain_health,
@@ -54,7 +57,6 @@ from app.services.gpu_arbiter import (
     read_gpu_resident_runtime_subject,
     record_gpu_resident_runtime_token_expiry,
 )
-from app.services.gpu_arbitration.fences import GPUFenceSessionFactory
 from app.services.gpu_arbitration.ledger import (
     GPU_EVICTION_OPERATION,
     GPUAdmissionResult,

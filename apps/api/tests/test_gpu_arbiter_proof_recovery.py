@@ -28,6 +28,7 @@ from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.services import gpu_arbiter as gpu_arbiter_service
+from app.services.gpu_arbitration import proofs as gpu_proofs_service
 from app.services.gpu_arbiter import (
     GPUBusyEvictionRuntimeSubjectError,
     GPUColdRuntimeSubjectError,
@@ -3737,7 +3738,7 @@ async def test_busy_eviction_drain_health_classifies_all_activity_domains_read_o
             raise gpu_arbiter_service._GPUProofInvalid("registry_concurrency_invalid")
 
         monkeypatch.setattr(
-            gpu_arbiter_service,
+            gpu_proofs_service,
             "_registry_gpu_max_concurrency",
             invalid_registry_concurrency,
         )
