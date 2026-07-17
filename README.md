@@ -2,7 +2,7 @@
 
 <h1>AI Annotation Platform</h1>
 
-<p><strong>A production-grade labeling control plane for image, video, and AI-assisted dataset operations.</strong></p>
+<p><strong>A production-grade labeling control plane for image, video, point-cloud, and AI-assisted dataset operations.</strong></p>
 
 <a href="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/ci.yml/badge.svg?branch=main"></a>
 <a href="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/docs.yml/badge.svg?branch=main"></a>
@@ -16,7 +16,7 @@
 ·
 <a href="#快速开始">Quick Start</a>
 ·
-<a href="#系统架构">Architecture</a>
+<a href="#架构">Architecture</a>
 ·
 <a href="./docs-site/api/">API</a>
 ·
@@ -24,28 +24,44 @@
 
 </div>
 
-```text
-raw media
-  -> dataset + project cockpit
-    -> image / video workbench
-      -> AI pre-annotation + tracking
-        -> review loop + notifications
-          -> trainable exports
-```
+AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台、AI 预标注、审核、导出、后台任务与可观测性放在同一条产品链路里。它不是一个只画框的 Demo，而是一个用于持续迭代标注生产系统的全栈仓库。
 
-AI Annotation Platform 把项目管理、标注工作台、AI 预标注、审核、导出、后台任务与可观测性放在同一条产品链路里。它不是一个只画框的 Demo，而是一个用于持续迭代标注生产系统的全栈仓库。
+## 工作台 AI 案例
+
+<table>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <strong>智能点 · Smart Point</strong><br>
+      <img src="./docs-site/user-guide/images/sam/smart-point-interaction.gif" alt="智能点单击生成对象轮廓" width="100%">
+    </td>
+    <td width="50%" valign="top" align="center">
+      <strong>智能框 · Smart Box</strong><br>
+      <img src="./docs-site/user-guide/images/sam/smart-box-interaction.gif" alt="智能框框选生成多边形候选" width="100%">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <strong>Magic Box</strong><br>
+      <img src="./docs-site/user-guide/images/sam/magic-box-interaction.gif" alt="Magic Box 粗框自动收紧目标框" width="100%">
+    </td>
+    <td width="50%" valign="top" align="center">
+      <strong>Exemplar</strong><br>
+      <img src="./docs-site/user-guide/images/sam/exemplar-interaction.gif" alt="Exemplar 示例驱动相似目标发现" width="100%">
+    </td>
+  </tr>
+</table>
 
 ## 控制台能力
 
 <table>
   <tr>
     <td width="33%" valign="top">
-      <strong>Labeling Ops</strong><br>
+      <strong>Project & Labeling Ops</strong><br>
       项目、数据集、批次、任务分配、审核回退、个人通知与后台任务历史。
     </td>
     <td width="33%" valign="top">
-      <strong>Image Workbench</strong><br>
-      bbox、rotated bbox、polygon、polyline、keypoint、mask 相关标注链路。
+      <strong>Image & OCR Workbench</strong><br>
+      bbox、rotated bbox、polygon、polyline、keypoint、mask 与 OCR 标注链路。
     </td>
     <td width="33%" valign="top">
       <strong>Video Workbench</strong><br>
@@ -54,77 +70,38 @@ AI Annotation Platform 把项目管理、标注工作台、AI 预标注、审核
   </tr>
   <tr>
     <td width="33%" valign="top">
-      <strong>AI Assist</strong><br>
-      Grounded-SAM-2、SAM 3、ML Backend 注册、图像批量预标、视频 tracker job。
+      <strong>3D & Multimodal Workbench</strong><br>
+      点云 3D 框、点级分割、scene 时序、LiDAR 坐标归一化与相机投影联动。
     </td>
     <td width="33%" valign="top">
-      <strong>Training Exports</strong><br>
-      COCO、YOLO det / obb / seg、AAP JSON、Video JSON、YOLO 逐帧、MOT、KITTI。
+      <strong>AI & Model Ops</strong><br>
+      Grounded-SAM-2、SAM 3、YOLO、ONNXTools、RapidOCR，以及交互预测、批量预标和视频追踪。
     </td>
     <td width="33%" valign="top">
-      <strong>Engineering Spine</strong><br>
-      OpenAPI codegen、Vitest、Playwright、pytest、VitePress、ADR、docs impact CI。
+      <strong>Review & Data Delivery</strong><br>
+      Data Manager 任务 / 对象 / 轨迹视图、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、nuScenes、Point Mask 等导出。
     </td>
   </tr>
 </table>
 
-## 数据航线
+## 架构
 
-```mermaid
-flowchart LR
-  Media["Raw media\nimages / videos"] --> Dataset["Datasets\nstorage + metadata"]
-  Dataset --> Project["Projects\nschema + bindings"]
-  Project --> Queue["Task queue\nbatches + assignment"]
-  Queue --> Workbench["Workbench\nimage + video stages"]
-  Workbench --> Review["Review loop\nfeedback + status"]
-  Review --> Export["Exports\nCOCO / YOLO / AAP / MOT / KITTI"]
-
-  AI["ML Backends\nGrounded-SAM-2 / SAM 3"] --> Workbench
-  AI --> Queue
-  Export --> Train["Model training\nexternal pipeline"]
-```
-
-## 系统架构
-
-```mermaid
-flowchart LR
-  subgraph Client["Client"]
-    Web["React + Vite\nWorkbench / Dashboard / Admin"]
-    Docs["VitePress Docs"]
-  end
-
-  subgraph API["FastAPI Backend"]
-    REST["REST + WebSocket API"]
-    OpenAPI["OpenAPI snapshot"]
-    Services["Domain services"]
-  end
-
-  subgraph Runtime["Runtime Services"]
-    PG[("PostgreSQL 16")]
-    Redis[("Redis 7")]
-    MinIO[("MinIO / OSS")]
-    Celery["Celery workers\nml / media / export / audit"]
-  end
-
-  subgraph AI["Optional ML Backends"]
-    GSAM2["Grounded-SAM-2\nimage prompts + video tracker"]
-    SAM3["SAM 3\nhigh-accuracy segmentation"]
-  end
-
-  Web --> REST
-  REST --> Services
-  Services --> PG
-  Services --> Redis
-  Services --> MinIO
-  Services --> Celery
-  Celery --> PG
-  Celery --> Redis
-  Celery --> MinIO
-  Celery --> GSAM2
-  Celery --> SAM3
-  OpenAPI --> Web
-  Docs --> OpenAPI
-```
+<table>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <strong>数据航线</strong><br>
+      <a href="./docs/assets/readme/data-route.excalidraw">
+        <img src="./docs/assets/readme/data-route.svg" alt="数据航线 Excalidraw 图" width="100%">
+      </a>
+    </td>
+    <td width="50%" valign="top" align="center">
+      <strong>系统架构</strong><br>
+      <a href="./docs/assets/readme/system-architecture.excalidraw">
+        <img src="./docs/assets/readme/system-architecture.svg" alt="系统架构 Excalidraw 图" width="100%">
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## 快速开始
 
@@ -145,6 +122,7 @@ flowchart LR
 # 1. 安装依赖
 pnpm install
 cd apps/api && uv sync --extra test && cd ../..
+pnpm codegen
 
 # 可选：已安装 pre-commit 时启用本地 hooks
 pre-commit install
@@ -184,12 +162,17 @@ PYTHONPATH=. uv run python scripts/seed.py
 # Celery 后台任务：通用队列、GPU / CPU 预标、导出、视频帧、通知等
 docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export celery-beat
 
-# GPU ML Backend 在叠加文件 docker-compose.ml.yml（grounded-sam2 / sam3 / yolo）
+# GPU ML Backend 在叠加文件 docker-compose.ml.yml，按显存预算选择独立 profile
 # Grounded-SAM-2：适合图片 SAM / DINO 与视频 tracker
 docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 
 # SAM 3：独立 GPU profile，需要 HF_TOKEN 与更高显存
 docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-sam3 up -d sam3-backend
+
+# 其它可选后端：YOLO、ONNXTools、RapidOCR
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-yolo up -d yolo-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-onnxtools up -d onnxtools-backend
+docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapidocr up -d rapidocr-backend
 
 # Prometheus + Grafana
 docker compose --profile monitoring up -d prometheus grafana
@@ -230,8 +213,10 @@ API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量�
 | API 文档 | [docs-site/api/](./docs-site/api/) |
 | Python SDK / CLI | [docs-site/dev/sdk/quickstart.md](./docs-site/dev/sdk/quickstart.md) |
 | ML Backend 协议 | [docs-site/dev/reference/ml-backend-protocol.md](./docs-site/dev/reference/ml-backend-protocol.md) |
+| Data Manager | [docs-site/user-guide/projects/data-manager.md](./docs-site/user-guide/projects/data-manager.md) |
 | 视频帧服务 | [docs-site/dev/reference/video-frame-service.md](./docs-site/dev/reference/video-frame-service.md) |
 | 导出格式 | [docs-site/user-guide/reference/export-formats.md](./docs-site/user-guide/reference/export-formats.md) |
+| 部署与运维 | [docs-site/ops/](./docs-site/ops/) |
 | 架构概念 | [docs-site/dev/concepts/](./docs-site/dev/concepts/) |
 | ADR | [docs/adr/](./docs/adr/) |
 | 变更记录 | [CHANGELOG.md](./CHANGELOG.md) |
@@ -247,7 +232,10 @@ ai-annotation-platform/
 │   ├── web/                       # React 18 + TypeScript + Vite 标注前端
 │   ├── grounded-sam2-backend/     # Grounded-SAM-2 GPU ML Backend
 │   ├── sam3-backend/              # SAM 3 GPU ML Backend
-│   └── _shared/mask_utils/        # mask -> polygon 共用工具包
+│   ├── yolo-backend/              # YOLO 检测 / 分割 / Exemplar ML Backend
+│   ├── onnxtools-backend/         # ONNX 检测与属性推理 ML Backend
+│   ├── rapidocr-backend/          # OCR 检测 / 识别 / 端到端 ML Backend
+│   └── _shared/                   # Backend runtime、协议与 mask 工具共享包
 ├── docs-site/                     # VitePress 用户 / 开发 / API / 运维文档
 ├── docs/
 │   ├── adr/                       # 架构决策记录
@@ -257,7 +245,7 @@ ai-annotation-platform/
 ├── infra/                         # Docker、Prometheus、Grafana、Nginx 等基础设施配置
 ├── scripts/                       # OpenAPI、docs impact、seed、维护脚本
 ├── docker-compose.yml             # 基础栈（postgres/redis/minio/celery + 监控 profile）
-├── docker-compose.ml.yml          # GPU ML Backend 叠加（grounded-sam2 / sam3 / yolo）
+├── docker-compose.ml.yml          # GPU ML Backend 与截图协议 stub 叠加
 ├── pnpm-workspace.yaml
 └── package.json
 ```
@@ -266,10 +254,10 @@ ai-annotation-platform/
 
 | 层 | 技术 |
 |---|---|
-| 前端 | React 18、TypeScript、Vite、TanStack Query、Zustand、Konva、Playwright |
+| 前端 | React 18、TypeScript、Vite、TanStack Query、Zustand、Konva、Three.js、Playwright |
 | 后端 | FastAPI、Pydantic、SQLAlchemy 2、Alembic、Celery、pytest |
 | 数据 | PostgreSQL 16、Redis 7、MinIO / OSS、DuckDB 分析视图 |
-| AI | Grounded-SAM-2、SAM 3、开放 ML Backend 协议 |
+| AI | Grounded-SAM-2、SAM 3、YOLO、ONNX Runtime、RapidOCR、开放 ML Backend 协议 |
 | 文档 | VitePress、Mermaid、OpenAPI / Scalar、ADR |
 | CI | GitHub Actions、docs impact、visual regression、OpenAPI snapshot check |
 
