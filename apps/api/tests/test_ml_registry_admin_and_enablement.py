@@ -27,7 +27,7 @@ from app.services.gpu_arbiter import (
     GPUArbiterErrorCode,
     GPUResourceRuntimeObservation,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     begin_gpu_arbiter_rollout,
     block_gpu_arbiter_rollout,
     complete_gpu_arbiter_rollout,

@@ -47,7 +47,7 @@ from app.services.gpu_arbitration.policy import (
     record_gpu_shadow_dispatch,
     validate_gpu_claim,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     GPUArbiterRolloutUnavailable,
     gpu_rollout_boundary_active,
     resolve_gpu_arbiter_rollout,

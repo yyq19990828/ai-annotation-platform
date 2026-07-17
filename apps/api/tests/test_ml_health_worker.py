@@ -1366,7 +1366,7 @@ def enabled_gpu_rollout_worker(monkeypatch):
     from types import SimpleNamespace
 
     from app.config import GPUArbiterMode, settings
-    from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
+    from app.services.gpu_arbitration.rollout_state import GPUArbiterRolloutSnapshot
     from app.workers import ml_health
 
     monkeypatch.setattr(settings, "gpu_arbiter_rollout_enabled", True)
@@ -2156,7 +2156,7 @@ async def test_gpu_demotion_waits_for_fresh_legacy_health(
     from types import SimpleNamespace
 
     from app.config import GPUArbiterMode
-    from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
+    from app.services.gpu_arbitration.rollout_state import GPUArbiterRolloutSnapshot
     from app.services.gpu_rollout_control import GPURolloutControlResult
     from app.workers import ml_health
 

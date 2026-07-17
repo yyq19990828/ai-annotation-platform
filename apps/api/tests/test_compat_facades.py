@@ -136,6 +136,33 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
         ),
     ),
     FacadeSpec(
+        facade_module="app.services.gpu_arbiter_rollout",
+        public_module="app.services.gpu_arbitration.rollout_state",
+        exports=(
+            _exports(
+                "app.services.gpu_arbitration.rollout_state",
+                "GPUArbiterRolloutConflict",
+                "GPUArbiterRolloutDecision",
+                "GPUArbiterRolloutSnapshot",
+                "GPUArbiterRolloutUnavailable",
+                "begin_gpu_arbiter_rollout",
+                "block_gpu_arbiter_rollout",
+                "classify_gpu_arbiter_rollout",
+                "complete_gpu_arbiter_rollout",
+                "gpu_arbiter_rollout_snapshot",
+                "gpu_rollout_boundary_active",
+                "read_gpu_arbiter_rollout",
+                "read_gpu_arbiter_rollouts",
+                "resolve_gpu_arbiter_rollout",
+            ),
+        ),
+        consumer_modules=(
+            "app.api.v1.admin_ml_integrations",
+            "app.services.ml_client",
+            "app.workers.ml_health",
+        ),
+    ),
+    FacadeSpec(
         facade_module="app.services.video_tracker_adapters",
         public_module="app.services.video_tracking.adapters",
         exports=(
@@ -432,6 +459,7 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
 _EXPECTED_FACADES = {
     "app.services.gpu_arbiter_store",
     "app.services.gpu_admission_signer",
+    "app.services.gpu_arbiter_rollout",
     "app.services.video_tracker_adapters",
     "app.services.video_tracker_job_service",
     "app.services.video_tracker_runner",
@@ -483,7 +511,7 @@ def test_all_compatibility_facades_are_registered() -> None:
     """The data-driven suite must not silently omit a landed legacy facade."""
     assert {spec.facade_module for spec in FACADE_SPECS} == _EXPECTED_FACADES
     all_names = [name for spec in FACADE_SPECS for name in spec.expected_names]
-    assert len(all_names) == 125
+    assert len(all_names) == 138
     for spec in FACADE_SPECS:
         assert len(spec.expected_names) == len(set(spec.expected_names)), (
             f"frozen manifest duplicates a name for {spec.facade_module}"

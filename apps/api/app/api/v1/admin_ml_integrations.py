@@ -74,7 +74,7 @@ from app.services.gpu_arbitration.ledger import (
     GPUArbiterStoreError,
     GPUBackendDomainMember,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     GPUArbiterRolloutDecision,
     GPUArbiterRolloutSnapshot,
     classify_gpu_arbiter_rollout,

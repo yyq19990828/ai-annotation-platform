@@ -21,7 +21,7 @@ from app.services.gpu_arbiter import (
     activate_gpu_backend_membership,
     prepare_gpu_backend_rollout_control,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     begin_gpu_arbiter_rollout,
     complete_gpu_arbiter_rollout,
 )

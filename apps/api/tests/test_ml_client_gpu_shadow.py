@@ -26,7 +26,7 @@ from app.services.gpu_arbiter import (
     GPUArbiterErrorCode,
     GPUDispatchGrant,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     GPUArbiterRolloutDecision,
     GPUArbiterRolloutUnavailable,
 )
