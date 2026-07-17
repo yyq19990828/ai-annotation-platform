@@ -11,10 +11,10 @@ from app import deps
 from app.api.v1 import admin_ml_integrations, ml_backends
 from app.api.v1.tasks import annotations
 from app.services import ml_backend as ml_backend_module
-from app.services import video_tracker_adapters as tracker_module
 from app.services.ml_backend import MLBackendService
 from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
-from app.services.video_tracker_adapters import (
+from app.services.video_tracking import adapters as tracker_impl_module
+from app.services.video_tracking.adapters import (
     MLBackendVideoTrackerAdapter,
     TrackerContext,
 )
@@ -126,7 +126,7 @@ async def test_video_tracker_adapter_forwards_the_exact_authority_factory(
         async def predict_interactive(self, task_data, context):
             return SimpleNamespace(result=[])
 
-    monkeypatch.setattr(tracker_module, "MLBackendClient", FakeClient)
+    monkeypatch.setattr(tracker_impl_module, "MLBackendClient", FakeClient)
     context = TrackerContext(
         job_id=uuid.uuid4(),
         task_id=uuid.uuid4(),

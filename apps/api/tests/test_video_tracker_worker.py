@@ -10,8 +10,8 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.ml_client import PredictionResult
-from app.services.video_tracker_adapters import TrackerContext, TrackerFrameResult
-from app.services.video_tracker_runner import accept_tracker_job, run_tracker_job
+from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
+from app.services.video_tracking.runner import accept_tracker_job, run_tracker_job
 
 
 async def _make_video_task(db_session, owner_id):
@@ -177,7 +177,7 @@ async def test_tracker_worker_marks_unknown_model_failed(db_session, super_admin
 async def test_tracker_worker_records_gpu_arbiter_failure(
     db_session, super_admin, monkeypatch
 ):
-    from app.services import video_tracker_runner as runner
+    from app.services.video_tracking import runner as runner
     from app.services.gpu_arbiter import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
@@ -248,7 +248,7 @@ async def test_tracker_worker_records_gpu_arbiter_failure(
 
 def test_apply_tracker_results_only_backfills_grid_frames():
     """采样开启 (grid_step>1) 时只回填网格帧，off-grid 预测帧丢弃。"""
-    from app.services.video_tracker_runner import apply_tracker_results
+    from app.services.video_tracking.runner import apply_tracker_results
 
     annotation = Annotation(
         annotation_type="bbox",
@@ -317,7 +317,7 @@ def _job(from_frame=0, to_frame=3) -> VideoTrackerJob:
 
 def test_apply_tracker_results_writes_polygon_keyframes():
     """v0.21.20 · polygon track: 保留多边形 points 关键帧 + video_track_polygon 类型。"""
-    from app.services.video_tracker_runner import apply_tracker_results
+    from app.services.video_tracking.runner import apply_tracker_results
 
     annotation = _polygon_track_annotation()
     results = [
@@ -350,7 +350,7 @@ def test_apply_tracker_results_writes_polygon_keyframes():
 
 def test_apply_tracker_results_degenerate_polygon_marked_outside():
     """退化多边形(顶点<3)不写坏 schema，转 outside 帧。"""
-    from app.services.video_tracker_runner import apply_tracker_results
+    from app.services.video_tracking.runner import apply_tracker_results
 
     annotation = _polygon_track_annotation()
     results = [
@@ -372,7 +372,7 @@ def test_apply_tracker_results_degenerate_polygon_marked_outside():
 
 def test_bbox_from_geometry_seeds_from_polygon_vertices():
     """SAM2 只吃 bbox seed: polygon track / 单帧 polygon 结果都取顶点外接框。"""
-    from app.services.video_tracker_adapters import _bbox_from_geometry
+    from app.services.video_tracking.adapters import _bbox_from_geometry
 
     track = {
         "type": "video_track_polygon",
@@ -745,7 +745,7 @@ async def _run_seed_test(db_session, super_admin, monkeypatch, *, direction, out
     monkeypatch.setattr(settings, "video_tracker_window_size_frames", 2)
     adapter = _SeedRecordingAdapter(outside_frames=outside)
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
 
@@ -1006,7 +1006,7 @@ async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeyp
 
 
 def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
-    from app.services.video_tracker_runner import _materialize_tracker_mask_result
+    from app.services.video_tracking.runner import _materialize_tracker_mask_result
 
     reference = {
         "encoding": "coco_rle_ref",
@@ -1017,7 +1017,7 @@ def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
         "bytes": 58,
     }
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.store_coco_rle", lambda rle: reference
+        "app.services.video_tracking.runner.store_coco_rle", lambda rle: reference
     )
     result = _materialize_tracker_mask_result(
         TrackerFrameResult(
@@ -1033,7 +1033,7 @@ def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
 
 
 def test_apply_tracker_results_converts_source_to_mask_track():
-    from app.services.video_tracker_runner import apply_tracker_results
+    from app.services.video_tracking.runner import apply_tracker_results
 
     annotation = Annotation(
         id=uuid.uuid4(),
@@ -1086,7 +1086,7 @@ def test_apply_tracker_results_converts_source_to_mask_track():
 
 
 def test_apply_tracker_results_preserves_mask_type_when_all_results_are_outside():
-    from app.services.video_tracker_runner import apply_tracker_results
+    from app.services.video_tracking.runner import apply_tracker_results
 
     reference = {
         "encoding": "coco_rle_ref",
@@ -1123,7 +1123,7 @@ def test_apply_tracker_results_preserves_mask_type_when_all_results_are_outside(
 
 
 def test_stage_tracker_results_rejects_oversized_payload_atomically(monkeypatch):
-    from app.services import video_tracker_runner as runner
+    from app.services.video_tracking import runner as runner
 
     job = _job()
     job.staged_result = None

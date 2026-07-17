@@ -12,8 +12,8 @@ import pytest
 from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
-from app.services.video_tracker_adapters import TrackerContext, TrackerFrameResult
-from app.services.video_tracker_runner import run_tracker_job
+from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
+from app.services.video_tracking.runner import run_tracker_job
 
 # 复用多实例测试里的视频 task/dataset 建置, 避免重复 ~40 行 fixture。
 from tests.test_video_tracker_multi_instance import _make_video_task
@@ -78,7 +78,7 @@ async def _run_with_capture(db_session, super_admin, monkeypatch, *, direction: 
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _CaptureAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
 
@@ -185,7 +185,7 @@ async def test_multi_instance_continuation_reseeds_each_instance(
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _TwoInstanceCaptureAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
 
@@ -241,7 +241,7 @@ async def test_no_seeds_prompt_passes_none(db_session, super_admin, monkeypatch)
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
     adapter = _CaptureAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
     )
 

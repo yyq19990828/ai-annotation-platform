@@ -13,8 +13,8 @@ import pytest
 
 from app.config import settings
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
-from app.services.video_tracker_adapters import TrackerContext, TrackerFrameResult
-from app.services.video_tracker_runner import (
+from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
+from app.services.video_tracking.runner import (
     _combo_seeds_from_discovery,
     run_tracker_job,
 )
@@ -187,7 +187,7 @@ async def test_combo_discovery_mints_pvs_seeds(db_session, super_admin, monkeypa
     discovery = _DiscoveryAdapter(n_objects=2)
     pvs = _PvsCaptureAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         _dispatch(discovery, pvs),
     )
 
@@ -214,7 +214,7 @@ async def test_combo_requires_text(db_session, super_admin, monkeypatch):
     discovery = _DiscoveryAdapter(n_objects=2)
     pvs = _PvsCaptureAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         _dispatch(discovery, pvs),
     )
 
@@ -233,7 +233,7 @@ async def test_combo_no_discovery_fails(db_session, super_admin, monkeypatch):
     discovery = _DiscoveryAdapter(n_objects=0)
     pvs = _PvsCaptureAdapter()
     monkeypatch.setattr(
-        "app.services.video_tracker_runner.get_tracker_adapter",
+        "app.services.video_tracking.runner.get_tracker_adapter",
         _dispatch(discovery, pvs),
     )
 

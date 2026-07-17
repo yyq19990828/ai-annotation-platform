@@ -72,11 +72,13 @@ def _resolve_task_url(task: Task) -> str:
     SAM backend 协议要求 file_path 是 http(s):// URL 或本地路径; tasks 表里存的是 key,
     必须先签发 presigned URL。当平台 api 跑在 host 进程而 ML backend 在 docker 网内时,
     再把 host 替换为 ``settings.ml_backend_storage_host`` (容器可达地址)。
+
+    v0.23.0 · 实现已下沉到 :func:`app.services.storage.resolve_task_url`, 供 router、
+    worker 与 video tracker runner 共用; 这里仅保留薄别名。
     """
-    storage = StorageService()
-    bucket = storage.datasets_bucket if task.dataset_item_id else storage.bucket
-    url = storage.generate_download_url(task.file_path, bucket=bucket)
-    return storage.rewrite_host_for_ml_backend(url)
+    from app.services.storage import resolve_task_url
+
+    return resolve_task_url(task)
 
 
 @router.post(

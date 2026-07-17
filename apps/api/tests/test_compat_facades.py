@@ -58,6 +58,21 @@ FACADE_SPECS: tuple[FacadeSpec, ...] = (
             "normalize_gpu_backend_max_concurrency",
         ),
     ),
+    FacadeSpec(
+        facade_module="app.services.video_tracker_adapters",
+        new_module="app.services.video_tracking.adapters",
+        symbols=("get_tracker_adapter", "TrackerContext", "TrackerFrameResult"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.video_tracker_job_service",
+        new_module="app.services.video_tracking.jobs",
+        symbols=("create_tracker_job", "get_tracker_job", "cancel_tracker_job"),
+    ),
+    FacadeSpec(
+        facade_module="app.services.video_tracker_runner",
+        new_module="app.services.video_tracking.runner",
+        symbols=("run_tracker_job", "TrackerJobStateConflict", "accept_tracker_job"),
+    ),
 )
 
 _HAS_FACADES = any(

@@ -25,7 +25,7 @@ from app.schemas.video_tracker_job import TrackerJobStatus, VideoTrackerJobOut
 from app.services.audit import AuditAction, AuditService
 from app.services.scheduler import is_privileged_for_project
 from app.services.raster_mask_storage import load_coco_rle
-from app.services.video_tracker_job_service import (
+from app.services.video_tracking.jobs import (
     accept_tracker_job,
     cancel_tracker_job,
     discard_tracker_job,
