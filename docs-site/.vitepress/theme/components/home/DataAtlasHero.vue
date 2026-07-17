@@ -1,9 +1,216 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { withBase } from "vitepress";
-// 静态导入让 Vite 处理资源哈希与 base 前缀，子路径部署（DOCS_BASE）也正确。
-import ocrInferenceUrl from "../../../../user-guide/images/workbench/ocr-real-scene.gif";
+import videoWorkspaceUrl from "../../../../user-guide/images/workbench/video-real-scene.png";
+import pointCloudWorkspaceUrl from "../../../../user-guide/images/workbench/pointcloud-real-scene.png";
+import dataManagerUrl from "../../../../user-guide/images/projects/data-manager-overview.png";
+import reviewWorkspaceUrl from "../../../../user-guide/images/review/workbench.png";
 
 const getStartedHref = withBase("/user-guide/getting-started");
+const heroWorkspaceUrl = withBase("/home/ai-assisted-annotation-poster.webp");
+
+type HeroSlide = {
+  no: string;
+  kicker: string;
+  title: string;
+  src: string;
+  href: string;
+  alt: string;
+};
+
+const heroSlides: HeroSlide[] = [
+  {
+    no: "01",
+    kicker: "IMAGE / SAM3",
+    title: "AI 交互标注",
+    src: heroWorkspaceUrl,
+    href: withBase("/user-guide/workbench/sam-tool"),
+    alt: "真实道路图中使用 SAM3 标注白色车辆并进入人工类别确认",
+  },
+  {
+    no: "02",
+    kicker: "VIDEO / TRACKS",
+    title: "视频轨迹标注",
+    src: videoWorkspaceUrl,
+    href: withBase("/user-guide/workbench/video-track"),
+    alt: "城市交通视频在标注工作台中显示时间轴与轨迹工具",
+  },
+  {
+    no: "03",
+    kicker: "3D / POINT CLOUD",
+    title: "点云标注工作台",
+    src: pointCloudWorkspaceUrl,
+    href: withBase("/user-guide/workbench/pointcloud-view"),
+    alt: "室内点云数据在三维标注工作台中渲染",
+  },
+  {
+    no: "04",
+    kicker: "DATA / MANAGER",
+    title: "任务与数据视图",
+    src: dataManagerUrl,
+    href: withBase("/user-guide/projects/data-manager"),
+    alt: "Data Manager 中的任务统计、视图与数据列表",
+  },
+  {
+    no: "05",
+    kicker: "QUALITY / REVIEW",
+    title: "质检审阅工作台",
+    src: reviewWorkspaceUrl,
+    href: withBase("/user-guide/review/"),
+    alt: "道路车辆标注在质检工作台中等待审阅",
+  },
+];
+
+const AUTO_DELAY_MS = 5_200;
+const DRAW_DURATION_MS = 560;
+const deckRef = ref<HTMLElement | null>(null);
+const deckOrder = ref(heroSlides.map((_, index) => index));
+const drawnSlideIndex = ref<number | null>(null);
+const deckAnimating = ref(false);
+const deckHovered = ref(false);
+const deckFocused = ref(false);
+const motionAllowed = ref(false);
+const activeSlideIndex = computed(() => deckOrder.value[0] ?? 0);
+const activeSlide = computed(
+  () => heroSlides[activeSlideIndex.value] ?? heroSlides[0],
+);
+const deckPaused = computed(
+  () => !motionAllowed.value || deckHovered.value || deckFocused.value,
+);
+const deckMode = computed(() => {
+  if (!motionAllowed.value) return "MANUAL";
+  return deckPaused.value ? "PAUSED" : "AUTO 05S";
+});
+
+let autoplayTimer: number | undefined;
+let drawTimer: number | undefined;
+let reducedMotionQuery: MediaQueryList | undefined;
+
+function clearAutoplay(): void {
+  if (autoplayTimer !== undefined) window.clearTimeout(autoplayTimer);
+  autoplayTimer = undefined;
+}
+
+function scheduleAutoplay(): void {
+  clearAutoplay();
+  if (deckPaused.value) return;
+  autoplayTimer = window.setTimeout(() => {
+    cycleNext(false);
+    scheduleAutoplay();
+  }, AUTO_DELAY_MS);
+}
+
+function finishManualMove(): void {
+  if (drawTimer !== undefined) window.clearTimeout(drawTimer);
+  drawTimer = window.setTimeout(() => {
+    deckAnimating.value = false;
+    scheduleAutoplay();
+  }, DRAW_DURATION_MS);
+}
+
+function cycleNext(resetAutoplay = true): void {
+  if (deckAnimating.value) return;
+  if (resetAutoplay) clearAutoplay();
+
+  if (!motionAllowed.value) {
+    const first = deckOrder.value[0];
+    if (first === undefined) return;
+    deckOrder.value = [...deckOrder.value.slice(1), first];
+    if (resetAutoplay) scheduleAutoplay();
+    return;
+  }
+
+  deckAnimating.value = true;
+  const first = deckOrder.value[0];
+  if (first === undefined) {
+    deckAnimating.value = false;
+    return;
+  }
+  drawnSlideIndex.value = first;
+  if (drawTimer !== undefined) window.clearTimeout(drawTimer);
+  drawTimer = window.setTimeout(() => {
+    deckOrder.value = [...deckOrder.value.slice(1), first];
+    drawnSlideIndex.value = null;
+    deckAnimating.value = false;
+    if (resetAutoplay) scheduleAutoplay();
+  }, DRAW_DURATION_MS);
+}
+
+function showPrevious(): void {
+  if (deckAnimating.value) return;
+  clearAutoplay();
+  const nextOrder = [...deckOrder.value];
+  const last = nextOrder.pop();
+  if (last === undefined) return;
+  deckAnimating.value = true;
+  deckOrder.value = [last, ...nextOrder];
+  finishManualMove();
+}
+
+function selectSlide(index: number): void {
+  if (deckAnimating.value) return;
+  clearAutoplay();
+  const position = deckOrder.value.indexOf(index);
+  if (position <= 0) {
+    scheduleAutoplay();
+    return;
+  }
+  deckAnimating.value = true;
+  deckOrder.value = [
+    ...deckOrder.value.slice(position),
+    ...deckOrder.value.slice(0, position),
+  ];
+  finishManualMove();
+}
+
+function cardPosition(index: number): number {
+  return deckOrder.value.indexOf(index);
+}
+
+function syncAutoplay(): void {
+  if (deckPaused.value) clearAutoplay();
+  else scheduleAutoplay();
+}
+
+function onDeckMouseEnter(): void {
+  deckHovered.value = true;
+  syncAutoplay();
+}
+
+function onDeckMouseLeave(): void {
+  deckHovered.value = false;
+  syncAutoplay();
+}
+
+function onDeckFocusIn(): void {
+  deckFocused.value = true;
+  syncAutoplay();
+}
+
+function onDeckFocusOut(): void {
+  void nextTick(() => {
+    deckFocused.value = deckRef.value?.contains(document.activeElement) ?? false;
+    syncAutoplay();
+  });
+}
+
+function onReducedMotionChange(event: MediaQueryListEvent): void {
+  motionAllowed.value = !event.matches;
+  syncAutoplay();
+}
+
+onMounted(() => {
+  reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  motionAllowed.value = !reducedMotionQuery.matches;
+  reducedMotionQuery.addEventListener("change", onReducedMotionChange);
+  scheduleAutoplay();
+});
+
+onBeforeUnmount(() => {
+  clearAutoplay();
+  if (drawTimer !== undefined) window.clearTimeout(drawTimer);
+  reducedMotionQuery?.removeEventListener("change", onReducedMotionChange);
+});
 
 /** 复用现有 VitePress local search：优先点击导航栏搜索按钮，回退到 ⌘K 快捷键。 */
 function openSearch(): void {
@@ -74,10 +281,72 @@ function openSearch(): void {
         ANNOTATION ATLAS · LIVE SIGNALS
       </div>
 
-      <div class="hero-figure">
-        <img :src="ocrInferenceUrl" alt="真实 RapidOCR 当前题推理生成文本候选" />
-        <i class="bbox a" data-label="ocr candidate" aria-hidden="true"></i>
-        <i class="bbox b" data-label="text result" aria-hidden="true"></i>
+      <div
+        ref="deckRef"
+        class="hero-figure hero-deck"
+        role="region"
+        aria-roledescription="carousel"
+        aria-label="标注平台关键页面"
+        @mouseenter="onDeckMouseEnter"
+        @mouseleave="onDeckMouseLeave"
+        @focusin="onDeckFocusIn"
+        @focusout="onDeckFocusOut"
+      >
+        <div class="hero-deck-space" aria-hidden="true"></div>
+
+        <a
+          v-for="(slide, index) in heroSlides"
+          :key="slide.no"
+          class="hero-card"
+          :class="[
+            `hero-card-pos-${cardPosition(index)}`,
+            { 'is-drawing': drawnSlideIndex === index },
+          ]"
+          :href="slide.href"
+          :aria-hidden="cardPosition(index) !== 0"
+          :tabindex="cardPosition(index) === 0 ? 0 : -1"
+        >
+          <span class="hero-card-head">
+            <span>LIVE ROUTE / {{ slide.no }}</span>
+            <small>{{ slide.kicker }}</small>
+          </span>
+          <span class="hero-card-media">
+            <img
+              :src="slide.src"
+              :alt="slide.alt"
+              :loading="index === 0 ? 'eager' : 'lazy'"
+            />
+          </span>
+          <span class="hero-card-foot">
+            <strong>{{ slide.title }}</strong>
+            <small>OPEN GUIDE ↗</small>
+          </span>
+        </a>
+
+        <div class="hero-deck-controls">
+          <button type="button" aria-label="上一个平台页面" @click="showPrevious">
+            ←
+          </button>
+          <div class="hero-deck-dots" aria-label="选择平台页面">
+            <button
+              v-for="(slide, index) in heroSlides"
+              :key="slide.no"
+              type="button"
+              :class="{ active: activeSlideIndex === index }"
+              :aria-label="`查看${slide.title}`"
+              :aria-pressed="activeSlideIndex === index"
+              @click="selectSlide(index)"
+            >
+              {{ slide.no }}
+            </button>
+          </div>
+          <button type="button" aria-label="下一个平台页面" @click="cycleNext()">
+            →
+          </button>
+          <span class="hero-deck-mode" aria-live="polite">
+            {{ activeSlide.no }} / {{ heroSlides.length }} · {{ deckMode }}
+          </span>
+        </div>
       </div>
     </div>
 

@@ -24,8 +24,8 @@
 - **主题**：默认浅色；只有 scene 显式声明时才生成 dark / mobile 变体
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
 
-当前正式矩阵包含 61 张自动 PNG（58 desktop-light、2 desktop-dark、1 mobile）、
-3 张手工 PNG 和 14 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
+当前正式矩阵包含 63 张自动 PNG（60 desktop-light、2 desktop-dark、1 mobile）、
+3 张手工 PNG 和 18 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
@@ -251,8 +251,14 @@
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
 - [x] `images/workbench/rotated-bbox.gif` — 拖框生成旋转框（angle=0）全过程 `[auto-gif]`（flows/rotated-bbox，P-COCO8；旋转手柄演示待补，盲拖坐标易空拖出第二框）
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
-- [x] `images/sam/interactive-toolbar.png` — 画布顶部交互工具栏（引擎/模型/档位下拉 + 工具特定控件 + 状态灯）`[auto]`（scene: `sam/interactive-toolbar`，P-COCO8 + live backend）
-- [x] `images/sam/exemplar-output-mode.png` — 输出形态三选一 TabRow [auto]
+- [x] `images/sam/smart-point-toolbar.png` — 智能点交互工具条（正负极性 + 引擎/档位 + 状态灯）`[auto]`（scene: `sam/smart-point-toolbar`，P-COCO8 + live backend）
+- [x] `images/sam/interactive-toolbar.png` — 智能框交互工具条（引擎/模型/档位 + 状态灯）`[auto]`（scene: `sam/interactive-toolbar`，P-COCO8 + live backend）
+- [x] `images/sam/magic-box-toolbar.png` — Magic Box 交互工具条（紧凑 bbox 输出提示 + 引擎/档位 + 状态灯）`[auto]`（scene: `sam/magic-box-toolbar`，P-COCO8 + live backend）
+- [x] `images/sam/exemplar-output-mode.png` — Exemplar 示例交互工具条（输出形态三选一 + 示例能力控件）`[auto]`（scene: `sam/exemplar-output-mode`，P-COCO8 + live backend）
+- [x] `images/sam/smart-point-interaction.gif` — 无侧边栏的真实 SAM3 智能点车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-point`，P-COCO8）
+- [x] `images/sam/smart-box-interaction.gif` — 无侧边栏的真实 SAM3 智能框车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-box`，P-COCO8）
+- [x] `images/sam/magic-box-interaction.gif` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[auto-gif]`（flow: `sam-interactive`，P-COCO8）
+- [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
 - [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]

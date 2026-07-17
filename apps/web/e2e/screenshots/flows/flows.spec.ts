@@ -25,7 +25,11 @@ import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
-import { runSamInteractive } from "./sam-interactive";
+import {
+  runSamInteractive,
+  runSamToolRecording,
+  type SamRecordingTool,
+} from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif, convertToWebm } from "../_helpers/recorder";
@@ -150,6 +154,7 @@ async function finalizeHomepageWebm(
   page: Page,
   name: string,
   trim: { startSec?: number; durationSec?: number },
+  docsGifTarget?: string,
 ) {
   if (VALIDATE_ONLY) {
     await page.close();
@@ -159,6 +164,7 @@ async function finalizeHomepageWebm(
   if (!video) throw new Error("[flows] video 未开启，无法生成首页 AI 媒体");
 
   const source = path.join(FLOWS_OUT, `${name}.source.webm`);
+  const gif = path.join(FLOWS_OUT, `${name}.gif`);
   await page.close();
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
   try {
@@ -171,9 +177,33 @@ async function finalizeHomepageWebm(
       posterAtSec,
       posterPath: path.join(HOME_MEDIA, `${name}-poster.webp`),
     });
+    if (docsGifTarget) {
+      await convertToGif(source, gif, {
+        ...trim,
+        fps: 8,
+        maxWidth: 860,
+      });
+      fs.mkdirSync(path.dirname(docsGifTarget), { recursive: true });
+      fs.copyFileSync(gif, docsGifTarget);
+      console.log(`[flows] ✓ 同步 gif 到文档站：${docsGifTarget}`);
+    }
   } finally {
     fs.rmSync(source, { force: true });
+    fs.rmSync(gif, { force: true });
+    fs.rmSync(gif.replace(/\.gif$/, ".palette.png"), { force: true });
   }
+}
+
+function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
+  const backend = catalog.projects.image_demo.ml_backend;
+  return Boolean(
+    backend?.name.toLowerCase().includes("sam3") ||
+    (backend?.capabilities.models ?? []).some((model) =>
+      [model.id, model.model_family].some(
+        (value) => typeof value === "string" && value.toLowerCase().includes("sam3"),
+      ),
+    ),
+  );
 }
 
 test.describe("flow recordings", () => {
@@ -192,17 +222,49 @@ test.describe("flow recordings", () => {
     await finalize(page, "ai-preannotate");
   });
 
+  const samToolDemos: Array<{
+    tool: SamRecordingTool;
+    label: string;
+    target: string;
+    fps?: number;
+    maxWidth?: number;
+  }> = [
+    { tool: "smart-point", label: "智能点", target: "smart-point-interaction.gif" },
+    { tool: "smart-box", label: "智能框", target: "smart-box-interaction.gif" },
+    {
+      tool: "exemplar",
+      label: "Exemplar 示例",
+      target: "exemplar-interaction.gif",
+      fps: 6,
+      maxWidth: 760,
+    },
+  ];
+
+  for (const demo of samToolDemos) {
+    test(`sam-tool-${demo.tool} — ${demo.label}真实推理`, async ({ page, seed }) => {
+      if (!cached) throw new Error("screenshot seed catalog 未完成");
+      test.skip(!hasLiveSam3(cached), "真实 SAM 工具 GIF 只由 live SAM3 场景更新");
+      test.setTimeout(150_000);
+      const t0 = Date.now();
+      await seed.injectToken(page, cached.users.admin.email);
+      await installRecordingWorkbenchLayout(page, "none");
+      const win = await runSamToolRecording(page, cached, demo.tool);
+      await finalize(
+        page,
+        `sam-${demo.tool}`,
+        path.join(DOCS_IMAGES, "sam", demo.target),
+        {
+          fps: demo.fps ?? 8,
+          maxWidth: demo.maxWidth ?? 860,
+          ...drawTrim(win, t0),
+        },
+      );
+    });
+  }
+
   test("sam-interactive — Magic Box 候选→人工确认", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    const backend = cached.projects.image_demo.ml_backend;
-    const hasSam3 =
-      backend?.name.toLowerCase().includes("sam3") ||
-      (backend?.capabilities.models ?? []).some((model) =>
-        [model.id, model.model_family].some(
-          (value) => typeof value === "string" && value.toLowerCase().includes("sam3"),
-        ),
-      );
-    test.skip(!hasSam3, "首页 AI 视频只由 live SAM3 场景更新，stub 模式保留现有资产");
+    test.skip(!hasLiveSam3(cached), "首页 AI 视频只由 live SAM3 场景更新，stub 模式保留现有资产");
     test.setTimeout(150_000);
     const t0 = Date.now();
     // 首页视频保留候选虚线与 toast 的自然动效，因此不安装面向静态 PNG 的
@@ -210,7 +272,12 @@ test.describe("flow recordings", () => {
     await seed.injectToken(page, cached.users.admin.email);
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runSamInteractive(page, cached);
-    await finalizeHomepageWebm(page, "ai-assisted-annotation", drawTrim(win, t0));
+    await finalizeHomepageWebm(
+      page,
+      "ai-assisted-annotation",
+      drawTrim(win, t0),
+      path.join(DOCS_IMAGES, "sam/magic-box-interaction.gif"),
+    );
   });
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {

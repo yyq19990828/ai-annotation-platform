@@ -5,31 +5,86 @@ import ocrUrl from "../../../../user-guide/images/workbench/ocr-real-scene.gif";
 import prelabelUrl from "../../../../user-guide/images/projects/ai-pre-config-panel.png";
 import modelMarketUrl from "../../../../user-guide/images/superadmin/model-market/list.png";
 
-type ProofScene = {
+type ProofSceneBase = {
   no: string;
   kicker: string;
   title: string;
   desc: string;
-  meta: string;
   href: string;
-  kind: "video" | "image";
+};
+
+type ProofScene = ProofSceneBase & (
+  | { kind: "tools" }
+  | {
+      kind: "image";
+      src: string;
+      meta: string;
+      alt: string;
+    }
+);
+
+type ToolPreview = {
+  no: string;
+  name: string;
+  kicker: string;
+  desc: string;
+  meta: string;
   src: string;
-  poster?: string;
+  poster: string;
   alt: string;
 };
+
+const toolPreviews: ToolPreview[] = [
+  {
+    no: "01",
+    name: "智能点",
+    kicker: "POINT PROMPT",
+    desc: "在目标上点一下，SAM3 返回贴合车辆轮廓的多个候选。",
+    meta: "SMART POINT · ONE CLICK · CANDIDATE MASKS",
+    src: withBase("/home/sam-tools/smart-point.webm"),
+    poster: withBase("/home/sam-tools/smart-point-poster.webp"),
+    alt: "在真实道路图中点击白色车辆，使用 SAM3 生成轮廓候选",
+  },
+  {
+    no: "02",
+    name: "智能框",
+    kicker: "BOX PROMPT",
+    desc: "拖框限定目标范围，让 SAM3 在框内提取完整车辆边界。",
+    meta: "SMART BOX · BOX PROMPT · POLYGON RESULT",
+    src: withBase("/home/sam-tools/smart-box.webm"),
+    poster: withBase("/home/sam-tools/smart-box-poster.webp"),
+    alt: "在真实道路图中框选白色车辆，使用 SAM3 提取车辆边界",
+  },
+  {
+    no: "03",
+    name: "Magic Box",
+    kicker: "TIGHT BBOX",
+    desc: "只需粗框目标，SAM3 自动收紧为贴合车辆的矩形框，再确认类别。",
+    meta: "MAGIC BOX · AUTO TIGHTEN · HUMAN ACCEPT",
+    src: withBase("/home/ai-assisted-annotation.webm"),
+    poster: withBase("/home/ai-assisted-annotation-poster.webp"),
+    alt: "在真实道路图中粗框白色车辆，使用 SAM3 收紧框并确认类别",
+  },
+  {
+    no: "04",
+    name: "Exemplar",
+    kicker: "VISUAL EXAMPLE",
+    desc: "框一辆车作为视觉示例，一次找出全图中外观相似的目标。",
+    meta: "EXEMPLAR · VISUAL QUERY · FIND SIMILAR",
+    src: withBase("/home/sam-tools/exemplar.webm"),
+    poster: withBase("/home/sam-tools/exemplar-poster.webp"),
+    alt: "在真实道路图中框选白色车辆作为视觉示例，找出全图相似车辆",
+  },
+];
 
 const scenes: ProofScene[] = [
   {
     no: "01",
-    kicker: "INTERACTIVE / SAM3",
-    title: "框出意图，确认结果",
-    desc: "Magic Box 把粗框交给已绑定的 SAM3，返回候选后由标注员确认类别。",
-    meta: "LIVE SAM3 · MAGIC BOX · HUMAN ACCEPT",
+    kicker: "4 TOOLS / SAM3",
+    title: "点、框、收紧、找同类",
+    desc: "智能点、智能框、Magic Box 与 Exemplar 四种真实推理，可左右切换查看。",
     href: withBase("/user-guide/workbench/sam-tool"),
-    kind: "video",
-    src: withBase("/home/ai-assisted-annotation.webm"),
-    poster: withBase("/home/ai-assisted-annotation-poster.webp"),
-    alt: "真实道路图中使用 SAM3 Magic Box 生成车辆候选并由人工确认类别",
+    kind: "tools",
   },
   {
     no: "02",
@@ -67,14 +122,21 @@ const scenes: ProofScene[] = [
 ];
 
 const activeIndex = ref(0);
+const activeToolIndex = ref(0);
 const activeScene = computed(() => scenes[activeIndex.value]);
+const activeTool = computed(() => toolPreviews[activeToolIndex.value]);
+const toolDirection = ref<1 | -1>(1);
+const toolTransitionName = computed(() =>
+  toolDirection.value === 1 ? "proof-tool-next" : "proof-tool-prev",
+);
 const videoRef = ref<HTMLVideoElement | null>(null);
 const autoplayVideo = ref(false);
 const videoPlaying = ref(false);
+const touchStartX = ref<number | null>(null);
 
 async function playActiveVideo(): Promise<void> {
   await nextTick();
-  if (activeScene.value.kind !== "video" || !autoplayVideo.value) return;
+  if (activeScene.value.kind !== "tools" || !autoplayVideo.value) return;
   await videoRef.value?.play()
     .then(() => { videoPlaying.value = true; })
     .catch(() => { videoPlaying.value = false; });
@@ -82,6 +144,18 @@ async function playActiveVideo(): Promise<void> {
 
 function selectScene(index: number): void {
   activeIndex.value = index;
+}
+
+function selectTool(index: number): void {
+  if (index === activeToolIndex.value) return;
+  toolDirection.value = index > activeToolIndex.value ? 1 : -1;
+  activeToolIndex.value = index;
+}
+
+function stepTool(delta: 1 | -1): void {
+  toolDirection.value = delta;
+  activeToolIndex.value =
+    (activeToolIndex.value + delta + toolPreviews.length) % toolPreviews.length;
 }
 
 async function toggleVideo(): Promise<void> {
@@ -95,6 +169,27 @@ async function toggleVideo(): Promise<void> {
     video.pause();
     videoPlaying.value = false;
   }
+}
+
+function onToolCarouselKeydown(event: KeyboardEvent): void {
+  if (event.currentTarget !== event.target) return;
+  if (event.key === "ArrowRight") stepTool(1);
+  else if (event.key === "ArrowLeft") stepTool(-1);
+  else return;
+  event.preventDefault();
+}
+
+function onTouchStart(event: TouchEvent): void {
+  touchStartX.value = event.touches[0]?.clientX ?? null;
+}
+
+function onTouchEnd(event: TouchEvent): void {
+  if (touchStartX.value === null) return;
+  const endX = event.changedTouches[0]?.clientX;
+  const delta = endX === undefined ? 0 : endX - touchStartX.value;
+  touchStartX.value = null;
+  if (Math.abs(delta) < 44) return;
+  stepTool(delta < 0 ? 1 : -1);
 }
 
 function onTabKeydown(event: KeyboardEvent, index: number): void {
@@ -120,7 +215,7 @@ onMounted(() => {
   void playActiveVideo();
 });
 
-watch(activeIndex, () => {
+watch([activeIndex, activeToolIndex], () => {
   videoPlaying.value = false;
   void playActiveVideo();
 });
@@ -132,8 +227,8 @@ watch(activeIndex, () => {
     <div class="proof-head reveal">
       <h2>AI IN THE LOOP.<br />PROOF ON SCREEN.</h2>
       <p class="proof-intro">
-        模型不是旁路演示，而是进入真实生产链路：给出候选，人完成类别与边界判断；预标注、OCR
-        与模型状态都保留可追踪上下文。
+        从单目标交互到全图召回，四种 SAM3 工具都以真实推理结果为起点；OCR、批量预标注
+        与模型状态则保留可追踪的生产上下文。
       </p>
     </div>
 
@@ -169,34 +264,96 @@ watch(activeIndex, () => {
         :aria-labelledby="`proof-tab-${activeIndex}`"
       >
         <div class="proof-screen">
-          <video
-            v-if="activeScene.kind === 'video'"
-            id="proof-video"
-            ref="videoRef"
-            :poster="activeScene.poster"
-            muted
-            loop
-            playsinline
-            :preload="autoplayVideo ? 'metadata' : 'none'"
-            :aria-label="activeScene.alt"
+          <div
+            v-if="activeScene.kind === 'tools'"
+            class="proof-tool-carousel"
+            role="region"
+            aria-roledescription="carousel"
+            aria-label="SAM3 四种交互工具预览"
+            tabindex="0"
+            @keydown="onToolCarouselKeydown"
+            @touchstart.passive="onTouchStart"
+            @touchend.passive="onTouchEnd"
           >
-            <source :src="activeScene.src" type="video/webm" />
-          </video>
+            <div class="proof-tool-viewport">
+              <Transition
+                :name="toolTransitionName"
+                @after-enter="playActiveVideo"
+              >
+                <video
+                  :id="`proof-tool-video-${activeTool.no}`"
+                  :key="activeTool.no"
+                  ref="videoRef"
+                  :poster="activeTool.poster"
+                  muted
+                  loop
+                  playsinline
+                  :preload="autoplayVideo ? 'metadata' : 'none'"
+                  :aria-label="activeTool.alt"
+                  @play="videoPlaying = true"
+                  @pause="videoPlaying = false"
+                >
+                  <source :src="activeTool.src" type="video/webm" />
+                </video>
+              </Transition>
+              <button
+                class="proof-video-toggle"
+                type="button"
+                :aria-controls="`proof-tool-video-${activeTool.no}`"
+                :aria-label="
+                  videoPlaying ? `暂停${activeTool.name}演示` : `播放${activeTool.name}演示`
+                "
+                @click="toggleVideo"
+              >
+                {{ videoPlaying ? "PAUSE Ⅱ" : "PLAY ▶" }}
+              </button>
+            </div>
+
+            <div class="proof-tool-copy" aria-live="polite">
+              <span>{{ activeTool.no }} / 04 · {{ activeTool.kicker }}</span>
+              <strong>{{ activeTool.name }}</strong>
+              <p>{{ activeTool.desc }}</p>
+            </div>
+
+            <div class="proof-tool-controls">
+              <button type="button" aria-label="上一个 SAM3 工具" @click="stepTool(-1)">
+                ←
+              </button>
+              <div class="proof-tool-list" aria-label="选择 SAM3 工具">
+                <button
+                  v-for="(tool, index) in toolPreviews"
+                  :key="tool.no"
+                  type="button"
+                  :class="{ active: activeToolIndex === index }"
+                  :aria-pressed="activeToolIndex === index"
+                  @click="selectTool(index)"
+                >
+                  <span>{{ tool.no }}</span>{{ tool.name }}
+                </button>
+              </div>
+              <button type="button" aria-label="下一个 SAM3 工具" @click="stepTool(1)">
+                →
+              </button>
+            </div>
+          </div>
+
           <img v-else :src="activeScene.src" :alt="activeScene.alt" />
-          <button
-            v-if="activeScene.kind === 'video'"
-            class="proof-video-toggle"
-            type="button"
-            aria-controls="proof-video"
-            :aria-label="videoPlaying ? '暂停 AI 标注演示' : '播放 AI 标注演示'"
-            @click="toggleVideo"
-          >
-            {{ videoPlaying ? "PAUSE Ⅱ" : "PLAY ▶" }}
-          </button>
-          <span class="proof-media-tag" aria-hidden="true">REAL PRODUCT / {{ activeScene.no }}</span>
+          <span class="proof-media-tag" aria-hidden="true">
+            {{
+              activeScene.kind === "tools"
+                ? `LIVE SAM3 / ${activeTool.no}`
+                : `REAL PRODUCT / ${activeScene.no}`
+            }}
+          </span>
           <div class="screen-meta" aria-hidden="true">
-            <span>{{ activeScene.meta }}</span>
-            <span>SEED-BACKED SCENE</span>
+            <span>{{ activeScene.kind === "tools" ? activeTool.meta : activeScene.meta }}</span>
+            <span>
+              {{
+                activeScene.kind === "tools"
+                  ? "4 TOOLS · REAL INFERENCE"
+                  : "SEED-BACKED SCENE"
+              }}
+            </span>
           </div>
         </div>
         <a class="proof-deep-link" :href="activeScene.href">
