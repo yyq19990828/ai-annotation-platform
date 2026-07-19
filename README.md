@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./apps/web/public/ai-annotation-platform-icon.svg" alt="AI Annotation Platform" width="112">
+
 <h1>AI Annotation Platform</h1>
 
 <p><strong>A production-grade labeling control plane for image, video, point-cloud, and AI-assisted dataset operations.</strong></p>

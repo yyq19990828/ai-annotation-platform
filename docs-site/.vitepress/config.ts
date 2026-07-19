@@ -33,6 +33,7 @@ export default withMermaid(defineConfig({
   lastUpdated: true,
   rewrites,
   srcExclude,
+  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/ai-annotation-platform-icon.svg" }]],
   // 站点地图：hostname 用源站，路径前缀由 base 处理。部署地址
   // https://yyq19990828.github.io/ai-annotation-platform/ 。提交给 Search Console 用完整 URL。
   sitemap: {
@@ -107,6 +108,7 @@ export default withMermaid(defineConfig({
   },
 
   themeConfig: {
+    logo: "/ai-annotation-platform-icon.svg",
     nav,
     sidebar: {
       "/user-guide/": userGuideSidebar,

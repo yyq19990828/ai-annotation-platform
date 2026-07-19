@@ -36,6 +36,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The product, documentation site, PWA installs, browser tabs, and README now share the new AI Annotation Platform icon.
+
 ## [0.23.2] - 2026-07-17
 
 ### Changed
