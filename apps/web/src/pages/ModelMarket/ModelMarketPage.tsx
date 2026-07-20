@@ -11,7 +11,8 @@ import { RuntimeObservePanel } from "./RuntimeObservePanel";
 import { CapabilityCatalogPanel } from "./CapabilityCatalogPanel";
 
 // v0.9.12 BUG B-14 · 删 failed tab; 失败预测已迁到 /ai-pre/jobs?status=failed.
-// FailedPredictionsTab.tsx 文件保留 (AIPreAnnotatePage 仍 import 此组件; 等 Phase 5 IA 重构一并清理).
+// v0.23.4 P4 · FailedPredictionsTab.tsx + ObserveBackendsPanel.tsx 已删除
+// （审计确认无任何 import；旧注释提及的引用已不存在）。
 type MarketTab = "catalog" | "runtime" | "registry";
 
 const TABS: { key: MarketTab; label: string; icon: "layers" | "activity" | "bot" }[] = [

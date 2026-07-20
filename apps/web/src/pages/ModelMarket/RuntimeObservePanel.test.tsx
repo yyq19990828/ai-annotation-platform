@@ -1,34 +1,54 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+// Radix Tooltip / ScrollArea read ResizeObserver; jsdom doesn't ship it.
+// Minimal stub — enough for mount/render assertions (no real layout).
+beforeAll(() => {
+  class RO {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = RO;
+});
+
+// ── module mocks (same style as the legacy test) ───────────────────────────
+
+const mockTopology = vi.fn();
+const mockRuntimeSnapshot = vi.fn();
+const mockObserve = vi.fn();
 const mockListAll = vi.fn();
 const mockOverview = vi.fn();
-const mockObserve = vi.fn();
 const mockSmokeTest = vi.fn();
+const mockDrainPoolMember = vi.fn();
+const mockResumePoolMember = vi.fn();
+
 vi.mock("@/api/adminMlIntegrations", () => ({
   adminMlIntegrationsApi: {
+    topology: () => mockTopology(),
+    runtimeSnapshot: () => mockRuntimeSnapshot(),
+    observe: () => mockObserve(),
     listAll: () => mockListAll(),
     overview: () => mockOverview(),
-    observe: () => mockObserve(),
     observeSmokeTest: (payload: unknown) => mockSmokeTest(payload),
+    drainPoolMember: (poolId: string, registryId: string) =>
+      mockDrainPoolMember(poolId, registryId),
+    resumePoolMember: (poolId: string, registryId: string) =>
+      mockResumePoolMember(poolId, registryId),
   },
 }));
 
 vi.mock("@/api/ml-backends", () => ({
-  mlBackendsApi: { setup: vi.fn() },
+  mlBackendsApi: { reload: vi.fn(), setup: vi.fn(), warmup: vi.fn() },
   mlBackendSetupQueryKey: (projectId: string, backendId: string) => [
     "ml-backend-setup",
     projectId,
     backendId,
   ],
-}));
-
-const mockReloadMutate = vi.fn();
-const mockWarmupMutate = vi.fn();
-vi.mock("@/hooks/useMLBackends", () => ({
-  useMLBackendReload: () => ({ mutate: mockReloadMutate, isPending: false }),
-  useMLBackendWarmup: () => ({ mutate: mockWarmupMutate, isPending: false }),
 }));
 
 const mockHealthMutate = vi.fn();
@@ -38,7 +58,9 @@ vi.mock("./useGlobalRegistry", () => ({
   useRegistryUnload: () => ({ mutate: mockUnloadMutate, isPending: false }),
 }));
 
-vi.mock("./VariantPanel", () => ({ VariantPanel: () => <div>variant panel</div> }));
+vi.mock("./VariantPanel", () => ({
+  VariantPanel: () => <div>variant panel</div>,
+}));
 
 const mockPushToast = vi.fn();
 vi.mock("@/components/ui/Toast", async () => {
@@ -52,10 +74,110 @@ vi.mock("@/components/ui/Toast", async () => {
 
 import { RuntimeObservePanel } from "./RuntimeObservePanel";
 
+// ── fixtures ───────────────────────────────────────────────────────────────
+
+type MemberState = "active" | "draining" | "disabled";
+
+function makeMember(opts: {
+  registryId?: string;
+  name?: string;
+  traffic_state?: MemberState;
+  weight?: number | null;
+  route_inflight?: number;
+  circuit_open?: boolean;
+  registry_state?: string;
+} = {}) {
+  return {
+    registry_id: opts.registryId ?? "inst-1",
+    name: opts.name ?? "grounded-sam2-a",
+    traffic_state: opts.traffic_state ?? "active",
+    weight: opts.weight ?? 1,
+    state: "connected",
+    last_checked_at: new Date().toISOString(),
+    gpu_resource_id: "node-a/GPU-abc",
+    // runtime-snapshot member fields:
+    health_fresh: true,
+    route_inflight: opts.route_inflight ?? 0,
+    circuit_open: opts.circuit_open ?? false,
+    registry_state: opts.registry_state ?? "connected",
+    // metrics-driven — always null in v0.23.4
+    last_selected_at: null,
+    selection_count_window: null,
+    rejection_count_window: null,
+    p95_ms: null,
+    error_rate: null,
+  };
+}
+
+function makePool(opts: {
+  id?: string;
+  name?: string;
+  status?: "healthy" | "degraded" | "offline" | "unknown";
+  routable_instances?: number;
+  members?: ReturnType<typeof makeMember>[];
+} = {}) {
+  const members = opts.members ?? [makeMember()];
+  return {
+    id: opts.id ?? "pool-1",
+    name: opts.name ?? "图像分割池",
+    enabled: true,
+    routing_policy: "weighted_round_robin",
+    legacy_instance_id: null,
+    capability_fingerprint: "fp-abc",
+    routing_generation: 1,
+    member_count: members.length,
+    routable_instances: opts.routable_instances ?? members.length,
+    status: opts.status ?? "healthy",
+    status_reason_codes: [],
+    members,
+  };
+}
+
+function makeSnapshot(opts: {
+  pools?: Array<{
+    id: string;
+    name: string;
+    enabled?: boolean;
+    routing_generation?: number;
+    members?: ReturnType<typeof makeMember>[];
+  }>;
+  router_mode?: "off" | "observe" | "enforce";
+  partial?: boolean;
+  partial_reason?: string | null;
+  sources?: Array<{
+    name: "topology" | "router_ledger" | "health" | "gpu" | "residency";
+    stale?: boolean;
+    error?: string | null;
+    updated_at?: string | null;
+  }>;
+} = {}) {
+  return {
+    observed_at: "2026-07-20T10:00:00Z",
+    partial: opts.partial ?? false,
+    partial_reason: opts.partial_reason ?? null,
+    router_mode: opts.router_mode ?? "enforce",
+    schema_version: "runtime_snapshot.v1",
+    pools: (opts.pools ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      enabled: p.enabled ?? true,
+      routing_generation: p.routing_generation ?? 1,
+      members: p.members ?? [],
+    })),
+    sources: opts.sources ?? [
+      { name: "topology", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+      { name: "router_ledger", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+      { name: "health", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+      { name: "gpu", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+      { name: "residency", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+    ],
+  };
+}
+
 function makeBackend(overrides: Record<string, unknown> = {}) {
   return {
-    id: "backend-1",
-    name: "grounded-sam2",
+    id: "inst-1",
+    name: "grounded-sam2-a",
     url: "http://172.17.0.1:8001",
     state: "connected",
     is_interactive: true,
@@ -64,19 +186,39 @@ function makeBackend(overrides: Record<string, unknown> = {}) {
     gpu_resource_id: "node-a/GPU-abc",
     vram_budget_mb: 8192,
     eviction_priority: 0,
-    gpu_config: {
-      status: "warning",
-      desired_mode: "observe",
-      effective_mode: "off",
-      allocatable_mb: 20_000,
-      resource_claimed_budget_mb: 8192,
-      diagnostics: [],
-    },
+    gpu_config: null,
     health_meta: null,
     source_project_id: "",
     source_project_name: "manual",
     last_checked_at: new Date().toISOString(),
     ...overrides,
+  };
+}
+
+function makeObserveTarget(opts: {
+  url?: string;
+  registered?: boolean;
+  ok?: boolean;
+} = {}) {
+  return {
+    url: opts.url ?? "http://172.17.0.1:8001",
+    ok: opts.ok ?? true,
+    latency_ms: 12,
+    status_code: 200,
+    supports_variants: false,
+    registered: opts.registered ?? true,
+    compute: null,
+    gpu_info: null,
+    residency: null,
+  };
+}
+
+function defaultOverview() {
+  return {
+    storage: { items: [], total_object_count: 0, total_size_bytes: 0 },
+    projects: [],
+    total_backends: 1,
+    connected_backends: 1,
   };
 }
 
@@ -91,198 +233,415 @@ function renderPanel() {
   );
 }
 
-describe("RuntimeObservePanel GPU residency", () => {
+describe("RuntimeObservePanel · service-pool tree (P4)", () => {
   beforeEach(() => {
+    mockTopology.mockReset();
+    mockRuntimeSnapshot.mockReset();
+    mockObserve.mockReset();
     mockListAll.mockReset();
     mockOverview.mockReset();
-    mockObserve.mockReset();
     mockSmokeTest.mockReset();
-    mockReloadMutate.mockReset();
-    mockWarmupMutate.mockReset();
+    mockDrainPoolMember.mockReset();
+    mockResumePoolMember.mockReset();
     mockHealthMutate.mockReset();
     mockUnloadMutate.mockReset();
     mockPushToast.mockReset();
-    mockOverview.mockResolvedValue({
-      storage: { items: [], total_object_count: 0, total_size_bytes: 0 },
-      projects: [],
-      total_backends: 0,
-      connected_backends: 0,
-    });
+    mockOverview.mockResolvedValue(defaultOverview());
+    mockDrainPoolMember.mockResolvedValue({});
+    mockResumePoolMember.mockResolvedValue({});
   });
 
-  it("以 /all 展示零项目 backend，并用 registry 级入口卸载", async () => {
+  afterEach(() => cleanup());
+
+  it("展开/收起服务池：点击 chevron 显隐成员行；metrics 字段渲染「暂无路由指标」", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool({ members: [makeMember()] })],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [
+          {
+            id: "pool-1",
+            name: "图像分割池",
+            members: [makeMember()],
+          },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
     mockListAll.mockResolvedValue({ items: [makeBackend()] });
-    mockObserve.mockResolvedValue({
-      configured_count: 1,
-      targets: [
-        {
-          url: "http://172.17.0.1:8001",
-          ok: true,
-          status_code: 200,
-          latency_ms: 12,
-          supports_variants: false,
-          registered: true,
-          compute: {
-            configured_device: "cuda:0",
-            effective_device: "cpu",
-            effective_provider: "CPUExecutionProvider",
-            cpu_fallback_supported: true,
-          },
-          gpu_info: {
-            device_index: 0,
-            device_uuid: "GPU-abc",
-            physical_device_token: "GPU-abc",
-            memory_used_mb: 9000,
-            memory_total_mb: 24_000,
-          },
-          residency: {
-            state: "resident",
-            gpu_loaded: true,
-            active_requests: 0,
-            draining: false,
-            evictable: false,
-            generation: null,
-            lifecycle_gate: "legacy",
-            pools: { image: { resident: true, device: "cuda:0", provider: null } },
-          },
-        },
-      ],
-    });
 
     renderPanel();
-    expect(await screen.findByText("grounded-sam2")).toBeInTheDocument();
-    expect(screen.getByText("未绑定项目")).toBeInTheDocument();
-    expect(screen.queryByText("未注册容器")).not.toBeInTheDocument();
-    expect(screen.getByText("⚠ CPU 回退")).toBeInTheDocument();
-    expect(screen.getByText("GPU 仍驻留")).toBeInTheDocument();
-    expect(screen.getByText("unmanaged")).toBeInTheDocument();
-    expect(screen.getByText("GPU-abc")).toBeInTheDocument();
+    await screen.findByText("图像分割池");
 
-    fireEvent.click(screen.getByRole("button", { name: "卸载" }));
-    await waitFor(() => expect(mockUnloadMutate).toHaveBeenCalledWith("backend-1", expect.anything()));
+    // collapsed by default — member row not present
+    expect(screen.queryByText("grounded-sam2-a")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /展开服务池成员/ }));
+    expect(await screen.findByText("grounded-sam2-a")).toBeInTheDocument();
+
+    // metrics sentinel — v0.23.4 metrics are null; rendered as 「暂无路由指标」
+    expect(screen.getAllByText("暂无路由指标").length).toBeGreaterThanOrEqual(1);
+
+    // collapse
+    fireEvent.click(screen.getByRole("button", { name: /收起服务池成员/ }));
+    await waitFor(() =>
+      expect(screen.queryByText("grounded-sam2-a")).not.toBeInTheDocument(),
+    );
   });
 
-  it("陈旧且畸形的缓存 residency 只展示原始观测警告，不推断为空闲", async () => {
-    mockListAll.mockResolvedValue({
-      items: [
-        makeBackend({
-          last_checked_at: "2020-01-01T00:00:00Z",
-          health_meta: { residency: { gpu_loaded: false } },
-        }),
-      ],
+  it("实例详情 Sheet：打开、复制 ID、关闭", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
     });
-    mockObserve.mockResolvedValue({ configured_count: 0, targets: [] });
-
-    renderPanel();
-    expect(await screen.findByText(/residency 格式不可识别/)).toBeInTheDocument();
-    expect(screen.getByText(/缓存 health（过期或未知）/)).toBeInTheDocument();
-    expect(screen.queryByText("GPU 空")).not.toBeInTheDocument();
-  });
-
-  it("陈旧但结构完整的 gpu_loaded=false 仍按未知处理", async () => {
-    mockListAll.mockResolvedValue({
-      items: [
-        makeBackend({
-          last_checked_at: "2020-01-01T00:00:00Z",
-          health_meta: {
-            residency: {
-              state: "unloaded",
-              gpu_loaded: false,
-              active_requests: 0,
-              builders: 0,
-              borrowers: 0,
-              draining: false,
-              evictable: true,
-              generation: "7",
-              lifecycle_gate: "enforce",
-              pools: { image: { resident: false, device: null, provider: null } },
-            },
-          },
-        }),
-      ],
-    });
-    mockObserve.mockResolvedValue({ configured_count: 0, targets: [] });
-
-    renderPanel();
-    expect(await screen.findByText("GPU 驻留未知")).toBeInTheDocument();
-    expect(screen.getByText(/证据已过期或来源未知/)).toBeInTheDocument();
-    expect(screen.queryByText("GPU 空")).not.toBeInTheDocument();
-    expect(screen.getByText(/image: unknown/)).toBeInTheDocument();
-  });
-
-  it("直连 residency=null 时正确回落到新鲜缓存来源", async () => {
-    mockListAll.mockResolvedValue({
-      items: [
-        makeBackend({
-          health_meta: {
-            residency: {
-              state: "unloaded",
-              gpu_loaded: false,
-              active_requests: 0,
-              builders: 0,
-              borrowers: 0,
-              draining: false,
-              evictable: true,
-              generation: "7",
-              lifecycle_gate: "enforce",
-              pools: { image: { resident: false, device: null, provider: null } },
-            },
-          },
-        }),
-      ],
-    });
-    mockObserve.mockResolvedValue({
-      configured_count: 1,
-      targets: [
-        {
-          url: "http://172.17.0.1:8001",
-          ok: true,
-          status_code: 200,
-          latency_ms: 3,
-          supports_variants: false,
-          registered: true,
-          residency: null,
-        },
-      ],
-    });
-
-    renderPanel();
-    expect(await screen.findByText("GPU 空")).toBeInTheDocument();
-    expect(screen.getByText("缓存 health（新鲜）")).toBeInTheDocument();
-    expect(screen.queryByText("实时直连（仅作旁证）")).not.toBeInTheDocument();
-  });
-
-  it("合法 state 搭配畸形嵌套字段时不崩溃且不显示空闲", async () => {
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
     mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^详情/ }));
+
+    // sheet is open — copy-id button visible inside it
+    const copyBtn = await screen.findByRole("button", { name: /复制 ID/ });
+    fireEvent.click(copyBtn);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("inst-1"));
+
+    // close via Radix Sheet close (aria-label "Close")
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /复制 ID/ }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("未纳管容器隔离：不渲染 routable/weight/traffic 字段", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(makeSnapshot({ pools: [] }));
     mockObserve.mockResolvedValue({
       configured_count: 1,
       targets: [
-        {
-          url: "http://172.17.0.1:8001",
-          ok: true,
-          status_code: 200,
-          latency_ms: 4,
-          supports_variants: false,
-          registered: true,
-          residency: {
-            state: "unloaded",
-            gpu_loaded: false,
-            active_requests: { invalid: true },
-            builders: 0,
-            borrowers: 0,
-            draining: false,
-            evictable: true,
-            generation: { invalid: true },
-            identity: { gpu_resource_id: { invalid: true } },
-            pools: { image: { resident: false, device: { invalid: true } } },
-          },
-        },
+        makeObserveTarget({
+          url: "http://172.17.0.1:9001",
+          registered: false,
+        }),
       ],
     });
+    mockListAll.mockResolvedValue({ items: [] });
 
     renderPanel();
-    expect(await screen.findByText(/含畸形字段/)).toBeInTheDocument();
-    expect(screen.getByText("GPU 驻留未知")).toBeInTheDocument();
-    expect(screen.queryByText("GPU 空")).not.toBeInTheDocument();
+    // wait for queries to resolve + env-only section to render
+    const envToggle = await screen.findByRole("button", { name: /未纳管容器/ });
+    fireEvent.click(envToggle);
+    expect(await screen.findByText("http://172.17.0.1:9001")).toBeInTheDocument();
+
+    // isolation: env card has NO weight / routable / drain / unload fields
+    expect(screen.queryByText("可路由")).not.toBeInTheDocument();
+    expect(screen.queryByText("权重")).not.toBeInTheDocument();
+    expect(screen.queryByText("停流")).not.toBeInTheDocument();
+    expect(screen.queryByText("卸载")).not.toBeInTheDocument();
+    // it DOES have register + smoke-test actions
+    expect(screen.getByRole("button", { name: /显式注册/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /试启动/ })).toBeInTheDocument();
+  });
+
+  it("unload 门控：routable 实例卸载按钮禁用；点击停流触发 drain", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool({ members: [makeMember({ traffic_state: "active" })] })],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        router_mode: "enforce",
+        pools: [
+          {
+            id: "pool-1",
+            name: "图像分割池",
+            members: [makeMember({ traffic_state: "active", route_inflight: 0 })],
+          },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+
+    const unloadBtn = await screen.findByRole("button", { name: /^卸载$/ });
+    expect(unloadBtn).toBeDisabled();
+
+    // drain fires the pool-member drain mutation
+    fireEvent.click(screen.getByRole("button", { name: /停流/ }));
+    await waitFor(() =>
+      expect(mockDrainPoolMember).toHaveBeenCalledWith("pool-1", "inst-1"),
+    );
+  });
+
+  it("drained + inflight=0 + 新鲜账本 → 卸载启用并触发 unload", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool({ members: [makeMember({ traffic_state: "draining" })] })],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        router_mode: "enforce",
+        pools: [
+          {
+            id: "pool-1",
+            name: "图像分割池",
+            members: [
+              makeMember({ traffic_state: "draining", route_inflight: 0 }),
+            ],
+          },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+    const unloadBtn = await screen.findByRole("button", { name: /^卸载$/ });
+    expect(unloadBtn).not.toBeDisabled();
+
+    fireEvent.click(unloadBtn);
+    await waitFor(() =>
+      expect(mockUnloadMutate).toHaveBeenCalledWith("inst-1", expect.anything()),
+    );
+  });
+
+  it("陈旧账本阻塞卸载（drained 但 router_ledger stale）", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool({ members: [makeMember({ traffic_state: "draining" })] })],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        router_mode: "enforce",
+        pools: [
+          {
+            id: "pool-1",
+            name: "图像分割池",
+            members: [
+              makeMember({ traffic_state: "draining", route_inflight: 0 }),
+            ],
+          },
+        ],
+        sources: [
+          { name: "topology", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+          {
+            name: "router_ledger",
+            stale: true,
+            error: "redis timeout",
+            updated_at: "2026-07-20T09:00:00Z",
+          },
+          { name: "health", stale: false, updated_at: "2026-07-20T10:00:00Z" },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+    const unloadBtn = await screen.findByRole("button", { name: /^卸载$/ });
+    expect(unloadBtn).toBeDisabled();
+  });
+
+  it("router_mode=observe：drained 实例卸载仍被阻塞（shadow drain）", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "observe",
+      schema_version: "topology.v1",
+      pools: [makePool({ members: [makeMember({ traffic_state: "draining" })] })],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        router_mode: "observe",
+        pools: [
+          {
+            id: "pool-1",
+            name: "图像分割池",
+            members: [
+              makeMember({ traffic_state: "draining", route_inflight: 0 }),
+            ],
+          },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+    const unloadBtn = await screen.findByRole("button", { name: /^卸载$/ });
+    expect(unloadBtn).toBeDisabled();
+  });
+
+  it("stale inflight 阻塞安全卸载：route_inflight=3 → 卸载禁用", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool({ members: [makeMember({ traffic_state: "draining" })] })],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        router_mode: "enforce",
+        pools: [
+          {
+            id: "pool-1",
+            name: "图像分割池",
+            members: [
+              makeMember({ traffic_state: "draining", route_inflight: 3 }),
+            ],
+          },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+    const unloadBtn = await screen.findByRole("button", { name: /^卸载$/ });
+    expect(unloadBtn).toBeDisabled();
+  });
+
+  it("部分来源失败：topology ok 但 runtime-snapshot partial → 服务池仍渲染 + partial banner", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        partial: true,
+        partial_reason: "router_ledger stale",
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+        sources: [
+          { name: "router_ledger", stale: true, error: "redis timeout" },
+        ],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    // pool still renders despite partial
+    expect(await screen.findByText("图像分割池")).toBeInTheDocument();
+
+    // expand data source region to reveal partial banner
+    fireEvent.click(screen.getByRole("button", { name: /数据来源/ }));
+    expect(await screen.findByText(/部分数据来源失败/)).toBeInTheDocument();
+  });
+
+  it("单一刷新按钮（不是两个）", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    await screen.findByText("图像分割池");
+
+    const refreshButtons = screen.getAllByRole("button", { name: /^刷新$/ });
+    expect(refreshButtons).toHaveLength(1);
+
+    fireEvent.click(refreshButtons[0]!);
+    await waitFor(() => expect(mockTopology).toHaveBeenCalled());
+    expect(mockRuntimeSnapshot).toHaveBeenCalled();
+    expect(mockObserve).toHaveBeenCalled();
+  });
+});
+
+describe("parseResidency (extracted module)", () => {
+  it("畸形顶层 payload 返回 null", async () => {
+    const { parseResidency } = await import("./runtime/parseResidency");
+    expect(parseResidency(null)).toBeNull();
+    expect(parseResidency("not an object")).toBeNull();
+    expect(parseResidency({ state: "bogus" })).toBeNull();
+    expect(parseResidency({})).toBeNull();
+  });
+
+  it("畸形叶子字段被标记为 malformed 且不推断为空闲", async () => {
+    const { parseResidency } = await import("./runtime/parseResidency");
+    // resident 非 boolean → poolsValid=false → strictEmpty 不能成立
+    const r = parseResidency({
+      state: "unloaded",
+      gpu_loaded: false,
+      active_requests: { invalid: true },
+      builders: 0,
+      borrowers: 0,
+      pools: { image: { resident: "yes", device: { invalid: true } } },
+    });
+    expect(r).not.toBeNull();
+    expect(r!.malformed).toBe(true);
+    expect(r!.strictEmpty).toBe(false);
+  });
+
+  it("结构完整的 gpu_loaded=false → strictEmpty=true", async () => {
+    const { parseResidency } = await import("./runtime/parseResidency");
+    const r = parseResidency({
+      state: "unloaded",
+      gpu_loaded: false,
+      active_requests: 0,
+      builders: 0,
+      borrowers: 0,
+      draining: false,
+      evictable: true,
+      generation: "7",
+      lifecycle_gate: "enforce",
+      pools: { image: { resident: false, device: null, provider: null } },
+    });
+    expect(r).not.toBeNull();
+    expect(r!.malformed).toBe(false);
+    expect(r!.strictEmpty).toBe(true);
+  });
+
+  it("isFreshCachedHealth 沿用 3 分钟新鲜窗口", async () => {
+    const { isFreshCachedHealth } = await import("./runtime/parseResidency");
+    const now = Date.parse("2026-07-20T10:00:00Z");
+    expect(isFreshCachedHealth("connected", "2026-07-20T09:58:00Z", now)).toBe(true);
+    expect(isFreshCachedHealth("connected", "2026-07-20T09:50:00Z", now)).toBe(false);
+    expect(isFreshCachedHealth("disconnected", "2026-07-20T09:58:00Z", now)).toBe(
+      false,
+    );
   });
 });
