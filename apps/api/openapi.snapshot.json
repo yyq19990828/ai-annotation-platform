@@ -25057,7 +25057,7 @@
     },
     "/api/v1/admin/ml-integrations/registry/{registry_id}": {
       "delete": {
-        "description": "删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑\nprojects.ml_backend_id / project_ml_backend (CASCADE) / 历史 prediction (SET NULL)。",
+        "description": "删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑\nprojects.ml_backend_pool_id / project_ml_backend_pool (CASCADE) / 历史 prediction (SET NULL)。\nv0.23.3 ADR-0050 · 删除前须先 drain + inflight=0 + GPU retirement + 成员移除\n(legacy_instance_id FK RESTRICT + member FK RESTRICT)。",
         "operationId": "delete_registry_api_v1_admin_ml_integrations_registry__registry_id__delete",
         "parameters": [
           {
@@ -25396,7 +25396,7 @@
     },
     "/api/v1/admin/preannotate-summary": {
       "get": {
-        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend WHERE enabled).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
+        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend_pool WHERE enabled).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
         "operationId": "list_preannotate_project_summary_api_v1_admin_preannotate_summary_get",
         "responses": {
           "200": {
