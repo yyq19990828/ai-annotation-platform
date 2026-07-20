@@ -14,20 +14,24 @@ export function shouldRunInProject(scene: ScreenshotScene, axis: MatrixAxis): bo
     return axis.viewport === "desktop" && axis.theme === "light";
   }
   const viewports = scene.matrix.viewports ?? ["desktop"];
-  const themes = scene.matrix.themes ?? ["light"];
-  return viewports.includes(axis.viewport) && themes.includes(axis.theme);
+  const themes = scene.matrix.themes ?? [scene.matrix.primaryTheme ?? "light"];
+  const locales = scene.matrix.locales ?? ["zh-CN"];
+  return viewports.includes(axis.viewport)
+    && themes.includes(axis.theme)
+    && locales.includes(axis.locale);
 }
 
 export function resolveOutputPath(scene: ScreenshotScene, axis: MatrixAxis): string {
   const base = typeof scene.target === "function" ? scene.target(axis) : scene.target;
-  const isDefault =
-    axis.viewport === "desktop" && axis.theme === "light" && axis.locale === "zh-CN";
-  if (isDefault) return base;
+  const primaryTheme = scene.matrix?.primaryTheme ?? "light";
+  const isPrimary =
+    axis.viewport === "desktop" && axis.theme === primaryTheme && axis.locale === "zh-CN";
+  if (isPrimary) return base;
 
   const extension = path.extname(base);
   const stem = base.slice(0, -extension.length);
   const parts = [
-    axis.theme !== "light" ? axis.theme : null,
+    axis.theme !== primaryTheme ? axis.theme : null,
     axis.viewport !== "desktop" ? axis.viewport : null,
     axis.locale !== "zh-CN" ? axis.locale : null,
   ].filter(Boolean);

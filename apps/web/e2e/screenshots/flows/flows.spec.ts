@@ -33,7 +33,7 @@ import {
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif, convertToWebm } from "../_helpers/recorder";
-import { installScreenshotEnvironment } from "../environment";
+import { applyScreenshotTheme, installScreenshotEnvironment } from "../environment";
 import { loadScreenshotCatalog } from "../catalog-runtime";
 import { execFileSync } from "child_process";
 import path from "path";
@@ -247,6 +247,7 @@ test.describe("flow recordings", () => {
       test.setTimeout(150_000);
       const t0 = Date.now();
       await seed.injectToken(page, cached.users.admin.email);
+      await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "none");
       const win = await runSamToolRecording(page, cached, demo.tool);
       await finalize(
@@ -270,6 +271,7 @@ test.describe("flow recordings", () => {
     // 首页视频保留候选虚线与 toast 的自然动效，因此不安装面向静态 PNG 的
     // fixed-time / reduced-motion 截图环境。
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runSamInteractive(page, cached);
     await finalizeHomepageWebm(
@@ -311,6 +313,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     // 保留推理中 badge / loader 的自然动效，不安装静态 PNG 专用的禁动环境。
     await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both");
     let cleanupRecord: OcrCleanupRecord | null = null;
     const win = await runOcrInference(page, cached, (record) => {
@@ -332,6 +335,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runRotatedBbox(page, cached);
     await finalize(
@@ -347,6 +351,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runBboxDraw(page, cached);
     await finalize(
@@ -362,6 +367,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolylineDraw(page, cached);
     await finalize(
@@ -377,6 +383,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolygonDraw(page, cached);
     await finalize(
@@ -392,6 +399,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runMaskDraw(page, cached);
     await finalize(
@@ -407,6 +415,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoTrack(page, cached);
     await finalize(
@@ -424,6 +433,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runAiTrackerPanel(page, cached);
     await finalize(
@@ -440,6 +450,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudControls(page, cached);
     await finalize(
@@ -457,6 +468,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudView(page, cached);
     await finalize(
@@ -475,6 +487,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoDraw(page, cached);
     await finalize(
@@ -491,6 +504,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runHotkeyCheatSheet(page, cached);
     await finalize(

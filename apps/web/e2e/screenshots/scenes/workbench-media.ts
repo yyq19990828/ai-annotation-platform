@@ -5,6 +5,11 @@ import {
   waitForRecordingWorkbenchLayout,
 } from "../flows/_workbench-layout";
 
+const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
+  themes: ["dark"],
+  primaryTheme: "dark",
+};
+
 async function reloadWithSidebarLayout(page: Page, mode: "both" | "none"): Promise<void> {
   await installRecordingWorkbenchLayout(page, mode);
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -44,6 +49,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       await page.getByTitle("适应视口（双击空白）").click();
       await page.waitForTimeout(800);
     },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/workbench/video-real-scene.png",
   },
   {
@@ -77,6 +83,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
         .waitFor({ state: "visible", timeout: 5000 });
       await page.waitForTimeout(500);
     },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png",
   },
   {
@@ -92,6 +99,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       await page.getByTestId("pc-viewport").waitFor({ state: "visible", timeout: 20_000 });
       await page.waitForTimeout(1800);
     },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/workbench/pointcloud-real-scene.png",
   },
   {
@@ -114,6 +122,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       await page.getByTestId("ai-prediction-popover").waitFor({ state: "visible", timeout: 5000 });
       await page.waitForTimeout(300);
     },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/workbench/ocr-real-scene.png",
   },
 ];

@@ -65,11 +65,13 @@ export interface ScreenshotScene {
     viewports?: Array<"desktop" | "mobile">;
     themes?: Array<"light" | "dark">;
     locales?: Array<"zh-CN" | "en-US">;
+    /** 写入无后缀 target 的主题；工作台文档以暗色主产物为准。 */
+    primaryTheme?: "light" | "dark";
   };
 
   /**
    * 输出路径（相对仓库根 docs-site/user-guide/...）。
-   * 矩阵非默认轴时 driver 自动追加后缀（.dark / .tablet / .mobile 等）。
+   * 矩阵非主轴时 driver 自动追加后缀（.light / .dark / .mobile 等）。
    */
   target: string | ((axis: MatrixAxis) => string);
 

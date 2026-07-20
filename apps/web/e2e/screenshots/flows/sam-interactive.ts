@@ -81,9 +81,8 @@ export async function runSamToolRecording(
     await acceptTitle.waitFor({ state: "visible", timeout: 120_000 });
   } else {
     // 智能点 / 智能框 / Exemplar 先进入可 Tab 切换的候选层；类选择器要按 Enter 后才出现。
-    // Exemplar 可能按账号记忆输出 bbox，此时没有 polygon 专属的「精修」按钮，
-    // 因而统一等待会持续显示的候选计数。
-    await page.getByText(/[1-9]\d*\s*个候选待处理/).waitFor({
+    // 单候选的桌宠文案省略数字，多候选才显示计数；两种状态都表示推理结果已落到前端。
+    await page.getByText(/^(?:候选待处理|[1-9]\d*\s*个候选待处理)$/).waitFor({
       state: "visible",
       timeout: 120_000,
     });

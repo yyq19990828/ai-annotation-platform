@@ -98,12 +98,10 @@ last_reviewed: 2026-07-17
 
 在 AI 面板的 Prompt 输入框填英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO、SAM 3 PCS、YOLO-World 或 YOLOE 会按当前 model 能力批量返回候选。
 
-输出形态三选一(由后端 `supported_text_outputs` 决定可见性):
+输出形态按模型任务和后端能力裁剪：检测模型固定输出框并隐藏选择器；分割模型只在支持时显示“掩膜 / 全部”，避免与检测任务重复；通用几何或文档模型才可能显示“框 / 掩膜 / 全部”三种选择。
 
-![文本提示三种输出形态](../images/sam/text-three-modes.png)
-
-- `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
-- `○ 掩膜`：mask → polygon（image-seg 项目默认）
+- `□ 框`：仅 box，跳过 mask
+- `○ 掩膜`：mask → polygon
 - `⊕ 全部`：同实例配对 box + polygon
 
 变体选择器对 gsam2 文本路径同时给出 **SAM2 变体 + DINO 变体两组**(后端内部按 output_mode 编排 detection/segmentation)。

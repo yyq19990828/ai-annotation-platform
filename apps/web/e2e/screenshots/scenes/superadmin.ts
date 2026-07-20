@@ -198,7 +198,7 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(400);
-      const reg = page.getByRole("button", { name: "注册全局 backend", exact: true });
+      const reg = page.getByRole("button", { name: "注册实例", exact: true });
       await reg.click({ timeout: 3000 });
       await page.getByRole("dialog").waitFor({ timeout: 3000 });
     },

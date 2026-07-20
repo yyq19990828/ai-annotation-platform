@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { MeResponse } from "@/api/auth";
 
 const mockTriggerMutate = vi.fn();
 const mockUseProject = vi.fn();
@@ -108,6 +109,21 @@ vi.mock("@/api/auth", () => ({
 }));
 
 import { ProjectDetailPanel } from "./ProjectDetailPanel";
+import { useAuthStore } from "@/stores/authStore";
+
+function setAuthRole(role: string) {
+  useAuthStore.setState({
+    user: {
+      id: `u-${role}`,
+      email: `${role}@example.test`,
+      name: role,
+      role,
+      group_name: null,
+      status: "online",
+      created_at: "2026-01-01T00:00:00Z",
+    } satisfies MeResponse,
+  });
+}
 
 function renderUI(extras: Partial<{ summary: any }> = {}) {
   const qc = new QueryClient({
@@ -128,6 +144,7 @@ function renderUI(extras: Partial<{ summary: any }> = {}) {
 
 describe("ProjectDetailPanel v0.9.12", () => {
   beforeEach(() => {
+    setAuthRole("super_admin");
     mockTriggerMutate.mockReset();
     mockSetupAPI.mockReset();
     mockCapabilitiesAPI.mockReset();
@@ -185,6 +202,7 @@ describe("ProjectDetailPanel v0.9.12", () => {
     });
     mockSummaryAPI.mockResolvedValue({ items: [] });
     mockQueueAPI.mockResolvedValue({ items: [] });
+    mockAliasFreqAPI.mockReset();
     mockAliasFreqAPI.mockResolvedValue({
       project_id: "p1",
       total_predictions: 0,
@@ -334,6 +352,15 @@ describe("ProjectDetailPanel v0.9.12", () => {
       const ta = screen.getByPlaceholderText(/car, person/) as HTMLTextAreaElement;
       expect(ta.value).toBe("person, car, truck");
     });
+  });
+
+  it("标注员不请求仅管理员可读的 alias 频率", async () => {
+    setAuthRole("annotator");
+
+    renderUI();
+
+    await waitFor(() => expect(mockSetupAPI).toHaveBeenCalled());
+    expect(mockAliasFreqAPI).not.toHaveBeenCalled();
   });
 
   it("用户已手填 prompt 时不被 alias 默认覆盖", async () => {
