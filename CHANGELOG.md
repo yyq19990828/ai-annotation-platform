@@ -36,8 +36,44 @@
 
 ## [Unreleased]
 
+### Added
+
+- **ML Backend 服务池与真实请求路由地基** (ADR-0050). 在全局实例注册表 (ADR-0044) 之上
+  新增逻辑服务池层 (`ml_backend_service_pools` + `ml_backend_pool_members`), 把「项目请求一个
+  逻辑能力」与「平台选择一个物理实例」拆成两个步骤。项目、pipeline、用户偏好以 pool id 为配置
+  真值; 每个现有 registry 经 alembic 迁移自动得到一个 singleton 服务池, off mode 下行为与
+  v0.23.2 完全一致。详见 `docs/adr/0050-ml-backend-service-pools-and-request-routing.md`。
+- **跨进程原子路由 ledger** (Redis, namespace `ml-router:v1`, 独立于 GPU 仲裁 `gpu-arbiter:v1`):
+  平滑加权轮询 (SWRR) + per-instance 并发上限 + 被动熔断 (仅 transport failure 触发) + route
+  lease acquire/heartbeat/finish/cancel (原子 Lua, 幂等终态, crash TTL 回收)。
+- **路由能力指纹** (SHA-256): 服务池成员加入前必须 exact match canonical 能力指纹 (排除
+  URL/GPU/VRAM/residency 等运行态字段, 使等价副本可互换); 漂移自动 disabled。
+- **Pool + instance 双 ID 溯源**: `Prediction` / `FailedPrediction` 新增 `ml_backend_pool_id`
+  (requested pool); `AsyncJob.payload` 新增 `ml_backend_pool_id`; audit 日志记录双 ID。
+  多阶段聚合的 stage-level lineage 存 `PredictionMeta.extra.pipeline`。
+- **项目服务池 API**: `GET /projects/:id/ml-backends/pools/available`、
+  `PUT /projects/:id/ml-backends/pools/:pool_id/enablement` (pool 级启用 + 变体覆盖)。
+- **超管服务池管理 API**: pool/member CRUD + drain/resume
+  (`/admin/ml-integrations/service-pools/*`), 含能力不匹配 409 结构化 diff。
+- **读模型** (v0.23.4 前置): `GET /admin/ml-integrations/topology` (角色裁剪)、
+  `GET /admin/ml-integrations/runtime-snapshot` (仅超管; router mode + inflight + circuit +
+  health + GPU 摘要)。
+- **路由指标**: `ml_backend_router_selections_total` / `_rejections_total` / `_ejections_total` /
+  `_routed_request_duration_seconds` / `_inflight` (label 仅稳定 UUID + 受控 outcome)。
+- **路由灰度开关**: `ML_BACKEND_ROUTER_MODE` (off / observe / enforce) + lease TTL / heartbeat /
+  passive-failure-threshold / eject-seconds / health-max-age 环境变量。
+
 ### Changed
 
+- `Project.ml_backend_id` → `ml_backend_pool_id` (项目主绑定改为服务池; 内部经 singleton pool
+  的 `legacy_instance_id` 解析回原 registry 实例, off mode 行为不变; 公共 schema 仍接受
+  `ml_backend_id` registry id 以兼容前端 / SDK, v0.23.4 完整池管理 UI 落地)。
+- `project_ml_backend` 表 → `project_ml_backend_pool` (`registry_id` → `pool_id`); 迁移保留原
+  关联行 id / enabled / default_variants / 时间戳。
+- `MLBackendService` resolver 方法 (list_enabled_for_project / get_project_backend /
+  get_tracker_backend_for_capabilities / set_enabled / delete) 经服务池层操作; registry 创建
+  (admin / env auto-upsert) 自动建 singleton pool。
+- 删除 registry 前须先清理服务池层 (成员移除 + legacy 清空 + pool disable), 满足 RESTRICT FK。
 - The product, documentation site, PWA installs, browser tabs, and README now share the new AI Annotation Platform icon.
 
 ## [0.23.2] - 2026-07-17

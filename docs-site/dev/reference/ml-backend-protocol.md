@@ -24,7 +24,18 @@ last_reviewed: 2026-07-17
 ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。effective `off/observe` 仍由各 API / Celery 进程的本地 semaphore 限流；effective `enforce` authority 则已按 [ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration) 使用 Redis request lease 执行跨进程上限。release latch 默认关闭；运维完成本地验收、显式开启 latch，且逐资源 rollout 收敛为 `enforcing` 后，跨进程上限才会生效。两层职责：
 
 - **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
-- **项目层（项目管理员）**：`project_ml_backend` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
+- **项目层（项目管理员）**：`project_ml_backend_pool` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`，pool 级）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
+
+### 服务池与请求路由（ADR-0050）
+
+在全局注册表之上叠加一层**逻辑服务池**（`ml_backend_service_pools` + `ml_backend_pool_members`），把「项目请求一个逻辑能力」与「平台选择一个物理实例」拆成两个步骤。pool id 是逻辑请求身份，registry id 是物理执行身份，二者永不互换。
+
+- **一个 registry 实例同时最多属于一个服务池**。每个现有 registry 经迁移自动得到一个 singleton 服务池（`legacy_instance_id` 指向该 registry，off mode 下解析回原实例，行为与之前完全一致）。
+- **能力等价合同**：成员加入前必须 exact match 路由能力指纹（SHA-256，排除 URL / GPU / VRAM / residency 等运行态字段，使等价副本可互换）。漂移自动 disabled。
+- **跨进程原子路由 ledger**（Redis namespace `ml-router:v1`，独立于 GPU 仲裁 `gpu-arbiter:v1`）：平滑加权轮询（SWRR）+ per-instance 并发上限 + 被动熔断（仅 transport failure 触发）+ route lease acquire/heartbeat/finish/cancel。
+- **双 ID 溯源**：`Prediction` / `FailedPrediction` 同时记录 `ml_backend_id`（实际执行的 selected instance）和 `ml_backend_pool_id`（requested pool）。多阶段聚合的 stage-level lineage 存 `PredictionMeta.extra.pipeline`。
+- **灰度**：`ML_BACKEND_ROUTER_MODE=off|observe|enforce`。off/observe 保持 legacy 实例派发（observe 额外记录 would-select 诊断，不门控）；enforce 用 router 选中实例并在 Redis / topology 不确定时 fail-closed。
+- **管理 API**：项目池绑定 `GET /projects/:id/ml-backends/pools/available` + `PUT /pools/:pool_id/enablement`；超管 pool/member CRUD + drain/resume `/admin/ml-integrations/service-pools/*`；读模型 `GET /admin/ml-integrations/{topology,runtime-snapshot}`。详见 [ADR-0050](/dev/adr/0050-ml-backend-service-pools-and-request-routing)。
 
 **没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 同时作为本地 semaphore 配置与 enforce Redis lease 上限。off/observe 下 API 与多个 Celery worker 的并发仍会叠加；enforce 下才由 Redis 收口为真正的跨进程上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
 
