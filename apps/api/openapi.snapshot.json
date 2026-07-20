@@ -11477,6 +11477,53 @@
         "title": "MLBackendOut",
         "type": "object"
       },
+      "MLBackendPoolSummary": {
+        "description": "服务池摘要 (项目可用清单 / 启用态)。\n\nv0.23.3 off/observe: 每池是 singleton, legacy_instance 指向唯一 registry 实例;\n项目设置勾选清单读此。完整池管理 (成员 / 权重 / drain) 留给 v0.23.4 超管 UI。",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "legacy_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Instance Id"
+          },
+          "member_count": {
+            "default": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routing_generation": {
+            "default": 1,
+            "title": "Routing Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MLBackendPoolSummary",
+        "type": "object"
+      },
       "MLBackendRegistryConflictDetail": {
         "properties": {
           "active_workloads": {
@@ -14772,6 +14819,78 @@
           "items"
         ],
         "title": "ProjectMLBackendList",
+        "type": "object"
+      },
+      "ProjectMLBackendPoolEnablement": {
+        "description": "切换项目对某服务池的启用 + 写项目级变体覆盖 (pool 级)。",
+        "properties": {
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ProjectMLBackendPoolEnablement",
+        "type": "object"
+      },
+      "ProjectMLBackendPoolItem": {
+        "description": "一行 = 一个服务池在本项目的启用态 + 项目级变体覆盖 (pool 级)。",
+        "properties": {
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/MLBackendPoolSummary"
+          }
+        },
+        "required": [
+          "pool"
+        ],
+        "title": "ProjectMLBackendPoolItem",
+        "type": "object"
+      },
+      "ProjectMLBackendPoolList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMLBackendPoolItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProjectMLBackendPoolList",
         "type": "object"
       },
       "ProjectMLBackendsGroup": {
@@ -34984,6 +35103,124 @@
           }
         ],
         "summary": "List Available Ml Backends",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/pools/available": {
+      "get": {
+        "description": "列出本项目可用的服务池 + 启用态 + 成员数 (ADR-0050 §12.2)。\n\nv0.23.3: off/observe 下每池 singleton; 完整池管理 UI 留给 v0.23.4。",
+        "operationId": "list_project_ml_backend_pools_api_v1_projects__project_id__ml_backends_pools_available_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMLBackendPoolList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Project Ml Backend Pools",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/pools/{pool_id}/enablement": {
+      "put": {
+        "description": "切换本项目对某服务池的启用 + 写项目级变体覆盖 (pool 级, ADR-0050 §12.2)。\n\npool 必须存在且 enabled (disabled / 空 / 无 capability fingerprint 的 pool 不可启用)。",
+        "operationId": "set_project_ml_backend_pool_enablement_api_v1_projects__project_id__ml_backends_pools__pool_id__enablement_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMLBackendPoolEnablement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMLBackendPoolItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Project Ml Backend Pool Enablement",
         "tags": [
           "ml-backends"
         ]

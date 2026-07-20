@@ -505,6 +505,40 @@ class ProjectMLBackendEnablement(BaseModel):
     default_variants: dict | None = None
 
 
+# v0.23.3 ADR-0050 §12.2 · 项目服务池绑定 API (pool-level)。
+class MLBackendPoolSummary(BaseModel):
+    """服务池摘要 (项目可用清单 / 启用态)。
+
+    v0.23.3 off/observe: 每池是 singleton, legacy_instance 指向唯一 registry 实例;
+    项目设置勾选清单读此。完整池管理 (成员 / 权重 / drain) 留给 v0.23.4 超管 UI。"""
+
+    id: UUID
+    name: str
+    enabled: bool = False
+    legacy_instance_id: UUID | None = None
+    member_count: int = 0
+    routing_generation: int = 1
+
+
+class ProjectMLBackendPoolItem(BaseModel):
+    """一行 = 一个服务池在本项目的启用态 + 项目级变体覆盖 (pool 级)。"""
+
+    pool: MLBackendPoolSummary
+    enabled: bool = False
+    default_variants: dict | None = None
+
+
+class ProjectMLBackendPoolList(BaseModel):
+    items: list[ProjectMLBackendPoolItem]
+
+
+class ProjectMLBackendPoolEnablement(BaseModel):
+    """切换项目对某服务池的启用 + 写项目级变体覆盖 (pool 级)。"""
+
+    enabled: bool
+    default_variants: dict | None = None
+
+
 # v0.10.26 · 模型市场单变体预热. 缺省时 backend 用默认变体 (保持旧 /reload 行为).
 class MLBackendReloadRequest(BaseModel):
     sam_variant: str | None = None

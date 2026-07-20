@@ -411,6 +411,78 @@ class MLBackendService:
         )
         return [(reg, assoc) for reg, assoc in result.all()]
 
+    async def list_pools_available_for_project(
+        self, project_id: uuid.UUID
+    ) -> list[tuple[MLBackendServicePool, int, ProjectMLBackendPool | None]]:
+        """全部服务池 + 成员数 + 本项目启用关联 (None=未建关联即未启用)。
+
+        v0.23.3 ADR-0050 §12.2 · 项目服务池可用清单。off/observe 下每池是 singleton;
+        完整池管理 UI 留给 v0.23.4。LEFT JOIN 保证未启用 / 从未关联过的池也出现。
+        """
+        # 成员计数子查询
+        member_count_subq = (
+            select(
+                MLBackendPoolMember.pool_id,
+                func.count(MLBackendPoolMember.id).label("n"),
+            )
+            .group_by(MLBackendPoolMember.pool_id)
+            .subquery()
+        )
+        result = await self.db.execute(
+            select(MLBackendServicePool, member_count_subq.c.n, ProjectMLBackendPool)
+            .outerjoin(
+                member_count_subq,
+                member_count_subq.c.pool_id == MLBackendServicePool.id,
+            )
+            .outerjoin(
+                ProjectMLBackendPool,
+                (ProjectMLBackendPool.pool_id == MLBackendServicePool.id)
+                & (ProjectMLBackendPool.project_id == project_id),
+            )
+            .order_by(MLBackendServicePool.created_at.desc())
+        )
+        return [
+            (pool, int(count or 0), assoc)
+            for pool, count, assoc in result.all()
+        ]
+
+    async def set_pool_enabled(
+        self,
+        project_id: uuid.UUID,
+        pool_id: uuid.UUID,
+        enabled: bool,
+        **overrides,
+    ) -> ProjectMLBackendPool:
+        """切换项目对某服务池的启用 + 写项目级变体覆盖 (pool 级, ADR-0050 §12.2)。
+
+        与 set_enabled (registry-level) 对称, 但直接操作 pool id。pool 必须存在。
+        """
+        pool = await self.db.get(MLBackendServicePool, pool_id)
+        if pool is None:
+            raise ValueError(f"service pool {pool_id} not found")
+        result = await self.db.execute(
+            select(ProjectMLBackendPool).where(
+                ProjectMLBackendPool.project_id == project_id,
+                ProjectMLBackendPool.pool_id == pool_id,
+            )
+        )
+        assoc = result.scalar_one_or_none()
+        if assoc is None:
+            assoc = ProjectMLBackendPool(
+                id=uuid.uuid4(),
+                project_id=project_id,
+                pool_id=pool_id,
+                enabled=enabled,
+            )
+            self.db.add(assoc)
+        else:
+            assoc.enabled = enabled
+        for key in ("default_variants",):
+            if key in overrides:
+                setattr(assoc, key, overrides[key])
+        await self.db.flush()
+        return assoc
+
     async def get_assoc(
         self, project_id: uuid.UUID, registry_id: uuid.UUID
     ) -> ProjectMLBackendPool | None:

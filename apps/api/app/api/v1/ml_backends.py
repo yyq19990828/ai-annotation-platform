@@ -15,6 +15,7 @@ from app.deps import (
     require_project_owner,
 )
 from app.db.enums import UserRole
+from app.db.models.ml_backend_pool import MLBackendServicePool
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.user import User
 from app.db.models.task import Task
@@ -31,6 +32,10 @@ from app.schemas.ml_backend import (
     ProjectMLBackendItem,
     ProjectMLBackendList,
     ProjectMLBackendEnablement,
+    MLBackendPoolSummary,
+    ProjectMLBackendPoolItem,
+    ProjectMLBackendPoolList,
+    ProjectMLBackendPoolEnablement,
 )
 from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
@@ -976,3 +981,121 @@ async def interactive_annotating_frame(
         "model_load_ms": result.model_load_ms,
         "mask_input_next": result.mask_input_next,
     }
+
+
+# ── v0.23.3 ADR-0050 §12.2 · 项目服务池绑定 API (pool-level) ──────────────────
+# 与上面的 /{backend_id}/* (registry-level) 端点并存: 后者继续按 registry 实例操作
+# (lifecycle / smoke), 本组按 pool 操作 (项目启用 / 可用清单)。off/observe 下每池
+# 是 singleton, legacy_instance 指向唯一 registry, 行为与 registry-level 等价。
+
+
+@router.get(
+    "/pools/available",
+    response_model=ProjectMLBackendPoolList,
+    dependencies=[Depends(require_project_visible)],
+)
+async def list_project_ml_backend_pools(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """列出本项目可用的服务池 + 启用态 + 成员数 (ADR-0050 §12.2)。
+
+    v0.23.3: off/observe 下每池 singleton; 完整池管理 UI 留给 v0.23.4。
+    """
+    svc = MLBackendService(db)
+    rows = await svc.list_pools_available_for_project(project_id)
+    items = [
+        ProjectMLBackendPoolItem(
+            pool=MLBackendPoolSummary(
+                id=pool.id,
+                name=pool.name,
+                enabled=pool.enabled,
+                legacy_instance_id=pool.legacy_instance_id,
+                member_count=member_count,
+                routing_generation=pool.routing_generation,
+            ),
+            enabled=assoc.enabled if assoc else False,
+            default_variants=assoc.default_variants if assoc else None,
+        )
+        for pool, member_count, assoc in rows
+    ]
+    return ProjectMLBackendPoolList(items=items)
+
+
+@router.put(
+    "/pools/{pool_id}/enablement",
+    response_model=ProjectMLBackendPoolItem,
+    dependencies=[Depends(require_project_owner)],
+)
+async def set_project_ml_backend_pool_enablement(
+    project_id: uuid.UUID,
+    pool_id: uuid.UUID,
+    data: ProjectMLBackendPoolEnablement,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """切换本项目对某服务池的启用 + 写项目级变体覆盖 (pool 级, ADR-0050 §12.2)。
+
+    pool 必须存在且 enabled (disabled / 空 / 无 capability fingerprint 的 pool 不可启用)。
+    """
+    svc = MLBackendService(db)
+    pool = await db.get(MLBackendServicePool, pool_id)
+    if pool is None:
+        raise HTTPException(status_code=404, detail="service pool not found")
+    if data.enabled and (not pool.enabled or pool.legacy_instance_id is None):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_pool_not_enabled",
+                "message": "pool is disabled or has no legacy instance; cannot enable for project",
+            },
+        )
+    overrides = {
+        k: v for k, v in (("default_variants", data.default_variants),) if v is not None
+    }
+    try:
+        assoc = await svc.set_pool_enabled(
+            project_id, pool_id, enabled=data.enabled, **overrides
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    member_count = await _pool_member_count(db, pool_id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend_pool.enablement",
+        target_type="ml_backend_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(project_id), "enabled": data.enabled},
+    )
+    await db.commit()
+    await db.refresh(pool)
+    await db.refresh(assoc)
+    return ProjectMLBackendPoolItem(
+        pool=MLBackendPoolSummary(
+            id=pool.id,
+            name=pool.name,
+            enabled=pool.enabled,
+            legacy_instance_id=pool.legacy_instance_id,
+            member_count=member_count,
+            routing_generation=pool.routing_generation,
+        ),
+        enabled=assoc.enabled,
+        default_variants=assoc.default_variants,
+    )
+
+
+async def _pool_member_count(db: AsyncSession, pool_id: uuid.UUID) -> int:
+    from sqlalchemy import func, select as _select
+
+    from app.db.models.ml_backend_pool import MLBackendPoolMember
+
+    result = await db.execute(
+        _select(func.count(MLBackendPoolMember.id)).where(
+            MLBackendPoolMember.pool_id == pool_id
+        )
+    )
+    return int(result.scalar() or 0)
