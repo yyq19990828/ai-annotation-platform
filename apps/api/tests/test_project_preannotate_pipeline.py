@@ -14,8 +14,9 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
+from tests.conftest import create_registry_with_pool
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -36,26 +37,29 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
     db.add(proj)
     await db.flush()
     # v0.19.0 ADR-0044 · 全局注册项 + 项目启用关联 (编排阶段引用 registry id)。
-    detect = MLBackendRegistry(
-        id=uuid.uuid4(),
+    detect, detect_pool = await create_registry_with_pool(
+        db,
         name="detect",
         url="http://detect/",
         is_interactive=False,
         state="connected",
     )
-    classify = MLBackendRegistry(
-        id=uuid.uuid4(),
+    classify, classify_pool = await create_registry_with_pool(
+        db,
         name="classify",
         url="http://classify/",
         is_interactive=False,
         state="connected",
     )
-    db.add(detect)
-    db.add(classify)
-    await db.flush()
-    db.add(ProjectMLBackend(project_id=proj.id, registry_id=detect.id, enabled=True))
-    db.add(ProjectMLBackend(project_id=proj.id, registry_id=classify.id, enabled=True))
-    proj.ml_backend_id = detect.id
+    db.add(
+        ProjectMLBackendPool(project_id=proj.id, pool_id=detect_pool.id, enabled=True)
+    )
+    db.add(
+        ProjectMLBackendPool(
+            project_id=proj.id, pool_id=classify_pool.id, enabled=True
+        )
+    )
+    proj.ml_backend_pool_id = detect_pool.id
     await db.commit()
     return proj, detect, classify
 

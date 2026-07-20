@@ -9,13 +9,14 @@ from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
+from app.services.ml_backend import MLBackendService
 from app.services.screenshot_seed_spec import (
     PROJECT_SPECS,
     SEED_MANAGED_BY,
@@ -274,21 +275,26 @@ async def _ready_profile(db):
     )
     db.add_all([image_backend, video_backend, ocr_backend])
     await db.flush()
-    image.ml_backend_id = image_backend.id
+    # v0.23.3 ADR-0050 · 每 registry 须有 singleton pool 才能被项目主绑定 / 启用。
+    svc = MLBackendService(db)
+    image_pool = await svc._create_singleton_pool(image_backend)
+    video_pool = await svc._create_singleton_pool(video_backend)
+    ocr_pool = await svc._create_singleton_pool(ocr_backend)
+    image.ml_backend_pool_id = image_pool.id
     video = projects["video_demo"]
-    video.ml_backend_id = video_backend.id
+    video.ml_backend_pool_id = video_pool.id
     ocr = projects["ocr_demo"]
-    ocr.ml_backend_id = ocr_backend.id
+    ocr.ml_backend_pool_id = ocr_pool.id
     db.add_all(
         [
-            ProjectMLBackend(
-                project_id=image.id, registry_id=image_backend.id, enabled=True
+            ProjectMLBackendPool(
+                project_id=image.id, pool_id=image_pool.id, enabled=True
             ),
-            ProjectMLBackend(
-                project_id=video.id, registry_id=video_backend.id, enabled=True
+            ProjectMLBackendPool(
+                project_id=video.id, pool_id=video_pool.id, enabled=True
             ),
-            ProjectMLBackend(
-                project_id=ocr.id, registry_id=ocr_backend.id, enabled=True
+            ProjectMLBackendPool(
+                project_id=ocr.id, pool_id=ocr_pool.id, enabled=True
             ),
         ]
     )
@@ -352,7 +358,7 @@ async def test_catalog_fails_closed_when_primary_backend_is_unbound(
     httpx_client, db_session
 ):
     projects, _ = await _ready_profile(db_session)
-    projects["image_demo"].ml_backend_id = None
+    projects["image_demo"].ml_backend_pool_id = None
     await db_session.flush()
 
     response = await httpx_client.get("/api/v1/__test/seed/catalog")

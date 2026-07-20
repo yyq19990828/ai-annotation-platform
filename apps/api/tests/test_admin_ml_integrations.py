@@ -55,9 +55,11 @@ async def test_overview_groups_backends_by_project(
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id, name="P1")
 
-    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+    from app.db.models.ml_backend_registry import ProjectMLBackendPool
+    from tests.conftest import create_registry_with_pool
 
-    b1 = MLBackendRegistry(
+    b1, b1_pool = await create_registry_with_pool(
+        db_session,
         name="b1",
         url="http://x:9000",
         state="connected",
@@ -69,16 +71,15 @@ async def test_overview_groups_backends_by_project(
             }
         },
     )
-    b2 = MLBackendRegistry(name="b2", url="http://y:9000", state="disconnected")
-    db_session.add(b1)
-    db_session.add(b2)
-    await db_session.flush()
+    b2, b2_pool = await create_registry_with_pool(
+        db_session, name="b2", url="http://y:9000", state="disconnected"
+    )
     # v0.19.0 ADR-0044 · overview 按项目「已启用」全局 backend 分组。
     db_session.add(
-        ProjectMLBackend(project_id=proj.id, registry_id=b1.id, enabled=True)
+        ProjectMLBackendPool(project_id=proj.id, pool_id=b1_pool.id, enabled=True)
     )
     db_session.add(
-        ProjectMLBackend(project_id=proj.id, registry_id=b2.id, enabled=True)
+        ProjectMLBackendPool(project_id=proj.id, pool_id=b2_pool.id, enabled=True)
     )
     await db_session.flush()
 

@@ -17,8 +17,9 @@ from unittest.mock import patch
 import pytest
 
 from app.api.v1 import ml_backends as ml_backends_route
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
+from tests.conftest import create_registry_with_pool
 
 
 async def _seed_project(db, owner_id) -> Project:
@@ -38,16 +39,14 @@ async def _seed_project(db, owner_id) -> Project:
 
 async def _seed_backend(db, project_id, name="grounded-sam2") -> MLBackendRegistry:
     """建全局注册项 + 为项目启用 (ADR-0044)。url 全局唯一, 每次生成不同 url。"""
-    b = MLBackendRegistry(
-        id=uuid.uuid4(),
+    b, pool = await create_registry_with_pool(
+        db,
         name=name,
         url=f"http://example-{uuid.uuid4().hex[:8]}/",
         is_interactive=True,
         state="connected",
     )
-    db.add(b)
-    await db.flush()
-    db.add(ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True))
+    db.add(ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True))
     await db.flush()
     return b
 

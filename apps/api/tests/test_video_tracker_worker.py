@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.db.models.annotation import Annotation
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -12,6 +12,7 @@ from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStat
 from app.services.ml_client import PredictionResult
 from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
 from app.services.video_tracking.runner import accept_tracker_job, run_tracker_job
+from tests.conftest import create_registry_with_pool
 
 
 async def _make_video_task(db_session, owner_id):
@@ -456,7 +457,8 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
-    backend = MLBackendRegistry(
+    backend, pool = await create_registry_with_pool(
+        db_session,
         name="SAM2 Video",
         url="http://sam2-video.test",
         state="connected",
@@ -465,13 +467,11 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
         # v0.21.25 阶段 R · runner 按 supported_trackers 路由, backend 须声明能力。
         health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
     )
-    db_session.add(backend)
-    await db_session.flush()
-    project.ml_backend_id = backend.id
-    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_id 且需项目「已启用」
+    project.ml_backend_pool_id = pool.id
+    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_pool_id 且需项目「已启用」
     db_session.add(
-        ProjectMLBackend(
-            project_id=task.project_id, registry_id=backend.id, enabled=True
+        ProjectMLBackendPool(
+            project_id=task.project_id, pool_id=pool.id, enabled=True
         )
     )
     await db_session.flush()
@@ -568,7 +568,8 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
-    backend = MLBackendRegistry(
+    backend, pool = await create_registry_with_pool(
+        db_session,
         name="SAM3 Video",
         url="http://sam3-video.test",
         state="connected",
@@ -577,13 +578,11 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
         # v0.21.25 阶段 R · runner 按 supported_trackers 路由, backend 须声明能力。
         health_meta={"capabilities": {"supported_trackers": ["sam3_video"]}},
     )
-    db_session.add(backend)
-    await db_session.flush()
-    project.ml_backend_id = backend.id
-    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_id 且需项目「已启用」
+    project.ml_backend_pool_id = pool.id
+    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_pool_id 且需项目「已启用」
     db_session.add(
-        ProjectMLBackend(
-            project_id=task.project_id, registry_id=backend.id, enabled=True
+        ProjectMLBackendPool(
+            project_id=task.project_id, pool_id=pool.id, enabled=True
         )
     )
     await db_session.flush()

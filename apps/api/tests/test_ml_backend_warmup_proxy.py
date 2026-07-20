@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
+from tests.conftest import create_registry_with_pool
 from tests.factory import create_project
 
 
@@ -23,8 +24,8 @@ async def _make_backend(
     db_session, project_id: uuid.UUID, name: str = "yolo"
 ) -> MLBackendRegistry:
     """建全局注册项 + 为项目启用 (ADR-0044)。url 全局唯一。"""
-    b = MLBackendRegistry(
-        id=uuid.uuid4(),
+    b, pool = await create_registry_with_pool(
+        db_session,
         name=name,
         url=f"http://yolo-{uuid.uuid4().hex[:8]}:8003",
         state="connected",
@@ -33,10 +34,8 @@ async def _make_backend(
         extra_params={},
         health_meta={},
     )
-    db_session.add(b)
-    await db_session.flush()
     db_session.add(
-        ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True)
+        ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True)
     )
     await db_session.flush()
     return b
