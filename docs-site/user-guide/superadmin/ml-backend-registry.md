@@ -74,6 +74,35 @@ POST   /admin/ml-integrations/registry/:registry_id/health   # 健康检查（�
 GET    /admin/ml-integrations/all                        # 全局列表（新建项目向导复用）
 ```
 
+每个全局 backend 注册后会自动得到一个 singleton 服务池（ADR-0050），池内含一个 active 成员指向该实例。off 模式下行为与单实例完全一致；当 `ML_BACKEND_ROUTER_MODE=observe|enforce` 时，路由器在该池内选择实例。详见 [ADR-0050 服务池与请求路由](../../dev/adr/0050-ml-backend-service-pools-and-request-routing)。
+
+## 服务池管理（超管）
+
+服务池是路由选择的逻辑边界，实例是可定位到物理 URL 的 registry 记录。一个池可含多个等价实例（同模型 / 同 schema，capability 指纹 exact match）。注册管理 tab 的「服务池」视图对池做增删改查 + drain / resume：
+
+```http
+GET    /admin/ml-integrations/service-pools                       # 列表（含成员）
+POST   /admin/ml-integrations/service-pools                       # 新建池
+GET    /admin/ml-integrations/service-pools/:pool_id              # 单池详情
+PATCH  /admin/ml-integrations/service-pools/:pool_id              # 改名 / 启停
+DELETE /admin/ml-integrations/service-pools/:pool_id              # 删除池
+PUT    /admin/ml-integrations/service-pools/:pool_id/members/:registry_id   # 加入/改权重
+DELETE /admin/ml-integrations/service-pools/:pool_id/members/:registry_id   # 移除成员
+POST   /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/drain    # active→draining
+POST   /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/resume   # draining→active
+```
+
+**drain / resume 语义**：
+
+- **drain**：成员 `traffic_state` 从 `active` 切到 `draining`，停止接收**新** route lease；已在飞的请求继续完成。幂等。
+- **resume**：`draining` 切回 `active`，恢复接流。幂等。`disabled` 的池需先 enable 才能 resume。
+- drain / resume **只影响路由接流**，不触发模型权重卸载（那是 GPU 仲裁的 residency drain，独立）。
+- 当 `ML_BACKEND_ROUTER_MODE != enforce` 时，drain 只是预配置，不会真正改变路由行为——运行时观测会标记为「未生效」。
+
+**加入成员**：被加入的实例必须与池内现有成员 capability 指纹 exact match（同模型、同 schema、同能力枚举，排除 URL/GPU/VRAM/residency 等运行态字段）。不匹配返回 `HTTP 409` 并附结构化 diff。
+
+**移除成员 / 删除池**：需先 drain 且 inflight 归零（运行时观测的安全卸载门会校验）。
+
 ## 项目启用
 
 注册仅是创建可选项。真正生效需要项目把它启用：

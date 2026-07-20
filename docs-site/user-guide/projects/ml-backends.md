@@ -12,6 +12,8 @@ last_reviewed: 2026-07-14
 
 每个项目从**全局 ML backend 注册表**里勾选启用一个或多个 backend，用于工作台交互式 AI 工具（智能点 / 智能框 / Exemplar，均为画布手势驱动）和批量预标注（文本「找全图」/ 几何 / OCR / 版面）。本页解释项目侧的**启用、设主后端**两件事。物理 backend 的全局注册（新增 / 编辑 / 删除）是超管在[模型市场](../superadmin/model-market.md)的职责；项目侧只做启用，不复制 backend。推理参数（如检测阈值）不在项目设置预设，而是在工作台 / 预标**运行时**按 backend 自报的 `/setup.params` 调整（详见下）。
 
+> **项目绑定的是服务池**：项目启用与主后端下拉在底层绑定的是**服务池**（`ml_backend_pool_id`，ADR-0050 的逻辑路由边界），不再是单个物理实例。每个全局 backend 注册后自动得到一个 singleton 服务池，off 模式下项目体验与单实例完全一致；当超管把多个等价实例加入同一池并切到 `observe|enforce` 模式时，平台会在池内自动选择实例，项目侧无需改动。`/projects/:id/ml-backends/pools/available` 与 `/pools/:pool_id/enablement` 是项目侧的服务池启用 API；旧 `ml_backend_id`（实例 id）字段仍被公共 schema 接受以兼容老前端 / SDK，内部解析回 singleton 池。
+
 > **交互线 / 批量线分流**：启用多个后端时，工作台 AI 按角色 + 能力路由——交互工具(point/interactive_box/exemplar)自动路由到支持该 prompt 的交互后端，批量预标走批量后端，两条线**同时就绪**。例如 yolo 设为项目主后端（批量几何）+ gsam2 启用：批量运行走 yolo，工具栏 point/interactive_box 自动命中 gsam2。文本「找全图」属批量线（不在工具栏）。详见 [AI 工具组 § 交互后端选择](../workbench/sam-tool.md#交互后端选择多后端)。
 
 ## 启用一个全局 backend

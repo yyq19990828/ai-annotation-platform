@@ -169,6 +169,29 @@ curl -X POST localhost:8003/warmup \
 
 平台代理 `POST /api/v1/projects/{pid}/ml-backends/{bid}/warmup` 把 body 原样转发；upstream 4xx 透传，5xx 502 兜底。
 
+> **术语区分**：本节 §5 描述的 `pool` 是**实例内部的模型驻留池**（单 backend 的 `/health.pool`、cap、loaded_keys、LRU evict）。ADR-0050 引入的**服务池** (`ml_backend_service_pools`) 是不同的概念——它是跨实例的**请求路由逻辑边界**，决定一个请求由哪个物理实例执行。两者的观测口径完全独立：模型驻留池走 backend `/health`，服务池路由状态走下面的 §5b。
+
+---
+
+## 5b. 服务池路由观测口径
+
+服务池 / 实例 / 路由状态由两个权威读模型提供（`apps/api/app/services/ml_routing/diagnostics.py`）：
+
+| 端点 | 角色 | 用途 |
+|---|---|---|
+| `GET /admin/ml-integrations/topology` | PROJECT_ADMIN + SUPER_ADMIN | 服务池 + 成员实例拓扑；角色裁剪（Project Admin 看 `routing_policy="unknown"` 与 `null` 敏感字段） |
+| `GET /admin/ml-integrations/runtime-snapshot` | SUPER_ADMIN only | router mode + per-pool/member `route_inflight` + `circuit_open` + health + freshness 信封 |
+
+**runtime-snapshot 的 freshness 信封**：每个异步来源（`topology` / `router_ledger` / `health` / `gpu` / `residency`）独立带 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据，`partial=true` + `partial_reason` 列出哪些来源 stale。`gpu` 与 `residency` 在 runtime-snapshot 中恒为 stale + `not_bundled_in_v0_23_3`——它们需通过 `/observe` 在模型市场 Instance Detail Sheet 单独取。
+
+**metrics 字段当前为 null**：`last_selected_at` / `selection_count_window` / `rejection_count_window` / `p95_ms` / `error_rate` 在 schema 中保留但恒为 `null`。Prometheus 模块 `apps/api/app/services/ml_routing/metrics.py` 已声明 `ml_backend_router_selections_total` / `_rejections_total` / `_ejections_total` / `_routed_request_duration_seconds` / `_inflight`，但当前未 wire（避免引入跨进程共享计数器的复杂度）。模型市场对这些字段统一渲染「暂无路由指标」，不会回落为 `0`。
+
+**route ledger 故障排查**：路由账本走 Redis namespace `ml-router:v1`（独立于 GPU 仲裁 `gpu-arbiter:v1`）。`ML_BACKEND_ROUTER_MODE=off` 时 ledger 不读取；`observe|enforce` 下若 Redis 不可达，`router_ledger` 来源切 stale + `error="redis_unavailable"`，`enforce` 模式 acquire 直接 fail-closed 返回 `ml_backend_router_unavailable` (503)。
+
+**drain / resume 状态机**：成员 `traffic_state` 为 `active` / `draining` / `disabled`。`drain` 只停止接**新** lease，不影响在飞请求或模型权重卸载（后者是 GPU 仲裁的 residency drain，独立）。运行时观测的卸载安全门要求 drain → inflight=0 + 快照新鲜 (quiescent) → unload，三步缺一不可。
+
+详见 [ADR-0050](../../dev/adr/0050-ml-backend-service-pools-and-request-routing)（路由核心）与 [ADR-0051](../../dev/adr/0051-model-market-observability-information-architecture)（观测面 IA）。
+
 ---
 
 ## GPU 显存影子决策日志
