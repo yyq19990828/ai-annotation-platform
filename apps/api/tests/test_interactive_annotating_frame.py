@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
+from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.ml_client import PredictionResult

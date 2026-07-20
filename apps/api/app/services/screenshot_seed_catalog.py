@@ -84,7 +84,7 @@ async def _resolve_backend(
     if requirement.interactive and not project.ai_interactive_enabled:
         issues.append(f"{prefix}: ai_interactive_enabled must be true")
     if project.ml_backend_pool_id is None:
-        issues.append(f"{prefix}: primary ML backend pool is not bound")
+        issues.append(f"{prefix}: primary ML backend is not bound")
 
     service = MLBackendService(db)
     backend = await service.get_project_backend(project.id)

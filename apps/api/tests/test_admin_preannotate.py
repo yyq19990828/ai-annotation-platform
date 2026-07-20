@@ -72,18 +72,16 @@ async def _seed_batch_with_predictions(
     db, project_id, *, status: str = "pre_annotated"
 ):
     from app.db.models.async_job import AsyncJob
-    from app.db.models.ml_backend_registry import (
-        MLBackendRegistry,
-        ProjectMLBackendPool,
-    )
+    from app.db.models.ml_backend_registry import ProjectMLBackendPool
     from app.db.models.prediction import Prediction
     from tests.conftest import create_registry_with_pool
 
     batch = await create_batch(db, project_id=project_id, status=status)
     task = await _create_task(db, project_id=project_id, batch_id=batch.id)
     # v0.19.0 ADR-0044 · 全局注册项 + 项目启用关联 (url 全局唯一, 故每次造唯一 url)。
+    # 不设 state → registry 默认 disconnected (summary 期望非 connected 状态)。
     backend, pool = await create_registry_with_pool(
-        db, name="bk", url=f"http://x-{uuid.uuid4().hex[:8]}/"
+        db, name="bk", url=f"http://x-{uuid.uuid4().hex[:8]}/", state="disconnected"
     )
     db.add(
         ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True)

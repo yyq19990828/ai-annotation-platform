@@ -708,8 +708,9 @@ async def update_project(
         _validate_saved_pipeline(payload["preannotate_pipeline"])
     # v0.23.3 ADR-0050 · 公共 schema 仍用 ml_backend_id (registry id);
     # 内部转成 ml_backend_pool_id (singleton pool) 存项目主绑定。
-    requested_main_backend_id = payload.pop("ml_backend_id", None)
-    if requested_main_backend_id is not None:
+    # 注意区分「字段未提供」(不改动) 与「显式 null」(清空): 用 in 判断而非 pop 默认值。
+    if "ml_backend_id" in payload:
+        requested_main_backend_id = payload.pop("ml_backend_id")
         if requested_main_backend_id:
             # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
             await _validate_backend_modality(
@@ -729,7 +730,7 @@ async def update_project(
             pool = await svc._pool_for_registry(requested_main_backend_id)
             payload["ml_backend_pool_id"] = pool.id if pool is not None else None
         else:
-            # 显式清空主绑定
+            # 显式 null = 清空主绑定
             payload["ml_backend_pool_id"] = None
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.

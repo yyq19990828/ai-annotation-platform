@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
+from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.project import Project
 from tests.conftest import create_registry_with_pool
 

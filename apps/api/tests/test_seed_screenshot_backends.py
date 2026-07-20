@@ -15,7 +15,6 @@ from app.services.screenshot_seed_backends import (
     select_backend_for_requirement,
 )
 from app.services.screenshot_seed_spec import BACKEND_REQUIREMENTS, PROJECT_SPECS
-from tests.conftest import create_registry_with_pool
 
 
 pytestmark = pytest.mark.asyncio

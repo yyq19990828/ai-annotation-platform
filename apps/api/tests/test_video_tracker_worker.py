@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.db.models.annotation import Annotation
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
+from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task

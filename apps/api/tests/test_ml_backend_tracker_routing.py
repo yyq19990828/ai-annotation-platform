@@ -27,6 +27,8 @@ async def _seed(db, *, name: str, trackers: list[str]) -> MLBackendRegistry:
     )
     db.add(b)
     await db.flush()
+    # v0.23.3 ADR-0050 · 每 registry 需要 singleton pool 才能 set_enabled / 绑定项目。
+    await MLBackendService(db)._create_singleton_pool(b)
     return b
 
 
@@ -42,7 +44,9 @@ async def test_get_tracker_backend_routes_by_capability_not_binding(
     await svc.set_enabled(proj.id, sam2.id, True)
     await svc.set_enabled(proj.id, sam3.id, True)
     # 项目显式绑定到 sam2 (复现现网「绑定 grounded-sam2」配置)。
-    proj.ml_backend_id = sam2.id
+    # v0.23.3: 项目主绑定存 pool id (经 sam2 的 singleton pool 解析)。
+    sam2_pool = await svc._pool_for_registry(sam2.id)
+    proj.ml_backend_pool_id = sam2_pool.id if sam2_pool else None
     await db_session.flush()
 
     # sam3_video 按能力挑 sam3-backend, 不受「项目绑定 sam2」影响 (核心回归)。

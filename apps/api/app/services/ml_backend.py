@@ -286,7 +286,12 @@ class MLBackendService:
         # 级联: 解绑 projects.ml_backend_pool_id (SET NULL 语义);
         # project_ml_backend_pool 关联由 FK ondelete=CASCADE 自动清。
         # 历史 prediction.ml_backend_id / ml_backend_pool_id 同样 SET NULL。
-        # v0.23.3: 项目主绑定存 pool id, 需先经 registry 的 singleton pool 解析。
+        # v0.23.3 ADR-0050 §5.2: 删除 registry 前必须先清理服务池层 ——
+        # pool.legacy_instance_id (FK RESTRICT) 与 pool_member.registry_id (FK RESTRICT)
+        # 都引用此 registry。off mode singleton 下: 删 member → 若该 registry 是某 pool
+        # 的 legacy_instance_id 且 pool 无其它成员, 把 pool 置 disabled + 清 legacy 指针
+        # (空 pool 只能 disabled) → 再删 registry 行。多成员 pool 的 legacy 接替留给
+        # 显式 pool 管理 API (v0.23.4), 本删除路径只处理 singleton / 无 legacy 场景。
         pool = await self._pool_for_registry(registry_id)
         if pool is not None:
             bound_projects = await self.db.execute(
@@ -294,6 +299,29 @@ class MLBackendService:
             )
             for project in bound_projects.scalars():
                 project.ml_backend_pool_id = None
+            # 删该 registry 在所有 pool 的成员关系 (singleton 下只有一条)。
+            members = await self.db.execute(
+                select(MLBackendPoolMember).where(
+                    MLBackendPoolMember.registry_id == registry_id
+                )
+            )
+            for member in members.scalars():
+                await self.db.delete(member)
+            await self.db.flush()
+            # 若该 registry 是某 pool 的 legacy_instance_id: 该 pool 失去 legacy 实例。
+            # 按 ADR-0050 D15 非空 enabled pool 必须有 legacy 成员; 这里 registry 正被删,
+            # pool 必然变为空 (singleton) 或需新 legacy (多成员, 不在本路径处理)。
+            # 把 pool enabled=false 并清 legacy_instance_id 满足 CHECK 约束。
+            legacy_pools = await self.db.execute(
+                select(MLBackendServicePool).where(
+                    MLBackendServicePool.legacy_instance_id == registry_id
+                )
+            )
+            for lp in legacy_pools.scalars():
+                lp.enabled = False
+                lp.legacy_instance_id = None
+                lp.routing_generation += 1
+            await self.db.flush()
         await self.db.delete(row)
         try:
             await self.db.flush()
