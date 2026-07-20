@@ -25276,7 +25276,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.3"
+    "version": "0.23.4"
   },
   "openapi": "3.1.0",
   "paths": {
