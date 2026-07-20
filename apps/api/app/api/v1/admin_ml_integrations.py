@@ -16,6 +16,8 @@ import time
 from typing import Literal
 
 import uuid
+from datetime import datetime
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -1569,3 +1571,319 @@ async def smoke_test_backend(
         )
         await _audit(r)
         return r
+
+
+# ── v0.23.3 ADR-0050 §12.1 · Super Admin service-pool / member management ──────
+
+
+class ServicePoolCreateRequest(BaseModel):
+    name: str
+    legacy_instance_id: UUID | None = None
+
+
+class ServicePoolPatchRequest(BaseModel):
+    name: str | None = None
+    enabled: bool | None = None
+
+
+class ServicePoolMemberPutRequest(BaseModel):
+    weight: int = Field(default=1, ge=1, le=100)
+
+
+class ServicePoolAdminItem(BaseModel):
+    id: UUID
+    name: str
+    enabled: bool
+    routing_policy: str
+    legacy_instance_id: UUID | None = None
+    routing_generation: int
+    capability_fingerprint: str | None = None
+    members: list["ServicePoolMemberItem"] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class ServicePoolMemberItem(BaseModel):
+    registry_id: UUID
+    registry_name: str
+    traffic_state: str
+    weight: int
+
+
+ServicePoolAdminItem.model_rebuild()
+
+
+async def _pool_to_admin_item(db: AsyncSession, pool) -> ServicePoolAdminItem:
+    from sqlalchemy import select as _select
+
+    members_q = await db.execute(
+        _select(MLBackendPoolMember, MLBackendRegistry)
+        .join(
+            MLBackendRegistry,
+            MLBackendRegistry.id == MLBackendPoolMember.registry_id,
+        )
+        .where(MLBackendPoolMember.pool_id == pool.id)
+        .order_by(MLBackendRegistry.name)
+    )
+    members = [
+        ServicePoolMemberItem(
+            registry_id=reg.id,
+            registry_name=reg.name,
+            traffic_state=member.traffic_state,
+            weight=member.weight,
+        )
+        for member, reg in members_q.all()
+    ]
+    return ServicePoolAdminItem(
+        id=pool.id,
+        name=pool.name,
+        enabled=pool.enabled,
+        routing_policy=pool.routing_policy,
+        legacy_instance_id=pool.legacy_instance_id,
+        routing_generation=pool.routing_generation,
+        capability_fingerprint=pool.capability_fingerprint,
+        members=members,
+        created_at=pool.created_at,
+        updated_at=pool.updated_at,
+    )
+
+
+@router.get(
+    "/service-pools",
+    response_model=list[ServicePoolAdminItem],
+)
+async def list_service_pools(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> list[ServicePoolAdminItem]:
+    pools = await MLBackendService(db).list_pools()
+    return [await _pool_to_admin_item(db, p) for p in pools]
+
+
+@router.post("/service-pools", response_model=ServicePoolAdminItem, status_code=201)
+async def create_service_pool(
+    data: ServicePoolCreateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    svc = MLBackendService(db)
+    pool = await svc.create_pool(data.name, legacy_instance_id=data.legacy_instance_id)
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.created",
+        target_type="ml_service_pool", target_id=str(pool.id),
+        request=request, status_code=201, detail={"name": data.name},
+    )
+    await db.commit()
+    await db.refresh(pool)
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.get("/service-pools/{pool_id}", response_model=ServicePoolAdminItem)
+async def get_service_pool(
+    pool_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    pool = await MLBackendService(db).get_pool(pool_id)
+    if pool is None:
+        raise HTTPException(status_code=404, detail="service pool not found")
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.patch("/service-pools/{pool_id}", response_model=ServicePoolAdminItem)
+async def patch_service_pool(
+    pool_id: uuid.UUID,
+    data: ServicePoolPatchRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    svc = MLBackendService(db)
+    try:
+        pool = await svc.update_pool(pool_id, name=data.name, enabled=data.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if pool is None:
+        raise HTTPException(status_code=404, detail="service pool not found")
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.updated",
+        target_type="ml_service_pool", target_id=str(pool_id),
+        request=request, status_code=200,
+        detail={"name": data.name, "enabled": data.enabled},
+    )
+    await db.commit()
+    await db.refresh(pool)
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.delete("/service-pools/{pool_id}", status_code=204)
+async def delete_service_pool(
+    pool_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> None:
+    svc = MLBackendService(db)
+    ok = await svc.delete_pool(pool_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="service pool not found")
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.deleted",
+        target_type="ml_service_pool", target_id=str(pool_id),
+        request=request, status_code=204, detail={},
+    )
+    await db.commit()
+
+
+@router.put(
+    "/service-pools/{pool_id}/members/{registry_id}",
+    response_model=ServicePoolAdminItem,
+)
+async def add_or_update_pool_member(
+    pool_id: uuid.UUID,
+    registry_id: uuid.UUID,
+    data: ServicePoolMemberPutRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    from app.services.ml_routing.contracts import CapabilityMismatchError
+
+    svc = MLBackendService(db)
+    try:
+        await svc.add_pool_member(
+            pool_id, registry_id, weight=data.weight
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CapabilityMismatchError as exc:
+        raise HTTPException(status_code=409, detail=exc.as_detail()) from exc
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.member_added",
+        target_type="ml_service_pool", target_id=str(pool_id),
+        request=request, status_code=200,
+        detail={"registry_id": str(registry_id), "weight": data.weight},
+    )
+    await db.commit()
+    pool = await svc.get_pool(pool_id)
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.delete(
+    "/service-pools/{pool_id}/members/{registry_id}",
+    response_model=ServicePoolAdminItem,
+)
+async def remove_pool_member(
+    pool_id: uuid.UUID,
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    svc = MLBackendService(db)
+    ok = await svc.remove_pool_member(pool_id, registry_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="member not found")
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.member_removed",
+        target_type="ml_service_pool", target_id=str(pool_id),
+        request=request, status_code=200, detail={"registry_id": str(registry_id)},
+    )
+    await db.commit()
+    pool = await svc.get_pool(pool_id)
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.post(
+    "/service-pools/{pool_id}/members/{registry_id}/drain",
+    response_model=ServicePoolAdminItem,
+)
+async def drain_pool_member(
+    pool_id: uuid.UUID,
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    svc = MLBackendService(db)
+    member = await svc.drain_pool_member(pool_id, registry_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="member not found")
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.member_drained",
+        target_type="ml_service_pool", target_id=str(pool_id),
+        request=request, status_code=200, detail={"registry_id": str(registry_id)},
+    )
+    await db.commit()
+    pool = await svc.get_pool(pool_id)
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.post(
+    "/service-pools/{pool_id}/members/{registry_id}/resume",
+    response_model=ServicePoolAdminItem,
+)
+async def resume_pool_member(
+    pool_id: uuid.UUID,
+    registry_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    svc = MLBackendService(db)
+    try:
+        member = await svc.resume_pool_member(pool_id, registry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if member is None:
+        raise HTTPException(status_code=404, detail="member not found")
+    await AuditService.log(
+        db, actor=admin, action="ml_service_pool.member_resumed",
+        target_type="ml_service_pool", target_id=str(pool_id),
+        request=request, status_code=200, detail={"registry_id": str(registry_id)},
+    )
+    await db.commit()
+    pool = await svc.get_pool(pool_id)
+    return await _pool_to_admin_item(db, pool)
+
+
+# ── v0.23.3 ADR-0050 §12.3 · topology / runtime-snapshot (v0.23.4 read model) ──
+
+
+@router.get("/topology")
+async def get_topology(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+) -> dict:
+    """Pool/member topology, role-scoped (§12.3). Super Admin sees full member detail
+    + health + GPU; Project Admin sees a trimmed summary."""
+    from app.services.ml_routing.diagnostics import build_topology
+
+    # role may be stored as enum or string; normalize to compare against SUPER_ADMIN.
+    role_val = admin.role.value if hasattr(admin.role, "value") else admin.role
+    return await build_topology(db, super_admin=(role_val == UserRole.SUPER_ADMIN.value))
+
+
+@router.get("/runtime-snapshot")
+async def get_runtime_snapshot(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> dict:
+    """Full runtime snapshot (Super Admin only): router mode + per-pool inflight /
+    circuit / health + GPU summary (§12.3). Best-effort Redis reads."""
+    from app.services.ml_routing.diagnostics import build_runtime_snapshot
+
+    ledger = None
+    if settings.ml_backend_router_mode != "off":
+        try:
+            from app.services.ml_routing.router import make_ledger_from_settings
+
+            ledger = make_ledger_from_settings()
+        except Exception:  # noqa: BLE001 — snapshot must not fail on Redis issues
+            ledger = None
+    try:
+        return await build_runtime_snapshot(db, ledger)
+    finally:
+        if ledger is not None:
+            await ledger.aclose()

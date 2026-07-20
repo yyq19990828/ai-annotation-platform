@@ -174,6 +174,193 @@ class MLBackendService:
         await self.db.flush()
         return pool
 
+    # ── v0.23.3 ADR-0050 §12.1 · Super Admin pool/member management ──────────
+    async def create_pool(
+        self, name: str, *, legacy_instance_id: uuid.UUID | None = None
+    ) -> MLBackendServicePool:
+        """Create a disabled empty pool (§12.1). Adding the first member sets legacy_instance_id
+        + computes capability fingerprint; only then can the pool be enabled (D15)."""
+        pool = MLBackendServicePool(
+            id=uuid.uuid4(),
+            name=name,
+            enabled=False,
+            routing_policy="smooth_weighted_round_robin",
+            legacy_instance_id=legacy_instance_id,
+            routing_generation=1,
+        )
+        self.db.add(pool)
+        await self.db.flush()
+        return pool
+
+    async def get_pool(self, pool_id: uuid.UUID) -> MLBackendServicePool | None:
+        return await self.db.get(MLBackendServicePool, pool_id)
+
+    async def list_pools(self) -> list[MLBackendServicePool]:
+        result = await self.db.execute(
+            select(MLBackendServicePool).order_by(
+                MLBackendServicePool.created_at.desc()
+            )
+        )
+        return list(result.scalars().all())
+
+    async def update_pool(
+        self, pool_id: uuid.UUID, *, name: str | None = None, enabled: bool | None = None
+    ) -> MLBackendServicePool | None:
+        pool = await self.get_pool(pool_id)
+        if pool is None:
+            return None
+        if name is not None:
+            pool.name = name
+        if enabled is not None:
+            if enabled and pool.legacy_instance_id is None:
+                raise ValueError(
+                    "cannot enable a pool with no legacy instance; add a member first (D15)"
+                )
+            pool.enabled = enabled
+            pool.routing_generation += 1
+        await self.db.flush()
+        return pool
+
+    async def delete_pool(self, pool_id: uuid.UUID) -> bool:
+        """Delete a pool. Members cascade; legacy_instance_id FK is RESTRICT so the
+        legacy registry must be removed from membership first (or pool disabled + cleared)."""
+        pool = await self.get_pool(pool_id)
+        if pool is None:
+            return False
+        # Clear legacy_instance_id first (FK RESTRICT); disable to satisfy CHECK.
+        pool.enabled = False
+        pool.legacy_instance_id = None
+        pool.routing_generation += 1
+        await self.db.flush()
+        await self.db.delete(pool)
+        await self.db.flush()
+        return True
+
+    async def add_pool_member(
+        self,
+        pool_id: uuid.UUID,
+        registry_id: uuid.UUID,
+        *,
+        weight: int = 1,
+        capability_snapshot: dict | None = None,
+    ) -> tuple[MLBackendPoolMember, MLBackendServicePool]:
+        """Add a registry as a pool member. Validates capability fingerprint exact match
+        against the pool snapshot (D3); first member seeds the pool fingerprint + legacy.
+
+        Returns (member, pool). Raises CapabilityMismatch on fingerprint divergence.
+        """
+        from app.services.ml_routing.capability import (
+            capability_fingerprint,
+            diff_capabilities,
+        )
+        from app.services.ml_routing.contracts import CapabilityMismatchError
+
+        pool = await self.get_pool(pool_id)
+        if pool is None:
+            raise ValueError(f"pool {pool_id} not found")
+        registry = await self.get(registry_id)
+        if registry is None:
+            raise ValueError(f"registry {registry_id} not found")
+        # Capability fingerprint check (D3): exact match required for active routing.
+        candidate_caps = (
+            (registry.health_meta or {}).get("capabilities")
+            if registry.health_meta
+            else None
+        )
+        candidate_fp = (
+            capability_fingerprint(candidate_caps) if candidate_caps else None
+        )
+        if pool.capability_fingerprint is not None and candidate_fp is not None:
+            mismatch = diff_capabilities(pool.capability_snapshot, candidate_caps)
+            if mismatch is not None:
+                raise CapabilityMismatchError(mismatch)
+        member = MLBackendPoolMember(
+            id=uuid.uuid4(),
+            pool_id=pool_id,
+            registry_id=registry_id,
+            traffic_state="active",
+            weight=weight,
+        )
+        self.db.add(member)
+        # First member seeds the pool fingerprint + legacy_instance_id (§7.3).
+        if pool.capability_fingerprint is None and candidate_fp is not None:
+            pool.capability_fingerprint = candidate_fp
+            pool.capability_snapshot = candidate_caps
+        if pool.legacy_instance_id is None:
+            pool.legacy_instance_id = registry_id
+        pool.routing_generation += 1
+        await self.db.flush()
+        return member, pool
+
+    async def remove_pool_member(
+        self, pool_id: uuid.UUID, registry_id: uuid.UUID
+    ) -> bool:
+        """Remove a member. If it's the legacy_instance_id, clear that pointer + disable
+        pool (D5/D15: non-empty enabled pool must have legacy member)."""
+        pool = await self.get_pool(pool_id)
+        if pool is None:
+            return False
+        result = await self.db.execute(
+            select(MLBackendPoolMember).where(
+                MLBackendPoolMember.pool_id == pool_id,
+                MLBackendPoolMember.registry_id == registry_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member is None:
+            return False
+        await self.db.delete(member)
+        if pool.legacy_instance_id == registry_id:
+            pool.legacy_instance_id = None
+            pool.enabled = False
+        pool.routing_generation += 1
+        await self.db.flush()
+        return True
+
+    async def drain_pool_member(
+        self, pool_id: uuid.UUID, registry_id: uuid.UUID
+    ) -> MLBackendPoolMember | None:
+        """Set member traffic_state=draining (no new leases; keeps existing)."""
+        result = await self.db.execute(
+            select(MLBackendPoolMember).where(
+                MLBackendPoolMember.pool_id == pool_id,
+                MLBackendPoolMember.registry_id == registry_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member is None:
+            return None
+        member.traffic_state = "draining"
+        pool = await self.get_pool(pool_id)
+        if pool is not None:
+            pool.routing_generation += 1
+        await self.db.flush()
+        return member
+
+    async def resume_pool_member(
+        self, pool_id: uuid.UUID, registry_id: uuid.UUID
+    ) -> MLBackendPoolMember | None:
+        """Resume a draining member back to active. Disabled members need re-validation."""
+        result = await self.db.execute(
+            select(MLBackendPoolMember).where(
+                MLBackendPoolMember.pool_id == pool_id,
+                MLBackendPoolMember.registry_id == registry_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member is None:
+            return None
+        if member.traffic_state == "disabled":
+            raise ValueError(
+                "disabled member needs capability re-validation before resume"
+            )
+        member.traffic_state = "active"
+        pool = await self.get_pool(pool_id)
+        if pool is not None:
+            pool.routing_generation += 1
+        await self.db.flush()
+        return member
+
     async def get(self, registry_id: uuid.UUID) -> MLBackendRegistry | None:
         result = await self.db.execute(
             select(MLBackendRegistry).where(MLBackendRegistry.id == registry_id)

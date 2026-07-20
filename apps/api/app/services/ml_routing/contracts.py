@@ -160,6 +160,29 @@ class CapabilityDiff:
     differing_fields: tuple[str, ...]  # canonical field names that differ
 
 
+class CapabilityMismatchError(Exception):
+    """Raised when adding a member whose fingerprint diverges from the pool snapshot.
+
+    Carries the structured diff for the 409 response body (ADR-0050 §7.3 / §B.3).
+    """
+
+    def __init__(self, diff: CapabilityDiff) -> None:
+        self.diff = diff
+        super().__init__(
+            f"capability mismatch: {len(diff.differing_fields)} field(s) differ "
+            f"({', '.join(diff.differing_fields[:5])})"
+        )
+
+    def as_detail(self) -> dict:
+        return {
+            "error_code": "ml_backend_pool_capability_mismatch",
+            "message": str(self),
+            "pool_fingerprint": self.diff.pool_fingerprint,
+            "candidate_fingerprint": self.diff.candidate_fingerprint,
+            "differing_fields": list(self.diff.differing_fields),
+        }
+
+
 class RoutingError(Exception):
     """Base for routing-domain errors surfaced to callers (API → HTTP error code)."""
 
