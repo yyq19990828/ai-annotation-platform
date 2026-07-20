@@ -54,6 +54,10 @@ from app.schemas.ml_backend import (
     RequestValidationErrorResponse,
     ResidencyInfo,
 )
+from app.schemas.ml_routing import (
+    RuntimeSnapshotResponse,
+    TopologyResponse,
+)
 from app.schemas.storage import BucketSummary
 from app.services.audit import AuditService
 from app.services.gpu_arbitration.contracts import (
@@ -1851,13 +1855,14 @@ async def resume_pool_member(
 # ── v0.23.3 ADR-0050 §12.3 · topology / runtime-snapshot (v0.23.4 read model) ──
 
 
-@router.get("/topology")
+@router.get("/topology", response_model=TopologyResponse)
 async def get_topology(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
-) -> dict:
+) -> TopologyResponse:
     """Pool/member topology, role-scoped (§12.3). Super Admin sees full member detail
-    + health + GPU; Project Admin sees a trimmed summary."""
+    + health + GPU; Project Admin sees a trimmed summary (routing_policy/weight/state
+    projected to ``unknown``/``None`` server-side per plan Appendix A.6)."""
     from app.services.ml_routing.diagnostics import build_topology
 
     # role may be stored as enum or string; normalize to compare against SUPER_ADMIN.
@@ -1865,13 +1870,15 @@ async def get_topology(
     return await build_topology(db, super_admin=(role_val == UserRole.SUPER_ADMIN.value))
 
 
-@router.get("/runtime-snapshot")
+@router.get("/runtime-snapshot", response_model=RuntimeSnapshotResponse)
 async def get_runtime_snapshot(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
-) -> dict:
+) -> RuntimeSnapshotResponse:
     """Full runtime snapshot (Super Admin only): router mode + per-pool inflight /
-    circuit / health + GPU summary (§12.3). Best-effort Redis reads."""
+    circuit / health + a freshness envelope (§12.3 + plan §6.3). Best-effort Redis
+    reads — a Redis failure flips the ``router_ledger`` source to ``stale`` rather
+    than dropping the snapshot. Metrics-driven fields stay ``None`` (plan §4.2)."""
     from app.services.ml_routing.diagnostics import build_runtime_snapshot
 
     ledger = None

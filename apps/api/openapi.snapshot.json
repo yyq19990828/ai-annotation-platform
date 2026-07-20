@@ -18309,6 +18309,238 @@
         "title": "RuntimeHints",
         "type": "object"
       },
+      "RuntimeMemberSnapshot": {
+        "description": "One pool member's runtime state.\n\nMetrics-driven fields (``last_selected_at`` / ``selection_count_window``\n/ ``rejection_count_window`` / ``p95_ms`` / ``error_rate``) are ``None``\nby default: plan §4.2 forbids wiring shared route counters, and v0.23.3's\nPrometheus module is declared but unwired. The frontend renders these as\n\"暂无路由指标\" per §6.2; the fields exist in the schema so v0.23.4 does\nnot have to refactor the contract again when metrics arrive.",
+        "properties": {
+          "circuit_open": {
+            "title": "Circuit Open",
+            "type": "boolean"
+          },
+          "error_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Rate"
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
+          "health_fresh": {
+            "title": "Health Fresh",
+            "type": "boolean"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_selected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Selected At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Ms"
+          },
+          "registry_id": {
+            "format": "uuid",
+            "title": "Registry Id",
+            "type": "string"
+          },
+          "registry_state": {
+            "title": "Registry State",
+            "type": "string"
+          },
+          "rejection_count_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Count Window"
+          },
+          "route_inflight": {
+            "title": "Route Inflight",
+            "type": "integer"
+          },
+          "selection_count_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Count Window"
+          },
+          "traffic_state": {
+            "enum": [
+              "active",
+              "draining",
+              "disabled"
+            ],
+            "title": "Traffic State",
+            "type": "string"
+          },
+          "weight": {
+            "default": 1,
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registry_id",
+          "name",
+          "traffic_state",
+          "registry_state",
+          "health_fresh",
+          "route_inflight",
+          "circuit_open"
+        ],
+        "title": "RuntimeMemberSnapshot",
+        "type": "object"
+      },
+      "RuntimePoolSnapshot": {
+        "description": "One pool's runtime snapshot (members carry runtime state).",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimeMemberSnapshot"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routing_generation": {
+            "title": "Routing Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "routing_generation"
+        ],
+        "title": "RuntimePoolSnapshot",
+        "type": "object"
+      },
+      "RuntimeSnapshotResponse": {
+        "description": "Full runtime snapshot read model\n(``GET /admin/ml-integrations/runtime-snapshot``).",
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "partial_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Reason"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimePoolSnapshot"
+            },
+            "title": "Pools",
+            "type": "array"
+          },
+          "router_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Router Mode",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "runtime_snapshot.v1",
+            "default": "runtime_snapshot.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFreshness"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observed_at",
+          "router_mode"
+        ],
+        "title": "RuntimeSnapshotResponse",
+        "type": "object"
+      },
       "SceneOut": {
         "properties": {
           "created_at": {
@@ -19219,6 +19451,55 @@
           }
         },
         "title": "SniffAxisConventionResponse",
+        "type": "object"
+      },
+      "SourceFreshness": {
+        "description": "Per-source freshness entry (plan §6.3 — partial failure must not erase\nother trustworthy sources).",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "name": {
+            "enum": [
+              "topology",
+              "router_ledger",
+              "health",
+              "gpu",
+              "residency"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SourceFreshness",
         "type": "object"
       },
       "StorageConnectionCreate": {
@@ -20565,6 +20846,212 @@
           "name"
         ],
         "title": "ToolClassEntry",
+        "type": "object"
+      },
+      "TopologyMemberInstance": {
+        "description": "One pool member (a backend instance).\n\nProject Admin sees only the identity + traffic fields; Super Admin\nadditionally sees ``state`` / ``last_checked_at`` / ``gpu_resource_id``\n(server-side projection sets them to ``None`` for Project Admin, so the\ngenerated TS type is uniform and the field is simply absent of value).",
+        "properties": {
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "registry_id": {
+            "format": "uuid",
+            "title": "Registry Id",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "traffic_state": {
+            "enum": [
+              "active",
+              "draining",
+              "disabled"
+            ],
+            "title": "Traffic State",
+            "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          }
+        },
+        "required": [
+          "registry_id",
+          "name",
+          "traffic_state"
+        ],
+        "title": "TopologyMemberInstance",
+        "type": "object"
+      },
+      "TopologyPoolEntry": {
+        "description": "One service pool with derived availability fields.\n\n``routable_instances`` / ``status`` / ``status_reason_codes`` are derived\nserver-side from the member list (plan Appendix A.6 requirement: the API\nmust return the derived reason, the frontend only displays).",
+        "properties": {
+          "capability_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Fingerprint"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "legacy_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Instance Id"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyMemberInstance"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routable_instances": {
+            "title": "Routable Instances",
+            "type": "integer"
+          },
+          "routing_generation": {
+            "title": "Routing Generation",
+            "type": "integer"
+          },
+          "routing_policy": {
+            "title": "Routing Policy",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "degraded",
+              "offline",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Status Reason Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "routing_policy",
+          "routing_generation",
+          "member_count",
+          "routable_instances",
+          "status"
+        ],
+        "title": "TopologyPoolEntry",
+        "type": "object"
+      },
+      "TopologyResponse": {
+        "description": "Role-scoped topology read model (``GET /admin/ml-integrations/topology``).",
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyPoolEntry"
+            },
+            "title": "Pools",
+            "type": "array"
+          },
+          "router_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Router Mode",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "topology.v1",
+            "default": "topology.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "router_mode"
+        ],
+        "title": "TopologyResponse",
         "type": "object"
       },
       "TrackerExemplar": {
@@ -25589,16 +26076,14 @@
     },
     "/api/v1/admin/ml-integrations/runtime-snapshot": {
       "get": {
-        "description": "Full runtime snapshot (Super Admin only): router mode + per-pool inflight /\ncircuit / health + GPU summary (§12.3). Best-effort Redis reads.",
+        "description": "Full runtime snapshot (Super Admin only): router mode + per-pool inflight /\ncircuit / health + a freshness envelope (§12.3 + plan §6.3). Best-effort Redis\nreads — a Redis failure flips the ``router_ledger`` source to ``stale`` rather\nthan dropping the snapshot. Metrics-driven fields stay ``None`` (plan §4.2).",
         "operationId": "get_runtime_snapshot_api_v1_admin_ml_integrations_runtime_snapshot_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Runtime Snapshot Api V1 Admin Ml Integrations Runtime Snapshot Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/RuntimeSnapshotResponse"
                 }
               }
             },
@@ -26075,16 +26560,14 @@
     },
     "/api/v1/admin/ml-integrations/topology": {
       "get": {
-        "description": "Pool/member topology, role-scoped (§12.3). Super Admin sees full member detail\n+ health + GPU; Project Admin sees a trimmed summary.",
+        "description": "Pool/member topology, role-scoped (§12.3). Super Admin sees full member detail\n+ health + GPU; Project Admin sees a trimmed summary (routing_policy/weight/state\nprojected to ``unknown``/``None`` server-side per plan Appendix A.6).",
         "operationId": "get_topology_api_v1_admin_ml_integrations_topology_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Topology Api V1 Admin Ml Integrations Topology Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/TopologyResponse"
                 }
               }
             },
