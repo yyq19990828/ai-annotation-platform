@@ -231,6 +231,19 @@ export function effectiveGpuLoaded(
 }
 
 /**
+ * Whether a trusted residency reading proves that the instance is occupying,
+ * acquiring, or releasing residency resources. Empty and unknown readings do
+ * not contribute to pool-level resident counts.
+ */
+export function isActiveResidency(value: unknown, trusted: boolean): boolean {
+  if (!trusted) return false;
+  const residency = parseResidency(value);
+  if (!residency) return false;
+  const axis = residencyStateToAxis(residency.state);
+  return axis === "resident" || axis === "loading" || axis === "draining";
+}
+
+/**
  * Whether cached `state === "connected"` health is fresh enough to trust as a
  * residency source. Mirrors the legacy panel's 3-minute freshness window.
  *

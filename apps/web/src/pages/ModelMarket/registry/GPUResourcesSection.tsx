@@ -132,7 +132,8 @@ function GpuResourceRow({
   const allocatable = resource.allocatable_mb;
   const claimed = resource.claimed_budget_mb;
   const committed = resource.runtime?.committed_mb ?? null;
-  const staticPct = allocatable > 0 ? Math.min(100, (claimed / allocatable) * 100) : 0;
+  const staticPct = allocatable > 0 ? (claimed / allocatable) * 100 : 0;
+  const staticProgressPct = Math.min(100, staticPct);
   const runtimePct =
     committed != null && allocatable > 0
       ? Math.min(100, (committed / allocatable) * 100)
@@ -179,7 +180,7 @@ function GpuResourceRow({
               <span>{Math.round(staticPct)}%</span>
             </div>
             <Progress
-              value={staticPct}
+              value={staticProgressPct}
               className={staticPct > 100 ? "bg-status-caution-soft" : undefined}
             />
             {staticPct > 100 && (

@@ -114,8 +114,10 @@ class RuntimeMemberSnapshot(BaseModel):
     registry_state: str
     health_fresh: bool
     last_checked_at: datetime | None = None
-    route_inflight: int
-    circuit_open: bool
+    # None means the router ledger could not provide a fresh proof.  It must not
+    # be coerced to zero/closed because unload safety is fail-closed.
+    route_inflight: int | None = None
+    circuit_open: bool | None = None
     gpu_resource_id: str | None = None
     # Metrics-driven — always None in v0.23.4 (plan §4.2 / Appendix A.2).
     last_selected_at: datetime | None = None

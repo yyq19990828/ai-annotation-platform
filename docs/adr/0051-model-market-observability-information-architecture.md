@@ -58,10 +58,10 @@ ADR-0050 发布的 `topology` / `runtime-snapshot` 读模型在 v0.23.3 首版�
 
 `evaluateUnloadGate(member, routerMode, ledgerFresh)` 在 `runtimeTopology.ts` 中实现，阻塞条件：
 
-1. 实例 `routable`（必须先 drain）；
+1. 成员未精确进入 `draining`（`active` / `disabled` 都不能作为停流证明）；
 2. `route_inflight > 0`（必须等待归零）；
-3. 路由账本 stale（无法确认 inflight 已归零）；
-4. `router_mode != enforce` 且成员 draining（drain 仅预配置未实际停流）。
+3. `route_inflight` 缺失或路由账本 stale（无法确认 inflight 已归零）；
+4. `router_mode != enforce`（drain 仅预配置未实际停流）。
 
 任一阻塞 → 卸载按钮 disabled + tooltip 列出 reasons；强制卸载（若合同支持）是独立高风险 AlertDialog，不是默认路径。
 

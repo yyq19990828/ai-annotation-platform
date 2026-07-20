@@ -1,8 +1,8 @@
 """v0.23.3 ADR-0050 · ML Backend 服务池数据模型。
 
 在 ``ml_backend_registry`` (物理实例, ADR-0044) 之上叠加一层逻辑服务池:
-一个 pool 表示一组可互换的等价实例, 项目 / pipeline / 用户偏好以 pool id 为配置真值,
-router (P3) 在成员间做原子选择。
+一个 pool 表示一组可互换的等价实例。项目绑定与路由 lineage 使用 pool id；
+既有 pipeline / 用户偏好等公开配置仍使用 registry id，router 在边界解析到 pool。
 
 本模块只定义数据模型; 路由逻辑在 ``app.services.ml_routing`` (P2/P3)。
 registry 行语义不变 — URL / auth / GPU claim / health 仍在 registry 行上, 不复制到 pool 表。
@@ -32,7 +32,7 @@ class MLBackendServicePool(Base):
     """v0.23.3 ADR-0050 · 逻辑服务池。
 
     一行 = 一组可互换的等价 registry 实例。pool id 是**逻辑请求身份**
-    (项目 / pipeline / 用户偏好引用它), registry id 是**物理执行身份**
+    (项目关系绑定与路由 lineage 引用它), registry id 是**物理执行身份**
     (GPU dispatch / transport 用它), 二者永不互换。
 
     非空且 enabled 的 pool 必须有 ``legacy_instance_id``, 且它必须是本池

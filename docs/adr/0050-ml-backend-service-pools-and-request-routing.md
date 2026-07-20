@@ -27,7 +27,7 @@ ADR-0044 把「一个 ML backend 实例」上提为全局 `ml_backend_registry` 
 
 | 选项 | 主要卖点 | 主要劣势 |
 |---|---|---|
-| **A. 新增服务池 + 路由 ledger（本 ADR）** | 逻辑能力与物理实例解耦；项目 / 用户 / pipeline 以 pool id 为配置真值；跨进程原子选择、权重、并发、drain、熔断独立于 GPU 仲裁 | 新增两张表 + Redis ledger + 一套 API；第一方调用链与 JSONB 迁移面广 |
+| **A. 新增服务池 + 路由 ledger（本 ADR）** | 逻辑能力与物理实例解耦；项目启用与请求 lineage 以 pool id 为真值，现有 pipeline / 用户偏好合同继续使用 registry id 并在派发时解析所属 pool；跨进程原子选择、权重、并发、drain、熔断独立于 GPU 仲裁 | 新增两张表 + Redis ledger + 一套 API；第一方调用链需统一解析身份边界 |
 | B. 只把 GPU 仲裁改名复用 | 不加新表 | 违反 ADR-0049 不做负载均衡的边界；CPU / off / observe 实例无路由并发控制；route lease 与 GPU request lease 生命周期冲突 |
 | C. 仅前端把若干 URL 分组 | 零后端改动 | 没有真实路由；选择仍按实例 id；副本扩容时项目配置和用户偏好会漂移 |
 | D. 多策略可插拔 router（随机 / least-request / 加权） | 灵活 | 首版没有数据证明策略收益；插件框架是 speculative 复杂度，违反「一次只做一种生产策略」 |
@@ -58,6 +58,7 @@ ADR-0044 把「一个 ML backend 实例」上提为全局 `ml_backend_registry` 
 | D16 | pool / member / weight / traffic state 任何变更都单调增加 `routing_generation`；旧 generation 不得 acquire。 |
 | D17 | `off` → `observe` → `enforce` 是部署级单一开关（`ML_BACKEND_ROUTER_MODE`）；API / worker / beat 必须读取相同配置，部署时整体重建 / 重启，不能混跑不同 mode。 |
 | D18 | migration 是 forward-only 安全：每个现有 registry 自动得到一个 singleton pool；多成员 pool 创建后 downgrade 不再无损，迁移必须 fail-closed 并提示 forward-only。 |
+| D19 | 字段名或 schema 明确表示 backend / registry 的公共配置不得被迁移静默改写为 pool id。`preannotate_pipeline[].ml_backend_id`、`projects.default_variants` 的 key 以及 `users.preferences.ai` 的 backend 分桶字段保留 registry id；派发时通过 registry 的唯一成员关系取得 requested pool。项目启用/主绑定与新增请求 lineage 仍使用 pool id。 |
 
 ### 数据模型（摘要，详见计划 §5）
 
@@ -70,7 +71,7 @@ ADR-0044 把「一个 ML backend 实例」上提为全局 `ml_backend_registry` 
 
 - `registry_id` → `pool_id`，唯一约束变为 `(project_id, pool_id)`。
 - `Project.ml_backend_id` → `ml_backend_pool_id`，成为项目主服务池；项目启用和主池必须一致。
-- `default_variants` 保留但覆盖语义改为 pool 级；`preannotate_pipeline[].ml_backend_id` → `ml_backend_pool_id`。
+- 项目启用关联上的 `default_variants` 是 pool 级覆盖。`projects.default_variants`、`preannotate_pipeline[].ml_backend_id` 和用户 AI 偏好的既有公共字段保留 registry id，不做 UUID 语义偷换；它们的请求在派发边界解析所属 pool。
 
 请求与结果溯源：
 
@@ -87,12 +88,13 @@ ADR-0044 把「一个 ML backend 实例」上提为全局 `ml_backend_registry` 
 
 ### 路由领域与依赖边界
 
-新增 `app/services/ml_routing/`（`contracts.py` / `capability.py` / `policy.py` / `ledger.py` / `circuit.py` / `router.py` / `diagnostics.py` / `metrics.py`）。边界：
+新增 `app/services/ml_routing/`（`contracts.py` / `capability.py` / `policy.py` / `ledger.py` / `router.py` / `safety.py` / `diagnostics.py` / `metrics.py`）。被动熔断由 `ledger.py` 维护；`safety.py` 提供卸载、成员移除与 registry 删除共用的 quiescence 校验。边界：
 
 - `MLBackendRouter` 返回 selected `MLBackendRegistry` + route lease，**不发 HTTP 请求**。
 - 既有 `MLBackendClient`（`apps/api/app/services/ml_client.py:140`）仍只负责一个实例的 transport / auth / local semaphore / GPU dispatch；router 不反向导入它，避免新循环依赖。
 - router 可以依赖 registry model、routing ledger、capability；**不得**导入 API router 或 worker。
 - GPU arbitration 不导入 ml_routing；route selection 完成后单向调用实例 client。
+- 破坏性实例操作必须复用 `safety.py`，在 router enforce、成员精确 draining、账本可读且清理过期 lease 后 exact inflight=0 时才放行；未知状态失败关闭。
 - 禁止把全部实现塞回 `ml_backend.py` 或 `ml_client.py`，也不新增泛化 BaseRouter / repository 框架。
 
 候选构建顺序固定：先验证项目已启用 pool 与 pool enabled → 再从 DB 读同一 `routing_generation` 下 active member（registry 必须 connected、health 未过期、capability fingerprint exact match）→ Redis acquire 再原子排除 circuit open 与达到 max concurrency 的成员 → 任何一步不确定都返回结构化 reason，不回落到名称 / URL / `legacy_instance_id` 猜测。
@@ -139,20 +141,24 @@ acquire Lua 在一个原子步骤完成：校验 pool / candidate generation →
 
 ### API 合同（冻结）
 
-Super Admin：`GET/POST/GET/PATCH/DELETE /admin/ml-integrations/service-pools[/:pool_id]`、`PUT/DELETE /admin/ml-integrations/service-pools/:pool_id/members/:registry_id`、`POST /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/{drain,resume}`。Project Admin：`GET /projects/:project_id/ml-backend-pools/available`、`PUT /projects/:project_id/ml-backend-pools/:pool_id/enablement`。v0.23.4 读模型：`GET /admin/ml-integrations/{topology,runtime-snapshot}`（topology 双角色服务端裁剪，runtime snapshot 仅 Super Admin）。错误码：`ml_backend_pool_not_enabled` / `ml_backend_pool_unavailable` / `ml_backend_pool_saturated` / `ml_backend_router_unavailable` / `ml_backend_pool_capability_mismatch` / `ml_backend_member_draining` / `ml_backend_member_not_quiescent` / `ml_backend_legacy_instance_unmapped`（HTTP status、Retry-After、日志 reason、OpenAPI schema 一致）。
+Super Admin：`GET/POST/GET/PATCH/DELETE /admin/ml-integrations/service-pools[/:pool_id]`、`PUT/DELETE /admin/ml-integrations/service-pools/:pool_id/members/:registry_id`、`POST /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/{drain,resume}`。Project Admin：`GET /projects/:project_id/ml-backends/pools/available`、`PUT /projects/:project_id/ml-backends/pools/:pool_id/enablement`。v0.23.4 读模型：`GET /admin/ml-integrations/{topology,runtime-snapshot}`（topology 双角色服务端裁剪，runtime snapshot 仅 Super Admin）。错误码：`ml_backend_pool_not_enabled` / `ml_backend_pool_unavailable` / `ml_backend_pool_saturated` / `ml_backend_router_unavailable` / `ml_backend_pool_capability_mismatch` / `ml_backend_member_draining` / `ml_backend_member_not_quiescent` / `ml_backend_legacy_instance_unmapped`（HTTP status、Retry-After、日志 reason、OpenAPI schema 一致）。
 
 ### 兼容窗口与 downgrade
 
 - 新 API / 第一方 Web / worker 用 `ml_backend_pool_id`；旧请求中的 `ml_backend_id` 先尝试解析为 legacy registry id，再解析其唯一 pool；响应增加弃用提示，但本版本不删除字段。
 - lifecycle API 的 `{registry_id}` 永远继续表示实例，不套用上述别名。
 - 旧 `/admin/ml-integrations/all` 保持实例列表，供 v0.23.3 现有模型市场页面继续工作；完整池管理 UI 留给 v0.23.4。
-- 所有 pool 都是 migration 生成的 singleton、且没有新 pool / 多成员 / pool-only 配置时，可按保存映射逆迁移；一旦创建多成员 pool、变更 / 删除 legacy instance 或写入 pool-only pipeline / preference，downgrade 不再无损，迁移 fail-closed 并提示 forward-only。
+- 所有 pool 都是 migration 生成的 singleton、且没有新 pool / 多成员 / pool-only 项目绑定时，可按保存映射逆迁移；一旦创建多成员 pool、变更 / 删除 legacy instance 或写入仅新 schema 可表达的 pool 绑定，downgrade 不再无损，迁移 fail-closed 并提示 forward-only。
+
+### 实施纠偏
+
+初始服务池迁移曾把 `preannotate_pipeline[].ml_backend_id`、`projects.default_variants` 的 backend-keyed 数据和 `users.preferences.ai` 的 backend 分桶字段误写为 pool id，与公共 API schema 及前端 registry 索引不兼容。纠正迁移 `0133_restore_registry_public_ids` 按 singleton 成员关系恢复这些字段的 registry id，并保留项目启用、项目主绑定与请求 lineage 的 pool id；这落实了 D19 的身份边界，不改变服务池路由决策。
 
 ## Consequences
 
 正向：
 
-- 「项目请求一个能力」与「平台选一个实例」首次成为两个明确步骤；项目 / 用户 / pipeline 以 pool id 为配置真值，副本扩容不再需要复制项目配置或漂移用户偏好。
+- 「项目请求一个能力」与「平台选一个实例」首次成为两个明确步骤；项目启用和请求溯源使用 pool id，既有 pipeline / 用户偏好使用 registry id 并通过唯一成员关系进入同一路由边界，不破坏公共 schema 与前端索引。
 - 跨进程原子选择 + 权重 + 并发上限 + drain + 被动熔断首次覆盖 API 与所有 Celery worker；CPU / off / observe 实例和无 GPU claim 实例也参与路由并发控制。
 - routing ledger 与 GPU arbitration ledger 完全分离，二者可同时观测、独立回滚；GPU dispatch 仍用 selected registry id，ADR-0049 的 generation / fence / membership 不受影响。
 - `Prediction` / `FailedPrediction` / `AsyncJob` / audit / logs / metrics 具备 pool + instance 双 ID，多阶段聚合的 stage-level lineage 完整，不再错误归因到 root instance。
@@ -160,7 +166,7 @@ Super Admin：`GET/POST/GET/PATCH/DELETE /admin/ml-integrations/service-pools[/:
 
 负向：
 
-- 一次性成本高：两张新表 + Redis ledger + 一套 API + 八个错误码；第一方调用链（interactive / batch / pipeline / frame fan-out / tracker / retry / secondary）与 7 类 JSONB 引用（`projects.preannotate_pipeline` / `projects.default_variants` / 4 个 `users.preferences.ai.*` 子键 / `AsyncJob.payload`）必须以 machine-readable 映射表迁移，不能按名称或 URL 重算。
+- 一次性成本高：两张新表 + Redis ledger + 一套 API + 八个错误码；第一方调用链（interactive / batch / pipeline / frame fan-out / tracker / retry / secondary）必须明确哪些边界接收 pool id、哪些现有公共字段仍接收 registry id，并使用机器可读的唯一成员映射进入路由。
 - migration forward-only：创建多成员 pool 后无法无损 downgrade。
 - 路由只覆盖第一方调用；平台外直连 predict / warmup / reload（ADR-0049 D13 已在 enforce 下用 admission token 限制）仍可能绕开 router，需运维侧网络与 token 双重约束。
 - 首版无全局路由等待队列：全部候选达到并发上限直接 503，对突发负载没有缓冲；stateful tracker / session 必须 job-scope pin，不能在执行中换实例。

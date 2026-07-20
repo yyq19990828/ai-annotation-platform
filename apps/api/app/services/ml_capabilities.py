@@ -369,6 +369,13 @@ def extract_capabilities(setup: dict | None) -> dict | None:
         warnings.append(managed_lifecycle_warning)
 
     caps: dict = {
+        # Stable compatibility/model identity fields participate in service-pool
+        # interchangeability checks.  Runtime and display metadata remain excluded.
+        "version": setup.get("version"),
+        "protocol_version": setup.get("protocol_version") or "1",
+        "compat_protocol_versions": list(setup.get("compat_protocol_versions") or []),
+        "model_version": setup.get("model_version"),
+        "weights_version": setup.get("weights_version"),
         # v0.14.12 · 透传 backend 自报的 name (如 "grounded-sam2-backend"), 让前端
         # 能力目录显示「源 backend 名」而非用户取的项目别名 (如 "gsam2.1")。
         "name": setup.get("name"),

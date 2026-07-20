@@ -55,7 +55,7 @@
 - **跨窗有状态续追**：SAM2 / SAM3 当前均用上一窗末帧 geometry 作下一窗 seed 的无状态近似，边界可能轻微漂移；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
 
 ### 3.2 Tracker 选择 / 展示（原 R23「Tracker Registry UI」）
-- **关键决策——不做 tracker 注册表 UI，勿走回头路**：原 R23 设想管理员手工「注册 / 启停 tracker adapter」（对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)）；[能力协商 epic](archive/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 改为 backend `/setup` 自报能力、平台动态发现，无需人工注册表，「启停」即 backend 暂停/恢复。
+- **关键决策——不做 tracker 注册表 UI，勿走回头路**：原 R23 设想管理员手工「注册 / 启停 tracker adapter」（对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracking/adapters.py)）；[能力协商 epic](archive/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 改为 backend `/setup` 自报能力、平台动态发现，无需人工注册表，「启停」即 backend 暂停/恢复。
 - **已落地**：能力只读展示（v0.10.37，`supported_trackers` 列）+ sam_variant 尺寸选择（v0.10.36，propagate 对话框 → adapter context → video 池）。视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）；图片工作台悬浮 AI 面板对视频任务**显式禁用 by design**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`）。
 
 ### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态）
@@ -67,7 +67,7 @@
 
 > **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.31 plan](../docs/plans/archive/2026-05-21-v0.10.31-phase4-video-export-plan.md)：视频并入异步 zip 管线、AAP schema 升 1.2（task 层 `media_type` + `video` 子块、`video_track` 无损透传，envelope 不拆 D3）、MOT 16/17/20 + KITTI Tracking 2D 导出（整数 id 按采样网格重编号 D2、附 `fetch_frames.py` 抽帧不物理打包 D1）。**v0.10.44 追加 `yolo-frames-det`**：按采样网格抽帧，合并单帧 `video_bbox` 与摊平后的 `video_track`，导出传统检测训练用 YOLO labels。
 >
-> **统一映射约定**（已落地于 [export_video.py](../apps/api/app/services/export_video.py) 顶部，保留供后续格式扩展参考）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
+> **统一映射约定**（已落地于 [exporting/video.py](../apps/api/app/services/exporting/video.py) 顶部，保留供后续格式扩展参考）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
 
 ### 4.2 导入端（**标注导入已落地，预测导入延后**）
 - AAP JSON 标注导入已能恢复 bbox / polygon / polyline / mask 视频轨迹；mask 内容由 `mask_objects` 携带并在入库时重建内容寻址引用。
@@ -121,8 +121,8 @@
 | track geometry | `apps/api/app/schemas/_jsonb_types.py:337-371` | `VideoTrackKeyframe`/`VideoTrackGeometry` |
 | track 服务 | `apps/api/app/services/annotation.py:629` | `split_track`/`merge_tracks`/`aggregate_bboxes` |
 | tracker job | `apps/api/app/db/models/video_tracker_job.py:20` | `from_frame/to_frame/direction/prompt` |
-| tracker adapter | `apps/api/app/services/video_tracker_adapters.py:39` | `propagate()` 协议 |
-| 视频导出 | `apps/api/app/services/export.py:153` | `export_video_tracks`（裸 JSON，待并入 zip） |
+| tracker adapter | `apps/api/app/services/video_tracking/adapters.py` | `propagate()` 协议 |
+| 视频导出 | `apps/api/app/services/exporting/service.py` | `export_video_tracks`（裸 JSON，待并入 zip） |
 | AAP schema | `apps/api/app/schemas/aap_json.py:33` | `schema_version 1.1`，待加 `media_type` |
 | 导入适配 | `apps/api/app/services/predictions_import.py` | `internal_geometry_to_ls_shape`（video_track 进 errors[]） |
 | 前端 stage | `apps/web/src/pages/Workbench/stage/VideoStage.tsx` | 按帧请求图片 |

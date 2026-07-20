@@ -39,10 +39,13 @@ from app.schemas.ml_routing import (
     TopologyResponse,
 )
 from app.services.ml_routing.ledger import RoutingLedger
+from app.services.ml_routing.capability import capability_fingerprint
 
 
 def _derive_pool_status(
-    member_states: list[tuple[str, bool]],
+    member_states: list[tuple[str, bool, bool, bool]],
+    *,
+    pool_enabled: bool,
 ) -> tuple[PoolAvailabilityStatus, list[str], int]:
     """Derive ``(status, reason_codes, routable_instances)`` from member tuples.
 
@@ -61,11 +64,25 @@ def _derive_pool_status(
     if not member_states:
         return "unknown", ["empty_pool"], 0
 
-    routable = sum(1 for state, _ in member_states if state == "active")
-    disabled_count = sum(1 for state, _ in member_states if state == "disabled")
-    draining_count = sum(1 for state, _ in member_states if state == "draining")
+    routable = sum(
+        1
+        for state, connected, health_fresh, fingerprint_ok in member_states
+        if pool_enabled
+        and state == "active"
+        and connected
+        and health_fresh
+        and fingerprint_ok
+    )
+    disabled_count = sum(1 for state, *_ in member_states if state == "disabled")
+    draining_count = sum(1 for state, *_ in member_states if state == "draining")
     disconnected_active = sum(
-        1 for state, connected in member_states if state == "active" and not connected
+        1 for state, connected, *_ in member_states if state == "active" and not connected
+    )
+    stale_active = sum(
+        1 for state, _, fresh, _ in member_states if state == "active" and not fresh
+    )
+    mismatch_active = sum(
+        1 for state, _, _, match in member_states if state == "active" and not match
     )
 
     reason_codes: list[str] = []
@@ -75,10 +92,16 @@ def _derive_pool_status(
         reason_codes.append(f"{draining_count}_draining")
     if disconnected_active:
         reason_codes.append(f"{disconnected_active}_disconnected")
+    if stale_active:
+        reason_codes.append(f"{stale_active}_health_stale")
+    if mismatch_active:
+        reason_codes.append(f"{mismatch_active}_capability_mismatch")
+    if not pool_enabled:
+        reason_codes.append("pool_disabled")
 
-    if disabled_count == len(member_states):
+    if routable == 0:
         status: PoolAvailabilityStatus = "offline"
-    elif reason_codes:
+    elif routable < len(member_states) or reason_codes:
         status = "degraded"
     else:
         status = "healthy"
@@ -99,6 +122,8 @@ async def build_topology(
         select(MLBackendServicePool).order_by(MLBackendServicePool.created_at.desc())
     )
     pools = list(pools_q.scalars().all())
+    observed_at = datetime.now(UTC)
+    max_age = timedelta(seconds=settings.ml_backend_router_health_max_age_seconds)
     pool_entries: list[TopologyPoolEntry] = []
     for pool in pools:
         members_q = await db.execute(
@@ -113,10 +138,27 @@ async def build_topology(
         member_rows = members_q.all()
         member_models: list[TopologyMemberInstance] = []
         # (traffic_state, registry_connected) tuples for status derivation.
-        member_states: list[tuple[str, bool]] = []
+        member_states: list[tuple[str, bool, bool, bool]] = []
+        singleton_without_fingerprint = (
+            pool.capability_fingerprint is None and len(member_rows) == 1
+        )
         for member, registry in member_rows:
             connected = registry.state == "connected"
-            member_states.append((member.traffic_state, connected))
+            health_fresh = (
+                registry.last_checked_at is not None
+                and registry.last_checked_at >= observed_at - max_age
+            )
+            caps = (registry.health_meta or {}).get("capabilities")
+            fingerprint_ok = bool(
+                isinstance(caps, dict)
+                and (
+                    singleton_without_fingerprint
+                    or capability_fingerprint(caps) == pool.capability_fingerprint
+                )
+            )
+            member_states.append(
+                (member.traffic_state, connected, health_fresh, fingerprint_ok)
+            )
             member_models.append(
                 TopologyMemberInstance(
                     registry_id=registry.id,
@@ -128,7 +170,9 @@ async def build_topology(
                     gpu_resource_id=registry.gpu_resource_id if super_admin else None,
                 )
             )
-        status, reason_codes, routable = _derive_pool_status(member_states)
+        status, reason_codes, routable = _derive_pool_status(
+            member_states, pool_enabled=pool.enabled
+        )
         pool_entries.append(
             TopologyPoolEntry(
                 id=pool.id,
@@ -143,12 +187,12 @@ async def build_topology(
                 member_count=len(member_models),
                 routable_instances=routable,
                 status=status,
-                status_reason_codes=reason_codes,
+                status_reason_codes=reason_codes if super_admin else [],
                 members=member_models,
             )
         )
     return TopologyResponse(
-        generated_at=datetime.now(UTC),
+        generated_at=observed_at,
         router_mode=settings.ml_backend_router_mode,
         pools=pool_entries,
     )
@@ -177,6 +221,13 @@ async def build_runtime_snapshot(
 
     ledger_error: str | None = None
     any_health_stale = False
+    health_timestamps: list[datetime] = []
+
+    if mode != "off" and ledger is not None:
+        try:
+            await ledger.healthcheck()
+        except Exception as exc:  # noqa: BLE001
+            ledger_error = str(exc) or "redis_unavailable"
 
     for pool in pools:
         members_q = await db.execute(
@@ -195,16 +246,17 @@ async def build_runtime_snapshot(
             )
             if not health_fresh:
                 any_health_stale = True
+            if registry.last_checked_at is not None:
+                health_timestamps.append(registry.last_checked_at)
             # route inflight from Redis ledger (best-effort; observe mode may
             # have no ledger; ledger/Redis failure is captured for the source).
-            inflight = 0
-            circuit_open = False
-            if ledger is not None:
+            inflight: int | None = None
+            circuit_open: bool | None = None
+            if ledger is not None and ledger_error is None:
                 try:
-                    leases_key = (
-                        f"{ledger.namespace}:pool:{pool.id}:member:{registry.id}:leases"
+                    inflight = await ledger.member_inflight(
+                        str(pool.id), str(registry.id)
                     )
-                    inflight = await ledger._redis.zcard(leases_key)
                     circuit = await ledger._redis.hgetall(
                         f"{ledger.namespace}:pool:{pool.id}:member:{registry.id}:circuit"
                     )
@@ -215,6 +267,8 @@ async def build_runtime_snapshot(
                     )
                 except Exception as exc:  # noqa: BLE001 — capture for source flag
                     ledger_error = str(exc) or "redis_unavailable"
+                    inflight = None
+                    circuit_open = None
             member_snapshots.append(
                 RuntimeMemberSnapshot(
                     registry_id=registry.id,
@@ -274,7 +328,7 @@ async def build_runtime_snapshot(
     sources.append(
         SourceFreshness(
             name="health",
-            updated_at=observed_at,
+            updated_at=min(health_timestamps) if health_timestamps else None,
             stale=any_health_stale,
             error=None if not any_health_stale else "some_member_health_stale",
         )

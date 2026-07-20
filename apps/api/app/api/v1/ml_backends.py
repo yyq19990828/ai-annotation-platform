@@ -370,13 +370,23 @@ async def unload_ml_backend(
     平台管理员, 与前端「运行时观测」面板 (super_admin only) 及 admin observe/smoke-test 的
     运维基线一致; 不叠加 require_project_owner —— 全局操作按 backend_id 定位, 与 path 里的
     project 无归属关系。构造性的 /warmup 仍保留在 project_owner (见该端点注释)。"""
+    from app.services.ml_routing.safety import (
+        MLBackendQuiescenceError,
+        require_registry_quiescent,
+    )
+
     svc = MLBackendService(
         db,
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
     try:
+        await require_registry_quiescent(db, backend_id)
         result = await svc.unload(backend_id)
+    except MLBackendQuiescenceError as exc:
+        raise HTTPException(
+            status_code=503 if exc.unavailable else 409, detail=exc.as_detail()
+        ) from exc
     except GPUArbiterDispatchError:
         raise
     except Exception as exc:

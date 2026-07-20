@@ -180,10 +180,14 @@ class MLBackendRouter:
                 MLBackendPoolMember.traffic_state == TrafficState.ACTIVE.value,
             )
         )
+        member_rows = list(members.scalars())
+        singleton_without_fingerprint = (
+            pool.capability_fingerprint is None and len(member_rows) == 1
+        )
         candidates: list[RoutingCandidate] = []
         now = datetime.now(UTC)
         max_age = timedelta(seconds=settings.ml_backend_router_health_max_age_seconds)
-        for member in members.scalars():
+        for member in member_rows:
             registry = await self.db.get(MLBackendRegistry, member.registry_id)
             if registry is None:
                 continue
@@ -199,9 +203,11 @@ class MLBackendRouter:
             fingerprint_ok = False
             if pool.capability_fingerprint and caps is not None:
                 fingerprint_ok = capability_fingerprint(caps) == pool.capability_fingerprint
-            elif pool.capability_fingerprint is None and caps is None:
-                # pool with no fingerprint yet (not routed until snapshot is taken)
-                fingerprint_ok = False
+            elif singleton_without_fingerprint and caps is not None:
+                # 0132-created singleton pools predate capability seeding. A single
+                # member is interchangeable with itself; its next health refresh
+                # persists the canonical fingerprint. Multi-member pools stay closed.
+                fingerprint_ok = True
             max_conc = await self._max_concurrency_for(registry.id)
             candidates.append(
                 RoutingCandidate(

@@ -98,7 +98,18 @@ if stored_gen_raw == false then
 else
   stored_gen = tonumber(stored_gen_raw)
 end
-if stored_gen ~= candidate_gen then
+if candidate_gen > stored_gen then
+  -- DB generation is the durable authority.  Atomically advance Redis after a
+  -- missed management-plane sync and discard generation-local SWRR state.
+  for _, field in ipairs(redis.call('HKEYS', pool_state)) do
+    if string.sub(field, 1, 3) == 'cw:' then
+      redis.call('HDEL', pool_state, field)
+    end
+  end
+  redis.call('HDEL', pool_state, 'last_winner')
+  redis.call('HSET', pool_state, 'generation', candidate_gen)
+  stored_gen = candidate_gen
+elseif candidate_gen < stored_gen then
   return {0, 'generation_mismatch'}
 end
 
@@ -188,6 +199,9 @@ local new_ttl_ms = tonumber(ARGV[6])
 
 local lease = redis.call('HMGET', lease_key, 'pool', 'instance', 'owner', 'expires_at', 'state')
 if lease[1] ~= pool_id or lease[2] ~= instance_id or lease[3] ~= owner then
+  return 0
+end
+if lease[5] ~= 'active' then
   return 0
 end
 local expires_at = tonumber(lease[4] or '0')
@@ -284,6 +298,33 @@ redis.call('PEXPIRE', metrics_key, 7200 * 1000)
 return 1
 """
 
+_SYNC_GENERATION_LUA = """
+local key = KEYS[1]
+local expected = tonumber(ARGV[1])
+local current_raw = redis.call('HGET', key, 'generation')
+local current = current_raw and tonumber(current_raw) or nil
+if current ~= nil and current > expected then
+  return {0, current}
+end
+if current == nil or current < expected then
+  for _, field in ipairs(redis.call('HKEYS', key)) do
+    if string.sub(field, 1, 3) == 'cw:' then
+      redis.call('HDEL', key, field)
+    end
+  end
+  redis.call('HDEL', key, 'last_winner')
+  redis.call('HSET', key, 'generation', expected)
+end
+return {1, expected}
+"""
+
+_MEMBER_INFLIGHT_LUA = """
+local leases_key = KEYS[1]
+local now_ms = tonumber(ARGV[1])
+redis.call('ZREMRANGEBYSCORE', leases_key, '-inf', now_ms)
+return redis.call('ZCARD', leases_key)
+"""
+
 
 class RoutingLedger:
     """Async Redis routing ledger client. One per event loop.
@@ -314,6 +355,8 @@ class RoutingLedger:
         self._heartbeat = redis.register_script(_HEARTBEAT_LUA)
         self._finish = redis.register_script(_FINISH_LUA)
         self._cancel = redis.register_script(_CANCEL_LUA)
+        self._sync_generation = redis.register_script(_SYNC_GENERATION_LUA)
+        self._member_inflight = redis.register_script(_MEMBER_INFLIGHT_LUA)
 
     @classmethod
     def from_url(cls, redis_url: str, **kwargs: Any) -> "RoutingLedger":
@@ -504,6 +547,26 @@ class RoutingLedger:
         except RedisError:
             return set()
         return open_ids
+
+    async def healthcheck(self) -> None:
+        """Require a live Redis response; callers decide how to surface failure."""
+        await self._redis.ping()
+
+    async def member_inflight(self, pool_id: str, instance_id: str) -> int:
+        """Return a fresh exact-lease count after atomically sweeping expirations."""
+        result = await self._member_inflight(
+            keys=[_member_leases_key(pool_id, instance_id, self.namespace)],
+            args=[str(_now_ms())],
+        )
+        return int(result)
+
+    async def sync_generation(self, pool_id: str, expected_generation: int) -> bool:
+        """Monotonically synchronize Redis to the exact durable DB generation."""
+        result = await self._sync_generation(
+            keys=[_pool_state_key(pool_id, self.namespace)],
+            args=[str(expected_generation)],
+        )
+        return int(result[0]) == 1
 
     async def bump_generation(self, pool_id: str) -> int:
         """Advance routing_generation (call when pool/member/weight/traffic changes).

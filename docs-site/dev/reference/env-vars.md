@@ -88,7 +88,7 @@ last_reviewed: 2026-07-20
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ML_BACKEND_ROUTER_MODE` | `off` | Deployment-level single switch (off | observe | enforce). off/observe keep legacy instance dispatch (behavior = ); observe additionally computes would-select in a shadow namespace and records diagnostics without gating; enforce uses router-selected instances and fails closed on Redis/topology uncertainty. API/worker/beat read the same value; deploy must rebuild/restart as a unit, do not mix modes across processes. |
+| `ML_BACKEND_ROUTER_MODE` | `off` | Deployment-level single switch (off | observe | enforce). off/observe keep legacy single-instance dispatch; observe additionally computes would-select in a shadow namespace and records diagnostics without gating; enforce uses router-selected instances and fails closed on Redis/topology uncertainty. API/worker/beat read the same value; deploy must rebuild/restart as a unit, do not mix modes across processes. |
 | `ML_BACKEND_ROUTER_HEALTH_MAX_AGE_SECONDS` | `90` | Health snapshot freshness gate: members whose last_checked_at is older than this are not eligible candidates (their capability may be stale). |
 | `ML_BACKEND_ROUTER_LEASE_TTL_SECONDS` | `120` | Route lease TTL must exceed the normal transport timeout; long tasks heartbeat. |
 | `ML_BACKEND_ROUTER_HEARTBEAT_INTERVAL_SECONDS` | `15` | — |

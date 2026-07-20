@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 
 from app.services.ml_routing import capability as cap
 from app.services.ml_routing import policy as swrr
@@ -127,6 +129,96 @@ def test_variant_axes_normalized_and_sorted() -> None:
             {"key": "sam", "values": ["base", "tiny"]},
         ]
     }
+    assert cap.capability_fingerprint(a) == cap.capability_fingerprint(b)
+
+
+def _production_caps(*, model_id: str = "detector", task: str = "detection") -> dict:
+    from app.services.ml_capabilities import extract_capabilities
+
+    result = extract_capabilities(
+        {
+            "protocol_version": "2",
+            "model_version": "weights-7",
+            "infra": "onnx",
+            "models": [
+                {
+                    "id": model_id,
+                    "task": task,
+                    "supported_inputs": ["crop", "full_image"],
+                    "supported_geometric_outputs": ["polygon", "bbox"],
+                    "supported_variants": [
+                        {
+                            "key": "size",
+                            "label": "Size",
+                            "variants": [
+                                {"value": "s", "label": "Small"},
+                                {"value": "m", "label": "Medium"},
+                            ],
+                        }
+                    ],
+                    "default_variants": {"size": "s"},
+                    "resource_profile": {"device": "gpu", "batchable": True},
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "threshold": {
+                                "type": "number",
+                                "default": 0.5,
+                                "description": "UI copy",
+                            }
+                        },
+                    },
+                }
+            ],
+        }
+    )
+    assert result is not None
+    return result
+
+
+def test_production_models_are_fingerprinted_and_order_independent() -> None:
+    a = _production_caps()
+    b = _production_caps()
+    b["models"][0]["supported_inputs"].reverse()
+    b["models"][0]["supported_geometric_outputs"].reverse()
+    b["models"][0]["supported_variants"][0]["variants"].reverse()
+    assert cap.capability_fingerprint(a) == cap.capability_fingerprint(b)
+
+
+@pytest.mark.parametrize(
+    ("field", "mutate"),
+    [
+        ("models", lambda value: value["models"][0].update(id="other")),
+        ("models", lambda value: value["models"][0].update(task="classification")),
+        (
+            "models",
+            lambda value: value["models"][0]["params"]["properties"]["threshold"].update(
+                default=0.7
+            ),
+        ),
+        ("models", lambda value: value["models"][0].update(default_variants={"size": "m"})),
+        ("models", lambda value: value["models"][0]["resource_profile"].update(batchable=False)),
+        ("protocol_version", lambda value: value.update(protocol_version="3")),
+        ("model_version", lambda value: value.update(model_version="weights-8")),
+    ],
+)
+def test_production_routing_contract_changes_fingerprint(field, mutate) -> None:
+    pool = _production_caps()
+    candidate = _production_caps()
+    mutate(candidate)
+    diff = cap.diff_capabilities(pool, candidate)
+    assert diff is not None
+    assert field in diff.differing_fields
+
+
+def test_production_display_and_runtime_fields_do_not_change_fingerprint() -> None:
+    a = _production_caps()
+    b = _production_caps()
+    b["models"][0]["display_name"] = "展示名称"
+    b["models"][0]["supported_variants"][0]["label"] = "尺寸"
+    b["models"][0]["params"]["properties"]["threshold"]["description"] = "另一段文案"
+    b["models"][0]["classes"] = [{"index": 0, "name": "loaded-only"}]
+    b["models"][0]["resource_profile"]["device"] = "cpu"
     assert cap.capability_fingerprint(a) == cap.capability_fingerprint(b)
 
 

@@ -155,6 +155,33 @@ async def test_acquire_generation_mismatch_rejected(ledger: RoutingLedger) -> No
     assert reason == RejectionReason.GENERATION_MISMATCH
 
 
+@pytest.mark.asyncio
+async def test_newer_db_generation_self_heals_redis_state(ledger: RoutingLedger) -> None:
+    pool_id = uuid.uuid4().hex
+    cands = [_candidate(_ids(1)[0])]
+    first, _ = await ledger.acquire(pool_id, 2, cands, owner="t", operation="p")
+    assert first is not None
+    await ledger.cancel(first)
+
+    newer, reason = await ledger.acquire(pool_id, 7, cands, owner="t", operation="p")
+    assert newer is not None
+    assert newer.generation == 7
+    assert reason is None
+
+    stale, reason = await ledger.acquire(pool_id, 6, cands, owner="t", operation="p")
+    assert stale is None
+    assert reason == RejectionReason.GENERATION_MISMATCH
+
+
+@pytest.mark.asyncio
+async def test_sync_generation_is_exact_idempotent_and_monotonic(ledger: RoutingLedger) -> None:
+    pool_id = uuid.uuid4().hex
+    assert await ledger.sync_generation(pool_id, 7) is True
+    assert await ledger.sync_generation(pool_id, 7) is True
+    assert await ledger.sync_generation(pool_id, 8) is True
+    assert await ledger.sync_generation(pool_id, 7) is False
+
+
 # ── SWRR distribution over Redis ──────────────────────────────────────────────
 
 
@@ -186,6 +213,19 @@ async def test_heartbeat_extends_unexpired_lease(ledger: RoutingLedger) -> None:
     assert lease is not None
     ok = await ledger.heartbeat(lease)
     assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_cannot_resurrect_terminal_lease(ledger: RoutingLedger) -> None:
+    pool_id = uuid.uuid4().hex
+    instance_id = _ids(1)[0]
+    lease, _ = await ledger.acquire(
+        pool_id, 1, [_candidate(instance_id)], owner="t", operation="p"
+    )
+    assert lease is not None
+    assert await ledger.cancel(lease) is True
+    assert await ledger.heartbeat(lease) is False
+    assert await ledger.member_inflight(pool_id, instance_id) == 0
 
 
 @pytest.mark.asyncio

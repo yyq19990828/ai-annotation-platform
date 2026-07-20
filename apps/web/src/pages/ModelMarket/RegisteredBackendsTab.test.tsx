@@ -82,6 +82,10 @@ vi.mock("./useGlobalRegistry", () => ({
     isPending: false,
   }),
   usePatchServicePool: () => ({ mutate: mockPatchPoolMutate, isPending: false }),
+  useCreateServicePool: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteServicePool: () => ({ mutate: vi.fn(), isPending: false }),
+  usePutPoolMember: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemovePoolMember: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ── GlobalBackendFormModal mock ──────────────────────────────────────────────

@@ -3,53 +3,52 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-20
 ---
 
 # ML Backend
 
-## 列出 / 详情
+## 全局注册表
 
 ```http
-GET /api/v1/admin/ml-integrations              # 当前用户可见
-GET /api/v1/admin/ml-integrations/all          # 全局列表
-GET /api/v1/admin/ml-integrations/:id
+GET    /api/v1/admin/ml-integrations/all                         # 全局列表
+POST   /api/v1/admin/ml-integrations/registry                    # 新增（仅超级管理员）
+PUT    /api/v1/admin/ml-integrations/registry/:registry_id       # 编辑（仅超级管理员）
+DELETE /api/v1/admin/ml-integrations/registry/:registry_id       # 删除（仅超级管理员）
+POST   /api/v1/admin/ml-integrations/registry/:registry_id/health # 健康检查
+POST   /api/v1/admin/ml-integrations/probe                       # 注册前无副作用探测
 ```
 
-## 创建
+一个物理 backend 对应一条全局 registry 记录；项目只引用它，不复制 URL、鉴权或能力快照。创建请求使用真实注册合同：
 
 ```http
-POST /api/v1/admin/ml-integrations
+POST /api/v1/admin/ml-integrations/registry
 {
   "name": "sam-prod",
-  "type": "grounded-sam-2",
-  "url": "http://172.17.0.1:8001",   // ⚠️ 不能 loopback
-  "api_key": "...",
-  "default_prompt": "person",
-  "default_threshold": 0.3
+  "url": "http://172.17.0.1:8001",
+  "is_interactive": true,
+  "auth_method": "token",
+  "auth_token": "...",
+  "extra_params": { "max_concurrency": 4 },
+  "gpu_resource_id": "gpu-node-a/GPU-1234abcd",
+  "vram_budget_mb": 12288,
+  "eviction_priority": 0
 }
 ```
 
-URL 校验拒绝 `localhost / 127.x.x.x / 0.0.0.0 / ::1`（[ADR 0015](../../dev/adr/archive/0015-ml-backend-url-validation)）。失败返回 422 + 提示用 docker bridge IP / service DNS。
+`gpu_resource_id` 与 `vram_budget_mb` 必须同时填写或同时为 `null`。`type`、默认 prompt、默认阈值和 `api_key` 不是注册字段；backend 类型及推理参数由 `/setup` 自描述，Bearer 凭据使用 `auth_method="token"` + `auth_token`。
+
+URL 校验拒绝 host 精确为 `localhost / 127.0.0.1 / 0.0.0.0 / ::1`（[ADR 0015](../../dev/adr/archive/0015-ml-backend-url-validation)）。失败返回 422，并提示改用 Docker service DNS、bridge IP 或可路由域名。
 
 ## 修改 / 删除
 
-```http
-PATCH  /api/v1/admin/ml-integrations/:id
-DELETE /api/v1/admin/ml-integrations/:id       # 仅 super_admin
-```
+编辑使用 `PUT /registry/:registry_id` 的部分字段请求体。受 GPU 管理的实例若已有运行时 epoch，修改 URL、鉴权、GPU claim 或 `extra_params` 前必须先完成 retirement。
 
-删除前若有项目引用会提示 N 个项目，确认后级联清掉项目侧绑定（`projects.ml_backend_id = NULL`）。
+删除不会把未知运行态当作空闲。若仍有运行中的预测任务、未完成 GPU retirement，或无法证明成员处于 `ML_BACKEND_ROUTER_MODE=enforce`、`draining` 且新鲜路由账本中的 exact `inflight=0`，接口返回 409/503 并保留记录。满足门禁后才解除服务池成员关系和项目主绑定；历史预测按外键策略继续保留可追溯性。
 
 ## 健康检查
 
-注册时 / 详情查询时后端会调用 `GET <url>/health`（5s 超时）。结果在响应里：
-
-```json
-{ "id": 1, "url": "...", "health": { "ok": true, "latency_ms": 45 } }
-```
-
-不阻断创建——网络抖动不应让你卡住。
+注册前可用 `/probe` 测试远端 `/health` 与 `/setup`，不会写数据库。注册后的 `/registry/:registry_id/health` 会刷新连接状态、能力快照和 singleton 服务池能力指纹；能力合同漂移时，相关成员会停止接流等待重新校验。远端暂时不可达不会阻断创建，但 registry 会显示错误状态。
 
 ## 项目启用与主后端
 
@@ -70,7 +69,7 @@ PUT /api/v1/projects/:id/ml-backends/:registry_id/enablement
 
 - list / get / setup / capabilities / interactive inference：调用者必须能看见该项目；读指定 backend 时还要求它已对本项目启用。
 - create / update / delete(enablement disable) / health / capabilities refresh / warmup / predict-test：要求项目 owner（超级管理员仍按全局特权放行）。仅有 `project_admin` 角色但不是该项目 owner 不足以执行写操作。
-- reload / unload：**仅超级管理员**。二者改写的是「全局 backend 显存驻留 / 常驻变体」——同一物理 backend 被多个项目共用，项目 owner 若能触发就会驱逐 / 换掉其他项目正在用的权重。故这类破坏性驻留操作收口到平台管理员，与「运行时观测」面板（super_admin only）及 admin `observe/smoke-test` 运维基线一致。构造性的 warmup 是项目自身预标 / 交互推理的前置（如预热加载类别表），刻意保留在项目 owner。
+- reload / unload：**仅超级管理员**。二者改写的是「全局 backend 显存驻留 / 常驻变体」——同一物理 backend 被多个项目共用，项目 owner 若能触发就会驱逐 / 换掉其他项目正在用的权重。故这类破坏性驻留操作收口到平台管理员，与「运行时观测」面板（super_admin only）及 admin `observe/smoke-test` 运维基线一致。纳入服务池的实例执行 unload 前还必须处于 `enforce + draining`，且 Redis 路由账本能提供新鲜的 exact `inflight=0` 证明；任一值缺失或 Redis 失联都返回 409/503，不会将未知解释为空闲。构造性的 warmup 是项目自身预标 / 交互推理的前置（如预热加载类别表），刻意保留在项目 owner。
 - 带 `task_id` 的测试 / 交互端点还会校验 task 确实属于 URL 中的 project；不属于时统一返回 404，避免跨项目 IDOR 与存在性泄露。
 
 设主后端 / AI 开关（走项目本体）：
@@ -87,6 +86,38 @@ PATCH /api/v1/projects/:id
 ```
 
 > 旧的项目作用域端点仍向后兼容：`POST /api/v1/projects/:id/ml-backends`（按 URL 复用或新建全局项 + 启用）、`DELETE`（停用）。主推路径是上面的启用清单。
+
+## 项目服务池绑定
+
+项目设置仍可通过 registry 兼容端点展示和选择物理 backend；存储层会把 registry 解析到它唯一所属的服务池。新调用方若直接管理逻辑路由边界，使用 pool 端点：
+
+```http
+GET /api/v1/projects/:id/ml-backends/pools/available
+PUT /api/v1/projects/:id/ml-backends/pools/:pool_id/enablement
+{ "enabled": true, "default_variants": {} }
+```
+
+项目启用、项目主绑定和请求 lineage 使用 pool id；预标注 pipeline、项目默认变体和用户 AI 偏好等既有公共字段继续使用 registry id。两类 UUID 不可互换，服务端只通过唯一成员关系做显式解析。
+
+## 服务池管理与观测
+
+```http
+GET    /api/v1/admin/ml-integrations/service-pools
+POST   /api/v1/admin/ml-integrations/service-pools
+GET    /api/v1/admin/ml-integrations/service-pools/:pool_id
+PATCH  /api/v1/admin/ml-integrations/service-pools/:pool_id
+DELETE /api/v1/admin/ml-integrations/service-pools/:pool_id
+PUT    /api/v1/admin/ml-integrations/service-pools/:pool_id/members/:registry_id
+DELETE /api/v1/admin/ml-integrations/service-pools/:pool_id/members/:registry_id
+POST   /api/v1/admin/ml-integrations/service-pools/:pool_id/members/:registry_id/drain
+POST   /api/v1/admin/ml-integrations/service-pools/:pool_id/members/:registry_id/resume
+GET    /api/v1/admin/ml-integrations/topology
+GET    /api/v1/admin/ml-integrations/runtime-snapshot
+```
+
+服务池和成员 mutation 仅超级管理员可用。成员 PUT 是幂等 upsert：对已在本池的实例只更新权重，保留 traffic state；实例已属于其他池、能力指纹不一致或能力基线不可用时返回 409。移除成员与物理删除 registry 共用上述停流证明；删除服务池前必须先安全移除全部成员。
+
+`topology` 对项目管理员和超级管理员开放，但在服务端裁剪项目管理员不可见的权重、接流状态和 GPU 标识；`runtime-snapshot` 仅超级管理员可用，并携带各数据来源的 `updated_at / stale / error` 与 partial 信封。
 
 ## 协议
 
@@ -118,7 +149,7 @@ POST /api/v1/projects/:id/ml-backends/:bid/capabilities/refresh
 
 ## 审计
 
-`ml_backend.created` / `updated` / `deleted` 全部进 audit_logs。
+全局注册写入 `ml_registry.created / updated / deleted`，服务池及成员操作写入 `ml_service_pool.*`；项目兼容端点继续记录 `ml_backend.*`。全部事件进入 `audit_logs`。
 
 ## 相关
 

@@ -3242,6 +3242,14 @@
       "BackendCapabilities": {
         "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.\n\nv0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);\n其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。",
         "properties": {
+          "compat_protocol_versions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Compat Protocol Versions",
+            "type": "array"
+          },
           "infra": {
             "default": "unknown",
             "title": "Infra",
@@ -3270,6 +3278,17 @@
             "title": "Modalities",
             "type": "array"
           },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
           "models": {
             "default": [],
             "items": {
@@ -3288,6 +3307,11 @@
               }
             ],
             "title": "Name"
+          },
+          "protocol_version": {
+            "default": "1",
+            "title": "Protocol Version",
+            "type": "string"
           },
           "supported_geometric_outputs": {
             "default": [],
@@ -3337,6 +3361,17 @@
             "title": "Text Driven Trackers",
             "type": "array"
           },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
           "warmup_endpoint": {
             "default": false,
             "title": "Warmup Endpoint",
@@ -3349,6 +3384,17 @@
             },
             "title": "Warnings",
             "type": "array"
+          },
+          "weights_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weights Version"
           }
         },
         "title": "BackendCapabilities",
@@ -18313,8 +18359,15 @@
         "description": "One pool member's runtime state.\n\nMetrics-driven fields (``last_selected_at`` / ``selection_count_window``\n/ ``rejection_count_window`` / ``p95_ms`` / ``error_rate``) are ``None``\nby default: plan §4.2 forbids wiring shared route counters, and v0.23.3's\nPrometheus module is declared but unwired. The frontend renders these as\n\"暂无路由指标\" per §6.2; the fields exist in the schema so v0.23.4 does\nnot have to refactor the contract again when metrics arrive.",
         "properties": {
           "circuit_open": {
-            "title": "Circuit Open",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circuit Open"
           },
           "error_rate": {
             "anyOf": [
@@ -18402,8 +18455,15 @@
             "title": "Rejection Count Window"
           },
           "route_inflight": {
-            "title": "Route Inflight",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Inflight"
           },
           "selection_count_window": {
             "anyOf": [
@@ -18436,9 +18496,7 @@
           "name",
           "traffic_state",
           "registry_state",
-          "health_fresh",
-          "route_inflight",
-          "circuit_open"
+          "health_fresh"
         ],
         "title": "RuntimeMemberSnapshot",
         "type": "object"

@@ -96,6 +96,8 @@ from app.services.gpu_arbitration.rollout_state import (
 from app.services.ml_backend import (
     GPUBackendManagedMutationBlocked,
     MLBackendDeleteBlocked,
+    MLBackendPoolCapabilityUnavailable,
+    MLBackendPoolMemberConflict,
     MLBackendService,
     MLBackendURLConflict,
 )
@@ -968,9 +970,22 @@ async def delete_registry(
     projects.ml_backend_pool_id / project_ml_backend_pool (CASCADE) / 历史 prediction (SET NULL)。
     v0.23.3 ADR-0050 · 删除前须先 drain + inflight=0 + GPU retirement + 成员移除
     (legacy_instance_id FK RESTRICT + member FK RESTRICT)。"""
+    from app.services.ml_routing.safety import (
+        MLBackendQuiescenceError,
+        require_registry_quiescent,
+    )
+
     svc = MLBackendService(db)
     try:
+        exists = await svc.validate_delete(registry_id)
+        if not exists:
+            raise HTTPException(status_code=404, detail="ML Backend not found")
+        await require_registry_quiescent(db, registry_id)
         ok = await svc.delete(registry_id)
+    except MLBackendQuiescenceError as exc:
+        raise HTTPException(
+            status_code=503 if exc.unavailable else 409, detail=exc.as_detail()
+        ) from exc
     except MLBackendDeleteBlocked as exc:
         raise HTTPException(
             status_code=409,
@@ -1037,13 +1052,23 @@ async def unload_registry_backend(
 ) -> MLBackendUnloadResponse:
     """全局卸载 backend，不要求它已被任一项目启用。"""
 
+    from app.services.ml_routing.safety import (
+        MLBackendQuiescenceError,
+        require_registry_quiescent,
+    )
+
     svc = MLBackendService(
         db,
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
     try:
+        await require_registry_quiescent(db, registry_id)
         result = await svc.unload(registry_id)
+    except MLBackendQuiescenceError as exc:
+        raise HTTPException(
+            status_code=503 if exc.unavailable else 409, detail=exc.as_detail()
+        ) from exc
     except GPUArbiterDispatchError:
         raise
     except Exception as exc:
@@ -1672,7 +1697,10 @@ async def create_service_pool(
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> ServicePoolAdminItem:
     svc = MLBackendService(db)
-    pool = await svc.create_pool(data.name, legacy_instance_id=data.legacy_instance_id)
+    try:
+        pool = await svc.create_pool(data.name, legacy_instance_id=data.legacy_instance_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     await AuditService.log(
         db, actor=admin, action="ml_service_pool.created",
         target_type="ml_service_pool", target_id=str(pool.id),
@@ -1729,7 +1757,10 @@ async def delete_service_pool(
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> None:
     svc = MLBackendService(db)
-    ok = await svc.delete_pool(pool_id)
+    try:
+        ok = await svc.delete_pool(pool_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="service pool not found")
     await AuditService.log(
@@ -1763,8 +1794,25 @@ async def add_or_update_pool_member(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CapabilityMismatchError as exc:
         raise HTTPException(status_code=409, detail=exc.as_detail()) from exc
+    except MLBackendPoolMemberConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_pool_member_conflict",
+                "message": str(exc),
+                "current_pool_id": str(exc.pool_id),
+            },
+        ) from exc
+    except MLBackendPoolCapabilityUnavailable as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_pool_capability_unavailable",
+                "message": str(exc),
+            },
+        ) from exc
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.member_added",
+        db, actor=admin, action="ml_service_pool.member_upserted",
         target_type="ml_service_pool", target_id=str(pool_id),
         request=request, status_code=200,
         detail={"registry_id": str(registry_id), "weight": data.weight},
@@ -1785,8 +1833,19 @@ async def remove_pool_member(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> ServicePoolAdminItem:
+    from app.services.ml_routing.safety import (
+        MLBackendQuiescenceError,
+        require_registry_quiescent,
+    )
+
     svc = MLBackendService(db)
-    ok = await svc.remove_pool_member(pool_id, registry_id)
+    try:
+        await require_registry_quiescent(db, registry_id)
+        ok = await svc.remove_pool_member(pool_id, registry_id)
+    except MLBackendQuiescenceError as exc:
+        raise HTTPException(
+            status_code=503 if exc.unavailable else 409, detail=exc.as_detail()
+        ) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="member not found")
     await AuditService.log(
@@ -1893,4 +1952,9 @@ async def get_runtime_snapshot(
         return await build_runtime_snapshot(db, ledger)
     finally:
         if ledger is not None:
-            await ledger.aclose()
+            try:
+                await ledger.aclose()
+            except Exception:
+                # Snapshot data already records Redis freshness; a client-close
+                # failure must not replace that typed partial response with 500.
+                pass

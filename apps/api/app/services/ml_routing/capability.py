@@ -22,16 +22,21 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-# Default values filled when a capability field is missing, so "omitted" and
-# "explicitly default" produce the same fingerprint (golden fixture §C.1).
+# The protocol currently persists normalized ``models[]`` entries.  Keep the old
+# flat fields as a compatibility branch for snapshots written by older versions;
+# production snapshots use ``models`` and are no longer fingerprinted as an empty
+# flat capability.
 _DEFAULTS: dict[str, Any] = {
+    "version": None,
     "protocol_version": "1",
+    "compat_protocol_versions": [],
+    "model_version": None,
+    "weights_version": None,
+    "models": [],
     "model_ids": [],
     "task": None,
     "modality": None,
     "infra": None,
-    "model_version": None,
-    "weights_version": None,
     "supported_prompts": [],
     "supported_inputs": [],
     "supported_outputs": [],
@@ -43,25 +48,7 @@ _DEFAULTS: dict[str, Any] = {
     "warmup": False,
 }
 
-# Canonical field order (frozen; changing it changes every fingerprint).
-_CANONICAL_FIELDS: tuple[str, ...] = (
-    "protocol_version",
-    "model_ids",
-    "task",
-    "modality",
-    "infra",
-    "model_version",
-    "weights_version",
-    "supported_prompts",
-    "supported_inputs",
-    "supported_outputs",
-    "supported_trackers",
-    "parameter_schema",
-    "variant_axes",
-    "stateful",
-    "batchable",
-    "warmup",
-)
+_CANONICAL_FIELDS: tuple[str, ...] = tuple(_DEFAULTS)
 
 # Fields that are always excluded from routing fingerprint (runtime/display-only).
 # Listed for documentation; the canonicalization only reads _CANONICAL_FIELDS so
@@ -92,7 +79,8 @@ def _sorted_unique(value: list[Any]) -> list[Any]:
     if not value:
         return []
     # Capability lists are strings or dicts-with-stable-keys; sort by JSON repr for determinism.
-    return sorted({json.dumps(v, sort_keys=True, ensure_ascii=False): v for v in value}.values())
+    keyed = {json.dumps(v, sort_keys=True, ensure_ascii=False): v for v in value}
+    return [keyed[key] for key in sorted(keyed)]
 
 
 def _canonicalize_list_field(value: Any) -> list[Any]:
@@ -101,6 +89,32 @@ def _canonicalize_list_field(value: Any) -> list[Any]:
     if isinstance(value, (list, tuple)):
         return _sorted_unique(list(value))
     return [value]
+
+
+_DISPLAY_ONLY_KEYS = {
+    "label",
+    "title",
+    "description",
+    "placeholder",
+    "order",
+    "group",
+    "help_text",
+    "note",
+}
+
+
+def _canonicalize_schema_value(value: Any) -> Any:
+    """Recursively normalize request schemas while dropping presentation hints."""
+    if isinstance(value, dict):
+        return {
+            key: _canonicalize_schema_value(value[key])
+            for key in sorted(value)
+            if key not in _DISPLAY_ONLY_KEYS
+        }
+    if isinstance(value, list):
+        normalized = [_canonicalize_schema_value(item) for item in value]
+        return _sorted_unique(normalized)
+    return value
 
 
 def _canonicalize_param_schema(value: Any) -> dict:
@@ -113,17 +127,7 @@ def _canonicalize_param_schema(value: Any) -> dict:
     """
     if not isinstance(value, dict):
         return {}
-    # Normalize: sort keys, drop display-only sibling keys.
-    display_only = {"label", "description", "placeholder", "order", "group", "help_text"}
-    out: dict[str, Any] = {}
-    for key in sorted(value):
-        field_def = value[key]
-        if not isinstance(field_def, dict):
-            out[key] = field_def
-            continue
-        norm = {k: field_def[k] for k in sorted(field_def) if k not in display_only}
-        out[key] = norm
-    return out
+    return _canonicalize_schema_value(value)
 
 
 def _canonicalize_variant_axes(value: Any) -> list[dict]:
@@ -144,6 +148,92 @@ def _canonicalize_variant_axes(value: Any) -> list[dict]:
     return out
 
 
+_MODEL_LIST_FIELDS = {
+    "supported_prompts",
+    "supported_inputs",
+    "supported_geometric_outputs",
+    "output_attribute_types",
+    "supported_text_outputs",
+    "supported_trackers",
+    "text_driven_trackers",
+}
+
+_MODEL_SCALAR_FIELDS = (
+    "id",
+    "task",
+    "model_family",
+    "infra",
+    "modality",
+    "is_interactive",
+    "default_input_type",
+    "variants_shared_across_tasks",
+    "composition",
+)
+
+
+def _canonicalize_supported_variants(value: Any) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    axes: list[dict] = []
+    for axis in value:
+        if not isinstance(axis, dict):
+            continue
+        variants = []
+        for variant in axis.get("variants") or axis.get("values") or []:
+            if isinstance(variant, dict):
+                variants.append(_canonicalize_schema_value(variant))
+            else:
+                variants.append({"value": variant})
+        axes.append(
+            {
+                "key": axis.get("key"),
+                "default": axis.get("default"),
+                "variants": _sorted_unique(variants),
+            }
+        )
+    return sorted(axes, key=lambda item: str(item.get("key") or ""))
+
+
+def _canonicalize_models(value: Any) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    models: list[dict] = []
+    for raw_model in value:
+        if not isinstance(raw_model, dict):
+            continue
+        model = {field: raw_model.get(field) for field in _MODEL_SCALAR_FIELDS}
+        for field in _MODEL_LIST_FIELDS:
+            model[field] = _canonicalize_list_field(raw_model.get(field))
+        model["output_attribute_schema"] = _canonicalize_schema_value(
+            raw_model.get("output_attribute_schema") or []
+        )
+        model["supported_variants"] = _canonicalize_supported_variants(
+            raw_model.get("supported_variants")
+        )
+        combinations = raw_model.get("variant_combinations") or []
+        model["variant_combinations"] = _sorted_unique(
+            [list(combo) if isinstance(combo, (list, tuple)) else combo for combo in combinations]
+        )
+        model["default_variants"] = _canonicalize_schema_value(
+            raw_model.get("default_variants") or {}
+        )
+        model["default_thresholds"] = _canonicalize_schema_value(
+            raw_model.get("default_thresholds") or {}
+        )
+        model["params"] = _canonicalize_param_schema(raw_model.get("params"))
+        resource_profile = raw_model.get("resource_profile") or {}
+        model["batchable"] = bool(
+            resource_profile.get("batchable", False)
+            if isinstance(resource_profile, dict)
+            else False
+        )
+        model["exemplar_capabilities"] = _canonicalize_schema_value(
+            raw_model.get("exemplar_capabilities") or {}
+        )
+        models.append(model)
+    return sorted(models, key=lambda item: str(item.get("id") or ""))
+
+
 def canonicalize_capability(raw: dict | None) -> dict:
     """Build the canonical routing-capability snapshot from a raw ``/setup`` / health_meta dict.
 
@@ -157,11 +247,14 @@ def canonicalize_capability(raw: dict | None) -> dict:
 
     canonical: dict[str, Any] = {}
     for field_name in _CANONICAL_FIELDS:
-        if field_name == "parameter_schema":
+        if field_name == "models":
+            canonical[field_name] = _canonicalize_models(caps.get(field_name))
+        elif field_name == "parameter_schema":
             canonical[field_name] = _canonicalize_param_schema(caps.get(field_name))
         elif field_name == "variant_axes":
             canonical[field_name] = _canonicalize_variant_axes(caps.get(field_name))
         elif field_name in {
+            "compat_protocol_versions",
             "model_ids",
             "supported_prompts",
             "supported_inputs",
@@ -213,9 +306,9 @@ def diff_capabilities(
     pool_canon = canonicalize_capability(pool_snapshot)
     cand_canon = canonicalize_capability(candidate_snapshot)
     differing = tuple(
-        f
-        for f in _CANONICAL_FIELDS
-        if pool_canon.get(f) != cand_canon.get(f)
+        field
+        for field in _CANONICAL_FIELDS
+        if pool_canon.get(field) != cand_canon.get(field)
     )
     if not differing:
         return None

@@ -2,7 +2,7 @@
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-20
 ---
 
 # 视频 AI 追踪架构
@@ -49,12 +49,13 @@ flowchart LR
 
 项目可以同时启用多个 ML Backend。tracker 选择不能只看 `Project.ml_backend_id`，否则 SAM3 tracker 可能被错误发给只支持 SAM2 的主后端。
 
-`MLBackendService.get_tracker_backend(project_id, model_key)` 的选择顺序是：
+tracker 先按能力确定请求所属服务池，再进入路由选择：
 
 1. 读取项目所有已启用 backend。
 2. 只保留状态为 connected，且 `health_meta.capabilities.supported_trackers` 包含全部所需能力的实例。
-3. 项目主后端在候选中时优先。
-4. 否则选择第一个匹配实例；没有 connected 候选时返回 `None`，创建 job 的 API 在排队前返回 422。
+3. 项目主后端在候选中时优先；否则使用第一个匹配实例来定位其唯一所属服务池。没有 connected 候选时，创建 job 的 API 在排队前返回 422。
+4. `off / observe` 固定派发该池的 legacy 实例，observe 只额外记录 would-select，不创建正式 route lease；`enforce` 由 `MLBackendRouter` 选出实例并取得 route lease。runner 必须使用这个 selected registry 构造 backend client，不能继续使用预选的 legacy 行。
+5. 整个 job 固定同一实例；enforce 模式还固定同一 route lease 并周期 heartbeat。路由拒绝或 selected registry 缺失发生在首个推理前，job 直接失败；heartbeat 可能在部分窗口已经完成后失败，此时 runner 中止后续推理并把 job 标为失败。正常完成调用 finish，取消、中途返回和异常调用 cancel，并总是终止 heartbeat 与关闭 Redis client。
 
 组合模型要求**同一个** backend 同时声明 `sam3_video` 与 `sam3_video_interactive`，不能把两个 backend 的能力并集误拼成可执行组合。前端从项目已启用 backend 的 `/setup` 能力与连接状态构建 `model_key → backend names`，下拉只显示可执行模型并标出提供者。`mock_bbox` 是本地 adapter，不参加 backend 路由；生产构建始终不在 UI 暴露它，仅开发构建在无真实 backend 时保留流程兜底。
 

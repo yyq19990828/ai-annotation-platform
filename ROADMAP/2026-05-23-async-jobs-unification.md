@@ -43,7 +43,7 @@
 
 理由：
 1. **丢 FK 完整性**（与 prediction_jobs 的本质区别）：专表带 `annotation_id / task_id / dataset_item_id / segment_id` 的 FK + CASCADE，引用的是**正在被编辑的活标注**。标注删除时 job 级联清理；塞进 payload JSONB 后会留孤儿 job。prediction_jobs 是纯历史记录无此问题。
-2. **runner 是紧耦合实时状态机**：[video_tracker_runner.py](../apps/api/app/services/video_tracker_runner.py) 用 `with_for_update()` 行锁 + `db.refresh` 轮询 `cancel_requested_at` 做协作取消，边追踪边 WS 逐帧推送，读十余个 domain 字段当工作状态。迁移到 async_jobs 需全量改写 + 重写 18.8K worker 测试。
+2. **runner 是紧耦合实时状态机**：[video_tracking/runner.py](../apps/api/app/services/video_tracking/runner.py) 用 `with_for_update()` 行锁 + `db.refresh` 轮询 `cancel_requested_at` 做协作取消，边追踪边 WS 逐帧推送，读十余个 domain 字段当工作状态。迁移到 async_jobs 需全量改写 + 重写 18.8K worker 测试。
 3. **收益已被前置满足**：前端列表 / 铃铛 / 历史页早已统一走 `/async-jobs?kind=video_tracker`（v0.10.45 索引层），专表只服务运行时 + FK。
 
 底线（写回决策表「Task 双重含义」行）：**新 job 类型默认进 async_jobs；仅当需 FK 级联到活实体 / 复杂运行时状态机时才建专表**——VideoTrackerJob 正属后者。

@@ -235,6 +235,11 @@ class BackendCapabilities(BaseModel):
     # v0.14.12 · backend 自报名 (如 "grounded-sam2-backend"), 用于前端能力目录展示
     # 源 backend 名 (而非用户在项目里取的别名)。
     name: str | None = None
+    version: str | None = None
+    protocol_version: str = "1"
+    compat_protocol_versions: list[str] = []
+    model_version: str | None = None
+    weights_version: str | None = None
     # v0.14.9 · 协议 v2 新增
     infra: str = "unknown"
     # v0.14.14 · backend 是否支持 POST /warmup (协议 §4.4). 老 backend 缺字段 = False.

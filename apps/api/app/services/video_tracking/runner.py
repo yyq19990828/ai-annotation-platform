@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
@@ -25,6 +27,12 @@ from app.services.gpu_arbitration.contracts import (
     gpu_arbiter_failure_record,
 )
 from app.services.ml_backend import MLBackendService
+from app.services.ml_routing.contracts import (
+    RejectionReason,
+    RouteOutcome,
+    RouterMode,
+    RoutingError,
+)
 from app.services.raster_mask_storage import (
     load_coco_rle,
     store_coco_rle,
@@ -897,6 +905,12 @@ async def run_tracker_job(
     await db.refresh(job)
     await publisher(job.event_channel, _event(job, "job_started"))
 
+    tracker_ledger = None
+    tracker_lease = None
+    tracker_router = None
+    heartbeat_task: asyncio.Task | None = None
+    heartbeat_failed = False
+    route_succeeded = False
     try:
         # v0.22.1 · B · 源轨迹可选: 无源检测 (job.annotation_id is None) 时不加载 source,
         # 种子来自 prompt (text/seeds), 主实例落库时新建。
@@ -930,12 +944,7 @@ async def run_tracker_job(
         # 证据 (observe); off 模式行为不变 (legacy instance dispatch)。lease 在整个 job
         # 期间按 heartbeat_interval 周期续命, job 结束时 finish/cancel exactly once。
         from app.services.ml_routing.router import MLBackendRouter, make_ledger_from_settings
-        from app.services.ml_routing.contracts import RouterMode, RouteOutcome
-
         tracker_pool_id = None
-        tracker_lease = None
-        tracker_router = None
-        heartbeat_stop = None
         if backend is not None:
             tracker_pool_id = await ml_svc.pool_id_for_registry(backend.id)
         adapter = get_tracker_adapter(tracker_capability)
@@ -955,27 +964,43 @@ async def run_tracker_job(
         # (observe)。tracker 整 job pin 一个实例, lease 周期 heartbeat 续命 (不能中途换实例)。
         if backend is not None and tracker_pool_id is not None:
             try:
-                _ledger = make_ledger_from_settings() if RouterMode(settings.ml_backend_router_mode) != RouterMode.OFF else None
-            except Exception:  # noqa: BLE001 — ledger build failure must not block tracker
-                _ledger = None
-            tracker_router = MLBackendRouter(db, ledger=_ledger)
+                tracker_ledger = (
+                    make_ledger_from_settings()
+                    if RouterMode(settings.ml_backend_router_mode) != RouterMode.OFF
+                    else None
+                )
+            except Exception:  # noqa: BLE001 — enforce will reject without a ledger
+                tracker_ledger = None
+            tracker_router = MLBackendRouter(db, ledger=tracker_ledger)
             _sel = await tracker_router.acquire(
                 tracker_pool_id,
                 owner=f"tracker:{job_id}",
                 operation="tracker",
                 project_id=task.project_id,
             )
-            if _sel.rejection is None and _sel.instance_id is not None:
+            if _sel.rejection is not None or _sel.instance_id is None:
+                rejection = _sel.rejection or RejectionReason.POOL_UNAVAILABLE
+                raise RoutingError(
+                    rejection,
+                    f"tracker route acquire rejected: {rejection.value}",
+                )
+            selected_backend = await ml_svc.get(_sel.instance_id)
+            if selected_backend is None:
+                raise RoutingError(
+                    RejectionReason.POOL_UNAVAILABLE,
+                    f"tracker selected missing registry instance {_sel.instance_id}",
+                )
+            backend = selected_backend
+            if _sel.instance_id is not None:
                 # off/observe: instance = legacy (unchanged). enforce: router-selected.
                 # tracker pins the acquired instance for the whole job (stateful session).
                 if _sel.lease is not None:
                     tracker_lease = _sel.lease
                     # heartbeat loop: renew lease periodically until job ends.
-                    import asyncio as _asyncio
-
                     async def _heartbeat_loop():
+                        nonlocal heartbeat_failed
                         while True:
-                            await _asyncio.sleep(
+                            await asyncio.sleep(
                                 settings.ml_backend_router_heartbeat_interval_seconds
                             )
                             if tracker_lease is None:
@@ -983,14 +1008,13 @@ async def run_tracker_job(
                             try:
                                 ok = await tracker_router.heartbeat(tracker_lease)
                                 if not ok:
+                                    heartbeat_failed = True
                                     return
                             except Exception:  # noqa: BLE001
+                                heartbeat_failed = True
                                 return
 
-                    heartbeat_task = _asyncio.ensure_future(_heartbeat_loop())
-
-                    def heartbeat_stop():
-                        heartbeat_task.cancel()
+                    heartbeat_task = asyncio.create_task(_heartbeat_loop())
 
                 # observe: record would-select evidence (non-gating).
                 if _sel.would_select is not None:
@@ -1133,6 +1157,8 @@ async def run_tracker_job(
             # 窗内 obj_id → 全局 instance_id) 后再并入 results。非 multiplex 时缓冲即透传。
             window_results: list[TrackerFrameResult] = []
             async for result in adapter.propagate(ctx):
+                if heartbeat_failed:
+                    raise RuntimeError("tracker route lease heartbeat failed")
                 result = _materialize_tracker_mask_result(result)
                 staged_bytes += _tracker_result_json_bytes(result)
                 if staged_bytes > MAX_TRACKER_STAGED_BYTES:
@@ -1182,6 +1208,9 @@ async def run_tracker_job(
                     ),
                 )
 
+            if heartbeat_failed:
+                raise RuntimeError("tracker route lease heartbeat failed")
+
             # 窗末: text-multiplex 关联 remap 窗内 obj_id → 跨窗全局 instance_id。
             if associate_multiplex:
                 window_results = _associate_multiplex_window(
@@ -1198,6 +1227,8 @@ async def run_tracker_job(
                         last_geometry = result.geometry
 
         await db.refresh(job)
+        if heartbeat_failed:
+            raise RuntimeError("tracker route lease heartbeat failed")
         if job.cancel_requested_at is not None:
             # v0.21.28 · 取消也暂存部分结果 (候选)。
             if results:
@@ -1207,14 +1238,6 @@ async def run_tracker_job(
             job.completed_at = job.completed_at or _now()
             await db.commit()
             await publisher(job.event_channel, _event(job, "job_cancelled"))
-            # v0.23.3 · cancel route lease (caller-initiated cancel; never trips circuit).
-            if tracker_lease is not None and tracker_router is not None:
-                try:
-                    await tracker_router.cancel(tracker_lease)
-                except Exception:  # noqa: BLE001
-                    log.warning("tracker route lease cancel failed job_id=%s", job_id)
-            if heartbeat_stop is not None:
-                heartbeat_stop()
             return job
 
         # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
@@ -1226,25 +1249,10 @@ async def run_tracker_job(
         await db.commit()
         await db.refresh(job)
         await publisher(job.event_channel, _event(job, "job_completed"))
-        # v0.23.3 · finish route lease (success outcome releases + updates circuit/metrics).
-        if tracker_lease is not None and tracker_router is not None:
-            try:
-                await tracker_router.finish(tracker_lease, RouteOutcome.SUCCESS, duration_ms=0)
-            except Exception:  # noqa: BLE001
-                log.warning("tracker route lease finish failed job_id=%s", job_id)
-        if heartbeat_stop is not None:
-            heartbeat_stop()
+        route_succeeded = True
         return job
     except Exception as exc:
         log.exception("video tracker job failed job_id=%s", job_id)
-        # v0.23.3 · cancel route lease on failure (not a transport failure → no circuit trip).
-        if tracker_lease is not None and tracker_router is not None:
-            try:
-                await tracker_router.cancel(tracker_lease)
-            except Exception:  # noqa: BLE001
-                log.warning("tracker route lease cancel failed job_id=%s", job_id)
-        if heartbeat_stop is not None:
-            heartbeat_stop()
         gpu_arbiter_error = gpu_arbiter_failure_record(exc)
         if gpu_arbiter_error is not None and failure_recorder is not None:
             failure_recorder(gpu_arbiter_error)
@@ -1258,3 +1266,23 @@ async def run_tracker_job(
             publisher,
             gpu_arbiter_error=gpu_arbiter_error,
         )
+    finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+        if tracker_lease is not None and tracker_router is not None:
+            try:
+                if route_succeeded:
+                    await tracker_router.finish(
+                        tracker_lease, RouteOutcome.SUCCESS, duration_ms=0
+                    )
+                else:
+                    await tracker_router.cancel(tracker_lease)
+            except Exception:  # noqa: BLE001
+                log.warning("tracker route lease cleanup failed job_id=%s", job_id)
+        if tracker_ledger is not None:
+            try:
+                await tracker_ledger.aclose()
+            except Exception:  # noqa: BLE001
+                log.warning("tracker routing ledger close failed job_id=%s", job_id)

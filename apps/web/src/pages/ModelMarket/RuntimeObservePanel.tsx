@@ -12,11 +12,31 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Activity,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  Route,
+  Server,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 
-import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/Switch";
+import { Alert, AlertDescription, AlertTitle } from "@/components/shadcn/ui/alert";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/shadcn/ui/card";
+import { Skeleton } from "@/components/shadcn/ui/skeleton";
 import { TooltipProvider } from "@/components/shadcn/ui/tooltip";
 import {
   adminMlIntegrationsApi,
@@ -154,7 +174,7 @@ export function RuntimeObservePanel(): React.ReactElement {
     allQ.isFetching;
   const hardError = topologyQ.error ?? (topology ? null : snapshotQ.error);
 
-  const onWarm = useWarmupDispatcher(projectByBackend);
+  const onWarm = useWarmupDispatcher(projectByBackend, backendsById);
 
   const lookup = useCallback(
     (registryId: string) => {
@@ -172,80 +192,235 @@ export function RuntimeObservePanel(): React.ReactElement {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="mb-4 flex flex-col gap-3">
-        <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 max-md:flex-col max-md:items-stretch">
-          <div className="flex items-center gap-2">
-            <Icon name="activity" size={14} className="text-muted-foreground" />
-            <h3 className="m-0 text-sm font-semibold">运行时观测</h3>
-            <span className="text-xs text-muted-foreground">
-              {poolCount} 个服务池 · {memberCount} 个实例 · {envOnlyTargets.length}{" "}
-              个未纳管容器
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 max-md:w-full max-md:flex-col max-md:items-stretch">
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="mb-4">
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Activity className="size-5" strokeWidth={1.6} aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="text-lg tracking-tight">运行时观测</CardTitle>
+                <CardDescription className="mt-1 max-w-2xl text-pretty">
+                  按服务池检查可用性、容量与数据可信度，展开后处理单个实例。
+                </CardDescription>
+              </div>
+            </div>
+            <CardAction className="flex flex-wrap items-center justify-end gap-3 max-md:col-span-2 max-md:row-start-3 max-md:justify-start">
               <Switch
                 checked={autoRefresh}
                 onChange={setAutoRefresh}
+                label="自动刷新"
                 title="每 15 秒自动刷新运行时快照"
               />
-              <span>自动刷新</span>
-            </label>
-            <Button size="sm" onClick={refetchAll} disabled={fetching}>
-              <Icon name="refresh" size={11} />
-              刷新
-            </Button>
-          </div>
-        </div>
+              <Button size="sm" onClick={refetchAll} disabled={fetching}>
+                <RefreshCw
+                  data-icon="inline-start"
+                  className={fetching ? "animate-spin" : undefined}
+                  aria-hidden="true"
+                />
+                刷新
+              </Button>
+            </CardAction>
+          </CardHeader>
 
-        {/* 数据来源 expandable region (plan §6.2) */}
-        {topology && (
-          <DataSourceRegion
-            topology={topology}
-            snapshotError={
-              snapshotQ.error ? String((snapshotQ.error as Error).message) : null
-            }
-            observeError={
-              observeQ.error ? String((observeQ.error as Error).message) : null
-            }
+          <CardContent className="flex flex-col gap-4">
+            {topology ? (
+              <RuntimeSummaryBand
+                topology={topology}
+                poolCount={poolCount}
+                memberCount={memberCount}
+                envOnlyCount={envOnlyTargets.length}
+              />
+            ) : loading ? (
+              <RuntimeSummarySkeleton />
+            ) : null}
+
+            {topology && (
+              <DataSourceRegion
+                topology={topology}
+                snapshotError={
+                  snapshotQ.error ? String((snapshotQ.error as Error).message) : null
+                }
+                observeError={
+                  observeQ.error ? String((observeQ.error as Error).message) : null
+                }
+              />
+            )}
+
+            {loading && topology === null ? (
+              <PoolListSkeleton />
+            ) : hardError ? (
+              <Alert variant="destructive">
+                <AlertTriangle aria-hidden="true" />
+                <AlertTitle>运行时状态加载失败</AlertTitle>
+                <AlertDescription>
+                  {(hardError as Error).message ?? "未知错误"}
+                </AlertDescription>
+              </Alert>
+            ) : topology ? (
+              <ServicePoolRuntimeTable
+                topology={topology}
+                lookup={lookup}
+                onWarm={onWarm}
+              />
+            ) : null}
+
+            {envOnlyTargets.length > 0 && (
+              <EnvOnlySection
+                targets={envOnlyTargets}
+                onRegister={() => setRegisterOpen(true)}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        {registerOpen && (
+          <GlobalBackendFormModal
+            open={registerOpen}
+            onClose={() => setRegisterOpen(false)}
           />
         )}
-
-        <div className="flex flex-col gap-3 p-3">
-          {loading && topology === null ? (
-            <div className="py-3 text-xs text-muted-foreground">
-              加载运行时状态…
-            </div>
-          ) : hardError ? (
-            <div className="text-xs text-status-danger">
-              加载失败：{(hardError as Error).message ?? "未知错误"}
-            </div>
-          ) : topology ? (
-            <ServicePoolRuntimeTable
-              topology={topology}
-              lookup={lookup}
-              onWarm={onWarm}
-            />
-          ) : null}
-
-          {envOnlyTargets.length > 0 && (
-            <EnvOnlySection
-              targets={envOnlyTargets}
-              onRegister={() => setRegisterOpen(true)}
-            />
-          )}
-        </div>
-      </Card>
-
-      {registerOpen && (
-        <GlobalBackendFormModal
-          open={registerOpen}
-          onClose={() => setRegisterOpen(false)}
-        />
-      )}
       </div>
     </TooltipProvider>
+  );
+}
+
+function RuntimeSummaryBand({
+  topology,
+  poolCount,
+  memberCount,
+  envOnlyCount,
+}: {
+  topology: RuntimeTopologyViewModel;
+  poolCount: number;
+  memberCount: number;
+  envOnlyCount: number;
+}): React.ReactElement {
+  const routable = topology.pools.reduce(
+    (sum, pool) => sum + pool.availability.routable,
+    0,
+  );
+  const attentionPools = topology.pools.filter(
+    (pool) => pool.status !== "healthy",
+  ).length;
+  const staleSources = topology.sources.filter((source) => source.stale).length;
+  const freshSources = topology.sources.length - staleSources;
+  const routerLabels: Record<string, string> = {
+    enforce: "强制路由",
+    observe: "影子观测",
+    off: "直连观测",
+  };
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="运行时摘要">
+      <SummaryItem
+        icon={Route}
+        label="路由模式"
+        value={routerLabels[topology.router_mode] ?? "未知"}
+        detail={`mode · ${topology.router_mode}`}
+      />
+      <SummaryItem
+        icon={ShieldCheck}
+        label="可路由实例"
+        value={`${routable} / ${memberCount}`}
+        detail={`${poolCount} 个服务池`}
+      />
+      <SummaryItem
+        icon={Activity}
+        label="需关注服务池"
+        value={String(attentionPools)}
+        detail={attentionPools === 0 ? "当前无异常" : "健康状态非正常"}
+        tone={attentionPools > 0 ? "warning" : "success"}
+      />
+      <SummaryItem
+        icon={Server}
+        label="数据与纳管"
+        value={topology.sources.length > 0 ? `${freshSources} / ${topology.sources.length}` : "未上报"}
+        detail={
+          envOnlyCount > 0
+            ? `${envOnlyCount} 个容器未纳管`
+            : staleSources > 0
+              ? `${staleSources} 个数据源陈旧`
+              : "全部容器已纳管"
+        }
+        tone={staleSources > 0 || envOnlyCount > 0 ? "warning" : "default"}
+      />
+    </div>
+  );
+}
+
+function SummaryItem({
+  icon: SummaryIcon,
+  label,
+  value,
+  detail,
+  tone = "default",
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "default" | "success" | "warning";
+}): React.ReactElement {
+  return (
+    <div className="flex min-w-0 items-center gap-3 rounded-lg bg-muted/40 px-3.5 py-3">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground shadow-sm ring-1 ring-border">
+        <SummaryIcon className="size-4" strokeWidth={1.6} aria-hidden="true" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-2xs font-medium text-muted-foreground">{label}</div>
+        <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
+          <span className="truncate text-base font-semibold tracking-tight tabular-nums">
+            {value}
+          </span>
+          {tone !== "default" && (
+            <Badge variant={tone}>{tone === "success" ? "正常" : "注意"}</Badge>
+          )}
+        </div>
+        <div className="mt-0.5 truncate text-2xs text-muted-foreground">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function RuntimeSummarySkeleton(): React.ReactElement {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="正在加载运行时摘要">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="flex items-center gap-3 rounded-lg bg-muted/40 px-3.5 py-3">
+          <Skeleton className="size-8" />
+          <div className="flex flex-1 flex-col gap-2">
+            <Skeleton className="h-2.5 w-20" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PoolListSkeleton(): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3" aria-label="正在加载服务池">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className="rounded-xl border border-border p-4">
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-8" />
+            <div className="flex flex-1 flex-col gap-2">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-3 w-52" />
+            </div>
+            <Skeleton className="h-5 w-16 rounded-full" />
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }, (_, metricIndex) => (
+              <Skeleton key={metricIndex} className="h-16 w-full" />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -259,31 +434,41 @@ function DataSourceRegion({
   observeError: string | null;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
+  const observedAt = formatObservedAt(topology.observed_at);
   return (
-    <div className="border-b border-border px-4 py-2">
+    <div className="rounded-lg border border-border bg-muted/20 px-3.5 py-3">
       <button
         type="button"
-        className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent p-0 text-left text-xs text-muted-foreground hover:text-foreground"
+        className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent p-0 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <Icon name={open ? "chevDown" : "chevRight"} size={11} />
-        <span>数据来源</span>
-        <span className="text-2xs">
-          快照 {topology.observed_at ?? "—"}
-          {topology.partial && " · 部分失败"}
-        </span>
+        {open ? (
+          <ChevronDown className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+        ) : (
+          <ChevronRight className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+        )}
+        <span className="font-medium text-foreground">数据来源</span>
+        <span className="text-2xs">更新于 {observedAt}</span>
+        <Badge variant={topology.partial ? "warning" : "success"}>
+          {topology.partial ? "部分可用" : "数据完整"}
+        </Badge>
       </button>
       {open && (
-        <div className="mt-2 flex flex-col gap-2">
+        <div className="mt-3 flex flex-col gap-3">
           {topology.partial && (
-            <div className="flex items-start gap-1.5 rounded-md border border-status-caution/50 bg-status-caution-soft px-2.5 py-1.5 text-xs text-status-caution">
-              <Icon name="alert-triangle" size={12} />
-              <span>
-                部分数据来源失败：{topology.partial_reason ?? "原因未知"}
-                ；已保留其它可信来源，未整页替换为错误。
-              </span>
-            </div>
+            <Alert variant="warning">
+              <AlertTriangle aria-hidden="true" />
+              <AlertTitle>部分数据来源失败</AlertTitle>
+              <AlertDescription>
+                <p>
+                  {topology.partial_reason ?? "原因未知"}。页面已保留其它可信来源，
+                  不会把缺失指标显示为 0。
+                </p>
+                {snapshotError && <p>runtime-snapshot：{snapshotError}</p>}
+                {observeError && <p>observe：{observeError}</p>}
+              </AlertDescription>
+            </Alert>
           )}
           <div className="flex flex-wrap gap-1.5">
             {topology.sources.length === 0 && (
@@ -295,18 +480,32 @@ function DataSourceRegion({
               <FreshnessIndicator key={s.name} source={s} />
             ))}
           </div>
-          {snapshotError && (
+          {!topology.partial && snapshotError && (
             <div className="text-2xs text-status-danger">
               runtime-snapshot：{snapshotError}
             </div>
           )}
-          {observeError && (
+          {!topology.partial && observeError && (
             <div className="text-2xs text-status-danger">observe：{observeError}</div>
           )}
         </div>
       )}
     </div>
   );
+}
+
+function formatObservedAt(iso: string | null): string {
+  if (!iso) return "—";
+  const timestamp = new Date(iso);
+  if (Number.isNaN(timestamp.getTime())) return iso;
+  return timestamp.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function EnvOnlySection({
@@ -325,7 +524,11 @@ function EnvOnlySection({
         onClick={() => setCollapsed((v) => !v)}
         aria-expanded={!collapsed}
       >
-        <Icon name={collapsed ? "chevRight" : "chevDown"} size={11} />
+        {collapsed ? (
+          <ChevronRight className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+        ) : (
+          <ChevronDown className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+        )}
         <span>未纳管容器（{targets.length}）</span>
         <span className="text-2xs font-normal">
           来自 ML_BACKEND_OBSERVE_URLS，未注册到全局表
@@ -348,12 +551,12 @@ function EnvOnlySection({
 
 /**
  * Warmup dispatcher: resolves the projectId for a registry_id and invokes the
- * legacy reload endpoint (v0.23.4 — generic warmup wired through the detail
- * Sheet's variant picker). Mirrors the legacy panel's behavior, centralized
- * so the detail Sheet + row can both call it.
+ * declared generic /warmup endpoint when available, falling back to legacy
+ * /reload only for older backends.
  */
 function useWarmupDispatcher(
   projectByBackend: Map<string, string>,
+  backendsById: Map<string, GlobalBackendItem>,
 ): (registryId: string, target?: VariantWarmTarget) => void {
   const qc = useQueryClient();
   const reload = useMutation({
@@ -372,10 +575,34 @@ function useWarmupDispatcher(
       invalidateRuntimeQueries(qc);
     },
   });
+  const warmup = useMutation({
+    mutationFn: ({
+      projectId,
+      backendId,
+      target,
+    }: {
+      projectId: string;
+      backendId: string;
+      target?: VariantWarmTarget;
+    }) =>
+      mlBackendsApi.warmup(projectId, backendId, {
+        ...(target?.task ? { task: target.task } : {}),
+        ...(target?.variants ? { variants: target.variants } : {}),
+        ...(target?.taskType ? { task_type: target.taskType } : {}),
+      }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+  });
 
   return (registryId: string, target?: VariantWarmTarget) => {
     const projectId = projectByBackend.get(registryId);
     if (!projectId) return;
+    const supportsWarmup =
+      backendsById.get(registryId)?.health_meta?.capabilities?.warmup_endpoint ===
+      true;
+    if (supportsWarmup) {
+      warmup.mutate({ projectId, backendId: registryId, target });
+      return;
+    }
     const variant = target?.variants as MLBackendVariant | undefined;
     reload.mutate({
       projectId,

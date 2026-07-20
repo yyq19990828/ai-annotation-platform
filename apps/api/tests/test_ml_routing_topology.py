@@ -9,9 +9,12 @@ Covers:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import select
 
+from app.config import settings
 from tests.conftest import create_registry_with_pool
 
 
@@ -21,7 +24,21 @@ async def test_topology_super_admin_sees_full_detail(
 ) -> None:
     """Super Admin topology includes health / GPU / state per member + routing_policy."""
     _, token = super_admin
-    backend, pool = await create_registry_with_pool(db_session, name="bk")
+    caps = {"models": [{"id": "det", "task": "detection"}]}
+    backend, pool = await create_registry_with_pool(
+        db_session,
+        name="bk",
+        enabled_pool=True,
+        health_meta={"capabilities": caps},
+        last_checked_at=datetime.now(UTC),
+    )
+    from app.services.ml_routing.capability import (
+        canonicalize_capability,
+        capability_fingerprint,
+    )
+
+    pool.capability_snapshot = canonicalize_capability(caps)
+    pool.capability_fingerprint = capability_fingerprint(caps)
     await db_session.flush()
     resp = await httpx_client.get(
         "/api/v1/admin/ml-integrations/topology",
@@ -70,6 +87,7 @@ async def test_topology_project_admin_trimmed(httpx_client, db_session, project_
         # Project Admin still sees derived availability (display hint).
         assert "routable_instances" in pool_entry
         assert "status" in pool_entry
+        assert pool_entry["status_reason_codes"] == []
         if pool_entry["members"]:
             member = pool_entry["members"][0]
             # Server-side projection: keys present, values None.
@@ -104,7 +122,21 @@ async def test_topology_status_derivation(
         m.traffic_state = "disabled"
 
     # Pool B: 2 members, 1 active + 1 draining → degraded.
-    _, pool_b = await create_registry_with_pool(db_session, name="pool-b")
+    caps = {"models": [{"id": "det", "task": "detection"}]}
+    _, pool_b = await create_registry_with_pool(
+        db_session,
+        name="pool-b",
+        enabled_pool=True,
+        health_meta={"capabilities": caps},
+        last_checked_at=datetime.now(UTC),
+    )
+    from app.services.ml_routing.capability import (
+        canonicalize_capability,
+        capability_fingerprint,
+    )
+
+    pool_b.capability_snapshot = canonicalize_capability(caps)
+    pool_b.capability_fingerprint = capability_fingerprint(caps)
     await db_session.flush()
     members_b = (
         await db_session.execute(
@@ -120,6 +152,8 @@ async def test_topology_status_derivation(
         state="connected",
         is_interactive=True,
         source="manual",
+        health_meta={"capabilities": caps},
+        last_checked_at=datetime.now(UTC),
     )
     db_session.add(reg_b2)
     await db_session.flush()
@@ -196,3 +230,47 @@ async def test_runtime_snapshot_super_admin_only(
         headers={"Authorization": f"Bearer {pa_token}"},
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_runtime_snapshot_keeps_unknown_inflight_when_ledger_unavailable(
+    httpx_client, db_session, super_admin, monkeypatch
+) -> None:
+    from app.services.ml_routing import router
+
+    class FailingLedger:
+        async def healthcheck(self) -> None:
+            raise ConnectionError("redis unavailable")
+
+        async def aclose(self) -> None:
+            return None
+
+    _, token = super_admin
+    await create_registry_with_pool(
+        db_session,
+        name="ledger-unavailable",
+        enabled_pool=True,
+        health_meta={"capabilities": {"models": [{"id": "det"}]}},
+        last_checked_at=datetime.now(UTC),
+    )
+    await db_session.flush()
+    monkeypatch.setattr(settings, "ml_backend_router_mode", "enforce")
+    monkeypatch.setattr(router, "make_ledger_from_settings", FailingLedger)
+
+    response = await httpx_client.get(
+        "/api/v1/admin/ml-integrations/runtime-snapshot",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    ledger_source = next(
+        source for source in body["sources"] if source["name"] == "router_ledger"
+    )
+    assert ledger_source["stale"] is True
+    member = next(
+        pool["members"][0]
+        for pool in body["pools"]
+        if pool["name"] == "ledger-unavailable"
+    )
+    assert member["route_inflight"] is None
+    assert member["circuit_open"] is None

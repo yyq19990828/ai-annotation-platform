@@ -3,7 +3,7 @@ audience: [ops, dev]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-20
 ---
 
 # 可观测性 / 运维监控
@@ -188,7 +188,7 @@ curl -X POST localhost:8003/warmup \
 
 **route ledger 故障排查**：路由账本走 Redis namespace `ml-router:v1`（独立于 GPU 仲裁 `gpu-arbiter:v1`）。`ML_BACKEND_ROUTER_MODE=off` 时 ledger 不读取；`observe|enforce` 下若 Redis 不可达，`router_ledger` 来源切 stale + `error="redis_unavailable"`，`enforce` 模式 acquire 直接 fail-closed 返回 `ml_backend_router_unavailable` (503)。
 
-**drain / resume 状态机**：成员 `traffic_state` 为 `active` / `draining` / `disabled`。`drain` 只停止接**新** lease，不影响在飞请求或模型权重卸载（后者是 GPU 仲裁的 residency drain，独立）。运行时观测的卸载安全门要求 drain → inflight=0 + 快照新鲜 (quiescent) → unload，三步缺一不可。
+**drain / resume 状态机**：成员 `traffic_state` 为 `active` / `draining` / `disabled`。`drain` 只停止接**新** lease，不影响在飞请求或模型权重卸载（后者是 GPU 仲裁的 residency drain，独立）。卸载、移除成员和物理删除 registry 共用同一安全门：router 必须处于 `enforce`，成员必须精确为 `draining`，Redis 账本可读并先清理过期 lease，随后新鲜快照中的 exact `inflight=0` 才构成 quiescent 证明。状态不满足返回 409；账本不可用、缺失或不可信返回 503，不能把未知当作零。
 
 详见 [ADR-0050](../../dev/adr/0050-ml-backend-service-pools-and-request-routing)（路由核心）与 [ADR-0051](../../dev/adr/0051-model-market-observability-information-architecture)（观测面 IA）。
 

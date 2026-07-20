@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-20
 ---
 
 # 模型市场（/model-market）
@@ -59,34 +59,42 @@ last_reviewed: 2026-07-11
 
 ### 2. 运行时观测
 
-<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-tree.png — 运行时观测服务池树表（池行 + 展开实例 + 数据来源） [manual] -->
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-pools.png — 运行时观测摘要带 + 两列服务池摘要卡 + 展开实例 [manual] -->
 
-运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**服务池**为默认比较层，按服务池 → 实例 → 详情 Sheet 逐级下钻，不再堆实例大卡。数据来自 `topology` + `runtime-snapshot` 两个权威读模型，按稳定 ID 关联（不再按 URL join）。
+运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**服务池**为默认比较层，先用摘要带汇总路由模式、可路由实例、异常池和数据新鲜度，再按服务池摘要卡 → 实例面板 → 详情 Sheet 逐级下钻。宽屏下服务池以两列排布，展开的卡片自动跨列；窄屏回落为单列。数据来自 `topology` + `runtime-snapshot` 两个权威读模型，按稳定 ID 关联（不再按 URL join）。
 
-页面提供单一「刷新」动作 + 自动刷新开关，并展开「数据来源」区域显示各来源（拓扑 / 路由账本 / 健康探活 / GPU 仲裁 / 模型驻留）的 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据——例如路由账本不可用时，拓扑与最近健康配置仍然展示，顶部显示 `partial` 告警。
+页面提供单一「刷新」动作 + 自动刷新开关，并展开「数据来源」区域显示各来源（拓扑 / 路由账本 / 健康探活 / GPU 仲裁 / 模型驻留）的 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据——例如路由账本不可用时，拓扑与最近健康配置仍然展示，数据来源区域显示部分可用告警。
 
-**服务池行**展示四条独立状态轴，不合成单一「在线」徽标：
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-data-sources.png — 展开的数据来源部分失败态（stale/error + 更新时间） [manual] -->
+
+**服务池摘要卡**分组展示独立状态轴，不合成单一「在线」徽标：
 
 | 分组 | 内容 |
 |---|---|
 | 可用性 | 总体严重度、可路由 / 总实例、draining / offline 数 |
 | 流量 | 窗口请求数、实例选择分布紧凑分段条、最近选择时间 |
-| 容量 | inflight / limit、饱和拒绝；GPU queue 另列 |
-| 质量 | P95、错误率、rejection 摘要 |
-| 资源 | GPU 风险、驻留实例数、CPU fallback 数 |
-| 新鲜度 | 最近快照时间、stale / partial 标记 |
+| 容量 | inflight / limit、饱和或熔断提示 |
+| 资源 | 驻留实例数、CPU fallback 数 |
+| 新鲜度 | 新鲜来源计数；各来源时间与错误在「数据来源」展开区查看 |
+| 状态依据 | 非正常状态的 reason code，便于与问题中心交叉定位 |
+
+资源区的驻留实例数只统计可信探活中处于加载、已驻留或释放中的实例；`unloaded`、未知状态与过期缓存均不计入。实例面板也会区分实时探活、缓存状态和过期状态，缓存中的 `connected` 不会显示成实时健康。
 
 > **「暂无路由指标」**：P95、错误率、最近选择、选择 / 拒绝计数等流量真值在合同中保留为 `null`，前端统一显示「暂无路由指标」，不会回落为 `0` 或「健康」。这些字段等后续版本接入共享路由计数器后才会显示真值。
 
-展开服务池后显示实例行：名称 / URL、权重、接流状态、routable reason、当前 / 最大并发、窗口 selection / rejection、P95、错误率、最近选中、health / compute / GPU claim / residency 摘要。点「详情」打开右侧 Sheet，里面才展示模型 / 视频驻留池、cache、variant、builder / borrower、generation、原始诊断和复制 ID。
+展开服务池后显示实例面板：名称 / URL、权重、接流状态、routable reason、当前 / 最大并发、窗口 selection / rejection、P95、错误率、最近选中、health / compute / GPU claim / residency 摘要。缺失的路由指标统一保留未知语义，不显示为零。点「详情」打开右侧 Sheet，里面才展示模型 / 视频驻留池、cache、variant、builder / borrower、generation、原始诊断和复制 ID。
+
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-instance-detail.png — 实例详情 Sheet（路由、健康、GPU claim、驻留与诊断） [manual] -->
 
 > **信任边界**：`/observe` 直连 `ML_BACKEND_OBSERVE_URLS` 里的地址探活，**不带应用层鉴权**——它假定这些地址在可信内网、免鉴权可达。请勿把该变量指向可从不受信网络到达的地址；需要鉴权的 backend 应通过「注册管理」注册（注册项携带 `auth_method` / `auth_token`，走鉴权链路），而非只靠裸 observe URL。
 
 **未注册容器**单独放在折叠区：只显示直连 health / latency / compute / GPU / 模型驻留；允许显式注册或 smoke test，但**不展示权重、routable、流量分布，也不自动并池**。
 
-**实例维护走安全顺序**：drain（停止接收新请求）→ 等待 inflight 归零且快照新鲜（quiescent）→ 卸载。`routable` 实例不可一键卸载；当 `ML_BACKEND_ROUTER_MODE != enforce` 时，drain 只标记为「预配置未生效」而非「已停流」。强制卸载（若合同支持）是独立高风险动作，需 AlertDialog 二次确认。
+**实例维护走安全顺序**：drain（停止接收新请求）→ 等待 inflight 归零且快照新鲜（quiescent）→ 卸载。成员必须精确处于 `draining`；`route_inflight` 缺失、账本 stale 或 Redis 不可用都不能作为零证明。当 `ML_BACKEND_ROUTER_MODE != enforce` 时，drain 只标记为「预配置未生效」而非「已停流」。同一权威门禁也用于移除服务池成员和物理删除 registry。
 
 ### 3. 注册管理
+
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/registry-service-pools.png — 注册管理服务池主视图（结构化 tab + 展开成员 + 维护操作） [auto] -->
 
 注册管理按实体拆成四个结构化视图 + 问题中心，超管看到全部五个 tab，项目管理员只看到服务池 + 实例两个只读视图。每个物理 backend 全局只有一行，注册一次、所有项目共享；服务池是路由选择的逻辑边界（ADR-0050），实例是可定位到物理 URL 的 registry 记录。
 
@@ -100,7 +108,7 @@ last_reviewed: 2026-07-11
 | 项目 | 启用项目数，可进入项目绑定视图 |
 | GPU | 关联资源数、最高严重度、预算摘要 |
 | 状态 | 健康、configured → effective 路由、router mode、数据新鲜度分开显示 |
-| 操作 | 查看实例、编辑策略、暂停 / 恢复接流（**仅超管**） |
+| 操作 | 创建、重命名、启停、删除空池，加入 / 移除成员、修改权重、暂停 / 恢复接流（**仅超管**） |
 
 服务池行可展开成员实例。项目管理员看不到 `routing_policy`、权重与 GPU 列（服务端裁剪为 `unknown` / `null`，非前端隐藏），也没有操作按钮。
 
@@ -111,6 +119,8 @@ last_reviewed: 2026-07-11
 **项目绑定**（**仅超管**）：默认按项目显示所绑定服务池、主服务池、可用实例数和风险；支持切换为按服务池反查项目。本页只读，修改入口跳项目设置。项目已启用但池内无可路由实例时单独告警。
 
 **问题中心**（**仅超管**）：按 `code + subject_type + subject_id` 稳定去重，同一问题只渲染一次主记录；默认按 blocker → critical → warning → info 排序。支持按服务池、实例、GPU 资源和 code 筛选。资源 / 实例行只显示关联标记和计数 + 跳转，不复制诊断全文。
+
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/registry-issue-center.png — 问题中心去重、严重度、受影响对象与筛选 [manual] -->
 
 对应后端端点：`GET /admin/ml-integrations/topology`（角色裁剪读模型）、`GET /admin/ml-integrations/runtime-snapshot`（仅超管）、`/admin/ml-integrations/service-pools/*`（pool/member CRUD + drain/resume，仅超管）、`POST/PUT/DELETE /admin/ml-integrations/registry/:id`（实例增删改）、`POST /admin/ml-integrations/registry/:id/health`（健康检查）。
 

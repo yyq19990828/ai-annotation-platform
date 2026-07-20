@@ -86,8 +86,8 @@ export interface MemberViewModel {
   // From runtime snapshot (super-admin only; absent for Project Admin).
   runtime?: {
     health_fresh: boolean;
-    route_inflight: number;
-    circuit_open: boolean;
+    route_inflight: number | null;
+    circuit_open: boolean | null;
     registry_state: string;
     // Metrics-driven — always null in v0.23.4.
     last_selected_at: string | null;
@@ -224,9 +224,11 @@ function toPoolViewModel(
   const disabled = members.filter((m) => m.traffic_state === "disabled").length;
   const routable = pool.routable_instances;
 
-  const inflight = snap
-    ? (snap.members ?? []).reduce((sum, m) => sum + (m.route_inflight ?? 0), 0)
-    : null;
+  const runtimeInflight = snap?.members?.map((m) => m.route_inflight) ?? [];
+  const inflight =
+    snap && runtimeInflight.every((value) => value != null)
+      ? runtimeInflight.reduce((sum, value) => sum + (value ?? 0), 0)
+      : null;
   // No max_concurrency in v0.23.3 contract → limit unknown.
   const limit = null;
   const saturated = snap
@@ -279,8 +281,8 @@ function toMemberViewModel(
     runtime: snap
       ? {
           health_fresh: snap.health_fresh,
-          route_inflight: snap.route_inflight,
-          circuit_open: snap.circuit_open,
+          route_inflight: snap.route_inflight ?? null,
+          circuit_open: snap.circuit_open ?? null,
           registry_state: snap.registry_state,
           last_selected_at: snap.last_selected_at ?? null,
           selection_count_window: snap.selection_count_window ?? null,
@@ -319,7 +321,7 @@ export function deriveMemberRouting(
 
 /** Capacity axis: unknown when no runtime snapshot (limit unknown in v0.23.4). */
 export function deriveMemberCapacity(snap: RuntimeMemberSnapshot | null): CapacityAxis {
-  if (!snap) return "unknown";
+  if (!snap || snap.route_inflight == null || snap.circuit_open == null) return "unknown";
   if (snap.circuit_open) return "saturated";
   if (snap.route_inflight > 0) return "serving";
   return "idle";
@@ -527,7 +529,7 @@ function dedup(xs: string[]): string[] {
 // ── drain → quiescent → unload safety gate (plan §8.1) ─────────────────────
 
 export interface UnloadSafetyGate {
-  /** True iff the member is routable (must drain first). */
+  /** True iff the member has not entered the exact draining state. */
   blocked_routable: boolean;
   /** True iff inflight > 0 (must wait for quiescent). */
   blocked_inflight: boolean;
@@ -553,28 +555,29 @@ export function evaluateUnloadGate(
   ledgerFresh: boolean,
 ): UnloadSafetyGate {
   const reasons: string[] = [];
-  const blocked_routable = member.routing === "routable";
+  const blocked_routable = member.traffic_state !== "draining";
   if (blocked_routable) {
-    reasons.push("实例仍在接流，需先 drain 停止接收新请求");
+    reasons.push("实例必须先进入 draining 状态，才能确认已停止接收新请求");
   }
-  const inflight = member.runtime?.route_inflight ?? 0;
-  const blocked_inflight = inflight > 0;
+  const inflight = member.runtime?.route_inflight;
+  const blocked_inflight = inflight != null && inflight > 0;
   if (blocked_inflight) {
     reasons.push(`仍有 ${inflight} 个活动请求，需等待归零`);
   }
-  const blocked_stale = member.runtime !== undefined && !ledgerFresh;
+  const blocked_stale =
+    member.runtime === undefined || inflight == null || !ledgerFresh;
   if (blocked_stale) {
     reasons.push("路由账本数据陈旧，无法确认 inflight 已归零");
   }
   const blocked_shadow_mode = routerMode !== "enforce";
-  if (blocked_shadow_mode && member.traffic_state === "draining") {
+  if (blocked_shadow_mode) {
     reasons.push(`router_mode=${routerMode}，drain 仅预配置未实际停流`);
   }
   const can_unload =
     !blocked_routable &&
     !blocked_inflight &&
     !blocked_stale &&
-    !(blocked_shadow_mode && member.traffic_state === "draining");
+    !blocked_shadow_mode;
   return {
     blocked_routable,
     blocked_inflight,

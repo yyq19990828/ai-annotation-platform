@@ -16,7 +16,7 @@
  * NOT add client-side hiding as the only gate; it simply does not render what
  * the server already nulled (plan §5 + Appendix A.6).
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 
@@ -61,7 +61,18 @@ export function RegisteredBackendsTab(): ReactNode {
     statusFilter: "all",
   });
   const [tab, setTab] = useState<string>("pools");
+  const [focusedPoolId, setFocusedPoolId] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
+
+  useEffect(() => {
+    const focusTab = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string; poolId?: string }>).detail;
+      if (detail?.tab) setTab(detail.tab);
+      setFocusedPoolId(detail?.poolId ?? null);
+    };
+    window.addEventListener("registry:focus-tab", focusTab);
+    return () => window.removeEventListener("registry:focus-tab", focusTab);
+  }, []);
 
   // ── queries ──────────────────────────────────────────────────────────────
   // Plan §9.1 + §9.3: topology is the registry default read model and is
@@ -257,7 +268,12 @@ export function RegisteredBackendsTab(): ReactNode {
               <ServicePoolsSection scope={scope} filters={filters} />
             </TabsContent>
             <TabsContent value="instances">
-              <BackendInstancesSection scope={scope} filters={filters} />
+              <BackendInstancesSection
+                scope={scope}
+                filters={filters}
+                focusedPoolId={focusedPoolId}
+                onClearPoolFocus={() => setFocusedPoolId(null)}
+              />
             </TabsContent>
             <TabsContent value="gpu">
               <GPUResourcesSection scope={scope} />
@@ -287,7 +303,12 @@ export function RegisteredBackendsTab(): ReactNode {
               <ServicePoolsSection scope={scope} filters={filters} />
             </TabsContent>
             <TabsContent value="instances">
-              <BackendInstancesSection scope={scope} filters={filters} />
+              <BackendInstancesSection
+                scope={scope}
+                filters={filters}
+                focusedPoolId={focusedPoolId}
+                onClearPoolFocus={() => setFocusedPoolId(null)}
+              />
             </TabsContent>
           </Tabs>
         )}

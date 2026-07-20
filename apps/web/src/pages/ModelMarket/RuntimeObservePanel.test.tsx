@@ -199,6 +199,7 @@ function makeObserveTarget(opts: {
   url?: string;
   registered?: boolean;
   ok?: boolean;
+  residency?: unknown;
 } = {}) {
   return {
     url: opts.url ?? "http://172.17.0.1:8001",
@@ -209,7 +210,7 @@ function makeObserveTarget(opts: {
     registered: opts.registered ?? true,
     compute: null,
     gpu_info: null,
-    residency: null,
+    residency: opts.residency ?? null,
   };
 }
 
@@ -291,6 +292,87 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
     await waitFor(() =>
       expect(screen.queryByText("grounded-sam2-a")).not.toBeInTheDocument(),
     );
+  });
+
+  it("unloaded 驻留数据不计入服务池驻留实例数", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+      }),
+    );
+    mockObserve.mockResolvedValue({
+      configured_count: 1,
+      targets: [
+        makeObserveTarget({
+          residency: {
+            state: "unloaded",
+            gpu_loaded: false,
+            active_requests: 0,
+            builders: 0,
+            borrowers: 0,
+            pools: { image: { resident: false } },
+          },
+        }),
+      ],
+    });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+
+    expect(await screen.findByText("0 个驻留")).toBeInTheDocument();
+  });
+
+  it("缺少实时探活时将新鲜 connected 缓存标为非实时", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({ items: [makeBackend()] });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+
+    expect(await screen.findByText("缓存在线")).toBeInTheDocument();
+    expect(screen.getByText("缓存探活，非实时")).toBeInTheDocument();
+    expect(screen.queryByText("健康探活正常")).not.toBeInTheDocument();
+  });
+
+  it("缺少实时探活且 connected 缓存过期时显示状态过期", async () => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+      }),
+    );
+    mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
+    mockListAll.mockResolvedValue({
+      items: [makeBackend({ last_checked_at: "2026-07-20T09:00:00Z" })],
+    });
+
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+
+    expect(await screen.findByText("状态过期")).toBeInTheDocument();
+    expect(screen.getByText("探活状态已过期")).toBeInTheDocument();
   });
 
   it("实例详情 Sheet：打开、复制 ID、关闭", async () => {

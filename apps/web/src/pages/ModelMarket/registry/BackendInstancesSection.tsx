@@ -60,6 +60,7 @@ import {
 import { CopyableId, EmptyState, NullCell } from "./registryUi";
 import type { RegistryFilters, RegistryScope } from "./registryTypes";
 import type { MemberViewModel } from "../runtimeTopology";
+import { evaluateUnloadGate } from "../runtimeTopology";
 import { RuntimeStatusBadge } from "../runtime/RuntimeStatusBadge";
 import {
   GlobalBackendFormModal,
@@ -85,9 +86,13 @@ interface ConfirmState {
 export function BackendInstancesSection({
   scope,
   filters,
+  focusedPoolId = null,
+  onClearPoolFocus,
 }: {
   scope: RegistryScope;
   filters: RegistryFilters;
+  focusedPoolId?: string | null;
+  onClearPoolFocus?: () => void;
 }): ReactNode {
   const { isSuperAdmin, backends, vm } = scope;
   const [detail, setDetail] = useState<DetailState | null>(null);
@@ -102,6 +107,9 @@ export function BackendInstancesSection({
 
   const rows = useMemo(() => {
     return backends.filter((b) => {
+      if (focusedPoolId && registryToPool.get(b.id)?.poolId !== focusedPoolId) {
+        return false;
+      }
       if (filters.search) {
         const q = filters.search.toLowerCase();
         const hay = `${b.name} ${b.url} ${b.id} ${b.source_project_name ?? ""}`.toLowerCase();
@@ -113,7 +121,7 @@ export function BackendInstancesSection({
       }
       return true;
     });
-  }, [backends, filters.search, filters.statusFilter]);
+  }, [backends, filters.search, filters.statusFilter, focusedPoolId, registryToPool]);
 
   if (backends.length === 0) {
     return (
@@ -127,6 +135,12 @@ export function BackendInstancesSection({
 
   return (
     <>
+      {focusedPoolId && (
+        <div className="mb-3 flex items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          <span>仅显示服务池 {focusedPoolId} 的实例</span>
+          <Button size="sm" variant="ghost" onClick={onClearPoolFocus}>清除筛选</Button>
+        </div>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
@@ -281,6 +295,11 @@ function InstanceRow({
             <InstanceActionsMenu
               backend={backend}
               poolInfo={poolInfo}
+              routerMode={scope.vm.router_mode}
+              ledgerFresh={
+                scope.vm.sources.find((source) => source.name === "router_ledger")
+                  ?.stale === false
+              }
               onConfirm={onConfirm}
               onEdit={onEdit}
             />
@@ -335,11 +354,15 @@ function GpuClaimCell({ backend }: { backend: GlobalBackendItem }): ReactNode {
 function InstanceActionsMenu({
   backend,
   poolInfo,
+  routerMode,
+  ledgerFresh,
   onConfirm,
   onEdit,
 }: {
   backend: GlobalBackendItem;
   poolInfo: { poolId: string; poolName: string; member: MemberViewModel | null } | null;
+  routerMode: RegistryScope["vm"]["router_mode"];
+  ledgerFresh: boolean;
   onConfirm: (s: ConfirmState) => void;
   onEdit: (target: GlobalRegistryEditTarget) => void;
 }): ReactNode {
@@ -350,6 +373,9 @@ function InstanceActionsMenu({
 
   const poolId = poolInfo?.poolId ?? null;
   const member = poolInfo?.member ?? null;
+  const unloadGate = member
+    ? evaluateUnloadGate(member, routerMode, ledgerFresh)
+    : null;
 
   const onHealth = () => {
     health.mutate(backend.id, {
@@ -445,6 +471,7 @@ function InstanceActionsMenu({
       id: "unload",
       label: "卸载",
       icon: "box",
+      disabled: unloadGate !== null && !unloadGate.can_unload,
       onSelect: () => onConfirm({ kind: "unload", backend }),
     },
     {
@@ -495,10 +522,14 @@ function InstanceConfirmDialog({
   if (!confirm) return null;
   const { kind, backend } = confirm;
   const member = findMemberByRegistry(scope, backend.id);
-  // Unload gate (plan §8.1): routable members must drain first. We surface this
-  // in the dialog body; the operator can still force-confirm, in which case the
-  // server-side gate will reject if it disagrees.
-  const unloadBlocked = kind === "unload" && member?.routing === "routable";
+  const ledgerFresh =
+    scope.vm.sources.find((source) => source.name === "router_ledger")?.stale ===
+    false;
+  const unloadGate =
+    kind === "unload" && member
+      ? evaluateUnloadGate(member, scope.vm.router_mode, ledgerFresh)
+      : null;
+  const unloadBlocked = unloadGate !== null && !unloadGate.can_unload;
 
   const onConfirm = () => {
     if (kind === "delete") {
@@ -556,7 +587,7 @@ function InstanceConfirmDialog({
                   {unloadBlocked && (
                     <div className="flex items-start gap-1.5 rounded-md border border-status-caution bg-status-caution-soft px-2.5 py-2 text-xs text-status-caution">
                       <Icon name="warning" size={12} className="mt-0.5 flex-shrink-0" />
-                      <span>实例仍在接流（routable）。建议先 drain 停止接收新请求，再卸载 GPU 驻留。</span>
+                      <span>{unloadGate.reasons.join("；")}</span>
                     </div>
                   )}
                 </>
@@ -568,7 +599,7 @@ function InstanceConfirmDialog({
           <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
           <AlertDialogAction
             variant={kind === "delete" ? "destructive" : "default"}
-            disabled={submitting}
+            disabled={submitting || unloadBlocked}
             onClick={(e) => {
               e.preventDefault();
               onConfirm();

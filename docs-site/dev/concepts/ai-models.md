@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-06-24
+last_reviewed: 2026-07-20
 ---
 
 # AI 模型集成
@@ -241,6 +241,8 @@ histogram_quantile(0.95,
 - `MLBackendClient.__init__` 读取 `extra_params.max_concurrency`；真正进入预测时，`_get_semaphore(backend_id, max_cc)` 在当前 event loop 中取得或创建信号量.
 - `predict()` / `predict_interactive()` 在 `async with await self._acquire():` 内调 httpx, 信号量 acquire/release 自动绕在请求 IO 外.
 - 同一 event loop 内的多个 `MLBackendClient` 实例共享同 backend id 的信号量，跨 task / 跨请求生效；API 与不同 Celery loop 之间仍不共享，本地闸不能替代 Redis 全局 lease.
+
+当 `ML_BACKEND_ROUTER_MODE=enforce` 时，服务池路由 ledger 会在选定物理实例前按同一 `max_concurrency` 发放 Redis route lease，因此 API 与多个 Celery worker 共享实例级上限；off/observe 仍只依赖各进程本地 semaphore。GPU 仲裁的逐资源 effective mode 负责显存准入与驱逐，不决定 route lease 是否生效。
 
 **配置示例** (DB JSONB):
 

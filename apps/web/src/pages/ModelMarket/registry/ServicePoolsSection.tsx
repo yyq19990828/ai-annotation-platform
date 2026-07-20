@@ -29,6 +29,32 @@ import {
   TableRow,
 } from "@/components/shadcn/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadcn/ui/tooltip";
+import { Input } from "@/components/shadcn/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shadcn/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadcn/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/shadcn/ui/select";
 import { useToastStore } from "@/components/ui/Toast";
 
 import { NO_LIMIT, NO_METRICS } from "./registryShared";
@@ -46,7 +72,11 @@ import { RuntimeStatusBadge } from "../runtime/RuntimeStatusBadge";
 import { poolStatusToken } from "../runtime/StateTokens";
 import {
   useDrainPoolMember,
+  useCreateServicePool,
+  useDeleteServicePool,
   usePatchServicePool,
+  usePutPoolMember,
+  useRemovePoolMember,
   useResumePoolMember,
 } from "../useGlobalRegistry";
 
@@ -129,6 +159,27 @@ export function ServicePoolsSection({
 }): ReactNode {
   const { isSuperAdmin, vm } = scope;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [createOpen, setCreateOpen] = useState(false);
+  const [poolName, setPoolName] = useState("");
+  const createPool = useCreateServicePool();
+  const pushToast = useToastStore((s) => s.push);
+
+  const submitCreate = () => {
+    const name = poolName.trim();
+    if (!name) return;
+    createPool.mutate(
+      { name },
+      {
+        onSuccess: () => {
+          pushToast({ msg: `已创建服务池「${name}」`, kind: "success" });
+          setPoolName("");
+          setCreateOpen(false);
+        },
+        onError: (error) =>
+          pushToast({ msg: "创建服务池失败", sub: (error as Error).message, kind: "warning" }),
+      },
+    );
+  };
 
   const togglePool = (poolId: string) => {
     setExpanded((prev) => {
@@ -154,16 +205,37 @@ export function ServicePoolsSection({
 
   if (vm.pools.length === 0) {
     return (
-      <EmptyState
-        icon="layers"
-        message="尚无服务池"
-        hint={isSuperAdmin ? "服务池由负载均衡配置创建；legacy 实例会在首次注册时自动建池。" : undefined}
-      />
+      <div className="flex flex-col gap-3">
+        {isSuperAdmin && (
+          <div className="flex justify-end">
+            <Button onClick={() => setCreateOpen(true)}>
+              <Icon name="plus" size={12} />新建服务池
+            </Button>
+          </div>
+        )}
+        <EmptyState icon="layers" message="尚无服务池" />
+        <CreatePoolDialog
+          open={createOpen}
+          name={poolName}
+          pending={createPool.isPending}
+          onNameChange={setPoolName}
+          onOpenChange={setCreateOpen}
+          onSubmit={submitCreate}
+        />
+      </div>
     );
   }
 
   return (
-    <Table>
+    <div className="flex flex-col gap-3">
+      {isSuperAdmin && (
+        <div className="flex justify-end">
+          <Button onClick={() => setCreateOpen(true)}>
+            <Icon name="plus" size={12} />新建服务池
+          </Button>
+        </div>
+      )}
+      <Table>
       <TableHeader>
         <TableRow>
           <TableHead className="w-8" />
@@ -196,7 +268,58 @@ export function ServicePoolsSection({
           </TableRow>
         )}
       </TableBody>
-    </Table>
+      </Table>
+      <CreatePoolDialog
+        open={createOpen}
+        name={poolName}
+        pending={createPool.isPending}
+        onNameChange={setPoolName}
+        onOpenChange={setCreateOpen}
+        onSubmit={submitCreate}
+      />
+    </div>
+  );
+}
+
+function CreatePoolDialog({
+  open,
+  name,
+  pending,
+  onNameChange,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  name: string;
+  pending: boolean;
+  onNameChange: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: () => void;
+}): ReactNode {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>新建服务池</DialogTitle>
+          <DialogDescription>创建后默认停用，加入能力等价的成员后再启用。</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          <label htmlFor="service-pool-name" className="text-sm font-medium">名称</label>
+          <Input
+            id="service-pool-name"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>取消</Button>
+          <Button onClick={onSubmit} disabled={pending || !name.trim()}>
+            {pending ? "创建中…" : "创建"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -316,7 +439,7 @@ function PoolRow({
         </TableCell>
         {isSuperAdmin && (
           <TableCell className="text-right">
-            <PoolActionsMenu pool={pool} />
+            <PoolActionsMenu pool={pool} scope={scope} />
           </TableCell>
         )}
       </TableRow>
@@ -410,6 +533,7 @@ function PoolMembersSubRows({
               {m.gpu_resource_id && scope.isSuperAdmin && (
                 <span className="text-muted-foreground">GPU · {m.gpu_resource_id}</span>
               )}
+              {scope.isSuperAdmin && <PoolMemberActions pool={pool} member={m} />}
             </div>
           </TableCell>
         </TableRow>
@@ -431,11 +555,21 @@ function trafficStateLabel(state: string): string {
   }
 }
 
-function PoolActionsMenu({ pool }: { pool: PoolViewModel }): ReactNode {
+function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: RegistryScope }): ReactNode {
   const pushToast = useToastStore((s) => s.push);
   const drain = useDrainPoolMember();
   const resume = useResumePoolMember();
   const patch = usePatchServicePool();
+  const putMember = usePutPoolMember();
+  const deletePool = useDeleteServicePool();
+  const [addOpen, setAddOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [registryId, setRegistryId] = useState("");
+  const [weight, setWeight] = useState("1");
+  const [nextName, setNextName] = useState(pool.name);
+  const owned = new Set(scope.vm.pools.flatMap((item) => item.members.map((m) => m.registry_id)));
+  const candidates = scope.backends.filter((backend) => !owned.has(backend.id));
 
   const anyActive = pool.members.some((m) => m.traffic_state === "active");
   const anyDraining = pool.members.some((m) => m.traffic_state === "draining");
@@ -497,6 +631,22 @@ function PoolActionsMenu({ pool }: { pool: PoolViewModel }): ReactNode {
         );
       },
     },
+    {
+      id: "add-member",
+      label: "添加成员",
+      icon: "plus",
+      disabled: candidates.length === 0,
+      onSelect: () => setAddOpen(true),
+    },
+    {
+      id: "rename-pool",
+      label: "重命名",
+      icon: "edit",
+      onSelect: () => {
+        setNextName(pool.name);
+        setRenameOpen(true);
+      },
+    },
     { id: "div-1", divider: true, label: "" },
     {
       id: "drain",
@@ -520,10 +670,35 @@ function PoolActionsMenu({ pool }: { pool: PoolViewModel }): ReactNode {
       disabled: patch.isPending,
       onSelect: onToggleEnabled,
     },
+    {
+      id: "delete-pool",
+      label: "删除服务池",
+      icon: "trash",
+      disabled: pool.members.length > 0,
+      onSelect: () => setDeleteOpen(true),
+    },
   ];
 
+  const submitMember = () => {
+    if (!registryId) return;
+    putMember.mutate(
+      { poolId: pool.id, registryId, payload: { weight: Number(weight) } },
+      {
+        onSuccess: () => {
+          pushToast({ msg: "已添加服务池成员", kind: "success" });
+          setAddOpen(false);
+          setRegistryId("");
+          setWeight("1");
+        },
+        onError: (error) =>
+          pushToast({ msg: "添加成员失败", sub: (error as Error).message, kind: "warning" }),
+      },
+    );
+  };
+
   return (
-    <DropdownMenu
+    <>
+      <DropdownMenu
       minWidth={200}
       items={items}
       trigger={({ open, toggle, ref }) => (
@@ -543,7 +718,144 @@ function PoolActionsMenu({ pool }: { pool: PoolViewModel }): ReactNode {
           操作
         </Button>
       )}
-    />
+      />
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>向「{pool.name}」添加成员</DialogTitle>
+            <DialogDescription>只能加入尚未归属其他服务池且能力指纹一致的实例。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">实例</label>
+              <Select value={registryId} onValueChange={setRegistryId}>
+                <SelectTrigger><SelectValue placeholder="选择实例" /></SelectTrigger>
+                <SelectContent>
+                  {candidates.map((backend) => (
+                    <SelectItem key={backend.id} value={backend.id}>{backend.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <label htmlFor={`member-weight-${pool.id}`} className="text-sm font-medium">权重</label>
+              <Input
+                id={`member-weight-${pool.id}`}
+                type="number"
+                min={1}
+                max={100}
+                value={weight}
+                onChange={(event) => setWeight(event.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddOpen(false)}>取消</Button>
+            <Button onClick={submitMember} disabled={!registryId || putMember.isPending}>添加</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>重命名服务池</DialogTitle>
+            <DialogDescription>名称仅用于展示，不改变服务池 ID 或路由成员。</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={nextName}
+            onChange={(event) => setNextName(event.target.value)}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameOpen(false)}>取消</Button>
+            <Button
+              disabled={!nextName.trim() || patch.isPending}
+              onClick={() => patch.mutate(
+                { poolId: pool.id, payload: { name: nextName.trim() } },
+                {
+                  onSuccess: () => {
+                    setRenameOpen(false);
+                    pushToast({ msg: "服务池已重命名", kind: "success" });
+                  },
+                  onError: (error) => pushToast({
+                    msg: "服务池重命名失败",
+                    sub: (error as Error).message,
+                    kind: "warning",
+                  }),
+                },
+              )}
+            >保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除服务池「{pool.name}」</AlertDialogTitle>
+            <AlertDialogDescription>仅空服务池可删除，此操作不可撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => deletePool.mutate(pool.id, {
+                onSuccess: () => setDeleteOpen(false),
+                onError: (error) => pushToast({ msg: "删除服务池失败", sub: (error as Error).message, kind: "warning" }),
+              })}
+            >删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function PoolMemberActions({ pool, member }: { pool: PoolViewModel; member: PoolViewModel["members"][number] }): ReactNode {
+  const pushToast = useToastStore((s) => s.push);
+  const put = usePutPoolMember();
+  const remove = useRemovePoolMember();
+  const [editOpen, setEditOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [weight, setWeight] = useState(String(member.weight ?? 1));
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>编辑权重</Button>
+      <Button size="sm" variant="ghost" onClick={() => setRemoveOpen(true)}>移除</Button>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>编辑「{member.name}」权重</DialogTitle></DialogHeader>
+          <Input type="number" min={1} max={100} value={weight} onChange={(event) => setWeight(event.target.value)} />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>取消</Button>
+            <Button onClick={() => put.mutate(
+              { poolId: pool.id, registryId: member.registry_id, payload: { weight: Number(weight) } },
+              {
+                onSuccess: () => setEditOpen(false),
+                onError: (error) => pushToast({ msg: "权重更新失败", sub: (error as Error).message, kind: "warning" }),
+              },
+            )}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除成员「{member.name}」</AlertDialogTitle>
+            <AlertDialogDescription>成员必须已 drain，且路由账本能确认 inflight 为 0。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => remove.mutate(
+              { poolId: pool.id, registryId: member.registry_id },
+              {
+                onSuccess: () => setRemoveOpen(false),
+                onError: (error) => pushToast({ msg: "移除成员失败", sub: (error as Error).message, kind: "warning" }),
+              },
+            )}>移除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

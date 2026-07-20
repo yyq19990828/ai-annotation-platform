@@ -168,7 +168,9 @@ export function InstanceDetailSheet({
                 <DetailRow
                   label="当前并发"
                   value={
-                    rt ? String(rt.route_inflight) : NO_METRICS_LABEL
+                    rt?.route_inflight == null
+                      ? NO_METRICS_LABEL
+                      : String(rt.route_inflight)
                   }
                 />
                 <DetailRow label="最大并发" value="未声明" muted />
@@ -208,7 +210,13 @@ export function InstanceDetailSheet({
                 />
                 <DetailRow
                   label="熔断"
-                  value={rt ? (rt.circuit_open ? "是" : "否") : NO_METRICS_LABEL}
+                  value={
+                    rt?.circuit_open == null
+                      ? NO_METRICS_LABEL
+                      : rt.circuit_open
+                        ? "是"
+                        : "否"
+                  }
                 />
               </div>
             </section>

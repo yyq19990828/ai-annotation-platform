@@ -211,7 +211,12 @@
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
 - [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market/protocol-card-details.png` — 能力目录协议卡复用 ModelCard 的详情态；红框：可接受输入、输出属性/几何、资源/变体、`⚠ 协议` 诊断 badge [manual]
-- [ ] `images/superadmin/model-market-runtime-card.png` — backend 运行时卡片；红框：GPU claim、资源 ID、显存预算、驱逐优先级、desired → effective、诊断、池状态与卸载 / 预热操作 **[Tier A]** [manual]
+- [~] ~~`images/superadmin/model-market-runtime-card.png` — backend 运行时大卡~~ — **已废弃**：运行时观测已改为服务池摘要卡 → 实例面板 → 详情 Sheet，不再按单 backend 展示大卡
+- [ ] `images/superadmin/model-market/runtime-pools.png` — 运行时观测主图；默认浅色 1440×900，同时露出四项摘要、部分可用的数据来源行、两列服务池摘要卡，并展开一个池显示实例面板 **[Tier A]** [manual]（现有 1440×1200 浅色录制可作构图参考；正式图使用固定 screenshots seed / stub，mask 更新时间、内部 URL、GPU / 实例 ID 和浮动 BUG 入口；重录前确认 `unloaded` 不计为驻留，observe 缺失 / stale 不显示为健康）
+- [ ] `images/superadmin/model-market/runtime-data-sources.png` — 展开「数据来源」后的部分失败态；至少包含一个 stale/error 来源及更新时间，说明单源失败不抹掉其它可信数据 **[Tier A]** [manual]
+- [ ] `images/superadmin/model-market/runtime-instance-detail.png` — 打开实例详情 Sheet；红框：路由状态、并发/延迟未知语义、health/compute、GPU claim、驻留与原始诊断 **[Tier B]** [manual]
+- [ ] `images/superadmin/model-market/registry-service-pools.png` — 注册管理「服务池」主视图；展开一个池显示成员、权重、接流状态和维护操作，并保留五个结构化视图的 tab **[Tier A]** `[auto]`
+- [ ] `images/superadmin/model-market/registry-issue-center.png` — 注册管理「问题中心」；展示按稳定键去重后的主问题、严重度、受影响对象计数与筛选 **[Tier B]** [manual]
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [x] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count `[auto]`（本地无模板呈空态）

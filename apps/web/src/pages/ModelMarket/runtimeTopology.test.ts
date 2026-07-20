@@ -690,6 +690,16 @@ describe("evaluateUnloadGate · drain→quiescent→unload 安全门", () => {
     expect(gate.can_unload).toBe(false);
     expect(gate.blocked_shadow_mode).toBe(true);
   });
+
+  it("disabled 成员也必须先进入 draining", () => {
+    const gate = evaluateUnloadGate(
+      makeMember({ routing: "blocked", traffic_state: "disabled" }),
+      "enforce",
+      true,
+    );
+    expect(gate.can_unload).toBe(false);
+    expect(gate.blocked_routable).toBe(true);
+  });
 });
 
 // ── pool sort ──────────────────────────────────────────────────────────────

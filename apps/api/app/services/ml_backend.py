@@ -43,6 +43,18 @@ class MLBackendURLConflict(Exception):
         self.backend_name = backend_name
 
 
+class MLBackendPoolMemberConflict(Exception):
+    """A registry is already owned by another service pool."""
+
+    def __init__(self, pool_id: uuid.UUID) -> None:
+        super().__init__(f"registry already belongs to service pool {pool_id}")
+        self.pool_id = pool_id
+
+
+class MLBackendPoolCapabilityUnavailable(Exception):
+    """A multi-member pool has no trustworthy capability baseline yet."""
+
+
 class GPUBackendManagedMutationBlocked(Exception):
     """A backend that entered a managed runtime must use managed retirement."""
 
@@ -153,6 +165,17 @@ class MLBackendService:
         pool = existing.scalars().first()
         if pool is not None:
             return pool
+        raw_caps = (registry.health_meta or {}).get("capabilities")
+        capability_snapshot = None
+        capability_fp = None
+        if isinstance(raw_caps, dict):
+            from app.services.ml_routing.capability import (
+                canonicalize_capability,
+                capability_fingerprint,
+            )
+
+            capability_snapshot = canonicalize_capability(raw_caps)
+            capability_fp = capability_fingerprint(capability_snapshot)
         pool = MLBackendServicePool(
             id=uuid.uuid4(),
             name=registry.name,
@@ -160,6 +183,8 @@ class MLBackendService:
             routing_policy="smooth_weighted_round_robin",
             legacy_instance_id=registry.id,
             routing_generation=1,
+            capability_fingerprint=capability_fp,
+            capability_snapshot=capability_snapshot,
         )
         self.db.add(pool)
         await self.db.flush()
@@ -180,12 +205,16 @@ class MLBackendService:
     ) -> MLBackendServicePool:
         """Create a disabled empty pool (§12.1). Adding the first member sets legacy_instance_id
         + computes capability fingerprint; only then can the pool be enabled (D15)."""
+        if legacy_instance_id is not None:
+            raise ValueError(
+                "legacy_instance_id cannot be set without membership; create the pool then add the member"
+            )
         pool = MLBackendServicePool(
             id=uuid.uuid4(),
             name=name,
             enabled=False,
             routing_policy="smooth_weighted_round_robin",
-            legacy_instance_id=legacy_instance_id,
+            legacy_instance_id=None,
             routing_generation=1,
         )
         self.db.add(pool)
@@ -194,6 +223,15 @@ class MLBackendService:
 
     async def get_pool(self, pool_id: uuid.UUID) -> MLBackendServicePool | None:
         return await self.db.get(MLBackendServicePool, pool_id)
+
+    async def _get_pool_for_update(
+        self, pool_id: uuid.UUID
+    ) -> MLBackendServicePool | None:
+        return await self.db.scalar(
+            select(MLBackendServicePool)
+            .where(MLBackendServicePool.id == pool_id)
+            .with_for_update()
+        )
 
     async def list_pools(self) -> list[MLBackendServicePool]:
         result = await self.db.execute(
@@ -206,17 +244,36 @@ class MLBackendService:
     async def update_pool(
         self, pool_id: uuid.UUID, *, name: str | None = None, enabled: bool | None = None
     ) -> MLBackendServicePool | None:
-        pool = await self.get_pool(pool_id)
+        pool = await self._get_pool_for_update(pool_id)
         if pool is None:
             return None
-        if name is not None:
+        changed = False
+        if name is not None and pool.name != name:
             pool.name = name
+            changed = True
         if enabled is not None:
             if enabled and pool.legacy_instance_id is None:
                 raise ValueError(
                     "cannot enable a pool with no legacy instance; add a member first (D15)"
                 )
-            pool.enabled = enabled
+            if enabled and pool.capability_fingerprint is None:
+                raise ValueError(
+                    "cannot enable a pool before a member capability snapshot is available"
+                )
+            if enabled:
+                member = await self.db.scalar(
+                    select(MLBackendPoolMember).where(
+                        MLBackendPoolMember.pool_id == pool.id,
+                        MLBackendPoolMember.registry_id == pool.legacy_instance_id,
+                        MLBackendPoolMember.traffic_state == "active",
+                    )
+                )
+                if member is None:
+                    raise ValueError("legacy instance must be an active member of the pool")
+            if pool.enabled != enabled:
+                pool.enabled = enabled
+                changed = True
+        if changed:
             pool.routing_generation += 1
         await self.db.flush()
         return pool
@@ -224,14 +281,14 @@ class MLBackendService:
     async def delete_pool(self, pool_id: uuid.UUID) -> bool:
         """Delete a pool. Members cascade; legacy_instance_id FK is RESTRICT so the
         legacy registry must be removed from membership first (or pool disabled + cleared)."""
-        pool = await self.get_pool(pool_id)
+        pool = await self._get_pool_for_update(pool_id)
         if pool is None:
             return False
-        # Clear legacy_instance_id first (FK RESTRICT); disable to satisfy CHECK.
-        pool.enabled = False
-        pool.legacy_instance_id = None
-        pool.routing_generation += 1
-        await self.db.flush()
+        member = await self.db.scalar(
+            select(MLBackendPoolMember.id).where(MLBackendPoolMember.pool_id == pool_id)
+        )
+        if member is not None:
+            raise ValueError("remove every service-pool member before deleting the pool")
         await self.db.delete(pool)
         await self.db.flush()
         return True
@@ -250,61 +307,131 @@ class MLBackendService:
         Returns (member, pool). Raises CapabilityMismatch on fingerprint divergence.
         """
         from app.services.ml_routing.capability import (
+            canonicalize_capability,
             capability_fingerprint,
             diff_capabilities,
         )
         from app.services.ml_routing.contracts import CapabilityMismatchError
 
-        pool = await self.get_pool(pool_id)
+        pool = await self.db.scalar(
+            select(MLBackendServicePool)
+            .where(MLBackendServicePool.id == pool_id)
+            .with_for_update()
+        )
         if pool is None:
             raise ValueError(f"pool {pool_id} not found")
         registry = await self.get(registry_id)
         if registry is None:
             raise ValueError(f"registry {registry_id} not found")
+        owned_member = await self.db.scalar(
+            select(MLBackendPoolMember)
+            .where(MLBackendPoolMember.registry_id == registry_id)
+            .with_for_update()
+        )
+        if owned_member is not None and owned_member.pool_id != pool_id:
+            raise MLBackendPoolMemberConflict(owned_member.pool_id)
+
         # Capability fingerprint check (D3): exact match required for active routing.
         candidate_caps = (
             (registry.health_meta or {}).get("capabilities")
             if registry.health_meta
             else None
         )
-        candidate_fp = (
-            capability_fingerprint(candidate_caps) if candidate_caps else None
+        candidate_snapshot = (
+            canonicalize_capability(candidate_caps) if candidate_caps else None
         )
-        if pool.capability_fingerprint is not None and candidate_fp is not None:
-            mismatch = diff_capabilities(pool.capability_snapshot, candidate_caps)
+        candidate_fp = capability_fingerprint(candidate_snapshot) if candidate_snapshot else None
+        if pool.capability_fingerprint is not None:
+            mismatch = diff_capabilities(pool.capability_snapshot, candidate_snapshot)
             if mismatch is not None:
                 raise CapabilityMismatchError(mismatch)
+        if owned_member is not None:
+            member = owned_member
+            if pool.capability_fingerprint is None and candidate_fp is not None:
+                pool.capability_fingerprint = candidate_fp
+                pool.capability_snapshot = candidate_snapshot
+                pool.routing_generation += 1
+            if member.weight != weight:
+                member.weight = weight
+                pool.routing_generation += 1
+            await self.db.flush()
+            return member, pool
+        if pool.capability_fingerprint is None:
+            existing_member_id = await self.db.scalar(
+                select(MLBackendPoolMember.id).where(
+                    MLBackendPoolMember.pool_id == pool_id
+                )
+            )
+            if existing_member_id is not None:
+                raise MLBackendPoolCapabilityUnavailable(
+                    "service pool capability baseline is unavailable; refresh the existing member before adding replicas"
+                )
         member = MLBackendPoolMember(
-            id=uuid.uuid4(),
-            pool_id=pool_id,
-            registry_id=registry_id,
-            traffic_state="active",
-            weight=weight,
+            id=uuid.uuid4(), pool_id=pool_id, registry_id=registry_id,
+            traffic_state="active", weight=weight,
         )
         self.db.add(member)
         # First member seeds the pool fingerprint + legacy_instance_id (§7.3).
         if pool.capability_fingerprint is None and candidate_fp is not None:
             pool.capability_fingerprint = candidate_fp
-            pool.capability_snapshot = candidate_caps
+            pool.capability_snapshot = candidate_snapshot
         if pool.legacy_instance_id is None:
             pool.legacy_instance_id = registry_id
         pool.routing_generation += 1
         await self.db.flush()
         return member, pool
 
+    async def _reconcile_pool_capability(
+        self, registry_id: uuid.UUID, capabilities: dict
+    ) -> None:
+        """Seed a pool snapshot or disable a member whose stable contract drifted."""
+        from app.services.ml_routing.capability import (
+            canonicalize_capability,
+            capability_fingerprint,
+        )
+
+        member = await self.db.scalar(
+            select(MLBackendPoolMember)
+            .where(MLBackendPoolMember.registry_id == registry_id)
+            .with_for_update()
+        )
+        if member is None:
+            return
+        pool = await self.db.scalar(
+            select(MLBackendServicePool)
+            .where(MLBackendServicePool.id == member.pool_id)
+            .with_for_update()
+        )
+        if pool is None:
+            return
+        snapshot = canonicalize_capability(capabilities)
+        fingerprint = capability_fingerprint(snapshot)
+        if pool.capability_fingerprint is None:
+            pool.capability_snapshot = snapshot
+            pool.capability_fingerprint = fingerprint
+            pool.routing_generation += 1
+        elif pool.capability_fingerprint != fingerprint and member.traffic_state != "disabled":
+            member.traffic_state = "disabled"
+            if pool.legacy_instance_id == registry_id:
+                # off/observe dispatch always uses the legacy instance.  Once its
+                # contract drifts, disable the pool until an equivalent legacy is
+                # selected explicitly; never bypass the disabled member state.
+                pool.enabled = False
+            pool.routing_generation += 1
+
     async def remove_pool_member(
         self, pool_id: uuid.UUID, registry_id: uuid.UUID
     ) -> bool:
         """Remove a member. If it's the legacy_instance_id, clear that pointer + disable
         pool (D5/D15: non-empty enabled pool must have legacy member)."""
-        pool = await self.get_pool(pool_id)
+        pool = await self._get_pool_for_update(pool_id)
         if pool is None:
             return False
         result = await self.db.execute(
             select(MLBackendPoolMember).where(
                 MLBackendPoolMember.pool_id == pool_id,
                 MLBackendPoolMember.registry_id == registry_id,
-            )
+            ).with_for_update()
         )
         member = result.scalar_one_or_none()
         if member is None:
@@ -325,14 +452,16 @@ class MLBackendService:
             select(MLBackendPoolMember).where(
                 MLBackendPoolMember.pool_id == pool_id,
                 MLBackendPoolMember.registry_id == registry_id,
-            )
+            ).with_for_update()
         )
         member = result.scalar_one_or_none()
         if member is None:
             return None
-        member.traffic_state = "draining"
-        pool = await self.get_pool(pool_id)
-        if pool is not None:
+        pool = await self._get_pool_for_update(pool_id)
+        changed = member.traffic_state != "draining"
+        if changed:
+            member.traffic_state = "draining"
+        if pool is not None and changed:
             pool.routing_generation += 1
         await self.db.flush()
         return member
@@ -345,7 +474,7 @@ class MLBackendService:
             select(MLBackendPoolMember).where(
                 MLBackendPoolMember.pool_id == pool_id,
                 MLBackendPoolMember.registry_id == registry_id,
-            )
+            ).with_for_update()
         )
         member = result.scalar_one_or_none()
         if member is None:
@@ -354,9 +483,11 @@ class MLBackendService:
             raise ValueError(
                 "disabled member needs capability re-validation before resume"
             )
-        member.traffic_state = "active"
-        pool = await self.get_pool(pool_id)
-        if pool is not None:
+        changed = member.traffic_state != "active"
+        if changed:
+            member.traffic_state = "active"
+        pool = await self._get_pool_for_update(pool_id)
+        if pool is not None and changed:
             pool.routing_generation += 1
         await self.db.flush()
         return member
@@ -457,11 +588,10 @@ class MLBackendService:
         )
         return len(list(running.scalars().all()))
 
-    async def delete(self, registry_id: uuid.UUID) -> bool:
-        row = await self.get(registry_id)
-        if not row:
+    async def validate_delete(self, registry_id: uuid.UUID) -> bool:
+        """Run non-mutating legacy job and managed-GPU deletion guards."""
+        if await self.get(registry_id) is None:
             return False
-        # prediction job 仍在跑则拒删 (payload.ml_backend_id 现存 registry id)
         running_jobs = await self._count_running_predictions(registry_id)
         if running_jobs:
             raise MLBackendDeleteBlocked(running_jobs)
@@ -470,6 +600,13 @@ class MLBackendService:
             raise GPUBackendManagedMutationBlocked(
                 "managed GPU backend requires retirement before delete"
             )
+        return True
+
+    async def delete(self, registry_id: uuid.UUID) -> bool:
+        row = await self.get(registry_id)
+        if not row:
+            return False
+        await self.validate_delete(registry_id)
         # 级联: 解绑 projects.ml_backend_pool_id (SET NULL 语义);
         # project_ml_backend_pool 关联由 FK ondelete=CASCADE 自动清。
         # 历史 prediction.ml_backend_id / ml_backend_pool_id 同样 SET NULL。
@@ -664,6 +801,12 @@ class MLBackendService:
             self.db.add(assoc)
         else:
             assoc.enabled = enabled
+        if enabled and not pool.enabled:
+            # A freshly registered singleton starts globally disabled. The first
+            # project enablement must make the logical route reachable; otherwise
+            # off/observe dispatch is rejected despite the project association.
+            pool.enabled = True
+            pool.routing_generation += 1
         for key in ("default_variants",):
             if key in overrides:
                 setattr(assoc, key, overrides[key])
@@ -706,6 +849,8 @@ class MLBackendService:
                 f"registry {registry_id} has no service pool; "
                 "singleton backfill (alembic 0132) must run first"
             )
+        pool = await self._get_pool_for_update(pool.id)
+        assert pool is not None
         result = await self.db.execute(
             select(ProjectMLBackendPool).where(
                 ProjectMLBackendPool.project_id == project_id,
@@ -979,6 +1124,9 @@ class MLBackendService:
             await self.db.refresh(backend)
             return False
         await self.db.refresh(backend)
+        if healthy and caps is not None:
+            await self._reconcile_pool_capability(registry_id, caps)
+            await self.db.flush()
         return healthy
 
     async def get_interactive_backend(
