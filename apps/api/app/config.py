@@ -228,6 +228,25 @@ class Settings(BaseSettings):
     # Slow-path FIFO has its own bound; it must not inherit the much longer
     # inference timeout or keep a card queue ticket alive indefinitely.
     gpu_arbiter_admission_timeout_seconds: int = Field(default=30, gt=0, le=3600)
+
+    # ── v0.23.3 ADR-0050 · ML Backend service-pool routing ledger ────────────
+    # Deployment-level single switch (D17). off / observe keep legacy instance
+    # dispatch (behavior = v0.23.2); observe additionally computes would-select in
+    # a shadow namespace and records diagnostics without gating; enforce uses
+    # router-selected instances and fails closed on Redis/topology uncertainty.
+    # API / worker / beat read the same value; deploy must rebuild/restart as a unit.
+    ml_backend_router_mode: str = "off"
+    # Health snapshot freshness gate: members whose last_checked_at is older than
+    # this are not eligible candidates (their capability may be stale).
+    ml_backend_router_health_max_age_seconds: int = Field(default=90, gt=0, le=3600)
+    # Route lease TTL must exceed the normal transport timeout; long tasks heartbeat.
+    ml_backend_router_lease_ttl_seconds: int = Field(default=120, gt=0, le=3600)
+    ml_backend_router_heartbeat_interval_seconds: int = Field(
+        default=15, gt=0, le=600
+    )
+    # Passive circuit: consecutive transport failures before ejection + open duration.
+    ml_backend_router_passive_failure_threshold: int = Field(default=3, gt=0, le=100)
+    ml_backend_router_eject_seconds: int = Field(default=30, gt=0, le=3600)
     # Every newly confirmed Resident allocation gets a Redis-time protection
     # window before it may participate in victim selection.
     gpu_arbiter_residency_cooldown_seconds: int = Field(default=30, gt=0, le=3600)
