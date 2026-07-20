@@ -59,45 +59,62 @@ last_reviewed: 2026-07-11
 
 ### 2. 运行时观测
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/superadmin/model-market-runtime-card.png — backend 卡片（GPU 显存 + 池状态 + 操作按钮） [manual] -->
+<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-tree.png — 运行时观测服务池树表（池行 + 展开实例 + 数据来源） [manual] -->
 
-运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**全局注册 backend** 为主键展示。`ML_BACKEND_OBSERVE_URLS` 返回的实时指标按 URL join 到注册 backend：
+运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**服务池**为默认比较层，按服务池 → 实例 → 详情 Sheet 逐级下钻，不再堆实例大卡。数据来自 `topology` + `runtime-snapshot` 两个权威读模型，按稳定 ID 关联（不再按 URL join）。
+
+页面提供单一「刷新」动作 + 自动刷新开关，并展开「数据来源」区域显示各来源（拓扑 / 路由账本 / 健康探活 / GPU 仲裁 / 模型驻留）的 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据——例如路由账本不可用时，拓扑与最近健康配置仍然展示，顶部显示 `partial` 告警。
+
+**服务池行**展示四条独立状态轴，不合成单一「在线」徽标：
+
+| 分组 | 内容 |
+|---|---|
+| 可用性 | 总体严重度、可路由 / 总实例、draining / offline 数 |
+| 流量 | 窗口请求数、实例选择分布紧凑分段条、最近选择时间 |
+| 容量 | inflight / limit、饱和拒绝；GPU queue 另列 |
+| 质量 | P95、错误率、rejection 摘要 |
+| 资源 | GPU 风险、驻留实例数、CPU fallback 数 |
+| 新鲜度 | 最近快照时间、stale / partial 标记 |
+
+> **「暂无路由指标」**：P95、错误率、最近选择、选择 / 拒绝计数等流量真值在合同中保留为 `null`，前端统一显示「暂无路由指标」，不会回落为 `0` 或「健康」。这些字段等后续版本接入共享路由计数器后才会显示真值。
+
+展开服务池后显示实例行：名称 / URL、权重、接流状态、routable reason、当前 / 最大并发、窗口 selection / rejection、P95、错误率、最近选中、health / compute / GPU claim / residency 摘要。点「详情」打开右侧 Sheet，里面才展示模型 / 视频驻留池、cache、variant、builder / borrower、generation、原始诊断和复制 ID。
 
 > **信任边界**：`/observe` 直连 `ML_BACKEND_OBSERVE_URLS` 里的地址探活，**不带应用层鉴权**——它假定这些地址在可信内网、免鉴权可达。请勿把该变量指向可从不受信网络到达的地址；需要鉴权的 backend 应通过「注册管理」注册（注册项携带 `auth_method` / `auth_token`，走鉴权链路），而非只靠裸 observe URL。
 
-- 每个全局注册 backend 一行（URL 全局唯一），实时指标取对应容器值。
-- 没有任何项目启用的注册 backend 仍会出现；全局健康检查和卸载操作不依赖项目绑定。
-- 观测 URL 没有匹配任何注册 backend 时，会进入「未注册容器」分组，只支持直连 observe / smoke-test。
-- 已注册 backend 可执行健康检查、卸载、默认预热，并展示变体面板。
-- 未注册容器会显示其自报的 `supported_trackers` 与变体目录；若只暴露通用 `supported_variants`，当前只读展示，「试启动」保持 disabled，等待 backend 实现通用 warm 接口。
-- 同一 backend URL 被多个项目启用时，运行时观测按 URL 聚合为一张卡，并列出所有启用项目，避免把同一物理容器重复计数。
-- CPU fallback 与 GPU residency 可同时出现；页面会分开显示。只有新鲜且完整的 `residency.gpu_loaded=false` 才能证明空驻留，`compute=cpu` 不能单独证明显存已释放。
-- 卸载、预热和重载成功只表示请求被 backend 接受；是否真正释放或驻留以后续 `residency` 为准。
+**未注册容器**单独放在折叠区：只显示直连 health / latency / compute / GPU / 模型驻留；允许显式注册或 smoke test，但**不展示权重、routable、流量分布，也不自动并池**。
+
+**实例维护走安全顺序**：drain（停止接收新请求）→ 等待 inflight 归零且快照新鲜（quiescent）→ 卸载。`routable` 实例不可一键卸载；当 `ML_BACKEND_ROUTER_MODE != enforce` 时，drain 只标记为「预配置未生效」而非「已停流」。强制卸载（若合同支持）是独立高风险动作，需 AlertDialog 二次确认。
 
 ### 3. 注册管理
 
-注册管理是**全局注册表**的中心，分两块：上方是跨项目共享的 backend 扁平列表，下方是只读的「项目启用概览」。每个物理 backend 全局只有一行，注册一次、所有项目共享。
+注册管理按实体拆成四个结构化视图 + 问题中心，超管看到全部五个 tab，项目管理员只看到服务池 + 实例两个只读视图。每个物理 backend 全局只有一行，注册一次、所有项目共享；服务池是路由选择的逻辑边界（ADR-0050），实例是可定位到物理 URL 的 registry 记录。
 
-**全局注册表**（扁平列表）：
+**服务池**（super_admin + project_admin）：
 
-| 列 | 说明 |
+| 主列 | 内容 |
 |---|---|
-| 名称 | backend 名称 |
-| URL | 注册地址（全局唯一） |
-| 来源 | `manual`（超管手动注册）/ `env`（env 配置启动后自动注册） |
-| 类型 | 交互式 / 批量；本地最大并发 chip（`extra_params.max_concurrency`，缺省不显示） |
-| GPU 配置 | 物理资源、预算、desired → effective mode 与 blocker / 弹性超售诊断 |
-| 状态 | 注册记录最近状态与错误片段 |
-| 最近检查 | 上次健康检查时间 |
-| 操作 | 编辑 / 删除 / 健康检查（**仅超管**） |
+| 服务池 | 名称、稳定 key、策略；ID 只在 tooltip / 复制动作中显示 |
+| 成员 | 可路由 / 总实例，按状态分段 |
+| 容量 | inflight / 总并发、饱和拒绝；明确标注「暂无路由指标」当无计数 |
+| 项目 | 启用项目数，可进入项目绑定视图 |
+| GPU | 关联资源数、最高严重度、预算摘要 |
+| 状态 | 健康、configured → effective 路由、router mode、数据新鲜度分开显示 |
+| 操作 | 查看实例、编辑策略、暂停 / 恢复接流（**仅超管**） |
 
-对应后端端点：`POST /admin/ml-integrations/registry`（新增）、`PUT /admin/ml-integrations/registry/:id`（编辑）、`DELETE /admin/ml-integrations/registry/:id`（删除）、`POST /admin/ml-integrations/registry/:id/health`（健康检查）。
+服务池行可展开成员实例。项目管理员看不到 `routing_policy`、权重与 GPU 列（服务端裁剪为 `unknown` / `null`，非前端隐藏），也没有操作按钮。
 
-**项目启用概览**（**仅超管可见 · 只读**）：列出每个启用了 AI 的项目，以及它当前启用了哪些 backend（已启用 AI 但未启用任何 backend 的项目会标黄提示），每行提供「打开项目设置 →」入口。这里只看不改——项目启用本身在项目设置里做（详见 [启用 ML 后端](../projects/ml-backends)）。
+**实例**（super_admin + project_admin）：实例名称、所属服务池、URL、来源、接流状态、权重（超管）、最大并发、GPU claim（超管）、最近检查、操作（健康检查 / 编辑 / drain / resume / unload / 删除，**仅超管**，按风险排序）。原始错误全文、能力快照、模型池、GPU generation 和诊断进入详情 Sheet。
 
-> **角色门控**：超管可在全局注册表做增删改查 + 健康检查，并看到项目启用概览。项目管理员进本 tab 时全局注册表为**只读**（隐藏注册 / 编辑 / 删除），且看不到项目启用概览与 GPU 物理资源、预算、residency / UUID 等拓扑字段——项目管理员只在自己的项目设置里勾选启用 backend。
+**GPU 资源**（**仅超管**）：资源名称、节点、静态预算 / 可分配容量、已声明预算、运行时 committed、Backend / card queue、lease、desired → effective 和最高诊断。静态声明超售与运行时实际占用是两根独立 Progress 条。资源行展开后列出受影响实例。
 
-运行时指标（GPU、cache、model_version、pool）和生命周期动作已经迁到「运行时观测」。
+**项目绑定**（**仅超管**）：默认按项目显示所绑定服务池、主服务池、可用实例数和风险；支持切换为按服务池反查项目。本页只读，修改入口跳项目设置。项目已启用但池内无可路由实例时单独告警。
+
+**问题中心**（**仅超管**）：按 `code + subject_type + subject_id` 稳定去重，同一问题只渲染一次主记录；默认按 blocker → critical → warning → info 排序。支持按服务池、实例、GPU 资源和 code 筛选。资源 / 实例行只显示关联标记和计数 + 跳转，不复制诊断全文。
+
+对应后端端点：`GET /admin/ml-integrations/topology`（角色裁剪读模型）、`GET /admin/ml-integrations/runtime-snapshot`（仅超管）、`/admin/ml-integrations/service-pools/*`（pool/member CRUD + drain/resume，仅超管）、`POST/PUT/DELETE /admin/ml-integrations/registry/:id`（实例增删改）、`POST /admin/ml-integrations/registry/:id/health`（健康检查）。
+
+> **角色门控**：超管看到全部五个 tab 与所有 mutation。项目管理员只看到「服务池 + 实例」两个只读视图，不显示 GPU 资源 / 项目绑定 / 问题中心，也看不到 `routing_policy` / 权重 / GPU UUID / 预算 / 内部 reason / 诊断拓扑——这些字段在服务端响应中已裁剪为 `unknown` / `null`（非前端隐藏）。项目管理员对自己项目的 backend 启用仍在项目设置里做（详见 [启用 ML 后端](../projects/ml-backends)）。
 
 ## 视频追踪观测与任务监控
 

@@ -36,6 +36,48 @@
 
 ## [Unreleased]
 
+### Added
+
+- **模型市场「注册管理」与「运行时观测」结构化重设计** (ADR-0051). 在 ADR-0050 的服务池 /
+  实例 / GPU 三层之上定义观测面信息架构：注册管理拆成「服务池 / 实例 / GPU 资源 / 项目绑定」
+  四个结构化视图 + 问题中心；运行时观测改为可展开的服务池树表，默认展示路由健康、容量与
+  流量分布，实例详情下沉到 Sheet。前端不再按 URL join `/all` + `/overview` + `/observe`。
+- **四条独立状态轴**: 连通/健康、路由 (configured → effective)、容量、驻留分别判定，不再合成
+  单一「在线」徽标。每条轴的来源不可互推（`connected` 缓存不冒充实时 healthy，GPU queue 不
+  等于路由 inflight，CPU compute 不代表 GPU 已释放）。
+- **typed topology / runtime-snapshot 读模型**: 两个端点从 `-> dict` 升级为 Pydantic
+  `response_model` (`TopologyResponse` / `RuntimeSnapshotResponse`)，OpenAPI snapshot 与
+  generated TS 类型不再是 `unknown`。topology 新增派生 `routable_instances` / `status` /
+  `status_reason_codes`；runtime-snapshot 新增 `observed_at` / `partial` / `partial_reason` /
+  `sources[]` freshness 信封。
+- **服务端角色裁剪收紧**: Project Admin 经 `topology` 拿到的响应中 `routing_policy="unknown"`、
+  member `weight` / `state` / `last_checked_at` / `gpu_resource_id` 为 `None`（服务端裁剪，
+  非前端隐藏）。`runtime-snapshot` / `/observe` / `/gpu-resources` 对 Project Admin 返回 403。
+- **诊断去重合同**: 问题按 `code + subject_type + subject_id` 稳定去重；同一问题在问题中心
+  只渲染一次主记录，受影响对象在 `affected_*_ids[]` 完整列出，资源 / 实例行只显示计数 + 跳转。
+- **卸载安全门**: 实例维护走 drain → quiescent (inflight=0 AND 快照新鲜) → unload 顺序。
+  `routable` 实例不可一键卸载；`router_mode != enforce` 时 draining 标记为「预配置未生效」。
+- **纯 view-model 层** (`runtimeTopology.ts`): 把 topology + runtime snapshot 按 ID 合并为页面
+  view model，保留 unknown / stale / partial，不做业务真值猜测；含可独立测试的派生、排序、
+  筛选、诊断聚合与卸载门控函数。
+
+### Changed
+
+- `RegisteredBackendsTab.tsx` 与 `RuntimeObservePanel.tsx` 重写为编排 shell，详情渲染下沉到
+  `registry/` (5 组件) 与 `runtime/` (10 组件) 子目录。原 `min-w-[980px]` 扁平宽表与实例
+  卡片墙移除；窄屏保留核心列，次要字段进展开行 / Sheet。
+- GPU 资源从大卡改为表格；静态声明超售与运行时实际占用拆成两根独立 Progress 条。
+- 运行时观测刷新合并为单一按钮 + 自动刷新开关 + 「数据来源」展开区（显示各来源 updated_at /
+  stale / error）；部分来源失败不抹掉其它可信数据。
+- 未注册 env 容器独立归组，不授予 routable / weight / traffic 字段，也不自动并池。
+
+### Fixed
+
+- 缺失 / 陈旧路由指标不再回落为 `0` 或 `healthy`：metrics 字段（P95 / 错误率 / 最近选择 /
+  选择 / 拒绝计数）在合同中保留为 `None`，前端统一渲染「暂无路由指标」。
+- 健康快照陈旧时保留上次值 + stale 标记 + 时间，不沿用实时状态色；`runtime-snapshot`
+  partial 时显示「N/M 来源新鲜」+ partial_reason，不整页替换为错误块。
+
 ## [0.23.3] - 2026-07-20
 
 ### Added
