@@ -380,6 +380,16 @@ async def _run_segment(
             task = await db.get(Task, uuid.UUID(task_id))
             if backend is None or task is None:
                 return stats
+            # v0.23.3 ADR-0050 §5.4 · requested pool (off/observe: registry→singleton pool)。
+            # Best-effort: pool id is supplementary lineage, not load-bearing for dispatch.
+            from app.services.ml_backend import MLBackendService
+
+            try:
+                source_pool_id = await MLBackendService(db).pool_id_for_registry(
+                    getattr(backend, "id", None)
+                )
+            except Exception:
+                source_pool_id = None
             ctx = await build_context_from_task(db, task)
             client = MLBackendClient(
                 backend,
@@ -437,6 +447,7 @@ async def _run_segment(
                             results[0].inference_time_ms if results else None
                         ),
                         token_meta=results[0].meta if results else None,
+                        ml_backend_pool_id=source_pool_id,
                     )
                     await db.commit()
                     stats["frames_done"] += 1

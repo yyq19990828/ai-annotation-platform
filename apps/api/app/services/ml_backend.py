@@ -351,6 +351,19 @@ class MLBackendService:
         )
         return result.scalars().first()
 
+    async def pool_id_for_registry(
+        self, registry_id: uuid.UUID
+    ) -> uuid.UUID | None:
+        """Resolve the singleton pool id owning a registry instance.
+
+        Public accessor for call sites that carry a registry id (off/observe dispatch)
+        and need to record the requested pool id on Prediction / FailedPrediction /
+        AsyncJob results (ADR-0050 §5.4 dual-ID). Returns None if the registry has no
+        pool (e.g. pre-backfill, or lifecycle-only instances).
+        """
+        pool = await self._pool_for_registry(registry_id)
+        return pool.id if pool is not None else None
+
     async def list_enabled_for_project(
         self, project_id: uuid.UUID
     ) -> list[MLBackendRegistry]:

@@ -237,6 +237,10 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     # 第三阶段：写 predictions + 删 failed + 推 succeeded
     async with session_factory() as db:
         pred_svc = PredictionService(db)
+        # v0.23.3 ADR-0050 §5.4 · retry 是新的显式请求, 记录 requested pool (经 registry 解析)。
+        from app.services.ml_backend import MLBackendService
+
+        retry_pool_id = await MLBackendService(db).pool_id_for_registry(backend.id)
         pred = await pred_svc.create_from_ml_result(
             task_id=task.id,
             project_id=task.project_id,
@@ -245,6 +249,7 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
             score=first.score,
             model_version=first.model_version,
             inference_time_ms=first.inference_time_ms,
+            ml_backend_pool_id=retry_pool_id,
         )
         # 删除 failed_prediction 行
         fp_again = await db.get(FailedPrediction, fid)

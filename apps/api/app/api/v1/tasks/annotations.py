@@ -361,6 +361,8 @@ async def secondary_inference(
             "task_id": str(task_id),
             "secondary_inference": True,
             "ml_backend_id": str(data.ml_backend_id),
+            # v0.23.3 ADR-0050 §5.4 · audit 记 pool + instance 双 ID。
+            "ml_backend_pool_id": str(await ml_svc.pool_id_for_registry(data.ml_backend_id)),
             "write_target": data.write_target,
             "created_children": len(children),
         },

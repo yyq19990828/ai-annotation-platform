@@ -873,12 +873,15 @@ async def predict_frame(
 
     score = next((r.score for r in results if r.score is not None), None)
     pred_svc = PredictionService(db)
+    # v0.23.3 ADR-0050 §5.4 · 记录 requested pool (off/observe: 经 registry 解析 singleton pool)。
+    pool_id = await svc.pool_id_for_registry(backend_id)
     prediction = await pred_svc.create_from_ml_result(
         task_id=task.id,
         project_id=project_id,
         ml_backend_id=backend_id,
         result=video_shapes,
         score=score,
+        ml_backend_pool_id=pool_id,
     )
     await db.commit()
     return {
