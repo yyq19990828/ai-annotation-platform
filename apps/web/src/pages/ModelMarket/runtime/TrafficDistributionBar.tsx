@@ -64,6 +64,7 @@ export function TrafficDistributionBar({
             <div
               key={s.instance_id}
               className={SEGMENT_COLORS[i % SEGMENT_COLORS.length]}
+              // eslint-disable-next-line no-restricted-syntax -- 流量分段宽度由实时计数派生，经 inline style 注入（同 EntityDataManagerLens 虚拟行偏移）。
               style={{ width: `${pct}%` }}
               title={`${s.instance_name}: ${s.count} (${pct.toFixed(0)}%)`}
             />
