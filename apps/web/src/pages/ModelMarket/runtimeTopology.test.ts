@@ -503,6 +503,46 @@ describe("collectDiagnostics · 去重", () => {
     ]);
     expect(diags.some((d) => d.code === "gpu_critical")).toBe(true);
   });
+
+  it("diagnostic.id 是稳定的 code:subject_type:subject_id（dedup 键）", () => {
+    // collectDiagnostics 的 pushDiagnostic 用 d.id 做 Map key 合并 affected_*_ids。
+    // 当前各 emitter 不会产生同 id 冲突（topology/runtime/gpu 各自的 code 不重叠），
+    // 但 dedup 合并路径是为未来新增 emitter 准备的。这里固定 id 格式合同，
+    // 保证未来若两个来源 emit 同 code+subject_type+subject_id，它们会落到同一 Map key。
+    const pool = makePool({
+      id: "p-stable",
+      name: "stable-pool",
+      status: "offline",
+      members: [
+        {
+          registry_id: "i-stable",
+          name: "i-stable",
+          traffic_state: "disabled",
+          weight: 1,
+          state: "disconnected",
+          last_checked_at: null,
+          gpu_resource_id: null,
+        },
+      ],
+    });
+    const diags = collectDiagnostics(makeTopology({ pools: [pool] }), null, null);
+    const offline = diags.find((d) => d.code === "pool_offline")!;
+    // id = `${code}:${subject_type}:${subject_id}` —— 稳定去重键。
+    expect(offline.id).toBe("pool_offline:service_pool:p-stable");
+    // 不同 subject 的同 code 不会冲突（subject_id 区分）。
+    const pool2 = makePool({
+      id: "p-other",
+      name: "other-pool",
+      status: "offline",
+      members: [],
+    });
+    const diags2 = collectDiagnostics(makeTopology({ pools: [pool, pool2] }), null, null);
+    const offlineIds = diags2.filter((d) => d.code === "pool_offline").map((d) => d.id);
+    expect(offlineIds).toEqual([
+      "pool_offline:service_pool:p-stable",
+      "pool_offline:service_pool:p-other",
+    ]);
+  });
 });
 
 // ── diagnostic sort + filter ───────────────────────────────────────────────
