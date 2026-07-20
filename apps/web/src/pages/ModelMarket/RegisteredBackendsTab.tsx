@@ -1,493 +1,512 @@
-import { useState } from "react";
-import { clsx } from "clsx";
+/**
+ * v0.23.4 P3 · 注册管理 tab — orchestrator shell.
+ *
+ * Plan §4.1 / §6.1 / §10: this file is the only place that owns the registry
+ * queries and renders the role-aware tab structure. It:
+ *   - reads `usePermissions()` and gates Super Admin vs Project Admin tabs;
+ *   - owns the topology / runtime-snapshot / gpu-resources / overview queries;
+ *   - merges topology + snapshot via the pure view-model (no URL-join);
+ *   - collects diagnostics for the Issue Center;
+ *   - renders a single header with counts + search + status filter + 刷新 +
+ *     Super Admin "注册实例" entry;
+ *   - delegates to the five section components under `registry/`.
+ *
+ * Mutations invalidate topology + all + overview + gpu-resources (extended in
+ * useGlobalRegistry.ts). Role projection is server-side (P1) — this view does
+ * NOT add client-side hiding as the only gate; it simply does not render what
+ * the server already nulled (plan §5 + Appendix A.6).
+ */
+import { useMemo, useState, type ReactNode } from "react";
+
 import { useQuery } from "@tanstack/react-query";
-import { Card } from "@/components/ui/Card";
+
 import { Badge } from "@/components/ui/Badge";
-import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
-import { useToastStore } from "@/components/ui/Toast";
+import { Icon } from "@/components/ui/Icon";
+import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/shadcn/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadcn/ui/tabs";
 import {
-  adminMlIntegrationsApi,
-  type GPUArbiterResourceItem,
-  type GPUConfigDiagnostic,
-  type MLBackendItem,
-  type GlobalBackendItem,
-} from "@/api/adminMlIntegrations";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/shadcn/ui/tooltip";
+import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
 import { usePermissions } from "@/hooks/usePermissions";
+
 import {
-  GlobalBackendFormModal,
-  type GlobalRegistryEditTarget,
-} from "./GlobalBackendFormModal";
-import { useDeleteRegistry, useRegistryHealth } from "./useGlobalRegistry";
+  collectDiagnostics,
+  mergeTopologyAndSnapshot,
+} from "./runtimeTopology";
+import { GlobalBackendFormModal } from "./GlobalBackendFormModal";
+import { ServicePoolsSection } from "./registry/ServicePoolsSection";
+import { BackendInstancesSection } from "./registry/BackendInstancesSection";
+import { GPUResourcesSection } from "./registry/GPUResourcesSection";
+import { ProjectBindingsSection } from "./registry/ProjectBindingsSection";
+import { IssueCenter } from "./registry/IssueCenter";
+import type {
+  RegistryFilters,
+  RegistryScope,
+} from "./registry/registryTypes";
 
-const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"> = {
-  connected: "success",
-  disconnected: "outline",
-  error: "danger",
-};
+type StatusFilter = RegistryFilters["statusFilter"];
 
-const TABLE_CLASS =
-  "w-full min-w-[980px] border-separate border-spacing-0 text-sm [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2";
-const TH_CLASS =
-  "border-b border-border bg-muted px-3 py-1.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
-const RETRY_BTN_CLASS =
-  "mt-2 cursor-pointer appearance-none rounded-md border border-border bg-card px-3 py-1 text-xs text-foreground";
-const NOWRAP = "whitespace-nowrap";
-
-function formatDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("zh-CN", { hour12: false });
-}
-
-// v0.19.0 · ADR-0044 · 注册管理 tab：
-//   1. 全局注册表（扁平 · 跨项目共享 · 超管做注册/编辑/删除/健康检查，项目管理员只读）
-//   2. 项目启用概览（仅超管 · 只读 · 列「项目→已启用 backend」+ 打开项目设置链接）
-// 已删除旧的「按项目分组注册」卡片：注册现为全局一次，不再按项目各注册一份。
-export function RegisteredBackendsTab() {
+export function RegisteredBackendsTab(): ReactNode {
   const { role } = usePermissions();
   const isSuperAdmin = role === "super_admin";
-  return (
-    <>
-      {isSuperAdmin && <GPUResourceOverview />}
-      <GlobalRegistrySection isSuperAdmin={isSuperAdmin} />
-      {isSuperAdmin && <ProjectEnablementOverview />}
-    </>
-  );
-}
 
-// 超管 · 跨项目共享的全局 ML Backend 注册表，提供注册/编辑/删除/健康检查。
-// 项目管理员可见同一列表但只读（注册由超管维护，项目启用在项目设置里做）。
-function GlobalRegistrySection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
-  const pushToast = useToastStore((s) => s.push);
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["admin", "ml-integrations", "all"],
-    queryFn: () => adminMlIntegrationsApi.listAll(),
-    refetchInterval: 60_000,
+  const [filters, setFilters] = useState<RegistryFilters>({
+    search: "",
+    statusFilter: "all",
+  });
+  const [tab, setTab] = useState<string>("pools");
+  const [registerOpen, setRegisterOpen] = useState(false);
+
+  // ── queries ──────────────────────────────────────────────────────────────
+  // Plan §9.1 + §9.3: topology is the registry default read model and is
+  // always fetched (both roles); runtime-snapshot / gpu-resources / overview
+  // are SUPER_ADMIN-only.
+  const topologyQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "topology"],
+    queryFn: () => adminMlIntegrationsApi.topology(),
+    staleTime: 60_000,
   });
 
-  const del = useDeleteRegistry();
-  const health = useRegistryHealth();
+  const snapshotQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "runtime-snapshot"],
+    queryFn: () => adminMlIntegrationsApi.runtimeSnapshot(),
+    staleTime: 30_000,
+    enabled: isSuperAdmin,
+  });
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<GlobalRegistryEditTarget | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<GlobalBackendItem | null>(null);
+  const gpuQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "gpu-resources"],
+    queryFn: () => adminMlIntegrationsApi.gpuResources(),
+    staleTime: 60_000,
+    enabled: isSuperAdmin,
+  });
 
-  const openCreate = () => {
-    setEditTarget(null);
-    setModalOpen(true);
-  };
-  const openEdit = (b: GlobalBackendItem) => {
-    setEditTarget({
-      id: b.id,
-      name: b.name,
-      url: b.url,
-      auth_method: b.auth_method,
-      gpu_resource_id: b.gpu_resource_id,
-      vram_budget_mb: b.vram_budget_mb,
-      eviction_priority: b.eviction_priority ?? 0,
-    });
-    setModalOpen(true);
-  };
+  const overviewQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "overview"],
+    queryFn: () => adminMlIntegrationsApi.overview(),
+    staleTime: 60_000,
+    enabled: isSuperAdmin,
+  });
 
-  const onHealth = (b: GlobalBackendItem) => {
-    health.mutate(b.id, {
-      onSuccess: (res) =>
-        pushToast({
-          msg: res.status === "ok" ? `「${res.backend_name}」健康检查通过` : `「${res.backend_name}」检查失败`,
-          kind: res.status === "ok" ? "success" : "warning",
-        }),
-      onError: (e) => pushToast({ msg: "健康检查失败", sub: (e as Error).message, kind: "warning" }),
-    });
-  };
+  const allQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "all"],
+    queryFn: () => adminMlIntegrationsApi.listAll(),
+    staleTime: 60_000,
+  });
 
-  const confirmDelete = () => {
-    if (!deleteTarget) return;
-    const target = deleteTarget;
-    del.mutate(target.id, {
-      onSuccess: () => {
-        pushToast({ msg: `已删除「${target.name}」`, kind: "success" });
-        setDeleteTarget(null);
-      },
-      onError: (e) => {
-        const err = e as { status?: number; message?: string };
-        pushToast({
-          msg: err.status === 409 ? "存在运行中的预标任务，无法删除" : "删除失败",
-          sub: err.status === 409 ? err.message : (e as Error).message,
-          kind: "warning",
-        });
-        setDeleteTarget(null);
-      },
-    });
+  const refreshAll = () => {
+    topologyQ.refetch();
+    if (isSuperAdmin) {
+      snapshotQ.refetch();
+      gpuQ.refetch();
+      overviewQ.refetch();
+    }
+    allQ.refetch();
   };
 
-  const items = data?.items ?? [];
-  const headers = isSuperAdmin
-    ? ["名称", "URL", "来源", "类型", "GPU 配置", "状态", "最近检查", "操作"]
-    : ["名称", "URL", "来源", "类型", "状态", "最近检查"];
+  // ── view-model merge ──────────────────────────────────────────────────────
+  // topologyQ.data may be undefined while loading; once loaded it is non-null.
+  // We narrow here so the rest of the component (and the RegistryScope it
+  // builds) can rely on a non-null TopologyResponse.
+  const topology = topologyQ.data ?? null;
+  const snapshot = isSuperAdmin ? snapshotQ.data ?? null : null;
+  const vm = useMemo(() => {
+    if (!topology) return null;
+    return mergeTopologyAndSnapshot(topology, snapshot);
+  }, [topology, snapshot]);
+
+  const diagnostics = useMemo(() => {
+    if (!topology) return [];
+    return collectDiagnostics(
+      topology,
+      snapshot,
+      isSuperAdmin ? gpuQ.data?.resources ?? null : null,
+    );
+  }, [topology, snapshot, gpuQ.data, isSuperAdmin]);
+
+  // ── loading / error / partial-fail ────────────────────────────────────────
+  // Topology is load-bearing for every tab; if it fails and we have nothing
+  // cached, surface a full error block. If only runtime-snapshot fails, keep
+  // the topology view and mark partial (plan §6.3).
+  if (topologyQ.isLoading) {
+    return <LoadingShell label="加载服务池拓扑…" />;
+  }
+  if (topologyQ.isError && !topology) {
+    return (
+      <ErrorShell
+        message={`拓扑加载失败：${(topologyQ.error as Error)?.message ?? "未知错误"}`}
+        onRetry={() => topologyQ.refetch()}
+      />
+    );
+  }
+  if (!vm || !topology) {
+    return <LoadingShell label="组装视图模型…" />;
+  }
+  // After the guards above, both `vm` and `topology` are non-null. Bind a
+  // narrowed local so TS carries the non-nullability into RegistryScope.
+  const narrowedTopology = topology;
+  const narrowedVm = vm;
+
+  // ── header counts ─────────────────────────────────────────────────────────
+  const totalPools = narrowedVm.pools.length;
+  const routableInstances = narrowedVm.pools.reduce(
+    (sum, p) => sum + p.availability.routable,
+    0,
+  );
+  const totalInstances = narrowedVm.pools.reduce((sum, p) => sum + p.availability.total, 0);
+  const anomalyCount = diagnostics.length;
+  const affectedProjects = isSuperAdmin && overviewQ.data
+    ? countAffectedProjects(overviewQ.data.projects, narrowedVm.pools)
+    : null;
+
+  const scope: RegistryScope = {
+    isSuperAdmin,
+    vm: narrowedVm,
+    topology: narrowedTopology,
+    servicePools: null,
+    backends: allQ.data?.items ?? [],
+    gpuResources: isSuperAdmin ? gpuQ.data?.resources ?? null : null,
+    overview: isSuperAdmin ? overviewQ.data ?? null : null,
+    diagnostics,
+    routerMode: narrowedVm.router_mode,
+  };
 
   return (
-    <>
-      <Card className="mb-4">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Icon name="bot" size={14} className="text-muted-foreground" />
-            <h3 className="m-0 text-sm font-semibold">全局注册表</h3>
-            <span className="text-xs text-muted-foreground">跨项目共享的 ML Backend</span>
-          </div>
-          {isSuperAdmin && (
-            <Button size="sm" onClick={openCreate}>
-              <Icon name="plus" size={11} />
-              注册全局 backend
-            </Button>
-          )}
-        </div>
+    // TooltipProvider: several descendants (CopyableId, FreshnessIndicator,
+    // SourceErrorBadge) use Radix Tooltip, which requires a provider ancestor.
+    <TooltipProvider>
+      <div className="flex flex-col gap-4">
+        <Card>
+          <RegistryHeader
+          isSuperAdmin={isSuperAdmin}
+          totalPools={totalPools}
+          routableInstances={routableInstances}
+          totalInstances={totalInstances}
+          anomalyCount={anomalyCount}
+          affectedProjects={affectedProjects}
+          filters={filters}
+          onFiltersChange={setFilters}
+          onRefresh={refreshAll}
+          refreshing={
+            topologyQ.isFetching ||
+            (isSuperAdmin &&
+              (snapshotQ.isFetching || gpuQ.isFetching || overviewQ.isFetching)) ||
+            allQ.isFetching
+          }
+          snapshotError={
+            isSuperAdmin && snapshotQ.isError
+              ? (snapshotQ.error as Error)?.message ?? "运行时快照加载失败"
+              : null
+          }
+          gpuError={
+            isSuperAdmin && gpuQ.isError
+              ? (gpuQ.error as Error)?.message ?? "GPU 资源加载失败"
+              : null
+          }
+          overviewError={
+            isSuperAdmin && overviewQ.isError
+              ? (overviewQ.error as Error)?.message ?? "项目绑定概览加载失败"
+              : null
+          }
+          allError={
+            allQ.isError
+              ? (allQ.error as Error)?.message ?? "实例列表加载失败"
+              : null
+          }
+          onOpenRegister={() => setRegisterOpen(true)}
+        />
+      </Card>
 
-        {!isSuperAdmin && (
-          <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-            注册由超级管理员维护；项目侧请在「项目设置 → ML 模型」里勾选启用所需 backend。
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">加载中…</div>
-        ) : isError ? (
-          <div className="p-6 text-center text-status-danger">
-            <Icon name="warning" size={18} className="mb-1.5" />
-            <div>加载失败：{(error as Error)?.message ?? "未知错误"}</div>
-            <button className={RETRY_BTN_CLASS} onClick={() => refetch()}>
-              重试
-            </button>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
-            <div>尚无全局 backend</div>
-            {isSuperAdmin && <div className="mt-1 text-xs">点击右上角「注册全局 backend」添加</div>}
-          </div>
+      <Card className="p-3">
+        {isSuperAdmin ? (
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList className="mb-3">
+              <TabsTrigger value="pools">
+                <Icon name="layers" size={12} />
+                服务池
+              </TabsTrigger>
+              <TabsTrigger value="instances">
+                <Icon name="bot" size={12} />
+                实例
+              </TabsTrigger>
+              <TabsTrigger value="gpu">
+                <Icon name="activity" size={12} />
+                GPU 资源
+              </TabsTrigger>
+              <TabsTrigger value="projects">
+                <Icon name="folder" size={12} />
+                项目绑定
+              </TabsTrigger>
+              <TabsTrigger value="issues">
+                <Icon name="alert-triangle" size={12} />
+                问题中心
+                {anomalyCount > 0 && (
+                  <Badge variant="danger" className="ml-1 text-2xs">
+                    {anomalyCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="pools">
+              <ServicePoolsSection scope={scope} filters={filters} />
+            </TabsContent>
+            <TabsContent value="instances">
+              <BackendInstancesSection scope={scope} filters={filters} />
+            </TabsContent>
+            <TabsContent value="gpu">
+              <GPUResourcesSection scope={scope} />
+            </TabsContent>
+            <TabsContent value="projects">
+              <ProjectBindingsSection scope={scope} />
+            </TabsContent>
+            <TabsContent value="issues">
+              <IssueCenter scope={scope} />
+            </TabsContent>
+          </Tabs>
         ) : (
-          <div className="max-w-full overflow-x-auto p-3">
-            <table className={TABLE_CLASS}>
-              <thead>
-                <tr>
-                  {headers.map((h) => (
-                    <th key={h} className={TH_CLASS}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((b) => (
-                  <tr key={b.id}>
-                    <td className="max-w-[180px] truncate" title={b.name}>
-                      {b.name}
-                    </td>
-                    <td className="mono max-w-[260px] truncate text-xs text-muted-foreground" title={b.url}>
-                      {b.url}
-                    </td>
-                    <td className={NOWRAP}>
-                      <Badge variant="outline">{b.source_project_name || "—"}</Badge>
-                    </td>
-                    <td>
-                      <div className="inline-flex flex-wrap items-center gap-1">
-                        <Badge variant={b.is_interactive ? "ai" : "outline"}>
-                          {b.is_interactive ? "交互式" : "批量"}
-                        </Badge>
-                        {/* max_concurrency chip; 缺省（默认 4）不显示, 避免列表噪音。
-                            v0.19.0 起限速真正 per-物理-backend 生效, 故在全局表展示。 */}
-                        {typeof b.extra_params?.max_concurrency === "number" && (
-                          <span title="单 backend 最大并发预标请求数" className="inline-flex">
-                            <Badge variant="outline">≤{b.extra_params.max_concurrency} 并发</Badge>
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    {isSuperAdmin && (
-                      <td className="min-w-[230px]">
-                        <BackendGPUConfig backend={b} />
-                      </td>
-                    )}
-                    <td className={NOWRAP}>
-                      <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
-                        {b.state}
-                      </Badge>
-                    </td>
-                    <td className={clsx(NOWRAP, "text-muted-foreground")}>
-                      {formatDate(b.last_checked_at)}
-                    </td>
-                    {isSuperAdmin && (
-                      <td className={NOWRAP}>
-                        <div className="inline-flex gap-1.5 whitespace-nowrap">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => onHealth(b)}
-                            disabled={health.isPending}
-                            title="健康检查"
-                          >
-                            <Icon name="activity" size={11} />
-                            检查
-                          </Button>
-                          <Button size="sm" onClick={() => openEdit(b)} title="编辑">
-                            <Icon name="edit" size={11} />
-                            编辑
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => setDeleteTarget(b)}
-                            disabled={del.isPending}
-                            title="删除"
-                          >
-                            <Icon name="trash" size={11} />
-                            删除
-                          </Button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          // Project Admin: only the first two tabs, read-only. No Issue Center,
+          // no GPU Resources, no Project Bindings overview (plan §5).
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList className="mb-3">
+              <TabsTrigger value="pools">
+                <Icon name="layers" size={12} />
+                服务池
+              </TabsTrigger>
+              <TabsTrigger value="instances">
+                <Icon name="bot" size={12} />
+                实例
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="pools">
+              <ServicePoolsSection scope={scope} filters={filters} />
+            </TabsContent>
+            <TabsContent value="instances">
+              <BackendInstancesSection scope={scope} filters={filters} />
+            </TabsContent>
+          </Tabs>
         )}
       </Card>
 
-      <GlobalBackendFormModal
-        open={modalOpen}
-        backend={editTarget}
-        onClose={() => setModalOpen(false)}
-      />
-
-      <Modal
-        open={!!deleteTarget}
-        onClose={() => (del.isPending ? undefined : setDeleteTarget(null))}
-        title="删除全局 backend"
-        width={420}
-      >
-        <div className="flex flex-col gap-4 text-sm">
-          <p className="m-0 text-foreground">
-            确认删除 backend「{deleteTarget?.name}」？此操作不可撤销，且仅在没有运行中预标任务时可成功。
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={del.isPending}>
-              取消
-            </Button>
-            <Button variant="danger" onClick={confirmDelete} disabled={del.isPending}>
-              {del.isPending ? "删除中..." : "确认删除"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-    </>
-  );
-}
-
-const GPU_STATUS_VARIANT: Record<
-  string,
-  "success" | "accent" | "warning" | "danger" | "outline"
-> = {
-  ok: "success",
-  info: "accent",
-  warning: "warning",
-  critical: "danger",
-  blocker: "danger",
-};
-
-function DiagnosticList({ diagnostics }: { diagnostics: GPUConfigDiagnostic[] }) {
-  if (diagnostics.length === 0) return null;
-  return (
-    <ul className="m-0 flex list-none flex-col gap-1 p-0 text-2xs text-muted-foreground">
-      {diagnostics.map((diagnostic, index) => (
-        <li key={`${diagnostic.code}-${diagnostic.backend_id ?? ""}-${index}`}>
-          <Badge variant={GPU_STATUS_VARIANT[diagnostic.level] ?? "outline"}>
-            {diagnostic.level}
-          </Badge>{" "}
-          {diagnostic.message}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function BackendGPUConfig({ backend }: { backend: GlobalBackendItem }) {
-  const status = backend.gpu_config;
-  if (!status) return <span className="text-muted-foreground">仅超级管理员可见</span>;
-  return (
-    <div className="flex flex-col gap-1.5 text-xs">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant={GPU_STATUS_VARIANT[status.status ?? "ok"] ?? "outline"}>
-          {status.status ?? "ok"}
-        </Badge>
-        <span className="mono max-w-[210px] truncate" title={backend.gpu_resource_id ?? undefined}>
-          {backend.gpu_resource_id ?? "无 GPU 声明"}
-        </span>
+        <GlobalBackendFormModal
+          open={registerOpen}
+          backend={null}
+          onClose={() => setRegisterOpen(false)}
+        />
       </div>
-      {backend.gpu_resource_id && (
-        <div className="text-2xs text-muted-foreground">
-          预算 {backend.vram_budget_mb ?? "—"}/{status.allocatable_mb ?? "—"} MiB · 优先级 {backend.eviction_priority}
-          · {status.desired_mode ?? "off"}→{status.effective_mode ?? "off"}
-        </div>
-      )}
-      <DiagnosticList diagnostics={status.diagnostics ?? []} />
-    </div>
+    </TooltipProvider>
   );
 }
 
-function GPUResourceOverview() {
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["admin", "ml-integrations", "gpu-resources"],
-    queryFn: () => adminMlIntegrationsApi.gpuResources(),
-    refetchInterval: 60_000,
-  });
-  const resources = data?.resources ?? [];
+// ── header ───────────────────────────────────────────────────────────────────
 
+function RegistryHeader({
+  isSuperAdmin,
+  totalPools,
+  routableInstances,
+  totalInstances,
+  anomalyCount,
+  affectedProjects,
+  filters,
+  onFiltersChange,
+  onRefresh,
+  refreshing,
+  snapshotError,
+  gpuError,
+  overviewError,
+  allError,
+  onOpenRegister,
+}: {
+  isSuperAdmin: boolean;
+  totalPools: number;
+  routableInstances: number;
+  totalInstances: number;
+  anomalyCount: number;
+  affectedProjects: number | null;
+  filters: RegistryFilters;
+  onFiltersChange: (f: RegistryFilters) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+  snapshotError: string | null;
+  gpuError: string | null;
+  overviewError: string | null;
+  allError: string | null;
+  onOpenRegister: () => void;
+}): ReactNode {
   return (
-    <Card className="mb-4">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Icon name="activity" size={14} className="text-muted-foreground" />
-          <h3 className="m-0 text-sm font-semibold">GPU 物理资源</h3>
-          {data && (
-            <Badge variant={data.observe_runtime_ready ? "success" : "warning"}>
-              observe runtime {data.observe_runtime_ready ? "ready" : "not ready"}
-            </Badge>
+    <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Icon name="layers" size={14} className="text-muted-foreground" />
+          <h3 className="m-0 text-sm font-semibold">注册管理</h3>
+          <HeaderStat label="服务池" value={totalPools} />
+          <HeaderStat
+            label="可路由 / 总实例"
+            value={`${routableInstances} / ${totalInstances}`}
+            tone={routableInstances === 0 && totalInstances > 0 ? "danger" : "default"}
+          />
+          {isSuperAdmin && (
+            <HeaderStat
+              label="异常"
+              value={anomalyCount}
+              tone={anomalyCount > 0 ? "warning" : "default"}
+            />
+          )}
+          {isSuperAdmin && affectedProjects != null && (
+            <HeaderStat label="受影响项目" value={affectedProjects} />
           )}
         </div>
-        {data && (
-          <span className="text-xs text-muted-foreground">
-            全局期望 {data.global_desired_mode} · {resources.length} 张资源卡
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isSuperAdmin && (
+            <Button size="sm" variant="primary" onClick={onOpenRegister}>
+              <Icon name="plus" size={11} />
+              注册实例
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="刷新全部数据源"
+          >
+            <Icon name={refreshing ? "loader2" : "refresh"} size={11} className={refreshing ? "spin" : undefined} />
+            刷新
+          </Button>
+        </div>
       </div>
-      {isLoading ? (
-        <div className="p-6 text-center text-sm text-muted-foreground">加载 GPU 资源…</div>
-      ) : isError ? (
-        <div className="p-6 text-center text-status-danger">
-          <div>GPU 资源加载失败：{(error as Error).message}</div>
-          <button className={RETRY_BTN_CLASS} onClick={() => refetch()}>
-            重试
-          </button>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Icon
+            name="search"
+            size={12}
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            aria-label="搜索服务池或实例"
+            placeholder="搜索名称 / ID / URL"
+            value={filters.search}
+            onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
+            className="h-8 w-56 pl-7 text-xs"
+          />
         </div>
-      ) : resources.length === 0 && (data?.diagnostics.length ?? 0) === 0 ? (
-        <div className="p-6 text-center text-sm text-muted-foreground">
-          尚未配置 GPU_ARBITER_RESOURCES_JSON
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2.5 p-3">
-          {resources.map((resource) => (
-            <GPUResourceRow key={resource.gpu_resource_id} resource={resource} />
-          ))}
-          <DiagnosticList diagnostics={data?.diagnostics ?? []} />
+        <label className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+          状态
+          <select
+            aria-label="按状态筛选"
+            value={filters.statusFilter}
+            onChange={(e) =>
+              onFiltersChange({ ...filters, statusFilter: e.target.value as StatusFilter })
+            }
+            className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground outline-none [font-family:inherit]"
+          >
+            <option value="all">全部</option>
+            <option value="healthy">健康</option>
+            <option value="degraded">降级</option>
+            <option value="offline">离线</option>
+            <option value="unknown">未知</option>
+          </select>
+        </label>
+      </div>
+
+      {/* Partial-failures row — each source keeps its own error so other data
+          stays visible (plan §6.3). */}
+      {(snapshotError || gpuError || overviewError || allError) && (
+        <div className="flex flex-wrap items-center gap-2 text-2xs">
+          {snapshotError && <SourceErrorBadge label="运行时快照" message={snapshotError} />}
+          {gpuError && <SourceErrorBadge label="GPU 资源" message={gpuError} />}
+          {overviewError && <SourceErrorBadge label="项目绑定" message={overviewError} />}
+          {allError && <SourceErrorBadge label="实例列表" message={allError} />}
         </div>
       )}
-    </Card>
-  );
-}
-
-function GPUResourceRow({ resource }: { resource: GPUArbiterResourceItem }) {
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-border bg-card px-3.5 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={GPU_STATUS_VARIANT[resource.status] ?? "outline"}>{resource.status}</Badge>
-        <span className="mono text-sm font-semibold">{resource.gpu_resource_id}</span>
-        <span className="text-xs text-muted-foreground">节点 {resource.node_id}</span>
-        <span className="mono text-xs text-muted-foreground">{resource.physical_device_token}</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span>静态声明 {resource.claimed_budget_mb}/{resource.allocatable_mb} MiB</span>
-        <span>{resource.claimed_backend_count} 个 backend</span>
-        <span>configured {resource.configured_mode ?? "未设置"}</span>
-        <span>desired {resource.desired_mode}</span>
-        <span>effective {resource.effective_mode}</span>
-      </div>
-      <DiagnosticList diagnostics={resource.diagnostics ?? []} />
     </div>
   );
 }
 
-// 仅超管 · 只读「项目启用概览」：复用 /overview（其 projects 已按 project_ml_backend.enabled
-// 聚合），列出每个项目已启用了哪些全局 backend，并提供「打开项目设置」入口。无注册/编辑/删除动作
-// —— 项目启用本身在项目设置里做，这里只看不改。
-function ProjectEnablementOverview() {
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["admin", "ml-integrations", "overview"],
-    queryFn: () => adminMlIntegrationsApi.overview(),
-    refetchInterval: 60_000,
-  });
+function HeaderStat({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  tone?: "default" | "warning" | "danger";
+}): ReactNode {
+  const valueTone =
+    tone === "danger"
+      ? "text-status-danger"
+      : tone === "warning"
+        ? "text-status-caution"
+        : "text-foreground";
+  return (
+    <Badge variant="outline" className="gap-1.5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={valueTone + " font-semibold"}>{value}</span>
+    </Badge>
+  );
+}
 
+function SourceErrorBadge({ label, message }: { label: string; message: string }): ReactNode {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="danger" className="cursor-help">
+          <Icon name="alert-triangle" size={11} />
+          <span>{label}加载失败</span>
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>{message}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function LoadingShell({ label }: { label: string }): ReactNode {
   return (
     <Card>
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Icon name="folder" size={14} className="text-muted-foreground" />
-          <h3 className="m-0 text-sm font-semibold">项目启用概览</h3>
-        </div>
-        {data && (
-          <span className="text-xs text-muted-foreground">
-            共 {data.projects.length} 个 AI 项目 · {data.total_backends} 个 backend
-          </span>
-        )}
+      <div className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
+        <Icon name="loader2" size={16} className="spin" />
+        {label}
       </div>
-
-      {isLoading ? (
-        <div className="p-6 text-center text-sm text-muted-foreground">加载中…</div>
-      ) : isError ? (
-        <div className="p-6 text-center text-status-danger">
-          <Icon name="warning" size={18} className="mb-1.5" />
-          <div>加载失败：{(error as Error)?.message ?? "未知错误"}</div>
-          <button className={RETRY_BTN_CLASS} onClick={() => refetch()}>
-            重试
-          </button>
-        </div>
-      ) : !data || data.projects.length === 0 ? (
-        <div className="p-8 text-center text-sm text-muted-foreground">
-          <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
-          <div>尚无项目启用 AI 或 backend</div>
-          <div className="mt-1 text-xs">在项目设置里启用 AI 并勾选 backend 后会出现在这里</div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2 p-3">
-          {data.projects.map((p) => (
-            <ProjectEnablementRow key={p.project_id} group={p} />
-          ))}
-        </div>
-      )}
     </Card>
   );
 }
 
-function ProjectEnablementRow({
-  group,
-}: {
-  group: { project_id: string; project_name: string; backends: MLBackendItem[] };
-}) {
+function ErrorShell({ message, onRetry }: { message: string; onRetry: () => void }): ReactNode {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-card px-3.5 py-2.5">
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon name="folder" size={14} className="text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{group.project_name}</span>
-        {group.backends.length === 0 ? (
-          <Badge variant="warning">AI 已启用 · 未启用 backend</Badge>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1">
-            {group.backends.map((b) => (
-              <span key={b.id} title={`${b.url} · ${b.state}`} className="inline-flex">
-                <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
-                  {b.name}
-                </Badge>
-              </span>
-            ))}
-          </div>
-        )}
+    <Card>
+      <div className="flex flex-col items-center gap-2 p-12 text-center text-sm text-status-danger">
+        <Icon name="warning" size={20} />
+        <div>{message}</div>
+        <Button size="sm" variant="ghost" onClick={onRetry}>
+          <Icon name="refresh" size={11} />
+          重试
+        </Button>
       </div>
-      <a
-        href={`/projects/${group.project_id}/settings?section=ml-backends`}
-        className="whitespace-nowrap text-xs text-brand no-underline"
-      >
-        打开项目设置 →
-      </a>
-    </div>
+    </Card>
   );
+}
+
+/** Count projects whose pool bindings include an offline or zero-routable pool. */
+function countAffectedProjects(
+  projects: Array<{ project_id: string; project_name: string; backends: Array<{ id: string }> }>,
+  pools: RegistryScope["vm"]["pools"],
+): number {
+  let count = 0;
+  for (const proj of projects) {
+    const backendIds = new Set(proj.backends.map((b) => b.id));
+    const linked = pools.filter((p) =>
+      p.members.some((m) => backendIds.has(m.registry_id)),
+    );
+    const atRisk =
+      linked.length === 0 ||
+      linked.some((p) => p.status === "offline" || p.availability.routable === 0);
+    if (atRisk && proj.backends.length > 0) count += 1;
+  }
+  return count;
 }
