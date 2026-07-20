@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
 from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
@@ -91,11 +92,14 @@ def _proof_timestamp(value: datetime) -> str:
 
 
 class MLBackendService:
-    """v0.19.0 ADR-0044 · backend 上提为全局注册表(MLBackendRegistry) + 项目启用关联
-    (ProjectMLBackend)。本服务既管全局注册项(superadmin)，也管项目级启用/覆盖。
+    """v0.19.0 ADR-0044 · backend 上提为全局注册表(MLBackendRegistry) + 项目启用关联。
+    v0.23.3 ADR-0050 · 项目启用关联迁移到服务池层 (ProjectMLBackendPool): 项目不再
+    绑定单个物理实例, 而是绑定一个服务池; off mode 下每 pool 是 singleton, 经
+    legacy_instance_id 解析回原 registry 实例, 行为与 v0.23.2 一致。
 
-    `get` 按 registry id 返回全局注册项; 项目内「可用 backend」走
-    `list_enabled_for_project` / `get_enabled` (读 ProjectMLBackend.enabled=true)。
+    本服务既管全局注册项(superadmin)，也管项目级启用/覆盖。`get` 按 registry id
+    返回全局注册项; 项目内「可用 backend」走 `list_enabled_for_project` /
+    `is_enabled` (读 ProjectMLBackendPool.enabled=true, 经 pool member 解析回 registry)。
     """
 
     def __init__(
@@ -126,7 +130,49 @@ class MLBackendService:
         )
         self.db.add(row)
         await self.db.flush()
+        # v0.23.3 ADR-0050 · 每 registry 创建即生成 singleton pool + active 成员。
+        # off mode 下项目经 pool.legacy_instance_id 解析回此 registry, 行为不变;
+        # 管理员后续可向同一 pool 加等价副本实现负载均衡。
+        await self._create_singleton_pool(row)
         return row
+
+    async def _create_singleton_pool(self, registry: MLBackendRegistry) -> MLBackendServicePool:
+        """为 registry 创建 singleton 服务池 (name 取 registry 名, legacy 指向它)。
+
+        幂等: 若 registry 已有 pool (经 member 反查), 直接返回既有 pool。
+        env auto-upsert 与重启不会重复创建 (uq_ml_backend_pool_members_registry)。
+        """
+        existing = await self.db.execute(
+            select(MLBackendServicePool)
+            .join(
+                MLBackendPoolMember,
+                MLBackendPoolMember.pool_id == MLBackendServicePool.id,
+            )
+            .where(MLBackendPoolMember.registry_id == registry.id)
+        )
+        pool = existing.scalars().first()
+        if pool is not None:
+            return pool
+        pool = MLBackendServicePool(
+            id=uuid.uuid4(),
+            name=registry.name,
+            enabled=False,
+            routing_policy="smooth_weighted_round_robin",
+            legacy_instance_id=registry.id,
+            routing_generation=1,
+        )
+        self.db.add(pool)
+        await self.db.flush()
+        member = MLBackendPoolMember(
+            id=uuid.uuid4(),
+            pool_id=pool.id,
+            registry_id=registry.id,
+            traffic_state="active",
+            weight=1,
+        )
+        self.db.add(member)
+        await self.db.flush()
+        return pool
 
     async def get(self, registry_id: uuid.UUID) -> MLBackendRegistry | None:
         result = await self.db.execute(
@@ -237,13 +283,17 @@ class MLBackendService:
             raise GPUBackendManagedMutationBlocked(
                 "managed GPU backend requires retirement before delete"
             )
-        # 级联: 解绑 projects.ml_backend_id (SET NULL 语义); project_ml_backend 关联
-        # 由 FK ondelete=CASCADE 自动清。历史 prediction.ml_backend_id 同样 SET NULL。
-        bound_projects = await self.db.execute(
-            select(Project).where(Project.ml_backend_id == registry_id)
-        )
-        for project in bound_projects.scalars():
-            project.ml_backend_id = None
+        # 级联: 解绑 projects.ml_backend_pool_id (SET NULL 语义);
+        # project_ml_backend_pool 关联由 FK ondelete=CASCADE 自动清。
+        # 历史 prediction.ml_backend_id / ml_backend_pool_id 同样 SET NULL。
+        # v0.23.3: 项目主绑定存 pool id, 需先经 registry 的 singleton pool 解析。
+        pool = await self._pool_for_registry(registry_id)
+        if pool is not None:
+            bound_projects = await self.db.execute(
+                select(Project).where(Project.ml_backend_pool_id == pool.id)
+            )
+            for project in bound_projects.scalars():
+                project.ml_backend_pool_id = None
         await self.db.delete(row)
         try:
             await self.db.flush()
@@ -251,20 +301,48 @@ class MLBackendService:
             _raise_managed_mutation_for_integrity(exc)
         return True
 
-    # ── 项目启用关联 ─────────────────────────────────────────────────────────
+    # ── 项目启用关联 (v0.23.3 ADR-0050 · 经服务池层) ─────────────────────────
+    # 项目绑定改为 pool 维度: project_ml_backend_pool.pool_id → service pool。
+    # off mode 下每 pool 是 singleton, legacy_instance_id 指向唯一 registry 实例,
+    # 行为与 v0.23.2 一致。调用方 (路由 / worker) 仍按 registry id 调本组方法:
+    # 内部 _pool_for_registry 把 registry id 解析到其所属 singleton pool。
+    # router (P3) 接线后, 推理路径改走 router.acquire(pool_id); 本组方法继续服务
+    # lifecycle / 项目设置勾选清单 (这些是实例级, 不经 router)。
+
+    async def _pool_for_registry(
+        self, registry_id: uuid.UUID
+    ) -> MLBackendServicePool | None:
+        """registry id → 其所属 service pool (singleton backfill 后每 registry 恰一 pool)。"""
+        result = await self.db.execute(
+            select(MLBackendServicePool)
+            .join(
+                MLBackendPoolMember,
+                MLBackendPoolMember.pool_id == MLBackendServicePool.id,
+            )
+            .where(MLBackendPoolMember.registry_id == registry_id)
+        )
+        return result.scalars().first()
+
     async def list_enabled_for_project(
         self, project_id: uuid.UUID
     ) -> list[MLBackendRegistry]:
-        """该项目已启用的全局 backend (registry 行)。预标 / DAG 下游 / 门控读此集合。"""
+        """该项目已启用的全局 backend (registry 行)。预标 / DAG 下游 / 门控读此集合。
+
+        v0.23.3: 读 project_ml_backend_pool.enabled → 经 pool member 解析回 registry
+        实例 (off mode singleton, 每启用 pool 恰一 registry)。"""
         result = await self.db.execute(
             select(MLBackendRegistry)
             .join(
-                ProjectMLBackend,
-                ProjectMLBackend.registry_id == MLBackendRegistry.id,
+                MLBackendPoolMember,
+                MLBackendPoolMember.registry_id == MLBackendRegistry.id,
+            )
+            .join(
+                ProjectMLBackendPool,
+                ProjectMLBackendPool.pool_id == MLBackendPoolMember.pool_id,
             )
             .where(
-                ProjectMLBackend.project_id == project_id,
-                ProjectMLBackend.enabled.is_(True),
+                ProjectMLBackendPool.project_id == project_id,
+                ProjectMLBackendPool.enabled.is_(True),
             )
             .order_by(MLBackendRegistry.created_at.desc())
         )
@@ -272,16 +350,21 @@ class MLBackendService:
 
     async def list_available_for_project(
         self, project_id: uuid.UUID
-    ) -> list[tuple[MLBackendRegistry, ProjectMLBackend | None]]:
+    ) -> list[tuple[MLBackendRegistry, ProjectMLBackendPool | None]]:
         """全部全局 backend + 本项目关联 (None=未建关联即未启用)。项目设置勾选清单读此。
 
-        LEFT JOIN 保证未启用 / 从未关联过的全局项也出现在清单里 (供勾选启用)。"""
+        v0.23.3: registry 行经其 singleton pool 关联回项目 (LEFT JOIN 保证未启用 /
+        从未关联过的全局项也出现在清单里, 供勾选启用)。"""
         result = await self.db.execute(
-            select(MLBackendRegistry, ProjectMLBackend)
+            select(MLBackendRegistry, ProjectMLBackendPool)
             .outerjoin(
-                ProjectMLBackend,
-                (ProjectMLBackend.registry_id == MLBackendRegistry.id)
-                & (ProjectMLBackend.project_id == project_id),
+                MLBackendPoolMember,
+                MLBackendPoolMember.registry_id == MLBackendRegistry.id,
+            )
+            .outerjoin(
+                ProjectMLBackendPool,
+                (ProjectMLBackendPool.pool_id == MLBackendPoolMember.pool_id)
+                & (ProjectMLBackendPool.project_id == project_id),
             )
             .order_by(MLBackendRegistry.created_at.desc())
         )
@@ -289,11 +372,15 @@ class MLBackendService:
 
     async def get_assoc(
         self, project_id: uuid.UUID, registry_id: uuid.UUID
-    ) -> ProjectMLBackend | None:
+    ) -> ProjectMLBackendPool | None:
+        """项目 × registry 的启用关联行 (经 registry 的 singleton pool 解析)。"""
+        pool = await self._pool_for_registry(registry_id)
+        if pool is None:
+            return None
         result = await self.db.execute(
-            select(ProjectMLBackend).where(
-                ProjectMLBackend.project_id == project_id,
-                ProjectMLBackend.registry_id == registry_id,
+            select(ProjectMLBackendPool).where(
+                ProjectMLBackendPool.project_id == project_id,
+                ProjectMLBackendPool.pool_id == pool.id,
             )
         )
         return result.scalar_one_or_none()
@@ -308,14 +395,29 @@ class MLBackendService:
         registry_id: uuid.UUID,
         enabled: bool,
         **overrides,
-    ) -> ProjectMLBackend:
-        """切换项目启用 + 写项目级变体覆盖 (default_variants)。"""
-        assoc = await self.get_assoc(project_id, registry_id)
+    ) -> ProjectMLBackendPool:
+        """切换项目启用 + 写项目级变体覆盖 (default_variants, pool 级)。
+
+        v0.23.3: registry_id 经 _pool_for_registry 解析到 singleton pool,
+        关联行写 pool_id。registry 必须 singleton-backfill 过 (有 pool)。"""
+        pool = await self._pool_for_registry(registry_id)
+        if pool is None:
+            raise ValueError(
+                f"registry {registry_id} has no service pool; "
+                "singleton backfill (alembic 0132) must run first"
+            )
+        result = await self.db.execute(
+            select(ProjectMLBackendPool).where(
+                ProjectMLBackendPool.project_id == project_id,
+                ProjectMLBackendPool.pool_id == pool.id,
+            )
+        )
+        assoc = result.scalar_one_or_none()
         if assoc is None:
-            assoc = ProjectMLBackend(
+            assoc = ProjectMLBackendPool(
                 id=uuid.uuid4(),
                 project_id=project_id,
-                registry_id=registry_id,
+                pool_id=pool.id,
                 enabled=enabled,
             )
             self.db.add(assoc)
@@ -582,16 +684,22 @@ class MLBackendService:
     async def get_interactive_backend(
         self, project_id: uuid.UUID
     ) -> MLBackendRegistry | None:
-        """该项目已启用且 is_interactive 的 connected backend。"""
+        """该项目已启用且 is_interactive 的 connected backend。
+
+        v0.23.3: 经 project_ml_backend_pool → pool member 解析回 registry 实例。"""
         result = await self.db.execute(
             select(MLBackendRegistry)
             .join(
-                ProjectMLBackend,
-                ProjectMLBackend.registry_id == MLBackendRegistry.id,
+                MLBackendPoolMember,
+                MLBackendPoolMember.registry_id == MLBackendRegistry.id,
+            )
+            .join(
+                ProjectMLBackendPool,
+                ProjectMLBackendPool.pool_id == MLBackendPoolMember.pool_id,
             )
             .where(
-                ProjectMLBackend.project_id == project_id,
-                ProjectMLBackend.enabled.is_(True),
+                ProjectMLBackendPool.project_id == project_id,
+                ProjectMLBackendPool.enabled.is_(True),
                 MLBackendRegistry.is_interactive.is_(True),
                 MLBackendRegistry.state == "connected",
             )
@@ -601,13 +709,20 @@ class MLBackendService:
     async def get_project_backend(
         self, project_id: uuid.UUID
     ) -> MLBackendRegistry | None:
-        """优先返回 project.ml_backend_id 显式绑定(且项目已启用)，否则 fallback 交互式。"""
+        """优先返回 project.ml_backend_pool_id 显式绑定(且项目已启用)，否则 fallback 交互式。
+
+        v0.23.3: 项目主绑定存 pool id; 经 _pool_for_registry 解析 pool 的 legacy
+        instance (off mode singleton, 行为与 v0.23.2 一致)。"""
         proj = await self.db.get(Project, project_id)
-        if proj is not None and proj.ml_backend_id is not None:
-            if await self.is_enabled(project_id, proj.ml_backend_id):
-                backend = await self.get(proj.ml_backend_id)
-                if backend is not None:
-                    return backend
+        if proj is not None and proj.ml_backend_pool_id is not None:
+            pool = await self.db.get(
+                MLBackendServicePool, proj.ml_backend_pool_id
+            )
+            if pool is not None and pool.legacy_instance_id is not None:
+                if await self.is_enabled(project_id, pool.legacy_instance_id):
+                    backend = await self.get(pool.legacy_instance_id)
+                    if backend is not None:
+                        return backend
         return await self.get_interactive_backend(project_id)
 
     async def get_tracker_backend(
@@ -647,7 +762,13 @@ class MLBackendService:
         if not supporting:
             return None
         proj = await self.db.get(Project, project_id)
-        bound_id = proj.ml_backend_id if proj is not None else None
+        # v0.23.3: 项目主绑定存 pool id; 经 pool 的 legacy instance 解析回 registry。
+        bound_id: uuid.UUID | None = None
+        if proj is not None and proj.ml_backend_pool_id is not None:
+            pool = await self.db.get(
+                MLBackendServicePool, proj.ml_backend_pool_id
+            )
+            bound_id = pool.legacy_instance_id if pool is not None else None
         if bound_id is not None:
             for b in supporting:
                 if b.id == bound_id:

@@ -172,8 +172,8 @@ def _binding_for_backend(
     return {
         "backend_id": str(backend.id),
         "backend_name": backend.name,
-        # v0.19.0 ADR-0044 · backend 全局化, 不再属于单一项目; 项目归属由 project_ml_backend
-        # 关联表表达 (健康概览不再按项目拆分)。
+        # v0.19.0 ADR-0044 · backend 全局化, 不再属于单一项目; 项目归属由 project_ml_backend_pool
+        # 关联表表达 (健康概览不再按项目拆分)。v0.23.3 ADR-0050 · 启用关联迁移到服务池层。
         "project_id": None,
         "project_display_id": project_display_id,
         "project_name": project_name,

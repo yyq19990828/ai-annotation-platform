@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
 from app.config import settings
 from app.services.ml_backend import MLBackendService
@@ -307,14 +307,18 @@ async def reconcile_screenshot_backends(
                 f"screenshot project {spec.display_id} is missing"
             )
         await db.execute(
-            delete(ProjectMLBackend).where(ProjectMLBackend.project_id == project.id)
+            delete(ProjectMLBackendPool).where(
+                ProjectMLBackendPool.project_id == project.id
+            )
         )
-        project.ml_backend_id = None
+        project.ml_backend_pool_id = None
         if spec.required_backend is None:
             continue
         backend = selected[spec.required_backend]
         await service.set_enabled(project.id, backend.id, True)
-        project.ml_backend_id = backend.id
+        # v0.23.3 ADR-0050 · 项目主绑定存 pool id; set_enabled 内部已解析 registry→pool。
+        pool = await service._pool_for_registry(backend.id)
+        project.ml_backend_pool_id = pool.id if pool is not None else None
         requirement = BACKEND_REQUIREMENTS[spec.required_backend]
         binding = {
             "backend_id": str(backend.id),

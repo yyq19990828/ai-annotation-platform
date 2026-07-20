@@ -59,17 +59,24 @@ async def sync_env_backends() -> None:
             name = (setup or {}).get("name") or url.rstrip("/").split("/")[-1]
 
             if existing is None:
-                db.add(
-                    MLBackendRegistry(
-                        name=name,
-                        url=url,
-                        state=state,
-                        is_interactive=is_interactive,
-                        health_meta=health_meta,
-                        source="env",
-                        last_checked_at=now,
-                    )
+                from app.services.ml_backend import MLBackendService
+
+                # v0.23.3 ADR-0050 · 经 service.create_registry 自动建 singleton pool。
+                await MLBackendService(db).create_registry(
+                    name=name,
+                    url=url,
+                    source="env",
+                    is_interactive=is_interactive,
                 )
+                # 探测态 (connected/error) 与 health_meta 写回刚建的行。
+                fresh = (
+                    await db.execute(
+                        select(MLBackendRegistry).where(MLBackendRegistry.url == url)
+                    )
+                ).scalar_one()
+                fresh.state = state
+                fresh.health_meta = health_meta
+                fresh.last_checked_at = now
             else:
                 existing.name = name
                 existing.state = state

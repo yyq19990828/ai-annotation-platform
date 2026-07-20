@@ -27,7 +27,8 @@ from app.config import GPUArbiterMode, settings
 from app.db.enums import UserRole
 from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.gpu_backend_membership import GPUBackendMembership
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_pool import MLBackendPoolMember
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import (
@@ -164,12 +165,22 @@ async def get_overview(
     )
 
     # v0.19.0 ADR-0044 · backend 全局化; 「按项目分组」改为按项目「已启用」关联分组
-    # (project_ml_backend join registry)。total/connected 统计全局注册表去重后的真值。
+    # (project_ml_backend_pool join pool member join registry)。total/connected
+    # 统计全局注册表去重后的真值。v0.23.3 ADR-0050 · 项目启用经服务池层。
     res = await db.execute(
         select(Project, MLBackendRegistry)
-        .join(ProjectMLBackend, ProjectMLBackend.project_id == Project.id)
-        .join(MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id)
-        .where(ProjectMLBackend.enabled.is_(True))
+        .join(
+            ProjectMLBackendPool, ProjectMLBackendPool.project_id == Project.id
+        )
+        .join(
+            MLBackendPoolMember,
+            MLBackendPoolMember.pool_id == ProjectMLBackendPool.pool_id,
+        )
+        .join(
+            MLBackendRegistry,
+            MLBackendRegistry.id == MLBackendPoolMember.registry_id,
+        )
+        .where(ProjectMLBackendPool.enabled.is_(True))
         .order_by(Project.name, MLBackendRegistry.created_at.desc())
     )
     grouped: dict[str, ProjectMLBackendsGroup] = {}
@@ -948,7 +959,9 @@ async def delete_registry(
     admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ) -> None:
     """删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑
-    projects.ml_backend_id / project_ml_backend (CASCADE) / 历史 prediction (SET NULL)。"""
+    projects.ml_backend_pool_id / project_ml_backend_pool (CASCADE) / 历史 prediction (SET NULL)。
+    v0.23.3 ADR-0050 · 删除前须先 drain + inflight=0 + GPU retirement + 成员移除
+    (legacy_instance_id FK RESTRICT + member FK RESTRICT)。"""
     svc = MLBackendService(db)
     try:
         ok = await svc.delete(registry_id)

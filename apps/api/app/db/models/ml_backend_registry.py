@@ -22,7 +22,7 @@ class MLBackendRegistry(Base):
     能力快照 health_meta.capabilities 单份真值,所有启用项目共享。
 
     auth_method / auth_token / extra_params 是「如何调用该 url」的端点固有属性,与项目无关,
-    故随 url 进全局行(不做项目覆盖)。项目级覆盖只放真正业务相关的阈值/变体,见 ProjectMLBackend。
+    故随 url 进全局行(不做项目覆盖)。项目级覆盖只放真正业务相关的阈值/变体,见 ProjectMLBackendPool。
     """
 
     __tablename__ = "ml_backend_registry"
@@ -81,17 +81,22 @@ class MLBackendRegistry(Base):
     )
 
 
-class ProjectMLBackend(Base):
-    """v0.19.0 · 项目 × 注册项关联(ADR-0044)。
+class ProjectMLBackendPool(Base):
+    """v0.23.3 ADR-0050 · 项目 × 服务池关联(原 ADR-0044 ``ProjectMLBackend``)。
 
-    项目层退化为「启用开关 + 项目级覆盖」: enabled 控制该项目能否选用此全局 backend;
-    default_variants 是项目级变体覆盖(可空,空=用全局默认)。阈值覆盖(box/text)已退役。
+    项目层退化为「启用开关 + 项目级覆盖」: enabled 控制该项目能否选用此服务池;
+    default_variants 是项目级变体覆盖(可空,空=用全局默认), 覆盖语义改为 pool 级。
     预标 / DAG 下游 / backends>=2 门控读 enabled=true 集合。
+
+    v0.23.3 把 ``registry_id`` 改为 ``pool_id``: 项目不再绑定单个物理实例,
+    而是绑定一个可包含多个等价副本的服务池 (ADR-0050)。原 ``registry_id``
+    列经 alembic 0132 迁移为 ``pool_id`` (singleton backfill 保证每 registry
+    恰有一个 singleton pool, off mode 行为不变)。
     """
 
-    __tablename__ = "project_ml_backend"
+    __tablename__ = "project_ml_backend_pool"
     __table_args__ = (
-        UniqueConstraint("project_id", "registry_id", name="uq_project_ml_backend"),
+        UniqueConstraint("project_id", "pool_id", name="uq_project_ml_backend_pool"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -102,14 +107,16 @@ class ProjectMLBackend(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         index=True,
     )
-    registry_id: Mapped[uuid.UUID] = mapped_column(
+    # v0.23.3 · 原 registry_id 迁移为 pool_id (ADR-0050 singleton backfill)。
+    # 项目启用和主池必须一致; 禁用主池时显式清空或先换主池, 不能留悬空引用。
+    pool_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("ml_backend_registry.id", ondelete="CASCADE"),
+        ForeignKey("ml_backend_service_pools.id", ondelete="CASCADE"),
         index=True,
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # 项目级业务覆盖(可空)。阈值(box/text)已退役: per-backend 调参由运行时按 /setup.params
-    # 通用渲染, 项目级单值 project.box_threshold 兜底。变体覆盖保留为未来落点。
+    # 通用渲染, 项目级单值 project.box_threshold 兜底。变体覆盖 v0.23.3 改为 pool 级。
     default_variants: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
