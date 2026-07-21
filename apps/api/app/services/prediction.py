@@ -75,7 +75,7 @@ def _tool_unit_from_internal_geometry(geometry: Any) -> str | None:
         return "rotated_bbox"
     if kind == "keypoint":
         return "keypoint"
-    if kind in {"polygon", "multi_polygon"}:
+    if kind in {"polygon", "multi_polygon", "raster_mask", "video_track_mask"}:
         return "region"
     if kind in {"bbox", "video_bbox", "video_track_bbox"}:
         return "bbox"

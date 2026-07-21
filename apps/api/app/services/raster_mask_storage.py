@@ -20,7 +20,7 @@ from app.utils.raster_mask_gzip import (
     compress_mask_gzip,
     decompress_mask_gzip,
 )
-from app.utils.raster_mask_rle import validate_coco_rle
+from app.utils.raster_mask_rle import coco_rle_area, validate_coco_rle
 
 MAX_RLE_OBJECT_BYTES = 4 * 1024 * 1024
 RLE_OBJECT_PREFIX = "raster-masks/sha256"
@@ -55,22 +55,38 @@ def _assert_raster_mask_create_enabled(geometry: dict[str, Any]) -> None:
 
 
 def _rle_has_foreground(rle: dict[str, Any]) -> bool:
-    """COCO uncompressed RLE starts with background; odd runs are foreground."""
-    return sum(int(count) for count in (rle.get("counts") or [])[1::2]) > 0
+    return coco_rle_area(rle) > 0
 
 
-def _mask_references(value: Any) -> list[dict[str, Any]]:
+def collect_mask_references(value: Any) -> list[dict[str, Any]]:
+    """Collect every content-addressed RLE reference from a nested payload."""
     references: list[dict[str, Any]] = []
     if isinstance(value, dict):
         key = value.get("object_key")
         if isinstance(key, str) and key.startswith(f"{RLE_OBJECT_PREFIX}/"):
             references.append(value)
         for child in value.values():
-            references.extend(_mask_references(child))
+            references.extend(collect_mask_references(child))
     elif isinstance(value, list):
         for child in value:
-            references.extend(_mask_references(child))
+            references.extend(collect_mask_references(child))
     return references
+
+
+def resolve_mask_reference_objects(
+    value: Any,
+    mask_objects: dict[str, dict[str, Any]],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Resolve and validate portable RLE objects, deduplicated by object key."""
+    resolved: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for reference in collect_mask_references(value):
+        digest = reference.get("sha256")
+        rle = mask_objects.get(str(digest))
+        if rle is None:
+            raise ValueError(f"AAP mask_objects missing sha256 {digest}")
+        validate_reference_for_rle(reference, rle)
+        resolved.setdefault(str(reference["object_key"]), (reference, rle))
+    return list(resolved.values())
 
 
 async def lock_raster_mask_references(
@@ -83,7 +99,8 @@ async def lock_raster_mask_references(
 ) -> list[str]:
     """Serialize reference commits with GC until the current DB transaction ends."""
     references = {
-        str(reference["object_key"]): reference for reference in _mask_references(value)
+        str(reference["object_key"]): reference
+        for reference in collect_mask_references(value)
     }
     for key in sorted(references):
         await db.execute(
@@ -114,6 +131,28 @@ async def lock_raster_mask_references(
             .values(linked_at=func.now())
         )
     return sorted(references)
+
+
+async def store_mask_reference_objects(
+    db: AsyncSession,
+    value: Any,
+    resolved: list[tuple[dict[str, Any], dict[str, Any]]],
+    *,
+    task_id: Any,
+) -> None:
+    """Store portable objects before linking their references to a DB row."""
+    if not resolved:
+        await lock_raster_mask_references(db, value, task_id=task_id)
+        return
+    await lock_raster_mask_references(db, value, verify=False)
+    for reference, rle in resolved:
+        if str(reference.get("object_key") or "").endswith(".json.gz"):
+            stored = await store_coco_rle_gzip(rle)
+        else:
+            stored = await store_coco_rle(rle)
+        if stored["object_key"] != reference.get("object_key"):
+            raise ValueError("AAP mask object storage does not match reference")
+    await lock_raster_mask_references(db, value, task_id=task_id)
 
 
 async def reserve_raster_mask_upload(

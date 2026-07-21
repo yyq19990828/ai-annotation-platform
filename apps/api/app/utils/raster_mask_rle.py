@@ -95,6 +95,12 @@ def decode_coco_rle(rle: Mapping[str, Any]) -> bytearray:
     return out
 
 
+def coco_rle_area(rle: Mapping[str, Any]) -> int:
+    """Return the foreground pixel count without materializing the mask."""
+    _, _, counts = validate_coco_rle(rle)
+    return sum(counts[1::2])
+
+
 def coco_rle_bbox_norm(rle: Mapping[str, Any]) -> dict[str, float]:
     """Return the tight normalized AABB without materializing the mask."""
     height, width, counts = validate_coco_rle(rle)

@@ -4,6 +4,7 @@ from app.schemas._jsonb_types import (
     MultiPolygonGeometry,
     PolygonGeometry,
     PolylineGeometry,
+    RasterMaskGeometry,
     RotatedBboxGeometry,
     ToolUnitId,
 )
@@ -29,6 +30,7 @@ class PredictionShape(BaseModel):
         RotatedBboxGeometry,
         PolylineGeometry,
         KeypointGeometry,
+        RasterMaskGeometry,
         dict[str, Any],
     ]
     confidence: float

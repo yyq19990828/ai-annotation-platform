@@ -548,13 +548,22 @@ async def test_aap_mask_objects_must_match_content_addressed_reference():
     geometry = _GEOMETRY_ADAPTER.validate_python(geometry).model_dump(
         mode="json", by_alias=True, exclude_unset=True
     )
-    assert _validate_aap_mask_objects(geometry, {reference["sha256"]: rle}) == [rle]
+    assert _validate_aap_mask_objects(geometry, {reference["sha256"]: rle}) == [
+        (geometry["keyframes"][0]["mask"], rle)
+    ]
     with pytest.raises(ValueError, match="missing"):
         _validate_aap_mask_objects(geometry, {})
     mismatched = {**reference, "runs": reference["runs"] + 1}
     geometry["keyframes"][0]["mask"] = mismatched
     with pytest.raises(ValueError, match="metadata mismatch"):
         _validate_aap_mask_objects(geometry, {reference["sha256"]: rle})
+
+    raster_geometry = _GEOMETRY_ADAPTER.validate_python(
+        {"type": "raster_mask", "mask": reference}
+    ).model_dump(mode="json", by_alias=True, exclude_unset=True)
+    assert _validate_aap_mask_objects(
+        [raster_geometry, raster_geometry], {reference["sha256"]: rle}
+    ) == [(raster_geometry["mask"], rle)]
 
 
 async def test_import_annotations_multi_geometry_kinds(
