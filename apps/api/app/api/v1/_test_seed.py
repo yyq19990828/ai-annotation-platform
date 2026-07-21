@@ -307,7 +307,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         MLBackendPoolMember,
         MLBackendServicePool,
     )
-    from app.db.models.ml_backend_registry import MLBackendRegistry
+    from app.db.models.ml_backend_registry import (
+        MLBackendRegistry,
+        ProjectMLBackendPool,
+    )
 
     mock_backend = MLBackendRegistry(
         name="E2E SAM Mock",
@@ -336,6 +339,13 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
             registry_id=mock_backend.id,
             traffic_state="active",
             weight=1,
+        )
+    )
+    db.add(
+        ProjectMLBackendPool(
+            project_id=project.id,
+            pool_id=mock_pool.id,
+            enabled=True,
         )
     )
     await db.flush()

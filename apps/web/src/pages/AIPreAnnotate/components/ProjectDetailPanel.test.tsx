@@ -41,6 +41,11 @@ vi.mock("@/hooks/useProjects", () => ({
 vi.mock("@/hooks/useBatchEventsSocket", () => ({
   useBatchEventsSocket: () => undefined,
 }));
+// 本文件验证面板编排与请求参数，不覆盖 React Flow 画布；真实画布依赖 jsdom
+// 不提供的 ResizeObserver，交互行为由 PipelineGraphCanvas.test.tsx 单独守护。
+vi.mock("./PipelineGraphCanvas", () => ({
+  default: () => <div data-testid="pipeline-canvas" />,
+}));
 vi.mock("@/hooks/useProjectPipelines", () => ({
   useProjectPipelines: (...args: unknown[]) => mockUseProjectPipelines(...args),
   useCreateProjectPipeline: () => ({
@@ -556,8 +561,10 @@ describe("ProjectDetailPanel v0.9.12", () => {
       });
       expect(screen.getByRole("option", { name: "版面" })).toBeInTheDocument();
       // 默认选中第一个可选 model(OCR)→ doc 模式: prompt 隐藏 + 静态提示。
-      expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
-      expect(screen.getByText(/未配置 text 属性，文本不会入库/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
+        expect(screen.getByText(/未配置 text 属性，文本不会入库/)).toBeInTheDocument();
+      });
     });
 
     it("OCR 默认模型发起预标透传 model_id + task_type, 不带 prompt", async () => {
