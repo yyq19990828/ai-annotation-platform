@@ -76,6 +76,8 @@ export interface ImageWorkbenchProps {
     points?: [number, number][];
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
+  samMaskRecords: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate: (candidateId: string) => void;
   samActiveIdx: number;
   /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传画布 overlay。 */
   samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
@@ -173,6 +175,8 @@ export function ImageWorkbench({
   onCommitRotateBbox,
   onSamPrompt,
   samCandidates,
+  samMaskRecords,
+  onSelectSamMaskCandidate,
   samActiveIdx,
   samSessionPoints,
   samSessionExemplars,
@@ -319,6 +323,8 @@ export function ImageWorkbench({
       onCommitRotateBbox={onCommitRotateBbox}
       onSamPrompt={onSamPrompt}
       samCandidates={samCandidates}
+      samMaskRecords={samMaskRecords}
+      onSelectSamMaskCandidate={onSelectSamMaskCandidate}
       samActiveIdx={samActiveIdx}
       samSessionPoints={samSessionPoints}
       samSessionExemplars={samSessionExemplars}

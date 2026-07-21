@@ -865,6 +865,236 @@ async def seed_configure_raster_mask(
     )
 
 
+class SeedVideoTaskRequest(BaseModel):
+    project_id: str
+
+
+class SeedVideoTaskResponse(BaseModel):
+    task_id: str
+
+
+@router.post(
+    "/seed/video-task",
+    response_model=SeedVideoTaskResponse,
+    include_in_schema=False,
+)
+async def seed_video_task(
+    payload: SeedVideoTaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoTaskResponse:
+    """Add one deterministic video task to the reset fixture for workbench E2E."""
+    _ensure_non_production()
+
+    from pathlib import Path
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.task import Task
+    from app.db.models.task_batch import TaskBatch
+    from app.services.storage import storage_service
+
+    project_id = UUID(payload.project_id)
+    image_task = (
+        await db.execute(
+            select(Task)
+            .where(Task.project_id == project_id, Task.dataset_item_id.is_not(None))
+            .order_by(Task.created_at)
+        )
+    ).scalars().first()
+    batch = (
+        await db.execute(
+            select(TaskBatch)
+            .where(TaskBatch.project_id == project_id)
+            .order_by(TaskBatch.created_at)
+        )
+    ).scalars().first()
+    if image_task is None or batch is None:
+        raise HTTPException(status_code=404, detail="project fixture not found")
+    image_item = await db.get(DatasetItem, image_task.dataset_item_id)
+    if image_item is None:
+        raise HTTPException(status_code=404, detail="dataset fixture not found")
+
+    source_path = (
+        Path(__file__).resolve().parents[5]
+        / "docs-site/public/home/sam-tools/smart-point.webm"
+    )
+    video = source_path.read_bytes()
+    video_key = "e2e/video/native-mask.webm"
+    storage_service.client.put_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=video_key,
+        Body=video,
+        ContentType="video/webm",
+    )
+    item = DatasetItem(
+        dataset_id=image_item.dataset_id,
+        file_name="native-mask.webm",
+        file_path=video_key,
+        file_type="video",
+        file_size=len(video),
+        width=1440,
+        height=810,
+        metadata_={
+            "video": {
+                "duration_ms": 5000,
+                "fps": 12,
+                "frame_count": 60,
+                "width": 1440,
+                "height": 810,
+                "codec": "vp9",
+            }
+        },
+    )
+    db.add(item)
+    await db.flush()
+    task = Task(
+        project_id=project_id,
+        batch_id=batch.id,
+        dataset_item_id=item.id,
+        display_id=f"T-E2E-VIDEO-{secrets.token_hex(3)}",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="video",
+        status="pending",
+    )
+    db.add(task)
+    batch.total_tasks = int(batch.total_tasks or 0) + 1
+    await db.flush()
+    task_id = str(task.id)
+    await db.commit()
+    return SeedVideoTaskResponse(task_id=task_id)
+
+
+class SeedNativeMaskCandidateRequest(BaseModel):
+    task_id: str
+
+
+class SeedNativeMaskCandidateResponse(BaseModel):
+    response: dict
+    rle: dict
+
+
+@router.post(
+    "/seed/native-mask-candidate",
+    response_model=SeedNativeMaskCandidateResponse,
+    include_in_schema=False,
+)
+async def seed_native_mask_candidate(
+    payload: SeedNativeMaskCandidateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedNativeMaskCandidateResponse:
+    """Issue a real signed receipt for a deterministic transient Mask candidate."""
+    _ensure_non_production()
+
+    import hashlib
+    from uuid import UUID
+
+    from aap_protocol_v2 import (
+        CocoRlePayload,
+        canonical_rle_bytes,
+        native_mask_candidate_id,
+    )
+
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.ml_backend_pool import MLBackendServicePool
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.services.ai_mask_receipt import issue_ai_mask_receipt
+
+    task = await db.get(Task, UUID(payload.task_id))
+    if task is None or task.dataset_item_id is None:
+        raise HTTPException(status_code=404, detail="task fixture not found")
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    project = await db.get(Project, task.project_id)
+    if item is None or project is None or item.width is None or item.height is None:
+        raise HTTPException(status_code=404, detail="media fixture not found")
+    if project.ml_backend_pool_id is None:
+        raise HTTPException(status_code=404, detail="backend pool fixture not found")
+    pool = await db.get(MLBackendServicePool, project.ml_backend_pool_id)
+    if pool is None or pool.legacy_instance_id is None:
+        raise HTTPException(status_code=404, detail="backend fixture not found")
+
+    total = int(item.width) * int(item.height)
+    foreground_start = total // 4
+    foreground_length = max(1, total // 3)
+    rle_model = CocoRlePayload(
+        encoding="coco_rle",
+        size=(int(item.height), int(item.width)),
+        counts=(
+            foreground_start,
+            foreground_length,
+            total - foreground_start - foreground_length,
+        ),
+    )
+    rle = rle_model.model_dump(mode="json")
+    prompt_revision = f"e2e-native-mask:{task.id}:0"
+    candidate_id = native_mask_candidate_id(
+        rle_model,
+        prompt_revision=prompt_revision,
+        candidate_index=0,
+    )
+    routing = {
+        "requested_backend_id": str(pool.legacy_instance_id),
+        "backend_pool_id": str(pool.id),
+        "backend_instance_id": str(pool.legacy_instance_id),
+        "model_id": "e2e-native-mask",
+    }
+    inference = {
+        "model_version": "e2e-native-mask",
+        "inference_time_ms": 7.0,
+        "cache_hit": False,
+        "model_load_ms": 0.0,
+    }
+    prompt_summary = {
+        "family": "point",
+        "positive_points": 1,
+        "negative_points": 0,
+        "boxes": 0,
+        "positive_scribbles": 0,
+        "negative_scribbles": 0,
+        "multimask": True,
+        "parameters_digest": None,
+    }
+    content_digest = hashlib.sha256(canonical_rle_bytes(rle_model)).hexdigest()
+    receipt = issue_ai_mask_receipt(
+        {
+            "task_id": str(task.id),
+            "candidate_id": candidate_id,
+            "candidate_index": 0,
+            "content_digest": content_digest,
+            "prompt_revision": prompt_revision,
+            "score": 0.95,
+            "routing": routing,
+            "inference": inference,
+            "prompt_summary": prompt_summary,
+        }
+    )
+    response = {
+        "result": [
+            {
+                "type": "mask",
+                "value": {"rle": rle, "masklabels": ["object"]},
+                "score": 0.95,
+                "candidate_id": candidate_id,
+            }
+        ],
+        "score": 0.95,
+        "model_version": inference["model_version"],
+        "inference_time_ms": inference["inference_time_ms"],
+        "cache_hit": inference["cache_hit"],
+        "model_load_ms": inference["model_load_ms"],
+        "mask_input_next": None,
+        "diagnostic": None,
+        "prompt_revision": prompt_revision,
+        "output_geometry": "mask",
+        "routing": routing,
+        "accept_receipts": {candidate_id: receipt},
+    }
+    return SeedNativeMaskCandidateResponse(response=response, rle=rle)
+
+
 RasterMaskFixtureVariant = Literal["single", "donut_three", "corrupt"]
 
 

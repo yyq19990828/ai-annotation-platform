@@ -114,6 +114,8 @@ interface WorkbenchStageHostVideoProps {
   /** v0.21.23 · 视频交互式 SAM: 提示派发 + 瞬态候选 / 点会话。 */
   onVideoSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate?: (candidateId: string) => void;
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
@@ -229,6 +231,8 @@ interface WorkbenchStageHostAiProps {
     points?: [number, number][];
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
+  samMaskRecords: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate: (candidateId: string) => void;
   samActiveIdx: number;
   /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传到画布 overlay 渲染。 */
   samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
@@ -339,6 +343,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onVideoSamPrompt,
       // 别名: image 分支已有同名 samCandidates/samActiveIdx/samSessionPoints。
       samCandidates: videoSamCandidates,
+      samMaskRecords: videoSamMaskRecords,
+      onSelectSamMaskCandidate: onSelectVideoSamMaskCandidate,
       samActiveIdx: videoSamActiveIdx,
       samSessionPoints: videoSamSessionPoints,
       samSessionBoxes: videoSamSessionBoxes,
@@ -413,6 +419,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
     const {
       samCandidates,
+      samMaskRecords,
+      onSelectSamMaskCandidate,
       samActiveIdx,
       samSessionPoints,
       samSessionExemplars,
@@ -501,6 +509,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             isVideoToolEnabled={isVideoToolEnabled}
             onSamPrompt={onVideoSamPrompt}
             samCandidates={videoSamCandidates}
+            samMaskRecords={videoSamMaskRecords}
+            onSelectSamMaskCandidate={onSelectVideoSamMaskCandidate}
             samActiveIdx={videoSamActiveIdx}
             samSessionPoints={videoSamSessionPoints}
             samSessionBoxes={videoSamSessionBoxes}
@@ -581,6 +591,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onCommitRotateBbox={onCommitRotateBbox}
             onSamPrompt={onSamPrompt}
             samCandidates={samCandidates}
+            samMaskRecords={samMaskRecords}
+            onSelectSamMaskCandidate={onSelectSamMaskCandidate}
             samActiveIdx={samActiveIdx}
             samSessionPoints={samSessionPoints}
             samSessionExemplars={samSessionExemplars}

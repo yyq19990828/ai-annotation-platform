@@ -1,6 +1,9 @@
 import json
 
-from app.middleware.upload_body_limits import UploadBodyLimitMiddleware
+from app.middleware.upload_body_limits import (
+    MAX_AI_MASK_ACCEPT_BODY_BYTES,
+    UploadBodyLimitMiddleware,
+)
 from app.utils.raster_mask_gzip import compress_mask_gzip
 
 
@@ -102,3 +105,57 @@ async def test_frame_body_content_length_rejected_before_multipart_parser():
     )
     assert called is False
     assert sent[0]["status"] == 413
+
+
+async def test_ai_mask_accept_body_is_bounded_before_json_parser():
+    called = False
+    sent = []
+
+    async def downstream(scope, receive, send):
+        nonlocal called
+        called = True
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = UploadBodyLimitMiddleware(downstream)
+    await middleware(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/tasks/x/ai-mask-candidates/accept",
+            "headers": [
+                (b"content-length", str(MAX_AI_MASK_ACCEPT_BODY_BYTES + 1).encode())
+            ],
+        },
+        _receive_chunks(b""),
+        send,
+    )
+    assert called is False
+    assert sent[0]["status"] == 413
+
+
+async def test_ai_mask_accept_rejects_encoded_body():
+    called = False
+    sent = []
+
+    async def downstream(scope, receive, send):
+        nonlocal called
+        called = True
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = UploadBodyLimitMiddleware(downstream)
+    await middleware(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/tasks/x/ai-mask-candidates/accept",
+            "headers": [(b"content-encoding", b"gzip")],
+        },
+        _receive_chunks(b"payload"),
+        send,
+    )
+    assert called is False
+    assert sent[0]["status"] == 415

@@ -503,6 +503,349 @@
         "title": "AdminResetPasswordResponse",
         "type": "object"
       },
+      "AiMaskAcceptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/AiMaskCandidateInput"
+          },
+          "class_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Class Name",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "inference": {
+            "$ref": "#/components/schemas/AiMaskInferenceLineage"
+          },
+          "prompt_summary": {
+            "$ref": "#/components/schemas/AiMaskPromptSummary"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/AiMaskRoutingLineage"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AiMaskAcceptTarget"
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "candidate",
+          "class_name",
+          "prompt_summary",
+          "routing"
+        ],
+        "title": "AiMaskAcceptRequest",
+        "type": "object"
+      },
+      "AiMaskAcceptResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation": {
+            "$ref": "#/components/schemas/AnnotationOut"
+          },
+          "content_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "prediction": {
+            "$ref": "#/components/schemas/PredictionOut"
+          },
+          "replayed": {
+            "default": false,
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "result_version": {
+            "title": "Result Version",
+            "type": "integer"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          }
+        },
+        "required": [
+          "prediction",
+          "annotation",
+          "result_version",
+          "content_digest"
+        ],
+        "title": "AiMaskAcceptResponse",
+        "type": "object"
+      },
+      "AiMaskAcceptTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "mode": {
+            "default": "create",
+            "enum": [
+              "create",
+              "refine"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          }
+        },
+        "title": "AiMaskAcceptTarget",
+        "type": "object"
+      },
+      "AiMaskCandidateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/NativeMaskCandidate"
+          },
+          "candidate_index": {
+            "maximum": 1024.0,
+            "minimum": 0.0,
+            "title": "Candidate Index",
+            "type": "integer"
+          },
+          "prompt_revision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Prompt Revision",
+            "type": "string"
+          },
+          "receipt": {
+            "maxLength": 4096,
+            "minLength": 16,
+            "title": "Receipt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate",
+          "candidate_index",
+          "prompt_revision",
+          "receipt"
+        ],
+        "title": "AiMaskCandidateInput",
+        "type": "object"
+      },
+      "AiMaskInferenceLineage": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_hit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Hit"
+          },
+          "inference_time_ms": {
+            "anyOf": [
+              {
+                "maximum": 86400000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Time Ms"
+          },
+          "model_load_ms": {
+            "anyOf": [
+              {
+                "maximum": 86400000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Load Ms"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          }
+        },
+        "title": "AiMaskInferenceLineage",
+        "type": "object"
+      },
+      "AiMaskPromptSummary": {
+        "additionalProperties": false,
+        "description": "Bounded, non-sensitive prompt lineage; coordinates never enter persistence.",
+        "properties": {
+          "boxes": {
+            "default": 0,
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Boxes",
+            "type": "integer"
+          },
+          "family": {
+            "enum": [
+              "point",
+              "interactive_box",
+              "exemplar",
+              "mask",
+              "scribble",
+              "correction_frame"
+            ],
+            "title": "Family",
+            "type": "string"
+          },
+          "multimask": {
+            "default": false,
+            "title": "Multimask",
+            "type": "boolean"
+          },
+          "negative_points": {
+            "default": 0,
+            "maximum": 8192.0,
+            "minimum": 0.0,
+            "title": "Negative Points",
+            "type": "integer"
+          },
+          "negative_scribbles": {
+            "default": 0,
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Negative Scribbles",
+            "type": "integer"
+          },
+          "parameters_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters Digest"
+          },
+          "positive_points": {
+            "default": 0,
+            "maximum": 8192.0,
+            "minimum": 0.0,
+            "title": "Positive Points",
+            "type": "integer"
+          },
+          "positive_scribbles": {
+            "default": 0,
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Positive Scribbles",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "family"
+        ],
+        "title": "AiMaskPromptSummary",
+        "type": "object"
+      },
+      "AiMaskRoutingLineage": {
+        "additionalProperties": false,
+        "properties": {
+          "backend_instance_id": {
+            "format": "uuid",
+            "title": "Backend Instance Id",
+            "type": "string"
+          },
+          "backend_pool_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Pool Id"
+          },
+          "model_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Model Id",
+            "type": "string"
+          },
+          "requested_backend_id": {
+            "format": "uuid",
+            "title": "Requested Backend Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested_backend_id",
+          "backend_instance_id",
+          "model_id"
+        ],
+        "title": "AiMaskRoutingLineage",
+        "type": "object"
+      },
       "AliasFrequencyResponse": {
         "properties": {
           "frequency": {
@@ -6128,6 +6471,42 @@
         "title": "CocoRleMaskRef",
         "type": "object"
       },
+      "CocoRlePayload": {
+        "additionalProperties": false,
+        "description": "Bounded uncompressed COCO RLE payload (column-major runs).",
+        "properties": {
+          "counts": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000000,
+            "minItems": 1,
+            "title": "Counts",
+            "type": "array"
+          },
+          "encoding": {
+            "const": "coco_rle",
+            "default": "coco_rle",
+            "title": "Encoding",
+            "type": "string"
+          },
+          "size": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Size",
+            "type": "array"
+          }
+        },
+        "required": [
+          "size",
+          "counts"
+        ],
+        "title": "CocoRlePayload",
+        "type": "object"
+      },
       "CommentAnchor": {
         "additionalProperties": false,
         "description": "评论锚点。v0.9.35 起用于视频 review 的帧级定位。",
@@ -10892,6 +11271,173 @@
         "title": "InstanceVariantOption",
         "type": "object"
       },
+      "InteractiveAnnotateResponse": {
+        "description": "Shared image/current-frame interactive response, including native Mask lineage.",
+        "properties": {
+          "accept_receipts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Accept Receipts",
+            "type": "object"
+          },
+          "cache_hit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Hit"
+          },
+          "diagnostic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InteractiveMaskDiagnostic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Time Ms"
+          },
+          "mask_input_next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask Input Next"
+          },
+          "model_load_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Load Ms"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "output_geometry": {
+            "default": "polygon",
+            "enum": [
+              "polygon",
+              "mask"
+            ],
+            "title": "Output Geometry",
+            "type": "string"
+          },
+          "prompt_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Revision"
+          },
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/InteractiveRoutingLineage"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "routing"
+        ],
+        "title": "InteractiveAnnotateResponse",
+        "type": "object"
+      },
+      "InteractiveMaskDiagnostic": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "supported_geometric_outputs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported Geometric Outputs"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "InteractiveMaskDiagnostic",
+        "type": "object"
+      },
       "InteractiveRequest": {
         "description": "工作台「AI 助手」单次推理请求。\n\n兼容请求的 ``context`` 仍是开放 dict；显式请求原生 Mask 时，平台会按目标\nmodel 能力预检、重建 prompt revision，并严格校验 backend 候选与字节上限。\n\n`context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：\n- ``point``：``{\"type\":\"point\",\"points\":[[x,y],...],\"labels\":[1,0,...],\"multimask_output\":false}``\n  （v0.18.17 · SAM-style 单实例点交互, 正/负点累加由前端重发全量点; multimask 出 3 候选）\n- ``interactive_box``：``{\"type\":\"interactive_box\",\"bbox\":[x1,y1,x2,y2],\"multimask_output\":false}``\n  （v0.18.17 · SAM-style 单框单 mask; 双 backend 统一名, 旧 ``bbox`` prompt 已退役）\n- ``polygon``：``{\"type\":\"polygon\",\"points\":[[x,y],...]}``\n- ``text``：``{\"type\":\"text\",\"text\":\"ripe apples\"}``（Grounded-SAM-2 DINO / SAM 3 PCS）\n- ``exemplar``：``{\"type\":\"exemplar\",\"bbox\":[x1,y1,x2,y2]}`` 或多正负框\n  ``{\"type\":\"exemplar\",\"exemplars\":[{\"bbox\":[...],\"label\":true},...],\"text\":\"car\",\"score_threshold\":0.5}``\n  （SAM 3 PCS 全图相似实例; v0.18.19 起支持多正负框累加 + text 概念组合 + 阈值重过滤的迭代 refinement）。",
         "properties": {
@@ -10911,6 +11457,55 @@
           "task_id"
         ],
         "title": "InteractiveRequest",
+        "type": "object"
+      },
+      "InteractiveRoutingLineage": {
+        "properties": {
+          "backend_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Instance Id"
+          },
+          "backend_pool_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Pool Id"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "requested_backend_id": {
+            "format": "uuid",
+            "title": "Requested Backend Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested_backend_id"
+        ],
+        "title": "InteractiveRoutingLineage",
         "type": "object"
       },
       "InterpolateRangeRequest": {
@@ -12653,6 +13248,68 @@
           "first_pass_yield"
         ],
         "title": "MyPerformance",
+        "type": "object"
+      },
+      "NativeMaskCandidate": {
+        "additionalProperties": false,
+        "description": "A transient native Mask candidate returned by an interactive backend.",
+        "properties": {
+          "candidate_id": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "type": {
+            "const": "mask",
+            "default": "mask",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/NativeMaskCandidateValue"
+          }
+        },
+        "required": [
+          "value",
+          "candidate_id"
+        ],
+        "title": "NativeMaskCandidate",
+        "type": "object"
+      },
+      "NativeMaskCandidateValue": {
+        "additionalProperties": false,
+        "properties": {
+          "masklabels": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Masklabels",
+            "type": "array"
+          },
+          "rle": {
+            "$ref": "#/components/schemas/CocoRlePayload"
+          }
+        },
+        "required": [
+          "rle",
+          "masklabels"
+        ],
+        "title": "NativeMaskCandidateValue",
         "type": "object"
       },
       "NeighborAnnotationsResponse": {
@@ -37156,7 +37813,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/InteractiveAnnotateResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -37223,7 +37882,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/InteractiveAnnotateResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -39838,6 +40499,65 @@
           }
         ],
         "summary": "Accept Rejection",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/ai-mask-candidates/accept": {
+      "post": {
+        "description": "Atomically accept one transient native Mask candidate.\n\nThe immutable content object is written before the final database commit. The\nPrediction, lineage, decision, Annotation mutation, and audit event share that\nsingle commit; a failed transaction leaves only a grace-period GC orphan.",
+        "operationId": "accept_native_ai_mask_candidate_api_v1_tasks__task_id__ai_mask_candidates_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiMaskAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiMaskAcceptResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Native Ai Mask Candidate",
         "tags": [
           "tasks"
         ]

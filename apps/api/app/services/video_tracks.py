@@ -94,6 +94,24 @@ def normalize_outside_ranges(ranges: list[dict] | None) -> list[dict]:
     return merged
 
 
+def remove_frame_from_outside_ranges(
+    ranges: list[dict] | None, frame_index: int
+) -> list[dict]:
+    """Make one frame visible while preserving every surrounding outside range."""
+
+    frame = max(0, int(frame_index))
+    result: list[dict] = []
+    for range_ in normalize_outside_ranges(ranges):
+        if frame < range_["from"] or frame > range_["to"]:
+            result.append(range_)
+            continue
+        if range_["from"] < frame:
+            result.append({**range_, "to": frame - 1})
+        if frame < range_["to"]:
+            result.append({**range_, "from": frame + 1})
+    return normalize_outside_ranges(result)
+
+
 def effective_outside_ranges(geometry: dict) -> list[dict]:
     return normalize_outside_ranges(geometry.get("outside") or [])
 

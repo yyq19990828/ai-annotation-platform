@@ -20,6 +20,9 @@ ASGIApp = Callable[
 MAX_FRAME_FILE_BYTES = 32 * 1024 * 1024
 # Raw multipart includes boundaries and small form fields in addition to the file.
 MAX_FRAME_MULTIPART_BODY_BYTES = MAX_FRAME_FILE_BYTES + 1024 * 1024
+# Inline RLE can consume the full canonical object budget; leave bounded room for
+# receipt, lineage, prompt summary, and JSON field names before Pydantic parsing.
+MAX_AI_MASK_ACCEPT_BODY_BYTES = MAX_UNCOMPRESSED_BYTES + 1024 * 1024
 
 
 async def _json_error(send, status: int, detail: Any) -> None:
@@ -97,6 +100,9 @@ class UploadBodyLimitMiddleware:
             and headers.get(b"content-encoding", b"").lower() == b"gzip"
         )
         is_mask = path.startswith("/api/v1/tasks/") and path.endswith("/mask-content")
+        is_ai_mask_accept = path.startswith("/api/v1/tasks/") and path.endswith(
+            "/ai-mask-candidates/accept"
+        )
         if is_mask and headers.get(b"content-encoding", b"").lower() not in {
             b"",
             b"identity",
@@ -104,11 +110,25 @@ class UploadBodyLimitMiddleware:
         }:
             await _json_error(send, 415, "Unsupported Content-Encoding")
             return
-        if not is_frame and not is_mask_gzip:
+        if is_ai_mask_accept and headers.get(b"content-encoding", b"").lower() not in {
+            b"",
+            b"identity",
+        }:
+            await _json_error(send, 415, "Unsupported Content-Encoding")
+            return
+        if not is_frame and not is_mask_gzip and not is_ai_mask_accept:
             await self.app(scope, receive, send)
             return
 
-        limit = MAX_FRAME_MULTIPART_BODY_BYTES if is_frame else MAX_COMPRESSED_BYTES
+        limit = (
+            MAX_FRAME_MULTIPART_BODY_BYTES
+            if is_frame
+            else (
+                MAX_AI_MASK_ACCEPT_BODY_BYTES
+                if is_ai_mask_accept
+                else MAX_COMPRESSED_BYTES
+            )
+        )
         raw_length = headers.get(b"content-length")
         if raw_length:
             try:

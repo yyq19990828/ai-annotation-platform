@@ -57,6 +57,7 @@ class AuditAction(str, Enum):
     ANNOTATION_CREATE = "annotation.create"
     ANNOTATION_UPDATE = "annotation.update"
     ANNOTATION_DELETE = "annotation.delete"
+    AI_MASK_CANDIDATE_ACCEPT = "mask_ai.candidate_accept"
     ANNOTATION_COMMENT_ADD = "annotation.comment_add"
     ANNOTATION_COMMENT_DELETE = "annotation.comment_delete"
     # v0.6.5 · 任务状态机锁定

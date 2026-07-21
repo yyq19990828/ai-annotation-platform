@@ -17,6 +17,7 @@ import { usePredictions } from "@/hooks/usePredictions";
 import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
+import { useAcceptNativeMaskCandidate } from "@/hooks/useAcceptNativeMaskCandidate";
 import { tasksApi } from "@/api/tasks";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import { ApiError } from "@/api/client";
@@ -53,7 +54,13 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
-import { useInteractiveAI, type InteractiveTransport, type TextOutputMode } from "./useInteractiveAI";
+import {
+  useInteractiveAI,
+  type InteractiveTransport,
+  type PendingCandidate,
+  type PendingMaskCandidate,
+  type TextOutputMode,
+} from "./useInteractiveAI";
 import type { VideoSamPrompt } from "../stage/videoStageTypes";
 import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
 import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
@@ -1259,6 +1266,43 @@ export function useWorkbenchShellModel({
   const activeInteractivePrompt = promptOfTool(activeAiTool);
   const interactiveBackendId = routing.resolveInteractive(activeInteractivePrompt ?? "point");
 
+  // 模型选择必须先于交互请求确定：原生 Mask 的 capability、model_id 与候选
+  // receipt 都绑定同一个 active model，不能在请求发出后再从工具栏状态猜测。
+  const modelPref = useAiToolModelPref(interactiveBackendId);
+  const mlCapabilities = useMLCapabilities(
+    projectId ?? null,
+    interactiveBackendId,
+    modelPref.savedModelId ?? null,
+  );
+  const [singleFrameOutputGeometry, setSingleFrameOutputGeometry] = useState<
+    "polygon" | "mask"
+  >("mask");
+  const activeGeometricOutputs =
+    mlCapabilities.activeModel?.supported_geometric_outputs
+    ?? mlCapabilities.capability?.supported_geometric_outputs
+    ?? [];
+  const activeModelSupportsNativeMask = activeGeometricOutputs.includes("mask");
+  const nativeMaskOutputDisabledReason = !activeModelSupportsNativeMask
+    ? "当前模型未声明原生 Mask 输出能力"
+    : !isVideoTask && imageMaskPersistenceMode !== "native"
+      ? "当前图片项目尚未开启原生 Raster Mask 编辑"
+      : undefined;
+  const effectiveSingleFrameOutputGeometry: "polygon" | "mask" =
+    activeAiTool !== "magic-box"
+    && singleFrameOutputGeometry === "mask"
+    && nativeMaskOutputDisabledReason == null
+      ? "mask"
+      : "polygon";
+  const samRequestContextDefaults = useMemo<Record<string, unknown>>(
+    () => ({
+      ...(mlCapabilities.activeModelId
+        ? { model_id: mlCapabilities.activeModelId }
+        : {}),
+      output_geometry: effectiveSingleFrameOutputGeometry,
+    }),
+    [effectiveSingleFrameOutputGeometry, mlCapabilities.activeModelId],
+  );
+
   // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
   const videoControlsRef = useRef<VideoStageControls | null>(null);
 
@@ -1284,8 +1328,66 @@ export function useWorkbenchShellModel({
     mlBackendId: interactiveBackendId,
     transport: samTransport,
     // 候选缓存 / 点会话按帧隔离; 切帧即失效 (mask_input 的 logits 绑定具体图像)。
-    cacheScope: isVideoTask ? videoFrameIndex : undefined,
+    cacheScope: [
+      isVideoTask ? videoFrameIndex : "image",
+      mlCapabilities.activeModelId ?? "default",
+      effectiveSingleFrameOutputGeometry,
+    ].join(":"),
+    requestContextDefaults: samRequestContextDefaults,
   });
+  const samVectorCandidates = useMemo(
+    () => sam.candidates.filter(
+      (candidate): candidate is Exclude<PendingCandidate, PendingMaskCandidate> =>
+        candidate.type !== "mask",
+    ),
+    [sam.candidates],
+  );
+  const samMaskCandidateDescriptors = useMemo(
+    () => sam.candidates.flatMap((candidate, index) => {
+      if (candidate.type !== "mask") return [];
+      return [{
+        id: candidate.id,
+        source: "interactive" as const,
+        ref: {
+          size: candidate.rle.size,
+          sha256: candidate.candidateId.replace(/^sha256:/, ""),
+        },
+        revision: candidate.promptRevision,
+        color: "#a855f7",
+        colorRevision: "sam-mask-purple",
+        zOrder: index,
+        selected: index === sam.activeIdx,
+        load: async () => candidate.rle,
+      }];
+    }),
+    [sam.activeIdx, sam.candidates],
+  );
+  const samMaskScopeKey = samMaskCandidateDescriptors.length > 0 && taskId
+    ? [
+        taskId,
+        isVideoTask ? videoFrameIndex : "image",
+        samMaskCandidateDescriptors.map((item) => item.revision).join(","),
+      ].join(":")
+    : null;
+  const samMaskCandidates = useRasterMaskRecords({
+    scopeKey: samMaskScopeKey,
+    descriptors: samMaskCandidateDescriptors,
+    maxCacheBytes: 32 * 1024 * 1024,
+    maxCachedRecords: 4,
+  });
+  const samCandidateDisplayGeom = useCallback(
+    (candidate: PendingCandidate | undefined) => {
+      if (candidate?.type !== "mask") return samCandidateGeom(candidate);
+      const record = samMaskCandidates.records.find((item) => item.id === candidate.id);
+      return record?.bounds ?? null;
+    },
+    [samMaskCandidates.records],
+  );
+  const selectSamCandidateByIndex = sam.select;
+  const selectSamMaskCandidate = useCallback((candidateId: string) => {
+    const index = sam.candidates.findIndex((candidate) => candidate.id === candidateId);
+    if (index >= 0) selectSamCandidateByIndex(index);
+  }, [sam.candidates, selectSamCandidateByIndex]);
 
   // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
   const onVideoSamPrompt = useCallback(
@@ -1321,15 +1423,6 @@ export function useWorkbenchShellModel({
       sam.runBbox(prompt.bbox);
     },
     [sam, s.exemplarOutputMode, seedCollecting, seedObj, s.videoFrameIndex],
-  );
-  // v0.18.25 · 引擎(模型)选择的服务端持久化偏好 (User.preferences.ai.model_by_backend, 跨设备);
-  // 作"默认之前的回落"注入 useMLCapabilities, 用户本会话显式选择仍盖过它。
-  const modelPref = useAiToolModelPref(interactiveBackendId);
-  // 交互工具栏的能力/模型反映"解析到的交互后端"; 门控 (isPromptSupported) 走 routing 并集。
-  const mlCapabilities = useMLCapabilities(
-    projectId ?? null,
-    interactiveBackendId,
-    modelPref.savedModelId ?? null,
   );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
@@ -1581,6 +1674,11 @@ export function useWorkbenchShellModel({
     // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
     getAnnotation: (id) => annotationsRef.current.find((a) => a.id === id) ?? null,
   });
+  const acceptNativeMaskCandidate = useAcceptNativeMaskCandidate({
+    taskId,
+    queryClient,
+    history,
+  });
 
   const { avgMs } = useSessionStats(taskId ?? null, projectId ?? null, "annotate");
   const remainingTaskCount = useMemo(() => {
@@ -1710,6 +1808,8 @@ export function useWorkbenchShellModel({
     activeToolHasOwnClasses: toolView.hasOwnClasses,
     keypointNodeCount: toolView.keypointSchema?.nodes.length ?? 0,
     sam,
+    samMaskRecords: samMaskCandidates.records,
+    acceptNativeMask: acceptNativeMaskCandidate,
     createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
     updateAnnotationAsync: (annotationId, payload, etag) =>
       updateAnnotationMut.mutateAsync({ annotationId, payload, etag }),
@@ -2231,7 +2331,7 @@ export function useWorkbenchShellModel({
       e.stopImmediatePropagation();
       if (e.key === "Enter") {
         const idx = sam.activeIdx;
-        const geom = samCandidateGeom(sam.candidates[idx]);
+        const geom = samCandidateDisplayGeom(sam.candidates[idx]);
         if (!geom) return;
         // 锚到候选外接框底边中点下方, 与手绘 box 的 onPendingDraw 同式。
         const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
@@ -2246,17 +2346,17 @@ export function useWorkbenchShellModel({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isVideoTask, s.videoTool, sam, videoSamPendingAccept]);
+  }, [isVideoTask, s.videoTool, sam, samCandidateDisplayGeom, videoSamPendingAccept]);
 
   // magic-box: 候选一到就自动弹类选择器 (无需 Enter), 选定类别后收紧成外接框 —— 与图片侧同式。
   useEffect(() => {
     if (!isVideoTask || s.videoTool !== "magic-box") return;
     if (sam.isRunning || sam.candidates.length === 0 || videoSamPendingAccept) return;
-    const geom = samCandidateGeom(sam.candidates[0]);
+    const geom = samCandidateDisplayGeom(sam.candidates[0]);
     if (!geom) return;
     const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
     setVideoSamPendingAccept({ idx: 0, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
-  }, [isVideoTask, s.videoTool, sam.isRunning, sam.candidates, videoSamPendingAccept]);
+  }, [isVideoTask, s.videoTool, sam.isRunning, sam.candidates, samCandidateDisplayGeom, videoSamPendingAccept]);
 
   // 候选被清空 / 切工具 / 切帧 → popover 一并收起, 避免它悬在一个已不存在的候选上。
   useEffect(() => {
@@ -2264,6 +2364,37 @@ export function useWorkbenchShellModel({
       setVideoSamPendingAccept(null);
     }
   }, [sam.candidates, videoSamPendingAccept]);
+
+  const acceptVideoNativeMaskCandidate = useCallback(async (idx: number, cls: string) => {
+    const candidate = sam.candidates[idx];
+    if (!taskId || candidate?.type !== "mask") return;
+    if (isLockedForActions) {
+      pushToast({ msg: "任务已锁定", sub: "当前不能采纳 Mask 候选", kind: "warning" });
+      return;
+    }
+    try {
+      const accepted = await acceptNativeMaskCandidate({
+        candidate,
+        className: cls,
+        target: { mode: "create", frame_index: s.videoFrameIndex },
+      });
+      if (!accepted) return;
+      s.setActiveClass(cls);
+      s.setSelectedId(accepted.annotation.id);
+      sam.consume(idx);
+      pushToast({
+        msg: "已采纳当前帧原生 Mask",
+        sub: accepted.replayed ? "幂等重试已恢复原结果" : `F${s.videoFrameIndex} 已写入轨迹关键帧`,
+        kind: "success",
+      });
+    } catch (error) {
+      pushToast({
+        msg: "原生 Mask 采纳失败",
+        sub: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    }
+  }, [acceptNativeMaskCandidate, isLockedForActions, pushToast, s, sam, taskId]);
 
   // 选定类别 → 按候选几何分流落库 (与图片侧 handleSamCommitClass 一致)。
   // consume 对 point/bbox 清空整个会话, 对 exemplar 只移除被采纳的那条 (多实例, 可继续采纳)。
@@ -2273,11 +2404,15 @@ export function useWorkbenchShellModel({
     setVideoSamPendingAccept(null);
     const c = sam.candidates[pending.idx];
     if (!c) return;
+    if (c.type === "mask") {
+      void acceptVideoNativeMaskCandidate(pending.idx, cls);
+      return;
+    }
     // magic-box: 不论候选形态一律收紧成紧凑外接矩形落 video_bbox, 并结束整个会话 (单候选)。
     if (s.videoTool === "magic-box") {
       const tight = c.type === "rectanglelabels" && c.bbox
         ? { x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height }
-        : c.points && c.points.length >= 3
+        : c.type === "polygonlabels" && c.points.length >= 3
         ? tightenBboxFromPolygon(c.points)
         : null;
       sam.cancel();
@@ -2288,11 +2423,11 @@ export function useWorkbenchShellModel({
       handleVideoCreateWithClass("video_bbox", s.videoFrameIndex, {
         x: c.bbox.x, y: c.bbox.y, w: c.bbox.width, h: c.bbox.height,
       }, cls);
-    } else if (c.points && c.points.length >= 3) {
+    } else if (c.type === "polygonlabels" && c.points.length >= 3) {
       handleVideoPointsCreateWithClass("video_polygon", s.videoFrameIndex, c.points, cls);
     }
     sam.consume(pending.idx);
-  }, [videoSamPendingAccept, sam, s.videoTool, s.videoFrameIndex, handleVideoCreateWithClass, handleVideoPointsCreateWithClass]);
+  }, [acceptVideoNativeMaskCandidate, videoSamPendingAccept, sam, s.videoTool, s.videoFrameIndex, handleVideoCreateWithClass, handleVideoPointsCreateWithClass]);
 
   const handleVideoSamCancelClass = useCallback(() => {
     setVideoSamPendingAccept(null);
@@ -2303,8 +2438,8 @@ export function useWorkbenchShellModel({
   // popover 定位用的候选外接框 (归一化)。
   const videoSamPendingGeom = useMemo(() => {
     if (!videoSamPendingAccept) return null;
-    return samCandidateGeom(sam.candidates[videoSamPendingAccept.idx]);
-  }, [videoSamPendingAccept, sam.candidates]);
+    return samCandidateDisplayGeom(sam.candidates[videoSamPendingAccept.idx]);
+  }, [videoSamPendingAccept, sam.candidates, samCandidateDisplayGeom]);
 
   // 候选自带的模型类别若在项目类别里则作默认值, 否则回落当前类 (与图片侧 samDefaultClass 一致)。
   const videoSamDefaultClass = useMemo(() => {
@@ -3533,6 +3668,9 @@ export function useWorkbenchShellModel({
                 isLoading={mlCapabilities.isLoading}
                 isError={mlCapabilities.isError}
                 exemplarOutputMode={s.exemplarOutputMode}
+                singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
+                onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
+                nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
                 onSetExemplarOutputMode={(mode) => {
                   // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
                   handleSetExemplarOutputMode(mode);
@@ -3639,7 +3777,9 @@ export function useWorkbenchShellModel({
         onVideoSamPrompt,
         // 工具条上的正/负切换 (= / - 键) 与 Alt 等价, 与图片侧 SmartPointTool 同语义。
         samPolarity: s.samPolarity,
-        samCandidates: isVideoTask ? sam.candidates : undefined,
+        samCandidates: isVideoTask ? samVectorCandidates : undefined,
+        samMaskRecords: isVideoTask ? samMaskCandidates.records : undefined,
+        onSelectSamMaskCandidate: isVideoTask ? selectSamMaskCandidate : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
         // v0.21.27 · U-pvs-1/2/3 + 框修正 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS
         // 种子点/框 (归一化); 纠偏多帧下只画**当前帧**的点/框 (别帧坐标属其帧, 画到当前帧会错位)。
@@ -3748,7 +3888,9 @@ export function useWorkbenchShellModel({
         onStageGeometry: setStageGeom,
       },
       ai: {
-        samCandidates: sam.candidates,
+        samCandidates: samVectorCandidates,
+        samMaskRecords: samMaskCandidates.records,
+        onSelectSamMaskCandidate: selectSamMaskCandidate,
         samActiveIdx: sam.activeIdx,
         samSessionPoints: sam.sessionPoints,
         samSessionExemplars: sam.sessionExemplars,

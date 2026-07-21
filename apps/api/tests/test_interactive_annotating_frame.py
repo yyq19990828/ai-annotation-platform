@@ -272,6 +272,14 @@ async def test_native_mask_frame_validates_jpeg_size_and_returns_lineage(
     assert body["result"][0]["value"]["rle"]["size"] == [24, 32]
     assert body["routing"]["model_id"] == "frame-interactive"
     assert body["model_version"] == "test-frame-model"
+    assert body["prompt_revision"]
+    candidate_id = body["result"][0]["candidate_id"]
+    from app.services.ai_mask_receipt import verify_ai_mask_receipt
+
+    receipt = verify_ai_mask_receipt(body["accept_receipts"][candidate_id])
+    assert receipt["task_id"] == str(task.id)
+    assert receipt["candidate_id"] == candidate_id
+    assert receipt["routing"] == body["routing"]
     assert patched["predict_kwargs"]["max_response_bytes"] == 16 * 1024 * 1024
 
 

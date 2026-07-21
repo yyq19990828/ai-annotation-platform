@@ -6,12 +6,14 @@ import { ApiError } from "@/api/client";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import type { ToolBindings } from "@/api/projects";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
+import type { useAcceptNativeMaskCandidate } from "@/hooks/useAcceptNativeMaskCandidate";
 import { dedupeAiBoxesById } from "../../stage/aiBoxFrames";
 import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
 import { guardDrawnBox } from "../../stage/drawGuard";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
 import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
+import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
 import {
   defaultPredictionSourceVisibility,
   emptyPredictionSourceCounts,
@@ -103,6 +105,9 @@ interface UseImageAnnotationActionsArgs {
   /** v0.10.28 · 当前 keypoint 单元 schema 节点数，透传给 useWorkbenchAnnotationActions。 */
   keypointNodeCount?: number;
   sam: UseInteractiveAIReturn;
+  /** Decoded transient native candidates, kept separate from committed annotations. */
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  acceptNativeMask: ReturnType<typeof useAcceptNativeMaskCandidate>;
   createAnnotationAsync: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
   updateAnnotationAsync: (
     annotationId: string,
@@ -211,6 +216,8 @@ export function useImageAnnotationActions({
   activeToolHasOwnClasses = true,
   keypointNodeCount = 0,
   sam,
+  samMaskRecords = [],
+  acceptNativeMask,
   createAnnotationAsync,
   updateAnnotationAsync,
   mutations,
@@ -338,8 +345,13 @@ export function useImageAnnotationActions({
 
   const samPendingGeom = useMemo<Geom | null>(
     // 与视频侧共用同一份几何解析 (见 useWorkbenchShellModel.helpers)。
-    () => (samPendingAccept ? samCandidateGeom(sam.candidates[samPendingAccept.idx]) : null),
-    [samPendingAccept, sam.candidates],
+    () => {
+      if (!samPendingAccept) return null;
+      const candidate = sam.candidates[samPendingAccept.idx];
+      if (candidate?.type !== "mask") return samCandidateGeom(candidate);
+      return samMaskRecords.find((record) => record.id === candidate.id)?.bounds ?? null;
+    },
+    [samPendingAccept, sam.candidates, samMaskRecords],
   );
 
   const samDefaultClass = (
@@ -350,6 +362,41 @@ export function useImageAnnotationActions({
     ? sam.candidates[samPendingAccept.idx].label
     : s.activeClass;
 
+  const acceptNativeMaskCandidate = useCallback(async (idx: number, cls: string) => {
+    const candidate = sam.candidates[idx];
+    if (!taskId || candidate?.type !== "mask") return;
+    if (maskPersistenceMode !== "native") {
+      pushToast({
+        msg: "原生 Mask 写入未开启",
+        sub: "请在项目设置中开启原生 Raster Mask 编辑",
+        kind: "warning",
+      });
+      return;
+    }
+    try {
+      const accepted = await acceptNativeMask({
+        candidate,
+        className: cls,
+        target: { mode: "create" },
+      });
+      if (!accepted) return;
+      recordRecentClass(cls);
+      s.setSelectedId(accepted.annotation.id);
+      sam.consume(idx);
+      pushToast({
+        msg: "已采纳原生 Mask",
+        sub: accepted.replayed ? "幂等重试已恢复原结果" : "候选像素已原子写入",
+        kind: "success",
+      });
+    } catch (error) {
+      pushToast({
+        msg: "原生 Mask 采纳失败",
+        sub: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    }
+  }, [acceptNativeMask, maskPersistenceMode, pushToast, recordRecentClass, s, sam, taskId]);
+
   const handleSamCommitClass = useCallback(
     (cls: string) => {
       const pending = samPendingAccept;
@@ -358,13 +405,17 @@ export function useImageAnnotationActions({
       setSamPendingAccept(null);
       if (!cand || !cls) return;
       s.setActiveClass(cls);
+      if (cand.type === "mask") {
+        void acceptNativeMaskCandidate(pending.idx, cls);
+        return;
+      }
       // v0.10.17 · Magic Box: bbox prompt → polygon → 紧凑外接矩形落 bbox.
       // 不论候选 type 都收紧到 bbox, 跳过 polygon 创建路径.
       if (s.tool === "magic-box") {
         let tight: { x: number; y: number; w: number; h: number } | null = null;
         if (cand.type === "rectanglelabels" && cand.bbox) {
           tight = { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height };
-        } else if (cand.points && cand.points.length >= 3) {
+        } else if (cand.type === "polygonlabels" && cand.points.length >= 3) {
           tight = tightenBboxFromPolygon(cand.points);
         }
         sam.cancel();
@@ -374,12 +425,12 @@ export function useImageAnnotationActions({
       // v0.9.4 phase 2 · 按 type 分发: rectanglelabels 走 bbox 创建路径，polygonlabels 走 polygon 创建路径。
       if (cand.type === "rectanglelabels" && cand.bbox) {
         createBboxWithClass({ x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height }, cls);
-      } else if (cand.points && cand.points.length >= 3) {
+      } else if (cand.type === "polygonlabels" && cand.points.length >= 3) {
         submitPolygon(cand.points);
       }
       sam.consume(pending.idx);
     },
-    [samPendingAccept, sam, s, createBboxWithClass, submitPolygon],
+    [acceptNativeMaskCandidate, samPendingAccept, sam, s, createBboxWithClass, submitPolygon],
   );
 
   const handleSamCancelClass = useCallback(() => {

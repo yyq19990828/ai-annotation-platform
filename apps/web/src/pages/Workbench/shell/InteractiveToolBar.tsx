@@ -40,6 +40,10 @@ export interface InteractiveToolBarProps {
   // exemplar 工具输出形态 (box/mask/both); 会话级状态由 WorkbenchShell 持有.
   exemplarOutputMode?: TextOutputMode;
   onSetExemplarOutputMode?: (mode: TextOutputMode) => void;
+  /** 单帧交互候选的持久几何；与 exemplar 的召回结果形态相互独立。 */
+  singleFrameOutputGeometry?: "polygon" | "mask";
+  onSetSingleFrameOutputGeometry?: (mode: "polygon" | "mask") => void;
+  nativeMaskOutputDisabledReason?: string;
   // exemplar refine 会话控件 (多正负框 + text 组合 + 阈值重过滤).
   /** 叠加的 text 概念 (PCS text + 几何示例组合); 改动即重跑当前会话。 */
   exemplarText?: string;
@@ -142,6 +146,9 @@ export function InteractiveToolBar({
   isError,
   exemplarOutputMode,
   onSetExemplarOutputMode,
+  singleFrameOutputGeometry,
+  onSetSingleFrameOutputGeometry,
+  nativeMaskOutputDisabledReason,
   exemplarText,
   onSetExemplarText,
   exemplarThreshold,
@@ -306,6 +313,32 @@ export function InteractiveToolBar({
               >
                 <Icon name={samPolarity === "positive" ? "plus" : "minus"} size={14} />
               </button>
+            </div>
+          </>
+        )}
+
+        {/* 单帧最终几何与 exemplar 的 box/mask/both 召回形态不是同一维度。 */}
+        {(tool === "smart-point" || tool === "smart-box" || tool === "exemplar")
+          && singleFrameOutputGeometry
+          && onSetSingleFrameOutputGeometry && (
+          <>
+            {DIVIDER}
+            <div className="flex items-center gap-1.5" data-testid="single-frame-output-geometry">
+              <span className={FIELD_LABEL_CLASS}>提交</span>
+              <select
+                data-testid="single-frame-output-geometry-select"
+                value={singleFrameOutputGeometry}
+                onChange={(event) =>
+                  onSetSingleFrameOutputGeometry(event.target.value as "polygon" | "mask")
+                }
+                className={`${SELECT_CLASS} cursor-pointer`}
+                title={nativeMaskOutputDisabledReason ?? "单帧候选持久化几何"}
+              >
+                <option value="polygon">多边形</option>
+                <option value="mask" disabled={nativeMaskOutputDisabledReason != null}>
+                  原生 Mask
+                </option>
+              </select>
             </div>
           </>
         )}

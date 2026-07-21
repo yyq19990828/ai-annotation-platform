@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-21
+last_reviewed: 2026-07-22
 ---
 
 # 环境变量参考
@@ -165,7 +165,7 @@ last_reviewed: 2026-07-21
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `RASTER_MASK_READ_ENABLED` | `true` | 图片原生 raster_mask reader 默认开启，保证新后端可读取已有 geometry。 |
-| `RASTER_MASK_CREATE_ENABLED` | `false` | 持久化创建默认关闭，待全部 reader / exporter 升级后再显式开启。 |
+| `RASTER_MASK_CREATE_ENABLED` | `true` | 持久化创建默认开启；项目级 opt-in 仍默认关闭，本项保留为部署紧急总闸。 |
 
 ## 认证 / 安全
 

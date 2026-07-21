@@ -434,6 +434,12 @@
 | POST | `/projects/{project_id}/tasks/query` |
 | GET | `/projects/{project_id}/task-views/{view_id}/tasks` |
 
+## `tasks/ai_masks.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/ai-mask-candidates/accept` |
+
 ## `tasks/annotations.py`
 
 | Method | Path |
@@ -565,4 +571,4 @@
 
 ---
 
-_共 53 模块 / 313 路由_
+_共 54 模块 / 314 路由_

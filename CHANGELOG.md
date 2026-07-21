@@ -44,19 +44,31 @@
   返回原分辨率 COCO RLE，hole、孤岛和多连通区不再经过 polygon 简化；旧请求继续返回 polygon。
 - **SAM3 PVS Mask 纠错种子**. 视频交互 Tracker 可校验并解码受控内联 RLE，在准确的窗内帧调用
   `add_new_mask`；能力目录将 Multiplex 与 PVS 拆分为独立 model 条目。
+- **原生 Mask 候选预览与原子采纳**. 图片和视频单帧候选复用共享 Raster renderer、字节预算与
+  alpha picking；任务级采纳接口在一个事务内创建 Prediction、lineage、decision 和 Annotation，
+  视频结果直接成为当前帧 `video_track_mask` 关键帧。
+- **原生候选幂等账本**. 数据库迁移新增 24 小时接受 decision，用任务与客户端 key 保证响应丢失后
+  重试只产生一次标注变更；有效快照在生命周期内参与 Mask 引用扫描，过期后由清理任务回收。
 
 ### Changed
 - **交互候选代理返回路由 lineage**. 图片与视频单帧响应补充请求 backend、实际实例、
   服务池、目标 model 与模型版本，为后续原子接受提供可追溯输入。
+- **图片 Mask 部署写能力默认开启**. reader / exporter / 浏览器退出矩阵通过后，部署总闸改为默认
+  开启；项目级原生编辑 opt-in 仍默认关闭，总闸继续作为紧急 kill switch。
 
 ### Fixed
 - **SAM3 Tracker Mask 像素与空帧保真**. Multiplex 的原生 Mask 输出不再做形态学开运算或丢弃
   小连通区，无目标帧返回尺寸正确的全背景 RLE 与 `outside=true`，不再误报 bbox。
+- **原生候选失败恢复**. 网络错误、版本冲突或服务端失败不再提前清空候选、prompt 与幂等键；
+  成功响应才消费候选，取消、切题、切帧、切模型、切输出类型和 TTL 到期会释放会话缓存。
 
 ### Security
 - **原生 Mask 安全代理**. 平台按同一目标 model 同时检查 prompt 与输出能力，重建 prompt
   revision，校验候选 RLE、媒体尺寸、ID 与空结果诊断；单对象 4 MiB 和整体 16 MiB
   上限在读取 backend 响应流时执行，超限返回稳定 413 reason。
+- **原生 Mask 采纳授权与血缘签名**. 接口复核任务可编辑状态、assignment、任务/标注锁、项目写闸、
+  类别和源版本；签名 receipt 绑定像素、prompt 摘要、模型与历史路由，跨 actor 回放和同 key 异请求
+  均稳定拒绝，普通日志与审计不记录 RLE counts。
 
 ## [0.23.7] - 2026-07-21
 

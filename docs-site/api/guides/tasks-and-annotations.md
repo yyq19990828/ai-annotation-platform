@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-22
 ---
 
 # 任务与标注
@@ -191,6 +191,18 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 ```
 
 每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。图片读取使用 `GET /api/v1/annotations/{annotation_id}/mask-content`；视频当前解析帧使用带 `{frame_index}` 的路径，兼容客户端也可以用带帧路径读取图片单态 Mask。响应支持 `If-None-Match` 命中返回 304；对象损坏或尺寸失配返回 409，存储暂时不可用返回可重试 503。部署可以分别控制读取和创建；创建关闭时仍允许安全读取存量 geometry。
+
+## 原生 AI Mask 候选采纳
+
+交互式推理返回的原生 Mask 是短生命周期候选，不应由客户端拆成“上传内容 + 创建标注”两次写操作。客户端应把候选和平台签发的 receipt 提交到任务级原子采纳接口：
+
+```http
+POST /api/v1/tasks/:id/ai-mask-candidates/accept
+```
+
+请求包含 `idempotency_key`、候选 RLE 与 `candidate_id`、`prompt_revision`、receipt、类别、目标、prompt 计数摘要、实际路由和推理摘要。图片新建使用 `target.mode=create`；视频还要给出当前 `frame_index`；精修使用 `target.mode=refine`，同时提供 `source_annotation_id`、`source_version` 和同值 `If-Match`。
+
+服务端重新检查任务状态、assignment、任务与标注锁、项目 Mask 写闸、媒体尺寸和类别，并原子写入 Prediction、lineage、接受 decision、Annotation 与审计。响应返回完整 Prediction、Annotation、源/结果版本和内容摘要，ETag 对应结果版本。相同 task、幂等键和请求会回放第一次的完整响应；同 key 不同请求、过期 decision 或版本漂移返回 409。客户端只有收到成功响应后才能清理候选。
 
 ## 视频轨迹转独立框
 

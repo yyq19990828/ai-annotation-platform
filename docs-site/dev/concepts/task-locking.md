@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-07-22
 ---
 
 # Task Lock
@@ -64,6 +64,10 @@ flowchart TD
 ### cleanup expired
 
 访问时会顺手清理过期锁，不依赖单独后台任务。
+
+### 写入边界
+
+需要把“检查当前锁持有人”和后续 annotation 写入视为一个原子决定的路径，会调用 `assert_write_allowed()`。服务使用按 task 派生的 PostgreSQL transaction advisory lock，把 acquire、release、heartbeat 与这类写入串行化；随后再锁定当前 task lock 行复核持有人。原生 AI Mask 接受使用这条边界，避免检查通过后另一会话恰好拿锁并同时提交。
 
 ## TTL 与 takeover
 

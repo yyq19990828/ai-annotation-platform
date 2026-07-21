@@ -535,7 +535,18 @@ Mask 候选的响应字面为：
     "score": 0.91,
     "candidate_id": "sha256:<64 hex>"
   }],
-  "diagnostic": null
+  "diagnostic": null,
+  "prompt_revision": "sha256:<64 hex>",
+  "output_geometry": "mask",
+  "routing": {
+    "requested_backend_id": "<uuid>",
+    "backend_pool_id": null,
+    "backend_instance_id": "<uuid>",
+    "model_id": "grounded-sam2-interactive-seg"
+  },
+  "accept_receipts": {
+    "sha256:<candidate digest>": "<signed receipt>"
+  }
 }
 ```
 
@@ -544,6 +555,15 @@ Mask 候选的响应字面为：
 分别是 4 MiB 和 16 MiB；整体限额在读取 backend 响应流时执行，无 `Content-Length`
 的 chunked 响应也不能绕过。返回给工作台的代理响应同时包含实际 backend
 instance / pool、目标 model 与 `model_version`，供后续接受时写入 lineage。
+
+`accept_receipts` 按 `candidate_id` 返回短生命周期签名回执。回执绑定 task、候选像素、候选序号、
+prompt revision、prompt 计数摘要、实际路由、模型和推理摘要；客户端不能自己构造或跨任务复用。
+接受原生候选使用 `POST /api/v1/tasks/{task_id}/ai-mask-candidates/accept`，提交候选、对应回执、
+类别、目标（新建或带源版本精修）、prompt 摘要、路由与推理元数据。服务端重新校验任务与写闸，
+并在一次数据库提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。图片写成
+`raster_mask`，视频写成仅含当前帧关键帧的 `video_track_mask`。同一 task 与 idempotency key 的相同
+请求返回首次完整响应；同 key 不同请求或过期 decision 返回 409。失败事务最多留下受宽限期 GC
+管理的未引用内容对象，不会留下半个预测或标注。
 
 > **`mask_input` 回灌（多点精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次点击精修同一对象时显著提升 mask 稳定性与边界质量。为保持 backend 无状态，这些 logits 由前端携带往返：backend 在 `multimask_output=false` 的单 mask 路径把本轮 `low_res_masks` 编码成响应字段 `mask_input_next`，前端**原样存储、不解析**，下一次点击经 `context.mask_input` 回传；backend 解码后喂回 `predict(mask_input=...)`。
 >

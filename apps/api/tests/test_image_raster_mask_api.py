@@ -148,7 +148,7 @@ async def test_image_mask_content_upload_checks_write_gate_before_storage(
 
 def test_raster_mask_rollout_flag_defaults_and_env(monkeypatch):
     assert Settings.model_fields["raster_mask_read_enabled"].default is True
-    assert Settings.model_fields["raster_mask_create_enabled"].default is False
+    assert Settings.model_fields["raster_mask_create_enabled"].default is True
     monkeypatch.setenv("RASTER_MASK_READ_ENABLED", "false")
     monkeypatch.setenv("RASTER_MASK_CREATE_ENABLED", "true")
     configured = Settings(_env_file=None)

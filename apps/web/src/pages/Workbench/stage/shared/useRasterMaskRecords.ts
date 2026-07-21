@@ -17,7 +17,8 @@ const DEFAULT_MAX_CACHE_BYTES = 128 * 1024 * 1024;
 export interface RasterMaskRecordDescriptor<TSource extends string = string> {
   id: string;
   source: TSource;
-  ref: CocoRleMaskRef;
+  /** Immutable content identity; inline AI candidates intentionally have no object_key. */
+  ref: Pick<CocoRleMaskRef, "size" | "sha256">;
   /** Annotation version, keyframe revision, or another immutable content revision. */
   revision: string | number;
   color: string;

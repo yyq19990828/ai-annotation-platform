@@ -246,10 +246,11 @@ class Settings(BaseSettings):
     ml_backend_router_passive_failure_threshold: int = Field(default=3, gt=0, le=100)
     ml_backend_router_eject_seconds: int = Field(default=30, gt=0, le=3600)
     # Image raster-mask rollout is deliberately split: readers ship first so
-    # existing rows remain consumable, while new persistent geometry stays
-    # blocked until every reader/exporter in the deployment has been upgraded.
+    # existing rows remain consumable. Creation is enabled by default after the
+    # reader/exporter exit matrix passed; the project opt-in remains the normal
+    # rollout boundary and this deployment flag remains an emergency kill switch.
     raster_mask_read_enabled: bool = True
-    raster_mask_create_enabled: bool = False
+    raster_mask_create_enabled: bool = True
     # Every newly confirmed Resident allocation gets a Redis-time protection
     # window before it may participate in victim selection.
     gpu_arbiter_residency_cooldown_seconds: int = Field(default=30, gt=0, le=3600)

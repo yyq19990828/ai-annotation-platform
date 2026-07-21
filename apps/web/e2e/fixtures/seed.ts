@@ -114,6 +114,15 @@ export interface SeedRasterPredictionData {
   mask: SeedRasterMaskData["mask"];
 }
 
+export interface SeedNativeMaskCandidateData {
+  response: Record<string, unknown>;
+  rle: {
+    encoding: "coco_rle";
+    size: [number, number];
+    counts: number[];
+  };
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -180,6 +189,30 @@ export class SeedAPI {
         `seed/configure-raster-mask failed: ${res.status()} ${await res.text()}`,
       );
     }
+  }
+
+  async videoTask(projectId: string): Promise<{ task_id: string }> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/video-task`,
+      { data: { project_id: projectId } },
+    );
+    if (!res.ok()) {
+      throw new Error(`seed/video-task failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as { task_id: string };
+  }
+
+  async nativeMaskCandidate(taskId: string): Promise<SeedNativeMaskCandidateData> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/native-mask-candidate`,
+      { data: { task_id: taskId } },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/native-mask-candidate failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as SeedNativeMaskCandidateData;
   }
 
   /** 构造已有 raster annotation，用于只读、损坏内容与锁定矩阵。 */

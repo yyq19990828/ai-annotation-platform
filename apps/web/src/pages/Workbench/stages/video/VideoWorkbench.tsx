@@ -27,6 +27,7 @@ import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
 import { resolveAnnotationVisual } from "../../stage/annotationVisual";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
+import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
@@ -71,6 +72,8 @@ export interface VideoWorkbenchProps {
   /** v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选 / 点会话 (透传给 VideoKonvaStage)。 */
   onSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate?: (candidateId: string) => void;
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
@@ -143,6 +146,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onCreatePoints,
     onSamPrompt,
     samCandidates,
+    samMaskRecords,
+    onSelectSamMaskCandidate,
     samActiveIdx,
     samSessionPoints,
     samSessionBoxes,
@@ -213,6 +218,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onCreatePointsTrack={onCreatePointsTrack}
         onSamPrompt={onSamPrompt}
         samCandidates={samCandidates}
+        samMaskRecords={samMaskRecords}
+        onSelectSamMaskCandidate={onSelectSamMaskCandidate}
         samActiveIdx={samActiveIdx}
         samSessionPoints={samSessionPoints}
         samSessionBoxes={samSessionBoxes}

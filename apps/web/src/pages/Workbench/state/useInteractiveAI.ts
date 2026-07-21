@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
-import { mlBackendsApi, type InteractiveAnnotateResponse } from "@/api/ml-backends";
+import {
+  mlBackendsApi,
+  type InteractiveAnnotateResponse,
+  type InteractiveInferenceLineage,
+} from "@/api/ml-backends";
 import { useToastStore } from "@/components/ui/Toast";
 import { VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { recordPredictCacheHit } from "./sessionVariantCache";
 import { simplifyPolygon } from "../stage/shared/geometry/simplify";
-import { createSamCache, makeSamCacheKey } from "./useSamCache";
+import { createSamCache, makeSamCacheKey, SAM_CACHE_TTL_MS } from "./useSamCache";
+import { validateCocoRle, type CocoRle } from "../stage/shared/geometry/maskRle";
 
 /**
  * v0.9.2 · 工作台 SAM 交互式 hook。
@@ -26,26 +31,62 @@ import { createSamCache, makeSamCacheKey } from "./useSamCache";
 /** v0.9.4 phase 2 · text 模式输出形态. point/bbox 模式恒为 "mask"(协议默认). */
 export type TextOutputMode = "box" | "mask" | "both";
 
-export interface PendingCandidate {
+interface PendingCandidateBase {
   /** 仅用于 React key / 选中态定位 */
   id: string;
-  /**
-   * v0.9.4 phase 2 · 候选几何类型 discriminator (与后端 AnnotationResult.type 同源).
-   * polygonlabels: SAM mask → polygon, 紫虚线多边形渲染.
-   * rectanglelabels: DINO 直出 box, 紫虚线矩形渲染.
-   * both 模式下同 instance 会出现一对 polygonlabels + rectanglelabels.
-   */
-  type: "polygonlabels" | "rectanglelabels";
-  /** 仅 type=polygonlabels 时有: 归一化顶点列表 [[0..1, 0..1]...] */
-  points?: [number, number][];
-  /** 仅 type=rectanglelabels 时有: 归一化矩形 (左上 + 宽高, 全部 [0,1]) */
-  bbox?: { x: number; y: number; width: number; height: number };
   /** backend 给的标签（DINO 短语 / SAM 默认 "object"） */
   label: string;
   score: number | null;
   /** 触发该候选的 prompt 类型 */
   source: "point" | "bbox" | "exemplar";
 }
+
+export interface PendingPolygonCandidate extends PendingCandidateBase {
+  type: "polygonlabels";
+  points: [number, number][];
+}
+
+export interface PendingRectangleCandidate extends PendingCandidateBase {
+  type: "rectanglelabels";
+  bbox: { x: number; y: number; width: number; height: number };
+}
+
+export interface PendingMaskPromptSummary {
+  family: "point" | "interactive_box" | "exemplar";
+  positive_points: number;
+  negative_points: number;
+  boxes: number;
+  positive_scribbles: number;
+  negative_scribbles: number;
+  multimask: boolean;
+}
+
+export interface PendingMaskCandidate extends PendingCandidateBase {
+  type: "mask";
+  rle: CocoRle;
+  candidateId: string;
+  candidateIndex: number;
+  promptRevision: string;
+  receipt: string;
+  idempotencyKey: string;
+  promptSummary: PendingMaskPromptSummary;
+  routing: {
+    requested_backend_id: string;
+    backend_pool_id: string | null;
+    backend_instance_id: string;
+    model_id: string;
+  };
+  inference: InteractiveInferenceLineage;
+}
+
+/**
+ * 候选几何判别联合。原生 Mask 保留 COCO RLE 和服务端签名的接纳血缘，
+ * 不经过环提取、多边形简化或几何近似。
+ */
+export type PendingCandidate =
+  | PendingPolygonCandidate
+  | PendingRectangleCandidate
+  | PendingMaskCandidate;
 
 /**
  * v0.21.23 · 交互式推理的**投递方式**。默认走图片链路（只传 task_id，服务端按 task URL 取图）。
@@ -75,6 +116,8 @@ export interface UseInteractiveAIArgs {
    * low-res logits 绑定具体图像，切帧后回传给下一帧是错的。
    */
   cacheScope?: string | number;
+  /** 合并到每次 prompt 的安全默认值，调用方字段优先。 */
+  requestContextDefaults?: Record<string, unknown>;
 }
 
 export interface UseInteractiveAIReturn {
@@ -113,6 +156,8 @@ export interface UseInteractiveAIReturn {
   /** v0.18.19 · 不加新框, 用当前会话 (含最新 text/阈值/output) 重跑; outputMode 变更时由 shell 调。 */
   rerunExemplar: (outputMode?: TextOutputMode, extraParams?: Record<string, unknown>) => void;
   cycle: (dir: 1 | -1) => void;
+  /** 画布 alpha picking 直接选中某个候选。 */
+  select: (idx: number) => void;
   /** 接受一个候选；调用方拿到 candidate 后落库（创建 polygon annotation），随后调 consume(idx) 清除该条。 */
   consume: (idx: number) => void;
   /** 清空所有候选（Esc） */
@@ -152,6 +197,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   // dispatch 的 useCallback 失效、进而级联重建 runPoint/runBbox/... 的引用。
   const transportRef = useRef(transport);
   transportRef.current = transport;
+  const requestContextDefaultsRef = useRef(args.requestContextDefaults ?? {});
+  requestContextDefaultsRef.current = args.requestContextDefaults ?? {};
   const pushToast = useToastStore((s) => s.push);
 
   const [candidates, setCandidates] = useState<PendingCandidate[]>([]);
@@ -165,6 +212,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   // v0.18.x · 当前 in-flight 交互请求的 AbortController: 新请求发起前 abort 掉上一个, 避免被
   // 取代的旧请求仍在后端跑到完成 (GPU 洪泛, 见 issue 0002)。
   const abortRef = useRef<AbortController | null>(null);
+  const activeCacheKeyRef = useRef<string | null>(null);
+  const candidateExpiryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // v0.18.17 · 点交互会话: 累加同一对象的正/负点, 每次重发全量点 (无状态后端). 单点首击
   // multimask 出候选; ≥2 点转单 mask 精修. 会话在 提交(consume point 候选) / Esc(cancel) /
@@ -232,9 +281,44 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (exemplarDebounceRef.current) clearTimeout(exemplarDebounceRef.current);
+      if (candidateExpiryRef.current) clearTimeout(candidateExpiryRef.current);
       abortRef.current?.abort();
+      cache.clearAll();
     };
-  }, []);
+  }, [cache]);
+
+  const retireCandidates = useCallback((deleteCached: boolean) => {
+    if (candidateExpiryRef.current) {
+      clearTimeout(candidateExpiryRef.current);
+      candidateExpiryRef.current = null;
+    }
+    if (deleteCached && activeCacheKeyRef.current) {
+      cache.delete(activeCacheKeyRef.current);
+    }
+    activeCacheKeyRef.current = null;
+    setCandidates([]);
+    setActiveIdx(0);
+  }, [cache]);
+
+  const activateCandidates = useCallback((
+    next: PendingCandidate[],
+    cacheKey: string,
+    expiresAt: number,
+  ) => {
+    if (candidateExpiryRef.current) clearTimeout(candidateExpiryRef.current);
+    activeCacheKeyRef.current = cacheKey;
+    setCandidates(next);
+    setActiveIdx(0);
+    candidateExpiryRef.current = setTimeout(() => {
+      if (activeCacheKeyRef.current !== cacheKey) return;
+      cache.delete(cacheKey);
+      activeCacheKeyRef.current = null;
+      setCandidates([]);
+      setActiveIdx(0);
+      resetPointSession();
+      resetExemplarSession();
+    }, Math.max(0, expiresAt - Date.now()));
+  }, [cache, resetExemplarSession, resetPointSession]);
 
   const guard = useCallback((): boolean => {
     if (!projectId || !taskId) return false;
@@ -256,7 +340,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       // (含 cache-hit 路径, 防止旧 in-flight 完成后覆盖刚命中的缓存; 见 issue 0002)。
       abortRef.current?.abort();
       const myInflight = ++inflightRef.current;
-      const normalized = normalizePredictContext(context);
+      const normalized = normalizePredictContext({
+        ...requestContextDefaultsRef.current,
+        ...context,
+      });
       const requestContext = normalized.context;
       const ctxKind = (requestContext.type as string | undefined) ?? source;
       // v0.18.18 · mask_input 是上一轮 logits 的不透明回灌, 不进缓存键 (同一点序的 mask_input
@@ -270,15 +357,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         scope: cacheScope,
       });
       // 命中前端缓存：直接复用候选，跳过 HTTP。
-      const cached = cache.get(cacheKey);
+      const bypassCache = requestContext.output_geometry === "mask" && requestContext.mask_input != null;
+      const cached = bypassCache ? undefined : cache.get(cacheKey);
       if (cached) {
-        setCandidates(cached);
-        setActiveIdx(0);
+        activateCandidates(cached.candidates, cacheKey, cached.expiresAt);
         // 上面 L212-213 已经 abort 旧请求 + 自增 inflightRef; 旧请求 finally 守卫不再通过
         // → 旋转图标永不清除 (issue claude[bot] P1)。此处显式复位。
         setIsRunning(false);
         return;
       }
+      // 新 prompt 未命中同 revision 缓存时，立即退役旧候选。推理失败也不得误接纳旧像素。
+      retireCandidates(false);
       // v0.10.23 · 本次请求携带的变体是否与上次成功应用的不同 → 切换后首次预测, 弹三态通知。
       const variantSig = variantSignature(requestContext);
       const isVariantSwitch =
@@ -312,12 +401,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
           Object.keys(normalized.modelVariants).length > 0 ? resp.cache_hit : null,
         );
         const next: PendingCandidate[] = (resp.result ?? [])
-          .map((r, i) => normalizeResult(r, i, source))
+          .map((r, i) => normalizeResult(r, i, source, resp, requestContext))
           .filter((c): c is PendingCandidate => c !== null);
-        setCandidates(next);
-        setActiveIdx(0);
         // 仅缓存非空结果，避免后端瞬时返空被钉死。
-        if (next.length > 0) cache.set(cacheKey, next);
+        if (next.length > 0) {
+          const stored = bypassCache ? undefined : cache.set(cacheKey, next);
+          activateCandidates(
+            next,
+            cacheKey,
+            stored?.expiresAt ?? Date.now() + SAM_CACHE_TTL_MS,
+          );
+        }
         if (next.length === 0) {
           pushToast({
             msg: "SAM 未返回候选",
@@ -353,7 +447,16 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       }
     },
     // transport 走 ref，不进依赖（内联闭包每渲染新建，会级联重建所有 run* 引用）。
-    [projectId, taskId, mlBackendId, cacheScope, pushToast, cache],
+    [
+      projectId,
+      taskId,
+      mlBackendId,
+      cacheScope,
+      pushToast,
+      cache,
+      activateCandidates,
+      retireCandidates,
+    ],
   );
 
   const runPoint = useCallback(
@@ -500,28 +603,47 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     [candidates.length],
   );
 
+  const select = useCallback((idx: number) => {
+    setActiveIdx(candidates.length === 0 ? 0 : Math.min(Math.max(0, idx), candidates.length - 1));
+  }, [candidates.length]);
+
   const consume = useCallback(
     (idx: number) => {
       // v0.18.17 · point / interactive_box 的多候选是「同一对象的备选 mask」, 接受一个即
       // 清空全部 + 重置点会话 (开始下一个对象); text / exemplar 是「多实例」, 仅移除被接受的那条.
       const c = candidates[idx];
+      const activeCacheKey = activeCacheKeyRef.current;
+      if (activeCacheKey) cache.delete(activeCacheKey);
       if (c && (c.source === "point" || c.source === "bbox")) {
         resetPointSession();
-        setCandidates([]);
-        setActiveIdx(0);
+        retireCandidates(false);
         return;
       }
-      setCandidates((prev) => prev.filter((_, i) => i !== idx));
+      const remaining = candidates.filter((_, i) => i !== idx);
+      if (remaining.length === 0) {
+        retireCandidates(false);
+      } else {
+        const stored = activeCacheKey ? cache.set(activeCacheKey, remaining) : undefined;
+        if (activeCacheKey) {
+          activateCandidates(
+            remaining,
+            activeCacheKey,
+            stored?.expiresAt ?? Date.now() + SAM_CACHE_TTL_MS,
+          );
+        } else {
+          setCandidates(remaining);
+        }
+      }
       setActiveIdx((i) => Math.max(0, i >= idx ? i - 1 : i));
     },
-    [candidates, resetPointSession],
+    [candidates, resetPointSession, cache, activateCandidates, retireCandidates],
   );
 
   const cancel = useCallback(() => {
     resetPointSession();
     resetExemplarSession();
-    setCandidates([]);
-    setActiveIdx(0);
+    retireCandidates(false);
+    cache.clearAll();
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
@@ -535,7 +657,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     abortRef.current?.abort();
     inflightRef.current++;
     setIsRunning(false);
-  }, [resetPointSession, resetExemplarSession]);
+  }, [resetPointSession, resetExemplarSession, cache, retireCandidates]);
 
   // v0.10.4 I6.2 · 预热去重：同 (taskId, mlBackendId) 只发一次。
   const warmedRef = useRef<string | null>(null);
@@ -556,25 +678,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         context: ctx,
         signal: new AbortController().signal,
       })
-      .then((resp) => {
-        // 预热成功 → 写缓存，下次真实点击命中（缓存键须与 dispatch 同作用域，否则视频侧必 miss）。
-        const cacheKey = makeSamCacheKey({
-          taskId,
-          mlBackendId,
-          ctxKind: "point",
-          ctx,
-          scope: cacheScope,
-        });
-        const next: PendingCandidate[] = (resp.result ?? [])
-          .map((r, i) => normalizeResult(r, i, "point"))
-          .filter((c): c is PendingCandidate => c !== null);
-        if (next.length > 0) cache.set(cacheKey, next);
-      })
+      .then(() => undefined)
       .catch(() => {
         // backend 不支持 point (如 sam3 exemplar-only) 或其它失败 → 静默，下次真实点击会重试。
         warmedRef.current = null;
       });
-  }, [projectId, taskId, mlBackendId, cacheScope, cache]);
+  }, [projectId, taskId, mlBackendId]);
 
   // 切 task / backend / 帧 → 重置预热记忆, 并 cancel 掉整个会话。
   // v0.21.23 · cacheScope (视频 frameIndex) 是第四个重置触发点。这里必须走 cancel 而不是只
@@ -601,6 +710,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     runExemplar,
     rerunExemplar,
     cycle: cycleStable,
+    select,
     consume,
     cancel,
     warmup,
@@ -707,18 +817,103 @@ interface BackendResult {
     width?: number;
     height?: number;
     rectanglelabels?: string[];
+    // 原生 Mask 字段
+    rle?: CocoRle;
+    masklabels?: string[];
   };
   score?: number;
+  candidate_id?: string;
+}
+
+let idempotencySequence = 0;
+
+function newIdempotencyKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `mask:${globalThis.crypto.randomUUID()}`;
+  }
+  idempotencySequence += 1;
+  return `mask:${Date.now().toString(36)}:${idempotencySequence.toString(36)}`;
+}
+
+function promptSummary(
+  source: PendingCandidate["source"],
+  context: Record<string, unknown>,
+): PendingMaskPromptSummary {
+  const labels = Array.isArray(context.labels) ? context.labels : [];
+  const exemplars = Array.isArray(context.exemplars) ? context.exemplars : [];
+  return {
+    family: source === "bbox" ? "interactive_box" : source,
+    positive_points: labels.filter((label) => label === 1).length,
+    negative_points: labels.filter((label) => label === 0).length,
+    boxes: source === "bbox" ? 1 : exemplars.length,
+    positive_scribbles: 0,
+    negative_scribbles: 0,
+    multimask: context.multimask_output === true,
+  };
 }
 
 function normalizeResult(
   raw: unknown,
   idx: number,
   source: PendingCandidate["source"],
+  response: InteractiveAnnotateResponse,
+  context: Record<string, unknown>,
 ): PendingCandidate | null {
   const r = raw as BackendResult;
   const score = typeof r.score === "number" ? r.score : null;
   const id = `sam-${Date.now()}-${idx}`;
+
+  if (r.type === "mask") {
+    const candidateId = r.candidate_id;
+    const promptRevision = response.prompt_revision;
+    const receipt = candidateId ? response.accept_receipts?.[candidateId] : undefined;
+    const routing = response.routing;
+    if (
+      typeof candidateId !== "string"
+      || response.output_geometry !== "mask"
+      || typeof promptRevision !== "string"
+      || typeof receipt !== "string"
+      || !routing
+      || typeof routing.requested_backend_id !== "string"
+      || typeof routing.backend_instance_id !== "string"
+      || typeof routing.model_id !== "string"
+      || !r.value?.rle
+    ) {
+      return null;
+    }
+    let rle: CocoRle;
+    try {
+      rle = validateCocoRle(r.value.rle);
+    } catch {
+      return null;
+    }
+    return {
+      id: candidateId,
+      type: "mask",
+      rle,
+      candidateId,
+      candidateIndex: idx,
+      promptRevision,
+      receipt,
+      idempotencyKey: newIdempotencyKey(),
+      promptSummary: promptSummary(source, context),
+      routing: {
+        requested_backend_id: routing.requested_backend_id,
+        backend_pool_id: routing.backend_pool_id,
+        backend_instance_id: routing.backend_instance_id,
+        model_id: routing.model_id,
+      },
+      inference: {
+        model_version: response.model_version ?? null,
+        inference_time_ms: response.inference_time_ms ?? null,
+        cache_hit: response.cache_hit ?? null,
+        model_load_ms: response.model_load_ms ?? null,
+      },
+      label: r.value.masklabels?.[0] ?? "object",
+      score,
+      source,
+    };
+  }
 
   if (r.type === "rectanglelabels") {
     const v = r.value;
@@ -741,7 +936,8 @@ function normalizeResult(
     };
   }
 
-  // 默认 / 显式 polygonlabels
+  // 仅历史缺省 type 或显式 polygonlabels 走多边形兼容；未知新类型不得被误解释。
+  if (r.type != null && r.type !== "polygonlabels") return null;
   // 后端按环数分发: 单环 → value.points; 多连通区域 → value.polygons[].points。
   // 候选/预览/落库均为单环模型, 故多环时取「面积最大」外环 (主体), 丢弃碎屑噪点 —
   // 此前只读 value.points, 多环结果被静默丢弃 → "同位置时好时坏 / 没有候选区域"。

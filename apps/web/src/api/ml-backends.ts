@@ -2,6 +2,7 @@ import { apiClient } from "./client";
 import type { MLBackendResponse } from "@/types";
 import type { OutputAttributeSchemaItem } from "./mlCapabilities";
 import type { MLBackendUnloadResponse } from "./generated/types.gen";
+import type { CocoRle } from "@/pages/Workbench/stage/shared/geometry/maskRle";
 
 // v0.19.0 · ADR-0044 全局 ML 注册表: backend 上提为全局表, 项目层退化为「启用关联 + 变体覆盖」。
 // `available` 端点列出全部全局 backend + 本项目启用态/覆盖; 一行 = 一个全局 backend。
@@ -25,15 +26,52 @@ export interface InteractiveRequest {
 }
 
 /** 交互式推理响应。图片走 interactiveAnnotate、视频当前帧走 interactiveAnnotateFrame，同形状。 */
+export interface InteractiveNativeMaskCandidate {
+  type: "mask";
+  value: {
+    rle: CocoRle;
+    masklabels: [string];
+  };
+  score: number | null;
+  candidate_id: string;
+}
+
+export interface InteractiveRoutingLineage {
+  requested_backend_id: string;
+  backend_pool_id: string | null;
+  backend_instance_id: string | null;
+  model_id: string | null;
+}
+
+export interface InteractiveInferenceLineage {
+  model_version: string | null;
+  inference_time_ms: number | null;
+  cache_hit: boolean | null;
+  model_load_ms: number | null;
+}
+
+export interface InteractiveMaskDiagnostic {
+  reason: string;
+  retryable: boolean;
+  message?: string | null;
+  supported_geometric_outputs?: string[] | null;
+}
+
 export interface InteractiveAnnotateResponse {
   result: unknown[];
   score: number | null;
+  model_version?: string | null;
   inference_time_ms: number | null;
   cache_hit?: boolean | null;
   model_load_ms?: number | null;
   // v0.18.18 · 交互精修 low-res logits 回灌 (base64, 不透明); 前端原样存储、
   // 下次点击经 context.mask_input 回传。仅 multimask=False 的单 mask 精修阶段非空。
   mask_input_next?: string | null;
+  diagnostic?: InteractiveMaskDiagnostic | null;
+  prompt_revision?: string | null;
+  output_geometry?: "polygon" | "mask";
+  routing?: InteractiveRoutingLineage;
+  accept_receipts?: Record<string, string>;
 }
 
 export type MLBackendVariant = Record<string, string>;

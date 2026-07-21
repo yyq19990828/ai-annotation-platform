@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Stage, Layer, Line, Circle } from "react-konva";
+import { Stage, Layer, Line, Circle, Group, Image as KonvaImage, Rect } from "react-konva";
 import type Konva from "konva";
 import { Icon } from "@/components/ui/Icon";
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -54,6 +54,10 @@ import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { VideoSamCandidateOverlay, type VideoSamCandidateShape } from "./VideoSamCandidateOverlay";
 import { SelectionOverlay } from "./SelectionOverlay";
+import {
+  pickTopRasterMaskAt,
+  type RasterMaskRenderRecord,
+} from "./shared/rasterMaskRender";
 import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
 import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
@@ -61,6 +65,7 @@ import styles from "./VideoKonvaStage.module.css";
 /** v0.21.23 · SAM 提示框描边色，与图片侧 SAM_CANDIDATE_STROKE 同值（canvas 数据域颜色）。 */
 const SAM_PROBE_STROKE = "#a855f7";
 const EMPTY_SAM_CANDIDATES: VideoSamCandidateShape[] = [];
+const EMPTY_SAM_MASK_RECORDS: RasterMaskRenderRecord<"interactive">[] = [];
 const EMPTY_SESSION_POINTS: { pt: [number, number]; polarity: 1 | 0; obj?: number }[] = [];
 const EMPTY_SESSION_BOXES: { bbox: [number, number, number, number]; obj?: number }[] = [];
 const EMPTY_ANNOTATIONS: AnnotationResponse[] = [];
@@ -133,6 +138,8 @@ interface VideoKonvaStageProps {
   onSamPrompt?: (prompt: VideoSamPrompt) => void;
   /** v0.21.23 · 交互式 SAM 的瞬态候选（不落库；采纳时才建标注）。 */
   samCandidates?: VideoSamCandidateShape[];
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate?: (candidateId: string) => void;
   samActiveIdx?: number;
   /** 当前点会话已落的正/负点（多点精修可视化）。 */
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
@@ -220,6 +227,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onUpdate,
   onSamPrompt,
   samCandidates = EMPTY_SAM_CANDIDATES,
+  samMaskRecords = EMPTY_SAM_MASK_RECORDS,
+  onSelectSamMaskCandidate,
   samActiveIdx = 0,
   samSessionPoints = EMPTY_SESSION_POINTS,
   samSessionBoxes = EMPTY_SESSION_BOXES,
@@ -623,6 +632,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
   const handleStagePointerDown = useCallback((e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
+    if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
+      const point = pointFromClientEvt(e.evt.clientX, e.evt.clientY);
+      const candidate = point ? pickTopRasterMaskAt(samMaskRecords, point) : null;
+      if (candidate) {
+        e.cancelBubble = true;
+        onSelectSamMaskCandidate?.(candidate.id);
+        return;
+      }
+    }
     // v0.23.5 · WS-C · 视频 mask 落点经 canEditMask: 同时检查 task readOnly、选中轨迹 lock、
     // annotation is_locked, 关闭锁定对象经视频 pointer 路径修改的绕过。
     const selectedTrackId = selectedManagedTrack?.geometry.track_id;
@@ -667,7 +685,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskEditor, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, selectedManagedTrack, size.h, size.w, videoTool]);
+  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskEditor, onSelectSamMaskCandidate, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, samMaskRecords, selectedManagedTrack, size.h, size.w, videoTool]);
 
   useEffect(() => {
     if (videoTool !== "mask" || !maskEditor) return;
@@ -1353,6 +1371,38 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             );
           })()}
           {/* v0.21.23 · 交互式 SAM 候选 + 点会话（瞬态，不落库；置顶且不吃事件）。 */}
+          {samMaskRecords.length > 0 && (
+            <Layer name="sam-native-mask-candidates" listening={false}>
+              {[...samMaskRecords]
+                .sort((left, right) => left.zOrder - right.zOrder)
+                .map((record) => (
+                  <Group key={record.cacheKey} id={record.id} listening={false}>
+                    <KonvaImage
+                      image={record.image}
+                      x={record.bounds.x * size.w}
+                      y={record.bounds.y * size.h}
+                      width={record.bounds.w * size.w}
+                      height={record.bounds.h * size.h}
+                      opacity={record.selected ? 0.58 : 0.28}
+                      imageSmoothingEnabled={false}
+                      listening={false}
+                    />
+                    {record.selected && (
+                      <Rect
+                        x={record.bounds.x * size.w}
+                        y={record.bounds.y * size.h}
+                        width={record.bounds.w * size.w}
+                        height={record.bounds.h * size.h}
+                        stroke={SAM_PROBE_STROKE}
+                        strokeWidth={2 / vp.scale}
+                        dash={[6 / vp.scale, 4 / vp.scale]}
+                        listening={false}
+                      />
+                    )}
+                  </Group>
+                ))}
+            </Layer>
+          )}
           {(samCandidates.length > 0 ||
             samSessionPoints.length > 0 ||
             samSessionBoxes.length > 0) && (

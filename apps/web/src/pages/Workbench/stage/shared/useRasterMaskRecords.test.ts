@@ -153,6 +153,35 @@ describe("useRasterMaskRecords", () => {
     })).not.toBe(key);
   });
 
+  it("renders an inline interactive candidate without inventing an object key", async () => {
+    const pixels = Uint8Array.from([255, 0, 0, 0, 255, 0]);
+    const rle = encodeCocoRle(pixels, 3, 2);
+    const descriptor: RasterMaskRecordDescriptor<"interactive"> = {
+      id: "candidate-1",
+      source: "interactive",
+      ref: { size: rle.size, sha256: "a".repeat(64) },
+      revision: "prompt-1",
+      color: "#a855f7",
+      colorRevision: "sam-mask-purple",
+      zOrder: 0,
+      selected: true,
+      load: vi.fn(async () => rle),
+    };
+    const view = renderHook(() => useRasterMaskRecords({
+      scopeKey: "task-1:prompt-1",
+      descriptors: [descriptor],
+    }));
+
+    await flushAsync();
+
+    expect(view.result.current.records[0]).toMatchObject({
+      id: "candidate-1",
+      source: "interactive",
+      selected: true,
+      area: 2,
+    });
+  });
+
   it("keeps ready siblings when one object fails and retries only the target", async () => {
     const ready = makeDescriptor("ready");
     const retryingLoad = vi.fn()

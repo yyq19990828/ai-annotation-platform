@@ -221,7 +221,62 @@ describe("useInteractiveAI", () => {
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(result.current.candidates).toHaveLength(1));
     // 取最大外环 (主体三角), 而非碎屑。
-    expect(result.current.candidates[0].points).toEqual([[0, 0], [1, 0], [0, 1]]);
+    const candidate = result.current.candidates[0];
+    expect(candidate.type).toBe("polygonlabels");
+    if (candidate.type !== "polygonlabels") throw new Error("expected polygon candidate");
+    expect(candidate.points).toEqual([[0, 0], [1, 0], [0, 1]]);
+  });
+
+  it("原生 Mask 保留 RLE 与签名血缘，不进入 polygon 简化", async () => {
+    const candidateId = `sha256:${"a".repeat(64)}`;
+    interactiveAnnotateMock.mockResolvedValue({
+      result: [{
+        type: "mask",
+        value: {
+          rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+          masklabels: ["person"],
+        },
+        score: 0.93,
+        candidate_id: candidateId,
+      }],
+      score: 0.93,
+      model_version: "sam-test",
+      inference_time_ms: 12,
+      cache_hit: false,
+      model_load_ms: 4,
+      prompt_revision: "prompt-revision",
+      output_geometry: "mask",
+      routing: {
+        requested_backend_id: "11111111-1111-1111-1111-111111111111",
+        backend_pool_id: null,
+        backend_instance_id: "11111111-1111-1111-1111-111111111111",
+        model_id: "sam-mask",
+      },
+      accept_receipts: { [candidateId]: "signed-receipt-value" },
+    });
+    const { result } = renderHook(() => useInteractiveAI({
+      ...ARGS,
+      requestContextDefaults: { model_id: "sam-mask", output_geometry: "mask" },
+    }));
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    const candidate = result.current.candidates[0];
+    expect(candidate.type).toBe("mask");
+    if (candidate.type !== "mask") throw new Error("expected native mask candidate");
+    expect(candidate.id).toBe(candidateId);
+    expect(candidate.rle).toEqual({
+      encoding: "coco_rle",
+      size: [2, 3],
+      counts: [1, 2, 3],
+    });
+    expect(candidate).not.toHaveProperty("points");
+    expect(candidate.receipt).toBe("signed-receipt-value");
+    expect(candidate.idempotencyKey.length).toBeGreaterThanOrEqual(16);
+    expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+      model_id: "sam-mask",
+      output_geometry: "mask",
+    });
   });
 
   it("cycle 在候选间循环切换", async () => {
@@ -570,16 +625,16 @@ describe("useInteractiveAI · transport 注入与 cacheScope", () => {
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
 
-    // 同 scope 同 prompt → 命中前端缓存，不再打后端。
+    // cancel 明确释放原始候选缓存，同 prompt 也必须重新推理。
     act(() => result.current.cancel());
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(result.current.candidates.length).toBe(1));
-    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledTimes(2);
 
     // 换帧（scope 变）→ 同样的 prompt 必须重新推理，不能复用上一帧候选。
     rerender({ scope: 2 });
     act(() => result.current.runPoint([0.5, 0.5], 1));
-    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(3));
   });
 
   it("cacheScope 变化 → 点会话重置（上一帧的点不喂给这一帧）", async () => {

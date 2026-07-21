@@ -216,6 +216,10 @@ interface ImageStageProps {
     points?: [number, number][];
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
+  /** Inline native candidates decoded by the shared raster renderer. */
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  /** Explicit modifier-based alpha selection; never enters annotation selection. */
+  onSelectSamMaskCandidate?: (candidateId: string) => void;
   samActiveIdx?: number;
   /**
    * v0.18.18 · §5.5 当前点交互会话已落的正/负点 (归一化 + 极性)。仅 smart-point 工具激活且
@@ -409,7 +413,7 @@ export function ImageStage({
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   secondaryBarHidden, onToggleSecondaryBar,
-  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0, samSessionPoints, samSessionExemplars,
+  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samMaskRecords = [], onSelectSamMaskCandidate, samActiveIdx = 0, samSessionPoints, samSessionExemplars,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samSubTool, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
@@ -936,6 +940,13 @@ export function ImageStage({
     }
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
+      const candidate = pickTopRasterMaskAt(samMaskRecords, pt);
+      if (candidate) {
+        onSelectSamMaskCandidate?.(candidate.id);
+        return;
+      }
+    }
     if (tool === "select" && !spacePan) {
       const hit = pickTopRasterMaskAt(displayedRasterMaskRecords, pt);
       if (hit) {
@@ -1786,6 +1797,40 @@ export function ImageStage({
               tool={tool}
             />
           )}
+          {samMaskRecords.map((record) => {
+            const { bounds } = record;
+            return (
+              <Group
+                key={record.cacheKey}
+                id={record.id}
+                name="sam-native-mask-candidate"
+                listening={false}
+              >
+                <KonvaImage
+                  image={record.image}
+                  x={bounds.x * imgW}
+                  y={bounds.y * imgH}
+                  width={bounds.w * imgW}
+                  height={bounds.h * imgH}
+                  opacity={record.selected ? 0.58 : 0.28}
+                  imageSmoothingEnabled={false}
+                  listening={false}
+                />
+                {record.selected && (
+                  <Rect
+                    x={bounds.x * imgW}
+                    y={bounds.y * imgH}
+                    width={bounds.w * imgW}
+                    height={bounds.h * imgH}
+                    stroke="#a855f7"
+                    strokeWidth={2 / vp.scale}
+                    dash={[6 / vp.scale, 4 / vp.scale]}
+                    listening={false}
+                  />
+                )}
+              </Group>
+            );
+          })}
 
           {/* v0.18.18 · §5.5 会话点位: smart-point 多点精修时显示已落的正/负点
               (正=绿色实心圆, 负=红色叉), 让用户看到点过哪、哪些正/负, 跟随视口缩放。 */}

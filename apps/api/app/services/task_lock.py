@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,10 @@ _RETRYABLE_SQLSTATES = {"40P01", "40001"}
 _MAX_DEADLOCK_RETRY = 3
 
 
+class TaskLockConflictError(RuntimeError):
+    pass
+
+
 def _is_retryable_db_error(exc: DBAPIError) -> bool:
     orig = getattr(exc, "orig", None)
     sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
@@ -27,6 +31,14 @@ class TaskLockService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def _lock_task_scope(self, task_id: uuid.UUID) -> None:
+        """Serialize lock-table decisions with annotation writes for one task."""
+
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"aap:task-edit-lock:{task_id}"},
+        )
 
     async def acquire(
         self,
@@ -56,6 +68,7 @@ class TaskLockService:
         ttl: int | None = None,
         force_takeover: bool = False,
     ) -> TaskLock | None:
+        await self._lock_task_scope(task_id)
         # B-6 修复：表上 unique 约束是 (task_id, user_id)，并不阻止同一 task_id 出现多行（不同用户）。
         # 历史并发 / 残留可能留下重复行，原本 scalar_one_or_none() 会抛 MultipleResultsFound → 500。
         # 这里改为读取全部行：若我已持有则续期并清掉同 task 的他人重复锁；否则视为他人占用。
@@ -131,6 +144,7 @@ class TaskLockService:
         return await self.db.get(TaskLock, lock_id)
 
     async def release(self, task_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        await self._lock_task_scope(task_id)
         result = await self.db.execute(
             select(TaskLock).where(
                 TaskLock.task_id == task_id, TaskLock.user_id == user_id
@@ -146,6 +160,7 @@ class TaskLockService:
     async def heartbeat(
         self, task_id: uuid.UUID, user_id: uuid.UUID, ttl: int | None = None
     ) -> bool:
+        await self._lock_task_scope(task_id)
         result = await self.db.execute(
             select(TaskLock).where(
                 TaskLock.task_id == task_id, TaskLock.user_id == user_id
@@ -159,6 +174,26 @@ class TaskLockService:
         )
         await self.db.flush()
         return True
+
+    async def assert_write_allowed(
+        self, task_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        """Reject a write while another user owns the active task edit lock."""
+
+        await self._lock_task_scope(task_id)
+        await self._cleanup_expired(task_id)
+        rows = await self.db.execute(
+            select(TaskLock)
+            .where(TaskLock.task_id == task_id)
+            .order_by(TaskLock.expire_at.desc())
+            .with_for_update()
+        )
+        owner = next(
+            (lock.user_id for lock in rows.scalars() if lock.user_id != user_id),
+            None,
+        )
+        if owner is not None:
+            raise TaskLockConflictError("task is locked by another user")
 
     async def is_locked(self, task_id: uuid.UUID) -> tuple[bool, uuid.UUID | None]:
         # B-6 修复：见 acquire() 注释 — 同 task_id 可能有多行残留，使用 first() 兜底。

@@ -3,12 +3,12 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-22
 ---
 
 # AI 工具组
 
-> 智能点 / 智能框 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
+> 智能点 / 智能框 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon、原生 Mask，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
 
@@ -16,8 +16,8 @@ last_reviewed: 2026-07-17
 
 | 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
 |---|---|---|---|---|
-| **智能点** | 🎯 | `S` 循环 | `point` | polygon 候选 |
-| **智能框** | ▭ | `S` 循环 | `interactive_box` | polygon 候选 |
+| **智能点** | 🎯 | `S` 循环 | `point` | polygon / 原生 Mask 候选 |
+| **智能框** | ▭ | `S` 循环 | `interactive_box` | polygon / 原生 Mask 候选 |
 | **Magic Box** | ✨ | `G` / `S` 循环 | `interactive_box` | **直接** bbox 标注 |
 | **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` | polygon / bbox 候选 |
 
@@ -45,7 +45,7 @@ last_reviewed: 2026-07-17
 
 ![智能框交互工具条](../images/sam/interactive-toolbar.png)
 
-拖框，SAM 把框内主要前景的 polygon 找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
+拖框，SAM 把框内主要前景的轮廓找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
 ![智能框对齐真实车辆并生成轮廓候选](../images/sam/smart-box-interaction.gif)
 
@@ -57,12 +57,12 @@ last_reviewed: 2026-07-17
 
 | 与 Smart Box 的区别 |
 |---|
-| Smart Box: 输出 polygon 候选,等 `Enter` 接受 + 选类 |
+| Smart Box: 输出 polygon 或原生 Mask 候选,等 `Enter` 接受 + 选类 |
 | Magic Box: 输出 **bbox** 直接落库,跳过候选层 |
 
 **使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
 
-**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的多边形归 `region`。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
+**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
 ![Magic Box 粗框后由真实 SAM3 收紧并确认类别](../images/sam/magic-box-interaction.gif)
 
@@ -110,11 +110,17 @@ last_reviewed: 2026-07-17
 
 ## 候选确认
 
-所有 AI 工具返回的 polygon 都是**待确认紫虚线**，需要确认才落库：
+智能点、智能框和 Exemplar 的结果先作为**待确认候选**显示，需要确认才落库。polygon 使用紫色虚线；原生 Mask 使用半透明紫色像素覆盖与选中边界，不会先转为 polygon：
 
 - **`Enter`** — 接受当前候选 → 弹类别选择器 → 选好类别才进库
 - **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）
 - **`Esc`** — 全部取消
+
+### 原生 Mask 输出
+
+智能点、智能框和 Exemplar 工具栏中的「提交」选择器独立于 Exemplar 的「框 / 掩膜 / 全部」推理输出，可选择 `Polygon` 或 `原生 Mask`。只有所选模型声明 Mask 输出、图片项目开启原生 Raster Mask 编辑且 `region` 工具可写时，图片侧才允许选择原生 Mask；视频侧按当前模型能力决定。条件不足时该选项保持置灰并说明原因，不会静默降级。
+
+原生候选只保存在当前交互会话中。`Ctrl/⌘ + 点击`候选的非透明像素可以在重叠候选间切换；`Enter` 选类后由服务端一次性保存像素内容、AI 血缘与标注。网络错误不会清掉候选，再次提交沿用同一个幂等键，不会重复创建标注。切题、切帧、切模型、切输出形态、取消或会话过期会释放尚未接受的候选。
 
 ### 精修 SAM 候选（Mask 编辑器）
 
@@ -201,7 +207,7 @@ Magic Box 只出一个候选，无需 `Enter`：候选一到就直接弹类别�
 
 三点差异值得留意：
 
-- **产出是单帧标注，不是轨迹**。智能点 / 智能框 / 示例框落单帧多边形，Magic Box 落单帧矩形框。
+- **产出是单帧标注，不是传播任务**。智能点 / 智能框 / 示例框选择 polygon 时落单帧多边形；选择原生 Mask 时创建一条仅含当前帧关键帧的 Mask 轨迹；Magic Box 落单帧矩形框。
   想要跨帧对象请改用轨迹工具，或先落单帧再用轨迹传播。
 - **候选与帧绑定**。切帧会清空当前候选与点会话——候选是针对某一帧算出来的，留到别的帧上没有意义。
 - **工具是否可见 / 可用，取决于三层判定**：项目的「交互式 AI 工具」总开关（关则整组隐藏）→ 绑定的

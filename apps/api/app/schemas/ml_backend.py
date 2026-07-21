@@ -575,3 +575,34 @@ class InteractiveRequest(BaseModel):
         default_factory=dict,
         description="开放 dict；type 字段见 schema docstring 与协议文档 §2.2。",
     )
+
+
+class InteractiveRoutingLineage(BaseModel):
+    requested_backend_id: UUID
+    backend_pool_id: UUID | None = None
+    backend_instance_id: UUID | None = None
+    model_id: str | None = None
+
+
+class InteractiveMaskDiagnostic(BaseModel):
+    reason: str
+    retryable: bool = False
+    message: str | None = None
+    supported_geometric_outputs: list[str] | None = None
+
+
+class InteractiveAnnotateResponse(BaseModel):
+    """Shared image/current-frame interactive response, including native Mask lineage."""
+
+    result: list[dict[str, Any]] = Field(default_factory=list)
+    score: float | None = None
+    model_version: str | None = None
+    inference_time_ms: float | None = None
+    cache_hit: bool | None = None
+    model_load_ms: float | None = None
+    mask_input_next: str | None = None
+    diagnostic: InteractiveMaskDiagnostic | None = None
+    prompt_revision: str | None = None
+    output_geometry: Literal["polygon", "mask"] = "polygon"
+    routing: InteractiveRoutingLineage
+    accept_receipts: dict[str, str] = Field(default_factory=dict)

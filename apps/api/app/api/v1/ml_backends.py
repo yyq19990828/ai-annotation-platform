@@ -1,11 +1,16 @@
 import asyncio
+import hashlib
 import io
 import json
 import time
 import uuid
 
 import httpx
-from aap_protocol_v2 import MAX_MASK_RESPONSE_BYTES
+from aap_protocol_v2 import (
+    MAX_MASK_RESPONSE_BYTES,
+    CocoRlePayload,
+    canonical_rle_bytes,
+)
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +37,7 @@ from app.schemas.ml_backend import (
     MLBackendUnloadResponse,
     MLBackendReloadRequest,
     InteractiveRequest,
+    InteractiveAnnotateResponse,
     BackendCapabilities,
     ProjectMLBackendItem,
     ProjectMLBackendList,
@@ -62,6 +68,7 @@ from app.services.ml_routing.client import RoutedMLBackendClient
 from app.services.prediction import PredictionService, to_video_bbox_result
 from app.services.storage import StorageService
 from app.services.audit import AuditService
+from app.services.ai_mask_receipt import issue_ai_mask_receipt
 
 # v0.10.1 · /setup 代理结果的进程内 TTL 缓存. 工作台进入即拉, 避免 N 次 backend 探活.
 # key = backend_id (绑定改动 → 重绑后新 backend_id 自然 invalidate); 30s TTL 兜底.
@@ -749,6 +756,7 @@ def _interactive_response(
     client: RoutedMLBackendClient,
     requested_backend_id: uuid.UUID,
     model_id: str | None,
+    task_id: uuid.UUID,
 ) -> dict:
     normalized, diagnostic = normalize_native_mask_response(
         result.result,
@@ -756,6 +764,42 @@ def _interactive_response(
         context=context,
         expected_size=expected_size,
     )
+    routing = {
+        "requested_backend_id": str(requested_backend_id),
+        "backend_pool_id": str(client.pool_id) if client.pool_id else None,
+        "backend_instance_id": (
+            str(client.last_instance_id) if client.last_instance_id else None
+        ),
+        "model_id": model_id,
+    }
+    accept_receipts: dict[str, str] = {}
+    prompt_revision = context.get("prompt_revision")
+    prompt_summary = _interactive_prompt_summary(context)
+    if context.get("output_geometry") == "mask" and isinstance(
+        prompt_revision, str
+    ):
+        for candidate_index, candidate in enumerate(normalized):
+            rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
+            content_digest = hashlib.sha256(canonical_rle_bytes(rle)).hexdigest()
+            candidate_id = str(candidate["candidate_id"])
+            accept_receipts[candidate_id] = issue_ai_mask_receipt(
+                {
+                    "task_id": str(task_id),
+                    "candidate_id": candidate_id,
+                    "candidate_index": candidate_index,
+                    "content_digest": content_digest,
+                    "prompt_revision": prompt_revision,
+                    "score": candidate.get("score"),
+                    "routing": routing,
+                    "inference": {
+                        "model_version": getattr(result, "model_version", None),
+                        "inference_time_ms": result.inference_time_ms,
+                        "cache_hit": result.cache_hit,
+                        "model_load_ms": result.model_load_ms,
+                    },
+                    "prompt_summary": prompt_summary,
+                }
+            )
     return {
         "result": normalized,
         "score": result.score,
@@ -765,14 +809,30 @@ def _interactive_response(
         "model_load_ms": result.model_load_ms,
         "mask_input_next": result.mask_input_next,
         "diagnostic": diagnostic,
-        "routing": {
-            "requested_backend_id": str(requested_backend_id),
-            "backend_pool_id": str(client.pool_id) if client.pool_id else None,
-            "backend_instance_id": (
-                str(client.last_instance_id) if client.last_instance_id else None
-            ),
-            "model_id": model_id,
-        },
+        "prompt_revision": prompt_revision,
+        "output_geometry": context.get("output_geometry", "polygon"),
+        "routing": routing,
+        "accept_receipts": accept_receipts,
+    }
+
+
+def _interactive_prompt_summary(context: dict) -> dict:
+    prompt_type = str(context.get("type") or "point")
+    labels = context.get("labels") if isinstance(context.get("labels"), list) else []
+    exemplars = (
+        context.get("exemplars")
+        if isinstance(context.get("exemplars"), list)
+        else []
+    )
+    return {
+        "family": prompt_type,
+        "positive_points": sum(label == 1 for label in labels),
+        "negative_points": sum(label == 0 for label in labels),
+        "boxes": 1 if prompt_type == "interactive_box" else len(exemplars),
+        "positive_scribbles": 0,
+        "negative_scribbles": 0,
+        "multimask": context.get("multimask_output") is True,
+        "parameters_digest": None,
     }
 
 
@@ -946,6 +1006,7 @@ async def predict_test(
 
 @router.post(
     "/{backend_id}/interactive-annotating",
+    response_model=InteractiveAnnotateResponse,
     dependencies=[Depends(require_project_visible)],
 )
 async def interactive_annotating(
@@ -1018,6 +1079,7 @@ async def interactive_annotating(
         client=client,
         requested_backend_id=backend_id,
         model_id=model_id,
+        task_id=task.id,
     )
 
 
@@ -1146,6 +1208,7 @@ async def predict_frame(
 
 @router.post(
     "/{backend_id}/interactive-annotating-frame",
+    response_model=InteractiveAnnotateResponse,
     dependencies=[Depends(require_project_visible)],
 )
 async def interactive_annotating_frame(
@@ -1255,6 +1318,7 @@ async def interactive_annotating_frame(
         client=client,
         requested_backend_id=backend_id,
         model_id=model_id,
+        task_id=task.id,
     )
 
 

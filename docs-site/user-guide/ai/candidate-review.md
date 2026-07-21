@@ -4,7 +4,7 @@ audience: [annotator, project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-22
 ---
 
 # 审阅 AI 候选
@@ -32,11 +32,14 @@ AI 预标和外部预测先生成 **Prediction（候选）**，不会直接替�
 | 操作 | 会发生什么 | 不会发生什么 |
 |---|---|---|
 | 接受候选 | 写入一条可编辑的正式 Annotation | 不会覆盖已有人工标注 |
+| 接受交互式原生 Mask | 原子保存像素内容、AI 来源和正式 Annotation；网络重试沿用同一决策 | 不会先留下半个 Prediction，也不会把 Mask 转成 polygon |
 | 拒绝候选 | 放弃当前候选 | 不会删除其它候选或人工标注 |
 | 清理预测 | 按来源删除尚未接受的 Prediction | 不会删除已经接受的 Annotation |
 | 视频追踪“丢弃” | 清除当前追踪 job 的暂存候选 | 不会改写原轨迹或人工关键帧 |
 
 需要按来源批量清理候选时，使用[外部预测导入 / 导出](../datasets/prediction-import-export#清理预测)。选择“ML Backend 预标”或“全部预测”前，先核对范围；这两种操作会清除未接受候选，之后需要重新运行或重新导入才能恢复。
+
+交互式原生 Mask 在接受前只存在于当前工作台会话，不属于可跨页面恢复的批量 Prediction。请求失败时候选仍留在画布，可直接重试；成功后才从候选层移除。切题、切帧、切模型、取消或会话过期会释放尚未接受的候选。
 
 ## 视频追踪的不同之处
 

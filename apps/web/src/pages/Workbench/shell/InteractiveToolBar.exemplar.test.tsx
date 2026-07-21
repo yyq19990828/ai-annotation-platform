@@ -1,5 +1,5 @@
 // v0.18.25 · InteractiveToolBar (前 AIToolDrawer) exemplar 能力驱动渲染: 后端无负框/无 text 叠加时隐藏对应控件。
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { InteractiveToolBar } from "./InteractiveToolBar";
@@ -30,6 +30,8 @@ function renderDrawer(model: MLModelCapability) {
       isError={false}
       exemplarOutputMode="mask"
       onSetExemplarOutputMode={vi.fn()}
+      singleFrameOutputGeometry="polygon"
+      onSetSingleFrameOutputGeometry={vi.fn()}
       exemplarText=""
       onSetExemplarText={vi.fn()}
       exemplarThreshold={null}
@@ -66,5 +68,34 @@ describe("InteractiveToolBar · exemplar 能力门控", () => {
   it("输出形态三选恒显示 (与能力无关)", () => {
     renderDrawer(exemplarModel({ negative_box: false }));
     expect(screen.queryByTestId("exemplar-output-mode")).not.toBeNull();
+  });
+
+  it("单帧持久几何与 exemplar 召回形态分别显示", () => {
+    renderDrawer(exemplarModel({ negative_box: false }));
+    expect(screen.queryByTestId("single-frame-output-geometry")).not.toBeNull();
+    expect(screen.queryByTestId("exemplar-output-mode")).not.toBeNull();
+  });
+
+  it("能力门禁关闭时禁用原生 Mask 选项并保留显式 polygon", () => {
+    const onChange = vi.fn();
+    render(
+      <InteractiveToolBar
+        tool="smart-point"
+        backendName="backend"
+        capability={undefined}
+        samPolarity="positive"
+        onSetSamPolarity={vi.fn()}
+        isLoading={false}
+        isError={false}
+        singleFrameOutputGeometry="polygon"
+        onSetSingleFrameOutputGeometry={onChange}
+        nativeMaskOutputDisabledReason="当前模型未声明原生 Mask 输出能力"
+      />,
+    );
+    const select = screen.getByTestId("single-frame-output-geometry-select");
+    expect(select).toHaveAttribute("title", "当前模型未声明原生 Mask 输出能力");
+    expect(select.querySelector('option[value="mask"]')).toBeDisabled();
+    fireEvent.change(select, { target: { value: "polygon" } });
+    expect(onChange).toHaveBeenCalledWith("polygon");
   });
 });

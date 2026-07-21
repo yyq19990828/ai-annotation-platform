@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-22
 ---
 
 # 审计与通知
@@ -74,7 +74,7 @@ flowchart TD
 - 批次：`batch.*`
 - 标注：`annotation.*`
 - 任务审核：`task.submit / withdraw / approve / reject / reopen / skip`
-- AI 预标与视频追踪：`preannotate.bulk_clear`、`video_tracker_job.create / cancel / accept / discard`
+- AI 预标、原生 Mask 与视频追踪：`preannotate.bulk_clear`、`mask_ai.candidate_accept`、`video_tracker_job.create / cancel / accept / discard`
 - 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移）
 - 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
 
@@ -141,6 +141,8 @@ flowchart TD
 - export：格式、行数、筛选条件、request id
 
 不要把大块重复对象整份塞进去。`detail_json` 更适合“补事实”，不是“存快照”。
+
+原生 Mask 候选接受的审计只记录 candidate / content digest、Prediction、源/结果版本、帧号、实际 backend / pool / model 与有界 prompt 计数摘要。它不记录 RLE counts、原图、scribble 点集、receipt 或 logits；这些大载荷和凭证也不得进入普通日志。
 
 ## Notification：提醒谁该处理什么
 

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select, text, update
 
 from app.db.models.annotation_comment import AnnotationComment
+from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.observability.raster_mask import (
     refresh_raster_mask_active_geometries_safely,
@@ -102,6 +103,13 @@ _MASK_REFERENCE_QUERIES = (
       AND status IN ('pending_review', 'cancelled')
       AND value #>> '{}' LIKE 'raster-masks/sha256/%'
     """,
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM ai_mask_accept_decisions,
+         LATERAL jsonb_path_query(response_json, '$.**.object_key') value
+    WHERE expires_at > now()
+      AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
 )
 
 _MASK_REFERENCE_EXISTS_QUERIES = (
@@ -126,6 +134,15 @@ _MASK_REFERENCE_EXISTS_QUERIES = (
              LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
         WHERE staged_result IS NOT NULL
           AND status IN ('pending_review', 'cancelled')
+          AND value #>> '{}' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM ai_mask_accept_decisions,
+             LATERAL jsonb_path_query(response_json, '$.**.object_key') value
+        WHERE expires_at > now()
           AND value #>> '{}' = :key
     )
     """,
@@ -168,6 +185,14 @@ def purge_unreferenced_raster_masks(dry_run: bool = False) -> dict:
 async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     async with task_session() as db:
+        # Native Mask accept 幂等快照只保留 24 小时；过期后重放稳定拒绝，
+        # 同时不再阻止其中 RLE 引用进入宽限 GC。在扫描引用前删除过期大快照。
+        await db.execute(
+            delete(AiMaskAcceptDecision).where(
+                AiMaskAcceptDecision.expires_at <= datetime.now(timezone.utc)
+            )
+        )
+        await db.commit()
         await refresh_raster_mask_active_geometries_safely(db)
         referenced = await _referenced_raster_mask_keys(db)
         candidates = await asyncio.to_thread(
