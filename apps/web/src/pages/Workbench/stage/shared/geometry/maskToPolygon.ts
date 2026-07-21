@@ -9,6 +9,11 @@
 //
 // 决策见 ADR-0022：v1 不引入 d3-contour；不输出 hole / 多分量，多分量时取最大面积外环
 // 并在调用方提示用户先 mask 编辑合并。
+//
+// v0.23.5 WS-E (ADR-0052 D5 / P4)：不再「静默 pickLargest」。maskToPolygon 仍返回最大
+// 外环顶点 (保持现有调用方不破), 但同时显式标记 lossy=true + 诊断字段, 调用方必须检查
+// lossy 后再决定是否落库。lossy 的 v1 判据 = 多连通 (components.length > 1); 精确 hole
+// 检测留 v0.23.7 原生 Mask 工作台 (届时直接输出 multi_polygon + holes, 不再走 polygon 中转)。
 
 import polygonClipping, { type Polygon } from "polygon-clipping";
 
@@ -34,7 +39,28 @@ export interface MaskToPolygonResult {
   points: [number, number][];
   /** 是否检测到多连通：若 true 且 pickLargest=true，则仅返回最大外环。 */
   multipleComponents: boolean;
+  /**
+   * v0.23.5 WS-E · 显式无损/有损标记 (ADR-0052 D5)。lossy=true 表示本次转换丢弃了
+   * 几何信息 (多连通分量 / 孔), 调用方必须在落库前检查并提示用户。
+   *
+   * v1 判据: components.length > 1。精确 hole 检测 (主分量内部被实心包围的背景分量)
+   * 留 v0.23.7, 届时 maskToPolygon 直接输出 multi_polygon + holes, 不再走单环中转。
+   */
+  lossy: boolean;
+  /** lossy 时的诊断: 丢弃的连通分量数 (不含保留的主分量)。lossy=false 时为 undefined。 */
+  droppedComponents?: number;
+  /**
+   * lossy 时的诊断: 主分量内部检测到的孔数。v0.23.5 不做精确 hole 检测, 一律 undefined
+   * (注释说明 v0.23.7 补); 调用方不应依赖此字段做分支。
+   */
+  droppedHoles?: number;
+  /** 文本原因, 供 UI (toast / toolbar) 展示。lossy=false 时为 undefined。 */
+  lossyReason?: string;
 }
+
+/** v0.23.5 WS-E · lossy=true 时的统一提示文案 (ADR-0052 D5)。 */
+const LOSSY_REASON =
+  "mask 含多个连通分量或孔, 当前 polygon 提交会丢弃; 请等待原生 Mask 工作台 (v0.23.7)";
 
 /** 像素是否「实心」（>= threshold）。越界视为 0。 */
 function isSolid(mask: MaskLike, x: number, y: number, threshold: number): boolean {
@@ -151,13 +177,20 @@ export function maskToPolygon(
 
   const components = findComponents(mask, threshold);
   if (components.length === 0) {
-    return { points: [], multipleComponents: false };
+    // v0.23.5 WS-E · 空 mask 无损 (无几何可丢)。
+    return { points: [], multipleComponents: false, lossy: false };
   }
+  // v0.23.5 WS-E · 多连通 = 有损 (ADR-0052 D5)。droppedComponents 不含保留的主分量。
+  const multipleComponents = components.length > 1;
+  const lossy = multipleComponents;
+  const droppedComponents = lossy ? components.length - 1 : undefined;
+  const lossyReason = lossy ? LOSSY_REASON : undefined;
+
   // 多连通时挑面积最大的
   const target = components.reduce((acc, c) => (c.count > acc.count ? c : acc), components[0]);
   let ring = traceBoundary(mask, target.sx, target.sy, threshold);
   if (ring.length < 3) {
-    return { points: ring, multipleComponents: components.length > 1 };
+    return { points: ring, multipleComponents, lossy, droppedComponents, lossyReason };
   }
 
   // 用 polygon-clipping union(self) 去自相交 / 修复 marching-squares 锯齿
@@ -194,10 +227,15 @@ export function maskToPolygon(
     if (!last || last[0] !== p[0] || last[1] !== p[1]) dedup.push(p);
   }
 
-  // 注意：v1 只返回最大分量（暂不支持 multipolygon 落库），但 multipleComponents
-  // 仍为 true 提示上层 UI。
+  // 注意：v1 只返回最大分量（暂不支持 multipolygon 落库），但 multipleComponents / lossy
+  // 仍为 true 提示上层 UI (v0.23.5 WS-E: 调用方必须检查 lossy 后再落库)。
   return {
     points: dedup,
-    multipleComponents: components.length > 1,
+    multipleComponents,
+    lossy,
+    droppedComponents,
+    // droppedHoles: v0.23.5 不做精确 hole 检测, 留 undefined; v0.23.7 原生 Mask 工作台补。
+    droppedHoles: undefined,
+    lossyReason,
   };
 }

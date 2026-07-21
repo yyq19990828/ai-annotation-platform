@@ -4,6 +4,11 @@
 // - 圆形 mask → 顶点数远小于 perimeter（RDP 起效）
 // - 多连通 mask → 取最大分量；multipleComponents=true
 // - 顶点无重复（去重生效）
+//
+// v0.23.5 WS-E (ADR-0052 D5) · 新增 lossy 显式报告测试:
+// - 多连通 → lossy=true, droppedComponents=分量数-1, lossyReason 非空
+// - 单连通 → lossy=false
+// - 空 mask → lossy=false (无几何可丢)
 
 import { describe, expect, it } from "vitest";
 import { MaskBuffer } from "./maskBuffer";
@@ -84,5 +89,53 @@ describe("maskToPolygon", () => {
     const off = maskToPolygon(m, { simplifyEpsilon: 0 });
     const on = maskToPolygon(m, { simplifyEpsilon: 1.5 });
     expect(off.points.length).toBeGreaterThan(on.points.length);
+  });
+});
+
+// v0.23.5 WS-E · ADR-0052 D5: maskToPolygon 必须显式报告 lossy, 不再静默 pickLargest。
+// 调用方 (useImageAnnotationActions.commitMaskAsPolygon) 检查 lossy 后阻断有损提交。
+describe("maskToPolygon · lossy 显式报告 (v0.23.5 WS-E)", () => {
+  it("test_mask_to_polygon_marks_lossy_on_multiple_components: 2 个分量 → lossy=true, droppedComponents=1", () => {
+    const m = new MaskBuffer({ width: 60, height: 60 });
+    // 两个互不相交的方块 → 2 个连通分量。
+    m.fromPolygon([[5, 5], [25, 5], [25, 25], [5, 25]]);
+    m.fromPolygon([[35, 35], [50, 35], [50, 50], [35, 50]]);
+    const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
+    expect(out.multipleComponents).toBe(true);
+    expect(out.lossy).toBe(true);
+    expect(out.droppedComponents).toBe(1); // 2 个分量 - 1 个主分量 = 丢弃 1 个。
+    expect(out.lossyReason).toBeTruthy();
+    expect(out.lossyReason).toContain("多个连通分量");
+    // 仍返回最大外环 (不破现有调用方), 但调用方必须先检查 lossy。
+    expect(out.points.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("test_mask_to_polygon_lossless_on_single_component: 单分量 → lossy=false, droppedComponents=undefined", () => {
+    const m = makeRect(50, 50, 10, 10, 30, 30);
+    const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
+    expect(out.multipleComponents).toBe(false);
+    expect(out.lossy).toBe(false);
+    expect(out.droppedComponents).toBeUndefined();
+    expect(out.lossyReason).toBeUndefined();
+  });
+
+  it("test_mask_to_polygon_empty_mask: 空 mask → {points:[], lossy:false, multipleComponents:false}", () => {
+    const m = new MaskBuffer({ width: 20, height: 20 });
+    const out = maskToPolygon(m);
+    expect(out.points).toEqual([]);
+    expect(out.multipleComponents).toBe(false);
+    expect(out.lossy).toBe(false);
+    expect(out.droppedComponents).toBeUndefined();
+    expect(out.lossyReason).toBeUndefined();
+  });
+
+  it("三个分量 → droppedComponents=2 (诊断准确, 不只是布尔)", () => {
+    const m = new MaskBuffer({ width: 80, height: 80 });
+    m.fromPolygon([[5, 5], [20, 5], [20, 20], [5, 20]]);
+    m.fromPolygon([[30, 30], [40, 30], [40, 40], [30, 40]]);
+    m.fromPolygon([[55, 55], [65, 55], [65, 65], [55, 65]]);
+    const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
+    expect(out.lossy).toBe(true);
+    expect(out.droppedComponents).toBe(2);
   });
 });
