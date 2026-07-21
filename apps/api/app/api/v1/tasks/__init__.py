@@ -4,6 +4,7 @@ from app.api.v1.tasks import (
     annotations,
     lifecycle,
     locks,
+    mask_capabilities,
     predictions,
     review,
     video,
@@ -22,6 +23,7 @@ from app.api.v1.tasks._shared import (
 router = APIRouter()
 router.include_router(task_list.router, prefix="/tasks")
 router.include_router(video.router, prefix="/tasks")
+router.include_router(mask_capabilities.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
 router.include_router(predictions.router, prefix="/tasks")
 router.include_router(lifecycle.router, prefix="/tasks")

@@ -120,6 +120,7 @@ class ProjectUpdate(BaseModel):
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     # 交互式 AI 工具总开关 (归 ML 模型设置项)。
     ai_interactive_enabled: bool | None = None
+    raster_mask_native_editing_enabled: bool | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
     rendering_config: ProjectRenderingConfig | None = None
     # v0.10.13 · E1 · 标注指引 Markdown 原文; 显式 None 仅在 owner 主动清空时出现.
@@ -178,6 +179,7 @@ class ProjectOut(BaseModel):
     text_threshold: float = 0.25
     # 交互式 AI 工具总开关 (归 ML 模型设置项)。
     ai_interactive_enabled: bool = True
+    raster_mask_native_editing_enabled: bool = False
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.

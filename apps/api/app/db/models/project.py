@@ -86,6 +86,9 @@ class Project(Base):
     ai_interactive_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true", default=True
     )
+    raster_mask_native_editing_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict = 全部沿用用户级 preferences
     rendering_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
