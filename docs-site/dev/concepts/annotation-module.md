@@ -108,6 +108,7 @@ graph TD
 | `rotated_bbox` | 旋转框 / OBB | `{cx,cy,w,h,angle}` 归一化，`angle` 顺时针 `[0,360)` |
 | `polyline` | 开放折线 | `points[]`(≥2 顶点)，不闭合、无 `holes`、无自交校验 |
 | `keypoint` | 关键点 (COCO 范式) | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
+| `raster_mask` | 图片栅格 Mask | 单个 `coco_rle_ref`；内容在对象存储，创建由独立开关控制 |
 | `video_bbox` | 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
 | `video_track_bbox` | 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
 | `video_track_polygon` / `video_track_polyline` | 视频点集轨迹 | compact points keyframes 与 outside |
@@ -117,7 +118,7 @@ graph TD
 
 `video_track_bbox` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 
-`video_track_mask` 沿用相同的 track 外壳，但关键帧保存内容寻址 RLE 引用。创建 / 更新必须同时通过 Pydantic 强类型与 task 的视频尺寸 / 帧数上下文校验；读取对象还会复核 SHA-256、canonical bytes、runs 和 size。Mask 帧间采用 hold 解析，不写展开帧；对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过 grace period 的内容。
+`raster_mask` 保存单个图片尺寸的内容寻址 RLE 引用；`video_track_mask` 沿用 track 外壳，在关键帧保存同一种引用。创建 / 更新必须同时通过 Pydantic 强类型与 task 的媒体、尺寸和帧数上下文校验；读取对象还会复核 SHA-256、canonical bytes、runs 和 size。图片 Mask 没有时间轴语义，视频 Mask 帧间采用 hold 解析、不写展开帧；对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过 grace period 的内容。
 
 ### 属性 schema 与派生渲染
 

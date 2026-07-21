@@ -955,6 +955,7 @@
                 "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
                 "polyline": "#/components/schemas/PolylineGeometry",
+                "raster_mask": "#/components/schemas/RasterMaskGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
@@ -1019,6 +1020,9 @@
               },
               {
                 "$ref": "#/components/schemas/PointMaskGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/RasterMaskGeometry"
               }
             ],
             "title": "Geometry"
@@ -1653,6 +1657,7 @@
                 "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
                 "polyline": "#/components/schemas/PolylineGeometry",
+                "raster_mask": "#/components/schemas/RasterMaskGeometry",
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
@@ -1717,6 +1722,9 @@
               },
               {
                 "$ref": "#/components/schemas/PointMaskGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/RasterMaskGeometry"
               }
             ],
             "title": "Geometry"
@@ -1946,6 +1954,7 @@
                     "point_mask_3d": "#/components/schemas/PointMaskGeometry",
                     "polygon": "#/components/schemas/PolygonGeometry",
                     "polyline": "#/components/schemas/PolylineGeometry",
+                    "raster_mask": "#/components/schemas/RasterMaskGeometry",
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                     "video_bbox": "#/components/schemas/VideoBboxGeometry",
                     "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
@@ -2010,6 +2019,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/PointMaskGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RasterMaskGeometry"
                   }
                 ]
               },
@@ -5996,6 +6008,47 @@
           "new_name"
         ],
         "title": "ClassRenameRequest",
+        "type": "object"
+      },
+      "CocoRleContent": {
+        "additionalProperties": false,
+        "description": "Materialized uncompressed COCO RLE returned by mask-content APIs.",
+        "properties": {
+          "counts": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000000,
+            "minItems": 1,
+            "title": "Counts",
+            "type": "array"
+          },
+          "encoding": {
+            "const": "coco_rle",
+            "default": "coco_rle",
+            "title": "Encoding",
+            "type": "string"
+          },
+          "size": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Size",
+            "type": "array"
+          }
+        },
+        "required": [
+          "size",
+          "counts"
+        ],
+        "title": "CocoRleContent",
         "type": "object"
       },
       "CocoRleMaskRef": {
@@ -14353,6 +14406,9 @@
                 "$ref": "#/components/schemas/KeypointGeometry"
               },
               {
+                "$ref": "#/components/schemas/RasterMaskGeometry"
+              },
+              {
                 "additionalProperties": true,
                 "type": "object"
               }
@@ -17575,6 +17631,26 @@
           "protocol_notes"
         ],
         "title": "ProtocolTaskItem",
+        "type": "object"
+      },
+      "RasterMaskGeometry": {
+        "additionalProperties": false,
+        "description": "v0.23.6 · 图片栅格掩码几何。\n\n引用不可变 COCO RLE 对象存储掩码内容，不内联像素数据。\n只允许图片 DatasetItem（视频使用 video_track_mask）。",
+        "properties": {
+          "mask": {
+            "$ref": "#/components/schemas/CocoRleMaskRef"
+          },
+          "type": {
+            "const": "raster_mask",
+            "default": "raster_mask",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mask"
+        ],
+        "title": "RasterMaskGeometry",
         "type": "object"
       },
       "RecentReviewItem": {
@@ -27257,9 +27333,67 @@
         ]
       }
     },
+    "/api/v1/annotations/{annotation_id}/mask-content": {
+      "get": {
+        "description": "v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。\n\n支持图片 RasterMaskGeometry 掩码的静态内容服务。\n返回标准 COCO RLE 格式，带 ETag 支持条件请求。",
+        "operationId": "get_annotation_mask_content_api_v1_annotations__annotation_id__mask_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CocoRleContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "409": {
+            "description": "Mask reference or task context is invalid"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Mask object storage is unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Annotation Mask Content",
+        "tags": [
+          "annotations"
+        ]
+      }
+    },
     "/api/v1/annotations/{annotation_id}/mask-content/{frame_index}": {
       "get": {
-        "operationId": "get_annotation_mask_content_api_v1_annotations__annotation_id__mask_content__frame_index__get",
+        "operationId": "get_annotation_mask_content_frame_api_v1_annotations__annotation_id__mask_content__frame_index__get",
         "parameters": [
           {
             "in": "path",
@@ -27285,10 +27419,18 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CocoRleContent"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "409": {
+            "description": "Mask reference or task context is invalid"
           },
           "422": {
             "content": {
@@ -27299,6 +27441,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Mask object storage is unavailable"
           }
         },
         "security": [
@@ -27306,7 +27451,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Get Annotation Mask Content",
+        "summary": "Get Annotation Mask Content Frame",
         "tags": [
           "annotations"
         ]

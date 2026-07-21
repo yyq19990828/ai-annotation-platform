@@ -87,6 +87,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/annotations/{annotation_id}/mask-content` |
 | GET | `/annotations/{annotation_id}/mask-content/{frame_index}` |
 | POST | `/tasks/{task_id}/mask-content` |
 | POST | `/annotations/bulk-update` |
@@ -558,4 +559,4 @@
 
 ---
 
-_共 52 模块 / 311 路由_
+_共 52 模块 / 312 路由_

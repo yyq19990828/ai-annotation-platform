@@ -49,6 +49,20 @@
 - **前端类型定义**. `Geometry` union 添加 `RasterMaskGeometry` 类型，`rasterMasksApi`
   拆分为 `annotationRasterMaskContent`（图片）和 `annotationVideoMaskContent`（视频）。
 
+### Fixed
+- **图片 Mask 可移植导入导出**. AAP JSON 会把图片与视频引用的 RLE 正文统一写入
+  `mask_objects`，导入先验证并重建不可变对象；COCO 图片导入识别 RLE segmentation，导出从
+  实际像素计算 segmentation、bbox 与 area，不再把栅格 Mask 静默跳过或降级为 bbox。
+- **图片 Mask 只读前端安全**. 原生像素渲染器上线前，工作台明确阻止 `raster_mask` 进入普通
+  bbox 的移动、缩放和复制路径，避免只读引用被覆盖或复制成零尺寸框。
+- **静态 Mask 条件读取合同**. 图片静态读取与兼容逐帧路径共享强类型响应、任务上下文尺寸校验
+  和 `If-None-Match` 处理；命中内容摘要时返回 304，不再重复下载对象正文。
+
+### Security
+- **Mask 任务级授权与灰度门禁**. 图片和视频 Mask 内容读取统一执行批次状态与标注员分派校验，
+  防止同项目跨任务读取；新增独立 read / create 开关，读取默认开启、创建默认关闭，所有写入与
+  导入入口拒绝绕过创建门禁及全背景图片 Mask。
+
 ## [0.23.5] - 2026-07-21
 
 ### Added

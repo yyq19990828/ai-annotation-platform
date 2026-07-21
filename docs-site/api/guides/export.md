@@ -48,7 +48,7 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 | **voc** | Pascal VOC XML（仅同步单选） |
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标） |
 
-COCO / YOLO 会按各自能消费的几何（bbox / rotated_bbox / polygon / multi_polygon / keypoint）映射，不匹配的几何跳过（COCO 跳过数记在 `info.skipped_annotations`）。
+COCO / YOLO 会按各自能消费的几何映射。COCO 对图片 `raster_mask` 输出标准 RLE segmentation，并从像素内容计算 bbox 与 area；polygon / multi_polygon 继续输出多边形 segmentation。其余不匹配几何会跳过，COCO 跳过数记在 `info.skipped_annotations`。
 
 ## 视频轨迹导出
 

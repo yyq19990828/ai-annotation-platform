@@ -58,15 +58,15 @@ v0.23.5 是栅格 mask 统一 Epic 的 Phase 1（可靠性与安全地基）。v
 
 引用的 `encoding` 永远描述引用协议（`coco_rle_ref`），不描述正文或存储压缩。gzip 对象额外携带 `storage_encoding: "gzip"` 且使用 `.json.gz`；未压缩旧引用可省略该字段。reader 继续接受历史 `encoding: "coco_rle_gzip"` + `.json.gz`，writer 不再生成该混合形态。
 
-### D3. 图片静态内容 GET API（泛化现有视频端点）
+### D3. 图片静态内容 GET API（静态规范路径 + 旧路径兼容）
 
-现有 `GET /annotations/{annotation_id}/mask-content/{frame_index}`（`apps/api/app/api/v1/annotations.py:81`）只认 `geometry.type == "video_track_mask"`。v0.23.6 将其泛化：
+图片单态 Mask 使用 `GET /annotations/{annotation_id}/mask-content` 作为规范接口；现有视频接口 `GET /annotations/{annotation_id}/mask-content/{frame_index}` 保持不变。为兼容按本 ADR 早期草案接入的客户端，带 `frame_index` 的路径也接受 `raster_mask` 并忽略该参数：
 
-- 接受 `geometry.type ∈ {"raster_mask", "video_track_mask"}`；
-- `raster_mask` 的 `frame_index` 路径参数保留但忽略（单态），以保持 URL 形态统一；
-- 响应头继续带 `ETag: "<sha256>"` 与 `Cache-Control: private, max-age=300`；
-- 鉴权不变：`annotations:read` scope + `assert_project_visible`；
-- **新增**：GET 在 annotation `is_locked` 时仍可读（lock 不影响读），但必须经 D7 的 task-context validator 校验引用完整性。
+- 无 `frame_index` 的静态路径只接受 `geometry.type == "raster_mask"`；
+- 带 `frame_index` 的路径接受 `video_track_mask`，并兼容 `raster_mask` 单态读取；
+- 响应头带 `ETag: "<sha256>"` 与 `Cache-Control: private, max-age=300`；`If-None-Match` 命中时不读取对象正文，返回 `304 Not Modified`；
+- 鉴权统一为 `annotations:read` scope + task-context 可见性，必须执行批次状态与标注员分派校验；仅项目可见不足以授权读取任务内容；
+- annotation `is_locked` 不影响读取，但 read feature flag 必须开启，且返回正文前必须经 D4 的 task-context validator 校验引用完整性与媒体尺寸。
 
 ### D4. task-context validator（图片 / 视频共用）
 
@@ -76,6 +76,7 @@ v0.23.5 是栅格 mask 统一 Epic 的 Phase 1（可靠性与安全地基）。v
 - 每个 `coco_rle_ref` 必须能 `load_coco_rle` 通过（可选 `verify=True` 触发实际对象读取）；
 - 写路径（annotation POST/PATCH、tracker accept）必须调用此 validator；
 - **不允许**绕过 validator 直接写 `coco_rle_ref` 到 JSONB。
+- codec 层允许全背景 RLE 往返；创建或更新可见 `raster_mask` annotation 时，必须读取对象并拒绝前景像素数为零的内容。
 
 ### D5. polygon ↔ Mask 显式转换（禁止静默有损）
 
@@ -117,9 +118,9 @@ v0.23.5 是栅格 mask 统一 Epic 的 Phase 1（可靠性与安全地基）。v
 
 `raster_mask` 是 annotation JSONB `geometry.type` 的加法扩展。部署顺序冻结为：
 
-1. **后端 reader**：先发能读 / 校验 / GC `raster_mask` 的后端（validator + storage + 静态 GET），不带创建开关。
-2. **前端 renderer**：再发能渲染 `raster_mask` 的前端（`KonvaPolygon` even-odd holes / multi_polygon 已在 v0.23.5 就绪）。
-3. **创建开关**：最后用独立 read / create feature flag 打开创建路径。
+1. **后端 reader**：先发能读 / 校验 / GC `raster_mask` 的后端（validator + storage + 静态 GET），read flag 默认开启。
+2. **前端安全 reader**：再发认识 `raster_mask` 的前端；原生像素 renderer 上线前，它只能作为明确的只读占位，不得落入 bbox 移动、缩放或复制降级路径。
+3. **创建开关**：最后用独立 create feature flag 打开创建路径；本阶段默认关闭，待原生图片 Mask 工作台就绪后再灰度开启。
 
 回滚约束：旧后端镜像不认识 `raster_mask`，一旦生产数据中存在 `raster_mask` annotation，**回滚必须采用 forward-fix**（在新版本中处理），**不**直接切回旧镜像——旧镜像会把 `raster_mask` 当未知 type 静默丢弃或报错。GC 与静态 GET 必须在所有 reader 升级后才打开 create flag。
 
@@ -151,7 +152,7 @@ feature flag 语义：read flag 与 create flag 独立；read flag 默认 on（�
 
 - 实现代码位置（v0.23.5 已落 / v0.23.6 待落）：
   - v0.23.5：`apps/api/app/utils/raster_mask_gzip.py`（新）、`apps/api/app/services/raster_mask_storage.py`（gzip + async to_thread）、`apps/api/app/services/video_tracking/runner.py:accept_tracker_job`（版本冲突 → 409）、`apps/web/src/pages/Workbench/state/useMaskEditorSession.ts`（新）、`apps/web/src/pages/Workbench/state/canEditMask.ts`（新）、`apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx:KonvaPolygon`（even-odd holes / multi_polygon）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts`（无损报告）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskRle.ts`（HTTP gzip 上传与安全回退）。
-  - v0.23.6：`raster_mask` alembic union（加法扩展，无 schema 迁移）、`validate_mask_geometry_for_task` 泛化、`GET /annotations/{id}/mask-content/{frame}` 泛化、create flag。
+  - v0.23.6：`raster_mask` JSONB union（加法扩展，无 schema 迁移）、`validate_mask_geometry_for_task` 泛化、静态与兼容 GET、独立 read / create flags。
 - 相关 ADR：[ADR-0022](./archive/0022-mask-editor-tool-architecture.md)（图片 mask 工具 v1，过渡决策）、[ADR-0048](./archive/0048-video-raster-mask-content-addressed-rle.md)（视频 `coco_rle_ref` 内容寻址，本 ADR 复用）、[ADR-0045](./0045-track-id-as-annotation-column.md)（track_id 跨帧身份）。
 - 相关计划：[v0.23.5 可靠性与安全地基](../plans/2026-07-21-v0.23.5-mask-reliability-security-foundation.md)、[v0.23.6 共享 RLE 与图片 geometry](../plans/2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)、[Epic 总纲](../plans/2026-07-21-raster-mask-workbench-unification-epic.md)。
 - Open Questions（本 ADR 不冻结，留后续版本）：

@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-21
 ---
 
 # 环境变量参考
@@ -159,6 +159,13 @@ last_reviewed: 2026-07-20
 | `FRAME_PREANNOTATE_CHUNK_SIZE` | `30` | 逐帧预标注每个 Celery 段子任务处理的帧数（fan-out 粒度：太小则子任务过多、太大则并行差）。 |
 | `FRAME_PREANNOTATE_MAX_BOXES_PER_FRAME` | `100` | 逐帧预标注单帧落库框数上限（防单帧检出爆量）。 |
 | `FRAME_PREANNOTATE_SEGMENT_SOFT_TIME_LIMIT_SECONDS` | `900` | 逐帧预标注段子任务的 soft 超时（秒，段内逐帧跑图像 predict）。 |
+
+## 图片原生栅格 Mask
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `RASTER_MASK_READ_ENABLED` | `true` | 图片原生 raster_mask reader 默认开启，保证新后端可读取已有 geometry。 |
+| `RASTER_MASK_CREATE_ENABLED` | `false` | 持久化创建默认关闭，待全部 reader / exporter 升级后再显式开启。 |
 
 ## 认证 / 安全
 

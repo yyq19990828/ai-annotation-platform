@@ -85,6 +85,8 @@ python fetch_images.py
 
 ## COCO JSON
 
+图片 `raster_mask` 以标准 COCO uncompressed RLE 写入 `segmentation`；`bbox` 与 `area` 从实际前景像素计算，不使用上传时的占位框。polygon / multi_polygon 继续输出多边形 segmentation，其他不兼容几何计入 `info.skipped_annotations`。
+
 最常用格式，适配 Detectron2、MMDetection、YOLOv8 等。COCO 是单文档格式，落在包根的 `annotations.json`（无 per-image label 文件）。图片的 `width` / `height` 现在取**真实尺寸**（来自 dataset 记录；早期版本曾硬编码 1920×1280，已修复）。
 
 COCO 单文件可同时承载多种几何：
@@ -215,7 +217,7 @@ names:
 
 ## AAP JSON 1.3（无损）
 
-> AAP JSON 是平台原生无损中间格式。当前 schema 1.3 在 task 层包含 `media_type` 与视频元数据，并可无损透传 `video_track_mask`。`mask_objects` 携带内容寻址 RLE 对象，使引用在导出后仍可移植并校验哈希。与 COCO / YOLO 并列，但**包含**它们丢失的项目、来源、属性与渲染配置。
+> AAP JSON 是平台原生无损中间格式。当前 schema 1.3 在 task 层包含 `media_type` 与视频元数据，并可无损透传图片 `raster_mask` 和视频 `video_track_mask`。`mask_objects` 携带内容寻址 RLE 对象，使引用在导出后仍可移植并校验哈希。与 COCO / YOLO 并列，但**包含**它们丢失的项目、来源、属性与渲染配置。
 <!-- history: 1.1 added tool bindings, 1.2 added media blocks, 1.3 added portable raster mask objects. -->
 
 适合场景：
