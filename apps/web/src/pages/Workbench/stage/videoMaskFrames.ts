@@ -142,7 +142,7 @@ export function useVideoMaskFrames(params: {
         selected: annotation.id === selectedId,
         cachePrefix: `annotation:${annotation.id}:version:${annotation.version ?? 0}`,
         frameKey: resolved.keyframeFrame,
-        load: () => rasterMasksApi.annotationContent(annotation.id, frameIndex),
+        load: () => rasterMasksApi.annotationVideoMaskContent(annotation.id, frameIndex),
       }];
     });
     const staged = candidates.flatMap((candidate, index) => {

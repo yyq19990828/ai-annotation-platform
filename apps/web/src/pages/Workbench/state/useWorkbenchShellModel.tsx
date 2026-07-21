@@ -1935,7 +1935,7 @@ export function useWorkbenchShellModel({
     // sessionKey 变化时 useMaskEditorSession 已自增 generation, 旧 gen 的回包被静默丢弃,
     // 不会覆盖用户在新帧上落笔后的 Buffer。
     const gen = maskGeneration;
-    void rasterMasksApi.annotationContent(selectedVideoMask.id, s.videoFrameIndex)
+    void rasterMasksApi.annotationVideoMaskContent(selectedVideoMask.id, s.videoFrameIndex)
       .then((rle) => {
         maskLoadRle(gen, rle);
       })

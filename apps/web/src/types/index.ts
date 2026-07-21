@@ -329,6 +329,11 @@ export type VideoTrackMaskGeometry = {
   keyframes: VideoTrackMaskKeyframe[];
   outside?: VideoTrackOutsideRange[];
 };
+/** v0.23.6 · 图片栅格掩码几何，引用不可变 COCO RLE 对象存储掩码内容。 */
+export type RasterMaskGeometry = {
+  type: "raster_mask";
+  mask: CocoRleMaskRef;
+};
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
  * hole. 新 prediction (mask 单连通带空洞) 在此填 hole 顶点列表 (内环, 与外环 evenodd
@@ -414,7 +419,8 @@ export type Geometry =
   | PolylineGeometry
   | KeypointGeometry
   | Box3DGeometry
-  | PointMaskGeometry;
+  | PointMaskGeometry
+  | RasterMaskGeometry;
 
 export interface AIBox {
   id: string;

@@ -167,8 +167,9 @@ export function geometryToShape(g: Geometry): {
     // 2D 画布消费方不画,3D 渲染走 three-d 模块(PointCloudScene)。
     return { x: 0, y: 0, w: 0, h: 0 };
   }
-  if (g.type === "video_track_mask") {
+  if (g.type === "video_track_mask" || g.type === "raster_mask") {
     // RLE AABB 需要异步读取 mask content；同步列表适配层不猜外接框。
+    // v0.23.6 · raster_mask 同样需要异步加载，返回空外接框。
     return { x: 0, y: 0, w: 0, h: 0 };
   }
   return { x: g.x, y: g.y, w: g.w, h: g.h };

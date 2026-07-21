@@ -6,7 +6,11 @@ import {
 import { apiClient } from "./client";
 
 export const rasterMasksApi = {
-  annotationContent: (annotationId: string, frameIndex: number) =>
+  /** v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。 */
+  annotationRasterMaskContent: (annotationId: string) =>
+    apiClient.get<CocoRle>(`/annotations/${annotationId}/mask-content`),
+  /** 获取视频掩码关键帧内容 (video_track_mask)。 */
+  annotationVideoMaskContent: (annotationId: string, frameIndex: number) =>
     apiClient.get<CocoRle>(`/annotations/${annotationId}/mask-content/${frameIndex}`),
   uploadTaskContent: async (taskId: string, rle: CocoRle) => {
     const gzip = await prepareCocoRleGzipUpload(rle);

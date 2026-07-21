@@ -111,10 +111,16 @@ function annotationToolMeta(
   if (geometry.type === "video_rotated_bbox") {
     return { label: "旋转框", detail: `F${geometry.frame_index} · ${Math.round(geometry.angle)}°` };
   }
-  return {
-    label: "多连通域",
-    detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,
-  };
+  if (geometry.type === "raster_mask") {
+    return { label: "栅格掩码", detail: `${geometry.mask.runs} runs` };
+  }
+  if (geometry.type === "multi_polygon") {
+    return {
+      label: "多连通域",
+      detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum: number, p) => sum + p.points.length, 0)} 点`,
+    };
+  }
+  return { label: "未知", detail: "" };
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {

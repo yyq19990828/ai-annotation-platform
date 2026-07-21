@@ -122,38 +122,67 @@ async def validate_mask_geometry_for_task(
     task: Task,
     geometry: dict[str, Any],
 ) -> None:
-    if geometry.get("type") != "video_track_mask":
-        return
-    if task.dataset_item_id is None:
-        raise ValueError("video mask track requires a primary dataset item")
-    item = await db.get(DatasetItem, task.dataset_item_id)
-    if item is None or item.file_type != "video":
-        raise ValueError("video mask track requires a video dataset item")
-    video = (item.metadata_ or {}).get("video")
-    video = video if isinstance(video, dict) else {}
-    width = item.width or video.get("width")
-    height = item.height or video.get("height")
-    frame_count = video.get("frame_count")
-    if not width or not height:
-        raise ValueError(
-            "source video width / height metadata is required for mask tracks"
-        )
-    expected_size = [int(height), int(width)]
-    for keyframe in geometry.get("keyframes") or []:
-        mask = keyframe.get("mask") or {}
-        if list(mask.get("size") or []) != expected_size:
-            raise ValueError(f"mask size must match source video {expected_size}")
-        frame_index = keyframe.get("frame_index")
-        if frame_count is not None and int(frame_index) >= int(frame_count):
+    """验证掩码几何是否与任务数据集项匹配。
+
+    支持 video_track_mask（视频）和 raster_mask（图片）两种类型。
+    """
+    geom_type = geometry.get("type")
+
+    if geom_type == "raster_mask":
+        # v0.23.6 · 图片掩码验证
+        if task.dataset_item_id is None:
+            raise ValueError("raster mask requires a primary dataset item")
+        item = await db.get(DatasetItem, task.dataset_item_id)
+        if item is None or item.file_type != "image":
+            raise ValueError("raster mask requires an image dataset item")
+        width = item.width
+        height = item.height
+        if not width or not height:
             raise ValueError(
-                f"mask frame_index must be < source frame_count {frame_count}"
+                "source image width / height metadata is required for raster mask"
             )
-    if frame_count is not None:
-        for outside in geometry.get("outside") or []:
-            if int(outside.get("to", 0)) >= int(frame_count):
+        expected_size = [int(height), int(width)]
+        mask = geometry.get("mask") or {}
+        if list(mask.get("size") or []) != expected_size:
+            raise ValueError(f"mask size must match source image {expected_size}")
+        return
+
+    if geom_type == "video_track_mask":
+        # 视频掩码验证（原有逻辑）
+        if task.dataset_item_id is None:
+            raise ValueError("video mask track requires a primary dataset item")
+        item = await db.get(DatasetItem, task.dataset_item_id)
+        if item is None or item.file_type != "video":
+            raise ValueError("video mask track requires a video dataset item")
+        video = (item.metadata_ or {}).get("video")
+        video = video if isinstance(video, dict) else {}
+        width = item.width or video.get("width")
+        height = item.height or video.get("height")
+        frame_count = video.get("frame_count")
+        if not width or not height:
+            raise ValueError(
+                "source video width / height metadata is required for mask tracks"
+            )
+        expected_size = [int(height), int(width)]
+        for keyframe in geometry.get("keyframes") or []:
+            mask = keyframe.get("mask") or {}
+            if list(mask.get("size") or []) != expected_size:
+                raise ValueError(f"mask size must match source video {expected_size}")
+            frame_index = keyframe.get("frame_index")
+            if frame_count is not None and int(frame_index) >= int(frame_count):
                 raise ValueError(
-                    f"outside range must be within source frame_count {frame_count}"
+                    f"mask frame_index must be < source frame_count {frame_count}"
                 )
+        if frame_count is not None:
+            for outside in geometry.get("outside") or []:
+                if int(outside.get("to", 0)) >= int(frame_count):
+                    raise ValueError(
+                        f"outside range must be within source frame_count {frame_count}"
+                    )
+        return
+
+    # 其他几何类型不需要验证
+    return
 
 
 def canonical_rle_bytes(rle: dict[str, Any]) -> bytes:

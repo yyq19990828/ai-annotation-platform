@@ -36,6 +36,19 @@
 
 ## [Unreleased]
 
+### Added
+- **图片原生 RasterMaskGeometry schema**. 新增 `raster_mask` 几何类型，用于图片任务的栅格掩码标注。
+  掩码内容通过 `CocoRleMaskRef` 引用存储在 S3 的不可变 COCO RLE 对象，与视频 `video_track_mask`
+  共享内容层基础设施。
+- **图片掩码静态内容 API**. 新增 `GET /annotations/{annotation_id}/mask-content` 端点，
+  支持获取图片掩码的 COCO RLE 内容，带 ETag 支持条件请求（304 Not Modified）。
+
+### Changed
+- **共享掩码验证逻辑**. `validate_mask_geometry_for_task` 扩展支持 `raster_mask` 类型，
+  验证图片掩码尺寸与数据集项匹配。
+- **前端类型定义**. `Geometry` union 添加 `RasterMaskGeometry` 类型，`rasterMasksApi`
+  拆分为 `annotationRasterMaskContent`（图片）和 `annotationVideoMaskContent`（视频）。
+
 ## [0.23.5] - 2026-07-21
 
 ### Added

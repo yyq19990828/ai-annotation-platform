@@ -112,10 +112,66 @@ async def _count_task_mask_references(db: AsyncSession, task_id: uuid.UUID) -> i
 
 
 @router.get(
-    "/annotations/{annotation_id}/mask-content/{frame_index}",
+    "/annotations/{annotation_id}/mask-content",
     dependencies=[Depends(require_scopes("annotations:read"))],
 )
 async def get_annotation_mask_content(
+    annotation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JSONResponse:
+    """v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。
+
+    支持图片 RasterMaskGeometry 掩码的静态内容服务。
+    返回标准 COCO RLE 格式，带 ETag 支持条件请求。
+    """
+    annotation = await db.get(Annotation, annotation_id)
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="annotation not found")
+    task = await db.get(Task, annotation.task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    await assert_project_visible(task.project_id, db, user)
+    geometry = annotation.geometry or {}
+    geom_type = geometry.get("type")
+
+    if geom_type == "raster_mask":
+        # 图片掩码：直接从 mask 字段读取引用
+        mask_ref = geometry.get("mask")
+        if not mask_ref:
+            raise HTTPException(status_code=409, detail="mask reference missing")
+        try:
+            payload = await load_coco_rle(mask_ref)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409, detail=f"mask object is invalid: {exc}"
+            ) from exc
+        except Exception as exc:
+            logger.warning(
+                "mask object read failed for annotation %s", annotation_id, exc_info=True
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={"reason": "mask_storage_unavailable", "retryable": True},
+            ) from exc
+        return JSONResponse(
+            payload,
+            headers={
+                "Cache-Control": "private, max-age=300",
+                "ETag": f'"{mask_ref.get("sha256")}"',
+            },
+        )
+    else:
+        raise HTTPException(
+            status_code=422, detail=f"unsupported geometry type: {geom_type}"
+        )
+
+
+@router.get(
+    "/annotations/{annotation_id}/mask-content/{frame_index}",
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_annotation_mask_content_frame(
     annotation_id: uuid.UUID,
     frame_index: int,
     db: AsyncSession = Depends(get_db),

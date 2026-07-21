@@ -221,6 +221,7 @@ _REGION_GEOMETRY_TYPES = frozenset(
         "polygon",
         "multi_polygon",
         "mask",
+        "raster_mask",
         "video_polygon",
         "video_track_polygon",
         "video_track_mask",
@@ -735,6 +736,19 @@ class VideoTrackMaskGeometry(BaseModel):
         return self
 
 
+class RasterMaskGeometry(BaseModel):
+    """v0.23.6 · 图片栅格掩码几何。
+
+    引用不可变 COCO RLE 对象存储掩码内容，不内联像素数据。
+    只允许图片 DatasetItem（视频使用 video_track_mask）。
+    """
+
+    type: Literal["raster_mask"] = "raster_mask"
+    mask: CocoRleMaskRef
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PolygonGeometry(BaseModel):
     """单连通域 polygon。
 
@@ -907,7 +921,8 @@ Geometry = Annotated[
     | PolylineGeometry
     | KeypointGeometry
     | Box3DGeometry
-    | PointMaskGeometry,
+    | PointMaskGeometry
+    | RasterMaskGeometry,
     Field(discriminator="type"),
 ]
 
