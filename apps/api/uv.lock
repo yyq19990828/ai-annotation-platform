@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "aap-protocol-v2"
 version = "0.2.0"
-source = { directory = "../_shared/protocol_v2" }
+source = { editable = "../_shared/protocol_v2" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
@@ -93,7 +93,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aap-protocol-v2", directory = "../_shared/protocol_v2" },
+    { name = "aap-protocol-v2", editable = "../_shared/protocol_v2" },
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "blurhash-python", specifier = ">=1.2.0" },

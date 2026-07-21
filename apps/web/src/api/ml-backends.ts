@@ -57,6 +57,17 @@ export interface InteractiveMaskDiagnostic {
   supported_geometric_outputs?: string[] | null;
 }
 
+export interface InteractivePromptSummary {
+  family: "point" | "interactive_box" | "exemplar" | "mask" | "scribble" | "correction_frame";
+  positive_points: number;
+  negative_points: number;
+  boxes: number;
+  positive_scribbles: number;
+  negative_scribbles: number;
+  multimask: boolean;
+  parameters_digest: string | null;
+}
+
 export interface InteractiveAnnotateResponse {
   result: unknown[];
   score: number | null;
@@ -70,7 +81,9 @@ export interface InteractiveAnnotateResponse {
   diagnostic?: InteractiveMaskDiagnostic | null;
   prompt_revision?: string | null;
   output_geometry?: "polygon" | "mask";
+  frame_index?: number | null;
   routing?: InteractiveRoutingLineage;
+  prompt_summary?: InteractivePromptSummary | null;
   accept_receipts?: Record<string, string>;
 }
 
@@ -175,6 +188,7 @@ export interface MLBackendCapability {
   is_interactive?: boolean;
   labels?: string[];
   supported_prompts: string[];
+  supported_inputs?: string[];
   supported_text_outputs?: string[];
   supported_geometric_outputs?: string[];
   // v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空/缺 = 不支持视频追踪.

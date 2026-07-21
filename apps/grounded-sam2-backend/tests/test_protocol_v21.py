@@ -18,7 +18,11 @@ def _stub_modules() -> None:
     sys.modules.setdefault("cv2", MagicMock())
     mask_utils = ModuleType("mask_utils")
     mask_utils.MultiPolygonRing = dict
+    mask_utils.PromptAdapterError = ValueError
+    mask_utils.encode_coco_rle = MagicMock(return_value={})
+    mask_utils.mask_prompt_to_low_res_logits = MagicMock()
     mask_utils.mask_to_multi_polygon = MagicMock(return_value=[])
+    mask_utils.scribbles_to_point_prompts = MagicMock(return_value=([], []))
     polygon = ModuleType("mask_utils.polygon")
     polygon.mask_to_polygon = MagicMock(return_value=[])
     rle = ModuleType("mask_utils.rle")

@@ -66,6 +66,7 @@ type Drag =
       cy: number;
       alt: boolean;
     }
+  | { kind: "samScribble"; points: [number, number][]; alt: boolean }
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom; alt: boolean }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | {
@@ -202,6 +203,12 @@ interface ImageStageProps {
   onSamPrompt?: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
+    | {
+        kind: "scribble";
+        points: [number, number][];
+        alt: boolean;
+        width: number;
+      }
     // v0.18.19 · exemplar refine: alt=负框 (排误检) / 否则正框 (扩召回)。
     | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
@@ -226,6 +233,11 @@ interface ImageStageProps {
    * 会话非空时, 在 overlay 层渲染正点绿色实心圆 / 负点红色叉, 跟随视口缩放平移。
    */
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionScribbles?: {
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[];
   /**
    * v0.18.19 · exemplar refine 会话已落的正/负框 (归一化 xyxy + 极性)。仅 exemplar 工具激活且
    * 会话非空时渲染: 正框=绿色实线 (扩召回) / 负框=红色虚线 (排误检), 跟随视口缩放平移。
@@ -259,7 +271,7 @@ interface ImageStageProps {
    * 派生自 tool: smart-point → "point", smart-box → "bbox", text-prompt → "text", exemplar → "exemplar".
    * 非 AI 工具时为 null.
    */
-  samSubTool?: "point" | "bbox" | "text" | "exemplar" | null;
+  samSubTool?: "point" | "bbox" | "scribble" | "text" | "exemplar" | null;
   /** v0.9.4 phase 2 · 仅 sam-point 子工具下生效, "+/-" 切换 (与 Alt 修饰键合并). */
   samPolarity?: "positive" | "negative";
   /** v0.6.4：画布批注 shapes（已落地的笔触）。read-only 渲染。 */
@@ -413,7 +425,7 @@ export function ImageStage({
   onJoinSelected, onCropSelected,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   secondaryBarHidden, onToggleSecondaryBar,
-  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samMaskRecords = [], onSelectSamMaskCandidate, samActiveIdx = 0, samSessionPoints, samSessionExemplars,
+  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samMaskRecords = [], onSelectSamMaskCandidate, samActiveIdx = 0, samSessionPoints, samSessionScribbles, samSessionExemplars,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samSubTool, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
@@ -723,6 +735,23 @@ export function ImageStage({
         schedule(() => setDrag((cur) => (cur && cur.kind === "draw" ? { ...cur, cx: pt.x, cy: pt.y } : cur)));
       } else if (d.kind === "samProbe") {
         schedule(() => setDrag((cur) => (cur && cur.kind === "samProbe" ? { ...cur, cx: pt.x, cy: pt.y } : cur)));
+      } else if (d.kind === "samScribble") {
+        const last = d.points[d.points.length - 1];
+        const nextPoint: [number, number] = [
+          Math.max(0, Math.min(1, pt.x)),
+          Math.max(0, Math.min(1, pt.y)),
+        ];
+        if (last && Math.hypot(nextPoint[0] - last[0], nextPoint[1] - last[1]) >= 0.002) {
+          if (d.points.length >= 8192) return;
+          // pointermove 的 React/rAF 回绘可能晚于 pointerup；先同步更新 ref，确保快速笔迹
+          // 松手时不会仍被误判为单点并丢弃，state 继续按帧合并仅用于预览。
+          const nextDrag: Drag = { ...d, points: [...d.points, nextPoint] };
+          dragRef.current = nextDrag;
+          schedule(() => {
+            const latest = dragRef.current;
+            setDrag(latest?.kind === "samScribble" ? latest : null);
+          });
+        }
       } else if (d.kind === "move") {
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "move") return cur;
@@ -867,6 +896,15 @@ export function ImageStage({
               }
             }
           }
+        } else if (d.kind === "samScribble") {
+          if (d.points.length >= 2) {
+            onSamPrompt?.({
+              kind: "scribble",
+              points: d.points,
+              alt: d.alt,
+              width: 0.008,
+            });
+          }
         } else if (d.kind === "move") {
           if (d.cur.x !== d.start.x || d.cur.y !== d.start.y) {
             // v0.20.15 · Alt 起拖 → 把直接子框按父框实际位移 (已 clamp 的 cur-start) 同步平移,
@@ -921,15 +959,20 @@ export function ImageStage({
           maskEditor?.endStroke();
         }
       }
+      dragRef.current = null;
       setDrag(null);
       setSnapIndicator(null);
     };
     window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    // Konva/canvas 在部分浏览器路径会消费 bubble 阶段的 pointerup；捕获阶段收口，
+    // 同时保留 mouseup 兜底，避免画布笔迹停在预览态而永不派发 prompt。
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("mouseup", onUp, true);
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("mouseup", onUp, true);
     };
   }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH, snapImagePoint, readOnly, primarySelectedBox?.is_locked]);
 
@@ -966,6 +1009,9 @@ export function ImageStage({
       readOnly: readOnly || (tool === "mask" && maskReadOnly),
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
+      preserveSelectionForPrompt:
+        primarySelectedBox?.geometry?.type === "raster_mask"
+        && (tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble"),
       snapPoint: (candidate, evt) => {
         const snapped = snapImagePoint(candidate, evt);
         setSnapIndicator(snapped.match ? snapped.point : null);
@@ -1787,6 +1833,17 @@ export function ImageStage({
               listening={false}
             />
           )}
+          {drag?.kind === "samScribble" && drag.points.length > 1 && (
+            <Line
+              points={drag.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+              stroke={drag.alt ? "#ef4444" : "#22c55e"}
+              strokeWidth={Math.max(2 / vp.scale, 0.008 * Math.min(imgW, imgH))}
+              lineCap="round"
+              lineJoin="round"
+              opacity={0.85}
+              listening={false}
+            />
+          )}
           {samCandidates && samCandidates.length > 0 && (
             <SamCandidateOverlay
               candidates={samCandidates}
@@ -1873,6 +1930,20 @@ export function ImageStage({
                 </Group>
               );
             })}
+
+          {samSubTool === "scribble" && samSessionScribbles && samSessionScribbles.length > 0 &&
+            samSessionScribbles.map((stroke, idx) => (
+              <Line
+                key={`sam-scribble-${idx}`}
+                points={stroke.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+                stroke={stroke.polarity === 1 ? "#22c55e" : "#ef4444"}
+                strokeWidth={Math.max(2 / vp.scale, stroke.width * Math.min(imgW, imgH))}
+                lineCap="round"
+                lineJoin="round"
+                opacity={0.85}
+                listening={false}
+              />
+            ))}
 
           {/* v0.18.19 · exemplar refine 会话框: 正框=绿色实线 (扩召回) / 负框=红色虚线 (排误检),
               让用户看清拖过哪些示例、哪些正/负, 跟随视口缩放。颜色与点会话正/负一致。 */}

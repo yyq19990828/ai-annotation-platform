@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
@@ -20,6 +21,7 @@ from app.db.models.task import Task
 from app.db.models.task_lock import TaskLock
 from app.services.ai_mask_receipt import issue_ai_mask_receipt
 from app.services.raster_mask_storage import build_rle_reference
+from app.services.video_tracks import resolve_track_at_frame
 
 from tests.conftest import create_registry_with_pool
 
@@ -131,9 +133,35 @@ def _body(
         "model_load_ms": 4.0,
     }
     content_digest = build_rle_reference(rle)["sha256"]
+    target = {
+        "mode": "refine" if source else "create",
+        "source_annotation_id": None,
+        "source_version": None,
+        "frame_index": frame_index,
+    }
+    prompt_source = None
+    if source:
+        target.update(
+            {
+                "source_annotation_id": str(source.id),
+                "source_version": source.version,
+            }
+        )
+        if (source.geometry or {}).get("type") == "raster_mask":
+            source_mask = source.geometry["mask"]
+        else:
+            resolved = resolve_track_at_frame(source.geometry, frame_index)
+            source_mask = resolved["mask"] if resolved is not None else None
+        if source_mask is not None:
+            prompt_source = {
+                "source_annotation_id": str(source.id),
+                "source_version": source.version,
+                "source_digest": source_mask["sha256"],
+            }
     receipt = issue_ai_mask_receipt(
         {
             "task_id": str(task.id),
+            "frame_index": frame_index,
             "candidate_id": candidate_id,
             "candidate_index": 0,
             "content_digest": content_digest,
@@ -151,19 +179,10 @@ def _body(
                 "multimask": True,
                 "parameters_digest": None,
             },
+            "prompt_source": prompt_source,
+            "accept_target": target,
         }
     )
-    target = {
-        "mode": "refine" if source else "create",
-        "frame_index": frame_index,
-    }
-    if source:
-        target.update(
-            {
-                "source_annotation_id": str(source.id),
-                "source_version": source.version,
-            }
-        )
     return {
         "idempotency_key": key or f"accept-{uuid.uuid4()}",
         "candidate": {
@@ -360,6 +379,56 @@ async def test_image_refine_requires_and_checks_if_match(
     assert source.source == "manual"
 
 
+async def test_mask_prompt_receipt_cannot_be_accepted_as_create_or_after_digest_drift(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+    monkeypatch,
+    accept_storage_mocks,
+):
+    user, token = super_admin
+    task, backend, pool = await _seed(db_session, owner_id=user.id)
+    source = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        source="manual",
+        annotation_type="raster_mask",
+        tool_unit_id="region",
+        class_name="object",
+        geometry={"type": "raster_mask", "mask": build_rle_reference(RLE)},
+        version=1,
+    )
+    db_session.add(source)
+    await db_session.flush()
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    body = _body(task, backend, pool, rle=ALT_RLE, source=source)
+
+    as_create = deepcopy(body)
+    as_create["target"] = {"mode": "create", "frame_index": None}
+    rejected = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
+        json=as_create,
+        headers=_headers(token),
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"]["reason"] == "candidate_receipt_mismatch"
+
+    source.geometry = {
+        "type": "raster_mask",
+        "mask": build_rle_reference(ALT_RLE),
+    }
+    await db_session.flush()
+    drifted = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
+        json=body,
+        headers=_headers(token, **{"If-Match": 'W/"1"'}),
+    )
+    assert drifted.status_code == 409
+    assert drifted.json()["detail"]["reason"] == "mask_prompt_source_changed"
+    accept_storage_mocks[0].assert_not_awaited()
+
+
 async def test_video_accept_updates_only_current_keyframe_and_outside(
     httpx_client_bound,
     db_session,
@@ -466,6 +535,32 @@ async def test_video_accept_create_builds_one_current_frame_keyframe(
     assert keyframe["mask"]["sha256"] == build_rle_reference(RLE)["sha256"]
     assert keyframe["source"] == "prediction"
     assert keyframe["occluded"] is False
+
+
+async def test_video_candidate_receipt_is_bound_to_the_requested_frame(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+    accept_storage_mocks,
+):
+    user, token = super_admin
+    task, backend, pool = await _seed(
+        db_session,
+        owner_id=user.id,
+        media_type="video",
+    )
+    body = _body(task, backend, pool, frame_index=7)
+    body["target"]["frame_index"] = 8
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
+        json=body,
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "candidate_receipt_mismatch"
+    accept_storage_mocks[0].assert_not_awaited()
 
 
 async def test_task_status_is_rechecked_after_route_preflight(

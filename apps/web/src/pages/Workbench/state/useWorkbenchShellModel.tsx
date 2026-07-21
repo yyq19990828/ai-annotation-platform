@@ -1264,7 +1264,58 @@ export function useWorkbenchShellModel({
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
   // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
   const activeInteractivePrompt = promptOfTool(activeAiTool);
-  const interactiveBackendId = routing.resolveInteractive(activeInteractivePrompt ?? "point");
+  const [singleFrameOutputGeometry, setSingleFrameOutputGeometry] = useState<
+    "polygon" | "mask"
+  >("mask");
+  const selectedMaskPromptSource = useMemo(() => {
+    if (!s.selectedId || s.selectedIds.length > 1) return null;
+    const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
+    if (!annotation || annotation.is_locked || !Number.isInteger(annotation.version)) return null;
+    const supportedGeometry = isVideoTask
+      ? annotation.geometry.type === "video_track_mask"
+      : annotation.geometry.type === "raster_mask";
+    if (!supportedGeometry) return null;
+    return {
+      annotation_id: annotation.id,
+      source_version: annotation.version as number,
+      class_name: annotation.class_name,
+    };
+  }, [isVideoTask, s.selectedId, s.selectedIds.length, visibleAnnotationsData]);
+  const promptInputByFamily: Record<string, string> = {
+    point: "point_prompt",
+    interactive_box: "bbox_prompt",
+    scribble: "scribble_prompt",
+  };
+  const activePromptInput = activeInteractivePrompt
+    ? promptInputByFamily[activeInteractivePrompt]
+    : undefined;
+  const maskRefinementRequested = selectedMaskPromptSource != null
+    && activePromptInput != null;
+  const exactMaskRequirement = maskRefinementRequested && activeInteractivePrompt
+    ? {
+        prompt: activeInteractivePrompt,
+        requiredInputs: [activePromptInput, "mask_prompt"],
+        output: "mask",
+      }
+    : null;
+  const maskRefinementRouteFor = (
+    prompt: "point" | "interactive_box" | "scribble",
+    input: string,
+  ) => selectedMaskPromptSource == null
+    ? null
+    : routing.resolveInteractiveRequest({
+        prompt,
+        requiredInputs: [input, "mask_prompt"],
+        output: "mask",
+      });
+  const maskRefinementRoutes = {
+    point: maskRefinementRouteFor("point", "point_prompt"),
+    interactive_box: maskRefinementRouteFor("interactive_box", "bbox_prompt"),
+    scribble: maskRefinementRouteFor("scribble", "scribble_prompt"),
+  };
+  const interactiveBackendId = exactMaskRequirement
+    ? routing.resolveInteractiveRequest(exactMaskRequirement)
+    : routing.resolveInteractive(activeInteractivePrompt ?? "point");
 
   // 模型选择必须先于交互请求确定：原生 Mask 的 capability、model_id 与候选
   // receipt 都绑定同一个 active model，不能在请求发出后再从工具栏状态猜测。
@@ -1273,10 +1324,8 @@ export function useWorkbenchShellModel({
     projectId ?? null,
     interactiveBackendId,
     modelPref.savedModelId ?? null,
+    exactMaskRequirement,
   );
-  const [singleFrameOutputGeometry, setSingleFrameOutputGeometry] = useState<
-    "polygon" | "mask"
-  >("mask");
   const activeGeometricOutputs =
     mlCapabilities.activeModel?.supported_geometric_outputs
     ?? mlCapabilities.capability?.supported_geometric_outputs
@@ -1287,9 +1336,28 @@ export function useWorkbenchShellModel({
     : !isVideoTask && imageMaskPersistenceMode !== "native"
       ? "当前图片项目尚未开启原生 Raster Mask 编辑"
       : undefined;
+  const activeModelSupportsPromptInput = activePromptInput != null
+    && mlCapabilities.isInputSupported(activePromptInput);
+  const activeModelSupportsMaskPrompt = mlCapabilities.isInputSupported("mask_prompt");
+  const maskRefinementDisabledReason = nativeMaskOutputDisabledReason
+    ?? (!activeModelSupportsMaskPrompt
+      ? "当前模型未声明 Mask prompt 输入能力"
+      : !activeModelSupportsPromptInput
+        ? "当前模型未声明该交互提示输入能力"
+        : undefined);
+  const canRefineSelectedMask = selectedMaskPromptSource != null
+    && exactMaskRequirement != null
+    && interactiveBackendId != null
+    && maskRefinementDisabledReason == null;
+  const maskRefinementToolDisabledReason = (
+    prompt: keyof typeof maskRefinementRoutes,
+  ) => nativeMaskOutputDisabledReason
+    ?? (maskRefinementRoutes[prompt] == null
+      ? "没有模型同时支持该提示、Mask prompt 与原生 Mask 输出"
+      : undefined);
   const effectiveSingleFrameOutputGeometry: "polygon" | "mask" =
     activeAiTool !== "magic-box"
-    && singleFrameOutputGeometry === "mask"
+    && (canRefineSelectedMask || singleFrameOutputGeometry === "mask")
     && nativeMaskOutputDisabledReason == null
       ? "mask"
       : "polygon";
@@ -1299,8 +1367,25 @@ export function useWorkbenchShellModel({
         ? { model_id: mlCapabilities.activeModelId }
         : {}),
       output_geometry: effectiveSingleFrameOutputGeometry,
+      ...(canRefineSelectedMask
+        && (activeAiTool === "smart-point"
+          || activeAiTool === "smart-box"
+          || activeAiTool === "smart-scribble")
+        ? {
+            mask_prompt_source: {
+              annotation_id: selectedMaskPromptSource.annotation_id,
+              source_version: selectedMaskPromptSource.source_version,
+            },
+          }
+        : {}),
     }),
-    [effectiveSingleFrameOutputGeometry, mlCapabilities.activeModelId],
+    [
+      activeAiTool,
+      canRefineSelectedMask,
+      effectiveSingleFrameOutputGeometry,
+      mlCapabilities.activeModelId,
+      selectedMaskPromptSource,
+    ],
   );
 
   // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
@@ -1332,6 +1417,9 @@ export function useWorkbenchShellModel({
       isVideoTask ? videoFrameIndex : "image",
       mlCapabilities.activeModelId ?? "default",
       effectiveSingleFrameOutputGeometry,
+      selectedMaskPromptSource
+        ? `${selectedMaskPromptSource.annotation_id}@${selectedMaskPromptSource.source_version}`
+        : "no-mask-prompt",
     ].join(":"),
     requestContextDefaults: samRequestContextDefaults,
   });
@@ -1577,9 +1665,16 @@ export function useWorkbenchShellModel({
   const prevToolPromptRef = useRef(promptOfTool(s.tool));
   useEffect(() => {
     const nextPrompt = promptOfTool(s.tool);
-    const changed = prevToolPromptRef.current !== nextPrompt;
+    const previousPrompt = prevToolPromptRef.current;
+    const changed = previousPrompt !== nextPrompt;
     prevToolPromptRef.current = nextPrompt;
-    if (changed) sam.cancel();
+    const maskRefinementPrompts = new Set(["point", "interactive_box", "scribble"]);
+    const continuesMaskRefinement = canRefineSelectedMask
+      && previousPrompt != null
+      && nextPrompt != null
+      && maskRefinementPrompts.has(previousPrompt)
+      && maskRefinementPrompts.has(nextPrompt);
+    if (changed && !continuesMaskRefinement) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
   // v0.14.18 · 门控走 routing 并集: 某交互 prompt 只要任一交互后端支持, 工具就亮。
@@ -1600,6 +1695,18 @@ export function useWorkbenchShellModel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routingSig, routing.isLoading, s.tool]);
+  useEffect(() => {
+    if (s.tool !== "smart-scribble" || canRefineSelectedMask) return;
+    s.setTool("select");
+    sam.cancel();
+    pushToast({
+      msg: "智能笔迹已结束",
+      sub: "请先选中一个已保存、未锁定的原生 Mask",
+      kind: "warning",
+    });
+    // sam / s 为壳层聚合对象，仅按实际门控状态触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canRefineSelectedMask, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (tool !== "box" && tool !== "select") setTool("box");
@@ -2330,6 +2437,7 @@ export function useWorkbenchShellModel({
       // 否则视频侧 Tab 会在切候选的同时又触发「同类下一个」的选中循环。
       e.stopImmediatePropagation();
       if (e.key === "Enter") {
+        if (!sam.canAcceptCandidates) return;
         const idx = sam.activeIdx;
         const geom = samCandidateDisplayGeom(sam.candidates[idx]);
         if (!geom) return;
@@ -2351,23 +2459,39 @@ export function useWorkbenchShellModel({
   // magic-box: 候选一到就自动弹类选择器 (无需 Enter), 选定类别后收紧成外接框 —— 与图片侧同式。
   useEffect(() => {
     if (!isVideoTask || s.videoTool !== "magic-box") return;
-    if (sam.isRunning || sam.candidates.length === 0 || videoSamPendingAccept) return;
+    if (
+      sam.isRunning
+      || !sam.canAcceptCandidates
+      || sam.candidates.length === 0
+      || videoSamPendingAccept
+    ) return;
     const geom = samCandidateDisplayGeom(sam.candidates[0]);
     if (!geom) return;
     const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
     setVideoSamPendingAccept({ idx: 0, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
-  }, [isVideoTask, s.videoTool, sam.isRunning, sam.candidates, samCandidateDisplayGeom, videoSamPendingAccept]);
+  }, [
+    isVideoTask,
+    s.videoTool,
+    sam.isRunning,
+    sam.canAcceptCandidates,
+    sam.candidates,
+    samCandidateDisplayGeom,
+    videoSamPendingAccept,
+  ]);
 
   // 候选被清空 / 切工具 / 切帧 → popover 一并收起, 避免它悬在一个已不存在的候选上。
   useEffect(() => {
-    if (videoSamPendingAccept && !sam.candidates[videoSamPendingAccept.idx]) {
+    if (
+      videoSamPendingAccept
+      && (!sam.canAcceptCandidates || !sam.candidates[videoSamPendingAccept.idx])
+    ) {
       setVideoSamPendingAccept(null);
     }
-  }, [sam.candidates, videoSamPendingAccept]);
+  }, [sam.canAcceptCandidates, sam.candidates, videoSamPendingAccept]);
 
   const acceptVideoNativeMaskCandidate = useCallback(async (idx: number, cls: string) => {
     const candidate = sam.candidates[idx];
-    if (!taskId || candidate?.type !== "mask") return;
+    if (!taskId || candidate?.type !== "mask" || !sam.canAcceptCandidates) return;
     if (isLockedForActions) {
       pushToast({ msg: "任务已锁定", sub: "当前不能采纳 Mask 候选", kind: "warning" });
       return;
@@ -2376,7 +2500,14 @@ export function useWorkbenchShellModel({
       const accepted = await acceptNativeMaskCandidate({
         candidate,
         className: cls,
-        target: { mode: "create", frame_index: s.videoFrameIndex },
+        target: candidate.refineSource
+          ? {
+              mode: "refine",
+              source_annotation_id: candidate.refineSource.annotationId,
+              source_version: candidate.refineSource.sourceVersion,
+              frame_index: candidate.frameIndex ?? s.videoFrameIndex,
+            }
+          : { mode: "create", frame_index: candidate.frameIndex ?? s.videoFrameIndex },
       });
       if (!accepted) return;
       s.setActiveClass(cls);
@@ -2402,6 +2533,7 @@ export function useWorkbenchShellModel({
     const pending = videoSamPendingAccept;
     if (!pending) return;
     setVideoSamPendingAccept(null);
+    if (!sam.canAcceptCandidates) return;
     const c = sam.candidates[pending.idx];
     if (!c) return;
     if (c.type === "mask") {
@@ -3543,6 +3675,17 @@ export function useWorkbenchShellModel({
       onSetTool: s.setTool,
       videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
       isPromptSupported: routing.isPromptSupported,
+      toolDisabledReasons: {
+        "smart-point": selectedMaskPromptSource != null
+          ? maskRefinementToolDisabledReason("point")
+          : undefined,
+        "smart-box": selectedMaskPromptSource != null
+          ? maskRefinementToolDisabledReason("interactive_box")
+          : undefined,
+        "smart-scribble": selectedMaskPromptSource == null
+            ? "请先选中一个已保存、未锁定的原生 Mask"
+            : maskRefinementToolDisabledReason("scribble"),
+      },
       capabilitiesLoading: routing.isLoading,
       reviewMode: mode === "review", videoMode: isVideoTask,
       enabledToolUnits,
@@ -3667,10 +3810,15 @@ export function useWorkbenchShellModel({
                 onSetSamPolarity={s.setSamPolarity}
                 isLoading={mlCapabilities.isLoading}
                 isError={mlCapabilities.isError}
+                canRetry={sam.canRetry}
+                onRetry={sam.retryLast}
                 exemplarOutputMode={s.exemplarOutputMode}
                 singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
                 onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
                 nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
+                maskPromptSourceLabel={canRefineSelectedMask && selectedMaskPromptSource
+                  ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
+                  : undefined}
                 onSetExemplarOutputMode={(mode) => {
                   // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
                   handleSetExemplarOutputMode(mode);
@@ -3874,6 +4022,8 @@ export function useWorkbenchShellModel({
             interactiveVariantSlice,
           );
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
+          if (prompt.kind === "scribble")
+            return sam.runScribble(prompt.points, prompt.alt ? 0 : 1, prompt.width, extra);
           if (prompt.kind === "exemplar")
             // v0.18.19 · alt=负框 (排误检) / 否则正框 (扩召回); refine 会话每次重发全量。
             return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode, extra);
@@ -3893,6 +4043,7 @@ export function useWorkbenchShellModel({
         onSelectSamMaskCandidate: selectSamMaskCandidate,
         samActiveIdx: sam.activeIdx,
         samSessionPoints: sam.sessionPoints,
+        samSessionScribbles: sam.sessionScribbles,
         samSessionExemplars: sam.sessionExemplars,
         samSubTool: s.samSubTool,
         samPolarity: s.samPolarity,

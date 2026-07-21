@@ -40,6 +40,25 @@ def test_decode_rejects_bad_magic():
         decode_low_res_mask(base64.b64encode(b"xx garbage").decode("ascii"))
 
 
+def test_decode_rejects_trailing_or_oversized_payload():
+    import base64
+
+    encoded = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
+    blob = base64.b64decode(encoded) + b"trailing"
+    with pytest.raises(ValueError, match="size is invalid"):
+        decode_low_res_mask(base64.b64encode(blob).decode("ascii"))
+
+    with pytest.raises(ValueError, match="encoded byte budget"):
+        decode_low_res_mask("A" * (512 * 1024 + 1))
+
+
+def test_codec_rejects_non_finite_logits():
+    arr = np.zeros((256, 256), dtype=np.float32)
+    arr[0, 0] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        encode_low_res_mask(arr)
+
+
 def test_encoded_is_base64_ascii_str():
     s = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
     assert isinstance(s, str)

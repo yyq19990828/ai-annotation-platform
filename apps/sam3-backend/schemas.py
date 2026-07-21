@@ -23,11 +23,18 @@ from typing import Any, Literal
 
 from aap_protocol_v2 import (
     BatchPredictResponse,
+    MAX_LOW_RES_MASK_INPUT_CHARS,
+    MAX_SCRIBBLE_STROKES,
+    MaskPromptPayload,
     PredictionResult,
+    ScribblePrompt,
+    ScribbleStroke,
     TaskItem,
     WarmupResponse,
 )
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StrictInt, model_validator
+
+MAX_SPARSE_PROMPT_POINTS = 512
 
 __all__ = [
     "AnnotationResult",
@@ -70,15 +77,38 @@ class Exemplar(BaseModel):
 class Context(BaseModel):
     # v0.18.17 · "interactive_box" = SAM-style 单框单 mask (开 inst 后); "bbox" 退役为纯几何形状,
     # 不再作交互 prompt (PCS 全图相似统一走 "exemplar"). "point" 升级为 inst 单实例点交互 (累加).
-    type: Literal["point", "interactive_box", "polygon", "text", "exemplar"]
-    points: list[list[float]] | None = None
-    labels: list[int] | None = None
+    type: Literal[
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "polygon",
+        "text",
+        "exemplar",
+    ]
+    points: list[list[float]] | None = Field(
+        default=None,
+        max_length=MAX_SPARSE_PROMPT_POINTS,
+    )
+    labels: list[StrictInt] | None = Field(
+        default=None,
+        max_length=MAX_SPARSE_PROMPT_POINTS,
+    )
     # bbox: type=interactive_box 时是单框 prompt; type=exemplar 时是单视觉示例框 (兼容旧单框路径)
     bbox: list[float] | None = None
     # v0.18.19 · type=exemplar 多正负框累加 (扩召回 / 去误检); 非空时优先于单 bbox.
     # 可与 text 同时传 (text 概念 + 几何示例组合)。
     exemplars: list[Exemplar] | None = None
     text: str | None = None
+    mask_prompt: MaskPromptPayload | None = None
+    scribbles: list[ScribbleStroke] | None = Field(
+        default=None,
+        max_length=MAX_SCRIBBLE_STROKES,
+    )
+    mask_input: str | None = Field(
+        default=None,
+        max_length=MAX_LOW_RES_MASK_INPUT_CHARS,
+    )
     # v0.9.4 phase 2 (与 grounded-sam2 协议一致): text 路径输出形态
     output: Literal["box", "mask", "both"] = "mask"
     # v0.9.4 phase 3: shapely.simplify 像素级覆盖 (mask/both/exemplar 路径生效)
@@ -107,9 +137,47 @@ class Context(BaseModel):
         if self.type == "interactive_box":
             if self.bbox is None or len(self.bbox) != 4:
                 raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=interactive_box")
+            if any(not math.isfinite(value) for value in self.bbox):
+                raise ValueError("context.bbox must be finite")
+            x1, y1, x2, y2 = self.bbox
+            if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+                raise ValueError("context.bbox must be normalized and non-degenerate")
         if self.type == "point":
             if not self.points:
                 raise ValueError("context.points required for type=point")
+            if self.labels is not None and len(self.labels) != len(self.points):
+                raise ValueError("context.labels must match context.points length")
+            for index, point in enumerate(self.points):
+                if len(point) != 2 or any(not math.isfinite(value) for value in point):
+                    raise ValueError(f"context.points[{index}] must be finite [x,y]")
+                if not all(0.0 <= value <= 1.0 for value in point):
+                    raise ValueError(f"context.points[{index}] must be normalized")
+            if self.labels is not None and any(label not in (0, 1) for label in self.labels):
+                raise ValueError("context.labels values must be 0 or 1")
+        if self.type == "mask" and self.mask_prompt is None:
+            raise ValueError("context.mask_prompt required for type=mask")
+        if self.type == "scribble":
+            ScribblePrompt.model_validate(
+                {
+                    "type": "scribble",
+                    "scribbles": self.scribbles,
+                    "output_geometry": self.output_geometry,
+                    "mask_prompt": self.mask_prompt,
+                }
+            )
+            if (
+                self.mask_prompt is None
+                and self.mask_input is None
+                and self.scribbles
+                and all(stroke.polarity == 0 for stroke in self.scribbles)
+            ):
+                raise ValueError(
+                    "negative-only scribble requires mask_prompt or mask_input"
+                )
+        if self.multimask_output and (
+            self.mask_prompt is not None or self.mask_input is not None
+        ):
+            raise ValueError("multimask_output cannot be combined with a Mask seed")
         return self
 
 

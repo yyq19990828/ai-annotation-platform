@@ -21,6 +21,7 @@ export type Tool =
   | "mask"
   | "smart-point"
   | "smart-box"
+  | "smart-scribble"
   | "text-prompt"
   | "exemplar"
   // v0.10.17 · 复用 SAM bbox prompt 返回的 mask, 取紧凑外接矩形落 bbox 标注 (Magic Box).
@@ -54,7 +55,7 @@ export type ThreeDTool = "select" | "box" | "point-mask";
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
  * 取值由 tool 决定; tool 不是 AI 工具时为 null.
  */
-export type SamSubTool = "point" | "bbox" | "text" | "exemplar";
+export type SamSubTool = "point" | "bbox" | "scribble" | "text" | "exemplar";
 
 /** SAM-point 子工具下的 polarity, "+" / "-" 键切换; 仅 smart-point 时有意义. */
 export type SamPolarity = "positive" | "negative";
@@ -66,6 +67,8 @@ export function toolToSamSubTool(tool: Tool): SamSubTool | null {
       return "point";
     case "smart-box":
       return "bbox";
+    case "smart-scribble":
+      return "scribble";
     // v0.10.17 · Magic Box 也是 bbox prompt; 共用 InteractiveToolBar 的 bbox subtool UI.
     case "magic-box":
       return "bbox";

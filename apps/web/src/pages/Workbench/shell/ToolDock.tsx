@@ -33,6 +33,8 @@ interface ToolDockProps {
   onSetVideoTool?: (t: VideoTool) => void;
   /** v0.10.2 · 由 useMLCapabilities 注入. tool.requiredPrompt 不在 supported 集合 → 置灰. */
   isPromptSupported?: (type: string) => boolean;
+  /** 工作台上下文门控（例如 scribble 必须先选中已存 Mask）。 */
+  toolDisabledReasons?: Partial<Record<ToolId, string>>;
   /** v0.10.2 · capability 加载中: AI 工具组半透 + 不可点 (避免误用回退到的 fallback). */
   capabilitiesLoading?: boolean;
   /** M2 · review 模式下只显示 Hand 工具. */
@@ -80,6 +82,7 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   mask: { desc: "Mask 笔刷 · B/E 切模式, Shift+滚轮调半径, Enter 提交" },
   "smart-point": { desc: "单击 = 正向点；Alt+点 = 负向点", altDigit: 3 },
   "smart-box": { desc: "拖框作为 SAM 提示" },
+  "smart-scribble": { desc: "在选中 Mask 上画正向笔迹；Alt = 负向笔迹" },
   "text-prompt": { desc: "文本召回 (右侧 AI 面板输入)" },
   exemplar: { desc: "拖框示例 → 全图相似实例 (SAM 3)" },
   // v0.10.17 · Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox.
@@ -155,6 +158,7 @@ export function ToolDock({
   videoTool = "select",
   onSetVideoTool,
   isPromptSupported,
+  toolDisabledReasons,
   capabilitiesLoading = false,
   reviewMode = false,
   videoMode = false,
@@ -330,14 +334,15 @@ export function ToolDock({
         const supported = requiredPrompt
           ? (isPromptSupported ? isPromptSupported(requiredPrompt) : true)
           : true;
-        const disabled = requiredPrompt
+        const contextualDisabledReason = toolDisabledReasons?.[t.id];
+        const disabled = contextualDisabledReason != null || (requiredPrompt
           ? capabilitiesLoading || !supported
-          : false;
-        const disabledHint = requiredPrompt && !capabilitiesLoading && !supported
+          : false);
+        const disabledHint = contextualDisabledReason ?? (requiredPrompt && !capabilitiesLoading && !supported
           ? "当前后端不支持此交互模式"
           : capabilitiesLoading && requiredPrompt
           ? "正在协商后端能力…"
-          : null;
+          : null);
         return (
           <Fragment key={t.id}>
             {showDivider && (

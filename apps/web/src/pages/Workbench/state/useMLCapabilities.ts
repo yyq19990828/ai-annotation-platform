@@ -26,9 +26,12 @@ export interface MLCapabilitiesResult {
   prompts: string[];
   /** 后端 /setup.params (JSON Schema Draft-07 子集). 缺字段 -> undefined. 有 activeModel 时优先取 model.params. */
   paramsSchema: MLBackendCapability["params"] | undefined;
+  /** 当前精确 model 声明的输入形态。 */
+  inputs: string[];
   /** 原始 capability 响应 (供调试 / 高级消费). */
   capability: MLBackendCapability | undefined;
   isPromptSupported: (type: string) => boolean;
+  isInputSupported: (type: string) => boolean;
   isLoading: boolean;
   isError: boolean;
   // v0.14.9 · 多模型目录 (capability.models). 长度 <= 1 时上层不应渲染选择器 (向后兼容).
@@ -54,6 +57,11 @@ export function useMLCapabilities(
   // 经 useAiToolModelPref 注入)。作"默认之前的回落": 用户本会话显式选择 (selectedModelId) > 本偏好 >
   // pickDefaultModel。镜像 useBackendRouting 的 preferred→default 模式; 不在本 hook 内做副作用, 保持纯净可测。
   preferredModelId?: string | null,
+  requirement?: {
+    prompt: string;
+    requiredInputs: string[];
+    output: string;
+  } | null,
 ): MLCapabilitiesResult {
   const enabled = Boolean(projectId && backendId);
   const query = useQuery({
@@ -65,11 +73,21 @@ export function useMLCapabilities(
   });
 
   const capability = query.data;
-  const models = useMemo<MLModelCapability[]>(
+  const allModels = useMemo<MLModelCapability[]>(
     // 工作台多模型选择器: 不过滤 (含 composite, 用户可手动选一锅端)。
     () => (Array.isArray(capability?.models) ? capability!.models : []),
     [capability],
   );
+  const models = useMemo<MLModelCapability[]>(() => {
+    if (!requirement) return allModels;
+    return allModels.filter(
+      (model) => (model.supported_prompts ?? []).includes(requirement.prompt)
+        && (model.supported_geometric_outputs ?? []).includes(requirement.output)
+        && requirement.requiredInputs.every(
+          (input) => (model.supported_inputs ?? []).includes(input),
+        ),
+    );
+  }, [allModels, requirement]);
 
   // 用户显式选中的 model id; 未选时回落默认. 切 backend 时 capability/models 变, 选中失效自动回落默认.
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>(undefined);
@@ -91,6 +109,8 @@ export function useMLCapabilities(
   } else if (activeModel && Array.isArray(activeModel.supported_prompts)) {
     // 有 activeModel: 优先取 model 的 supported_prompts (即便为空也尊重 — 该 model 不接受任何 prompt).
     prompts = activeModel.supported_prompts;
+  } else if (requirement && allModels.length > 0) {
+    prompts = [];
   } else if (capability && Array.isArray(capability.supported_prompts)) {
     prompts = capability.supported_prompts;
   } else if (capability) {
@@ -109,12 +129,15 @@ export function useMLCapabilities(
     activeModel?.params && Object.keys(activeModel.params.properties ?? {}).length > 0
       ? activeModel.params
       : capability?.params;
+  const inputs = activeModel?.supported_inputs ?? capability?.supported_inputs ?? [];
 
   return {
     prompts,
     paramsSchema,
+    inputs,
     capability,
     isPromptSupported: (type: string) => prompts.includes(type),
+    isInputSupported: (type: string) => inputs.includes(type),
     isLoading: query.isLoading,
     isError: query.isError,
     models,

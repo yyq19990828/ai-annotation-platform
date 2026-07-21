@@ -5,7 +5,7 @@
 
 1. 送给 backend 的 ``task_data.file_path`` 是**上传后的帧 URL**，不是 task 的 mp4 路径。
 2. 兼容 ``context`` 原样透传；显式原生 Mask 请求按目标 model 预检并校验 JPEG 尺寸。
-3. ``mask_input_next`` 直通回前端（支撑同帧多次点击的 logits 回灌精修）。
+3. ``mask_input_next`` 经平台签名封装后回前端（支撑同帧多次点击的 logits 回灌精修）。
 
 候选**瞬态返回、不落 Prediction**（区别于走批量 ``/predict`` 协议的 ``predict-frame``）。
 """
@@ -13,14 +13,17 @@
 from __future__ import annotations
 
 import io
+import json
 import uuid
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 from aap_protocol_v2 import (
     CocoRlePayload,
     NativeMaskCandidate,
     NativeMaskCandidateValue,
+    encode_low_res_mask,
     native_mask_candidate_id,
 )
 from PIL import Image
@@ -43,6 +46,7 @@ def _jpeg_bytes(width: int = 32, height: int = 24) -> bytes:
 
 
 JPEG_BYTES = _jpeg_bytes()
+RAW_MASK_INPUT = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
 
 
 async def _seed(db, owner_id, *, is_interactive=True):
@@ -95,6 +99,11 @@ def patched(monkeypatch):
                     "task": "interactive_seg",
                     "is_interactive": True,
                     "supported_prompts": ["point", "interactive_box"],
+                    "supported_inputs": [
+                        "full_image",
+                        "point_prompt",
+                        "bbox_prompt",
+                    ],
                     "supported_geometric_outputs": ["polygon", "mask"],
                 }
             ]
@@ -132,7 +141,7 @@ def patched(monkeypatch):
             inference_time_ms=7,
             cache_hit=False,
             model_load_ms=42,
-            mask_input_next="BASE64LOGITS",
+            mask_input_next=RAW_MASK_INPUT,
         )
 
     def fake_upload(self, data, key):
@@ -216,13 +225,13 @@ async def test_context_passthrough_without_threshold_injection(
     assert ctx["bbox"] == [0.1, 0.1, 0.4, 0.4]
     assert "box_threshold" not in ctx
     assert "text_threshold" not in ctx
-    assert set(ctx) == {"type", "bbox"}  # 平台不夹带任何额外字段
+    assert set(ctx) == {"type", "bbox", "model_id"}
 
 
 async def test_mask_input_next_passthrough(
     httpx_client_bound, super_admin, db_session, patched
 ):
-    """low-res logits 回灌 token 原样回传，供同帧下一次点击精修。"""
+    """low-res logits 由平台绑定帧与模型后签名，供同帧下一次点击精修。"""
     user, token = super_admin
     proj, backend, task = await _seed(db_session, user.id)
     await db_session.commit()
@@ -239,7 +248,14 @@ async def test_mask_input_next_passthrough(
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["mask_input_next"] == "BASE64LOGITS"
+    from app.services.ai_mask_session import verify_ai_mask_session
+
+    session = verify_ai_mask_session(body["mask_input_next"])
+    assert session["raw"] == RAW_MASK_INPUT
+    assert session["task_id"] == str(task.id)
+    assert session["frame_index"] == 3
+    assert session["model_id"] == "frame-interactive"
+    assert session["model_variants"] == {}
     assert body["model_load_ms"] == 42
     assert body["cache_hit"] is False
     assert body["result"][0]["type"] == "polygonlabels"
@@ -280,6 +296,12 @@ async def test_native_mask_frame_validates_jpeg_size_and_returns_lineage(
     assert receipt["task_id"] == str(task.id)
     assert receipt["candidate_id"] == candidate_id
     assert receipt["routing"] == body["routing"]
+    assert receipt["accept_target"] == {
+        "mode": "create",
+        "source_annotation_id": None,
+        "source_version": None,
+        "frame_index": 4,
+    }
     assert patched["predict_kwargs"]["max_response_bytes"] == 16 * 1024 * 1024
 
 
@@ -322,6 +344,33 @@ async def test_non_interactive_backend_rejected(
     assert resp.status_code == 400
     assert "interactive" in resp.json()["detail"]
     # 拒绝发生在读帧之前: 不上传、不打 backend。
+    assert "upload_key" not in patched
+    assert "task_data" not in patched
+
+
+async def test_interactive_frame_rejects_context_over_one_mib_before_upload(
+    httpx_client_bound, super_admin, db_session, patched
+):
+    user, token = super_admin
+    proj, backend, task = await _seed(db_session, user.id)
+    await db_session.commit()
+    oversized = json.dumps(
+        {"type": "point", "padding": "界" * 400_000},
+        ensure_ascii=False,
+    )
+
+    resp = await httpx_client_bound.post(
+        _url(proj, backend),
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
+        data={
+            "task_id": str(task.id),
+            "frame_index": "0",
+            "context": oversized,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 413
+    assert resp.json()["detail"]["reason"] == "interactive_context_too_large"
     assert "upload_key" not in patched
     assert "task_data" not in patched
 

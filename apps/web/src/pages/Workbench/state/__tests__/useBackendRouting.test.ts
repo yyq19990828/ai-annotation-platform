@@ -8,7 +8,9 @@ import type { MLBackendCapability } from "@/api/ml-backends";
 import {
   buildCapEntry,
   candidatesFor,
+  candidatesForRequest,
   resolveInteractive,
+  resolveInteractiveRequest,
   pickDefaultPreferred,
   capFingerprint,
   type CapIndex,
@@ -109,6 +111,59 @@ describe("candidatesFor", () => {
     expect(candidatesFor(idx, order, "point")).toEqual(["gsam2"]);
     expect(candidatesFor(idx, order, "interactive_box")).toEqual(["gsam2", "sam3"]);
     expect(candidatesFor(idx, order, "exemplar")).toEqual(["sam3"]);
+  });
+});
+
+describe("精确交互请求路由", () => {
+  it("不把同一后端不同 model 的 prompt/input/output 能力拼成虚假组合", () => {
+    const split: MLBackendCapability = {
+      name: "split",
+      supported_prompts: ["point", "mask"],
+      models: [
+        {
+          id: "point-only",
+          is_interactive: true,
+          supported_prompts: ["point"],
+          supported_inputs: ["point_prompt"],
+          supported_geometric_outputs: ["mask"],
+        },
+        {
+          id: "mask-only",
+          is_interactive: true,
+          supported_prompts: ["mask"],
+          supported_inputs: ["mask_prompt"],
+          supported_geometric_outputs: ["mask"],
+        },
+      ],
+    };
+    const nativeRefine: MLBackendCapability = {
+      name: "native-refine",
+      supported_prompts: ["point", "mask"],
+      models: [{
+        id: "refine",
+        is_interactive: true,
+        supported_prompts: ["point", "mask"],
+        supported_inputs: ["point_prompt", "mask_prompt"],
+        supported_geometric_outputs: ["mask"],
+      }],
+    };
+    const idx = mkIndex({ split, nativeRefine });
+    const requirement = {
+      prompt: "point" as const,
+      requiredInputs: ["point_prompt", "mask_prompt"],
+      output: "mask",
+    };
+
+    expect(candidatesForRequest(idx, ["split", "nativeRefine"], requirement)).toEqual([
+      "nativeRefine",
+    ]);
+    expect(resolveInteractiveRequest(
+      idx,
+      ["split", "nativeRefine"],
+      "split",
+      "split",
+      requirement,
+    )).toBe("nativeRefine");
   });
 });
 
@@ -218,5 +273,27 @@ describe("capFingerprint — capSignature 内容变化感知", () => {
       text_driven_trackers: ["sam3_video"],
     };
     expect(capFingerprint(sam3TextTrk)).not.toBe(capFingerprint(SAM3));
+  });
+  it("同 model 的 input/output 契约变化 → 指纹变化", () => {
+    const base: MLBackendCapability = {
+      name: "native",
+      supported_prompts: ["point"],
+      models: [{
+        id: "interactive",
+        is_interactive: true,
+        supported_prompts: ["point"],
+        supported_inputs: ["point_prompt"],
+        supported_geometric_outputs: ["polygon"],
+      }],
+    };
+    const changed: MLBackendCapability = {
+      ...base,
+      models: [{
+        ...base.models![0],
+        supported_inputs: ["point_prompt", "mask_prompt"],
+        supported_geometric_outputs: ["mask"],
+      }],
+    };
+    expect(capFingerprint(changed)).not.toBe(capFingerprint(base));
   });
 });

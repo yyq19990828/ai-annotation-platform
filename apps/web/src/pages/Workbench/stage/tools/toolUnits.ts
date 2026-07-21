@@ -25,6 +25,7 @@ export const TOOL_TO_UNIT: Record<ToolId, ToolUnitId> = {
   // SAM 点 / 框 / 示例交互产出多边形 → 与手画 polygon 同归 region 单位.
   "smart-point": "region",
   "smart-box": "region",
+  "smart-scribble": "region",
   exemplar: "region",
   // 文本召回与 Magic Box 产出矩形框 → 与手画 box 同归 bbox 单位.
   "text-prompt": "bbox",

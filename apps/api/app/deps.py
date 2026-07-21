@@ -120,6 +120,21 @@ def require_roles(*roles: str) -> Callable:
 WILDCARD_SCOPE = "*"
 
 
+def assert_request_scopes(request: Request, *needed: str) -> None:
+    """Enforce API-key scopes while treating JWT principals as full access."""
+
+    scopes = getattr(request.state, "api_key_scopes", None)
+    if scopes is None or WILDCARD_SCOPE in scopes:
+        return
+    missing = [scope for scope in needed if scope not in scopes]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"API key 缺少所需权限: {', '.join(missing)}",
+            headers={"WWW-Authenticate": f'Bearer scope="{" ".join(needed)}"'},
+        )
+
+
 def require_scopes(*needed: str) -> Callable:
     """工厂函数：要求 api_key principal 持有全部 ``needed`` scope。
 
@@ -132,16 +147,7 @@ def require_scopes(*needed: str) -> Callable:
         request: Request,
         current_user: User = Depends(get_current_user),
     ) -> User:
-        scopes = getattr(request.state, "api_key_scopes", None)
-        if scopes is None or WILDCARD_SCOPE in scopes:
-            return current_user
-        missing = [s for s in needed if s not in scopes]
-        if missing:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"API key 缺少所需权限: {', '.join(missing)}",
-                headers={"WWW-Authenticate": f'Bearer scope="{" ".join(needed)}"'},
-            )
+        assert_request_scopes(request, *needed)
         return current_user
 
     return checker

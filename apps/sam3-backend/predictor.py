@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 # vendor: container 内由 Dockerfile `pip install -e ./vendor/sam3` 提供; 本地测试通过
@@ -55,6 +56,7 @@ from aap_backend_runtime import (
 )
 from aap_protocol_v2 import (
     CocoRlePayload,
+    MAX_SCRIBBLE_RASTERIZED_PIXELS,
     NativeMaskCandidate,
     NativeMaskCandidateValue,
     decode_low_res_mask,
@@ -62,7 +64,14 @@ from aap_protocol_v2 import (
     native_mask_candidate_id,
 )
 from embedding_cache import CacheEntry, EmbeddingCache
-from mask_utils import MultiPolygonRing, encode_coco_rle, mask_to_multi_polygon
+from mask_utils import (
+    MultiPolygonRing,
+    PromptAdapterError,
+    encode_coco_rle,
+    mask_prompt_to_low_res_logits,
+    mask_to_multi_polygon,
+    scribbles_to_point_prompts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,20 +80,31 @@ DEFAULT_SIMPLIFY_TOLERANCE = 1.0
 VERTEX_COUNT_WARN_THRESHOLD = 200
 
 
-def _safe_decode_mask_input(mask_input: str) -> np.ndarray | None:
-    """v0.18.18 · 解码前端回传的 low-res logits; 坏串静默忽略 (不让一次精修整体失败)。"""
-    try:
+def _resolve_mask_input(
+    mask_input: str | None,
+    mask_prompt: Mapping[str, Any] | None,
+    *,
+    width: int,
+    height: int,
+) -> np.ndarray | None:
+    if mask_input is not None:
         return decode_low_res_mask(mask_input)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ignoring invalid mask_input: %s", exc)
-        return None
+    if mask_prompt is not None:
+        return mask_prompt_to_low_res_logits(
+            mask_prompt,
+            expected_size=(width, height),
+        )
+    return None
 
 
 def _maybe_encode_low_res(
-    low_res: np.ndarray | None, points: list[list[float]] | None, multimask_output: bool
+    low_res: np.ndarray | None,
+    *,
+    enable: bool,
 ) -> str | None:
-    """v0.18.18 · 仅点精修单 mask 阶段回灌 low-res logits (多候选 index 歧义 / 框单发不回灌)。"""
-    if not points or multimask_output or low_res is None or len(low_res) < 1:
+    """Encode logits only when the single-candidate session is unambiguous."""
+
+    if not enable or low_res is None or len(low_res) < 1:
         return None
     try:
         return encode_low_res_mask(low_res[0])
@@ -371,8 +391,10 @@ class SAM3Predictor:
         points: list[list[float]] | None = None,
         labels: list[int] | None = None,
         box: list[float] | None = None,
+        scribbles: Sequence[Mapping[str, Any]] | None = None,
         multimask_output: bool = False,
         mask_input: str | None = None,
+        mask_prompt: Mapping[str, Any] | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
         output_geometry: str = "polygon",
@@ -398,6 +420,16 @@ class SAM3Predictor:
             state, w, h, hit = self._prime_state(image, cache_key)
 
             kwargs: dict[str, Any] = {"multimask_output": multimask_output}
+            if scribbles is not None:
+                if points or box is not None:
+                    raise PromptAdapterError(
+                        "points, box, and scribbles are mutually exclusive"
+                    )
+                points, labels = scribbles_to_point_prompts(
+                    scribbles,
+                    image_size=(w, h),
+                    max_rasterized_pixels=MAX_SCRIBBLE_RASTERIZED_PIXELS,
+                )
             if points:
                 kwargs["point_coords"] = np.array(
                     [[p[0] * w, p[1] * h] for p in points], dtype=np.float32
@@ -406,10 +438,14 @@ class SAM3Predictor:
             if box is not None:
                 x1, y1, x2, y2 = box
                 kwargs["box"] = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
-            if mask_input:
-                arr = _safe_decode_mask_input(mask_input)
-                if arr is not None:
-                    kwargs["mask_input"] = arr
+            dense_prompt = _resolve_mask_input(
+                mask_input,
+                mask_prompt,
+                width=w,
+                height=h,
+            )
+            if dense_prompt is not None:
+                kwargs["mask_input"] = dense_prompt
 
             # predict_inst 复用 state["backbone_out"]["sam2_backbone_out"], 不重跑 backbone.
             # 返回 (masks CxHxW, iou C, low_res Cx256x256); masks 已 threshold 成 0/1 float.
@@ -425,7 +461,11 @@ class SAM3Predictor:
             prompt_revision=prompt_revision,
         )
         return results, hit, (
-            _maybe_encode_low_res(low_res, points, multimask_output)
+            _maybe_encode_low_res(
+                low_res,
+                enable=bool(points or dense_prompt is not None)
+                and not multimask_output,
+            )
             if results
             else None
         )

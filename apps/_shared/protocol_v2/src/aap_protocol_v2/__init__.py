@@ -6,7 +6,11 @@ from aap_protocol_v2.errors import (
     ModelUnavailableError,
     VariantNotSupportedError,
 )
-from aap_protocol_v2.mask_codec import decode_low_res_mask, encode_low_res_mask
+from aap_protocol_v2.mask_codec import (
+    MAX_LOW_RES_MASK_INPUT_CHARS,
+    decode_low_res_mask,
+    encode_low_res_mask,
+)
 from aap_protocol_v2.mask_interaction import (
     CocoRlePayload,
     CorrectionFramePrompt,
@@ -75,6 +79,7 @@ __all__ = [
     "MAX_MASK_PIXELS",
     "MAX_MASK_RESPONSE_BYTES",
     "MAX_MASK_RUNS",
+    "MAX_LOW_RES_MASK_INPUT_CHARS",
     "MAX_RLE_OBJECT_BYTES",
     "MAX_SCRIBBLE_JSON_BYTES",
     "MAX_SCRIBBLE_POINTS",

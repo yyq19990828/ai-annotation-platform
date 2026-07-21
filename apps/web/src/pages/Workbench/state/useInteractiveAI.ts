@@ -38,7 +38,7 @@ interface PendingCandidateBase {
   label: string;
   score: number | null;
   /** 触发该候选的 prompt 类型 */
-  source: "point" | "bbox" | "exemplar";
+  source: "point" | "bbox" | "scribble" | "exemplar";
 }
 
 export interface PendingPolygonCandidate extends PendingCandidateBase {
@@ -52,13 +52,14 @@ export interface PendingRectangleCandidate extends PendingCandidateBase {
 }
 
 export interface PendingMaskPromptSummary {
-  family: "point" | "interactive_box" | "exemplar";
+  family: "point" | "interactive_box" | "scribble" | "exemplar" | "mask" | "correction_frame";
   positive_points: number;
   negative_points: number;
   boxes: number;
   positive_scribbles: number;
   negative_scribbles: number;
   multimask: boolean;
+  parameters_digest: string | null;
 }
 
 export interface PendingMaskCandidate extends PendingCandidateBase {
@@ -67,6 +68,8 @@ export interface PendingMaskCandidate extends PendingCandidateBase {
   candidateId: string;
   candidateIndex: number;
   promptRevision: string;
+  /** 服务端签名的推理帧；视频接受不得改用播放过程中漂移的当前帧。 */
+  frameIndex: number | null;
   receipt: string;
   idempotencyKey: string;
   promptSummary: PendingMaskPromptSummary;
@@ -77,6 +80,8 @@ export interface PendingMaskCandidate extends PendingCandidateBase {
     model_id: string;
   };
   inference: InteractiveInferenceLineage;
+  /** 候选由已存 Mask 精修得到时，接纳必须原位更新该版本。 */
+  refineSource?: { annotationId: string; sourceVersion: number };
 }
 
 /**
@@ -124,11 +129,20 @@ export interface UseInteractiveAIReturn {
   candidates: PendingCandidate[];
   activeIdx: number;
   isRunning: boolean;
+  canRetry: boolean;
+  canAcceptCandidates: boolean;
+  retryLast: () => void;
   /**
    * v0.18.18 · §5.5 当前点交互会话已落的正/负点 (归一化坐标 + 极性), 供画布 overlay 渲染。
    * 提交 / 取消 / 切 prompt / 切 task·backend 时清空。空数组 = 无进行中的多点精修会话。
    */
   sessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  /** 当前 Mask 精修会话已落的正 / 负归一化笔迹。 */
+  sessionScribbles: {
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[];
   /**
    * v0.18.19 · PCS exemplar refine 会话已落的正/负框 (归一化 xyxy + 极性), 供画布 overlay 渲染。
    * 正框=扩召回 / 负框=排误检; 每次操作重发全量。Esc / 切 prompt / 切 task·backend 时清空。
@@ -143,6 +157,12 @@ export interface UseInteractiveAIReturn {
   /** v0.10.2 · 各 run* 接受可选 extraParams; 由 InteractiveToolBar 注入 (box_threshold 等). */
   runPoint: (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => void;
   runBbox: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
+  runScribble: (
+    points: [number, number][],
+    polarity: 1 | 0,
+    width?: number,
+    extraParams?: Record<string, unknown>,
+  ) => void;
   /**
    * v0.18.19 · SAM 3 exemplar refine 会话: 拖框累加到正/负框集 (polarity 1=正 / 0=负), 每次
    * 重发全量 exemplars[] + text + 阈值 + output。与 bbox 同手势, context.type="exemplar"。
@@ -204,6 +224,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const [candidates, setCandidates] = useState<PendingCandidate[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+  const [canRetry, setCanRetry] = useState(false);
+  const [canAcceptCandidates, setCanAcceptCandidates] = useState(false);
+  const lastFailedRequestRef = useRef<{
+    context: Record<string, unknown>;
+    source: PendingCandidate["source"];
+  } | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // v0.18.x · exemplar text/阈值连发的独立防抖 timer (与 point 的 debounceRef 互不干扰)。
@@ -224,14 +250,43 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const [sessionPoints, setSessionPoints] = useState<{ pt: [number, number]; polarity: 1 | 0 }[]>(
     [],
   );
-  // v0.18.18 · §5.4 mask_input 回灌: 存上一轮单 mask 的 256×256 low-res logits (不透明 base64);
-  // ≥2 点精修阶段经 context.mask_input 回传, 首点候选阶段 / 切 prompt / 提交 / 取消时失效。
+  // mask_input 存上一轮单 mask 的受签名 low-res logits token。在同一已存 Mask
+  // 精修会话中可跨 point / box / scribble 回灌；接受、取消、切题 / 帧 / 模型时释放。
   const maskInputRef = useRef<string | null>(null);
-  const resetPointSession = useCallback(() => {
+  const maskInputVariantSigRef = useRef<string | null>(null);
+  const activeRefinementFamilyRef = useRef<"point" | "bbox" | "scribble" | null>(null);
+  const scribbleSessionRef = useRef<{
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[]>([]);
+  const [sessionScribbles, setSessionScribbles] = useState<{
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[]>([]);
+
+  const clearPointSession = useCallback(() => {
     pointSessionRef.current = [];
-    maskInputRef.current = null;
     setSessionPoints([]);
   }, []);
+  const clearScribbleSession = useCallback(() => {
+    scribbleSessionRef.current = [];
+    setSessionScribbles([]);
+  }, []);
+  const resetRefinementSession = useCallback(() => {
+    clearPointSession();
+    clearScribbleSession();
+    activeRefinementFamilyRef.current = null;
+    maskInputRef.current = null;
+    maskInputVariantSigRef.current = null;
+  }, [clearPointSession, clearScribbleSession]);
+  const enterRefinementFamily = useCallback((family: "point" | "bbox" | "scribble") => {
+    if (activeRefinementFamilyRef.current === family) return;
+    if (family !== "point") clearPointSession();
+    if (family !== "scribble") clearScribbleSession();
+    activeRefinementFamilyRef.current = family;
+  }, [clearPointSession, clearScribbleSession]);
 
   // v0.18.19 · exemplar refine 会话: 累加同一概念的正/负框, 每次重发全量 (无状态后端). 拖正框
   // 扩召回 / 拖负框去误检 / 拖阈值实时增减 / 叠 text 概念。会话在 Esc(cancel) / 切 task·backend /
@@ -298,6 +353,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     activeCacheKeyRef.current = null;
     setCandidates([]);
     setActiveIdx(0);
+    setCanAcceptCandidates(false);
   }, [cache]);
 
   const activateCandidates = useCallback((
@@ -309,16 +365,18 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     activeCacheKeyRef.current = cacheKey;
     setCandidates(next);
     setActiveIdx(0);
+    setCanAcceptCandidates(true);
     candidateExpiryRef.current = setTimeout(() => {
       if (activeCacheKeyRef.current !== cacheKey) return;
       cache.delete(cacheKey);
       activeCacheKeyRef.current = null;
       setCandidates([]);
       setActiveIdx(0);
-      resetPointSession();
+      setCanAcceptCandidates(false);
+      resetRefinementSession();
       resetExemplarSession();
     }, Math.max(0, expiresAt - Date.now()));
-  }, [cache, resetExemplarSession, resetPointSession]);
+  }, [cache, resetExemplarSession, resetRefinementSession]);
 
   const guard = useCallback((): boolean => {
     if (!projectId || !taskId) return false;
@@ -344,7 +402,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         ...requestContextDefaultsRef.current,
         ...context,
       });
-      const requestContext = normalized.context;
+      let requestContext = normalized.context;
+      const variantSig = variantSignature(requestContext);
+      if (
+        requestContext.mask_input != null
+        && maskInputVariantSigRef.current !== variantSig
+      ) {
+        const { mask_input: _staleMaskInput, ...withoutStaleMaskInput } = requestContext;
+        requestContext = withoutStaleMaskInput;
+        maskInputRef.current = null;
+        maskInputVariantSigRef.current = null;
+      }
       const ctxKind = (requestContext.type as string | undefined) ?? source;
       // v0.18.18 · mask_input 是上一轮 logits 的不透明回灌, 不进缓存键 (同一点序的 mask_input
       // 是确定的, 排除它避免巨串塞键 / 误判 miss)。
@@ -360,16 +428,17 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       const bypassCache = requestContext.output_geometry === "mask" && requestContext.mask_input != null;
       const cached = bypassCache ? undefined : cache.get(cacheKey);
       if (cached) {
+        lastFailedRequestRef.current = null;
+        setCanRetry(false);
         activateCandidates(cached.candidates, cacheKey, cached.expiresAt);
         // 上面 L212-213 已经 abort 旧请求 + 自增 inflightRef; 旧请求 finally 守卫不再通过
         // → 旋转图标永不清除 (issue claude[bot] P1)。此处显式复位。
         setIsRunning(false);
         return;
       }
-      // 新 prompt 未命中同 revision 缓存时，立即退役旧候选。推理失败也不得误接纳旧像素。
-      retireCandidates(false);
+      // 请求在途和网络失败时保留上一个已签名候选，便于继续修改或重试。
+      // 新请求成功后由 activateCandidates 原子替换；成功空结果才退役旧候选。
       // v0.10.23 · 本次请求携带的变体是否与上次成功应用的不同 → 切换后首次预测, 弹三态通知。
-      const variantSig = variantSignature(requestContext);
       const isVariantSwitch =
         variantSig !== null && variantSig !== lastAppliedVariantRef.current;
       if (isVariantSwitch) {
@@ -377,6 +446,9 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       }
       const controller = new AbortController();
       abortRef.current = controller;
+      lastFailedRequestRef.current = null;
+      setCanRetry(false);
+      setCanAcceptCandidates(false);
       setIsRunning(true);
       try {
         const resp = await transportRef.current({
@@ -388,9 +460,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         });
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
+        lastFailedRequestRef.current = null;
+        setCanRetry(false);
         // v0.18.18 · 存本轮回灌 token: 单 mask 精修阶段非空, 多候选 / 框 / text / exemplar 为 null
         // (后端按 multimask 自动决定), 下次 ≥2 点点击经 context.mask_input 回传。
         maskInputRef.current = resp.mask_input_next ?? null;
+        maskInputVariantSigRef.current = resp.mask_input_next ? variantSig : null;
         if (isVariantSwitch) {
           lastAppliedVariantRef.current = variantSig;
           pushToast({ msg: `已切换到 ${variantLabel(requestContext)}`, kind: "success" });
@@ -413,6 +488,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
           );
         }
         if (next.length === 0) {
+          retireCandidates(false);
           pushToast({
             msg: "SAM 未返回候选",
             sub: source === "exemplar" ? "可调低阈值或多画几个样例框" : "请尝试不同的位置/区域",
@@ -435,6 +511,29 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         if (controller.signal.aborted || myInflight !== inflightRef.current) return;
         const formatted = formatPredictError(err);
         const msg = err instanceof Error ? err.message : String(err);
+        const sessionReason = apiErrorReason(err);
+        const invalidSession = sessionReason === "invalid_mask_session"
+          || sessionReason === "mask_session_expired"
+          || sessionReason === "mask_session_mismatch";
+        let retryContext = requestContext;
+        if (invalidSession) {
+          const { mask_input: _invalidMaskInput, ...withoutInvalidMaskInput } = requestContext;
+          retryContext = withoutInvalidMaskInput;
+          maskInputRef.current = null;
+          maskInputVariantSigRef.current = null;
+        }
+        const retryableWithoutSession = !(
+          retryContext.type === "scribble"
+          && !isRecord(retryContext.mask_prompt_source)
+          && Array.isArray(retryContext.scribbles)
+          && retryContext.scribbles.every(
+            (stroke) => isRecord(stroke) && stroke.polarity === 0,
+          )
+        );
+        lastFailedRequestRef.current = retryableWithoutSession
+          ? { context: retryContext, source }
+          : null;
+        setCanRetry(retryableWithoutSession);
         // 切换后首次预测失败 → 不更新 lastAppliedVariant (下次重试仍视为切换), 落到切换失败态;
         // backend 503 (变体 checkpoint 未预置) 的 detail 经 ApiError.message 透出。
         pushToast({
@@ -459,11 +558,18 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     ],
   );
 
+  const retryLast = useCallback(() => {
+    const failed = lastFailedRequestRef.current;
+    if (!failed || isRunning) return;
+    void dispatch(failed.context, failed.source);
+  }, [dispatch, isRunning]);
+
   const runPoint = useCallback(
     (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => {
       if (!guard()) return;
       // v0.18.19 · 切到点模式 → 重置 exemplar 会话 (互斥)。
       resetExemplarSession();
+      enterRefinementFamily("point");
       // v0.18.17 · 累加到当前点会话, 每次重发全量点 (正/负点精修同一对象).
       pointSessionRef.current = [...pointSessionRef.current, { pt, polarity }];
       const session = pointSessionRef.current;
@@ -472,7 +578,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       const points = session.map((s) => s.pt);
       const labels = session.map((s) => s.polarity);
       // 单点首击 multimask 出 3 候选 (top-1 + Tab 切换); 累加 ≥2 点转单 mask 精修.
-      const multimask = session.length === 1;
+      const hasMaskPrompt = isRecord(requestContextDefaultsRef.current.mask_prompt_source);
+      const multimask = session.length === 1 && !hasMaskPrompt;
       // v0.18.18 · §5.4 仅多点精修阶段 (≥2 点) 回灌上一轮 low-res logits; 首点候选阶段不回灌
       // (多候选 index 歧义)。首个非候选点 (第 2 点) 时 maskInputRef 通常还空 (首点是 multimask),
       // 回灌自然从第 3 点起生效, 与协议约定一致。
@@ -492,22 +599,66 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         );
       }, DEBOUNCE_MS);
     },
-    [guard, dispatch, resetExemplarSession],
+    [guard, dispatch, enterRefinementFamily, resetExemplarSession],
   );
 
   const runBbox = useCallback(
     (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => {
       if (!guard()) return;
-      // v0.18.17 · 切到框模式 → 重置点会话; type=interactive_box (旧 "bbox" 退役).
-      // 单框默认单 mask (multimask_output 缺省 false, 保留旧 bbox 行为).
-      resetPointSession();
+      // 框提示清掉当前点 / 笔迹显示，但保留同一 Mask 会话的 logits token。
+      enterRefinementFamily("bbox");
       resetExemplarSession();
       dispatch(
-        { ...(extraParams ?? {}), type: "interactive_box", bbox, multimask_output: false },
+        {
+          ...(extraParams ?? {}),
+          type: "interactive_box",
+          bbox,
+          multimask_output: false,
+          ...(maskInputRef.current ? { mask_input: maskInputRef.current } : {}),
+        },
         "bbox",
       );
     },
-    [guard, dispatch, resetPointSession, resetExemplarSession],
+    [guard, dispatch, enterRefinementFamily, resetExemplarSession],
+  );
+
+  const runScribble = useCallback(
+    (
+      points: [number, number][],
+      polarity: 1 | 0,
+      width = 0.008,
+      extraParams?: Record<string, unknown>,
+    ) => {
+      if (!guard() || points.length < 2) return;
+      const totalPoints = scribbleSessionRef.current.reduce(
+        (total, stroke) => total + stroke.points.length,
+        0,
+      );
+      if (scribbleSessionRef.current.length >= 64 || totalPoints + points.length > 8192) {
+        pushToast({
+          msg: "笔迹上限已达到",
+          sub: "每轮最多 64 条、8,192 个采样点；可先接纳当前候选再继续",
+          kind: "warning",
+        });
+        return;
+      }
+      resetExemplarSession();
+      enterRefinementFamily("scribble");
+      const stroke = { points, polarity, width };
+      scribbleSessionRef.current = [...scribbleSessionRef.current, stroke];
+      setSessionScribbles(scribbleSessionRef.current);
+      dispatch(
+        {
+          ...(extraParams ?? {}),
+          type: "scribble",
+          scribbles: scribbleSessionRef.current,
+          multimask_output: false,
+          ...(maskInputRef.current ? { mask_input: maskInputRef.current } : {}),
+        },
+        "scribble",
+      );
+    },
+    [dispatch, enterRefinementFamily, guard, pushToast, resetExemplarSession],
   );
 
   // v0.18.19 · 用当前会话 (全量正/负框 + text + 阈值) 重发一次 exemplar 请求 (无状态后端).
@@ -550,13 +701,13 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     ) => {
       if (!guard()) return;
       // v0.18.19 · 切到 exemplar 模式 → 重置点会话; 拖框累加到正/负框集, 每次重发全量。
-      resetPointSession();
+      resetRefinementSession();
       exemplarSessionRef.current = [...exemplarSessionRef.current, { bbox, polarity }];
       setSessionExemplars(exemplarSessionRef.current);
       lastExemplarArgsRef.current = { outputMode, extra: extraParams ?? {} };
       dispatchExemplar();
     },
-    [guard, resetPointSession, dispatchExemplar],
+    [guard, resetRefinementSession, dispatchExemplar],
   );
 
   const rerunExemplar = useCallback(
@@ -614,8 +765,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       const c = candidates[idx];
       const activeCacheKey = activeCacheKeyRef.current;
       if (activeCacheKey) cache.delete(activeCacheKey);
-      if (c && (c.source === "point" || c.source === "bbox")) {
-        resetPointSession();
+      if (c && (c.source === "point" || c.source === "bbox" || c.source === "scribble")) {
+        resetRefinementSession();
         retireCandidates(false);
         return;
       }
@@ -636,11 +787,11 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       }
       setActiveIdx((i) => Math.max(0, i >= idx ? i - 1 : i));
     },
-    [candidates, resetPointSession, cache, activateCandidates, retireCandidates],
+    [candidates, resetRefinementSession, cache, activateCandidates, retireCandidates],
   );
 
   const cancel = useCallback(() => {
-    resetPointSession();
+    resetRefinementSession();
     resetExemplarSession();
     retireCandidates(false);
     cache.clearAll();
@@ -656,8 +807,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     // abort 后旧请求的 finally 因 inflight 已变不会复位 isRunning, 这里显式收尾。
     abortRef.current?.abort();
     inflightRef.current++;
+    lastFailedRequestRef.current = null;
+    setCanRetry(false);
     setIsRunning(false);
-  }, [resetPointSession, resetExemplarSession, cache, retireCandidates]);
+  }, [resetRefinementSession, resetExemplarSession, cache, retireCandidates]);
 
   // v0.10.4 I6.2 · 预热去重：同 (taskId, mlBackendId) 只发一次。
   const warmedRef = useRef<string | null>(null);
@@ -699,7 +852,11 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     candidates,
     activeIdx,
     isRunning,
+    canRetry,
+    canAcceptCandidates,
+    retryLast,
     sessionPoints,
+    sessionScribbles,
     sessionExemplars,
     exemplarText,
     setExemplarText,
@@ -707,6 +864,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     setExemplarThreshold,
     runPoint,
     runBbox,
+    runScribble,
     runExemplar,
     rerunExemplar,
     cycle: cycleStable,
@@ -784,6 +942,11 @@ function normalizePredictContext(context: Record<string, unknown>): {
   return { context: next, modelVariants };
 }
 
+function apiErrorReason(err: unknown): string | null {
+  if (!(err instanceof ApiError) || !isRecord(err.detailRaw)) return null;
+  return typeof err.detailRaw.reason === "string" ? err.detailRaw.reason : null;
+}
+
 function formatPredictError(err: unknown): { msg: string; sub?: string } | null {
   if (!(err instanceof ApiError)) return null;
   if (err.status === 422) {
@@ -835,23 +998,6 @@ function newIdempotencyKey(): string {
   return `mask:${Date.now().toString(36)}:${idempotencySequence.toString(36)}`;
 }
 
-function promptSummary(
-  source: PendingCandidate["source"],
-  context: Record<string, unknown>,
-): PendingMaskPromptSummary {
-  const labels = Array.isArray(context.labels) ? context.labels : [];
-  const exemplars = Array.isArray(context.exemplars) ? context.exemplars : [];
-  return {
-    family: source === "bbox" ? "interactive_box" : source,
-    positive_points: labels.filter((label) => label === 1).length,
-    negative_points: labels.filter((label) => label === 0).length,
-    boxes: source === "bbox" ? 1 : exemplars.length,
-    positive_scribbles: 0,
-    negative_scribbles: 0,
-    multimask: context.multimask_output === true,
-  };
-}
-
 function normalizeResult(
   raw: unknown,
   idx: number,
@@ -868,6 +1014,7 @@ function normalizeResult(
     const promptRevision = response.prompt_revision;
     const receipt = candidateId ? response.accept_receipts?.[candidateId] : undefined;
     const routing = response.routing;
+    const promptSummary = response.prompt_summary;
     if (
       typeof candidateId !== "string"
       || response.output_geometry !== "mask"
@@ -877,6 +1024,7 @@ function normalizeResult(
       || typeof routing.requested_backend_id !== "string"
       || typeof routing.backend_instance_id !== "string"
       || typeof routing.model_id !== "string"
+      || !promptSummary
       || !r.value?.rle
     ) {
       return null;
@@ -894,9 +1042,12 @@ function normalizeResult(
       candidateId,
       candidateIndex: idx,
       promptRevision,
+      frameIndex: Number.isInteger(response.frame_index)
+        ? response.frame_index as number
+        : null,
       receipt,
       idempotencyKey: newIdempotencyKey(),
-      promptSummary: promptSummary(source, context),
+      promptSummary,
       routing: {
         requested_backend_id: routing.requested_backend_id,
         backend_pool_id: routing.backend_pool_id,
@@ -909,6 +1060,7 @@ function normalizeResult(
         cache_hit: response.cache_hit ?? null,
         model_load_ms: response.model_load_ms ?? null,
       },
+      refineSource: readMaskPromptSource(context),
       label: r.value.masklabels?.[0] ?? "object",
       score,
       source,
@@ -952,6 +1104,17 @@ function normalizeResult(
     score,
     source,
   };
+}
+
+function readMaskPromptSource(
+  context: Record<string, unknown>,
+): PendingMaskCandidate["refineSource"] {
+  const source = context.mask_prompt_source;
+  if (!isRecord(source)) return undefined;
+  const annotationId = source.annotation_id;
+  const sourceVersion = source.source_version;
+  if (typeof annotationId !== "string" || !Number.isInteger(sourceVersion)) return undefined;
+  return { annotationId, sourceVersion: sourceVersion as number };
 }
 
 /**

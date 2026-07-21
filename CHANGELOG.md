@@ -49,6 +49,8 @@
   视频结果直接成为当前帧 `video_track_mask` 关键帧。
 - **原生候选幂等账本**. 数据库迁移新增 24 小时接受 decision，用任务与客户端 key 保证响应丢失后
   重试只产生一次标注变更；有效快照在生命周期内参与 Mask 引用扫描，过期后由清理任务回收。
+- **已存 Mask 多轮 AI 精修**. 图片工作台可在选中的原生 Mask 上交替追加正负点、框和笔迹，
+  接受候选后原位更新同一 annotation；Grounded-SAM2 与 SAM3 共享 Mask / scribble adapter。
 
 ### Changed
 - **交互候选代理返回路由 lineage**. 图片与视频单帧响应补充请求 backend、实际实例、
@@ -61,6 +63,8 @@
   小连通区，无目标帧返回尺寸正确的全背景 RLE 与 `outside=true`，不再误报 bbox。
 - **原生候选失败恢复**. 网络错误、版本冲突或服务端失败不再提前清空候选、prompt 与幂等键；
   成功响应才消费候选，取消、切题、切帧、切模型、切输出类型和 TTL 到期会释放会话缓存。
+- **多轮 prompt 失败恢复**. 交互请求失败时保留已存 Mask、候选和本轮正负输入，工具栏可按原始
+  payload 重试；成功空结果才结束上一轮候选，避免瞬时网络故障中断精修。
 
 ### Security
 - **原生 Mask 安全代理**. 平台按同一目标 model 同时检查 prompt 与输出能力，重建 prompt
@@ -69,6 +73,9 @@
 - **原生 Mask 采纳授权与血缘签名**. 接口复核任务可编辑状态、assignment、任务/标注锁、项目写闸、
   类别和源版本；签名 receipt 绑定像素、prompt 摘要、模型与历史路由，跨 actor 回放和同 key 异请求
   均稳定拒绝，普通日志与审计不记录 RLE counts。
+- **Mask prompt 鉴权与短期 logits**. 浏览器只提交源 annotation ID 与版本；平台复核任务、帧、锁和
+  版本后解析 RLE，并以绑定 actor、backend、model、prompt revision 和候选的短期签名封装连接多轮
+  推理。输入正文、解压结果、笔迹数量和点数均有上限，日志不记录 RLE 或 logits。
 
 ## [0.23.7] - 2026-07-21
 

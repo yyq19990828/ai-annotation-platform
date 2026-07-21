@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 import types
 from unittest.mock import MagicMock
@@ -447,6 +449,21 @@ def _fake_inst_output(num: int):
     return masks, ious, low_res
 
 
+def _interactive_mask_prompt(width: int = 640, height: int = 480) -> dict:
+    from mask_utils import encode_coco_rle
+
+    pixels = [int(x < width // 2) for _y in range(height) for x in range(width)]
+    rle = encode_coco_rle(pixels, width, height)
+    return {
+        "rle": rle,
+        "source_annotation_id": "source-1",
+        "source_version": 1,
+        "source_digest": hashlib.sha256(
+            json.dumps(rle, separators=(",", ":")).encode()
+        ).hexdigest(),
+    }
+
+
 def test_interactive_point_returns_polygon(predictor_with_mocks, fake_image):
     inst = predictor_with_mocks
     inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
@@ -504,6 +521,52 @@ def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_im
     )
     kw = inst._model.predict_inst.call_args.kwargs
     assert kw["mask_input"].shape == (1, 256, 256)
+
+
+def test_scribble_consumer_preserves_positive_negative_and_mask_seed(
+    predictor_with_mocks,
+    fake_image,
+):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    inst.predict_interactive(
+        fake_image,
+        scribbles=[
+            {"polarity": 1, "points": [[0.1, 0.1], [0.4, 0.4]], "width": 0.01},
+            {"polarity": 0, "points": [[0.8, 0.8], [0.6, 0.6]], "width": 0.01},
+        ],
+        mask_prompt=_interactive_mask_prompt(),
+        cache_key="scribble-1",
+    )
+
+    kwargs = inst._model.predict_inst.call_args.kwargs
+    assert set(kwargs["point_labels"].tolist()) == {0, 1}
+    assert kwargs["mask_input"].shape == (1, 256, 256)
+    assert set(np.unique(kwargs["mask_input"])) == {-16.0, 16.0}
+
+
+def test_mask_prompt_only_is_consumed_as_dense_prompt(
+    predictor_with_mocks,
+    fake_image,
+):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    results, _, mask_next = inst.predict_interactive(
+        fake_image,
+        mask_prompt=_interactive_mask_prompt(),
+        cache_key="mask-only-1",
+    )
+
+    kwargs = inst._model.predict_inst.call_args.kwargs
+    assert "point_coords" not in kwargs
+    assert "point_labels" not in kwargs
+    assert kwargs["mask_input"].shape == (1, 256, 256)
+    assert results
+    assert mask_next is not None
 
 
 def test_interactive_multimask_sorted_by_iou(predictor_with_mocks, fake_image):

@@ -34,6 +34,13 @@ function isInteractivePrompt(p: string): p is InteractivePrompt {
 export interface BackendCapEntry {
   /** 该后端支持的交互 prompt (跨其 model 取并集; 仅 is_interactive 的 model 计入)。 */
   prompts: Set<InteractivePrompt>;
+  /** 同一 model 内可原子组合的 prompt/input/output；不得跨 model 拼接。 */
+  interactiveModels: Array<{
+    id: string;
+    prompts: Set<InteractivePrompt>;
+    inputs: Set<string>;
+    outputs: Set<string>;
+  }>;
   /** 是否支持文本 prompt (批量线判定用)。 */
   textCapable: boolean;
   /** 后端整体是否交互 (任一 model 或顶层 is_interactive)。 */
@@ -49,6 +56,7 @@ export interface BackendCapEntry {
 /** 由单个后端的 /setup 响应派生能力条目。reachable=false 表示拉取失败 (cap 为空)。 */
 export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapEntry {
   const prompts = new Set<InteractivePrompt>();
+  const interactiveModels: BackendCapEntry["interactiveModels"] = [];
   let textCapable = false;
   let isInteractive = false;
   const trackers = new Set<string>();
@@ -57,6 +65,7 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
   if (!cap) {
     return {
       prompts,
+      interactiveModels: [],
       textCapable,
       isInteractive,
       trackers: [],
@@ -78,6 +87,14 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
       const mInteractive = m.is_interactive === true;
       if (mInteractive) isInteractive = true;
       addPrompts(mInteractive, m.supported_prompts);
+      if (mInteractive) {
+        interactiveModels.push({
+          id: m.id,
+          prompts: new Set((m.supported_prompts ?? []).filter(isInteractivePrompt)),
+          inputs: new Set(m.supported_inputs ?? []),
+          outputs: new Set(m.supported_geometric_outputs ?? []),
+        });
+      }
       for (const t of m.supported_trackers ?? []) trackers.add(t);
       for (const t of m.text_driven_trackers ?? []) textDrivenTrackers.add(t);
     }
@@ -86,12 +103,21 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
     const topInteractive = cap.is_interactive !== false;
     if (topInteractive) isInteractive = true;
     addPrompts(topInteractive, cap.supported_prompts);
+    if (topInteractive) {
+      interactiveModels.push({
+        id: "__top__",
+        prompts: new Set((cap.supported_prompts ?? []).filter(isInteractivePrompt)),
+        inputs: new Set(cap.supported_inputs ?? []),
+        outputs: new Set(cap.supported_geometric_outputs ?? []),
+      });
+    }
   }
   for (const t of cap.supported_trackers ?? []) trackers.add(t);
   for (const t of cap.text_driven_trackers ?? []) textDrivenTrackers.add(t);
 
   return {
     prompts,
+    interactiveModels,
     textCapable,
     isInteractive,
     trackers: [...trackers],
@@ -114,11 +140,52 @@ export function capFingerprint(cap: MLBackendCapability | undefined): string {
     return models
       .map(
         (m) =>
-          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}/${(m.text_driven_trackers ?? []).join(",")}`,
+          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_inputs ?? []).join(",")}/${(m.supported_geometric_outputs ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}/${(m.text_driven_trackers ?? []).join(",")}`,
       )
       .join(";");
   }
-  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}/${(cap.text_driven_trackers ?? []).join(",")}`;
+  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_inputs ?? []).join(",")}/${(cap.supported_geometric_outputs ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}/${(cap.text_driven_trackers ?? []).join(",")}`;
+}
+
+export interface InteractiveRouteRequirement {
+  prompt: InteractivePrompt;
+  requiredInputs: string[];
+  output: string;
+}
+
+function entrySupportsRequest(
+  entry: BackendCapEntry | undefined,
+  requirement: InteractiveRouteRequirement,
+): boolean {
+  return Boolean(
+    entry?.reachable
+    && entry.interactiveModels.some(
+      (model) => model.prompts.has(requirement.prompt)
+        && model.outputs.has(requirement.output)
+        && requirement.requiredInputs.every((input) => model.inputs.has(input)),
+    ),
+  );
+}
+
+export function candidatesForRequest(
+  capIndex: CapIndex,
+  order: string[],
+  requirement: InteractiveRouteRequirement,
+): string[] {
+  return order.filter((id) => entrySupportsRequest(capIndex[id], requirement));
+}
+
+export function resolveInteractiveRequest(
+  capIndex: CapIndex,
+  order: string[],
+  defaultBackendId: string | null,
+  preferredId: string | null,
+  requirement: InteractiveRouteRequirement,
+): string | null {
+  const candidates = candidatesForRequest(capIndex, order, requirement);
+  if (preferredId && candidates.includes(preferredId)) return preferredId;
+  if (defaultBackendId && candidates.includes(defaultBackendId)) return defaultBackendId;
+  return candidates[0] ?? null;
 }
 
 /** reachable 且支持该 prompt 的候选后端 (按注册顺序)。 */
@@ -190,6 +257,7 @@ export interface BackendRoutingResult {
   isPromptSupported: (type: string) => boolean;
   /** 解析某交互 prompt 实际会跑的后端 (null = 无候选, 工具置灰)。 */
   resolveInteractive: (p: InteractivePrompt) => string | null;
+  resolveInteractiveRequest: (requirement: InteractiveRouteRequirement) => string | null;
   /** 某交互 prompt 的候选后端 (按注册序; 选择器只列这些)。 */
   candidatesFor: (p: InteractivePrompt) => string[];
   /** 当前 preferred 交互后端 (用户选定, 缺省 = 项目默认/首个交互)。 */
@@ -278,6 +346,13 @@ export function useBackendRouting({
     },
     resolveInteractive: (p) =>
       resolveInteractive(capIndex, order, defaultBackendId, preferredInteractiveId, p),
+    resolveInteractiveRequest: (requirement) => resolveInteractiveRequest(
+      capIndex,
+      order,
+      defaultBackendId,
+      preferredInteractiveId,
+      requirement,
+    ),
     candidatesFor: (p) => candidatesFor(capIndex, order, p),
     preferredInteractiveId,
     setPreferredInteractiveId,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from email.message import Message
 from typing import Any
 
 from app.utils.raster_mask_gzip import (
@@ -23,6 +24,7 @@ MAX_FRAME_MULTIPART_BODY_BYTES = MAX_FRAME_FILE_BYTES + 1024 * 1024
 # Inline RLE can consume the full canonical object budget; leave bounded room for
 # receipt, lineage, prompt summary, and JSON field names before Pydantic parsing.
 MAX_AI_MASK_ACCEPT_BODY_BYTES = MAX_UNCOMPRESSED_BYTES + 1024 * 1024
+MAX_INTERACTIVE_CONTEXT_BODY_BYTES = 1024 * 1024
 
 
 async def _json_error(send, status: int, detail: Any) -> None:
@@ -79,6 +81,46 @@ def _replace_body_headers(scope: dict[str, Any], body: bytes) -> dict[str, Any]:
     return copied
 
 
+def _multipart_field_size(
+    body: bytes,
+    content_type: bytes,
+    *,
+    field_name: str,
+) -> int | None:
+    """Return one multipart field's raw byte size without copying file parts."""
+
+    message = Message()
+    message["content-type"] = content_type.decode("latin-1")
+    boundary_value = message.get_param("boundary", header="content-type")
+    if not isinstance(boundary_value, str) or not boundary_value:
+        return None
+    delimiter = b"--" + boundary_value.encode("latin-1")
+    cursor = 0
+    expected = f'name="{field_name}"'.encode()
+    while True:
+        part_start = body.find(delimiter, cursor)
+        if part_start < 0:
+            return None
+        part_start += len(delimiter)
+        if body[part_start : part_start + 2] == b"--":
+            return None
+        if body[part_start : part_start + 2] == b"\r\n":
+            part_start += 2
+        header_end = body.find(b"\r\n\r\n", part_start)
+        if header_end < 0 or header_end - part_start > 16 * 1024:
+            return None
+        next_boundary = body.find(delimiter, header_end + 4)
+        if next_boundary < 0:
+            return None
+        headers = body[part_start:header_end].lower()
+        if b"content-disposition:" in headers and expected in headers:
+            value_end = next_boundary
+            if body[value_end - 2 : value_end] == b"\r\n":
+                value_end -= 2
+            return max(0, value_end - (header_end + 4))
+        cursor = next_boundary
+
+
 class UploadBodyLimitMiddleware:
     """Bound selected upload bodies before FastAPI invokes multipart/JSON parsing."""
 
@@ -94,6 +136,7 @@ class UploadBodyLimitMiddleware:
         is_frame = "/ml-backends/" in path and path.endswith(
             ("/predict-frame", "/interactive-annotating-frame")
         )
+        is_interactive_frame = path.endswith("/interactive-annotating-frame")
         is_mask_gzip = (
             path.startswith("/api/v1/tasks/")
             and path.endswith("/mask-content")
@@ -102,6 +145,9 @@ class UploadBodyLimitMiddleware:
         is_mask = path.startswith("/api/v1/tasks/") and path.endswith("/mask-content")
         is_ai_mask_accept = path.startswith("/api/v1/tasks/") and path.endswith(
             "/ai-mask-candidates/accept"
+        )
+        is_interactive_context = (
+            "/ml-backends/" in path and path.endswith("/interactive-annotating")
         )
         if is_mask and headers.get(b"content-encoding", b"").lower() not in {
             b"",
@@ -116,7 +162,18 @@ class UploadBodyLimitMiddleware:
         }:
             await _json_error(send, 415, "Unsupported Content-Encoding")
             return
-        if not is_frame and not is_mask_gzip and not is_ai_mask_accept:
+        if is_interactive_context and headers.get(b"content-encoding", b"").lower() not in {
+            b"",
+            b"identity",
+        }:
+            await _json_error(send, 415, "Unsupported Content-Encoding")
+            return
+        if (
+            not is_frame
+            and not is_mask_gzip
+            and not is_ai_mask_accept
+            and not is_interactive_context
+        ):
             await self.app(scope, receive, send)
             return
 
@@ -126,7 +183,11 @@ class UploadBodyLimitMiddleware:
             else (
                 MAX_AI_MASK_ACCEPT_BODY_BYTES
                 if is_ai_mask_accept
-                else MAX_COMPRESSED_BYTES
+                else (
+                    MAX_INTERACTIVE_CONTEXT_BODY_BYTES
+                    if is_interactive_context
+                    else MAX_COMPRESSED_BYTES
+                )
             )
         )
         raw_length = headers.get(b"content-length")
@@ -151,6 +212,25 @@ class UploadBodyLimitMiddleware:
                 {"reason": "request_body_too_large", "max_bytes": limit},
             )
             return
+        if is_interactive_frame:
+            context_size = _multipart_field_size(
+                raw,
+                headers.get(b"content-type", b""),
+                field_name="context",
+            )
+            if (
+                context_size is not None
+                and context_size > MAX_INTERACTIVE_CONTEXT_BODY_BYTES
+            ):
+                await _json_error(
+                    send,
+                    413,
+                    {
+                        "reason": "interactive_context_too_large",
+                        "message": "interactive context must be <= 1 MiB",
+                    },
+                )
+                return
         if is_mask_gzip:
             try:
                 body = decompress_mask_gzip(

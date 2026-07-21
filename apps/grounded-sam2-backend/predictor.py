@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 # vendor 内 grounding_dino/groundingdino/util/inference.py 用 `import grounding_dino.groundingdino...`
@@ -38,6 +39,7 @@ from PIL import Image
 from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
 from aap_protocol_v2 import (
     CocoRlePayload,
+    MAX_SCRIBBLE_RASTERIZED_PIXELS,
     NativeMaskCandidate,
     NativeMaskCandidateValue,
     decode_low_res_mask,
@@ -45,18 +47,35 @@ from aap_protocol_v2 import (
     native_mask_candidate_id,
 )
 from embedding_cache import CacheEntry, EmbeddingCache
-from mask_utils import MultiPolygonRing, encode_coco_rle, mask_to_multi_polygon
+from mask_utils import (
+    MultiPolygonRing,
+    PromptAdapterError,
+    encode_coco_rle,
+    mask_prompt_to_low_res_logits,
+    mask_to_multi_polygon,
+    scribbles_to_point_prompts,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_decode_mask_input(mask_input: str) -> np.ndarray | None:
-    """v0.18.18 · 解码前端回传的 low-res logits; 坏串静默忽略 (不让一次精修整体失败)。"""
-    try:
+def _resolve_mask_input(
+    mask_input: str | None,
+    mask_prompt: Mapping[str, Any] | None,
+    *,
+    width: int,
+    height: int,
+) -> np.ndarray | None:
+    """Resolve a verified session token first, otherwise adapt the source RLE."""
+
+    if mask_input is not None:
         return decode_low_res_mask(mask_input)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ignoring invalid mask_input: %s", exc)
-        return None
+    if mask_prompt is not None:
+        return mask_prompt_to_low_res_logits(
+            mask_prompt,
+            expected_size=(width, height),
+        )
+    return None
 
 
 def _maybe_encode_low_res(low_res: np.ndarray | None, *, enable: bool) -> str | None:
@@ -204,8 +223,10 @@ class GroundedSAM2Predictor:
         points: list[list[float]],
         labels: list[int],
         *,
+        scribbles: Sequence[Mapping[str, Any]] | None = None,
         multimask_output: bool = False,
         mask_input: str | None = None,
+        mask_prompt: Mapping[str, Any] | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
         output_geometry: str = "polygon",
@@ -219,13 +240,25 @@ class GroundedSAM2Predictor:
         的单 mask 精修阶段把本轮 low-res 编码回 mask_input_next 供下一次回传。
         """
         w, h, hit = self._prime_sam(image, cache_key)
+        if scribbles is not None:
+            if points:
+                raise PromptAdapterError("points and scribbles are mutually exclusive")
+            points, labels = scribbles_to_point_prompts(
+                scribbles,
+                image_size=(w, h),
+                max_rasterized_pixels=MAX_SCRIBBLE_RASTERIZED_PIXELS,
+            )
         px = np.array([[p[0] * w, p[1] * h] for p in points], dtype=np.float32)
         lab = np.array(labels, dtype=np.int32)
         kwargs: dict[str, Any] = {}
-        if mask_input:
-            arr = _safe_decode_mask_input(mask_input)
-            if arr is not None:
-                kwargs["mask_input"] = arr
+        dense_prompt = _resolve_mask_input(
+            mask_input,
+            mask_prompt,
+            width=w,
+            height=h,
+        )
+        if dense_prompt is not None:
+            kwargs["mask_input"] = dense_prompt
         masks, scores, low_res = self._sam_predictor.predict(
             point_coords=px, point_labels=lab, multimask_output=multimask_output, **kwargs
         )
@@ -250,6 +283,8 @@ class GroundedSAM2Predictor:
         bbox: list[float],
         *,
         multimask_output: bool = False,
+        mask_input: str | None = None,
+        mask_prompt: Mapping[str, Any] | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
         output_geometry: str = "polygon",
@@ -263,11 +298,20 @@ class GroundedSAM2Predictor:
         w, h, hit = self._prime_sam(image, cache_key)
         x1, y1, x2, y2 = bbox
         box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
-        masks, scores, _ = self._sam_predictor.predict(
-            point_coords=None, point_labels=None, box=box_px[None, :],
-            multimask_output=multimask_output,
+        kwargs: dict[str, Any] = {}
+        dense_prompt = _resolve_mask_input(
+            mask_input,
+            mask_prompt,
+            width=w,
+            height=h,
         )
-        return self._masks_to_results(
+        if dense_prompt is not None:
+            kwargs["mask_input"] = dense_prompt
+        masks, scores, low_res = self._sam_predictor.predict(
+            point_coords=None, point_labels=None, box=box_px[None, :],
+            multimask_output=multimask_output, **kwargs,
+        )
+        results = self._masks_to_results(
             masks,
             scores,
             w,
@@ -276,7 +320,53 @@ class GroundedSAM2Predictor:
             sort_by_score=multimask_output,
             output_geometry=output_geometry,
             prompt_revision=prompt_revision,
-        ), hit, None
+        )
+        return results, hit, _maybe_encode_low_res(
+            low_res,
+            enable=(dense_prompt is not None and not multimask_output and bool(results)),
+        )
+
+    def predict_mask(
+        self,
+        image: Image.Image | None,
+        mask_prompt: Mapping[str, Any],
+        *,
+        mask_input: str | None = None,
+        cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool, str | None]:
+        """Refine an authorized Mask seed without an additional sparse prompt."""
+
+        w, h, hit = self._prime_sam(image, cache_key)
+        dense_prompt = _resolve_mask_input(
+            mask_input,
+            mask_prompt,
+            width=w,
+            height=h,
+        )
+        assert dense_prompt is not None
+        masks, scores, low_res = self._sam_predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            mask_input=dense_prompt,
+            multimask_output=False,
+        )
+        results = self._masks_to_results(
+            masks,
+            scores,
+            w,
+            h,
+            simplify_tolerance,
+            sort_by_score=False,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
+        )
+        return results, hit, _maybe_encode_low_res(
+            low_res,
+            enable=bool(results),
+        )
 
     def predict_boxes(
         self,

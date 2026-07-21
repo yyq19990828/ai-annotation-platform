@@ -141,4 +141,45 @@ describe("useMLCapabilities", () => {
     expect(result.current.prompts).toEqual(["text"]);
     expect(result.current.paramsSchema?.properties?.box_threshold).toBeTruthy();
   });
+
+  it("精确请求会过滤不兼容的持久化 model 偏好并回落到同 model 完整契约", async () => {
+    mockSetup.mockResolvedValue({
+      name: "multi-backend",
+      models: [
+        {
+          id: "saved-but-split",
+          is_interactive: true,
+          supported_prompts: ["point"],
+          supported_inputs: ["point_prompt"],
+          supported_geometric_outputs: ["mask"],
+        },
+        {
+          id: "native-refine",
+          is_interactive: true,
+          supported_prompts: ["point", "mask"],
+          supported_inputs: ["point_prompt", "mask_prompt"],
+          supported_geometric_outputs: ["mask"],
+        },
+      ],
+    });
+    const { result } = renderHook(
+      () => useMLCapabilities(
+        "p1",
+        "b1",
+        "saved-but-split",
+        {
+          prompt: "point",
+          requiredInputs: ["point_prompt", "mask_prompt"],
+          output: "mask",
+        },
+      ),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.models.map((model) => model.id)).toEqual(["native-refine"]);
+    expect(result.current.activeModelId).toBe("native-refine");
+    expect(result.current.inputs).toEqual(["point_prompt", "mask_prompt"]);
+    expect(result.current.isInputSupported("mask_prompt")).toBe(true);
+  });
 });

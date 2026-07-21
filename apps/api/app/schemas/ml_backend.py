@@ -604,5 +604,7 @@ class InteractiveAnnotateResponse(BaseModel):
     diagnostic: InteractiveMaskDiagnostic | None = None
     prompt_revision: str | None = None
     output_geometry: Literal["polygon", "mask"] = "polygon"
+    frame_index: int | None = None
     routing: InteractiveRoutingLineage
+    prompt_summary: dict[str, Any] | None = None
     accept_receipts: dict[str, str] = Field(default_factory=dict)

@@ -35,7 +35,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-aap-protocol-v2 = { path = "../_shared/protocol_v2" }
+aap-protocol-v2 = { path = "../_shared/protocol_v2", editable = true }
 
 [project.optional-dependencies]
 test = [

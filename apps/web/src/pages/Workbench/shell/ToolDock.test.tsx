@@ -122,7 +122,7 @@ describe("ToolDock · video tools", () => {
 //   2. 后端不支持该 prompt → 置灰
 //   3. 产出几何所属单位未启用 → 隐藏 (smart-* → region, magic-box → bbox)
 describe("ToolDock · AI 工具三层门控", () => {
-  const AI_TOOL_IDS = ["smart-point", "smart-box", "exemplar", "magic-box"];
+  const AI_TOOL_IDS = ["smart-point", "smart-box", "smart-scribble", "exemplar", "magic-box"];
 
   it("默认 (总开关未加载 + 无 tool_bindings) → AI 工具全部显示", () => {
     render(<ToolDock tool="select" onSetTool={vi.fn()} />);
@@ -177,6 +177,7 @@ describe("ToolDock · AI 工具三层门控", () => {
     );
     expect(screen.queryByTestId("tool-btn-smart-point")).toBeNull();
     expect(screen.queryByTestId("tool-btn-smart-box")).toBeNull();
+    expect(screen.queryByTestId("tool-btn-smart-scribble")).toBeNull();
     expect(screen.queryByTestId("tool-btn-exemplar")).toBeNull();
     // magic-box 把 SAM 多边形收紧成外接矩形 → 归 bbox 单位, 故仍显示
     expect(screen.getByTestId("tool-btn-magic-box")).toBeInTheDocument();
@@ -194,8 +195,21 @@ describe("ToolDock · AI 工具三层门控", () => {
       />,
     );
     expect(screen.getByTestId("tool-btn-smart-point")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-btn-smart-scribble")).toBeInTheDocument();
     expect(screen.getByTestId("tool-btn-exemplar")).toBeInTheDocument();
     expect(screen.getByTestId("tool-btn-magic-box")).toBeInTheDocument();
+  });
+
+  it("笔迹后端能力已就绪但未选 Mask 时按上下文置灰", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        isPromptSupported={() => true}
+        toolDisabledReasons={{ "smart-scribble": "请先选中原生 Mask" }}
+      />,
+    );
+    expect(screen.getByTestId("tool-btn-smart-scribble")).toBeDisabled();
   });
 
   it("层 1 优先于层 3 · 总开关关闭时, 即使单位已启用 AI 工具仍隐藏", () => {

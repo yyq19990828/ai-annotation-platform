@@ -28,7 +28,11 @@ def _load_main():
     if "mask_utils" not in sys.modules:
         mask_utils = ModuleType("mask_utils")
         mask_utils.MultiPolygonRing = dict
+        mask_utils.PromptAdapterError = ValueError
+        mask_utils.encode_coco_rle = MagicMock(return_value={})
+        mask_utils.mask_prompt_to_low_res_logits = MagicMock()
         mask_utils.mask_to_multi_polygon = MagicMock(return_value=[])
+        mask_utils.scribbles_to_point_prompts = MagicMock(return_value=([], []))
         polygon = ModuleType("mask_utils.polygon")
         polygon.mask_to_polygon = MagicMock(return_value=[])
         rle = ModuleType("mask_utils.rle")
@@ -213,6 +217,27 @@ def test_predict_keeps_legacy_malformed_json_400(monkeypatch) -> None:
     )
     assert response.status_code == 400
     assert lifecycle.events == ["begin:predict", "close"]
+
+
+def test_predict_rejects_oversized_body_before_gpu_admission(monkeypatch) -> None:
+    main = _load_main()
+    lifecycle = _Lifecycle()
+    monkeypatch.setattr(main, "_gpu_lifecycle", lifecycle)
+
+    response = _run(
+        _request(
+            "POST",
+            "/predict",
+            content=b"",
+            headers={
+                "content-type": "application/json",
+                "content-length": str(main.MAX_PREDICT_REQUEST_BYTES + 1),
+            },
+        )
+    )
+
+    assert response.status_code == 413
+    assert lifecycle.events == []
 
 
 def test_reload_success_wire_is_unchanged(monkeypatch) -> None:

@@ -149,7 +149,12 @@ class MaskPromptPayload(BaseModel):
 
 
 class ScribbleStroke(BaseModel):
-    """One normalized positive or negative scribble polyline."""
+    """One normalized positive or negative scribble polyline.
+
+    ``width`` is the full stroke diameter divided by the shorter original-image
+    side. Consumers rasterize round caps and joins; viewport-only minimum widths
+    do not alter this wire value.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

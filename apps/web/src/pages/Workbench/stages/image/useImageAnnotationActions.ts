@@ -364,7 +364,7 @@ export function useImageAnnotationActions({
 
   const acceptNativeMaskCandidate = useCallback(async (idx: number, cls: string) => {
     const candidate = sam.candidates[idx];
-    if (!taskId || candidate?.type !== "mask") return;
+    if (!taskId || candidate?.type !== "mask" || !sam.canAcceptCandidates) return;
     if (maskPersistenceMode !== "native") {
       pushToast({
         msg: "原生 Mask 写入未开启",
@@ -377,15 +377,25 @@ export function useImageAnnotationActions({
       const accepted = await acceptNativeMask({
         candidate,
         className: cls,
-        target: { mode: "create" },
+        target: candidate.refineSource
+          ? {
+              mode: "refine",
+              source_annotation_id: candidate.refineSource.annotationId,
+              source_version: candidate.refineSource.sourceVersion,
+            }
+          : { mode: "create" },
       });
       if (!accepted) return;
       recordRecentClass(cls);
       s.setSelectedId(accepted.annotation.id);
       sam.consume(idx);
       pushToast({
-        msg: "已采纳原生 Mask",
-        sub: accepted.replayed ? "幂等重试已恢复原结果" : "候选像素已原子写入",
+        msg: candidate.refineSource ? "已更新原生 Mask" : "已采纳原生 Mask",
+        sub: accepted.replayed
+          ? "幂等重试已恢复原结果"
+          : candidate.refineSource
+            ? "精修像素已原位原子替换"
+            : "候选像素已原子写入",
         kind: "success",
       });
     } catch (error) {
@@ -401,6 +411,10 @@ export function useImageAnnotationActions({
     (cls: string) => {
       const pending = samPendingAccept;
       if (!pending) return;
+      if (!sam.canAcceptCandidates) {
+        setSamPendingAccept(null);
+        return;
+      }
       const cand = sam.candidates[pending.idx];
       setSamPendingAccept(null);
       if (!cand || !cls) return;
@@ -444,10 +458,15 @@ export function useImageAnnotationActions({
   useEffect(() => {
     if (s.tool !== "magic-box") return;
     if (sam.isRunning) return;
+    if (!sam.canAcceptCandidates) return;
     if (sam.candidates.length === 0) return;
     if (samPendingAccept) return;
     setSamPendingAccept({ idx: 0 });
-  }, [s.tool, sam.isRunning, sam.candidates.length, samPendingAccept]);
+  }, [s.tool, sam.isRunning, sam.canAcceptCandidates, sam.candidates.length, samPendingAccept]);
+
+  useEffect(() => {
+    if (!sam.canAcceptCandidates && samPendingAccept) setSamPendingAccept(null);
+  }, [sam.canAcceptCandidates, samPendingAccept]);
 
   // v0.10.9 · R 键精修走 ref 间接调用,避免在 useEffect 依赖里前向引用未定义的 handleRefineSamCandidate.
   const refineSamRef = useRef<(idx: number) => void>(() => {});
@@ -455,7 +474,7 @@ export function useImageAnnotationActions({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
-      const isAIActive = s.tool === "smart-point" || s.tool === "smart-box" || s.tool === "text-prompt" || s.tool === "exemplar";
+      const isAIActive = s.tool === "smart-point" || s.tool === "smart-box" || s.tool === "smart-scribble" || s.tool === "text-prompt" || s.tool === "exemplar";
       if (!isAIActive) return;
       if (sam.candidates.length === 0) return;
       const target = e.target as HTMLElement | null;
@@ -463,6 +482,7 @@ export function useImageAnnotationActions({
       if (samPendingAccept) return;
 
       if (e.key === "Enter") {
+        if (!sam.canAcceptCandidates) return;
         e.preventDefault();
         e.stopPropagation();
         setSamPendingAccept({ idx: sam.activeIdx });
@@ -482,6 +502,7 @@ export function useImageAnnotationActions({
       }
       // v0.10.9 · R 键精修当前 SAM 候选 → Mask 编辑器。仅 polygonlabels 类型有效。
       if (e.key === "r" || e.key === "R") {
+        if (!sam.canAcceptCandidates) return;
         e.preventDefault();
         e.stopPropagation();
         refineSamRef.current(sam.activeIdx);

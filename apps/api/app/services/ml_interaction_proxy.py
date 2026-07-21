@@ -11,12 +11,17 @@ from aap_protocol_v2 import (
     MAX_MASK_PIXELS,
     MAX_MASK_RUNS,
     MAX_RLE_OBJECT_BYTES,
+    MaskPromptPayload,
     MaskInteractionDiagnostic,
     NativeMaskCandidate,
+    ScribblePrompt,
     native_mask_candidate_id,
+    normalize_context_model_variants,
 )
 from fastapi import HTTPException
 from pydantic import ValidationError
+
+from app.services.ai_mask_session import AiMaskSessionError, verify_ai_mask_session
 
 
 def _error(status_code: int, reason: str, message: str, **detail: Any) -> None:
@@ -31,15 +36,17 @@ def prepare_interactive_context(
     capabilities: dict[str, Any] | None,
     *,
     task_id: str,
+    frame_index: int | None = None,
+    requested_backend_id: str | None = None,
 ) -> tuple[dict[str, Any], str | None]:
-    """Resolve one image-interactive model and bind native output to a revision.
-
-    Legacy requests that omit both ``output_geometry`` and ``model_id`` retain
-    their pre-contract pass-through behavior.
-    """
+    """Resolve one image-interactive model and bind its safe prompt contract."""
 
     prepared = dict(context)
-    if "output_geometry" not in prepared and "model_id" not in prepared:
+    uses_mask_contract = any(
+        key in prepared
+        for key in ("mask_prompt", "mask_input", "scribbles", "output_geometry", "model_id")
+    ) or prepared.get("type") in {"point", "interactive_box", "mask", "scribble"}
+    if not uses_mask_contract:
         return prepared, None
 
     prompt = prepared.get("type")
@@ -53,6 +60,16 @@ def prepare_interactive_context(
             "output_geometry must be polygon or mask",
             requested=output_geometry,
         )
+
+    required_inputs = {
+        "point": "point_prompt",
+        "interactive_box": "bbox_prompt",
+        "mask": "mask_prompt",
+        "scribble": "scribble_prompt",
+    }
+    required = [required_inputs[prompt]] if prompt in required_inputs else []
+    if "mask_prompt" in prepared and "mask_prompt" not in required:
+        required.append("mask_prompt")
 
     models = [
         model
@@ -94,17 +111,23 @@ def prepare_interactive_context(
             if output_geometry
             in (model.get("supported_geometric_outputs") or [])
         ]
-        if len(output_models) == 1:
-            target = output_models[0]
-        elif len(output_models) > 1:
+        input_models = [
+            model
+            for model in output_models
+            if all(
+                item in (model.get("supported_inputs") or [])
+                for item in required
+            )
+        ]
+        if len(input_models) == 1:
+            target = input_models[0]
+        elif len(input_models) > 1:
             _error(
                 422,
                 "ambiguous_model",
                 "multiple interactive models match the request",
-                model_ids=[model.get("id") for model in output_models],
+                model_ids=[model.get("id") for model in input_models],
             )
-        elif len(prompt_models) == 1:
-            target = prompt_models[0]
         elif not prompt_models:
             _error(
                 422,
@@ -112,12 +135,42 @@ def prepare_interactive_context(
                 "no interactive model supports the requested prompt",
                 requested=prompt,
             )
+        elif not output_models:
+            sole_prompt_model = prompt_models[0] if len(prompt_models) == 1 else None
+            _error(
+                422,
+                "unsupported_output_geometry",
+                "no interactive model supports the requested output geometry",
+                requested=output_geometry,
+                model_id=sole_prompt_model.get("id") if sole_prompt_model else None,
+                supported_geometric_outputs=(
+                    list(sole_prompt_model.get("supported_geometric_outputs") or [])
+                    if sole_prompt_model
+                    else []
+                ),
+            )
+        elif required:
+            sole_output_model = output_models[0] if len(output_models) == 1 else None
+            _error(
+                422,
+                "unsupported_input",
+                "no interactive model supports the required prompt inputs",
+                missing_inputs=required,
+                model_id=sole_output_model.get("id") if sole_output_model else None,
+                supported_inputs=(
+                    list(sole_output_model.get("supported_inputs") or [])
+                    if sole_output_model
+                    else []
+                ),
+            )
+        elif len(output_models) == 1:
+            target = output_models[0]
         else:
             _error(
                 422,
                 "ambiguous_model",
-                "multiple interactive models support the prompt",
-                model_ids=[model.get("id") for model in prompt_models],
+                "multiple interactive models match the request",
+                model_ids=[model.get("id") for model in output_models],
             )
 
     assert target is not None
@@ -141,17 +194,160 @@ def prepare_interactive_context(
             requested=output_geometry,
             supported_geometric_outputs=supported_outputs,
         )
+    supported_inputs = list(target.get("supported_inputs") or [])
+    missing_inputs = [item for item in required if item not in supported_inputs]
+    if missing_inputs:
+        _error(
+            422,
+            "unsupported_input",
+            "target model does not support the requested prompt input",
+            model_id=target.get("id"),
+            missing_inputs=missing_inputs,
+            supported_inputs=supported_inputs,
+        )
+
+    try:
+        prepared, _deprecated = normalize_context_model_variants(prepared)
+    except ValueError:
+        _error(
+            422,
+            "invalid_model_variants",
+            "model variants failed schema validation",
+        )
+    for legacy_field in ("variants", "sam_variant", "dino_variant", "model_variant"):
+        prepared.pop(legacy_field, None)
+    default_variants = target.get("default_variants")
+    effective_variants = {
+        str(key): str(value)
+        for key, value in (
+            default_variants.items()
+            if isinstance(default_variants, dict)
+            else []
+        )
+        if value is not None
+    }
+    requested_variants = prepared.get("model_variants")
+    if isinstance(requested_variants, dict):
+        effective_variants.update(
+            {
+                str(key): str(value)
+                for key, value in requested_variants.items()
+                if value is not None
+            }
+        )
+    if effective_variants:
+        prepared["model_variants"] = dict(sorted(effective_variants.items()))
+    else:
+        prepared.pop("model_variants", None)
+
+    mask_prompt = prepared.get("mask_prompt")
+    if mask_prompt is not None:
+        try:
+            prepared["mask_prompt"] = MaskPromptPayload.model_validate(
+                mask_prompt
+            ).model_dump(mode="json")
+        except ValidationError:
+            _error(
+                422,
+                "invalid_mask_prompt",
+                "Mask prompt failed schema validation",
+            )
+    if prompt == "mask" and "mask_prompt" not in prepared:
+        _error(422, "invalid_mask_prompt", "mask prompt is required")
+    if prompt == "scribble":
+        try:
+            scribble = ScribblePrompt.model_validate(
+                {
+                    "type": "scribble",
+                    "scribbles": prepared.get("scribbles"),
+                    "output_geometry": output_geometry,
+                    "mask_prompt": prepared.get("mask_prompt"),
+                }
+            )
+        except ValidationError:
+            _error(
+                422,
+                "invalid_scribble_prompt",
+                "scribble prompt failed schema validation",
+            )
+        prepared["scribbles"] = [
+            stroke.model_dump(mode="json") for stroke in scribble.scribbles
+        ]
+        if (
+            "mask_prompt" not in prepared
+            and "mask_input" not in prepared
+            and all(stroke.polarity == 0 for stroke in scribble.scribbles)
+        ):
+            _error(
+                422,
+                "negative_scribble_requires_seed",
+                "negative-only scribble requires a Mask seed",
+            )
+
+    if prepared.get("multimask_output") is True and (
+        "mask_prompt" in prepared or "mask_input" in prepared
+    ):
+        _error(
+            422,
+            "invalid_multimask_seed",
+            "multimask_output cannot be combined with a Mask seed",
+        )
 
     model_id = str(target.get("id"))
     prepared["model_id"] = model_id
+    session_origin: dict[str, Any] | None = None
+    if "mask_input" in prepared:
+        token = prepared.get("mask_input")
+        try:
+            claims = verify_ai_mask_session(token) if isinstance(token, str) else None
+        except AiMaskSessionError as exc:
+            _error(409, exc.reason, str(exc))
+        if claims is None:
+            _error(422, "invalid_mask_session", "Mask session is invalid")
+        mask_prompt = prepared.get("mask_prompt")
+        source = (
+            {
+                "source_annotation_id": mask_prompt.get("source_annotation_id"),
+                "source_version": mask_prompt.get("source_version"),
+                "source_digest": mask_prompt.get("source_digest"),
+            }
+            if isinstance(mask_prompt, dict)
+            else None
+        )
+        expected_session = {
+            "task_id": task_id,
+            "frame_index": frame_index,
+            "requested_backend_id": requested_backend_id,
+            "model_id": model_id,
+            "source": source,
+            "model_variants": prepared.get("model_variants") or {},
+        }
+        if any(claims.get(key) != value for key, value in expected_session.items()):
+            _error(409, "mask_session_mismatch", "Mask session does not match this prompt")
+        prepared["mask_input"] = claims["raw"]
+        session_origin = {
+            "origin_prompt_revision": claims.get("origin_prompt_revision"),
+            "candidate_id": claims.get("candidate_id"),
+            "candidate_index": claims.get("candidate_index"),
+        }
     if output_geometry == "mask":
         revision_context = dict(prepared)
         revision_context.pop("prompt_revision", None)
+        revision_context.pop("mask_input", None)
+        mask_prompt = revision_context.get("mask_prompt")
+        if isinstance(mask_prompt, dict):
+            revision_context["mask_prompt"] = {
+                "source_annotation_id": mask_prompt.get("source_annotation_id"),
+                "source_version": mask_prompt.get("source_version"),
+                "source_digest": mask_prompt.get("source_digest"),
+            }
         revision_bytes = json.dumps(
             {
                 "task_id": task_id,
+                "frame_index": frame_index,
                 "model_id": model_id,
                 "context": revision_context,
+                "session_origin": session_origin,
             },
             ensure_ascii=False,
             separators=(",", ":"),

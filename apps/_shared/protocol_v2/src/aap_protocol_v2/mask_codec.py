@@ -22,6 +22,8 @@ from typing import Any
 # format 标记: 解码时校验, 未来换格式 (如 int8 量化) 可换 magic 而不误读旧串。
 _MAGIC = b"m1"
 _SIDE = 256  # SAM low-res mask 边长 (H=W=256)
+_RAW_BYTES = _SIDE * _SIDE * 2
+MAX_LOW_RES_MASK_INPUT_CHARS = 512 * 1024
 
 
 def encode_low_res_mask(arr: Any) -> str:
@@ -39,6 +41,9 @@ def encode_low_res_mask(arr: Any) -> str:
         a = a[0]
     if a.shape != (_SIDE, _SIDE):
         raise ValueError(f"expected {_SIDE}x{_SIDE} low-res mask, got shape {a.shape}")
+    if not np.isfinite(a).all():
+        raise ValueError("mask_input logits must be finite")
+    a = np.clip(a, -32.0, 32.0)
     raw = zlib.compress(np.ascontiguousarray(a).tobytes(), 6)
     return base64.b64encode(_MAGIC + raw).decode("ascii")
 
@@ -47,11 +52,23 @@ def decode_low_res_mask(s: str) -> Any:
     """base64 字符串 → (1,256,256) float32, 直接喂 `predict(mask_input=...)`。"""
     import numpy as np
 
-    blob = base64.b64decode(s)
+    if not isinstance(s, str) or len(s) > MAX_LOW_RES_MASK_INPUT_CHARS:
+        raise ValueError("mask_input exceeds the encoded byte budget")
+    blob = base64.b64decode(s, validate=True)
     if blob[: len(_MAGIC)] != _MAGIC:
         raise ValueError("unknown mask_input encoding (bad magic)")
-    raw = zlib.decompress(blob[len(_MAGIC) :])
+    decoder = zlib.decompressobj()
+    raw = decoder.decompress(blob[len(_MAGIC) :], _RAW_BYTES + 1)
+    if (
+        len(raw) != _RAW_BYTES
+        or decoder.unconsumed_tail
+        or not decoder.eof
+        or decoder.unused_data
+    ):
+        raise ValueError("mask_input decompressed size is invalid")
     a = np.frombuffer(raw, dtype=np.float16).astype(np.float32)
     if a.size != _SIDE * _SIDE:
         raise ValueError(f"decoded {a.size} floats, expected {_SIDE * _SIDE}")
+    if not np.isfinite(a).all():
+        raise ValueError("decoded mask_input logits must be finite")
     return a.reshape(1, _SIDE, _SIDE)

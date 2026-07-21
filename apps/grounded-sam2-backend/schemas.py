@@ -7,15 +7,23 @@ v0.14.12 · 通用部分 (TaskItem / PredictionResult / BatchPredictResponse) �
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from aap_protocol_v2 import (
     BatchPredictResponse,
+    MAX_LOW_RES_MASK_INPUT_CHARS,
+    MAX_SCRIBBLE_STROKES,
+    MaskPromptPayload,
     PredictionResult,
+    ScribblePrompt,
+    ScribbleStroke,
     TaskItem,
     WarmupResponse,
 )
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StrictInt, model_validator
+
+MAX_SPARSE_PROMPT_POINTS = 512
 
 __all__ = [
     "AnnotationResult",
@@ -34,11 +42,33 @@ __all__ = [
 class Context(BaseModel):
     # v0.18.17 · "bbox" 改名 "interactive_box" (单框单 mask), 统一双 backend 命名;
     # gsam2 行为不变, 仅协议名换. "bbox" 已退出交互 prompt 命名空间.
-    type: Literal["point", "interactive_box", "polygon", "text"]
-    points: list[list[float]] | None = None
-    labels: list[int] | None = None
+    type: Literal[
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "polygon",
+        "text",
+    ]
+    points: list[list[float]] | None = Field(
+        default=None,
+        max_length=MAX_SPARSE_PROMPT_POINTS,
+    )
+    labels: list[StrictInt] | None = Field(
+        default=None,
+        max_length=MAX_SPARSE_PROMPT_POINTS,
+    )
     bbox: list[float] | None = None
     text: str | None = None
+    mask_prompt: MaskPromptPayload | None = None
+    scribbles: list[ScribbleStroke] | None = Field(
+        default=None,
+        max_length=MAX_SCRIBBLE_STROKES,
+    )
+    mask_input: str | None = Field(
+        default=None,
+        max_length=MAX_LOW_RES_MASK_INPUT_CHARS,
+    )
     # v0.18.17 · point / interactive_box 单点歧义时出 3 候选 (按 SAM iou 降序); 缺省单 mask.
     multimask_output: bool = False
     output_geometry: Literal["polygon", "mask"] = "polygon"
@@ -62,6 +92,52 @@ class Context(BaseModel):
             raise ValueError(
                 "context.prompt_revision required for output_geometry=mask"
             )
+        if self.type == "mask" and self.mask_prompt is None:
+            raise ValueError("context.mask_prompt required for type=mask")
+        if self.type == "point":
+            if not self.points:
+                raise ValueError("context.points required for type=point")
+            if self.labels is not None and len(self.labels) != len(self.points):
+                raise ValueError("context.labels must match context.points length")
+            for index, point in enumerate(self.points):
+                if len(point) != 2 or any(not math.isfinite(value) for value in point):
+                    raise ValueError(f"context.points[{index}] must be finite [x,y]")
+                if not all(0.0 <= value <= 1.0 for value in point):
+                    raise ValueError(f"context.points[{index}] must be normalized")
+            if self.labels is not None and any(label not in (0, 1) for label in self.labels):
+                raise ValueError("context.labels values must be 0 or 1")
+        if self.type == "interactive_box":
+            if self.bbox is None or len(self.bbox) != 4:
+                raise ValueError(
+                    "context.bbox=[x1,y1,x2,y2] required for type=interactive_box"
+                )
+            if any(not math.isfinite(value) for value in self.bbox):
+                raise ValueError("context.bbox must be finite")
+            x1, y1, x2, y2 = self.bbox
+            if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+                raise ValueError("context.bbox must be normalized and non-degenerate")
+        if self.type == "scribble":
+            ScribblePrompt.model_validate(
+                {
+                    "type": "scribble",
+                    "scribbles": self.scribbles,
+                    "output_geometry": self.output_geometry,
+                    "mask_prompt": self.mask_prompt,
+                }
+            )
+            if (
+                self.mask_prompt is None
+                and self.mask_input is None
+                and self.scribbles
+                and all(stroke.polarity == 0 for stroke in self.scribbles)
+            ):
+                raise ValueError(
+                    "negative-only scribble requires mask_prompt or mask_input"
+                )
+        if self.multimask_output and (
+            self.mask_prompt is not None or self.mask_input is not None
+        ):
+            raise ValueError("multimask_output cannot be combined with a Mask seed")
         return self
 
 

@@ -207,6 +207,7 @@ interface WorkbenchStageHostImageProps {
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
+    | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
     | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
   ) => void;
   onCommitMove: (
@@ -236,6 +237,11 @@ interface WorkbenchStageHostAiProps {
   samActiveIdx: number;
   /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传到画布 overlay 渲染。 */
   samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionScribbles: {
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[];
   /** v0.18.19 · exemplar refine 会话已落的正/负框, 透传到画布 overlay 渲染。 */
   samSessionExemplars: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
   samSubTool: SamSubTool | null;
@@ -423,6 +429,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onSelectSamMaskCandidate,
       samActiveIdx,
       samSessionPoints,
+      samSessionScribbles,
       samSessionExemplars,
       samSubTool,
       samPolarity,
@@ -595,6 +602,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onSelectSamMaskCandidate={onSelectSamMaskCandidate}
             samActiveIdx={samActiveIdx}
             samSessionPoints={samSessionPoints}
+            samSessionScribbles={samSessionScribbles}
             samSessionExemplars={samSessionExemplars}
             samSubTool={samSubTool}
             samPolarity={samPolarity}

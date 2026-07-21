@@ -55,6 +55,7 @@ from aap_protocol_v2 import (
     MaskInteractionDiagnostic,
     PlatformRole,
     VariantNotSupportedError,
+    decode_low_res_mask,
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
@@ -96,6 +97,7 @@ from observability import (
     shutdown_perfhud_collectors,
     update_cache_size,
 )
+from mask_utils import PromptAdapterError
 from predictor import (
     DEFAULT_SCORE_THRESHOLD,
     DEFAULT_SIMPLIFY_TOLERANCE,
@@ -105,7 +107,7 @@ from predictor import (
 from video_predictor import SAM3MultiplexVideoTracker
 from pvs_video_predictor import SAM3PVSVideoTracker
 from pool_domain import Sam3Pools
-from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
+from schemas import BatchPredictResponse, Context, PredictionResult, WarmupResponse
 
 logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -128,8 +130,31 @@ MANAGED_LIFECYCLE_VERIFIED = os.getenv(
     "SAM3_MANAGED_LIFECYCLE_VERIFIED",
     "0",
 ).lower() in {"1", "true", "yes"}
+MAX_PREDICT_REQUEST_BYTES = 6 * 1024 * 1024
 
 app = FastAPI(title="sam3-backend", version=BACKEND_VERSION)
+
+
+async def _buffer_bounded_predict_body(request: Request) -> None:
+    """Buffer one JSON predict body before acquiring GPU admission."""
+
+    content_encoding = request.headers.get("content-encoding", "identity").lower()
+    if content_encoding not in {"", "identity"}:
+        raise HTTPException(status_code=415, detail="compressed predict bodies are not supported")
+    raw_length = request.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            declared = int(raw_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid Content-Length") from exc
+        if declared > MAX_PREDICT_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail="predict request body is too large")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_PREDICT_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail="predict request body is too large")
+    request._body = bytes(body)  # noqa: SLF001 - Starlette body cache after bounded stream
 
 
 class _ManagedAdmissionRoute(APIRoute):
@@ -146,6 +171,8 @@ class _ManagedAdmissionRoute(APIRoute):
             return original
 
         async def admitted(request: Request):
+            if scope == AdmissionScope.PREDICT:
+                await _buffer_bounded_predict_body(request)
             operation = await _begin_workload(request, scope)
             request.state.gpu_workload = operation
             try:
@@ -595,7 +622,14 @@ def setup() -> dict:
         # v0.18.17 选项 B: 开 inst_interactivity 后宣称 point + interactive_box (SAM-style 单实例
         # 点/框交互, 走 model.predict_inst). "bbox" 已退出交互 prompt 命名空间 (仅几何形状);
         # PCS「找全图相似」统一走 "exemplar" (add_geometric_prompt). text = PCS 文本概念.
-        "supported_prompts": ["point", "interactive_box", "text", "exemplar"],
+        "supported_prompts": [
+            "point",
+            "interactive_box",
+            "mask",
+            "scribble",
+            "text",
+            "exemplar",
+        ],
         # v0.18.19 · exemplar 升级为多正负框 + text 组合 + per-request 阈值重过滤的迭代会话.
         # 前端据此把 exemplar 工具从「一发」升级为 refine 会话 (加正框/负框/拖阈值/叠 text).
         "exemplar_capabilities": {
@@ -739,9 +773,21 @@ def setup() -> dict:
             # v0.18.17 · 开 inst 后并入 SAM-style point / interactive_box 单实例交互 (与 exemplar 的
             # PCS 全图相似并列; 三者均走整图、出 polygon)。
             "composition": "atom",
-            "supported_prompts": ["point", "interactive_box", "exemplar"],
+            "supported_prompts": [
+                "point",
+                "interactive_box",
+                "mask",
+                "scribble",
+                "exemplar",
+            ],
             # 交互分割: 点/框/exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
-            "supported_inputs": ["full_image"],
+            "supported_inputs": [
+                "point_prompt",
+                "bbox_prompt",
+                "mask_prompt",
+                "scribble_prompt",
+                "full_image",
+            ],
             "supported_geometric_outputs": ["polygon", "mask"],
             # 交互分割: 单实例逐次推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
             "resource_profile": {"device": "gpu", "batchable": False},
@@ -1038,6 +1084,30 @@ def _coerce_interactive_output(ctx: dict) -> tuple[str, str | None]:
     return output_geometry, prompt_revision
 
 
+def _validate_mask_context(ctx: dict) -> Context | None:
+    if ctx.get("type") not in {"point", "interactive_box", "mask", "scribble"}:
+        return None
+    try:
+        validated = Context.model_validate(ctx)
+        if validated.mask_input is not None:
+            decode_low_res_mask(validated.mask_input)
+        return validated
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "invalid_mask_prompt",
+                "message": "interactive Mask prompt failed schema validation",
+            },
+        ) from exc
+
+
+def _mask_prompt_payload(context: Context | None) -> dict[str, Any] | None:
+    if context is None or context.mask_prompt is None:
+        return None
+    return context.mask_prompt.model_dump(mode="json")
+
+
 def _coerce_exemplars(ctx: dict) -> list[dict]:
     """v0.18.19 · 归一 type=exemplar 的几何输入为 [{bbox, label}] 列表。
 
@@ -1103,41 +1173,132 @@ def _run_prompt_sync(
     mask_input_next (v0.18.18) 仅 point 精修单 mask 阶段非空, 其余 prompt 恒 None。
     """
     ptype = ctx.get("type")
+    mask_context = _validate_mask_context(ctx)
+    if ptype in {"point", "interactive_box", "mask", "scribble"} and mask_context is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "invalid_mask_prompt", "message": "interactive prompt is invalid"},
+        )
+    mask_prompt = _mask_prompt_payload(mask_context)
     cache_key = compute_cache_key(file_path, MODEL_VERSION)
     simplify_tol = _coerce_simplify_tolerance(ctx)
     score_th = ctx.get("score_threshold")
 
     if ptype == "point":
+        if mask_context is None or mask_context.points is None:
+            raise HTTPException(status_code=422, detail="context.points required for type=point")
         output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.17 · inst 单实例点交互 (累加正负点; multimask 候选).
-        points = ctx.get("points") or []
-        if not points:
-            raise HTTPException(status_code=422, detail="context.points required for type=point")
-        labels = ctx.get("labels") or [1] * len(points)
-        multimask = bool(ctx.get("multimask_output", False))
+        points = [list(point) for point in mask_context.points]
+        labels = list(mask_context.labels or [1] * len(points))
+        multimask = mask_context.multimask_output
         image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
-        return p.predict_interactive(
-            image, points=points, labels=labels, multimask_output=multimask,
-            mask_input=ctx.get("mask_input"),
-            cache_key=cache_key, simplify_tolerance=simplify_tol,
-            output_geometry=output_geometry, prompt_revision=prompt_revision,
-        )
+        try:
+            return p.predict_interactive(
+                image,
+                points=points,
+                labels=labels,
+                multimask_output=multimask,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": str(exc)},
+            ) from exc
 
     if ptype == "interactive_box":
+        if mask_context is None or mask_context.bbox is None:
+            raise HTTPException(
+                status_code=422,
+                detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box",
+            )
         output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.17 · inst 单框单 mask (≠ exemplar 的全图相似; bbox prompt 已退役).
-        box = ctx.get("bbox")
-        if not box or len(box) != 4:
-            raise HTTPException(
-                status_code=422, detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box"
-            )
-        multimask = bool(ctx.get("multimask_output", False))
+        box = list(mask_context.bbox)
+        multimask = mask_context.multimask_output
         image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
-        return p.predict_interactive(
-            image, box=box, multimask_output=multimask,
-            cache_key=cache_key, simplify_tolerance=simplify_tol,
-            output_geometry=output_geometry, prompt_revision=prompt_revision,
+        try:
+            return p.predict_interactive(
+                image,
+                box=box,
+                multimask_output=multimask,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": str(exc)},
+            ) from exc
+
+    if ptype == "mask":
+        if mask_context is None or mask_prompt is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": "mask prompt is required"},
+            )
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
+        image = None if _cache.peek(cache_key) else fetch_image(
+            file_path,
+            timeout=IMAGE_DOWNLOAD_TIMEOUT,
         )
+        try:
+            return p.predict_interactive(
+                image,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": str(exc)},
+            ) from exc
+
+    if ptype == "scribble":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
+        if mask_context is None or mask_context.scribbles is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_scribble_prompt", "message": "scribbles are required"},
+            )
+        image = None if _cache.peek(cache_key) else fetch_image(
+            file_path,
+            timeout=IMAGE_DOWNLOAD_TIMEOUT,
+        )
+        try:
+            return p.predict_interactive(
+                image,
+                scribbles=[
+                    stroke.model_dump(mode="json")
+                    for stroke in mask_context.scribbles
+                ],
+                multimask_output=False,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_scribble_prompt", "message": str(exc)},
+            ) from exc
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
@@ -1623,7 +1784,13 @@ async def predict(request: Request):
             mask_input_next=mask_input_next,
             diagnostic=(
                 MaskInteractionDiagnostic(reason="empty_mask")
-                if ctx.get("type") in ("point", "interactive_box", "exemplar")
+                if ctx.get("type") in (
+                    "point",
+                    "interactive_box",
+                    "mask",
+                    "scribble",
+                    "exemplar",
+                )
                 and ctx.get("output_geometry", "polygon") == "mask"
                 and not result
                 else None

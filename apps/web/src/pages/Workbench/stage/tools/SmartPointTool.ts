@@ -19,6 +19,7 @@ export const SmartPointTool: CanvasTool = {
     readOnly,
     pendingDrawing,
     onClearSelection,
+    preserveSelectionForPrompt,
     samPolarity = "positive",
   }: ToolPointerContext): DragInit | null => {
     if (pendingDrawing) return null;
@@ -26,7 +27,7 @@ export const SmartPointTool: CanvasTool = {
       if (readOnly) onClearSelection();
       return { kind: "pan", sx: pt.x, sy: pt.y };
     }
-    onClearSelection();
+    if (!preserveSelectionForPrompt) onClearSelection();
     const negative = !!evt.altKey || samPolarity === "negative";
     return {
       kind: "samProbe",

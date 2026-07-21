@@ -202,10 +202,36 @@ export class SeedAPI {
     return (await res.json()) as { task_id: string };
   }
 
-  async nativeMaskCandidate(taskId: string): Promise<SeedNativeMaskCandidateData> {
+  async nativeMaskCandidate(
+    taskId: string,
+    options?: {
+      variant?: "default" | "negative_scribble";
+      promptFamily?: "point" | "scribble";
+      negativeScribbles?: number;
+      promptSource?: {
+        annotationId: string;
+        sourceVersion: number;
+        sourceDigest: string;
+      };
+    },
+  ): Promise<SeedNativeMaskCandidateData> {
     const res = await this.request.post(
       `${API_BASE}/api/v1/__test/seed/native-mask-candidate`,
-      { data: { task_id: taskId } },
+      {
+        data: {
+          task_id: taskId,
+          variant: options?.variant ?? "default",
+          prompt_family: options?.promptFamily ?? "point",
+          negative_scribbles: options?.negativeScribbles ?? 0,
+          prompt_source: options?.promptSource
+            ? {
+                annotation_id: options.promptSource.annotationId,
+                source_version: options.promptSource.sourceVersion,
+                source_digest: options.promptSource.sourceDigest,
+              }
+            : null,
+        },
+      },
     );
     if (!res.ok()) {
       throw new Error(

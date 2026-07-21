@@ -41,6 +41,42 @@ const POLY_RESPONSE = {
   ],
 };
 
+function nativeResponse(maskInputNext: string | null = null) {
+  const candidateId = `sha256:${"a".repeat(64)}`;
+  return {
+    result: [{
+      type: "mask",
+      value: {
+        rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+        masklabels: ["person"],
+      },
+      score: 0.93,
+      candidate_id: candidateId,
+    }],
+    prompt_revision: `prompt-${maskInputNext ?? "initial"}`,
+    output_geometry: "mask",
+    frame_index: null,
+    routing: {
+      requested_backend_id: "11111111-1111-1111-1111-111111111111",
+      backend_pool_id: null,
+      backend_instance_id: "11111111-1111-1111-1111-111111111111",
+      model_id: "sam-mask",
+    },
+    accept_receipts: { [candidateId]: "signed-receipt-value" },
+    mask_input_next: maskInputNext,
+    prompt_summary: {
+      family: "scribble",
+      positive_points: 0,
+      negative_points: 0,
+      boxes: 0,
+      positive_scribbles: 0,
+      negative_scribbles: 1,
+      multimask: false,
+      parameters_digest: null,
+    },
+  };
+}
+
 describe("useInteractiveAI", () => {
   beforeEach(() => {
     interactiveAnnotateMock.mockReset();
@@ -253,6 +289,16 @@ describe("useInteractiveAI", () => {
         model_id: "sam-mask",
       },
       accept_receipts: { [candidateId]: "signed-receipt-value" },
+      prompt_summary: {
+        family: "point",
+        positive_points: 1,
+        negative_points: 0,
+        boxes: 0,
+        positive_scribbles: 0,
+        negative_scribbles: 0,
+        multimask: true,
+        parameters_digest: null,
+      },
     });
     const { result } = renderHook(() => useInteractiveAI({
       ...ARGS,
@@ -277,6 +323,153 @@ describe("useInteractiveAI", () => {
       model_id: "sam-mask",
       output_geometry: "mask",
     });
+  });
+
+  it("已存 Mask 种子让首个点直接进单候选精修，并绑定原位更新版本", async () => {
+    interactiveAnnotateMock.mockResolvedValue(nativeResponse("SIGNED_LOGITS_A"));
+    const { result } = renderHook(() => useInteractiveAI({
+      ...ARGS,
+      requestContextDefaults: {
+        model_id: "sam-mask",
+        output_geometry: "mask",
+        mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+      },
+    }));
+
+    act(() => result.current.runPoint([0.5, 0.5], 0));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    const context = interactiveAnnotateMock.mock.calls[0][2].context;
+    expect(context).toMatchObject({
+      type: "point",
+      labels: [0],
+      multimask_output: false,
+      mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+    });
+    const item = result.current.candidates[0];
+    expect(item.type).toBe("mask");
+    if (item.type !== "mask") throw new Error("expected native mask candidate");
+    expect(item.refineSource).toEqual({ annotationId: "annotation-mask-1", sourceVersion: 7 });
+  });
+
+  it("负 scribble 累加且跨工具回灌 logits；网络失败保留候选与笔迹并可原样重试", async () => {
+    interactiveAnnotateMock
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_A"))
+      .mockRejectedValueOnce(new Error("network lost"))
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_B"));
+    const { result } = renderHook(() => useInteractiveAI({
+      ...ARGS,
+      requestContextDefaults: {
+        model_id: "sam-mask",
+        output_geometry: "mask",
+        mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+      },
+    }));
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(result.current.canAcceptCandidates).toBe(true);
+    const stroke: [number, number][] = [[0.6, 0.4], [0.7, 0.45], [0.75, 0.5]];
+    act(() => result.current.runScribble(stroke, 0, 0.008));
+    await waitFor(() => expect(result.current.canRetry).toBe(true));
+
+    expect(result.current.candidates).toHaveLength(1);
+    expect(result.current.canAcceptCandidates).toBe(false);
+    expect(result.current.sessionPoints).toEqual([]);
+    expect(result.current.sessionScribbles).toEqual([{ points: stroke, polarity: 0, width: 0.008 }]);
+    expect(interactiveAnnotateMock.mock.calls[1][2].context).toMatchObject({
+      type: "scribble",
+      scribbles: [{ points: stroke, polarity: 0, width: 0.008 }],
+      mask_input: "SIGNED_LOGITS_A",
+    });
+
+    act(() => result.current.retryLast());
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.canRetry).toBe(false));
+    expect(result.current.canAcceptCandidates).toBe(true);
+    expect(interactiveAnnotateMock.mock.calls[2][2].context).toEqual(
+      interactiveAnnotateMock.mock.calls[1][2].context,
+    );
+    const retried = result.current.candidates[0];
+    expect(retried.type).toBe("mask");
+    if (retried.type !== "mask") throw new Error("expected native mask candidate");
+    expect(retried.promptSummary).toMatchObject({
+      family: "scribble",
+      positive_scribbles: 0,
+      negative_scribbles: 1,
+    });
+  });
+
+  it("过期 mask session 清掉旧 logits，保留已授权种子与笔迹后可重试", async () => {
+    interactiveAnnotateMock
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_A"))
+      .mockRejectedValueOnce(
+        new ApiError(409, "mask session expired", { reason: "mask_session_expired" }),
+      )
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_B"));
+    const { result } = renderHook(() => useInteractiveAI({
+      ...ARGS,
+      requestContextDefaults: {
+        model_id: "sam-mask",
+        output_geometry: "mask",
+        mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+      },
+    }));
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    const stroke: [number, number][] = [[0.2, 0.2], [0.3, 0.3]];
+    act(() => result.current.runScribble(stroke, 1));
+    await waitFor(() => expect(result.current.canRetry).toBe(true));
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBe("SIGNED_LOGITS_A");
+
+    act(() => result.current.retryLast());
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    const retryContext = interactiveAnnotateMock.mock.calls[2][2].context;
+    expect(retryContext.mask_input).toBeUndefined();
+    expect(retryContext).toMatchObject({
+      type: "scribble",
+      scribbles: [{ points: stroke, polarity: 1, width: 0.008 }],
+      mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+    });
+  });
+
+  it("模型变体变化时不跨变体回灌 mask session", async () => {
+    interactiveAnnotateMock
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_A"))
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_B"))
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_DEFAULT"));
+    const { result } = renderHook(() => useInteractiveAI({
+      ...ARGS,
+      requestContextDefaults: {
+        model_id: "sam-mask",
+        output_geometry: "mask",
+        mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+      },
+    }));
+
+    act(() => result.current.runPoint(
+      [0.5, 0.5],
+      1,
+      { model_variants: { sam_variant: "tiny" } },
+    ));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.runScribble(
+      [[0.2, 0.2], [0.3, 0.3]],
+      1,
+      0.008,
+      { model_variants: { sam_variant: "large" } },
+    ));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBeUndefined();
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.model_variants).toEqual({
+      sam_variant: "large",
+    });
+
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    expect(interactiveAnnotateMock.mock.calls[2][2].context.mask_input).toBeUndefined();
+    expect(interactiveAnnotateMock.mock.calls[2][2].context.model_variants).toBeUndefined();
   });
 
   it("cycle 在候选间循环切换", async () => {

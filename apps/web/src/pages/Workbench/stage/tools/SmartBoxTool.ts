@@ -18,13 +18,14 @@ export const SmartBoxTool: CanvasTool = {
     readOnly,
     pendingDrawing,
     onClearSelection,
+    preserveSelectionForPrompt,
   }: ToolPointerContext): DragInit | null => {
     if (pendingDrawing) return null;
     if (spacePan || readOnly) {
       if (readOnly) onClearSelection();
       return { kind: "pan", sx: pt.x, sy: pt.y };
     }
-    onClearSelection();
+    if (!preserveSelectionForPrompt) onClearSelection();
     return {
       kind: "samProbe",
       mode: "bbox",

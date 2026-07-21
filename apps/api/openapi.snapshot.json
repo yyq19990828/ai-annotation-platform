@@ -4575,6 +4575,7 @@
         "properties": {
           "context": {
             "default": "{}",
+            "maxLength": 1048576,
             "title": "Context",
             "type": "string"
           },
@@ -11302,6 +11303,17 @@
               }
             ]
           },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
           "inference_time_ms": {
             "anyOf": [
               {
@@ -11365,6 +11377,18 @@
               }
             ],
             "title": "Prompt Revision"
+          },
+          "prompt_summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Summary"
           },
           "result": {
             "items": {

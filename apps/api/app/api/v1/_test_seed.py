@@ -967,8 +967,18 @@ async def seed_video_task(
     return SeedVideoTaskResponse(task_id=task_id)
 
 
+class SeedNativeMaskPromptSource(BaseModel):
+    annotation_id: str
+    source_version: int
+    source_digest: str
+
+
 class SeedNativeMaskCandidateRequest(BaseModel):
     task_id: str
+    variant: Literal["default", "negative_scribble"] = "default"
+    prompt_family: Literal["point", "scribble"] = "point"
+    negative_scribbles: int = 0
+    prompt_source: SeedNativeMaskPromptSource | None = None
 
 
 class SeedNativeMaskCandidateResponse(BaseModel):
@@ -1018,7 +1028,10 @@ async def seed_native_mask_candidate(
 
     total = int(item.width) * int(item.height)
     foreground_start = total // 4
-    foreground_length = max(1, total // 3)
+    foreground_length = max(
+        1,
+        total // 4 if payload.variant == "negative_scribble" else total // 3,
+    )
     rle_model = CocoRlePayload(
         encoding="coco_rle",
         size=(int(item.height), int(item.width)),
@@ -1029,7 +1042,9 @@ async def seed_native_mask_candidate(
         ),
     )
     rle = rle_model.model_dump(mode="json")
-    prompt_revision = f"e2e-native-mask:{task.id}:0"
+    prompt_revision = (
+        f"e2e-native-mask:{task.id}:{payload.variant}:{payload.prompt_family}"
+    )
     candidate_id = native_mask_candidate_id(
         rle_model,
         prompt_revision=prompt_revision,
@@ -1047,20 +1062,40 @@ async def seed_native_mask_candidate(
         "cache_hit": False,
         "model_load_ms": 0.0,
     }
+    # E2E 的视频任务复用图片项目，必须按实际媒体而不是 project.data_type 绑定 receipt。
+    frame_index = 0 if item.file_type == "video" else None
     prompt_summary = {
-        "family": "point",
-        "positive_points": 1,
+        "family": payload.prompt_family,
+        "positive_points": 1 if payload.prompt_family == "point" else 0,
         "negative_points": 0,
         "boxes": 0,
         "positive_scribbles": 0,
-        "negative_scribbles": 0,
-        "multimask": True,
+        "negative_scribbles": payload.negative_scribbles,
+        "multimask": payload.prompt_family == "point",
         "parameters_digest": None,
     }
     content_digest = hashlib.sha256(canonical_rle_bytes(rle_model)).hexdigest()
+    prompt_source = (
+        {
+            "source_annotation_id": payload.prompt_source.annotation_id,
+            "source_version": payload.prompt_source.source_version,
+            "source_digest": payload.prompt_source.source_digest,
+        }
+        if payload.prompt_source is not None
+        else None
+    )
+    accept_target = {
+        "mode": "refine" if prompt_source is not None else "create",
+        "source_annotation_id": (
+            prompt_source["source_annotation_id"] if prompt_source else None
+        ),
+        "source_version": prompt_source["source_version"] if prompt_source else None,
+        "frame_index": frame_index,
+    }
     receipt = issue_ai_mask_receipt(
         {
             "task_id": str(task.id),
+            "frame_index": frame_index,
             "candidate_id": candidate_id,
             "candidate_index": 0,
             "content_digest": content_digest,
@@ -1069,6 +1104,8 @@ async def seed_native_mask_candidate(
             "routing": routing,
             "inference": inference,
             "prompt_summary": prompt_summary,
+            "prompt_source": prompt_source,
+            "accept_target": accept_target,
         }
     )
     response = {
@@ -1089,7 +1126,9 @@ async def seed_native_mask_candidate(
         "diagnostic": None,
         "prompt_revision": prompt_revision,
         "output_geometry": "mask",
+        "frame_index": frame_index,
         "routing": routing,
+        "prompt_summary": prompt_summary,
         "accept_receipts": {candidate_id: receipt},
     }
     return SeedNativeMaskCandidateResponse(response=response, rle=rle)

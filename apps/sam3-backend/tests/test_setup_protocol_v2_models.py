@@ -60,7 +60,13 @@ def test_setup_models_declare_supported_inputs(setup_fn):
     by_id = {m["id"]: m for m in setup_fn()["models"]}
     assert by_id["sam3-detection"]["supported_inputs"] == ["full_image", "crop"]
     assert by_id["sam3-segmentation"]["supported_inputs"] == ["full_image", "crop"]
-    assert by_id["sam3-interactive-seg"]["supported_inputs"] == ["full_image"]
+    assert by_id["sam3-interactive-seg"]["supported_inputs"] == [
+        "point_prompt",
+        "bbox_prompt",
+        "mask_prompt",
+        "scribble_prompt",
+        "full_image",
+    ]
     assert by_id["sam3-video-tracker"]["supported_inputs"] == ["video"]
     assert by_id["sam3-video-interactive-tracker"]["supported_inputs"] == [
         "video",
@@ -113,20 +119,27 @@ def test_interactive_seg_model_prompts(setup_fn):
     """v0.18.17 · 交互分割含 SAM-style point/interactive_box (inst) + exemplar (PCS)."""
     data = setup_fn()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
-    assert inter["supported_prompts"] == ["point", "interactive_box", "exemplar"]
+    assert inter["supported_prompts"] == [
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "exemplar",
+    ]
     assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
     assert inter["is_interactive"] is True
 
 
-def test_image_native_mask_output_is_advertised_without_future_prompts(
+def test_image_mask_and_scribble_consumers_are_advertised(
     setup_fn,
 ):
-    """SAM3 image 声明原生输出，但未实现的 Mask / scribble prompt 不抢跑。"""
+    """SAM3 image advertises Mask/scribble only after consumer coverage."""
     inter = next(m for m in setup_fn()["models"] if m["task"] == "interactive_seg")
-    assert {"mask", "scribble", "correction_frame"}.isdisjoint(
-        inter["supported_prompts"]
+    assert {"mask", "scribble"}.issubset(inter["supported_prompts"])
+    assert {"mask_prompt", "scribble_prompt"}.issubset(
+        inter["supported_inputs"]
     )
-    assert {"mask_prompt", "scribble_prompt"}.isdisjoint(inter["supported_inputs"])
+    assert "correction_frame" not in inter["supported_prompts"]
     assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
 
 
@@ -157,7 +170,14 @@ def test_models_carry_composition_dimension(setup_fn):
 def test_top_level_back_compat_fields_unchanged(setup_fn):
     """v0.18.17 · 顶层 supported_prompts: point/interactive_box/text/exemplar (bbox 已退役)."""
     data = setup_fn()
-    assert set(data["supported_prompts"]) == {"point", "interactive_box", "text", "exemplar"}
+    assert set(data["supported_prompts"]) == {
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "text",
+        "exemplar",
+    }
 
 
 def test_setup_params_schema_platform_roles(setup_fn):

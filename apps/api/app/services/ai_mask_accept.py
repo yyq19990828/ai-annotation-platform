@@ -37,7 +37,7 @@ from app.services.raster_mask_storage import (
     validate_mask_geometry_for_task,
 )
 from app.services.task_lock import TaskLockConflictError, TaskLockService
-from app.services.video_tracks import remove_frame_from_outside_ranges
+from app.services.video_tracks import remove_frame_from_outside_ranges, resolve_track_at_frame
 
 
 class AiMaskAcceptError(ValueError):
@@ -118,7 +118,7 @@ def _validate_receipt(
     *,
     task_id: uuid.UUID,
     content_digest: str,
-) -> None:
+) -> dict[str, Any]:
     try:
         claims = verify_ai_mask_receipt(data.candidate.receipt)
     except AiMaskReceiptError as exc:
@@ -130,6 +130,7 @@ def _validate_receipt(
 
     expected = {
         "task_id": str(task_id),
+        "frame_index": data.target.frame_index,
         "candidate_id": data.candidate.candidate.candidate_id,
         "candidate_index": data.candidate.candidate_index,
         "content_digest": content_digest,
@@ -144,6 +145,73 @@ def _validate_receipt(
             status_code=409,
             reason="candidate_receipt_mismatch",
             message="candidate receipt does not match the accept request",
+        )
+    accept_target = claims.get("accept_target")
+    if accept_target is not None and accept_target != data.target.model_dump(mode="json"):
+        raise AiMaskAcceptError(
+            status_code=409,
+            reason="candidate_receipt_mismatch",
+            message="candidate receipt does not match the accept target",
+        )
+    prompt_source = claims.get("prompt_source")
+    if prompt_source is not None:
+        expected_source = {
+            "source_annotation_id": (
+                str(data.target.source_annotation_id)
+                if data.target.source_annotation_id is not None
+                else None
+            ),
+            "source_version": data.target.source_version,
+        }
+        if (
+            data.target.mode != "refine"
+            or not isinstance(prompt_source, dict)
+            or any(
+                prompt_source.get(key) != value
+                for key, value in expected_source.items()
+            )
+        ):
+            raise AiMaskAcceptError(
+                status_code=409,
+                reason="candidate_receipt_mismatch",
+                message="Mask prompt source does not match the accept target",
+            )
+    return claims
+
+
+def _validate_prompt_source_digest(
+    claims: dict[str, Any],
+    source: Annotation | None,
+    *,
+    frame_index: int | None,
+) -> None:
+    prompt_source = claims.get("prompt_source")
+    if prompt_source is None:
+        return
+    if source is None or not isinstance(prompt_source, dict):
+        raise AiMaskAcceptError(
+            status_code=409,
+            reason="candidate_receipt_mismatch",
+            message="Mask prompt source is no longer the accept target",
+        )
+    geometry = source.geometry or {}
+    if geometry.get("type") == "raster_mask":
+        mask_reference = geometry.get("mask")
+    else:
+        resolved = (
+            resolve_track_at_frame(geometry, frame_index)
+            if frame_index is not None
+            else None
+        )
+        mask_reference = resolved.get("mask") if isinstance(resolved, dict) else None
+    current_digest = (
+        mask_reference.get("sha256") if isinstance(mask_reference, dict) else None
+    )
+    if current_digest != prompt_source.get("source_digest"):
+        raise AiMaskAcceptError(
+            status_code=409,
+            reason="mask_prompt_source_changed",
+            message="Mask prompt source content has changed",
         )
 
 
@@ -376,7 +444,11 @@ async def accept_ai_mask_candidate(
     if existing is not None:
         return _validate_replay(existing, request_digest, current_user)
 
-    _validate_receipt(data, task_id=task_id, content_digest=content_digest)
+    receipt_claims = _validate_receipt(
+        data,
+        task_id=task_id,
+        content_digest=content_digest,
+    )
     prediction_backend_id, prediction_pool_id = await _resolve_routing_lineage(db, data)
 
     item = await db.get(DatasetItem, task.dataset_item_id) if task.dataset_item_id else None
@@ -408,6 +480,11 @@ async def accept_ai_mask_candidate(
         task_id=task_id,
         expected_version=expected_version,
         expected_geometry_type=geometry_type,
+    )
+    _validate_prompt_source_digest(
+        receipt_claims,
+        source,
+        frame_index=frame_index,
     )
     source_version = source.version if source is not None else None
     if media_type == "image":
@@ -505,6 +582,7 @@ async def accept_ai_mask_candidate(
                 "routing": data.routing.model_dump(mode="json"),
                 "inference": data.inference.model_dump(mode="json"),
                 "target": data.target.model_dump(mode="json"),
+                "prompt_source": receipt_claims.get("prompt_source"),
             }
         },
     )

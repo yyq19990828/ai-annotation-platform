@@ -37,6 +37,8 @@ export interface InteractiveToolBarProps {
   onSetSamPolarity: (p: SamPolarity) => void;
   isLoading: boolean;
   isError: boolean;
+  canRetry?: boolean;
+  onRetry?: () => void;
   // exemplar 工具输出形态 (box/mask/both); 会话级状态由 WorkbenchShell 持有.
   exemplarOutputMode?: TextOutputMode;
   onSetExemplarOutputMode?: (mode: TextOutputMode) => void;
@@ -44,6 +46,8 @@ export interface InteractiveToolBarProps {
   singleFrameOutputGeometry?: "polygon" | "mask";
   onSetSingleFrameOutputGeometry?: (mode: "polygon" | "mask") => void;
   nativeMaskOutputDisabledReason?: string;
+  /** 当前已鉴权的已存 Mask 提示摘要；不携带 RLE 正文。 */
+  maskPromptSourceLabel?: string;
   // exemplar refine 会话控件 (多正负框 + text 组合 + 阈值重过滤).
   /** 叠加的 text 概念 (PCS text + 几何示例组合); 改动即重跑当前会话。 */
   exemplarText?: string;
@@ -127,6 +131,7 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   mask: null,
   "smart-point": "单击图像 = 正向点；Alt+点 = 负向点",
   "smart-box": "在图像上拖框作为 SAM 提示",
+  "smart-scribble": "在选中的已存 Mask 上绘制正 / 负笔迹",
   "text-prompt": null,
   exemplar: "拖框圈出某个示例，后端找全图相似实例",
   "magic-box": "粗略拖框 → SAM 返回 mask → 取紧凑外接矩形落 bbox",
@@ -144,11 +149,14 @@ export function InteractiveToolBar({
   onSetSamPolarity,
   isLoading,
   isError,
+  canRetry,
+  onRetry,
   exemplarOutputMode,
   onSetExemplarOutputMode,
   singleFrameOutputGeometry,
   onSetSingleFrameOutputGeometry,
   nativeMaskOutputDisabledReason,
+  maskPromptSourceLabel,
   exemplarText,
   onSetExemplarText,
   exemplarThreshold,
@@ -229,6 +237,21 @@ export function InteractiveToolBar({
           <b className="whitespace-nowrap text-xs">{meta.label}</b>
         </div>
 
+        {canRetry && onRetry && (
+          <>
+            {DIVIDER}
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onRetry}
+              data-testid="interactive-prompt-retry"
+            >
+              <Icon name="rotate-ccw" size={11} />
+              重试本轮
+            </Button>
+          </>
+        )}
+
         {DIVIDER}
 
         {/* 引擎: 后端 (≥2 候选可切, 否则只读) + 模型 (过滤后 >1 时) */}
@@ -288,7 +311,7 @@ export function InteractiveToolBar({
 
         {/* 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。
             exemplar 仅在后端支持负框时显示 (YOLOE negative_box=false → 隐藏, 恒正框)。 */}
-        {(tool === "smart-point" || (tool === "exemplar" && exemplarNegative)) && (
+        {(tool === "smart-point" || tool === "smart-scribble" || (tool === "exemplar" && exemplarNegative)) && (
           <>
             {DIVIDER}
             <div className="flex items-center gap-1.5">
@@ -318,7 +341,7 @@ export function InteractiveToolBar({
         )}
 
         {/* 单帧最终几何与 exemplar 的 box/mask/both 召回形态不是同一维度。 */}
-        {(tool === "smart-point" || tool === "smart-box" || tool === "exemplar")
+        {(tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble" || tool === "exemplar")
           && singleFrameOutputGeometry
           && onSetSingleFrameOutputGeometry && (
           <>
@@ -340,6 +363,20 @@ export function InteractiveToolBar({
                 </option>
               </select>
             </div>
+          </>
+        )}
+
+        {maskPromptSourceLabel
+          && (tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble") && (
+          <>
+            {DIVIDER}
+            <span
+              data-testid="mask-prompt-source"
+              className="whitespace-nowrap rounded-full bg-status-positive-soft px-2 py-1 text-2xs font-medium text-emerald-700 dark:text-emerald-400"
+              title="本轮以已存原生 Mask 为种子，接纳后原位更新"
+            >
+              {maskPromptSourceLabel}
+            </span>
           </>
         )}
 

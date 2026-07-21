@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 import types
 from unittest.mock import MagicMock
@@ -50,6 +52,21 @@ def _circle(size: int = 256, r: int = 60) -> np.ndarray:
 
 def _img() -> Image.Image:
     return Image.fromarray(np.zeros((256, 256, 3), dtype=np.uint8))
+
+
+def _mask_prompt(width: int, height: int) -> dict:
+    from mask_utils import encode_coco_rle
+
+    pixels = [int(x < width // 2) for _y in range(height) for x in range(width)]
+    rle = encode_coco_rle(pixels, width, height)
+    return {
+        "rle": rle,
+        "source_annotation_id": "source-1",
+        "source_version": 1,
+        "source_digest": hashlib.sha256(
+            json.dumps(rle, separators=(",", ":")).encode()
+        ).hexdigest(),
+    }
 
 
 def test_point_multimask_passthrough_and_sorted(predictor):
@@ -102,6 +119,49 @@ def test_point_mask_input_decoded_and_passed(predictor):
     )
     kw = predictor._sam_predictor.predict.call_args.kwargs
     assert kw["mask_input"].shape == (1, 256, 256)
+
+
+def test_scribble_consumer_preserves_positive_negative_and_mask_seed(predictor):
+    low_res = np.zeros((1, 256, 256), dtype=np.float32)
+    predictor._sam_predictor.predict = MagicMock(
+        return_value=(_circle()[None, ...], np.array([0.8]), low_res)
+    )
+    predictor.predict_point(
+        _img(),
+        [],
+        [],
+        scribbles=[
+            {"polarity": 1, "points": [[0.1, 0.1], [0.4, 0.4]], "width": 0.01},
+            {"polarity": 0, "points": [[0.8, 0.8], [0.6, 0.6]], "width": 0.01},
+        ],
+        mask_prompt=_mask_prompt(256, 256),
+        cache_key=None,
+    )
+
+    kwargs = predictor._sam_predictor.predict.call_args.kwargs
+    assert set(kwargs["point_labels"].tolist()) == {0, 1}
+    assert kwargs["mask_input"].shape == (1, 256, 256)
+    assert set(np.unique(kwargs["mask_input"])) == {-16.0, 16.0}
+
+
+def test_mask_prompt_only_is_consumed_as_dense_prompt(predictor):
+    low_res = np.zeros((1, 256, 256), dtype=np.float32)
+    predictor._sam_predictor.predict = MagicMock(
+        return_value=(_circle()[None, ...], np.array([0.8]), low_res)
+    )
+
+    results, _, mask_next = predictor.predict_mask(
+        _img(),
+        _mask_prompt(256, 256),
+        cache_key=None,
+    )
+
+    kwargs = predictor._sam_predictor.predict.call_args.kwargs
+    assert kwargs["point_coords"] is None
+    assert kwargs["point_labels"] is None
+    assert kwargs["mask_input"].shape == (1, 256, 256)
+    assert results
+    assert mask_next is not None
 
 
 def test_interactive_box_multimask_sorted(predictor):

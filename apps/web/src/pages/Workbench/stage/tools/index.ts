@@ -10,6 +10,7 @@ import { PolylineTool } from "./PolylineTool";
 import { CanvasTool } from "./CanvasTool";
 import { SmartPointTool } from "./SmartPointTool";
 import { SmartBoxTool } from "./SmartBoxTool";
+import { SmartScribbleTool } from "./SmartScribbleTool";
 import { TextPromptTool } from "./TextPromptTool";
 import { ExemplarTool } from "./ExemplarTool";
 import { MaskTool } from "./MaskTool";
@@ -35,6 +36,7 @@ export type ToolId =
   | "mask"
   | "smart-point"
   | "smart-box"
+  | "smart-scribble"
   | "text-prompt"
   | "exemplar"
   // v0.10.17 · 复用 SAM bbox prompt → polygon → 紧凑外接矩形 → bbox 标注.
@@ -44,7 +46,7 @@ export type ToolId =
 
 /** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合.
  *  v0.18.17 · "bbox" 改名 "interactive_box" (单框单 mask, 统一双 backend); 与后端 supported_prompts 对齐. */
-export type RequiredPrompt = "point" | "interactive_box" | "text" | "exemplar";
+export type RequiredPrompt = "point" | "interactive_box" | "scribble" | "text" | "exemplar";
 
 export interface ToolMeta {
   id: ToolId;
@@ -71,6 +73,7 @@ export type DragInit =
       cy: number;
       alt: boolean;
     }
+  | { kind: "samScribble"; points: [number, number][]; alt: boolean }
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] }
   /**
@@ -117,6 +120,8 @@ export interface ToolPointerContext {
   readOnly: boolean;
   pendingDrawing: boolean;
   onClearSelection: () => void;
+  /** 在已存 Mask 上追加 AI 提示时保留选中，便于服务端按 id + version 解析种子。 */
+  preserveSelectionForPrompt?: boolean;
   /** v0.14.10 · 仅 polygon/polyline 落点消费；返回吸附后的归一化图像坐标。 */
   snapPoint?: (pt: { x: number; y: number }, evt: MouseEvent) => { x: number; y: number };
   /** 仅 PolygonTool 用. */
@@ -158,6 +163,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   mask: MaskTool,
   "smart-point": SmartPointTool,
   "smart-box": SmartBoxTool,
+  "smart-scribble": SmartScribbleTool,
   "text-prompt": TextPromptTool,
   exemplar: ExemplarTool,
   "magic-box": MagicBoxTool,
@@ -181,6 +187,7 @@ export const ALL_TOOLS: CanvasTool[] = [
   MaskTool,
   SmartPointTool,
   SmartBoxTool,
+  SmartScribbleTool,
   ExemplarTool,
   MagicBoxTool,
 ];
@@ -204,6 +211,7 @@ export {
   MaskTool,
   SmartPointTool,
   SmartBoxTool,
+  SmartScribbleTool,
   TextPromptTool,
   ExemplarTool,
   KeypointTool,

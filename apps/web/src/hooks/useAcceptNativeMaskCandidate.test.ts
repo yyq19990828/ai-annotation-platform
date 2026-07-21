@@ -15,6 +15,7 @@ function candidate(): PendingMaskCandidate {
     candidateId: `sha256:${"a".repeat(64)}`,
     candidateIndex: 0,
     promptRevision: "revision-1",
+    frameIndex: null,
     receipt: "signed-receipt-value",
     idempotencyKey: "mask:stable-idempotency-key",
     promptSummary: {
@@ -25,6 +26,7 @@ function candidate(): PendingMaskCandidate {
       positive_scribbles: 0,
       negative_scribbles: 0,
       multimask: true,
+      parameters_digest: null,
     },
     routing: {
       requested_backend_id: "backend-requested",
@@ -147,5 +149,60 @@ describe("useAcceptNativeMaskCandidate", () => {
     expect(request.mock.calls[0][1].idempotency_key).toBe(
       request.mock.calls[1][1].idempotency_key,
     );
+  });
+
+  it("精修已存 Mask 原位更新缓存，历史记录 update 而非删除原标注", async () => {
+    const queryClient = new QueryClient();
+    const push = vi.fn();
+    const before = {
+      ...response().annotation,
+      id: "annotation-source",
+      class_name: "car",
+      geometry: {
+        type: "raster_mask" as const,
+        mask: {
+          encoding: "coco_rle_ref" as const,
+          size: [2, 3] as [number, number],
+          object_key: "raster-masks/before.json",
+          sha256: "c".repeat(64),
+          runs: 2,
+          bytes: 32,
+        },
+      },
+    } as AnnotationResponse;
+    const accepted = {
+      ...response(),
+      annotation: { ...response().annotation, id: "annotation-source", class_name: "car" },
+      source_version: 7,
+      result_version: 8,
+    };
+    queryClient.setQueryData(["annotations", "task-1"], [before]);
+    vi.spyOn(aiMasksApi, "accept").mockResolvedValue(accepted);
+    const view = renderHook(() => useAcceptNativeMaskCandidate({
+      taskId: "task-1",
+      queryClient,
+      history: { push },
+    }));
+
+    await act(async () => {
+      await view.result.current({
+        candidate: { ...candidate(), refineSource: { annotationId: "annotation-source", sourceVersion: 7 } },
+        className: "car",
+        target: {
+          mode: "refine",
+          source_annotation_id: "annotation-source",
+          source_version: 7,
+        },
+      });
+    });
+
+    expect(queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"]))
+      .toEqual([accepted.annotation]);
+    expect(push).toHaveBeenCalledWith({
+      kind: "update",
+      annotationId: "annotation-source",
+      before: { geometry: before.geometry, class_name: "car" },
+      after: { geometry: accepted.annotation.geometry, class_name: "car" },
+    });
   });
 });

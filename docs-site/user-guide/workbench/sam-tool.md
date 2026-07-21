@@ -8,22 +8,23 @@ last_reviewed: 2026-07-22
 
 # AI 工具组
 
-> 智能点 / 智能框 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon、原生 Mask，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
+> 智能点 / 智能框 / 智能笔迹 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon、原生 Mask，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
 
-工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
+工具栏按交互范式拆成 5 个独立 AI 工具（均为**画布手势驱动**）。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
 | 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
 |---|---|---|---|---|
 | **智能点** | 🎯 | `S` 循环 | `point` | polygon / 原生 Mask 候选 |
 | **智能框** | ▭ | `S` 循环 | `interactive_box` | polygon / 原生 Mask 候选 |
+| **智能笔迹** | ✎ | — | `scribble` + `mask` | 原位精修已存原生 Mask |
 | **Magic Box** | ✨ | `G` / `S` 循环 | `interactive_box` | **直接** bbox 标注 |
 | **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` | polygon / bbox 候选 |
 
 > **文本提示「找全图」已归批量线**:给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`),不再是工具栏交互工具,改在 **AI 面板 / 批量预标页** 使用(见下方「文本预标『找全图』」一节)。工具栏只保留需要在画布上画点/框/示例的交互工具。
 
-按 `S` 在 4 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
+按 `S` 在智能点、智能框、Magic Box 和 Exemplar 之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → exemplar → 回 smart-point。智能笔迹只在选中可精修的已存 Mask 后启用，不进入全局循环。`Alt+3` 与 `S` 等价。
 
 > **能力来自后端 `/setup.supported_prompts`（按交互后端并集）**：项目可注册多个后端,工具栏某交互工具只要**任一已注册的交互后端**支持该 prompt 就亮。挂 `grounded-sam2`（point/interactive_box）时 Exemplar 灰;只挂仅支持 exemplar 的 backend 时 **Smart Point、Smart Box、Magic Box 都灰**。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。同时注册 gsam2 + sam3 / yolo-backend 时,point/interactive_box 自动路由到 gsam2、exemplar 路由到支持视觉示例的 backend,各司其职(见[交互后端选择](#交互后端选择多后端))。
 
@@ -48,6 +49,19 @@ last_reviewed: 2026-07-22
 拖框，SAM 把框内主要前景的轮廓找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
 ![智能框对齐真实车辆并生成轮廓候选](../images/sam/smart-box-interaction.gif)
+
+### 智能笔迹（Smart Scribble）— 在已存 Mask 上做加减法
+
+先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹补回目标区域；按住
+`Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，可移除误分区域。没有合格的源 Mask、当前
+模型未同时声明 `mask` 与 `scribble` prompt，或项目不允许写入原生 Mask 时，按钮保持置灰并显示原因。
+
+点、框与正负笔迹可以在同一精修会话中交替追加。工作台只向平台发送源 annotation 的 ID 与版本；
+平台在鉴权、任务 / 帧 / 版本校验后解析已存 RLE，并以短期签名的低分辨率 logits 连接后续轮次，
+浏览器不保存原始 logits。`Enter` 选类后原位更新同一 annotation，不会创建重复对象。
+
+如果 prompt 请求遇到网络错误，当前候选、已追加的点 / 框 / 笔迹和源 Mask 会保留，交互工具栏可用
+「重试」原样发送同一轮输入。主动取消、切题、切帧、切模型或会话过期会清理未接受的候选与短期会话。
 
 ### Magic Box — 拖框 → SAM 收紧到对象紧凑外接矩形
 
@@ -110,7 +124,7 @@ last_reviewed: 2026-07-22
 
 ## 候选确认
 
-智能点、智能框和 Exemplar 的结果先作为**待确认候选**显示，需要确认才落库。polygon 使用紫色虚线；原生 Mask 使用半透明紫色像素覆盖与选中边界，不会先转为 polygon：
+智能点、智能框、智能笔迹和 Exemplar 的结果先作为**待确认候选**显示，需要确认才落库。polygon 使用紫色虚线；原生 Mask 使用半透明紫色像素覆盖与选中边界，不会先转为 polygon：
 
 - **`Enter`** — 接受当前候选 → 弹类别选择器 → 选好类别才进库
 - **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）
@@ -118,7 +132,7 @@ last_reviewed: 2026-07-22
 
 ### 原生 Mask 输出
 
-智能点、智能框和 Exemplar 工具栏中的「提交」选择器独立于 Exemplar 的「框 / 掩膜 / 全部」推理输出，可选择 `Polygon` 或 `原生 Mask`。只有所选模型声明 Mask 输出、图片项目开启原生 Raster Mask 编辑且 `region` 工具可写时，图片侧才允许选择原生 Mask；视频侧按当前模型能力决定。条件不足时该选项保持置灰并说明原因，不会静默降级。
+智能点、智能框和 Exemplar 工具栏中的「提交」选择器独立于 Exemplar 的「框 / 掩膜 / 全部」推理输出，可选择 `Polygon` 或 `原生 Mask`。只有所选模型声明 Mask 输出、图片项目开启原生 Raster Mask 编辑且 `region` 工具可写时，图片侧才允许选择原生 Mask；视频侧按当前模型能力决定。智能笔迹固定输出原生 Mask 并原位更新选中的源对象。条件不足时对应选项保持置灰并说明原因，不会静默降级。
 
 原生候选只保存在当前交互会话中。`Ctrl/⌘ + 点击`候选的非透明像素可以在重叠候选间切换；`Enter` 选类后由服务端一次性保存像素内容、AI 血缘与标注。网络错误不会清掉候选，再次提交沿用同一个幂等键，不会重复创建标注。切题、切帧、切模型、切输出形态、取消或会话过期会释放尚未接受的候选。
 
@@ -179,13 +193,14 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 | 键 | 行为 |
 |---|---|
-| `S` | 在 4 个 AI 工具间循环（跳过置灰；含 Magic Box） |
+| `S` | 在 4 个常规 AI 工具间循环（跳过置灰；含 Magic Box） |
 | `G` | 直接切到 Magic Box |
 | `Alt + 3` | 同 `S` |
 | 单击 | Smart Point: positive point |
 | `Alt + 单击` | Smart Point: negative point |
-| `=` / `+` / `-` | Smart Point 默认极性切换 |
+| `=` / `+` / `-` | Smart Point / Smart Scribble 默认极性切换 |
 | 拖框 | Smart Box / Magic Box / Exemplar 触发 |
+| 拖动 | Smart Scribble 在选中 Mask 上追加正向笔迹；`Alt + 拖动`追加负向笔迹 |
 | `Enter` | 接受当前候选，弹出类别选择器 |
 | `Esc` | 取消所有候选 |
 | `Tab` / `Shift+Tab` | 切换候选 |

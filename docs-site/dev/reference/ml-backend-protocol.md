@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # ML Backend 协议契约
@@ -544,6 +544,16 @@ Mask 候选的响应字面为：
     "backend_instance_id": "<uuid>",
     "model_id": "grounded-sam2-interactive-seg"
   },
+  "prompt_summary": {
+    "family": "point",
+    "positive_points": 1,
+    "negative_points": 0,
+    "boxes": 0,
+    "positive_scribbles": 0,
+    "negative_scribbles": 0,
+    "multimask": true,
+    "parameters_digest": null
+  },
   "accept_receipts": {
     "sha256:<candidate digest>": "<signed receipt>"
   }
@@ -557,7 +567,8 @@ Mask 候选的响应字面为：
 instance / pool、目标 model 与 `model_version`，供后续接受时写入 lineage。
 
 `accept_receipts` 按 `candidate_id` 返回短生命周期签名回执。回执绑定 task、候选像素、候选序号、
-prompt revision、prompt 计数摘要、实际路由、模型和推理摘要；客户端不能自己构造或跨任务复用。
+prompt revision、服务端生成的 prompt 计数摘要、实际路由、模型、模型变体、推理摘要、源 Mask
+digest 与精确接受目标；客户端不能自己构造、改成新建目标或跨任务 / 源版本复用。
 接受原生候选使用 `POST /api/v1/tasks/{task_id}/ai-mask-candidates/accept`，提交候选、对应回执、
 类别、目标（新建或带源版本精修）、prompt 摘要、路由与推理元数据。服务端重新校验任务与写闸，
 并在一次数据库提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。图片写成
@@ -565,11 +576,13 @@ prompt revision、prompt 计数摘要、实际路由、模型和推理摘要；�
 请求返回首次完整响应；同 key 不同请求或过期 decision 返回 409。失败事务最多留下受宽限期 GC
 管理的未引用内容对象，不会留下半个预测或标注。
 
-> **`mask_input` 回灌（多点精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次点击精修同一对象时显著提升 mask 稳定性与边界质量。为保持 backend 无状态，这些 logits 由前端携带往返：backend 在 `multimask_output=false` 的单 mask 路径把本轮 `low_res_masks` 编码成响应字段 `mask_input_next`，前端**原样存储、不解析**，下一次点击经 `context.mask_input` 回传；backend 解码后喂回 `predict(mask_input=...)`。
+> **`mask_input` 回灌（多轮精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次追加点、框或笔迹时提升 Mask 稳定性与边界质量。backend 把本轮 `low_res_masks` 编码为内部 raw logits；平台代理将其封装成短期签名 token 后才作为 `mask_input_next` 返回。浏览器只保存并原样回传 token，不能读取或自行构造 raw logits；平台复核 task、frame、backend、model、模型变体、源 Mask、origin revision 与候选后再解封给 backend。
 >
-> - **编码格式**（不透明字符串，仅 backend 编解码，前端只搬运）：`float16(256×256)` → `tobytes` → `zlib(level=6)` → 前缀 magic `m1` → `base64(ascii)`。每轮往返 ~128KB（float16）/ ~175KB（base64 上界），zlib 对 clamp 到 `[-32,32]` 的饱和 logits 进一步压缩。实现见 `apps/_shared/protocol_v2/.../mask_codec.py`（两 backend 共用）。
-> - **仅多点精修阶段启用**：`mask_input_next` 只在 `multimask_output=false`（≥2 点的单 mask 精修）的 `point` 路径返回；`multimask_output=true`（首点 3 候选）会有 index 歧义，恒返回 `null`。`interactive_box` / `text` / `exemplar` 单发 prompt 不链式精修，恒 `null`。回灌因此自然从第 3 次点击起生效（首点候选阶段不回灌、第 2 点尚无上一轮单 mask logits）。
-> - **失效**：前端在提交候选 / 取消（Esc）/ 切 prompt 模式 / 切 task·backend 时丢弃所存 logits。坏 / 过期的 `mask_input` 串 backend 静默忽略（记 warning），不让单次精修整体失败。
+> - **内部编码**：`float16(256×256)` → `tobytes` → `zlib(level=6)` → 前缀 magic `m1` → `base64(ascii)`；解压后必须精确为 256×256、有限并位于 `[-32,32]`。该 raw 串只存在于平台代理与 backend 之间。
+> - **候选边界**：`multimask_output=true` 的多候选存在 index 歧义，不返回下一轮 token；已存 Mask seed 或单候选 point / box / scribble 精修可以返回 token，并跨这三种工具继续同一会话。
+> - **失效与恢复**：接受、取消、切题、切帧、切 backend / model / 变体、TTL 到期都会释放 token。坏、过期或绑定不一致的 token 由平台稳定拒绝；工作台清除旧 token，并在仍有已授权源 Mask 时保留笔迹、禁用旧候选接受并允许重试。
+
+> **`type=mask` / `type=scribble`**：浏览器只提交源 annotation ID 与版本，平台完成权限、任务 / 帧、锁、版本和内容摘要校验后，才把有界 inline RLE 交给 backend。`scribble` 使用归一化折线；`width` 是相对图片短边的完整笔宽，后画笔迹覆盖先画笔迹。每请求最多 64 条、8,192 个 wire 点和 2,000,000 个累计栅格工作像素；adapter 最多确定性采样 512 个正负点交给底层 SAM。只有负笔迹时必须同时有已授权 Mask seed 或有效 session token。
 
 > **`type=text`**：Grounded-SAM-2 走 GroundingDINO 文本 → boxes → SAM mask 复合链路；SAM 3 走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
 

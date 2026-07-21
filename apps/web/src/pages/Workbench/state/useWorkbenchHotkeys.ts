@@ -679,7 +679,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
 
         case "samPolarity": {
           // v0.10.2 · smart-point 点正负; v0.18.19 · exemplar 框正负 (refine 会话) 同享极性。
-          if (s.tool === "smart-point" || s.tool === "exemplar") {
+          if (s.tool === "smart-point" || s.tool === "smart-scribble" || s.tool === "exemplar") {
             s.setSamPolarity(action.polarity);
           }
           return;

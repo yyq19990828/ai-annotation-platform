@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
+    assert_request_scopes,
     get_db,
     get_gpu_dispatch_context_factory,
     get_gpu_shadow_session_factory,
@@ -69,6 +70,9 @@ from app.services.prediction import PredictionService, to_video_bbox_result
 from app.services.storage import StorageService
 from app.services.audit import AuditService
 from app.services.ai_mask_receipt import issue_ai_mask_receipt
+from app.services.ai_mask_prompt import resolve_authorized_mask_prompt
+from app.services.ai_mask_session import issue_ai_mask_session
+from app.api.v1.tasks._shared import _assert_task_visible
 
 # v0.10.1 · /setup 代理结果的进程内 TTL 缓存. 工作台进入即拉, 避免 N 次 backend 探活.
 # key = backend_id (绑定改动 → 重绑后新 backend_id 自然 invalidate); 30s TTL 兜底.
@@ -83,6 +87,7 @@ _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 # interactive-annotating-frame). Bounds memory regardless of a lying/missing
 # Content-Length header; 32 MiB comfortably fits a 4K JPEG / PNG with headroom.
 MAX_FRAME_UPLOAD_BYTES = 32 * 1024 * 1024
+MAX_INTERACTIVE_CONTEXT_BODY_BYTES = 1024 * 1024
 # v0.23.5 · WS-D · D2 · streaming read stride (1 MiB) — small enough to abort
 # between chunks when the cap is exceeded, large enough to avoid per-call
 # overhead on legitimate multi-MiB frames.
@@ -711,8 +716,13 @@ async def _prepare_safe_interactive_context(
     context: dict,
     *,
     task_id: uuid.UUID,
+    frame_index: int | None = None,
 ) -> tuple[dict, str | None]:
-    if "output_geometry" not in context and "model_id" not in context:
+    uses_mask_contract = any(
+        key in context
+        for key in ("mask_prompt", "mask_input", "scribbles", "output_geometry", "model_id")
+    ) or context.get("type") in {"point", "interactive_box", "mask", "scribble"}
+    if not uses_mask_contract:
         return dict(context), None
     setup = await _fetch_setup_cached(backend, backend_id)
     capabilities = extract_capabilities(setup)
@@ -720,6 +730,8 @@ async def _prepare_safe_interactive_context(
         context,
         capabilities,
         task_id=str(task_id),
+        frame_index=frame_index,
+        requested_backend_id=str(backend_id),
     )
 
 
@@ -757,6 +769,7 @@ def _interactive_response(
     requested_backend_id: uuid.UUID,
     model_id: str | None,
     task_id: uuid.UUID,
+    frame_index: int | None,
 ) -> dict:
     normalized, diagnostic = normalize_native_mask_response(
         result.result,
@@ -775,6 +788,15 @@ def _interactive_response(
     accept_receipts: dict[str, str] = {}
     prompt_revision = context.get("prompt_revision")
     prompt_summary = _interactive_prompt_summary(context)
+    prompt_source = _interactive_prompt_source(context)
+    accept_target = {
+        "mode": "refine" if prompt_source is not None else "create",
+        "source_annotation_id": (
+            prompt_source.get("source_annotation_id") if prompt_source else None
+        ),
+        "source_version": prompt_source.get("source_version") if prompt_source else None,
+        "frame_index": frame_index,
+    }
     if context.get("output_geometry") == "mask" and isinstance(
         prompt_revision, str
     ):
@@ -785,6 +807,7 @@ def _interactive_response(
             accept_receipts[candidate_id] = issue_ai_mask_receipt(
                 {
                     "task_id": str(task_id),
+                    "frame_index": frame_index,
                     "candidate_id": candidate_id,
                     "candidate_index": candidate_index,
                     "content_digest": content_digest,
@@ -798,8 +821,46 @@ def _interactive_response(
                         "model_load_ms": result.model_load_ms,
                     },
                     "prompt_summary": prompt_summary,
+                    "prompt_source": prompt_source,
+                    "accept_target": accept_target,
                 }
             )
+    mask_input_next = None
+    raw_mask_input = getattr(result, "mask_input_next", None)
+    if isinstance(raw_mask_input, str) and len(normalized) == 1:
+        mask_prompt = context.get("mask_prompt")
+        source = (
+            {
+                "source_annotation_id": mask_prompt.get("source_annotation_id"),
+                "source_version": mask_prompt.get("source_version"),
+                "source_digest": mask_prompt.get("source_digest"),
+            }
+            if isinstance(mask_prompt, dict)
+            else None
+        )
+        try:
+            mask_input_next = issue_ai_mask_session(
+                raw_mask_input,
+                {
+                    "task_id": str(task_id),
+                    "frame_index": frame_index,
+                    "requested_backend_id": str(requested_backend_id),
+                    "model_id": model_id,
+                    "model_variants": context.get("model_variants") or {},
+                    "source": source,
+                    "origin_prompt_revision": prompt_revision,
+                    "candidate_id": normalized[0].get("candidate_id"),
+                    "candidate_index": 0,
+                },
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "reason": "invalid_mask_session_payload",
+                    "message": "backend returned invalid Mask session logits",
+                },
+            ) from exc
     return {
         "result": normalized,
         "score": result.score,
@@ -807,12 +868,25 @@ def _interactive_response(
         "inference_time_ms": result.inference_time_ms,
         "cache_hit": result.cache_hit,
         "model_load_ms": result.model_load_ms,
-        "mask_input_next": result.mask_input_next,
+        "mask_input_next": mask_input_next,
         "diagnostic": diagnostic,
         "prompt_revision": prompt_revision,
         "output_geometry": context.get("output_geometry", "polygon"),
+        "frame_index": frame_index,
         "routing": routing,
+        "prompt_summary": prompt_summary,
         "accept_receipts": accept_receipts,
+    }
+
+
+def _interactive_prompt_source(context: dict) -> dict | None:
+    mask_prompt = context.get("mask_prompt")
+    if not isinstance(mask_prompt, dict):
+        return None
+    return {
+        "source_annotation_id": mask_prompt.get("source_annotation_id"),
+        "source_version": mask_prompt.get("source_version"),
+        "source_digest": mask_prompt.get("source_digest"),
     }
 
 
@@ -824,15 +898,54 @@ def _interactive_prompt_summary(context: dict) -> dict:
         if isinstance(context.get("exemplars"), list)
         else []
     )
+    scribbles = (
+        context.get("scribbles")
+        if isinstance(context.get("scribbles"), list)
+        else []
+    )
+    excluded = {
+        "type",
+        "points",
+        "labels",
+        "bbox",
+        "exemplars",
+        "scribbles",
+        "mask_prompt",
+        "mask_input",
+        "prompt_revision",
+        "output_geometry",
+        "model_id",
+    }
+    parameters = {
+        key: value for key, value in context.items() if key not in excluded
+    }
+    parameters_digest = (
+        hashlib.sha256(
+            json.dumps(
+                parameters,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if parameters
+        else None
+    )
     return {
         "family": prompt_type,
         "positive_points": sum(label == 1 for label in labels),
         "negative_points": sum(label == 0 for label in labels),
         "boxes": 1 if prompt_type == "interactive_box" else len(exemplars),
-        "positive_scribbles": 0,
-        "negative_scribbles": 0,
+        "positive_scribbles": sum(
+            isinstance(stroke, dict) and stroke.get("polarity") == 1
+            for stroke in scribbles
+        ),
+        "negative_scribbles": sum(
+            isinstance(stroke, dict) and stroke.get("polarity") == 0
+            for stroke in scribbles
+        ),
         "multimask": context.get("multimask_output") is True,
-        "parameters_digest": None,
+        "parameters_digest": parameters_digest,
     }
 
 
@@ -1013,6 +1126,7 @@ async def interactive_annotating(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     body: InteractiveRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
@@ -1036,15 +1150,25 @@ async def interactive_annotating(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, body.task_id, project_id)
+    await _assert_task_visible(db, task, current_user)
+    if (body.context or {}).get("mask_prompt_source") is not None:
+        assert_request_scopes(request, "annotations:read")
 
     # AI 推理参数 (阈值 / 变体等) 已统一改走工作台 AI 面板: 前端按所绑定 backend 的
     # /setup.params 动态渲染、每用户独立调整, 并随 context 透传。平台不再注入项目级 DINO
     # 阈值 (那会把 gsam2 专属参数塞给 sam3 等不支持的后端); 各 backend 缺省值由自身 /setup 决定。
+    resolved_context = await resolve_authorized_mask_prompt(
+        db,
+        task=task,
+        context=dict(body.context or {}),
+        frame_index=None,
+    )
     context, model_id = await _prepare_safe_interactive_context(
         backend,
         backend_id,
-        dict(body.context or {}),
+        resolved_context,
         task_id=task.id,
+        frame_index=None,
     )
     expected_size = (
         await _task_media_size(db, task)
@@ -1080,6 +1204,7 @@ async def interactive_annotating(
         requested_backend_id=backend_id,
         model_id=model_id,
         task_id=task.id,
+        frame_index=None,
     )
 
 
@@ -1125,6 +1250,7 @@ async def predict_frame(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, task_id, project_id)
+    await _assert_task_visible(db, task, current_user)
 
     try:
         cfg = json.loads(config) if config else {}
@@ -1218,7 +1344,7 @@ async def interactive_annotating_frame(
     frame: UploadFile = File(...),
     task_id: uuid.UUID = Form(...),
     frame_index: int = Form(...),
-    context: str = Form("{}"),
+    context: str = Form("{}", max_length=MAX_INTERACTIVE_CONTEXT_BODY_BYTES),
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
@@ -1257,6 +1383,16 @@ async def interactive_annotating_frame(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, task_id, project_id)
+    await _assert_task_visible(db, task, current_user)
+
+    if len(context.encode()) > MAX_INTERACTIVE_CONTEXT_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "reason": "interactive_context_too_large",
+                "message": "interactive context must be <= 1 MiB",
+            },
+        )
 
     try:
         ctx = json.loads(context) if context else {}
@@ -1264,12 +1400,21 @@ async def interactive_annotating_frame(
         raise HTTPException(status_code=400, detail="Invalid context JSON")
     if not isinstance(ctx, dict):
         raise HTTPException(status_code=400, detail="context must be a JSON object")
+    if ctx.get("mask_prompt_source") is not None:
+        assert_request_scopes(request, "annotations:read")
 
+    ctx = await resolve_authorized_mask_prompt(
+        db,
+        task=task,
+        context=ctx,
+        frame_index=frame_index,
+    )
     ctx, model_id = await _prepare_safe_interactive_context(
         backend,
         backend_id,
         ctx,
         task_id=task.id,
+        frame_index=frame_index,
     )
 
     # v0.23.5 · WS-D · D2 · bounded frame read (Content-Length + streaming cap
@@ -1319,6 +1464,7 @@ async def interactive_annotating_frame(
         requested_backend_id=backend_id,
         model_id=model_id,
         task_id=task.id,
+        frame_index=frame_index,
     )
 
 
