@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-21
 ---
 
 # Mask 笔刷编辑器
@@ -33,7 +33,7 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
    - 右侧 AIInspector 中找到 polygon 候选行 → 点该行的「精修」按钮
    - 自动进 mask 工具，buffer 从候选 polygon 初始化（已涂为红色 mask）
    - 用 `B`(笔刷)/`E`(橡皮) 修正 → `Enter` 提交
-   - 原候选会自动 reject，新 polygon 用候选 label 落库
+   - 原候选在前端标记为已驳回（prediction 实体仍在服务端，便于审计），新 polygon 用候选 label 落库
 
 3. **SAM 候选精修**
    - SAM 工具（SmartPoint / SmartBox）出 polygon 候选后，**不要按 Enter 采纳**
@@ -53,8 +53,9 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 1. 没有选中 Mask 轨迹时，在当前帧落笔会从空白画布开始；确认后创建一条只有当前帧关键帧的 Mask 轨迹。
 2. 选中已有 Mask 轨迹再进入工具，会加载当前帧解析到的 mask。若当前帧只是关键帧之间的保持帧，提交会在当前帧物化一个人工关键帧，不会覆盖来源关键帧。
 3. 时间轴把 Mask 关键帧之间显示为「保持」，不会标成 bbox 的线性插值。`outside` 帧不显示 mask；`occluded` 仍表示对象存在。
-4. 每次按下到松开是一条独立的笔刷历史；`Ctrl/⌘+Z` 撤销一笔，`Ctrl/⌘+Shift+Z` 或 `Ctrl/⌘+Y` 重做。
+4. 每次按下到松开是一条独立的笔刷历史；`Ctrl/⌘+Z` 撤销一笔，`Ctrl/⌘+Shift+Z` 或 `Ctrl/⌘+Y` 重做（图片和视频路径一致）。
 5. 选中卡支持编辑、AI 追踪、显隐、锁定、改类、删除和关键帧导航。Mask 不支持 bbox 专属的轨迹合并、拆框或转换操作。
+6. 选中 Mask 轨迹时按 `Delete` 只删除当前关键帧；删除整条轨迹用 `Ctrl/⌘+Delete` 或右键菜单的「删除整条轨迹」。
 
 ## 快捷键
 
@@ -64,10 +65,12 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 | `B` | mask 工具激活时切笔刷（涂） |
 | `E` | mask 工具激活时切橡皮（擦） |
 | `Shift + 滚轮` | 调笔刷半径 ±2px（clamp [1, 200]） |
-| `Enter` | 提交当前 Mask；图片任务转为 polygon，视频任务写入 RLE 关键帧 |
+| `Enter` | 提交当前 Mask（需已有笔迹，否则不物化）；图片任务转为 polygon，视频任务写入 RLE 关键帧 |
 | `Esc` | 取消，丢弃当前 mask buffer |
-| `Ctrl/⌘ + Z` | 视频 Mask 编辑时撤销上一笔 |
-| `Ctrl/⌘ + Shift + Z` / `Ctrl/⌘ + Y` | 视频 Mask 编辑时重做 |
+| `Ctrl/⌘ + Z` | 撤销上一笔笔迹（图片 / 视频一致） |
+| `Ctrl/⌘ + Shift + Z` / `Ctrl/⌘ + Y` | 重做上一笔笔迹（图片 / 视频一致） |
+| `Delete` | 视频：删除选中 Mask 轨迹的当前关键帧（非整轨） |
+| `Ctrl/⌘ + Delete` | 视频：删除整条选中 Mask 轨迹 |
 | `R` | SAM 候选存在时启动「精修」（同浮按钮） |
 
 完整快捷键索引见 [hotkeys.generated.md](./hotkeys.generated.md)。
@@ -84,17 +87,19 @@ Mask 笔刷工具使用 `M` 键进入。常见用法：
 ## 已知限制
 
 - **bbox 候选不支持初始化**：AI 给的是 bbox 时「精修」按钮不显示。
-- **多连通区只保留最大外环**：mask 包含多块互不相连的区域时，只把最大连通块转回 polygon 入库，其它区域丢弃 + toast 提示
+- **多连通 / 含孔的 mask 不再有损提交**：当图片 mask 包含多块互不相连的区域时，提交会被阻止并提示「含多个连通分量，当前 polygon 提交会丢失；请等待原生 Mask 工作台」，避免静默丢弃几何。视频路径保存逐像素 RLE，不受此限制。
+- **图片 polygon 现已渲染 hole 与 multi_polygon**：含孔或多连通的 polygon 会用 even-odd 填充正确渲染，不再只画最大外环。
 - **图片任务不持久化 RLE**：图片提交仍转 polygon；视频 Mask 轨迹会持久化 RLE。
 - **大画布性能**：MaskBuffer 使用 dirtyRect 增量重绘；极大图仍建议降低笔刷半径并分段精修。
 
 ## 故障排查
 
 - **按 M 不响应**：确认非只读模式（task 已锁定 / 已审完），输入框聚焦时 hotkey 会被吞
-- **图片任务 Enter 后无 polygon 落库**：mask 尚未涂抹（`dirty` 为假）或涂抹区域过小（转出顶点 < 3）时 `commitToPolygon` 返回 null，工具栏确认按钮置灰（`!active || !dirty`）；Enter 键虽可触发提交流程，但同样会被 null 结果拦截并弹 toast 提示
+- **图片任务 Enter 后无 polygon 落库**：mask 尚未涂抹（`dirty` 为假）时 Enter 不再触发提交；涂抹区域过小（转出顶点 < 3）或检测到多连通 / 含孔（有损）时，`commitToPolygon` 会阻止提交并提示原因，不静默取最大环。
 - **视频任务确认后无 Mask 关键帧**：先确认当前帧已产生有效笔迹且任务可编辑；若编辑的是保持帧，成功提交后应在当前帧新增人工关键帧，而不是改写来源关键帧
 - **mask 与 SAM 候选重叠看不清**：mask 是半透红，透明度可在工作台设置的「图片 → Mask 覆盖透明度」调整；SAM 是紫虚线，可按 `E` 临时擦掉 mask 中已被 SAM 覆盖的部分
 
 ## 相关 ADR
 
 - [ADR-0022 · Mask 编辑器工具架构](/dev/adr/archive/0022-mask-editor-tool-architecture)
+- [ADR-0052 · 共享栅格 Mask 与图片 geometry 合同](/dev/adr/0052-shared-raster-mask-and-image-geometry)

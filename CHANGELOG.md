@@ -36,6 +36,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **栅格 Mask 可靠性与安全地基 (ADR-0052)**. 为图像 / 视频栅格 Mask 统一 Epic 的 Phase 1，
+  冻结 v0.23.6 实施所需的全部共享边界：`raster_mask` 类型名、共享 `coco_rle_ref` schema、
+  泛化静态 GET API、polygon ↔ Mask 显式无损 / 有损转换报告、gzip 传输契约、编辑会话状态机语义、
+  JSONB 加法扩展部署顺序与 forward-fix 回滚限制。
+- **图片 polygon 的 hole / multi_polygon 渲染**. `KonvaPolygon` 现使用 even-odd 填充渲染
+  `holes` 与全部 `multi_polygon` 外环，不再只画单个外环；`maskToPolygon` 在多连通 / 含孔时
+  显式标记 `lossy` 并阻止有损的 polygon 提交（提示等待原生 Mask 工作台），不再静默取最大环。
+- **Mask 编辑会话状态机**. 新增 `useMaskEditorSession`，统一 `idle → loading → ready → dirty →
+  saving → error` 相位；`sessionId + generation` 隔离过期 GET 回包；保存走单飞 Promise，失败
+  保留 buffer / history 并可 retry。`canEditMask` 单一闸门同时检查 task 只读、annotation
+  `is_locked`、轨迹 lock、segment lock 与编辑器相位，供 toolbar / 快捷键 / pointer / commit 复用。
+
 ### Changed
 
 - 首页的 SAM3 与 OCR 演示统一使用高清 WebM 和独立 WebP 海报，OCR 录制中的 AI 面板改为停靠在主图右侧；Hero 图片卡扩大为主视觉，并以悬停显现的左右按钮取代底部播放条。
@@ -44,6 +58,9 @@
 
 ### Fixed
 
+- 修复视频 Mask 选中时按 `Delete` 会误删整条轨迹的问题；现仅删除当前关键帧，整轨删除改为 `Ctrl/⌘+Delete` 或右键菜单（与 `video_track_bbox` 语义一致）。
+- 修复图片 Mask 笔迹无 undo 历史的问题；`ImageStage` 现为每一笔接入 `beginStroke / endStroke`，与视频路径一致。
+- 修复 Enter 在 Mask 无变化时仍物化 held keyframe 的问题；现要求 `dirty` 才提交。
 - 修复首页 Hero 在首次打开或慢网络下同时请求所有大图，导致个别卡片轮播时短暂空白的问题；现仅挂载当前与下一张，并在切换前完成预加载和解码。
 - 修复新注册 ML Backend 的 singleton 服务池未随项目启用而激活，以及批量、逐帧、重试、二次推理和同步预测绕过服务池路由的问题；这些请求现统一按池选择物理实例，并遵守 drain、跨进程并发和熔断门禁。
 - 修复标注员进入图片工作台时误请求管理员专用类别频率接口、重复弹出权限告警的问题。
@@ -53,6 +70,21 @@
 - 修复路由 generation 与 Redis 账本可漂移、追踪任务忽略路由选中实例或拒绝结果、中途取消泄漏 lease 及 heartbeat 失败仍静默继续的问题。
 - 修复缺失或过期的 inflight 数据被当作零而允许卸载或移除成员的问题。纳管实例的卸载、移除和物理删除现均要求 enforce 路由、draining 状态、新鲜账本和精确 `inflight=0`，Redis 不可用时失败关闭。
 - 修复服务池成员 PUT 重复插入、API `PATCH` 丢失 `If-Match` 等额外 header、通用预热按钮错发 reload、GPU 静态超售告警无法触发，以及注册管理缺少服务池和成员增删改、权重编辑与实例联动筛选的问题。
+
+### Security
+
+- **Mask 内容 gzip 传输 + bounded decompress**. 新增 `coco_rle_gzip` 编码与 `.json.gz` 对象
+  key，流式 `zlib` 解压在压缩输入 > 8 MiB、解压输出 > 4 MiB 或膨胀比 > 20× 时立即拒绝，
+  关闭 zip bomb 向量；SHA-256 仍对未压缩 canonical bytes 计算，旧未压缩引用向后兼容。
+- **交互式帧上传 size cap**. `predict-frame` 与 `interactive-annotating-frame` 现检查
+  `Content-Length` 并流式累计字节，超过 32 MiB 返回 413；解码后校验宽高 ≤ 4096、总像素
+  ≤ 16M、格式 ∈ {JPEG, PNG}。此前 `await frame.read()` 无任何上限。
+- **Mask 内容上传配额**. `POST /tasks/{task_id}/mask-content` 现按任务统计已引用的 mask
+  对象数，超过 2048 时拒绝，防止未关联 orphan 对象无限累积。
+- **Tracker accept 并发冲突 → 409**. `accept_tracker_job` 现在创建 job 时记录源 annotation
+  version，accept 时以 `with_for_update` 重锁并比对；源版本漂移返回 409，不再 last-writer-wins。
+- **对象存储 I/O 不阻塞 async event loop**. `store_coco_rle` / `load_coco_rle` 及 GC
+  `delete_object` 的 boto3 同步调用现统一经 `asyncio.to_thread` 包裹，不再阻塞 FastAPI 事件循环。
 
 ## [0.23.4] - 2026-07-20
 
