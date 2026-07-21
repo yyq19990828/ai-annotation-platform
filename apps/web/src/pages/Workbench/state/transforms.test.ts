@@ -456,3 +456,19 @@ describe("v0.9.14 mask 多连通域 / 空洞", () => {
     expect(b.cls).toBe("donut");
   });
 });
+
+describe("v0.23.6 raster_mask", () => {
+  it("同步转换不猜测外接框", () => {
+    expect(geometryToShape({
+      type: "raster_mask",
+      mask: {
+        encoding: "coco_rle_ref",
+        size: [10, 20],
+        object_key: "raster-masks/sha256/aa/bb/digest.json",
+        sha256: "a".repeat(64),
+        runs: 4,
+        bytes: 32,
+      },
+    })).toMatchObject({ x: 0, y: 0, w: 0, h: 0 });
+  });
+});

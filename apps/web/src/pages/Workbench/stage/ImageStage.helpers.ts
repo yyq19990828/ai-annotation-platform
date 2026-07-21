@@ -1,4 +1,5 @@
 // v0.16.x 第 2 批 · 从 ImageStage 提炼的纯几何函数(无 React/Konva,可单测)。
+import type { Annotation } from "@/types";
 import type { Viewport } from "../state/useViewportTransform";
 import type { Pt } from "./polygonGeom";
 import {
@@ -33,6 +34,16 @@ export function siblingHighlightChildren<
   const parentId = selectionSize === 1 ? selectedId : null;
   if (!parentId) return [];
   return boxes.filter((b) => b.parent_annotation_id === parentId);
+}
+
+/**
+ * raster_mask 在原生画布 renderer 上线前只能由列表 / 选中卡管理。
+ * 显式返回 false 防止 ImageStage 把无外接框的 mask 落入 KonvaBox 默认分支。
+ */
+export function shouldRenderImageAnnotationShape(
+  annotation: Pick<Annotation, "geometry">,
+): boolean {
+  return annotation.geometry?.type !== "raster_mask";
 }
 
 // 取点吸附 / 线段吸附中距离更近者(阈值内)。从 ImageStage.findSnapMatch 提炼;

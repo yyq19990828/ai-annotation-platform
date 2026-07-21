@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AnnotationPayload } from "@/api/tasks";
-import { translateGeometry } from "./geometryTranslate";
+import { canTranslateAnnotationGeometry, translateGeometry } from "./geometryTranslate";
 
 interface UseClipboardArgs {
   userBoxes: Annotation[];
@@ -27,9 +27,10 @@ export function useClipboard({
   const offY = imgH > 0 ? PIXEL_OFFSET / imgH : 0;
 
   const copyAnnotations = useCallback((targets: Annotation[]) => {
-    if (targets.length === 0) return 0;
-    setClipboard(targets);
-    return targets.length;
+    const supported = targets.filter(canTranslateAnnotationGeometry);
+    if (supported.length === 0) return 0;
+    setClipboard(supported);
+    return supported.length;
   }, [setClipboard]);
 
   const copySelection = useCallback(() => {
@@ -39,10 +40,11 @@ export function useClipboard({
   }, [copyAnnotations, selectedIds, userBoxes]);
 
   const pasteFrom = useCallback(async (sources: Annotation[]) => {
-    if (sources.length === 0) return [];
+    const supported = sources.filter(canTranslateAnnotationGeometry);
+    if (supported.length === 0) return [];
     const cmds: { kind: "create"; annotationId: string; payload: AnnotationPayload }[] = [];
     const newIds: string[] = [];
-    for (const b of sources) {
+    for (const b of supported) {
       const { geometry, annotationType } = translateGeometry(b, offX, offY);
       const payload: AnnotationPayload = {
         annotation_type: annotationType,
@@ -70,5 +72,11 @@ export function useClipboard({
     return pasteFrom(targets);
   }, [userBoxes, selectedIds, pasteFrom]);
 
-  return { copySelection, copyAnnotations, paste, duplicateSelection, hasClipboard: clipboard.length > 0 };
+  return {
+    copySelection,
+    copyAnnotations,
+    paste,
+    duplicateSelection,
+    hasClipboard: clipboard.some(canTranslateAnnotationGeometry),
+  };
 }

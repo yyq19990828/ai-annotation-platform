@@ -125,6 +125,21 @@ export function getBatchChangeTarget(
   };
 }
 
+export function hasUsableImageBounds(geom: Geom): boolean {
+  return Number.isFinite(geom.x)
+    && Number.isFinite(geom.y)
+    && Number.isFinite(geom.w)
+    && Number.isFinite(geom.h)
+    && geom.w > 0
+    && geom.h > 0;
+}
+
+function defaultFixedClassPickerAnchor(): { left: number; top: number } | undefined {
+  return typeof window !== "undefined"
+    ? { left: Math.max(16, window.innerWidth - 340), top: 96 }
+    : undefined;
+}
+
 function acceptedPredictionShapeKeys(annotations: AnnotationResponse[] | undefined): Set<string> {
   const set = new Set<string>();
   for (const ann of annotations ?? []) {
@@ -584,11 +599,16 @@ export function useImageAnnotationActions({
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
-    // 视频几何走固定屏幕锚点(锚到首个选中框);图片用 geom + vp 走 image 定位,anchor 留空。
+    // 视频几何和无可用外接框的图片几何走固定屏幕锚点；其余图片用
+    // geom + vp 定位。
     const firstAnn = annotationsRef.current.find((a) => a.id === ids[0]);
-    const isVideoGeometry = firstAnn
-      && (firstAnn.geometry.type === "video_bbox" || firstAnn.geometry.type === "video_track_bbox");
-    setBatchChangeAnchor(isVideoGeometry ? videoBoxScreenAnchor(firstAnn, s.videoFrameIndex) : undefined);
+    const isVideoGeometry = !!firstAnn?.geometry.type.startsWith("video_");
+    const firstBounds = firstAnn ? geometryToShape(firstAnn.geometry) : null;
+    const needsFixedAnchor = isVideoGeometry || (firstBounds != null && !hasUsableImageBounds(firstBounds));
+    setBatchChangeAnchor(needsFixedAnchor
+      ? ((firstAnn && isVideoGeometry ? videoBoxScreenAnchor(firstAnn, s.videoFrameIndex) : null)
+        ?? defaultFixedClassPickerAnchor())
+      : undefined);
     setBatchChanging(true);
   }, [s.selectedIds, s.videoFrameIndex, annotationsRef]);
 
@@ -986,15 +1006,19 @@ export function useImageAnnotationActions({
   const handleStartChangeClass = useCallback((annotationId: string, anchor?: { left: number; top: number }) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
-    const isVideoGeometry = ann.geometry.type === "video_bbox" || ann.geometry.type === "video_track_bbox";
-    const geom = isVideoGeometry ? geometryToShape(ann.geometry) : ann.geometry as Geom;
+    const geom = geometryToShape(ann.geometry);
+    const isVideoGeometry = ann.geometry.type.startsWith("video_");
+    const needsFixedAnchor = isVideoGeometry || !hasUsableImageBounds(geom);
+    const fallbackAnchor = defaultFixedClassPickerAnchor();
     // 视频几何无法走 image 定位（侧栏/快捷键无 stage transform），需 fixed anchor：
     // 优先锚到画布上的框（overlay 屏幕矩形 + 当前帧 bbox），覆盖所有触发入口；
     // 框在当前帧不可见时退回调用方传入的锚点（如侧栏按钮），再不行才贴右上角兜底。
-    const resolvedAnchor = isVideoGeometry
-      ? (videoBoxScreenAnchor(ann, s.videoFrameIndex)
+    // raster_mask 也无同步外接框；本版不启用 canvas renderer，因此同样走 fixed
+    // 锚点，避免把 type/mask 强转 Geom 后计算出 NaNpx。
+    const resolvedAnchor = needsFixedAnchor
+      ? ((isVideoGeometry ? videoBoxScreenAnchor(ann, s.videoFrameIndex) : null)
         ?? anchor
-        ?? (typeof window !== "undefined" ? { left: Math.max(16, window.innerWidth - 340), top: 96 } : undefined))
+        ?? fallbackAnchor)
       : anchor;
     s.setEditingClass({
       annotationId,

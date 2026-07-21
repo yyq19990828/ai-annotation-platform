@@ -164,7 +164,7 @@ export function buildImageContextMenuItems({
       label: "复制",
       icon: "copy",
       kbd: "Ctrl+C",
-      disabled: !clipboard,
+      disabled: !clipboard || annotation.geometry?.type === "raster_mask",
       onSelect: () => {
         clipboard?.copyAnnotation(annotation);
       },

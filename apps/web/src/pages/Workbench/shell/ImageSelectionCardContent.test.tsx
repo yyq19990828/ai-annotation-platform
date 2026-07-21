@@ -99,6 +99,38 @@ describe("ImageSelectionCardContent", () => {
     expect(getByRole("status").textContent).toContain("禁用顶点编辑和整体拖动");
   });
 
+  it("raster_mask 显示画布只读占位但保留管理操作", () => {
+    const { getByRole, getByLabelText } = render(
+      <ImageSelectionCardContent
+        annotation={makeAnnotation({
+          geometry: {
+            type: "raster_mask",
+            mask: {
+              encoding: "coco_rle_ref",
+              size: [10, 20],
+              object_key: "raster-masks/sha256/aa/bb/digest.json",
+              sha256: "a".repeat(64),
+              runs: 4,
+              bytes: 32,
+            },
+          },
+        })}
+        imageWidth={20}
+        imageHeight={10}
+        attributeSchema={undefined}
+        readOnly={false}
+        onChangeClass={noop}
+        onToggleFlag={noop}
+        onDelete={noop}
+        onUpdateAttributes={noop}
+      />,
+    );
+
+    expect(getByRole("status").textContent).toContain("画布渲染与编辑尚未启用");
+    expect((getByLabelText("修改类别") as HTMLButtonElement).disabled).toBe(false);
+    expect((getByLabelText("删除标注") as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("改类 / 锁定 / 删除 回调透传正确参数", () => {
     const onChangeClass = vi.fn();
     const onToggleFlag = vi.fn();

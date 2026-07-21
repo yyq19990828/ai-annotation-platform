@@ -114,4 +114,22 @@ describe("translateGeometry", () => {
     );
     expect(geometry).toMatchObject({ cx: 0.5, cy: 0.5, angle: 30, w: 0.2, h: 0.1 });
   });
+
+  it("raster_mask 拒绝降级为 bbox", () => {
+    const raster = anno({
+      type: "raster_mask",
+      mask: {
+        encoding: "coco_rle_ref",
+        size: [10, 20],
+        object_key: "raster-masks/sha256/aa/bb/digest.json",
+        sha256: "a".repeat(64),
+        runs: 4,
+        bytes: 32,
+      },
+    });
+
+    expect(() => translateGeometry(raster, 0.1, 0.1)).toThrow(
+      "raster_mask does not support geometric translation",
+    );
+  });
 });

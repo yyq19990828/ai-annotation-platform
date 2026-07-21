@@ -26,8 +26,13 @@ import {
 } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex, SIBLING_HIGHLIGHT_COLOR } from "./ImageStageShapes";
-import { normalizeImageCoordinate, resolveSnapMatch, siblingHighlightChildren } from "./ImageStage.helpers";
-import { translateGeometry } from "../state/geometryTranslate";
+import {
+  normalizeImageCoordinate,
+  resolveSnapMatch,
+  shouldRenderImageAnnotationShape,
+  siblingHighlightChildren,
+} from "./ImageStage.helpers";
+import { canTranslateAnnotationGeometry, translateGeometry } from "../state/geometryTranslate";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import { resolveAnnotationVisual } from "./annotationVisual";
 import {
@@ -507,7 +512,8 @@ export function ImageStage({
   // v0.20.14 · 父子同胞高亮: 恰好单选一个框时, 其直接子框 (parent_annotation_id === 选中框) 描高亮环。
   // 多选/无选 → 空 (环仅辅助"看清某父框的子框归属", 多选语义模糊故不画)。
   const siblingHighlightChildBoxes = useMemo(
-    () => siblingHighlightChildren(visibleSortedUserBoxes, selectedId, selSet.size),
+    () => siblingHighlightChildren(visibleSortedUserBoxes, selectedId, selSet.size)
+      .filter(shouldRenderImageAnnotationShape),
     [visibleSortedUserBoxes, selSet, selectedId],
   );
 
@@ -856,6 +862,7 @@ export function ImageStage({
               // 有子框被删 / 新加, 冻结闭包会向已消失 id 发 PATCH 或漏掉新子框。
               childMoves = userBoxesRef.current
                 .filter((c) => c.parent_annotation_id === d.id && c.geometry)
+                .filter(canTranslateAnnotationGeometry)
                 .map((c) => ({
                   id: c.id,
                   before: c.geometry as Geometry,
@@ -1266,6 +1273,9 @@ export function ImageStage({
         {/* user 层：人工框 + 选中态 + resize handle */}
         <Layer name="user" listening={userLayerListening}>
           {visibleSortedUserBoxes.map((b) => {
+            // v0.23.6 只接入 raster_mask schema / 列表管理；无 canvas renderer 时不创建
+            // 零尺寸 KonvaBox，从源头隔离 move / resize / polygon 等矢量编辑路径。
+            if (!shouldRenderImageAnnotationShape(b)) return null;
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
             const renderKey = b.render_key ?? b.id;

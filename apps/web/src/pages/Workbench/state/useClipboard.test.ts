@@ -87,6 +87,23 @@ function keypointAnn(id: string): Annotation {
   } as Annotation;
 }
 
+function rasterMaskAnn(id: string): Annotation {
+  return {
+    ...bbox(id, { x: 0, y: 0, w: 0, h: 0 }),
+    geometry: {
+      type: "raster_mask",
+      mask: {
+        encoding: "coco_rle_ref",
+        size: [10, 20],
+        object_key: "raster-masks/sha256/aa/bb/digest.json",
+        sha256: "a".repeat(64),
+        runs: 4,
+        bytes: 32,
+      },
+    },
+  } as Annotation;
+}
+
 describe("useClipboard", () => {
   it("copy 选中后返回数量并写入 clipboard setter", () => {
     const setClipboard = vi.fn();
@@ -132,6 +149,25 @@ describe("useClipboard", () => {
     });
     expect(count).toBe(1);
     expect(setClipboard).toHaveBeenCalledWith([expect.objectContaining({ id: "b" })]);
+  });
+
+  it("raster_mask 不进入剪贴板，copy 返回 0", () => {
+    const setClipboard = vi.fn();
+    const { result } = renderHook(() =>
+      useClipboard({
+        userBoxes: [rasterMaskAnn("mask")],
+        selectedIds: ["mask"],
+        clipboard: [],
+        setClipboard,
+        createAnnotation: vi.fn(),
+        pushBatch: vi.fn(),
+        imgW: 100,
+        imgH: 100,
+      }),
+    );
+
+    expect(result.current.copySelection()).toBe(0);
+    expect(setClipboard).not.toHaveBeenCalled();
   });
 
   it("paste bbox 应用 +10px 偏移并 clamp 到 [0, 1-w]", async () => {
@@ -205,6 +241,29 @@ describe("useClipboard", () => {
     );
     await act(async () => {
       await result.current.paste();
+    });
+    expect(createAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("防御性跳过旧 clipboard 中的 raster_mask", async () => {
+    const createAnnotation = vi.fn();
+    const { result } = renderHook(() =>
+      useClipboard({
+        userBoxes: [rasterMaskAnn("mask")],
+        selectedIds: ["mask"],
+        clipboard: [rasterMaskAnn("mask")],
+        setClipboard: vi.fn(),
+        createAnnotation,
+        pushBatch: vi.fn(),
+        imgW: 100,
+        imgH: 100,
+      }),
+    );
+
+    expect(result.current.hasClipboard).toBe(false);
+    await act(async () => {
+      expect(await result.current.duplicateSelection()).toEqual([]);
+      expect(await result.current.paste()).toEqual([]);
     });
     expect(createAnnotation).not.toHaveBeenCalled();
   });

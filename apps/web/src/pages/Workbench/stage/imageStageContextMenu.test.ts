@@ -228,4 +228,30 @@ describe("imageStageContextMenu", () => {
     expect(items.find((item) => item.id === "locked")?.label).toBe("解锁");
     expect(items.find((item) => item.id === "locked")?.disabled).toBe(false);
   });
+
+  it("disables raster_mask copy before native canvas support", () => {
+    const clipboard = { copyAnnotation: vi.fn(), paste: vi.fn(), hasClipboard: false };
+    const items = buildImageContextMenuItems({
+      annotation: annotation({
+        geometry: {
+          type: "raster_mask",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [10, 20],
+            object_key: "raster-masks/sha256/aa/bb/digest.json",
+            sha256: "a".repeat(64),
+            runs: 4,
+            bytes: 32,
+          },
+        },
+      }),
+      readOnly: false,
+      minZOrder: 0,
+      maxZOrder: 0,
+      clipboard,
+    });
+
+    expect(items.find((item) => item.id === "copy")?.disabled).toBe(true);
+    expect(clipboard.copyAnnotation).not.toHaveBeenCalled();
+  });
 });
