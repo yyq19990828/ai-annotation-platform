@@ -3,7 +3,7 @@ audience: [ops, dev]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-21
 ---
 
 # 可观测性 / 运维监控
@@ -19,8 +19,43 @@ FastAPI `/metrics` 暴露 Prometheus metrics。超管也可以直接打开 `/adm
 | `ml_backend_request_duration_seconds` | Histogram | `backend_id`, `outcome` | ML Backend 调用延迟 |
 | `celery_queue_length` | Gauge | `queue` | 各队列堆积（default / ml / media / audit / events） |
 | `celery_worker_heartbeat_seconds` | Gauge | `worker` | worker 上次心跳距今秒数 |
+| `raster_mask_content_operations_total` | Counter | `operation`, `outcome` | Mask 内容加载、存储与校验结果 |
+| `raster_mask_content_errors_total` | Counter | `operation`, `reason` | Mask 内容错误的固定原因分类 |
+| `raster_mask_active_geometries` | Gauge | `kind` | 活跃图片 Mask 标注与含 Mask 预测数量 |
 
 定义在 `apps/api/app/observability/metrics.py` 与 `apps/api/app/main.py:108`。
+
+---
+
+## Raster Mask 内容指标
+
+`raster_mask_content_operations_total` 的 `operation` 固定为 `load`、`store`、`verify`，
+`outcome` 固定为 `success`、`error`。计数发生在最外层异步内容边界：例如 verify 内部读取对象，
+只增加一次 `operation="verify"`，不会同时增加嵌套的 load；gzip 存储回落到普通 JSON 也只增加一次 store。
+
+错误计数的 `reason` 只使用以下固定集合：
+
+- `missing_object`、`digest_mismatch`、`size_mismatch`、`run_mismatch`、`byte_mismatch`；
+- `invalid_encoding`、`invalid_payload`、`storage_unavailable`、`unknown`。
+
+这些指标不携带 task id、annotation id、prediction id 或 object key。定位具体对象时，先按
+`operation` / `reason` 查看错误速率，再结合相同时间窗口的请求日志或 worker 日志排查，避免把业务标识
+引入 Prometheus label。
+
+`raster_mask_active_geometries{kind="annotation"}` 统计仍活跃且顶层几何为 `raster_mask` 的标注；
+`kind="prediction"` 统计结果中包含 raster geometry 的 Prediction 行。API 健康巡检与对象 GC 每次运行
+都会从 PostgreSQL 精确刷新这两个序列。查询或指标客户端失败时保留上次值，不把未知写成零，也不会改变
+GC 的引用集合或中断清理任务。
+
+常用查询：
+
+```promql
+sum by (operation, reason) (rate(raster_mask_content_errors_total[5m]))
+```
+
+```promql
+raster_mask_active_geometries
+```
 
 ---
 
@@ -260,6 +295,7 @@ Prometheus Gauge 当作 API `/metrics` 可见的跨进程指标。
 | 主题 | 路径 |
 |---|---|
 | Metrics 定义 | `apps/api/app/observability/metrics.py` |
+| Raster Mask 活跃量巡检 | `apps/api/app/observability/raster_mask.py` |
 | ML backend 指标埋点 | `apps/grounded-sam2-backend/observability.py` · `apps/sam3-backend/observability.py` |
 | ML backend http_sd 端点 | `apps/api/app/api/v1/` → `GET /api/v1/internal/metrics-targets` |
 | ML backend 告警规则 | `infra/prometheus/alerts.yml` |

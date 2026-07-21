@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from typing import Any
+from collections.abc import Awaitable
+from contextvars import ContextVar
+from typing import Any, TypeVar
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +15,7 @@ from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.task import Task
+from app.observability.metrics import record_raster_mask_content_operation
 from app.services.raster_mask_capabilities import evaluate_raster_mask_capabilities
 from app.services.storage import StorageService, storage_service
 from app.utils.raster_mask_gzip import (
@@ -33,6 +36,12 @@ COCO_RLE_GZIP_ENCODING = "coco_rle_gzip"  # legacy request/reference marker
 RLE_STORAGE_IDENTITY = "identity"
 RLE_STORAGE_GZIP = "gzip"
 
+_ACTIVE_CONTENT_OPERATION: ContextVar[str | None] = ContextVar(
+    "raster_mask_content_operation",
+    default=None,
+)
+_T = TypeVar("_T")
+
 
 class RasterMaskContractError(ValueError):
     """Stable API-facing rejection raised at the mask persistence boundary."""
@@ -41,6 +50,84 @@ class RasterMaskContractError(ValueError):
         super().__init__(message)
         self.status_code = status_code
         self.detail = {"reason": reason, "message": message}
+
+
+def classify_raster_mask_content_error(exc: Exception) -> str:
+    """Map arbitrary content/storage failures onto a fixed metric vocabulary."""
+    chain: list[Exception] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while isinstance(current, Exception) and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+
+    for item in chain:
+        if isinstance(item, ClientError):
+            code = str(item.response.get("Error", {}).get("Code", ""))
+            if code in {"NoSuchKey", "404", "NotFound"}:
+                return "missing_object"
+
+    messages = " ".join(str(item).lower() for item in chain)
+    if "missing" in messages and ("object" in messages or "key" in messages):
+        return "missing_object"
+    if "digest mismatch" in messages:
+        return "digest_mismatch"
+    if "size mismatch" in messages:
+        return "size_mismatch"
+    if "run count mismatch" in messages or "runs mismatch" in messages:
+        return "run_mismatch"
+    if "byte count mismatch" in messages or "bytes mismatch" in messages:
+        return "byte_mismatch"
+    if any(
+        marker in messages
+        for marker in (
+            "unsupported mask reference encoding",
+            "unsupported mask reference storage_encoding",
+            "mask reference must use .json",
+        )
+    ):
+        return "invalid_encoding"
+
+    for item in chain:
+        if isinstance(item, RasterMaskContractError):
+            reason = str(item.detail.get("reason") or "")
+            if reason == "mask_storage_unavailable":
+                return "storage_unavailable"
+            return "invalid_payload"
+        if isinstance(item, (BotoCoreError, OSError)):
+            return "storage_unavailable"
+        if isinstance(
+            item,
+            (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError, ValueError),
+        ):
+            return "invalid_payload"
+    return "unknown"
+
+
+async def _observe_content_operation(
+    operation: str,
+    action: Awaitable[_T],
+) -> _T:
+    """Record one outermost operation, suppressing nested wrapper duplicates."""
+    if _ACTIVE_CONTENT_OPERATION.get() is not None:
+        return await action
+
+    token = _ACTIVE_CONTENT_OPERATION.set(operation)
+    try:
+        result = await action
+    except Exception as exc:
+        record_raster_mask_content_operation(
+            operation,
+            "error",
+            error_reason=classify_raster_mask_content_error(exc),
+        )
+        raise
+    else:
+        record_raster_mask_content_operation(operation, "success")
+        return result
+    finally:
+        _ACTIVE_CONTENT_OPERATION.reset(token)
 
 
 def assert_raster_mask_write_enabled(project: Project | None) -> None:
@@ -95,6 +182,27 @@ def collect_mask_geometries(value: Any) -> list[dict[str, Any]]:
     return geometries
 
 
+async def _verify_mask_reference_content(
+    reference: dict[str, Any],
+    *,
+    key: str,
+    value: Any,
+    require_raster_foreground: bool,
+) -> None:
+    payload = await load_coco_rle(reference)
+    if (
+        require_raster_foreground
+        and value.get("type") == "raster_mask"
+        and key == str((value.get("mask") or {}).get("object_key"))
+        and not _rle_has_foreground(payload)
+    ):
+        raise RasterMaskContractError(
+            status_code=422,
+            reason="raster_mask_empty_foreground",
+            message="raster mask annotation must contain foreground pixels",
+        )
+
+
 def resolve_mask_reference_objects(
     value: Any,
     mask_objects: dict[str, dict[str, Any]],
@@ -130,18 +238,15 @@ async def lock_raster_mask_references(
             {"key": f"aap:raster-mask:{key}"},
         )
         if verify:
-            payload = await load_coco_rle(references[key])
-            if (
-                require_raster_foreground
-                and value.get("type") == "raster_mask"
-                and key == str((value.get("mask") or {}).get("object_key"))
-                and not _rle_has_foreground(payload)
-            ):
-                raise RasterMaskContractError(
-                    status_code=422,
-                    reason="raster_mask_empty_foreground",
-                    message="raster mask annotation must contain foreground pixels",
-                )
+            await _observe_content_operation(
+                "verify",
+                _verify_mask_reference_content(
+                    references[key],
+                    key=key,
+                    value=value,
+                    require_raster_foreground=require_raster_foreground,
+                ),
+            )
     if task_id is not None and references:
         await db.execute(
             update(RasterMaskUpload)
@@ -508,7 +613,10 @@ async def store_coco_rle(
     rle: dict[str, Any], *, storage: StorageService = storage_service
 ) -> dict[str, Any]:
     """Async wrapper of :func:`store_coco_rle_sync` (boto3 I/O in ``to_thread``)."""
-    return await asyncio.to_thread(store_coco_rle_sync, rle, storage=storage)
+    return await _observe_content_operation(
+        "store",
+        asyncio.to_thread(store_coco_rle_sync, rle, storage=storage),
+    )
 
 
 def store_coco_rle_gzip_sync(
@@ -542,7 +650,10 @@ async def store_coco_rle_gzip(
     ``bytes`` / ``size`` are schema-identical to the uncompressed
     ``coco_rle_ref`` (``bytes`` = uncompressed canonical length).
     """
-    return await asyncio.to_thread(store_coco_rle_gzip_sync, rle, storage=storage)
+    return await _observe_content_operation(
+        "store",
+        asyncio.to_thread(store_coco_rle_gzip_sync, rle, storage=storage),
+    )
 
 
 def load_coco_rle_sync(
@@ -609,7 +720,10 @@ async def load_coco_rle(
     reference: dict[str, Any], *, storage: StorageService = storage_service
 ) -> dict[str, Any]:
     """Async wrapper of :func:`load_coco_rle_sync` (boto3 I/O in ``to_thread``)."""
-    return await asyncio.to_thread(load_coco_rle_sync, reference, storage=storage)
+    return await _observe_content_operation(
+        "load",
+        asyncio.to_thread(load_coco_rle_sync, reference, storage=storage),
+    )
 
 
 def validate_reference_for_rle(reference: dict[str, Any], rle: dict[str, Any]) -> None:

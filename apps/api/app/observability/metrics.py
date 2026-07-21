@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 
 ML_BACKEND_REQUEST_DURATION = Histogram(
@@ -63,6 +63,71 @@ VIDEO_FRAME_ASSET_BYTES = Gauge(
     "视频帧服务已缓存对象字节数",
     labelnames=("asset_type",),
 )
+
+RASTER_MASK_CONTENT_OPERATIONS_TOTAL = Counter(
+    "raster_mask_content_operations_total",
+    "Raster mask 内容存储操作次数",
+    labelnames=("operation", "outcome"),
+)
+
+RASTER_MASK_CONTENT_ERRORS_TOTAL = Counter(
+    "raster_mask_content_errors_total",
+    "Raster mask 内容存储错误次数",
+    labelnames=("operation", "reason"),
+)
+
+RASTER_MASK_ACTIVE_GEOMETRIES = Gauge(
+    "raster_mask_active_geometries",
+    "当前持久化的活跃图片 raster mask 几何数量",
+    labelnames=("kind",),
+)
+
+RASTER_MASK_CONTENT_OPERATIONS = frozenset({"load", "store", "verify"})
+RASTER_MASK_CONTENT_OUTCOMES = frozenset({"success", "error"})
+RASTER_MASK_CONTENT_ERROR_REASONS = frozenset(
+    {
+        "missing_object",
+        "digest_mismatch",
+        "size_mismatch",
+        "run_mismatch",
+        "byte_mismatch",
+        "invalid_encoding",
+        "invalid_payload",
+        "storage_unavailable",
+        "unknown",
+    }
+)
+
+
+def record_raster_mask_content_operation(
+    operation: str,
+    outcome: str,
+    *,
+    error_reason: str | None = None,
+) -> None:
+    """Best-effort metric update; instrumentation never breaks content I/O."""
+    if (
+        operation not in RASTER_MASK_CONTENT_OPERATIONS
+        or outcome not in RASTER_MASK_CONTENT_OUTCOMES
+    ):
+        return
+    reason = (
+        error_reason
+        if error_reason in RASTER_MASK_CONTENT_ERROR_REASONS
+        else "unknown"
+    )
+    try:
+        RASTER_MASK_CONTENT_OPERATIONS_TOTAL.labels(
+            operation=operation,
+            outcome=outcome,
+        ).inc()
+        if outcome == "error":
+            RASTER_MASK_CONTENT_ERRORS_TOTAL.labels(
+                operation=operation,
+                reason=reason,
+            ).inc()
+    except Exception:  # noqa: BLE001 - metrics must not break content I/O
+        return
 
 
 def observe_ml_backend(

@@ -14,9 +14,12 @@ from sqlalchemy import delete, select, text, update
 
 from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.raster_mask_upload import RasterMaskUpload
-from app.workers._db import task_session
-from app.services.storage import storage_service
+from app.observability.raster_mask import (
+    refresh_raster_mask_active_geometries_safely,
+)
 from app.services.raster_mask_storage import lock_raster_mask_references
+from app.services.storage import storage_service
+from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -165,6 +168,7 @@ def purge_unreferenced_raster_masks(dry_run: bool = False) -> dict:
 async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     async with task_session() as db:
+        await refresh_raster_mask_active_geometries_safely(db)
         referenced = await _referenced_raster_mask_keys(db)
         candidates = await asyncio.to_thread(
             storage_service.list_objects, "raster-masks/sha256/"

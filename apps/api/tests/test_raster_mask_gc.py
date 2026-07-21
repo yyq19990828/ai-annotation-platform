@@ -62,6 +62,12 @@ async def test_gc_rechecks_reference_under_object_lock_before_delete(
         yield db
 
     monkeypatch.setattr(cleanup, "task_session", session)
+    refresh_gauge = AsyncMock()
+    monkeypatch.setattr(
+        cleanup,
+        "refresh_raster_mask_active_geometries_safely",
+        refresh_gauge,
+    )
     monkeypatch.setattr(
         cleanup,
         "_referenced_raster_mask_keys",
@@ -91,6 +97,7 @@ async def test_gc_rechecks_reference_under_object_lock_before_delete(
 
     result = await cleanup._purge_unreferenced_raster_masks_async()
 
+    refresh_gauge.assert_awaited_once_with(db)
     lock.assert_awaited_once_with(db, {"object_key": key}, verify=False)
     assert delete.call_count == expected_deleted
     assert result["deleted"] == expected_deleted

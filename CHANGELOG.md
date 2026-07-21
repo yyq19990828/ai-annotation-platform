@@ -37,6 +37,8 @@
 ## [Unreleased]
 
 ### Added
+- **Raster Mask 内容可观测性**. 新增低基数的内容 load / store / verify 成功与错误计数、固定错误原因分类，
+  并由健康巡检和保守 GC 精确刷新活跃图片 Mask 标注与预测 Gauge；指标不携带任务、对象或标注标识。
 - **图片原生 RasterMaskGeometry schema**. 新增 `raster_mask` 几何类型，用于图片任务的栅格掩码标注。
   掩码内容通过 `CocoRleMaskRef` 引用存储在 S3 的不可变 COCO RLE 对象，与视频 `video_track_mask`
   共享内容层基础设施。
