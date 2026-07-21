@@ -196,6 +196,13 @@ async def test_unload_allowed_for_super_admin(
     async def _fake_unload(self, registry_id):
         return {"ok": True, "unloaded": True, "loaded": False}
 
+    async def _allow_quiescent(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.ml_routing.safety.require_registry_quiescent",
+        _allow_quiescent,
+    )
     monkeypatch.setattr("app.services.ml_backend.MLBackendService.unload", _fake_unload)
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
@@ -257,6 +264,13 @@ async def test_residency_routes_preserve_gpu_arbiter_error_contract(
             retry_after_s=7,
         )
 
+    async def _allow_quiescent(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.ml_routing.safety.require_registry_quiescent",
+        _allow_quiescent,
+    )
     for method in ("unload", "reload", "warmup"):
         monkeypatch.setattr(
             f"app.services.ml_backend.MLBackendService.{method}",

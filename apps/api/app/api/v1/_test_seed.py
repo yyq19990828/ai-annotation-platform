@@ -233,6 +233,15 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         # 会被 PG 自动置 NULL，无 ondelete 的字段需我们已手动删完）。
         await _try_delete("DELETE FROM users WHERE email LIKE '%@e2e.test'")
 
+    # v0.23.3 ADR-0050 · mock registry 已有 singleton pool，且 pool 的
+    # legacy_instance_id / member 都以 RESTRICT 引用 registry。先删除 mock pool
+    # （member 随 pool CASCADE），再删 registry；否则第二次 reset 会留下旧 registry，
+    # 重建时撞 url unique 约束。共享 pool / registry 均不受影响。
+    await _try_delete(
+        "DELETE FROM ml_backend_service_pools WHERE legacy_instance_id IN "
+        "(SELECT id FROM ml_backend_registry "
+        "WHERE url = 'http://mock-sam.e2e:9999')"
+    )
     # v0.19.0 ADR-0044 · 清旧的 E2E mock registry 行(url unique 约束,
     # 重建必须先删旧)。共享注册项不删,只删本 fixture 自造的 mock url。
     await _try_delete(

@@ -19,6 +19,15 @@ async def test_seed_reset_returns_fixture_payload(httpx_client):
     assert len(body["task_ids"]) == 5
 
 
+async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client):
+    first = await httpx_client.post("/api/v1/__test/seed/reset")
+    second = await httpx_client.post("/api/v1/__test/seed/reset")
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["ml_backend_id"]
+
+
 async def test_seed_login_after_reset_returns_jwt(httpx_client):
     await httpx_client.post("/api/v1/__test/seed/reset")
     res = await httpx_client.post(

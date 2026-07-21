@@ -147,9 +147,15 @@ async def test_predict_frame_route_records_dual_id(
     fake_result.model_version = "v1"
     fake_result.inference_time_ms = 10
 
-    with patch(
-        "app.services.ml_client.MLBackendClient.predict",
-        new=AsyncMock(return_value=[fake_result]),
+    with (
+        patch(
+            "app.services.ml_client.MLBackendClient.predict",
+            new=AsyncMock(return_value=[fake_result]),
+        ),
+        patch(
+            "app.api.v1.ml_backends.StorageService.upload_crop_bytes",
+            return_value="http://storage.test/frame.jpg",
+        ),
     ):
         # predict-frame takes a multipart upload; build a tiny JPEG.
         resp = await httpx_client_bound.post(
