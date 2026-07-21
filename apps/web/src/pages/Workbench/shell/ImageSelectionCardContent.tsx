@@ -8,6 +8,7 @@ import { MetricGrid } from "./selectionCard/MetricGrid";
 import { MetaFooter } from "./selectionCard/MetaFooter";
 import { ActionBar } from "./selectionCard/ActionBar";
 import { geometryMetrics } from "./selectionCard/geometryMetrics";
+import { isComplexPolygonGeometry } from "../stage/shared/geometry/geometryEditPolicy";
 
 const BODY_CLASS =
   "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
@@ -46,6 +47,7 @@ export function ImageSelectionCardContent({
   const locked = !!annotation.is_locked;
   const hidden = !!annotation.is_hidden;
   const metrics = geometryMetrics(annotation.geometry, imageWidth, imageHeight);
+  const complexPolygon = isComplexPolygonGeometry(annotation.geometry);
   const hasAttributes = !!attributeSchema && (attributeSchema.fields ?? []).length > 0;
   const source = annotationSourceKind(annotation);
   // 置信度仅对 AI 来源(采纳 / 导入)有意义;手动框即便后端落了 conf=1 也不展示 pill。
@@ -60,6 +62,15 @@ export function ImageSelectionCardContent({
       />
 
       <MetricGrid metrics={metrics} />
+
+      {complexPolygon && (
+        <p
+          role="status"
+          className="m-0 rounded-md border border-border bg-muted px-2.5 py-2 text-xs leading-5 text-muted-foreground"
+        >
+          此标注含内环或多个外环。为避免丢失几何，画布已禁用顶点编辑和整体拖动；仍可选择、改类、编辑属性或删除。
+        </p>
+      )}
 
       {hasAttributes && (
         <div className={ATTR_BLOCK_CLASS} data-floating-panel-no-drag>

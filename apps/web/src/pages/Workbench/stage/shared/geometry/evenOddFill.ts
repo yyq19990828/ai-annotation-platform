@@ -22,6 +22,11 @@ export interface PathCanvasContext {
   closePath(): void;
 }
 
+export interface FillStrokePathContext<TShape> extends PathCanvasContext {
+  fillShape(shape: TShape): void;
+  strokeShape(shape: TShape): void;
+}
+
 /** 单个外环 + 可选内环 (holes)。归一化坐标 [0,1]。 */
 export interface PolygonRing {
   points: ReadonlyArray<readonly [number, number]>;
@@ -103,6 +108,27 @@ export function buildEvenOddPaths(
     }
   }
   return subpaths;
+}
+
+/**
+ * 用同一组真实边界完成 even-odd 填充与描边。第二遍描边必须继续包含 holes：孔洞边缘也是
+ * 实际对象边界，若只描外环，缩放或低透明度下会难以辨认镂空范围。
+ */
+export function drawEvenOddShape<TShape>(
+  ctx: FillStrokePathContext<TShape>,
+  shape: TShape,
+  outerRings: ReadonlyArray<PolygonRing>,
+  imgW: number,
+  imgH: number,
+): { fillSubpaths: number; strokeSubpaths: number } {
+  ctx.beginPath();
+  const fillSubpaths = buildEvenOddPaths(ctx, outerRings, imgW, imgH);
+  ctx.fillShape(shape);
+
+  ctx.beginPath();
+  const strokeSubpaths = buildEvenOddPaths(ctx, outerRings, imgW, imgH);
+  ctx.strokeShape(shape);
+  return { fillSubpaths, strokeSubpaths };
 }
 
 /**

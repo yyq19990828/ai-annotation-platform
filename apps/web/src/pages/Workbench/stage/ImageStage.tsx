@@ -38,6 +38,7 @@ import {
 import { wheelZoomFactor } from "./imageStageSettings";
 import { fitToCanvas } from "./shared/viewport/fit";
 import { zoomAtPoint } from "./shared/viewport/zoom";
+import { supportsSingleRingPolygonEdit } from "./shared/geometry/geometryEditPolicy";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -1396,7 +1397,13 @@ export function ImageStage({
               const polyOv = polyOverridePoints(b.id);
               const livePoints = polyOv ?? (display.polygon as Pt[]);
               // v0.10.5 M4-β · 锁定时不进入编辑态，但仍允许 click 选中。
-              const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+              // points-only 编辑器不能原子保存 holes / multi_polygon；复杂几何保持可选择、可查看，
+              // 但禁用顶点、插点与整体拖动，避免提交时降级成无孔单 polygon。
+              const geometrySupportsDirectEdit = b.geometry
+                ? supportsSingleRingPolygonEdit(b.geometry)
+                : !(display.holes?.length || display.multiPolygon?.length);
+              const isOnlySelected = geometrySupportsDirectEdit && selectedId === b.id &&
+                selSet.size === 1 && !readOnly && !b.is_locked;
               // v0.10.4 I2.2 · 顶点拖拽中走 O(n) 增量检测；静态态用 O(n²) 全量（n 通常 <50）。
               const draggingThisVertex =
                 drag?.kind === "polyVertex" && drag.id === b.id ? drag.vidx : -1;

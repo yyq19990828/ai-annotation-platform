@@ -24,8 +24,8 @@ import {
 } from "./annotationVisual";
 // v0.23.5 WS-E · holes / multi_polygon even-odd 渲染地基 (ADR-0052 D5 / D8)。
 import {
-  buildEvenOddPaths,
   collectOuterRings,
+  drawEvenOddShape,
   type PolygonRing,
 } from "./shared/geometry/evenOddFill";
 
@@ -272,22 +272,13 @@ export function KonvaPolygon({
     (holesArr && holesArr.some((ring) => ring.length >= 2))
   );
   // 收集 even-odd 子路径列表 (纯函数, 便于单测); 仅在分支启用时计算。
-  // outerOnly (剥离 holes) 用于描边: holes 是填充镂空, 不画边; multi_polygon 的每个
-  // 外环都画边 (它们都是真实边界)。
-  const { fillRings, strokeRings } = useMemo<{
-    fillRings: PolygonRing[];
-    strokeRings: PolygonRing[];
-  }>(() => {
-    if (!hasHolesOrMulti) return { fillRings: [], strokeRings: [] };
-    const all = collectOuterRings({
+  const fillRings = useMemo<PolygonRing[]>(() => {
+    if (!hasHolesOrMulti) return [];
+    return collectOuterRings({
       primaryPoints: ps,
       holes: holesArr,
       multiPolygon: multiArr,
     });
-    return {
-      fillRings: all,
-      strokeRings: all.map((r) => ({ points: r.points })),
-    };
   }, [hasHolesOrMulti, ps, holesArr, multiArr]);
   // sceneFunc 闭包依赖 imgW/imgH + rings; 用 useMemo 稳定引用减少 Konva 重绘。
   const drawEvenOdd = useMemo(
@@ -297,17 +288,10 @@ export function KonvaPolygon({
         ctx.beginPath();
         return;
       }
-      // Pass 1: 全子路径 (外环 + holes) → even-odd 填充。
-      // fillShape 走 shape._fillFunc, 它读 fillRule 属性并调 ctx.fill('evenodd')。
-      ctx.beginPath();
-      buildEvenOddPaths(ctx, fillRings, imgW, imgH);
-      ctx.fillShape(shape);
-      // Pass 2: 仅外环 (剥离 holes) → 描边; holes 作为填充镂空, 不画边, 减少视觉噪声。
-      ctx.beginPath();
-      buildEvenOddPaths(ctx, strokeRings, imgW, imgH);
-      ctx.strokeShape(shape);
+      // 填充与描边都覆盖外环 + holes；hole 边缘是真实边界，不能在描边阶段剥离。
+      drawEvenOddShape(ctx, shape, fillRings, imgW, imgH);
     },
-    [fillRings, strokeRings, imgW, imgH],
+    [fillRings, imgW, imgH],
   );
 
   return (

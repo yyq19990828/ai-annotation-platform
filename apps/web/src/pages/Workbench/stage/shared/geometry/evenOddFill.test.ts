@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildEvenOddPaths,
   collectOuterRings,
+  drawEvenOddShape,
   type PathCanvasContext,
   type PolygonRing,
 } from "./evenOddFill";
@@ -107,6 +108,28 @@ describe("buildEvenOddPaths", () => {
     const n = buildEvenOddPaths(ctx, [], 100, 100);
     expect(n).toBe(0);
     expect(ctx.calls).toHaveLength(0);
+  });
+});
+
+describe("drawEvenOddShape", () => {
+  it("hole 边界同时进入填充与描边路径", () => {
+    const base = makeCtx();
+    const fillShape = vi.fn();
+    const strokeShape = vi.fn();
+    const ctx = { ...base, fillShape, strokeShape };
+    const shape = { id: "polygon-with-hole" };
+    const rings: PolygonRing[] = [{
+      points: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      holes: [[[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]]],
+    }];
+
+    const result = drawEvenOddShape(ctx, shape, rings, 100, 100);
+
+    expect(result).toEqual({ fillSubpaths: 2, strokeSubpaths: 2 });
+    expect(base.calls.filter((call) => call.fn === "beginPath")).toHaveLength(2);
+    expect(base.calls.filter((call) => call.fn === "closePath")).toHaveLength(4);
+    expect(fillShape).toHaveBeenCalledWith(shape);
+    expect(strokeShape).toHaveBeenCalledWith(shape);
   });
 });
 

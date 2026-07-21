@@ -62,6 +62,43 @@ describe("ImageSelectionCardContent", () => {
     expect(getByText("4")).not.toBeNull();
   });
 
+  it.each([
+    {
+      name: "polygon holes",
+      geometry: {
+        type: "polygon" as const,
+        points: [[0, 0], [1, 0], [1, 1], [0, 1]] as [number, number][],
+        holes: [[[0.2, 0.2], [0.4, 0.2], [0.3, 0.4]]] as [number, number][][],
+      },
+    },
+    {
+      name: "multi_polygon",
+      geometry: {
+        type: "multi_polygon" as const,
+        polygons: [{
+          type: "polygon" as const,
+          points: [[0, 0], [1, 0], [1, 1]] as [number, number][],
+        }],
+      },
+    },
+  ])("$name 显示防降级编辑提示", ({ geometry }) => {
+    const { getByRole } = render(
+      <ImageSelectionCardContent
+        annotation={makeAnnotation({ geometry })}
+        imageWidth={100}
+        imageHeight={100}
+        attributeSchema={undefined}
+        readOnly={false}
+        onChangeClass={noop}
+        onToggleFlag={noop}
+        onDelete={noop}
+        onUpdateAttributes={noop}
+      />,
+    );
+
+    expect(getByRole("status").textContent).toContain("禁用顶点编辑和整体拖动");
+  });
+
   it("改类 / 锁定 / 删除 回调透传正确参数", () => {
     const onChangeClass = vi.fn();
     const onToggleFlag = vi.fn();

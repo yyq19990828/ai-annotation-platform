@@ -77,7 +77,9 @@ describe("geometryMetrics · polygon", () => {
     };
     const m = geometryMetrics(g, 1000, 1000);
     expect(byLabel(m, "占图").value).toBe("21.0%"); // 0.25 - 0.04
-    expect(byLabel(m, "顶点").hint).toBe("+1 内环");
+    expect(byLabel(m, "顶点").value).toBe("8");
+    expect(byLabel(m, "顶点").hint).toBe("外环 4 + 1 内环");
+    expect(byLabel(m, "周长").value).toBe("≈ 2,800 px"); // 外环 2000 + 内环 800
   });
 });
 
@@ -86,13 +88,17 @@ describe("geometryMetrics · 其它几何", () => {
     const g: Geometry = {
       type: "multi_polygon",
       polygons: [
-        { type: "polygon", points: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]] },
+        {
+          type: "polygon",
+          points: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]],
+          holes: [[[0.1, 0.1], [0.2, 0.1], [0.2, 0.2], [0.1, 0.2]]],
+        },
         { type: "polygon", points: [[0.5, 0.5], [1, 0.5], [1, 1], [0.5, 1]] },
       ],
     };
     const m = geometryMetrics(g, 1000, 1000);
-    expect(byLabel(m, "环 / 顶点").value).toBe("2 / 8");
-    expect(byLabel(m, "占图").value).toBe("50.0%"); // 0.25 + 0.25
+    expect(byLabel(m, "环 / 顶点").value).toBe("3 / 12");
+    expect(byLabel(m, "占图").value).toBe("49.0%"); // 0.25 - 0.01 + 0.25
   });
 
   it("polyline 点数 + 总长", () => {

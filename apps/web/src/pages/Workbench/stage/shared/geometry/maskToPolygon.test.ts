@@ -7,6 +7,7 @@
 //
 // v0.23.5 WS-E (ADR-0052 D5) · 新增 lossy 显式报告测试:
 // - 多连通 → lossy=true, droppedComponents=分量数-1, lossyReason 非空
+// - 单前景连通但含背景孔洞 → lossy=true, droppedHoles=孔洞数
 // - 单连通 → lossy=false
 // - 空 mask → lossy=false (无几何可丢)
 
@@ -17,6 +18,17 @@ import { maskToPolygon } from "./maskToPolygon";
 function makeRect(w: number, h: number, x0: number, y0: number, x1: number, y1: number): MaskBuffer {
   const m = new MaskBuffer({ width: w, height: h });
   m.fromPolygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+  return m;
+}
+
+function makeDonut(w = 40, h = 40): MaskBuffer {
+  const m = new MaskBuffer({ width: w, height: h });
+  for (let y = 5; y < h - 5; y++) {
+    for (let x = 5; x < w - 5; x++) m.data[y * w + x] = 255;
+  }
+  for (let y = 14; y < h - 14; y++) {
+    for (let x = 14; x < w - 14; x++) m.data[y * w + x] = 0;
+  }
   return m;
 }
 
@@ -117,6 +129,42 @@ describe("maskToPolygon · lossy 显式报告 (v0.23.5 WS-E)", () => {
     expect(out.lossy).toBe(false);
     expect(out.droppedComponents).toBeUndefined();
     expect(out.lossyReason).toBeUndefined();
+  });
+
+  it("donut 单前景分量带孔洞 → lossy=true, droppedHoles=1", () => {
+    const out = maskToPolygon(makeDonut(), { simplifyEpsilon: 0.5 });
+
+    expect(out.multipleComponents).toBe(false);
+    expect(out.droppedComponents).toBeUndefined();
+    expect(out.lossy).toBe(true);
+    expect(out.droppedHoles).toBe(1);
+    expect(out.lossyReason).toContain("孔洞");
+    expect(out.points.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("同一前景分量内的两个孔洞分别计数", () => {
+    const m = new MaskBuffer({ width: 50, height: 30 });
+    m.data.fill(255);
+    for (let y = 8; y < 16; y++) {
+      for (let x = 8; x < 16; x++) m.data[y * m.width + x] = 0;
+      for (let x = 32; x < 40; x++) m.data[y * m.width + x] = 0;
+    }
+
+    const out = maskToPolygon(m, { simplifyEpsilon: 0 });
+    expect(out.multipleComponents).toBe(false);
+    expect(out.lossy).toBe(true);
+    expect(out.droppedHoles).toBe(2);
+  });
+
+  it("背景通道连到画布边界时不误报孔洞", () => {
+    const m = makeDonut();
+    // 从内孔向上打通到外部背景，几何成为单连通、无孔的 C 形。
+    for (let y = 0; y <= 14; y++) m.data[y * m.width + 20] = 0;
+
+    const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
+    expect(out.multipleComponents).toBe(false);
+    expect(out.lossy).toBe(false);
+    expect(out.droppedHoles).toBeUndefined();
   });
 
   it("test_mask_to_polygon_empty_mask: 空 mask → {points:[], lossy:false, multipleComponents:false}", () => {

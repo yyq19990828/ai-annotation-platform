@@ -17,6 +17,7 @@ import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
 import { UNKNOWN_CLASS } from "../stage/colors";
 import type { KeypointDraftHandle, PolygonDraftHandle } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
+import { isComplexPolygonGeometry } from "../stage/shared/geometry/geometryEditPolicy";
 import { bboxGeom, keypointGeom, polygonGeom, polylineGeom } from "../state/transforms";
 import type { Geometry, Keypoint } from "@/types";
 import { randomId } from "@/utils/id";
@@ -618,9 +619,17 @@ export function useWorkbenchAnnotationActions({
   const handleCommitPolygonGeometry = useCallback(
     (id: string, before: Pt[], after: Pt[]) => {
       if (blockIfLocked()) return;
+      const target = annotationsRef.current.find((a) => a.id === id);
+      if (isComplexPolygonGeometry(target?.geometry)) {
+        pushToast({
+          msg: "复杂多边形暂不支持直接编辑",
+          sub: "已保留全部外环与内环，未提交本次变更",
+          kind: "warning",
+        });
+        return;
+      }
       // v0.10.28 · 折线 (polyline) 复用同一顶点编辑路径，但不闭合 → 跳过 polygon 专属校验。
-      const isPolyline =
-        annotationsRef.current.find((a) => a.id === id)?.geometry.type === "polyline";
+      const isPolyline = target?.geometry.type === "polyline";
       if (isPolyline) {
         if (after.length < 2) {
           pushToast({ msg: "折线至少需要 2 顶点", kind: "error" });
