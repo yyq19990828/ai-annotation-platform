@@ -66,7 +66,12 @@ def _create_fk_names(op_mock: MagicMock) -> list[str]:
 
 
 def _has_create_fk(
-    op_mock: MagicMock, name: str, table: str, ref_table: str, cols: list[str], ondelete: str
+    op_mock: MagicMock,
+    name: str,
+    table: str,
+    ref_table: str,
+    cols: list[str],
+    ondelete: str,
 ) -> bool:
     """True if create_foreign_key(name, table, ref_table, cols, ..., ondelete=ondelete) called."""
     for c in op_mock.create_foreign_key.call_args_list:
@@ -183,7 +188,9 @@ def test_upgrade_renames_project_main_column_without_dropping_nonexistent_fk() -
     )
 
 
-def test_upgrade_adds_pool_id_to_partitioned_predictions_and_failed_predictions() -> None:
+def test_upgrade_adds_pool_id_to_partitioned_predictions_and_failed_predictions() -> (
+    None
+):
     migration = _load_migration_0132()
     migration.op = MagicMock()
     migration.upgrade()
@@ -221,7 +228,9 @@ def test_upgrade_remaps_all_seven_jsonb_classes() -> None:
     # 7 classes per plan §5.5
     assert "preannotate_pipeline" in blob and "ml_backend_pool_id" in blob
     assert "projects" in blob and "default_variants" in blob
-    assert "project_ml_backend" in blob  # project_ml_backend_pool.default_variants (pre-rename)
+    assert (
+        "project_ml_backend" in blob
+    )  # project_ml_backend_pool.default_variants (pre-rename)
     assert "params_by_backend" in blob
     assert "model_by_backend" in blob
     assert "interactive_backend_by_project" in blob
@@ -263,17 +272,13 @@ def test_downgrade_reverses_column_and_table_renames_when_singleton() -> None:
     migration.downgrade()
 
     # pool_id → registry_id on project_ml_backend_pool (before rename back)
-    assert _has_alter(
-        migration.op, "project_ml_backend_pool", "pool_id", "registry_id"
-    )
+    assert _has_alter(migration.op, "project_ml_backend_pool", "pool_id", "registry_id")
     # table rename back
     migration.op.rename_table.assert_any_call(
         "project_ml_backend_pool", "project_ml_backend"
     )
     # projects column rename back; NOTE no FK recreation (never existed historically)
-    assert _has_alter(
-        migration.op, "projects", "ml_backend_pool_id", "ml_backend_id"
-    )
+    assert _has_alter(migration.op, "projects", "ml_backend_pool_id", "ml_backend_id")
 
 
 def test_downgrade_does_not_recreate_historically_absent_projects_fk() -> None:

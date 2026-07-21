@@ -403,14 +403,17 @@ async def list_preannotate_project_summary(
     legacy_map: dict[uuid.UUID, uuid.UUID] = {}
     if pool_ids:
         legacy_q = await db.execute(
-            select(MLBackendServicePool.id, MLBackendServicePool.legacy_instance_id)
-            .where(MLBackendServicePool.id.in_(pool_ids))
+            select(
+                MLBackendServicePool.id, MLBackendServicePool.legacy_instance_id
+            ).where(MLBackendServicePool.id.in_(pool_ids))
         )
         legacy_map = {pid: leg for pid, leg in legacy_q.all() if leg is not None}
     for pid, bk in rows:
         backends_by_project.setdefault(pid, bk)
     for proj in projects:
-        preferred_registry = legacy_map.get(proj.ml_backend_pool_id) if proj.ml_backend_pool_id else None
+        preferred_registry = (
+            legacy_map.get(proj.ml_backend_pool_id) if proj.ml_backend_pool_id else None
+        )
         if preferred_registry:
             for pid, bk in rows:
                 if bk.id == preferred_registry:

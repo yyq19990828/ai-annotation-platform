@@ -148,7 +148,9 @@ class MLBackendService:
         await self._create_singleton_pool(row)
         return row
 
-    async def _create_singleton_pool(self, registry: MLBackendRegistry) -> MLBackendServicePool:
+    async def _create_singleton_pool(
+        self, registry: MLBackendRegistry
+    ) -> MLBackendServicePool:
         """为 registry 创建 singleton 服务池 (name 取 registry 名, legacy 指向它)。
 
         幂等: 若 registry 已有 pool (经 member 反查), 直接返回既有 pool。
@@ -242,7 +244,11 @@ class MLBackendService:
         return list(result.scalars().all())
 
     async def update_pool(
-        self, pool_id: uuid.UUID, *, name: str | None = None, enabled: bool | None = None
+        self,
+        pool_id: uuid.UUID,
+        *,
+        name: str | None = None,
+        enabled: bool | None = None,
     ) -> MLBackendServicePool | None:
         pool = await self._get_pool_for_update(pool_id)
         if pool is None:
@@ -269,7 +275,9 @@ class MLBackendService:
                     )
                 )
                 if member is None:
-                    raise ValueError("legacy instance must be an active member of the pool")
+                    raise ValueError(
+                        "legacy instance must be an active member of the pool"
+                    )
             if pool.enabled != enabled:
                 pool.enabled = enabled
                 changed = True
@@ -288,7 +296,9 @@ class MLBackendService:
             select(MLBackendPoolMember.id).where(MLBackendPoolMember.pool_id == pool_id)
         )
         if member is not None:
-            raise ValueError("remove every service-pool member before deleting the pool")
+            raise ValueError(
+                "remove every service-pool member before deleting the pool"
+            )
         await self.db.delete(pool)
         await self.db.flush()
         return True
@@ -340,7 +350,9 @@ class MLBackendService:
         candidate_snapshot = (
             canonicalize_capability(candidate_caps) if candidate_caps else None
         )
-        candidate_fp = capability_fingerprint(candidate_snapshot) if candidate_snapshot else None
+        candidate_fp = (
+            capability_fingerprint(candidate_snapshot) if candidate_snapshot else None
+        )
         if pool.capability_fingerprint is not None:
             mismatch = diff_capabilities(pool.capability_snapshot, candidate_snapshot)
             if mismatch is not None:
@@ -367,8 +379,11 @@ class MLBackendService:
                     "service pool capability baseline is unavailable; refresh the existing member before adding replicas"
                 )
         member = MLBackendPoolMember(
-            id=uuid.uuid4(), pool_id=pool_id, registry_id=registry_id,
-            traffic_state="active", weight=weight,
+            id=uuid.uuid4(),
+            pool_id=pool_id,
+            registry_id=registry_id,
+            traffic_state="active",
+            weight=weight,
         )
         self.db.add(member)
         # First member seeds the pool fingerprint + legacy_instance_id (§7.3).
@@ -410,7 +425,10 @@ class MLBackendService:
             pool.capability_snapshot = snapshot
             pool.capability_fingerprint = fingerprint
             pool.routing_generation += 1
-        elif pool.capability_fingerprint != fingerprint and member.traffic_state != "disabled":
+        elif (
+            pool.capability_fingerprint != fingerprint
+            and member.traffic_state != "disabled"
+        ):
             member.traffic_state = "disabled"
             if pool.legacy_instance_id == registry_id:
                 # off/observe dispatch always uses the legacy instance.  Once its
@@ -428,10 +446,12 @@ class MLBackendService:
         if pool is None:
             return False
         result = await self.db.execute(
-            select(MLBackendPoolMember).where(
+            select(MLBackendPoolMember)
+            .where(
                 MLBackendPoolMember.pool_id == pool_id,
                 MLBackendPoolMember.registry_id == registry_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         member = result.scalar_one_or_none()
         if member is None:
@@ -449,10 +469,12 @@ class MLBackendService:
     ) -> MLBackendPoolMember | None:
         """Set member traffic_state=draining (no new leases; keeps existing)."""
         result = await self.db.execute(
-            select(MLBackendPoolMember).where(
+            select(MLBackendPoolMember)
+            .where(
                 MLBackendPoolMember.pool_id == pool_id,
                 MLBackendPoolMember.registry_id == registry_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         member = result.scalar_one_or_none()
         if member is None:
@@ -471,10 +493,12 @@ class MLBackendService:
     ) -> MLBackendPoolMember | None:
         """Resume a draining member back to active. Disabled members need re-validation."""
         result = await self.db.execute(
-            select(MLBackendPoolMember).where(
+            select(MLBackendPoolMember)
+            .where(
                 MLBackendPoolMember.pool_id == pool_id,
                 MLBackendPoolMember.registry_id == registry_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         member = result.scalar_one_or_none()
         if member is None:
@@ -675,9 +699,7 @@ class MLBackendService:
         )
         return result.scalars().first()
 
-    async def pool_id_for_registry(
-        self, registry_id: uuid.UUID
-    ) -> uuid.UUID | None:
+    async def pool_id_for_registry(self, registry_id: uuid.UUID) -> uuid.UUID | None:
         """Resolve the singleton pool id owning a registry instance.
 
         Public accessor for call sites that carry a registry id (off/observe dispatch)
@@ -765,10 +787,7 @@ class MLBackendService:
             )
             .order_by(MLBackendServicePool.created_at.desc())
         )
-        return [
-            (pool, int(count or 0), assoc)
-            for pool, count, assoc in result.all()
-        ]
+        return [(pool, int(count or 0), assoc) for pool, count, assoc in result.all()]
 
     async def set_pool_enabled(
         self,
@@ -1163,9 +1182,7 @@ class MLBackendService:
         instance (off mode singleton, 行为与 v0.23.2 一致)。"""
         proj = await self.db.get(Project, project_id)
         if proj is not None and proj.ml_backend_pool_id is not None:
-            pool = await self.db.get(
-                MLBackendServicePool, proj.ml_backend_pool_id
-            )
+            pool = await self.db.get(MLBackendServicePool, proj.ml_backend_pool_id)
             if pool is not None and pool.legacy_instance_id is not None:
                 if await self.is_enabled(project_id, pool.legacy_instance_id):
                     backend = await self.get(pool.legacy_instance_id)
@@ -1213,9 +1230,7 @@ class MLBackendService:
         # v0.23.3: 项目主绑定存 pool id; 经 pool 的 legacy instance 解析回 registry。
         bound_id: uuid.UUID | None = None
         if proj is not None and proj.ml_backend_pool_id is not None:
-            pool = await self.db.get(
-                MLBackendServicePool, proj.ml_backend_pool_id
-            )
+            pool = await self.db.get(MLBackendServicePool, proj.ml_backend_pool_id)
             bound_id = pool.legacy_instance_id if pool is not None else None
         if bound_id is not None:
             for b in supporting:

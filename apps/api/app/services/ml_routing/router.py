@@ -164,7 +164,9 @@ class MLBackendRouter:
         )
         if lease is None:
             return RouteSelection(
-                lease=None, instance_id=None, rejection=reason or RejectionReason.POOL_UNAVAILABLE
+                lease=None,
+                instance_id=None,
+                rejection=reason or RejectionReason.POOL_UNAVAILABLE,
             )
         return RouteSelection(
             lease=lease, instance_id=uuid.UUID(lease.instance_id), rejection=None
@@ -199,10 +201,16 @@ class MLBackendRouter:
                 and registry.last_checked_at >= now - max_age
             )
             # capability fingerprint exact match (D3)
-            caps = (registry.health_meta or {}).get("capabilities") if registry.health_meta else None
+            caps = (
+                (registry.health_meta or {}).get("capabilities")
+                if registry.health_meta
+                else None
+            )
             fingerprint_ok = False
             if pool.capability_fingerprint and caps is not None:
-                fingerprint_ok = capability_fingerprint(caps) == pool.capability_fingerprint
+                fingerprint_ok = (
+                    capability_fingerprint(caps) == pool.capability_fingerprint
+                )
             elif singleton_without_fingerprint and caps is not None:
                 # 0132-created singleton pools predate capability seeding. A single
                 # member is interchangeable with itself; its next health refresh
@@ -366,7 +374,8 @@ def make_ledger_from_settings() -> RoutingLedger:
     return RoutingLedger.from_url(
         settings.redis_url,
         lease_ttl_ms=settings.ml_backend_router_lease_ttl_seconds * 1000,
-        heartbeat_interval_ms=settings.ml_backend_router_heartbeat_interval_seconds * 1000,
+        heartbeat_interval_ms=settings.ml_backend_router_heartbeat_interval_seconds
+        * 1000,
         passive_failure_threshold=settings.ml_backend_router_passive_failure_threshold,
         eject_ms=settings.ml_backend_router_eject_seconds * 1000,
     )

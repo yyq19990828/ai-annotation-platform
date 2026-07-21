@@ -59,12 +59,16 @@ async def test_topology_super_admin_sees_full_detail(
     # Super Admin sees health + GPU + weight (not projected away).
     assert member["state"] is not None
     assert member["weight"] == 1
-    assert "last_checked_at" in member  # key present (value may be None if never probed)
+    assert (
+        "last_checked_at" in member
+    )  # key present (value may be None if never probed)
     assert "gpu_resource_id" in member
 
 
 @pytest.mark.asyncio
-async def test_topology_project_admin_trimmed(httpx_client, db_session, project_admin) -> None:
+async def test_topology_project_admin_trimmed(
+    httpx_client, db_session, project_admin
+) -> None:
     """Project Admin topology: server-side projection nulls routing_policy/weight/state/gpu.
 
     Plan Appendix A.6: role projection must happen server-side, not by frontend
@@ -114,10 +118,16 @@ async def test_topology_status_derivation(
     await db_session.flush()
     # The helper creates one active member; flip it to disabled.
     members_a = (
-        await db_session.execute(
-            select(MLBackendPoolMember).where(MLBackendPoolMember.pool_id == pool_a.id)
+        (
+            await db_session.execute(
+                select(MLBackendPoolMember).where(
+                    MLBackendPoolMember.pool_id == pool_a.id
+                )
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for m in members_a:
         m.traffic_state = "disabled"
 
@@ -139,10 +149,16 @@ async def test_topology_status_derivation(
     pool_b.capability_fingerprint = capability_fingerprint(caps)
     await db_session.flush()
     members_b = (
-        await db_session.execute(
-            select(MLBackendPoolMember).where(MLBackendPoolMember.pool_id == pool_b.id)
+        (
+            await db_session.execute(
+                select(MLBackendPoolMember).where(
+                    MLBackendPoolMember.pool_id == pool_b.id
+                )
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if members_b:
         members_b[0].traffic_state = "draining"
     # Add a second active+connected member to pool B.
@@ -205,7 +221,13 @@ async def test_runtime_snapshot_super_admin_only(
     assert "partial" in body
     source_names = [s["name"] for s in body["sources"]]
     # All five sources present.
-    assert set(source_names) == {"topology", "router_ledger", "health", "gpu", "residency"}
+    assert set(source_names) == {
+        "topology",
+        "router_ledger",
+        "health",
+        "gpu",
+        "residency",
+    }
     # gpu + residency honestly marked stale (not bundled in v0.23.3 snapshot).
     gpu_src = next(s for s in body["sources"] if s["name"] == "gpu")
     assert gpu_src["stale"] is True

@@ -124,12 +124,18 @@ async def test_acquire_no_eligible_returns_unavailable(ledger: RoutingLedger) ->
 
 
 @pytest.mark.asyncio
-async def test_acquire_all_circuit_open_returns_all_circuits_open(ledger: RoutingLedger) -> None:
+async def test_acquire_all_circuit_open_returns_all_circuits_open(
+    ledger: RoutingLedger,
+) -> None:
     pool_id = uuid.uuid4().hex
     ids = _ids(2)
     cands = [_candidate(i) for i in ids]
     lease, reason = await ledger.acquire(
-        pool_id, 1, cands, owner="t", operation="p",
+        pool_id,
+        1,
+        cands,
+        owner="t",
+        operation="p",
         circuit_open_instances=set(ids),
     )
     assert lease is None
@@ -142,21 +148,29 @@ async def test_acquire_generation_mismatch_rejected(ledger: RoutingLedger) -> No
     pool_id = uuid.uuid4().hex
     cands = [_candidate(_ids(1)[0])]
     # First acquire at gen=1 succeeds and seeds pool:state.generation=1.
-    l1, _ = await ledger.acquire(pool_id, generation=1, candidates=cands, owner="t", operation="p")
+    l1, _ = await ledger.acquire(
+        pool_id, generation=1, candidates=cands, owner="t", operation="p"
+    )
     assert l1 is not None
     await ledger.cancel(l1)
     # Bump generation (topology changed) → stored gen now 2.
     await ledger.bump_generation(pool_id)
     # Stale-gen acquire rejected.
     lease, reason = await ledger.acquire(
-        pool_id, generation=1, candidates=cands, owner="t", operation="p"  # stale gen
+        pool_id,
+        generation=1,
+        candidates=cands,
+        owner="t",
+        operation="p",  # stale gen
     )
     assert lease is None
     assert reason == RejectionReason.GENERATION_MISMATCH
 
 
 @pytest.mark.asyncio
-async def test_newer_db_generation_self_heals_redis_state(ledger: RoutingLedger) -> None:
+async def test_newer_db_generation_self_heals_redis_state(
+    ledger: RoutingLedger,
+) -> None:
     pool_id = uuid.uuid4().hex
     cands = [_candidate(_ids(1)[0])]
     first, _ = await ledger.acquire(pool_id, 2, cands, owner="t", operation="p")
@@ -174,7 +188,9 @@ async def test_newer_db_generation_self_heals_redis_state(ledger: RoutingLedger)
 
 
 @pytest.mark.asyncio
-async def test_sync_generation_is_exact_idempotent_and_monotonic(ledger: RoutingLedger) -> None:
+async def test_sync_generation_is_exact_idempotent_and_monotonic(
+    ledger: RoutingLedger,
+) -> None:
     pool_id = uuid.uuid4().hex
     assert await ledger.sync_generation(pool_id, 7) is True
     assert await ledger.sync_generation(pool_id, 7) is True
@@ -190,7 +206,10 @@ async def test_swrr_weight_1_2_distribution_over_redis(ledger: RoutingLedger) ->
     """The Redis Lua SWRR matches the pure core: weight 1:2 → 33/67 over a cycle."""
     pool_id = uuid.uuid4().hex
     ids = _ids(2)
-    cands = [_candidate(ids[0], weight=1, max_concurrency=100), _candidate(ids[1], weight=2, max_concurrency=100)]
+    cands = [
+        _candidate(ids[0], weight=1, max_concurrency=100),
+        _candidate(ids[1], weight=2, max_concurrency=100),
+    ]
     counts = {ids[0]: 0, ids[1]: 0}
     for _ in range(300):
         lease, _ = await ledger.acquire(pool_id, 1, cands, owner="t", operation="p")
@@ -271,7 +290,9 @@ async def test_finish_cancel_race_only_one_releases(ledger: RoutingLedger) -> No
 
 
 @pytest.mark.asyncio
-async def test_transport_failures_open_circuit_after_threshold(ledger: RoutingLedger) -> None:
+async def test_transport_failures_open_circuit_after_threshold(
+    ledger: RoutingLedger,
+) -> None:
     """Consecutive transport failures reach threshold → circuit opens, instance excluded."""
     pool_id = uuid.uuid4().hex
     inst = _ids(1)[0]
@@ -286,7 +307,11 @@ async def test_transport_failures_open_circuit_after_threshold(ledger: RoutingLe
     assert inst in open_ids
     # Acquire with circuit_open excludes it → ALL_CIRCUITS_OPEN (single member, all open)
     lease, reason = await ledger.acquire(
-        pool_id, 1, cands, owner="t", operation="p",
+        pool_id,
+        1,
+        cands,
+        owner="t",
+        operation="p",
         circuit_open_instances=open_ids,
     )
     assert lease is None

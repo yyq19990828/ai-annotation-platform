@@ -83,9 +83,7 @@ async def _seed_batch_with_predictions(
     backend, pool = await create_registry_with_pool(
         db, name="bk", url=f"http://x-{uuid.uuid4().hex[:8]}/", state="disconnected"
     )
-    db.add(
-        ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True)
-    )
+    db.add(ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True))
     db.add(
         Prediction(
             task_id=task.id,

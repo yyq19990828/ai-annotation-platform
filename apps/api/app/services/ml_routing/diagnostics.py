@@ -76,7 +76,9 @@ def _derive_pool_status(
     disabled_count = sum(1 for state, *_ in member_states if state == "disabled")
     draining_count = sum(1 for state, *_ in member_states if state == "draining")
     disconnected_active = sum(
-        1 for state, connected, *_ in member_states if state == "active" and not connected
+        1
+        for state, connected, *_ in member_states
+        if state == "active" and not connected
     )
     stale_active = sum(
         1 for state, _, fresh, _ in member_states if state == "active" and not fresh
@@ -108,9 +110,7 @@ def _derive_pool_status(
     return status, reason_codes, routable
 
 
-async def build_topology(
-    db: AsyncSession, *, super_admin: bool
-) -> TopologyResponse:
+async def build_topology(db: AsyncSession, *, super_admin: bool) -> TopologyResponse:
     """Pool/member/registry topology, role-scoped.
 
     Project Admin gets a trimmed view: pool name/member_count/enabled/
@@ -260,11 +260,9 @@ async def build_runtime_snapshot(
                     circuit = await ledger._redis.hgetall(
                         f"{ledger.namespace}:pool:{pool.id}:member:{registry.id}:circuit"
                     )
-                    circuit_open = (
-                        circuit.get("state") == "open"
-                        and int(circuit.get("open_until", 0))
-                        > int(datetime.now(UTC).timestamp() * 1000)
-                    )
+                    circuit_open = circuit.get("state") == "open" and int(
+                        circuit.get("open_until", 0)
+                    ) > int(datetime.now(UTC).timestamp() * 1000)
                 except Exception as exc:  # noqa: BLE001 — capture for source flag
                     ledger_error = str(exc) or "redis_unavailable"
                     inflight = None
@@ -320,9 +318,7 @@ async def build_runtime_snapshot(
         )
     else:
         sources.append(
-            SourceFreshness(
-                name="router_ledger", updated_at=observed_at, stale=False
-            )
+            SourceFreshness(name="router_ledger", updated_at=observed_at, stale=False)
         )
     # health: stale if any member's last_checked_at exceeds the freshness window.
     sources.append(
@@ -356,7 +352,9 @@ async def build_runtime_snapshot(
     partial_reason: str | None = None
     if partial:
         names = [s.name for s in partial_flags]
-        partial_reason = f"{len(partial_flags)}/{len(sources)} sources stale: {', '.join(names)}"
+        partial_reason = (
+            f"{len(partial_flags)}/{len(sources)} sources stale: {', '.join(names)}"
+        )
 
     return RuntimeSnapshotResponse(
         observed_at=observed_at,

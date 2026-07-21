@@ -28,7 +28,9 @@ async def test_list_pools_available_returns_all_pools_with_enablement(
     backend1, pool1 = await create_registry_with_pool(db_session, name="bk1")
     backend2, pool2 = await create_registry_with_pool(db_session, name="bk2")
     # Enable pool1 for the project.
-    db_session.add(ProjectMLBackendPool(project_id=proj.id, pool_id=pool1.id, enabled=True))
+    db_session.add(
+        ProjectMLBackendPool(project_id=proj.id, pool_id=pool1.id, enabled=True)
+    )
     await db_session.flush()
 
     resp = await httpx_client_bound.get(
@@ -51,7 +53,9 @@ async def test_list_pools_available_returns_all_pools_with_enablement(
 
 
 @pytest.mark.asyncio
-async def test_enable_pool_for_project(httpx_client_bound, db_session, super_admin) -> None:
+async def test_enable_pool_for_project(
+    httpx_client_bound, db_session, super_admin
+) -> None:
     """PUT /pools/:pool_id/enablement creates the project binding."""
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id)
@@ -84,7 +88,9 @@ async def test_enable_pool_for_project(httpx_client_bound, db_session, super_adm
 
 
 @pytest.mark.asyncio
-async def test_enable_disabled_pool_rejected(httpx_client_bound, db_session, super_admin) -> None:
+async def test_enable_disabled_pool_rejected(
+    httpx_client_bound, db_session, super_admin
+) -> None:
     """A pool that is not enabled (pool.enabled=false) cannot be project-enabled (D15)."""
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id)
@@ -102,7 +108,9 @@ async def test_enable_disabled_pool_rejected(httpx_client_bound, db_session, sup
 
 
 @pytest.mark.asyncio
-async def test_enable_unknown_pool_404(httpx_client_bound, db_session, super_admin) -> None:
+async def test_enable_unknown_pool_404(
+    httpx_client_bound, db_session, super_admin
+) -> None:
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id)
     resp = await httpx_client_bound.put(
@@ -114,13 +122,17 @@ async def test_enable_unknown_pool_404(httpx_client_bound, db_session, super_adm
 
 
 @pytest.mark.asyncio
-async def test_disable_pool_clears_enablement(httpx_client_bound, db_session, super_admin) -> None:
+async def test_disable_pool_clears_enablement(
+    httpx_client_bound, db_session, super_admin
+) -> None:
     """PUT with enabled=false disables an existing binding."""
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id)
     _backend, pool = await create_registry_with_pool(db_session, name="bk")
     pool.enabled = True
-    db_session.add(ProjectMLBackendPool(project_id=proj.id, pool_id=pool.id, enabled=True))
+    db_session.add(
+        ProjectMLBackendPool(project_id=proj.id, pool_id=pool.id, enabled=True)
+    )
     await db_session.flush()
 
     resp = await httpx_client_bound.put(

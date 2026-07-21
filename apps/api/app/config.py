@@ -241,9 +241,7 @@ class Settings(BaseSettings):
     ml_backend_router_health_max_age_seconds: int = Field(default=90, gt=0, le=3600)
     # Route lease TTL must exceed the normal transport timeout; long tasks heartbeat.
     ml_backend_router_lease_ttl_seconds: int = Field(default=120, gt=0, le=3600)
-    ml_backend_router_heartbeat_interval_seconds: int = Field(
-        default=15, gt=0, le=600
-    )
+    ml_backend_router_heartbeat_interval_seconds: int = Field(default=15, gt=0, le=600)
     # Passive circuit: consecutive transport failures before ejection + open duration.
     ml_backend_router_passive_failure_threshold: int = Field(default=3, gt=0, le=100)
     ml_backend_router_eject_seconds: int = Field(default=30, gt=0, le=3600)

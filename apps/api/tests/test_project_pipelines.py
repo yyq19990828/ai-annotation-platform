@@ -48,9 +48,7 @@ async def _seed_backend(db: AsyncSession, name: str) -> MLBackendRegistry:
 
 async def _enable(db: AsyncSession, project: Project, backend: MLBackendRegistry):
     pool = await MLBackendService(db)._pool_for_registry(backend.id)
-    db.add(
-        ProjectMLBackendPool(project_id=project.id, pool_id=pool.id, enabled=True)
-    )
+    db.add(ProjectMLBackendPool(project_id=project.id, pool_id=pool.id, enabled=True))
     await db.flush()
 
 

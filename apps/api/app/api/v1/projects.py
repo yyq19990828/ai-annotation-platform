@@ -599,9 +599,7 @@ async def create_project(
         from app.services.ml_backend import MLBackendService
 
         svc = MLBackendService(db)
-        await svc.set_enabled(
-            new_project_id, main_backend_to_enable, enabled=True
-        )
+        await svc.set_enabled(new_project_id, main_backend_to_enable, enabled=True)
         # v0.23.3 ADR-0050 · 项目主绑定存 pool id; set_enabled 内部已解析 registry→pool。
         pool = await svc._pool_for_registry(main_backend_to_enable)
         if pool is not None:
@@ -724,9 +722,7 @@ async def update_project(
             from app.services.ml_backend import MLBackendService
 
             svc = MLBackendService(db)
-            await svc.set_enabled(
-                project.id, requested_main_backend_id, enabled=True
-            )
+            await svc.set_enabled(project.id, requested_main_backend_id, enabled=True)
             pool = await svc._pool_for_registry(requested_main_backend_id)
             payload["ml_backend_pool_id"] = pool.id if pool is not None else None
         else:

@@ -293,9 +293,7 @@ async def _ready_profile(db):
             ProjectMLBackendPool(
                 project_id=video.id, pool_id=video_pool.id, enabled=True
             ),
-            ProjectMLBackendPool(
-                project_id=ocr.id, pool_id=ocr_pool.id, enabled=True
-            ),
+            ProjectMLBackendPool(project_id=ocr.id, pool_id=ocr_pool.id, enabled=True),
         ]
     )
     await db.flush()

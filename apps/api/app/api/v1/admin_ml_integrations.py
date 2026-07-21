@@ -177,9 +177,7 @@ async def get_overview(
     # 统计全局注册表去重后的真值。v0.23.3 ADR-0050 · 项目启用经服务池层。
     res = await db.execute(
         select(Project, MLBackendRegistry)
-        .join(
-            ProjectMLBackendPool, ProjectMLBackendPool.project_id == Project.id
-        )
+        .join(ProjectMLBackendPool, ProjectMLBackendPool.project_id == Project.id)
         .join(
             MLBackendPoolMember,
             MLBackendPoolMember.pool_id == ProjectMLBackendPool.pool_id,
@@ -1698,13 +1696,20 @@ async def create_service_pool(
 ) -> ServicePoolAdminItem:
     svc = MLBackendService(db)
     try:
-        pool = await svc.create_pool(data.name, legacy_instance_id=data.legacy_instance_id)
+        pool = await svc.create_pool(
+            data.name, legacy_instance_id=data.legacy_instance_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.created",
-        target_type="ml_service_pool", target_id=str(pool.id),
-        request=request, status_code=201, detail={"name": data.name},
+        db,
+        actor=admin,
+        action="ml_service_pool.created",
+        target_type="ml_service_pool",
+        target_id=str(pool.id),
+        request=request,
+        status_code=201,
+        detail={"name": data.name},
     )
     await db.commit()
     await db.refresh(pool)
@@ -1739,9 +1744,13 @@ async def patch_service_pool(
     if pool is None:
         raise HTTPException(status_code=404, detail="service pool not found")
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.updated",
-        target_type="ml_service_pool", target_id=str(pool_id),
-        request=request, status_code=200,
+        db,
+        actor=admin,
+        action="ml_service_pool.updated",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
         detail={"name": data.name, "enabled": data.enabled},
     )
     await db.commit()
@@ -1764,9 +1773,14 @@ async def delete_service_pool(
     if not ok:
         raise HTTPException(status_code=404, detail="service pool not found")
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.deleted",
-        target_type="ml_service_pool", target_id=str(pool_id),
-        request=request, status_code=204, detail={},
+        db,
+        actor=admin,
+        action="ml_service_pool.deleted",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=204,
+        detail={},
     )
     await db.commit()
 
@@ -1787,9 +1801,7 @@ async def add_or_update_pool_member(
 
     svc = MLBackendService(db)
     try:
-        await svc.add_pool_member(
-            pool_id, registry_id, weight=data.weight
-        )
+        await svc.add_pool_member(pool_id, registry_id, weight=data.weight)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CapabilityMismatchError as exc:
@@ -1812,9 +1824,13 @@ async def add_or_update_pool_member(
             },
         ) from exc
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.member_upserted",
-        target_type="ml_service_pool", target_id=str(pool_id),
-        request=request, status_code=200,
+        db,
+        actor=admin,
+        action="ml_service_pool.member_upserted",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
         detail={"registry_id": str(registry_id), "weight": data.weight},
     )
     await db.commit()
@@ -1849,9 +1865,14 @@ async def remove_pool_member(
     if not ok:
         raise HTTPException(status_code=404, detail="member not found")
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.member_removed",
-        target_type="ml_service_pool", target_id=str(pool_id),
-        request=request, status_code=200, detail={"registry_id": str(registry_id)},
+        db,
+        actor=admin,
+        action="ml_service_pool.member_removed",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
+        detail={"registry_id": str(registry_id)},
     )
     await db.commit()
     pool = await svc.get_pool(pool_id)
@@ -1874,9 +1895,14 @@ async def drain_pool_member(
     if member is None:
         raise HTTPException(status_code=404, detail="member not found")
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.member_drained",
-        target_type="ml_service_pool", target_id=str(pool_id),
-        request=request, status_code=200, detail={"registry_id": str(registry_id)},
+        db,
+        actor=admin,
+        action="ml_service_pool.member_drained",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
+        detail={"registry_id": str(registry_id)},
     )
     await db.commit()
     pool = await svc.get_pool(pool_id)
@@ -1902,9 +1928,14 @@ async def resume_pool_member(
     if member is None:
         raise HTTPException(status_code=404, detail="member not found")
     await AuditService.log(
-        db, actor=admin, action="ml_service_pool.member_resumed",
-        target_type="ml_service_pool", target_id=str(pool_id),
-        request=request, status_code=200, detail={"registry_id": str(registry_id)},
+        db,
+        actor=admin,
+        action="ml_service_pool.member_resumed",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
+        detail={"registry_id": str(registry_id)},
     )
     await db.commit()
     pool = await svc.get_pool(pool_id)
@@ -1926,7 +1957,9 @@ async def get_topology(
 
     # role may be stored as enum or string; normalize to compare against SUPER_ADMIN.
     role_val = admin.role.value if hasattr(admin.role, "value") else admin.role
-    return await build_topology(db, super_admin=(role_val == UserRole.SUPER_ADMIN.value))
+    return await build_topology(
+        db, super_admin=(role_val == UserRole.SUPER_ADMIN.value)
+    )
 
 
 @router.get("/runtime-snapshot", response_model=RuntimeSnapshotResponse)

@@ -55,9 +55,7 @@ async def _seed(db: AsyncSession, owner_id: uuid.UUID):
         ProjectMLBackendPool(project_id=proj.id, pool_id=detect_pool.id, enabled=True)
     )
     db.add(
-        ProjectMLBackendPool(
-            project_id=proj.id, pool_id=classify_pool.id, enabled=True
-        )
+        ProjectMLBackendPool(project_id=proj.id, pool_id=classify_pool.id, enabled=True)
     )
     proj.ml_backend_pool_id = detect_pool.id
     await db.commit()

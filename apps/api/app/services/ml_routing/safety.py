@@ -13,7 +13,9 @@ from app.services.ml_routing.router import make_ledger_from_settings
 
 
 class MLBackendQuiescenceError(Exception):
-    def __init__(self, error_code: str, message: str, *, unavailable: bool = False) -> None:
+    def __init__(
+        self, error_code: str, message: str, *, unavailable: bool = False
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.unavailable = unavailable
@@ -22,9 +24,7 @@ class MLBackendQuiescenceError(Exception):
         return {"error_code": self.error_code, "message": str(self)}
 
 
-async def require_registry_quiescent(
-    db: AsyncSession, registry_id: uuid.UUID
-) -> None:
+async def require_registry_quiescent(db: AsyncSession, registry_id: uuid.UUID) -> None:
     """Require enforce + draining + a fresh exact inflight=0 proof.
 
     Unpooled registries cannot receive service-pool leases and retain the legacy

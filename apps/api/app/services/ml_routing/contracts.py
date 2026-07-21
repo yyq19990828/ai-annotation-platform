@@ -186,7 +186,9 @@ class CapabilityMismatchError(Exception):
 class RoutingError(Exception):
     """Base for routing-domain errors surfaced to callers (API → HTTP error code)."""
 
-    def __init__(self, reason: RejectionReason, message: str, *, retry_after: int | None = None) -> None:
+    def __init__(
+        self, reason: RejectionReason, message: str, *, retry_after: int | None = None
+    ) -> None:
         super().__init__(message)
         self.reason = reason
         self.http_status = REJECTION_HTTP_STATUS[reason]

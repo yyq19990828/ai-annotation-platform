@@ -168,8 +168,7 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
         (await db_session.execute(select(ProjectMLBackendPool))).scalars()
     )
     assert {
-        (association.project_id, association.pool_id)
-        for association in associations
+        (association.project_id, association.pool_id) for association in associations
     } == {
         (projects["image_demo"].id, image_pool.id),
         (projects["video_demo"].id, image_pool.id),

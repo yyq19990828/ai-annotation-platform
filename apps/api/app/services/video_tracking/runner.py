@@ -943,7 +943,11 @@ async def run_tracker_job(
         # 经 MLBackendRouter 取得 job-scope route lease (enforce) 或记录 would-select
         # 证据 (observe); off 模式行为不变 (legacy instance dispatch)。lease 在整个 job
         # 期间按 heartbeat_interval 周期续命, job 结束时 finish/cancel exactly once。
-        from app.services.ml_routing.router import MLBackendRouter, make_ledger_from_settings
+        from app.services.ml_routing.router import (
+            MLBackendRouter,
+            make_ledger_from_settings,
+        )
+
         tracker_pool_id = None
         if backend is not None:
             tracker_pool_id = await ml_svc.pool_id_for_registry(backend.id)
@@ -996,6 +1000,7 @@ async def run_tracker_job(
                 # tracker pins the acquired instance for the whole job (stateful session).
                 if _sel.lease is not None:
                     tracker_lease = _sel.lease
+
                     # heartbeat loop: renew lease periodically until job ends.
                     async def _heartbeat_loop():
                         nonlocal heartbeat_failed
@@ -1020,12 +1025,18 @@ async def run_tracker_job(
                 if _sel.would_select is not None:
                     log.info(
                         "tracker job %s observe would_select=%s actual=%s pool=%s",
-                        job_id, _sel.would_select, _sel.instance_id, tracker_pool_id,
+                        job_id,
+                        _sel.would_select,
+                        _sel.instance_id,
+                        tracker_pool_id,
                     )
             # v0.23.3 · pool/instance dual-ID recorded via structured log (audit lineage, §5.4).
             log.info(
                 "tracker job %s routed pool=%s instance=%s mode=%s",
-                job_id, tracker_pool_id, backend.id, settings.ml_backend_router_mode,
+                job_id,
+                tracker_pool_id,
+                backend.id,
+                settings.ml_backend_router_mode,
             )
         task_data = {
             "id": str(task.id),

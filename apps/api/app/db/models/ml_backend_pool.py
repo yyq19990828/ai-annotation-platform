@@ -87,7 +87,9 @@ class MLBackendServicePool(Base):
         BigInteger, nullable=False, default=1, server_default="1"
     )
     # SHA-256 hex (64 chars) of canonical routing capability; null = 池不可路由。
-    capability_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    capability_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     # canonical 路由相关能力快照 (仅路由相关字段, 排除 URL/auth/GPU/health 运行态)。
     capability_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

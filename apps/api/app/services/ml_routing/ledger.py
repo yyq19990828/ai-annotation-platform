@@ -45,7 +45,9 @@ def _pool_state_key(pool_id: str, namespace: str = DEFAULT_NAMESPACE) -> str:
     return f"{namespace}:pool:{pool_id}:state"
 
 
-def _member_leases_key(pool_id: str, instance_id: str, namespace: str = DEFAULT_NAMESPACE) -> str:
+def _member_leases_key(
+    pool_id: str, instance_id: str, namespace: str = DEFAULT_NAMESPACE
+) -> str:
     return f"{namespace}:pool:{pool_id}:member:{instance_id}:leases"
 
 
@@ -53,7 +55,9 @@ def _lease_key(lease_id: str, namespace: str = DEFAULT_NAMESPACE) -> str:
     return f"{namespace}:lease:{lease_id}"
 
 
-def _circuit_key(pool_id: str, instance_id: str, namespace: str = DEFAULT_NAMESPACE) -> str:
+def _circuit_key(
+    pool_id: str, instance_id: str, namespace: str = DEFAULT_NAMESPACE
+) -> str:
     return f"{namespace}:pool:{pool_id}:member:{instance_id}:circuit"
 
 
@@ -392,7 +396,8 @@ class RoutingLedger:
         """
         circuit_open_instances = circuit_open_instances or set()
         eligible = [
-            c for c in candidates
+            c
+            for c in candidates
             if str(c.instance_id) not in circuit_open_instances
             and c.traffic_state.value == "active"
             and c.fingerprint_ok
@@ -413,7 +418,8 @@ class RoutingLedger:
         # KEYS: pool:state + each eligible member's leases key
         keys = [_pool_state_key(pool_id, self.namespace)]
         keys += [
-            _member_leases_key(pool_id, str(c.instance_id), self.namespace) for c in eligible
+            _member_leases_key(pool_id, str(c.instance_id), self.namespace)
+            for c in eligible
         ]
         # ARGV: pool_id, gen, now, ttl, lease_id, owner, operation, bucket, then triples
         argv: list[str] = [

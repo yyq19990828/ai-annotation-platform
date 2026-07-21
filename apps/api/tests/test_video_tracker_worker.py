@@ -471,9 +471,7 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     project.ml_backend_pool_id = pool.id
     # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_pool_id 且需项目「已启用」
     db_session.add(
-        ProjectMLBackendPool(
-            project_id=task.project_id, pool_id=pool.id, enabled=True
-        )
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
     )
     await db_session.flush()
     annotation = Annotation(
@@ -583,9 +581,7 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     project.ml_backend_pool_id = pool.id
     # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_pool_id 且需项目「已启用」
     db_session.add(
-        ProjectMLBackendPool(
-            project_id=task.project_id, pool_id=pool.id, enabled=True
-        )
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
     )
     await db_session.flush()
     annotation = Annotation(
@@ -1234,25 +1230,46 @@ async def test_tracker_observe_mode_records_would_select_evidence(
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
     backend, pool = await create_registry_with_pool(
-        db_session, name="SAM2 Video", url="http://sam2-obs.test",
-        state="connected", is_interactive=True,
+        db_session,
+        name="SAM2 Video",
+        url="http://sam2-obs.test",
+        state="connected",
+        is_interactive=True,
         enabled_pool=True,
         health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
     )
     project.ml_backend_pool_id = pool.id
-    db_session.add(ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True))
+    db_session.add(
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
+    )
     await db_session.flush()
     annotation = Annotation(
-        task_id=task.id, project_id=task.project_id, user_id=user.id,
-        annotation_type="video_bbox", class_name="car",
-        geometry={"type": "video_bbox", "frame_index": 0, "x": 1, "y": 2, "w": 10, "h": 12},
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 1,
+            "y": 2,
+            "w": 10,
+            "h": 12,
+        },
     )
     db_session.add(annotation)
     await db_session.flush()
     job = VideoTrackerJob(
-        task_id=task.id, dataset_item_id=item.id, annotation_id=annotation.id,
-        created_by=user.id, status=VideoTrackerJobStatus.QUEUED.value,
-        model_key="sam2_video", direction="forward", from_frame=0, to_frame=2,
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
         prompt={"type": "bbox", "geometry": annotation.geometry},
         event_channel="video-tracker-job:obs",
     )
@@ -1264,10 +1281,20 @@ async def test_tracker_observe_mode_records_would_select_evidence(
     async def fake_predict_interactive(self, task_data, context):
         return PredictionResult(
             task_id=task_data["id"],
-            result=[{"frame_index": fi, "geometry": {"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12}, "confidence": 0.9}
-                    for fi in range(context["from_frame"], context["to_frame"] + 1)],
+            result=[
+                {
+                    "frame_index": fi,
+                    "geometry": {"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+                    "confidence": 0.9,
+                }
+                for fi in range(context["from_frame"], context["to_frame"] + 1)
+            ],
         )
-    monkeypatch.setattr("app.services.ml_client.MLBackendClient.predict_interactive", fake_predict_interactive)
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
 
     await run_tracker_job(db_session, job.id, publisher=_noop_pub)
     await db_session.refresh(job)
@@ -1287,26 +1314,47 @@ async def test_tracker_enforce_mode_acquires_and_finishes_route_lease(
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
     backend, pool = await create_registry_with_pool(
-        db_session, name="SAM2 Video Enf", url="http://sam2-enf.test",
-        state="connected", is_interactive=True,
+        db_session,
+        name="SAM2 Video Enf",
+        url="http://sam2-enf.test",
+        state="connected",
+        is_interactive=True,
         health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
         last_checked_at=datetime.now(timezone.utc),
     )
     project.ml_backend_pool_id = pool.id
     pool.enabled = True  # pool must be enabled for enforce acquire
-    db_session.add(ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True))
+    db_session.add(
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
+    )
     await db_session.flush()
     annotation = Annotation(
-        task_id=task.id, project_id=task.project_id, user_id=user.id,
-        annotation_type="video_bbox", class_name="car",
-        geometry={"type": "video_bbox", "frame_index": 0, "x": 1, "y": 2, "w": 10, "h": 12},
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 1,
+            "y": 2,
+            "w": 10,
+            "h": 12,
+        },
     )
     db_session.add(annotation)
     await db_session.flush()
     job = VideoTrackerJob(
-        task_id=task.id, dataset_item_id=item.id, annotation_id=annotation.id,
-        created_by=user.id, status=VideoTrackerJobStatus.QUEUED.value,
-        model_key="sam2_video", direction="forward", from_frame=0, to_frame=2,
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
         prompt={"type": "bbox", "geometry": annotation.geometry},
         event_channel="video-tracker-job:enf",
     )
@@ -1318,10 +1366,20 @@ async def test_tracker_enforce_mode_acquires_and_finishes_route_lease(
     async def fake_predict_interactive(self, task_data, context):
         return PredictionResult(
             task_id=task_data["id"],
-            result=[{"frame_index": fi, "geometry": {"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12}, "confidence": 0.9}
-                    for fi in range(context["from_frame"], context["to_frame"] + 1)],
+            result=[
+                {
+                    "frame_index": fi,
+                    "geometry": {"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+                    "confidence": 0.9,
+                }
+                for fi in range(context["from_frame"], context["to_frame"] + 1)
+            ],
         )
-    monkeypatch.setattr("app.services.ml_client.MLBackendClient.predict_interactive", fake_predict_interactive)
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
 
     await run_tracker_job(db_session, job.id, publisher=_noop_pub)
     await db_session.refresh(job)
@@ -1337,7 +1395,9 @@ async def test_tracker_enforce_mode_acquires_and_finishes_route_lease(
         # the tracker lease should be gone (finished); ZCARD of the member leases == 0.
         key = _member_leases_key(str(pool.id), str(backend.id))
         inflight = await ledger._redis.zcard(key)
-        assert inflight == 0, f"route lease leaked: {inflight} inflight after job completion"
+        assert inflight == 0, (
+            f"route lease leaked: {inflight} inflight after job completion"
+        )
     finally:
         await ledger.aclose()
 
@@ -1354,9 +1414,7 @@ async def _make_multi_member_tracker_job(db_session, user_id):
     project = await db_session.get(Project, task.project_id)
     capabilities = {
         "supported_trackers": ["sam2_video"],
-        "models": [
-            {"id": "sam2", "task": "video_segment", "modalities": ["video"]}
-        ],
+        "models": [{"id": "sam2", "task": "video_segment", "modalities": ["video"]}],
     }
     legacy, pool = await create_registry_with_pool(
         db_session,
@@ -1392,9 +1450,7 @@ async def _make_multi_member_tracker_job(db_session, user_id):
     )
     project.ml_backend_pool_id = pool.id
     db_session.add(
-        ProjectMLBackendPool(
-            project_id=task.project_id, pool_id=pool.id, enabled=True
-        )
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
     )
     annotation = Annotation(
         task_id=task.id,

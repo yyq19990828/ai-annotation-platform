@@ -20,7 +20,9 @@ from tests.factory import create_project
 
 
 @pytest.mark.asyncio
-async def test_create_from_ml_result_records_pool_and_instance(db_session, super_admin) -> None:
+async def test_create_from_ml_result_records_pool_and_instance(
+    db_session, super_admin
+) -> None:
     """Prediction gets both ml_backend_id (instance) and ml_backend_pool_id (requested pool)."""
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id)
@@ -65,7 +67,9 @@ async def test_create_failed_records_pool_and_instance(db_session, super_admin) 
 
 
 @pytest.mark.asyncio
-async def test_create_failed_pool_set_when_instance_null(db_session, super_admin) -> None:
+async def test_create_failed_pool_set_when_instance_null(
+    db_session, super_admin
+) -> None:
     """§5.4: a failure before instance selection records pool but instance may be null."""
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id)
@@ -100,7 +104,9 @@ async def test_pool_id_for_registry_resolves_singleton(db_session, super_admin) 
 
 
 @pytest.mark.asyncio
-async def test_pool_id_for_registry_returns_none_for_unknown(db_session, super_admin) -> None:
+async def test_pool_id_for_registry_returns_none_for_unknown(
+    db_session, super_admin
+) -> None:
     """An unknown registry id resolves to None (no pool)."""
     user, _ = super_admin
     await create_project(db_session, owner_id=user.id)
@@ -128,7 +134,9 @@ async def test_predict_frame_route_records_dual_id(
     backend, pool = await create_registry_with_pool(db_session, name="gsam2-video")
     from app.db.models.ml_backend_registry import ProjectMLBackendPool
 
-    db_session.add(ProjectMLBackendPool(project_id=proj.id, pool_id=pool.id, enabled=True))
+    db_session.add(
+        ProjectMLBackendPool(project_id=proj.id, pool_id=pool.id, enabled=True)
+    )
     task = await create_task(db_session, project_id=proj.id)
     await db_session.flush()
 
@@ -147,7 +155,13 @@ async def test_predict_frame_route_records_dual_id(
         resp = await httpx_client_bound.post(
             f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/predict-frame",
             headers={"Authorization": f"Bearer {token}"},
-            files={"frame": ("f.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9", "image/jpeg")},
+            files={
+                "frame": (
+                    "f.jpg",
+                    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9",
+                    "image/jpeg",
+                )
+            },
             data={"task_id": str(task.id), "frame_index": "0", "config": "{}"},
         )
     assert resp.status_code == 200, resp.text

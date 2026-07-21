@@ -212,7 +212,10 @@ def _canonicalize_models(value: Any) -> list[dict]:
         )
         combinations = raw_model.get("variant_combinations") or []
         model["variant_combinations"] = _sorted_unique(
-            [list(combo) if isinstance(combo, (list, tuple)) else combo for combo in combinations]
+            [
+                list(combo) if isinstance(combo, (list, tuple)) else combo
+                for combo in combinations
+            ]
         )
         model["default_variants"] = _canonicalize_schema_value(
             raw_model.get("default_variants") or {}
@@ -282,7 +285,9 @@ def capability_fingerprint(raw_or_canonical: dict | None) -> str:
         canonical = raw_or_canonical
     else:
         canonical = canonicalize_capability(raw_or_canonical)
-    encoded = json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    encoded = json.dumps(
+        canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 

@@ -52,7 +52,9 @@ ROUTER_MODE = Gauge(
 
 def record_selection(pool_id: str, instance_id: str, outcome: str) -> None:
     try:
-        ROUTER_SELECTIONS.labels(pool_id=pool_id, instance_id=instance_id, outcome=outcome).inc()
+        ROUTER_SELECTIONS.labels(
+            pool_id=pool_id, instance_id=instance_id, outcome=outcome
+        ).inc()
     except Exception:  # noqa: BLE001 — metrics must never break dispatch
         logger.debug("failed to record selection metric", exc_info=True)
 
@@ -66,12 +68,16 @@ def record_rejection(pool_id: str, reason: str) -> None:
 
 def record_ejection(pool_id: str, instance_id: str, reason: str) -> None:
     try:
-        ROUTER_EJECTIONS.labels(pool_id=pool_id, instance_id=instance_id, reason=reason).inc()
+        ROUTER_EJECTIONS.labels(
+            pool_id=pool_id, instance_id=instance_id, reason=reason
+        ).inc()
     except Exception:  # noqa: BLE001
         logger.debug("failed to record ejection metric", exc_info=True)
 
 
-def record_duration(pool_id: str, instance_id: str, outcome: str, seconds: float) -> None:
+def record_duration(
+    pool_id: str, instance_id: str, outcome: str, seconds: float
+) -> None:
     try:
         ROUTED_REQUEST_DURATION.labels(
             pool_id=pool_id, instance_id=instance_id, outcome=outcome

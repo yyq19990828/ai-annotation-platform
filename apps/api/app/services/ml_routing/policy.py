@@ -80,18 +80,25 @@ def select_swrr(
     # (stable across processes — UUIDs are deterministic per registry row).
     winner = max(
         eligible,
-        key=lambda iw: (state.current_weights.get(iw[0], 0), _invert_uuid_for_min(iw[0])),
+        key=lambda iw: (
+            state.current_weights.get(iw[0], 0),
+            _invert_uuid_for_min(iw[0]),
+        ),
     )
     # Tie-break: max() picks the first max on equal keys; we want lexicographically
     # SMALLEST instance UUID to win ties, so invert the UUID in the sort key so that
     # a smaller UUID yields a larger inverted key (and thus wins max()).
     # Re-resolve ties explicitly for determinism:
     top_weight = state.current_weights[winner[0]]
-    tied = sorted(iid for iid, _ in eligible if state.current_weights.get(iid, 0) == top_weight)
+    tied = sorted(
+        iid for iid, _ in eligible if state.current_weights.get(iid, 0) == top_weight
+    )
     winner_id = tied[0]
 
     # Step 3: selected member's current_weight -= total eligible weight.
-    state.current_weights[winner_id] = state.current_weights.get(winner_id, 0) - total_weight
+    state.current_weights[winner_id] = (
+        state.current_weights.get(winner_id, 0) - total_weight
+    )
     return winner_id
 
 
@@ -109,7 +116,9 @@ def _invert_uuid_for_min(uuid_hex: str) -> int:
     return (~val) & ((1 << 64) - 1)
 
 
-def expected_distribution(candidates: list[tuple[str, int]], draws: int) -> dict[str, float]:
+def expected_distribution(
+    candidates: list[tuple[str, int]], draws: int
+) -> dict[str, float]:
     """Theoretical per-member share of ``draws`` selections under SWRR.
 
     For golden-test assertions (§C.2): SWRR with integer weights reproduces the weight

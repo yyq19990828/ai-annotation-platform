@@ -58,8 +58,16 @@ def test_fingerprint_missing_defaults_equivalent_to_explicit() -> None:
 
 def test_fingerprint_excludes_runtime_fields() -> None:
     """URL / GPU UUID / VRAM differences must NOT change fingerprint (replicas interchangeable)."""
-    a = {"model_ids": ["sam3"], "url": "http://gpu-a:9999", "gpu_resource_id": "node-a/GPU-1"}
-    b = {"model_ids": ["sam3"], "url": "http://gpu-b:9999", "gpu_resource_id": "node-b/GPU-2"}
+    a = {
+        "model_ids": ["sam3"],
+        "url": "http://gpu-a:9999",
+        "gpu_resource_id": "node-a/GPU-1",
+    }
+    b = {
+        "model_ids": ["sam3"],
+        "url": "http://gpu-b:9999",
+        "gpu_resource_id": "node-b/GPU-2",
+    }
     assert cap.capability_fingerprint(a) == cap.capability_fingerprint(b)
 
 
@@ -91,13 +99,25 @@ def test_fingerprint_param_schema_mismatch_produces_diff() -> None:
 
 def test_fingerprint_param_schema_display_fields_ignored() -> None:
     """Display-only fields (label/description/order) do NOT affect fingerprint."""
-    a = {"parameter_schema": {"box_threshold": {"type": "float", "label": "Box Threshold"}}}
-    b = {"parameter_schema": {"box_threshold": {"type": "float", "label": "框阈值", "order": 1}}}
+    a = {
+        "parameter_schema": {
+            "box_threshold": {"type": "float", "label": "Box Threshold"}
+        }
+    }
+    b = {
+        "parameter_schema": {
+            "box_threshold": {"type": "float", "label": "框阈值", "order": 1}
+        }
+    }
     assert cap.capability_fingerprint(a) == cap.capability_fingerprint(b)
 
 
 def test_diff_returns_none_on_identical() -> None:
-    snap = {"model_ids": ["sam3"], "task": "segment", "supported_trackers": ["sam3_video"]}
+    snap = {
+        "model_ids": ["sam3"],
+        "task": "segment",
+        "supported_trackers": ["sam3_video"],
+    }
     assert cap.diff_capabilities(snap, dict(snap)) is None
 
 
@@ -192,12 +212,20 @@ def test_production_models_are_fingerprinted_and_order_independent() -> None:
         ("models", lambda value: value["models"][0].update(task="classification")),
         (
             "models",
-            lambda value: value["models"][0]["params"]["properties"]["threshold"].update(
-                default=0.7
+            lambda value: value["models"][0]["params"]["properties"][
+                "threshold"
+            ].update(default=0.7),
+        ),
+        (
+            "models",
+            lambda value: value["models"][0].update(default_variants={"size": "m"}),
+        ),
+        (
+            "models",
+            lambda value: value["models"][0]["resource_profile"].update(
+                batchable=False
             ),
         ),
-        ("models", lambda value: value["models"][0].update(default_variants={"size": "m"})),
-        ("models", lambda value: value["models"][0]["resource_profile"].update(batchable=False)),
         ("protocol_version", lambda value: value.update(protocol_version="3")),
         ("model_version", lambda value: value.update(model_version="weights-8")),
     ],
@@ -242,7 +270,7 @@ def test_swrr_weight_1_1_split_50_50() -> None:
         counts[pick] += 1
     # SWRR with equal weights alternates exactly → ~50/50, within tight tolerance.
     for i in ids:
-        assert 0.45 < counts[i] / 1000 < 0.55, f"{i}: {counts[i]/1000}"
+        assert 0.45 < counts[i] / 1000 < 0.55, f"{i}: {counts[i] / 1000}"
 
 
 def test_swrr_weight_1_2_split_33_67() -> None:
@@ -323,4 +351,6 @@ def test_swrr_distribution_matches_expected() -> None:
     for _ in range(1000):
         counts[swrr.select_swrr(cands, state)] += 1
     for iid, exp in expected.items():
-        assert abs(counts[iid] / 1000 - exp) < 0.02, f"{iid}: empirical {counts[iid]/1000} vs expected {exp}"
+        assert abs(counts[iid] / 1000 - exp) < 0.02, (
+            f"{iid}: empirical {counts[iid] / 1000} vs expected {exp}"
+        )
