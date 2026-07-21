@@ -67,7 +67,7 @@ def test_setup_models_declare_supported_inputs():
         "point_prompt",
         "full_image",
     ]
-    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == ["video", "bbox_prompt"]
     assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
 
 
@@ -121,6 +121,23 @@ def test_interactive_seg_model_point_box_to_polygon():
     assert set(inter["supported_prompts"]) == {"point", "interactive_box"}
     assert inter["supported_geometric_outputs"] == ["polygon"]
     assert inter["is_interactive"] is True
+
+
+def test_native_mask_interaction_is_not_advertised_before_implementation():
+    """原生候选、Mask prompt、scribble 与 correction 未实现前不得抢跑声明。"""
+    by_id = {m["id"]: m for m in setup()["models"]}
+    new_prompts = {"mask", "scribble", "correction_frame"}
+    new_inputs = {"mask_prompt", "scribble_prompt"}
+
+    interactive = by_id["grounded-sam2-interactive-seg"]
+    assert new_prompts.isdisjoint(interactive["supported_prompts"])
+    assert new_inputs.isdisjoint(interactive["supported_inputs"])
+    assert "mask" not in interactive["supported_geometric_outputs"]
+
+    tracker = by_id["grounded-sam2-tracker"]
+    assert new_prompts.isdisjoint(tracker["supported_prompts"])
+    assert new_inputs.isdisjoint(tracker["supported_inputs"])
+    assert "video" in tracker["supported_inputs"]
 
 
 def test_tracker_model_sam2_video():

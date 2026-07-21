@@ -75,9 +75,9 @@ def test_absent_task_not_flagged():
     assert all(w["field"] != "task" for w in warnings)
 
 
-def test_prompts_requires_input_matches_legacy_interactive_set():
-    """SSOT 派生集合 == 改造前 ml_capabilities._INTERACTIVE_PROMPTS 硬编码 (防迁移漂移)。"""
-    legacy = {
+def test_prompts_requires_input_matches_registry_contract():
+    """SSOT 派生集合覆盖当前交互与纠错 prompt。"""
+    expected = {
         "point",
         "interactive_box",
         "bbox",
@@ -86,10 +86,12 @@ def test_prompts_requires_input_matches_legacy_interactive_set():
         "scribble",
         "sketch",
         "mask",
+        "correction_frame",
     }
-    assert set(PROMPTS_REQUIRES_INPUT) == legacy
+    assert set(PROMPTS_REQUIRES_INPUT) == expected
 
 
 def test_prompts_interactive_route_excludes_text_includes_core():
     assert "text" not in PROMPTS_INTERACTIVE_ROUTE
+    assert "correction_frame" not in PROMPTS_INTERACTIVE_ROUTE
     assert {"point", "interactive_box", "exemplar"} <= PROMPTS_INTERACTIVE_ROUTE

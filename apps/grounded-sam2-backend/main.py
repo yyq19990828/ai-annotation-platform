@@ -867,7 +867,7 @@ def setup() -> dict:
             "composition": "composite",
             "supported_prompts": ["bbox"],
             # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
-            "supported_inputs": ["bbox_prompt", "full_image"],
+            "supported_inputs": ["video", "bbox_prompt"],
             "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             # 有状态视频追踪, 跨帧串行不可批量。output_attribute_types 留空。
             "resource_profile": {"device": "gpu", "batchable": False},

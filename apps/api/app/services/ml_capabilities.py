@@ -27,7 +27,9 @@ from .capability_registry import (
     INPUT_BBOX_PROMPT,
     INPUT_CROP,
     INPUT_FULL_IMAGE,
+    INPUT_MASK_PROMPT,
     INPUT_POINT_PROMPT,
+    INPUT_SCRIBBLE_PROMPT,
     INPUT_VALUES,
     INFRA_VALUES,
     PROMPT_VALUES,
@@ -56,7 +58,8 @@ _LIDAR_GEOMETRY = {"lidar_box_3d", "point_mask_3d"}
 def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
     """v0.18.15 · 老 backend 缺 supported_inputs 时, 按 supported_prompts 合成兼容默认。
 
-    受控词表: ``full_image | crop | bbox_prompt | point_prompt | video``。
+    受控词表: ``full_image | crop | bbox_prompt | point_prompt | mask_prompt |
+    scribble_prompt | video``。
     - bbox/point prompt → 对应 ``bbox_prompt`` / ``point_prompt`` (box-seg 类走 geometry-prompt)。
     - 一律含 ``full_image`` (任何模型都能吃整图)。
     - 非交互模型 (纯检测/分类/OCR…) 额外含 ``crop`` (平台可裁父框 ROI 喂入), 让其能作几何/属性下游。
@@ -67,6 +70,10 @@ def _synthesize_supported_inputs(prompts: list[str]) -> list[str]:
         out.append(INPUT_BBOX_PROMPT)
     if "point" in prompts:
         out.append(INPUT_POINT_PROMPT)
+    if "mask" in prompts or "correction_frame" in prompts:
+        out.append(INPUT_MASK_PROMPT)
+    if "scribble" in prompts:
+        out.append(INPUT_SCRIBBLE_PROMPT)
     out.append(INPUT_FULL_IMAGE)
     if not any(p in PROMPTS_REQUIRES_INPUT for p in prompts):
         out.append(INPUT_CROP)

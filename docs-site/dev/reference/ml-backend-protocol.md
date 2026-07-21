@@ -704,9 +704,9 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 >
 > 超管运行时观测端点 `GET /admin/ml-integrations/observe` 会把 `/setup.supported_variants` 透传到每个 `ObserveTarget.supported_variants`，用于未注册观测容器的只读多轴变体展示。顶层未声明时，平台合并 `models[].supported_variants` 并按 axis key 去重；旧 grounded-sam2/sam3 的 `sam_variant` / `dino_variant` enum 仍通过 `variant_catalog` 双发。仅声明通用变体目录的容器暂不启用「试启动」，直到 backend 实现通用 warm 接口。
 
-> **`supported_prompts`**：枚举 `point | interactive_box | text | exemplar | sketch | scribble | …`。**交互式用户 prompt**，前端 ToolDock 据此置灰不支持的工具。（`bbox` 已退出交互 prompt 命名空间，仅保留为几何形状名。）
+> **`supported_prompts`**：枚举 `point | interactive_box | text | exemplar | sketch | scribble | mask | correction_frame | …`。**交互式用户 prompt**，前端 ToolDock 据此置灰不支持的工具。`correction_frame` 是视频局部纠错种子，不进入单帧图片工具路由。（`bbox` 已退出交互 prompt 命名空间，仅保留为几何形状名。）
 >
-> **`supported_inputs`**（一等输入契约）：枚举 `full_image | crop | bbox_prompt | point_prompt`，声明本 model 能吃哪些**投递形态**，与 `supported_prompts`（交互 prompt）**解耦**——纯分类器 `supported_prompts=[]` 但 `supported_inputs=["full_image","crop"]`；box-seg `supported_inputs=["bbox_prompt","full_image"]`。多阶段编排据此判定父子可达性（产几何的子须含 `bbox_prompt` 或 `crop`）并选择投递方式（见 §2.1.1 判别器）；模型市场「可接受输入」行也由它驱动。**老 backend 缺字段时平台合成兼容默认**：含 `interactive_box`（或历史 `bbox`）prompt → `["bbox_prompt","full_image"]`；含 `point` → 加 `point_prompt`；非交互模型额外含 `crop`；任何模型都含 `full_image`（见 services/ml_capabilities.py `_synthesize_supported_inputs`）。
+> **`supported_inputs`**（一等输入契约）：枚举 `full_image | crop | bbox_prompt | point_prompt | mask_prompt | scribble_prompt | video`，声明本 model 能吃哪些**投递形态**，与 `supported_prompts`（交互 prompt）**解耦**——纯分类器 `supported_prompts=[]` 但 `supported_inputs=["full_image","crop"]`；box-seg `supported_inputs=["bbox_prompt","full_image"]`；视频 tracker 必须显式含 `video`。多阶段编排据此判定父子可达性（产几何的子须含 `bbox_prompt` 或 `crop`）并选择投递方式（见 §2.1.1 判别器）；模型市场「可接受输入」行也由它驱动。**老 backend 缺字段时平台合成兼容默认**：含 `interactive_box`（或历史 `bbox`）prompt → 加 `bbox_prompt`；含 `point` → 加 `point_prompt`；含 `mask` / `correction_frame` → 加 `mask_prompt`；含 `scribble` → 加 `scribble_prompt`；任何模型都含 `full_image`，非交互模型额外含 `crop`。平台不会替老 backend 猜测 `video`（见 services/ml_capabilities.py `_synthesize_supported_inputs`）。
 >
 > **`supported_text_outputs`**：text 路径支持的 `Context.output` 取值。
 >
@@ -827,9 +827,11 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 - **缺省**：老 backend 不报 `infra` ⇒ 缓存标 `unknown`，UI 不渲染 badge 或显示「未声明」。
 - **边界**：`infra` 是纯元数据 —— 不改 `/predict` 协议、不影响 result schema、不参与项目兼容性的硬校验（仅展示 badge + 排障溯源）。
 
-**`supported_prompts`（prompt 受控词表）** —— `none`（纯批量，无交互） / `point` / `interactive_box` / `text` / `exemplar` / `sketch` / `scribble` / `mask` / `bbox`（退役兼容）。YOLO / OCR / layout 闭集模型通常是 `["none"]`（批量自动）；SAM 类是 point/interactive_box/text/exemplar；YOLOE visual prompt exemplar 是 `["exemplar"]`。`text` 需要用户输入，但不进入画布交互工具线；`bbox` 仅兼容历史快照，新增 backend 应使用 `interactive_box`。
+**`supported_prompts`（prompt 受控词表）** —— `none`（纯批量，无交互） / `point` / `interactive_box` / `text` / `exemplar` / `sketch` / `scribble` / `mask` / `correction_frame` / `bbox`（退役兼容）。YOLO / OCR / layout 闭集模型通常是 `["none"]`（批量自动）；SAM 类按真实实现声明 point/interactive_box/text/exemplar/mask/scribble；视频局部纠错使用 `correction_frame`。`text` 需要用户输入，但不进入画布交互工具线；`bbox` 仅兼容历史快照，新增 backend 应使用 `interactive_box`。
 
-**`supported_inputs`（投递形态受控词表）** —— `full_image` / `crop` / `bbox_prompt` / `point_prompt`。它描述平台如何把上游产物交给这个 model：整图、裁剪 ROI、框提示或点提示。多阶段编排只看这个字段决定父子可达性，不再从 `supported_prompts` 猜测；老 backend 缺字段时由平台按 prompt 合成兼容默认。
+**`supported_inputs`（投递形态受控词表）** —— `full_image` / `crop` / `bbox_prompt` / `point_prompt` / `mask_prompt` / `scribble_prompt` / `video`。它描述平台如何把上游产物交给这个 model：整图、裁剪 ROI、框提示、点提示、受控内联 Mask、正负笔迹或视频。多阶段编排只看这个字段决定父子可达性，不再从 `supported_prompts` 猜测；老 backend 缺字段时由平台按 prompt 合成兼容默认，但 `video` 必须由 backend 显式声明。
+
+原生 Mask 交互使用 `type="mask"` 候选，`value.rle` 携带受限的非压缩 COCO RLE，`candidate_id` 绑定 canonical RLE、prompt revision 和候选序号。空前景返回空 `result` 与 `reason="empty_mask"`，不得用零框或空 polygon 占位。单个 RLE 限制为 4096×4096、最多 1,000,000 runs 和 4 MiB canonical JSON；请求 Mask 输出但目标 model 未声明 `mask` 时，平台返回 `unsupported_output_geometry`，不会静默转 polygon。`mask`、`scribble`、`correction_frame` 及对应输入只有在实际 consumer 路径通过契约测试后才能写入 `/setup.models[]`。
 
 **`composition`（原子 vs 内部编排，可选）** <!-- since 协议 v2.2 --> —— `atom`（单次推理 / 单原子） / `composite`（一个 model 内部编排多个原子、一次 `/predict` 一气呵成）：
 

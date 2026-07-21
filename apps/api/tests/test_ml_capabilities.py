@@ -440,6 +440,28 @@ def test_supported_inputs_synthesized_for_box_seg():
     assert m["supported_inputs"] == ["bbox_prompt", "full_image"]
 
 
+def test_supported_inputs_synthesized_for_native_mask_prompts():
+    """旧 backend 缺 inputs 时，原生 Mask 相关 prompt 合成受控输入形态。"""
+    setup = {
+        "name": "mask-seg",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "mask-seg",
+                "task": "interactive_seg",
+                "supported_prompts": ["mask", "scribble", "correction_frame"],
+                "supported_geometric_outputs": ["mask"],
+            }
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == [
+        "mask_prompt",
+        "scribble_prompt",
+        "full_image",
+    ]
+
+
 def test_supported_inputs_union_and_legacy_synth():
     """扁平并集含 supported_inputs; 老 backend (无 models[]) 也合成。"""
     setup = {

@@ -61,6 +61,7 @@ def test_setup_models_declare_supported_inputs(setup_fn):
     assert by_id["sam3-detection"]["supported_inputs"] == ["full_image", "crop"]
     assert by_id["sam3-segmentation"]["supported_inputs"] == ["full_image", "crop"]
     assert by_id["sam3-interactive-seg"]["supported_inputs"] == ["full_image"]
+    assert by_id["sam3-video-tracker"]["supported_inputs"] == ["video"]
 
 
 def test_setup_models_declare_output_attribute_types(setup_fn):
@@ -110,6 +111,29 @@ def test_interactive_seg_model_prompts(setup_fn):
     assert inter["supported_prompts"] == ["point", "interactive_box", "exemplar"]
     assert inter["supported_geometric_outputs"] == ["polygon"]
     assert inter["is_interactive"] is True
+
+
+def test_image_native_mask_interaction_is_not_advertised_before_implementation(
+    setup_fn,
+):
+    """SAM3 image 原生候选与新 prompt 路径未实现前保持 polygon 能力真值。"""
+    inter = next(m for m in setup_fn()["models"] if m["task"] == "interactive_seg")
+    assert {"mask", "scribble", "correction_frame"}.isdisjoint(
+        inter["supported_prompts"]
+    )
+    assert {"mask_prompt", "scribble_prompt"}.isdisjoint(inter["supported_inputs"])
+    assert inter["supported_geometric_outputs"] == ["polygon"]
+
+
+def test_multiplex_pvs_correction_is_not_advertised_before_implementation(setup_fn):
+    """Multiplex/PVS tracker 只有代码消费 correction seed 后才能声明新能力。"""
+    tracker = next(m for m in setup_fn()["models"] if m["task"] == "tracker")
+    assert {"mask", "scribble", "correction_frame"}.isdisjoint(
+        tracker["supported_prompts"]
+    )
+    assert {"mask_prompt", "scribble_prompt"}.isdisjoint(tracker["supported_inputs"])
+    assert tracker["supported_inputs"] == ["video"]
+    assert tracker["supported_geometric_outputs"] == ["polygon"]
 
 
 def test_models_carry_composition_dimension(setup_fn):

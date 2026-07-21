@@ -100,6 +100,16 @@
       "summary": "整图 + 点提示。"
     },
     {
+      "id": "mask_prompt",
+      "label": "Mask 提示",
+      "summary": "整图或视频 + 已有原生 Mask 提示。"
+    },
+    {
+      "id": "scribble_prompt",
+      "label": "涂抹提示",
+      "summary": "整图 + 正负二值涂抹笔迹。"
+    },
+    {
       "id": "video",
       "label": "视频",
       "summary": "多帧视频序列输入。"
@@ -177,7 +187,14 @@
       "interactive_route": true,
       "label": "掩膜",
       "requires_input": true,
-      "summary": "已有 mask 作提示再细化 (预留/迭代)。"
+      "summary": "已有原生 mask 作提示继续细化。"
+    },
+    {
+      "id": "correction_frame",
+      "interactive_route": false,
+      "label": "纠错帧",
+      "requires_input": true,
+      "summary": "以人工纠错关键帧为种子执行有界视频重传播。"
     },
     {
       "id": "bbox",

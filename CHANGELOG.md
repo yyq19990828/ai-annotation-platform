@@ -36,6 +36,11 @@
 
 ## [Unreleased]
 
+### Added
+- **原生 Mask AI 交互协议地基**. 扩展 ML capability 受控词表与共享协议包，冻结原生 COCO RLE
+  候选、Mask prompt、正负 scribble、视频纠错帧、空结果诊断和显式 fallback lineage；Tracker
+  同时按真实输入声明 `video`，未实现的 Mask 交互能力继续保持不声明。
+
 ## [0.23.7] - 2026-07-21
 
 ### Added

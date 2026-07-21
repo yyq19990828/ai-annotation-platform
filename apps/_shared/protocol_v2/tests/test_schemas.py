@@ -3,22 +3,38 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 
 import pytest
 from aap_protocol_v2 import (
     BatchPredictResponse,
     COMPAT_PROTOCOL_VERSIONS,
+    CocoRlePayload,
+    CorrectionFramePrompt,
     EvictRecord,
     LoadedKey,
+    MaskInteractionDiagnostic,
+    MaskInteractionFallback,
+    MaskPromptPayload,
     ModelUnavailableError,
+    NativeMaskCandidate,
     PoolStateSnapshot,
     PoolStatus,
     PROTOCOL_VERSION,
     PredictionResult,
+    ScribblePrompt,
     TaskItem,
     VariantNotSupportedError,
     WarmupResponse,
+    canonical_rle_bytes,
+    native_mask_candidate_id,
     normalize_context_model_variants,
+)
+
+
+FIXTURE = json.loads(
+    (Path(__file__).parent / "fixtures/native_mask_interaction.json").read_text()
 )
 
 
@@ -66,6 +82,112 @@ def test_batch_predict_response_empty() -> None:
 def test_task_item_missing_file_path_rejects() -> None:
     with pytest.raises(Exception):
         TaskItem(id="t1")  # type: ignore[call-arg]
+
+
+def test_native_mask_interaction_fixture_contract() -> None:
+    candidate = NativeMaskCandidate.model_validate(FIXTURE["candidate"])
+    mask_prompt = MaskPromptPayload.model_validate(FIXTURE["mask_prompt"])
+    scribble = ScribblePrompt.model_validate(
+        {**FIXTURE["scribble"], "mask_prompt": FIXTURE["mask_prompt"]}
+    )
+    correction = CorrectionFramePrompt.model_validate(
+        {**FIXTURE["correction_frame"], "mask_prompt": FIXTURE["mask_prompt"]}
+    )
+    diagnostic = MaskInteractionDiagnostic.model_validate(
+        FIXTURE["empty_mask_diagnostic"]
+    )
+    fallback = MaskInteractionFallback.model_validate(FIXTURE["mask_prompt_fallback"])
+    assert candidate.value.rle.size == [3, 4]
+    assert canonical_rle_bytes(candidate.value.rle) == (
+        b'{"encoding":"coco_rle","size":[3,4],"counts":[0,1,11]}'
+    )
+    assert candidate.candidate_id == native_mask_candidate_id(
+        candidate.value.rle,
+        prompt_revision=FIXTURE["prompt_revision"],
+        candidate_index=FIXTURE["candidate_index"],
+    )
+    assert mask_prompt.source_version == 3
+    assert len(scribble.scribbles) == 2
+    assert correction.frame_index == 12
+    assert diagnostic.reason == "empty_mask"
+    assert fallback.fallback_reason == "mask_prompt_unsupported"
+
+
+def test_native_mask_candidate_id_binds_prompt_revision_and_index() -> None:
+    rle = CocoRlePayload.model_validate(FIXTURE["candidate"]["value"]["rle"])
+    first = native_mask_candidate_id(rle, prompt_revision="rev-1", candidate_index=0)
+    assert first.startswith("sha256:") and len(first) == 71
+    assert first != native_mask_candidate_id(
+        rle, prompt_revision="rev-2", candidate_index=0
+    )
+    assert first != native_mask_candidate_id(
+        rle, prompt_revision="rev-1", candidate_index=1
+    )
+
+
+def test_native_mask_candidate_rejects_empty_foreground() -> None:
+    payload = {
+        **FIXTURE["candidate"],
+        "value": {
+            **FIXTURE["candidate"]["value"],
+            "rle": {"encoding": "coco_rle", "size": [3, 4], "counts": [12]},
+        },
+    }
+    with pytest.raises(Exception):
+        NativeMaskCandidate.model_validate(payload)
+
+
+def test_unsupported_output_diagnostic_accepts_bbox_capability() -> None:
+    diagnostic = MaskInteractionDiagnostic(
+        reason="unsupported_output_geometry",
+        supported_geometric_outputs=["bbox", "polygon"],
+    )
+    assert diagnostic.supported_geometric_outputs == ["bbox", "polygon"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"encoding": "coco_rle", "size": [3, 4], "counts": [13]},
+        {"encoding": "coco_rle", "size": [3, 4], "counts": [12, -1, 1]},
+        {"encoding": "coco_rle", "size": [4097, 1], "counts": [4097]},
+    ],
+)
+def test_native_mask_rle_rejects_invalid_bounds(payload: dict) -> None:
+    with pytest.raises(Exception):
+        CocoRlePayload.model_validate(payload)
+
+
+def test_scribble_rejects_out_of_bounds_point() -> None:
+    with pytest.raises(Exception):
+        ScribblePrompt.model_validate(
+            {
+                "type": "scribble",
+                "scribbles": [
+                    {
+                        "polarity": 1,
+                        "points": [[0.0, 0.0], [1.1, 0.5]],
+                        "width": 0.01,
+                    }
+                ],
+            }
+        )
+
+
+def test_scribble_rejects_boolean_polarity() -> None:
+    with pytest.raises(Exception):
+        ScribblePrompt.model_validate(
+            {
+                "type": "scribble",
+                "scribbles": [
+                    {
+                        "polarity": True,
+                        "points": [[0.0, 0.0], [0.5, 0.5]],
+                        "width": 0.01,
+                    }
+                ],
+            }
+        )
 
 
 # ---------- v0.14.14 新字段 ----------

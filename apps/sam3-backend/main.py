@@ -761,7 +761,7 @@ def setup() -> dict:
             "composition": "composite",
             # text-driven: 以文本 query 初始化 (非 bbox 种子)。
             "supported_prompts": ["text"],
-            "supported_inputs": ["full_image"],
+            "supported_inputs": ["video"],
             "supported_geometric_outputs": ["polygon"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": False},
