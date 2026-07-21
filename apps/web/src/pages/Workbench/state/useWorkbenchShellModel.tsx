@@ -129,6 +129,8 @@ import {
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
 import { useMaskEditor } from "./useMaskEditor";
+import { useMaskEditorSession, type MaskSessionKey } from "./useMaskEditorSession";
+import { canEditMask } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import {
@@ -1536,7 +1538,41 @@ export function useWorkbenchShellModel({
     stageGeom,
     videoManifest.data?.metadata,
   );
-  const maskEditor = useMaskEditor(maskEditorSize);
+  // v0.23.5 · WS-B · mask 编辑会话键: task + frame + selection + annotation version。
+  // sessionKey 变化 → useMaskEditorSession 自增 generation, 隔离迟到 GET 回包 (A1)。
+  const maskSessionSelection = s.selectedId ?? "blank";
+  const maskSessionAnnotationVersion = useMemo(() => {
+    if (!s.selectedId) return undefined;
+    return annotationsData?.find((a) => a.id === s.selectedId)?.version;
+  }, [annotationsData, s.selectedId]);
+  const maskSessionKey = useMemo<MaskSessionKey>(
+    () => ({
+      taskId,
+      frameIndex: isVideoTask ? s.videoFrameIndex : 0,
+      selectionKey: maskSessionSelection,
+      annotationVersion: maskSessionAnnotationVersion,
+    }),
+    [taskId, isVideoTask, s.videoFrameIndex, maskSessionSelection, maskSessionAnnotationVersion],
+  );
+  // v0.23.5 · WS-B/P1 · 离开 dirty session 的 guard: 通知用户有未保存稿件。
+  // 本版用 toast 提示 (保存/丢弃/继续由用户在 MaskToolbar 操作); onLeaveDirty 不阻塞
+  // generation 推进, 仅提醒。后续可升级为模态确认。
+  const handleMaskLeaveDirty = useCallback(
+    async (_key: MaskSessionKey) => {
+      pushToast({
+        msg: "有未保存的 Mask 稿件",
+        sub: "切走前请按 Enter 保存或 Esc 丢弃",
+        kind: "warning",
+      });
+      return "continue" as const;
+    },
+    [pushToast],
+  );
+  const maskEditor = useMaskEditorSession({
+    ...maskEditorSize,
+    sessionKey: maskSessionKey,
+    onLeaveDirty: handleMaskLeaveDirty,
+  });
 
   const imageActions = useImageAnnotationActions({
     taskId,
@@ -1809,9 +1845,10 @@ export function useWorkbenchShellModel({
   const selectedVideoMaskFingerprint = selectedVideoMask
     ? `${selectedVideoMask.id}:${selectedVideoMask.version ?? 0}:${selectedVideoMask.updated_at ?? ""}:${s.videoFrameIndex}`
     : "";
-  const maskInitFromRle = maskEditor.initFromRle;
-  const maskBeginBlank = maskEditor.beginBlank;
+  const maskLoadRle = maskEditor.loadRle;
+  const maskLoadBlank = maskEditor.loadBlank;
   const maskCancel = maskEditor.cancel;
+  const maskGeneration = maskEditor.generation;
   useEffect(() => {
     if (!isVideoTask) return;
     if (s.videoTool !== "mask") {
@@ -1822,22 +1859,23 @@ export function useWorkbenchShellModel({
       maskCancel();
       return;
     }
-    let cancelled = false;
+    // v0.23.5 · WS-B/A1 · 捕获本次加载的 generation, 交给 loadRle/loadBlank 隔离迟到回包。
+    // sessionKey 变化时 useMaskEditorSession 已自增 generation, 旧 gen 的回包被静默丢弃,
+    // 不会覆盖用户在新帧上落笔后的 Buffer。
+    const gen = maskGeneration;
     void rasterMasksApi.annotationContent(selectedVideoMask.id, s.videoFrameIndex)
       .then((rle) => {
-        if (!cancelled) maskInitFromRle(rle);
+        maskLoadRle(gen, rle);
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
         if (error instanceof ApiError && error.status === 404) {
-          maskBeginBlank();
+          maskLoadBlank(gen);
           return;
         }
         maskCancel();
         pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
       });
-    return () => { cancelled = true; };
-  }, [isVideoTask, maskBeginBlank, maskCancel, maskInitFromRle, pushToast, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
+  }, [isVideoTask, maskCancel, maskLoadRle, maskLoadBlank, maskGeneration, pushToast, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
 
   const cancelVideoMaskEdit = useCallback(() => {
     maskEditor.cancel();
@@ -1849,13 +1887,31 @@ export function useWorkbenchShellModel({
       pushToast({ msg: "Mask 为空，未提交", kind: "warning" });
       return;
     }
-    void handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask)
-      .then(() => {
-        maskEditor.cancel();
-        s.setVideoTool("select");
+    // v0.23.5 · WS-B/A7 · 经 session 单飞 save: 重复 Enter / 双击只产生一次 mutation;
+    // 失败保留 buffer/history 进入 error 相位, 可 retry (A2)。
+    void maskEditor
+      .save(async () => {
+        try {
+          await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
+          return { ok: true, retryable: false };
+        } catch (error: unknown) {
+          const retryable = error instanceof ApiError
+            ? error.status === 409 || error.status >= 500
+            : false;
+          return { ok: false, retryable, error };
+        }
       })
-      .catch((error: unknown) => {
-        pushToast({ msg: "Mask 保存失败", sub: String(error), kind: "error" });
+      .then((result) => {
+        if (result.ok) {
+          maskEditor.cancel();
+          s.setVideoTool("select");
+        } else {
+          pushToast({
+            msg: "Mask 保存失败",
+            sub: result.retryable ? "稿件已保留，可重试" : String(result.error),
+            kind: "error",
+          });
+        }
       });
   }, [handleVideoMaskCommit, maskEditor, pushToast, s, selectedVideoMask]);
 
@@ -2234,6 +2290,7 @@ export function useWorkbenchShellModel({
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
+    maskTaskReadOnly: isLockedForActions,
   });
 
   const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
@@ -3120,6 +3177,19 @@ export function useWorkbenchShellModel({
                 mode={maskEditor.mode}
                 radius={maskEditor.radius}
                 dirty={maskEditor.dirty}
+                canEdit={(() => {
+                  // v0.23.5 · WS-C · 工具栏经 canEditMask 统一准入 (与 pointer / hotkey 同源)。
+                  const sel = s.selectedId
+                    ? visibleAnnotationsData.find((a) => a.id === s.selectedId)
+                    : null;
+                  return canEditMask({
+                    taskReadOnly: isLockedForActions,
+                    annotationLocked: !!sel?.is_locked,
+                    trackLocked: false,
+                    segmentLocked: false,
+                    editorPhase: maskEditor.phase,
+                  });
+                })()}
                 onSetMode={maskEditor.setMode}
                 onSetRadius={maskEditor.setRadius}
                 onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}

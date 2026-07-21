@@ -12,6 +12,8 @@ interface MaskToolbarProps {
   mode: MaskMode;
   radius: number;
   dirty: boolean;
+  /** v0.23.5 · WS-C · 经 canEditMask 的统一准入; false 时禁用笔刷/橡皮/确认。 */
+  canEdit: boolean;
   onSetMode: (m: MaskMode) => void;
   onSetRadius: (r: number) => void;
   onCommit: () => void;
@@ -27,7 +29,7 @@ const MODE_BTN_IDLE = "border-border bg-transparent text-foreground";
 const MODE_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
 
 export function MaskToolbar({
-  active, mode, radius, dirty,
+  active, mode, radius, dirty, canEdit,
   onSetMode, onSetRadius, onCommit, onCancel,
 }: MaskToolbarProps) {
   return (
@@ -40,15 +42,17 @@ export function MaskToolbar({
       <div className="flex gap-1">
         <button
           type="button"
-          onClick={() => onSetMode("brush")}
-          className={cn(MODE_BTN_BASE, mode === "brush" ? MODE_BTN_ACTIVE : MODE_BTN_IDLE)}
+          onClick={() => canEdit && onSetMode("brush")}
+          disabled={!canEdit}
+          className={cn(MODE_BTN_BASE, mode === "brush" ? MODE_BTN_ACTIVE : MODE_BTN_IDLE, !canEdit && "opacity-50 cursor-not-allowed")}
           title="笔刷 (B)"
           data-testid="mask-mode-brush"
         >笔刷 B</button>
         <button
           type="button"
-          onClick={() => onSetMode("erase")}
-          className={cn(MODE_BTN_BASE, mode === "erase" ? MODE_BTN_ACTIVE : MODE_BTN_IDLE)}
+          onClick={() => canEdit && onSetMode("erase")}
+          disabled={!canEdit}
+          className={cn(MODE_BTN_BASE, mode === "erase" ? MODE_BTN_ACTIVE : MODE_BTN_IDLE, !canEdit && "opacity-50 cursor-not-allowed")}
           title="橡皮 (E)"
           data-testid="mask-mode-erase"
         >橡皮 E</button>
@@ -76,7 +80,7 @@ export function MaskToolbar({
       <Button size="sm" onClick={onCancel} title="取消 (Esc)">
         取消
       </Button>
-      <Button size="sm" variant="primary" onClick={onCommit} disabled={!active || !dirty} title="确认 (Enter)">
+      <Button size="sm" variant="primary" onClick={onCommit} disabled={!canEdit || !active || !dirty} title="确认 (Enter)">
         <Icon name="check" size={11} /> 确认
       </Button>
     </div>

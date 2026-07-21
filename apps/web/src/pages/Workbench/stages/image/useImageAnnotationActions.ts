@@ -21,6 +21,7 @@ import {
 } from "../../state/transforms";
 import { samCandidateGeom } from "../../state/useWorkbenchShellModel.helpers";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
+import { canEditMask } from "../../state/canEditMask";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
 import { classNameForCommittedDrawing } from "../../stage/imageStageSettings";
@@ -766,6 +767,23 @@ export function useImageAnnotationActions({
 
   const commitMaskAsPolygon = useCallback(() => {
     if (!maskEditor) return;
+    // v0.23.5 · WS-C · 提交边界 defense-in-depth: 即便 Enter hotkey 漏判, commit 本身也
+    // 经 canEditMask 拦截锁定对象 (task 只读 / 选中 annotation is_locked)。
+    const sel = s.selectedId
+      ? annotationsRef.current.find((a) => a.id === s.selectedId)
+      : null;
+    if (
+      !canEditMask({
+        taskReadOnly: !!isLocked,
+        annotationLocked: !!sel?.is_locked,
+        trackLocked: false,
+        segmentLocked: false,
+        editorPhase: maskEditor.dirty ? "dirty" : "ready",
+      })
+    ) {
+      pushToast({ msg: "对象已锁定,无法提交 Mask", kind: "warning" });
+      return;
+    }
     const out = maskEditor.commitToPolygon();
     if (!out) {
       pushToast({ msg: "Mask 为空,无可提交几何", kind: "warning" });
@@ -835,7 +853,7 @@ export function useImageAnnotationActions({
     s.setTool("box");
     // v0.23.5 WS-E · multipleComponents 的「仅落最大外环」toast 已移除: lossy 转换在
     // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
-  }, [maskEditor, s, submitPolygon, pushToast, stageGeom, mutations.update, history, sam]);
+  }, [maskEditor, s, annotationsRef, isLocked, submitPolygon, pushToast, stageGeom, mutations.update, history, sam]);
 
   const cancelMaskEdit = useCallback(() => {
     if (!maskEditor) return;

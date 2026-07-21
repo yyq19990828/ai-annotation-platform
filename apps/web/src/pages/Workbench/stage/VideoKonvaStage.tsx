@@ -622,7 +622,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
   // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
   const handleStagePointerDown = useCallback((e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
-    if (videoTool === "mask" && maskEditor && !readOnly && !isPlaybackActive) {
+    // v0.23.5 · WS-C · 视频 mask 落点经 canEditMask: 同时检查 task readOnly、选中轨迹 lock、
+    // annotation is_locked, 关闭锁定对象经视频 pointer 路径修改的绕过。
+    const selTrackLocked = selectedId ? lockedTrackIds.has(selectedId) : false;
+    if (videoTool === "mask" && maskEditor && !readOnly && !isPlaybackActive
+      && !selTrackLocked
+      && !selectedManagedTrack?.is_locked) {
       const native = e.evt;
       if (native.button !== 0) return;
       const point = pointFromClientEvt(native.clientX, native.clientY);
@@ -656,7 +661,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, maskEditor, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, size.h, size.w, videoTool]);
+  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskEditor, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, selectedId, selectedManagedTrack, size.h, size.w, videoTool]);
 
   useEffect(() => {
     if (videoTool !== "mask" || !maskEditor) return;

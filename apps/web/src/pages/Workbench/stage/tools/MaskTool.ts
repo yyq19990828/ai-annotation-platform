@@ -8,6 +8,8 @@
 // 走 ctx.maskEditor（v0.10.8 在 ToolPointerContext 上扩展的字段）。
 
 import type { CanvasTool as CanvasToolMeta, DragInit } from "./index";
+// v0.23.5 · WS-C · 单一 mask 编辑准入闸门 (同时检查 readOnly + is_locked)。
+import { canEditMask } from "../../state/canEditMask";
 
 export const MaskTool: CanvasToolMeta = {
   id: "mask",
@@ -15,8 +17,21 @@ export const MaskTool: CanvasToolMeta = {
   label: "Mask 笔刷",
   icon: "edit",
   cursor: "crosshair",
-  onPointerDown: ({ pt, readOnly, imgW, imgH, maskEditor }) => {
-    if (readOnly) return null;
+  onPointerDown: ({ pt, readOnly, imgW, imgH, maskEditor, annotationLocked }) => {
+    // v0.23.5 · WS-C · pointer 入口经 canEditMask: task readOnly 或 annotation is_locked
+    // 任一为 true → 拒绝落笔 (关闭锁定对象经 pointer 路径修改的绕过)。editorPhase 此处
+    // 取 ready (落笔瞬间 buffer 已就绪或即将 beginBlank); loading/saving 由上层 session 守。
+    if (
+      !canEditMask({
+        taskReadOnly: readOnly,
+        annotationLocked: !!annotationLocked,
+        trackLocked: false,
+        segmentLocked: false,
+        editorPhase: "ready",
+      })
+    ) {
+      return null;
+    }
     if (!maskEditor) return null;
     // 像素坐标（pixel-space）— 与 maskBuffer / paintAt 单位一致。
     const px = pt.x * imgW;

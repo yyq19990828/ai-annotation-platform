@@ -61,6 +61,7 @@
 - 修复视频 Mask 选中时按 `Delete` 会误删整条轨迹的问题；现仅删除当前关键帧，整轨删除改为 `Ctrl/⌘+Delete` 或右键菜单（与 `video_track_bbox` 语义一致）。
 - 修复图片 Mask 笔迹无 undo 历史的问题；`ImageStage` 现为每一笔接入 `beginStroke / endStroke`，与视频路径一致。
 - 修复 Enter 在 Mask 无变化时仍物化 held keyframe 的问题；现要求 `dirty` 才提交。
+- 修复锁定 / 只读对象经 Enter 提交、笔刷模式切换或视频 pointer 落笔仍可修改 mask 的问题；`canEditMask` 现接入图片 / 视频 pointer 入口、B/E 快捷键、MaskToolbar 与 `commitMaskAsPolygon` / `commitVideoMask` 提交边界，task 只读或 annotation `is_locked` 任一为真即拒绝。
 - 修复首页 Hero 在首次打开或慢网络下同时请求所有大图，导致个别卡片轮播时短暂空白的问题；现仅挂载当前与下一张，并在切换前完成预加载和解码。
 - 修复新注册 ML Backend 的 singleton 服务池未随项目启用而激活，以及批量、逐帧、重试、二次推理和同步预测绕过服务池路由的问题；这些请求现统一按池选择物理实例，并遵守 drain、跨进程并发和熔断门禁。
 - 修复标注员进入图片工作台时误请求管理员专用类别频率接口、重复弹出权限告警的问题。

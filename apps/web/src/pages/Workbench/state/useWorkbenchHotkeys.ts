@@ -16,7 +16,7 @@ import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 // v0.23.5 · WS-C · Enter 提交真实条件 (dirty + 可提交相位)。
-import { canCommitMask } from "./canEditMask";
+import { canCommitMask, canEditMask } from "./canEditMask";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
 import type { useWorkbenchState } from "./useWorkbenchState";
@@ -127,6 +127,8 @@ export interface UseWorkbenchHotkeysArgs {
   maskEditor?: UseMaskEditorReturn;
   commitMaskAsPolygon?: () => void;
   cancelMaskEdit?: () => void;
+  /** v0.23.5 · WS-C · task 级只读 (review/completed 锁), 供 canEditMask 判定 B/E 是否可用。 */
+  maskTaskReadOnly?: boolean;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -158,7 +160,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported, aiInteractiveEnabled,
-    maskEditor, commitMaskAsPolygon, cancelMaskEdit,
+    maskEditor, commitMaskAsPolygon, cancelMaskEdit, maskTaskReadOnly = false,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -238,19 +240,35 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       const t = e.target;
       if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (s.pendingDrawing || s.editingClass) return;
+      // v0.23.5 · WS-C · B/E 模式切换也经 canEditMask: 锁定对象连切笔刷都不允许,
+      // 与 pointer 入口 (MaskTool) 一道关闭锁定绕过。readOnly 来自 task 级 (调用方传入),
+      // is_locked 读当前选中 annotation。
+      const sel = s.selectedId
+        ? annotationsRef.current.find((a) => a.id === s.selectedId)
+        : null;
+      const maskEditable = canEditMask({
+        taskReadOnly: !!maskTaskReadOnly,
+        annotationLocked: !!sel?.is_locked,
+        trackLocked: false,
+        segmentLocked: false,
+        editorPhase: maskEditor.dirty ? "dirty" : "ready",
+      });
       if (e.key === "b" || e.key === "B") {
+        if (!maskEditable) return;
         e.preventDefault(); e.stopPropagation();
         maskEditor.setMode("brush");
         return;
       }
       if (e.key === "e" || e.key === "E") {
+        if (!maskEditable) return;
         e.preventDefault(); e.stopPropagation();
         maskEditor.setMode("erase");
         return;
       }
       if (e.key === "Enter" && maskEditor.active) {
-        // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe。
-        // 旧逻辑只查 active, 现在要求 dirty 才提交。
+        // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe;
+        // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
+        if (!maskEditable) return;
         if (!canCommitMask(maskEditor.dirty ? "dirty" : "ready", maskEditor.dirty)) return;
         e.preventDefault(); e.stopPropagation();
         commitMaskAsPolygon?.();
@@ -267,7 +285,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, maskEditor, commitMaskAsPolygon, cancelMaskEdit]);
+  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, cancelMaskEdit, maskTaskReadOnly, annotationsRef]);
 
   // 主 keydown / keyup
   useEffect(() => {

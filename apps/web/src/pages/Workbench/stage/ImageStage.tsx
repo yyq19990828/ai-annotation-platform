@@ -926,6 +926,8 @@ export function ImageStage({
       keypointDraft,
       samPolarity,
       maskEditor,
+      // v0.23.5 · WS-C · 选中对象的 is_locked 传入, 供 MaskTool 经 canEditMask 判定。
+      annotationLocked: !!primarySelectedBox?.is_locked,
     });
     if (init) setDrag(init);
   };

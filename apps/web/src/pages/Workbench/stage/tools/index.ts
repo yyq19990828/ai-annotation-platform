@@ -130,6 +130,11 @@ export interface ToolPointerContext {
    * pointerdown 时 beginBlank / paintAt 一次, 返回 maskBrush DragInit.
    */
   maskEditor?: UseMaskEditorReturn;
+  /**
+   * v0.23.5 · WS-C · 当前选中 annotation 的 is_locked; MaskTool 据此 (与 readOnly 一起)
+   * 经 canEditMask 判定是否允许落笔, 关闭锁定对象经 pointer 路径修改的绕过。
+   */
+  annotationLocked?: boolean;
 }
 
 /** 画布工具接口。新增 polygon / keypoint 等类型时，实现此接口并注册到 TOOL_REGISTRY。 */
