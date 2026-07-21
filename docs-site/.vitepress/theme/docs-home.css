@@ -172,7 +172,7 @@
   min-height: 100svh;
   position: relative;
   display: grid;
-  grid-template-columns: 1.02fr 0.98fr;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   align-items: center;
   padding: 130px var(--home-pad) 68px;
   isolation: isolate;
@@ -319,9 +319,9 @@
 }
 .docs-home .hero-figure {
   position: absolute;
-  left: 8%;
-  right: 6%;
-  top: 16%;
+  left: -2%;
+  right: 0;
+  top: 6%;
   height: auto;
   overflow: visible;
   transform: rotate(-2.2deg);
@@ -449,53 +449,57 @@
 .docs-home .hero-deck:focus-within .hero-card-pos-0 {
   border-color: var(--home-acid);
 }
-.docs-home .hero-deck-controls {
-  position: relative;
+.docs-home .hero-deck-nav {
+  position: absolute;
+  inset: 0;
   z-index: 10;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 32px auto;
-  gap: 7px;
-  align-items: stretch;
-  margin-top: 10px;
-  transform: rotate(2.2deg);
+  pointer-events: none;
 }
-.docs-home .hero-deck-controls button {
-  min-width: 0;
-  height: 32px;
+.docs-home .hero-deck-nav button {
+  position: absolute;
+  top: 50%;
+  width: 42px;
+  height: 72px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.46);
   border-radius: 0;
-  background: rgba(23, 24, 29, 0.78);
+  background: rgba(23, 24, 29, 0.86);
   color: var(--home-paper);
-  font: 9px var(--home-font-mono);
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+  font: 18px var(--home-font-mono);
+  backdrop-filter: blur(8px);
+  transition:
+    opacity 0.22s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.22s ease;
 }
-.docs-home .hero-deck-controls button:hover,
-.docs-home .hero-deck-controls button:focus-visible,
-.docs-home .hero-deck-dots button.active {
+.docs-home .hero-deck-prev {
+  left: 12px;
+  transform: translate3d(-10px, -50%, 0);
+}
+.docs-home .hero-deck-next {
+  right: 12px;
+  transform: translate3d(10px, -50%, 0);
+}
+.docs-home .hero-deck:hover .hero-deck-nav button,
+.docs-home .hero-deck:focus-within .hero-deck-nav button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, -50%, 0);
+}
+.docs-home .hero-deck-nav button:hover,
+.docs-home .hero-deck-nav button:focus-visible {
   background: var(--home-acid);
   color: var(--home-ink);
 }
-.docs-home .hero-deck-controls button:active {
-  transform: translateY(2px);
+.docs-home .hero-deck-nav button:focus-visible {
+  outline: 2px solid var(--home-paper);
+  outline-offset: 3px;
 }
-.docs-home .hero-deck-dots {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px;
-}
-.docs-home .hero-deck-dots button {
-  width: 100%;
-}
-.docs-home .hero-deck-mode {
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(13, 24, 185, 0.38);
-  font: 8px var(--home-font-mono);
-  letter-spacing: 0.08em;
-  white-space: nowrap;
+.docs-home .hero-deck-nav button:active {
+  transform: translate3d(0, -50%, 0) scale(0.96);
 }
 .docs-home .hero-index {
   position: absolute;
@@ -1263,17 +1267,15 @@
   .docs-home .hero-deck-space {
     margin-bottom: 56px;
   }
-  .docs-home .hero-deck-controls {
-    grid-template-columns: 30px minmax(0, 1fr) 30px;
-    transform: none;
+  .docs-home .hero-deck-nav button {
+    width: 38px;
+    height: 58px;
   }
-  .docs-home .hero-deck-controls button {
-    height: 30px;
+  .docs-home .hero-deck-prev {
+    left: 8px;
   }
-  .docs-home .hero-deck-mode {
-    grid-column: 1 / -1;
-    min-height: 24px;
-    justify-content: center;
+  .docs-home .hero-deck-next {
+    right: 8px;
   }
   .docs-home .proof-screen {
     transform: none;
@@ -1418,6 +1420,14 @@
   }
   .docs-home .grain {
     opacity: 0.08;
+  }
+}
+
+@media (hover: none) {
+  .docs-home .hero-deck-nav button {
+    opacity: 0.82;
+    pointer-events: auto;
+    transform: translate3d(0, -50%, 0);
   }
 }
 

@@ -70,20 +70,12 @@ const deckAnimating = ref(false);
 const deckHovered = ref(false);
 const deckFocused = ref(false);
 const motionAllowed = ref(false);
-const activeSlideIndex = computed(() => deckOrder.value[0] ?? 0);
-const activeSlide = computed(
-  () => heroSlides[activeSlideIndex.value] ?? heroSlides[0],
-);
 const mediaWindow = computed(
   () => new Set(deckOrder.value.slice(0, 2)),
 );
 const deckPaused = computed(
   () => !motionAllowed.value || deckHovered.value || deckFocused.value,
 );
-const deckMode = computed(() => {
-  if (!motionAllowed.value) return "MANUAL";
-  return deckPaused.value ? "PAUSED" : "AUTO 05S";
-});
 
 let autoplayTimer: number | undefined;
 let drawTimer: number | undefined;
@@ -194,29 +186,6 @@ async function showPrevious(): Promise<void> {
     return;
   }
   deckOrder.value = [last, ...nextOrder];
-  finishManualMove();
-}
-
-async function selectSlide(index: number): Promise<void> {
-  if (deckAnimating.value) return;
-  clearAutoplay();
-  const position = deckOrder.value.indexOf(index);
-  if (position <= 0) {
-    scheduleAutoplay();
-    return;
-  }
-  deckAnimating.value = true;
-  try {
-    await preloadSlide(index);
-  } catch {
-    deckAnimating.value = false;
-    scheduleAutoplay();
-    return;
-  }
-  deckOrder.value = [
-    ...deckOrder.value.slice(position),
-    ...deckOrder.value.slice(0, position),
-  ];
   finishManualMove();
 }
 
@@ -383,29 +352,23 @@ function openSearch(): void {
           </span>
         </a>
 
-        <div class="hero-deck-controls">
-          <button type="button" aria-label="上一个平台页面" @click="showPrevious()">
+        <div class="hero-deck-nav" aria-label="切换平台页面">
+          <button
+            class="hero-deck-prev"
+            type="button"
+            aria-label="上一个平台页面"
+            @click="showPrevious()"
+          >
             ←
           </button>
-          <div class="hero-deck-dots" aria-label="选择平台页面">
-            <button
-              v-for="(slide, index) in heroSlides"
-              :key="slide.no"
-              type="button"
-              :class="{ active: activeSlideIndex === index }"
-              :aria-label="`查看${slide.title}`"
-              :aria-pressed="activeSlideIndex === index"
-              @click="selectSlide(index)"
-            >
-              {{ slide.no }}
-            </button>
-          </div>
-          <button type="button" aria-label="下一个平台页面" @click="cycleNext()">
+          <button
+            class="hero-deck-next"
+            type="button"
+            aria-label="下一个平台页面"
+            @click="cycleNext()"
+          >
             →
           </button>
-          <span class="hero-deck-mode" aria-live="polite">
-            {{ activeSlide.no }} / {{ heroSlides.length }} · {{ deckMode }}
-          </span>
         </div>
       </div>
     </div>
