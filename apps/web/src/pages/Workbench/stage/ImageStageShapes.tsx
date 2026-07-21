@@ -22,6 +22,12 @@ import {
   strokeWidthFor,
   type AnnotationVisualConfig,
 } from "./annotationVisual";
+// v0.23.5 WS-E · holes / multi_polygon even-odd 渲染地基 (ADR-0052 D5 / D8)。
+import {
+  buildEvenOddPaths,
+  collectOuterRings,
+  type PolygonRing,
+} from "./shared/geometry/evenOddFill";
 
 // v0.10.4 I2.1 · Douglas-Peucker LOD: 仅在 polygon 不可编辑 / 未选中时启用；
 // 简化阈值 ≈ 1 屏幕像素，避免视觉差异。
@@ -199,6 +205,17 @@ interface KonvaPolygonProps {
   onBodyMouseDown?: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
   /** v0.10.4 I2.3 · 归一化 [0,1] viewport bbox。提供后启用顶点视口粗筛。 */
   viewportBBox?: ViewportBBox;
+  /**
+   * v0.23.5 WS-E · 单 polygon 的内环 (holes), 仅参与 even-odd 填充, 不参与顶点编辑。
+   * 与 b.holes 二选一透传; 显式 prop 优先 (供 ImageStage override 几何时使用)。
+   */
+  holes?: Pt[][];
+  /**
+   * v0.23.5 WS-E · 多连通域: 每个 {points, holes?} 是一个独立外环。提供后外环用
+   * even-odd 合并填充 (分量按定义互不相交, evenodd 不会 XOR 抵消)。与 b.multiPolygon
+   * 二选一; 显式 prop 优先。
+   */
+  multiPolygon?: PolygonRing[];
 }
 
 export function KonvaPolygon({
@@ -212,6 +229,8 @@ export function KonvaPolygon({
   onEdgeMouseDown,
   onBodyMouseDown,
   viewportBBox,
+  holes,
+  multiPolygon,
 }: KonvaPolygonProps) {
   const color = classColorForCanvas(b.cls);
   const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
@@ -242,11 +261,65 @@ export function KonvaPolygon({
     return new Set(idx.verticesInBBox(viewportBBox));
   }, [editable, viewportBBox, ps]);
 
+  // v0.23.5 WS-E · holes / multi_polygon even-odd 渲染 (ADR-0052 D5)。
+  // 显式 prop 优先, 缺省回落 b.holes / b.multiPolygon (transforms.geometryToShape 透传)。
+  // 仅当存在非空 holes 或 multi_polygon 时走 sceneFunc 分支; 否则保留单环 <Line> 快路径
+  // (常见 bbox/单 polygon 不回归 LOD simplify / vertex cull 行为)。
+  const holesArr = holes ?? b.holes;
+  const multiArr = multiPolygon ?? b.multiPolygon;
+  const hasHolesOrMulti = !!(
+    (multiArr && multiArr.length > 0) ||
+    (holesArr && holesArr.some((ring) => ring.length >= 2))
+  );
+  // 收集 even-odd 子路径列表 (纯函数, 便于单测); 仅在分支启用时计算。
+  // outerOnly (剥离 holes) 用于描边: holes 是填充镂空, 不画边; multi_polygon 的每个
+  // 外环都画边 (它们都是真实边界)。
+  const { fillRings, strokeRings } = useMemo<{
+    fillRings: PolygonRing[];
+    strokeRings: PolygonRing[];
+  }>(() => {
+    if (!hasHolesOrMulti) return { fillRings: [], strokeRings: [] };
+    const all = collectOuterRings({
+      primaryPoints: ps,
+      holes: holesArr,
+      multiPolygon: multiArr,
+    });
+    return {
+      fillRings: all,
+      strokeRings: all.map((r) => ({ points: r.points })),
+    };
+  }, [hasHolesOrMulti, ps, holesArr, multiArr]);
+  // sceneFunc 闭包依赖 imgW/imgH + rings; 用 useMemo 稳定引用减少 Konva 重绘。
+  const drawEvenOdd = useMemo(
+    () => (ctx: Konva.Context, shape: Konva.Shape) => {
+      if (fillRings.length === 0) {
+        // 无可画 → 清空 path, 让 Konva 退化为不填充 (与 Line 空 points 行为一致)。
+        ctx.beginPath();
+        return;
+      }
+      // Pass 1: 全子路径 (外环 + holes) → even-odd 填充。
+      // fillShape 走 shape._fillFunc, 它读 fillRule 属性并调 ctx.fill('evenodd')。
+      ctx.beginPath();
+      buildEvenOddPaths(ctx, fillRings, imgW, imgH);
+      ctx.fillShape(shape);
+      // Pass 2: 仅外环 (剥离 holes) → 描边; holes 作为填充镂空, 不画边, 减少视觉噪声。
+      ctx.beginPath();
+      buildEvenOddPaths(ctx, strokeRings, imgW, imgH);
+      ctx.strokeShape(shape);
+    },
+    [fillRings, strokeRings, imgW, imgH],
+  );
+
   return (
     <Group id={annotationId}>
       <Line
         points={flat}
         closed
+        // v0.23.5 WS-E · 有 holes/multi 时走 sceneFunc + fillRule=evenodd;
+        // Konva Context.fill(...args) 直接转发到原生 canvas.fill, fillRule 透传无损。
+        // 无 holes/multi 时 sceneFunc=undefined, Konva 用内置 Line._sceneFunc (快路径)。
+        sceneFunc={hasHolesOrMulti ? drawEvenOdd : undefined}
+        fillRule={hasHolesOrMulti ? "evenodd" : undefined}
         stroke={strokeColor}
         strokeWidth={sw}
         dash={isAi || selfIntersect || occluded ? [4 / scale, 3 / scale] : undefined}

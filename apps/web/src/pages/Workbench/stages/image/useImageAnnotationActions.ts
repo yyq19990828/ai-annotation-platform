@@ -771,6 +771,19 @@ export function useImageAnnotationActions({
       pushToast({ msg: "Mask 为空,无可提交几何", kind: "warning" });
       return;
     }
+    // v0.23.5 WS-E (ADR-0052 D5 / P4) · 止血: mask 含多连通分量 (或孔) 时转换有损,
+    // 禁止静默取最大环落库。阻断本次提交, 弹 warning toast 说明原因, 保留 mask 编辑态
+    // (不 cancel) 让用户: ① 用橡皮擦掉小分量后重试, 或 ② 等待 v0.23.7 原生 Mask 工作台
+    // (届时直接落 raster_mask, 不走 polygon 中转)。不创建 raster_mask annotation (那是 v0.23.6)。
+    if (out.lossy) {
+      const dropped = out.droppedComponents ? ` (丢弃 ${out.droppedComponents} 个连通分量)` : "";
+      pushToast({
+        msg: "Mask 含多连通区域,无法无损保存为 polygon",
+        sub: `${out.lossyReason ?? ""}${dropped}`,
+        kind: "warning",
+      });
+      return;
+    }
     const refine = pendingRefineRef.current;
     const labelForCommit = refine ? refine.labelId : s.activeClass;
     if (!labelForCommit) {
@@ -820,9 +833,8 @@ export function useImageAnnotationActions({
     pendingRefineRef.current = null;
     maskEditor.cancel();
     s.setTool("box");
-    if (out.multipleComponents) {
-      pushToast({ msg: "Mask 含多个连通区，仅落最大外环", kind: "warning" });
-    }
+    // v0.23.5 WS-E · multipleComponents 的「仅落最大外环」toast 已移除: lossy 转换在
+    // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
   }, [maskEditor, s, submitPolygon, pushToast, stageGeom, mutations.update, history, sam]);
 
   const cancelMaskEdit = useCallback(() => {

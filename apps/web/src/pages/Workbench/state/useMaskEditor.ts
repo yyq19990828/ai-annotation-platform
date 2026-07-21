@@ -75,8 +75,19 @@ export interface UseMaskEditorReturn {
    * - 空 mask / 顶点 < 3 → 返回 null，调用方可提示「mask 为空」；
    * - 非 null → 调用方走 submitPolygon 落库；
    * - 调用 commitToPolygon 不会自动退出 active；调用方在拿到 polygon 后自行 cancel。
+   *
+   * v0.23.5 WS-E (ADR-0052 D5)：返回值新增 lossy / droppedComponents / lossyReason。
+   * 调用方必须在落库前检查 `lossy`：若 true, 不可静默提交 (会丢多连通分量 / 孔),
+   * 应提示用户「请等待原生 Mask 工作台 (v0.23.7)」并保留编辑态。
    */
-  commitToPolygon: () => { points: [number, number][]; multipleComponents: boolean } | null;
+  commitToPolygon: () => {
+    points: [number, number][];
+    multipleComponents: boolean;
+    lossy: boolean;
+    droppedComponents?: number;
+    droppedHoles?: number;
+    lossyReason?: string;
+  } | null;
   /** 视频路径收尾：保持逐像素 RLE，不做 polygon 矢量化。 */
   commitToRle: () => CocoRle | null;
 }
@@ -212,11 +223,19 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     bump();
   }, [bump]);
 
-  const commitToPolygon = useCallback((): { points: [number, number][]; multipleComponents: boolean } | null => {
+  const commitToPolygon = useCallback((): {
+    points: [number, number][];
+    multipleComponents: boolean;
+    lossy: boolean;
+    droppedComponents?: number;
+    droppedHoles?: number;
+    lossyReason?: string;
+  } | null => {
     const b = bufferRef.current;
     if (!b) return null;
     const out = maskToPolygon(b);
     if (out.points.length < 3) return null;
+    // v0.23.5 WS-E · 透传 maskToPolygon 的 lossy 诊断字段, 调用方据此决定是否落库。
     return out;
   }, []);
 

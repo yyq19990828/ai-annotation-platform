@@ -51,6 +51,9 @@ const PASSTHROUGH_PROPS = [
   "padding", "lineCap", "lineJoin", "hitStrokeWidth",
   "shadowColor", "shadowBlur", "shadowOpacity", "shadowEnabled",
   "listening", "id", "visible",
+  // v0.23.5 WS-E · fillRule=evenodd 标记 KonvaPolygon 走 sceneFunc holes/multi 分支,
+  // sceneFunc 本身是函数无法 JSON 化, 但 fillRule 的存在性可断言分支是否启用。
+  "fillRule",
 ] as const;
 
 /** 构造一个近似 Konva 事件对象:含 evt(原始 DOM 事件)/ target / cancelBubble。 */
