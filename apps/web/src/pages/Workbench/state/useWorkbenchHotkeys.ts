@@ -15,6 +15,8 @@ import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
+// v0.23.5 · WS-C · Enter 提交真实条件 (dirty + 可提交相位)。
+import { canCommitMask } from "./canEditMask";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
 import type { useWorkbenchState } from "./useWorkbenchState";
@@ -247,6 +249,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         return;
       }
       if (e.key === "Enter" && maskEditor.active) {
+        // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe。
+        // 旧逻辑只查 active, 现在要求 dirty 才提交。
+        if (!canCommitMask(maskEditor.dirty ? "dirty" : "ready", maskEditor.dirty)) return;
         e.preventDefault(); e.stopPropagation();
         commitMaskAsPolygon?.();
         return;
@@ -416,14 +421,17 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (!s.selectedId) return;
           if (action.scope === "keyframe") {
             const selected = annotationsRef.current.find((ann) => ann.id === s.selectedId);
-            if (selected?.geometry.type === "video_track_bbox") {
-              // v0.21.26 · 关键帧级删除是 no-op 时不再「静默什么都不发生」:
-              // 只剩 1 个关键帧 → 删它 = 删整条, 回退到整条删; 多关键帧但当前帧无关键帧 →
-              // 保持不动(避免在非关键帧上误删整条)。
+            // v0.23.5 · WS-C · A5 止血: video_track_mask 也走关键帧级删除, 不能 fall-through
+            // 到 handleDeleteBox 误删整轨。与 video_track_bbox 同语义: 只剩 1 个关键帧 →
+            // 删它 = 删整条 (回退); 多关键帧但当前帧无关键帧 → 保持不动 (避免误删整轨)。
+            if (
+              selected?.geometry.type === "video_track_bbox" ||
+              selected?.geometry.type === "video_track_mask"
+            ) {
               const deleted = videoControlsRef?.current?.deleteSelectedTrackKeyframe();
               if (deleted) return;
               if (selected.geometry.keyframes.length > 1) return;
-              // 落到下方 handleDeleteBox 删整条
+              // 落到下方 handleDeleteBox 删整条 (只剩 1 关键帧)
             }
           }
           handleDeleteBox(s.selectedId);
