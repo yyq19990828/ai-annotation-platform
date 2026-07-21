@@ -18,7 +18,6 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.project import Project
 from app.schemas.aap_json import (
@@ -30,6 +29,7 @@ from app.schemas.aap_json import (
 from app.schemas._jsonb_types import Geometry
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
+    assert_raster_mask_write_enabled,
     resolve_mask_reference_objects,
     store_mask_reference_objects,
     validate_mask_geometry_for_task,
@@ -61,10 +61,6 @@ def _validate_aap_mask_objects(
     mask_objects: dict[str, dict[str, Any]],
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     return resolve_mask_reference_objects(geometry, mask_objects)
-
-
-def _raster_mask_create_enabled() -> bool:
-    return bool(getattr(settings, "raster_mask_create_enabled", False))
 
 
 def _derive_tool_unit(geometry_type: str | None) -> str:
@@ -197,11 +193,8 @@ async def import_aap_json_annotations(
                     coco_rle_area(rle) == 0 for _, rle in mask_objects
                 ):
                     raise ValueError("raster mask must contain foreground pixels")
-                if (
-                    entry.geometry.get("type") == "raster_mask"
-                    and not _raster_mask_create_enabled()
-                ):
-                    raise ValueError("raster mask creation is disabled")
+                if entry.geometry.get("type") == "raster_mask":
+                    assert_raster_mask_write_enabled(project)
             except ValidationError as exc:
                 result.errors.append(
                     AAPImportErrorEntry(

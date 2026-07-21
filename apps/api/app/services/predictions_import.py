@@ -31,7 +31,6 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db.models.dataset import DatasetItem
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
@@ -51,6 +50,7 @@ from app.services.task_matcher import (
     resolve_task_by_file_stem,
 )
 from app.services.raster_mask_storage import (
+    assert_raster_mask_write_enabled,
     build_rle_reference,
     resolve_mask_reference_objects,
     store_coco_rle,
@@ -62,10 +62,6 @@ from app.utils.raster_mask_rle import coco_rle_area, validate_coco_rle
 logger = logging.getLogger(__name__)
 
 _GEOMETRY_ADAPTER = TypeAdapter(Geometry)
-
-
-def _raster_mask_create_enabled() -> bool:
-    return bool(getattr(settings, "raster_mask_create_enabled", False))
 
 
 # ── geometry kind → LabelStudio shape 适配 ─────────────────────────
@@ -342,6 +338,7 @@ async def import_aap_json(
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
     stored_mask_keys: set[str] = set()
+    project = await db.get(Project, project_id)
 
     purged_tasks = purged_tasks if purged_tasks is not None else set()
 
@@ -395,8 +392,8 @@ async def import_aap_json(
                 )
                 if any(coco_rle_area(rle) == 0 for _, rle in resolved_masks):
                     raise ValueError("raster mask must contain foreground pixels")
-                if mask_geometries and not _raster_mask_create_enabled():
-                    raise ValueError("raster mask creation is disabled")
+                if mask_geometries:
+                    assert_raster_mask_write_enabled(project)
             except (ValidationError, ValueError) as exc:
                 result.errors.append(
                     AAPImportErrorEntry(
@@ -664,6 +661,7 @@ async def import_coco(
 
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
+    project = await db.get(Project, project_id)
     purged_tasks = purged_tasks if purged_tasks is not None else set()
     stored_rle_references: dict[str, dict[str, Any]] = {}
 
@@ -743,8 +741,7 @@ async def import_coco(
                 )
                 if coco_rle_area(rle) == 0:
                     raise ValueError("raster mask must contain foreground pixels")
-                if not _raster_mask_create_enabled():
-                    raise ValueError("raster mask creation is disabled")
+                assert_raster_mask_write_enabled(project)
                 geometry = {
                     "type": "raster_mask",
                     "mask": build_rle_reference(rle),

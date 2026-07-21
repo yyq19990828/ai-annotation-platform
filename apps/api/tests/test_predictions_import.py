@@ -19,7 +19,6 @@ import io
 import json
 import uuid
 import zipfile
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -27,6 +26,7 @@ import pytest
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.audit_log import AuditLog
 from app.db.models.prediction import Prediction, PredictionMeta
@@ -60,7 +60,18 @@ async def _seed_project_with_tasks(
         type_label="测试",
         owner_id=owner_id,
         status="in_progress",
+        raster_mask_native_editing_enabled=True,
         classes=["car", "truck"],
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [{"name": "car"}, {"name": "truck"}],
+            },
+            "region": {
+                "enabled": True,
+                "classes": [{"name": "car"}, {"name": "truck"}],
+            },
+        },
     )
     db.add(project)
     await db.flush()
@@ -1518,11 +1529,7 @@ async def test_import_coco_rle_builds_portable_prediction_and_reports_invalid_it
 
     import app.services.predictions_import as predictions_import
 
-    monkeypatch.setattr(
-        predictions_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=True),
-    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
 
     async def _store(rle):
         return build_rle_reference(rle)
@@ -1587,11 +1594,7 @@ async def test_import_coco_rle_respects_create_flag(
 
     import app.services.predictions_import as predictions_import
 
-    monkeypatch.setattr(
-        predictions_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=False),
-    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", False)
     store = AsyncMock()
     create = AsyncMock()
     monkeypatch.setattr(predictions_import, "store_coco_rle", store)

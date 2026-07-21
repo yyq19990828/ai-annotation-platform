@@ -606,6 +606,10 @@ async def update_annotation(
     ).scalar_one_or_none()
     if existing is None or not existing.is_active:
         raise HTTPException(status_code=404, detail="Annotation not found")
+    if existing.task_id != task_id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
 
     before_attributes: dict | None = None
     if "attributes" in fields:
@@ -613,6 +617,18 @@ async def update_annotation(
 
     # 乐观并发控制：If-Match 头校验
     if_match = request.headers.get("If-Match", "").strip()
+    if "geometry" in fields:
+        previous_type = str((existing.geometry or {}).get("type") or "")
+        next_geometry = fields["geometry"]
+        next_type = str((next_geometry or {}).get("type") or "")
+        requires_precondition = (
+            previous_type != next_type or next_type == "raster_mask"
+        )
+        if requires_precondition and not if_match:
+            raise HTTPException(
+                status_code=428,
+                detail={"reason": "if_match_required"},
+            )
     if if_match:
         expected_version = if_match.removeprefix('W/"').removesuffix('"')
         try:
@@ -634,10 +650,6 @@ async def update_annotation(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
-    if annotation.task_id != task_id:
-        raise HTTPException(
-            status_code=400, detail="Annotation does not belong to this task"
-        )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     _audit_action = (
         AuditAction.TASK_REVIEWER_EDIT

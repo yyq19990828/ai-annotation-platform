@@ -99,8 +99,13 @@ describe("useRasterMaskRecords", () => {
   it("keys content revisions without including selected or z-order", () => {
     const item = makeDescriptor("mask");
     const key = rasterMaskRecordCacheKey(item.descriptor);
+    const selectionOnlyChange = {
+      ...item.descriptor,
+      selected: true,
+      zOrder: 99,
+    };
 
-    expect(rasterMaskRecordCacheKey({ ...item.descriptor, selected: true, zOrder: 99 })).toBe(key);
+    expect(rasterMaskRecordCacheKey(selectionOnlyChange)).toBe(key);
     expect(rasterMaskRecordCacheKey({ ...item.descriptor, revision: 2 })).not.toBe(key);
     expect(rasterMaskRecordCacheKey({ ...item.descriptor, colorRevision: "class-color-2" })).not.toBe(key);
     expect(rasterMaskRecordCacheKey({

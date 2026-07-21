@@ -9,10 +9,11 @@ from botocore.exceptions import ClientError
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db.models.dataset import DatasetItem
+from app.db.models.project import Project
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.task import Task
+from app.services.raster_mask_capabilities import evaluate_raster_mask_capabilities
 from app.services.storage import StorageService, storage_service
 from app.utils.raster_mask_gzip import (
     MAX_COMPRESSED_BYTES,
@@ -42,15 +43,13 @@ class RasterMaskContractError(ValueError):
         self.detail = {"reason": reason, "message": message}
 
 
-def _assert_raster_mask_create_enabled(geometry: dict[str, Any]) -> None:
-    if (
-        geometry.get("type") == "raster_mask"
-        and not settings.raster_mask_create_enabled
-    ):
+def assert_raster_mask_write_enabled(project: Project | None) -> None:
+    capabilities = evaluate_raster_mask_capabilities(project)
+    if not capabilities.write_enabled:
         raise RasterMaskContractError(
             status_code=409,
             reason="raster_mask_create_disabled",
-            message="raster mask creation is not enabled",
+            message="raster mask creation is disabled",
         )
 
 
@@ -318,16 +317,18 @@ async def prepare_mask_payload_for_write(
     if not geometries:
         return
 
-    # Check every gate before object reads, advisory locks, or upload association.
-    for geometry in geometries:
-        _assert_raster_mask_create_enabled(geometry)
-
     if task is None:
         raise RasterMaskContractError(
             status_code=409,
             reason="mask_task_context_missing",
             message="mask persistence requires an existing task",
         )
+
+    # Check every image-mask gate before object reads, advisory locks, or upload
+    # association. Video mask tracks keep their existing deployment contract.
+    if any(geometry.get("type") == "raster_mask" for geometry in geometries):
+        project = await db.get(Project, task.project_id)
+        assert_raster_mask_write_enabled(project)
 
     for geometry in geometries:
         try:

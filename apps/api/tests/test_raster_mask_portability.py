@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
@@ -38,6 +38,7 @@ async def _image_project_task(
         type_label="测试",
         owner_id=owner_id,
         status="in_progress",
+        raster_mask_native_editing_enabled=True,
         tool_bindings={
             "region": {
                 "enabled": True,
@@ -118,14 +119,10 @@ async def test_aap_raster_mask_round_trip_deduplicates_objects(
     assert exported["mask_objects"] == {reference["sha256"]: rle}
     assert load.await_count == 1
 
+    store = AsyncMock()
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     import app.services.annotations_import as annotations_import
 
-    store = AsyncMock()
-    monkeypatch.setattr(
-        annotations_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=True),
-    )
     monkeypatch.setattr(annotations_import, "store_mask_reference_objects", store)
     result = await import_aap_json_annotations(
         db_session,
@@ -184,13 +181,7 @@ async def test_aap_raster_mask_dry_run_validates_objects_and_create_flag(
         ],
     }
 
-    import app.services.annotations_import as annotations_import
-
-    monkeypatch.setattr(
-        annotations_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=True),
-    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     missing = await import_aap_json_annotations(
         db_session,
         project.id,
@@ -203,11 +194,7 @@ async def test_aap_raster_mask_dry_run_validates_objects_and_create_flag(
     assert "mask_objects missing" in missing.errors[0].reason
 
     envelope["mask_objects"] = {reference["sha256"]: rle}
-    monkeypatch.setattr(
-        annotations_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=False),
-    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", False)
     disabled = await import_aap_json_annotations(
         db_session,
         project.id,
@@ -223,11 +210,7 @@ async def test_aap_raster_mask_dry_run_validates_objects_and_create_flag(
     empty_reference = build_rle_reference(empty)
     envelope["mask_objects"] = {empty_reference["sha256"]: empty}
     envelope["tasks"][0]["annotations"][0]["geometry"]["mask"] = empty_reference
-    monkeypatch.setattr(
-        annotations_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=True),
-    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     empty_result = await import_aap_json_annotations(
         db_session,
         project.id,
@@ -269,13 +252,7 @@ async def test_aap_raster_mask_prediction_rejects_empty_foreground(
         ],
     }
 
-    import app.services.predictions_import as predictions_import
-
-    monkeypatch.setattr(
-        predictions_import,
-        "settings",
-        SimpleNamespace(raster_mask_create_enabled=True),
-    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     result = await import_aap_json(
         db_session,
         project.id,

@@ -56,6 +56,7 @@ async def _seed_image_task(db, owner_id: uuid.UUID, *, item_type: str = "image")
         type_key="image-seg",
         data_type="image",
         owner_id=owner_id,
+        raster_mask_native_editing_enabled=True,
         tool_bindings={
             "region": {
                 "enabled": True,
@@ -150,6 +151,45 @@ async def test_prediction_create_gate_off_rejects_before_flush_or_link(
     await db_session.refresh(task)
     assert upload.linked_at is None
     assert task.total_predictions == 0
+    load.assert_not_awaited()
+
+
+@pytest.mark.parametrize("disabled_layer", ["read", "project", "region"])
+@pytest.mark.asyncio
+async def test_prediction_create_honors_every_effective_rollout_layer(
+    disabled_layer, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    project, task = await _seed_image_task(db_session, user.id)
+    reference = build_rle_reference(FOREGROUND_RLE)
+    upload = await _seed_upload(db_session, task.id, reference)
+    load = AsyncMock(return_value=FOREGROUND_RLE)
+    monkeypatch.setattr("app.services.raster_mask_storage.load_coco_rle", load)
+    monkeypatch.setattr(settings, "raster_mask_read_enabled", True)
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    if disabled_layer == "read":
+        monkeypatch.setattr(settings, "raster_mask_read_enabled", False)
+    elif disabled_layer == "project":
+        project.raster_mask_native_editing_enabled = False
+    else:
+        project.tool_bindings = {
+            **project.tool_bindings,
+            "region": {**project.tool_bindings["region"], "enabled": False},
+        }
+    await db_session.flush()
+
+    with pytest.raises(RasterMaskContractError) as exc_info:
+        await PredictionService(db_session).create_from_ml_result(
+            task_id=task.id,
+            project_id=project.id,
+            ml_backend_id=None,
+            result=[_shape(reference)],
+        )
+
+    assert exc_info.value.detail["reason"] == "raster_mask_create_disabled"
+    assert await _count_for_task(db_session, Prediction, task.id) == 0
+    await db_session.refresh(upload)
+    assert upload.linked_at is None
     load.assert_not_awaited()
 
 

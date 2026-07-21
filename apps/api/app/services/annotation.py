@@ -180,7 +180,7 @@ class AnnotationService:
             project_id=task.project_id if task else None,
             user_id=user_id,
             source=source,
-            annotation_type=annotation_type,
+            annotation_type=str(geometry.get("type") or annotation_type),
             tool_unit_id=tool_unit_id,
             class_name=class_name,
             geometry=geometry,
@@ -1101,6 +1101,25 @@ class AnnotationService:
                 annotation.project_id, annotation.tool_unit_id, class_name
             )
         if geometry is not None:
+            previous_type = str((annotation.geometry or {}).get("type") or "")
+            next_type = str(geometry.get("type") or "")
+            if previous_type != next_type:
+                region_types = {"polygon", "multi_polygon", "raster_mask"}
+                if (
+                    annotation.tool_unit_id != "region"
+                    or previous_type not in region_types
+                    or next_type not in region_types
+                ):
+                    from fastapi import HTTPException
+
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "reason": "geometry_type_transition_not_allowed",
+                            "from_type": previous_type,
+                            "to_type": next_type,
+                        },
+                    )
             task = await self.db.get(Task, annotation.task_id)
             await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
             try:
@@ -1114,6 +1133,7 @@ class AnnotationService:
 
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             annotation.geometry = geometry
+            annotation.annotation_type = next_type
             annotation.track_id = track_id
         if class_name is not None:
             annotation.class_name = class_name

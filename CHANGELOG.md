@@ -42,16 +42,23 @@
   共享内容层基础设施。
 - **图片掩码静态内容 API**. 新增 `GET /annotations/{annotation_id}/mask-content` 端点，
   支持获取图片掩码的 COCO RLE 内容，带 ETag 支持条件请求（304 Not Modified）。
+- **图片 Mask 项目级灰度能力**. 项目新增默认关闭的原生编辑 opt-in，工作台可通过
+  `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力、稳定禁用原因与内容上限。
 
 ### Changed
 - **共享掩码验证逻辑**. `validate_mask_geometry_for_task` 扩展支持 `raster_mask` 类型，
   验证图片掩码尺寸与数据集项匹配。
 - **前端类型定义**. `Geometry` union 添加 `RasterMaskGeometry` 类型，`rasterMasksApi`
   拆分为 `annotationRasterMaskContent`（图片）和 `annotationVideoMaskContent`（视频）。
+- **Mask 渲染加载核心**. 图片与视频复用 cropped alpha 分析和命中检测；图片加载器按对象
+  隔离 loading / ready / error，并提供有界并发、定向重试、LRU 与 bitmap 释放。
 
 ### Fixed
 - **Raster Mask 持久化门禁**. 预测结果写入与预测采纳现与标注创建共用同一个写入边界，
   在创建开关关闭或媒体、尺寸、前景、引用校验失败时，不再留下 Prediction / Annotation 行或提前关联上传对象。
+- **Mask 转换并发与类型一致性**. 替换 raster 内容或转换 geometry 类型缺少 `If-Match`
+  时返回 428，旧版本返回稳定 409；成功转换会同步 `annotation_type`，且仅允许同一
+  `region` 工具内的 polygon / multi-polygon / raster Mask 互转。
 - **图片 Mask 可移植导入导出**. AAP JSON 会把图片与视频引用的 RLE 正文统一写入
   `mask_objects`，导入先验证并重建不可变对象；COCO 图片导入识别 RLE segmentation，导出从
   实际像素计算 segmentation、bbox 与 area，不再把栅格 Mask 静默跳过或降级为 bbox。
@@ -62,8 +69,8 @@
 
 ### Security
 - **Mask 任务级授权与灰度门禁**. 图片和视频 Mask 内容读取统一执行批次状态与标注员分派校验，
-  防止同项目跨任务读取；新增独立 read / create 开关，读取默认开启、创建默认关闭，所有写入与
-  导入入口拒绝绕过创建门禁及全背景图片 Mask。
+  防止同项目跨任务读取；有效写能力同时受部署 read / create 开关、项目 opt-in 和
+  `region` 工具绑定约束，直接写入、预测、采纳及 AAP / COCO 导入均无法绕过。
 
 ## [0.23.5] - 2026-07-21
 

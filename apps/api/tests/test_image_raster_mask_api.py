@@ -58,6 +58,7 @@ async def _seed_image_mask(
         type_key="image-seg",
         data_type="image",
         owner_id=owner_id,
+        raster_mask_native_editing_enabled=True,
         tool_bindings={
             "region": {
                 "enabled": True,
@@ -288,3 +289,88 @@ async def test_raster_mask_write_maps_size_and_empty_foreground_errors(
     assert mismatch.json()["detail"]["reason"] == "raster_mask_size_mismatch"
     assert empty.status_code == 422
     assert empty.json()["detail"]["reason"] == "raster_mask_empty_foreground"
+
+
+async def test_raster_mask_replacement_requires_if_match(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    await db_session.commit()
+
+    response = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        json={"geometry": annotation.geometry},
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 428
+    assert response.json()["detail"]["reason"] == "if_match_required"
+
+
+async def test_raster_mask_to_polygon_syncs_type_and_allows_gate_off(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", False)
+    await db_session.commit()
+
+    response = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        json={
+            "geometry": {
+                "type": "polygon",
+                "points": [[0.1, 0.1], [0.8, 0.1], [0.8, 0.8]],
+            }
+        },
+        headers=_headers(token, **{"If-Match": 'W/"1"'}),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["annotation_type"] == "polygon"
+    assert response.json()["geometry"]["type"] == "polygon"
+    assert response.headers["etag"] == 'W/"2"'
+
+
+async def test_polygon_to_raster_syncs_type_and_rejects_stale_version(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    annotation.annotation_type = "polygon"
+    annotation.geometry = {
+        "type": "polygon",
+        "points": [[0.1, 0.1], [0.8, 0.1], [0.8, 0.8]],
+    }
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    load = AsyncMock(return_value=FOREGROUND_RLE)
+    monkeypatch.setattr("app.services.raster_mask_storage.load_coco_rle", load)
+    await db_session.commit()
+
+    stale = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        json={"geometry": {"type": "raster_mask", "mask": build_rle_reference(FOREGROUND_RLE)}},
+        headers=_headers(token, **{"If-Match": 'W/"0"'}),
+    )
+    converted = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        json={"geometry": {"type": "raster_mask", "mask": build_rle_reference(FOREGROUND_RLE)}},
+        headers=_headers(token, **{"If-Match": 'W/"1"'}),
+    )
+
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == {
+        "reason": "version_mismatch",
+        "current_version": 1,
+    }
+    assert converted.status_code == 200, converted.text
+    assert converted.json()["annotation_type"] == "raster_mask"
+    assert converted.json()["geometry"]["type"] == "raster_mask"
