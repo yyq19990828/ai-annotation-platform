@@ -167,7 +167,9 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 }
 ```
 
-客户端先 `POST /api/v1/tasks/{task_id}/mask-content` 上传 `{encoding:"coco_rle",size,counts}` 获得引用，再创建或更新 annotation。读取当前解析帧用 `GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}`；outside 帧返回 404。
+客户端先 `POST /api/v1/tasks/{task_id}/mask-content` 上传 `{encoding:"coco_rle",size,counts}` 获得引用，再创建或更新 annotation。需要对象存储压缩时增加 `storage_encoding:"gzip"`；需要压缩 HTTP 请求时仍发送相同 JSON，并设置 `Content-Encoding:gzip`。返回引用的 `encoding` 始终是 `coco_rle_ref`，gzip 引用额外带 `storage_encoding:"gzip"` 和 `.json.gz` key。
+
+每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。读取当前解析帧用 `GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}`；outside 帧返回 404，对象损坏返回 409，存储暂时不可用返回可重试 503。
 
 ## 视频轨迹转独立框
 

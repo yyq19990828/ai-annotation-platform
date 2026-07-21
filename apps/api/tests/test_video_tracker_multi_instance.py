@@ -7,12 +7,13 @@ backend 一次追踪返回多实例 (模式 a「自动发现」) 时:
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.config import settings
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.dataset import Dataset, DatasetItem, VideoSegment
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
@@ -340,6 +341,7 @@ async def test_runner_sourceless_detection_lands_all_as_new_tracks(
     await accept_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
     assert job.status == "accepted"
+    assert job.staged_result is None
 
     rows = (
         (
@@ -1366,9 +1368,10 @@ async def test_accept_tracker_job_conflict_on_source_version_mismatch(
 
     with pytest.raises(TrackerJobStateConflict) as exc:
         await accept_tracker_job(db_session, job.id, publisher=collect)
-    assert "version changed" in str(exc.value).lower() or "conflict" in str(
-        exc.value
-    ).lower()
+    assert (
+        "version changed" in str(exc.value).lower()
+        or "conflict" in str(exc.value).lower()
+    )
 
     # Source geometry untouched (no last-writer-wins).
     await db_session.refresh(source)
@@ -1378,11 +1381,12 @@ async def test_accept_tracker_job_conflict_on_source_version_mismatch(
     assert job.status != "accepted"
 
 
-async def test_accept_tracker_job_legacy_without_expected_versions_skips_check(
+async def test_accept_tracker_job_legacy_without_expected_versions_fails_closed(
     db_session, super_admin, monkeypatch
 ):
-    """legacy job (no expected_source_versions in prompt) → accept proceeds
-    (forward compat). Source version drift is tolerated, not 409'd."""
+    """A source candidate without a creation-time version cannot be accepted safely."""
+    from app.services.video_tracking.runner import TrackerJobStateConflict
+
     user, _ = super_admin
     task, source, job = await _seed_pending_review_job_with_source(
         db_session,
@@ -1404,11 +1408,112 @@ async def test_accept_tracker_job_legacy_without_expected_versions_skips_check(
     await db_session.refresh(job)
     assert job.status == "pending_review"
 
-    # Even if the source version moved, accept must still succeed for a legacy job.
+    # Even if the row is currently readable, drift since creation is unknowable.
     source.version = (source.version or 1) + 5
     await db_session.commit()
     await db_session.refresh(source)
 
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    with pytest.raises(TrackerJobStateConflict, match="snapshot is missing"):
+        await accept_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
-    assert job.status == "accepted"
+    assert job.status == "pending_review"
+    assert job.staged_result is not None
+
+
+async def test_accept_tracker_job_rejects_locked_or_soft_deleted_source(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.video_tracking.runner import (
+        TrackerJobStateConflict,
+        run_tracker_job,
+    )
+
+    user, _ = super_admin
+    _task, source, job = await _seed_pending_review_job_with_source(
+        db_session, user.id, expected_versions=None
+    )
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    monkeypatch.setattr(
+        "app.services.video_tracking.runner.get_tracker_adapter",
+        lambda _model_key: monkeypatch_holder["adapter"],
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    job.prompt = {
+        **(job.prompt or {}),
+        "expected_source_versions": {str(source.id): int(source.version)},
+    }
+    source.is_locked = True
+    await db_session.commit()
+    with pytest.raises(TrackerJobStateConflict, match="locked"):
+        await accept_tracker_job(db_session, job.id, publisher=collect)
+
+
+async def test_accept_tracker_job_rechecks_task_status(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.video_tracking.runner import (
+        TrackerJobStateConflict,
+        run_tracker_job,
+    )
+
+    user, _ = super_admin
+    task, _source, job = await _seed_pending_review_job_with_source(
+        db_session, user.id, expected_versions=None
+    )
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    monkeypatch.setattr(
+        "app.services.video_tracking.runner.get_tracker_adapter",
+        lambda _model_key: monkeypatch_holder["adapter"],
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    task.status = "review"
+    await db_session.commit()
+    with pytest.raises(TrackerJobStateConflict, match="task is locked"):
+        await accept_tracker_job(db_session, job.id, publisher=collect)
+
+
+async def test_accept_tracker_job_rechecks_segment_lease(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.video_tracking.runner import (
+        TrackerJobStateConflict,
+        run_tracker_job,
+    )
+
+    user, _ = super_admin
+    _task, _source, job = await _seed_pending_review_job_with_source(
+        db_session, user.id, expected_versions=None
+    )
+    segment = VideoSegment(
+        dataset_item_id=job.dataset_item_id,
+        segment_index=0,
+        start_frame=0,
+        end_frame=3,
+        assignee_id=user.id,
+        locked_by=user.id,
+        lock_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    db_session.add(segment)
+    await db_session.flush()
+    job.segment_id = segment.id
+    await db_session.commit()
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    monkeypatch.setattr(
+        "app.services.video_tracking.runner.get_tracker_adapter",
+        lambda _model_key: monkeypatch_holder["adapter"],
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    with pytest.raises(TrackerJobStateConflict, match="segment lease"):
+        await accept_tracker_job(db_session, job.id, publisher=collect)

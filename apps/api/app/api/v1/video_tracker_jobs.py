@@ -310,7 +310,13 @@ async def accept_video_tracker_job(
     """v0.21.28 · 接受候选: 把 job 暂存结果落库 (主实例回填源轨迹 + 新轨迹建), status=ACCEPTED。"""
     task, body = await _load_visible_job_task(db, job_id, current_user)
     await _assert_can_cancel(db, task, body, current_user)
-    body = await accept_tracker_job(db, job_id)
+    project = await db.get(Project, task.project_id)
+    body = await accept_tracker_job(
+        db,
+        job_id,
+        actor_id=current_user.id,
+        privileged=bool(project and is_privileged_for_project(current_user, project)),
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -398,9 +404,14 @@ async def get_video_tracker_mask_content(
         raise HTTPException(status_code=404, detail="mask candidate not found")
     try:
         payload = await load_coco_rle(reference)
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise HTTPException(
             status_code=409, detail=f"mask object is invalid: {exc}"
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"reason": "mask_storage_unavailable", "retryable": True},
         ) from exc
     return JSONResponse(
         payload,

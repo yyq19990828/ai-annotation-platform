@@ -10,9 +10,10 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
 
 from app.db.models.annotation_comment import AnnotationComment
+from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.workers._db import task_session
 from app.services.storage import storage_service
 from app.services.raster_mask_storage import lock_raster_mask_references
@@ -94,7 +95,9 @@ _MASK_REFERENCE_QUERIES = (
     """
     SELECT DISTINCT value #>> '{}' AS object_key
     FROM video_tracker_jobs, LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
-    WHERE staged_result IS NOT NULL AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    WHERE staged_result IS NOT NULL
+      AND status IN ('pending_review', 'cancelled')
+      AND value #>> '{}' LIKE 'raster-masks/sha256/%'
     """,
 )
 
@@ -118,7 +121,9 @@ _MASK_REFERENCE_EXISTS_QUERIES = (
         SELECT 1
         FROM video_tracker_jobs,
              LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
-        WHERE staged_result IS NOT NULL AND value #>> '{}' = :key
+        WHERE staged_result IS NOT NULL
+          AND status IN ('pending_review', 'cancelled')
+          AND value #>> '{}' = :key
     )
     """,
 )
@@ -161,7 +166,9 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     async with task_session() as db:
         referenced = await _referenced_raster_mask_keys(db)
-        candidates = storage_service.list_objects("raster-masks/sha256/")
+        candidates = await asyncio.to_thread(
+            storage_service.list_objects, "raster-masks/sha256/"
+        )
         deletable = _eligible_raster_mask_objects(candidates, referenced, cutoff)
         deleted = 0
         errors = 0
@@ -178,6 +185,11 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
                         # D5 · delete_object wraps boto3 sync I/O in to_thread so the
                         # async GC path doesn't block the event loop on each delete.
                         await asyncio.to_thread(storage_service.delete_object, key)
+                        await db.execute(
+                            delete(RasterMaskUpload).where(
+                                RasterMaskUpload.object_key == key
+                            )
+                        )
                         deleted += 1
                     await db.commit()
                 except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure

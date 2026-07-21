@@ -144,7 +144,7 @@ runner 把结果序列化到：
 
 正常完成进入 `pending_review`。取消时 worker 在停止前暂存已收集的部分结果，状态保持 `cancelled`；若候选非空，前端仍可进入审阅。失败不生成可审候选。
 
-接受与丢弃都需要 task 可见性，并限制为 job 创建者或项目特权角色。accept 对已接受 job 幂等；discard 清空 `staged_result`。API 记录 `VIDEO_TRACKER_JOB_ACCEPT` / `VIDEO_TRACKER_JOB_DISCARD` 审计动作。
+接受与丢弃都需要 task 可见性，并限制为 job 创建者或项目特权角色。accept 在落库事务内锁定并刷新 task、segment 和全部源 annotation，复核 task 状态、assignment、segment lease、源版本、active 状态与 annotation lock；源删除不降级为新轨迹。accept 成功和 discard 都清空 `staged_result`，对象引用分别转由 annotation 保活或进入 GC 宽限。API 记录 `VIDEO_TRACKER_JOB_ACCEPT` / `VIDEO_TRACKER_JOB_DISCARD` 审计动作。
 
 ## 接受阶段如何落库
 
@@ -157,7 +157,7 @@ runner 把结果序列化到：
 落库以 `source_map: {instance_id → 源 annotation}` 决定每个实例回填还是新建，命中源则 `apply_tracker_results()` 回填、未命中则 `_new_discovered_track()` 新建：
 
 - **单源延展**：主实例回填源，额外发现实例各新建。
-- **多选批量**（`source_annotation_ids[]`）：`prompt.seeds[]` 每条带 `source_annotation_id`，`instance_id == str(obj_id)` 契约让每个实例回填各自源；某源在 job 运行期被删则该实例 per-source 降级为新建，不整 job 失败。多源 job 的 `annotation_id` 存 NULL，走 job 级审阅，接受时按 task 粒度 invalidate，各源轨迹一并刷新。
+- **多选批量**（`source_annotation_ids[]`）：`prompt.seeds[]` 每条带 `source_annotation_id`，`instance_id == str(obj_id)` 契约让每个实例回填各自源；任一源在运行期被删、锁定或修改时整次接受返回 409。多源 job 的 `annotation_id` 存 NULL，走 job 级审阅，接受时按 task 粒度 invalidate，各源轨迹一并刷新。
 - **无源检测 / combo 发现**（`job.annotation_id` 为空）：`source_map` 为空，主实例也走新建。
 
 归属由 `_TrackTarget` 提供——有源继承源 label，无源取 job 的 `target_class_name` / `target_tool_unit_id` 显式类别。持久化时：

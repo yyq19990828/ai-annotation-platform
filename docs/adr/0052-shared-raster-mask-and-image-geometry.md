@@ -56,6 +56,8 @@ v0.23.5 是栅格 mask 统一 Epic 的 Phase 1（可靠性与安全地基）。v
 
 字段与 `build_raster_mask_reference`（`apps/api/app/services/raster_mask_storage.py:build_rle_reference`）完全一致；读取路径必须复核 `object_key == rle_object_key(sha256)`、`sha256`、`bytes`、`runs`、`size`，任一不符即拒绝（`load_coco_rle` 已实现）。
 
+引用的 `encoding` 永远描述引用协议（`coco_rle_ref`），不描述正文或存储压缩。gzip 对象额外携带 `storage_encoding: "gzip"` 且使用 `.json.gz`；未压缩旧引用可省略该字段。reader 继续接受历史 `encoding: "coco_rle_gzip"` + `.json.gz`，writer 不再生成该混合形态。
+
 ### D3. 图片静态内容 GET API（泛化现有视频端点）
 
 现有 `GET /annotations/{annotation_id}/mask-content/{frame_index}`（`apps/api/app/api/v1/annotations.py:81`）只认 `geometry.type == "video_track_mask"`。v0.23.6 将其泛化：
@@ -88,12 +90,14 @@ v0.23.5 是栅格 mask 统一 Epic 的 Phase 1（可靠性与安全地基）。v
 
 - object key 后缀：未压缩 `.json`，gzip `.json.gz`；`coco_rle_ref.object_key` 必须与实际存储后缀一致。
 - canonical bytes：未压缩为 compact JSON；gzip 为 `gzip` 压缩后的 canonical JSON 字节流，SHA-256 仍对**未压缩的 canonical JSON** 计算（`bytes` 字段记录未压缩长度，便于校验）。
-- 流式 bounded decompress（`apps/api/app/utils/raster_mask_gzip.py`）：超任一上限立即 `raise ValueError` 并拒绝写库 / 拒绝响应。
+- bounded decompress（`apps/api/app/utils/raster_mask_gzip.py`）：限制输出分配，并强制 `eof`、空 `unused_data`、空 `unconsumed_tail`；截断、拼接 member 和尾随数据一律拒绝。超任一上限立即 `raise ValueError` 并拒绝写库 / 拒绝响应。
   - `MAX_COMPRESSED_BYTES = 8 MiB`
   - `MAX_UNCOMPRESSED_BYTES = MAX_RLE_OBJECT_BYTES = 4 MiB`
   - `MAX_EXPANSION_RATIO = 20`
-- 编码协商：客户端上传可在 `Content-Encoding: gzip` 或 body 内 `encoding: "coco_rle_gzip"` 声明；服务端未声明时按未压缩 JSON 处理。旧客户端不传 `encoding` → 按 JSON 处理，向后兼容。
-- 前端 `maskRle.ts` 同步实现 gzip 编解码，上传侧默认 gzip（当 canonical > 阈值），下载侧按 `object_key` 后缀或 `encoding` 分流。
+- 编码分层：请求 JSON 正文始终是 `{encoding:"coco_rle",size,counts}`；HTTP 传输压缩只由 `Content-Encoding: gzip` 表示，对象存储偏好只由 `storage_encoding: "identity" | "gzip"` 表示。服务端在 JSON 解析前有界解压 HTTP gzip。历史 body `encoding:"coco_rle_gzip"` 会被归一化为 `coco_rle` + gzip 存储偏好。
+- writer/readability：若 canonical JSON 的 gzip 展开比超过 20，writer 自动回退 `.json`，不得生成 reader 会拒绝的 `.json.gz` 对象。
+- 匿名上传归属：`raster_mask_uploads` 记录 `(task_id, object_key)`，task 级事务 advisory lock 串行化预留；每 task 最多 256 个未被 annotation 事务认领的对象。GC 删除对象时同步删除归属记录。
+- 前端 `maskRle.ts` 同步实现 gzip 编解码，上传侧仅在满足相同边界时发送 HTTP gzip / gzip 存储偏好，下载侧按 `object_key` 后缀或 `storage_encoding` 分流。
 
 ### D7. 编辑会话状态机语义（图片 / 视频共用）
 

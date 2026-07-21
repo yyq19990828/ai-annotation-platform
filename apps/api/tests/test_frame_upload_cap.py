@@ -27,15 +27,12 @@ from PIL import Image
 from app.api.v1.ml_backends import (
     MAX_FRAME_UPLOAD_BYTES,
     _MAX_FRAME_DIMENSION,
-    _MAX_FRAME_PIXELS,
     _read_capped_frame,
 )
 from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.services.ml_client import PredictionResult
-from fastapi import HTTPException, UploadFile
-from starlette.datastructures import Headers
+from fastapi import HTTPException
 from tests.conftest import create_registry_with_pool
 
 FRAME_URL = "http://minio/import/frame-predict/x/0.jpg"
@@ -84,13 +81,6 @@ class _FakeUpload:
         return None
 
 
-def _request_with_content_length(length: int):
-    class _Req:
-        headers = Headers({"content-length": str(length)})
-
-    return _Req()
-
-
 # ── unit tests on _read_capped_frame ──────────────────────────────────
 
 
@@ -108,13 +98,13 @@ async def test_read_capped_frame_accepts_valid_png():
     assert out == data
 
 
-async def test_read_capped_frame_rejects_oversize_content_length():
-    """declared Content-Length > cap → 413 before reading any byte."""
+async def test_read_capped_frame_rejects_oversize_upload_file_size():
+    """The parsed file size (not multipart overhead) is capped at 32 MiB."""
     data = _jpeg_bytes()
     frame = _FakeUpload(data)
-    request = _request_with_content_length(MAX_FRAME_UPLOAD_BYTES + 1)
+    frame.size = MAX_FRAME_UPLOAD_BYTES + 1
     with pytest.raises(HTTPException) as exc:
-        await _read_capped_frame(frame, request=request)
+        await _read_capped_frame(frame)
     assert exc.value.status_code == 413
     assert exc.value.detail["reason"] == "frame_too_large"
     assert exc.value.detail["max_bytes"] == MAX_FRAME_UPLOAD_BYTES
@@ -145,6 +135,14 @@ async def test_read_capped_frame_rejects_empty():
 async def test_read_capped_frame_rejects_undecodable_image():
     """bytes that aren't a valid image → 400 (not 500)."""
     frame = _FakeUpload(b"this is definitely not an image")
+    with pytest.raises(HTTPException) as exc:
+        await _read_capped_frame(frame)
+    assert exc.value.status_code == 400
+    assert "decodable" in exc.value.detail
+
+
+async def test_read_capped_frame_rejects_truncated_jpeg_with_valid_header():
+    frame = _FakeUpload(_jpeg_bytes()[:-2])
     with pytest.raises(HTTPException) as exc:
         await _read_capped_frame(frame)
     assert exc.value.status_code == 400
@@ -248,9 +246,7 @@ def patched_storage(monkeypatch):
         captured["upload_called"] = True
         return FRAME_URL
 
-    with patch(
-        "app.services.ml_client.MLBackendClient.predict", new=fake_predict
-    ):
+    with patch("app.services.ml_client.MLBackendClient.predict", new=fake_predict):
         monkeypatch.setattr(
             "app.services.storage.StorageService.upload_crop_bytes", fake_upload
         )
@@ -258,9 +254,7 @@ def patched_storage(monkeypatch):
 
 
 def _predict_url(proj, backend) -> str:
-    return (
-        f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/predict-frame"
-    )
+    return f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/predict-frame"
 
 
 async def test_predict_frame_rejects_oversize_content_length(

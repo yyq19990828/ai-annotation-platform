@@ -19,6 +19,7 @@ from app.core.ratelimit import limiter
 from app.middleware.audit import AuditMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.upload_body_limits import UploadBodyLimitMiddleware
 from app.services.storage import storage_service
 from app.services.ml_routing.contracts import RoutingError
 
@@ -207,6 +208,10 @@ app.add_middleware(
     if settings.environment != "production"
     else settings.cors_allow_headers,
 )
+
+# Pure ASGI pre-parser guard: registered outermost so multipart/JSON parsing can
+# never spool an unbounded selected upload before endpoint validation runs.
+app.add_middleware(UploadBodyLimitMiddleware)
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(ws_router)

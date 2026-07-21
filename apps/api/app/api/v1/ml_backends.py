@@ -105,17 +105,20 @@ async def _read_capped_frame(
     """
     # 1. Pre-flight on declared size, if available.
     declared: int | None = None
-    if request is not None:
+    size_attr = getattr(frame, "size", None)
+    if isinstance(size_attr, int) and size_attr >= 0:
+        declared = size_attr
+    if (
+        declared is None
+        and request is not None
+        and not request.headers.get("content-type", "").lower().startswith("multipart/")
+    ):
         cl = request.headers.get("content-length")
         if cl:
             try:
                 declared = int(cl)
             except (TypeError, ValueError):
                 declared = None
-    if declared is None:
-        size_attr = getattr(frame, "size", None)
-        if isinstance(size_attr, int) and size_attr >= 0:
-            declared = size_attr
     if declared is not None and declared > max_bytes:
         raise HTTPException(
             status_code=413,
@@ -157,6 +160,11 @@ async def _read_capped_frame(
         with Image.open(io.BytesIO(data)) as img:
             fmt = img.format
             width, height = img.size
+            img.verify()
+        # verify() checks the stream structure but invalidates the decoder;
+        # reopen and load pixels to reject truncated images with valid headers.
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
     except Exception as exc:
         raise HTTPException(
             status_code=400, detail=f"frame is not a decodable image: {exc}"
@@ -170,8 +178,7 @@ async def _read_capped_frame(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"frame dimensions exceed {_MAX_FRAME_DIMENSION}px: "
-                f"{width}x{height}"
+                f"frame dimensions exceed {_MAX_FRAME_DIMENSION}px: {width}x{height}"
             ),
         )
     if width * height > _MAX_FRAME_PIXELS:

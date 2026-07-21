@@ -167,7 +167,7 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 
 这些写操作要求当前用户是 job 创建者，或对项目拥有特权角色：
 
-- `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。单源模式把主实例回填源轨迹，额外实例新建；多源模式按 `instance_id` 把各实例回填各自源轨迹，未映射实例新建，某个源在运行期间被删除时仅该实例降级为新建；无源模式全部新建。已接受时幂等返回，响应的 `touched_annotation_ids` 列出本次回填和新建的轨迹。
+- `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。服务端在同一事务内重新锁定 task、segment 和按 UUID 排序的全部源 annotation，复核 task 状态、assignment、segment lease、源版本与 annotation lock；任一源被软删或变化都 fail closed 返回 409。单源模式把主实例回填源轨迹，额外实例新建；多源模式按 `instance_id` 把各实例回填各自源轨迹；无源模式全部新建。接受后立即清空 staged result（引用已由 annotation 保活），响应的 `touched_annotation_ids` 列出本次回填和新建的轨迹。
 - `discard`：只允许带暂存结果的 `pending_review` / `cancelled` job，清空 staged result，annotation 保持不变；已丢弃时幂等返回，其它状态返回 `409`。
 - `DELETE`：请求停止 queued / running job。已计算的部分结果可能保留为 candidate，之后仍可接受或丢弃。
 

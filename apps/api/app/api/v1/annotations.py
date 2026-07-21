@@ -25,13 +25,13 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
-from app.db.models.prediction import Prediction
+from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -52,7 +52,11 @@ from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
 from app.services.raster_mask_storage import (
     COCO_RLE_GZIP_ENCODING,
+    RLE_STORAGE_GZIP,
+    build_rle_gzip_reference,
+    build_rle_reference,
     load_coco_rle,
+    reserve_raster_mask_upload,
     store_coco_rle,
     store_coco_rle_gzip,
 )
@@ -75,9 +79,8 @@ _LOCKED_STATUSES = {"review", "completed"}
 # annotation), so the per-annotation ``is_locked`` guard doesn't apply at
 # upload time — instead we bound the total number of content-addressed mask
 # objects attributable to this task's annotations + predictions. The cap is
-# deterministic (a single SQL count) and large enough to never clip legitimate
-# multi-instance / multi-keyframe video work (2048 refs ≈ hundreds of tracks).
-MAX_MASK_OBJECTS_PER_TASK = 2048
+# serialized by a task-level advisory lock so concurrent requests cannot race.
+MAX_MASK_OBJECTS_PER_TASK = 256
 
 
 def _assert_task_editable(task: Task, user: User | None) -> None:
@@ -94,33 +97,18 @@ def _assert_task_editable(task: Task, user: User | None) -> None:
 
 
 async def _count_task_mask_references(db: AsyncSession, task_id: uuid.UUID) -> int:
-    """v0.23.5 · WS-D · D3 · count distinct ``raster-masks/sha256/...`` object
-    keys referenced by this task's annotations + predictions.
-
-    Uses the same ``jsonb_path_query`` plumbing as the GC path
-    (``app.workers.cleanup._referenced_raster_mask_keys``) but scoped to a
-    single task so the count is cheap and deterministic. Annotations are
-    filtered to ``is_active`` to match the GC's liveness semantics.
-    """
-    query = text(
-        """
-        SELECT COUNT(DISTINCT key) FROM (
-            SELECT value #>> '{}' AS key
-            FROM annotations,
-                 LATERAL jsonb_path_query(geometry, '$.**.object_key') value
-            WHERE task_id = :task_id
-              AND is_active IS TRUE
-              AND value #>> '{}' LIKE 'raster-masks/sha256/%'
-          UNION ALL
-            SELECT value #>> '{}' AS key
-            FROM predictions,
-                 LATERAL jsonb_path_query(result, '$.**.object_key') value
-            WHERE task_id = :task_id
-              AND value #>> '{}' LIKE 'raster-masks/sha256/%'
-        ) AS keys
-        """
+    """Count anonymous uploads not yet claimed by an annotation transaction."""
+    return int(
+        (
+            await db.execute(
+                select(func.count(RasterMaskUpload.id)).where(
+                    RasterMaskUpload.task_id == task_id,
+                    RasterMaskUpload.linked_at.is_(None),
+                )
+            )
+        ).scalar()
+        or 0
     )
-    return int((await db.execute(query, {"task_id": task_id})).scalar() or 0)
 
 
 @router.get(
@@ -154,6 +142,14 @@ async def get_annotation_mask_content(
         raise HTTPException(
             status_code=409, detail=f"mask object is invalid: {exc}"
         ) from exc
+    except Exception as exc:  # object store unavailable; do not misreport corruption
+        logger.warning(
+            "mask object read failed for annotation %s", annotation_id, exc_info=True
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={"reason": "mask_storage_unavailable", "retryable": True},
+        ) from exc
     return JSONResponse(
         payload,
         headers={
@@ -178,23 +174,28 @@ async def upload_task_mask_content(
         raise HTTPException(status_code=404, detail="task not found")
     await assert_project_visible(task.project_id, db, user)
     _assert_task_editable(task, user)
+    if (
+        user.role == UserRole.ANNOTATOR
+        and task.assignee_id is not None
+        and task.assignee_id != user.id
+    ):
+        raise HTTPException(status_code=403, detail="Task belongs to another annotator")
     # v0.23.5 · WS-D · D3 · per-task mask-object quota. The upload returns an
     # anonymous reference (not yet linked to an annotation), so the per-annotation
     # ``is_locked`` guard doesn't apply at upload time; the quota bounds how many
     # orphan-able objects a single task can produce before the caller must link
-    # or clean up existing ones. Reusing the GC's liveness filter keeps the count
-    # consistent with what purge_unreferenced_raster_masks considers reachable.
-    existing = await _count_task_mask_references(db, task_id)
-    if existing >= MAX_MASK_OBJECTS_PER_TASK:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "reason": "mask_quota_exceeded",
-                "limit": MAX_MASK_OBJECTS_PER_TASK,
-                "current": existing,
-            },
-        )
+    # or clean up existing ones. Linking the returned ref marks the reservation
+    # claimed in the same annotation transaction.
     try:
+        body = dict(payload)
+        requested_storage = body.pop("storage_encoding", None)
+        # Backward-compatible request shim. The body is normalized immediately:
+        # COCO RLE encoding and object-storage encoding are separate contracts.
+        if body.get("encoding") == COCO_RLE_GZIP_ENCODING:
+            requested_storage = RLE_STORAGE_GZIP
+            body["encoding"] = "coco_rle"
+        if requested_storage not in (None, "identity", RLE_STORAGE_GZIP):
+            raise ValueError("storage_encoding must be 'identity' or 'gzip'")
         size = payload.get("size")
         if task.dataset_item_id is not None:
             item = await db.get(DatasetItem, task.dataset_item_id)
@@ -207,13 +208,51 @@ async def upload_task_mask_content(
                     raise ValueError(
                         f"mask size must match source video [{height}, {width}]"
                     )
-        # v0.23.5 · WS-D · D1 · route to gzip storage when the client declares
-        # ``encoding == "coco_rle_gzip"`` (Content-Encoding: gzip); otherwise the
-        # legacy uncompressed JSON path. Both return identical ``coco_rle_ref``
-        # schema — gzip just changes ``object_key`` suffix and ``encoding`` marker.
-        if payload.get("encoding") == COCO_RLE_GZIP_ENCODING:
-            return await store_coco_rle_gzip(payload)
-        return await store_coco_rle(payload)
+        # HTTP Content-Encoding is handled before JSON parsing. This field is
+        # only the object-storage preference; reference encoding stays stable.
+        if requested_storage == RLE_STORAGE_GZIP:
+            try:
+                expected = build_rle_gzip_reference(body)
+            except ValueError as exc:
+                if "expansion ratio" not in str(exc):
+                    raise
+                expected = build_rle_reference(body)
+        else:
+            expected = build_rle_reference(body)
+        try:
+            await reserve_raster_mask_upload(
+                db,
+                task_id=task_id,
+                object_key=expected["object_key"],
+                limit=MAX_MASK_OBJECTS_PER_TASK,
+            )
+        except ValueError:
+            current = await _count_task_mask_references(db, task_id)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "mask_quota_exceeded",
+                    "limit": MAX_MASK_OBJECTS_PER_TASK,
+                    "current": current,
+                },
+            ) from None
+        try:
+            reference = (
+                await store_coco_rle_gzip(body)
+                if requested_storage == RLE_STORAGE_GZIP
+                else await store_coco_rle(body)
+            )
+        except Exception:
+            # Reservation and quota consumption are transactional. A storage
+            # failure must not leave a phantom owner row.
+            await db.rollback()
+            raise
+        if reference["object_key"] != expected["object_key"]:
+            raise RuntimeError("mask storage selection changed after reservation")
+        await db.commit()
+        return reference
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

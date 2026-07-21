@@ -174,7 +174,7 @@ class AnnotationService:
 
         if task is not None:
             await validate_mask_geometry_for_task(self.db, task, geometry)
-            await lock_raster_mask_references(self.db, geometry)
+            await lock_raster_mask_references(self.db, geometry, task_id=task_id)
         geometry, track_id = prepare_compact_track_identity(geometry)
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -397,7 +397,9 @@ class AnnotationService:
             anns.append(annotation)
 
         await lock_raster_mask_references(
-            self.db, [annotation.geometry for annotation in anns]
+            self.db,
+            [annotation.geometry for annotation in anns],
+            task_id=prediction.task_id,
         )
         await self.db.flush()
         await self._update_task_stats(prediction.task_id)
@@ -1097,7 +1099,9 @@ class AnnotationService:
             task = await self.db.get(Task, annotation.task_id)
             if task is not None:
                 await validate_mask_geometry_for_task(self.db, task, geometry)
-                await lock_raster_mask_references(self.db, geometry)
+                await lock_raster_mask_references(
+                    self.db, geometry, task_id=annotation.task_id
+                )
             try:
                 geometry, track_id = prepare_compact_track_identity(
                     geometry,

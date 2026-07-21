@@ -55,7 +55,7 @@ async def test_gc_rechecks_reference_under_object_lock_before_delete(
     import app.workers.cleanup as cleanup
 
     key = "raster-masks/sha256/aa/aa/live.json"
-    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    db = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock(), rollback=AsyncMock())
 
     @asynccontextmanager
     async def session():

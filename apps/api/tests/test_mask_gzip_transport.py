@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-import json
 from io import BytesIO
 from unittest.mock import MagicMock
 
 import pytest
 
+from app.schemas._jsonb_types import CocoRleMaskRef
 from app.services.raster_mask_storage import (
     MAX_RLE_OBJECT_BYTES,
     canonical_rle_bytes,
@@ -54,6 +54,16 @@ def test_constants_match_adr_0052_d6():
     # MAX_UNCOMPRESSED_BYTES must mirror MAX_RLE_OBJECT_BYTES (duplicated in
     # raster_mask_gzip to avoid a circular import — guard against drift).
     assert MAX_UNCOMPRESSED_BYTES == MAX_RLE_OBJECT_BYTES
+
+
+def test_gzip_reference_schema_accepts_new_and_legacy_contracts():
+    from app.services.raster_mask_storage import build_rle_gzip_reference
+
+    reference = build_rle_gzip_reference(RLE)
+    assert CocoRleMaskRef.model_validate(reference).storage_encoding == "gzip"
+    legacy = {**reference, "encoding": "coco_rle_gzip"}
+    legacy.pop("storage_encoding")
+    assert CocoRleMaskRef.model_validate(legacy).encoding == "coco_rle_gzip"
 
 
 def test_decompress_mask_gzip_roundtrip():
@@ -110,6 +120,16 @@ def test_decompress_mask_gzip_rejects_malformed_payload():
         decompress_mask_gzip(b"this is not gzip at all")
 
 
+def test_decompress_mask_gzip_rejects_truncated_concatenated_and_trailing():
+    payload = compress_mask_gzip(canonical_rle_bytes(RLE))
+    with pytest.raises(ValueError, match="truncated"):
+        decompress_mask_gzip(payload[:-2])
+    with pytest.raises(ValueError, match="concatenated or trailing"):
+        decompress_mask_gzip(payload + compress_mask_gzip(b"second member"))
+    with pytest.raises(ValueError, match="concatenated or trailing"):
+        decompress_mask_gzip(payload + b"junk")
+
+
 def test_compress_mask_gzip_is_symmetric_and_idempotent():
     """compress + decompress is identity; same input → same output bytes."""
     data = canonical_rle_bytes(RLE)
@@ -126,7 +146,8 @@ async def test_store_coco_rle_gzip_content_addressed():
     storage = _storage()
     reference = await store_coco_rle_gzip(RLE, storage=storage)
 
-    assert reference["encoding"] == "coco_rle_gzip"
+    assert reference["encoding"] == "coco_rle_ref"
+    assert reference["storage_encoding"] == "gzip"
     assert reference["object_key"].endswith(f"{reference['sha256']}.json.gz")
     # sha256 is over the uncompressed canonical bytes (ADR-0052 §D6).
     canonical = canonical_rle_bytes(RLE)
@@ -174,6 +195,19 @@ async def test_load_coco_rle_backward_compat_json():
 
     payload = await load_coco_rle(reference, storage=storage)
     assert payload["counts"] == [1, 2, 2, 1]
+
+
+async def test_gzip_writer_falls_back_when_reader_ratio_would_reject():
+    highly_compressible = {
+        "encoding": "coco_rle",
+        "size": [1, 4000],
+        "counts": [0] * 4000 + [4000],
+    }
+    storage = _storage()
+    reference = await store_coco_rle_gzip(highly_compressible, storage=storage)
+    assert reference["encoding"] == "coco_rle_ref"
+    assert reference["object_key"].endswith(".json")
+    assert "storage_encoding" not in reference
 
 
 async def test_load_coco_rle_gzip_rejects_digest_mismatch():

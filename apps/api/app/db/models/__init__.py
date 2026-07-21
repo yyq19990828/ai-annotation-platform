@@ -32,6 +32,7 @@ from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.video_chapter import VideoChapter
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -90,6 +91,7 @@ __all__ = [
     "FailedPrediction",
     "VideoTrackerJob",
     "VideoTrackerJobStatus",
+    "RasterMaskUpload",
     "VideoChapter",
     "AuditLog",
     "UserInvitation",

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import DatasetItem
+from app.db.models.dataset import DatasetItem, VideoSegment
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
@@ -707,8 +707,8 @@ def _stage_tracker_results(
 
 
 async def _assert_source_versions_unchanged(
-    db: AsyncSession, job: VideoTrackerJob, source_map: dict[str, Annotation]
-) -> None:
+    db: AsyncSession, job: VideoTrackerJob, source_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, Annotation]:
     """v0.23.5 · WS-D · D4 · reject accept when a source annotation was mutated
     after the job was created.
 
@@ -719,29 +719,30 @@ async def _assert_source_versions_unchanged(
     ``TrackerJobStateConflict`` (409), so the caller can surface the conflict
     instead of last-writer-wins overwriting the user's edit.
 
-    Legacy jobs (created before this change) have no ``expected_source_versions``
-    key; we skip the check for forward compat and log a warning.
+    Legacy jobs with sources and no version snapshot cannot prove that their
+    source is unchanged, so acceptance fails closed.
     """
     prompt = job.prompt or {}
     expected = prompt.get("expected_source_versions")
     if not expected:
-        # Forward compat: jobs queued before v0.23.5 carry no version snapshot.
-        # Don't 409 them; just record that the safety net was inactive.
-        if source_map:
-            log.warning(
-                "video tracker job %s accept has no expected_source_versions; "
-                "skipping source-version conflict check (legacy job)",
-                job.id,
+        if source_ids:
+            raise TrackerJobStateConflict(
+                "source version snapshot is missing; candidate cannot be accepted safely"
             )
-        return
+        expected = {}
     if not isinstance(expected, dict):
         raise TrackerJobStateConflict(
             "expected_source_versions is malformed; cannot verify source versions"
         )
-    for ann in source_map.values():
-        key = str(ann.id)
+    if expected and set(expected) != {str(source_id) for source_id in source_ids}:
+        raise TrackerJobStateConflict(
+            "expected_source_versions does not match the tracker source set"
+        )
+    locked: dict[uuid.UUID, Annotation] = {}
+    for annotation_id in sorted(source_ids, key=str):
+        key = str(annotation_id)
         recorded = expected.get(key)
-        if recorded is None:
+        if expected and recorded is None:
             # Source is in source_map but not in the snapshot — only happens if
             # the snapshot was built inconsistently with seed_sources. Treat as
             # conflict (fail closed).
@@ -755,17 +756,28 @@ async def _assert_source_versions_unchanged(
         row = (
             await db.execute(
                 select(Annotation)
-                .where(Annotation.id == ann.id)
+                .where(Annotation.id == annotation_id)
                 .with_for_update()
+                .execution_options(populate_existing=True)
             )
         ).scalar_one_or_none()
         current_version = int(row.version) if row is not None else None
-        if current_version is None or current_version != int(recorded):
-            await db.rollback()
+        if (
+            row is None
+            or not row.is_active
+            or row.task_id != job.task_id
+            or row.is_locked
+        ):
+            raise TrackerJobStateConflict(
+                f"source annotation {key} is missing, inactive, moved, or locked"
+            )
+        if recorded is not None and current_version != int(recorded):
             raise TrackerJobStateConflict(
                 "source annotation version changed; conflict "
                 f"(annotation {key}: expected {recorded}, got {current_version})"
             )
+        locked[row.id] = row
+    return locked
 
 
 async def accept_tracker_job(
@@ -773,6 +785,8 @@ async def accept_tracker_job(
     job_id: uuid.UUID,
     *,
     publisher: TrackerEventPublisher = publish_tracker_event,
+    actor_id: uuid.UUID | None = None,
+    privileged: bool = False,
 ) -> VideoTrackerJob | None:
     """接受候选: 把 job.staged_result 应用到 annotation (主实例回填源 + 每个新 instance 各建
     一条 track), status=ACCEPTED。幂等 (已 ACCEPTED 直接返回)。状态不符 / 无 staged → 原样返回。"""
@@ -797,19 +811,60 @@ async def accept_tracker_job(
     # v0.22.1 · B · 源轨迹可选 (无源检测 → 全新建); v0.22.2 · M · 多选批量: prompt.seeds
     # 每条可带 source_annotation_id (obj_id ↔ 源轨迹), 各实例回填各自源。
     results = _deserialize_results(rows)
-    task = await db.get(Task, job.task_id)
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == job.task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if task is None:
-        await db.rollback()
         raise ValueError("Task not found")
+    effective_actor = actor_id or job.created_by
+    if task.status in {"review", "completed"}:
+        raise TrackerJobStateConflict(f"task is locked in status {task.status}")
+    if (
+        not privileged
+        and task.assignee_id is not None
+        and task.assignee_id != effective_actor
+    ):
+        raise TrackerJobStateConflict("task assignment changed before accept")
+    if job.segment_id is not None:
+        segment = (
+            await db.execute(
+                select(VideoSegment)
+                .where(VideoSegment.id == job.segment_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+        now = _now()
+        if (
+            segment is None
+            or segment.dataset_item_id != job.dataset_item_id
+            or job.from_frame < segment.start_frame
+            or job.to_frame > segment.end_frame
+            or (
+                not privileged
+                and (
+                    segment.assignee_id not in (None, effective_actor)
+                    or segment.locked_by != effective_actor
+                    or segment.lock_expires_at is None
+                    or segment.lock_expires_at <= now
+                )
+            )
+        ):
+            raise TrackerJobStateConflict("video segment lease changed before accept")
     seed_sources = _seed_source_map(job)
+    source_ids = set(seed_sources.values())
+    if not source_ids and job.annotation_id is not None:
+        source_ids.add(job.annotation_id)
+    locked_sources = await _assert_source_versions_unchanged(db, job, source_ids)
     source_map: dict[str, Annotation] = {}
     if seed_sources:
-        # 多源批量: 各 instance 回填各自源; 某源在 job 期间被软删 → 该源 per-source 降级
-        # (跳过映射 → 该 instance 落新建), 不整 job 失败。
         for instance_id, ann_id in seed_sources.items():
-            ann = await db.get(Annotation, ann_id)
-            if ann is not None and ann.is_active:
-                source_map[instance_id] = ann
+            source_map[instance_id] = locked_sources[ann_id]
         target = (
             _target_from_source(next(iter(source_map.values())))
             if source_map
@@ -817,16 +872,7 @@ async def accept_tracker_job(
         )
     elif job.annotation_id is not None:
         # 单源延展 (0.22.1 及以前): 主实例回填源; 整源软删 → 丢弃孤儿候选 (409 告知前端)。
-        annotation = await db.get(Annotation, job.annotation_id)
-        if annotation is None or not annotation.is_active:
-            job.status = VideoTrackerJobStatus.DISCARDED.value
-            job.staged_result = None
-            await db.commit()
-            await db.refresh(job)
-            await publisher(job.event_channel, _event(job, "job_discarded"))
-            raise TrackerJobStateConflict(
-                "Source annotation no longer exists; candidate discarded"
-            )
+        annotation = locked_sources[job.annotation_id]
         primary_iid = _primary_instance_id(results)
         source_map = {
             primary_iid if primary_iid is not None else _SOLE_SOURCE_KEY: annotation
@@ -838,7 +884,6 @@ async def accept_tracker_job(
     # v0.23.5 · WS-D · D4 · refuse accept if any source annotation was mutated
     # between job creation and accept. Runs before _persist_tracker_results so
     # a conflict leaves annotations untouched (no last-writer-wins).
-    await _assert_source_versions_unchanged(db, job, source_map)
     created = _persist_tracker_results(
         db,
         source_map,
@@ -861,6 +906,7 @@ async def accept_tracker_job(
                 *(src.geometry or {} for src in source_map.values()),
                 *(annotation.geometry or {} for annotation in created),
             ],
+            task_id=task.id,
         )
     except ValueError:
         await db.rollback()
@@ -873,6 +919,9 @@ async def accept_tracker_job(
     ]
     job.prompt = {**(job.prompt or {}), "touched_annotation_ids": touched}
     job.status = VideoTrackerJobStatus.ACCEPTED.value
+    # Accepted refs are now reachable from annotations; the candidate copy no
+    # longer needs a grace period. Discard/failure likewise clear immediately.
+    job.staged_result = None
     await db.commit()
     await db.refresh(job)
     await publisher(job.event_channel, _event(job, "job_accepted"))

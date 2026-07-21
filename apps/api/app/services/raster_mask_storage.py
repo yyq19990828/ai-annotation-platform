@@ -5,14 +5,17 @@ import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import text
+from botocore.exceptions import ClientError
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
+from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.services.storage import StorageService, storage_service
 from app.utils.raster_mask_gzip import (
     MAX_COMPRESSED_BYTES,
+    MAX_EXPANSION_RATIO,
     compress_mask_gzip,
     decompress_mask_gzip,
 )
@@ -24,7 +27,9 @@ RLE_OBJECT_PREFIX = "raster-masks/sha256"
 # v0.23.5 · ADR-0052 §D6 · encoding markers carried inside ``coco_rle_ref``
 # (additive — legacy uncompressed ``.json`` refs keep ``encoding="coco_rle_ref"``).
 COCO_RLE_REF_ENCODING = "coco_rle_ref"
-COCO_RLE_GZIP_ENCODING = "coco_rle_gzip"
+COCO_RLE_GZIP_ENCODING = "coco_rle_gzip"  # legacy request/reference marker
+RLE_STORAGE_IDENTITY = "identity"
+RLE_STORAGE_GZIP = "gzip"
 
 
 def _mask_references(value: Any) -> list[dict[str, Any]]:
@@ -46,6 +51,7 @@ async def lock_raster_mask_references(
     value: Any,
     *,
     verify: bool = True,
+    task_id: Any | None = None,
 ) -> list[str]:
     """Serialize reference commits with GC until the current DB transaction ends."""
     references = {
@@ -58,7 +64,57 @@ async def lock_raster_mask_references(
         )
         if verify:
             await load_coco_rle(references[key])
+    if task_id is not None and references:
+        await db.execute(
+            update(RasterMaskUpload)
+            .where(
+                RasterMaskUpload.task_id == task_id,
+                RasterMaskUpload.object_key.in_(sorted(references)),
+                RasterMaskUpload.linked_at.is_(None),
+            )
+            .values(linked_at=func.now())
+        )
     return sorted(references)
+
+
+async def reserve_raster_mask_upload(
+    db: AsyncSession,
+    *,
+    task_id: Any,
+    object_key: str,
+    limit: int,
+) -> int:
+    """Reserve one task-owned anonymous upload under a transaction-scoped lock."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"aap:raster-mask-upload:{task_id}"},
+    )
+    existing = (
+        await db.execute(
+            select(RasterMaskUpload).where(
+                RasterMaskUpload.task_id == task_id,
+                RasterMaskUpload.object_key == object_key,
+            )
+        )
+    ).scalar_one_or_none()
+    current = int(
+        (
+            await db.execute(
+                select(func.count(RasterMaskUpload.id)).where(
+                    RasterMaskUpload.task_id == task_id,
+                    RasterMaskUpload.linked_at.is_(None),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    if existing is not None:
+        return current
+    if current >= limit:
+        raise ValueError(f"mask orphan quota exceeded ({current}/{limit})")
+    db.add(RasterMaskUpload(task_id=task_id, object_key=object_key))
+    await db.flush()
+    return current + 1
 
 
 async def validate_mask_geometry_for_task(
@@ -158,16 +214,19 @@ def build_rle_reference(rle: dict[str, Any]) -> dict[str, Any]:
 def build_rle_gzip_reference(rle: dict[str, Any]) -> dict[str, Any]:
     """v0.23.5 · ADR-0052 §D6 · gzip variant of :func:`build_rle_reference`.
 
-    ``object_key`` ends in ``.json.gz`` and ``encoding`` flips to
-    ``coco_rle_gzip``; ``sha256`` / ``bytes`` / ``runs`` / ``size`` are
+    ``object_key`` ends in ``.json.gz`` and ``storage_encoding`` is ``gzip``;
+    reference ``encoding`` remains ``coco_rle_ref``. ``sha256`` / ``bytes`` / ``runs`` / ``size`` are
     identical to the uncompressed reference (the digest is over the
     **uncompressed** canonical bytes, ``bytes`` is the uncompressed length).
     """
-    data, _gzip_bytes = canonical_rle_bytes_gzip(rle)
+    data, gzip_bytes = canonical_rle_bytes_gzip(rle)
+    if len(data) > len(gzip_bytes) * MAX_EXPANSION_RATIO:
+        raise ValueError("mask RLE exceeds the bounded gzip expansion ratio")
     digest = hashlib.sha256(data).hexdigest()
     height, width, counts = validate_coco_rle(rle)
     return {
-        "encoding": COCO_RLE_GZIP_ENCODING,
+        "encoding": COCO_RLE_REF_ENCODING,
+        "storage_encoding": RLE_STORAGE_GZIP,
         "size": [height, width],
         "object_key": rle_gzip_object_key(digest),
         "sha256": digest,
@@ -189,13 +248,17 @@ def _put_object_sync(
         )
 
 
-def _get_object_sync(
-    storage: StorageService, *, key: str
-) -> bytes:
-    """Sync boto3 get; reads up to ``MAX_RLE_OBJECT_BYTES + 1`` to bound memory."""
-    response = storage.client.get_object(Bucket=storage.bucket, Key=key)
+def _get_object_sync(storage: StorageService, *, key: str, max_bytes: int) -> bytes:
+    """Sync boto3 get with a caller-selected compressed/uncompressed bound."""
     try:
-        data = response["Body"].read(MAX_RLE_OBJECT_BYTES + 1)
+        response = storage.client.get_object(Bucket=storage.bucket, Key=key)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            raise ValueError("stored mask RLE object is missing") from exc
+        raise
+    try:
+        data = response["Body"].read(max_bytes + 1)
     finally:
         response["Body"].close()
     return data
@@ -232,6 +295,10 @@ def store_coco_rle_gzip_sync(
 ) -> dict[str, Any]:
     """Sync gzip storage path (see ``store_coco_rle_gzip`` for the async entry)."""
     data, gzip_bytes = canonical_rle_bytes_gzip(rle)
+    # A reference written here must always be readable under the same bounded
+    # decompression contract. Highly compressible payloads fall back to JSON.
+    if len(data) > len(gzip_bytes) * MAX_EXPANSION_RATIO:
+        return store_coco_rle_sync(rle, storage=storage)
     reference = build_rle_gzip_reference(rle)
     _put_object_sync(
         storage,
@@ -266,8 +333,27 @@ def load_coco_rle_sync(
     canonical bytes**, so behavior is identical regardless of transport.
     """
     key = str(reference["object_key"])
-    raw = _get_object_sync(storage, key=key)
-    if key.endswith(".json.gz"):
+    raw = _get_object_sync(
+        storage,
+        key=key,
+        max_bytes=(
+            MAX_COMPRESSED_BYTES if key.endswith(".json.gz") else MAX_RLE_OBJECT_BYTES
+        ),
+    )
+    storage_encoding = reference.get("storage_encoding")
+    gzip_key = key.endswith(".json.gz")
+    if storage_encoding not in (None, RLE_STORAGE_IDENTITY, RLE_STORAGE_GZIP):
+        raise ValueError("unsupported mask reference storage_encoding")
+    if storage_encoding == RLE_STORAGE_GZIP and not gzip_key:
+        raise ValueError("gzip mask reference must use .json.gz")
+    if storage_encoding == RLE_STORAGE_IDENTITY and gzip_key:
+        raise ValueError("identity mask reference must use .json")
+    if reference.get("encoding") not in (
+        COCO_RLE_REF_ENCODING,
+        COCO_RLE_GZIP_ENCODING,
+    ):
+        raise ValueError("unsupported mask reference encoding")
+    if gzip_key:
         data = decompress_mask_gzip(
             raw,
             max_compressed=MAX_COMPRESSED_BYTES,
@@ -303,3 +389,25 @@ async def load_coco_rle(
 ) -> dict[str, Any]:
     """Async wrapper of :func:`load_coco_rle_sync` (boto3 I/O in ``to_thread``)."""
     return await asyncio.to_thread(load_coco_rle_sync, reference, storage=storage)
+
+
+def validate_reference_for_rle(reference: dict[str, Any], rle: dict[str, Any]) -> None:
+    """Validate portable AAP object metadata independent of storage encoding."""
+    data = canonical_rle_bytes(rle)
+    digest = hashlib.sha256(data).hexdigest()
+    height, width, counts = validate_coco_rle(rle)
+    key = str(reference.get("object_key") or "")
+    expected = (
+        rle_gzip_object_key(digest)
+        if key.endswith(".json.gz")
+        else rle_object_key(digest)
+    )
+    if (
+        reference.get("encoding") not in (COCO_RLE_REF_ENCODING, COCO_RLE_GZIP_ENCODING)
+        or key != expected
+        or reference.get("sha256") != digest
+        or list(reference.get("size") or []) != [height, width]
+        or reference.get("runs") != len(counts)
+        or reference.get("bytes") != len(data)
+    ):
+        raise ValueError(f"AAP mask object metadata mismatch for sha256 {digest}")

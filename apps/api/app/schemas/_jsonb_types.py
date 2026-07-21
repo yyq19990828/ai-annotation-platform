@@ -653,12 +653,13 @@ class VideoTrackPolylineGeometry(BaseModel):
 class CocoRleMaskRef(BaseModel):
     """Immutable content-addressed COCO uncompressed RLE object reference."""
 
-    encoding: Literal["coco_rle_ref"] = "coco_rle_ref"
+    encoding: Literal["coco_rle_ref", "coco_rle_gzip"] = "coco_rle_ref"
+    storage_encoding: Literal["identity", "gzip"] | None = None
     size: tuple[StrictInt, StrictInt]
     object_key: str = Field(
         min_length=1,
         max_length=255,
-        pattern=r"^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\.json$",
+        pattern=r"^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\.json(?:\.gz)?$",
     )
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     runs: StrictInt = Field(ge=1, le=1_000_000)
@@ -678,12 +679,26 @@ class CocoRleMaskRef(BaseModel):
 
     @model_validator(mode="after")
     def _check_content_address(self):
+        gzip_key = self.object_key.endswith(".json.gz")
         expected = (
             f"raster-masks/sha256/{self.sha256[:2]}/{self.sha256[2:4]}/"
             f"{self.sha256}.json"
         )
+        expected = f"{expected}.gz" if gzip_key else expected
         if self.object_key != expected:
             raise ValueError("mask object_key 必须与 sha256 内容地址一致")
+        if self.storage_encoding == "gzip" and not gzip_key:
+            raise ValueError("gzip mask reference 必须使用 .json.gz")
+        if self.storage_encoding == "identity" and gzip_key:
+            raise ValueError("identity mask reference 必须使用 .json")
+        if self.encoding == "coco_rle_gzip" and not gzip_key:
+            raise ValueError("legacy coco_rle_gzip reference 必须使用 .json.gz")
+        if (
+            gzip_key
+            and self.encoding == "coco_rle_ref"
+            and self.storage_encoding != "gzip"
+        ):
+            raise ValueError(".json.gz mask reference 必须声明 storage_encoding=gzip")
         return self
 
 

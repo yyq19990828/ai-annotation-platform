@@ -14,12 +14,14 @@ gzip path; absent ``encoding`` falls through to the legacy uncompressed path.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
-import pytest
-
-from app.api.v1.annotations import MAX_MASK_OBJECTS_PER_TASK, _count_task_mask_references
-from app.db.models.annotation import Annotation
+from app.api.v1.annotations import (
+    MAX_MASK_OBJECTS_PER_TASK,
+    _count_task_mask_references,
+)
+from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.project import Project
 from app.db.models.task import Task
 
@@ -65,74 +67,41 @@ async def _seed_task(db, owner_id):
     return proj, task
 
 
-async def test_count_task_mask_references_counts_distinct_object_keys(db_session, super_admin):
-    """distinct object_keys across this task's annotations are counted once."""
+async def test_count_task_mask_references_counts_distinct_object_keys(
+    db_session, super_admin
+):
+    """Only task-owned uploads that have not been linked consume quota."""
     user, _ = super_admin
     _proj, task = await _seed_task(db_session, user.id)
-    # Two annotations referencing the same object_key → counted once.
     ref_a = _mask_ref("a" * 64)
     ref_b = _mask_ref("b" * 64)
     db_session.add_all(
         [
-            Annotation(
+            RasterMaskUpload(
                 task_id=task.id,
-                project_id=task.project_id,
-                user_id=user.id,
-                annotation_type="video_track_mask",
-                class_name="x",
-                tool_unit_id="region",
-                geometry={
-                    "type": "video_track_mask",
-                    "track_id": "t1",
-                    "keyframes": [{"frame_index": 0, "mask": ref_a}],
-                    "outside": [],
-                },
+                object_key=ref_a["object_key"],
             ),
-            Annotation(
+            RasterMaskUpload(
                 task_id=task.id,
-                project_id=task.project_id,
-                user_id=user.id,
-                annotation_type="video_track_mask",
-                class_name="x",
-                tool_unit_id="region",
-                geometry={
-                    "type": "video_track_mask",
-                    "track_id": "t2",
-                    "keyframes": [
-                        {"frame_index": 0, "mask": ref_a},  # dup → dedup
-                        {"frame_index": 1, "mask": ref_b},
-                    ],
-                    "outside": [],
-                },
+                object_key=ref_b["object_key"],
+                linked_at=datetime.now(timezone.utc),
             ),
         ]
     )
     await db_session.flush()
     count = await _count_task_mask_references(db_session, task.id)
-    assert count == 2  # ref_a + ref_b, deduped
+    assert count == 1
 
 
-async def test_count_task_mask_references_isolated_per_task(
-    db_session, super_admin
-):
+async def test_count_task_mask_references_isolated_per_task(db_session, super_admin):
     """other tasks' references don't leak into this task's count."""
     user, _ = super_admin
     _proj, task_a = await _seed_task(db_session, user.id)
     _proj2, task_b = await _seed_task(db_session, user.id)
     db_session.add(
-        Annotation(
+        RasterMaskUpload(
             task_id=task_a.id,
-            project_id=task_a.project_id,
-            user_id=user.id,
-            annotation_type="video_track_mask",
-            class_name="x",
-            tool_unit_id="region",
-            geometry={
-                "type": "video_track_mask",
-                "track_id": "t",
-                "keyframes": [{"frame_index": 0, "mask": _mask_ref("c" * 64)}],
-                "outside": [],
-            },
+            object_key=_mask_ref("c" * 64)["object_key"],
         )
     )
     await db_session.flush()
@@ -155,13 +124,13 @@ async def test_upload_task_mask_content_enforces_quota(
     monkeypatch.setattr(
         "app.api.v1.annotations._count_task_mask_references", _full_count
     )
+    monkeypatch.setattr(
+        "app.api.v1.annotations.reserve_raster_mask_upload",
+        AsyncMock(side_effect=ValueError("quota")),
+    )
     # Storage should never be hit on a rejected upload.
-    monkeypatch.setattr(
-        "app.api.v1.annotations.store_coco_rle", AsyncMock()
-    )
-    monkeypatch.setattr(
-        "app.api.v1.annotations.store_coco_rle_gzip", AsyncMock()
-    )
+    monkeypatch.setattr("app.api.v1.annotations.store_coco_rle", AsyncMock())
+    monkeypatch.setattr("app.api.v1.annotations.store_coco_rle_gzip", AsyncMock())
     await db_session.commit()
 
     resp = await httpx_client_bound.post(
@@ -182,16 +151,10 @@ async def test_upload_task_mask_content_routes_gzip_when_encoding_declared(
     user, token = super_admin
     _proj, task = await _seed_task(db_session, user.id)
 
-    gzip_store = AsyncMock(
-        return_value={
-            "encoding": "coco_rle_gzip",
-            "size": [2, 3],
-            "object_key": "raster-masks/sha256/ab/cd/" + "a" * 64 + ".json.gz",
-            "sha256": "a" * 64,
-            "runs": 4,
-            "bytes": 55,
-        }
-    )
+    from app.services.raster_mask_storage import build_rle_gzip_reference
+
+    expected = build_rle_gzip_reference(RLE)
+    gzip_store = AsyncMock(return_value=expected)
     json_store = AsyncMock(
         return_value={
             "encoding": "coco_rle_ref",
@@ -210,7 +173,8 @@ async def test_upload_task_mask_content_routes_gzip_when_encoding_declared(
     assert resp.status_code == 200, resp.text
     gzip_store.assert_awaited_once()
     json_store.assert_not_awaited()
-    assert resp.json()["encoding"] == "coco_rle_gzip"
+    assert resp.json()["encoding"] == "coco_rle_ref"
+    assert resp.json()["storage_encoding"] == "gzip"
 
 
 async def test_upload_task_mask_content_defaults_to_json_path(
@@ -220,16 +184,9 @@ async def test_upload_task_mask_content_defaults_to_json_path(
     user, token = super_admin
     _proj, task = await _seed_task(db_session, user.id)
 
-    json_store = AsyncMock(
-        return_value={
-            "encoding": "coco_rle_ref",
-            "size": [2, 3],
-            "object_key": "raster-masks/sha256/ab/cd/" + "b" * 64 + ".json",
-            "sha256": "b" * 64,
-            "runs": 4,
-            "bytes": 55,
-        }
-    )
+    from app.services.raster_mask_storage import build_rle_reference
+
+    json_store = AsyncMock(return_value=build_rle_reference(RLE))
     gzip_store = AsyncMock()
     monkeypatch.setattr("app.api.v1.annotations.store_coco_rle", json_store)
     monkeypatch.setattr("app.api.v1.annotations.store_coco_rle_gzip", gzip_store)

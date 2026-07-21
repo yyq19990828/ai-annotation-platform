@@ -353,7 +353,7 @@ queued -> running -> pending_review -> accepted | discarded
 
 `video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。两个决策都写审计动作。
 
-接受时 `_partition_results_by_instance()` 把主实例回填到源 annotation，额外 `instance_id` 各创建一条同类轨迹；人工关键帧不会被 prediction 覆盖。丢弃会清空 `staged_result`，不修改 annotation。该数据边界与批量预标的 `Prediction` 不同，见[视频 AI 追踪架构](../concepts/video-ai-tracking)。
+接受时先在同一事务内复核 task、assignment、segment lease 和按 UUID 排序锁定后的全部源 annotation，再把主实例回填到源、把额外 `instance_id` 创建为同类轨迹；人工关键帧不会被 prediction 覆盖。接受成功与丢弃都会清空 `staged_result`，后者不修改 annotation。该数据边界与批量预标的 `Prediction` 不同，见[视频 AI 追踪架构](../concepts/video-ai-tracking)。
 
 SAM video adapter 会调用能力匹配的 ML Backend `/predict`：
 

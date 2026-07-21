@@ -29,9 +29,10 @@ from app.schemas.aap_json import (
 from app.schemas._jsonb_types import Geometry
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
-    build_rle_reference,
     lock_raster_mask_references,
     store_coco_rle,
+    store_coco_rle_gzip,
+    validate_reference_for_rle,
     validate_mask_geometry_for_task,
 )
 from app.services.task_matcher import resolve_task
@@ -67,8 +68,7 @@ def _validate_aap_mask_objects(
         rle = mask_objects.get(str(digest))
         if rle is None:
             raise ValueError(f"AAP mask_objects missing sha256 {digest}")
-        if build_rle_reference(rle) != reference:
-            raise ValueError(f"AAP mask object metadata mismatch for sha256 {digest}")
+        validate_reference_for_rle(reference, rle)
         objects.append(rle)
     return objects
 
@@ -260,10 +260,25 @@ async def import_aap_json_annotations(
                 continue
 
             if mask_objects:
-                await lock_raster_mask_references(db, entry.geometry, verify=False)
-                for mask_object in mask_objects:
-                    await store_coco_rle(mask_object)
-                await lock_raster_mask_references(db, entry.geometry)
+                await lock_raster_mask_references(
+                    db, entry.geometry, verify=False, task_id=task.id
+                )
+                references = [
+                    (keyframe.get("mask") or {})
+                    for keyframe in entry.geometry.get("keyframes", [])
+                ]
+                for reference, mask_object in zip(
+                    references, mask_objects, strict=True
+                ):
+                    if str(reference.get("object_key") or "").endswith(".json.gz"):
+                        stored = await store_coco_rle_gzip(mask_object)
+                    else:
+                        stored = await store_coco_rle(mask_object)
+                    if stored["object_key"] != reference.get("object_key"):
+                        raise ValueError(
+                            "AAP gzip object violates bounded decompression contract"
+                        )
+                await lock_raster_mask_references(db, entry.geometry, task_id=task.id)
 
             # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
             #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）

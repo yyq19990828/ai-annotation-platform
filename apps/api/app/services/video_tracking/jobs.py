@@ -393,10 +393,18 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     return _job_out(row)
 
 
-async def accept_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJobOut:
+async def accept_tracker_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+    privileged: bool = False,
+) -> VideoTrackerJobOut:
     """v0.21.28 · 接受候选: 把 job.staged_result 应用到 annotation, status=ACCEPTED。"""
     try:
-        row = await _runner.accept_tracker_job(db, job_id)
+        row = await _runner.accept_tracker_job(
+            db, job_id, actor_id=actor_id, privileged=privileged
+        )
     except _runner.TrackerJobStateConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if row is None:

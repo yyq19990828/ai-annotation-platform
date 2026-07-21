@@ -182,7 +182,8 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - job 长时间停在 `pending_review`：推理已结束，但 staged candidate 还没有被接受 / 丢弃；annotation 此时尚未改变。用 preview 端点确认候选是否存在。
 - 用户刷新后审阅条没有恢复：工作台会按当前 task 调 reviewable 端点并拉 preview。检查 task 可见性、job 是否属于当前普通用户（项目 owner / 超级管理员可看该 task 全部候选）、`staged_result.results` 是否非空，以及浏览器请求是否返回 401 / 404；不要盲目重跑。
 - 取消后仍看到部分候选：worker 会把停止前已收集的结果写入 `staged_result`，不是已落库 annotation。接受可保留部分结果，丢弃则 annotation 零改动。
-- accept 后看不到新轨迹：检查 job 是否真的进入 `accepted`、源 annotation 是否仍 active，并查看 accept 审计日志；主实例回填源轨迹，额外 `instance_id` 才新建轨迹。
+- accept 返回 409：检查 task 是否进入 review/completed、assignee 是否变化、segment lease 是否过期或转移，以及任一源 annotation 是否被修改、锁定或软删。accept 会 fail closed，不再把失效源降级为新轨迹。
+- accept 后看不到新轨迹：检查 job 是否真的进入 `accepted` 和 `prompt.touched_annotation_ids`，并查看 accept 审计日志；成功后 `staged_result` 会立即清空，主实例回填源轨迹，额外 `instance_id` 才新建轨迹。
 
 ## Tracker GPU OOM / 长视频分窗
 

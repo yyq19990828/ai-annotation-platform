@@ -71,58 +71,35 @@ def decompress_mask_gzip(
     if max_compressed <= 0 or max_uncompressed <= 0 or max_ratio <= 0:
         raise ValueError("decompress limits must be positive")
 
+    compressed_seen = len(raw)
+    if compressed_seen > max_compressed:
+        raise ValueError(
+            f"gzip compressed payload exceeds MAX_COMPRESSED_BYTES={max_compressed}"
+        )
+    if compressed_seen == 0:
+        raise ValueError("gzip payload is empty")
     decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)
-    out = bytearray()
-    compressed_seen = 0
-    # 64 KiB stride: small enough that we can abort between chunks, large
-    # enough to avoid per-byte overhead on legitimate multi-MiB payloads.
-    chunk_size = 64 * 1024
-    view = memoryview(raw)
-    offset = 0
-    total = len(view)
-    while offset < total:
-        end = min(offset + chunk_size, total)
-        chunk = view[offset:end]
-        compressed_seen += end - offset
-        if compressed_seen > max_compressed:
-            raise ValueError(
-                "gzip compressed payload exceeds "
-                f"MAX_COMPRESSED_BYTES={max_compressed}"
-            )
-        offset = end
-        try:
-            piece = decompressor.decompress(chunk, max_length=max_uncompressed + 1)
-        except zlib.error as exc:  # malformed / truncated / not actually gzip
-            raise ValueError(f"gzip decode failed: {exc}") from exc
-        if piece:
-            out.extend(piece)
-        if len(out) > max_uncompressed:
-            raise ValueError(
-                "gzip decompressed payload exceeds "
-                f"MAX_UNCOMPRESSED_BYTES={max_uncompressed}"
-            )
-        # ratio guard — reject zip bombs early even when under absolute caps.
-        if compressed_seen > 0 and len(out) > compressed_seen * max_ratio:
-            raise ValueError(
-                "gzip expansion ratio exceeds "
-                f"MAX_EXPANSION_RATIO={max_ratio}"
-            )
-
-    # Flush any trailing bytes still buffered in the decompressor.
     try:
-        tail = decompressor.flush()
-    except zlib.error as exc:
-        raise ValueError(f"gzip flush failed: {exc}") from exc
-    if tail:
-        out.extend(tail)
+        # max_length bounds allocation even for a malicious high-ratio stream.
+        out = bytearray(decompressor.decompress(raw, max_uncompressed + 1))
+    except zlib.error as exc:  # malformed / not actually gzip
+        raise ValueError(f"gzip decode failed: {exc}") from exc
     if len(out) > max_uncompressed:
         raise ValueError(
             "gzip decompressed payload exceeds "
             f"MAX_UNCOMPRESSED_BYTES={max_uncompressed}"
         )
-    if compressed_seen > 0 and len(out) > compressed_seen * max_ratio:
+    if decompressor.unconsumed_tail:
         raise ValueError(
-            "gzip expansion ratio exceeds "
-            f"MAX_EXPANSION_RATIO={max_ratio}"
+            "gzip decompressed payload exceeds "
+            f"MAX_UNCOMPRESSED_BYTES={max_uncompressed}"
+        )
+    if not decompressor.eof:
+        raise ValueError("gzip payload is truncated")
+    if decompressor.unused_data:
+        raise ValueError("gzip payload contains concatenated or trailing data")
+    if len(out) > compressed_seen * max_ratio:
+        raise ValueError(
+            f"gzip expansion ratio exceeds MAX_EXPANSION_RATIO={max_ratio}"
         )
     return bytes(out)
