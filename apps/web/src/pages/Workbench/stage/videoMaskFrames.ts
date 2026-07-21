@@ -4,7 +4,14 @@ import type { VideoTrackerPreviewResult } from "@/api/videoTracker";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import { videoTrackerApi } from "@/api/videoTracker";
 import { decodeCocoRle, type CocoRle } from "./shared/geometry/maskRle";
+import {
+  buildTintedMaskRgba,
+  closeRasterMaskImage,
+  rasterMaskAlphaBounds,
+} from "./shared/rasterMaskRender";
 import { isVideoMaskTrack, resolveVideoMaskTrackAtFrame } from "./videoStageGeometry";
+
+export { buildTintedMaskRgba };
 
 const MAX_CACHED_MASKS = 96;
 
@@ -48,54 +55,11 @@ interface CachedMask {
 }
 
 function closeImage(image: CanvasImageSource) {
-  if (typeof ImageBitmap !== "undefined" && image instanceof ImageBitmap) image.close();
-}
-
-function parseHexColor(color: string): [number, number, number] {
-  const normalized = color.startsWith("#") ? color.slice(1) : color;
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return [168, 85, 247];
-  return [
-    Number.parseInt(normalized.slice(0, 2), 16),
-    Number.parseInt(normalized.slice(2, 4), 16),
-    Number.parseInt(normalized.slice(4, 6), 16),
-  ];
-}
-
-export function buildTintedMaskRgba(alpha: Uint8Array, color: string): Uint8ClampedArray {
-  const [red, green, blue] = parseHexColor(color);
-  const rgba = new Uint8ClampedArray(alpha.length * 4);
-  for (let index = 0; index < alpha.length; index += 1) {
-    if (alpha[index] === 0) continue;
-    const offset = index * 4;
-    rgba[offset] = red;
-    rgba[offset + 1] = green;
-    rgba[offset + 2] = blue;
-    rgba[offset + 3] = 255;
-  }
-  return rgba;
+  closeRasterMaskImage(image);
 }
 
 export function maskAlphaBounds(alpha: Uint8Array, width: number, height: number) {
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (alpha[y * width + x] === 0) continue;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    }
-  }
-  if (maxX < minX || maxY < minY) return { x: 0, y: 0, w: 0, h: 0 };
-  return {
-    x: minX / width,
-    y: minY / height,
-    w: (maxX - minX + 1) / width,
-    h: (maxY - minY + 1) / height,
-  };
+  return rasterMaskAlphaBounds(alpha, width, height);
 }
 
 async function createMaskImage(alpha: Uint8Array, width: number, height: number, color: string) {
