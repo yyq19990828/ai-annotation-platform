@@ -50,6 +50,8 @@
   拆分为 `annotationRasterMaskContent`（图片）和 `annotationVideoMaskContent`（视频）。
 
 ### Fixed
+- **Raster Mask 持久化门禁**. 预测结果写入与预测采纳现与标注创建共用同一个写入边界，
+  在创建开关关闭或媒体、尺寸、前景、引用校验失败时，不再留下 Prediction / Annotation 行或提前关联上传对象。
 - **图片 Mask 可移植导入导出**. AAP JSON 会把图片与视频引用的 RLE 正文统一写入
   `mask_objects`，导入先验证并重建不可变对象；COCO 图片导入识别 RLE segmentation，导出从
   实际像素计算 segmentation、bbox 与 area，不再把栅格 Mask 静默跳过或降级为 bbox。

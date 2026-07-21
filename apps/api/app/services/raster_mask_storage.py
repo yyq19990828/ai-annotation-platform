@@ -34,7 +34,7 @@ RLE_STORAGE_GZIP = "gzip"
 
 
 class RasterMaskContractError(ValueError):
-    """Stable API-facing rejection raised at the annotation write boundary."""
+    """Stable API-facing rejection raised at the mask persistence boundary."""
 
     def __init__(self, *, status_code: int, reason: str, message: str):
         super().__init__(message)
@@ -71,6 +71,29 @@ def collect_mask_references(value: Any) -> list[dict[str, Any]]:
         for child in value:
             references.extend(collect_mask_references(child))
     return references
+
+
+def collect_mask_geometries(value: Any) -> list[dict[str, Any]]:
+    """Collect persisted mask geometry objects from a nested write payload."""
+    geometries: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        geometry_type = value.get("type")
+        if geometry_type == "raster_mask" and (
+            "mask" in value or "geometry" not in value
+        ):
+            geometries.append(value)
+            return geometries
+        if geometry_type == "video_track_mask" and (
+            "keyframes" in value or "geometry" not in value
+        ):
+            geometries.append(value)
+            return geometries
+        for child in value.values():
+            geometries.extend(collect_mask_geometries(child))
+    elif isinstance(value, list):
+        for child in value:
+            geometries.extend(collect_mask_geometries(child))
+    return geometries
 
 
 def resolve_mask_reference_objects(
@@ -279,30 +302,55 @@ async def validate_mask_geometry_for_task(
     return
 
 
-async def prepare_mask_geometry_for_annotation_write(
+async def prepare_mask_payload_for_write(
     db: AsyncSession,
-    task: Task,
-    geometry: dict[str, Any],
+    task: Task | None,
+    value: Any,
 ) -> None:
-    """Gate, validate and claim mask references in one annotation transaction."""
-    _assert_raster_mask_create_enabled(geometry)
-    try:
-        await validate_mask_geometry_for_task(db, task, geometry)
-    except RasterMaskContractError:
-        raise
-    except ValueError as exc:
+    """Gate, validate and claim every mask in a nested persistence payload.
+
+    Prediction results wrap their geometry one level below the result item while
+    annotation writes pass a geometry directly.  Keeping both paths here prevents
+    a new persistence entry point from linking an uploaded object before applying
+    the raster-mask create gate and task-context checks.
+    """
+    geometries = collect_mask_geometries(value)
+    if not geometries:
+        return
+
+    # Check every gate before object reads, advisory locks, or upload association.
+    for geometry in geometries:
+        _assert_raster_mask_create_enabled(geometry)
+
+    if task is None:
         raise RasterMaskContractError(
-            status_code=422,
-            reason="mask_geometry_invalid",
-            message=f"mask geometry is invalid: {exc}",
-        ) from exc
-    try:
-        await lock_raster_mask_references(
-            db,
-            geometry,
-            task_id=task.id,
-            require_raster_foreground=geometry.get("type") == "raster_mask",
+            status_code=409,
+            reason="mask_task_context_missing",
+            message="mask persistence requires an existing task",
         )
+
+    for geometry in geometries:
+        try:
+            await validate_mask_geometry_for_task(db, task, geometry)
+        except RasterMaskContractError:
+            raise
+        except ValueError as exc:
+            raise RasterMaskContractError(
+                status_code=422,
+                reason="mask_geometry_invalid",
+                message=f"mask geometry is invalid: {exc}",
+            ) from exc
+
+    # Verify every referenced object before associating any upload with the row.
+    # The transaction-scoped advisory locks remain held through the final claim.
+    try:
+        for geometry in geometries:
+            await lock_raster_mask_references(
+                db,
+                geometry,
+                require_raster_foreground=geometry.get("type") == "raster_mask",
+            )
+        await lock_raster_mask_references(db, value, verify=False, task_id=task.id)
     except RasterMaskContractError:
         raise
     except (KeyError, ValueError) as exc:
@@ -317,6 +365,15 @@ async def prepare_mask_geometry_for_annotation_write(
             reason="mask_storage_unavailable",
             message="mask object storage is unavailable",
         ) from exc
+
+
+async def prepare_mask_geometry_for_annotation_write(
+    db: AsyncSession,
+    task: Task | None,
+    geometry: dict[str, Any],
+) -> None:
+    """Backward-compatible direct-geometry wrapper for annotation writes."""
+    await prepare_mask_payload_for_write(db, task, geometry)
 
 
 def canonical_rle_bytes(rle: dict[str, Any]) -> bytes:

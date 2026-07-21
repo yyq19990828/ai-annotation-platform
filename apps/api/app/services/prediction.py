@@ -12,6 +12,7 @@ from app.db.models.prediction import Prediction, PredictionMeta, FailedPredictio
 from app.db.models.task import Task
 from app.schemas._jsonb_types import TOOL_UNIT_IDS as _SCHEMA_TOOL_UNIT_IDS
 from app.services.annotation_propagation import _new_track_id
+from app.services.raster_mask_storage import prepare_mask_payload_for_write
 
 logger = logging.getLogger("app.services.prediction")
 
@@ -425,9 +426,8 @@ class PredictionService:
     ) -> Prediction:
         # v0.21.1 · 检测式追踪原生 int track_id → trk_<uuid> (读路径不得再生 uuid, 见 _remap_track_ids)。
         result = _remap_track_ids(result)
-        from app.services.raster_mask_storage import lock_raster_mask_references
-
-        await lock_raster_mask_references(self.db, result)
+        task = await self.db.get(Task, task_id)
+        await prepare_mask_payload_for_write(self.db, task, result)
         prediction = Prediction(
             id=uuid.uuid4(),
             task_id=task_id,

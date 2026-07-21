@@ -31,8 +31,8 @@ from app.services.annotation_propagation import (
 )
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
-    lock_raster_mask_references,
     prepare_mask_geometry_for_annotation_write,
+    prepare_mask_payload_for_write,
 )
 
 logger = logging.getLogger("app.services.annotation")
@@ -172,8 +172,7 @@ class AnnotationService:
         if parent_annotation_id is not None:
             await self._validate_parent_annotation(task_id, parent_annotation_id)
 
-        if task is not None:
-            await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
+        await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
         geometry, track_id = prepare_compact_track_identity(geometry)
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -227,6 +226,28 @@ class AnnotationService:
         if not prediction:
             return None
 
+        # Convert and validate every selected geometry before constructing or adding
+        # any Annotation row.  This closes the accept path that previously bypassed
+        # the raster create gate and linked uploads immediately before flush.
+        from app.services.prediction import to_internal_shape
+
+        raw_shapes = list(prediction.result or [])
+        if shape_index is not None:
+            if not (0 <= shape_index < len(raw_shapes)):
+                return None
+            indexed = [(shape_index, to_internal_shape(raw_shapes[shape_index]))]
+        else:
+            indexed = [
+                (index, to_internal_shape(raw_shape))
+                for index, raw_shape in enumerate(raw_shapes)
+            ]
+        task = await self.db.get(Task, prediction.task_id)
+        await prepare_mask_payload_for_write(
+            self.db,
+            task,
+            [shape.get("geometry", {}) for _, shape in indexed],
+        )
+
         # v0.20.10 · 属性级溯源: 从 PredictionMeta.extra.pipeline 建「AI 富集属性键 → model_ref」
         # 映射。pipeline 是 stage 级 (非 per-key), 但 enriched key = f"{label}_{k}" if label else k
         # (与 tasks.py:_run_task_pipeline 一致), 故能精确反推每个键出自哪个 stage 的 backend/model。
@@ -256,7 +277,6 @@ class AnnotationService:
                     ai_key_model[f"{prefix}{k}"] = model_ref
 
         # v0.9.7 fix · prediction.result 是 LabelStudio 标准, 转内部 schema 后入 annotation
-        from app.services.prediction import to_internal_shape
         from app.db.models.project import Project
 
         # B-11 · DINO 写入的 class_name 是项目类别的英文 alias; 采纳时反查
@@ -292,17 +312,8 @@ class AnnotationService:
                 if isinstance(fkey, str) and opts:
                     attr_select_options[fkey] = opts
 
-        raw_shapes = list(prediction.result or [])
-        if shape_index is not None:
-            if not (0 <= shape_index < len(raw_shapes)):
-                return None
-            indexed = [(shape_index, raw_shapes[shape_index])]
-        else:
-            indexed = list(enumerate(raw_shapes))
-
         anns: list[Annotation] = []
-        for idx, raw_shape in indexed:
-            shape = to_internal_shape(raw_shape)
+        for idx, shape in indexed:
             raw_class = shape.get("class_name", "") or ""
             # v0.14.17 · 采纳时选类: override_class_name 非空时直接用它 (人工指定项目标签),
             # 跳过 alias 反查 — 用于"预测类名既不在标签集、又无 alias 命中"时让人当场选类落库,
@@ -395,11 +406,6 @@ class AnnotationService:
             self.db.add(annotation)
             anns.append(annotation)
 
-        await lock_raster_mask_references(
-            self.db,
-            [annotation.geometry for annotation in anns],
-            task_id=prediction.task_id,
-        )
         await self.db.flush()
         await self._update_task_stats(prediction.task_id)
         return anns
@@ -1096,10 +1102,7 @@ class AnnotationService:
             )
         if geometry is not None:
             task = await self.db.get(Task, annotation.task_id)
-            if task is not None:
-                await prepare_mask_geometry_for_annotation_write(
-                    self.db, task, geometry
-                )
+            await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
             try:
                 geometry, track_id = prepare_compact_track_identity(
                     geometry,

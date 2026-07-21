@@ -17,6 +17,7 @@ from app.schemas.annotation import (
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
 from app.services.prediction import PredictionService
+from app.services.raster_mask_storage import RasterMaskContractError
 from app.services.task_lock import TaskLockService
 
 
@@ -162,13 +163,16 @@ async def accept_prediction(
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
-    anns = await svc.accept_prediction(
-        prediction_id,
-        current_user.id,
-        shape_index=shape_index,
-        override_class_name=override_class_name,
-        attribute_overrides=attribute_overrides,
-    )
+    try:
+        anns = await svc.accept_prediction(
+            prediction_id,
+            current_user.id,
+            shape_index=shape_index,
+            override_class_name=override_class_name,
+            attribute_overrides=attribute_overrides,
+        )
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     # v0.20.22 · 契约: None → 404 (prediction 不存在 / shape_index 越界); 成功 →
     # 仅返回本次新建的 annotation 列表。原实现另跑 list_by_task 返回整题全量,
     # 前端把全量当"刚新建"逐条 PATCH 合并 AI 候选属性 → 污染人工标注 (改动 1 根因)。
