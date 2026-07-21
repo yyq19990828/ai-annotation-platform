@@ -1,10 +1,10 @@
 # 图像 / 视频栅格 Mask 能力统一 Epic
 
-> Status: Draft · 2026-07-21
+> Status: In progress（Phase 1–2 completed，Phase 3 implementation started）· 2026-07-21
 >
 > 起始版本：v0.23.5
 >
-> 当前基线：v0.23.4，审计基线 commit `b71cd2c6`。
+> 当前基线：v0.23.6 实施完成，基线 commit `07aca6f8`；生产图片 create 总闸保持关闭。
 >
 > 相关决策：[ADR-0022 Mask 编辑器 v1](../adr/archive/0022-mask-editor-tool-architecture.md) ·
 > [ADR-0048 视频栅格 Mask 内容寻址 RLE](../adr/archive/0048-video-raster-mask-content-addressed-rle.md) ·
@@ -40,9 +40,9 @@ ADR-0022 的过渡决策，会丢失 hole、多连通区域和原始像素边界
 |---|---|---|---|
 | [v0.23.5](2026-07-21-v0.23.5-mask-reliability-security-foundation.md) | 可靠性与安全地基 | 防丢稿、异步隔离、锁与 Delete 语义、安全解压、accept 并发、polygon hole / multi 止血 | v0.23.4 |
 | [v0.23.6](2026-07-21-v0.23.6-shared-rle-image-mask-schema.md) | 共享 RLE 与图片 geometry | ADR-0052、`raster_mask`、静态内容 API、AAP / COCO 后端闭环 | v0.23.5 |
-| [v0.23.7](2026-07-21-v0.23.7-image-mask-workbench-native-editing.md) | 图片原生 Mask 工作台 | 原生渲染、alpha picking、创建 / 重载 / 再编辑、显式 polygon 转换 | v0.23.6 |
+| [v0.23.7](2026-07-21-v0.23.7-image-mask-workbench-native-editing.md) | 图片原生 Mask 工作台 | 对象级安全渲染、alpha picking、项目 opt-in、创建 / 重载 / 再编辑、单对象双向显式转换 | v0.23.6 |
 | [v0.23.8](2026-07-21-v0.23.8-mask-ai-interaction-video-correction.md) | AI 原生 Mask 与视频修正 | 单帧 SAM 原生 RLE、mask-as-prompt、scribble、局部视频纠错再传播 | v0.23.7 |
-| [v0.23.9](2026-07-21-v0.23.9-mask-advanced-editing-instance-operations.md) | 高级编辑与实例操作 | 套索增减、连通域、填洞、形态学、非重叠绘制、显式转换 | v0.23.8 |
+| [v0.23.9](2026-07-21-v0.23.9-mask-advanced-editing-instance-operations.md) | 高级编辑与实例操作 | 套索增减、连通域、填洞、形态学、非重叠绘制、批量 / 视频 / 派生几何转换 | v0.23.8 |
 | [v0.23.10](2026-07-21-v0.23.10-mask-performance-large-canvas.md) | 性能与大画布 | 字节预算缓存、AABB 裁剪、Worker、tile editor、5K / 8K 可用性 | v0.23.9 |
 | [v0.23.11](2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md) | 质检、审阅与格式生态 | Mask QC、跨帧稳定性、局部接受、Label Studio / PNG / MOTS 等格式 | v0.23.10 |
 | [v0.24.0](2026-07-21-v0.24.0-semantic-panoptic-mask-workflows.md) | 语义 / 全景分割 | class-map、instance + semantic 合成、冲突策略、16-bit 输出与专用工作流 | v0.23.11 |
