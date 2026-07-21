@@ -18,6 +18,7 @@ import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaMaskLayer } from "./VideoKonvaMaskLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import { canCommitMask, canEditMask } from "../state/canEditMask";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import { VideoKonvaInteractionLayer, type VideoHandleBox, type VideoPreviewBox } from "./VideoKonvaInteractionLayer";
@@ -624,10 +625,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const handleStagePointerDown = useCallback((e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
     // v0.23.5 · WS-C · 视频 mask 落点经 canEditMask: 同时检查 task readOnly、选中轨迹 lock、
     // annotation is_locked, 关闭锁定对象经视频 pointer 路径修改的绕过。
-    const selTrackLocked = selectedId ? lockedTrackIds.has(selectedId) : false;
-    if (videoTool === "mask" && maskEditor && !readOnly && !isPlaybackActive
-      && !selTrackLocked
-      && !selectedManagedTrack?.is_locked) {
+    const selectedTrackId = selectedManagedTrack?.geometry.track_id;
+    const maskEditable = !!maskEditor && canEditMask({
+      taskReadOnly: !!readOnly || isPlaybackActive,
+      annotationLocked: !!selectedManagedTrack?.is_locked,
+      trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
+      segmentLocked: false,
+      editorPhase: maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
+    });
+    if (videoTool === "mask" && maskEditor && maskEditable) {
       const native = e.evt;
       if (native.button !== 0) return;
       const point = pointFromClientEvt(native.clientX, native.clientY);
@@ -661,7 +667,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskEditor, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, selectedId, selectedManagedTrack, size.h, size.w, videoTool]);
+  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskEditor, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, selectedManagedTrack, size.h, size.w, videoTool]);
 
   useEffect(() => {
     if (videoTool !== "mask" || !maskEditor) return;
@@ -669,9 +675,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       const target = event.target;
       if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
       const command = event.ctrlKey || event.metaKey;
+      const selectedTrackId = selectedManagedTrack?.geometry.track_id;
+      const phase = maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle");
+      const editable = canEditMask({
+        taskReadOnly: !!readOnly || isPlaybackActive,
+        annotationLocked: !!selectedManagedTrack?.is_locked,
+        trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
+        segmentLocked: false,
+        editorPhase: phase,
+      });
       if (command && event.key.toLowerCase() === "z") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (!editable) return;
         if (event.shiftKey) maskEditor.redo();
         else maskEditor.undo();
         return;
@@ -679,20 +695,24 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (command && event.key.toLowerCase() === "y") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (!editable) return;
         maskEditor.redo();
         return;
       }
       if (event.key === "b" || event.key === "B") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (!editable) return;
         maskEditor.setMode("brush");
       } else if (event.key === "e" || event.key === "E") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (!editable) return;
         maskEditor.setMode("erase");
       } else if (event.key === "Enter") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (!editable || !canCommitMask(phase, maskEditor.dirty)) return;
         onMaskCommit?.();
       } else if (event.key === "Escape") {
         event.preventDefault();
@@ -702,7 +722,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [maskEditor, onMaskCancel, onMaskCommit, videoTool]);
+  }, [isPlaybackActive, lockedTrackIds, maskEditor, onMaskCancel, onMaskCommit, readOnly, selectedManagedTrack, videoTool]);
 
   // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
   useEffect(() => {
@@ -1056,7 +1076,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (videoTool === "mask") setMaskCursor(inFrame);
     }
     const maskStroke = maskStrokeRef.current;
-    if (maskStroke && maskEditor) {
+    const selectedTrackId = selectedManagedTrack?.geometry.track_id;
+    const maskEditable = !!maskEditor && canEditMask({
+      taskReadOnly: !!readOnly || isPlaybackActive,
+      annotationLocked: !!selectedManagedTrack?.is_locked,
+      trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
+      segmentLocked: false,
+      editorPhase: maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
+    });
+    if (maskStroke && maskEditor && maskEditable) {
       const point = pointFromClientEvt(evt.clientX, evt.clientY);
       if (point) {
         const x = point.x * size.w;
@@ -1078,7 +1106,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const dy = evt.clientY - start.y;
     panRef.current = { x: evt.clientX, y: evt.clientY };
     setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
-  }, [maskEditor, onCursorMove, pointFromClientEvt, pointsDrawEnabled, setVp, showPlaybackOverlay, size, videoTool, vpRef]);
+  }, [isPlaybackActive, lockedTrackIds, maskEditor, onCursorMove, pointFromClientEvt, pointsDrawEnabled, readOnly, selectedManagedTrack, setVp, showPlaybackOverlay, size, videoTool, vpRef]);
 
   const endPan = useCallback(() => {
     if (maskStrokeRef.current) {

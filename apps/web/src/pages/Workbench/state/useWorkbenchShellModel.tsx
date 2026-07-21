@@ -129,8 +129,8 @@ import {
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
 import { useMaskEditor } from "./useMaskEditor";
-import { useMaskEditorSession, type MaskSessionKey } from "./useMaskEditorSession";
-import { canEditMask } from "./canEditMask";
+import { promptMaskLeaveChoice, useMaskEditorSession, type MaskSessionKey } from "./useMaskEditorSession";
+import { canCommitMask, canEditMask } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import {
@@ -224,13 +224,20 @@ export function useWorkbenchShellModel({
     () => resolveWorkbenchReturnTo(returnTo, currentPath),
     [returnTo, currentPath],
   );
-  const onBack = useCallback(() => navigate(backTarget), [navigate, backTarget]);
+  const maskNavigationGuardRef = useRef<() => Promise<boolean>>(async () => true);
+  const onBack = useCallback(() => {
+    void maskNavigationGuardRef.current().then((allowed) => {
+      if (allowed) navigate(backTarget);
+    });
+  }, [navigate, backTarget]);
   const updateUrl = useCallback(
     (opts: { batchId?: string | null; taskId?: string | null; replace?: boolean }) => {
       const nextUrl = updateWorkbenchUrlSearch(location, opts);
-      if (nextUrl !== currentPath) {
-        navigate(nextUrl, { replace: opts.replace ?? false });
-      }
+      void maskNavigationGuardRef.current().then((allowed) => {
+        if (allowed && nextUrl !== currentPath) {
+          navigate(nextUrl, { replace: opts.replace ?? false });
+        }
+      });
     },
     [currentPath, location, navigate],
   );
@@ -465,9 +472,12 @@ export function useWorkbenchShellModel({
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
   const selectTask = useCallback(
     (id: string, opts: { replace?: boolean } = {}) => {
-      setCurrentTaskId(id);
-      setSelectedId(null);
-      updateUrl({ batchId: selectedBatchId, taskId: id, replace: opts.replace });
+      void maskNavigationGuardRef.current().then((allowed) => {
+        if (!allowed) return;
+        setCurrentTaskId(id);
+        setSelectedId(null);
+        updateUrl({ batchId: selectedBatchId, taskId: id, replace: opts.replace });
+      });
     },
     [selectedBatchId, setCurrentTaskId, setSelectedId, updateUrl],
   );
@@ -1531,8 +1541,8 @@ export function useWorkbenchShellModel({
     drawerOpen: offlineDrawerOpen, openDrawer: openOfflineDrawer, closeDrawer: closeOfflineDrawer } = offlineQ;
 
   const isLockedForActions = mode === "review"
-    ? task?.status === "completed"
-    : task?.status === "review" || task?.status === "completed";
+    ? task?.status === "completed" || !!lockConflict || !!lockError
+    : task?.status === "review" || task?.status === "completed" || !!lockConflict || !!lockError;
   const maskEditorSize = resolveMaskEditorSize(
     isVideoTask,
     stageGeom,
@@ -1549,30 +1559,84 @@ export function useWorkbenchShellModel({
     () => ({
       taskId,
       frameIndex: isVideoTask ? s.videoFrameIndex : 0,
+      toolKey: isVideoTask ? `video:${s.videoTool}` : `image:${s.tool}`,
+      routeKey: currentPath,
       selectionKey: maskSessionSelection,
       annotationVersion: maskSessionAnnotationVersion,
     }),
-    [taskId, isVideoTask, s.videoFrameIndex, maskSessionSelection, maskSessionAnnotationVersion],
+    [taskId, isVideoTask, s.videoFrameIndex, s.videoTool, s.tool, currentPath, maskSessionSelection, maskSessionAnnotationVersion],
   );
-  // v0.23.5 · WS-B/P1 · 离开 dirty session 的 guard: 通知用户有未保存稿件。
-  // 本版用 toast 提示 (保存/丢弃/继续由用户在 MaskToolbar 操作); onLeaveDirty 不阻塞
-  // generation 推进, 仅提醒。后续可升级为模态确认。
+  const maskPhaseStateRef = useRef<"idle" | "loading" | "ready" | "dirty" | "saving" | "error">("idle");
+  const commitCurrentMaskRef = useRef<() => Promise<boolean>>(async () => false);
+  // 离开 dirty session 必须先取得明确决定。取消即恢复旧 task/frame/tool/selection，
+  // 确认才丢弃；session hook 仅在 guard 完成后推进 generation。
   const handleMaskLeaveDirty = useCallback(
-    async (_key: MaskSessionKey) => {
+    async (previous: MaskSessionKey, next: MaskSessionKey) => {
+      const applyContext = (key: MaskSessionKey) => {
+        if (key.taskId) setCurrentTaskId(key.taskId);
+        setVideoFrameIndex(key.frameIndex);
+        setSelectedId(key.selectionKey === "blank" ? null : key.selectionKey);
+        const [toolScope, targetTool] = (key.toolKey ?? "").split(":", 2);
+        if (toolScope === "video" && targetTool) setVideoTool(targetTool as VideoTool);
+        if (toolScope === "image" && targetTool) s.setTool(targetTool as ToolId);
+        if (key.routeKey && key.routeKey !== currentPath) navigate(key.routeKey, { replace: true });
+      };
       pushToast({
         msg: "有未保存的 Mask 稿件",
-        sub: "切走前请按 Enter 保存或 Esc 丢弃",
+        sub: "确认可丢弃；取消将继续编辑",
         kind: "warning",
       });
+      if (maskPhaseStateRef.current === "saving") {
+        pushToast({ msg: "Mask 正在保存", sub: "保存完成后再离开", kind: "warning" });
+        applyContext(previous);
+        return "continue" as const;
+      }
+      const choice = promptMaskLeaveChoice((message) => window.confirm(message));
+      if (choice === "save") {
+        // 先回到旧上下文再提交，避免把旧 Buffer 落到新 task/frame/selection。
+        applyContext(previous);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        const saved = await commitCurrentMaskRef.current();
+        if (saved) {
+          applyContext(next);
+          return "save" as const;
+        }
+      }
+      if (choice === "discard") return "discard" as const;
+
+      // continue 必须真正留在旧上下文，不能只保留一块已错配到新帧/新题的 Buffer。
+      applyContext(previous);
       return "continue" as const;
     },
-    [pushToast],
+    [currentPath, navigate, pushToast, s, setCurrentTaskId, setSelectedId, setVideoFrameIndex, setVideoTool],
   );
   const maskEditor = useMaskEditorSession({
     ...maskEditorSize,
     sessionKey: maskSessionKey,
     onLeaveDirty: handleMaskLeaveDirty,
   });
+  maskPhaseStateRef.current = maskEditor.phase;
+  maskNavigationGuardRef.current = async () => {
+    if (!maskEditor.active || !maskEditor.dirty) return true;
+    if (maskEditor.phase === "saving") {
+      pushToast({ msg: "Mask 正在保存", sub: "保存完成后再离开", kind: "warning" });
+      return false;
+    }
+    const choice = promptMaskLeaveChoice((message) => window.confirm(message));
+    if (choice === "continue") return false;
+    if (choice === "save") return commitCurrentMaskRef.current();
+    maskEditor.cancel();
+    return true;
+  };
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!maskEditor.active || !maskEditor.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [maskEditor.active, maskEditor.dirty]);
 
   const imageActions = useImageAnnotationActions({
     taskId,
@@ -1595,6 +1659,8 @@ export function useWorkbenchShellModel({
     keypointNodeCount: toolView.keypointSchema?.nodes.length ?? 0,
     sam,
     createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
+    updateAnnotationAsync: (annotationId, payload) =>
+      updateAnnotationMut.mutateAsync({ annotationId, payload }),
     isLocked: isLockedForActions,
     enqueueOnError,
     maskEditor,
@@ -1847,16 +1913,23 @@ export function useWorkbenchShellModel({
     : "";
   const maskLoadRle = maskEditor.loadRle;
   const maskLoadBlank = maskEditor.loadBlank;
-  const maskCancel = maskEditor.cancel;
+  const maskFailLoad = maskEditor.failLoad;
+  const maskMarkReady = maskEditor.markReady;
   const maskGeneration = maskEditor.generation;
+  const maskAcceptedSessionId = maskEditor.acceptedSessionId;
+  const maskRequestedSessionId = maskEditor.sessionId;
   useEffect(() => {
-    if (!isVideoTask) return;
-    if (s.videoTool !== "mask") {
-      maskCancel();
+    if (maskAcceptedSessionId !== maskRequestedSessionId) return;
+    if (!isVideoTask) {
+      if (s.tool !== "mask" || maskEditor.phase !== "loading") return;
+      if (maskEditor.active) maskMarkReady(maskGeneration);
+      else maskLoadBlank(maskGeneration);
       return;
     }
+    if (s.videoTool !== "mask") return;
+    if (maskEditor.phase !== "loading") return;
     if (!selectedVideoMask) {
-      maskCancel();
+      maskLoadBlank(maskGeneration);
       return;
     }
     // v0.23.5 · WS-B/A1 · 捕获本次加载的 generation, 交给 loadRle/loadBlank 隔离迟到回包。
@@ -1872,27 +1945,40 @@ export function useWorkbenchShellModel({
           maskLoadBlank(gen);
           return;
         }
-        maskCancel();
+        maskFailLoad(gen, error);
         pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
       });
-  }, [isVideoTask, maskCancel, maskLoadRle, maskLoadBlank, maskGeneration, pushToast, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
+  }, [isVideoTask, maskAcceptedSessionId, maskRequestedSessionId, maskLoadRle, maskLoadBlank, maskFailLoad, maskMarkReady, maskGeneration, maskEditor.active, maskEditor.phase, pushToast, s.tool, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
 
   const cancelVideoMaskEdit = useCallback(() => {
     maskEditor.cancel();
     s.setVideoTool("select");
   }, [maskEditor, s]);
   const commitVideoMask = useCallback(() => {
+    const trackLocked = !!selectedVideoMask
+      && s.lockedVideoTrackIds.has(selectedVideoMask.geometry.track_id);
+    if (!canEditMask({
+      taskReadOnly: isLockedForActions,
+      annotationLocked: !!selectedVideoMask?.is_locked,
+      trackLocked,
+      segmentLocked: !!lockConflict || !!lockError,
+      editorPhase: maskEditor.phase,
+    }) || !canCommitMask(maskEditor.phase, maskEditor.dirty)) {
+      pushToast({ msg: "当前 Mask 不可提交", sub: "请检查锁状态或等待加载/保存完成", kind: "warning" });
+      return Promise.resolve({ ok: false, retryable: false });
+    }
     const rle = maskEditor.commitToRle();
     if (!rle || !maskEditor.buffer || maskEditor.buffer.countSet() === 0) {
       pushToast({ msg: "Mask 为空，未提交", kind: "warning" });
-      return;
+      return Promise.resolve({ ok: false, retryable: false });
     }
     // v0.23.5 · WS-B/A7 · 经 session 单飞 save: 重复 Enter / 双击只产生一次 mutation;
     // 失败保留 buffer/history 进入 error 相位, 可 retry (A2)。
-    void maskEditor
+    let committedAnnotation: AnnotationResponse | null = null;
+    return maskEditor
       .save(async () => {
         try {
-          await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
+          committedAnnotation = await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
           return { ok: true, retryable: false };
         } catch (error: unknown) {
           const retryable = error instanceof ApiError
@@ -1905,6 +1991,7 @@ export function useWorkbenchShellModel({
         if (result.ok) {
           maskEditor.cancel();
           s.setVideoTool("select");
+          if (committedAnnotation) s.setSelectedId(committedAnnotation.id);
         } else {
           pushToast({
             msg: "Mask 保存失败",
@@ -1912,8 +1999,15 @@ export function useWorkbenchShellModel({
             kind: "error",
           });
         }
+        return result;
       });
-  }, [handleVideoMaskCommit, maskEditor, pushToast, s, selectedVideoMask]);
+  }, [handleVideoMaskCommit, isLockedForActions, lockConflict, lockError, maskEditor, pushToast, s, selectedVideoMask]);
+  commitCurrentMaskRef.current = async () => {
+    const result = isVideoTask
+      ? await commitVideoMask()
+      : await commitMaskAsPolygon();
+    return result.ok;
+  };
 
   // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
   // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
@@ -2238,7 +2332,7 @@ export function useWorkbenchShellModel({
         schema: { fields: mutableFields },
         attributes: ann.attributes ?? {},
         context: "video",
-        readOnly: isLocked,
+        readOnly: isLocked || !!lockConflict || !!lockError,
         onChange: (next) => handleUpdateTrackAttributes(ann, next),
       };
     }
@@ -3142,7 +3236,7 @@ export function useWorkbenchShellModel({
       common: {
         stageKind,
         taskId: taskId ?? null,
-        readOnly: isLocked,
+        readOnly: isLocked || !!lockConflict || !!lockError,
         activeClass: s.activeClass,
         selectedId: s.selectedId,
         selectedIds: s.selectedIds,
@@ -3182,11 +3276,14 @@ export function useWorkbenchShellModel({
                   const sel = s.selectedId
                     ? visibleAnnotationsData.find((a) => a.id === s.selectedId)
                     : null;
+                  const trackLocked = isVideoTask && sel && isVideoMaskTrack(sel)
+                    ? s.lockedVideoTrackIds.has(sel.geometry.track_id)
+                    : false;
                   return canEditMask({
                     taskReadOnly: isLockedForActions,
                     annotationLocked: !!sel?.is_locked,
-                    trackLocked: false,
-                    segmentLocked: false,
+                    trackLocked,
+                    segmentLocked: !!lockConflict || !!lockError,
                     editorPhase: maskEditor.phase,
                   });
                 })()}

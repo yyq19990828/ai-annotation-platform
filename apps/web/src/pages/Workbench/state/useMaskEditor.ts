@@ -16,6 +16,7 @@ import { useCallback, useRef, useState } from "react";
 import { MaskBuffer } from "../stage/shared/geometry/maskBuffer";
 import { maskToPolygon } from "../stage/shared/geometry/maskToPolygon";
 import type { CocoRle } from "../stage/shared/geometry/maskRle";
+import type { MaskEditorPhase } from "./canEditMask";
 
 export type MaskMode = "brush" | "erase";
 
@@ -33,6 +34,8 @@ export interface UseMaskEditorOptions {
 }
 
 export interface UseMaskEditorReturn {
+  /** 会话包装器注入；裸编辑器缺省时由调用方按 active/dirty 推导。 */
+  phase?: MaskEditorPhase;
   /** 是否处于活跃编辑态。`initFromPolygon` / `beginBlank` 后变 true；`cancel` / `commitToPolygon` 后清空。 */
   active: boolean;
   /** 当前模式：笔刷 / 橡皮。 */

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
-import type { AnnotationPayload } from "@/api/tasks";
+import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
+import { ApiError } from "@/api/client";
 import type { ToolBindings } from "@/api/projects";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import { dedupeAiBoxesById } from "../../stage/aiBoxFrames";
@@ -20,7 +21,7 @@ import {
   type PredictionSourceFilter,
 } from "../../state/transforms";
 import { samCandidateGeom } from "../../state/useWorkbenchShellModel.helpers";
-import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
+import type { UseMaskEditorSessionReturn } from "../../state/useMaskEditorSession";
 import { canEditMask } from "../../state/canEditMask";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
@@ -97,11 +98,15 @@ interface UseImageAnnotationActionsArgs {
   keypointNodeCount?: number;
   sam: UseInteractiveAIReturn;
   createAnnotationAsync: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
+  updateAnnotationAsync: (
+    annotationId: string,
+    payload: AnnotationUpdatePayload,
+  ) => Promise<AnnotationResponse>;
   mutations: AnnotationMutations;
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   isLocked?: boolean;
   /** v0.10.8 · 由 WorkbenchShell 注入；mask 编辑器状态层。空时 refine/commitMask 返回 false。 */
-  maskEditor?: UseMaskEditorReturn;
+  maskEditor?: UseMaskEditorSessionReturn;
   /** v0.20.22 · 桥接松手闪回, 见 usePendingGeom。 */
   markPendingGeom?: (id: string, geom: import("@/types").Geometry) => void;
 }
@@ -135,6 +140,23 @@ function acceptedPredictionShapeKeys(annotations: AnnotationResponse[] | undefin
   return set;
 }
 
+export function maskRefineBlockReason(
+  annotation: AnnotationResponse,
+  taskLocked: boolean,
+): string | null {
+  if (taskLocked || annotation.is_locked) return "对象已锁定，无法精修";
+  const geometry = annotation.geometry;
+  if (geometry.type === "multi_polygon"
+    || (Array.isArray((geometry as { holes?: unknown[] }).holes)
+      && (geometry as { holes?: unknown[] }).holes!.length > 0)) {
+    return "复杂几何暂不支持 Mask 精修";
+  }
+  if (geometry.type !== "polygon" || geometry.points.length < 3) {
+    return "仅支持 polygon 标注的精修";
+  }
+  return null;
+}
+
 export function useImageAnnotationActions({
   taskId,
   projectId,
@@ -156,6 +178,7 @@ export function useImageAnnotationActions({
   keypointNodeCount = 0,
   sam,
   createAnnotationAsync,
+  updateAnnotationAsync,
   mutations,
   enqueueOnError,
   isLocked = false,
@@ -750,10 +773,12 @@ export function useImageAnnotationActions({
       pushToast({ msg: "未找到该标注", kind: "warning" });
       return;
     }
-    if (ann.geometry.type !== "polygon" || ann.geometry.points.length < 3) {
-      pushToast({ msg: "仅支持 polygon 标注的精修", kind: "warning" });
+    const blocked = maskRefineBlockReason(ann, isLocked);
+    if (blocked) {
+      pushToast({ msg: blocked, kind: "warning" });
       return;
     }
+    if (ann.geometry.type !== "polygon") return;
     if (!initMaskFromNormalizedPoints(ann.geometry.points)) return;
     pendingRefineRef.current = {
       kind: "user",
@@ -763,31 +788,36 @@ export function useImageAnnotationActions({
     };
     s.setTool("mask");
     s.setSelectedId(null);
-  }, [annotationsRef, initMaskFromNormalizedPoints, pushToast, s]);
+  }, [annotationsRef, initMaskFromNormalizedPoints, isLocked, pushToast, s]);
 
   const commitMaskAsPolygon = useCallback(() => {
-    if (!maskEditor) return;
+    if (!maskEditor) return Promise.resolve({ ok: false, retryable: false });
     // v0.23.5 · WS-C · 提交边界 defense-in-depth: 即便 Enter hotkey 漏判, commit 本身也
     // 经 canEditMask 拦截锁定对象 (task 只读 / 选中 annotation is_locked)。
-    const sel = s.selectedId
-      ? annotationsRef.current.find((a) => a.id === s.selectedId)
+    const refine = pendingRefineRef.current;
+    const refinedAnnotation = refine?.kind === "user"
+      ? annotationsRef.current.find((a) => a.id === refine.annotationId)
       : null;
+    const sel = refinedAnnotation ?? (s.selectedId
+      ? annotationsRef.current.find((a) => a.id === s.selectedId)
+      : null);
     if (
       !canEditMask({
         taskReadOnly: !!isLocked,
         annotationLocked: !!sel?.is_locked,
         trackLocked: false,
         segmentLocked: false,
-        editorPhase: maskEditor.dirty ? "dirty" : "ready",
+        editorPhase: maskEditor.phase,
       })
     ) {
       pushToast({ msg: "对象已锁定,无法提交 Mask", kind: "warning" });
-      return;
+      return Promise.resolve({ ok: false, retryable: false });
     }
+    if (!maskEditor.dirty) return Promise.resolve({ ok: false, retryable: false });
     const out = maskEditor.commitToPolygon();
     if (!out) {
       pushToast({ msg: "Mask 为空,无可提交几何", kind: "warning" });
-      return;
+      return Promise.resolve({ ok: false, retryable: false });
     }
     // v0.23.5 WS-E (ADR-0052 D5 / P4) · 止血: mask 含多连通分量 (或孔) 时转换有损,
     // 禁止静默取最大环落库。阻断本次提交, 弹 warning toast 说明原因, 保留 mask 编辑态
@@ -796,64 +826,83 @@ export function useImageAnnotationActions({
     if (out.lossy) {
       const dropped = out.droppedComponents ? ` (丢弃 ${out.droppedComponents} 个连通分量)` : "";
       pushToast({
-        msg: "Mask 含多连通区域,无法无损保存为 polygon",
-        sub: `${out.lossyReason ?? ""}${dropped}`,
+        msg: "Mask 无法无损保存为 polygon",
+        sub: `${out.lossyReason ?? "含多连通区域或孔洞"}${dropped}`,
         kind: "warning",
       });
-      return;
+      return Promise.resolve({ ok: false, retryable: false });
     }
-    const refine = pendingRefineRef.current;
     const labelForCommit = refine ? refine.labelId : s.activeClass;
     if (!labelForCommit) {
       pushToast({ msg: "请先选择类别", kind: "warning" });
-      return;
+      return Promise.resolve({ ok: false, retryable: false });
     }
     const { imgW, imgH } = stageGeom;
     // maskToPolygon 输出像素坐标 → 归一化 [0,1]。
     const normPoints: [number, number][] = out.points.map(([x, y]) => [x / imgW, y / imgH]);
 
-    if (refine?.kind === "user") {
-      // 原地替换 geometry，走 update mutation + history.push update；不新建 annotation。
-      const before = { geometry: refine.beforeGeometry };
-      const after = { geometry: { type: "polygon", points: normPoints } as const };
-      mutations.update.mutate(
-        { annotationId: refine.annotationId, payload: after },
-        {
-          onSuccess: () => {
-            history.push({
-              kind: "update",
-              annotationId: refine.annotationId,
-              before,
-              after,
-            });
-            pushToast({ msg: "已更新 polygon", sub: `${out.points.length} 顶点`, kind: "success" });
-          },
-        },
-      );
-    } else {
-      // prediction / sam / 空白工具：新建 polygon。
-      if (refine?.kind === "prediction") {
-        setDismissedShapeKeys((prev) => {
-          const next = new Set(prev);
-          next.add(`pred-${refine.predictionId}-${refine.shapeIndex}`);
-          return next;
+    const geometry = { type: "polygon", points: normPoints } as const;
+    let createdAnnotation: AnnotationResponse | null = null;
+    return maskEditor.save(async () => {
+      try {
+        if (refine?.kind === "user") {
+          await updateAnnotationAsync(refine.annotationId, { geometry });
+        } else {
+          const payload: AnnotationPayload = {
+            annotation_type: "polygon",
+            tool_unit_id: "region",
+            class_name: labelForCommit,
+            geometry,
+            confidence: 1,
+            ...(refine?.kind === "prediction"
+              ? {
+                  parent_prediction_id: refine.predictionId,
+                  attributes: { _shape_index: refine.shapeIndex },
+                }
+              : {}),
+          };
+          createdAnnotation = await createAnnotationAsync(payload);
+          history.push({ kind: "create", annotationId: createdAnnotation.id, payload });
+          recordRecentClass(labelForCommit);
+        }
+        return { ok: true, retryable: false };
+      } catch (error: unknown) {
+        const retryable = !(error instanceof ApiError)
+          || error.status === 409
+          || error.status >= 500;
+        return { ok: false, retryable, error };
+      }
+    }).then((result) => {
+      if (!result.ok) {
+        pushToast({
+          msg: "Mask 保存失败",
+          sub: result.retryable ? "稿件与撤销历史已保留，可重试" : String(result.error),
+          kind: "error",
         });
-      } else if (refine?.kind === "sam") {
-        // 立即从 SAM 候选列表移除：避免 commit 后紫虚线还残留一条。
-        sam.consume(refine.samIdx);
+        return result;
       }
-      // submitPolygon 内部读 s.activeClass；refine 时先临时切到目标 label，再提交。
-      if (refine && refine.labelId !== s.activeClass) {
-        s.setActiveClass(refine.labelId);
+      if (refine?.kind === "user") {
+        const before = { geometry: refine.beforeGeometry };
+        const after = { geometry };
+        history.push({ kind: "update", annotationId: refine.annotationId, before, after });
+        pushToast({ msg: "已更新 polygon", sub: `${out.points.length} 顶点`, kind: "success" });
+      } else {
+        if (refine?.kind === "prediction") {
+          setDismissedShapeKeys((prev) => new Set(prev).add(`pred-${refine.predictionId}-${refine.shapeIndex}`));
+        } else if (refine?.kind === "sam") {
+          sam.consume(refine.samIdx);
+        }
+        pushToast({ msg: "已创建多边形", sub: `${out.points.length} 顶点 · ${labelForCommit}`, kind: "success" });
       }
-      submitPolygon(normPoints);
-    }
-    pendingRefineRef.current = null;
-    maskEditor.cancel();
-    s.setTool("box");
+      pendingRefineRef.current = null;
+      maskEditor.cancel();
+      s.setTool("box");
+      if (createdAnnotation) s.setSelectedId(createdAnnotation.id);
+      return result;
+    });
     // v0.23.5 WS-E · multipleComponents 的「仅落最大外环」toast 已移除: lossy 转换在
     // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
-  }, [maskEditor, s, annotationsRef, isLocked, submitPolygon, pushToast, stageGeom, mutations.update, history, sam]);
+  }, [maskEditor, s, annotationsRef, isLocked, pushToast, stageGeom, updateAnnotationAsync, createAnnotationAsync, history, recordRecentClass, sam]);
 
   const cancelMaskEdit = useCallback(() => {
     if (!maskEditor) return;

@@ -47,6 +47,11 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
 
     // Enter → 恰好一次 POST。
+    let commitPostCount = 0;
+    page.on("request", (request) => {
+      if (/\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(request.url())
+        && request.method() === "POST") commitPostCount += 1;
+    });
     const commitPost = page.waitForResponse(
       (resp) =>
         /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
@@ -57,6 +62,8 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.keyboard.press("Enter");
     const resp = await commitPost;
     expect(resp.status()).toBeLessThan(400);
+    await page.waitForTimeout(500);
+    expect(commitPostCount).toBe(1);
   });
 
   test("涂抹后切工具离开 dirty session 弹未保存提示", async ({ page, seed }) => {
@@ -82,23 +89,13 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.mouse.up();
     await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
 
-    // 切回 box 工具 → 离开 dirty session → onLeaveDirty 触发 toast。
-    // (sessionKey 变化因 tool 切换不直接改 frame/selection, 但 mask 工具退出会 cancel;
-    //  这里验证 toast 提示在切走时出现。)
-    const toastPromise = page.waitForResponse(
-      (resp) => resp.url().includes("/api/v1/") && resp.request().method() === "GET",
-      { timeout: 3_000 },
-    ).catch(() => null);
-    await page.keyboard.press("b"); // 退回 box 工具的主 dispatchKey 路径 (B 在非 mask 态是 box)
-    // 切到 box 工具按钮更可靠:
+    // 两段确认均取消 = continue，必须恢复旧工具与 Buffer。
+    page.on("dialog", (dialog) => void dialog.dismiss());
     const bboxBtn = page.getByTestId("tool-btn-box");
-    if (await bboxBtn.isVisible().catch(() => false)) {
-      await bboxBtn.click();
-    }
-    // toast 文案断言 (useToastStore 渲染的提示)
-    await expect(page.locator("text=有未保存的 Mask 稿件").first()).toBeVisible({ timeout: 5_000 }).catch(() => {
-      // 部分 session 切换路径 (tool 内切换) 不触发 sessionKey 变化; 至少验证 mask toolbar 已收起。
-    });
-    await toastPromise;
+    await expect(bboxBtn).toBeVisible();
+    await bboxBtn.click();
+    await expect(page.getByText("有未保存的 Mask 稿件").first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("mask-toolbar")).toBeVisible();
+    await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
   });
 });

@@ -16,6 +16,7 @@ import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX } from "../state/useMaskEditor";
+import { canEditMask } from "../state/canEditMask";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
@@ -770,6 +771,15 @@ export function ImageStage({
       } else if (d.kind === "maskBrush") {
         // v0.10.8 · 相邻两点线段插值 (步长 = radius/2)；不走 rAF 节流，避免漏笔。
         if (!maskEditor) return;
+        const phase = maskEditor.phase
+          ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle");
+        if (!canEditMask({
+          taskReadOnly: readOnly,
+          annotationLocked: !!primarySelectedBox?.is_locked,
+          trackLocked: false,
+          segmentLocked: false,
+          editorPhase: phase,
+        })) return;
         const px = pt.x * imgW;
         const py = pt.y * imgH;
         const dx = px - d.lastX;
@@ -897,7 +907,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH, snapImagePoint]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH, snapImagePoint, readOnly, primarySelectedBox?.is_locked]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {

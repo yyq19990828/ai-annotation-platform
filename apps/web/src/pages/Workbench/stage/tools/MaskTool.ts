@@ -27,7 +27,9 @@ export const MaskTool: CanvasToolMeta = {
         annotationLocked: !!annotationLocked,
         trackLocked: false,
         segmentLocked: false,
-        editorPhase: "ready",
+        // 裸 useMaskEditor 没有 phase，保留旧的 pointerdown→beginBlank 行为；
+        // session 包装器会明确给出 loading/saving 并在这里被拒绝。
+        editorPhase: maskEditor?.phase ?? "ready",
       })
     ) {
       return null;

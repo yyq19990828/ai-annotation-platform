@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useMaskEditorSession } from "./useMaskEditorSession";
+import { promptMaskLeaveChoice, useMaskEditorSession } from "./useMaskEditorSession";
 import type { MaskSessionKey } from "./useMaskEditorSession";
 
 const KEY_A: MaskSessionKey = {
@@ -50,6 +50,18 @@ const RLE_DIFFERENT: { encoding: "coco_rle"; size: [number, number]; counts: num
 };
 
 describe("useMaskEditorSession · A1 迟到 GET 不得覆盖当前 Buffer", () => {
+  it("paint revision 变化不会改变 load callback 引用", async () => {
+    const { result } = renderSession();
+    await act(async () => {
+      result.current.loadBlank(result.current.generation);
+    });
+    const loadRle = result.current.loadRle;
+    const loadBlank = result.current.loadBlank;
+    act(() => result.current.paintAt(5, 5));
+    expect(result.current.loadRle).toBe(loadRle);
+    expect(result.current.loadBlank).toBe(loadBlank);
+  });
+
   it("sessionKey 切换后旧 generation 的 loadRle 静默丢弃", async () => {
     const { result, rerender } = renderSession({ sessionKey: KEY_A });
     // session A 进入 loading → loadBlank 让它 ready
@@ -104,6 +116,39 @@ describe("useMaskEditorSession · A1 迟到 GET 不得覆盖当前 Buffer", () =
     // RLE_DIFFERENT = [200,200] → 第二段 200 个前景 → countSet === 200
     expect(result.current.buffer?.countSet()).toBe(200);
     expect(result.current.buffer?.countSet()).not.toBe(before);
+  });
+});
+
+describe("useMaskEditorSession · dirty leave guard", () => {
+  it("continue 不推进 generation，discard 才接受新 session", async () => {
+    const onLeaveDirty = vi.fn(async () => "continue" as const);
+    const { result, rerender } = renderSession({ sessionKey: KEY_A, onLeaveDirty });
+    await act(async () => result.current.loadBlank(result.current.generation));
+    act(() => result.current.paintAt(5, 5));
+    const generation = result.current.generation;
+
+    rerender({ sessionKey: KEY_B, onLeaveDirty });
+    await act(async () => { await Promise.resolve(); });
+    expect(onLeaveDirty).toHaveBeenCalledWith(KEY_A, KEY_B);
+    expect(result.current.generation).toBe(generation);
+    expect(result.current.acceptedSessionId).not.toBe(result.current.sessionId);
+    expect(result.current.buffer?.countSet()).toBeGreaterThan(0);
+
+    const discard = vi.fn(async () => "discard" as const);
+    rerender({ sessionKey: KEY_A, onLeaveDirty: discard });
+    await act(async () => { await Promise.resolve(); });
+    rerender({ sessionKey: KEY_B, onLeaveDirty: discard });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.generation).toBeGreaterThan(generation);
+    expect(result.current.phase).toBe("loading");
+  });
+
+  it("三段选择结果明确", () => {
+    expect(promptMaskLeaveChoice(vi.fn(() => true))).toBe("save");
+    expect(promptMaskLeaveChoice(vi.fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true))).toBe("discard");
+    expect(promptMaskLeaveChoice(vi.fn(() => false))).toBe("continue");
   });
 });
 
@@ -231,5 +276,37 @@ describe("useMaskEditorSession · A7 重复 Enter / 双击单飞去重", () => {
     });
     expect(result.current.phase).toBe("loading");
     expect(result.current.saveInFlight).toBe(false);
+  });
+
+  it("旧 save resolve 不会清除新 session 的单飞 Promise", async () => {
+    const { result, rerender } = renderSession({ sessionKey: KEY_A });
+    await act(async () => result.current.loadBlank(result.current.generation));
+    act(() => result.current.paintAt(3, 3));
+    let resolveOld!: (value: { ok: boolean; retryable: boolean }) => void;
+    let resolveNew!: (value: { ok: boolean; retryable: boolean }) => void;
+    let oldPromise!: Promise<{ ok: boolean }>;
+    act(() => {
+      oldPromise = result.current.save(() => new Promise((resolve) => { resolveOld = resolve; }));
+    });
+    rerender({ sessionKey: KEY_B, onLeaveDirty: vi.fn(async () => "discard" as const) });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => result.current.loadBlank(result.current.generation));
+    act(() => result.current.paintAt(4, 4));
+    let newPromise!: Promise<{ ok: boolean }>;
+    const newCommit = vi.fn(() => new Promise<{ ok: boolean; retryable: boolean }>((resolve) => { resolveNew = resolve; }));
+    act(() => { newPromise = result.current.save(newCommit); });
+
+    await act(async () => {
+      resolveOld({ ok: true, retryable: false });
+      await oldPromise;
+    });
+    expect(result.current.saveInFlight).toBe(true);
+    expect(result.current.save(newCommit)).toBe(newPromise);
+    expect(newCommit).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveNew({ ok: true, retryable: false });
+      await newPromise;
+    });
   });
 });

@@ -90,5 +90,19 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
     await expect(page.getByTestId("mask-mode-brush")).toBeDisabled();
     await page.keyboard.press("e");
     await expect(page.getByTestId("mask-mode-erase")).toBeDisabled();
+
+    // 7. 真实 pointer → Enter 闭环不得产生任何 annotation mutation。
+    let mutationCount = 0;
+    page.on("request", (request) => {
+      if (/\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(request.url())
+        && ["POST", "PATCH", "PUT", "DELETE"].includes(request.method())) mutationCount += 1;
+    });
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 40, cy + 40, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(500);
+    expect(mutationCount).toBe(0);
   });
 });

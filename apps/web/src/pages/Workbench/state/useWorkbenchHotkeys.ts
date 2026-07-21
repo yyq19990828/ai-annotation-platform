@@ -21,7 +21,7 @@ import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
 import type { useWorkbenchState } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, Geometry } from "@/types";
 import type { AiBox } from "./transforms";
 import type { VideoStageControls } from "../stage/videoStageControls";
 
@@ -45,7 +45,7 @@ interface ClipboardLike {
 }
 
 interface UpdateMutationLike {
-  mutate: (vars: { annotationId: string; payload: { geometry: ReturnType<typeof bboxGeom> } }) => void;
+  mutate: (vars: { annotationId: string; payload: { geometry: Geometry } }) => void;
 }
 
 export interface UseWorkbenchHotkeysArgs {
@@ -251,26 +251,38 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         annotationLocked: !!sel?.is_locked,
         trackLocked: false,
         segmentLocked: false,
-        editorPhase: maskEditor.dirty ? "dirty" : "ready",
+        editorPhase: maskEditor.phase
+          ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
       });
-      if (e.key === "b" || e.key === "B") {
+      const command = e.ctrlKey || e.metaKey;
+      if (command && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
+        e.preventDefault(); e.stopImmediatePropagation();
         if (!maskEditable) return;
-        e.preventDefault(); e.stopPropagation();
+        if (e.key.toLowerCase() === "y" || e.shiftKey) maskEditor.redo();
+        else maskEditor.undo();
+        return;
+      }
+      if (e.key === "b" || e.key === "B") {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (!maskEditable) return;
         maskEditor.setMode("brush");
         return;
       }
       if (e.key === "e" || e.key === "E") {
+        e.preventDefault(); e.stopImmediatePropagation();
         if (!maskEditable) return;
-        e.preventDefault(); e.stopPropagation();
         maskEditor.setMode("erase");
         return;
       }
       if (e.key === "Enter" && maskEditor.active) {
         // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe;
         // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
+        e.preventDefault(); e.stopImmediatePropagation();
         if (!maskEditable) return;
-        if (!canCommitMask(maskEditor.dirty ? "dirty" : "ready", maskEditor.dirty)) return;
-        e.preventDefault(); e.stopPropagation();
+        if (!canCommitMask(
+          maskEditor.phase ?? (maskEditor.dirty ? "dirty" : "ready"),
+          maskEditor.dirty,
+        )) return;
         commitMaskAsPolygon?.();
         return;
       }
@@ -439,17 +451,33 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (!s.selectedId) return;
           if (action.scope === "keyframe") {
             const selected = annotationsRef.current.find((ann) => ann.id === s.selectedId);
+            const trackId = selected && "track_id" in selected.geometry
+              ? selected.geometry.track_id
+              : null;
+            if (selected?.is_locked || (trackId && s.lockedVideoTrackIds.has(trackId))) return;
             // v0.23.5 · WS-C · A5 止血: video_track_mask 也走关键帧级删除, 不能 fall-through
             // 到 handleDeleteBox 误删整轨。与 video_track_bbox 同语义: 只剩 1 个关键帧 →
             // 删它 = 删整条 (回退); 多关键帧但当前帧无关键帧 → 保持不动 (避免误删整轨)。
-            if (
-              selected?.geometry.type === "video_track_bbox" ||
-              selected?.geometry.type === "video_track_mask"
-            ) {
+            if (selected?.geometry.type === "video_track_mask") {
+              const keyframes = selected.geometry.keyframes;
+              if (keyframes.length <= 1) return;
+              if (!keyframes.some((kf) => kf.frame_index === s.videoFrameIndex)) return;
+              updateMutation.mutate({
+                annotationId: selected.id,
+                payload: {
+                  geometry: {
+                    ...selected.geometry,
+                    keyframes: keyframes.filter((kf) => kf.frame_index !== s.videoFrameIndex),
+                  },
+                },
+              });
+              return;
+            }
+            if (selected?.geometry.type === "video_track_bbox") {
               const deleted = videoControlsRef?.current?.deleteSelectedTrackKeyframe();
               if (deleted) return;
-              if (selected.geometry.keyframes.length > 1) return;
-              // 落到下方 handleDeleteBox 删整条 (只剩 1 关键帧)
+              // Delete 永远是关键帧级；最后一帧也不隐式退化为删整轨。
+              return;
             }
           }
           handleDeleteBox(s.selectedId);

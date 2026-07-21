@@ -409,24 +409,23 @@ export function useVideoAnnotationActions({
           },
         );
       });
-      return;
+      return selected;
     }
     const payload = buildVideoMaskTrackCreatePayload(
       frameIndex,
       reference,
       s.activeClass || UNKNOWN_CLASS,
     );
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<AnnotationResponse>((resolve, reject) => {
       mutations.create.mutate(payload, {
         onSuccess: (created) => {
           history.push({ kind: "create", annotationId: created.id, payload });
-          s.setSelectedId(created.id);
-          resolve();
+          resolve(created);
         },
         onError: reject,
       });
     });
-  }, [history, mutations.create, mutations.update, s, taskId]);
+  }, [history, mutations.create, mutations.update, s.activeClass, taskId]);
 
   const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
     const before = { class_name: ann.class_name };
