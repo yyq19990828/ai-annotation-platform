@@ -932,7 +932,7 @@ class ExportService:
                         reference = keyframe.get("mask") or {}
                         digest = reference.get("sha256")
                         if digest and digest not in mask_objects:
-                            mask_objects[digest] = load_coco_rle(reference)
+                            mask_objects[digest] = await load_coco_rle(reference)
                 ann_entries.append(
                     AAPAnnotationEntry(
                         geometry=geometry,

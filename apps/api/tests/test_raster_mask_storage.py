@@ -22,9 +22,9 @@ def _storage(*, exists: bool = False):
     return storage
 
 
-def test_store_coco_rle_uses_content_addressed_key_and_put_if_absent():
+async def test_store_coco_rle_uses_content_addressed_key_and_put_if_absent():
     storage = _storage()
-    reference = store_coco_rle(
+    reference = await store_coco_rle(
         {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]},
         storage=storage,
     )
@@ -34,16 +34,16 @@ def test_store_coco_rle_uses_content_addressed_key_and_put_if_absent():
     storage.client.put_object.assert_called_once()
 
     existing = _storage(exists=True)
-    store_coco_rle(
+    await store_coco_rle(
         {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]},
         storage=existing,
     )
     existing.client.put_object.assert_not_called()
 
 
-def test_load_coco_rle_verifies_reference_metadata():
+async def test_load_coco_rle_verifies_reference_metadata():
     storage = _storage()
-    reference = store_coco_rle(
+    reference = await store_coco_rle(
         {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]},
         storage=storage,
     )
@@ -51,13 +51,18 @@ def test_load_coco_rle_verifies_reference_metadata():
     stream = BytesIO(body)
     stream.close = MagicMock()
     storage.client.get_object.return_value = {"Body": stream}
-    assert load_coco_rle(reference, storage=storage)["counts"] == [1, 2, 2, 1]
+    assert (await load_coco_rle(reference, storage=storage))["counts"] == [
+        1,
+        2,
+        2,
+        1,
+    ]
     stream.close.assert_called_once()
 
 
-def test_load_coco_rle_rejects_digest_mismatch():
+async def test_load_coco_rle_rejects_digest_mismatch():
     storage = _storage()
-    reference = store_coco_rle(
+    reference = await store_coco_rle(
         {"encoding": "coco_rle", "size": [2, 3], "counts": [6]},
         storage=storage,
     )
@@ -65,7 +70,7 @@ def test_load_coco_rle_rejects_digest_mismatch():
     stream.close = MagicMock()
     storage.client.get_object.return_value = {"Body": stream}
     with pytest.raises(ValueError, match="digest mismatch"):
-        load_coco_rle(reference, storage=storage)
+        await load_coco_rle(reference, storage=storage)
 
 
 @pytest.mark.asyncio
@@ -78,7 +83,7 @@ async def test_reference_locks_are_sorted_deduplicated_and_verified(monkeypatch)
         {"object_key": "raster-masks/sha256/a.json", "sha256": "a"},
         {"object_key": "raster-masks/sha256/b.json", "sha256": "b"},
     ]
-    load = MagicMock()
+    load = AsyncMock()
     monkeypatch.setattr(module, "load_coco_rle", load)
 
     assert await lock_raster_mask_references(db, {"items": refs}) == [

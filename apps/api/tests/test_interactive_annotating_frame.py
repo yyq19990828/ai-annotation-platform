@@ -12,10 +12,12 @@
 
 from __future__ import annotations
 
+import io
 import uuid
 from unittest.mock import patch
 
 import pytest
+from PIL import Image
 
 from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.project import Project
@@ -25,6 +27,16 @@ from tests.conftest import create_registry_with_pool
 
 FRAME_URL = "http://minio/import/frame-interactive/x/7.jpg"
 VIDEO_PATH = "http://example/clip.mp4"
+
+
+def _jpeg_bytes(width: int = 32, height: int = 24) -> bytes:
+    """Minimal valid JPEG — v0.23.5 WS-D D2 requires PIL-decodable frames."""
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (8, 16, 32)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+JPEG_BYTES = _jpeg_bytes()
 
 
 async def _seed(db, owner_id, *, is_interactive=True):
@@ -114,7 +126,7 @@ async def test_frame_bytes_become_backend_file_path(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"\xff\xd8jpegbytes", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={
             "task_id": str(task.id),
             "frame_index": "7",
@@ -129,7 +141,7 @@ async def test_frame_bytes_become_backend_file_path(
     assert patched["task_data"]["id"] == str(task.id)
     # 上传键按 task/frame 分桶，便于同帧连击命中同一对象。
     assert patched["upload_key"] == f"frame-interactive/{task.id}/7.jpg"
-    assert patched["upload_size"] == len(b"\xff\xd8jpegbytes")
+    assert patched["upload_size"] == len(JPEG_BYTES)
 
 
 async def test_context_passthrough_without_threshold_injection(
@@ -142,7 +154,7 @@ async def test_context_passthrough_without_threshold_injection(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={
             "task_id": str(task.id),
             "frame_index": "0",
@@ -170,7 +182,7 @@ async def test_mask_input_next_passthrough(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={
             "task_id": str(task.id),
             "frame_index": "3",
@@ -199,7 +211,7 @@ async def test_non_interactive_backend_rejected(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={"task_id": str(task.id), "frame_index": "0", "context": "{}"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -239,7 +251,7 @@ async def test_invalid_context_json_rejected(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={"task_id": str(task.id), "frame_index": "0", "context": "{not json"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -259,7 +271,7 @@ async def test_unknown_task_rejected(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={"task_id": str(uuid.uuid4()), "frame_index": "0", "context": "{}"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -279,7 +291,7 @@ async def test_cross_project_task_rejected(
 
     resp = await httpx_client_bound.post(
         _url(proj_a, backend_a),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={"task_id": str(task_b.id), "frame_index": "0", "context": "{}"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -299,7 +311,7 @@ async def test_ai_interactive_disabled_rejected(
 
     resp = await httpx_client_bound.post(
         _url(proj, backend),
-        files={"frame": ("f.jpg", b"jpeg", "image/jpeg")},
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
         data={
             "task_id": str(task.id),
             "frame_index": "0",

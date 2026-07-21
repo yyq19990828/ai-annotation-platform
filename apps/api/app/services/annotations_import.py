@@ -262,7 +262,7 @@ async def import_aap_json_annotations(
             if mask_objects:
                 await lock_raster_mask_references(db, entry.geometry, verify=False)
                 for mask_object in mask_objects:
-                    store_coco_rle(mask_object)
+                    await store_coco_rle(mask_object)
                 await lock_raster_mask_references(db, entry.geometry)
 
             # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，

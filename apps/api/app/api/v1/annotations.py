@@ -25,12 +25,13 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
+from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -49,7 +50,12 @@ from app.schemas.annotation import (
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
-from app.services.raster_mask_storage import load_coco_rle, store_coco_rle
+from app.services.raster_mask_storage import (
+    COCO_RLE_GZIP_ENCODING,
+    load_coco_rle,
+    store_coco_rle,
+    store_coco_rle_gzip,
+)
 from app.services.video_tracks import resolve_track_at_frame
 
 router = APIRouter()
@@ -64,6 +70,15 @@ _ANNOTATORS = (
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
 
+# v0.23.5 · WS-D · D3 · per-task cap on raster-mask object references.
+# The upload endpoint returns an anonymous reference (not yet linked to an
+# annotation), so the per-annotation ``is_locked`` guard doesn't apply at
+# upload time — instead we bound the total number of content-addressed mask
+# objects attributable to this task's annotations + predictions. The cap is
+# deterministic (a single SQL count) and large enough to never clip legitimate
+# multi-instance / multi-keyframe video work (2048 refs ≈ hundreds of tracks).
+MAX_MASK_OBJECTS_PER_TASK = 2048
+
 
 def _assert_task_editable(task: Task, user: User | None) -> None:
     """复用 tasks.py 同名守卫的语义: review / completed 锁;
@@ -76,6 +91,36 @@ def _assert_task_editable(task: Task, user: User | None) -> None:
         status_code=409,
         detail={"reason": "task_locked", "status": task.status},
     )
+
+
+async def _count_task_mask_references(db: AsyncSession, task_id: uuid.UUID) -> int:
+    """v0.23.5 · WS-D · D3 · count distinct ``raster-masks/sha256/...`` object
+    keys referenced by this task's annotations + predictions.
+
+    Uses the same ``jsonb_path_query`` plumbing as the GC path
+    (``app.workers.cleanup._referenced_raster_mask_keys``) but scoped to a
+    single task so the count is cheap and deterministic. Annotations are
+    filtered to ``is_active`` to match the GC's liveness semantics.
+    """
+    query = text(
+        """
+        SELECT COUNT(DISTINCT key) FROM (
+            SELECT value #>> '{}' AS key
+            FROM annotations,
+                 LATERAL jsonb_path_query(geometry, '$.**.object_key') value
+            WHERE task_id = :task_id
+              AND is_active IS TRUE
+              AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+          UNION ALL
+            SELECT value #>> '{}' AS key
+            FROM predictions,
+                 LATERAL jsonb_path_query(result, '$.**.object_key') value
+            WHERE task_id = :task_id
+              AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+        ) AS keys
+        """
+    )
+    return int((await db.execute(query, {"task_id": task_id})).scalar() or 0)
 
 
 @router.get(
@@ -104,7 +149,7 @@ async def get_annotation_mask_content(
     if resolved is None:
         raise HTTPException(status_code=404, detail="mask is outside at this frame")
     try:
-        payload = load_coco_rle(resolved["mask"])
+        payload = await load_coco_rle(resolved["mask"])
     except (KeyError, ValueError) as exc:
         raise HTTPException(
             status_code=409, detail=f"mask object is invalid: {exc}"
@@ -133,6 +178,22 @@ async def upload_task_mask_content(
         raise HTTPException(status_code=404, detail="task not found")
     await assert_project_visible(task.project_id, db, user)
     _assert_task_editable(task, user)
+    # v0.23.5 · WS-D · D3 · per-task mask-object quota. The upload returns an
+    # anonymous reference (not yet linked to an annotation), so the per-annotation
+    # ``is_locked`` guard doesn't apply at upload time; the quota bounds how many
+    # orphan-able objects a single task can produce before the caller must link
+    # or clean up existing ones. Reusing the GC's liveness filter keeps the count
+    # consistent with what purge_unreferenced_raster_masks considers reachable.
+    existing = await _count_task_mask_references(db, task_id)
+    if existing >= MAX_MASK_OBJECTS_PER_TASK:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "mask_quota_exceeded",
+                "limit": MAX_MASK_OBJECTS_PER_TASK,
+                "current": existing,
+            },
+        )
     try:
         size = payload.get("size")
         if task.dataset_item_id is not None:
@@ -146,7 +207,13 @@ async def upload_task_mask_content(
                     raise ValueError(
                         f"mask size must match source video [{height}, {width}]"
                     )
-        return store_coco_rle(payload)
+        # v0.23.5 · WS-D · D1 · route to gzip storage when the client declares
+        # ``encoding == "coco_rle_gzip"`` (Content-Encoding: gzip); otherwise the
+        # legacy uncompressed JSON path. Both return identical ``coco_rle_ref``
+        # schema — gzip just changes ``object_key`` suffix and ``encoding`` marker.
+        if payload.get("encoding") == COCO_RLE_GZIP_ENCODING:
+            return await store_coco_rle_gzip(payload)
+        return await store_coco_rle(payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -426,7 +426,7 @@ async def test_create_tracker_job_sourceless_rejects_invalid_target(
     assert exc.value.status_code == 422
 
 
-def test_mask_track_seed_geometry_is_hydrated_to_bbox(monkeypatch):
+async def test_mask_track_seed_geometry_is_hydrated_to_bbox(monkeypatch):
     from types import SimpleNamespace
 
     import app.services.video_tracking.jobs as service
@@ -439,14 +439,18 @@ def test_mask_track_seed_geometry_is_hydrated_to_bbox(monkeypatch):
             "keyframes": [{"frame_index": 0, "mask": reference}],
         }
     )
-    monkeypatch.setattr(service, "load_coco_rle", lambda value: {"rle": value})
+
+    async def _fake_load(value):
+        return {"rle": value}
+
+    monkeypatch.setattr(service, "load_coco_rle", _fake_load)
     monkeypatch.setattr(
         service,
         "coco_rle_bbox_norm",
         lambda _rle: {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
     )
 
-    assert service._seed_geometry_at_frame(annotation, 0) == {
+    assert await service._seed_geometry_at_frame(annotation, 0) == {
         "type": "bbox",
         "x": 0.1,
         "y": 0.2,
@@ -1267,3 +1271,144 @@ async def test_accept_multi_source_touched_covers_sources_and_created(
     # VideoTrackerJobOut 顶层字段与 prompt 落库一致。
     out = VideoTrackerJobOut.model_validate(job, from_attributes=True)
     assert {str(x) for x in out.touched_annotation_ids} == touched
+
+
+# ── v0.23.5 · WS-D · D4 · accept version conflict → 409 ────────────────
+
+
+async def _seed_pending_review_job_with_source(
+    db_session, owner_id, *, expected_versions: dict | None
+):
+    """Run a job to pending_review; optionally inject expected_source_versions
+    into prompt (mirroring what create_tracker_job records at creation time)."""
+    task, item = await _make_video_task(db_session, owner_id)
+    source = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=owner_id,
+        annotation_type="bbox",
+        class_name="car",
+        tool_unit_id="bbox",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    prompt: dict = {"text": "car"}
+    if expected_versions is not None:
+        prompt["expected_source_versions"] = expected_versions
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=source.id,
+        created_by=owner_id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=3,
+        prompt=prompt,
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    # Drive the job to pending_review with staged results.
+    adapter = _MultiInstanceAdapter(extra_ids=[])
+    monkeypatch_holder["adapter"] = adapter
+    return task, source, job
+
+
+# module-level holder so the test body can patch get_tracker_adapter after
+# the helper returns (tests need to monkeypatch within their own monkeypatch
+# fixture scope).
+monkeypatch_holder: dict = {}
+
+
+async def test_accept_tracker_job_conflict_on_source_version_mismatch(
+    db_session, super_admin, monkeypatch
+):
+    """source annotation version bumped between job creation and accept → 409,
+    source geometry unchanged (no last-writer-wins)."""
+    from app.services.video_tracking.runner import TrackerJobStateConflict
+
+    user, _ = super_admin
+    task, source, job = await _seed_pending_review_job_with_source(
+        db_session,
+        user.id,
+        expected_versions={str("__SOURCE__"): 1},  # placeholder, fixed below
+    )
+    # Replace the placeholder with the actual source id + version snapshot.
+    expected = {str(source.id): int(source.version)}
+    job.prompt = {**(job.prompt or {}), "expected_source_versions": expected}
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    monkeypatch.setattr(
+        "app.services.video_tracking.runner.get_tracker_adapter",
+        lambda _model_key: monkeypatch_holder["adapter"],
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    from app.services.video_tracking.runner import run_tracker_job
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    await db_session.refresh(source)
+    assert job.status == "pending_review"
+    original_geometry = dict(source.geometry or {})
+
+    # Simulate a concurrent edit: bump the source annotation's version.
+    source.version = (source.version or 1) + 1
+    await db_session.commit()
+    await db_session.refresh(source)
+
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await accept_tracker_job(db_session, job.id, publisher=collect)
+    assert "version changed" in str(exc.value).lower() or "conflict" in str(
+        exc.value
+    ).lower()
+
+    # Source geometry untouched (no last-writer-wins).
+    await db_session.refresh(source)
+    assert source.geometry == original_geometry
+    # Job is NOT accepted.
+    await db_session.refresh(job)
+    assert job.status != "accepted"
+
+
+async def test_accept_tracker_job_legacy_without_expected_versions_skips_check(
+    db_session, super_admin, monkeypatch
+):
+    """legacy job (no expected_source_versions in prompt) → accept proceeds
+    (forward compat). Source version drift is tolerated, not 409'd."""
+    user, _ = super_admin
+    task, source, job = await _seed_pending_review_job_with_source(
+        db_session,
+        user.id,
+        expected_versions=None,  # legacy: no snapshot
+    )
+    monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
+    monkeypatch.setattr(
+        "app.services.video_tracking.runner.get_tracker_adapter",
+        lambda _model_key: monkeypatch_holder["adapter"],
+    )
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    from app.services.video_tracking.runner import run_tracker_job
+
+    await run_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+
+    # Even if the source version moved, accept must still succeed for a legacy job.
+    source.version = (source.version or 1) + 5
+    await db_session.commit()
+    await db_session.refresh(source)
+
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await db_session.refresh(job)
+    assert job.status == "accepted"

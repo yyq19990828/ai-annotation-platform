@@ -1,3 +1,5 @@
+import asyncio
+import io
 import json
 import time
 import uuid
@@ -63,6 +65,121 @@ _setup_cache: dict[uuid.UUID, tuple[float, dict]] = {}
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+
+# v0.23.5 · WS-D · D2 · cap on uploaded frame bytes (predict-frame /
+# interactive-annotating-frame). Bounds memory regardless of a lying/missing
+# Content-Length header; 32 MiB comfortably fits a 4K JPEG / PNG with headroom.
+MAX_FRAME_UPLOAD_BYTES = 32 * 1024 * 1024
+# v0.23.5 · WS-D · D2 · streaming read stride (1 MiB) — small enough to abort
+# between chunks when the cap is exceeded, large enough to avoid per-call
+# overhead on legitimate multi-MiB frames.
+_FRAME_READ_CHUNK = 1024 * 1024
+# v0.23.5 · WS-D · D2 · image format / dimension cap mirroring ADR-0048 / 0052
+# (dims ≤ 4096, pixels ≤ 16_777_216). Frames bigger than this can blow up the
+# downstream inference memory budget and are rejected before hitting the backend.
+_ALLOWED_FRAME_IMAGE_FORMATS = {"JPEG", "PNG"}
+_MAX_FRAME_DIMENSION = 4096
+_MAX_FRAME_PIXELS = _MAX_FRAME_DIMENSION * _MAX_FRAME_DIMENSION
+
+
+async def _read_capped_frame(
+    frame: UploadFile,
+    *,
+    request: Request | None = None,
+    max_bytes: int = MAX_FRAME_UPLOAD_BYTES,
+) -> bytes:
+    """v0.23.5 · WS-D · D2 · read an uploaded frame under a hard byte + format cap.
+
+    Two layers of defense against unbounded reads:
+
+    1. If ``Content-Length`` is present on ``request`` (or the Starlette upload
+       exposes ``frame.size``), reject early with 413 when it already exceeds
+       ``max_bytes`` — before we buffer a single byte.
+    2. Stream-read in ``_FRAME_READ_CHUNK`` increments and abort with 413 the
+       moment the running total crosses ``max_bytes``. This catches clients that
+       lie about (or omit) Content-Length.
+
+    After collection the bytes are decoded with PIL: only ``{JPEG, PNG}`` are
+    accepted and dimensions must respect the 4096 / 16M-pixel mask contract.
+    Decode or dimension failures raise 400 (bad request), not 500.
+    """
+    # 1. Pre-flight on declared size, if available.
+    declared: int | None = None
+    if request is not None:
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                declared = int(cl)
+            except (TypeError, ValueError):
+                declared = None
+    if declared is None:
+        size_attr = getattr(frame, "size", None)
+        if isinstance(size_attr, int) and size_attr >= 0:
+            declared = size_attr
+    if declared is not None and declared > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "reason": "frame_too_large",
+                "max_bytes": max_bytes,
+                "declared_bytes": declared,
+            },
+        )
+
+    # 2. Streaming accumulate (bypasses ``frame.read()`` which buffers fully).
+    buf = bytearray()
+    while True:
+        chunk = await frame.read(_FRAME_READ_CHUNK)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "reason": "frame_too_large",
+                    "max_bytes": max_bytes,
+                    "received_bytes": len(buf),
+                },
+            )
+    data = bytes(buf)
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty frame image")
+
+    # 3. Decode + dimension/format validation via PIL.
+    try:
+        from PIL import Image  # noqa: PLC0415 — Pillow is a declared dep
+    except ImportError as exc:  # pragma: no cover — Pillow is in pyproject
+        raise HTTPException(
+            status_code=500, detail="image validation unavailable"
+        ) from exc
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            fmt = img.format
+            width, height = img.size
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"frame is not a decodable image: {exc}"
+        ) from exc
+    if fmt not in _ALLOWED_FRAME_IMAGE_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported frame image format: {fmt}",
+        )
+    if width > _MAX_FRAME_DIMENSION or height > _MAX_FRAME_DIMENSION:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"frame dimensions exceed {_MAX_FRAME_DIMENSION}px: "
+                f"{width}x{height}"
+            ),
+        )
+    if width * height > _MAX_FRAME_PIXELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"frame pixel count exceeds {_MAX_FRAME_PIXELS}",
+        )
+    return data
 
 
 def _out(backend: MLBackendRegistry, project_id: uuid.UUID) -> MLBackendOut:
@@ -805,6 +922,7 @@ async def interactive_annotating(
 async def predict_frame(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
+    request: Request,
     frame: UploadFile = File(...),
     task_id: uuid.UUID = Form(...),
     frame_index: int = Form(...),
@@ -870,13 +988,16 @@ async def predict_frame(
         ),
     )
 
-    jpeg_bytes = await frame.read()
-    if not jpeg_bytes:
-        raise HTTPException(status_code=400, detail="Empty frame image")
+    # v0.23.5 · WS-D · D2 · bounded frame read (Content-Length + streaming cap
+    # + JPEG/PNG decode + dim/pixel limits) before any storage I/O.
+    jpeg_bytes = await _read_capped_frame(frame, request=request)
 
     storage = StorageService()
-    frame_url = storage.upload_crop_bytes(
-        jpeg_bytes, f"frame-predict/{task_id}/{frame_index}.jpg"
+    # v0.23.5 · WS-D · D5 · boto3 sync put_object wrapped in to_thread.
+    frame_url = await asyncio.to_thread(
+        storage.upload_crop_bytes,
+        jpeg_bytes,
+        f"frame-predict/{task_id}/{frame_index}.jpg",
     )
     await db.commit()
 
@@ -924,6 +1045,7 @@ async def predict_frame(
 async def interactive_annotating_frame(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
+    request: Request,
     frame: UploadFile = File(...),
     task_id: uuid.UUID = Form(...),
     frame_index: int = Form(...),
@@ -973,13 +1095,16 @@ async def interactive_annotating_frame(
     if not isinstance(ctx, dict):
         raise HTTPException(status_code=400, detail="context must be a JSON object")
 
-    jpeg_bytes = await frame.read()
-    if not jpeg_bytes:
-        raise HTTPException(status_code=400, detail="Empty frame image")
+    # v0.23.5 · WS-D · D2 · bounded frame read (Content-Length + streaming cap
+    # + JPEG/PNG decode + dim/pixel limits) before any storage I/O.
+    jpeg_bytes = await _read_capped_frame(frame, request=request)
 
     storage = StorageService()
-    frame_url = storage.upload_crop_bytes(
-        jpeg_bytes, f"frame-interactive/{task_id}/{frame_index}.jpg"
+    # v0.23.5 · WS-D · D5 · boto3 sync put_object wrapped in to_thread.
+    frame_url = await asyncio.to_thread(
+        storage.upload_crop_bytes,
+        jpeg_bytes,
+        f"frame-interactive/{task_id}/{frame_index}.jpg",
     )
     await db.commit()
 

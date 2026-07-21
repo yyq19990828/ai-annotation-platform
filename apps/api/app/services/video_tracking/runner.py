@@ -110,14 +110,16 @@ def _normalize_points(geometry: dict) -> list[list[float]]:
     return [[float(p[0]), float(p[1])] for p in points if len(p) >= 2]
 
 
-def _materialize_tracker_mask_result(result: TrackerFrameResult) -> TrackerFrameResult:
+async def _materialize_tracker_mask_result(
+    result: TrackerFrameResult,
+) -> TrackerFrameResult:
     geometry = result.geometry or {}
     if geometry.get("type") != "mask":
         return result
     rle = geometry.get("rle")
     if not isinstance(rle, dict):
         raise ValueError("tracker mask result requires geometry.rle")
-    reference = store_coco_rle(rle)
+    reference = await store_coco_rle(rle)
     bbox = coco_rle_bbox_norm(rle)
     return replace(
         result,
@@ -132,11 +134,11 @@ def _tracker_result_json_bytes(result: TrackerFrameResult) -> int:
     )
 
 
-def _mask_track_seed_geometry(geometry: dict, frame_index: int) -> dict:
+async def _mask_track_seed_geometry(geometry: dict, frame_index: int) -> dict:
     resolved = resolve_track_at_frame(geometry, frame_index)
     if resolved is None:
         return geometry
-    rle = load_coco_rle(resolved.get("mask") or {})
+    rle = await load_coco_rle(resolved.get("mask") or {})
     bbox = coco_rle_bbox_norm(rle)
     return {"type": "bbox", **bbox} if bbox else geometry
 
@@ -704,6 +706,68 @@ def _stage_tracker_results(
     job.staged_result = staged
 
 
+async def _assert_source_versions_unchanged(
+    db: AsyncSession, job: VideoTrackerJob, source_map: dict[str, Annotation]
+) -> None:
+    """v0.23.5 · WS-D · D4 · reject accept when a source annotation was mutated
+    after the job was created.
+
+    ``create_tracker_job`` snapshotted each source annotation's ``version`` into
+    ``job.prompt["expected_source_versions"]`` (keyed by stringified annotation
+    id). Here we re-read each source with ``with_for_update`` (row lock, same
+    transaction as the rest of accept) and compare. Any drift → rollback +
+    ``TrackerJobStateConflict`` (409), so the caller can surface the conflict
+    instead of last-writer-wins overwriting the user's edit.
+
+    Legacy jobs (created before this change) have no ``expected_source_versions``
+    key; we skip the check for forward compat and log a warning.
+    """
+    prompt = job.prompt or {}
+    expected = prompt.get("expected_source_versions")
+    if not expected:
+        # Forward compat: jobs queued before v0.23.5 carry no version snapshot.
+        # Don't 409 them; just record that the safety net was inactive.
+        if source_map:
+            log.warning(
+                "video tracker job %s accept has no expected_source_versions; "
+                "skipping source-version conflict check (legacy job)",
+                job.id,
+            )
+        return
+    if not isinstance(expected, dict):
+        raise TrackerJobStateConflict(
+            "expected_source_versions is malformed; cannot verify source versions"
+        )
+    for ann in source_map.values():
+        key = str(ann.id)
+        recorded = expected.get(key)
+        if recorded is None:
+            # Source is in source_map but not in the snapshot — only happens if
+            # the snapshot was built inconsistently with seed_sources. Treat as
+            # conflict (fail closed).
+            raise TrackerJobStateConflict(
+                "source annotation version changed; conflict "
+                f"(missing snapshot for annotation {key})"
+            )
+        # Re-read under row lock so a concurrent mutation blocks until we
+        # decide. ``with_for_update`` runs in the same transaction as accept's
+        # later writes, so the lock is held through commit/rollback.
+        row = (
+            await db.execute(
+                select(Annotation)
+                .where(Annotation.id == ann.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        current_version = int(row.version) if row is not None else None
+        if current_version is None or current_version != int(recorded):
+            await db.rollback()
+            raise TrackerJobStateConflict(
+                "source annotation version changed; conflict "
+                f"(annotation {key}: expected {recorded}, got {current_version})"
+            )
+
+
 async def accept_tracker_job(
     db: AsyncSession,
     job_id: uuid.UUID,
@@ -771,6 +835,10 @@ async def accept_tracker_job(
     else:
         # 无源检测 (画布级文本/种子发起): 全部新建, 归属取 job 显式目标类别。
         target = _target_from_job(job, task)
+    # v0.23.5 · WS-D · D4 · refuse accept if any source annotation was mutated
+    # between job creation and accept. Runs before _persist_tracker_results so
+    # a conflict leaves annotations untouched (no last-writer-wins).
+    await _assert_source_versions_unchanged(db, job, source_map)
     created = _persist_tracker_results(
         db,
         source_map,
@@ -1052,7 +1120,7 @@ async def run_tracker_job(
         # target instead of restarting from the original box every window.
         source_geometry = (annotation.geometry or {}) if annotation else {}
         last_geometry = (
-            _mask_track_seed_geometry(source_geometry, job.from_frame)
+            await _mask_track_seed_geometry(source_geometry, job.from_frame)
             if is_mask_track(source_geometry)
             else source_geometry
         )
@@ -1119,10 +1187,9 @@ async def run_tracker_job(
                 output_geometry=output_geometry,
             )
             discovery_adapter = get_tracker_adapter("sam3_video")
-            discovery_results = [
-                _materialize_tracker_mask_result(r)
-                async for r in discovery_adapter.propagate(discovery_ctx)
-            ]
+            discovery_results: list[TrackerFrameResult] = []
+            async for r in discovery_adapter.propagate(discovery_ctx):
+                discovery_results.append(await _materialize_tracker_mask_result(r))
             prompt_seeds = _combo_seeds_from_discovery(
                 discovery_results, seed_frame=job.from_frame
             )
@@ -1170,7 +1237,7 @@ async def run_tracker_job(
             async for result in adapter.propagate(ctx):
                 if heartbeat_failed:
                     raise RuntimeError("tracker route lease heartbeat failed")
-                result = _materialize_tracker_mask_result(result)
+                result = await _materialize_tracker_mask_result(result)
                 staged_bytes += _tracker_result_json_bytes(result)
                 if staged_bytes > MAX_TRACKER_STAGED_BYTES:
                     raise ValueError(

@@ -147,7 +147,7 @@ def _job_out(row: VideoTrackerJob) -> VideoTrackerJobOut:
     return VideoTrackerJobOut.model_validate(row, from_attributes=True)
 
 
-def _seed_geometry_at_frame(annotation: Annotation, from_frame: int) -> dict:
+async def _seed_geometry_at_frame(annotation: Annotation, from_frame: int) -> dict:
     """多源 seed 的源几何: 视频轨迹取 from_frame 处的几何 (转成 backend 可解析的 result-style
     geometry), 取不到 (非轨迹 / outside / 无该帧) 则回退整条 annotation.geometry。
 
@@ -163,7 +163,7 @@ def _seed_geometry_at_frame(annotation: Annotation, from_frame: int) -> dict:
     if resolved.get("bbox") is not None:
         return {"type": "bbox", **resolved["bbox"]}
     if resolved.get("mask") is not None:
-        bbox = coco_rle_bbox_norm(load_coco_rle(resolved["mask"]))
+        bbox = coco_rle_bbox_norm(await load_coco_rle(resolved["mask"]))
         if bbox:
             return {"type": "bbox", **bbox}
     return geometry
@@ -241,6 +241,11 @@ async def create_tracker_job(
     # str(obj_id) 契约一致。单数 source_annotation_id (单源延展) / 无源路径保持现状不变。
     multi_source_ids = payload.source_annotation_ids or []
     seed_prompt: dict = {}
+    # v0.23.5 · WS-D · D4 · record source annotation versions at job creation
+    # so accept_tracker_job can detect a concurrent mutation of any source
+    # annotation and refuse with 409 instead of last-writer-wins. Keyed by the
+    # stringified annotation id (matches ``_seed_source_map``'s keying).
+    expected_source_versions: dict[str, int] = {}
     if multi_source_ids:
         annotation_id = None
         seeds: list[dict] = []
@@ -248,11 +253,14 @@ async def create_tracker_job(
             source = await _load_annotation(db, task, sid)
             if is_polyline_track(source.geometry or {}):
                 raise HTTPException(status_code=400, detail="polyline 轨迹追踪暂不支持")
+            expected_source_versions[str(sid)] = int(source.version or 1)
             seeds.append(
                 {
                     "obj_id": obj_id,
                     "source_annotation_id": str(sid),
-                    "geometry": _seed_geometry_at_frame(source, payload.from_frame),
+                    "geometry": await _seed_geometry_at_frame(
+                        source, payload.from_frame
+                    ),
                 }
             )
         seed_prompt = {"seeds": seeds}
@@ -264,6 +272,7 @@ async def create_tracker_job(
         # fallback → 原关键帧被静默改写成空 bbox 轨迹 (points 全丢), 故在入口用 400 明确拒绝。
         if is_polyline_track(annotation.geometry or {}):
             raise HTTPException(status_code=400, detail="polyline 轨迹追踪暂不支持")
+        expected_source_versions[str(annotation_id)] = int(annotation.version or 1)
     sourceless = annotation_id is None and not multi_source_ids
     if sourceless:
         await _validate_sourceless_target(
@@ -308,6 +317,15 @@ async def create_tracker_job(
             **(
                 {"exemplars": [e.model_dump() for e in payload.exemplars]}
                 if payload.exemplars
+                else {}
+            ),
+            # v0.23.5 · WS-D · D4 · snapshot of source annotation versions at job
+            # creation; accept_tracker_job re-reads with_for_update and 409s on
+            # any drift. Absent on legacy jobs → accept skips the check (forward
+            # compat, logged as a warning).
+            **(
+                {"expected_source_versions": expected_source_versions}
+                if expected_source_versions
                 else {}
             ),
         },

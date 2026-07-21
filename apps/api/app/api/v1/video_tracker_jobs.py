@@ -397,7 +397,7 @@ async def get_video_tracker_mask_content(
     if reference is None:
         raise HTTPException(status_code=404, detail="mask candidate not found")
     try:
-        payload = load_coco_rle(reference)
+        payload = await load_coco_rle(reference)
     except ValueError as exc:
         raise HTTPException(
             status_code=409, detail=f"mask object is invalid: {exc}"

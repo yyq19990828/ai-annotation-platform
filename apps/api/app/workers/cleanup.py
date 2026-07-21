@@ -56,7 +56,9 @@ async def _purge_async() -> dict:
                 if not key:
                     continue
                 try:
-                    storage_service.delete_object(key)
+                    # v0.23.5 · WS-D · D5 · boto3 sync delete wrapped in to_thread
+                    # so the async GC loop isn't blocked per-object.
+                    await asyncio.to_thread(storage_service.delete_object, key)
                     deleted_objects += 1
                 except Exception as e:
                     log.warning("delete object %s failed: %s", key, e)
@@ -173,7 +175,9 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
                         verify=False,
                     )
                     if not await _is_raster_mask_key_referenced(db, key):
-                        storage_service.delete_object(key)
+                        # D5 · delete_object wraps boto3 sync I/O in to_thread so the
+                        # async GC path doesn't block the event loop on each delete.
+                        await asyncio.to_thread(storage_service.delete_object, key)
                         deleted += 1
                     await db.commit()
                 except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure

@@ -89,12 +89,12 @@ VIDEO_EXPORT_FORMATS = {
 }
 
 
-def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
+async def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
     if geometry.get("type") != "video_track_mask":
         return geometry
     hydrated = deepcopy(geometry)
     for keyframe in hydrated.get("keyframes") or []:
-        rle = load_coco_rle(keyframe.get("mask") or {})
+        rle = await load_coco_rle(keyframe.get("mask") or {})
         keyframe["mask_rle"] = rle
         keyframe["bbox"] = coco_rle_bbox_norm(rle)
     return hydrated
@@ -1207,7 +1207,7 @@ async def _build_video_export_zip(
                 track_anns = tracks_by_task.get(t.id, [])
                 bbox_anns = bboxes_by_task.get(t.id, [])
                 track_geometry_by_id = {
-                    ann.id: _hydrate_mask_geometry_for_export(ann.geometry or {})
+                    ann.id: await _hydrate_mask_geometry_for_export(ann.geometry or {})
                     for ann in track_anns
                 }
                 # frame_count：元数据优先，缺失回退最大标注帧 + 1。

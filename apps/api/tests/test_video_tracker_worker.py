@@ -1002,7 +1002,7 @@ async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeyp
     assert aj.status == "completed"
 
 
-def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
+async def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
     from app.services.video_tracking.runner import _materialize_tracker_mask_result
 
     reference = {
@@ -1013,10 +1013,14 @@ def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
         "runs": 3,
         "bytes": 58,
     }
+
+    async def _fake_store(rle):
+        return reference
+
     monkeypatch.setattr(
-        "app.services.video_tracking.runner.store_coco_rle", lambda rle: reference
+        "app.services.video_tracking.runner.store_coco_rle", _fake_store
     )
-    result = _materialize_tracker_mask_result(
+    result = await _materialize_tracker_mask_result(
         TrackerFrameResult(
             frame_index=3,
             geometry={
