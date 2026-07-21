@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import uuid
 from typing import Any
 
 from sqlalchemy import func, select
@@ -82,7 +83,7 @@ async def _resolve_backend(
         issues.append(f"{prefix}: ai_enabled must be true")
     if requirement.interactive and not project.ai_interactive_enabled:
         issues.append(f"{prefix}: ai_interactive_enabled must be true")
-    if project.ml_backend_id is None:
+    if project.ml_backend_pool_id is None:
         issues.append(f"{prefix}: primary ML backend is not bound")
 
     service = MLBackendService(db)
@@ -90,7 +91,14 @@ async def _resolve_backend(
     if backend is None:
         issues.append(f"{prefix}: no enabled project ML backend resolves")
         return None
-    if project.ml_backend_id != backend.id:
+    # v0.23.3 ADR-0050 · 项目主绑定存 pool id; 经 pool.legacy_instance_id 解析后比较 registry id。
+    declared_registry: uuid.UUID | None = None
+    if project.ml_backend_pool_id is not None:
+        from app.db.models.ml_backend_pool import MLBackendServicePool
+
+        pool = await db.get(MLBackendServicePool, project.ml_backend_pool_id)
+        declared_registry = pool.legacy_instance_id if pool is not None else None
+    if declared_registry != backend.id:
         issues.append(
             f"{prefix}: resolved ML backend is not the declared primary backend"
         )

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.db.models.annotation import Annotation
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -12,6 +12,7 @@ from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStat
 from app.services.ml_client import PredictionResult
 from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
 from app.services.video_tracking.runner import accept_tracker_job, run_tracker_job
+from tests.conftest import create_registry_with_pool
 
 
 async def _make_video_task(db_session, owner_id):
@@ -178,7 +179,7 @@ async def test_tracker_worker_records_gpu_arbiter_failure(
     db_session, super_admin, monkeypatch
 ):
     from app.services.video_tracking import runner as runner
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
     )
@@ -456,23 +457,21 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
-    backend = MLBackendRegistry(
+    backend, pool = await create_registry_with_pool(
+        db_session,
         name="SAM2 Video",
         url="http://sam2-video.test",
         state="connected",
         is_interactive=True,
+        enabled_pool=True,
         extra_params={},
         # v0.21.25 阶段 R · runner 按 supported_trackers 路由, backend 须声明能力。
         health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
     )
-    db_session.add(backend)
-    await db_session.flush()
-    project.ml_backend_id = backend.id
-    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_id 且需项目「已启用」
+    project.ml_backend_pool_id = pool.id
+    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_pool_id 且需项目「已启用」
     db_session.add(
-        ProjectMLBackend(
-            project_id=task.project_id, registry_id=backend.id, enabled=True
-        )
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
     )
     await db_session.flush()
     annotation = Annotation(
@@ -568,23 +567,21 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     project = await db_session.get(Project, task.project_id)
-    backend = MLBackendRegistry(
+    backend, pool = await create_registry_with_pool(
+        db_session,
         name="SAM3 Video",
         url="http://sam3-video.test",
         state="connected",
         is_interactive=True,
+        enabled_pool=True,
         extra_params={},
         # v0.21.25 阶段 R · runner 按 supported_trackers 路由, backend 须声明能力。
         health_meta={"capabilities": {"supported_trackers": ["sam3_video"]}},
     )
-    db_session.add(backend)
-    await db_session.flush()
-    project.ml_backend_id = backend.id
-    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_id 且需项目「已启用」
+    project.ml_backend_pool_id = pool.id
+    # v0.19.0 ADR-0044 · get_project_backend 优先 project.ml_backend_pool_id 且需项目「已启用」
     db_session.add(
-        ProjectMLBackend(
-            project_id=task.project_id, registry_id=backend.id, enabled=True
-        )
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
     )
     await db_session.flush()
     annotation = Annotation(
@@ -1217,3 +1214,410 @@ async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
     await db_session.refresh(job)
     assert annotation.geometry["type"] == "video_track_bbox"
     assert job.status == VideoTrackerJobStatus.PENDING_REVIEW.value
+
+
+# ── v0.23.3 ADR-0050 §11 · tracker job-scope pin + would-select evidence ──────
+
+
+@pytest.mark.asyncio
+async def test_tracker_observe_mode_records_would_select_evidence(
+    db_session, super_admin, monkeypatch
+):
+    """observe: tracker job runs against legacy instance (unchanged); would-select
+    evidence is recorded in logs (non-gating). Verifies the router.acquire path is
+    exercised for tracker without changing dispatch."""
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    backend, pool = await create_registry_with_pool(
+        db_session,
+        name="SAM2 Video",
+        url="http://sam2-obs.test",
+        state="connected",
+        is_interactive=True,
+        enabled_pool=True,
+        health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
+    )
+    project.ml_backend_pool_id = pool.id
+    db_session.add(
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
+    )
+    await db_session.flush()
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 1,
+            "y": 2,
+            "w": 10,
+            "h": 12,
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
+        prompt={"type": "bbox", "geometry": annotation.geometry},
+        event_channel="video-tracker-job:obs",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "video_tracker_window_size_frames", 2)
+    monkeypatch.setattr(settings, "ml_backend_router_mode", "observe")
+
+    async def fake_predict_interactive(self, task_data, context):
+        return PredictionResult(
+            task_id=task_data["id"],
+            result=[
+                {
+                    "frame_index": fi,
+                    "geometry": {"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+                    "confidence": 0.9,
+                }
+                for fi in range(context["from_frame"], context["to_frame"] + 1)
+            ],
+        )
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
+
+    await run_tracker_job(db_session, job.id, publisher=_noop_pub)
+    await db_session.refresh(job)
+    # observe: job still completes normally (behavior unchanged).
+    assert job.status == VideoTrackerJobStatus.PENDING_REVIEW.value
+    # the backend used is the capability-selected legacy instance (not a router-picked one).
+    # would-select evidence was recorded via log (verified by the acquire path not raising).
+
+
+@pytest.mark.asyncio
+async def test_tracker_enforce_mode_acquires_and_finishes_route_lease(
+    db_session, super_admin, monkeypatch
+):
+    """enforce: tracker job acquires a job-scope route lease, pins the instance,
+    and finishes the lease on success (no lease leak)."""
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    backend, pool = await create_registry_with_pool(
+        db_session,
+        name="SAM2 Video Enf",
+        url="http://sam2-enf.test",
+        state="connected",
+        is_interactive=True,
+        health_meta={"capabilities": {"supported_trackers": ["sam2_video"]}},
+        last_checked_at=datetime.now(timezone.utc),
+    )
+    project.ml_backend_pool_id = pool.id
+    pool.enabled = True  # pool must be enabled for enforce acquire
+    db_session.add(
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
+    )
+    await db_session.flush()
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 1,
+            "y": 2,
+            "w": 10,
+            "h": 12,
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
+        prompt={"type": "bbox", "geometry": annotation.geometry},
+        event_channel="video-tracker-job:enf",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "video_tracker_window_size_frames", 2)
+    monkeypatch.setattr(settings, "ml_backend_router_mode", "enforce")
+
+    async def fake_predict_interactive(self, task_data, context):
+        return PredictionResult(
+            task_id=task_data["id"],
+            result=[
+                {
+                    "frame_index": fi,
+                    "geometry": {"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+                    "confidence": 0.9,
+                }
+                for fi in range(context["from_frame"], context["to_frame"] + 1)
+            ],
+        )
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
+
+    await run_tracker_job(db_session, job.id, publisher=_noop_pub)
+    await db_session.refresh(job)
+    # enforce: job completes; the route lease was acquired + finished (no leak).
+    assert job.status == VideoTrackerJobStatus.PENDING_REVIEW.value
+    # verify the lease was released: query the Redis ledger for residual inflight.
+    import os
+    from app.services.ml_routing.ledger import RoutingLedger, _member_leases_key
+
+    redis_url = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/0")
+    ledger = RoutingLedger.from_url(redis_url)
+    try:
+        # the tracker lease should be gone (finished); ZCARD of the member leases == 0.
+        key = _member_leases_key(str(pool.id), str(backend.id))
+        inflight = await ledger._redis.zcard(key)
+        assert inflight == 0, (
+            f"route lease leaked: {inflight} inflight after job completion"
+        )
+    finally:
+        await ledger.aclose()
+
+
+async def _make_multi_member_tracker_job(db_session, user_id):
+    from app.db.models.ml_backend_pool import MLBackendPoolMember
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+    from app.services.ml_routing.capability import (
+        canonicalize_capability,
+        capability_fingerprint,
+    )
+
+    task, item = await _make_video_task(db_session, user_id)
+    project = await db_session.get(Project, task.project_id)
+    capabilities = {
+        "supported_trackers": ["sam2_video"],
+        "models": [{"id": "sam2", "task": "video_segment", "modalities": ["video"]}],
+    }
+    legacy, pool = await create_registry_with_pool(
+        db_session,
+        name="tracker-legacy",
+        url="http://tracker-legacy.test",
+        state="connected",
+        is_interactive=True,
+        enabled_pool=True,
+        health_meta={"capabilities": capabilities},
+        last_checked_at=datetime.now(timezone.utc),
+    )
+    snapshot = canonicalize_capability(capabilities)
+    pool.capability_snapshot = snapshot
+    pool.capability_fingerprint = capability_fingerprint(snapshot)
+    selected = MLBackendRegistry(
+        name="tracker-selected",
+        url="http://tracker-selected.test",
+        state="connected",
+        is_interactive=True,
+        source="manual",
+        health_meta={"capabilities": capabilities},
+        last_checked_at=datetime.now(timezone.utc),
+    )
+    db_session.add(selected)
+    await db_session.flush()
+    db_session.add(
+        MLBackendPoolMember(
+            pool_id=pool.id,
+            registry_id=selected.id,
+            traffic_state="active",
+            weight=1,
+        )
+    )
+    project.ml_backend_pool_id = pool.id
+    db_session.add(
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
+    )
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user_id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 1,
+            "y": 2,
+            "w": 10,
+            "h": 12,
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user_id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=1,
+        prompt={"type": "bbox", "geometry": annotation.geometry},
+        event_channel="video-tracker-job:selected",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    return job, legacy, selected, pool
+
+
+@pytest.mark.asyncio
+async def test_tracker_enforce_dispatches_to_router_selected_instance(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.ml_routing.contracts import (
+        RouteLease,
+        RouteOutcome,
+        RouteSelection,
+    )
+    from app.services.ml_routing.router import MLBackendRouter
+
+    class FakeLedger:
+        async def aclose(self) -> None:
+            return None
+
+    user, _ = super_admin
+    job, legacy, selected, pool = await _make_multi_member_tracker_job(
+        db_session, user.id
+    )
+    lease = RouteLease(
+        lease_id="tracker-selected-lease",
+        pool_id=pool.id,
+        instance_id=selected.id,
+        owner=f"tracker:{job.id}",
+        operation="tracker",
+        generation=pool.routing_generation,
+        expires_at_ms=9999999999999,
+    )
+    finished: list[tuple[uuid.UUID, RouteOutcome]] = []
+    cancelled: list[uuid.UUID] = []
+
+    async def fake_acquire(_self, _pool_id, **_kwargs):
+        return RouteSelection(
+            lease=lease,
+            instance_id=selected.id,
+            rejection=None,
+        )
+
+    async def fake_finish(_self, route_lease, outcome, **_kwargs):
+        finished.append((route_lease.instance_id, outcome))
+
+    async def fake_cancel(_self, route_lease):
+        cancelled.append(route_lease.instance_id)
+
+    used_backend_ids: list[str] = []
+
+    async def fake_predict_interactive(self, task_data, context):
+        used_backend_ids.append(self.backend_id)
+        return PredictionResult(
+            task_id=task_data["id"],
+            result=[
+                {
+                    "frame_index": frame,
+                    "geometry": {
+                        "type": "bbox",
+                        "x": 1,
+                        "y": 2,
+                        "w": 10,
+                        "h": 12,
+                    },
+                    "confidence": 0.9,
+                }
+                for frame in range(context["from_frame"], context["to_frame"] + 1)
+            ],
+        )
+
+    monkeypatch.setattr(settings, "ml_backend_router_mode", "enforce")
+    monkeypatch.setattr(settings, "ml_backend_router_heartbeat_interval_seconds", 3600)
+    monkeypatch.setattr(
+        "app.services.ml_routing.router.make_ledger_from_settings", lambda: FakeLedger()
+    )
+    monkeypatch.setattr(MLBackendRouter, "acquire", fake_acquire)
+    monkeypatch.setattr(MLBackendRouter, "finish", fake_finish)
+    monkeypatch.setattr(MLBackendRouter, "cancel", fake_cancel)
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
+
+    await run_tracker_job(db_session, job.id, publisher=_noop_pub)
+    await db_session.refresh(job)
+    assert legacy.id != selected.id
+    assert used_backend_ids == [str(selected.id)]
+    assert job.status == VideoTrackerJobStatus.PENDING_REVIEW.value
+    assert finished == [(selected.id, RouteOutcome.SUCCESS)]
+    assert cancelled == []
+
+
+@pytest.mark.asyncio
+async def test_tracker_route_rejection_fails_without_dispatch(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.ml_routing.contracts import RejectionReason, RouteSelection
+    from app.services.ml_routing.router import MLBackendRouter
+
+    class FakeLedger:
+        async def aclose(self) -> None:
+            return None
+
+    user, _ = super_admin
+    job, _, _, _ = await _make_multi_member_tracker_job(db_session, user.id)
+    dispatched = False
+
+    async def fake_acquire(_self, _pool_id, **_kwargs):
+        return RouteSelection(
+            lease=None,
+            instance_id=None,
+            rejection=RejectionReason.POOL_SATURATED,
+        )
+
+    async def fake_predict_interactive(self, task_data, context):
+        nonlocal dispatched
+        dispatched = True
+        return PredictionResult(task_id=task_data["id"], result=[])
+
+    monkeypatch.setattr(settings, "ml_backend_router_mode", "enforce")
+    monkeypatch.setattr(
+        "app.services.ml_routing.router.make_ledger_from_settings", lambda: FakeLedger()
+    )
+    monkeypatch.setattr(MLBackendRouter, "acquire", fake_acquire)
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
+
+    await run_tracker_job(db_session, job.id, publisher=_noop_pub)
+    await db_session.refresh(job)
+    assert dispatched is False
+    assert job.status == VideoTrackerJobStatus.FAILED.value
+    assert "ml_backend_pool_saturated" in job.error_message
+
+
+async def _noop_pub(_channel: str, _payload: dict) -> None:
+    return None

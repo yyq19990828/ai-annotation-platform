@@ -1,14 +1,34 @@
 /**
- * RegisteredBackendsTab 单测
- * v0.19.0 ADR-0044 重构后结构:
- *   - 全局注册表 (listAll · 超管 CRUD / 项目管理员只读)
- *   - 项目启用概览 (overview · 仅超管 · 只读)
- * 覆盖: 加载/错误/空态 · 角色门控 (CRUD 仅超管) · 项目管理员只读 · 项目启用概览
+ * RegisteredBackendsTab 单测 · v0.23.4 P3 重构。
+ *
+ * 重构后 RegisteredBackendsTab 是一个编排壳：
+ *   - topology / runtime-snapshot / gpu-resources / overview / all 五个查询；
+ *   - mergeTopologyAndSnapshot 把 topology+snapshot 合并成 view-model；
+ *   - collectDiagnostics 给问题中心去重；
+ *   - 超管 5 个 tab（服务池 / 实例 / GPU / 项目绑定 / 问题中心），
+ *     项目管理员只有前 2 个只读 tab；
+ *   - 行操作收到 DropdownMenu，卸载/删除走 AlertDialog。
+ *
+ * 覆盖 (plan §12.2): loading/empty/error/partial-fail · 角色门控 · mutation
+ * flows（drain/resume/delete/health）· 问题中心诊断去重 · 窄屏无 min-w-[980px]。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// Radix Tabs switches on pointerdown. userEvent.click() fires the full
+// pointer + mouse + click sequence, which reliably triggers the switch in jsdom.
+async function switchTab(name: RegExp): Promise<void> {
+  const tab = await screen.findByRole("tab", { name: name as never });
+  await userEvent.click(tab);
+}
+
+async function clickTab(name: RegExp): Promise<void> {
+  const tab = screen.getByRole("tab", { name: name as never });
+  await userEvent.click(tab);
+}
 
 // ── Toast mock ───────────────────────────────────────────────────────────────
 const mockPushToast = vi.fn();
@@ -21,40 +41,158 @@ vi.mock("@/components/ui/Toast", async () => {
 });
 
 // ── adminMlIntegrationsApi mock ───────────────────────────────────────────────
-const mockOverview = vi.fn();
+const mockTopology = vi.fn();
+const mockRuntimeSnapshot = vi.fn();
 const mockListAll = vi.fn();
 const mockGpuResources = vi.fn();
+const mockOverview = vi.fn();
+const mockListServicePools = vi.fn();
+
 vi.mock("@/api/adminMlIntegrations", () => ({
   adminMlIntegrationsApi: {
-    overview: () => mockOverview(),
+    topology: () => mockTopology(),
+    runtimeSnapshot: () => mockRuntimeSnapshot(),
     listAll: () => mockListAll(),
     gpuResources: () => mockGpuResources(),
+    overview: () => mockOverview(),
+    listServicePools: () => mockListServicePools(),
   },
 }));
 
-// ── 全局注册表 CRUD hooks mock ────────────────────────────────────────────────
+// ── mutation hooks mock ──────────────────────────────────────────────────────
 const mockDeleteRegistryMutate = vi.fn();
 const mockHealthMutate = vi.fn();
+const mockUnloadMutate = vi.fn();
+const mockDrainMutate = vi.fn();
+const mockResumeMutate = vi.fn();
+const mockPatchPoolMutate = vi.fn();
+
 vi.mock("./useGlobalRegistry", () => ({
-  useDeleteRegistry: () => ({ mutate: mockDeleteRegistryMutate, isPending: false }),
+  useDeleteRegistry: () => ({ mutate: mockDeleteRegistryMutate, mutateAsync: vi.fn(), isPending: false }),
   useRegistryHealth: () => ({ mutate: mockHealthMutate, isPending: false }),
+  useRegistryUnload: () => ({ mutate: mockUnloadMutate, mutateAsync: vi.fn(), isPending: false }),
+  useDrainPoolMember: () => ({
+    mutate: mockDrainMutate,
+    mutateAsync: vi.fn(() => Promise.resolve()),
+    isPending: false,
+  }),
+  useResumePoolMember: () => ({
+    mutate: mockResumeMutate,
+    mutateAsync: vi.fn(() => Promise.resolve()),
+    isPending: false,
+  }),
+  usePatchServicePool: () => ({ mutate: mockPatchPoolMutate, isPending: false }),
+  useCreateServicePool: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteServicePool: () => ({ mutate: vi.fn(), isPending: false }),
+  usePutPoolMember: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemovePoolMember: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-// ── GlobalBackendFormModal mock ───────────────────────────────────────────────
+// ── GlobalBackendFormModal mock ──────────────────────────────────────────────
 vi.mock("./GlobalBackendFormModal", () => ({
   GlobalBackendFormModal: ({ open }: { open: boolean }) =>
     open ? <div data-testid="global-backend-form-modal">modal</div> : null,
 }));
 
-// ── usePermissions mock (角色可切) ────────────────────────────────────────────
+// ── usePermissions mock (角色可切) ───────────────────────────────────────────
 let mockRole = "super_admin";
 vi.mock("@/hooks/usePermissions", () => ({
   usePermissions: () => ({ role: mockRole }),
 }));
 
 import { RegisteredBackendsTab } from "./RegisteredBackendsTab";
+import type {
+  TopologyResponse,
+  TopologyPoolEntry,
+  RuntimeSnapshotResponse,
+} from "@/api/generated/types.gen";
 
-function makeGlobalItem(overrides: Record<string, unknown> = {}) {
+// ── fixture builders ─────────────────────────────────────────────────────────
+
+function makeTopologyPool(overrides: Partial<TopologyPoolEntry> = {}): TopologyPoolEntry {
+  return {
+    id: "pool-1",
+    name: "grounded-sam2-pool",
+    enabled: true,
+    routing_policy: "smooth_weighted_round_robin",
+    legacy_instance_id: null,
+    routing_generation: 1,
+    capability_fingerprint: "abc",
+    member_count: 1,
+    routable_instances: 1,
+    status: "healthy",
+    status_reason_codes: [],
+    members: [
+      {
+        registry_id: "bk-1",
+        name: "grounded-sam2",
+        traffic_state: "active",
+        weight: 1,
+        state: "connected",
+        last_checked_at: "2026-07-20T10:00:00Z",
+        gpu_resource_id: "node-a/index:0",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function makeTopology(overrides: Partial<TopologyResponse> = {}): TopologyResponse {
+  return {
+    schema_version: "topology.v1",
+    generated_at: "2026-07-20T10:00:00Z",
+    router_mode: "off",
+    pools: [makeTopologyPool()],
+    ...overrides,
+  };
+}
+
+function makeSnapshot(overrides: Partial<RuntimeSnapshotResponse> = {}): RuntimeSnapshotResponse {
+  return {
+    schema_version: "runtime_snapshot.v1",
+    observed_at: "2026-07-20T10:00:00Z",
+    router_mode: "off",
+    partial: false,
+    partial_reason: null,
+    sources: [
+      { name: "topology", updated_at: "2026-07-20T10:00:00Z", stale: false },
+      { name: "router_ledger", updated_at: "2026-07-20T10:00:00Z", stale: false },
+      { name: "health", updated_at: "2026-07-20T10:00:00Z", stale: false },
+      { name: "gpu", stale: true, error: "not_bundled_in_v0_23_3" },
+      { name: "residency", stale: true, error: "not_bundled_in_v0_23_3" },
+    ],
+    pools: [
+      {
+        id: "pool-1",
+        name: "grounded-sam2-pool",
+        enabled: true,
+        routing_generation: 1,
+        members: [
+          {
+            registry_id: "bk-1",
+            name: "grounded-sam2",
+            traffic_state: "active",
+            weight: 1,
+            registry_state: "connected",
+            health_fresh: true,
+            last_checked_at: "2026-07-20T10:00:00Z",
+            route_inflight: 0,
+            circuit_open: false,
+            gpu_resource_id: "node-a/index:0",
+            last_selected_at: null,
+            selection_count_window: null,
+            rejection_count_window: null,
+            p95_ms: null,
+            error_rate: null,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function makeBackend(overrides: Record<string, unknown> = {}) {
   return {
     id: "bk-1",
     name: "grounded-sam2",
@@ -77,26 +215,57 @@ function makeGlobalItem(overrides: Record<string, unknown> = {}) {
     health_meta: null,
     source_project_id: "p-1",
     source_project_name: "env",
-    last_checked_at: "2026-05-01T10:00:00Z",
+    last_checked_at: "2026-07-20T10:00:00Z",
     ...overrides,
   };
 }
 
-function makeOverviewBackend(overrides: Record<string, unknown> = {}) {
+function makeGpuResource(overrides: Record<string, unknown> = {}) {
   return {
-    id: "bk-1",
-    project_id: "p-1",
-    name: "grounded-sam2",
-    url: "http://172.17.0.1:8001",
-    state: "connected",
-    is_interactive: true,
-    auth_method: "none",
-    extra_params: {},
-    health_meta: null,
-    error_message: null,
-    last_checked_at: "2026-05-01T10:00:00Z",
-    created_at: "2026-05-01T00:00:00Z",
-    updated_at: "2026-05-01T00:00:00Z",
+    gpu_resource_id: "node-a/index:0",
+    node_id: "node-a",
+    physical_device_token: "index:0",
+    allocatable_mb: 20_000,
+    configured_mode: "observe",
+    desired_mode: "observe",
+    effective_mode: "observe",
+    claimed_budget_mb: 8192,
+    claimed_backend_count: 1,
+    status: "ok",
+    diagnostics: [],
+    rollout: {
+      enabled: false,
+      state: "off",
+      dispatch_blocked: false,
+      effective_mode: "off",
+    },
+    runtime: {
+      ready: true,
+      reason: "ok",
+      status: "ready",
+      active_backend_count: 1,
+      backend_count: 1,
+      allocation_state_counts: {},
+      membership_state_counts: {},
+      backend_queue_count: 0,
+      card_queue_count: 0,
+      committed_mb: 4096,
+      lease_count: 1,
+      transition_present: null,
+    },
+    ...overrides,
+  };
+}
+
+function makeGpuResources(resources: any[] = [], overrides: Record<string, unknown> = {}) {
+  return {
+    global_desired_mode: "observe",
+    runtime_ready: true,
+    observe_runtime_ready: true,
+    enforce_runtime_ready: false,
+    rollout_enabled: false,
+    resources,
+    diagnostics: [],
     ...overrides,
   };
 }
@@ -124,211 +293,390 @@ function renderUI() {
   );
 }
 
-describe("RegisteredBackendsTab", () => {
+// ── tests ────────────────────────────────────────────────────────────────────
+
+describe("RegisteredBackendsTab (v0.23.4 P3)", () => {
   beforeEach(() => {
     mockPushToast.mockReset();
     mockDeleteRegistryMutate.mockReset();
     mockHealthMutate.mockReset();
-    mockOverview.mockReset();
+    mockUnloadMutate.mockReset();
+    mockDrainMutate.mockReset();
+    mockResumeMutate.mockReset();
+    mockPatchPoolMutate.mockReset();
+    mockTopology.mockReset();
+    mockRuntimeSnapshot.mockReset();
     mockListAll.mockReset();
     mockGpuResources.mockReset();
+    mockOverview.mockReset();
+    mockListServicePools.mockReset();
     mockRole = "super_admin";
+
+    mockTopology.mockResolvedValue(makeTopology());
+    mockRuntimeSnapshot.mockResolvedValue(makeSnapshot());
     mockListAll.mockResolvedValue({ items: [] });
+    mockGpuResources.mockResolvedValue(makeGpuResources([]));
     mockOverview.mockResolvedValue(makeOverview());
-    mockGpuResources.mockResolvedValue({
-      global_desired_mode: "observe",
-      runtime_ready: true,
-      observe_runtime_ready: true,
-      enforce_runtime_ready: false,
-      resources: [],
-      diagnostics: [],
+  });
+
+  describe("loading / empty / error / partial-fail", () => {
+    it("topology 加载中 → 显示加载态", () => {
+      mockTopology.mockImplementation(() => new Promise(() => {}));
+      renderUI();
+      expect(screen.getByText("加载服务池拓扑…")).toBeInTheDocument();
+    });
+
+    it("topology 加载失败 → 显示整页错误 + 重试", async () => {
+      mockTopology.mockRejectedValue(new Error("网络故障"));
+      renderUI();
+      await screen.findByText(/拓扑加载失败/);
+      expect(screen.getAllByRole("button", { name: /重试/ }).length).toBeGreaterThan(0);
+    });
+
+    it("runtime-snapshot 失败但 topology 成功 → 其它数据保留 + 顶部 partial 告警", async () => {
+      mockRuntimeSnapshot.mockRejectedValue(new Error("snapshot 503"));
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      // 服务池 tab 内容仍在
+      expect(await screen.findByText("grounded-sam2-pool")).toBeInTheDocument();
+      // 顶部出现运行时快照加载失败的 partial 告警
+      await waitFor(() => {
+        expect(screen.getByText("运行时快照加载失败")).toBeInTheDocument();
+      });
+    });
+
+    it("空态：0 服务池 → 显示空态文案，不渲染 0 实例数字", async () => {
+      mockTopology.mockResolvedValue(makeTopology({ pools: [] }));
+      renderUI();
+      expect(await screen.findByText("尚无服务池")).toBeInTheDocument();
     });
   });
 
-  it("全局表加载态 → 显示加载中文本", () => {
-    mockListAll.mockImplementation(() => new Promise(() => {}));
-    renderUI();
-    expect(screen.getAllByText("加载中…").length).toBeGreaterThan(0);
-  });
-
-  it("全局表错误态 → 显示加载失败 + 重试按钮", async () => {
-    mockListAll.mockRejectedValue(new Error("网络故障"));
-    renderUI();
-    await screen.findByText(/加载失败/);
-    expect(screen.getAllByRole("button", { name: /重试/ }).length).toBeGreaterThan(0);
-  });
-
-  it("全局表空态 → 显示空状态提示", async () => {
-    renderUI();
-    await screen.findByText(/尚无全局 backend/);
-  });
-
-  it("超管 → 全局表渲染 backend + 注册/编辑/删除/检查可用", async () => {
-    mockListAll.mockResolvedValue({ items: [makeGlobalItem()] });
-    renderUI();
-    await screen.findByText("grounded-sam2");
-    expect(screen.getByRole("button", { name: /注册全局 backend/ })).toBeInTheDocument();
-    expect(screen.getByTitle("编辑")).toBeInTheDocument();
-    expect(screen.getByTitle("删除")).toBeInTheDocument();
-    expect(screen.getByTitle("健康检查")).toBeInTheDocument();
-  });
-
-  it("全局表显示 max_concurrency chip (缺省不显示)", async () => {
-    mockListAll.mockResolvedValue({
-      items: [
-        makeGlobalItem({ id: "bk-a", name: "with-limit", extra_params: { max_concurrency: 2 } }),
-        makeGlobalItem({ id: "bk-b", name: "no-limit", extra_params: {} }),
-      ],
+  describe("Super Admin", () => {
+    it("默认显示 5 个 tab，默认在服务池 tab", async () => {
+      renderUI();
+      expect(await screen.findByRole("tab", { name: /服务池/ })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /实例/ })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /GPU 资源/ })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /项目绑定/ })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /问题中心/ })).toBeInTheDocument();
     });
-    renderUI();
-    await screen.findByText("with-limit");
-    expect(screen.getByText("≤2 并发")).toBeInTheDocument();
-    expect(screen.queryByText(/并发$/)).toBeInTheDocument(); // 仅一处
-    expect(screen.getAllByText(/并发/).length).toBe(1);
-  });
 
-  it("显示 backend 静态 GPU claim，并明确区分 desired/effective", async () => {
-    mockListAll.mockResolvedValue({ items: [makeGlobalItem()] });
-    renderUI();
-    await screen.findByText("node-a/index:0");
-    expect(screen.getByText(/预算 8192\/20000 MiB/)).toBeInTheDocument();
-    expect(screen.getByText(/observe→observe/)).toBeInTheDocument();
-  });
+    it("服务池行展示策略、ID、可路由/总实例、操作菜单", async () => {
+      renderUI();
+      await screen.findByText("grounded-sam2-pool");
+      // routing_policy 超管可见
+      expect(screen.getByText(/平滑加权轮询/)).toBeInTheDocument();
+      // 操作按钮
+      expect(screen.getAllByTitle("服务池操作").length).toBeGreaterThan(0);
+    });
 
-  it("超管逐卡展示单卡、多卡/多节点隔离资源与诊断", async () => {
-    mockGpuResources.mockResolvedValue({
-      global_desired_mode: "observe",
-      runtime_ready: true,
-      observe_runtime_ready: true,
-      enforce_runtime_ready: false,
-      resources: [
-        {
-          gpu_resource_id: "node-a/index:0",
-          node_id: "node-a",
-          physical_device_token: "index:0",
-          allocatable_mb: 20_000,
-          configured_mode: "observe",
-          desired_mode: "observe",
-          effective_mode: "observe",
-          claimed_budget_mb: 24_000,
-          claimed_backend_count: 2,
-          status: "warning",
-          diagnostics: [
+    it("实例 tab 渲染实例行 + 详情/操作按钮 + GPU claim UUID", async () => {
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      // 切到实例 tab（Radix Tabs 用 pointerdown 切换）
+      await switchTab(/实例/);
+      await screen.findByText("grounded-sam2");
+      // GPU claim UUID 可见（超管）
+      expect(screen.getAllByText("node-a/index:0").length).toBeGreaterThan(0);
+      // 详情 + 操作按钮存在
+      expect(screen.getAllByTitle("详情").length).toBeGreaterThan(0);
+      expect(screen.getAllByTitle("实例操作").length).toBeGreaterThan(0);
+    });
+
+    it("点击注册实例 → 打开 GlobalBackendFormModal", async () => {
+      renderUI();
+      await screen.findByText("grounded-sam2-pool");
+      fireEvent.click(screen.getByRole("button", { name: /注册实例/ }));
+      await waitFor(() => {
+        expect(screen.getByTestId("global-backend-form-modal")).toBeInTheDocument();
+      });
+    });
+
+    it("GPU 资源 tab 渲染资源行 + 两根独立 Progress 条（静态 vs 运行时）", async () => {
+      mockGpuResources.mockResolvedValue(makeGpuResources([makeGpuResource()]));
+      renderUI();
+      await switchTab(/GPU 资源/);
+      // 资源 ID 出现
+      expect(await screen.findByText(/node-a\/index:0/)).toBeInTheDocument();
+      // committed 运行时占用的数值
+      expect(screen.getByText(/4,096 MiB/)).toBeInTheDocument();
+      // 静态声明的数值
+      expect(screen.getByText(/8,192 MiB/)).toBeInTheDocument();
+    });
+
+    it("项目绑定 tab 默认按项目渲染，可切换按服务池", async () => {
+      mockOverview.mockResolvedValue(
+        makeOverview({
+          total_backends: 1,
+          connected_backends: 1,
+          projects: [
             {
-              code: "gpu_resource_oversubscribed",
-              level: "warning",
-              message: "该卡存在弹性超售",
+              project_id: "p-1",
+              project_name: "My AI Project",
+              backends: [
+                {
+                  id: "bk-1",
+                  project_id: "p-1",
+                  name: "grounded-sam2",
+                  url: "http://172.17.0.1:8001",
+                  state: "connected",
+                  is_interactive: true,
+                  auth_method: "none",
+                  extra_params: {},
+                  health_meta: null,
+                  error_message: null,
+                  last_checked_at: "2026-07-20T10:00:00Z",
+                  created_at: "2026-07-20T00:00:00Z",
+                  updated_at: "2026-07-20T00:00:00Z",
+                },
+              ],
             },
           ],
-        },
-        {
-          gpu_resource_id: "node-a/index:1",
-          node_id: "node-a",
-          physical_device_token: "index:1",
-          allocatable_mb: 20_000,
-          configured_mode: "off",
-          desired_mode: "off",
-          effective_mode: "off",
-          claimed_budget_mb: 8_000,
-          claimed_backend_count: 1,
-          status: "ok",
-          diagnostics: [],
-        },
-        {
-          gpu_resource_id: "node-b/index:0",
-          node_id: "node-b",
-          physical_device_token: "index:0",
-          allocatable_mb: 24_000,
-          configured_mode: "observe",
-          desired_mode: "observe",
-          effective_mode: "observe",
-          claimed_budget_mb: 4_000,
-          claimed_backend_count: 1,
-          status: "ok",
-          diagnostics: [],
-        },
-      ],
-      diagnostics: [],
-    });
-    renderUI();
-    expect(await screen.findByText("node-a/index:0")).toBeInTheDocument();
-    expect(screen.getByText("node-a/index:1")).toBeInTheDocument();
-    expect(screen.getByText("node-b/index:0")).toBeInTheDocument();
-    expect(screen.getByText("该卡存在弹性超售")).toBeInTheDocument();
-    expect(screen.getByText("observe runtime ready")).toBeInTheDocument();
-  });
-
-  it("点击注册全局 backend → 打开 GlobalBackendFormModal", async () => {
-    mockListAll.mockResolvedValue({ items: [makeGlobalItem()] });
-    renderUI();
-    await screen.findByText("grounded-sam2");
-    fireEvent.click(screen.getByRole("button", { name: /注册全局 backend/ }));
-    await waitFor(() => {
-      expect(screen.getByTestId("global-backend-form-modal")).toBeInTheDocument();
-    });
-  });
-
-  it("项目管理员 → 全局表只读 (无注册/编辑/删除) + 看不到项目启用概览", async () => {
-    mockRole = "project_admin";
-    mockListAll.mockResolvedValue({
-      items: [
-        makeGlobalItem({
-          gpu_resource_id: null,
-          vram_budget_mb: null,
-          eviction_priority: null,
-          gpu_config: null,
         }),
-      ],
+      );
+      renderUI();
+      await switchTab(/项目绑定/);
+      expect(await screen.findByText("My AI Project")).toBeInTheDocument();
+      // 切换到按服务池视图
+      fireEvent.click(screen.getByRole("button", { name: "按服务池" }));
+      expect(await screen.findByText("grounded-sam2-pool")).toBeInTheDocument();
     });
-    renderUI();
-    await screen.findByText("grounded-sam2");
-    expect(screen.queryByRole("button", { name: /注册全局 backend/ })).not.toBeInTheDocument();
-    expect(screen.queryByTitle("编辑")).not.toBeInTheDocument();
-    expect(screen.queryByTitle("删除")).not.toBeInTheDocument();
-    expect(screen.getByText(/注册由超级管理员维护/)).toBeInTheDocument();
-    expect(screen.queryByText("GPU 配置")).not.toBeInTheDocument();
-    expect(screen.queryByText("node-a/index:0")).not.toBeInTheDocument();
-    // 项目启用概览仅超管可见
-    expect(screen.queryByText("项目启用概览")).not.toBeInTheDocument();
-    // 项目管理员不应触发超管专属 overview 查询
-    expect(mockOverview).not.toHaveBeenCalled();
-    expect(mockGpuResources).not.toHaveBeenCalled();
   });
 
-  it("超管 → 项目启用概览只读渲染项目名与已启用 backend chip", async () => {
-    mockOverview.mockResolvedValue(
-      makeOverview({
-        total_backends: 1,
-        connected_backends: 1,
-        projects: [
-          {
-            project_id: "p-1",
-            project_name: "My AI Project",
-            backends: [makeOverviewBackend()],
-          },
-        ],
-      }),
-    );
-    renderUI();
-    await screen.findByText("My AI Project");
-    expect(screen.getByText("项目启用概览")).toBeInTheDocument();
-    // chip 显示 backend 名 (全局表 + 概览各一处)
-    expect(screen.getAllByText("grounded-sam2").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("共 1 个 AI 项目 · 1 个 backend")).toBeInTheDocument();
-    // 只读: 概览里没有 per-project 注册/编辑/删除
-    expect(screen.getByText("打开项目设置 →")).toBeInTheDocument();
+  describe("Project Admin", () => {
+    beforeEach(() => {
+      mockRole = "project_admin";
+    });
+
+    it("只显示服务池 + 实例两个 tab，无 GPU / 项目绑定 / 问题中心", async () => {
+      renderUI();
+      expect(await screen.findByRole("tab", { name: /服务池/ })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /实例/ })).toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: /GPU 资源/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: /项目绑定/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: /问题中心/ })).not.toBeInTheDocument();
+    });
+
+    it("服务池行不显示 routing_policy、无 GPU 列、无操作按钮", async () => {
+      // 项目管理员：服务端把 routing_policy 投影成 "unknown"
+      mockTopology.mockResolvedValue(
+        makeTopology({
+          pools: [
+            makeTopologyPool({
+              routing_policy: "unknown",
+              members: [
+                {
+                  registry_id: "bk-1",
+                  name: "grounded-sam2",
+                  traffic_state: "active",
+                  weight: null,
+                  state: null,
+                  last_checked_at: null,
+                  gpu_resource_id: null,
+                },
+              ],
+            }),
+          ],
+        }),
+      );
+      renderUI();
+      await screen.findByText("grounded-sam2-pool");
+      // routing_policy 标签不出现（"策略 · ..." 仅超管可见）
+      expect(screen.queryByText(/策略 ·/)).not.toBeInTheDocument();
+      // 无服务池操作菜单
+      expect(screen.queryByTitle("服务池操作")).not.toBeInTheDocument();
+      // 无"注册实例"按钮
+      expect(screen.queryByRole("button", { name: /注册实例/ })).not.toBeInTheDocument();
+    });
+
+    it("不触发超管专属查询（runtime-snapshot / gpu-resources / overview）", async () => {
+      renderUI();
+      await screen.findByText("grounded-sam2-pool");
+      // 等一拍让所有 effect 跑完
+      await waitFor(() => {
+        expect(mockTopology).toHaveBeenCalled();
+      });
+      expect(mockRuntimeSnapshot).not.toHaveBeenCalled();
+      expect(mockGpuResources).not.toHaveBeenCalled();
+      expect(mockOverview).not.toHaveBeenCalled();
+    });
   });
 
-  it("超管 → 项目已启用 AI 但无 backend → 显示告警 badge", async () => {
-    mockOverview.mockResolvedValue(
-      makeOverview({
-        projects: [
-          { project_id: "p-2", project_name: "Empty AI Project", backends: [] },
-        ],
-      }),
-    );
-    renderUI();
-    await screen.findByText("Empty AI Project");
-    expect(screen.getByText("AI 已启用 · 未启用 backend")).toBeInTheDocument();
+  describe("mutation flows", () => {
+    it("实例健康检查 → 调用 registryHealth", async () => {
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      await switchTab(/实例/);
+      await screen.findByText("grounded-sam2");
+      // 打开操作菜单
+      fireEvent.click(screen.getByTitle("实例操作"));
+      // 点健康检查
+      await waitFor(() => {
+        expect(screen.getByRole("menuitem", { name: /健康检查/ })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: /健康检查/ }));
+      await waitFor(() => {
+        expect(mockHealthMutate).toHaveBeenCalledWith("bk-1", expect.anything());
+      });
+    });
+
+    it("实例 drain → 调用 drainPoolMember", async () => {
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      await switchTab(/实例/);
+      await screen.findByText("grounded-sam2");
+      fireEvent.click(screen.getByTitle("实例操作"));
+      await waitFor(() => {
+        expect(screen.getByRole("menuitem", { name: /暂停接流/ })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: /暂停接流/ }));
+      await waitFor(() => {
+        expect(mockDrainMutate).toHaveBeenCalledWith(
+          { poolId: "pool-1", registryId: "bk-1" },
+          expect.anything(),
+        );
+      });
+    });
+
+    it("实例 resume → 调用 resumePoolMember", async () => {
+      // 成员当前处于 draining 状态，resume 才可点
+      mockTopology.mockResolvedValue(
+        makeTopology({
+          pools: [
+            makeTopologyPool({
+              members: [
+                {
+                  registry_id: "bk-1",
+                  name: "grounded-sam2",
+                  traffic_state: "draining",
+                  weight: 1,
+                  state: "connected",
+                  last_checked_at: "2026-07-20T10:00:00Z",
+                  gpu_resource_id: "node-a/index:0",
+                },
+              ],
+            }),
+          ],
+        }),
+      );
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      await switchTab(/实例/);
+      await screen.findByText("grounded-sam2");
+      fireEvent.click(screen.getByTitle("实例操作"));
+      await waitFor(() => {
+        expect(screen.getByRole("menuitem", { name: /恢复接流/ })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: /恢复接流/ }));
+      await waitFor(() => {
+        expect(mockResumeMutate).toHaveBeenCalledWith(
+          { poolId: "pool-1", registryId: "bk-1" },
+          expect.anything(),
+        );
+      });
+    });
+
+    it("实例删除 → AlertDialog 确认 → 调用 deleteRegistry", async () => {
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      await switchTab(/实例/);
+      await screen.findByText("grounded-sam2");
+      fireEvent.click(screen.getByTitle("实例操作"));
+      await waitFor(() => {
+        expect(screen.getByRole("menuitem", { name: /删除/ })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: /删除/ }));
+      // AlertDialog 打开
+      const dialog = await screen.findByText(/确认删除实例/);
+      expect(dialog).toBeInTheDocument();
+      // 点确认删除
+      fireEvent.click(screen.getByRole("button", { name: /确认删除/ }));
+      await waitFor(() => {
+        expect(mockDeleteRegistryMutate).toHaveBeenCalledWith("bk-1", expect.anything());
+      });
+    });
+  });
+
+  describe("Issue Center · 诊断去重", () => {
+    it("同一 code+subject_type+subject_id 在问题中心只渲染一次", async () => {
+      // 构造一个 pool_offline 的池子（topology 来源），其成员还处于 circuit_open（runtime 来源）。
+      // collectDiagnostics 会把 pool_offline 单独成条，circuit_open 单独成条——
+      // 二者 subject_type 不同（service_pool vs instance），所以各算一条。
+      // 我们要断言的是：不会出现两条 pool_offline 主文案。
+      mockTopology.mockResolvedValue(
+        makeTopology({
+          pools: [
+            makeTopologyPool({
+              id: "pool-dead",
+              name: "dead-pool",
+              status: "offline",
+              routable_instances: 0,
+              status_reason_codes: ["all_members_disabled"],
+              members: [
+                {
+                  registry_id: "bk-dead",
+                  name: "dead-instance",
+                  traffic_state: "disabled",
+                  weight: 1,
+                  state: "disconnected",
+                  last_checked_at: "2026-07-20T10:00:00Z",
+                  gpu_resource_id: null,
+                },
+              ],
+            }),
+          ],
+        }),
+      );
+      mockRuntimeSnapshot.mockResolvedValue(
+        makeSnapshot({
+          pools: [
+            {
+              id: "pool-dead",
+              name: "dead-pool",
+              enabled: true,
+              routing_generation: 1,
+              members: [
+                {
+                  registry_id: "bk-dead",
+                  name: "dead-instance",
+                  traffic_state: "disabled",
+                  weight: 1,
+                  registry_state: "disconnected",
+                  health_fresh: true,
+                  last_checked_at: "2026-07-20T10:00:00Z",
+                  route_inflight: 0,
+                  circuit_open: true,
+                  gpu_resource_id: null,
+                  last_selected_at: null,
+                  selection_count_window: null,
+                  rejection_count_window: null,
+                  p95_ms: null,
+                  error_rate: null,
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      renderUI();
+      await switchTab(/问题中心/);
+      // pool_offline 主文案只出现一次
+      await waitFor(() => {
+        expect(screen.getAllByText(/无可路由实例/).length).toBe(1);
+      });
+      // 问题中心 tab 上的计数 badge = 2（pool_offline + circuit_open）
+      const issueTab = screen.getByRole("tab", { name: /问题中心/ });
+      expect(issueTab.querySelector(".bg-status-danger-soft, [class*='danger']")).not.toBeNull();
+    });
+  });
+
+  describe("窄屏 · 不再有 min-w-[980px]", () => {
+    it("表格容器不使用旧的 min-w-[980px] 类", async () => {
+      const { container } = renderUI();
+      await screen.findByText("grounded-sam2-pool");
+      // 整个 DOM 中不应再出现 min-w-[980px] 类
+      expect(container.querySelector(".min-w-\\[980px\\]")).toBeNull();
+    });
   });
 });

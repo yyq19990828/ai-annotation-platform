@@ -332,9 +332,7 @@ function InviteRegisterForm({ token }: { token: string }) {
 function Brand() {
   return (
     <div className={styles.brand}>
-      <div className={styles.brandIcon}>
-        <div className={styles.brandIconInner} />
-      </div>
+      <img src="/ai-annotation-platform-icon.svg" alt="" aria-hidden="true" className={styles.brandIcon} />
       <div>
         <div className={styles.brandTitle}>标注中心</div>
         <div className={styles.brandSubtitle}>AI Annotation Platform</div>

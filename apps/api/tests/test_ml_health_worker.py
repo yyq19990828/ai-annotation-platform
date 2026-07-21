@@ -27,7 +27,9 @@ from sqlalchemy.ext.asyncio import (
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
-from app.services.gpu_arbiter import _activate_gpu_backend_membership_in_transaction
+from app.services.gpu_arbitration.fences import (
+    _activate_gpu_backend_membership_in_transaction,
+)
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import GPU_HEALTH_CHALLENGE_ECHO_MARKER
 
@@ -1366,7 +1368,7 @@ def enabled_gpu_rollout_worker(monkeypatch):
     from types import SimpleNamespace
 
     from app.config import GPUArbiterMode, settings
-    from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
+    from app.services.gpu_arbitration.rollout_state import GPUArbiterRolloutSnapshot
     from app.workers import ml_health
 
     monkeypatch.setattr(settings, "gpu_arbiter_rollout_enabled", True)
@@ -1457,7 +1459,9 @@ async def test_gpu_repair_worker_does_not_touch_redis_outside_desired_enforce(
     resource_mode: str,
 ) -> None:
     from app.config import GPUArbiterMode, settings
-    from app.services import gpu_membership_activation
+    from app.services.gpu_arbitration import (
+        membership_activation as gpu_membership_activation,
+    )
     from app.workers import ml_health
 
     resource_id = "node-worker/GPU-mode-gate"
@@ -1973,7 +1977,9 @@ async def test_gpu_repair_fails_closed_when_collector_boundary_is_unavailable(
     from types import SimpleNamespace
 
     from app.config import GPUArbiterMode, settings
-    from app.services.gpu_collector_database import GPUCollectorDatabaseConfigError
+    from app.services.gpu_arbitration.collector_database import (
+        GPUCollectorDatabaseConfigError,
+    )
     from app.workers import ml_health
 
     resource_id = "node-worker/GPU-collector-unavailable"
@@ -2056,7 +2062,7 @@ async def test_gpu_promotion_waits_for_control_health_before_redis_ready(
 ) -> None:
     from types import SimpleNamespace
 
-    from app.services.gpu_rollout_control import GPURolloutControlResult
+    from app.services.gpu_arbitration.rollout_control import GPURolloutControlResult
     from app.workers import ml_health
 
     transition_id = uuid.uuid4()
@@ -2156,8 +2162,8 @@ async def test_gpu_demotion_waits_for_fresh_legacy_health(
     from types import SimpleNamespace
 
     from app.config import GPUArbiterMode
-    from app.services.gpu_arbiter_rollout import GPUArbiterRolloutSnapshot
-    from app.services.gpu_rollout_control import GPURolloutControlResult
+    from app.services.gpu_arbitration.rollout_state import GPUArbiterRolloutSnapshot
+    from app.services.gpu_arbitration.rollout_control import GPURolloutControlResult
     from app.workers import ml_health
 
     resource_id = "node-worker/GPU-demotion-sequence"

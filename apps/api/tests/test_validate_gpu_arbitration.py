@@ -11,7 +11,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+)
 from scripts.validate_gpu_arbitration import (
     ActionSpec,
     BackendEndpoint,

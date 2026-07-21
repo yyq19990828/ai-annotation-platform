@@ -701,6 +701,9 @@ non-evictable，不进入 enforce allowlist。
 - P0a 地基：[ML Backend GPU 失效诊断与 CPU fallback 地基审计](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md)
 - 协议现状与后续契约：[ML Backend 协议契约](https://yyq19990828.github.io/ai-annotation-platform/dev/reference/ml-backend-protocol)
 - 相关决策：ADR-0012（backend 独立 GPU 服务）、ADR-0038（不借机抽 backend 基类）、ADR-0044（全局注册表）
-- 主要实现触点：`apps/api/app/services/ml_client.py`、待新增 `gpu_arbiter.py`、
-  `apps/api/app/workers/ml_health.py`、`apps/api/app/db/models/ml_backend_registry.py` 及五个 backend 的现有 pool / predictor。
+- 主要实现触点：`apps/api/app/services/ml_client.py`、
+  `apps/api/app/services/gpu_arbitration/`（contracts、policy、ledger、fences、proofs、
+  control_preparation、reconciliation、retirement、diagnostics、dispatch、
+  membership_activation、rollout_control）、`apps/api/app/workers/ml_health.py`、
+  `apps/api/app/db/models/ml_backend_registry.py` 及五个 backend 的现有 pool / predictor。
 - 本次接受只证明 P0 设计门已关闭；Redis 账本、受管驱逐与 `observe` / `enforce` 仍按阶段实施。

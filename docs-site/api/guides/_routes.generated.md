@@ -33,6 +33,17 @@
 | POST | `/registry/{registry_id}/unload` |
 | GET | `/observe` |
 | POST | `/observe/smoke-test` |
+| GET | `/service-pools` |
+| POST | `/service-pools` |
+| GET | `/service-pools/{pool_id}` |
+| PATCH | `/service-pools/{pool_id}` |
+| DELETE | `/service-pools/{pool_id}` |
+| PUT | `/service-pools/{pool_id}/members/{registry_id}` |
+| DELETE | `/service-pools/{pool_id}/members/{registry_id}` |
+| POST | `/service-pools/{pool_id}/members/{registry_id}/drain` |
+| POST | `/service-pools/{pool_id}/members/{registry_id}/resume` |
+| GET | `/topology` |
+| GET | `/runtime-snapshot` |
 
 ## `admin_preannotate.py`
 
@@ -300,6 +311,8 @@
 | POST | `/{backend_id}/interactive-annotating` |
 | POST | `/{backend_id}/predict-frame` |
 | POST | `/{backend_id}/interactive-annotating-frame` |
+| GET | `/pools/available` |
+| PUT | `/pools/{pool_id}/enablement` |
 
 ## `ml_capabilities.py`
 
@@ -545,4 +558,4 @@
 
 ---
 
-_共 52 模块 / 298 路由_
+_共 52 模块 / 311 路由_

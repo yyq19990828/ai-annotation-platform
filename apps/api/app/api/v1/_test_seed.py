@@ -192,10 +192,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         )
 
         # 2d) v0.19.0 ADR-0044 · 断开项目对全局 backend 的启用关联;
-        #     project_ml_backend.project_id FK ON DELETE CASCADE,删项目时也会自动清,
+        #     project_ml_backend_pool.project_id FK ON DELETE CASCADE,删项目时也会自动清,
         #     这里显式清避免后续 mock registry 行被 CASCADE 时跨 SAVEPOINT 留尾。
         await _try_delete(
-            "DELETE FROM project_ml_backend WHERE project_id = ANY(:pids)",
+            "DELETE FROM project_ml_backend_pool WHERE project_id = ANY(:pids)",
             {"pids": fixture_project_ids},
         )
 
@@ -233,6 +233,15 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         # 会被 PG 自动置 NULL，无 ondelete 的字段需我们已手动删完）。
         await _try_delete("DELETE FROM users WHERE email LIKE '%@e2e.test'")
 
+    # v0.23.3 ADR-0050 · mock registry 已有 singleton pool，且 pool 的
+    # legacy_instance_id / member 都以 RESTRICT 引用 registry。先删除 mock pool
+    # （member 随 pool CASCADE），再删 registry；否则第二次 reset 会留下旧 registry，
+    # 重建时撞 url unique 约束。共享 pool / registry 均不受影响。
+    await _try_delete(
+        "DELETE FROM ml_backend_service_pools WHERE legacy_instance_id IN "
+        "(SELECT id FROM ml_backend_registry "
+        "WHERE url = 'http://mock-sam.e2e:9999')"
+    )
     # v0.19.0 ADR-0044 · 清旧的 E2E mock registry 行(url unique 约束,
     # 重建必须先删旧)。共享注册项不删,只删本 fixture 自造的 mock url。
     await _try_delete(
@@ -293,7 +302,15 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
 
     # v0.9.4 phase 3: SAM E2E 用 mock ml_backend (url 不会被真请求, page.route 拦截)
     # v0.19.0 ADR-0044 · 建全局注册项 + 为本项目启用关联。
-    from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+    # v0.23.3 ADR-0050 · 同时建 singleton 服务池, 项目主绑定存 pool id。
+    from app.db.models.ml_backend_pool import (
+        MLBackendPoolMember,
+        MLBackendServicePool,
+    )
+    from app.db.models.ml_backend_registry import (
+        MLBackendRegistry,
+        ProjectMLBackendPool,
+    )
 
     mock_backend = MLBackendRegistry(
         name="E2E SAM Mock",
@@ -306,14 +323,34 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     )
     db.add(mock_backend)
     await db.flush()
+    # singleton pool: legacy_instance_id 指向 mock_backend; enabled 跟随项目启用。
+    mock_pool = MLBackendServicePool(
+        name=mock_backend.name,
+        enabled=True,
+        routing_policy="smooth_weighted_round_robin",
+        legacy_instance_id=mock_backend.id,
+        routing_generation=1,
+    )
+    db.add(mock_pool)
+    await db.flush()
     db.add(
-        ProjectMLBackend(
-            project_id=project.id, registry_id=mock_backend.id, enabled=True
+        MLBackendPoolMember(
+            pool_id=mock_pool.id,
+            registry_id=mock_backend.id,
+            traffic_state="active",
+            weight=1,
+        )
+    )
+    db.add(
+        ProjectMLBackendPool(
+            project_id=project.id,
+            pool_id=mock_pool.id,
+            enabled=True,
         )
     )
     await db.flush()
     project.ai_enabled = True
-    project.ml_backend_id = mock_backend.id
+    project.ml_backend_pool_id = mock_pool.id
     await db.commit()
 
     return SeedReset(

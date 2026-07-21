@@ -21,11 +21,19 @@
 - **数据来源**：只使用 `screenshots` seed catalog 的固定逻辑键；不从开发库随机选择项目或任务
 - **动态信息**：账号、时间和通知数等不稳定区域由统一 mask 规则处理
 - **标注红框**：引导读者注意的位置用红框（#FF3333，2px）
-- **主题**：默认浅色；只有 scene 显式声明时才生成 dark / mobile 变体
+- **主题**：普通页面默认浅色；图片、视频、点云工作台统一以暗色作为无后缀主产物，其他主题按 scene 声明生成后缀变体
 - **保存路径**：`docs-site/user-guide/images/<page>/<name>.png`
 
-当前正式矩阵包含 63 张自动 PNG（60 desktop-light、2 desktop-dark、1 mobile）、
-3 张手工 PNG 和 18 个文档目标 GIF；以 manifest、scene、磁盘文件和文档引用四方一致为准。
+矩阵数量以 manifest、scene、磁盘文件和文档引用四方一致为准；每次重录后重新核对各 project 数量，避免在清单中保留会漂移的手工统计。
+
+### 暗色工作台重录
+
+- [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode,ai-inspector-panel}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
+- [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
+- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.webm` 与 `public/home/ai-assisted-annotation-poster.webp`
+- [x] 视频工作台：`workbench/video-real-scene.png`、`video-propagate/ai-tracking-panel.png`、`workbench/{video-track-overview,video-track-trajectory}.gif`、`video-propagate/ai-tracking-panel-interaction.gif`
+- [x] 点云工作台：`workbench/pointcloud-real-scene.png`、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
+- [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
 
@@ -211,7 +219,12 @@
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
 - [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图
 - [ ] `images/superadmin/model-market/protocol-card-details.png` — 能力目录协议卡复用 ModelCard 的详情态；红框：可接受输入、输出属性/几何、资源/变体、`⚠ 协议` 诊断 badge [manual]
-- [ ] `images/superadmin/model-market-runtime-card.png` — backend 运行时卡片；红框：GPU claim、资源 ID、显存预算、驱逐优先级、desired → effective、诊断、池状态与卸载 / 预热操作 **[Tier A]** [manual]
+- [~] ~~`images/superadmin/model-market-runtime-card.png` — backend 运行时大卡~~ — **已废弃**：运行时观测已改为服务池摘要卡 → 实例面板 → 详情 Sheet，不再按单 backend 展示大卡
+- [ ] `images/superadmin/model-market/runtime-pools.png` — 运行时观测主图；默认浅色 1440×900，同时露出四项摘要、部分可用的数据来源行、两列服务池摘要卡，并展开一个池显示实例面板 **[Tier A]** [manual]（现有 1440×1200 浅色录制可作构图参考；正式图使用固定 screenshots seed / stub，mask 更新时间、内部 URL、GPU / 实例 ID 和浮动 BUG 入口；重录前确认 `unloaded` 不计为驻留，observe 缺失 / stale 不显示为健康）
+- [ ] `images/superadmin/model-market/runtime-data-sources.png` — 展开「数据来源」后的部分失败态；至少包含一个 stale/error 来源及更新时间，说明单源失败不抹掉其它可信数据 **[Tier A]** [manual]
+- [ ] `images/superadmin/model-market/runtime-instance-detail.png` — 打开实例详情 Sheet；红框：路由状态、并发/延迟未知语义、health/compute、GPU claim、驻留与原始诊断 **[Tier B]** [manual]
+- [ ] `images/superadmin/model-market/registry-service-pools.png` — 注册管理「服务池」主视图；展开一个池显示成员、权重、接流状态和维护操作，并保留五个结构化视图的 tab **[Tier A]** `[auto]`
+- [ ] `images/superadmin/model-market/registry-issue-center.png` — 注册管理「问题中心」；展示按稳定键去重后的主问题、严重度、受影响对象计数与筛选 **[Tier B]** [manual]
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [x] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count `[auto]`（本地无模板呈空态）
@@ -220,11 +233,11 @@
 
 ### 工作台
 - [x] `images/bbox/draw-in-progress.gif` — 选矩形工具 → 画布拖出轴对齐矩形 `[auto-gif]`（flows/bbox-draw，P-COCO8）
-- [x] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标 [auto]
-- [x] `images/polygon/close-hint.png` — 三顶点后第四点贴近闭合提示 [auto]
+- [ ] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
+- [ ] `images/polygon/close-hint.png` — 三顶点后下一点贴近首点的闭合提示；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
 - [ ] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线；旧 1×1 占位图已删除，待重拍
 - [ ] `images/keypoint/hand.png` — 21 点手部骨架；旧 1×1 占位图已删除，待重拍
-- [x] `images/sam/text-three-modes.png` — 文字提示三种模式 `[manual]`（旧自动截图场景已移除，现作为保留参考图）
+- [x] `images/sam/text-three-modes.png` — 已删除；输出选项现按模型任务和后端能力动态裁剪，不再保留误导性的固定三选参考图
 - [ ] `images/3d-box/workbench-overview.png` — 3D 工作台全局（主视图 + 相机面板 + PSR 面板 + 自动贴合按钮组） [manual]
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
@@ -264,8 +277,8 @@
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [ ] `images/video-propagate/ai-tracking-panel.png` — **重拍现有路径**：画布右上追踪面板展示新版「发现新目标 / 延展当前轨迹 / 批量延展」作用范围、真实 backend 提供方、方向、范围与种子摘要 **[Tier A]** `[auto]`（scene: `workbench/video-ai-tracking-panel`，旧图仍是重构前口径）
-- [ ] `images/video-propagate/ai-tracking-panel-interaction.gif` — **重录现有路径**：顶部打开 → 切换正确作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 **[Tier A]** `[auto-gif]`（flow: `ai-tracker-panel`，旧动图早于单源 / 多源 / 无源重构）
+- [x] `images/video-propagate/ai-tracking-panel.png` — 画布右上追踪面板展示新版作用范围、真实 backend 提供方、方向、范围与种子摘要 `[auto]`（scene: `workbench/video-ai-tracking-panel`）
+- [x] `images/video-propagate/ai-tracking-panel-interaction.gif` — 顶部打开 → 切换作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 `[auto-gif]`（flow: `ai-tracker-panel`）
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
 - [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）

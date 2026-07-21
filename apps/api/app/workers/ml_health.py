@@ -37,34 +37,36 @@ from sqlalchemy.ext.asyncio import (
 from app.config import GPUArbiterMode, settings
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
-from app.services.gpu_arbiter import (
-    collect_gpu_backend_tombstone,
-    effective_gpu_arbiter_mode,
+from app.services.gpu_arbitration.policy import effective_gpu_arbiter_mode
+from app.services.gpu_arbitration.reconciliation import (
     observe_gpu_resource_runtime,
-    probe_retired_gpu_membership,
     repair_gpu_resource,
+)
+from app.services.gpu_arbitration.retirement import (
+    collect_gpu_backend_tombstone,
+    probe_retired_gpu_membership,
 )
 from app.services.gpu_arbitration.ledger import (
     GPUArbiterStore,
     GPUArbiterStoreError,
     GPUBackendDomainMember,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     GPUArbiterRolloutSnapshot,
     begin_gpu_arbiter_rollout,
     block_gpu_arbiter_rollout,
     complete_gpu_arbiter_rollout,
     read_gpu_arbiter_rollouts,
 )
-from app.services.gpu_collector_database import (
+from app.services.gpu_arbitration.collector_database import (
     GPUCollectorDatabase,
     open_gpu_collector_database,
 )
-from app.services.gpu_membership_activation import (
+from app.services.gpu_arbitration.membership_activation import (
     GPUMembershipPromotionResult,
     promote_gpu_resource_memberships,
 )
-from app.services.gpu_rollout_control import (
+from app.services.gpu_arbitration.rollout_control import (
     GPURolloutControlResult,
     advance_gpu_resource_rollout_control,
 )
@@ -170,8 +172,8 @@ def _binding_for_backend(
     return {
         "backend_id": str(backend.id),
         "backend_name": backend.name,
-        # v0.19.0 ADR-0044 · backend 全局化, 不再属于单一项目; 项目归属由 project_ml_backend
-        # 关联表表达 (健康概览不再按项目拆分)。
+        # v0.19.0 ADR-0044 · backend 全局化, 不再属于单一项目; 项目归属由 project_ml_backend_pool
+        # 关联表表达 (健康概览不再按项目拆分)。v0.23.3 ADR-0050 · 启用关联迁移到服务池层。
         "project_id": None,
         "project_display_id": project_display_id,
         "project_name": project_name,

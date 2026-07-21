@@ -20,6 +20,7 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.storage import storage_service
+from app.services.ml_routing.contracts import RoutingError
 
 import logging
 
@@ -95,6 +96,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _routing_error_handler(_request: Request, exc: RoutingError):
+    """Expose router rejections with their stable HTTP/error-code contract."""
+
+    headers = (
+        {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
+    )
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"detail": exc.as_detail()},
+        headers=headers,
+    )
+
+
+app.add_exception_handler(RoutingError, _routing_error_handler)
 
 
 async def _registry_validation_error_handler(

@@ -244,7 +244,7 @@ async def test_retry_worker_tracks_success_in_async_jobs(
         return authority_marker
 
     monkeypatch.setattr(
-        "app.services.gpu_dispatch_authority.build_gpu_dispatch_context_factory",
+        "app.services.gpu_arbitration.dispatch.build_gpu_dispatch_context_factory",
         build_authority,
     )
 
@@ -367,7 +367,7 @@ async def test_retry_worker_tracks_backend_failure_in_async_jobs(
 async def test_retry_worker_preserves_gpu_arbiter_failure_in_job_and_source(
     db_session, super_admin, monkeypatch
 ):
-    from app.services.gpu_arbiter import (
+    from app.services.gpu_arbitration.contracts import (
         GPUArbiterDispatchError,
         GPUArbiterErrorCode,
     )

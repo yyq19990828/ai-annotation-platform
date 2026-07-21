@@ -235,6 +235,11 @@ class BackendCapabilities(BaseModel):
     # v0.14.12 · backend 自报名 (如 "grounded-sam2-backend"), 用于前端能力目录展示
     # 源 backend 名 (而非用户在项目里取的别名)。
     name: str | None = None
+    version: str | None = None
+    protocol_version: str = "1"
+    compat_protocol_versions: list[str] = []
+    model_version: str | None = None
+    weights_version: str | None = None
     # v0.14.9 · 协议 v2 新增
     infra: str = "unknown"
     # v0.14.14 · backend 是否支持 POST /warmup (协议 §4.4). 老 backend 缺字段 = False.
@@ -500,6 +505,40 @@ class ProjectMLBackendList(BaseModel):
 
 class ProjectMLBackendEnablement(BaseModel):
     """切换项目启用 + 写项目级变体覆盖。覆盖项缺省 = 不改动。"""
+
+    enabled: bool
+    default_variants: dict | None = None
+
+
+# v0.23.3 ADR-0050 §12.2 · 项目服务池绑定 API (pool-level)。
+class MLBackendPoolSummary(BaseModel):
+    """服务池摘要 (项目可用清单 / 启用态)。
+
+    v0.23.3 off/observe: 每池是 singleton, legacy_instance 指向唯一 registry 实例;
+    项目设置勾选清单读此。完整池管理 (成员 / 权重 / drain) 留给 v0.23.4 超管 UI。"""
+
+    id: UUID
+    name: str
+    enabled: bool = False
+    legacy_instance_id: UUID | None = None
+    member_count: int = 0
+    routing_generation: int = 1
+
+
+class ProjectMLBackendPoolItem(BaseModel):
+    """一行 = 一个服务池在本项目的启用态 + 项目级变体覆盖 (pool 级)。"""
+
+    pool: MLBackendPoolSummary
+    enabled: bool = False
+    default_variants: dict | None = None
+
+
+class ProjectMLBackendPoolList(BaseModel):
+    items: list[ProjectMLBackendPoolItem]
+
+
+class ProjectMLBackendPoolEnablement(BaseModel):
+    """切换项目对某服务池的启用 + 写项目级变体覆盖 (pool 级)。"""
 
     enabled: bool
     default_variants: dict | None = None

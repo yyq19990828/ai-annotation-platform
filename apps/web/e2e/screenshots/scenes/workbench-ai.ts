@@ -1,5 +1,10 @@
 import type { ScreenshotScene } from "./_types";
 
+const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
+  themes: ["dark"],
+  primaryTheme: "dark",
+};
+
 const imageTaskRoute = (
   catalog: Parameters<ScreenshotScene["route"]>[0],
   task: string,
@@ -25,6 +30,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(500);
     },
     // 四区全貌用视口截图（不设 capture）
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/workbench/layout-overview.png",
   },
   {
@@ -44,6 +50,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       { selector: '[data-testid="mask-mode-erase"]',  style: "rect-red", label: "橡皮" },
       { selector: '[data-testid="mask-radius-slider"]', style: "numbered" },
     ],
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/mask-brush/toolbar-overview.png",
   },
   {
@@ -66,6 +73,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/sam/smart-point-toolbar.png",
   },
   {
@@ -88,6 +96,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/sam/interactive-toolbar.png",
   },
   {
@@ -110,6 +119,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/sam/magic-box-toolbar.png",
   },
   {
@@ -135,6 +145,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     annotate: [
       { selector: '[data-testid="exemplar-output-mode"]', style: "rect-red", label: "输出形态" },
     ],
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/sam/exemplar-output-mode.png",
   },
   {
@@ -157,6 +168,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(300);
     },
     capture: { kind: "locator", selector: '[data-testid="ai-prediction-popover"]', padding: 8 },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/sam/ai-inspector-panel.png",
   },
 ];

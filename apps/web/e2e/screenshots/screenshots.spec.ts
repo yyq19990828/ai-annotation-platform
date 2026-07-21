@@ -13,11 +13,12 @@
  * 矩阵规则：
  *   - scene 不声明 matrix → 只跑 desktop-light project
  *   - scene 声明 matrix.themes:['light','dark'] → desktop-light + desktop-dark 都跑
+ *   - scene 声明 matrix.primaryTheme:'dark' → 暗色写入无后缀 target
  *   - scene 声明 matrix.viewports:['desktop','mobile'] → desktop-light + mobile 都跑
  *
  * 输出路径规则：
- *   - desktop-light（默认）→ 原 target 路径不加后缀
- *   - desktop-dark          → 追加 .dark 后缀
+ *   - desktop + primaryTheme → 原 target 路径不加后缀
+ *   - 非主主题               → 追加 .light / .dark 后缀
  *   - mobile                → 追加 .mobile 后缀
  */
 import { test } from "../fixtures/seed";

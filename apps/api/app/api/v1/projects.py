@@ -225,6 +225,18 @@ async def _serialize_project(
         }
 
     data = {c.name: getattr(project, c.name) for c in project.__table__.columns}
+    # v0.23.3 ADR-0050 · 公共 schema ProjectOut 仍暴露 ml_backend_id (registry id, 兼容前端);
+    # ORM 存的是 ml_backend_pool_id (pool id)。这里解析 pool 的 legacy instance 回 registry id。
+    # 前端完整池管理留给 v0.23.4; 本版本前端看到的仍是 singleton pool 的 legacy 实例。
+    ml_backend_id_for_response: uuid.UUID | None = None
+    if project.ml_backend_pool_id is not None:
+        from app.db.models.ml_backend_pool import MLBackendServicePool
+
+        pool = await db.get(MLBackendServicePool, project.ml_backend_pool_id)
+        ml_backend_id_for_response = (
+            pool.legacy_instance_id if pool is not None else None
+        )
+    data["ml_backend_id"] = ml_backend_id_for_response
     data["owner_name"] = owner_name
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
@@ -481,6 +493,9 @@ async def create_project(
     # v0.9.7 · 取出 source_id (若给定), 校验存在性后再创建项目;
     # 项目 INSERT 完成后再为新项目启用 backend (项目 → project_ml_backend FK).
     source_id = payload.pop("ml_backend_source_id", None)
+    # v0.23.3 ADR-0050 · 公共 schema 仍用 ml_backend_id (registry id, 兼容前端);
+    # 内部转成 ml_backend_pool_id (singleton pool id) 存进项目主绑定。
+    requested_main_backend_id = payload.pop("ml_backend_id", None)
     source_backend = None
     if source_id is not None:
         from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
@@ -517,10 +532,18 @@ async def create_project(
                 payload.setdefault(
                     "guide_assets", _copy.deepcopy(source_project.guide_assets)
                 )
-        if source_backend is None and source_project.ml_backend_id is not None:
-            from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
+        if source_backend is None and source_project.ml_backend_pool_id is not None:
+            from app.db.models.ml_backend_pool import MLBackendServicePool
 
-            source_backend = await db.get(_MLB, source_project.ml_backend_id)
+            # v0.23.3 ADR-0050 · 项目主绑定存 pool id; 经 pool.legacy_instance_id 解析
+            # 回 registry 实例 (off mode singleton, 与 v0.23.2 clone 行为一致)。
+            src_pool = await db.get(
+                MLBackendServicePool, source_project.ml_backend_pool_id
+            )
+            if src_pool is not None and src_pool.legacy_instance_id is not None:
+                from app.db.models.ml_backend_registry import MLBackendRegistry as _MLB
+
+                source_backend = await db.get(_MLB, src_pool.legacy_instance_id)
     elif copy_guide:
         # 没给 source_project_id 却给了 copy_annotation_guide 是请求体错误, 提示前端
         raise HTTPException(
@@ -542,18 +565,18 @@ async def create_project(
         await assert_template_visible(db, template, current_user)
         payload = merge_template_into_payload(template, payload)
 
-    if payload.get("ml_backend_id"):
+    if requested_main_backend_id:
         # v0.10.37 · 创建即绑定 backend 时同样按 data_type 校验模态 (与 update_project 对称)
         await _validate_backend_modality(
-            db, payload["ml_backend_id"], payload["data_type"]
+            db, requested_main_backend_id, payload["data_type"]
         )
 
     new_project_id = uuid.uuid4()
     # v0.19.0 ADR-0044 · 直接指定主 backend (非克隆路径) 时, 同步在新项目建启用关联;
-    # 不然 project_ml_backend 缺行, trigger_preannotation 的 is_enabled 校验 404 +
+    # 不然 project_ml_backend_pool 缺行, trigger_preannotation 的 is_enabled 校验 404 +
     # ai_enabled 又派生为 true → 工作台显示「已启用 AI 却跑不起来」。
     main_backend_to_enable = (
-        payload.get("ml_backend_id") if source_backend is None else None
+        requested_main_backend_id if source_backend is None else None
     )
     project = Project(
         id=new_project_id,
@@ -565,19 +588,22 @@ async def create_project(
     await db.flush()  # 让 project row 入 DB, 满足 project_ml_backend FK
 
     if source_backend is not None:
-        new_backend_id = await _clone_backend_to_new_project(
+        new_pool_id = await _clone_backend_to_new_project(
             db, source=source_backend, new_project_id=new_project_id
         )
-        project.ml_backend_id = new_backend_id
+        project.ml_backend_pool_id = new_pool_id
         # v0.10.37 · 克隆源项目 backend 落定后, 同样按新项目 data_type 校验模态
         # (clone 复制了 url/auth, 实时探 /setup 与校验 source 等价).
-        await _validate_backend_modality(db, new_backend_id, project.data_type)
+        await _validate_backend_modality(db, source_backend.id, project.data_type)
     elif main_backend_to_enable is not None:
         from app.services.ml_backend import MLBackendService
 
-        await MLBackendService(db).set_enabled(
-            new_project_id, main_backend_to_enable, enabled=True
-        )
+        svc = MLBackendService(db)
+        await svc.set_enabled(new_project_id, main_backend_to_enable, enabled=True)
+        # v0.23.3 ADR-0050 · 项目主绑定存 pool id; set_enabled 内部已解析 registry→pool。
+        pool = await svc._pool_for_registry(main_backend_to_enable)
+        if pool is not None:
+            project.ml_backend_pool_id = pool.id
 
     if template is not None:
         template.usage_count = (template.usage_count or 0) + 1
@@ -596,12 +622,16 @@ async def _clone_backend_to_new_project(
     db: AsyncSession, *, source, new_project_id: uuid.UUID
 ) -> uuid.UUID:
     """v0.19.0 ADR-0044 · backend 已是全局注册项, 「克隆给新项目」退化为「为新项目启用同一
-    全局 backend」: 建一条 project_ml_backend 关联, 复用 source.id (registry id)。返回 registry id。
+    全局 backend」: 建一条 project_ml_backend_pool 关联。返回项目主绑定的 pool id。
+    v0.23.3 ADR-0050 · 返回 singleton pool id (项目主绑定存 pool, 非 registry)。
     """
     from app.services.ml_backend import MLBackendService
 
-    await MLBackendService(db).set_enabled(new_project_id, source.id, enabled=True)
-    return source.id
+    svc = MLBackendService(db)
+    await svc.set_enabled(new_project_id, source.id, enabled=True)
+    pool = await svc._pool_for_registry(source.id)
+    # source 必经 create_registry / singleton backfill, 故 pool 必然存在。
+    return pool.id if pool is not None else source.id
 
 
 # v0.10.14 · E2 · 白名单 + merge 实现迁出至 app.services.project_clone, 供
@@ -674,12 +704,16 @@ async def update_project(
     # v0.18.27 · 项目级编排结构校验 (显式 null = 清除, 跳过校验直接置 None)。
     if payload.get("preannotate_pipeline") is not None:
         _validate_saved_pipeline(payload["preannotate_pipeline"])
+    # v0.23.3 ADR-0050 · 公共 schema 仍用 ml_backend_id (registry id);
+    # 内部转成 ml_backend_pool_id (singleton pool) 存项目主绑定。
+    # 注意区分「字段未提供」(不改动) 与「显式 null」(清空): 用 in 判断而非 pop 默认值。
     if "ml_backend_id" in payload:
-        if payload["ml_backend_id"]:
+        requested_main_backend_id = payload.pop("ml_backend_id")
+        if requested_main_backend_id:
             # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
             await _validate_backend_modality(
                 db,
-                payload["ml_backend_id"],
+                requested_main_backend_id,
                 payload.get("data_type") or project.data_type,
             )
             # v0.19.0 ADR-0044 · 设主 backend 即视为「本项目启用该 backend」;
@@ -687,9 +721,13 @@ async def update_project(
             # → 工作台显示「已启用 AI 却跑不起来」。与 PUT /ml-backends/{rid}/enablement 对称。
             from app.services.ml_backend import MLBackendService
 
-            await MLBackendService(db).set_enabled(
-                project.id, payload["ml_backend_id"], enabled=True
-            )
+            svc = MLBackendService(db)
+            await svc.set_enabled(project.id, requested_main_backend_id, enabled=True)
+            pool = await svc._pool_for_registry(requested_main_backend_id)
+            payload["ml_backend_pool_id"] = pool.id if pool is not None else None
+        else:
+            # 显式 null = 清空主绑定
+            payload["ml_backend_pool_id"] = None
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
     from app.services.project import coalesce_legacy_into_tool_bindings
@@ -1572,7 +1610,8 @@ async def trigger_preannotation(
     if source_backend_id is None:
         raise HTTPException(status_code=422, detail="ml_backend_id 必填")
     backend = await svc.get(source_backend_id)
-    # v0.19.0 ADR-0044 · 校验 backend 存在且在本项目「已启用」(project_ml_backend.enabled):
+    # v0.19.0 ADR-0044 · 校验 backend 存在且在本项目「已启用」
+    # (project_ml_backend_pool.enabled, 经 pool member 解析回 registry):
     # 与下游阶段校验对称, 防止 owner 手动 POST 未启用/别项目 backend id 触发预标。
     if not backend or not await svc.is_enabled(project.id, source_backend_id):
         raise HTTPException(status_code=404, detail="ML Backend not found")

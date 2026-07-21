@@ -5,9 +5,10 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.user import User
+from app.services.ml_backend import MLBackendService
 from app.services.screenshot_seed_backends import (
     backend_requirement_issues,
     reconcile_screenshot_backends,
@@ -134,14 +135,19 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
     stale = _backend(url="http://backend.test:8999")
     db_session.add_all([image, ocr, stale])
     await db_session.flush()
+    # v0.23.3 ADR-0050 · 每 registry 须有 singleton pool 才能被项目启用 / 主绑定。
+    svc = MLBackendService(db_session)
+    image_pool = await svc._create_singleton_pool(image)
+    ocr_pool = await svc._create_singleton_pool(ocr)
+    stale_pool = await svc._create_singleton_pool(stale)
     db_session.add(
-        ProjectMLBackend(
+        ProjectMLBackendPool(
             project_id=projects["pointcloud_demo"].id,
-            registry_id=stale.id,
+            pool_id=stale_pool.id,
             enabled=True,
         )
     )
-    projects["pointcloud_demo"].ml_backend_id = stale.id
+    projects["pointcloud_demo"].ml_backend_pool_id = stale_pool.id
     await db_session.flush()
 
     async def fake_live_candidates(_db):
@@ -157,13 +163,14 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
     assert report["bindings"]["image_demo"]["backend_id"] == str(image.id)
     assert report["bindings"]["video_demo"]["tracker"] == ("sam3_video_interactive")
     assert report["bindings"]["ocr_demo"]["backend_id"] == str(ocr.id)
-    assert projects["pointcloud_demo"].ml_backend_id is None
-    associations = list((await db_session.execute(select(ProjectMLBackend))).scalars())
+    assert projects["pointcloud_demo"].ml_backend_pool_id is None
+    associations = list(
+        (await db_session.execute(select(ProjectMLBackendPool))).scalars()
+    )
     assert {
-        (association.project_id, association.registry_id)
-        for association in associations
+        (association.project_id, association.pool_id) for association in associations
     } == {
-        (projects["image_demo"].id, image.id),
-        (projects["video_demo"].id, image.id),
-        (projects["ocr_demo"].id, ocr.id),
+        (projects["image_demo"].id, image_pool.id),
+        (projects["video_demo"].id, image_pool.id),
+        (projects["ocr_demo"].id, ocr_pool.id),
     }

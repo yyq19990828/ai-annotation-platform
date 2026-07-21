@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -27,8 +28,11 @@ const variantClassNames: Record<NonNullable<BadgeProps["variant"]>, string> = {
   outline: "border border-border text-foreground",
 };
 
-export function Badge({ variant = "default", dot, children, className, style }: BadgeProps) {
-  const styleRef = useElementStyle<HTMLSpanElement>(style);
+export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
+  { variant = "default", dot, children, className, style },
+  forwardedRef,
+) {
+  const styleRef = useElementStyle<HTMLSpanElement>(style, forwardedRef);
   return (
     <span
       ref={styleRef}
@@ -42,4 +46,4 @@ export function Badge({ variant = "default", dot, children, className, style }: 
       {children}
     </span>
   );
-}
+});

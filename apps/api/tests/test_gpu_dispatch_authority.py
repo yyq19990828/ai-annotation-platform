@@ -17,13 +17,15 @@ from aap_protocol_v2.lifecycle import (
 
 from app.config import Settings
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services import gpu_dispatch_authority as authority_module
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration import dispatch as authority_module
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
+    GPUDispatchRequest,
+)
+from app.services.gpu_arbitration.proofs import (
     GPUColdRuntimeSubject,
     GPUColdTerminalCommitResult,
-    GPUDispatchRequest,
     GPUEvictionCommitResult,
     GPUEvictionDrainHealth,
     GPUIdleEvictionRuntimeSubject,

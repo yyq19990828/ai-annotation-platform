@@ -72,9 +72,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             </button>
           )}
           <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-semibold tracking-[0.01em]">
-            <div className="surface-shadow-sm relative size-[22px] overflow-hidden rounded-md border border-border bg-primary">
-              <div className="absolute inset-1 rounded-[3px] border-[1.5px] border-primary-foreground/85" />
-            </div>
+            <img src="/ai-annotation-platform-icon.svg" alt="" aria-hidden="true" className="size-[22px] shrink-0 rounded-md" />
             <span>标注中心</span>
             <span className="ml-1 text-xs font-normal text-muted-foreground">v2.5</span>
           </div>

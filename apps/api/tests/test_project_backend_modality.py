@@ -34,7 +34,8 @@ _VIDEO_SETUP = {
 
 async def _seed_backend(db, project_id, *, name="bk") -> MLBackendRegistry:
     """ADR-0044 · backend 现为全局注册项 (无 project_id); 绑定经 PATCH ml_backend_id,
-    模态校验走 db.get(MLBackendRegistry, id)。project_id 仅保留签名兼容, 不入库。"""
+    模态校验走 db.get(MLBackendRegistry, id)。project_id 仅保留签名兼容, 不入库。
+    v0.23.3 ADR-0050 · 同时建 singleton pool (绑定需经 pool 层)。"""
     b = MLBackendRegistry(
         id=uuid.uuid4(),
         name=name,
@@ -44,6 +45,9 @@ async def _seed_backend(db, project_id, *, name="bk") -> MLBackendRegistry:
     )
     db.add(b)
     await db.flush()
+    from app.services.ml_backend import MLBackendService
+
+    await MLBackendService(db)._create_singleton_pool(b)
     return b
 
 

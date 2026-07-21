@@ -30,6 +30,13 @@ class Prediction(Base):
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ml_backend_registry.id", ondelete="SET NULL")
     )
+    # v0.23.3 ADR-0050 · requested pool (单阶段 = 请求的池; 多阶段聚合 = root stage pool)。
+    # ml_backend_id 永远表示实际执行的 selected registry instance; 多阶段聚合时每
+    # stage / invocation 的双 ID lineage 存 PredictionMeta.extra.pipeline.selections[]。
+    ml_backend_pool_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ml_backend_service_pools.id", ondelete="SET NULL"),
+    )
     model_version: Mapped[str | None] = mapped_column(String(100))
     score: Mapped[float | None] = mapped_column(Float)
     # v0.10.17 · 与 Annotation.tool_unit_id 对齐; to_internal_shape 按 result.type 推断.
@@ -112,6 +119,11 @@ class FailedPrediction(Base):
     )
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ml_backend_registry.id", ondelete="SET NULL")
+    )
+    # v0.23.3 ADR-0050 · 失败所在的 requested pool; 选择前失败 instance id 可为 null。
+    ml_backend_pool_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ml_backend_service_pools.id", ondelete="SET NULL"),
     )
     model_version: Mapped[str | None] = mapped_column(String(100))
     error_type: Mapped[str] = mapped_column(String(100), nullable=False)

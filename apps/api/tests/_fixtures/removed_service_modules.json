@@ -1,0 +1,952 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "facade_module": "app.services.gpu_arbiter_store",
+      "public_module": "app.services.gpu_arbitration.ledger",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.ledger.keys",
+          "names": [
+            "GPUArbiterKeys",
+            "gpu_arbiter_keys"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.ledger.store",
+          "names": [
+            "GPUArbiterStore"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.ledger.types",
+          "names": [
+            "GPU_COLD_ADMISSION_OPERATION",
+            "GPU_EVICTION_OPERATION",
+            "GPUAdmissionResult",
+            "GPUAllocation",
+            "GPUAllocationState",
+            "GPUArbiterStoreError",
+            "GPUBackendDomainEvolutionResult",
+            "GPUBackendDomainMember",
+            "GPUBackendMembershipState",
+            "GPUCardSnapshot",
+            "GPUEvictionBranchResult",
+            "GPUIdleEvictionResult",
+            "GPULeaseMutationResult",
+            "GPUProofResetCAS",
+            "GPUProofResetContext",
+            "GPUQueueResult",
+            "GPUQueueTicket",
+            "GPUReconcileLeaseCleanup",
+            "GPUReconcileResult",
+            "GPURequestLease",
+            "GPURequestLeaseState",
+            "GPUTombstoneGCReceipt",
+            "GPUTombstoneGCResult",
+            "GPUTransitionOwnerResult",
+            "GPUTransitionResult"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.ledger.validation",
+          "names": [
+            "normalize_gpu_backend_max_concurrency"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.admin_ml_integrations",
+        "app.workers.ml_health"
+      ],
+      "frozen_symbols": [
+        "GPUArbiterKeys",
+        "gpu_arbiter_keys",
+        "GPUArbiterStore",
+        "GPU_COLD_ADMISSION_OPERATION",
+        "GPU_EVICTION_OPERATION",
+        "GPUAdmissionResult",
+        "GPUAllocation",
+        "GPUAllocationState",
+        "GPUArbiterStoreError",
+        "GPUBackendDomainEvolutionResult",
+        "GPUBackendDomainMember",
+        "GPUBackendMembershipState",
+        "GPUCardSnapshot",
+        "GPUEvictionBranchResult",
+        "GPUIdleEvictionResult",
+        "GPULeaseMutationResult",
+        "GPUProofResetCAS",
+        "GPUProofResetContext",
+        "GPUQueueResult",
+        "GPUQueueTicket",
+        "GPUReconcileLeaseCleanup",
+        "GPUReconcileResult",
+        "GPURequestLease",
+        "GPURequestLeaseState",
+        "GPUTombstoneGCReceipt",
+        "GPUTombstoneGCResult",
+        "GPUTransitionOwnerResult",
+        "GPUTransitionResult",
+        "normalize_gpu_backend_max_concurrency"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_admission_signer",
+      "public_module": "app.services.gpu_arbitration.signing",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.signing",
+          "names": [
+            "GPUAdmissionSignerConfigError",
+            "GPUAdmissionTokenSigner"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.services.gpu_arbitration.dispatch",
+        "app.services.gpu_arbitration.membership_activation",
+        "app.services.gpu_arbitration.rollout_control",
+        "scripts.validate_gpu_arbitration"
+      ],
+      "frozen_symbols": [
+        "GPUAdmissionSignerConfigError",
+        "GPUAdmissionTokenSigner"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_arbiter_rollout",
+      "public_module": "app.services.gpu_arbitration.rollout_state",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.rollout_state",
+          "names": [
+            "GPUArbiterRolloutConflict",
+            "GPUArbiterRolloutDecision",
+            "GPUArbiterRolloutSnapshot",
+            "GPUArbiterRolloutUnavailable",
+            "begin_gpu_arbiter_rollout",
+            "block_gpu_arbiter_rollout",
+            "classify_gpu_arbiter_rollout",
+            "complete_gpu_arbiter_rollout",
+            "gpu_arbiter_rollout_snapshot",
+            "gpu_rollout_boundary_active",
+            "read_gpu_arbiter_rollout",
+            "read_gpu_arbiter_rollouts",
+            "resolve_gpu_arbiter_rollout"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.admin_ml_integrations",
+        "app.services.ml_client",
+        "app.workers.ml_health"
+      ],
+      "frozen_symbols": [
+        "GPUArbiterRolloutConflict",
+        "GPUArbiterRolloutDecision",
+        "GPUArbiterRolloutSnapshot",
+        "GPUArbiterRolloutUnavailable",
+        "begin_gpu_arbiter_rollout",
+        "block_gpu_arbiter_rollout",
+        "classify_gpu_arbiter_rollout",
+        "complete_gpu_arbiter_rollout",
+        "gpu_arbiter_rollout_snapshot",
+        "gpu_rollout_boundary_active",
+        "read_gpu_arbiter_rollout",
+        "read_gpu_arbiter_rollouts",
+        "resolve_gpu_arbiter_rollout"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_collector_database",
+      "public_module": "app.services.gpu_arbitration.collector_database",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.collector_database",
+          "names": [
+            "GPUCollectorDatabase",
+            "GPUCollectorDatabaseConfigError",
+            "load_gpu_collector_database_url",
+            "open_gpu_collector_database",
+            "validate_gpu_collector_role_boundary"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.workers.ml_health"
+      ],
+      "frozen_symbols": [
+        "GPUCollectorDatabase",
+        "GPUCollectorDatabaseConfigError",
+        "load_gpu_collector_database_url",
+        "open_gpu_collector_database",
+        "validate_gpu_collector_role_boundary"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_dispatch_authority",
+      "public_module": "app.services.gpu_arbitration.dispatch",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.dispatch",
+          "names": [
+            "build_gpu_dispatch_context_factory"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.deps",
+        "app.workers.frame_preannotate",
+        "app.workers.predictions_retry",
+        "app.workers.tasks",
+        "app.workers.video_tracker"
+      ],
+      "frozen_symbols": [
+        "build_gpu_dispatch_context_factory"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_membership_activation",
+      "public_module": "app.services.gpu_arbitration.membership_activation",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.membership_activation",
+          "names": [
+            "GPUMembershipPromotionResult",
+            "promote_gpu_backend_membership",
+            "promote_gpu_resource_memberships"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.workers.ml_health"
+      ],
+      "frozen_symbols": [
+        "GPUMembershipPromotionResult",
+        "promote_gpu_backend_membership",
+        "promote_gpu_resource_memberships"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_rollout_control",
+      "public_module": "app.services.gpu_arbitration.rollout_control",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.rollout_control",
+          "names": [
+            "GPURolloutControlResult",
+            "advance_gpu_backend_rollout_control",
+            "advance_gpu_resource_rollout_control"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.workers.ml_health"
+      ],
+      "frozen_symbols": [
+        "GPURolloutControlResult",
+        "advance_gpu_backend_rollout_control",
+        "advance_gpu_resource_rollout_control"
+      ]
+    },
+    {
+      "facade_module": "app.services.gpu_arbiter",
+      "public_module": "app.services.gpu_arbiter",
+      "exports": [
+        {
+          "module": "app.services.gpu_arbitration.contracts",
+          "names": [
+            "GPUArbiterDispatchError",
+            "GPUArbiterErrorCode",
+            "GPUDispatchContextFactory",
+            "GPUDispatchGrant",
+            "GPUDispatchOperation",
+            "GPUDispatchOutcome",
+            "GPUDispatchOutcomeChannel",
+            "GPUDispatchOutcomeKind",
+            "GPUDispatchRequest",
+            "GPUDispatchUncertainReason",
+            "GPUShadowSessionFactory",
+            "gpu_arbiter_failure_record",
+            "summarize_gpu_arbiter_failures"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.policy",
+          "names": [
+            "GPUClaimConfigurationError",
+            "GPUShadowCandidate",
+            "GPUShadowDecision",
+            "any_gpu_resource_effectively_enforced",
+            "backend_is_trusted_explicit_cpu",
+            "effective_gpu_arbiter_mode",
+            "evaluate_gpu_shadow_decision",
+            "gpu_shadow_observation_enabled",
+            "record_gpu_shadow_dispatch",
+            "strict_gpu_loaded_evidence",
+            "validate_gpu_claim"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.fences",
+          "names": [
+            "GPUFenceCounter",
+            "GPUFenceExhaustedError",
+            "GPUFenceMembershipError",
+            "GPUFenceSessionFactory",
+            "GPUReadinessDemoter",
+            "activate_gpu_backend_membership",
+            "advance_gpu_backend_fence",
+            "read_gpu_backend_fence",
+            "record_gpu_backend_token_expiry"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.proofs",
+          "names": [
+            "GPUBusyEvictionRuntimeSubjectError",
+            "GPUColdRuntimeSubject",
+            "GPUColdRuntimeSubjectError",
+            "GPUColdTerminalCommitResult",
+            "GPUEvictionCancelRuntimeSubjectError",
+            "GPUEvictionCommitResult",
+            "GPUEvictionDrainHealth",
+            "GPUIdleEvictionRuntimeSubject",
+            "GPUIdleEvictionRuntimeSubjectError",
+            "GPUPreparedColdRuntimeSubject",
+            "GPUPreparedEvictionCancelRuntimeSubject",
+            "GPUPreparedIdleEvictionRuntimeSubject",
+            "GPUResidentRuntimeSubject",
+            "GPUResidentRuntimeSubjectError",
+            "GPU_LEGACY_MODE_TOKEN_TTL_SECONDS",
+            "commit_gpu_cold_terminal_from_health",
+            "commit_gpu_eviction_cancel_from_health",
+            "commit_gpu_eviction_phase_from_health",
+            "prepare_gpu_cold_runtime_generation",
+            "prepare_gpu_eviction_cancel_runtime_generation",
+            "prepare_gpu_idle_eviction_runtime_generation",
+            "read_gpu_busy_eviction_runtime_subject",
+            "read_gpu_cold_runtime_subject",
+            "read_gpu_eviction_cancel_runtime_subject",
+            "read_gpu_eviction_drain_health",
+            "read_gpu_idle_eviction_runtime_subject",
+            "read_gpu_resident_runtime_subject",
+            "record_gpu_resident_runtime_token_expiry"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.control_preparation",
+          "names": [
+            "GPULegacyAckBlockedError",
+            "GPULegacyAckPreparation",
+            "GPURolloutControlBlockedError",
+            "GPURolloutControlPreparation",
+            "prepare_gpu_backend_legacy_ack",
+            "prepare_gpu_backend_rollout_control"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.reconciliation",
+          "names": [
+            "GPUResourceRepairResult",
+            "GPUResourceRuntimeObservation",
+            "commit_gpu_proof_reset_from_health",
+            "disabled_gpu_resource_runtime_observation",
+            "observe_gpu_resource_runtime",
+            "repair_gpu_resource"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.retirement",
+          "names": [
+            "GPURetiredLiveProof",
+            "GPURetiredProbeResult",
+            "GPUTombstoneCollectionResult",
+            "collect_gpu_backend_tombstone",
+            "probe_retired_gpu_membership"
+          ]
+        },
+        {
+          "module": "app.services.gpu_arbitration.diagnostics",
+          "names": [
+            "build_backend_gpu_config_status",
+            "build_resource_summaries",
+            "claimed_budget_by_resource",
+            "record_unregistered_gpu_shadow_dispatch",
+            "unregistered_gpu_loading_blocked"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.admin_ml_integrations",
+        "app.api.v1.ml_backends",
+        "app.api.v1.tasks.annotations",
+        "app.deps",
+        "app.services.ml_backend",
+        "app.services.secondary_inference",
+        "app.services.video_tracking.adapters",
+        "app.services.video_tracking.runner",
+        "app.workers.ml_health",
+        "scripts.validate_gpu_arbitration"
+      ],
+      "frozen_symbols": [
+        "GPUArbiterDispatchError",
+        "GPUArbiterErrorCode",
+        "GPUDispatchContextFactory",
+        "GPUDispatchGrant",
+        "GPUDispatchOperation",
+        "GPUDispatchOutcome",
+        "GPUDispatchOutcomeChannel",
+        "GPUDispatchOutcomeKind",
+        "GPUDispatchRequest",
+        "GPUDispatchUncertainReason",
+        "GPUShadowSessionFactory",
+        "gpu_arbiter_failure_record",
+        "summarize_gpu_arbiter_failures",
+        "GPUClaimConfigurationError",
+        "GPUShadowCandidate",
+        "GPUShadowDecision",
+        "any_gpu_resource_effectively_enforced",
+        "backend_is_trusted_explicit_cpu",
+        "effective_gpu_arbiter_mode",
+        "evaluate_gpu_shadow_decision",
+        "gpu_shadow_observation_enabled",
+        "record_gpu_shadow_dispatch",
+        "strict_gpu_loaded_evidence",
+        "validate_gpu_claim",
+        "GPUFenceCounter",
+        "GPUFenceExhaustedError",
+        "GPUFenceMembershipError",
+        "GPUFenceSessionFactory",
+        "GPUReadinessDemoter",
+        "activate_gpu_backend_membership",
+        "advance_gpu_backend_fence",
+        "read_gpu_backend_fence",
+        "record_gpu_backend_token_expiry",
+        "GPUBusyEvictionRuntimeSubjectError",
+        "GPUColdRuntimeSubject",
+        "GPUColdRuntimeSubjectError",
+        "GPUColdTerminalCommitResult",
+        "GPUEvictionCancelRuntimeSubjectError",
+        "GPUEvictionCommitResult",
+        "GPUEvictionDrainHealth",
+        "GPUIdleEvictionRuntimeSubject",
+        "GPUIdleEvictionRuntimeSubjectError",
+        "GPUPreparedColdRuntimeSubject",
+        "GPUPreparedEvictionCancelRuntimeSubject",
+        "GPUPreparedIdleEvictionRuntimeSubject",
+        "GPUResidentRuntimeSubject",
+        "GPUResidentRuntimeSubjectError",
+        "GPU_LEGACY_MODE_TOKEN_TTL_SECONDS",
+        "commit_gpu_cold_terminal_from_health",
+        "commit_gpu_eviction_cancel_from_health",
+        "commit_gpu_eviction_phase_from_health",
+        "prepare_gpu_cold_runtime_generation",
+        "prepare_gpu_eviction_cancel_runtime_generation",
+        "prepare_gpu_idle_eviction_runtime_generation",
+        "read_gpu_busy_eviction_runtime_subject",
+        "read_gpu_cold_runtime_subject",
+        "read_gpu_eviction_cancel_runtime_subject",
+        "read_gpu_eviction_drain_health",
+        "read_gpu_idle_eviction_runtime_subject",
+        "read_gpu_resident_runtime_subject",
+        "record_gpu_resident_runtime_token_expiry",
+        "GPULegacyAckBlockedError",
+        "GPULegacyAckPreparation",
+        "GPURolloutControlBlockedError",
+        "GPURolloutControlPreparation",
+        "prepare_gpu_backend_legacy_ack",
+        "prepare_gpu_backend_rollout_control",
+        "GPUResourceRepairResult",
+        "GPUResourceRuntimeObservation",
+        "commit_gpu_proof_reset_from_health",
+        "disabled_gpu_resource_runtime_observation",
+        "observe_gpu_resource_runtime",
+        "repair_gpu_resource",
+        "GPURetiredLiveProof",
+        "GPURetiredProbeResult",
+        "GPUTombstoneCollectionResult",
+        "collect_gpu_backend_tombstone",
+        "probe_retired_gpu_membership",
+        "build_backend_gpu_config_status",
+        "build_resource_summaries",
+        "claimed_budget_by_resource",
+        "record_unregistered_gpu_shadow_dispatch",
+        "unregistered_gpu_loading_blocked"
+      ]
+    },
+    {
+      "facade_module": "app.services.video_tracker_adapters",
+      "public_module": "app.services.video_tracking.adapters",
+      "exports": [
+        {
+          "module": "app.services.video_tracking.adapters",
+          "names": [
+            "MLBackendVideoTrackerAdapter",
+            "MockBboxTrackerAdapter",
+            "TrackerAdapter",
+            "TrackerContext",
+            "TrackerFrameResult",
+            "get_tracker_adapter",
+            "registered_tracker_models"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.tasks.video",
+        "app.api.v1.video_tracker_jobs",
+        "app.workers.video_tracker"
+      ],
+      "frozen_symbols": [
+        "MLBackendVideoTrackerAdapter",
+        "MockBboxTrackerAdapter",
+        "TrackerAdapter",
+        "TrackerContext",
+        "TrackerFrameResult",
+        "get_tracker_adapter",
+        "registered_tracker_models"
+      ]
+    },
+    {
+      "facade_module": "app.services.video_tracker_job_service",
+      "public_module": "app.services.video_tracking.jobs",
+      "exports": [
+        {
+          "module": "app.services.video_tracking.jobs",
+          "names": [
+            "accept_tracker_job",
+            "cancel_tracker_job",
+            "create_tracker_job",
+            "discard_tracker_job",
+            "get_tracker_job",
+            "list_active_tracker_jobs",
+            "list_reviewable_tracker_jobs",
+            "tracker_job_out"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.tasks.video",
+        "app.api.v1.video_tracker_jobs",
+        "app.workers.video_tracker"
+      ],
+      "frozen_symbols": [
+        "accept_tracker_job",
+        "cancel_tracker_job",
+        "create_tracker_job",
+        "discard_tracker_job",
+        "get_tracker_job",
+        "list_active_tracker_jobs",
+        "list_reviewable_tracker_jobs",
+        "tracker_job_out"
+      ]
+    },
+    {
+      "facade_module": "app.services.video_tracker_runner",
+      "public_module": "app.services.video_tracking.runner",
+      "exports": [
+        {
+          "module": "app.services.video_tracking.runner",
+          "names": [
+            "COMBO_DISCOVERY_WINDOW_FRAMES",
+            "MAX_TRACKER_STAGED_BYTES",
+            "TrackerEventPublisher",
+            "TrackerJobStateConflict",
+            "accept_tracker_job",
+            "apply_tracker_results",
+            "discard_tracker_job",
+            "publish_tracker_event",
+            "run_tracker_job"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.tasks.video",
+        "app.api.v1.video_tracker_jobs",
+        "app.workers.video_tracker"
+      ],
+      "frozen_symbols": [
+        "COMBO_DISCOVERY_WINDOW_FRAMES",
+        "MAX_TRACKER_STAGED_BYTES",
+        "TrackerEventPublisher",
+        "TrackerJobStateConflict",
+        "accept_tracker_job",
+        "apply_tracker_results",
+        "discard_tracker_job",
+        "publish_tracker_event",
+        "run_tracker_job"
+      ]
+    },
+    {
+      "facade_module": "app.services.export",
+      "public_module": "app.services.exporting.service",
+      "exports": [
+        {
+          "module": "app.services.exporting.service",
+          "names": [
+            "ExportService",
+            "UnsupportedExportError"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.batches",
+        "app.api.v1.projects",
+        "app.workers.export"
+      ],
+      "frozen_symbols": [
+        "ExportService",
+        "UnsupportedExportError"
+      ]
+    },
+    {
+      "facade_module": "app.services.export_packaging",
+      "public_module": "app.services.exporting.packaging",
+      "exports": [
+        {
+          "module": "app.services.exporting.packaging",
+          "names": [
+            "ALL_EXPORT_TARGETS",
+            "IMAGE_EXPORT_TARGETS",
+            "LIDAR_EXPORT_TARGETS",
+            "PRESIGN_EXPIRES_SECONDS",
+            "VIDEO_EXPORT_FORMATS",
+            "YOLO_TARGETS",
+            "build_export_zip",
+            "clean_export_targets",
+            "relative_path_from_file_path"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.batches",
+        "app.api.v1.projects",
+        "app.workers.export"
+      ],
+      "frozen_symbols": [
+        "ALL_EXPORT_TARGETS",
+        "IMAGE_EXPORT_TARGETS",
+        "LIDAR_EXPORT_TARGETS",
+        "PRESIGN_EXPIRES_SECONDS",
+        "VIDEO_EXPORT_FORMATS",
+        "YOLO_TARGETS",
+        "build_export_zip",
+        "clean_export_targets",
+        "relative_path_from_file_path"
+      ]
+    },
+    {
+      "facade_module": "app.services.export_cache",
+      "public_module": "app.services.exporting.cache",
+      "exports": [
+        {
+          "module": "app.services.exporting.cache",
+          "names": [
+            "compute_cache_key",
+            "lookup",
+            "record"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.batches",
+        "app.api.v1.projects",
+        "app.workers.export"
+      ],
+      "frozen_symbols": [
+        "compute_cache_key",
+        "lookup",
+        "record"
+      ]
+    },
+    {
+      "facade_module": "app.services.export_video",
+      "public_module": "app.services.exporting.video",
+      "exports": [
+        {
+          "module": "app.services.exporting.video",
+          "names": [
+            "VIDEO_SINGLE_FRAME_GEOMETRY_TYPES",
+            "VIDEO_TRACK_GEOMETRY_TYPES",
+            "build_coco_frames_seg",
+            "build_kitti_labels",
+            "build_mot_gt",
+            "build_mot_seqinfo",
+            "build_yolo_frame_det_labels",
+            "build_yolo_frame_seg_labels",
+            "effective_fps",
+            "points_to_bbox_norm",
+            "single_frame_bbox",
+            "source_to_grid",
+            "track_grid_rows",
+            "yolo_seg_line"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.batches",
+        "app.api.v1.projects",
+        "app.workers.export"
+      ],
+      "frozen_symbols": [
+        "VIDEO_SINGLE_FRAME_GEOMETRY_TYPES",
+        "VIDEO_TRACK_GEOMETRY_TYPES",
+        "build_coco_frames_seg",
+        "build_kitti_labels",
+        "build_mot_gt",
+        "build_mot_seqinfo",
+        "build_yolo_frame_det_labels",
+        "build_yolo_frame_seg_labels",
+        "effective_fps",
+        "points_to_bbox_norm",
+        "single_frame_bbox",
+        "source_to_grid",
+        "track_grid_rows",
+        "yolo_seg_line"
+      ]
+    },
+    {
+      "facade_module": "app.services.export_lidar",
+      "public_module": "app.services.exporting.lidar",
+      "exports": [
+        {
+          "module": "app.services.exporting.lidar",
+          "names": [
+            "BoxExportAttrs",
+            "LidarFrameExportCtx",
+            "build_kitti_lidar_label_lines",
+            "build_nuscenes_frame_records",
+            "build_pointmask_label_bytes",
+            "category_map_json"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.batches",
+        "app.api.v1.projects",
+        "app.workers.export"
+      ],
+      "frozen_symbols": [
+        "BoxExportAttrs",
+        "LidarFrameExportCtx",
+        "build_kitti_lidar_label_lines",
+        "build_nuscenes_frame_records",
+        "build_pointmask_label_bytes",
+        "category_map_json"
+      ]
+    },
+    {
+      "facade_module": "app.services.export_davis",
+      "public_module": "app.services.exporting.davis",
+      "exports": [
+        {
+          "module": "app.services.exporting.davis",
+          "names": [
+            "DAVIS_MAX_OBJECTS",
+            "build_davis_palette_png",
+            "davis_palette",
+            "derive_davis_object_ids"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.batches",
+        "app.api.v1.projects",
+        "app.workers.export"
+      ],
+      "frozen_symbols": [
+        "DAVIS_MAX_OBJECTS",
+        "build_davis_palette_png",
+        "davis_palette",
+        "derive_davis_object_ids"
+      ]
+    },
+    {
+      "facade_module": "app.services.data_manager",
+      "public_module": "app.services.data_management.service",
+      "exports": [
+        {
+          "module": "app.services.data_management.service",
+          "names": [
+            "DataManagerService"
+          ]
+        },
+        {
+          "module": "app.services.data_management.schema",
+          "names": [
+            "build_data_manager_schema"
+          ]
+        },
+        {
+          "module": "app.services.data_management.task_metrics",
+          "names": [
+            "LOW_CONFIDENCE_THRESHOLD",
+            "low_confidence_pending_prediction_shapes_expr",
+            "pending_prediction_shapes_expr",
+            "pending_tracker_jobs_expr"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.data_manager",
+        "app.api.v1.task_views"
+      ],
+      "frozen_symbols": [
+        "DataManagerService",
+        "build_data_manager_schema",
+        "LOW_CONFIDENCE_THRESHOLD",
+        "low_confidence_pending_prediction_shapes_expr",
+        "pending_prediction_shapes_expr",
+        "pending_tracker_jobs_expr"
+      ]
+    },
+    {
+      "facade_module": "app.services.task_views",
+      "public_module": "app.services.data_management.views",
+      "exports": [
+        {
+          "module": "app.services.data_management.task_filters",
+          "names": [
+            "apply_task_visibility",
+            "compile_filter",
+            "visible_tasks_stmt"
+          ]
+        },
+        {
+          "module": "app.services.data_management.views",
+          "names": [
+            "DEFAULT_COLUMNS",
+            "TaskViewService",
+            "apply_sort",
+            "builtin_views",
+            "compile_annotation_match_filter",
+            "invalid_filter_fields",
+            "validate_columns",
+            "validate_filter",
+            "validate_sort"
+          ]
+        },
+        {
+          "module": "app.services.data_management.schema",
+          "names": [
+            "builtin_view_keys"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.data_manager",
+        "app.api.v1.task_views"
+      ],
+      "frozen_symbols": [
+        "apply_task_visibility",
+        "compile_filter",
+        "visible_tasks_stmt",
+        "DEFAULT_COLUMNS",
+        "TaskViewService",
+        "apply_sort",
+        "builtin_views",
+        "compile_annotation_match_filter",
+        "invalid_filter_fields",
+        "validate_columns",
+        "validate_filter",
+        "validate_sort",
+        "builtin_view_keys"
+      ]
+    },
+    {
+      "facade_module": "app.services.data_manager_cursor",
+      "public_module": "app.services.data_management.cursor",
+      "exports": [
+        {
+          "module": "app.services.data_management.cursor",
+          "names": [
+            "decode_cursor",
+            "encode_cursor",
+            "keyset_after"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.data_manager",
+        "app.api.v1.task_views"
+      ],
+      "frozen_symbols": [
+        "decode_cursor",
+        "encode_cursor",
+        "keyset_after"
+      ]
+    },
+    {
+      "facade_module": "app.services.data_manager_entities",
+      "public_module": "app.services.data_management.entities",
+      "exports": [
+        {
+          "module": "app.services.data_management.entities",
+          "names": [
+            "COMPACT_TRACK_TYPES",
+            "DataManagerObjectService",
+            "object_from_row",
+            "task_dataset_item_id_expr"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.data_manager",
+        "app.api.v1.task_views"
+      ],
+      "frozen_symbols": [
+        "COMPACT_TRACK_TYPES",
+        "DataManagerObjectService",
+        "object_from_row",
+        "task_dataset_item_id_expr"
+      ]
+    },
+    {
+      "facade_module": "app.services.data_manager_entity_filter",
+      "public_module": "app.services.data_management.entity_filters",
+      "exports": [
+        {
+          "module": "app.services.data_management.entity_filters",
+          "names": [
+            "builtin_entity_views",
+            "compile_entity_filter",
+            "count_entity_filters",
+            "invalid_entity_filter_fields",
+            "validate_entity_view"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.data_manager",
+        "app.api.v1.task_views"
+      ],
+      "frozen_symbols": [
+        "builtin_entity_views",
+        "compile_entity_filter",
+        "count_entity_filters",
+        "invalid_entity_filter_fields",
+        "validate_entity_view"
+      ]
+    },
+    {
+      "facade_module": "app.services.data_manager_tracks",
+      "public_module": "app.services.data_management.tracks",
+      "exports": [
+        {
+          "module": "app.services.data_management.tracks",
+          "names": [
+            "DataManagerTrackService"
+          ]
+        }
+      ],
+      "consumer_modules": [
+        "app.api.v1.data_manager",
+        "app.api.v1.task_views"
+      ],
+      "frozen_symbols": [
+        "DataManagerTrackService"
+      ]
+    }
+  ]
+}

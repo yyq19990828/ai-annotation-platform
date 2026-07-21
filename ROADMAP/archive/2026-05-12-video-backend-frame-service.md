@@ -172,8 +172,8 @@ Wave 6 · 质量评估
 | media worker | `apps/api/app/workers/media.py` | probe / poster / timetable / chunk / frame extraction / cleanup |
 | 数据模型 | `apps/api/app/db/models/dataset.py` | `VideoFrameIndex` / `VideoChunk` / `VideoFrameCache` / `VideoSegment` |
 | tracker job | `apps/api/app/db/models/video_tracker_job.py` / `apps/api/app/services/video_tracker_job_service.py` | job 持久化、创建 / 查询 / 取消、segment lock 校验 |
-| tracker worker | `apps/api/app/workers/video_tracker.py` / `apps/api/app/services/video_tracker_runner.py` | `gpu` queue、状态机、事件流、分窗、结果写回 |
-| tracker adapters | `apps/api/app/services/video_tracker_adapters.py` | `mock_bbox`、`sam2_video`、`sam3_video` registry |
+| tracker worker | `apps/api/app/workers/video_tracker.py` / `apps/api/app/services/video_tracking/runner.py` | `gpu` queue、状态机、事件流、分窗、结果写回 |
+| tracker adapters | `apps/api/app/services/video_tracking/adapters.py` | `mock_bbox`、`sam2_video`、`sam3_video` registry |
 | ML Backend client | `apps/api/app/services/ml_client.py` | `/predict` 调用、per-backend concurrency、metrics |
 | 协议文档 | `docs-site/dev/reference/video-frame-service.md` / `docs-site/dev/reference/ml-backend-protocol.md` | frame service 与 `context.type="video_tracker"` 契约 |
 | Runbook | `docs-site/ops/runbooks/video-frame-service.md` | chunk/frame 失败、segment lock、tracker queue / GPU OOM |

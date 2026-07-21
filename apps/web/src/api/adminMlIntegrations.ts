@@ -6,6 +6,19 @@ import type {
   GpuInfo,
   MLBackendUnloadResponse,
   ResidencyInfo,
+  // v0.23.4 · ML routing read models + service-pool CRUD (ADR-0050).
+  TopologyResponse,
+  TopologyPoolEntry,
+  TopologyMemberInstance,
+  RuntimeSnapshotResponse,
+  RuntimePoolSnapshot,
+  RuntimeMemberSnapshot,
+  SourceFreshness,
+  ServicePoolAdminItem,
+  ServicePoolMemberItem,
+  ServicePoolCreateRequest,
+  ServicePoolPatchRequest,
+  ServicePoolMemberPutRequest,
 } from "./generated/types.gen";
 import type { MLBackendCompute } from "@/utils/mlBackendCompute";
 
@@ -17,6 +30,19 @@ export type {
   GpuInfo,
   MLBackendUnloadResponse,
   ResidencyInfo,
+  // v0.23.4 · ML routing read models + service-pool CRUD (ADR-0050).
+  TopologyResponse,
+  TopologyPoolEntry,
+  TopologyMemberInstance,
+  RuntimeSnapshotResponse,
+  RuntimePoolSnapshot,
+  RuntimeMemberSnapshot,
+  SourceFreshness,
+  ServicePoolAdminItem,
+  ServicePoolMemberItem,
+  ServicePoolCreateRequest,
+  ServicePoolPatchRequest,
+  ServicePoolMemberPutRequest,
 } from "./generated/types.gen";
 
 export interface BucketSummary {
@@ -326,4 +352,55 @@ export const adminMlIntegrationsApi = {
   /** ADR-0049 · 不依赖项目绑定的全局 backend 手工卸载。 */
   registryUnload: (id: string) =>
     apiClient.post<MLBackendUnloadResponse>(`/admin/ml-integrations/registry/${id}/unload`),
+
+  // ── v0.23.4 · ADR-0050 · 服务池 / 实例读模型 + CRUD ────────────────────
+  // Plan §9.1: 前端不再 URL-join; topology 是注册管理默认读模型。
+  /** 角色裁剪的服务池/实例拓扑 (PROJECT_ADMIN 看裁剪视图, SUPER_ADMIN 看全量). */
+  topology: () => apiClient.get<TopologyResponse>("/admin/ml-integrations/topology"),
+  /** 运行时快照 (SUPER_ADMIN-only); 含 router metrics / health / 新鲜度信封. */
+  runtimeSnapshot: () =>
+    apiClient.get<RuntimeSnapshotResponse>("/admin/ml-integrations/runtime-snapshot"),
+  /** 超管: 全量服务池列表 (含 members + created_at/updated_at). */
+  listServicePools: () =>
+    apiClient.get<ServicePoolAdminItem[]>("/admin/ml-integrations/service-pools"),
+  /** 超管: 新建服务池; name 必填, legacy_instance_id 可选 (单实例起步). */
+  createServicePool: (payload: ServicePoolCreateRequest) =>
+    apiClient.post<ServicePoolAdminItem>("/admin/ml-integrations/service-pools", payload),
+  /** 超管: 单个服务池详情. */
+  getServicePool: (poolId: string) =>
+    apiClient.get<ServicePoolAdminItem>(`/admin/ml-integrations/service-pools/${poolId}`),
+  /** 超管: 改池名 / 启用状态; 仅下发改动字段. */
+  patchServicePool: (poolId: string, payload: ServicePoolPatchRequest) =>
+    apiClient.patch<ServicePoolAdminItem>(
+      `/admin/ml-integrations/service-pools/${poolId}`,
+      payload,
+    ),
+  /** 超管: 删除服务池; 需先解除成员关系且无活跃 lease. */
+  deleteServicePool: (poolId: string) =>
+    apiClient.delete<void>(`/admin/ml-integrations/service-pools/${poolId}`),
+  /** 超管: 加入或更新成员 (weight); capability 指纹不匹配返 409. */
+  addOrUpdatePoolMember: (
+    poolId: string,
+    registryId: string,
+    payload: ServicePoolMemberPutRequest,
+  ) =>
+    apiClient.put<ServicePoolAdminItem>(
+      `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}`,
+      payload,
+    ),
+  /** 超管: 移除成员; 需先 drain 且 inflight=0. */
+  removePoolMember: (poolId: string, registryId: string) =>
+    apiClient.delete<ServicePoolAdminItem>(
+      `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}`,
+    ),
+  /** 超管: 成员 active→draining (停止接新 lease); 幂等. */
+  drainPoolMember: (poolId: string, registryId: string) =>
+    apiClient.post<ServicePoolAdminItem>(
+      `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}/drain`,
+    ),
+  /** 超管: 成员 draining→active (恢复接流); 幂等; disabled 需先 enable. */
+  resumePoolMember: (poolId: string, registryId: string) =>
+    apiClient.post<ServicePoolAdminItem>(
+      `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}/resume`,
+    ),
 };

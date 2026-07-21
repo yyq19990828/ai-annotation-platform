@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-20
 ---
 
 # 环境变量参考
@@ -83,6 +83,17 @@ last_reviewed: 2026-07-16
 | `GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS` | `30` | 新 residency 的最短保护窗口；只接受 1..3600 秒。未到期 victim 会在 exact card ticket 上按 admission deadline 与固定 ticket TTL 有界等待且不续期；预算耗尽返回 503 + Retry-After， 超时或取消会精确清理票据。 |
 | `GPU_LIFECYCLE_SIGNING_KEYS_FILE` | `—` | Platform signer private seeds stay in a root-readable file, never in an env value. Strict JSON: {"kid":"unpadded-base64url-raw-32-byte-Ed25519-private-seed"}. Leave both values empty while arbitration is off/observe. The file is read lazily only by enforce authority/promotion, and must not be mounted into GPU backends. |
 | `GPU_LIFECYCLE_ACTIVE_SIGNING_KID` | `—` | Select one exact kid from the private key file after backend public-key rollout. |
+
+## ADR-0050 · ML Backend service-pool routing ledger
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ML_BACKEND_ROUTER_MODE` | `off` | Deployment-level single switch (off | observe | enforce). off/observe keep legacy single-instance dispatch; observe additionally computes would-select in a shadow namespace and records diagnostics without gating; enforce uses router-selected instances and fails closed on Redis/topology uncertainty. API/worker/beat read the same value; deploy must rebuild/restart as a unit, do not mix modes across processes. |
+| `ML_BACKEND_ROUTER_HEALTH_MAX_AGE_SECONDS` | `90` | Health snapshot freshness gate: members whose last_checked_at is older than this are not eligible candidates (their capability may be stale). |
+| `ML_BACKEND_ROUTER_LEASE_TTL_SECONDS` | `120` | Route lease TTL must exceed the normal transport timeout; long tasks heartbeat. |
+| `ML_BACKEND_ROUTER_HEARTBEAT_INTERVAL_SECONDS` | `15` | — |
+| `ML_BACKEND_ROUTER_PASSIVE_FAILURE_THRESHOLD` | `3` | Passive circuit: consecutive transport failures before ejection + open duration. |
+| `ML_BACKEND_ROUTER_EJECT_SECONDS` | `30` | — |
 
 ## yolo-backend (ultralytics 多任务 det/seg/pose/obb)
 

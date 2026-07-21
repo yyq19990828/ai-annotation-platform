@@ -11,7 +11,8 @@ from app.services.ml_backend import MLBackendService
 
 
 async def _make_backend(db, *, name="b", url="http://h:8000"):
-    """v0.19.0 ADR-0044 · backend 已上提为全局注册项 (无 project_id)。"""
+    """v0.19.0 ADR-0044 · backend 已上提为全局注册项 (无 project_id)。
+    v0.23.3 ADR-0050 · 同时建 singleton pool (项目创建经 ml_backend_source_id 复用需 pool)。"""
     b = MLBackendRegistry(
         id=uuid.uuid4(),
         name=name,
@@ -24,6 +25,7 @@ async def _make_backend(db, *, name="b", url="http://h:8000"):
     )
     db.add(b)
     await db.flush()
+    await MLBackendService(db)._create_singleton_pool(b)
     return b
 
 

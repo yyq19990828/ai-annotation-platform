@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.config import GPUArbiterMode, Settings
 from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     GPUArbiterRolloutConflict,
     GPUArbiterRolloutSnapshot,
     begin_gpu_arbiter_rollout,

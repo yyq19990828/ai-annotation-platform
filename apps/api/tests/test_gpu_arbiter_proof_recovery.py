@@ -27,23 +27,25 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services import gpu_arbiter as gpu_arbiter_service
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration import proofs as gpu_arbiter_service
+from app.services.gpu_arbitration import proofs as gpu_proofs_service
+from app.services.gpu_arbitration.contracts import GPUDispatchRequest
+from app.services.gpu_arbitration.fences import (
+    _record_gpu_backend_token_expiry_in_transaction,
+    activate_gpu_backend_membership,
+    record_gpu_backend_token_expiry,
+)
+from app.services.gpu_arbitration.proofs import (
     GPUBusyEvictionRuntimeSubjectError,
     GPUColdRuntimeSubjectError,
-    GPUDispatchRequest,
-    GPUIdleEvictionRuntimeSubjectError,
     GPUEvictionCancelRuntimeSubjectError,
+    GPUIdleEvictionRuntimeSubjectError,
     GPUPreparedColdRuntimeSubject,
     GPUPreparedIdleEvictionRuntimeSubject,
     GPUResidentRuntimeSubjectError,
-    _record_gpu_backend_token_expiry_in_transaction,
-    activate_gpu_backend_membership,
-    collect_gpu_backend_tombstone,
     commit_gpu_cold_terminal_from_health,
     commit_gpu_eviction_cancel_from_health,
     commit_gpu_eviction_phase_from_health,
-    commit_gpu_proof_reset_from_health,
     prepare_gpu_cold_runtime_generation,
     prepare_gpu_eviction_cancel_runtime_generation,
     prepare_gpu_idle_eviction_runtime_generation,
@@ -53,12 +55,14 @@ from app.services.gpu_arbiter import (
     read_gpu_eviction_drain_health,
     read_gpu_idle_eviction_runtime_subject,
     read_gpu_resident_runtime_subject,
-    record_gpu_backend_token_expiry,
     record_gpu_resident_runtime_token_expiry,
+)
+from app.services.gpu_arbitration.reconciliation import (
+    commit_gpu_proof_reset_from_health,
     repair_gpu_resource,
 )
-from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
-from app.services.gpu_dispatch_authority import build_gpu_dispatch_context_factory
+from app.services.gpu_arbitration.retirement import collect_gpu_backend_tombstone
+from app.services.gpu_arbitration.dispatch import build_gpu_dispatch_context_factory
 from app.services.gpu_arbitration.ledger import (
     GPUAllocation,
     GPUAllocationState,
@@ -67,6 +71,7 @@ from app.services.gpu_arbitration.ledger import (
     GPUProofResetContext,
     GPUReconcileResult,
 )
+from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 
 
 _RESOURCE_A = "node-proof/GPU-a"
@@ -3737,7 +3742,7 @@ async def test_busy_eviction_drain_health_classifies_all_activity_domains_read_o
             raise gpu_arbiter_service._GPUProofInvalid("registry_concurrency_invalid")
 
         monkeypatch.setattr(
-            gpu_arbiter_service,
+            gpu_proofs_service,
             "_registry_gpu_max_concurrency",
             invalid_registry_concurrency,
         )

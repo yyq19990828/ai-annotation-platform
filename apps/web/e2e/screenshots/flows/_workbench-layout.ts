@@ -94,7 +94,14 @@ export async function installRecordingWorkbenchLayout(
     return response.json() as Promise<UserPreferences>;
   });
 
+  const screenshotTheme = await page.evaluate(() => localStorage.getItem("anno.theme"));
   let sandbox = applyRecordingLayout(original, mode);
+  if (screenshotTheme === "light" || screenshotTheme === "dark") {
+    sandbox = {
+      ...sandbox,
+      ui: { ...sandbox.ui, theme: screenshotTheme },
+    };
+  }
   await page.route("**/api/v1/auth/me/preferences", async (route) => {
     const method = route.request().method();
     if (method === "GET") {

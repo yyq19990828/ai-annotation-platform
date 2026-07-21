@@ -21,12 +21,12 @@ from fastapi import HTTPException
 
 from app.config import GPUArbiterMode, settings
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
     GPUDispatchGrant,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     GPUArbiterRolloutDecision,
     GPUArbiterRolloutUnavailable,
 )

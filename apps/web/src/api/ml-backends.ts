@@ -197,17 +197,21 @@ export const mlBackendsApi = {
     ),
 
   setup: (projectId: string, backendId: string) =>
-    apiClient.get<MLBackendCapability>(`/projects/${projectId}/ml-backends/${backendId}/setup`),
+    // 探测式调用：不弹全局 toast（调用方自带错误展示，例如能力目录的黄色降级提示），
+    // 避免一个不可达 backend 容器触发 N 个堆叠 toast。
+    apiClient.silentGet<MLBackendCapability>(
+      `/projects/${projectId}/ml-backends/${backendId}/setup`,
+    ),
 
   // v0.14.9 · 能力目录 (health_meta 派生视图, 含 models[] + infra + modalities).
   capabilities: (projectId: string, backendId: string) =>
-    apiClient.get<MLBackendCapability>(
+    apiClient.silentGet<MLBackendCapability>(
       `/projects/${projectId}/ml-backends/${backendId}/capabilities`,
     ),
 
   // v0.14.9 · 强制重探 /setup 并刷新能力目录缓存.
   refreshCapabilities: (projectId: string, backendId: string) =>
-    apiClient.post<MLBackendCapability>(
+    apiClient.silentPost<MLBackendCapability>(
       `/projects/${projectId}/ml-backends/${backendId}/capabilities/refresh`,
     ),
 

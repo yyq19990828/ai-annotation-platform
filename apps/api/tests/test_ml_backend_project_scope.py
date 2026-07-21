@@ -16,10 +16,14 @@ from __future__ import annotations
 
 import uuid
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
-from app.services.gpu_arbiter import GPUArbiterDispatchError, GPUArbiterErrorCode
+from app.services.gpu_arbitration.contracts import (
+    GPUArbiterDispatchError,
+    GPUArbiterErrorCode,
+)
+from tests.conftest import create_registry_with_pool
 
 
 async def _seed_project(db, owner_id) -> Project:
@@ -38,16 +42,14 @@ async def _seed_project(db, owner_id) -> Project:
 
 
 async def _seed_backend(db, project_id) -> MLBackendRegistry:
-    b = MLBackendRegistry(
-        id=uuid.uuid4(),
+    b, pool = await create_registry_with_pool(
+        db,
         name="grounded-sam2",
         url=f"http://example-{uuid.uuid4().hex[:8]}/",
         is_interactive=True,
         state="connected",
     )
-    db.add(b)
-    await db.flush()
-    db.add(ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True))
+    db.add(ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True))
     await db.flush()
     return b
 
@@ -194,6 +196,13 @@ async def test_unload_allowed_for_super_admin(
     async def _fake_unload(self, registry_id):
         return {"ok": True, "unloaded": True, "loaded": False}
 
+    async def _allow_quiescent(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.ml_routing.safety.require_registry_quiescent",
+        _allow_quiescent,
+    )
     monkeypatch.setattr("app.services.ml_backend.MLBackendService.unload", _fake_unload)
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
@@ -255,6 +264,13 @@ async def test_residency_routes_preserve_gpu_arbiter_error_contract(
             retry_after_s=7,
         )
 
+    async def _allow_quiescent(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.ml_routing.safety.require_registry_quiescent",
+        _allow_quiescent,
+    )
     for method in ("unload", "reload", "warmup"):
         monkeypatch.setattr(
             f"app.services.ml_backend.MLBackendService.{method}",

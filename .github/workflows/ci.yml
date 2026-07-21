@@ -156,7 +156,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install ruff
-        run: pip install ruff
+        # Pinned to an exact version shared with the local pre-commit hook so the CI
+        # formatter and the local gate never disagree (v0.23.1 P0 baseline).
+        run: pip install "ruff==0.15.22"
       - name: ruff check --fix apps/api
         run: ruff check --fix apps/api/app apps/api/tests
       - name: ruff format (auto-fix)

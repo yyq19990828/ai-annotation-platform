@@ -20,7 +20,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus, UserRole
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.async_job import AsyncJob
 from app.db.models.prediction import FailedPrediction, Prediction
 from app.db.models.project import Project
@@ -328,16 +329,16 @@ async def list_preannotate_project_summary(
 ) -> PreannotateProjectSummaryResponse:
     """v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.
 
-    仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend WHERE enabled).
+    仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend_pool WHERE enabled).
     v0.10.38 · 撤回 v0.10.36 的 data_type="image" 过滤: 模态分流改到前端 ProjectDetailPanel
     (image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.
     """
     pres = await db.execute(
         select(Project).where(
-            select(ProjectMLBackend.id)
+            select(ProjectMLBackendPool.id)
             .where(
-                ProjectMLBackend.project_id == Project.id,
-                ProjectMLBackend.enabled.is_(True),
+                ProjectMLBackendPool.project_id == Project.id,
+                ProjectMLBackendPool.enabled.is_(True),
             )
             .exists(),
         )
@@ -378,23 +379,44 @@ async def list_preannotate_project_summary(
     fail_counts = {pid: int(cnt) for pid, cnt in fail_q.all()}
 
     # v0.19.0 ADR-0044 · 按项目启用关联 join 全局注册表取本项目可用 backend。
+    # v0.23.3 ADR-0050 · 经服务池层 (project_ml_backend_pool → pool member → registry)。
     bk_q = await db.execute(
-        select(ProjectMLBackend.project_id, MLBackendRegistry)
-        .join(MLBackendRegistry, MLBackendRegistry.id == ProjectMLBackend.registry_id)
+        select(ProjectMLBackendPool.project_id, MLBackendRegistry)
+        .join(
+            MLBackendPoolMember,
+            MLBackendPoolMember.pool_id == ProjectMLBackendPool.pool_id,
+        )
+        .join(
+            MLBackendRegistry,
+            MLBackendRegistry.id == MLBackendPoolMember.registry_id,
+        )
         .where(
-            ProjectMLBackend.project_id.in_(project_ids),
-            ProjectMLBackend.enabled.is_(True),
+            ProjectMLBackendPool.project_id.in_(project_ids),
+            ProjectMLBackendPool.enabled.is_(True),
         )
     )
     rows = list(bk_q.all())
     backends_by_project: dict[uuid.UUID, MLBackendRegistry] = {}
-    # 同项目多 backend 时优先选 Project.ml_backend_id 指向的那条; 否则任取一条.
+    # 同项目多 backend 时优先选项目主池的 legacy instance; 否则任取一条.
+    # v0.23.3: 项目主绑定存 pool id, 经 MLBackendServicePool.legacy_instance_id 解析。
+    pool_ids = {proj.ml_backend_pool_id for proj in projects if proj.ml_backend_pool_id}
+    legacy_map: dict[uuid.UUID, uuid.UUID] = {}
+    if pool_ids:
+        legacy_q = await db.execute(
+            select(
+                MLBackendServicePool.id, MLBackendServicePool.legacy_instance_id
+            ).where(MLBackendServicePool.id.in_(pool_ids))
+        )
+        legacy_map = {pid: leg for pid, leg in legacy_q.all() if leg is not None}
     for pid, bk in rows:
         backends_by_project.setdefault(pid, bk)
     for proj in projects:
-        if proj.ml_backend_id:
+        preferred_registry = (
+            legacy_map.get(proj.ml_backend_pool_id) if proj.ml_backend_pool_id else None
+        )
+        if preferred_registry:
             for pid, bk in rows:
-                if bk.id == proj.ml_backend_id:
+                if bk.id == preferred_registry:
                     backends_by_project[proj.id] = bk
                     break
 

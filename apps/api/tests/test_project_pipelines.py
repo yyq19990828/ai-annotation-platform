@@ -8,9 +8,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.project_pipeline import ProjectPipeline
+from app.services.ml_backend import MLBackendService
+from tests.conftest import create_registry_with_pool
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -34,22 +36,19 @@ async def _seed_project(db: AsyncSession, owner_id: uuid.UUID, name: str = "pipe
 
 
 async def _seed_backend(db: AsyncSession, name: str) -> MLBackendRegistry:
-    backend = MLBackendRegistry(
-        id=uuid.uuid4(),
+    backend, _pool = await create_registry_with_pool(
+        db,
         name=name,
         url=f"http://{name}-{uuid.uuid4().hex[:8]}/",
         is_interactive=False,
         state="connected",
     )
-    db.add(backend)
-    await db.flush()
     return backend
 
 
 async def _enable(db: AsyncSession, project: Project, backend: MLBackendRegistry):
-    db.add(
-        ProjectMLBackend(project_id=project.id, registry_id=backend.id, enabled=True)
-    )
+    pool = await MLBackendService(db)._pool_for_registry(backend.id)
+    db.add(ProjectMLBackendPool(project_id=project.id, pool_id=pool.id, enabled=True))
     await db.flush()
 
 

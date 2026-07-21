@@ -20,14 +20,16 @@ from sqlalchemy.ext.asyncio import (
 from app.config import GPUArbiterMode, settings
 from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.gpu_backend_fence import GPUBackendFence
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
+)
+from app.services.gpu_arbitration.reconciliation import (
     GPUResourceRuntimeObservation,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.rollout_state import (
     begin_gpu_arbiter_rollout,
     block_gpu_arbiter_rollout,
     complete_gpu_arbiter_rollout,
@@ -62,7 +64,32 @@ async def _seed_registry(db: AsyncSession, name: str = "g") -> MLBackendRegistry
     )
     db.add(b)
     await db.flush()
+    # v0.23.3 ADR-0050 · 每 registry 须有 singleton pool (alembic 0132 backfill 语义)。
+    await MLBackendService(db)._create_singleton_pool(b)
     return b
+
+
+async def _allow_managed_destructive_operation(
+    db: AsyncSession, registry_id: uuid.UUID, monkeypatch
+) -> None:
+    from app.services.ml_routing import safety
+
+    class QuiescentLedger:
+        async def healthcheck(self) -> None:
+            return None
+
+        async def member_inflight(self, _pool_id: str, _registry_id: str) -> int:
+            return 0
+
+        async def aclose(self) -> None:
+            return None
+
+    svc = MLBackendService(db)
+    pool = await svc._pool_for_registry(registry_id)
+    await svc.drain_pool_member(pool.id, registry_id)
+    await db.commit()
+    monkeypatch.setattr(settings, "ml_backend_router_mode", "enforce")
+    monkeypatch.setattr(safety, "make_ledger_from_settings", QuiescentLedger)
 
 
 def _configure_gpu(
@@ -315,10 +342,11 @@ async def test_project_admin_cannot_create_or_update_global_registry_row(
     user, token = project_admin
     project = await _seed_project(db_session, user.id)
     backend = await _seed_registry(db_session, name="shared-global")
+    pool = await MLBackendService(db_session)._pool_for_registry(backend.id)
     db_session.add(
-        ProjectMLBackend(
+        ProjectMLBackendPool(
             project_id=project.id,
-            registry_id=backend.id,
+            pool_id=pool.id,
             enabled=True,
         )
     )
@@ -815,14 +843,17 @@ async def test_update_registry_404(httpx_client, super_admin):
 
 
 async def test_delete_registry_cascades_project_binding(
-    httpx_client, db_session, super_admin
+    httpx_client, db_session, super_admin, monkeypatch
 ):
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     b = await _seed_registry(db_session, name="todel")
-    db_session.add(ProjectMLBackend(project_id=proj.id, registry_id=b.id, enabled=True))
-    proj.ml_backend_id = b.id
-    await db_session.commit()
+    pool = await MLBackendService(db_session)._pool_for_registry(b.id)
+    db_session.add(
+        ProjectMLBackendPool(project_id=proj.id, pool_id=pool.id, enabled=True)
+    )
+    proj.ml_backend_pool_id = pool.id
+    await _allow_managed_destructive_operation(db_session, b.id, monkeypatch)
 
     res = await httpx_client.delete(
         f"/api/v1/admin/ml-integrations/registry/{b.id}",
@@ -838,7 +869,7 @@ async def test_registry_unload_does_not_require_project_binding(
 ):
     _, token = super_admin
     backend = await _seed_registry(db_session, name="unbound-unload")
-    await db_session.commit()
+    await _allow_managed_destructive_operation(db_session, backend.id, monkeypatch)
     calls: list[uuid.UUID] = []
 
     async def _unload(_self, registry_id: uuid.UUID):
@@ -862,7 +893,7 @@ async def test_registry_unload_preserves_gpu_arbiter_error_contract(
 ):
     _, token = super_admin
     backend = await _seed_registry(db_session, name="arbiter-reject")
-    await db_session.commit()
+    await _allow_managed_destructive_operation(db_session, backend.id, monkeypatch)
 
     async def _reject(_self, _registry_id: uuid.UUID):
         raise GPUArbiterDispatchError(
@@ -897,10 +928,11 @@ async def test_available_lists_all_with_enabled_flag(
     proj = await _seed_project(db_session, user.id)
     on = await _seed_registry(db_session, name="on")
     off = await _seed_registry(db_session, name="off")
+    on_pool = await MLBackendService(db_session)._pool_for_registry(on.id)
     db_session.add(
-        ProjectMLBackend(
+        ProjectMLBackendPool(
             project_id=proj.id,
-            registry_id=on.id,
+            pool_id=on_pool.id,
             enabled=True,
             default_variants={"sam_variant": "large"},
         )

@@ -19,6 +19,28 @@ async def test_seed_reset_returns_fixture_payload(httpx_client):
     assert len(body["task_ids"]) == 5
 
 
+async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client, db_session):
+    from sqlalchemy import select
+
+    from app.db.models.ml_backend_registry import ProjectMLBackendPool
+
+    first = await httpx_client.post("/api/v1/__test/seed/reset")
+    second = await httpx_client.post("/api/v1/__test/seed/reset")
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    body = second.json()
+    assert body["ml_backend_id"]
+
+    assoc = await db_session.scalar(
+        select(ProjectMLBackendPool).where(
+            ProjectMLBackendPool.project_id == body["project_id"]
+        )
+    )
+    assert assoc is not None
+    assert assoc.enabled is True
+
+
 async def test_seed_login_after_reset_returns_jwt(httpx_client):
     await httpx_client.post("/api/v1/__test/seed/reset")
     res = await httpx_client.post(

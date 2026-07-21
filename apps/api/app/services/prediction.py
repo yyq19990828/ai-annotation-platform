@@ -421,6 +421,7 @@ class PredictionService:
         token_meta: dict | None = None,
         source: str = "ml_backend",
         pipeline_extra: dict | None = None,
+        ml_backend_pool_id: uuid.UUID | None = None,
     ) -> Prediction:
         # v0.21.1 · 检测式追踪原生 int track_id → trk_<uuid> (读路径不得再生 uuid, 见 _remap_track_ids)。
         result = _remap_track_ids(result)
@@ -432,6 +433,8 @@ class PredictionService:
             task_id=task_id,
             project_id=project_id,
             ml_backend_id=ml_backend_id,
+            # v0.23.3 ADR-0050 §5.4 · requested pool (单阶段 = 请求的池; 多阶段 = root stage pool)。
+            ml_backend_pool_id=ml_backend_pool_id,
             model_version=model_version,
             score=score,
             # v0.10.17 · 按 result[0].type 派生 tool_unit_id.
@@ -478,12 +481,15 @@ class PredictionService:
         message: str,
         model_version: str | None = None,
         extra: dict | None = None,
+        ml_backend_pool_id: uuid.UUID | None = None,
     ) -> FailedPrediction:
         failed = FailedPrediction(
             id=uuid.uuid4(),
             task_id=task_id,
             project_id=project_id,
             ml_backend_id=ml_backend_id,
+            # v0.23.3 ADR-0050 §5.4 · 失败所在的 requested pool; 选择前失败 instance id 可为 null。
+            ml_backend_pool_id=ml_backend_pool_id,
             model_version=model_version,
             error_type=error_type,
             message=message,

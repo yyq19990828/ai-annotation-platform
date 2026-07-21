@@ -3242,6 +3242,14 @@
       "BackendCapabilities": {
         "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.\n\nv0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);\n其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。",
         "properties": {
+          "compat_protocol_versions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Compat Protocol Versions",
+            "type": "array"
+          },
           "infra": {
             "default": "unknown",
             "title": "Infra",
@@ -3270,6 +3278,17 @@
             "title": "Modalities",
             "type": "array"
           },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
           "models": {
             "default": [],
             "items": {
@@ -3288,6 +3307,11 @@
               }
             ],
             "title": "Name"
+          },
+          "protocol_version": {
+            "default": "1",
+            "title": "Protocol Version",
+            "type": "string"
           },
           "supported_geometric_outputs": {
             "default": [],
@@ -3337,6 +3361,17 @@
             "title": "Text Driven Trackers",
             "type": "array"
           },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
           "warmup_endpoint": {
             "default": false,
             "title": "Warmup Endpoint",
@@ -3349,6 +3384,17 @@
             },
             "title": "Warnings",
             "type": "array"
+          },
+          "weights_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weights Version"
           }
         },
         "title": "BackendCapabilities",
@@ -11477,6 +11523,53 @@
         "title": "MLBackendOut",
         "type": "object"
       },
+      "MLBackendPoolSummary": {
+        "description": "服务池摘要 (项目可用清单 / 启用态)。\n\nv0.23.3 off/observe: 每池是 singleton, legacy_instance 指向唯一 registry 实例;\n项目设置勾选清单读此。完整池管理 (成员 / 权重 / drain) 留给 v0.23.4 超管 UI。",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "legacy_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Instance Id"
+          },
+          "member_count": {
+            "default": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routing_generation": {
+            "default": 1,
+            "title": "Routing Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MLBackendPoolSummary",
+        "type": "object"
+      },
       "MLBackendRegistryConflictDetail": {
         "properties": {
           "active_workloads": {
@@ -14772,6 +14865,78 @@
           "items"
         ],
         "title": "ProjectMLBackendList",
+        "type": "object"
+      },
+      "ProjectMLBackendPoolEnablement": {
+        "description": "切换项目对某服务池的启用 + 写项目级变体覆盖 (pool 级)。",
+        "properties": {
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ProjectMLBackendPoolEnablement",
+        "type": "object"
+      },
+      "ProjectMLBackendPoolItem": {
+        "description": "一行 = 一个服务池在本项目的启用态 + 项目级变体覆盖 (pool 级)。",
+        "properties": {
+          "default_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Variants"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/MLBackendPoolSummary"
+          }
+        },
+        "required": [
+          "pool"
+        ],
+        "title": "ProjectMLBackendPoolItem",
+        "type": "object"
+      },
+      "ProjectMLBackendPoolList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMLBackendPoolItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProjectMLBackendPoolList",
         "type": "object"
       },
       "ProjectMLBackendsGroup": {
@@ -18190,6 +18355,250 @@
         "title": "RuntimeHints",
         "type": "object"
       },
+      "RuntimeMemberSnapshot": {
+        "description": "One pool member's runtime state.\n\nMetrics-driven fields (``last_selected_at`` / ``selection_count_window``\n/ ``rejection_count_window`` / ``p95_ms`` / ``error_rate``) are ``None``\nby default: plan §4.2 forbids wiring shared route counters, and v0.23.3's\nPrometheus module is declared but unwired. The frontend renders these as\n\"暂无路由指标\" per §6.2; the fields exist in the schema so v0.23.4 does\nnot have to refactor the contract again when metrics arrive.",
+        "properties": {
+          "circuit_open": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circuit Open"
+          },
+          "error_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Rate"
+          },
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
+          "health_fresh": {
+            "title": "Health Fresh",
+            "type": "boolean"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_selected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Selected At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Ms"
+          },
+          "registry_id": {
+            "format": "uuid",
+            "title": "Registry Id",
+            "type": "string"
+          },
+          "registry_state": {
+            "title": "Registry State",
+            "type": "string"
+          },
+          "rejection_count_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Count Window"
+          },
+          "route_inflight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Inflight"
+          },
+          "selection_count_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Count Window"
+          },
+          "traffic_state": {
+            "enum": [
+              "active",
+              "draining",
+              "disabled"
+            ],
+            "title": "Traffic State",
+            "type": "string"
+          },
+          "weight": {
+            "default": 1,
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registry_id",
+          "name",
+          "traffic_state",
+          "registry_state",
+          "health_fresh"
+        ],
+        "title": "RuntimeMemberSnapshot",
+        "type": "object"
+      },
+      "RuntimePoolSnapshot": {
+        "description": "One pool's runtime snapshot (members carry runtime state).",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimeMemberSnapshot"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routing_generation": {
+            "title": "Routing Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "routing_generation"
+        ],
+        "title": "RuntimePoolSnapshot",
+        "type": "object"
+      },
+      "RuntimeSnapshotResponse": {
+        "description": "Full runtime snapshot read model\n(``GET /admin/ml-integrations/runtime-snapshot``).",
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "partial_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Reason"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimePoolSnapshot"
+            },
+            "title": "Pools",
+            "type": "array"
+          },
+          "router_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Router Mode",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "runtime_snapshot.v1",
+            "default": "runtime_snapshot.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFreshness"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observed_at",
+          "router_mode"
+        ],
+        "title": "RuntimeSnapshotResponse",
+        "type": "object"
+      },
       "SceneOut": {
         "properties": {
           "created_at": {
@@ -18541,6 +18950,178 @@
           "intrinsic"
         ],
         "title": "SensorCalibration",
+        "type": "object"
+      },
+      "ServicePoolAdminItem": {
+        "properties": {
+          "capability_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Fingerprint"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "legacy_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Instance Id"
+          },
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ServicePoolMemberItem"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routing_generation": {
+            "title": "Routing Generation",
+            "type": "integer"
+          },
+          "routing_policy": {
+            "title": "Routing Policy",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "routing_policy",
+          "routing_generation",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ServicePoolAdminItem",
+        "type": "object"
+      },
+      "ServicePoolCreateRequest": {
+        "properties": {
+          "legacy_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Instance Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ServicePoolCreateRequest",
+        "type": "object"
+      },
+      "ServicePoolMemberItem": {
+        "properties": {
+          "registry_id": {
+            "format": "uuid",
+            "title": "Registry Id",
+            "type": "string"
+          },
+          "registry_name": {
+            "title": "Registry Name",
+            "type": "string"
+          },
+          "traffic_state": {
+            "title": "Traffic State",
+            "type": "string"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registry_id",
+          "registry_name",
+          "traffic_state",
+          "weight"
+        ],
+        "title": "ServicePoolMemberItem",
+        "type": "object"
+      },
+      "ServicePoolMemberPutRequest": {
+        "properties": {
+          "weight": {
+            "default": 1,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "title": "ServicePoolMemberPutRequest",
+        "type": "object"
+      },
+      "ServicePoolPatchRequest": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "ServicePoolPatchRequest",
         "type": "object"
       },
       "SkipTaskRequest": {
@@ -18928,6 +19509,55 @@
           }
         },
         "title": "SniffAxisConventionResponse",
+        "type": "object"
+      },
+      "SourceFreshness": {
+        "description": "Per-source freshness entry (plan §6.3 — partial failure must not erase\nother trustworthy sources).",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "name": {
+            "enum": [
+              "topology",
+              "router_ledger",
+              "health",
+              "gpu",
+              "residency"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SourceFreshness",
         "type": "object"
       },
       "StorageConnectionCreate": {
@@ -20274,6 +20904,212 @@
           "name"
         ],
         "title": "ToolClassEntry",
+        "type": "object"
+      },
+      "TopologyMemberInstance": {
+        "description": "One pool member (a backend instance).\n\nProject Admin sees only the identity + traffic fields; Super Admin\nadditionally sees ``state`` / ``last_checked_at`` / ``gpu_resource_id``\n(server-side projection sets them to ``None`` for Project Admin, so the\ngenerated TS type is uniform and the field is simply absent of value).",
+        "properties": {
+          "gpu_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Resource Id"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "registry_id": {
+            "format": "uuid",
+            "title": "Registry Id",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "traffic_state": {
+            "enum": [
+              "active",
+              "draining",
+              "disabled"
+            ],
+            "title": "Traffic State",
+            "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          }
+        },
+        "required": [
+          "registry_id",
+          "name",
+          "traffic_state"
+        ],
+        "title": "TopologyMemberInstance",
+        "type": "object"
+      },
+      "TopologyPoolEntry": {
+        "description": "One service pool with derived availability fields.\n\n``routable_instances`` / ``status`` / ``status_reason_codes`` are derived\nserver-side from the member list (plan Appendix A.6 requirement: the API\nmust return the derived reason, the frontend only displays).",
+        "properties": {
+          "capability_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Fingerprint"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "legacy_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Instance Id"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyMemberInstance"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "routable_instances": {
+            "title": "Routable Instances",
+            "type": "integer"
+          },
+          "routing_generation": {
+            "title": "Routing Generation",
+            "type": "integer"
+          },
+          "routing_policy": {
+            "title": "Routing Policy",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "degraded",
+              "offline",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Status Reason Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "routing_policy",
+          "routing_generation",
+          "member_count",
+          "routable_instances",
+          "status"
+        ],
+        "title": "TopologyPoolEntry",
+        "type": "object"
+      },
+      "TopologyResponse": {
+        "description": "Role-scoped topology read model (``GET /admin/ml-integrations/topology``).",
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyPoolEntry"
+            },
+            "title": "Pools",
+            "type": "array"
+          },
+          "router_mode": {
+            "enum": [
+              "off",
+              "observe",
+              "enforce"
+            ],
+            "title": "Router Mode",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "topology.v1",
+            "default": "topology.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "router_mode"
+        ],
+        "title": "TopologyResponse",
         "type": "object"
       },
       "TrackerExemplar": {
@@ -24498,7 +25334,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.0"
+    "version": "0.23.4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -25057,7 +25893,7 @@
     },
     "/api/v1/admin/ml-integrations/registry/{registry_id}": {
       "delete": {
-        "description": "删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑\nprojects.ml_backend_id / project_ml_backend (CASCADE) / 历史 prediction (SET NULL)。",
+        "description": "删除全局 backend。running prediction job 仍在跑则 409; 否则级联解绑\nprojects.ml_backend_pool_id / project_ml_backend_pool (CASCADE) / 历史 prediction (SET NULL)。\nv0.23.3 ADR-0050 · 删除前须先 drain + inflight=0 + GPU retirement + 成员移除\n(legacy_instance_id FK RESTRICT + member FK RESTRICT)。",
         "operationId": "delete_registry_api_v1_admin_ml_integrations_registry__registry_id__delete",
         "parameters": [
           {
@@ -25296,6 +26132,517 @@
         ]
       }
     },
+    "/api/v1/admin/ml-integrations/runtime-snapshot": {
+      "get": {
+        "description": "Full runtime snapshot (Super Admin only): router mode + per-pool inflight /\ncircuit / health + a freshness envelope (§12.3 + plan §6.3). Best-effort Redis\nreads — a Redis failure flips the ``router_ledger`` source to ``stale`` rather\nthan dropping the snapshot. Metrics-driven fields stay ``None`` (plan §4.2).",
+        "operationId": "get_runtime_snapshot_api_v1_admin_ml_integrations_runtime_snapshot_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Runtime Snapshot",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools": {
+      "get": {
+        "operationId": "list_service_pools_api_v1_admin_ml_integrations_service_pools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServicePoolAdminItem"
+                  },
+                  "title": "Response List Service Pools Api V1 Admin Ml Integrations Service Pools Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Service Pools",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      },
+      "post": {
+        "operationId": "create_service_pool_api_v1_admin_ml_integrations_service_pools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicePoolCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Service Pool",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools/{pool_id}": {
+      "delete": {
+        "operationId": "delete_service_pool_api_v1_admin_ml_integrations_service_pools__pool_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Service Pool",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      },
+      "get": {
+        "operationId": "get_service_pool_api_v1_admin_ml_integrations_service_pools__pool_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Service Pool",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_service_pool_api_v1_admin_ml_integrations_service_pools__pool_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicePoolPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Service Pool",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}": {
+      "delete": {
+        "operationId": "remove_pool_member_api_v1_admin_ml_integrations_service_pools__pool_id__members__registry_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Pool Member",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      },
+      "put": {
+        "operationId": "add_or_update_pool_member_api_v1_admin_ml_integrations_service_pools__pool_id__members__registry_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicePoolMemberPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Or Update Pool Member",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/drain": {
+      "post": {
+        "operationId": "drain_pool_member_api_v1_admin_ml_integrations_service_pools__pool_id__members__registry_id__drain_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Drain Pool Member",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/resume": {
+      "post": {
+        "operationId": "resume_pool_member_api_v1_admin_ml_integrations_service_pools__pool_id__members__registry_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resume Pool Member",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/topology": {
+      "get": {
+        "description": "Pool/member topology, role-scoped (§12.3). Super Admin sees full member detail\n+ health + GPU; Project Admin sees a trimmed summary (routing_policy/weight/state\nprojected to ``unknown``/``None`` server-side per plan Appendix A.6).",
+        "operationId": "get_topology_api_v1_admin_ml_integrations_topology_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Topology",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
     "/api/v1/admin/preannotate-queue": {
       "get": {
         "description": "列出已预标 (pre_annotated 状态) 的批次, 按最近一次预标时间倒序.\n\n含 prediction / failed 计数 + 项目元数据, 供 AIPreAnnotatePage 历史表渲染.",
@@ -25396,7 +26743,7 @@
     },
     "/api/v1/admin/preannotate-summary": {
       "get": {
-        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend WHERE enabled).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
+        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有「已启用」全局 backend 的项目 (EXISTS project_ml_backend_pool WHERE enabled).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
         "operationId": "list_preannotate_project_summary_api_v1_admin_preannotate_summary_get",
         "responses": {
           "200": {
@@ -34984,6 +36331,124 @@
           }
         ],
         "summary": "List Available Ml Backends",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/pools/available": {
+      "get": {
+        "description": "列出本项目可用的服务池 + 启用态 + 成员数 (ADR-0050 §12.2)。\n\nv0.23.3: off/observe 下每池 singleton; 完整池管理 UI 留给 v0.23.4。",
+        "operationId": "list_project_ml_backend_pools_api_v1_projects__project_id__ml_backends_pools_available_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMLBackendPoolList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Project Ml Backend Pools",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/pools/{pool_id}/enablement": {
+      "put": {
+        "description": "切换本项目对某服务池的启用 + 写项目级变体覆盖 (pool 级, ADR-0050 §12.2)。\n\npool 必须存在且 enabled (disabled / 空 / 无 capability fingerprint 的 pool 不可启用)。",
+        "operationId": "set_project_ml_backend_pool_enablement_api_v1_projects__project_id__ml_backends_pools__pool_id__enablement_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMLBackendPoolEnablement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMLBackendPoolItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Project Ml Backend Pool Enablement",
         "tags": [
           "ml-backends"
         ]

@@ -32,6 +32,7 @@ import {
   type VariantSource,
 } from "../utils/panelShape";
 import { useAiParamPresets } from "../utils/useAiParamPresets";
+import { useAuthStore } from "@/stores/authStore";
 
 // v0.14.9 · 文本 / OCR / 文档版面三态任务类型 (按选中 backend 的 models[].task 派生).
 export type PreannotateTaskType = "text" | "ocr" | "doc_layout";
@@ -86,6 +87,9 @@ export function usePreannotateConfig({
   executionUnit,
 }: UsePreannotateConfigArgs) {
   const pushToast = useToastStore((s) => s.push);
+  const canReadAliasFrequency = useAuthStore((s) =>
+    s.user?.role === "project_admin" || s.user?.role === "super_admin",
+  );
   const qc = useQueryClient();
 
   const projectQ = useProject(projectId);
@@ -102,7 +106,7 @@ export function usePreannotateConfig({
   const freqQ = useQuery({
     queryKey: ["alias-frequency", projectId],
     queryFn: () => aliasFrequencyApi.byProject(projectId),
-    enabled: !!projectId,
+    enabled: !!projectId && canReadAliasFrequency,
     staleTime: 1000 * 60 * 5,
   });
   const aliases = useMemo<PreannotateAlias[]>(() => {

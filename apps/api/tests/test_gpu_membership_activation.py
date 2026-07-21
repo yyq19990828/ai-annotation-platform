@@ -21,15 +21,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services.gpu_admission_signer import GPUAdmissionTokenSigner
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.fences import (
     activate_gpu_backend_membership,
     advance_gpu_backend_fence,
 )
-from app.services.gpu_membership_activation import (
+from app.services.gpu_arbitration.membership_activation import (
     promote_gpu_backend_membership,
     promote_gpu_resource_memberships,
 )
+from app.services.gpu_arbitration.signing import GPUAdmissionTokenSigner
 
 
 _RESOURCE_A = "node-promotion/GPU-a"

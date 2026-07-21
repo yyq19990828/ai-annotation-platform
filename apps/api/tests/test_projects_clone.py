@@ -43,6 +43,7 @@ async def _seed_backend(
     db: AsyncSession, project_id: uuid.UUID, name: str = "src-backend"
 ) -> MLBackendRegistry:
     # v0.19.0 ADR-0044 · backend 已上提为全局注册项 (无 project_id); url 全局唯一。
+    # v0.23.3 ADR-0050 · 同时建 singleton pool (克隆 / 绑定经 pool 层)。
     b = MLBackendRegistry(
         id=uuid.uuid4(),
         name=name,
@@ -55,6 +56,9 @@ async def _seed_backend(
     )
     db.add(b)
     await db.flush()
+    from app.services.ml_backend import MLBackendService
+
+    await MLBackendService(db)._create_singleton_pool(b)
     return b
 
 
@@ -167,7 +171,11 @@ async def test_clone_auto_derives_ml_backend_from_source(
     user, token = super_admin
     src = await _seed_project(db_session, user.id, ai_enabled=True)
     backend = await _seed_backend(db_session, src.id, name="auto-clone-backend")
-    src.ml_backend_id = backend.id
+    # v0.23.3: 项目主绑定存 pool id (backend 经 _seed_backend 已有 singleton pool)。
+    from app.services.ml_backend import MLBackendService
+
+    src_pool = await MLBackendService(db_session)._pool_for_registry(backend.id)
+    src.ml_backend_pool_id = src_pool.id if src_pool else None
     await db_session.flush()
     await db_session.commit()
 

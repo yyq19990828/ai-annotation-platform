@@ -72,9 +72,7 @@ export function LoginPage() {
       <div className="w-[min(380px,100%)]">
         {/* Logo */}
         <div className="mb-8 flex items-center justify-center gap-2.5">
-          <div className="relative size-8 shrink-0 overflow-hidden rounded-md bg-brand">
-            <div className="absolute inset-1.5 rounded-[4px] border-2 border-white/85" />
-          </div>
+          <img src="/ai-annotation-platform-icon.svg" alt="" aria-hidden="true" className="size-8 shrink-0 rounded-md" />
           <div>
             <div className="text-base font-bold">标注中心</div>
             <div className="text-xs text-muted-foreground">AI Annotation Platform</div>

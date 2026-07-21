@@ -40,16 +40,23 @@ class Project(Base):
     )
     status: Mapped[str] = mapped_column(String(30), default="in_progress")
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    # v0.14.13 · 项目级 variant 偏好 (按 backend_id 分桶).
-    # 形状: { "<backend_uuid>": { "<axis_key>": "<axis_value>", ... }, ... }
+    # v0.23.3 ADR-0050 · 项目主服务池 (原 ml_backend_id, 迁移为 ml_backend_pool_id)。
+    # 项目不再直接绑定物理 registry 实例, 而是绑定一个服务池; router (P3) 在池内
+    # active 成员间选择。off mode 下 singleton pool 的 legacy_instance_id 解析回
+    # 原 registry 实例, 行为与 v0.23.2 完全一致。DB FK 由 alembic 0132 加
+    # (ON DELETE SET NULL); ORM 仍是 plain UUID 与原约定一致。
+    ml_backend_pool_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # v0.14.13 · 项目级 variant 偏好. v0.23.3 改为按 pool_id 分桶 (原 backend_id,
+    # 经 alembic 0132 singleton backfill 重 key)。
+    # 形状: { "<pool_uuid>": { "<axis_key>": "<axis_value>", ... }, ... }
     # 优先级链: 本字段 > backend.default_variants > backend env 默认.
     # 前端 VariantSelector 用户切换变体时 PATCH 写回; 项目跨设备 / 协作时保留偏好.
     default_variants: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
     # v0.18.27 · 项目级「已保存的编排」(方案 A, 一项目一条); 形状 = pipeline_stages 数组
-    # (ml_backend_id 存 str)。NULL = 未配编排 → popover 不出「运行项目编排」入口。
+    # (v0.23.3: stage 内 ml_backend_pool_id 存 str, 原 ml_backend_id 经迁移重 key)。
+    # NULL = 未配编排 → popover 不出「运行项目编排」入口。
     preannotate_pipeline: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     label_config: Mapped[dict] = mapped_column(JSONB, default=dict)
     # v0.10.17 · 工具维度类别 / 属性绑定 (ROADMAP §A 新建向导通用化).

@@ -24,7 +24,8 @@ from app.db.models.dataset import (
     VideoSegment,
 )
 from app.db.models.scene_pose import SceneFramePose
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
@@ -77,7 +78,9 @@ __all__ = [
     "VideoSegment",
     "SceneFramePose",
     "MLBackendRegistry",
-    "ProjectMLBackend",
+    "MLBackendServicePool",
+    "MLBackendPoolMember",
+    "ProjectMLBackendPool",
     "GPUBackendCancelIntent",
     "GPUArbiterRollout",
     "GPUBackendFence",

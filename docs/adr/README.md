@@ -92,3 +92,5 @@
 - [0047](0047-data-manager-entity-read-model.md) — Data Manager 按 task / object / track 分 grain 查询，不复制权威写模型
 - [0048](archive/0048-video-raster-mask-content-addressed-rle.md) — 视频栅格 mask 使用内容寻址 RLE 对象，不内联进 annotation JSONB
 - [0049](archive/0049-cross-backend-gpu-memory-arbitration.md) — 按物理 GPU 资源进行跨 Backend 显存预算准入与驱逐
+- [0050](0050-ml-backend-service-pools-and-request-routing.md) — ML Backend 服务池与真实请求路由（池 / 实例双 ID + 平滑加权轮询，独立于 GPU 仲裁）
+- [0051](0051-model-market-observability-information-architecture.md) — 模型市场可观测性 IA（四状态轴 + 诊断去重 + 卸载安全门 + 只读字段补齐）

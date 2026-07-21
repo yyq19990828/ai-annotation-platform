@@ -14,10 +14,12 @@ repos:
         args: ["--maxkb=2048"]
       - id: check-merge-conflict
 
-  # v0.7.5: ruff-format 移到 CI（lint job 跑 `ruff format --check`），
-  # 本地仅保留 ruff lint --fix，commit 速度更快、与编辑器 format on save 不冲突。
+  # ruff lint --fix 本地自动修复；ruff format 校验移到 CI（lint job 跑 `ruff format --check`），
+  # commit 速度更快、与编辑器 format on save 不冲突。
+  # rev 与 .github/workflows/ci.yml 的 `pip install "ruff==0.15.22"` 保持完全一致，
+  # 避免 CI 与本地 formatter 行为漂移（v0.23.1 P0 基线固定）。
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.4
+    rev: v0.15.22
     hooks:
       - id: ruff
         files: ^apps/api/

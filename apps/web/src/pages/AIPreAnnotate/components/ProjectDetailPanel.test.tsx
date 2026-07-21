@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { MeResponse } from "@/api/auth";
 
 const mockTriggerMutate = vi.fn();
 const mockUseProject = vi.fn();
@@ -39,6 +40,11 @@ vi.mock("@/hooks/useProjects", () => ({
 // libuv stream assert → worker crash. 单测里直接 noop 即可 (WS 行为另有 useBatchEventsSocket 自己的 smoke 测试).
 vi.mock("@/hooks/useBatchEventsSocket", () => ({
   useBatchEventsSocket: () => undefined,
+}));
+// 本文件验证面板编排与请求参数，不覆盖 React Flow 画布；真实画布依赖 jsdom
+// 不提供的 ResizeObserver，交互行为由 PipelineGraphCanvas.test.tsx 单独守护。
+vi.mock("./PipelineGraphCanvas", () => ({
+  default: () => <div data-testid="pipeline-canvas" />,
 }));
 vi.mock("@/hooks/useProjectPipelines", () => ({
   useProjectPipelines: (...args: unknown[]) => mockUseProjectPipelines(...args),
@@ -108,6 +114,21 @@ vi.mock("@/api/auth", () => ({
 }));
 
 import { ProjectDetailPanel } from "./ProjectDetailPanel";
+import { useAuthStore } from "@/stores/authStore";
+
+function setAuthRole(role: string) {
+  useAuthStore.setState({
+    user: {
+      id: `u-${role}`,
+      email: `${role}@example.test`,
+      name: role,
+      role,
+      group_name: null,
+      status: "online",
+      created_at: "2026-01-01T00:00:00Z",
+    } satisfies MeResponse,
+  });
+}
 
 function renderUI(extras: Partial<{ summary: any }> = {}) {
   const qc = new QueryClient({
@@ -128,6 +149,7 @@ function renderUI(extras: Partial<{ summary: any }> = {}) {
 
 describe("ProjectDetailPanel v0.9.12", () => {
   beforeEach(() => {
+    setAuthRole("super_admin");
     mockTriggerMutate.mockReset();
     mockSetupAPI.mockReset();
     mockCapabilitiesAPI.mockReset();
@@ -185,6 +207,7 @@ describe("ProjectDetailPanel v0.9.12", () => {
     });
     mockSummaryAPI.mockResolvedValue({ items: [] });
     mockQueueAPI.mockResolvedValue({ items: [] });
+    mockAliasFreqAPI.mockReset();
     mockAliasFreqAPI.mockResolvedValue({
       project_id: "p1",
       total_predictions: 0,
@@ -334,6 +357,15 @@ describe("ProjectDetailPanel v0.9.12", () => {
       const ta = screen.getByPlaceholderText(/car, person/) as HTMLTextAreaElement;
       expect(ta.value).toBe("person, car, truck");
     });
+  });
+
+  it("标注员不请求仅管理员可读的 alias 频率", async () => {
+    setAuthRole("annotator");
+
+    renderUI();
+
+    await waitFor(() => expect(mockSetupAPI).toHaveBeenCalled());
+    expect(mockAliasFreqAPI).not.toHaveBeenCalled();
   });
 
   it("用户已手填 prompt 时不被 alias 默认覆盖", async () => {
@@ -529,8 +561,10 @@ describe("ProjectDetailPanel v0.9.12", () => {
       });
       expect(screen.getByRole("option", { name: "版面" })).toBeInTheDocument();
       // 默认选中第一个可选 model(OCR)→ doc 模式: prompt 隐藏 + 静态提示。
-      expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
-      expect(screen.getByText(/未配置 text 属性，文本不会入库/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByPlaceholderText(/car, person/)).toBeNull();
+        expect(screen.getByText(/未配置 text 属性，文本不会入库/)).toBeInTheDocument();
+      });
     });
 
     it("OCR 默认模型发起预标透传 model_id + task_type, 不带 prompt", async () => {

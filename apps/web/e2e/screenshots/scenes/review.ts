@@ -2,6 +2,11 @@ import type { ScreenshotScene } from "./_types";
 
 import type { Page } from "@playwright/test";
 
+const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
+  themes: ["dark"],
+  primaryTheme: "dark",
+};
+
 async function waitForReviewWorkbench(page: Page): Promise<void> {
   await page.getByTestId("review-reject").waitFor({ state: "visible", timeout: 10_000 });
   await page.waitForTimeout(300);
@@ -37,6 +42,7 @@ export const REVIEW_SCENES: ScreenshotScene[] = [
     fixture: { project: "image_demo", task: "review", batch: "review" },
     route: reviewWorkbenchRoute,
     prepare: waitForReviewWorkbench,
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/review/workbench.png",
   },
   {
@@ -52,6 +58,7 @@ export const REVIEW_SCENES: ScreenshotScene[] = [
     },
     // 只截拒回对话框，不露出后面的标注画布（Modal 无 reject-dialog testid，用 role=dialog）
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
+    matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/review/reject-form.png",
   },
   {

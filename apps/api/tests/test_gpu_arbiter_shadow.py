@@ -8,12 +8,14 @@ import pytest
 from structlog.testing import capture_logs
 
 from app.config import GPUArbiterMode, Settings
-from app.services.gpu_arbiter import (
+from app.services.gpu_arbitration.diagnostics import (
+    record_unregistered_gpu_shadow_dispatch,
+)
+from app.services.gpu_arbitration.policy import (
     effective_gpu_arbiter_mode,
     evaluate_gpu_shadow_decision,
     gpu_shadow_observation_enabled,
     record_gpu_shadow_dispatch,
-    record_unregistered_gpu_shadow_dispatch,
 )
 
 

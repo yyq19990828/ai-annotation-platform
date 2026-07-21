@@ -401,7 +401,7 @@ pre_annotated_by_run_id: UUID | None  # 是被哪一轮训练出的模型预标�
 - [apps/api/app/db/models/annotation.py](../../apps/api/app/db/models/annotation.py)
 - [apps/api/app/services/dataset.py](../../apps/api/app/services/dataset.py)（重点：`link_project` 285-322）
 - [apps/api/app/services/scheduler.py](../../apps/api/app/services/scheduler.py)
-- [apps/api/app/services/export.py](../../apps/api/app/services/export.py)
+- [apps/api/app/services/exporting/service.py](../../apps/api/app/services/exporting/service.py)
 - [docs/research/01-label-studio.md](./01-label-studio.md)
 - [docs/research/03-cvat.md](./03-cvat.md)
 - [docs/research/05-commercial.md](./05-commercial.md)

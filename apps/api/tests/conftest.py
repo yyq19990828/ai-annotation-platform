@@ -234,3 +234,57 @@ async def reviewer(db_session: AsyncSession):
 def auth_headers(super_admin) -> dict[str, str]:
     _, token = super_admin
     return {"Authorization": f"Bearer {token}"}
+
+
+# v0.23.3 ADR-0050 · 测试辅助: 创建 registry + 其 singleton 服务池 + active 成员。
+# 项目启用关联 / 项目主绑定都基于 pool id (ProjectMLBackendPool.pool_id / Project.ml_backend_pool_id)。
+# 测试不再直接 new ProjectMLBackend(project_id, registry_id); 改用本 helper 得到 pool 再建关联。
+async def create_registry_with_pool(
+    db: AsyncSession,
+    *,
+    name: str = "test-backend",
+    url: str | None = None,
+    state: str = "connected",
+    is_interactive: bool = True,
+    enabled_pool: bool = False,
+    **registry_kwargs,
+):
+    """Create a MLBackendRegistry row + its singleton service pool + active member.
+
+    Returns (registry, pool). The pool's legacy_instance_id points at the registry.
+    Pass enabled_pool=True to mark the pool enabled (rare; off mode leaves it false
+    and project enablement is expressed via ProjectMLBackendPool.enabled).
+    """
+    from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+
+    url = url or f"http://{name}.test:9999"
+    registry = MLBackendRegistry(
+        name=name,
+        url=url,
+        state=state,
+        is_interactive=is_interactive,
+        source="manual",
+        **registry_kwargs,
+    )
+    db.add(registry)
+    await db.flush()
+    pool = MLBackendServicePool(
+        name=registry.name,
+        enabled=enabled_pool,
+        routing_policy="smooth_weighted_round_robin",
+        legacy_instance_id=registry.id,
+        routing_generation=1,
+    )
+    db.add(pool)
+    await db.flush()
+    db.add(
+        MLBackendPoolMember(
+            pool_id=pool.id,
+            registry_id=registry.id,
+            traffic_state="active",
+            weight=1,
+        )
+    )
+    await db.flush()
+    return registry, pool

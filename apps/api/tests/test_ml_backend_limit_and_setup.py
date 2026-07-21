@@ -17,8 +17,9 @@ from unittest.mock import patch
 import pytest
 
 from app.api.v1 import ml_backends as ml_backends_route
-from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackend
+from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
+from tests.conftest import create_registry_with_pool
 
 
 async def _seed_project(db, owner_id) -> Project:
@@ -38,16 +39,14 @@ async def _seed_project(db, owner_id) -> Project:
 
 async def _seed_backend(db, project_id, name="grounded-sam2") -> MLBackendRegistry:
     """建全局注册项 + 为项目启用 (ADR-0044)。url 全局唯一, 每次生成不同 url。"""
-    b = MLBackendRegistry(
-        id=uuid.uuid4(),
+    b, pool = await create_registry_with_pool(
+        db,
         name=name,
         url=f"http://example-{uuid.uuid4().hex[:8]}/",
         is_interactive=True,
         state="connected",
     )
-    db.add(b)
-    await db.flush()
-    db.add(ProjectMLBackend(project_id=project_id, registry_id=b.id, enabled=True))
+    db.add(ProjectMLBackendPool(project_id=project_id, pool_id=pool.id, enabled=True))
     await db.flush()
     return b
 
@@ -101,6 +100,45 @@ async def test_create_ml_backend_reuses_registry_by_url(
     assert r1.status_code == 201, r1.text
     assert r2.status_code == 201, r2.text
     assert r1.json()["id"] == r2.json()["id"]
+
+
+async def test_create_ml_backend_activates_singleton_pool(
+    httpx_client_bound, super_admin, db_session
+):
+    """registry 兼容入口首次启用时同步激活 singleton pool，真实路由才可达。"""
+    from sqlalchemy import select
+
+    from app.db.models.ml_backend_pool import (
+        MLBackendPoolMember,
+        MLBackendServicePool,
+    )
+
+    user, token = super_admin
+    proj = await _seed_project(db_session, user.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends",
+        json={
+            "name": "sam3-routable",
+            "url": "http://sam3-routable/",
+            "is_interactive": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 201, resp.text
+
+    pool = await db_session.scalar(
+        select(MLBackendServicePool)
+        .join(
+            MLBackendPoolMember,
+            MLBackendPoolMember.pool_id == MLBackendServicePool.id,
+        )
+        .where(MLBackendPoolMember.registry_id == uuid.UUID(resp.json()["id"]))
+    )
+    assert pool is not None
+    assert pool.enabled is True
+    assert pool.routing_generation == 2
 
 
 async def test_project_out_drops_ml_backend_limit(

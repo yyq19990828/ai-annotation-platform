@@ -17,11 +17,11 @@ from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.ml_backend_registry import MLBackendRegistry
-from app.services.gpu_arbiter import (
-    activate_gpu_backend_membership,
+from app.services.gpu_arbitration.control_preparation import (
     prepare_gpu_backend_rollout_control,
 )
-from app.services.gpu_arbiter_rollout import (
+from app.services.gpu_arbitration.fences import activate_gpu_backend_membership
+from app.services.gpu_arbitration.rollout_state import (
     begin_gpu_arbiter_rollout,
     complete_gpu_arbiter_rollout,
 )

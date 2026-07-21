@@ -44,10 +44,5 @@ last_reviewed: 2026-06-10
 - 顶点数量本身没有硬性上限，但顶点过多（如 > 500）会明显增加序列化和 API 传输开销，建议合并/简化后再提交。
 - 复杂形状可考虑拆分为多个多边形；Slice 切割工具仍在后续版本中补齐。
 
-## 典型场景
-
-![顶点编辑](../images/polygon/vertex-edit.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 多边形选中态，鼠标悬停在边上出现 + 图标的瞬间。 -->
-
-![闭合提示](../images/polygon/close-hint.png)
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: 三顶点已落点，第四点贴近第一点出现「单击闭合」提示。 -->
+<!-- IMAGE_CHECKLIST: images/polygon/vertex-edit.png — 暗色多边形选中态，鼠标悬停在边上出现 + 图标的瞬间；旧图未展示该状态，已删除。 -->
+<!-- IMAGE_CHECKLIST: images/polygon/close-hint.png — 暗色三顶点已落点，下一点贴近第一点出现「单击闭合」提示；旧图未展示该状态，已删除。 -->
