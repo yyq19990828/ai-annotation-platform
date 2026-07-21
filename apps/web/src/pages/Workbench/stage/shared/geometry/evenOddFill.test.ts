@@ -4,7 +4,7 @@
 // context 直接断言 subpath 数与坐标换算, 不走 jsdom canvas 渲染。
 // 覆盖: 单 polygon + holes、multi_polygon 各环 + holes、空输入退化、imgW/imgH 换算。
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   buildEvenOddPaths,
   collectOuterRings,
