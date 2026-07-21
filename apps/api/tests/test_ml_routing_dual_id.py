@@ -131,7 +131,9 @@ async def test_predict_frame_route_records_dual_id(
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="video-track")
     proj.data_type = "video"
-    backend, pool = await create_registry_with_pool(db_session, name="gsam2-video")
+    backend, pool = await create_registry_with_pool(
+        db_session, name="gsam2-video", enabled_pool=True
+    )
     from app.db.models.ml_backend_registry import ProjectMLBackendPool
 
     db_session.add(

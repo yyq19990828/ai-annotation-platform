@@ -887,6 +887,12 @@ class MLBackendService:
             self.db.add(assoc)
         else:
             assoc.enabled = enabled
+        if enabled and not pool.enabled:
+            # registry 兼容端点仍是项目添加 backend 的主入口。新建 singleton pool
+            # 初始为 disabled；首次项目启用必须同时激活逻辑池，否则 router 在所有
+            # mode 下都会以 POOL_NOT_ENABLED 拒绝真实推理。
+            pool.enabled = True
+            pool.routing_generation += 1
         for key in ("default_variants",):
             if key in overrides:
                 setattr(assoc, key, overrides[key])

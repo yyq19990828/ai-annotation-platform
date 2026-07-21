@@ -46,6 +46,7 @@ async def _seed(db, owner_id, *, is_interactive=True):
         url=f"http://example-{suffix}/",
         is_interactive=is_interactive,
         state="connected",
+        enabled_pool=True,
     )
     db.add(ProjectMLBackendPool(project_id=proj.id, pool_id=pool.id, enabled=True))
     await db.flush()

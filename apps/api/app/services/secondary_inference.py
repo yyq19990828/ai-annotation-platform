@@ -141,7 +141,7 @@ async def run_secondary_inference(
     """
     # 惰性导入 worker 助手, 避免 API 进程在 import 期拉起 celery 相关重依赖。
     from app.workers.tasks import _build_predict_context, _load_task_image
-    from app.services.ml_client import MLBackendClient
+    from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.prediction import to_internal_shape
     from app.services.storage import StorageService
 
@@ -214,8 +214,12 @@ async def run_secondary_inference(
     #    典型诱因: backend 空闲卸载后按需重载 (冷启动本身只需 ~10s), 但多个 GPU backend 同时
     #    驻留模型挤爆显存时, 加载会退化一个数量级 (实测 8s → 160s) 而超时。故文案指向卸载
     #    其它 backend, 而非调大 ML_PREDICT_TIMEOUT (后者只是盖住症状)。
-    client = MLBackendClient(
+    client = RoutedMLBackendClient(
+        db,
         backend,
+        project_id=task.project_id,
+        owner=f"secondary:{annotation.id}",
+        operation="secondary_inference",
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
@@ -244,7 +248,10 @@ async def run_secondary_inference(
             detail=f"ML backend error (HTTP {status})",
         ) from exc
 
-    model_ref = {"backend_id": str(backend.id), "model_id": model_id}
+    model_ref = {
+        "backend_id": str(client.last_instance_id or backend.id),
+        "model_id": model_id,
+    }
 
     if write_target == "attributes":
         # 6a. 属性型: merge 进 (起始为空的) ls_box, 写入键即 AI 产物。

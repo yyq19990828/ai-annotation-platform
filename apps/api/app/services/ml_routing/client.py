@@ -1,0 +1,188 @@
+"""Route-aware ML backend client for prediction traffic.
+
+Lifecycle and discovery calls intentionally stay instance-addressed. Prediction
+callers use this adapter so a requested registry first resolves to its logical
+service pool and then to the router-selected physical instance.
+"""
+
+from __future__ import annotations
+
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Callable
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
+from app.db.models.ml_backend_registry import MLBackendRegistry
+from app.services.gpu_arbitration.contracts import (
+    GPUDispatchContextFactory,
+    GPUShadowSessionFactory,
+)
+from app.services.ml_routing.contracts import (
+    RejectionReason,
+    RouteSelection,
+    RouterMode,
+    RoutingError,
+)
+from app.services.ml_routing.ledger import RoutingLedger
+from app.services.ml_routing.router import (
+    MLBackendRouter,
+    _router_mode,
+    make_ledger_from_settings,
+    route_context,
+)
+
+
+LedgerFactory = Callable[[], RoutingLedger]
+
+
+class RoutedMLBackendClient:
+    """Route each prediction call through the requested registry's service pool."""
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        requested_registry: MLBackendRegistry | uuid.UUID,
+        *,
+        project_id: uuid.UUID,
+        owner: str,
+        operation: str,
+        shadow_session_factory: GPUShadowSessionFactory | None = None,
+        dispatch_context_factory: GPUDispatchContextFactory | None = None,
+        mode: RouterMode | None = None,
+        ledger_factory: LedgerFactory | None = None,
+    ) -> None:
+        self.db = db
+        if isinstance(requested_registry, uuid.UUID):
+            self.requested_registry_id: uuid.UUID | None = requested_registry
+            self.requested_backend: MLBackendRegistry | None = None
+        else:
+            requested_id = getattr(requested_registry, "id", None)
+            self.requested_registry_id = (
+                requested_id if isinstance(requested_id, uuid.UUID) else None
+            )
+            self.requested_backend = requested_registry
+        self.project_id = project_id
+        self.owner = owner
+        self.operation = operation
+        self.shadow_session_factory = shadow_session_factory
+        self.dispatch_context_factory = dispatch_context_factory
+        self.mode = mode or _router_mode()
+        self.ledger_factory = ledger_factory or make_ledger_from_settings
+        self.pool_id: uuid.UUID | None = None
+        self.last_instance_id: uuid.UUID | None = None
+        self.last_selection: RouteSelection | None = None
+        self._transports: dict[object, Any] = {}
+
+    async def _pool(self) -> MLBackendServicePool | None:
+        if self.requested_registry_id is None:
+            return None
+        result = await self.db.execute(
+            select(MLBackendServicePool)
+            .join(
+                MLBackendPoolMember,
+                MLBackendPoolMember.pool_id == MLBackendServicePool.id,
+            )
+            .where(MLBackendPoolMember.registry_id == self.requested_registry_id)
+        )
+        return result.scalars().first()
+
+    def _transport(self, backend: MLBackendRegistry):
+        # Import the module at call time so existing tests and integrations that
+        # replace MLBackendClient keep observing the same seam.
+        from app.services import ml_client as ml_client_module
+
+        key = getattr(backend, "id", id(backend))
+        transport = self._transports.get(key)
+        if transport is None:
+            transport = ml_client_module.MLBackendClient(
+                backend,
+                shadow_session_factory=self.shadow_session_factory,
+                dispatch_context_factory=self.dispatch_context_factory,
+            )
+            self._transports[key] = transport
+        return transport
+
+    @asynccontextmanager
+    async def _routed_transport(self) -> AsyncIterator[Any]:
+        pool = await self._pool()
+        if pool is None:
+            # Production registries are singleton-backfilled. Keep off/observe
+            # compatible with pre-backfill rows and lightweight unit fixtures;
+            # enforce must fail closed when no logical route can be resolved.
+            if self.mode == RouterMode.ENFORCE:
+                raise RoutingError(
+                    RejectionReason.POOL_UNAVAILABLE,
+                    f"registry {self.requested_registry_id} has no service pool",
+                )
+            backend = self.requested_backend
+            if backend is None and self.requested_registry_id is not None:
+                backend = await self.db.get(
+                    MLBackendRegistry, self.requested_registry_id
+                )
+            if backend is None:
+                raise RoutingError(
+                    RejectionReason.POOL_UNAVAILABLE,
+                    f"registry {self.requested_registry_id} not found",
+                )
+            self.pool_id = None
+            self.last_instance_id = getattr(backend, "id", None)
+            self.last_selection = RouteSelection(
+                lease=None,
+                instance_id=self.last_instance_id,
+                rejection=None,
+            )
+            yield self._transport(backend)
+            return
+
+        self.pool_id = pool.id
+        ledger: RoutingLedger | None = None
+        if self.mode != RouterMode.OFF:
+            try:
+                ledger = self.ledger_factory()
+            except Exception:
+                # Observe remains non-gating; enforce receives ROUTER_UNAVAILABLE
+                # from MLBackendRouter when the ledger could not be constructed.
+                ledger = None
+        try:
+            routed = MLBackendRouter(self.db, ledger=ledger, mode=self.mode)
+            async with route_context(
+                routed,
+                pool.id,
+                owner=self.owner,
+                operation=self.operation,
+                project_id=self.project_id,
+            ) as (instance_id, _lease, selection):
+                if instance_id is None:
+                    raise RoutingError(
+                        RejectionReason.POOL_UNAVAILABLE,
+                        f"service pool {pool.id} selected no registry instance",
+                    )
+                backend = await self.db.get(MLBackendRegistry, instance_id)
+                if backend is None:
+                    raise RoutingError(
+                        RejectionReason.POOL_UNAVAILABLE,
+                        f"selected registry {instance_id} not found",
+                    )
+                self.last_instance_id = backend.id
+                self.last_selection = selection
+                yield self._transport(backend)
+        finally:
+            if ledger is not None:
+                await ledger.aclose()
+
+    async def predict(
+        self, tasks: list[dict], context: dict | None = None
+    ) -> list[Any]:
+        async with self._routed_transport() as client:
+            if context is None:
+                return await client.predict(tasks)
+            return await client.predict(tasks, context=context)
+
+    async def predict_interactive(self, task_data: dict, context: dict) -> Any:
+        async with self._routed_transport() as client:
+            return await client.predict_interactive(
+                task_data=task_data, context=context
+            )

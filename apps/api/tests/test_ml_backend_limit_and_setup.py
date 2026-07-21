@@ -102,6 +102,45 @@ async def test_create_ml_backend_reuses_registry_by_url(
     assert r1.json()["id"] == r2.json()["id"]
 
 
+async def test_create_ml_backend_activates_singleton_pool(
+    httpx_client_bound, super_admin, db_session
+):
+    """registry 兼容入口首次启用时同步激活 singleton pool，真实路由才可达。"""
+    from sqlalchemy import select
+
+    from app.db.models.ml_backend_pool import (
+        MLBackendPoolMember,
+        MLBackendServicePool,
+    )
+
+    user, token = super_admin
+    proj = await _seed_project(db_session, user.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/ml-backends",
+        json={
+            "name": "sam3-routable",
+            "url": "http://sam3-routable/",
+            "is_interactive": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 201, resp.text
+
+    pool = await db_session.scalar(
+        select(MLBackendServicePool)
+        .join(
+            MLBackendPoolMember,
+            MLBackendPoolMember.pool_id == MLBackendServicePool.id,
+        )
+        .where(MLBackendPoolMember.registry_id == uuid.UUID(resp.json()["id"]))
+    )
+    assert pool is not None
+    assert pool.enabled is True
+    assert pool.routing_generation == 2
+
+
 async def test_project_out_drops_ml_backend_limit(
     httpx_client_bound, super_admin, db_session
 ):

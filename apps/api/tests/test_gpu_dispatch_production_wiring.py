@@ -201,7 +201,7 @@ async def test_frame_segment_builds_authority_from_its_own_session_factory(
         return authority_marker
 
     class FakeClient:
-        def __init__(self, received_backend, **kwargs) -> None:
+        def __init__(self, _db, received_backend, **kwargs) -> None:
             assert received_backend is backend
             client_kwargs.append(kwargs)
 
@@ -224,7 +224,9 @@ async def test_frame_segment_builds_authority_from_its_own_session_factory(
         "app.services.gpu_arbitration.dispatch.build_gpu_dispatch_context_factory",
         build_authority,
     )
-    monkeypatch.setattr("app.services.ml_client.MLBackendClient", FakeClient)
+    monkeypatch.setattr(
+        "app.services.ml_routing.client.RoutedMLBackendClient", FakeClient
+    )
     monkeypatch.setattr(
         "app.services.video_frame_service.build_context_from_task",
         build_frame_context,
@@ -242,12 +244,10 @@ async def test_frame_segment_builds_authority_from_its_own_session_factory(
 
     assert stats["frames_done"] == 0
     assert built_from == [session_factory]
-    assert client_kwargs == [
-        {
-            "shadow_session_factory": session_factory,
-            "dispatch_context_factory": authority_marker,
-        }
-    ]
+    assert len(client_kwargs) == 1
+    assert client_kwargs[0]["shadow_session_factory"] is session_factory
+    assert client_kwargs[0]["dispatch_context_factory"] is authority_marker
+    assert client_kwargs[0]["operation"] == "frame_predict"
 
 
 @pytest.mark.asyncio

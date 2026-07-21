@@ -351,7 +351,7 @@ async def _run_segment(
         gpu_arbiter_failure_record,
         summarize_gpu_arbiter_failures,
     )
-    from app.services.ml_client import MLBackendClient
+    from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.prediction import PredictionService, to_video_bbox_result
     from app.services.video_frame_service import build_context_from_task
     from app.workers.tasks import _build_predict_context
@@ -380,8 +380,8 @@ async def _run_segment(
             task = await db.get(Task, uuid.UUID(task_id))
             if backend is None or task is None:
                 return stats
-            # v0.23.3 ADR-0050 §5.4 · requested pool (off/observe: registry→singleton pool)。
-            # Best-effort: pool id is supplementary lineage, not load-bearing for dispatch.
+            # 预先解析 requested pool 用于失败前的溯源；实际逐帧派发由
+            # RoutedMLBackendClient 获取 route lease 并记录选中的物理实例。
             from app.services.ml_backend import MLBackendService
 
             try:
@@ -391,8 +391,12 @@ async def _run_segment(
             except Exception:
                 source_pool_id = None
             ctx = await build_context_from_task(db, task)
-            client = MLBackendClient(
+            client = RoutedMLBackendClient(
+                db,
                 backend,
+                project_id=uuid.UUID(project_id),
+                owner=f"frame:{job_id}:{task_id}",
+                operation="frame_predict",
                 shadow_session_factory=SessionLocal,
                 dispatch_context_factory=dispatch_context_factory,
             )
@@ -439,7 +443,7 @@ async def _run_segment(
                     await pred_svc.create_from_ml_result(
                         task_id=task.id,
                         project_id=uuid.UUID(project_id),
-                        ml_backend_id=backend.id,
+                        ml_backend_id=client.last_instance_id or backend.id,
                         result=video_items,
                         score=results[0].score if results else None,
                         model_version=results[0].model_version if results else None,
@@ -447,7 +451,7 @@ async def _run_segment(
                             results[0].inference_time_ms if results else None
                         ),
                         token_meta=results[0].meta if results else None,
-                        ml_backend_pool_id=source_pool_id,
+                        ml_backend_pool_id=client.pool_id or source_pool_id,
                     )
                     await db.commit()
                     stats["frames_done"] += 1

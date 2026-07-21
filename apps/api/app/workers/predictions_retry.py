@@ -163,7 +163,7 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
         build_gpu_dispatch_context_factory,
     )
     from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record
-    from app.services.ml_client import MLBackendClient
+    from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.notification import NotificationService
     from app.services.prediction import PredictionService
 
@@ -200,16 +200,28 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
             "reason": "missing_task_or_backend",
         }
 
-    # 第二阶段：调 backend
-    client = MLBackendClient(
-        backend,
-        shadow_session_factory=session_factory,
-        dispatch_context_factory=build_gpu_dispatch_context_factory(session_factory),
-    )
+    # 第二阶段：按 failed_prediction 记录的 registry 定位逻辑池，再由 router
+    # 选择本次重试实际调用的物理实例。
+    executed_backend_id = backend.id
+    retry_pool_id = None
     try:
-        results = await client.predict(
-            [{"id": str(task.id), "file_path": task.file_path}]
-        )
+        async with session_factory() as route_db:
+            client = RoutedMLBackendClient(
+                route_db,
+                backend,
+                project_id=task.project_id,
+                owner=f"retry:{failed_id}",
+                operation="prediction_retry",
+                shadow_session_factory=session_factory,
+                dispatch_context_factory=build_gpu_dispatch_context_factory(
+                    session_factory
+                ),
+            )
+            results = await client.predict(
+                [{"id": str(task.id), "file_path": task.file_path}]
+            )
+            executed_backend_id = client.last_instance_id or backend.id
+            retry_pool_id = client.pool_id
         if not results:
             raise RuntimeError("backend returned empty results")
         first = results[0]
@@ -237,14 +249,10 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     # 第三阶段：写 predictions + 删 failed + 推 succeeded
     async with session_factory() as db:
         pred_svc = PredictionService(db)
-        # v0.23.3 ADR-0050 §5.4 · retry 是新的显式请求, 记录 requested pool (经 registry 解析)。
-        from app.services.ml_backend import MLBackendService
-
-        retry_pool_id = await MLBackendService(db).pool_id_for_registry(backend.id)
         pred = await pred_svc.create_from_ml_result(
             task_id=task.id,
             project_id=task.project_id,
-            ml_backend_id=backend.id,
+            ml_backend_id=executed_backend_id,
             result=first.result,
             score=first.score,
             model_version=first.model_version,

@@ -563,8 +563,8 @@ async def _run_batch(
         gpu_arbiter_failure_record,
         summarize_gpu_arbiter_failures,
     )
-    from app.services.ml_client import MLBackendClient
     from app.services.ml_backend import MLBackendService
+    from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.prediction import PredictionService
 
     engine = create_async_engine(settings.database_url, echo=False)
@@ -589,8 +589,8 @@ async def _run_batch(
                 project_id, 0, 0, status="error", error="ML Backend not found"
             )
             return
-        # v0.23.3 ADR-0050 §5.4 · 解析源 backend 的 singleton pool, 记录 requested pool id
-        # 到 Prediction / FailedPrediction (off/observe: 行为不变, 仅多写一个列)。
+        # registry id 先解析为 requested pool；实际预测再由 RoutedMLBackendClient
+        # 在池内选物理实例，Prediction / FailedPrediction 同时保留逻辑池与执行实例。
         source_pool_id = await MLBackendService(db).pool_id_for_registry(backend.id)
 
         # v0.9.5 / v0.14.9 / v0.14.17 · 构造 /predict context (扁平文本路径 vs v2 结构化路径,
@@ -653,7 +653,7 @@ async def _run_batch(
             "batch_id": batch_id,
             "batch_display_id": batch.display_id if batch else None,
             "ml_backend_id": ml_backend_id,
-            # v0.23.3 ADR-0050 §5.4 · 新任务写 requested pool id; ml_backend_id 保留为历史实例证据。
+            # job payload 保留请求入口 registry 与逻辑池；逐条 Prediction 另记实际执行实例。
             "ml_backend_pool_id": str(source_pool_id) if source_pool_id else None,
             "total_tasks": total,
             "prompt": (prompt or "")[:200],
@@ -861,7 +861,7 @@ async def _run_batch(
         box_thr = float(project.box_threshold) if project is not None else None
         text_thr = float(project.text_threshold) if project is not None else None
         dispatch_context_factory = build_gpu_dispatch_context_factory(SessionLocal)
-        stage_clients: list[MLBackendClient] = []
+        stage_clients: list[RoutedMLBackendClient] = []
         stage_contexts: list[dict | None] = []
         # v0.18.14 · 每阶段投递模式 (crop|geometry), 按 write.target 推断 (input.mode 可覆盖)。
         # 源阶段 (stage 0) 模式无意义, 占位 "crop"。
@@ -869,8 +869,12 @@ async def _run_batch(
         for s in stages:
             if s["parent_stage"] is None:
                 stage_clients.append(
-                    MLBackendClient(
+                    RoutedMLBackendClient(
+                        db,
                         backend,
+                        project_id=uuid.UUID(project_id),
+                        owner=f"batch:{async_job_id}:stage:{s['stage']}",
+                        operation="batch_predict",
                         shadow_session_factory=SessionLocal,
                         dispatch_context_factory=dispatch_context_factory,
                     )
@@ -880,8 +884,12 @@ async def _run_batch(
             else:
                 s_backend = await db.get(MLBackend, uuid.UUID(s["ml_backend_id"]))
                 stage_clients.append(
-                    MLBackendClient(
+                    RoutedMLBackendClient(
+                        db,
                         s_backend,
+                        project_id=uuid.UUID(project_id),
+                        owner=f"batch:{async_job_id}:stage:{s['stage']}",
+                        operation="batch_predict",
                         shadow_session_factory=SessionLocal,
                         dispatch_context_factory=dispatch_context_factory,
                     )
@@ -942,18 +950,20 @@ async def _run_batch(
                     .get("pipeline", {})
                     .get("gpu_arbiter_failures", [])
                 )
+                executed_backend_id = stage_clients[0].last_instance_id or backend.id
+                executed_pool_id = stage_clients[0].pool_id or source_pool_id
                 for pred_result in results:
                     await pred_svc.create_from_ml_result(
                         task_id=task.id,
                         project_id=uuid.UUID(project_id),
-                        ml_backend_id=backend.id,
+                        ml_backend_id=executed_backend_id,
                         result=pred_result.result,
                         score=pred_result.score,
                         model_version=pred_result.model_version,
                         inference_time_ms=pred_result.inference_time_ms,
                         token_meta=pred_result.meta,
                         pipeline_extra=pipeline_extra,
-                        ml_backend_pool_id=source_pool_id,
+                        ml_backend_pool_id=executed_pool_id,
                     )
                     # v0.9.11 · 单条 cost 累加到 job 级总费用
                     if pred_result.meta:
@@ -969,7 +979,7 @@ async def _run_batch(
                 failed = await pred_svc.create_failed(
                     task_id=task.id,
                     project_id=uuid.UUID(project_id),
-                    ml_backend_id=backend.id,
+                    ml_backend_id=stage_clients[0].last_instance_id or backend.id,
                     error_type=(
                         gpu_arbiter_error["error_code"]
                         if gpu_arbiter_error is not None
@@ -985,7 +995,7 @@ async def _run_batch(
                         if gpu_arbiter_error is not None
                         else None
                     ),
-                    ml_backend_pool_id=source_pool_id,
+                    ml_backend_pool_id=stage_clients[0].pool_id or source_pool_id,
                 )
                 failed_prediction_ids.append(str(failed.id))
                 await db.commit()

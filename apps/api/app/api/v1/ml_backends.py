@@ -50,6 +50,7 @@ from app.services.ml_backend import (
 )
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
+from app.services.ml_routing.client import RoutedMLBackendClient
 from app.services.prediction import PredictionService, to_video_bbox_result
 from app.services.storage import StorageService
 from app.services.audit import AuditService
@@ -715,8 +716,12 @@ async def predict_test(
     task = await _get_task_in_project(db, task_id, project_id)
     await db.commit()
 
-    client = ml_client_module.MLBackendClient(
+    client = RoutedMLBackendClient(
+        db,
         backend,
+        project_id=project_id,
+        owner=f"api:predict-test:{task.id}",
+        operation="predict_test",
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
@@ -769,8 +774,12 @@ async def interactive_annotating(
     context = dict(body.context or {})
     await db.commit()
 
-    client = ml_client_module.MLBackendClient(
+    client = RoutedMLBackendClient(
+        db,
         backend,
+        project_id=project_id,
+        owner=f"api:interactive:{task.id}",
+        operation="interactive_predict",
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
@@ -871,8 +880,12 @@ async def predict_frame(
     )
     await db.commit()
 
-    client = ml_client_module.MLBackendClient(
+    client = RoutedMLBackendClient(
+        db,
         backend,
+        project_id=project_id,
+        owner=f"api:predict-frame:{task.id}:{frame_index}",
+        operation="frame_predict",
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
@@ -888,15 +901,13 @@ async def predict_frame(
 
     score = next((r.score for r in results if r.score is not None), None)
     pred_svc = PredictionService(db)
-    # v0.23.3 ADR-0050 §5.4 · 记录 requested pool (off/observe: 经 registry 解析 singleton pool)。
-    pool_id = await svc.pool_id_for_registry(backend_id)
     prediction = await pred_svc.create_from_ml_result(
         task_id=task.id,
         project_id=project_id,
-        ml_backend_id=backend_id,
+        ml_backend_id=client.last_instance_id or backend_id,
         result=video_shapes,
         score=score,
-        ml_backend_pool_id=pool_id,
+        ml_backend_pool_id=client.pool_id,
     )
     await db.commit()
     return {
@@ -974,8 +985,12 @@ async def interactive_annotating_frame(
 
     # 与 interactive_annotating 一致: 不注入项目级 DINO 阈值 (那是 gsam2 专属, 塞给 sam3
     # 等后端会出错); 推理参数由前端按 /setup.params 渲染后随 context 透传。
-    client = ml_client_module.MLBackendClient(
+    client = RoutedMLBackendClient(
+        db,
         backend,
+        project_id=project_id,
+        owner=f"api:interactive-frame:{task.id}:{frame_index}",
+        operation="interactive_frame_predict",
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
