@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import { ApiError } from "@/api/client";
+import { rasterMasksApi } from "@/api/rasterMasks";
 import type { ToolBindings } from "@/api/projects";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import { dedupeAiBoxesById } from "../../stage/aiBoxFrames";
@@ -38,6 +39,11 @@ import {
   canJoinPolygonAnnotation,
   cropPolygonGeometry,
 } from "../../stage/shared/geometry/polygonOps";
+import {
+  compareRegionToRasterResult,
+  formatMaskConversionReport,
+  type RegionGeometry,
+} from "../../stage/shared/geometry/maskConversion";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -101,12 +107,15 @@ interface UseImageAnnotationActionsArgs {
   updateAnnotationAsync: (
     annotationId: string,
     payload: AnnotationUpdatePayload,
+    etag?: string,
   ) => Promise<AnnotationResponse>;
   mutations: AnnotationMutations;
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   isLocked?: boolean;
   /** v0.10.8 · 由 WorkbenchShell 注入；mask 编辑器状态层。空时 refine/commitMask 返回 false。 */
   maskEditor?: UseMaskEditorSessionReturn;
+  /** 任务能力握手决定的图片 Mask 持久化路径；未知/失败必须 blocked。 */
+  maskPersistenceMode?: "native" | "legacy" | "blocked";
   /** v0.20.22 · 桥接松手闪回, 见 usePendingGeom。 */
   markPendingGeom?: (id: string, geom: import("@/types").Geometry) => void;
 }
@@ -172,6 +181,16 @@ export function maskRefineBlockReason(
   return null;
 }
 
+export type EmptyRasterMaskChoice = "delete" | "undo" | "continue";
+
+export function promptEmptyRasterMaskChoice(
+  confirmFn: (message: string) => boolean,
+): EmptyRasterMaskChoice {
+  if (confirmFn("Mask 已被擦空。是否删除该标注对象？")) return "delete";
+  if (confirmFn("是否撤销本次擦空？选择取消将保持空白并继续编辑。")) return "undo";
+  return "continue";
+}
+
 export function useImageAnnotationActions({
   taskId,
   projectId,
@@ -198,6 +217,7 @@ export function useImageAnnotationActions({
   enqueueOnError,
   isLocked = false,
   maskEditor,
+  maskPersistenceMode = "blocked",
   markPendingGeom,
 }: UseImageAnnotationActionsArgs) {
   const annotationActions = useWorkbenchAnnotationActions({
@@ -421,14 +441,23 @@ export function useImageAnnotationActions({
   }, [s.tool, sam, samPendingAccept]);
 
   const handleBatchDelete = useCallback((targetIds?: string[]) => {
+    if (isLocked) {
+      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+      return;
+    }
     const ids = (targetIds ?? s.selectedIds).filter((id) =>
       annotationsRef.current.some((a) => a.id === id),
     );
     if (ids.length === 0) return;
     const targets = ids
       .map((id) => annotationsRef.current.find((a) => a.id === id))
-      .filter(Boolean) as AnnotationResponse[];
-    let pending = ids.length;
+      .filter((ann): ann is AnnotationResponse => !!ann && !ann.is_locked);
+    const skipped = ids.length - targets.length;
+    if (targets.length === 0) {
+      pushToast({ msg: "所选对象已锁定", sub: "请先解锁再删除", kind: "warning" });
+      return;
+    }
+    let pending = targets.length;
     let succeeded = 0, failed = 0;
     const cmds: { kind: "delete"; annotation: AnnotationResponse }[] = [];
     targets.forEach((ann) => {
@@ -441,15 +470,16 @@ export function useImageAnnotationActions({
             if (cmds.length > 0) history.pushBatch(cmds);
             pushToast({
               msg: `已删除 ${succeeded}/${targets.length} 个标注`,
-              sub: failed ? `${failed} 项失败` : undefined,
-              kind: failed ? "error" : "success",
+              sub: [failed ? `${failed} 项失败` : null, skipped ? `${skipped} 项已锁定、已跳过` : null]
+                .filter(Boolean).join("；") || undefined,
+              kind: failed || skipped ? "warning" : "success",
             });
             s.setSelectedId(null);
           }
         },
       });
     });
-  }, [s, annotationsRef, mutations.delete, history, pushToast]);
+  }, [s, annotationsRef, isLocked, mutations.delete, history, pushToast]);
 
   // 批量切换 is_locked / is_hidden:聚合语义 = 选中全部已开 → 全部关,否则 → 全部开;
   // 只对需要变更的标注发 PATCH,与 handleBatchDelete 一致走 mutation 循环 + history.pushBatch。
@@ -725,9 +755,22 @@ export function useImageAnnotationActions({
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
   type PendingRefine =
-    | { kind: "prediction"; predictionId: string; shapeIndex: number; labelId: string }
-    | { kind: "sam"; samIdx: number; labelId: string }
-    | { kind: "user"; annotationId: string; beforeGeometry: AnnotationResponse["geometry"]; labelId: string };
+    | {
+        kind: "prediction";
+        predictionId: string;
+        shapeIndex: number;
+        labelId: string;
+        sourceGeometry: RegionGeometry;
+      }
+    | { kind: "sam"; samIdx: number; labelId: string; sourceGeometry: RegionGeometry }
+    | {
+        kind: "user";
+        annotationId: string;
+        beforeGeometry: AnnotationResponse["geometry"];
+        annotationVersion: number | undefined;
+        labelId: string;
+        sourceGeometry: RegionGeometry;
+      };
   const pendingRefineRef = useRef<PendingRefine | null>(null);
 
   const initMaskFromNormalizedPoints = useCallback((normPoints: [number, number][]): boolean => {
@@ -760,6 +803,7 @@ export function useImageAnnotationActions({
       predictionId: box.predictionId,
       shapeIndex: box.shapeIndex,
       labelId: box.cls,
+      sourceGeometry: { type: "polygon", points: box.polygon },
     };
     s.setTool("mask");
     s.setSelectedId(null);
@@ -779,7 +823,12 @@ export function useImageAnnotationActions({
     }
     if (!initMaskFromNormalizedPoints(cand.points)) return;
     const labelId = (cand.label && classes.includes(cand.label)) ? cand.label : s.activeClass;
-    pendingRefineRef.current = { kind: "sam", samIdx: idx, labelId };
+    pendingRefineRef.current = {
+      kind: "sam",
+      samIdx: idx,
+      labelId,
+      sourceGeometry: { type: "polygon", points: cand.points },
+    };
     s.setTool("mask");
     s.setSelectedId(null);
   }, [sam, initMaskFromNormalizedPoints, pushToast, classes, s]);
@@ -804,7 +853,9 @@ export function useImageAnnotationActions({
       kind: "user",
       annotationId: ann.id,
       beforeGeometry: ann.geometry,
+      annotationVersion: ann.version,
       labelId: ann.class_name,
+      sourceGeometry: ann.geometry,
     };
     s.setTool("mask");
     s.setSelectedId(null);
@@ -834,6 +885,171 @@ export function useImageAnnotationActions({
       return Promise.resolve({ ok: false, retryable: false });
     }
     if (!maskEditor.dirty) return Promise.resolve({ ok: false, retryable: false });
+    if (sel?.geometry.type === "raster_mask" && maskPersistenceMode !== "native") {
+      pushToast({ msg: "Mask 为只读", sub: "当前项目未开启原生 Mask 再编辑", kind: "warning" });
+      return Promise.resolve({ ok: false, retryable: false });
+    }
+    if (maskPersistenceMode === "blocked") {
+      pushToast({ msg: "当前不能保存 Mask", sub: "任务能力未就绪或项目未开启对应写入路径", kind: "warning" });
+      return Promise.resolve({ ok: false, retryable: false });
+    }
+    if (maskPersistenceMode === "native") {
+      if (!taskId) {
+        pushToast({ msg: "Mask 保存失败", sub: "当前任务未就绪", kind: "error" });
+        return Promise.resolve({ ok: false, retryable: false });
+      }
+      const rle = maskEditor.commitToRle();
+      const foregroundPixels = maskEditor.buffer?.countSet() ?? 0;
+      const selectedRaster = sel?.geometry.type === "raster_mask" ? sel : null;
+      const updateTarget = refinedAnnotation ?? selectedRaster;
+      if (!rle || !maskEditor.buffer || foregroundPixels === 0) {
+        if (!selectedRaster) {
+          pushToast({ msg: "Mask 为空", sub: "请继续编辑或取消本次绘制", kind: "warning" });
+          return Promise.resolve({ ok: false, retryable: false });
+        }
+        const emptyChoice = promptEmptyRasterMaskChoice(window.confirm);
+        if (emptyChoice === "delete") {
+          return maskEditor.save(() => new Promise((resolve) => {
+            mutations.delete.mutate(selectedRaster.id, {
+              onSuccess: () => resolve({ ok: true, retryable: false }),
+              onError: (error) => resolve({
+                ok: false,
+                retryable: !(error instanceof ApiError) || error.status === 409 || error.status >= 500,
+                error,
+              }),
+            });
+          })).then((result) => {
+            if (!result.ok) {
+              pushToast({
+                msg: "删除 Mask 失败",
+                sub: result.retryable ? "空白稿件和撤销历史已保留，可重试" : String(result.error),
+                kind: "error",
+              });
+              return result;
+            }
+            history.push({ kind: "delete", annotation: selectedRaster });
+            pendingRefineRef.current = null;
+            maskEditor.cancel();
+            s.setTool("box");
+            s.setSelectedId(null);
+            pushToast({ msg: "已删除空 Mask 对象", kind: "success" });
+            return result;
+          });
+        }
+        if (emptyChoice === "undo") {
+          if (maskEditor.canUndo) {
+            maskEditor.undo();
+            pushToast({ msg: "已撤销本次擦空", kind: "success" });
+          } else {
+            pushToast({ msg: "没有可撤销的 Mask 笔画", kind: "warning" });
+          }
+        } else {
+          pushToast({ msg: "已保留空白 Mask 稿件", sub: "可继续绘制或再次提交", kind: "warning" });
+        }
+        return Promise.resolve({ ok: false, retryable: false });
+      }
+      const labelForCommit = refine ? refine.labelId : updateTarget?.class_name ?? s.activeClass;
+      if (!labelForCommit) {
+        pushToast({ msg: "请先选择类别", kind: "warning" });
+        return Promise.resolve({ ok: false, retryable: false });
+      }
+      const targetVersion = refine?.kind === "user"
+        ? refine.annotationVersion
+        : updateTarget?.version;
+      if (updateTarget && targetVersion == null) {
+        pushToast({ msg: "Mask 保存失败", sub: "缺少对象版本，请刷新后重试", kind: "error" });
+        return Promise.resolve({ ok: false, retryable: false });
+      }
+      if (refine) {
+        const report = compareRegionToRasterResult(refine.sourceGeometry, rle);
+        if (!window.confirm(`${formatMaskConversionReport(report)}\n\n是否将精修结果保存为原生 Mask？`)) {
+          return Promise.resolve({ ok: false, retryable: false });
+        }
+        if (report.lossy && !window.confirm(
+          `精修后有 ${report.changedPixels} 个像素发生变化，其中 ${report.droppedPixels} 个源前景像素被移除。确认继续？`,
+        )) {
+          return Promise.resolve({ ok: false, retryable: false });
+        }
+      }
+
+      let committedAnnotation: AnnotationResponse | null = null;
+      let createdPayload: AnnotationPayload | null = null;
+      const beforeGeometry = updateTarget?.geometry;
+      return maskEditor.save(async () => {
+        try {
+          const mask = await rasterMasksApi.uploadTaskContent(taskId, rle);
+          const geometry = { type: "raster_mask", mask } as const;
+          if (updateTarget) {
+            committedAnnotation = await updateAnnotationAsync(
+              updateTarget.id,
+              { geometry },
+              `W/"${targetVersion}"`,
+            );
+          } else {
+            createdPayload = {
+              annotation_type: "raster_mask",
+              tool_unit_id: "region",
+              class_name: labelForCommit,
+              geometry,
+              confidence: 1,
+              ...(refine?.kind === "prediction"
+                ? {
+                    parent_prediction_id: refine.predictionId,
+                    attributes: { _shape_index: refine.shapeIndex },
+                  }
+                : {}),
+            };
+            committedAnnotation = await createAnnotationAsync(createdPayload);
+          }
+          return { ok: true, retryable: false };
+        } catch (error: unknown) {
+          const retryable = !(error instanceof ApiError)
+            || error.status === 409
+            || error.status >= 500;
+          return { ok: false, retryable, error };
+        }
+      }).then((result) => {
+        if (!result.ok) {
+          pushToast({
+            msg: "Mask 保存失败",
+            sub: result.retryable ? "稿件与撤销历史已保留，可重试" : String(result.error),
+            kind: "error",
+          });
+          return result;
+        }
+        if (!committedAnnotation) return result;
+        if (updateTarget && beforeGeometry) {
+          history.push({
+            kind: "update",
+            annotationId: updateTarget.id,
+            before: { geometry: beforeGeometry },
+            after: { geometry: committedAnnotation.geometry },
+          });
+        } else if (createdPayload) {
+          history.push({
+            kind: "create",
+            annotationId: committedAnnotation.id,
+            payload: createdPayload,
+          });
+          recordRecentClass(labelForCommit);
+        }
+        if (refine?.kind === "prediction") {
+          setDismissedShapeKeys((prev) => new Set(prev).add(`pred-${refine.predictionId}-${refine.shapeIndex}`));
+        } else if (refine?.kind === "sam") {
+          sam.consume(refine.samIdx);
+        }
+        pendingRefineRef.current = null;
+        maskEditor.cancel();
+        s.setTool("box");
+        s.setSelectedId(committedAnnotation.id);
+        pushToast({
+          msg: updateTarget ? "已更新原生 Mask" : "已创建原生 Mask",
+          sub: `${foregroundPixels} 像素 · ${labelForCommit}`,
+          kind: "success",
+        });
+        return result;
+      });
+    }
     const out = maskEditor.commitToPolygon();
     if (!out) {
       pushToast({ msg: "Mask 为空,无可提交几何", kind: "warning" });
@@ -922,7 +1138,7 @@ export function useImageAnnotationActions({
     });
     // v0.23.5 WS-E · multipleComponents 的「仅落最大外环」toast 已移除: lossy 转换在
     // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
-  }, [maskEditor, s, annotationsRef, isLocked, pushToast, stageGeom, updateAnnotationAsync, createAnnotationAsync, history, recordRecentClass, sam]);
+  }, [maskEditor, s, annotationsRef, isLocked, pushToast, maskPersistenceMode, taskId, stageGeom, updateAnnotationAsync, createAnnotationAsync, mutations.delete, history, recordRecentClass, sam]);
 
   const cancelMaskEdit = useCallback(() => {
     if (!maskEditor) return;

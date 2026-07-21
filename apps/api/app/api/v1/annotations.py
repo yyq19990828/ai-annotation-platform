@@ -58,6 +58,7 @@ from app.services.raster_mask_storage import (
     COCO_RLE_GZIP_ENCODING,
     RLE_STORAGE_GZIP,
     RasterMaskContractError,
+    assert_raster_mask_write_enabled,
     build_rle_gzip_reference,
     build_rle_reference,
     load_coco_rle,
@@ -307,17 +308,24 @@ async def upload_task_mask_content(
         if requested_storage not in (None, "identity", RLE_STORAGE_GZIP):
             raise ValueError("storage_encoding must be 'identity' or 'gzip'")
         size = payload.get("size")
-        if task.dataset_item_id is not None:
-            item = await db.get(DatasetItem, task.dataset_item_id)
-            if item is not None:
-                video = (item.metadata_ or {}).get("video")
-                video = video if isinstance(video, dict) else {}
-                width = item.width or video.get("width")
-                height = item.height or video.get("height")
-                if width and height and size != [int(height), int(width)]:
-                    raise ValueError(
-                        f"mask size must match source video [{height}, {width}]"
-                    )
+        item = (
+            await db.get(DatasetItem, task.dataset_item_id)
+            if task.dataset_item_id is not None
+            else None
+        )
+        source_file_type = item.file_type if item is not None else task.file_type
+        if source_file_type != "video":
+            project = await db.get(Project, task.project_id)
+            assert_raster_mask_write_enabled(project)
+        if item is not None:
+            video = (item.metadata_ or {}).get("video")
+            video = video if isinstance(video, dict) else {}
+            width = item.width or video.get("width")
+            height = item.height or video.get("height")
+            if width and height and size != [int(height), int(width)]:
+                raise ValueError(
+                    f"mask size must match source video [{height}, {width}]"
+                )
         # HTTP Content-Encoding is handled before JSON parsing. This field is
         # only the object-storage preference; reference encoding stays stable.
         if requested_storage == RLE_STORAGE_GZIP:
@@ -363,6 +371,8 @@ async def upload_task_mask_content(
         return reference
     except HTTPException:
         raise
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

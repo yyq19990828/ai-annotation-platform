@@ -46,6 +46,8 @@
   支持获取图片掩码的 COCO RLE 内容，带 ETag 支持条件请求（304 Not Modified）。
 - **图片 Mask 项目级灰度能力**. 项目新增默认关闭的原生编辑 opt-in，工作台可通过
   `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力、稳定禁用原因与内容上限。
+- **图片原生 Mask 工作台**. 已有 Mask 按 cropped alpha 渲染与像素命中，支持空白创建、RLE 重载再编辑、笔画撤销/重做、逐对象状态与定向重试。
+- **Mask 显式双向转换**. 单对象 polygon / multi-polygon 与 Raster Mask 可原位互转，默认不简化，并在写入前展示面积、组件、孔洞、顶点和像素 XOR 损失报告。
 
 ### Changed
 - **共享掩码验证逻辑**. `validate_mask_geometry_for_task` 扩展支持 `raster_mask` 类型，
@@ -53,7 +55,7 @@
 - **前端类型定义**. `Geometry` union 添加 `RasterMaskGeometry` 类型，`rasterMasksApi`
   拆分为 `annotationRasterMaskContent`（图片）和 `annotationVideoMaskContent`（视频）。
 - **Mask 渲染加载核心**. 图片与视频复用 cropped alpha 分析和命中检测；图片加载器按对象
-  隔离 loading / ready / error，并提供有界并发、定向重试、LRU 与 bitmap 释放。
+  隔离 loading / ready / error，并提供 Worker 解码分析、有界并发、定向重试、LRU 与 bitmap 释放。
 
 ### Fixed
 - **Raster Mask 持久化门禁**. 预测结果写入与预测采纳现与标注创建共用同一个写入边界，
@@ -68,6 +70,7 @@
   bbox 的移动、缩放和复制路径，避免只读引用被覆盖或复制成零尺寸框。
 - **静态 Mask 条件读取合同**. 图片静态读取与兼容逐帧路径共享强类型响应、任务上下文尺寸校验
   和 `If-None-Match` 处理；命中内容摘要时返回 304，不再重复下载对象正文。
+- **图片 Mask 上传与锁定边界**. 图片内容上传在保留对象和写入存储前先执行有效写闸，包括无数据集项关联的图片任务；已锁定 annotation 的 geometry PATCH 和删除均返回稳定冲突，不再依赖前端禁用。
 
 ### Security
 - **Mask 任务级授权与灰度门禁**. 图片和视频 Mask 内容读取统一执行批次状态与标注员分派校验，

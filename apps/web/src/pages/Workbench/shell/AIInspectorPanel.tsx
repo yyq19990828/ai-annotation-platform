@@ -17,6 +17,7 @@ import {
   type PredictionSourceVisibility,
 } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
+import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
 import {
@@ -60,6 +61,8 @@ interface AIInspectorPanelProps {
   aiBoxes: AiBox[];
   predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
+  rasterMaskStatusById?: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask?: (id: string) => void;
   orphanUserBoxIds?: Set<string>;
   selectedId: string | null;
   selectedIds?: string[];
@@ -94,6 +97,7 @@ interface AIInspectorPanelProps {
   onRefinePrediction?: (b: AiBox) => void;
   /** v0.10.9 · 已落库 user polygon 行展示「精修」按钮 → 启动 Mask 编辑器（update mutation）。 */
   onRefineUserPolygon?: (annotationId: string) => void;
+  onEditRasterMask?: (annotationId: string) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -131,14 +135,14 @@ export function AIInspectorPanel({
   open,
   aiBoxes,
   predictionSourceFilter,
-  userBoxes, orphanUserBoxIds, selectedId, selectedIds,
+  userBoxes, orphanUserBoxIds, rasterMaskStatusById, onRetryRasterMask, selectedId, selectedIds,
   dimmedAiIds,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes,
   onBulkUpdateAttributes,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame,
-  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
+  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon, onEditRasterMask,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
   readOnly = false,
@@ -270,6 +274,8 @@ export function AIInspectorPanel({
         predictionSourceFilter={predictionSourceFilter}
         userBoxes={userBoxes}
         orphanUserBoxIds={orphanUserBoxIds}
+        rasterMaskStatusById={rasterMaskStatusById}
+        onRetryRasterMask={onRetryRasterMask}
         selSet={selSet}
         dimmedAiIds={dimmedAiIds}
         imageWidth={imageWidth}
@@ -284,6 +290,8 @@ export function AIInspectorPanel({
         onRejectPrediction={onRejectPrediction}
         onRefinePrediction={onRefinePrediction}
         onRefineUserPolygon={onRefineUserPolygon}
+        onEditRasterMask={onEditRasterMask}
+        readOnly={readOnly}
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
@@ -874,6 +882,8 @@ interface BoxesListProps {
   predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
   orphanUserBoxIds?: Set<string>;
+  rasterMaskStatusById?: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask?: (id: string) => void;
   selSet: Set<string>;
   dimmedAiIds?: Set<string>;
   imageWidth: number | null;
@@ -889,6 +899,8 @@ interface BoxesListProps {
   onRefinePrediction?: (b: AiBox) => void;
   /** v0.10.9 · 已落库 user polygon 行的「精修」按钮，update mutation 替换 geometry。 */
   onRefineUserPolygon?: (annotationId: string) => void;
+  onEditRasterMask?: (annotationId: string) => void;
+  readOnly?: boolean;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -905,11 +917,12 @@ interface BoxesListProps {
 }
 
 function BoxesList({
-  aiBoxes, predictionSourceFilter, userBoxes, orphanUserBoxIds, selSet, dimmedAiIds, imageWidth, imageHeight,
+  aiBoxes, predictionSourceFilter, userBoxes, orphanUserBoxIds, rasterMaskStatusById, onRetryRasterMask, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
   currentFrameIndex,
   onSeekFrame,
-  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
+  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon, onEditRasterMask,
+  readOnly = false,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
   videoTrackPanel,
@@ -1134,16 +1147,24 @@ function BoxesList({
                 <div className={r.depth ? "ml-3 border-l-2 border-border pl-2" : undefined}>
                   <BoxListItem
                     b={r.box}
+                    rasterMaskStatus={rasterMaskStatusById?.get(r.box.id)}
+                    onRetryRasterMask={onRetryRasterMask ? () => onRetryRasterMask(r.box.id) : undefined}
                     orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
                     selected={selSet.has(r.box.id)}
                     imageWidth={imageWidth} imageHeight={imageHeight}
                     onSelect={(e) => selectBox(r.box, e?.shiftKey)}
-                    onDelete={() => onDeleteUserBox(r.box.id)}
-                    onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
-                    onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
-                    onRefine={onRefineUserPolygon && r.box.geometry?.type === "polygon"
-                      ? () => onRefineUserPolygon(r.box.id)
+                    onDelete={!readOnly && !r.box.is_locked ? () => onDeleteUserBox(r.box.id) : undefined}
+                    onChangeClass={!readOnly && !r.box.is_locked && onChangeUserBoxClass
+                      ? () => onChangeUserBoxClass(r.box.id)
                       : undefined}
+                    onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
+                    onRefine={r.box.geometry?.type === "raster_mask"
+                      ? (!readOnly && !r.box.is_locked && onEditRasterMask
+                          ? () => onEditRasterMask(r.box.id)
+                          : undefined)
+                      : onRefineUserPolygon && r.box.geometry?.type === "polygon"
+                        ? () => onRefineUserPolygon(r.box.id)
+                        : undefined}
                   />
                 </div>
               )}

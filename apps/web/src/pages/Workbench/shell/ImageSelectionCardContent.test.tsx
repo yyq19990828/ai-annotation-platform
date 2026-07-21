@@ -99,7 +99,7 @@ describe("ImageSelectionCardContent", () => {
     expect(getByRole("status").textContent).toContain("禁用顶点编辑和整体拖动");
   });
 
-  it("raster_mask 显示画布只读占位但保留管理操作", () => {
+  it("raster_mask 显示真实像素指标并保留管理操作", () => {
     const { getByRole, getByLabelText } = render(
       <ImageSelectionCardContent
         annotation={makeAnnotation({
@@ -123,10 +123,17 @@ describe("ImageSelectionCardContent", () => {
         onToggleFlag={noop}
         onDelete={noop}
         onUpdateAttributes={noop}
+        rasterMaskStatus={{
+          state: "ready",
+          cacheKey: "mask-v1",
+          area: 17,
+          componentCount: 2,
+          bounds: { x: 0.1, y: 0.2, w: 0.5, h: 0.4 },
+        }}
       />,
     );
 
-    expect(getByRole("status").textContent).toContain("画布渲染与编辑尚未启用");
+    expect(getByRole("status").textContent).toContain("已按真实像素渲染 · 17 px · 2 个组件");
     expect((getByLabelText("修改类别") as HTMLButtonElement).disabled).toBe(false);
     expect((getByLabelText("删除标注") as HTMLButtonElement).disabled).toBe(false);
   });
@@ -197,5 +204,25 @@ describe("ImageSelectionCardContent", () => {
     expect((getByLabelText("修改类别") as HTMLButtonElement).disabled).toBe(true);
     expect((getByLabelText("锁定") as HTMLButtonElement).disabled).toBe(true);
     expect((getByLabelText("删除标注") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("对象锁定时禁用改类和删除，仍可解锁", () => {
+    const { getByLabelText } = render(
+      <ImageSelectionCardContent
+        annotation={makeAnnotation({ is_locked: true })}
+        imageWidth={1920}
+        imageHeight={1080}
+        attributeSchema={undefined}
+        readOnly={false}
+        onChangeClass={noop}
+        onToggleFlag={noop}
+        onDelete={noop}
+        onUpdateAttributes={noop}
+      />,
+    );
+
+    expect((getByLabelText("修改类别") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByLabelText("删除标注") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByLabelText("解锁") as HTMLButtonElement).disabled).toBe(false);
   });
 });

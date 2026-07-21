@@ -5,7 +5,7 @@
  *
  * screenshot catalog 的 image_demo 已绑定 region 工具单位，Mask 笔刷归属 region。选「Mask 笔刷」工具 →
  * 按住左键拖动涂抹（pointerdown 起笔，pointermove 连续涂），来回几笔填出一块区域 → Enter 提交。
- * 提交时 maskToPolygon 把笔刷栅格转为 polygon/multi_polygon 落库（afterAll 清理已覆盖这两类）。
+ * 提交类型由任务 Mask 能力决定：原生项目落 raster_mask，兼容项目落 polygon。
  * Konva canvas，用 page.mouse 坐标拖动。
  *
  * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(隐藏预测/选工具)与结尾(落库等待)。
@@ -55,7 +55,7 @@ export async function runMaskDraw(page: Page, catalog: ScreenshotSeedCatalog): P
   await stroke(page, cx + 100, cx - 100, cy + 50);
   await page.waitForTimeout(700); // 停留展示涂好的色块
 
-  // Enter 提交 mask（→ polygon/multi_polygon 落库）
+  // Enter 提交 Mask（实际落库类型由任务能力决定）
   await page.keyboard.press("Enter");
   await page.waitForTimeout(1100);
 

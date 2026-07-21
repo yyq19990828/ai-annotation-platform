@@ -90,6 +90,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     name?: string;
     status?: string;
     due_date?: string | null;
+    raster_mask_native_editing_enabled?: boolean;
   }) => {
     update.mutate(patch, {
       onError: (err) =>
@@ -166,6 +167,27 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
             )}
           </div>
         </div>
+        {(project.data_type === "image" || project.type_key.startsWith("image")) && (
+          <div className="rounded-md border border-border bg-muted p-3">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-primary"
+                checked={project.raster_mask_native_editing_enabled ?? false}
+                disabled={update.isPending}
+                onChange={(event) => savePatch({
+                  raster_mask_native_editing_enabled: event.target.checked,
+                })}
+              />
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="text-sm font-medium text-foreground">原生 Mask 编辑灰度</span>
+                <span className="text-xs text-muted-foreground">
+                  允许该项目在 region 工具中写入逐像素 Mask。部署级创建开关关闭时，项目仍保持只读。
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
         <ProgressOverview project={project} />
         {update.isPending && <div className="text-xs text-muted-foreground" data-testid="saving-hint">保存中…</div>}
       </div>

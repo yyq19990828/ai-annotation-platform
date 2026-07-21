@@ -254,6 +254,17 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     annotator = await create_user(db, "annotator", "anno@e2e.test", "E2E Annotator")
     reviewer = await create_user(db, "reviewer", "rev@e2e.test", "E2E Reviewer")
     project = await create_project(db, owner_id=admin.id, name="E2E Demo Project")
+    # Mask E2E 走兼容 polygon 提交；能力握手要求项目显式开启
+    # region 工具。保留 bbox 绑定，避免改变其他工作台 E2E 的基础数据。
+    bbox_binding = project.tool_bindings.get("bbox", {})
+    project.tool_bindings = {
+        **project.tool_bindings,
+        "region": {
+            "enabled": True,
+            "classes": list(bbox_binding.get("classes", [])),
+            "attribute_schema": {"fields": []},
+        },
+    }
 
     # v0.8.5 · 把 annotator / reviewer 加为项目成员，否则 RequireProjectMember 会
     # 在进入 /projects/:id/annotate 时 403 弹回，annotation/batch-flow spec 走不通。

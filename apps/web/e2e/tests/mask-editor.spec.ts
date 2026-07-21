@@ -71,7 +71,7 @@ test.describe("mask editor (I11)", () => {
     await seed.injectPrediction({
       taskId: data.task_ids[0],
       projectId: data.project_id,
-      label: "object",
+      label: "car",
       polygon: [
         [0.3, 0.3],
         [0.6, 0.3],

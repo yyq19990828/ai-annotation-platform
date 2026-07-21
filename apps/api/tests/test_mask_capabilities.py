@@ -186,3 +186,31 @@ async def test_mask_capabilities_honors_task_visibility(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found"
+
+
+@pytest.mark.asyncio
+async def test_mask_capabilities_marks_completed_task_read_only(
+    httpx_client, super_admin, db_session, monkeypatch
+):
+    user, token = super_admin
+    _, task = await _seed_project_and_task(
+        db_session,
+        owner_id=user.id,
+        project_enabled=True,
+        region_enabled=True,
+    )
+    task.status = "completed"
+    monkeypatch.setattr(settings, "raster_mask_read_enabled", True)
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    await db_session.commit()
+
+    response = await httpx_client.get(
+        f"/api/v1/tasks/{task.id}/mask-capabilities",
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["read_enabled"] is True
+    assert response.json()["write_enabled"] is False
+    assert response.json()["legacy_polygon_commit_enabled"] is False
+    assert response.json()["reason"] == "task_locked"

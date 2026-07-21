@@ -226,7 +226,7 @@ async def create_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _assert_task_editable(await _load_task_or_404(db, task_id))
+    _assert_task_editable(await _load_task_or_404(db, task_id), current_user)
     svc = AnnotationService(db)
     try:
         annotation = await svc.create(
@@ -610,6 +610,11 @@ async def update_annotation(
         raise HTTPException(
             status_code=400, detail="Annotation does not belong to this task"
         )
+    if "geometry" in fields and existing.is_locked:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "annotation_locked"},
+        )
 
     before_attributes: dict | None = None
     if "attributes" in fields:
@@ -881,10 +886,17 @@ async def delete_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _assert_task_editable(await _load_task_or_404(db, task_id))
+    _assert_task_editable(await _load_task_or_404(db, task_id), current_user)
     # 先取一份 detail 供 audit 用（soft delete 之后字段仍能读，但安全起见提前）
     pre = await db.get(Annotation, annotation_id)
-    pre_class = pre.class_name if pre else None
+    if pre is None or pre.task_id != task_id or not pre.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if pre.is_locked:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "annotation_locked"},
+        )
+    pre_class = pre.class_name
     svc = AnnotationService(db)
     ok = await svc.delete(annotation_id)
     if not ok:

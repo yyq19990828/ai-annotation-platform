@@ -12,8 +12,8 @@
  * annotation 的 is_locked 判定。per-annotation / taskReadOnly 两条走 canEditMask 同一
  * 拒绝分支, 等价覆盖 (纯函数层 8 个锁定场景见 canEditMask.test.ts)。
  *
- * 选择策略: 用 API 建一个居中较大 bbox 并锁定; reload 后 bbox 渲染在画布上, 用 bbox
- * 几何中心点选 (避开 canvas 拖框误画: 先切 select 工具)。
+ * 选择策略: 用 API 建一个居中较大 bbox 并锁定; 显式定位到所属任务,
+ * 再从标注列表选中它，避免受任务默认排序与画布缩放影响。
  */
 import { test, expect } from "../fixtures/seed";
 
@@ -58,23 +58,22 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
 
     // 2. 进工作台, 等 annotation 列表加载。
     await seed.injectToken(page, data.annotator_email);
-    await page.goto(`/projects/${data.project_id}/annotate`);
+    await page.goto(
+      `/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`,
+    );
     await page.waitForLoadState("networkidle");
 
-    // 3. 切 select 工具 (避免 box 工具点选时误画), 点 bbox 中心选中锁定对象。
-    const selectBtn = page.getByTestId("tool-btn-select");
-    if (await selectBtn.isVisible().catch(() => false)) {
-      await selectBtn.click();
-    }
+    // 3. 从标注列表精确选中锁定对象。
+    const annotationRow = page.getByTestId(`box-list-item-${annotationId}`);
+    await expect(annotationRow).toBeVisible({ timeout: 10_000 });
+    await annotationRow.click();
+
     const stage = page.getByTestId("workbench-stage");
     const box = await stage.boundingBox();
     if (!box) throw new Error("workbench-stage boundingBox 不可用");
     // bbox (0.3,0.3,0.4,0.4) 中心 (0.5,0.5)。
     const cx = box.x + box.width * 0.5;
     const cy = box.y + box.height * 0.5;
-    await page.mouse.click(cx, cy);
-    // 等选中态在 React 落定 (annotationsRef.current 已含 is_locked)。
-    await page.waitForTimeout(800);
 
     // 4. 按 M 进 mask 工具 (task 可编辑 → 工具条正常渲染)。
     await page.keyboard.press("m");

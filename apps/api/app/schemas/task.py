@@ -85,6 +85,7 @@ MaskCapabilityReason = Literal[
     "deployment_disabled",
     "project_disabled",
     "region_disabled",
+    "task_locked",
     "enabled",
 ]
 

@@ -17,6 +17,8 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+import pytest
+
 from app.api.v1.annotations import (
     MAX_MASK_OBJECTS_PER_TASK,
     _count_task_mask_references,
@@ -24,10 +26,17 @@ from app.api.v1.annotations import (
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.config import settings
 
 RLE = {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]}
 # Distinct object_key → distinct counted reference.
 _KEY_FMT = "raster-masks/sha256/{ab}/{cd}/{digest}.json"
+
+
+@pytest.fixture(autouse=True)
+def _enable_native_mask_writes(monkeypatch):
+    monkeypatch.setattr(settings, "raster_mask_read_enabled", True)
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
 
 
 def _mask_ref(digest: str = "a" * 64) -> dict:
@@ -51,6 +60,8 @@ async def _seed_task(db, owner_id):
         type_label="image",
         type_key="image-bbox",
         owner_id=owner_id,
+        raster_mask_native_editing_enabled=True,
+        tool_bindings={"region": {"enabled": True, "classes": []}},
     )
     db.add(proj)
     await db.flush()

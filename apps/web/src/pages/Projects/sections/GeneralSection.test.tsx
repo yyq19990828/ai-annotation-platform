@@ -101,6 +101,17 @@ describe("GeneralSection", () => {
     expect(mockUpdateMutate.mock.calls[0][0]).toEqual({ status: "completed" });
   });
 
+  it("图片项目可单独开启原生 Mask 灰度", () => {
+    renderUI(makeProject({ raster_mask_native_editing_enabled: false }));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /原生 Mask 编辑灰度/ }));
+
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
+      raster_mask_native_editing_enabled: true,
+    });
+  });
+
   it("空名失焦 → 弹 toast 并恢复, 不提交", () => {
     renderUI(makeProject());
     const nameInput = screen.getByDisplayValue("Demo Project") as HTMLInputElement;

@@ -44,6 +44,15 @@ export function useTask(id: string) {
   });
 }
 
+export function useMaskCapabilities(taskId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["task-mask-capabilities", taskId],
+    queryFn: () => tasksApi.getMaskCapabilities(taskId!),
+    enabled: !!taskId && enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useVideoManifest(taskId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-video-manifest", taskId],
@@ -196,10 +205,15 @@ export function useUpdateAnnotation(
         const annotationId = (_vars as { annotationId?: string } | undefined)?.annotationId ?? "";
         if (detail?.current_version && onConflict) {
           onConflict(annotationId, detail.current_version);
-          return; // don't rollback — let user decide
         }
       }
       if (ctx?.prev !== undefined) qc.setQueryData(["annotations", taskId], ctx.prev);
+    },
+    onSuccess: (annotation) => {
+      qc.setQueryData<AnnotationResponse[]>(
+        ["annotations", taskId],
+        (old) => (old ?? []).map((item) => item.id === annotation.id ? annotation : item),
+      );
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });

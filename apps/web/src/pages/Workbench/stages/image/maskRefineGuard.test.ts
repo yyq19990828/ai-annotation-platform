@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse } from "@/types";
-import { maskRefineBlockReason } from "./useImageAnnotationActions";
+import {
+  maskRefineBlockReason,
+  promptEmptyRasterMaskChoice,
+} from "./useImageAnnotationActions";
 
 function annotation(geometry: AnnotationResponse["geometry"], isLocked = false): AnnotationResponse {
   return { geometry, is_locked: isLocked } as AnnotationResponse;
@@ -25,5 +28,15 @@ describe("maskRefineBlockReason", () => {
     } as AnnotationResponse["geometry"]);
     expect(maskRefineBlockReason(multi, false)).toContain("复杂几何");
     expect(maskRefineBlockReason(holes, false)).toContain("复杂几何");
+  });
+});
+
+describe("promptEmptyRasterMaskChoice", () => {
+  it("三态选择依次映射删除、撤销和继续编辑", () => {
+    expect(promptEmptyRasterMaskChoice(vi.fn(() => true))).toBe("delete");
+    expect(promptEmptyRasterMaskChoice(vi.fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true))).toBe("undo");
+    expect(promptEmptyRasterMaskChoice(vi.fn(() => false))).toBe("continue");
   });
 });

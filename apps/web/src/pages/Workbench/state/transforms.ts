@@ -201,6 +201,7 @@ export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string
     z_order: a.z_order ?? 0,
     is_locked: a.is_locked ?? false,
     is_hidden: a.is_hidden ?? false,
+    version: a.version ?? 1,
     // v0.11.27 · 遮挡为渲染派生：任一 style_occluded 属性为 true 即触发。
     occluded: occludedKeys
       ? [...occludedKeys].some((k) => a.attributes?.[k] === true)

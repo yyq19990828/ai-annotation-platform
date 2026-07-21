@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CocoRleMaskRef } from "@/types";
-import { decodeCocoRle, type CocoRle } from "./geometry/maskRle";
+import type { CocoRle } from "./geometry/maskRle";
+import { analyzeRasterMaskRleAsync, RasterMaskWorkerError } from "./rasterMaskCompute";
 import {
-  analyzeRasterMaskAlpha,
   closeRasterMaskImage,
   createTintedRasterMaskImage,
   type RasterMaskAnalysis,
@@ -284,14 +284,13 @@ export function useRasterMaskRecords<TSource extends string = string>(
         }
         let analysis: RasterMaskAnalysis;
         try {
-          const alpha = decodeCocoRle(rle);
-          const [height, width] = rle.size;
-          analysis = analyzeRasterMaskAlpha(alpha, width, height);
+          analysis = await analyzeRasterMaskRleAsync(rle);
           if (analysis.area === 0) {
             throw new InvalidRasterMaskContentError("mask content has no foreground pixels");
           }
         } catch (error) {
           if (error instanceof InvalidRasterMaskContentError) throw error;
+          if (error instanceof RasterMaskWorkerError) throw new RasterMaskRenderError(error.message);
           throw new InvalidRasterMaskContentError(String(error));
         }
         try {
@@ -368,16 +367,20 @@ export function useRasterMaskRecords<TSource extends string = string>(
   }, []);
 
   useLayoutEffect(() => {
+    const activeDescriptors = activeDescriptorsRef;
+    const requestTokens = requestTokensRef.current;
+    const errors = errorsRef.current;
+    const cache = cacheRef.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       scopeGenerationRef.current += 1;
-      activeDescriptorsRef.current.clear();
-      requestTokensRef.current.clear();
+      activeDescriptors.current.clear();
+      requestTokens.clear();
       queueRef.current = [];
-      errorsRef.current.clear();
-      for (const cached of cacheRef.current.values()) disposeCached(cached);
-      cacheRef.current.clear();
+      errors.clear();
+      for (const cached of cache.values()) disposeCached(cached);
+      cache.clear();
     };
   }, [disposeCached]);
 
@@ -414,7 +417,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
     }
     evictLru();
     pumpRef.current();
-  }, [descriptorEntries, enqueue, evictLru, maxCachedRecords, maxConcurrent, scopeKey]);
+  }, [descriptorEntries, disposeCached, enqueue, evictLru, maxCachedRecords, maxConcurrent, scopeKey]);
 
   const retry = useCallback((id: string) => {
     const descriptor = descriptorsByIdRef.current.get(id);

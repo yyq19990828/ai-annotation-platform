@@ -41,6 +41,8 @@ import type { VideoSamCandidateShape } from "../stage/VideoSamCandidateOverlay";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
+import type { RasterMaskRenderRecord } from "../stage/shared/rasterMaskRender";
+import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -162,6 +164,11 @@ interface WorkbenchStageHostVideoProps {
 }
 
 interface WorkbenchStageHostImageProps {
+  rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
+  rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask: (id: string) => void;
+  editingRasterMaskId?: string | null;
+  maskReadOnly?: boolean;
   fileUrl: string | null;
   mediaKey?: string | null;
   blurhash?: string | null;
@@ -365,6 +372,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
+      rasterMaskRecords,
+      rasterMaskStatusById,
+      onRetryRasterMask,
+      editingRasterMaskId,
+      maskReadOnly,
       fileUrl,
       mediaKey,
       blurhash,
@@ -529,6 +541,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           />
         ) : (
           <ImageWorkbench
+            rasterMaskRecords={rasterMaskRecords}
+            rasterMaskStatusById={rasterMaskStatusById}
+            onRetryRasterMask={onRetryRasterMask}
+            editingRasterMaskId={editingRasterMaskId}
+            maskReadOnly={maskReadOnly}
             readOnly={readOnly}
             fileUrl={fileUrl}
             mediaKey={mediaKey}

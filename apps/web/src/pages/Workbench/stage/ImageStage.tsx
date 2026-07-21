@@ -49,6 +49,8 @@ import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
+import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
+import type { RasterMaskRecordStatus } from "./shared/useRasterMaskRecords";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -136,6 +138,10 @@ function SamRefineButton({
 }
 
 interface ImageStageProps {
+  rasterMaskRecords?: readonly RasterMaskRenderRecord<"annotation">[];
+  rasterMaskStatusById?: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask?: (id: string) => void;
+  maskReadOnly?: boolean;
   fileUrl: string | null;
   mediaKey?: string | null;
   blurhash?: string | null;
@@ -396,6 +402,7 @@ function SamCandidateOverlay({
 
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
+  rasterMaskRecords = [], rasterMaskStatusById = new Map(), onRetryRasterMask, maskReadOnly = false,
   fileUrl, mediaKey, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap, pendingGeomMap,
@@ -503,6 +510,12 @@ export function ImageStage({
       .sort((a, c) => (a.b.z_order ?? 0) - (c.b.z_order ?? 0) || a.i - c.i)
       .map((entry) => entry.b);
   }, [userBoxes]);
+  const displayedRasterMaskRecords = rasterMaskRecords;
+  const rasterMaskErrors = useMemo(
+    () => [...rasterMaskStatusById.entries()].flatMap(([id, status]) =>
+      status.state === "error" ? [{ id, status }] : []),
+    [rasterMaskStatusById],
+  );
   const snapIndex = useMemo(() => {
     const polygonAnnotations = visibleSortedUserBoxes.filter((annotation): annotation is Annotation & { geometry: Geometry } => (
       !!annotation.geometry && (annotation.geometry.type === "polygon" || annotation.geometry.type === "multi_polygon")
@@ -923,6 +936,13 @@ export function ImageStage({
     }
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if (tool === "select" && !spacePan) {
+      const hit = pickTopRasterMaskAt(displayedRasterMaskRecords, pt);
+      if (hit) {
+        onSelectBox(hit.id, { shift: e.evt.shiftKey });
+        return;
+      }
+    }
     // spacePan 模式下强制走 hand 工具的 pan 行为，无视当前 tool
     const effective = spacePan ? TOOL_REGISTRY.hand : TOOL_REGISTRY[tool];
     const init = effective.onPointerDown?.({
@@ -932,7 +952,7 @@ export function ImageStage({
       activeClass,
       imgW, imgH,
       spacePan,
-      readOnly,
+      readOnly: readOnly || (tool === "mask" && maskReadOnly),
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
       snapPoint: (candidate, evt) => {
@@ -945,7 +965,7 @@ export function ImageStage({
       samPolarity,
       maskEditor,
       // v0.23.5 · WS-C · 选中对象的 is_locked 传入, 供 MaskTool 经 canEditMask 判定。
-      annotationLocked: !!primarySelectedBox?.is_locked,
+      annotationLocked: !!primarySelectedBox?.is_locked || maskReadOnly,
     });
     if (init) setDrag(init);
   };
@@ -1147,7 +1167,12 @@ export function ImageStage({
       y: evt.clientY - rect.top,
     });
     const hitId = findContextMenuAnnotationId(hitNode);
-    const target = hitId ? userBoxes.find((annotation) => annotation.id === hitId) ?? null : null;
+    const imagePoint = toImg(evt.clientX, evt.clientY);
+    const rasterHit = imagePoint
+      ? pickTopRasterMaskAt(displayedRasterMaskRecords, imagePoint)
+      : null;
+    const targetId = hitId ?? rasterHit?.id ?? null;
+    const target = targetId ? userBoxes.find((annotation) => annotation.id === targetId) ?? null : null;
     if (!target) {
       closeContextMenu();
       return;
@@ -1155,7 +1180,7 @@ export function ImageStage({
     setContextMenuTargetId(target.id);
     if (!selSet.has(target.id)) onSelectBox(target.id);
     contextMenu.openAt(evt.clientX, evt.clientY);
-  }, [closeContextMenu, contextMenu, keypointDraftPending, onSelectBox, readOnly, selSet, userBoxes]);
+  }, [closeContextMenu, contextMenu, displayedRasterMaskRecords, keypointDraftPending, onSelectBox, readOnly, selSet, toImg, userBoxes]);
 
   return (
     <div
@@ -1222,6 +1247,39 @@ export function ImageStage({
           )}
         </Layer>
 
+        {/* committed Mask 独立于背景与 AI/vector 之间，不参与 Konva hit-test。 */}
+        <Layer name="image-mask" listening={false}>
+          {displayedRasterMaskRecords.map((record) => {
+            const { bounds } = record;
+            return (
+              <Group key={record.cacheKey} id={record.id} listening={false}>
+                <KonvaImage
+                  image={record.image}
+                  x={bounds.x * imgW}
+                  y={bounds.y * imgH}
+                  width={bounds.w * imgW}
+                  height={bounds.h * imgH}
+                  opacity={workbenchConfig.image.maskOverlayOpacity}
+                  listening={false}
+                  imageSmoothingEnabled={false}
+                />
+                {record.selected && (
+                  <Rect
+                    x={bounds.x * imgW}
+                    y={bounds.y * imgH}
+                    width={bounds.w * imgW}
+                    height={bounds.h * imgH}
+                    stroke="#ffffff"
+                    strokeWidth={2 / vp.scale}
+                    dash={[6 / vp.scale, 4 / vp.scale]}
+                    listening={false}
+                  />
+                )}
+              </Group>
+            );
+          })}
+        </Layer>
+
         {/* ai 层：AI 预测框（虚线 + 浅填充）。严格分离：仅「选择工具」下可点选采纳，
             与 user 层一致；绘制工具下不响应 hit-test，避免预标注被任意工具误选。 */}
         <Layer name="ai" listening={selectActive}>
@@ -1273,8 +1331,6 @@ export function ImageStage({
         {/* user 层：人工框 + 选中态 + resize handle */}
         <Layer name="user" listening={userLayerListening}>
           {visibleSortedUserBoxes.map((b) => {
-            // v0.23.6 只接入 raster_mask schema / 列表管理；无 canvas renderer 时不创建
-            // 零尺寸 KonvaBox，从源头隔离 move / resize / polygon 等矢量编辑路径。
             if (!shouldRenderImageAnnotationShape(b)) return null;
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
@@ -1855,7 +1911,32 @@ export function ImageStage({
             onDrop={onIssuePinDrop}
           />
         ) : null}
-        </Stage>
+      </Stage>
+      {rasterMaskErrors.length > 0 && (
+        <div
+          className="pointer-events-auto absolute right-3 top-3 z-popover max-w-80 rounded-md border border-border bg-card p-2 text-xs text-foreground shadow-md"
+          role="status"
+          aria-label="Mask 加载错误"
+        >
+          {rasterMaskErrors.map(({ id, status }) => (
+            <div key={id} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">
+                {userBoxes.find((annotation) => annotation.id === id)?.cls ?? id}：{status.message}
+              </span>
+              {status.retryable && (
+                <button
+                  type="button"
+                  className="rounded border border-border px-2 py-1 hover:bg-muted"
+                  onClick={() => onRetryRasterMask?.(id)}
+                  aria-label={`重试 Mask ${id}`}
+                >
+                  重试
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       </div>
 
       {/* v0.10.9 · SAM 候选精修浮按钮：active polygonlabels 候选 + 未 Enter 时显示。

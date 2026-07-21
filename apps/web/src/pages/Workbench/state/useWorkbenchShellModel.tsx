@@ -11,6 +11,7 @@ import {
   useUpdateAnnotation, useSubmitTask,
   useVideoManifest,
   useVideoFrameTimetable,
+  useMaskCapabilities,
 } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
 import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
@@ -56,6 +57,14 @@ import { useInteractiveAI, type InteractiveTransport, type TextOutputMode } from
 import type { VideoSamPrompt } from "../stage/videoStageTypes";
 import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
 import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
+import { classColorForCanvas } from "../stage/colors";
+import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
+import {
+  formatMaskConversionReport,
+  rasterMaskToRegionPreview,
+  vectorGeometryToRasterPreview,
+  type MaskConversionReport,
+} from "../stage/shared/geometry/maskConversion";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -488,6 +497,13 @@ export function useWorkbenchShellModel({
   const thumbnailUrl = task?.thumbnail_url ?? null;
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
+  const maskCapabilities = useMaskCapabilities(taskId, !!taskId && !isVideoTask);
+  const imageMaskPersistenceMode: "native" | "legacy" | "blocked" =
+    maskCapabilities.data?.write_enabled === true
+      ? "native"
+      : maskCapabilities.data?.legacy_polygon_commit_enabled === true
+        ? "legacy"
+        : "blocked";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
   const videoFrameTimetable = useVideoFrameTimetable(taskId, isVideoTask && !!videoManifest.data);
   const videoDatasetItemId = videoManifest.data?.dataset_item_id ?? null;
@@ -1067,6 +1083,32 @@ export function useWorkbenchShellModel({
       .map((a) => annotationToBox(a, occludedKeys)),
     [visibleAnnotationsData, isVideoTask, occludedKeys],
   );
+  const rasterMaskSelectedIds = useMemo(
+    () => new Set(s.selectedIds.length > 0 ? s.selectedIds : s.selectedId ? [s.selectedId] : []),
+    [s.selectedId, s.selectedIds],
+  );
+  const imageRasterMaskDescriptors = useMemo(() => {
+    if (isVideoTask || maskCapabilities.data?.read_enabled !== true) return [];
+    return visibleAnnotationsData.flatMap((annotation) => {
+      if (annotation.geometry.type !== "raster_mask") return [];
+      const color = classColorForCanvas(annotation.class_name);
+      return [{
+        id: annotation.id,
+        source: "annotation" as const,
+        ref: annotation.geometry.mask,
+        revision: annotation.version ?? annotation.geometry.mask.sha256,
+        color,
+        colorRevision: color,
+        zOrder: annotation.z_order ?? 0,
+        selected: rasterMaskSelectedIds.has(annotation.id),
+        load: () => rasterMasksApi.annotationRasterMaskContent(annotation.id),
+      }];
+    });
+  }, [isVideoTask, maskCapabilities.data?.read_enabled, rasterMaskSelectedIds, visibleAnnotationsData]);
+  const imageRasterMasks = useRasterMaskRecords({
+    scopeKey: !isVideoTask && maskCapabilities.data?.read_enabled === true ? taskId ?? null : null,
+    descriptors: imageRasterMaskDescriptors,
+  });
 
   const taskAiMeta = useMemo(() => {
     if (predictionsData.length === 0) return { totalCost: 0, avgMs: null as number | null, count: 0 };
@@ -1506,8 +1548,19 @@ export function useWorkbenchShellModel({
   const history = useAnnotationHistory(taskId, {
     createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
     deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
-    updateAnnotation: (id, payload) =>
-      updateAnnotationMut.mutateAsync({ annotationId: id, payload }),
+    updateAnnotation: (id, payload) => {
+      const cached = queryClient.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
+      const current = cached?.find((annotation) => annotation.id === id)
+        ?? annotationsRef.current.find((annotation) => annotation.id === id);
+      const previousType = current?.geometry.type;
+      const nextType = payload.geometry?.type;
+      const requiresPrecondition = !!nextType
+        && (previousType !== nextType || nextType === "raster_mask");
+      const etag = requiresPrecondition && current?.version != null
+        ? `W/"${current.version}"`
+        : undefined;
+      return updateAnnotationMut.mutateAsync({ annotationId: id, payload, etag });
+    },
     updateVideoKeyframe: async (id, frameIndex, keyframe) => {
       const ann = annotationsRef.current.find((a) => a.id === id);
       if (!ann || ann.geometry.type !== "video_track_bbox") throw new Error("Video track not found");
@@ -1658,11 +1711,12 @@ export function useWorkbenchShellModel({
     keypointNodeCount: toolView.keypointSchema?.nodes.length ?? 0,
     sam,
     createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
-    updateAnnotationAsync: (annotationId, payload) =>
-      updateAnnotationMut.mutateAsync({ annotationId, payload }),
+    updateAnnotationAsync: (annotationId, payload, etag) =>
+      updateAnnotationMut.mutateAsync({ annotationId, payload, etag }),
     isLocked: isLockedForActions,
     enqueueOnError,
     maskEditor,
+    maskPersistenceMode: imageMaskPersistenceMode,
     mutations: {
       create: createAnnotation,
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
@@ -1907,6 +1961,18 @@ export function useWorkbenchShellModel({
     const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
     return annotation && isVideoMaskTrack(annotation) ? annotation : null;
   }, [s.selectedId, visibleAnnotationsData]);
+  const selectedImageRasterMask = useMemo(() => {
+    if (isVideoTask) return null;
+    const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
+    return annotation?.geometry.type === "raster_mask" ? annotation : null;
+  }, [isVideoTask, s.selectedId, visibleAnnotationsData]);
+  const selectedImageRasterMaskFingerprint = selectedImageRasterMask
+    ? `${selectedImageRasterMask.id}:${selectedImageRasterMask.version ?? 0}:${
+        selectedImageRasterMask.geometry.type === "raster_mask"
+          ? selectedImageRasterMask.geometry.mask.sha256
+          : ""
+      }`
+    : "";
   const selectedVideoMaskFingerprint = selectedVideoMask
     ? `${selectedVideoMask.id}:${selectedVideoMask.version ?? 0}:${selectedVideoMask.updated_at ?? ""}:${s.videoFrameIndex}`
     : "";
@@ -1921,6 +1987,30 @@ export function useWorkbenchShellModel({
     if (maskAcceptedSessionId !== maskRequestedSessionId) return;
     if (!isVideoTask) {
       if (s.tool !== "mask" || maskEditor.phase !== "loading") return;
+      if (maskCapabilities.isPending) return;
+      if (imageMaskPersistenceMode === "blocked") {
+        const error = new Error(
+          maskCapabilities.isError ? "Mask 写入能力加载失败" : "当前任务未开启 Mask 写入",
+        );
+        maskFailLoad(maskGeneration, error);
+        return;
+      }
+      if (selectedImageRasterMask) {
+        if (imageMaskPersistenceMode !== "native") {
+          const error = new Error("当前任务未开启原生 Mask 编辑");
+          maskFailLoad(maskGeneration, error);
+          pushToast({ msg: "Mask 为只读", sub: error.message, kind: "warning" });
+          return;
+        }
+        const gen = maskGeneration;
+        void rasterMasksApi.annotationRasterMaskContent(selectedImageRasterMask.id)
+          .then((rle) => maskLoadRle(gen, rle))
+          .catch((error: unknown) => {
+            maskFailLoad(gen, error);
+            pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
+          });
+        return;
+      }
       if (maskEditor.active) maskMarkReady(maskGeneration);
       else maskLoadBlank(maskGeneration);
       return;
@@ -1947,7 +2037,115 @@ export function useWorkbenchShellModel({
         maskFailLoad(gen, error);
         pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
       });
-  }, [isVideoTask, maskAcceptedSessionId, maskRequestedSessionId, maskLoadRle, maskLoadBlank, maskFailLoad, maskMarkReady, maskGeneration, maskEditor.active, maskEditor.phase, pushToast, s.tool, s.videoFrameIndex, s.videoTool, selectedVideoMask, selectedVideoMaskFingerprint]);
+  }, [isVideoTask, maskAcceptedSessionId, maskRequestedSessionId, maskLoadRle, maskLoadBlank, maskFailLoad, maskMarkReady, maskGeneration, maskEditor.active, maskEditor.phase, imageMaskPersistenceMode, maskCapabilities.isError, maskCapabilities.isPending, pushToast, s.tool, s.videoFrameIndex, s.videoTool, selectedImageRasterMask, selectedImageRasterMaskFingerprint, selectedVideoMask, selectedVideoMaskFingerprint]);
+
+  const editingImageRasterMaskId = !isVideoTask
+    && s.tool === "mask"
+    && selectedImageRasterMask
+    && maskEditor.active
+    && maskEditor.phase !== "loading"
+    ? selectedImageRasterMask.id
+    : null;
+  const imageMaskInteractionBlocked = !isVideoTask
+    && (imageMaskPersistenceMode === "blocked"
+      || (!!selectedImageRasterMask && imageMaskPersistenceMode !== "native"));
+  const retryImageMaskSession = useCallback(() => {
+    if (imageMaskPersistenceMode === "blocked") {
+      const gen = maskGeneration;
+      void maskCapabilities.refetch().then(({ data }) => {
+        if (data?.write_enabled !== true && data?.legacy_polygon_commit_enabled !== true) {
+          maskFailLoad(gen, new Error("当前任务未开启 Mask 写入"));
+          return;
+        }
+        if (selectedImageRasterMask) {
+          if (data.write_enabled !== true) {
+            maskFailLoad(gen, new Error("当前任务未开启原生 Mask 编辑"));
+            return;
+          }
+          void rasterMasksApi.annotationRasterMaskContent(selectedImageRasterMask.id)
+            .then((rle) => maskLoadRle(gen, rle))
+            .catch((error: unknown) => maskFailLoad(gen, error));
+          return;
+        }
+        maskLoadBlank(gen);
+      }).catch((error: unknown) => maskFailLoad(gen, error));
+      return;
+    }
+    if (selectedImageRasterMask && !maskEditor.active) {
+      const gen = maskGeneration;
+      void rasterMasksApi.annotationRasterMaskContent(selectedImageRasterMask.id)
+        .then((rle) => maskLoadRle(gen, rle))
+        .catch((error: unknown) => {
+          maskFailLoad(gen, error);
+          pushToast({ msg: "Mask 内容加载失败", sub: String(error), kind: "error" });
+        });
+      return;
+    }
+    maskEditor.recoverFromError();
+  }, [imageMaskPersistenceMode, maskCapabilities, maskEditor, maskFailLoad, maskGeneration, maskLoadBlank, maskLoadRle, pushToast, selectedImageRasterMask]);
+  const confirmMaskConversion = useCallback((report: MaskConversionReport) => {
+    if (!window.confirm(`${formatMaskConversionReport(report)}\n\n是否执行转换？`)) return false;
+    return !report.lossy || window.confirm("该转换会改变像素真值。确认继续有损转换？");
+  }, []);
+  const convertRegionToRasterMask = useCallback(async (annotationId: string) => {
+    const annotation = annotationsRef.current.find((item) => item.id === annotationId);
+    if (!annotation || (annotation.geometry.type !== "polygon" && annotation.geometry.type !== "multi_polygon")) return;
+    if (imageMaskPersistenceMode !== "native" || isLockedForActions || annotation.is_locked) {
+      pushToast({ msg: "当前对象不可转为 Mask", kind: "warning" });
+      return;
+    }
+    if (!taskId || !imageWidth || !imageHeight || annotation.version == null) {
+      pushToast({ msg: "转换条件未就绪", sub: "缺少原图尺寸或对象版本", kind: "warning" });
+      return;
+    }
+    try {
+      const preview = vectorGeometryToRasterPreview(annotation.geometry, imageWidth, imageHeight);
+      if (!confirmMaskConversion(preview.report)) return;
+      const mask = await rasterMasksApi.uploadTaskContent(taskId, preview.rle);
+      const geometry = { type: "raster_mask", mask } as const;
+      const updated = await updateAnnotationMut.mutateAsync({
+        annotationId,
+        payload: { geometry },
+        etag: `W/"${annotation.version}"`,
+      });
+      history.push({
+        kind: "update",
+        annotationId,
+        before: { geometry: annotation.geometry },
+        after: { geometry: updated.geometry },
+      });
+      pushToast({ msg: "已转为原生 Mask", sub: `${preview.report.targetAreaPixels} 像素`, kind: "success" });
+    } catch (error) {
+      pushToast({ msg: "Mask 转换失败", sub: String(error), kind: "error" });
+    }
+  }, [confirmMaskConversion, history, imageHeight, imageMaskPersistenceMode, imageWidth, isLockedForActions, pushToast, taskId, updateAnnotationMut]);
+  const convertRasterMaskToRegion = useCallback(async (annotationId: string) => {
+    const annotation = annotationsRef.current.find((item) => item.id === annotationId);
+    if (!annotation || annotation.geometry.type !== "raster_mask") return;
+    if (isLockedForActions || annotation.is_locked || annotation.version == null) {
+      pushToast({ msg: "当前对象不可转换", kind: "warning" });
+      return;
+    }
+    try {
+      const rle = await rasterMasksApi.annotationRasterMaskContent(annotationId);
+      const preview = rasterMaskToRegionPreview(rle);
+      if (!confirmMaskConversion(preview.report)) return;
+      const updated = await updateAnnotationMut.mutateAsync({
+        annotationId,
+        payload: { geometry: preview.geometry },
+        etag: `W/"${annotation.version}"`,
+      });
+      history.push({
+        kind: "update",
+        annotationId,
+        before: { geometry: annotation.geometry },
+        after: { geometry: updated.geometry },
+      });
+      pushToast({ msg: `已转为 ${preview.geometry.type}`, sub: `${preview.report.targetVertices} 顶点`, kind: "success" });
+    } catch (error) {
+      pushToast({ msg: "Mask 转换失败", sub: String(error), kind: "error" });
+    }
+  }, [confirmMaskConversion, history, isLockedForActions, pushToast, updateAnnotationMut]);
 
   const cancelVideoMaskEdit = useCallback(() => {
     maskEditor.cancel();
@@ -2383,7 +2581,7 @@ export function useWorkbenchShellModel({
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
-    maskTaskReadOnly: isLockedForActions,
+    maskTaskReadOnly: isLockedForActions || imageMaskInteractionBlocked,
   });
 
   const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
@@ -2853,6 +3051,16 @@ export function useWorkbenchShellModel({
           onToggleFlag={handlePatchShapeFlag}
           onDelete={handleDeleteBox}
           onUpdateAttributes={handleUpdateAttributes}
+          rasterMaskStatus={imageRasterMasks.statusById.get(ann.id)}
+          onRetryRasterMask={imageRasterMasks.retry}
+          onEditRasterMask={imageMaskPersistenceMode === "native"
+              ? (id) => {
+                handleSelectBox(id);
+                setTool("mask");
+              }
+            : undefined}
+          onConvertRegionToRaster={imageMaskPersistenceMode === "native" ? convertRegionToRasterMask : undefined}
+          onConvertRasterToRegion={convertRasterMaskToRegion}
         />
       );
     } else {
@@ -2920,6 +3128,12 @@ export function useWorkbenchShellModel({
     acceptPredictionFromCard,
     rejectPredictionFromCard,
     handleRefinePrediction,
+    convertRasterMaskToRegion,
+    convertRegionToRasterMask,
+    imageMaskPersistenceMode,
+    imageRasterMasks.retry,
+    imageRasterMasks.statusById,
+    setTool,
     renderVideoTrackSidebar,
     floatingSelectionPosition,
     onSelectionPositionChange,
@@ -3277,6 +3491,9 @@ export function useWorkbenchShellModel({
                 mode={maskEditor.mode}
                 radius={maskEditor.radius}
                 dirty={maskEditor.dirty}
+                phase={maskEditor.phase}
+                canUndo={maskEditor.canUndo}
+                canRedo={maskEditor.canRedo}
                 canEdit={(() => {
                   // v0.23.5 · WS-C · 工具栏经 canEditMask 统一准入 (与 pointer / hotkey 同源)。
                   const sel = s.selectedId
@@ -3286,7 +3503,7 @@ export function useWorkbenchShellModel({
                     ? s.lockedVideoTrackIds.has(sel.geometry.track_id)
                     : false;
                   return canEditMask({
-                    taskReadOnly: isLockedForActions,
+                    taskReadOnly: isLockedForActions || imageMaskInteractionBlocked,
                     annotationLocked: !!sel?.is_locked,
                     trackLocked,
                     segmentLocked: !!lockConflict || !!lockError,
@@ -3295,6 +3512,9 @@ export function useWorkbenchShellModel({
                 })()}
                 onSetMode={maskEditor.setMode}
                 onSetRadius={maskEditor.setRadius}
+                onUndo={maskEditor.undo}
+                onRedo={maskEditor.redo}
+                onRetry={isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession}
                 onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}
                 onCancel={isVideoTask ? cancelVideoMaskEdit : cancelMaskEdit}
               />
@@ -3475,6 +3695,11 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
       },
       image: {
+        rasterMaskRecords: imageRasterMasks.records,
+        rasterMaskStatusById: imageRasterMasks.statusById,
+        onRetryRasterMask: imageRasterMasks.retry,
+        editingRasterMaskId: editingImageRasterMaskId,
+        maskReadOnly: imageMaskInteractionBlocked,
         fileUrl,
         mediaKey: imageMediaKey,
         blurhash,
@@ -3591,6 +3816,8 @@ export function useWorkbenchShellModel({
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
       predictionSourceFilter,
       userBoxes, orphanUserBoxIds: orphanAnnotationIds,
+      rasterMaskStatusById: imageRasterMasks.statusById,
+      onRetryRasterMask: imageRasterMasks.retry,
       selectedId: s.selectedId, selectedIds: s.selectedIds,
       dimmedAiIds,
       imageWidth, imageHeight,
@@ -3599,6 +3826,12 @@ export function useWorkbenchShellModel({
       onRejectPrediction: handleRejectPrediction,
       onRefinePrediction: handleRefinePrediction,
       onRefineUserPolygon: handleRefineUserPolygon,
+      onEditRasterMask: imageMaskPersistenceMode === "native"
+        ? (id: string) => {
+            handleSelectBox(id);
+            s.setTool("mask");
+          }
+        : undefined,
       onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
       onChangeUserBoxClass: handleStartChangeClass,
       onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden") => {

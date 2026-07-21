@@ -30,7 +30,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Shift", "+ wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
   { keys: ["B"], desc: "Mask 工具激活时: 切笔刷模式", group: "draw" },
   { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
-  { keys: ["Enter"], desc: "Mask 工具激活时: 提交 mask → polygon 落库", group: "draw" },
+  { keys: ["Enter"], desc: "Mask 工具激活时: 提交当前 Mask", group: "draw" },
   { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["V"], desc: "选择工具：点选 / 移动已有标注与预标注", group: "draw", actionType: "setTool" },
   { keys: ["Alt", "4"], desc: "选择工具（备用）", group: "draw", actionType: "setTool" },

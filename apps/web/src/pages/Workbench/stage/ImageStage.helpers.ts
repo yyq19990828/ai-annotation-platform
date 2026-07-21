@@ -36,10 +36,7 @@ export function siblingHighlightChildren<
   return boxes.filter((b) => b.parent_annotation_id === parentId);
 }
 
-/**
- * raster_mask 在原生画布 renderer 上线前只能由列表 / 选中卡管理。
- * 显式返回 false 防止 ImageStage 把无外接框的 mask 落入 KonvaBox 默认分支。
- */
+/** raster_mask 由独立像素层渲染，不得落入矢量 KonvaBox 分支。 */
 export function shouldRenderImageAnnotationShape(
   annotation: Pick<Annotation, "geometry">,
 ): boolean {

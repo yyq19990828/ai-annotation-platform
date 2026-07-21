@@ -117,6 +117,35 @@ async def _seed_image_mask(
     return task, annotation
 
 
+async def test_image_mask_content_upload_checks_write_gate_before_storage(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    user, token = super_admin
+    task, _annotation = await _seed_image_mask(
+        db_session,
+        owner_id=user.id,
+        user_id=user.id,
+    )
+    monkeypatch.setattr(settings, "raster_mask_read_enabled", True)
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", False)
+    reserve = AsyncMock()
+    store = AsyncMock()
+    monkeypatch.setattr("app.api.v1.annotations.reserve_raster_mask_upload", reserve)
+    monkeypatch.setattr("app.api.v1.annotations.store_coco_rle", store)
+    await db_session.commit()
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/mask-content",
+        json=FOREGROUND_RLE,
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "raster_mask_create_disabled"
+    reserve.assert_not_awaited()
+    store.assert_not_awaited()
+
+
 def test_raster_mask_rollout_flag_defaults_and_env(monkeypatch):
     assert Settings.model_fields["raster_mask_read_enabled"].default is True
     assert Settings.model_fields["raster_mask_create_enabled"].default is False
@@ -309,6 +338,48 @@ async def test_raster_mask_replacement_requires_if_match(
 
     assert response.status_code == 428
     assert response.json()["detail"]["reason"] == "if_match_required"
+
+
+async def test_locked_annotation_rejects_geometry_patch(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    annotation.is_locked = True
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    await db_session.commit()
+
+    response = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        json={"geometry": annotation.geometry},
+        headers=_headers(token, **{"If-Match": 'W/"1"'}),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "annotation_locked"
+
+
+async def test_locked_annotation_rejects_delete(
+    httpx_client_bound, db_session, super_admin
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    annotation.is_locked = True
+    await db_session.commit()
+
+    response = await httpx_client_bound.delete(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "annotation_locked"
+    await db_session.refresh(annotation)
+    assert annotation.is_active is True
 
 
 async def test_raster_mask_to_polygon_syncs_type_and_allows_gate_off(

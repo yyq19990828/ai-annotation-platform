@@ -247,7 +247,7 @@
 - [x] `images/workbench/ocr-real-scene.png` — OCR 面板无脚本静态备用图 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
-- [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，提交转 polygon 落库）
+- [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，落库类型由任务 Mask 能力决定）
 - [ ] `images/mask-brush/video-mask-track-edit.gif` — 视频帧按 `M` 从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷 / 橡皮修正 → `Enter` 物化第二个人工关键帧；同时露出 Mask、轨迹卡和时间轴关键帧变化 **[Tier A]** `[auto-gif]`（需新增 flow，结束后恢复 screenshot seed）
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]

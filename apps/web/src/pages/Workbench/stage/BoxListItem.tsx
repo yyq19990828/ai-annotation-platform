@@ -3,6 +3,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { Annotation } from "@/types";
 import { predictionSourceLabel, type AiBox } from "../state/transforms";
 import { classColor, displayClassName } from "./colors";
+import type { RasterMaskRecordStatus } from "./shared/useRasterMaskRecords";
 
 function pct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -191,15 +192,32 @@ interface BoxListItemProps {
   /** v0.10.5 M4-β · I15 切换 lock/hidden；仅人工框传入。 */
   onToggleFlag?: (flag: "is_locked" | "is_hidden") => void;
   orphan?: boolean;
+  rasterMaskStatus?: RasterMaskRecordStatus;
+  onRetryRasterMask?: () => void;
 }
 
 export function BoxListItem({
   b, isAi, selected, dimmed = false, imageWidth, imageHeight,
   onSelect, onAccept, onReject, onRefine, onDelete, onChangeClass, onToggleFlag,
   orphan = false,
+  rasterMaskStatus,
+  onRetryRasterMask,
 }: BoxListItemProps) {
   const color = classColor(b.cls);
-  const toolMeta = annotationToolMeta(b, imageWidth, imageHeight);
+  const baseToolMeta = annotationToolMeta(b, imageWidth, imageHeight);
+  const toolMeta = b.geometry?.type !== "raster_mask" || !rasterMaskStatus
+    ? baseToolMeta
+    : rasterMaskStatus.state === "loading"
+      ? { label: baseToolMeta.label, detail: "内容加载中…" }
+      : rasterMaskStatus.state === "ready"
+        ? {
+            label: baseToolMeta.label,
+            detail: `${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
+          }
+        : {
+            label: baseToolMeta.label,
+            detail: `${rasterMaskStatus.reason} · ${rasterMaskStatus.message}`,
+          };
   const predictionSource = isAi ? getPredictionSource(b) : null;
   // v0.14.9 · OCR / doc_layout 候选: 文本摘要 + 版面 type badge (仅 AI 行展示).
   const ocrText = isAi ? ocrTextSummary(b) : null;
@@ -267,6 +285,19 @@ export function BoxListItem({
           <span className="overflow-hidden text-ellipsis whitespace-nowrap">
             {toolMeta.detail}
           </span>
+          {rasterMaskStatus?.state === "error" && rasterMaskStatus.retryable && onRetryRasterMask && (
+            <button
+              type="button"
+              className="shrink-0 rounded border border-border px-1.5 py-px text-2xs hover:bg-muted"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRetryRasterMask();
+              }}
+              aria-label={`重试 Mask ${b.id}`}
+            >
+              重试
+            </button>
+          )}
         </div>
         {ocrText && (
           <div className="col-start-2 flex items-center gap-1 min-w-0 mt-0.5 text-muted-foreground text-xs" title={ocrText}>
@@ -382,8 +413,8 @@ export function BoxListItem({
                 {onRefine && (
                   <Button
                     size="sm"
-                    title="Mask 笔刷精修"
-                    aria-label="精修"
+                    title={b.geometry?.type === "raster_mask" ? "编辑 Mask" : "Mask 笔刷精修"}
+                    aria-label={b.geometry?.type === "raster_mask" ? "编辑 Mask" : "精修"}
                     onClick={(e) => { e.stopPropagation(); onRefine(); }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                     data-testid={`user-refine-${b.id}`}

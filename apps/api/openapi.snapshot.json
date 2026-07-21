@@ -15328,6 +15328,11 @@
             "title": "Prefer Same Scene Continuation",
             "type": "boolean"
           },
+          "raster_mask_native_editing_enabled": {
+            "default": false,
+            "title": "Raster Mask Native Editing Enabled",
+            "type": "boolean"
+          },
           "rendering_config": {
             "$ref": "#/components/schemas/ProjectRenderingConfig",
             "default": {}
@@ -17144,6 +17149,17 @@
               }
             ],
             "title": "Prefer Same Scene Continuation"
+          },
+          "raster_mask_native_editing_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raster Mask Native Editing Enabled"
           },
           "rendering_config": {
             "anyOf": [
@@ -20320,6 +20336,72 @@
           "unique_id"
         ],
         "title": "TaskLockResponse",
+        "type": "object"
+      },
+      "TaskMaskCapabilitiesResponse": {
+        "properties": {
+          "legacy_polygon_commit_enabled": {
+            "title": "Legacy Polygon Commit Enabled",
+            "type": "boolean"
+          },
+          "max_bytes": {
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_dimension": {
+            "title": "Max Dimension",
+            "type": "integer"
+          },
+          "max_pixels": {
+            "title": "Max Pixels",
+            "type": "integer"
+          },
+          "max_runs": {
+            "title": "Max Runs",
+            "type": "integer"
+          },
+          "project_enabled": {
+            "title": "Project Enabled",
+            "type": "boolean"
+          },
+          "read_enabled": {
+            "title": "Read Enabled",
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "read_disabled",
+              "deployment_disabled",
+              "project_disabled",
+              "region_disabled",
+              "task_locked",
+              "enabled"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "region_enabled": {
+            "title": "Region Enabled",
+            "type": "boolean"
+          },
+          "write_enabled": {
+            "title": "Write Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "read_enabled",
+          "write_enabled",
+          "legacy_polygon_commit_enabled",
+          "project_enabled",
+          "region_enabled",
+          "reason",
+          "max_dimension",
+          "max_pixels",
+          "max_runs",
+          "max_bytes"
+        ],
+        "title": "TaskMaskCapabilitiesResponse",
         "type": "object"
       },
       "TaskOut": {
@@ -40697,6 +40779,54 @@
           }
         ],
         "summary": "Heartbeat Lock",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/mask-capabilities": {
+      "get": {
+        "operationId": "get_mask_capabilities_api_v1_tasks__task_id__mask_capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskMaskCapabilitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Mask Capabilities",
         "tags": [
           "tasks"
         ]

@@ -490,6 +490,10 @@ export function useWorkbenchAnnotationActions({
     (id: string) => {
       if (blockIfLocked()) return;
       const target = annotationsRef.current.find((a) => a.id === id);
+      if (target?.is_locked) {
+        pushToast({ msg: "对象已锁定", sub: "请先解锁再删除", kind: "warning" });
+        return;
+      }
       if (target && taskId) {
         mutations.delete.mutate(id, {
           onSuccess: () => {

@@ -13,6 +13,7 @@ import type {
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
+import type { TaskMaskCapabilitiesResponse } from "./generated";
 
 /** v0.20.11 · 选中框单框二次推理请求: 在选中框 ROI 上跑一个能力。 */
 export interface SecondaryInferenceRequest {
@@ -170,6 +171,9 @@ export const tasksApi = {
   },
 
   get: (id: string) => apiClient.get<TaskResponse>(`/tasks/${id}`),
+
+  getMaskCapabilities: (id: string) =>
+    apiClient.get<TaskMaskCapabilitiesResponse>(`/tasks/${id}/mask-capabilities`),
 
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),

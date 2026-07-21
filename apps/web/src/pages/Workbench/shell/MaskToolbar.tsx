@@ -6,18 +6,25 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX, type MaskMode } from "../state/useMaskEditor";
+import type { MaskEditorPhase } from "../state/canEditMask";
 
 interface MaskToolbarProps {
   active: boolean;
   mode: MaskMode;
   radius: number;
   dirty: boolean;
+  phase: MaskEditorPhase;
+  canUndo: boolean;
+  canRedo: boolean;
   /** v0.23.5 · WS-C · 经 canEditMask 的统一准入; false 时禁用笔刷/橡皮/确认。 */
   canEdit: boolean;
   onSetMode: (m: MaskMode) => void;
   onSetRadius: (r: number) => void;
   onCommit: () => void;
   onCancel: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onRetry?: () => void;
 }
 
 const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -29,9 +36,17 @@ const MODE_BTN_IDLE = "border-border bg-transparent text-foreground";
 const MODE_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
 
 export function MaskToolbar({
-  active, mode, radius, dirty, canEdit,
-  onSetMode, onSetRadius, onCommit, onCancel,
+  active, mode, radius, dirty, phase, canUndo, canRedo, canEdit,
+  onSetMode, onSetRadius, onCommit, onCancel, onUndo, onRedo, onRetry,
 }: MaskToolbarProps) {
+  const phaseLabel: Record<MaskEditorPhase, string> = {
+    idle: "未激活",
+    loading: "加载中",
+    ready: "就绪",
+    dirty: "未保存",
+    saving: "保存中",
+    error: "操作失败",
+  };
   return (
     <div
       data-testid="mask-toolbar"
@@ -74,13 +89,24 @@ export function MaskToolbar({
         </span>
       </div>
       <span className={cn("text-xs", dirty ? "text-status-caution" : "text-muted-foreground")}>
-        {dirty ? "未保存" : active ? "就绪" : "未激活"}
+        {phaseLabel[phase]}
       </span>
+      <Button size="sm" variant="ghost" onClick={onUndo} disabled={!canEdit || !canUndo} title="撤销笔画 (Ctrl+Z)">
+        撤销
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onRedo} disabled={!canEdit || !canRedo} title="重做笔画 (Ctrl+Y)">
+        重做
+      </Button>
+      {phase === "error" && onRetry && (
+        <Button size="sm" variant="ghost" onClick={onRetry} title="恢复或重试 Mask">
+          重试
+        </Button>
+      )}
       <span className="text-2xs text-muted-foreground">Shift+滚轮调半径</span>
       <Button size="sm" onClick={onCancel} title="取消 (Esc)">
         取消
       </Button>
-      <Button size="sm" variant="primary" onClick={onCommit} disabled={!canEdit || !active || !dirty} title="确认 (Enter)">
+      <Button size="sm" variant="primary" onClick={onCommit} disabled={!canEdit || !active || !dirty || phase !== "dirty"} title="确认 (Enter)">
         <Icon name="check" size={11} /> 确认
       </Button>
     </div>

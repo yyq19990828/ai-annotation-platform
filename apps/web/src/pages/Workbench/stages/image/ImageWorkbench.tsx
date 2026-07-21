@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
@@ -13,11 +13,18 @@ import type { Viewport } from "../../state/useViewportTransform";
 import type { KeypointDraftHandle, PolygonDraftHandle } from "../../stage/tools";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../../stage/imageStageContextMenu";
+import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
+import type { RasterMaskRecordStatus } from "../../stage/shared/useRasterMaskRecords";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
+  rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask: (id: string) => void;
+  editingRasterMaskId?: string | null;
+  maskReadOnly?: boolean;
   readOnly: boolean;
   fileUrl: string | null;
   mediaKey?: string | null;
@@ -126,6 +133,11 @@ export interface ImageWorkbenchProps {
 }
 
 export function ImageWorkbench({
+  rasterMaskRecords,
+  rasterMaskStatusById,
+  onRetryRasterMask,
+  editingRasterMaskId,
+  maskReadOnly,
   readOnly,
   fileUrl,
   mediaKey,
@@ -204,23 +216,56 @@ export function ImageWorkbench({
   issuePinDropArmed,
   onIssuePinDrop,
 }: ImageWorkbenchProps) {
+  const displayedRasterMaskRecords = useMemo(() => {
+    const hiddenIds = new Set(userBoxes.filter((annotation) => annotation.is_hidden).map((annotation) => annotation.id));
+    return rasterMaskRecords
+      .filter((record) => !hiddenIds.has(record.id) && record.id !== editingRasterMaskId)
+      .sort((left, right) => left.zOrder - right.zOrder);
+  }, [editingRasterMaskId, rasterMaskRecords, userBoxes]);
   // v0.21.11 · 图片焦点联动: 选中对象(键盘两级循环 / 点选)若出视口或过小则平移居中 + 适度放大。
   // 与视频同构, 由 common.focusSelectionEnabled gate; 默认关。用 ref 读最新盒集/几何,
   // effect 只在 selectedId 变化时跑(避免盒集逐次变身份触发重排)。
   const { config: focusConfig } = useWorkbenchConfig();
   const focusSelectionEnabled = focusConfig.common.focusSelectionEnabled;
-  const focusStateRef = useRef({ aiBoxes, userBoxes, stageGeom, setVp });
-  focusStateRef.current = { aiBoxes, userBoxes, stageGeom, setVp };
+  const focusStateRef = useRef({
+    aiBoxes,
+    userBoxes,
+    stageGeom,
+    setVp,
+    rasterMaskStatusById,
+  });
+  focusStateRef.current = {
+    aiBoxes,
+    userBoxes,
+    stageGeom,
+    setVp,
+    rasterMaskStatusById,
+  };
+  const selectedRasterMaskStatus = selectedId
+    ? rasterMaskStatusById.get(selectedId)
+    : undefined;
+  const selectedRasterMaskFocusRevision = selectedRasterMaskStatus?.state === "ready"
+    ? selectedRasterMaskStatus.cacheKey
+    : selectedRasterMaskStatus?.state ?? null;
   useEffect(() => {
     if (!focusSelectionEnabled || !selectedId) return;
-    const { aiBoxes: ai, userBoxes: users, stageGeom: geom, setVp: setViewport } = focusStateRef.current;
+    const {
+      aiBoxes: ai,
+      userBoxes: users,
+      stageGeom: geom,
+      setVp: setViewport,
+      rasterMaskStatusById,
+    } = focusStateRef.current;
     const { imgW, imgH, vpSize } = geom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
     const box = ai.find((b) => b.id === selectedId) ?? users.find((b) => b.id === selectedId);
     if (!box) return;
-    const cx = (box.x + box.w / 2) * imgW;
-    const cy = (box.y + box.h / 2) * imgH;
-    const objMaxDimPx = Math.max(box.w * imgW, box.h * imgH, 1);
+    const maskStatus = rasterMaskStatusById.get(box.id);
+    if (box.geometry?.type === "raster_mask" && maskStatus?.state !== "ready") return;
+    const bounds = maskStatus?.state === "ready" ? maskStatus.bounds : box;
+    const cx = (bounds.x + bounds.w / 2) * imgW;
+    const cy = (bounds.y + bounds.h / 2) * imgH;
+    const objMaxDimPx = Math.max(bounds.w * imgW, bounds.h * imgH, 1);
     setViewport((cur) => {
       let scale = cur.scale;
       if (objMaxDimPx * scale < 48) scale = clampScale(140 / objMaxDimPx);
@@ -233,10 +278,14 @@ export function ImageWorkbench({
       if (!outOfView && scale === cur.scale) return cur;
       return { scale, tx: vpSize.w / 2 - cx * scale, ty: vpSize.h / 2 - cy * scale };
     });
-  }, [focusSelectionEnabled, selectedId]);
+  }, [focusSelectionEnabled, selectedId, selectedRasterMaskFocusRevision]);
 
   return (
     <ImageStage
+      rasterMaskRecords={displayedRasterMaskRecords}
+      rasterMaskStatusById={rasterMaskStatusById}
+      onRetryRasterMask={onRetryRasterMask}
+      maskReadOnly={maskReadOnly}
       readOnly={readOnly}
       fileUrl={fileUrl}
       mediaKey={mediaKey}
