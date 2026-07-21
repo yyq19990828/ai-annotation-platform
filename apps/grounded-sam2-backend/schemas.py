@@ -15,7 +15,7 @@ from aap_protocol_v2 import (
     TaskItem,
     WarmupResponse,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "AnnotationResult",
@@ -41,6 +41,8 @@ class Context(BaseModel):
     text: str | None = None
     # v0.18.17 · point / interactive_box 单点歧义时出 3 候选 (按 SAM iou 降序); 缺省单 mask.
     multimask_output: bool = False
+    output_geometry: Literal["polygon", "mask"] = "polygon"
+    prompt_revision: str | None = Field(default=None, max_length=256)
     # v0.9.4 phase 2 · text 模式输出形态选择 (老前端不传时仍走 mask 兼容旧行为)
     # box: 仅 DINO 出框, 跳过 SAM image embedding + mask 推理 + cv2/shapely 简化, 速度最快
     # mask: DINO → SAM mask → polygon (当前默认行为)
@@ -53,6 +55,14 @@ class Context(BaseModel):
     # v0.9.4 phase 3: shapely.simplify tolerance 像素级覆盖 (None 走 predictor.DEFAULT_SIMPLIFY_TOLERANCE).
     # 仅 mask/both 路径有意义 (box 路径不简化); 大物体可调高 (2-3) 减顶点, 精细物体调低 (0.3-0.5).
     simplify_tolerance: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_native_mask_revision(self) -> Context:
+        if self.output_geometry == "mask" and not self.prompt_revision:
+            raise ValueError(
+                "context.prompt_revision required for output_geometry=mask"
+            )
+        return self
 
 
 class InteractiveRequest(BaseModel):

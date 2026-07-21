@@ -30,6 +30,11 @@ CorrectionDirection = Literal["forward", "backward", "bidirectional"]
 MaskInteractionReason = Literal[
     "empty_mask",
     "unsupported_output_geometry",
+    "unsupported_prompt",
+    "unknown_model",
+    "ambiguous_model",
+    "capability_unavailable",
+    "invalid_backend_response",
     "invalid_mask_payload",
     "mask_payload_too_large",
     "mask_response_too_large",

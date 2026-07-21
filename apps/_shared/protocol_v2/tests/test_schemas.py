@@ -54,6 +54,18 @@ def test_prediction_result_defaults() -> None:
     assert r.task is None
     assert r.result == []
     assert r.score is None
+    assert r.diagnostic is None
+
+
+def test_prediction_result_keeps_empty_mask_diagnostic() -> None:
+    result = PredictionResult(
+        result=[],
+        diagnostic={"reason": "empty_mask", "retryable": False},
+    )
+    assert result.model_dump(mode="json", exclude_none=True)["diagnostic"] == {
+        "reason": "empty_mask",
+        "retryable": False,
+    }
 
 
 def test_batch_predict_response_round_trip() -> None:

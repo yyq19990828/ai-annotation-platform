@@ -40,6 +40,23 @@
 - **原生 Mask AI 交互协议地基**. 扩展 ML capability 受控词表与共享协议包，冻结原生 COCO RLE
   候选、Mask prompt、正负 scribble、视频纠错帧、空结果诊断和显式 fallback lineage；Tracker
   同时按真实输入声明 `video`，未实现的 Mask 交互能力继续保持不声明。
+- **交互模型原生 RLE 候选**. Grounded-SAM2 和 SAM3 image 的点、框与多候选路径可显式
+  返回原分辨率 COCO RLE，hole、孤岛和多连通区不再经过 polygon 简化；旧请求继续返回 polygon。
+- **SAM3 PVS Mask 纠错种子**. 视频交互 Tracker 可校验并解码受控内联 RLE，在准确的窗内帧调用
+  `add_new_mask`；能力目录将 Multiplex 与 PVS 拆分为独立 model 条目。
+
+### Changed
+- **交互候选代理返回路由 lineage**. 图片与视频单帧响应补充请求 backend、实际实例、
+  服务池、目标 model 与模型版本，为后续原子接受提供可追溯输入。
+
+### Fixed
+- **SAM3 Tracker Mask 像素与空帧保真**. Multiplex 的原生 Mask 输出不再做形态学开运算或丢弃
+  小连通区，无目标帧返回尺寸正确的全背景 RLE 与 `outside=true`，不再误报 bbox。
+
+### Security
+- **原生 Mask 安全代理**. 平台按同一目标 model 同时检查 prompt 与输出能力，重建 prompt
+  revision，校验候选 RLE、媒体尺寸、ID 与空结果诊断；单对象 4 MiB 和整体 16 MiB
+  上限在读取 backend 响应流时执行，超限返回稳定 413 reason。
 
 ## [0.23.7] - 2026-07-21
 

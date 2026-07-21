@@ -497,6 +497,9 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
     ],
     "labels": [1, 0, ...],                  // 可选；point 类型，1=positive 0=negative
     "multimask_output": false,              // 可选; point/interactive_box 单点歧义出 3 候选 (按 iou 降序), 默认单 mask
+    "model_id": "grounded-sam2-interactive-seg", // 可选；指定 /setup.models[] 的目标交互 model
+    "output_geometry": "polygon" | "mask", // 可选；缺省继续返回 polygon 兼容字面
+    "prompt_revision": "<server-generated>", // Mask 请求必填；经平台代理时由服务端重建
     "mask_input": "<base64>",               // 可选; 上一轮 256×256 low-res logits 回灌 (多点精修, 见下), 不透明字符串
     "text": "ripe apples",                  // type=text 时（Grounded-SAM-2 / SAM 3 PCS 文本入口）; type=exemplar 时可叠加为概念组合
     "output": "box" | "mask" | "both",      // type=text / type=exemplar 生效, 默认 "mask" 老前端兼容
@@ -512,9 +515,35 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 }
 ```
 
-`context` 是个开放 dict——平台和 backend 协商具体字段，平台不做 schema 校验（`ml_client.py:64-82`）。
+`context` 是开放 dict，旧请求仍按原样透传。显式携带 `output_geometry` 或 `model_id`
+时，平台会在调用 backend 前从同一个 `models[]` 条目同时校验 prompt 与输出；
+`output_geometry="mask"` 还会由平台覆盖客户端传入的 `prompt_revision`，并在有界读取后
+校验每个 RLE、候选 ID、媒体尺寸和空结果诊断。
 
-> **`type=point` / `type=interactive_box`**：SAM-style 单实例交互分割，两个 backend 同名同义（grounded-sam2 走 SAM 2.1 image predictor，SAM 3 走 inst predictor `model.predict_inst`）。`point` 支持正/负点累加——前端把同一对象的全部点每次重发（无状态后端），1=positive 0=negative；`interactive_box` 是单框单 mask。`multimask_output=true` 时单点歧义返回 3 个候选 mask（`result[]` 按 iou 降序，前端默认取 top-1 + 切换）。返回 `polygonlabels: ["object"]`（前端按 active label 改写）。`bbox` 作为交互 prompt 已退役（仅保留为几何形状）；旧 `type=bbox` 请求返回 422。
+> **`type=point` / `type=interactive_box`**：SAM-style 单实例交互分割，两个 backend 同名同义（grounded-sam2 走 SAM 2.1 image predictor，SAM 3 走 inst predictor `model.predict_inst`）。`point` 支持正/负点累加——前端把同一对象的全部点每次重发（无状态后端），1=positive 0=negative；`interactive_box` 是单框单 mask。`multimask_output=true` 时单点歧义返回多个候选（`result[]` 按 iou 稳定降序）。缺少 `output_geometry` 或显式传 `polygon` 时保持 `polygonlabels: ["object"]`；显式传 `mask` 时，Grounded-SAM2 和 SAM3 直接编码模型的原分辨率像素，不调用 contour / simplify。`bbox` 作为交互 prompt 已退役（仅保留为几何形状）；旧 `type=bbox` 请求返回 422。
+
+Mask 候选的响应字面为：
+
+```json
+{
+  "result": [{
+    "type": "mask",
+    "value": {
+      "rle": {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]},
+      "masklabels": ["object"]
+    },
+    "score": 0.91,
+    "candidate_id": "sha256:<64 hex>"
+  }],
+  "diagnostic": null
+}
+```
+
+全部候选为空时返回 `result=[]` 与
+`diagnostic={"reason":"empty_mask","retryable":false}`。单个 RLE 与整个交互响应的上限
+分别是 4 MiB 和 16 MiB；整体限额在读取 backend 响应流时执行，无 `Content-Length`
+的 chunked 响应也不能绕过。返回给工作台的代理响应同时包含实际 backend
+instance / pool、目标 model 与 `model_version`，供后续接受时写入 lineage。
 
 > **`mask_input` 回灌（多点精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次点击精修同一对象时显著提升 mask 稳定性与边界质量。为保持 backend 无状态，这些 logits 由前端携带往返：backend 在 `multimask_output=false` 的单 mask 路径把本轮 `low_res_masks` 编码成响应字段 `mask_input_next`，前端**原样存储、不解析**，下一次点击经 `context.mask_input` 回传；backend 解码后喂回 `predict(mask_input=...)`。
 >
@@ -544,7 +573,7 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/archive/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
 > - **`sam_variant`**：请求链路可传——AI 追踪面板为 SAM2 选尺寸 → `VideoTrackerPropagateRequest.sam_variant` → 存入 `job.prompt` → `TrackerContext` → adapter 在 `context.model_variants.sam_variant` 透传；缺省（未选）时 backend 回退默认 tiny。backend `/predict` video_tracker 分支按 `context.model_variants.sam_variant` 从 `VideoPool` 取对应尺寸 tracker。
 > - **种子输入 `context.seeds[]`（点 / 框 / 多目标）**：`sam2_video` 与 `sam3_video_interactive` 接受完整点 / 框种子——每条可用 `{obj_id?, bbox?, points?}` 单帧简写或 `{obj_id, prompts:[{frame_index, points?, bbox?}, ...]}` 多帧写法。`sam3_video` multiplex 消费每条 seed 的 `bbox` 或可转成外接框的 `geometry`，在新分窗的种子帧把这些框作为正提示与 `text` 组合；不消费点或多帧纠偏。坐标归一化到 [0,1]，点 `label` 1=正点 / 0=负点，缺 `obj_id` 按序补 1..N。backend 应优先显式 seeds，缺省时才用 `source_geometry` 单框兜底。平台从 `job.prompt.seeds` 读取并经 `TrackerContext.seeds` 透传；首窗下发原始提示，后续窗按各实例续种。
->   - **多帧 prompt（中途纠偏）**：seed 还可写成 `{obj_id, prompts:[{frame_index, points?/bbox?}, ...]}`——`frame_index` 是**绝对源帧**，各 prompt 在其（局部）帧对该 obj 播种，PVS memory 逐帧累积，后续帧的修正点（含负点）改善该段追踪。仍从窗种子帧传播，故须保证种子帧有基准 prompt；`prompts` 优先于单帧 `bbox`/`points`。落在窗 `[lo,hi]` 外的 `frame_index` 被钳进窗内。多帧种子（f0 原始点 + f5 修正点）已真机验证。
+>   - **多帧 prompt（中途纠偏）**：seed 还可写成 `{obj_id, prompts:[{frame_index, points?/bbox?/mask_prompt?}, ...]}`——`frame_index` 是**绝对源帧**，各 prompt 在其（局部）帧对该 obj 播种，PVS memory 逐帧累积。`mask_prompt` 是经共享有界 schema 验证的内联 COCO RLE，尺寸必须与视频帧一致，并直接调用 PVS `add_new_mask`；Multiplex 尚不声明 Mask seed。`prompts` 优先于单帧 `bbox`/`points`/`mask_prompt`，窗外绝对帧会稳定拒绝，不再静默 clamp 到边界帧。
 > - **跨窗续追（平台侧）**：首窗用原始 keyframe 或 `seeds[]`；后续窗为**每个实例**取上一窗最后一个非 outside geometry，并用相同 obj id 重新播种，避免非主实例过窗丢失。只有单实例时继续用 `source_geometry` 兜底。
 > - **多目标身份与落库（平台侧）**：每条结果可带 job 作用域的 `instance_id` 与 `primary`。种子驱动模型直接使用 caller 指定 obj id；文本 multiplex 每窗独立检测，平台在窗口边界帧按 IoU 把局部 id 映射为全局稳定 id。`instance_id` 不是数据库 `group_id`，也不等于最终 `track_id`。用户接受 job 后，主实例回填源 annotation（保留其 `track_id`），其余 `instance_id` 各创建一条继承源类别的新 annotation 与新 `track_id`；无 instance id 的老 backend 继续走单实例路径。
 > - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
@@ -831,7 +860,7 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 
 **`supported_inputs`（投递形态受控词表）** —— `full_image` / `crop` / `bbox_prompt` / `point_prompt` / `mask_prompt` / `scribble_prompt` / `video`。它描述平台如何把上游产物交给这个 model：整图、裁剪 ROI、框提示、点提示、受控内联 Mask、正负笔迹或视频。多阶段编排只看这个字段决定父子可达性，不再从 `supported_prompts` 猜测；老 backend 缺字段时由平台按 prompt 合成兼容默认，但 `video` 必须由 backend 显式声明。
 
-原生 Mask 交互使用 `type="mask"` 候选，`value.rle` 携带受限的非压缩 COCO RLE，`candidate_id` 绑定 canonical RLE、prompt revision 和候选序号。空前景返回空 `result` 与 `reason="empty_mask"`，不得用零框或空 polygon 占位。单个 RLE 限制为 4096×4096、最多 1,000,000 runs 和 4 MiB canonical JSON；请求 Mask 输出但目标 model 未声明 `mask` 时，平台返回 `unsupported_output_geometry`，不会静默转 polygon。`mask`、`scribble`、`correction_frame` 及对应输入只有在实际 consumer 路径通过契约测试后才能写入 `/setup.models[]`。
+原生 Mask 交互使用 `type="mask"` 候选，`value.rle` 携带受限的非压缩 COCO RLE，`candidate_id` 绑定 canonical RLE、prompt revision 和候选序号。空前景返回空 `result` 与 `reason="empty_mask"`，不得用零框或空 polygon 占位。单个 RLE 限制为 4096×4096、最多 1,000,000 runs 和 4 MiB canonical JSON，整个单帧交互响应最多 16 MiB；请求 Mask 输出但目标 model 未声明 `mask` 时，平台返回 `unsupported_output_geometry`，不会静默转 polygon。Grounded-SAM2 与 SAM3 image 的 point / interactive-box 已声明 Mask 输出；SAM3 PVS 还声明 `correction_frame + mask_prompt`，Multiplex 仅声明已验证的 Mask 输出。`mask`、`scribble`、`correction_frame` 及对应输入只有在实际 consumer 路径通过契约测试后才能写入 `/setup.models[]`。
 
 **`composition`（原子 vs 内部编排，可选）** <!-- since 协议 v2.2 --> —— `atom`（单次推理 / 单原子） / `composite`（一个 model 内部编排多个原子、一次 `/predict` 一气呵成）：
 

@@ -553,7 +553,10 @@ class MLBackendReloadRequest(BaseModel):
 
 
 class InteractiveRequest(BaseModel):
-    """工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。
+    """工作台「AI 助手」单次推理请求。
+
+    兼容请求的 ``context`` 仍是开放 dict；显式请求原生 Mask 时，平台会按目标
+    model 能力预检、重建 prompt revision，并严格校验 backend 候选与字节上限。
 
     `context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：
     - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...],"multimask_output":false}``

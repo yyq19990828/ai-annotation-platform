@@ -36,10 +36,10 @@ def test_setup_protocol_version_v22(setup_fn):
     assert data["compat_protocol_versions"] == ["2.1", "2.0"]
 
 
-def test_setup_exposes_four_models(setup_fn):
+def test_setup_exposes_five_models(setup_fn):
     data = setup_fn()
     assert isinstance(data["models"], list)
-    assert len(data["models"]) == 4
+    assert len(data["models"]) == 5
 
 
 def test_setup_models_cover_protocol_tasks(setup_fn):
@@ -62,6 +62,10 @@ def test_setup_models_declare_supported_inputs(setup_fn):
     assert by_id["sam3-segmentation"]["supported_inputs"] == ["full_image", "crop"]
     assert by_id["sam3-interactive-seg"]["supported_inputs"] == ["full_image"]
     assert by_id["sam3-video-tracker"]["supported_inputs"] == ["video"]
+    assert by_id["sam3-video-interactive-tracker"]["supported_inputs"] == [
+        "video",
+        "mask_prompt",
+    ]
 
 
 def test_setup_models_declare_output_attribute_types(setup_fn):
@@ -92,16 +96,17 @@ def test_segmentation_model_text_to_polygon(setup_fn):
     data = setup_fn()
     seg = next(m for m in data["models"] if m["task"] == "segmentation")
     assert seg["supported_prompts"] == ["text"]
-    assert seg["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    assert seg["supported_geometric_outputs"] == ["bbox", "polygon"]
 
 
-def test_tracker_model_declares_both_sam3_video_modes(setup_fn):
-    tracker = next(m for m in setup_fn()["models"] if m["task"] == "tracker")
-    assert tracker["supported_trackers"] == [
-        "sam3_video",
-        "sam3_video_interactive",
-    ]
+def test_tracker_models_declare_each_sam3_video_mode(setup_fn):
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    tracker = by_id["sam3-video-tracker"]
+    assert tracker["supported_trackers"] == ["sam3_video"]
     assert tracker["text_driven_trackers"] == ["sam3_video"]
+    assert by_id["sam3-video-interactive-tracker"]["supported_trackers"] == [
+        "sam3_video_interactive"
+    ]
 
 
 def test_interactive_seg_model_prompts(setup_fn):
@@ -109,31 +114,35 @@ def test_interactive_seg_model_prompts(setup_fn):
     data = setup_fn()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
     assert inter["supported_prompts"] == ["point", "interactive_box", "exemplar"]
-    assert inter["supported_geometric_outputs"] == ["polygon"]
+    assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
     assert inter["is_interactive"] is True
 
 
-def test_image_native_mask_interaction_is_not_advertised_before_implementation(
+def test_image_native_mask_output_is_advertised_without_future_prompts(
     setup_fn,
 ):
-    """SAM3 image 原生候选与新 prompt 路径未实现前保持 polygon 能力真值。"""
+    """SAM3 image 声明原生输出，但未实现的 Mask / scribble prompt 不抢跑。"""
     inter = next(m for m in setup_fn()["models"] if m["task"] == "interactive_seg")
     assert {"mask", "scribble", "correction_frame"}.isdisjoint(
         inter["supported_prompts"]
     )
     assert {"mask_prompt", "scribble_prompt"}.isdisjoint(inter["supported_inputs"])
-    assert inter["supported_geometric_outputs"] == ["polygon"]
+    assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
 
 
-def test_multiplex_pvs_correction_is_not_advertised_before_implementation(setup_fn):
-    """Multiplex/PVS tracker 只有代码消费 correction seed 后才能声明新能力。"""
-    tracker = next(m for m in setup_fn()["models"] if m["task"] == "tracker")
+def test_only_pvs_advertises_mask_correction_seed(setup_fn):
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    tracker = by_id["sam3-video-tracker"]
     assert {"mask", "scribble", "correction_frame"}.isdisjoint(
         tracker["supported_prompts"]
     )
     assert {"mask_prompt", "scribble_prompt"}.isdisjoint(tracker["supported_inputs"])
     assert tracker["supported_inputs"] == ["video"]
-    assert tracker["supported_geometric_outputs"] == ["polygon"]
+    assert tracker["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    pvs = by_id["sam3-video-interactive-tracker"]
+    assert "correction_frame" in pvs["supported_prompts"]
+    assert "mask_prompt" in pvs["supported_inputs"]
+    assert pvs["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
 
 
 def test_models_carry_composition_dimension(setup_fn):

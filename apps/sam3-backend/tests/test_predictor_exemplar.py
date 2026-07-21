@@ -537,3 +537,75 @@ def test_interactive_empty_when_no_mask(predictor_with_mocks, fake_image):
         fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ie1"
     )
     assert results == []
+
+
+def test_interactive_native_mask_preserves_pixels(predictor_with_mocks, fake_image):
+    from mask_utils import decode_coco_rle
+
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    masks, ious, low_res = _fake_inst_output(1)
+    masks[0, 101, 101] = 0
+    masks[0, 350, 500] = 1
+    inst._model.predict_inst = MagicMock(return_value=(masks, ious, low_res))
+
+    results, _, mask_next = inst.predict_interactive(
+        fake_image,
+        points=[[0.5, 0.5]],
+        labels=[1],
+        output_geometry="mask",
+        prompt_revision="sam3-revision",
+        cache_key="native-1",
+    )
+
+    assert mask_next is not None
+    assert len(results) == 1
+    candidate = results[0]
+    assert candidate["type"] == "mask"
+    assert candidate["value"]["rle"]["size"] == [480, 640]
+    assert list(decode_coco_rle(candidate["value"]["rle"])) == (
+        (masks[0] > 0).reshape(-1).astype(int).tolist()
+    )
+
+
+def test_interactive_box_native_mask_output(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    results, _, _ = inst.predict_interactive(
+        fake_image,
+        box=[0.1, 0.2, 0.5, 0.6],
+        output_geometry="mask",
+        prompt_revision="sam3-box-revision",
+        cache_key="native-box",
+    )
+
+    assert len(results) == 1
+    assert results[0]["type"] == "mask"
+    assert results[0]["value"]["rle"]["size"] == [480, 640]
+
+
+def test_exemplars_native_mask_output(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    state = _fake_state_after_set_image()
+    inst._processor.set_image = MagicMock(return_value=state)
+
+    def add_geo(box, label, current_state):
+        _populate_state_with_outputs(current_state, 1)
+        return current_state
+
+    inst._processor.add_geometric_prompt = MagicMock(side_effect=add_geo)
+    inst._processor.reset_all_prompts = MagicMock()
+
+    results, _ = inst.predict_exemplars(
+        fake_image,
+        [{"bbox": [0.2, 0.2, 0.45, 0.55], "label": True}],
+        output_geometry="mask",
+        prompt_revision="sam3-exemplar-revision",
+        cache_key="native-exemplar",
+    )
+
+    assert len(results) == 1
+    assert results[0]["type"] == "mask"
+    assert results[0]["value"]["rle"]["size"] == [480, 640]

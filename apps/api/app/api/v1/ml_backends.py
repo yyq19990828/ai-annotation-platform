@@ -5,6 +5,7 @@ import time
 import uuid
 
 import httpx
+from aap_protocol_v2 import MAX_MASK_RESPONSE_BYTES
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,7 @@ from app.deps import (
 from app.db.enums import UserRole
 from app.db.models.ml_backend_pool import MLBackendServicePool
 from app.db.models.ml_backend_registry import MLBackendRegistry
+from app.db.models.dataset import DatasetItem
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.project import Project
@@ -52,6 +54,10 @@ from app.services.ml_backend import (
 )
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
+from app.services.ml_interaction_proxy import (
+    normalize_native_mask_response,
+    prepare_interactive_context,
+)
 from app.services.ml_routing.client import RoutedMLBackendClient
 from app.services.prediction import PredictionService, to_video_bbox_result
 from app.services.storage import StorageService
@@ -692,6 +698,84 @@ async def _fetch_setup_cached(backend, backend_id: uuid.UUID) -> dict:
     return data
 
 
+async def _prepare_safe_interactive_context(
+    backend: MLBackendRegistry,
+    backend_id: uuid.UUID,
+    context: dict,
+    *,
+    task_id: uuid.UUID,
+) -> tuple[dict, str | None]:
+    if "output_geometry" not in context and "model_id" not in context:
+        return dict(context), None
+    setup = await _fetch_setup_cached(backend, backend_id)
+    capabilities = extract_capabilities(setup)
+    return prepare_interactive_context(
+        context,
+        capabilities,
+        task_id=str(task_id),
+    )
+
+
+async def _task_media_size(
+    db: AsyncSession,
+    task: Task,
+) -> tuple[int, int] | None:
+    if task.dataset_item_id is None:
+        return None
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    if (
+        item is None
+        or not isinstance(item.width, int)
+        or not isinstance(item.height, int)
+        or item.width <= 0
+        or item.height <= 0
+    ):
+        return None
+    return item.width, item.height
+
+
+def _decoded_image_size(data: bytes) -> tuple[int, int]:
+    from PIL import Image  # noqa: PLC0415
+
+    with Image.open(io.BytesIO(data)) as image:
+        return image.size
+
+
+def _interactive_response(
+    result,
+    *,
+    context: dict,
+    expected_size: tuple[int, int] | None,
+    client: RoutedMLBackendClient,
+    requested_backend_id: uuid.UUID,
+    model_id: str | None,
+) -> dict:
+    normalized, diagnostic = normalize_native_mask_response(
+        result.result,
+        getattr(result, "diagnostic", None),
+        context=context,
+        expected_size=expected_size,
+    )
+    return {
+        "result": normalized,
+        "score": result.score,
+        "model_version": getattr(result, "model_version", None),
+        "inference_time_ms": result.inference_time_ms,
+        "cache_hit": result.cache_hit,
+        "model_load_ms": result.model_load_ms,
+        "mask_input_next": result.mask_input_next,
+        "diagnostic": diagnostic,
+        "routing": {
+            "requested_backend_id": str(requested_backend_id),
+            "backend_pool_id": str(client.pool_id) if client.pool_id else None,
+            "backend_instance_id": (
+                str(client.last_instance_id) if client.last_instance_id else None
+            ),
+            "model_id": model_id,
+        },
+    }
+
+
 @router.get(
     "/{backend_id}/setup",
     dependencies=[Depends(require_project_visible)],
@@ -895,7 +979,17 @@ async def interactive_annotating(
     # AI 推理参数 (阈值 / 变体等) 已统一改走工作台 AI 面板: 前端按所绑定 backend 的
     # /setup.params 动态渲染、每用户独立调整, 并随 context 透传。平台不再注入项目级 DINO
     # 阈值 (那会把 gsam2 专属参数塞给 sam3 等不支持的后端); 各 backend 缺省值由自身 /setup 决定。
-    context = dict(body.context or {})
+    context, model_id = await _prepare_safe_interactive_context(
+        backend,
+        backend_id,
+        dict(body.context or {}),
+        task_id=task.id,
+    )
+    expected_size = (
+        await _task_media_size(db, task)
+        if context.get("output_geometry") == "mask"
+        else None
+    )
     await db.commit()
 
     client = RoutedMLBackendClient(
@@ -907,19 +1001,24 @@ async def interactive_annotating(
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
+    predict_kwargs = (
+        {"max_response_bytes": MAX_MASK_RESPONSE_BYTES}
+        if context.get("output_geometry") == "mask"
+        else {}
+    )
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
         context=context,
+        **predict_kwargs,
     )
-    return {
-        "result": result.result,
-        "score": result.score,
-        "inference_time_ms": result.inference_time_ms,
-        "cache_hit": result.cache_hit,
-        "model_load_ms": result.model_load_ms,
-        # v0.18.18 · 交互精修 low-res logits 回灌 (前端原样存储、下次点击经 context.mask_input 回传)
-        "mask_input_next": result.mask_input_next,
-    }
+    return _interactive_response(
+        result,
+        context=context,
+        expected_size=expected_size,
+        client=client,
+        requested_backend_id=backend_id,
+        model_id=model_id,
+    )
 
 
 @router.post(
@@ -1070,8 +1169,9 @@ async def interactive_annotating_frame(
 ):
     """视频当前帧的**交互式** SAM 提示 (point / interactive_box / exemplar)。
 
-    与 ``interactive-annotating`` 同一个 backend 契约 (``context`` 原样透传, 见
-    ``InteractiveRequest.context``), 唯一差别是**图从哪来**: 图片 task 由服务端
+    与 ``interactive-annotating`` 同一个 backend 契约（兼容 ``context`` 透传，显式
+    原生 Mask 请求会经过能力预检与响应校验，见 ``InteractiveRequest.context``），
+    唯一差别是**图从哪来**: 图片 task 由服务端
     ``_resolve_task_url(task)`` 取, 而视频 task 的 ``file_path`` 是整段 mp4, SAM 吃不到帧。
     故前端把当前帧解成 JPEG 随 multipart 传入 (复用 ``predict-frame`` 的 client 供图机制:
     上传 import 桶换 presigned URL, 通用 http URL, 不走 ``data:`` 捷径)。
@@ -1102,9 +1202,21 @@ async def interactive_annotating_frame(
     if not isinstance(ctx, dict):
         raise HTTPException(status_code=400, detail="context must be a JSON object")
 
+    ctx, model_id = await _prepare_safe_interactive_context(
+        backend,
+        backend_id,
+        ctx,
+        task_id=task.id,
+    )
+
     # v0.23.5 · WS-D · D2 · bounded frame read (Content-Length + streaming cap
     # + JPEG/PNG decode + dim/pixel limits) before any storage I/O.
     jpeg_bytes = await _read_capped_frame(frame, request=request)
+    expected_size = (
+        _decoded_image_size(jpeg_bytes)
+        if ctx.get("output_geometry") == "mask"
+        else None
+    )
 
     storage = StorageService()
     # v0.23.5 · WS-D · D5 · boto3 sync put_object wrapped in to_thread.
@@ -1126,18 +1238,24 @@ async def interactive_annotating_frame(
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
+    predict_kwargs = (
+        {"max_response_bytes": MAX_MASK_RESPONSE_BYTES}
+        if ctx.get("output_geometry") == "mask"
+        else {}
+    )
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": frame_url},
         context=ctx,
+        **predict_kwargs,
     )
-    return {
-        "result": result.result,
-        "score": result.score,
-        "inference_time_ms": result.inference_time_ms,
-        "cache_hit": result.cache_hit,
-        "model_load_ms": result.model_load_ms,
-        "mask_input_next": result.mask_input_next,
-    }
+    return _interactive_response(
+        result,
+        context=ctx,
+        expected_size=expected_size,
+        client=client,
+        requested_backend_id=backend_id,
+        model_id=model_id,
+    )
 
 
 # ── v0.23.3 ADR-0050 §12.2 · 项目服务池绑定 API (pool-level) ──────────────────

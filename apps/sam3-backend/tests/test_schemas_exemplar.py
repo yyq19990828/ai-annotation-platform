@@ -81,6 +81,22 @@ def test_multimask_output_field():
     assert ctx.multimask_output is True
 
 
+def test_native_mask_output_requires_prompt_revision():
+    with pytest.raises(ValidationError, match="prompt_revision"):
+        Context(
+            type="point",
+            points=[[0.5, 0.5]],
+            output_geometry="mask",
+        )
+    context = Context(
+        type="point",
+        points=[[0.5, 0.5]],
+        output_geometry="mask",
+        prompt_revision="revision-1",
+    )
+    assert context.output_geometry == "mask"
+
+
 def test_score_threshold_field_present():
     """score_threshold (text / exemplar 路径)."""
     ctx = Context(type="text", text="cat", score_threshold=0.7)

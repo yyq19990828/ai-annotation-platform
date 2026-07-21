@@ -154,7 +154,7 @@ class SAM3MultiplexVideoTracker:
         text: 文本 query (必填; SAM3 每帧按此检测目标)。
         seed_bbox: 首个归一化 {x,y,w,h}; 用于选择主实例。
         seed_bboxes: 上一分窗逐实例续追框；与 text 一起作为种子帧正框提示。
-        output_geometry: "polygon"→mask 矢量化多边形; 否则 mask 外接框 bbox。
+        output_geometry: "mask"→原生 RLE；"polygon"→矢量化多边形；否则取外接框 bbox。
         """
         if not text or not text.strip():
             raise ValueError("sam3_video tracker requires non-empty text query")
@@ -227,19 +227,36 @@ class SAM3MultiplexVideoTracker:
                 per_frame[int(response["frame_index"])] = response["outputs"]
 
             results: list[dict[str, Any]] = []
-            geom_empty = {"type": output_geometry_type(output_geometry)}
+            geom_empty, _ = self._mask_geometry(
+                np.zeros((_fh, _fw), dtype=bool),
+                output_geometry,
+            )
+            seed_obj_ids = _to_numpy(seed_out.get("out_obj_ids"))
+            known_obj_ids = {
+                int(oid) for oid in seed_obj_ids.tolist()
+            } if seed_obj_ids is not None else set()
             for local_idx in sorted(per_frame, reverse=reverse):
                 if local_idx < 0 or local_idx >= local_count:
                     continue
                 src_idx = local_idx + lo
                 outputs = per_frame[local_idx]
                 obj_ids = _to_numpy(outputs.get("out_obj_ids"))
-                if obj_ids is None or len(obj_ids) == 0:
-                    continue  # 该帧无检测对象
-                for oid in obj_ids.tolist():
-                    oid = int(oid)
+                current_obj_ids = {
+                    int(oid) for oid in obj_ids.tolist()
+                } if obj_ids is not None else set()
+                known_obj_ids.update(current_obj_ids)
+                for oid in sorted(known_obj_ids):
                     is_primary = oid == primary_obj_id
-                    mask = self._obj_mask(outputs, oid, frame_index=src_idx)
+                    mask = (
+                        self._obj_mask(
+                            outputs,
+                            oid,
+                            frame_index=src_idx,
+                            preserve_pixels=output_geometry == "mask",
+                        )
+                        if oid in current_obj_ids
+                        else None
+                    )
                     if mask is None or not mask.any():
                         results.append({
                             "frame_index": src_idx,
@@ -310,7 +327,13 @@ class SAM3MultiplexVideoTracker:
             cap.release()
 
     @staticmethod
-    def _obj_mask(outputs: dict, obj_id: int, *, frame_index: int) -> np.ndarray | None:
+    def _obj_mask(
+        outputs: dict,
+        obj_id: int,
+        *,
+        frame_index: int,
+        preserve_pixels: bool = False,
+    ) -> np.ndarray | None:
         """从某帧 multiplex 输出取指定 obj_id 的二值 mask (HxW bool); 无则 None。"""
         obj_ids = _to_numpy(outputs.get("out_obj_ids"))
         masks = _to_numpy(outputs.get("out_binary_masks"))
@@ -319,8 +342,9 @@ class SAM3MultiplexVideoTracker:
         _assert_masks_align(masks, obj_ids, frame_index=frame_index)
         for idx, oid in enumerate(obj_ids.tolist()):
             if int(oid) == obj_id:
-                # 去掉 multiplex 偶发的细长毛刺 (见 _largest_blob), 避免外接框虚高。
-                return _largest_blob(masks[idx] > 0)
+                raw = masks[idx] > 0
+                # bbox / polygon 保留旧的追踪稳定化；原生 Mask 必须逐像素透传。
+                return raw if preserve_pixels else _largest_blob(raw)
         return None
 
     @staticmethod
@@ -409,6 +433,8 @@ def _patch_init_state_kwargs(predictor: Any) -> None:
 
 
 def output_geometry_type(output_geometry: str) -> str:
+    if output_geometry == "mask":
+        return "mask"
     return "polygon" if output_geometry == "polygon" else "bbox"
 
 

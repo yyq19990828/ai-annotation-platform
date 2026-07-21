@@ -119,3 +119,77 @@ def test_interactive_box_multimask_sorted(predictor):
     assert out_scores[0] == pytest.approx(0.95)
     # 框单发不回灌.
     assert mask_next is None
+
+
+def test_interactive_box_native_mask_output(predictor):
+    mask = np.zeros((2, 3), dtype=np.uint8)
+    mask[0, 1] = 1
+    predictor._sam_predictor.predict = MagicMock(
+        return_value=(mask[None, ...], np.array([0.92]), None)
+    )
+    image = Image.fromarray(np.zeros((2, 3, 3), dtype=np.uint8))
+
+    results, _, _ = predictor.predict_bbox(
+        image,
+        [0.1, 0.1, 0.8, 0.8],
+        output_geometry="mask",
+        prompt_revision="box-revision",
+    )
+
+    assert len(results) == 1
+    assert results[0]["type"] == "mask"
+    assert results[0]["value"]["rle"]["size"] == [2, 3]
+
+
+def test_point_native_mask_preserves_non_square_pixels(predictor):
+    from aap_protocol_v2 import CocoRlePayload, native_mask_candidate_id
+    from mask_utils import decode_coco_rle
+
+    mask = np.array([[1, 0, 1], [0, 1, 0]], dtype=np.uint8)
+    predictor._sam_predictor.predict = MagicMock(
+        return_value=(mask[None, ...], np.array([0.87]), None)
+    )
+    image = Image.fromarray(np.zeros((2, 3, 3), dtype=np.uint8))
+    results, _, mask_next = predictor.predict_point(
+        image,
+        [[0.5, 0.5]],
+        [1],
+        output_geometry="mask",
+        prompt_revision="revision-1",
+    )
+
+    assert mask_next is None
+    assert len(results) == 1
+    candidate = results[0]
+    assert candidate["type"] == "mask"
+    assert candidate["value"]["rle"]["size"] == [2, 3]
+    assert list(decode_coco_rle(candidate["value"]["rle"])) == mask.reshape(-1).tolist()
+    rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
+    assert candidate["candidate_id"] == native_mask_candidate_id(
+        rle,
+        prompt_revision="revision-1",
+        candidate_index=0,
+    )
+
+
+def test_point_native_multimask_filters_empty_and_reindexes(predictor):
+    masks = np.zeros((3, 2, 3), dtype=np.uint8)
+    masks[0, 0, 0] = 1
+    masks[2, 1, 2] = 1
+    scores = np.array([0.6, 0.9, 0.8], dtype=np.float32)
+    predictor._sam_predictor.predict = MagicMock(
+        return_value=(masks, scores, None)
+    )
+    image = Image.fromarray(np.zeros((2, 3, 3), dtype=np.uint8))
+
+    results, _, _ = predictor.predict_point(
+        image,
+        [[0.5, 0.5]],
+        [1],
+        multimask_output=True,
+        output_geometry="mask",
+        prompt_revision="revision-2",
+    )
+
+    assert [entry["score"] for entry in results] == pytest.approx([0.8, 0.6])
+    assert len({entry["candidate_id"] for entry in results}) == 2

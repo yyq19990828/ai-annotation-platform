@@ -53,9 +53,16 @@ from aap_backend_runtime import (
     is_device_error,
     require_gpu_device,
 )
-from aap_protocol_v2 import decode_low_res_mask, encode_low_res_mask
+from aap_protocol_v2 import (
+    CocoRlePayload,
+    NativeMaskCandidate,
+    NativeMaskCandidateValue,
+    decode_low_res_mask,
+    encode_low_res_mask,
+    native_mask_candidate_id,
+)
 from embedding_cache import CacheEntry, EmbeddingCache
-from mask_utils import MultiPolygonRing, mask_to_multi_polygon
+from mask_utils import MultiPolygonRing, encode_coco_rle, mask_to_multi_polygon
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +315,8 @@ class SAM3Predictor:
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
         score_threshold: float | None = None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         """v0.18.19 · PCS 多正负框 (+ 可选 text) 迭代 refinement (无状态: 每请求重发全量).
 
@@ -352,6 +361,7 @@ class SAM3Predictor:
         return self._build_results(
             boxes, masks, scores, w, h, label=label, output=output,
             simplify_tolerance=simplify_tolerance, prompt_name="exemplar",
+            output_geometry=output_geometry, prompt_revision=prompt_revision,
         ), hit
 
     def predict_interactive(
@@ -365,6 +375,8 @@ class SAM3Predictor:
         mask_input: str | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool, str | None]:
         """v0.18.17 · SAM-style 单实例点/框交互 (与 grounded-sam2 对齐).
 
@@ -404,9 +416,19 @@ class SAM3Predictor:
             masks, ious, low_res = self._model.predict_inst(state, **kwargs)
 
         results = self._build_interactive_results(
-            masks, ious, w, h, simplify_tolerance=simplify_tolerance,
+            masks,
+            ious,
+            w,
+            h,
+            simplify_tolerance=simplify_tolerance,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
         )
-        return results, hit, _maybe_encode_low_res(low_res, points, multimask_output)
+        return results, hit, (
+            _maybe_encode_low_res(low_res, points, multimask_output)
+            if results
+            else None
+        )
 
     def _build_interactive_results(
         self,
@@ -416,6 +438,8 @@ class SAM3Predictor:
         h: int,
         *,
         simplify_tolerance: float | None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> list[dict[str, Any]]:
         """inst 输出 (CxHxW masks + C ious) → polygonlabels 列表 (按 iou 降序)."""
         if masks is None or len(masks) == 0:
@@ -423,10 +447,38 @@ class SAM3Predictor:
         eff_tol = (
             DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
         )
-        order = np.argsort(-np.asarray(ious))  # iou 降序; 多候选时前端取 top-1
+        order = np.argsort(-np.asarray(ious), kind="stable")  # iou 降序; 同分保留原顺序
         results: list[dict[str, Any]] = []
         for i in order:
-            mask = masks[i]
+            mask = np.asarray(masks[i])
+            binary = mask > 0
+            if binary.shape != (h, w):
+                raise ValueError(
+                    f"mask shape must be {(h, w)}, got {tuple(binary.shape)}"
+                )
+            if not bool(binary.any()):
+                continue
+            if output_geometry == "mask":
+                if not prompt_revision:
+                    raise ValueError("prompt_revision is required for native mask output")
+                rle = CocoRlePayload.model_validate(
+                    encode_coco_rle(binary.reshape(-1), w, h)
+                )
+                candidate_index = len(results)
+                candidate = NativeMaskCandidate(
+                    value=NativeMaskCandidateValue(
+                        rle=rle,
+                        masklabels=["object"],
+                    ),
+                    score=float(ious[i]),
+                    candidate_id=native_mask_candidate_id(
+                        rle,
+                        prompt_revision=prompt_revision,
+                        candidate_index=candidate_index,
+                    ),
+                )
+                results.append(candidate.model_dump(mode="json"))
+                continue
             rings = mask_to_multi_polygon(
                 mask.astype(np.uint8), tolerance=eff_tol, normalize_to=(w, h)
             )
@@ -476,6 +528,8 @@ class SAM3Predictor:
         output: str,
         simplify_tolerance: float | None,
         prompt_name: str,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> list[dict[str, Any]]:
         eff_tol = (
             DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
@@ -489,6 +543,34 @@ class SAM3Predictor:
 
         for i, mask in enumerate(masks):
             score = float(scores[i])
+            binary = np.asarray(mask) > 0
+            if binary.shape != (h, w):
+                raise ValueError(
+                    f"mask shape must be {(h, w)}, got {tuple(binary.shape)}"
+                )
+            if not bool(binary.any()):
+                continue
+            if output_geometry == "mask":
+                if not prompt_revision:
+                    raise ValueError("prompt_revision is required for native mask output")
+                rle = CocoRlePayload.model_validate(
+                    encode_coco_rle(binary.reshape(-1), w, h)
+                )
+                candidate_index = len(results)
+                candidate = NativeMaskCandidate(
+                    value=NativeMaskCandidateValue(
+                        rle=rle,
+                        masklabels=[label],
+                    ),
+                    score=score,
+                    candidate_id=native_mask_candidate_id(
+                        rle,
+                        prompt_revision=prompt_revision,
+                        candidate_index=candidate_index,
+                    ),
+                )
+                results.append(candidate.model_dump(mode="json"))
+                continue
             rings = mask_to_multi_polygon(
                 mask.astype(np.uint8), tolerance=eff_tol, normalize_to=(w, h)
             )

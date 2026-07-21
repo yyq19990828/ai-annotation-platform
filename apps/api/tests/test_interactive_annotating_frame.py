@@ -4,7 +4,7 @@
 传入，服务端上传对象存储换 presigned URL 后投给 ``predict_interactive``。本文件锁住三件事：
 
 1. 送给 backend 的 ``task_data.file_path`` 是**上传后的帧 URL**，不是 task 的 mp4 路径。
-2. ``context`` 原样透传（与 ``interactive-annotating`` 同契约，平台不注入项目级阈值）。
+2. 兼容 ``context`` 原样透传；显式原生 Mask 请求按目标 model 预检并校验 JPEG 尺寸。
 3. ``mask_input_next`` 直通回前端（支撑同帧多次点击的 logits 回灌精修）。
 
 候选**瞬态返回、不落 Prediction**（区别于走批量 ``/predict`` 协议的 ``predict-frame``）。
@@ -17,6 +17,12 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from aap_protocol_v2 import (
+    CocoRlePayload,
+    NativeMaskCandidate,
+    NativeMaskCandidateValue,
+    native_mask_candidate_id,
+)
 from PIL import Image
 
 from app.db.models.ml_backend_registry import ProjectMLBackendPool
@@ -81,9 +87,44 @@ def patched(monkeypatch):
     """抓取 predict_interactive 的调用参数；把对象存储上传打桩成固定 URL。"""
     captured: dict = {}
 
-    async def fake_predict_interactive(self, task_data, context):
+    async def fake_setup(self):
+        return {
+            "models": [
+                {
+                    "id": "frame-interactive",
+                    "task": "interactive_seg",
+                    "is_interactive": True,
+                    "supported_prompts": ["point", "interactive_box"],
+                    "supported_geometric_outputs": ["polygon", "mask"],
+                }
+            ]
+        }
+
+    async def fake_predict_interactive(self, task_data, context, **kwargs):
         captured["task_data"] = task_data
         captured["context"] = context
+        captured["predict_kwargs"] = kwargs
+        if context.get("output_geometry") == "mask":
+            height, width = captured.get("native_size", (24, 32))
+            rle = CocoRlePayload(
+                encoding="coco_rle",
+                size=[height, width],
+                counts=[0, 1, height * width - 1],
+            )
+            candidate = NativeMaskCandidate(
+                value=NativeMaskCandidateValue(rle=rle, masklabels=["object"]),
+                score=0.91,
+                candidate_id=native_mask_candidate_id(
+                    rle,
+                    prompt_revision=context["prompt_revision"],
+                    candidate_index=0,
+                ),
+            )
+            return PredictionResult(
+                task_id=task_data["id"],
+                result=[candidate.model_dump(mode="json")],
+                model_version="test-frame-model",
+            )
         return PredictionResult(
             task_id=task_data["id"],
             result=[{"type": "polygonlabels", "points": [[0.1, 0.1]]}],
@@ -99,9 +140,15 @@ def patched(monkeypatch):
         captured["upload_size"] = len(data)
         return FRAME_URL
 
-    with patch(
-        "app.services.ml_client.MLBackendClient.predict_interactive",
-        new=fake_predict_interactive,
+    with (
+        patch(
+            "app.services.ml_client.MLBackendClient.setup",
+            new=fake_setup,
+        ),
+        patch(
+            "app.services.ml_client.MLBackendClient.predict_interactive",
+            new=fake_predict_interactive,
+        ),
     ):
         monkeypatch.setattr(
             "app.services.storage.StorageService.upload_crop_bytes", fake_upload
@@ -200,6 +247,55 @@ async def test_mask_input_next_passthrough(
     assert "prediction_id" not in body
     # frame_index 进上传键 → 同 task 不同帧不会互相覆盖。
     assert patched["upload_key"].endswith("/3.jpg")
+
+
+async def test_native_mask_frame_validates_jpeg_size_and_returns_lineage(
+    httpx_client_bound, super_admin, db_session, patched
+):
+    user, token = super_admin
+    proj, backend, task = await _seed(db_session, user.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        _url(proj, backend),
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
+        data={
+            "task_id": str(task.id),
+            "frame_index": "4",
+            "context": '{"type":"point","points":[[0.5,0.5]],"output_geometry":"mask"}',
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["result"][0]["value"]["rle"]["size"] == [24, 32]
+    assert body["routing"]["model_id"] == "frame-interactive"
+    assert body["model_version"] == "test-frame-model"
+    assert patched["predict_kwargs"]["max_response_bytes"] == 16 * 1024 * 1024
+
+
+async def test_native_mask_frame_rejects_backend_size_mismatch(
+    httpx_client_bound, super_admin, db_session, patched
+):
+    user, token = super_admin
+    proj, backend, task = await _seed(db_session, user.id)
+    await db_session.commit()
+    patched["native_size"] = (23, 32)
+
+    resp = await httpx_client_bound.post(
+        _url(proj, backend),
+        files={"frame": ("f.jpg", JPEG_BYTES, "image/jpeg")},
+        data={
+            "task_id": str(task.id),
+            "frame_index": "5",
+            "context": '{"type":"point","points":[[0.5,0.5]],"output_geometry":"mask"}',
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["reason"] == "invalid_mask_payload"
 
 
 async def test_non_interactive_backend_rejected(

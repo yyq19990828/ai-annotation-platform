@@ -88,9 +88,15 @@ class Context(BaseModel):
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     # v0.18.17 · point / interactive_box 单点歧义时出 3 候选 (按 iou 降序); 缺省单 mask.
     multimask_output: bool = False
+    output_geometry: Literal["polygon", "mask"] = "polygon"
+    prompt_revision: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def _validate_required_fields(self) -> Context:
+        if self.output_geometry == "mask" and not self.prompt_revision:
+            raise ValueError(
+                "context.prompt_revision required for output_geometry=mask"
+            )
         if self.type == "exemplar":
             # v0.18.19 · 多框 exemplars 优先; 缺省退化单 bbox (旧路径兼容)。两者皆缺则报错。
             if not self.exemplars and (self.bbox is None or len(self.bbox) != 4):

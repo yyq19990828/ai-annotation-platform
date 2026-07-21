@@ -114,17 +114,16 @@ def test_segmentation_model_text_to_polygon():
     assert seg["supported_geometric_outputs"] == ["polygon"]
 
 
-def test_interactive_seg_model_point_box_to_polygon():
+def test_interactive_seg_model_point_box_to_native_mask():
     data = setup()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
     # v0.18.17 · bbox→interactive_box (图像交互单框单 mask).
     assert set(inter["supported_prompts"]) == {"point", "interactive_box"}
-    assert inter["supported_geometric_outputs"] == ["polygon"]
+    assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
     assert inter["is_interactive"] is True
 
 
-def test_native_mask_interaction_is_not_advertised_before_implementation():
-    """原生候选、Mask prompt、scribble 与 correction 未实现前不得抢跑声明。"""
+def test_native_mask_output_is_advertised_without_future_prompts():
     by_id = {m["id"]: m for m in setup()["models"]}
     new_prompts = {"mask", "scribble", "correction_frame"}
     new_inputs = {"mask_prompt", "scribble_prompt"}
@@ -132,7 +131,7 @@ def test_native_mask_interaction_is_not_advertised_before_implementation():
     interactive = by_id["grounded-sam2-interactive-seg"]
     assert new_prompts.isdisjoint(interactive["supported_prompts"])
     assert new_inputs.isdisjoint(interactive["supported_inputs"])
-    assert "mask" not in interactive["supported_geometric_outputs"]
+    assert interactive["supported_geometric_outputs"] == ["polygon", "mask"]
 
     tracker = by_id["grounded-sam2-tracker"]
     assert new_prompts.isdisjoint(tracker["supported_prompts"])

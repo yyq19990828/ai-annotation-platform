@@ -30,3 +30,30 @@ def test_mask_geometry_allows_empty_mask_as_outside():
     )
     assert outside is True
     assert geometry["rle"]["counts"] == [6]
+
+
+def test_native_mask_bypasses_multiplex_largest_blob_cleanup():
+    raw = np.zeros((9, 9), dtype=bool)
+    raw[1:5, 1:5] = True
+    raw[8, 8] = True
+    outputs = {
+        "out_obj_ids": np.array([7]),
+        "out_binary_masks": raw[None, ...],
+    }
+
+    native = SAM3MultiplexVideoTracker._obj_mask(
+        outputs,
+        7,
+        frame_index=3,
+        preserve_pixels=True,
+    )
+    legacy = SAM3MultiplexVideoTracker._obj_mask(
+        outputs,
+        7,
+        frame_index=3,
+        preserve_pixels=False,
+    )
+
+    assert np.array_equal(native, raw)
+    assert legacy[8, 8] == 0
+    assert native[8, 8] == 1

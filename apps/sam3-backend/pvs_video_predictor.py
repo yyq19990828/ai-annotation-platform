@@ -37,6 +37,8 @@ from aap_backend_runtime import (
     is_device_error,
     require_gpu_device,
 )
+from aap_protocol_v2 import MaskPromptPayload
+from mask_utils import decode_coco_rle
 # 复用 multiplex 封装里的通用几何/IO 静态工具(抽窗解码、mask→几何、临时目录清理),
 # 避免重复实现; 这些与 multiplex 逻辑无关, 纯 OpenCV/几何。
 from video_predictor import SAM3MultiplexVideoTracker, _to_numpy
@@ -260,6 +262,31 @@ class SAM3PVSVideoTracker:
     ) -> bool:
         """在指定(局部)帧对 obj_id 加一条 prompt(框或点)。框 = 归一化 xyxy; 点 =
         归一化 [x,y]+label(1 正 / 0 负)。无框无点返回 False(跳过)。"""
+        mask_prompt = prompt.get("mask_prompt")
+        if mask_prompt is not None:
+            payload = MaskPromptPayload.model_validate(mask_prompt)
+            height, width = payload.rle.size
+            expected_height = int(state["video_height"])
+            expected_width = int(state["video_width"])
+            if (height, width) != (expected_height, expected_width):
+                raise ValueError(
+                    "mask_prompt size must match video frame "
+                    f"{expected_height}x{expected_width}, got {height}x{width}"
+                )
+            decoded = decode_coco_rle(payload.rle.model_dump(mode="json"))
+            mask = torch.from_numpy(
+                np.frombuffer(decoded, dtype=np.uint8)
+                .reshape(height, width)
+                .copy()
+            ).to(dtype=torch.bool)
+            self._predictor.add_new_mask(
+                inference_state=state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                mask=mask,
+            )
+            return True
+
         bbox = prompt.get("bbox")
         pts = prompt.get("points")
         if not bbox and not pts:
@@ -304,9 +331,9 @@ class SAM3PVSVideoTracker:
     ) -> None:
         """把一条 seed 的 prompt(s) 按 obj_id 加进 state。
 
-        - 多帧 (纠偏): seed["prompts"]=[{frame_index?, points?/bbox?}], 各在其局部帧
-          (frame_index-lo, 越界钳到窗内) 播种; 缺 frame_index 的落窗种子帧。
-        - 单帧: seed 直接带 points/bbox, 落窗种子帧 local_seed。
+        - 多帧 (纠偏): seed["prompts"]=[{frame_index?, points?/bbox?/mask_prompt?}],
+          各在其局部帧 (frame_index-lo) 播种，越界稳定拒绝；缺 frame_index 的落窗种子帧。
+        - 单帧: seed 直接带 points/bbox/mask_prompt, 落窗种子帧 local_seed。
         """
         obj_id = int(seed["obj_id"])
         prompts = seed.get("prompts")
@@ -316,14 +343,22 @@ class SAM3PVSVideoTracker:
                 if not isinstance(p, dict):
                     continue
                 fi = p.get("frame_index")
-                local_f = (
-                    local_seed
-                    if fi is None
-                    else max(0, min(int(fi) - lo, local_count - 1))
-                )
+                if fi is None:
+                    local_f = local_seed
+                else:
+                    local_f = int(fi) - lo
+                    if local_f < 0 or local_f >= local_count:
+                        raise ValueError(
+                            f"seed frame {fi} outside decoded window "
+                            f"[{lo},{lo + local_count - 1}]"
+                        )
                 if self._add_prompt(state, local_f, obj_id, p):
                     added += 1
             if added == 0:
-                raise ValueError(f"seed obj_id={obj_id} 的 prompts 无有效框/点")
+                raise ValueError(
+                    f"seed obj_id={obj_id} 的 prompts 无有效框/点/Mask"
+                )
         elif not self._add_prompt(state, local_seed, obj_id, seed):
-            raise ValueError(f"seed for obj_id={obj_id} has neither bbox nor points")
+            raise ValueError(
+                f"seed for obj_id={obj_id} has neither bbox, points nor mask_prompt"
+            )

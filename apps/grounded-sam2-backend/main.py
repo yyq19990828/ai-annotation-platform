@@ -42,6 +42,7 @@ from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
     ModelUnavailableError,
+    MaskInteractionDiagnostic,
     PlatformRole,
     VariantNotSupportedError,
     log_deprecated_model_variant_fields,
@@ -848,7 +849,7 @@ def setup() -> dict:
             "supported_prompts": ["point", "interactive_box"],
             # 交互分割: 消费点 / 框提示 (不作批量 crop 下游)。
             "supported_inputs": ["bbox_prompt", "point_prompt", "full_image"],
-            "supported_geometric_outputs": ["polygon"],
+            "supported_geometric_outputs": ["polygon", "mask"],
             # 单实例交互推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_variants": [_sam_variant_axis()],
@@ -1213,6 +1214,32 @@ async def _run_executor_to_completion(
     return result
 
 
+def _coerce_interactive_output(ctx: dict) -> tuple[str, str | None]:
+    output_geometry = ctx.get("output_geometry", "polygon")
+    if output_geometry not in ("polygon", "mask"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "context.output_geometry must be polygon|mask, "
+                f"got {output_geometry!r}"
+            ),
+        )
+    prompt_revision = ctx.get("prompt_revision")
+    if output_geometry == "mask" and (
+        not isinstance(prompt_revision, str)
+        or not prompt_revision
+        or len(prompt_revision) > 256
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "context.prompt_revision must contain 1..256 characters "
+                "for output_geometry=mask"
+            ),
+        )
+    return output_geometry, prompt_revision
+
+
 def _run_prompt_sync(
     file_path: str,
     ctx: dict,
@@ -1248,6 +1275,7 @@ def _run_prompt_sync(
             raise HTTPException(status_code=422, detail="context.simplify_tolerance must be >= 0")
 
     if ptype == "point":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         points = ctx.get("points") or []
         labels = ctx.get("labels") or [1] * len(points)
         if not points:
@@ -1261,10 +1289,12 @@ def _run_prompt_sync(
         results, hit, mask_input_next = p.predict_point(
             image, points, labels, multimask_output=multimask,
             mask_input=mask_input, cache_key=cache_key, simplify_tolerance=simplify_tol,
+            output_geometry=output_geometry, prompt_revision=prompt_revision,
         )
         return results, hit, sv, dv, pool_cache_hit, model_load_ms, mask_input_next
 
     if ptype == "interactive_box":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.17 · 单框单 mask (旧 type=bbox 改名; bbox 已退出交互 prompt 命名空间).
         bbox = ctx.get("bbox")
         if not bbox or len(bbox) != 4:
@@ -1278,6 +1308,7 @@ def _run_prompt_sync(
         results, hit, _ = p.predict_bbox(
             image, bbox, multimask_output=multimask,
             cache_key=cache_key, simplify_tolerance=simplify_tol,
+            output_geometry=output_geometry, prompt_revision=prompt_revision,
         )
         return results, hit, sv, dv, pool_cache_hit, model_load_ms, None
 
@@ -1741,6 +1772,13 @@ async def predict(request: Request):
             cache_hit=pool_cache_hit,
             model_load_ms=model_load_ms,
             mask_input_next=mask_input_next,
+            diagnostic=(
+                MaskInteractionDiagnostic(reason="empty_mask")
+                if ctx.get("type") in ("point", "interactive_box")
+                and ctx.get("output_geometry", "polygon") == "mask"
+                and not result
+                else None
+            ),
         ).model_dump(exclude_none=True)
 
     # 批量: tasks 数组（M0 仅支持顶层 context.text 时整批同 prompt）

@@ -52,6 +52,7 @@ from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
     PROTOCOL_VERSION,
     ModelUnavailableError,
+    MaskInteractionDiagnostic,
     PlatformRole,
     VariantNotSupportedError,
     log_deprecated_model_variant_fields,
@@ -605,7 +606,7 @@ def setup() -> dict:
         },
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
-        "supported_geometric_outputs": ["box", "mask", "both"],
+        "supported_geometric_outputs": ["bbox", "polygon", "mask"],
         # v0.21.19 §PR3 · sam3.1_multiplex 视频文本追踪 (text-driven, 每帧按文本检测目标)。
         # 平台据 supported_trackers 判 backend 支持视频追踪; text_driven_trackers 让其区分
         # seed-bbox tracker(sam2) 与文本驱动 tracker(sam3, 需 text)。
@@ -718,7 +719,7 @@ def setup() -> dict:
             "supported_prompts": ["text"],
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 内置流程)。
             "supported_inputs": ["full_image", "crop"],
-            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
+            "supported_geometric_outputs": ["bbox", "polygon"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
@@ -741,7 +742,7 @@ def setup() -> dict:
             "supported_prompts": ["point", "interactive_box", "exemplar"],
             # 交互分割: 点/框/exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
             "supported_inputs": ["full_image"],
-            "supported_geometric_outputs": ["polygon"],
+            "supported_geometric_outputs": ["polygon", "mask"],
             # 交互分割: 单实例逐次推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_variants": base["supported_variants"],
@@ -762,11 +763,29 @@ def setup() -> dict:
             # text-driven: 以文本 query 初始化 (非 bbox 种子)。
             "supported_prompts": ["text"],
             "supported_inputs": ["video"],
-            "supported_geometric_outputs": ["polygon"],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": False},
-            "supported_trackers": ["sam3_video", "sam3_video_interactive"],
+            "supported_trackers": ["sam3_video"],
             "text_driven_trackers": ["sam3_video"],
+            "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
+            "params": base["params"],
+        },
+        {
+            "id": "sam3-video-interactive-tracker",
+            "display_name": "SAM 3 · 视频交互追踪 (PVS)",
+            "task": "tracker",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": True,
+            "composition": "composite",
+            "supported_prompts": ["point", "interactive_box", "correction_frame"],
+            "supported_inputs": ["video", "mask_prompt"],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
+            "resource_profile": {"device": "gpu", "batchable": False},
+            "supported_trackers": ["sam3_video_interactive"],
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
             "default_variants": _default_variants,
@@ -993,6 +1012,32 @@ def _coerce_output(ctx: dict) -> str:
     return mode
 
 
+def _coerce_interactive_output(ctx: dict) -> tuple[str, str | None]:
+    output_geometry = ctx.get("output_geometry", "polygon")
+    if output_geometry not in ("polygon", "mask"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "context.output_geometry must be polygon|mask, "
+                f"got {output_geometry!r}"
+            ),
+        )
+    prompt_revision = ctx.get("prompt_revision")
+    if output_geometry == "mask" and (
+        not isinstance(prompt_revision, str)
+        or not prompt_revision
+        or len(prompt_revision) > 256
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "context.prompt_revision must contain 1..256 characters "
+                "for output_geometry=mask"
+            ),
+        )
+    return output_geometry, prompt_revision
+
+
 def _coerce_exemplars(ctx: dict) -> list[dict]:
     """v0.18.19 · 归一 type=exemplar 的几何输入为 [{bbox, label}] 列表。
 
@@ -1063,6 +1108,7 @@ def _run_prompt_sync(
     score_th = ctx.get("score_threshold")
 
     if ptype == "point":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.17 · inst 单实例点交互 (累加正负点; multimask 候选).
         points = ctx.get("points") or []
         if not points:
@@ -1074,9 +1120,11 @@ def _run_prompt_sync(
             image, points=points, labels=labels, multimask_output=multimask,
             mask_input=ctx.get("mask_input"),
             cache_key=cache_key, simplify_tolerance=simplify_tol,
+            output_geometry=output_geometry, prompt_revision=prompt_revision,
         )
 
     if ptype == "interactive_box":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.17 · inst 单框单 mask (≠ exemplar 的全图相似; bbox prompt 已退役).
         box = ctx.get("bbox")
         if not box or len(box) != 4:
@@ -1088,6 +1136,7 @@ def _run_prompt_sync(
         return p.predict_interactive(
             image, box=box, multimask_output=multimask,
             cache_key=cache_key, simplify_tolerance=simplify_tol,
+            output_geometry=output_geometry, prompt_revision=prompt_revision,
         )
 
     if ptype == "text":
@@ -1109,6 +1158,7 @@ def _run_prompt_sync(
         return results, hit, None
 
     if ptype == "exemplar":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.19 · 多正负框 exemplars[] (+ 可选 text 组合) 优先; 缺省退化单 bbox 正框.
         exemplars = _coerce_exemplars(ctx)
         text = (ctx.get("text") or "").strip() or None
@@ -1122,6 +1172,8 @@ def _run_prompt_sync(
             cache_key=cache_key,
             simplify_tolerance=simplify_tol,
             score_threshold=score_th,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
         )
         return results, hit, None
 
@@ -1396,6 +1448,14 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
     1..N。prompts (v0.21.27 U-pvs-2 纠偏) = 多帧 [{frame_index, points?/bbox?}], 原样透传给
     wrapper 逐帧播种; 优先于单帧 bbox/points。
     """
+    if ctx.get("type") == "correction_frame":
+        return [
+            {
+                "obj_id": int(ctx.get("obj_id", 1)),
+                "prompts": [ctx],
+            }
+        ]
+
     raw = ctx.get("seeds")
     if isinstance(raw, list) and raw:
         seeds: list[dict] = []
@@ -1409,11 +1469,18 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
                 entry["bbox"] = s["bbox"]
             elif isinstance(s.get("points"), list) and s["points"]:
                 entry["points"] = s["points"]
+            elif isinstance(s.get("mask_prompt"), dict):
+                entry["mask_prompt"] = s["mask_prompt"]
             elif s.get("geometry") is not None:
                 b = _seed_bbox_from_video_ctx({"source_geometry": s["geometry"]})
                 if b is not None:
                     entry["bbox"] = b
-            if "prompts" in entry or "bbox" in entry or "points" in entry:
+            if (
+                "prompts" in entry
+                or "bbox" in entry
+                or "points" in entry
+                or "mask_prompt" in entry
+            ):
                 seeds.append(entry)
         if seeds:
             return seeds
@@ -1554,6 +1621,13 @@ async def predict(request: Request):
             cache_hit=pool_cache_hit,
             model_load_ms=model_load_ms,
             mask_input_next=mask_input_next,
+            diagnostic=(
+                MaskInteractionDiagnostic(reason="empty_mask")
+                if ctx.get("type") in ("point", "interactive_box", "exemplar")
+                and ctx.get("output_geometry", "polygon") == "mask"
+                and not result
+                else None
+            ),
         ).model_dump(exclude_none=True)
 
     if isinstance(body, dict) and "tasks" in body:
