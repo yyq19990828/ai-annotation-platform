@@ -1,6 +1,7 @@
 import type { ScreenshotScene } from "./_types";
 import type { Page } from "@playwright/test";
 import {
+  dockAiPanelAtViewportRight,
   installRecordingWorkbenchLayout,
   waitForRecordingWorkbenchLayout,
 } from "../flows/_workbench-layout";
@@ -119,7 +120,9 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       await page.getByTestId("workbench-stage").waitFor({ state: "visible", timeout: 10_000 });
       const aiButton = page.getByTestId("workbench-ai-single");
       await aiButton.click();
-      await page.getByTestId("ai-prediction-popover").waitFor({ state: "visible", timeout: 5000 });
+      const panel = page.getByTestId("ai-prediction-popover");
+      await panel.waitFor({ state: "visible", timeout: 5000 });
+      await dockAiPanelAtViewportRight(page, panel);
       await page.waitForTimeout(300);
     },
     matrix: DARK_WORKBENCH_MATRIX,

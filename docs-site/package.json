@@ -12,6 +12,7 @@
     "hotkeys": "node scripts/generate-hotkeys.mjs",
     "settings": "node scripts/generate-settings.mjs",
     "gen": "node scripts/generate-hotkeys.mjs && node scripts/generate-settings.mjs",
+    "media:home-hero": "node scripts/generate-home-hero-media.mjs",
     "check:snippets": "node scripts/check-doc-snippets.mjs",
     "check:adr": "node scripts/check-adr.mjs",
     "check:plans": "node scripts/check-plans-freshness.mjs",

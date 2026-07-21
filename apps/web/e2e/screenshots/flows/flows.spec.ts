@@ -155,6 +155,7 @@ async function finalizeHomepageWebm(
   name: string,
   trim: { startSec?: number; durationSec?: number },
   docsGifTarget?: string,
+  docsGifOptions?: { fps?: number; maxWidth?: number },
 ) {
   if (VALIDATE_ONLY) {
     await page.close();
@@ -163,25 +164,29 @@ async function finalizeHomepageWebm(
   const video = page.video();
   if (!video) throw new Error("[flows] video 未开启，无法生成首页 AI 媒体");
 
-  const source = path.join(FLOWS_OUT, `${name}.source.webm`);
-  const gif = path.join(FLOWS_OUT, `${name}.gif`);
+  const tempName = name.replaceAll("/", "-");
+  const source = path.join(FLOWS_OUT, `${tempName}.source.webm`);
+  const gif = path.join(FLOWS_OUT, `${tempName}.gif`);
+  const homepageWebm = path.join(HOME_MEDIA, `${name}.webm`);
+  const homepagePoster = path.join(HOME_MEDIA, `${name}-poster.webp`);
   await page.close();
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
+  fs.mkdirSync(path.dirname(homepageWebm), { recursive: true });
   try {
     await video.saveAs(source);
     const posterAtSec = Math.max(1, (trim.durationSec ?? 4) - 2.8);
-    await convertToWebm(source, path.join(HOME_MEDIA, `${name}.webm`), {
+    await convertToWebm(source, homepageWebm, {
       ...trim,
       fps: 12,
-      maxWidth: 960,
+      maxWidth: 1440,
       posterAtSec,
-      posterPath: path.join(HOME_MEDIA, `${name}-poster.webp`),
+      posterPath: homepagePoster,
     });
     if (docsGifTarget) {
       await convertToGif(source, gif, {
         ...trim,
-        fps: 8,
-        maxWidth: 860,
+        fps: docsGifOptions?.fps ?? 8,
+        maxWidth: docsGifOptions?.maxWidth ?? 860,
       });
       fs.mkdirSync(path.dirname(docsGifTarget), { recursive: true });
       fs.copyFileSync(gif, docsGifTarget);
@@ -250,14 +255,14 @@ test.describe("flow recordings", () => {
       await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "none");
       const win = await runSamToolRecording(page, cached, demo.tool);
-      await finalize(
+      await finalizeHomepageWebm(
         page,
-        `sam-${demo.tool}`,
+        `sam-tools/${demo.tool}`,
+        drawTrim(win, t0),
         path.join(DOCS_IMAGES, "sam", demo.target),
         {
           fps: demo.fps ?? 8,
           maxWidth: demo.maxWidth ?? 860,
-          ...drawTrim(win, t0),
         },
       );
     });
@@ -322,11 +327,12 @@ test.describe("flow recordings", () => {
     });
     if (!cleanupRecord) throw new Error("[ocr-inference] 未记录无痕清理标识");
     cleanupOcrRecording(cleanupRecord);
-    await finalize(
+    await finalizeHomepageWebm(
       page,
       "ocr-real-scene",
+      drawTrim(win, t0),
       path.join(DOCS_IMAGES, "workbench/ocr-real-scene.gif"),
-      { fps: 6, maxWidth: 860, ...drawTrim(win, t0) },
+      { fps: 6, maxWidth: 860 },
     );
   });
 

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { withBase } from "vitepress";
-import videoWorkspaceUrl from "../../../../user-guide/images/workbench/video-real-scene.png";
-import pointCloudWorkspaceUrl from "../../../../user-guide/images/workbench/pointcloud-real-scene.png";
-import dataManagerUrl from "../../../../user-guide/images/projects/data-manager-overview.png";
-import reviewWorkspaceUrl from "../../../../user-guide/images/review/workbench.png";
+import videoWorkspaceUrl from "../../assets/home/hero/video-track.webp";
+import pointCloudWorkspaceUrl from "../../assets/home/hero/pointcloud.webp";
+import dataManagerUrl from "../../assets/home/hero/data-manager.webp";
+import reviewWorkspaceUrl from "../../assets/home/hero/review.webp";
 
 const getStartedHref = withBase("/user-guide/getting-started");
 const heroWorkspaceUrl = withBase("/home/ai-assisted-annotation-poster.webp");
@@ -74,6 +74,9 @@ const activeSlideIndex = computed(() => deckOrder.value[0] ?? 0);
 const activeSlide = computed(
   () => heroSlides[activeSlideIndex.value] ?? heroSlides[0],
 );
+const mediaWindow = computed(
+  () => new Set(deckOrder.value.slice(0, 2)),
+);
 const deckPaused = computed(
   () => !motionAllowed.value || deckHovered.value || deckFocused.value,
 );
@@ -85,6 +88,7 @@ const deckMode = computed(() => {
 let autoplayTimer: number | undefined;
 let drawTimer: number | undefined;
 let reducedMotionQuery: MediaQueryList | undefined;
+const slidePreloads = new Map<number, Promise<void>>();
 
 function clearAutoplay(): void {
   if (autoplayTimer !== undefined) window.clearTimeout(autoplayTimer);
@@ -95,8 +99,7 @@ function scheduleAutoplay(): void {
   clearAutoplay();
   if (deckPaused.value) return;
   autoplayTimer = window.setTimeout(() => {
-    cycleNext(false);
-    scheduleAutoplay();
+    void cycleNext(false);
   }, AUTO_DELAY_MS);
 }
 
@@ -108,19 +111,59 @@ function finishManualMove(): void {
   }, DRAW_DURATION_MS);
 }
 
-function cycleNext(resetAutoplay = true): void {
+function preloadSlide(index: number): Promise<void> {
+  const cached = slidePreloads.get(index);
+  if (cached) return cached;
+
+  const promise = new Promise<void>((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => {
+      void image.decode().catch(() => undefined).then(() => resolve());
+    };
+    image.onerror = () => reject(new Error(`Failed to preload hero slide ${index + 1}`));
+    image.src = heroSlides[index]?.src ?? "";
+  }).catch((error) => {
+    slidePreloads.delete(index);
+    throw error;
+  });
+
+  slidePreloads.set(index, promise);
+  return promise;
+}
+
+async function cycleNext(resetAutoplay = true): Promise<void> {
   if (deckAnimating.value) return;
   if (resetAutoplay) clearAutoplay();
 
-  if (!motionAllowed.value) {
-    const first = deckOrder.value[0];
-    if (first === undefined) return;
-    deckOrder.value = [...deckOrder.value.slice(1), first];
-    if (resetAutoplay) scheduleAutoplay();
+  const target = deckOrder.value[1];
+  if (target === undefined) return;
+  deckAnimating.value = true;
+  try {
+    await preloadSlide(target);
+  } catch {
+    deckAnimating.value = false;
+    scheduleAutoplay();
     return;
   }
 
-  deckAnimating.value = true;
+  if (!resetAutoplay && deckPaused.value) {
+    deckAnimating.value = false;
+    return;
+  }
+
+  if (!motionAllowed.value) {
+    const first = deckOrder.value[0];
+    if (first === undefined) {
+      deckAnimating.value = false;
+      return;
+    }
+    deckOrder.value = [...deckOrder.value.slice(1), first];
+    deckAnimating.value = false;
+    scheduleAutoplay();
+    return;
+  }
+
   const first = deckOrder.value[0];
   if (first === undefined) {
     deckAnimating.value = false;
@@ -132,22 +175,29 @@ function cycleNext(resetAutoplay = true): void {
     deckOrder.value = [...deckOrder.value.slice(1), first];
     drawnSlideIndex.value = null;
     deckAnimating.value = false;
-    if (resetAutoplay) scheduleAutoplay();
+    scheduleAutoplay();
   }, DRAW_DURATION_MS);
 }
 
-function showPrevious(): void {
+async function showPrevious(): Promise<void> {
   if (deckAnimating.value) return;
   clearAutoplay();
   const nextOrder = [...deckOrder.value];
   const last = nextOrder.pop();
   if (last === undefined) return;
   deckAnimating.value = true;
+  try {
+    await preloadSlide(last);
+  } catch {
+    deckAnimating.value = false;
+    scheduleAutoplay();
+    return;
+  }
   deckOrder.value = [last, ...nextOrder];
   finishManualMove();
 }
 
-function selectSlide(index: number): void {
+async function selectSlide(index: number): Promise<void> {
   if (deckAnimating.value) return;
   clearAutoplay();
   const position = deckOrder.value.indexOf(index);
@@ -156,6 +206,13 @@ function selectSlide(index: number): void {
     return;
   }
   deckAnimating.value = true;
+  try {
+    await preloadSlide(index);
+  } catch {
+    deckAnimating.value = false;
+    scheduleAutoplay();
+    return;
+  }
   deckOrder.value = [
     ...deckOrder.value.slice(position),
     ...deckOrder.value.slice(0, position),
@@ -312,9 +369,12 @@ function openSearch(): void {
           </span>
           <span class="hero-card-media">
             <img
+              v-if="mediaWindow.has(index)"
               :src="slide.src"
               :alt="slide.alt"
-              :loading="index === 0 ? 'eager' : 'lazy'"
+              loading="eager"
+              decoding="async"
+              :fetchpriority="cardPosition(index) === 0 ? 'high' : 'low'"
             />
           </span>
           <span class="hero-card-foot">
@@ -324,7 +384,7 @@ function openSearch(): void {
         </a>
 
         <div class="hero-deck-controls">
-          <button type="button" aria-label="上一个平台页面" @click="showPrevious">
+          <button type="button" aria-label="上一个平台页面" @click="showPrevious()">
             ←
           </button>
           <div class="hero-deck-dots" aria-label="选择平台页面">

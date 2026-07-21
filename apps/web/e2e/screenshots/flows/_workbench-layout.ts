@@ -5,7 +5,7 @@
  * 这里只改写 GET 响应，并在内存中响应 PATCH，确保页面内交互正常，
  * 同时不把任何录制设置写回真实用户。Playwright context 关闭后即无痕清理。
  */
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type {
   UserPreferences,
   WorkbenchLayoutPreferences,
@@ -161,4 +161,39 @@ export async function waitForRecordingWorkbenchLayout(
       ? value.includes("clamp(180px, 15%, 600px) 48px 1fr clamp(180px, 15%, 600px)")
       : value === "0px 48px 1fr 0px";
   }, mode, { timeout: 10_000 });
+}
+
+/**
+ * 把可拖动的当前题 AI 面板停到视口最右侧，避免录制时遮住中央主图。
+ * 走真实 pointer drag，只影响隔离的 Playwright context，不改产品默认定位。
+ */
+export async function dockAiPanelAtViewportRight(
+  page: Page,
+  panel: Locator,
+): Promise<void> {
+  const header = panel.getByTitle("拖动 AI 面板");
+  const [panelBox, headerBox] = await Promise.all([
+    panel.boundingBox(),
+    header.boundingBox(),
+  ]);
+  const viewport = page.viewportSize();
+  if (!panelBox || !headerBox || !viewport) {
+    throw new Error("[recording-layout] 无法定位当前题 AI 面板");
+  }
+
+  const deltaX = viewport.width - panelBox.x - panelBox.width - 8;
+  const startX = headerBox.x + headerBox.width / 2;
+  const startY = headerBox.y + Math.min(18, headerBox.height / 2);
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY, { steps: 8 });
+  await page.mouse.up();
+
+  await page.waitForFunction(() => {
+    const node = document.querySelector<HTMLElement>(
+      '[data-testid="ai-prediction-popover"]',
+    );
+    if (!node) return false;
+    return Math.abs(window.innerWidth - node.getBoundingClientRect().right - 8) <= 2;
+  }, undefined, { timeout: 5_000 });
 }

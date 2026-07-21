@@ -4,7 +4,7 @@ description: 如何新增场景、更新现有截图、维护视觉回归基线
 audience: [developer]
 type: how-to
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-21
 ---
 
 # 更新文档截图
@@ -32,6 +32,9 @@ pnpm screenshots:lint             # 快速检查静态引用与 manifest
 
 # 开发/验证场景：执行真实导航和 locator 校验，但不写 PNG/manifest
 SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots
+
+# 首页 Hero 静态卡片源图更新后，重新生成轻量 WebP
+pnpm --filter @anno/docs-site media:home-hero
 ```
 
 截图脚本从只读 screenshot catalog 获取当次运行的 UUID，并分别使用 seed 中的
@@ -46,8 +49,8 @@ desktop-light、dark、mobile 和 regression project。运行期间不要 repair
 场景自己的正常读取不会触发跨 project 的第二次全库预检。
 
 当前完整矩阵产出 63 张自动 PNG：60 张 desktop-light、2 张显式声明的
-desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、18 个文档目标 GIF，
-以及 1 段首页 AI WebM 与对应静态海报。
+desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、18 个文档目标 GIF、
+5 段首页工作台 WebM 与对应静态海报，以及 4 张由文档截图派生的首页 Hero WebP。
 这些数量用于人工审阅交接，发布判断仍以 scene、manifest、磁盘文件和文档引用四方一致为准。
 
 ## 目录结构
@@ -176,7 +179,8 @@ node docs-site/scripts/check-orphan-images.mjs --strict
 
 人工审阅时至少检查每张 PNG 的主体内容、加载状态和敏感信息；GIF / WebM 除首帧外
 还要抽查正文帧，并确认动效完整、体积合理。首页 WebM 还需检查对应 WebP 海报能独立说明
-场景，移动端与 `prefers-reduced-motion` 下不自动播放。录制结束后 `outputs/flows/` 必须为空。
+场景，主图不被浮动面板遮挡，且移动端与 `prefers-reduced-motion` 下不自动播放。Hero 源图更新后还要
+重新生成派生 WebP。录制结束后 `outputs/flows/` 必须为空。
 
 ## `ScreenshotScene` 完整字段说明
 

@@ -77,11 +77,11 @@ export default defineConfig({
       testMatch: ["**/flows/flows.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
-        viewport: { width: 1280, height: 720 },
+        viewport: { width: 1440, height: 810 },
         deviceScaleFactor: 1,
         video: VALIDATE_ONLY
           ? "off"
-          : { mode: "on", size: { width: 1280, height: 720 } },
+          : { mode: "on", size: { width: 1440, height: 810 } },
         trace: "on",
       },
     },

@@ -9,13 +9,13 @@
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
 > 2. 修复截图 seed 并按能力绑定 live backend；无 GPU 时显式使用协议 stub
-> 3. `pnpm --filter @anno/web screenshots:matrix` 和 `pnpm --filter @anno/web screenshots:flows`
+> 3. `pnpm --filter @anno/web screenshots:matrix` 和 `pnpm --filter @anno/web screenshots:flows`；首页 Hero 源图有变化时再运行 `pnpm --filter @anno/docs-site media:home-hero`
 > 4. `git diff docs-site/user-guide/images/` 人眼审阅全部 PNG 和 GIF 正文帧
 > 5. 运行 manifest release gate 和 orphan strict gate 后再提交
 
 ## 拍摄约定
 
-- **分辨率**：desktop 1440×900、mobile 390×664；GIF 录屏 1280×720
+- **分辨率**：desktop 1440×900、mobile 390×664；流程录屏与首页 WebM 1440×810，文档 GIF 从同一源录屏缩放生成
 - **格式**：截图 PNG，GIF 用于流程录屏
 - **浏览器**：Playwright 固定版本 Chromium；时区、语言、DPR、时钟和动画由 driver 统一固定
 - **数据来源**：只使用 `screenshots` seed catalog 的固定逻辑键；不从开发库随机选择项目或任务
@@ -30,7 +30,8 @@
 
 - [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode,ai-inspector-panel}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
 - [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
-- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.webm` 与 `public/home/ai-assisted-annotation-poster.webp`
+- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`；OCR 录制时将 AI 面板停靠在主图右侧
+- [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
 - [x] 视频工作台：`workbench/video-real-scene.png`、`video-propagate/ai-tracking-panel.png`、`workbench/{video-track-overview,video-track-trajectory}.gif`、`video-propagate/ai-tracking-panel-interaction.gif`
 - [x] 点云工作台：`workbench/pointcloud-real-scene.png`、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
 - [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`

@@ -8,7 +8,10 @@
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
-import { waitForRecordingWorkbenchLayout } from "./_workbench-layout";
+import {
+  dockAiPanelAtViewportRight,
+  waitForRecordingWorkbenchLayout,
+} from "./_workbench-layout";
 
 export interface OcrCleanupRecord {
   projectId: string;
@@ -42,6 +45,7 @@ export async function runOcrInference(
   await page.getByTestId("workbench-ai-single").click();
   const panel = page.getByTestId("ai-prediction-popover");
   await panel.waitFor({ state: "visible", timeout: 5_000 });
+  await dockAiPanelAtViewportRight(page, panel);
 
   const modelField = panel.locator("label").filter({ hasText: "模型任务" });
   const modelSelect = modelField.locator("select");

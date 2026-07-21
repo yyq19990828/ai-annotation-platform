@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { withBase } from "vitepress";
-import ocrUrl from "../../../../user-guide/images/workbench/ocr-real-scene.gif";
 import prelabelUrl from "../../../../user-guide/images/projects/ai-pre-config-panel.png";
 import modelMarketUrl from "../../../../user-guide/images/superadmin/model-market/list.png";
 
@@ -18,6 +17,13 @@ type ProofScene = ProofSceneBase & (
   | {
       kind: "image";
       src: string;
+      meta: string;
+      alt: string;
+    }
+  | {
+      kind: "video";
+      src: string;
+      poster: string;
       meta: string;
       alt: string;
     }
@@ -93,8 +99,9 @@ const scenes: ProofScene[] = [
     desc: "真实文档图进入当前题推理，模型版本、参数与结果和任务上下文一起保留。",
     meta: "RAPIDOCR · CURRENT TASK · TRACEABLE PARAMS",
     href: withBase("/user-guide/projects/ai-preannotate"),
-    kind: "image",
-    src: ocrUrl,
+    kind: "video",
+    src: withBase("/home/ocr-real-scene.webm"),
+    poster: withBase("/home/ocr-real-scene-poster.webp"),
     alt: "真实 OCR 当前题从启动推理到生成文本多边形候选",
   },
   {
@@ -130,13 +137,20 @@ const toolTransitionName = computed(() =>
   toolDirection.value === 1 ? "proof-tool-next" : "proof-tool-prev",
 );
 const videoRef = ref<HTMLVideoElement | null>(null);
+const sectionRef = ref<HTMLElement | null>(null);
 const autoplayVideo = ref(false);
+const mediaInView = ref(false);
 const videoPlaying = ref(false);
 const touchStartX = ref<number | null>(null);
+let mediaObserver: IntersectionObserver | undefined;
 
 async function playActiveVideo(): Promise<void> {
   await nextTick();
-  if (activeScene.value.kind !== "tools" || !autoplayVideo.value) return;
+  if (
+    activeScene.value.kind === "image" ||
+    !autoplayVideo.value ||
+    !mediaInView.value
+  ) return;
   await videoRef.value?.play()
     .then(() => { videoPlaying.value = true; })
     .catch(() => { videoPlaying.value = false; });
@@ -212,8 +226,18 @@ onMounted(() => {
   autoplayVideo.value =
     window.innerWidth > 600 &&
     !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  void playActiveVideo();
+  mediaObserver = new IntersectionObserver(([entry]) => {
+    mediaInView.value = entry?.isIntersecting ?? false;
+    if (mediaInView.value) void playActiveVideo();
+    else {
+      videoRef.value?.pause();
+      videoPlaying.value = false;
+    }
+  }, { threshold: 0.15 });
+  if (sectionRef.value) mediaObserver.observe(sectionRef.value);
 });
+
+onBeforeUnmount(() => mediaObserver?.disconnect());
 
 watch([activeIndex, activeToolIndex], () => {
   videoPlaying.value = false;
@@ -222,7 +246,7 @@ watch([activeIndex, activeToolIndex], () => {
 </script>
 
 <template>
-  <section class="proof" id="proof">
+  <section ref="sectionRef" class="proof" id="proof">
     <span class="section-no">02 / PRODUCT PROOF</span>
     <div class="proof-head reveal">
       <h2>AI IN THE LOOP.<br />PROOF ON SCREEN.</h2>
@@ -288,7 +312,7 @@ watch([activeIndex, activeToolIndex], () => {
                   muted
                   loop
                   playsinline
-                  :preload="autoplayVideo ? 'metadata' : 'none'"
+                  :preload="autoplayVideo && mediaInView ? 'metadata' : 'none'"
                   :aria-label="activeTool.alt"
                   @play="videoPlaying = true"
                   @pause="videoPlaying = false"
@@ -337,7 +361,32 @@ watch([activeIndex, activeToolIndex], () => {
             </div>
           </div>
 
-          <img v-else :src="activeScene.src" :alt="activeScene.alt" />
+          <video
+            v-else-if="activeScene.kind === 'video'"
+            id="proof-scene-video"
+            ref="videoRef"
+            :poster="activeScene.poster"
+            muted
+            loop
+            playsinline
+            :preload="autoplayVideo && mediaInView ? 'metadata' : 'none'"
+            :aria-label="activeScene.alt"
+            @play="videoPlaying = true"
+            @pause="videoPlaying = false"
+          >
+            <source :src="activeScene.src" type="video/webm" />
+          </video>
+          <img v-else :src="activeScene.src" :alt="activeScene.alt" loading="lazy" decoding="async" />
+          <button
+            v-if="activeScene.kind === 'video'"
+            class="proof-video-toggle"
+            type="button"
+            aria-controls="proof-scene-video"
+            :aria-label="videoPlaying ? '暂停 OCR 演示' : '播放 OCR 演示'"
+            @click="toggleVideo"
+          >
+            {{ videoPlaying ? "PAUSE Ⅱ" : "PLAY ▶" }}
+          </button>
           <span class="proof-media-tag" aria-hidden="true">
             {{
               activeScene.kind === "tools"
