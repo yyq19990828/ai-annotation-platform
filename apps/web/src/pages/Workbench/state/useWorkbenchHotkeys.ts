@@ -24,6 +24,7 @@ import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse, Geometry } from "@/types";
 import type { AiBox } from "./transforms";
 import type { VideoStageControls } from "../stage/videoStageControls";
+import { supportsBBoxNudge } from "../stage/shared/geometry/geometryEditPolicy";
 
 type Geom = { x: number; y: number; w: number; h: number };
 
@@ -305,7 +306,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     const applyArrowNudge = (dx: number, dy: number) => {
       const userTargets = s.selectedIds
         .map((id) => annotationsRef.current.find((a) => a.id === id))
-        .filter(Boolean) as AnnotationResponse[];
+        .filter((annotation): annotation is AnnotationResponse => (
+          !!annotation && supportsBBoxNudge(annotation.geometry)
+        ));
       if (userTargets.length === 0) return;
       const w = stageGeom.imgW || 1;
       const h = stageGeom.imgH || 1;

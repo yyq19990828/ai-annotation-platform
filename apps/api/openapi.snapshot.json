@@ -6009,15 +6009,18 @@
             "type": "integer"
           },
           "encoding": {
-            "const": "coco_rle_ref",
             "default": "coco_rle_ref",
+            "enum": [
+              "coco_rle_ref",
+              "coco_rle_gzip"
+            ],
             "title": "Encoding",
             "type": "string"
           },
           "object_key": {
             "maxLength": 255,
             "minLength": 1,
-            "pattern": "^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\\.json$",
+            "pattern": "^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\\.json(?:\\.gz)?$",
             "title": "Object Key",
             "type": "string"
           },
@@ -6045,6 +6048,21 @@
             ],
             "title": "Size",
             "type": "array"
+          },
+          "storage_encoding": {
+            "anyOf": [
+              {
+                "enum": [
+                  "identity",
+                  "gzip"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Encoding"
           }
         },
         "required": [

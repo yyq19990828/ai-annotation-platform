@@ -206,7 +206,10 @@ async def test_runner_lands_extra_instances_as_new_tracks(
         direction="forward",
         from_frame=0,
         to_frame=3,
-        prompt={"text": "car"},
+        prompt={
+            "text": "car",
+            "expected_source_versions": {str(source.id): int(source.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -575,7 +578,11 @@ async def test_runner_single_instance_no_extra_tracks(
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={"type": "bbox", "geometry": source.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": source.geometry,
+            "expected_source_versions": {str(source.id): int(source.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -635,7 +642,10 @@ async def test_runner_discard_leaves_annotation_untouched(
         direction="forward",
         from_frame=0,
         to_frame=3,
-        prompt={"text": "car"},
+        prompt={
+            "text": "car",
+            "expected_source_versions": {str(source.id): int(source.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -824,7 +834,10 @@ async def test_runner_associates_window_local_ids_across_windows(
         direction="forward",
         from_frame=0,
         to_frame=3,
-        prompt={"text": "car"},
+        prompt={
+            "text": "car",
+            "expected_source_versions": {str(source.id): int(source.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -950,7 +963,11 @@ async def _seed_two_source_job(db_session, user):
             "seeds": [
                 {"obj_id": 1, "source_annotation_id": str(src_a.id)},
                 {"obj_id": 2, "source_annotation_id": str(src_b.id)},
-            ]
+            ],
+            "expected_source_versions": {
+                str(src_a.id): int(src_a.version),
+                str(src_b.id): int(src_b.version),
+            },
         },
         event_channel="video-tracker-job:test-multi-source",
     )
@@ -1011,11 +1028,12 @@ async def test_runner_multi_source_backfills_each_own_track(
     assert rows == []
 
 
-async def test_accept_multi_source_orphan_degrades_to_new_track(
+async def test_accept_multi_source_soft_deleted_source_fails_closed(
     db_session, super_admin, monkeypatch
 ):
-    """一源在 job 运行后被软删 → 该 instance per-source 降级为新建 (不串到别的源、不整 job
-    失败), 另一源正常回填。"""
+    """一源在 job 运行后被软删 → 整批冲突且零写入。"""
+    from app.services.video_tracking.runner import TrackerJobStateConflict
+
     user, _ = super_admin
     task, src_a, src_b, job = await _seed_two_source_job(db_session, user)
 
@@ -1038,16 +1056,14 @@ async def test_accept_multi_source_orphan_degrades_to_new_track(
     src_b.is_active = False
     await db_session.flush()
 
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    with pytest.raises(TrackerJobStateConflict, match="inactive"):
+        await accept_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
     await db_session.refresh(src_a)
-    assert job.status == "accepted"  # 不整 job 失败
+    assert job.status == "pending_review"
+    assert src_a.annotation_type == "bbox"
 
-    # src_a (obj1) 正常回填。
-    assert src_a.annotation_type == "video_track_bbox"
-    assert src_a.geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(3.0)
-
-    # src_b 被删 → obj2 降级为一条新建 ai_tracker 轨迹 (几何 x≈frame+100, 类别继承存活源)。
+    # 不把失去来源的候选静默降级为新轨迹。
     rows = (
         (
             await db_session.execute(
@@ -1060,9 +1076,7 @@ async def test_accept_multi_source_orphan_degrades_to_new_track(
         .scalars()
         .all()
     )
-    assert len(rows) == 1
-    assert rows[0].class_name == "car"
-    assert rows[0].geometry["keyframes"][3]["bbox"]["x"] == pytest.approx(103.0)
+    assert rows == []
 
 
 # ── v0.22.2 · M1 · 建 job 侧: 多源 endpoint/schema/service ────────────────

@@ -7,6 +7,18 @@ export interface CocoRle {
 export const MAX_MASK_DIMENSION = 4096;
 export const MAX_MASK_PIXELS = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION;
 export const MAX_MASK_RUNS = 1_000_000;
+export const MAX_MASK_GZIP_COMPRESSED_BYTES = 8 * 1024 * 1024;
+export const MAX_MASK_GZIP_UNCOMPRESSED_BYTES = 4 * 1024 * 1024;
+export const MAX_MASK_GZIP_EXPANSION_RATIO = 20;
+export const MASK_GZIP_MIN_BYTES = 64 * 1024;
+
+type GzipCompressor = (input: Uint8Array) => Promise<Uint8Array>;
+
+export interface PreparedCocoRleGzipUpload {
+  body: Blob;
+  compressedBytes: number;
+  uncompressedBytes: number;
+}
 
 function positiveInteger(value: unknown, name: string): number {
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
@@ -92,4 +104,53 @@ export function decodeCocoRle(rle: unknown): Uint8Array {
     foreground = !foreground;
   }
   return out;
+}
+
+async function compressWithBrowserStream(input: Uint8Array): Promise<Uint8Array> {
+  if (typeof CompressionStream === "undefined") {
+    throw new Error("CompressionStream is unavailable");
+  }
+  const stream = new Blob([input]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * 为 mask-content 上传准备真实 HTTP gzip 正文。
+ *
+ * 返回 null 表示必须走普通 JSON：小正文、浏览器不支持 gzip、任一绝对上限超出，或
+ * 展开比超过后端 reader 的 20× 安全合同。对象存储偏好与 RLE 正文编码分离，故压缩
+ * 前正文仍保持 encoding=coco_rle，仅额外携带 storage_encoding=gzip。
+ */
+export async function prepareCocoRleGzipUpload(
+  rle: CocoRle,
+  options: { minBytes?: number; compress?: GzipCompressor } = {},
+): Promise<PreparedCocoRleGzipUpload | null> {
+  const checked = validateCocoRle(rle);
+  const json = JSON.stringify({ ...checked, storage_encoding: "gzip" });
+  const raw = new TextEncoder().encode(json);
+  const minBytes = options.minBytes ?? MASK_GZIP_MIN_BYTES;
+  if (raw.byteLength < minBytes || raw.byteLength > MAX_MASK_GZIP_UNCOMPRESSED_BYTES) {
+    return null;
+  }
+  const compress = options.compress
+    ?? (typeof CompressionStream === "undefined" ? null : compressWithBrowserStream);
+  if (!compress) return null;
+  let compressed: Uint8Array;
+  try {
+    compressed = await compress(raw);
+  } catch {
+    return null;
+  }
+  if (
+    compressed.byteLength === 0
+    || compressed.byteLength > MAX_MASK_GZIP_COMPRESSED_BYTES
+    || raw.byteLength > compressed.byteLength * MAX_MASK_GZIP_EXPANSION_RATIO
+  ) {
+    return null;
+  }
+  return {
+    body: new Blob([compressed], { type: "application/json" }),
+    compressedBytes: compressed.byteLength,
+    uncompressedBytes: raw.byteLength,
+  };
 }

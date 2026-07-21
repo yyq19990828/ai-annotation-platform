@@ -36,6 +36,8 @@
 
 ## [Unreleased]
 
+## [0.23.5] - 2026-07-21
+
 ### Added
 
 - **栅格 Mask 可靠性与安全地基 (ADR-0052)**. 为图像 / 视频栅格 Mask 统一 Epic 的 Phase 1，
@@ -74,16 +76,21 @@
 
 ### Security
 
-- **Mask 内容 gzip 传输 + bounded decompress**. 新增 `coco_rle_gzip` 编码与 `.json.gz` 对象
-  key，流式 `zlib` 解压在压缩输入 > 8 MiB、解压输出 > 4 MiB 或膨胀比 > 20× 时立即拒绝，
-  关闭 zip bomb 向量；SHA-256 仍对未压缩 canonical bytes 计算，旧未压缩引用向后兼容。
+- **Mask 内容 gzip 传输 + bounded decompress**. 上传正文继续使用 `coco_rle`，HTTP 压缩由
+  `Content-Encoding: gzip` 表示，对象存储压缩由 `storage_encoding: gzip` 表示；引用保持
+  `coco_rle_ref` 并使用 `.json.gz` 对象 key。流式 `zlib` 解压在压缩输入 > 8 MiB、解压输出
+  > 4 MiB 或膨胀比 > 20× 时立即拒绝，关闭 zip bomb 向量；SHA-256 仍对未压缩 canonical
+  bytes 计算，旧未压缩引用及历史混合编码继续可读。
 - **交互式帧上传 size cap**. `predict-frame` 与 `interactive-annotating-frame` 现检查
   `Content-Length` 并流式累计字节，超过 32 MiB 返回 413；解码后校验宽高 ≤ 4096、总像素
   ≤ 16M、格式 ∈ {JPEG, PNG}。此前 `await frame.read()` 无任何上限。
-- **Mask 内容上传配额**. `POST /tasks/{task_id}/mask-content` 现按任务统计已引用的 mask
-  对象数，超过 2048 时拒绝，防止未关联 orphan 对象无限累积。
-- **Tracker accept 并发冲突 → 409**. `accept_tracker_job` 现在创建 job 时记录源 annotation
-  version，accept 时以 `with_for_update` 重锁并比对；源版本漂移返回 409，不再 last-writer-wins。
+- **Mask 内容上传配额**. `POST /tasks/{task_id}/mask-content` 现记录上传归属，并以任务级事务锁
+  串行化配额预留；每个任务最多保留 256 个尚未被 annotation 事务认领的 mask 对象，GC 删除
+  对象时同步清理归属，防止并发请求绕过计数或无限累积 orphan。
+- **Tracker accept 并发冲突 → 409**. `accept_tracker_job` 现在创建 job 时记录全部源 annotation
+  version，accept 时按稳定顺序重锁并复核任务、assignment、segment lease、源对象存活 / 锁定 /
+  版本；任一漂移返回 409，旧 job 缺少快照时失败关闭，不再 last-writer-wins。accept 成功后清除
+  staged 结果，GC 仅保留仍待审核或已取消且处于宽限期的对象。
 - **对象存储 I/O 不阻塞 async event loop**. `store_coco_rle` / `load_coco_rle` 及 GC
   `delete_object` 的 boto3 同步调用现统一经 `asyncio.to_thread` 包裹，不再阻塞 FastAPI 事件循环。
 

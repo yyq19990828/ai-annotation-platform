@@ -321,8 +321,7 @@ async def create_tracker_job(
             ),
             # v0.23.5 · WS-D · D4 · snapshot of source annotation versions at job
             # creation; accept_tracker_job re-reads with_for_update and 409s on
-            # any drift. Absent on legacy jobs → accept skips the check (forward
-            # compat, logged as a warning).
+            # any drift. Source-backed legacy jobs without this proof fail closed.
             **(
                 {"expected_source_versions": expected_source_versions}
                 if expected_source_versions

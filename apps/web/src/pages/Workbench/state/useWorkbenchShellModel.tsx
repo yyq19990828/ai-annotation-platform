@@ -128,7 +128,6 @@ import {
 } from "./offlineQueue";
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
-import { useMaskEditor } from "./useMaskEditor";
 import { promptMaskLeaveChoice, useMaskEditorSession, type MaskSessionKey } from "./useMaskEditorSession";
 import { canCommitMask, canEditMask } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
@@ -2343,7 +2342,7 @@ export function useWorkbenchShellModel({
       readOnly: isLocked,
       onChange: (next) => handleUpdateAttributes(ann.id, next),
     };
-  }, [editingClassAnnotation, toolView.attributeSchema, isLocked, handleUpdateTrackAttributes, handleUpdateAttributes]);
+  }, [editingClassAnnotation, toolView.attributeSchema, isLocked, lockConflict, lockError, handleUpdateTrackAttributes, handleUpdateAttributes]);
 
   useCanvasDraftPersistence({
     taskId,
@@ -2583,6 +2582,13 @@ export function useWorkbenchShellModel({
     [handleRejectPrediction, s],
   );
 
+  const hiddenVideoTrackIds = s.hiddenVideoTrackIds;
+  const lockedVideoTrackIds = s.lockedVideoTrackIds;
+  const toggleHiddenVideoTrack = s.toggleHiddenVideoTrack;
+  const toggleLockedVideoTrack = s.toggleLockedVideoTrack;
+  const trackSectionCollapsed = s.trackSectionCollapsed;
+  const setTrackSectionCollapsed = s.setTrackSectionCollapsed;
+
   // v0.16.8 Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
   // 复用同一份 props/回调,杜绝两套逻辑漂移。frameFilter 控制「全部 / 当前帧」轨迹过滤。
   const renderVideoTrackSidebar = useCallback(
@@ -2599,16 +2605,16 @@ export function useWorkbenchShellModel({
         imageWidth={imageWidth}
         imageHeight={imageHeight}
         readOnly={isLocked}
-        hiddenTrackIds={s.hiddenVideoTrackIds}
-        lockedTrackIds={s.lockedVideoTrackIds}
+        hiddenTrackIds={hiddenVideoTrackIds}
+        lockedTrackIds={lockedVideoTrackIds}
         classes={classes}
         onSelect={(id) => handleSelectBox(id)}
-        onToggleHiddenTrack={s.toggleHiddenVideoTrack}
-        onToggleLockedTrack={s.toggleLockedVideoTrack}
+        onToggleHiddenTrack={toggleHiddenVideoTrack}
+        onToggleLockedTrack={toggleLockedVideoTrack}
         onSeekFrame={s.setVideoFrameIndex}
         reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
-        trackSectionCollapsed={s.trackSectionCollapsed}
-        onToggleTrackSection={() => s.setTrackSectionCollapsed(!s.trackSectionCollapsed)}
+        trackSectionCollapsed={trackSectionCollapsed}
+        onToggleTrackSection={() => setTrackSectionCollapsed(!trackSectionCollapsed)}
         onChangeUserBoxClass={handleStartChangeClass}
         onRenameTracks={handleVideoBatchRename}
         onDeleteTracks={handleVideoBatchDelete}
@@ -2632,14 +2638,14 @@ export function useWorkbenchShellModel({
     ),
     [
       visibleAnnotationsData, s.selectedId, s.selectedIds, s.videoFrameIndex, meUserId, isLocked,
-      s.hiddenVideoTrackIds, s.lockedVideoTrackIds, classes, handleSelectBox,
-      s.toggleHiddenVideoTrack, s.toggleLockedVideoTrack, s.setVideoFrameIndex, mode, modeState.diffMode,
+      hiddenVideoTrackIds, lockedVideoTrackIds, classes, handleSelectBox,
+      toggleHiddenVideoTrack, toggleLockedVideoTrack, s.setVideoFrameIndex, mode, modeState.diffMode,
       handleStartChangeClass, handleVideoBatchRename, handleVideoBatchDelete, handleVideoUpdate,
       handleVideoConvertToBboxes, handleVideoComposeTracks, trackerJobs.byAnnotation, openPropagateDialog,
       trackerJobs.cancel, s.trackColorOverrides, s.setVideoTrackColor, toolView.attributeSchema,
       handleUpdateTrackAttributes, handleUpdateKeyframeAttributes, handlePropagateKeyframe, samplingStep,
       currentProject?.rendering_config?.propagateOverwrite, videoFps, imageWidth, imageHeight,
-      s.trackSectionCollapsed, s.setTrackSectionCollapsed,
+      trackSectionCollapsed, setTrackSectionCollapsed,
     ],
   );
 
@@ -2754,14 +2760,14 @@ export function useWorkbenchShellModel({
             imageHeight={imageHeight}
             fps={videoFps}
             readOnly={isLocked}
-            hidden={s.hiddenVideoTrackIds.has(ann.geometry.track_id)}
-            locked={s.lockedVideoTrackIds.has(ann.geometry.track_id)}
+            hidden={hiddenVideoTrackIds.has(ann.geometry.track_id)}
+            locked={lockedVideoTrackIds.has(ann.geometry.track_id)}
             onSeekFrame={setVideoFrameIndex}
             onChangeClass={handleStartChangeClass}
             onDelete={handleDeleteBox}
-            onToggleHidden={s.toggleHiddenVideoTrack}
-            onToggleLock={s.toggleLockedVideoTrack}
-            onEditMask={isVideoMaskTrack(ann) ? () => s.setVideoTool("mask") : undefined}
+            onToggleHidden={toggleHiddenVideoTrack}
+            onToggleLock={toggleLockedVideoTrack}
+            onEditMask={isVideoMaskTrack(ann) ? () => setVideoTool("mask") : undefined}
             onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
           />
         );
@@ -2784,15 +2790,15 @@ export function useWorkbenchShellModel({
               : "两条轨迹的可见帧区间不能重叠";
         const setBatchHidden = (hidden: boolean) =>
           videoBatchTracks.forEach((t) => {
-            if (s.hiddenVideoTrackIds.has(t.geometry.track_id) !== hidden) s.toggleHiddenVideoTrack(t.geometry.track_id);
+            if (hiddenVideoTrackIds.has(t.geometry.track_id) !== hidden) toggleHiddenVideoTrack(t.geometry.track_id);
           });
         const setBatchLocked = (locked: boolean) =>
           videoBatchTracks.forEach((t) => {
-            if (s.lockedVideoTrackIds.has(t.geometry.track_id) !== locked) s.toggleLockedVideoTrack(t.geometry.track_id);
+            if (lockedVideoTrackIds.has(t.geometry.track_id) !== locked) toggleLockedVideoTrack(t.geometry.track_id);
           });
         // 全选中才算「已隐藏 / 已锁定」→ 切换按钮翻转为反向动作; 部分选中时仍显示正向动作(与图片侧一致)。
-        const allTracksHidden = videoBatchTracks.every((t) => s.hiddenVideoTrackIds.has(t.geometry.track_id));
-        const allTracksLocked = videoBatchTracks.every((t) => s.lockedVideoTrackIds.has(t.geometry.track_id));
+        const allTracksHidden = videoBatchTracks.every((t) => hiddenVideoTrackIds.has(t.geometry.track_id));
+        const allTracksLocked = videoBatchTracks.every((t) => lockedVideoTrackIds.has(t.geometry.track_id));
         children = (
           <VideoTrackBatchCardContent
             count={videoBatchTracks.length}
@@ -2901,11 +2907,11 @@ export function useWorkbenchShellModel({
     handleSelectBox,
     videoBatchTracks,
     classes,
-    s.hiddenVideoTrackIds,
-    s.lockedVideoTrackIds,
-    s.toggleHiddenVideoTrack,
-    s.toggleLockedVideoTrack,
-    s.setVideoTool,
+    hiddenVideoTrackIds,
+    lockedVideoTrackIds,
+    toggleHiddenVideoTrack,
+    toggleLockedVideoTrack,
+    setVideoTool,
     openPropagateDialog,
     handleStartChangeClass,
     handlePatchShapeFlag,

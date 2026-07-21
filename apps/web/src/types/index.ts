@@ -308,6 +308,7 @@ export type VideoTrackPolylineGeometry = {
 };
 export type CocoRleMaskRef = {
   encoding: "coco_rle_ref";
+  storage_encoding?: "identity" | "gzip" | null;
   size: [number, number];
   object_key: string;
   sha256: string;

@@ -74,12 +74,12 @@ _ANNOTATORS = (
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
 
-# v0.23.5 · WS-D · D3 · per-task cap on raster-mask object references.
+# v0.23.5 · WS-D · D3 · per-task cap on unclaimed raster-mask uploads.
 # The upload endpoint returns an anonymous reference (not yet linked to an
 # annotation), so the per-annotation ``is_locked`` guard doesn't apply at
-# upload time — instead we bound the total number of content-addressed mask
-# objects attributable to this task's annotations + predictions. The cap is
-# serialized by a task-level advisory lock so concurrent requests cannot race.
+# upload time. Ownership rows bound anonymous objects until an annotation
+# transaction claims them; the cap is serialized by a task-level advisory lock
+# so concurrent requests cannot race.
 MAX_MASK_OBJECTS_PER_TASK = 256
 
 

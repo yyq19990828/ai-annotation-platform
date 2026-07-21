@@ -89,7 +89,11 @@ async def _make_job(
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={},
+        prompt={
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            }
+        },
         event_channel="video-tracker-job:test",
     )
     db.add(job)
@@ -306,7 +310,11 @@ async def _make_staged_job(db, task, item, owner_id):
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={},
+        prompt={
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            }
+        },
         event_channel="video-tracker-job:test",
         staged_result={
             "results": [

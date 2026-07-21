@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import fixture from "@/__fixtures__/rasterMaskRle.json";
-import { decodeCocoRle, encodeCocoRle, validateCocoRle } from "./maskRle";
+import {
+  decodeCocoRle,
+  encodeCocoRle,
+  prepareCocoRleGzipUpload,
+  validateCocoRle,
+} from "./maskRle";
 
 interface ValidCase {
   name: string;
@@ -37,4 +42,60 @@ describe("COCO uncompressed RLE", () => {
       })).toThrow();
     });
   }
+
+  it("prepares HTTP gzip with a separate storage preference", async () => {
+    let captured: Uint8Array | undefined;
+    const prepared = await prepareCocoRleGzipUpload(
+      { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 2, 1] },
+      {
+        minBytes: 1,
+        compress: async (raw) => {
+          captured = raw;
+          return new Uint8Array(Math.ceil(raw.byteLength / 2)).fill(1);
+        },
+      },
+    );
+    expect(prepared).not.toBeNull();
+    expect(JSON.parse(new TextDecoder().decode(captured))).toMatchObject({
+      encoding: "coco_rle",
+      storage_encoding: "gzip",
+    });
+    expect(prepared?.body.type).toBe("application/json");
+  });
+
+  it("falls back when gzip would exceed the shared expansion ratio", async () => {
+    const prepared = await prepareCocoRleGzipUpload(
+      { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 2, 1] },
+      { minBytes: 1, compress: async () => new Uint8Array([1]) },
+    );
+    expect(prepared).toBeNull();
+  });
+
+  it("falls back when browser gzip compression fails", async () => {
+    const prepared = await prepareCocoRleGzipUpload(
+      { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 2, 1] },
+      {
+        minBytes: 1,
+        compress: async () => {
+          throw new Error("compression failed");
+        },
+      },
+    );
+    expect(prepared).toBeNull();
+  });
+
+  it("keeps small payloads on the backward-compatible JSON path", async () => {
+    let called = false;
+    const prepared = await prepareCocoRleGzipUpload(
+      { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 2, 1] },
+      {
+        compress: async () => {
+          called = true;
+          return new Uint8Array([1]);
+        },
+      },
+    );
+    expect(prepared).toBeNull();
+    expect(called).toBe(false);
+  });
 });

@@ -112,6 +112,10 @@ export function useMaskEditorSession({
   ...editorOpts
 }: UseMaskEditorSessionOptions): UseMaskEditorSessionReturn {
   const editor = useMaskEditor(editorOpts);
+  const editorBeginBlank = editor.beginBlank;
+  const editorCancel = editor.cancel;
+  const editorInitFromPolygon = editor.initFromPolygon;
+  const editorInitFromRle = editor.initFromRle;
   const [phase, setPhase] = useState<MaskEditorPhase>("idle");
   const [generation, setGeneration] = useState(0);
   const [lastSaveError, setLastSaveError] = useState<unknown>(undefined);
@@ -182,22 +186,22 @@ export function useMaskEditorSession({
         if (requestedSessionIdRef.current !== serialized) return;
         if (choice === "continue") return;
         // save 表示 guard 已完成保存；discard 才由 session 主动清 Buffer。
-        if (choice === "discard") editor.cancel();
+        if (choice === "discard") editorCancel();
         acceptTransition(serialized, requestedKeyRef.current);
       });
-  }, [acceptTransition, editor.cancel, sessionId]);
+  }, [acceptTransition, editorCancel, sessionId]);
 
   const loadRle = useCallback((gen: number, rle: CocoRle) => {
     if (gen !== generationRef.current) return; // 迟到回包, 丢弃
-    editor.initFromRle(rle);
+    editorInitFromRle(rle);
     updatePhase("ready");
-  }, [editor.initFromRle, updatePhase]);
+  }, [editorInitFromRle, updatePhase]);
 
   const loadBlank = useCallback((gen: number) => {
     if (gen !== generationRef.current) return;
-    editor.beginBlank();
+    editorBeginBlank();
     updatePhase("ready");
-  }, [editor.beginBlank, updatePhase]);
+  }, [editorBeginBlank, updatePhase]);
 
   const failLoad = useCallback((gen: number, error: unknown) => {
     if (gen !== generationRef.current) return;
@@ -218,28 +222,28 @@ export function useMaskEditorSession({
   }, [editor.dirty, updatePhase]);
 
   const beginBlank = useCallback(() => {
-    editor.beginBlank();
+    editorBeginBlank();
     updatePhase("ready");
-  }, [editor.beginBlank, updatePhase]);
+  }, [editorBeginBlank, updatePhase]);
 
   const initFromPolygon = useCallback((points: ReadonlyArray<readonly [number, number]>) => {
-    editor.initFromPolygon(points);
+    editorInitFromPolygon(points);
     updatePhase("ready");
-  }, [editor.initFromPolygon, updatePhase]);
+  }, [editorInitFromPolygon, updatePhase]);
 
   const initFromRle = useCallback((rle: CocoRle) => {
-    editor.initFromRle(rle);
+    editorInitFromRle(rle);
     updatePhase("ready");
-  }, [editor.initFromRle, updatePhase]);
+  }, [editorInitFromRle, updatePhase]);
 
   const cancel = useCallback(() => {
     transitionTokenRef.current += 1;
-    editor.cancel();
+    editorCancel();
     setLastSaveError(undefined);
     setSaveInFlight(false);
     savePromiseRef.current = null;
     updatePhase("idle");
-  }, [editor.cancel, updatePhase]);
+  }, [editorCancel, updatePhase]);
 
   const save = useCallback((commit: () => Promise<MaskSaveResult>): Promise<MaskSaveResult> => {
     // 单飞: 同 session 内重复 Enter / 双击合并为同一 Promise。

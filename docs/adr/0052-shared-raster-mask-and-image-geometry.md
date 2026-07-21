@@ -97,7 +97,7 @@ v0.23.5 是栅格 mask 统一 Epic 的 Phase 1（可靠性与安全地基）。v
 - 编码分层：请求 JSON 正文始终是 `{encoding:"coco_rle",size,counts}`；HTTP 传输压缩只由 `Content-Encoding: gzip` 表示，对象存储偏好只由 `storage_encoding: "identity" | "gzip"` 表示。服务端在 JSON 解析前有界解压 HTTP gzip。历史 body `encoding:"coco_rle_gzip"` 会被归一化为 `coco_rle` + gzip 存储偏好。
 - writer/readability：若 canonical JSON 的 gzip 展开比超过 20，writer 自动回退 `.json`，不得生成 reader 会拒绝的 `.json.gz` 对象。
 - 匿名上传归属：`raster_mask_uploads` 记录 `(task_id, object_key)`，task 级事务 advisory lock 串行化预留；每 task 最多 256 个未被 annotation 事务认领的对象。GC 删除对象时同步删除归属记录。
-- 前端 `maskRle.ts` 同步实现 gzip 编解码，上传侧仅在满足相同边界时发送 HTTP gzip / gzip 存储偏好，下载侧按 `object_key` 后缀或 `storage_encoding` 分流。
+- 前端 `maskRle.ts` 在满足相同边界且浏览器支持 `CompressionStream` 时发送 HTTP gzip / gzip 存储偏好，压缩不可用或失败时回退普通 JSON。下载侧不暴露对象存储编码：服务端按引用完成校验与解压，统一返回 `coco_rle` JSON。
 
 ### D7. 编辑会话状态机语义（图片 / 视频共用）
 
@@ -150,7 +150,7 @@ feature flag 语义：read flag 与 create flag 独立；read flag 默认 on（�
 ## Notes
 
 - 实现代码位置（v0.23.5 已落 / v0.23.6 待落）：
-  - v0.23.5：`apps/api/app/utils/raster_mask_gzip.py`（新）、`apps/api/app/services/raster_mask_storage.py`（gzip + async to_thread）、`apps/api/app/services/video_tracking/runner.py:accept_tracker_job`（版本冲突 → 409）、`apps/web/src/pages/Workbench/state/useMaskEditorSession.ts`（新）、`apps/web/src/pages/Workbench/state/canEditMask.ts`（新）、`apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx:KonvaPolygon`（even-odd holes / multi_polygon）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts`（无损报告）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskRle.ts`（gzip 编解码）。
+  - v0.23.5：`apps/api/app/utils/raster_mask_gzip.py`（新）、`apps/api/app/services/raster_mask_storage.py`（gzip + async to_thread）、`apps/api/app/services/video_tracking/runner.py:accept_tracker_job`（版本冲突 → 409）、`apps/web/src/pages/Workbench/state/useMaskEditorSession.ts`（新）、`apps/web/src/pages/Workbench/state/canEditMask.ts`（新）、`apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx:KonvaPolygon`（even-odd holes / multi_polygon）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts`（无损报告）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskRle.ts`（HTTP gzip 上传与安全回退）。
   - v0.23.6：`raster_mask` alembic union（加法扩展，无 schema 迁移）、`validate_mask_geometry_for_task` 泛化、`GET /annotations/{id}/mask-content/{frame}` 泛化、create flag。
 - 相关 ADR：[ADR-0022](./archive/0022-mask-editor-tool-architecture.md)（图片 mask 工具 v1，过渡决策）、[ADR-0048](./archive/0048-video-raster-mask-content-addressed-rle.md)（视频 `coco_rle_ref` 内容寻址，本 ADR 复用）、[ADR-0045](./0045-track-id-as-annotation-column.md)（track_id 跨帧身份）。
 - 相关计划：[v0.23.5 可靠性与安全地基](../plans/2026-07-21-v0.23.5-mask-reliability-security-foundation.md)、[v0.23.6 共享 RLE 与图片 geometry](../plans/2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)、[Epic 总纲](../plans/2026-07-21-raster-mask-workbench-unification-epic.md)。

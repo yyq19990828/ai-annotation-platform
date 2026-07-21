@@ -90,7 +90,13 @@ async def test_tracker_worker_completes_mock_bbox_job_and_writes_video_track(
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            },
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -422,7 +428,13 @@ async def test_tracker_worker_preserves_partial_results_on_cancel(
         direction="forward",
         from_frame=1,
         to_frame=3,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            },
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -501,7 +513,13 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
         direction="forward",
         from_frame=0,
         to_frame=4,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            },
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -620,7 +638,13 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
         direction="forward",
         from_frame=1,
         to_frame=2,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            },
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -1188,7 +1212,12 @@ async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
         direction="forward",
         from_frame=0,
         to_frame=1,
-        prompt={"output_geometry": "mask"},
+        prompt={
+            "output_geometry": "mask",
+            "expected_source_versions": {
+                str(annotation.id): int(annotation.version)
+            },
+        },
         event_channel="video-tracker-job:test",
         staged_result={
             "grid_step": 1,
