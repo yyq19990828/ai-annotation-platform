@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CocoRleMaskRef } from "@/types";
 import { encodeCocoRle, type CocoRle } from "./geometry/maskRle";
 import {
+  rasterMaskLoadError,
   rasterMaskRecordCacheKey,
   useRasterMaskRecords,
   type RasterMaskRecordDescriptor,
@@ -94,6 +95,44 @@ describe("useRasterMaskRecords", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it.each(["missing_object", "digest_mismatch"])(
+    "preserves structured corruption reason %s for object-scoped recovery",
+    (reason) => {
+      expect(rasterMaskLoadError({
+        status: 409,
+        detailRaw: {
+          reason,
+          retryable: true,
+          message: `mask object is invalid: ${reason}`,
+        },
+      })).toEqual({
+        state: "error",
+        reason: "corrupt",
+        backendReason: reason,
+        retryable: true,
+        message: `mask object is invalid: ${reason}`,
+        httpStatus: 409,
+      });
+    },
+  );
+
+  it("does not retry a 409 unless the backend explicitly marks it retryable", () => {
+    expect(rasterMaskLoadError({
+      status: 409,
+      detailRaw: {
+        reason: "mask_task_context_invalid",
+        message: "task dimensions are unavailable",
+      },
+    })).toEqual({
+      state: "error",
+      reason: "corrupt",
+      backendReason: "mask_task_context_invalid",
+      retryable: false,
+      message: "task dimensions are unavailable",
+      httpStatus: 409,
+    });
   });
 
   it("keys content revisions without including selected or z-order", () => {
@@ -256,6 +295,67 @@ describe("useRasterMaskRecords", () => {
     view.rerender({ scope: "task-2", items: [] });
     expect(bitmaps[1].close).toHaveBeenCalledTimes(1);
     expect(bitmaps[2].close).toHaveBeenCalledTimes(1);
+    view.unmount();
+    for (const bitmap of bitmaps) expect(bitmap.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("evicts inactive records by retained-byte budget", async () => {
+    const first = makeDescriptor("first");
+    const second = makeDescriptor("second");
+    const view = renderHook(
+      ({ items }) => useRasterMaskRecords({
+        scopeKey: "task-1",
+        descriptors: items,
+        maxCacheBytes: 21,
+      }),
+      { initialProps: { items: [first.descriptor] } },
+    );
+    await flushAsync();
+    expect(view.result.current.cacheBytes).toBe(20);
+
+    view.rerender({ items: [second.descriptor] });
+    await flushAsync();
+
+    expect(view.result.current.cacheBytes).toBe(20);
+    expect(bitmaps[0].close).toHaveBeenCalledTimes(1);
+    expect(bitmaps[1].close).not.toHaveBeenCalled();
+  });
+
+  it("keeps cache bytes stable across 20 masks and 50 task scopes", async () => {
+    const makeScope = (scopeIndex: number) => Array.from(
+      { length: 20 },
+      (_, maskIndex) => makeDescriptor(`scope-${scopeIndex}-mask-${maskIndex}`).descriptor,
+    );
+    const view = renderHook(
+      ({ scope, items }) => useRasterMaskRecords({
+        scopeKey: scope,
+        descriptors: items,
+        maxCacheBytes: 401,
+      }),
+      {
+        initialProps: {
+          scope: "task-0",
+          items: makeScope(0),
+        },
+      },
+    );
+    await flushAsync(16);
+    expect(view.result.current.cacheBytes).toBe(400);
+
+    for (let scopeIndex = 1; scopeIndex < 50; scopeIndex += 1) {
+      view.rerender({
+        scope: `task-${scopeIndex}`,
+        items: makeScope(scopeIndex),
+      });
+      await flushAsync(16);
+      expect(view.result.current.cacheBytes).toBe(400);
+    }
+
+    expect(bitmaps).toHaveLength(1000);
+    for (const bitmap of bitmaps.slice(0, -20)) {
+      expect(bitmap.close).toHaveBeenCalledTimes(1);
+    }
+    for (const bitmap of bitmaps.slice(-20)) expect(bitmap.close).not.toHaveBeenCalled();
     view.unmount();
     for (const bitmap of bitmaps) expect(bitmap.close).toHaveBeenCalledTimes(1);
   });

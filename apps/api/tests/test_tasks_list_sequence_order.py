@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.tasks._shared import storage_service
 from app.db.models.project import Project
 from app.db.models.task import Task
 
@@ -110,3 +111,33 @@ async def test_cursor_pagination_preserves_sequence_order(
             break
 
     assert collected == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_point_cloud_task_without_dataset_item_uses_datasets_bucket(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    admin_user, token = super_admin
+    project = await _seed_sequence(db_session, admin_user.id, [0])
+    await db_session.commit()
+
+    signed: list[tuple[str, str | None]] = []
+
+    def _fake_download_url(key: str, **kwargs) -> str:
+        bucket = kwargs.get("bucket")
+        signed.append((key, bucket))
+        return f"http://storage.local/{bucket}/{key.lstrip('/')}"
+
+    monkeypatch.setattr(storage_service, "generate_download_url", _fake_download_url)
+
+    response = await httpx_client_bound.get(
+        f"/api/v1/tasks?project_id={project.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["file_url"].startswith(
+        f"http://storage.local/{storage_service.datasets_bucket}/"
+    )
+    assert signed == [("/tmp/x.pcd", storage_service.datasets_bucket)]

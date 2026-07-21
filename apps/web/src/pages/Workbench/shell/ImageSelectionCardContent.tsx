@@ -94,11 +94,14 @@ export function ImageSelectionCardContent({
           ) : rasterMaskStatus.state === "ready" ? (
             <span>
               已按真实像素渲染 · {rasterMaskStatus.area} px · {rasterMaskStatus.componentCount} 个组件
+              {" "}· {rasterMaskStatus.holeCount} 个孔洞 · {rasterMaskStatus.boundaryPixelCount} 边界像素
               {` · AABB (${rasterMaskStatus.bounds.x.toFixed(3)}, ${rasterMaskStatus.bounds.y.toFixed(3)}, ${rasterMaskStatus.bounds.w.toFixed(3)}, ${rasterMaskStatus.bounds.h.toFixed(3)})`}
             </span>
           ) : (
             <span className="flex items-center gap-2">
-              <span className="min-w-0 flex-1">{rasterMaskStatus.reason}：{rasterMaskStatus.message}</span>
+              <span className="min-w-0 flex-1">
+                {rasterMaskStatus.backendReason ?? rasterMaskStatus.reason}：{rasterMaskStatus.message}
+              </span>
               {rasterMaskStatus.retryable && onRetryRasterMask && (
                 <Button
                   variant="ghost"
@@ -112,7 +115,7 @@ export function ImageSelectionCardContent({
                 size="sm"
                 onClick={() => void navigator.clipboard?.writeText(JSON.stringify({
                   annotationId: annotation.id,
-                  reason: rasterMaskStatus.reason,
+                  reason: rasterMaskStatus.backendReason ?? rasterMaskStatus.reason,
                   message: rasterMaskStatus.message,
                   httpStatus: rasterMaskStatus.httpStatus,
                 }))}

@@ -78,11 +78,14 @@ async def test_content_operation_success_and_error_counter_deltas():
         outcome="success",
     )
     await store_coco_rle(RLE, storage=_storage())
-    assert _counter_value(
-        RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
-        operation="store",
-        outcome="success",
-    ) == store_before + 1
+    assert (
+        _counter_value(
+            RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
+            operation="store",
+            outcome="success",
+        )
+        == store_before + 1
+    )
 
     missing = ClientError(
         {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
@@ -103,16 +106,22 @@ async def test_content_operation_success_and_error_counter_deltas():
     with pytest.raises(ValueError, match="missing"):
         await load_coco_rle(build_rle_reference(RLE), storage=storage)
 
-    assert _counter_value(
-        RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
-        operation="load",
-        outcome="error",
-    ) == load_before + 1
-    assert _counter_value(
-        RASTER_MASK_CONTENT_ERRORS_TOTAL,
-        operation="load",
-        reason="missing_object",
-    ) == error_before + 1
+    assert (
+        _counter_value(
+            RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
+            operation="load",
+            outcome="error",
+        )
+        == load_before + 1
+    )
+    assert (
+        _counter_value(
+            RASTER_MASK_CONTENT_ERRORS_TOTAL,
+            operation="load",
+            reason="missing_object",
+        )
+        == error_before + 1
+    )
 
 
 @pytest.mark.asyncio
@@ -146,16 +155,22 @@ async def test_verify_counts_once_without_nested_load(monkeypatch):
         require_raster_foreground=True,
     )
 
-    assert _counter_value(
-        RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
-        operation="verify",
-        outcome="success",
-    ) == verify_before + 1
-    assert _counter_value(
-        RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
-        operation="load",
-        outcome="success",
-    ) == load_before
+    assert (
+        _counter_value(
+            RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
+            operation="verify",
+            outcome="success",
+        )
+        == verify_before + 1
+    )
+    assert (
+        _counter_value(
+            RASTER_MASK_CONTENT_OPERATIONS_TOTAL,
+            operation="load",
+            outcome="success",
+        )
+        == load_before
+    )
 
 
 @pytest.mark.asyncio

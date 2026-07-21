@@ -39,3 +39,32 @@ groups:
         annotations:
           summary: "{{ $labels.service }} ({{ $labels.instance }}) 推理 P95 >10s 持续 10m"
           description: "P95 推理延迟 {{ $value }}s，检查 GPU 负载 / 模型变体 / 显存驱逐。"
+
+  - name: raster-mask-content
+    rules:
+      - alert: RasterMaskContentCorruption
+        expr: sum(rate(raster_mask_content_errors_total{reason=~"missing_object|digest_mismatch|size_mismatch|run_mismatch|byte_mismatch|invalid_encoding|invalid_payload"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Raster Mask 内容校验错误持续 5m"
+          description: "{{ $value }} errors/s；先按 operation/reason 查 Grafana，再用同时段 API/worker 日志定位 request 与 task。"
+
+      - alert: RasterMaskStorageUnavailable
+        expr: sum(rate(raster_mask_content_errors_total{reason="storage_unavailable"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Raster Mask 对象存储不可用持续 5m"
+          description: "{{ $value }} errors/s；检查 MinIO 健康、网络、bucket 权限和同时段 raster mask 请求日志。"
+
+      - alert: RasterMaskInventoryMetricMissing
+        expr: absent(raster_mask_active_geometries{kind="annotation"}) or absent(raster_mask_active_geometries{kind="prediction"})
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Raster Mask 活跃库存指标缺失"
+          description: "annotation/prediction 固定序列已缺失 15m；检查 API 健康巡检、GC 任务与 Prometheus scrape。"

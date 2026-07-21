@@ -123,6 +123,10 @@ pre-commit 会在 capability registry、schema 或 API 序列化文件变更时�
 
 `raster_mask` 与 `video_track_mask` 都不把 `counts[]` 内联到 annotation JSONB。Pydantic `CocoRleMaskRef` 负责引用字段强校验，任务上下文 validator 再按图片或视频校验媒体类型、尺寸和帧范围。真实 RLE 以 canonical JSON 写入对象存储，key 由 SHA-256 派生；读取必须重新计算 digest、bytes、runs 与 size，任何不一致都拒绝。
 
+图片客户端先读取 `GET /tasks/{task_id}/mask-capabilities`，以服务端返回的部署总闸、项目 opt-in、`region` 绑定、任务锁和内容上限决定读写路径。客户端在能力未就绪时不得先上传对象再依赖 annotation API 拒绝。
+
+`polygon | multi_polygon | raster_mask` 的原位转换仅允许同一 `region` 工具单元。替换 Raster 内容或改变 geometry 类型时，`PATCH` 必须携带 `If-Match`；缺少前置条件返回 428，版本冲突返回 409，成功时在同一事务内同步 `annotation_type` 与 `geometry.type`。
+
 前端手写 `Geometry` union 与后端 `_jsonb_types.Geometry` 同步包含 `RasterMaskGeometry` 和 `VideoTrackMaskGeometry`。OpenAPI 覆盖上传、静态/逐帧读取端点与 tracker request；geometry JSONB union 仍需要专门的跨语言 fixture 测试，不能只依赖路由 codegen。
 
 ## 何时跑 codegen

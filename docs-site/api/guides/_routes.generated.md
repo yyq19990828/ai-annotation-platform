@@ -477,6 +477,12 @@
 | POST | `/{task_id}/lock/heartbeat` |
 | DELETE | `/{task_id}/lock` |
 
+## `tasks/mask_capabilities.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/mask-capabilities` |
+
 ## `tasks/predictions.py`
 
 | Method | Path |
@@ -559,4 +565,4 @@
 
 ---
 
-_共 52 模块 / 312 路由_
+_共 53 模块 / 313 路由_

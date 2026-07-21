@@ -24,6 +24,10 @@ export interface RasterMaskAnalysis {
   area: number;
   /** Number of 4-connected foreground components. */
   componentCount: number;
+  /** Number of 4-connected background regions enclosed by foreground. */
+  holeCount: number;
+  /** Foreground pixels touching background or the source-image edge. */
+  boundaryPixelCount: number;
   bounds: RasterMaskNormalizedBounds;
   crop: RasterMaskAlphaCrop;
 }
@@ -43,6 +47,8 @@ export interface RasterMaskRenderRecord<TSource extends string = string>
   bounds: RasterMaskNormalizedBounds;
   area: number;
   componentCount: number;
+  holeCount: number;
+  boundaryPixelCount: number;
   zOrder: number;
   selected: boolean;
   cacheKey: string;
@@ -80,6 +86,7 @@ function scanRasterMaskAlpha(alpha: Uint8Array, width: number, height: number) {
   let maxX = -1;
   let maxY = -1;
   let nextLabel = 1;
+  let boundaryPixelCount = 0;
   let previousRuns: RowRun[] = [];
   let parents = new Map<number, number>();
 
@@ -121,6 +128,22 @@ function scanRasterMaskAlpha(alpha: Uint8Array, width: number, height: number) {
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
 
+      for (let foregroundX = start; foregroundX <= end; foregroundX += 1) {
+        const offset = y * width + foregroundX;
+        if (
+          foregroundX === 0
+          || foregroundX === width - 1
+          || y === 0
+          || y === height - 1
+          || alpha[offset - 1] === 0
+          || alpha[offset + 1] === 0
+          || alpha[offset - width] === 0
+          || alpha[offset + width] === 0
+        ) {
+          boundaryPixelCount += 1;
+        }
+      }
+
       const overlappingLabels: number[] = [];
       for (const run of previousRuns) {
         if (run.end < start) continue;
@@ -161,10 +184,109 @@ function scanRasterMaskAlpha(alpha: Uint8Array, width: number, height: number) {
   return {
     area,
     componentCount,
+    boundaryPixelCount,
     pixelBounds: empty
       ? { x: 0, y: 0, width: 0, height: 0 }
       : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
   };
+}
+
+/** Count 4-connected background components that do not touch the image edge. */
+function countRasterMaskHoles(alpha: Uint8Array, width: number, height: number): number {
+  let nextLabel = 1;
+  let holes = 0;
+  let previousRuns: RowRun[] = [];
+  let parents = new Map<number, number>();
+  let touchesBorder = new Map<number, boolean>();
+
+  const find = (label: number): number => {
+    let root = label;
+    while (parents.get(root) !== root) root = parents.get(root) ?? root;
+    let cursor = label;
+    while (cursor !== root) {
+      const parent = parents.get(cursor);
+      parents.set(cursor, root);
+      if (parent == null || parent === cursor) break;
+      cursor = parent;
+    }
+    return root;
+  };
+
+  const union = (left: number, right: number): number => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot === rightRoot) return leftRoot;
+    const root = Math.min(leftRoot, rightRoot);
+    const merged = Math.max(leftRoot, rightRoot);
+    parents.set(merged, root);
+    touchesBorder.set(
+      root,
+      !!touchesBorder.get(leftRoot) || !!touchesBorder.get(rightRoot),
+    );
+    touchesBorder.delete(merged);
+    return root;
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    const currentRuns: RowRun[] = [];
+    let x = 0;
+    while (x < width) {
+      while (x < width && alpha[y * width + x] !== 0) x += 1;
+      if (x >= width) break;
+      const start = x;
+      while (x + 1 < width && alpha[y * width + x + 1] === 0) x += 1;
+      const end = x;
+      const overlappingLabels: number[] = [];
+      for (const run of previousRuns) {
+        if (run.end < start) continue;
+        if (run.start > end) break;
+        overlappingLabels.push(find(run.label));
+      }
+
+      let label: number;
+      if (overlappingLabels.length === 0) {
+        label = nextLabel;
+        nextLabel += 1;
+        parents.set(label, label);
+        touchesBorder.set(
+          label,
+          y === 0 || y === height - 1 || start === 0 || end === width - 1,
+        );
+      } else {
+        label = overlappingLabels[0];
+        for (let index = 1; index < overlappingLabels.length; index += 1) {
+          label = union(label, overlappingLabels[index]);
+        }
+        if (y === height - 1 || start === 0 || end === width - 1) {
+          touchesBorder.set(find(label), true);
+        }
+      }
+      currentRuns.push({ start, end, label: find(label) });
+      x += 1;
+    }
+
+    const currentRoots = new Set(currentRuns.map((run) => find(run.label)));
+    const previousRoots = new Set(previousRuns.map((run) => find(run.label)));
+    for (const root of previousRoots) {
+      if (!currentRoots.has(root) && !touchesBorder.get(root)) holes += 1;
+    }
+
+    const nextParents = new Map<number, number>();
+    const nextTouchesBorder = new Map<number, boolean>();
+    for (const root of currentRoots) {
+      nextParents.set(root, root);
+      nextTouchesBorder.set(root, !!touchesBorder.get(root));
+    }
+    for (const run of currentRuns) run.label = find(run.label);
+    parents = nextParents;
+    touchesBorder = nextTouchesBorder;
+    previousRuns = currentRuns;
+  }
+
+  for (const root of new Set(previousRuns.map((run) => run.label))) {
+    if (!touchesBorder.get(root)) holes += 1;
+  }
+  return holes;
 }
 
 function normalizedBounds(
@@ -201,6 +323,8 @@ export function analyzeRasterMaskAlpha(
     sourceHeight: height,
     area: scanned.area,
     componentCount: scanned.componentCount,
+    holeCount: countRasterMaskHoles(alpha, width, height),
+    boundaryPixelCount: scanned.boundaryPixelCount,
     bounds: normalizedBounds(scanned.pixelBounds, width, height),
     crop: { x, y, width: cropWidth, height: cropHeight, alpha: croppedAlpha },
   };

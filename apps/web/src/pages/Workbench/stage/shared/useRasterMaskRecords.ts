@@ -12,7 +12,7 @@ import {
 } from "./rasterMaskRender";
 
 const DEFAULT_MAX_CONCURRENT = 4;
-const DEFAULT_MAX_CACHED_RECORDS = 96;
+const DEFAULT_MAX_CACHE_BYTES = 128 * 1024 * 1024;
 
 export interface RasterMaskRecordDescriptor<TSource extends string = string> {
   id: string;
@@ -44,11 +44,14 @@ export type RasterMaskRecordStatus =
       cacheKey: string;
       area: number;
       componentCount: number;
+      holeCount: number;
+      boundaryPixelCount: number;
       bounds: RasterMaskNormalizedBounds;
     }
   | {
       state: "error";
       reason: RasterMaskLoadErrorReason;
+      backendReason?: string;
       message: string;
       retryable: boolean;
       httpStatus?: number;
@@ -58,12 +61,16 @@ export interface UseRasterMaskRecordsOptions<TSource extends string = string> {
   scopeKey: string | null;
   descriptors: readonly RasterMaskRecordDescriptor<TSource>[];
   maxConcurrent?: number;
+  /** Approximate retained crop alpha + bitmap RGBA budget. */
+  maxCacheBytes?: number;
+  /** Optional secondary guard for callers that need a strict object-count cap. */
   maxCachedRecords?: number;
 }
 
 export interface UseRasterMaskRecordsResult<TSource extends string = string> {
   records: RasterMaskRenderRecord<TSource>[];
   statusById: ReadonlyMap<string, RasterMaskRecordStatus>;
+  cacheBytes: number;
   retry: (id: string) => void;
 }
 
@@ -72,6 +79,7 @@ interface CachedRasterMask {
   cacheKey: string;
   analysis: RasterMaskAnalysis;
   rendered: RasterMaskCroppedImage;
+  byteSize: number;
 }
 
 interface RasterMaskLoadJob<TSource extends string> {
@@ -107,6 +115,14 @@ function httpStatusOf(error: unknown): number | undefined {
   if (!error || typeof error !== "object" || !("status" in error)) return undefined;
   const status = (error as { status?: unknown }).status;
   return typeof status === "number" && Number.isInteger(status) ? status : undefined;
+}
+
+function detailOf(error: unknown): Record<string, unknown> | undefined {
+  if (!error || typeof error !== "object" || !("detailRaw" in error)) return undefined;
+  const detail = (error as { detailRaw?: unknown }).detailRaw;
+  return detail && typeof detail === "object"
+    ? detail as Record<string, unknown>
+    : undefined;
 }
 
 export function rasterMaskLoadError(error: unknown): Extract<RasterMaskRecordStatus, { state: "error" }> {
@@ -146,11 +162,16 @@ export function rasterMaskLoadError(error: unknown): Extract<RasterMaskRecordSta
     };
   }
   if (httpStatus === 409) {
+    const detail = detailOf(error);
+    const backendReason = typeof detail?.reason === "string" ? detail.reason : undefined;
     return {
       state: "error",
       reason: "corrupt",
-      message: "Mask 内容已损坏或与引用不一致",
-      retryable: false,
+      ...(backendReason == null ? {} : { backendReason }),
+      message: typeof detail?.message === "string"
+        ? detail.message
+        : "Mask 内容已损坏或与引用不一致",
+      retryable: detail?.retryable === true,
       httpStatus,
     };
   }
@@ -186,6 +207,8 @@ function toRenderRecord<TSource extends string>(
     bounds: cached.analysis.bounds,
     area: cached.analysis.area,
     componentCount: cached.analysis.componentCount,
+    holeCount: cached.analysis.holeCount,
+    boundaryPixelCount: cached.analysis.boundaryPixelCount,
     zOrder: descriptor.zOrder,
     selected: descriptor.selected,
     cacheKey: cached.cacheKey,
@@ -197,10 +220,10 @@ export function useRasterMaskRecords<TSource extends string = string>(
 ): UseRasterMaskRecordsResult<TSource> {
   const { scopeKey, descriptors } = options;
   const maxConcurrent = normalizePositiveLimit(options.maxConcurrent, DEFAULT_MAX_CONCURRENT);
-  const maxCachedRecords = normalizePositiveLimit(
-    options.maxCachedRecords,
-    DEFAULT_MAX_CACHED_RECORDS,
-  );
+  const maxCacheBytes = normalizePositiveLimit(options.maxCacheBytes, DEFAULT_MAX_CACHE_BYTES);
+  const maxCachedRecords = options.maxCachedRecords == null
+    ? Number.MAX_SAFE_INTEGER
+    : normalizePositiveLimit(options.maxCachedRecords, Number.MAX_SAFE_INTEGER);
   const [, forceRender] = useState(0);
   const mountedRef = useRef(false);
   const scopeRef = useRef(scopeKey);
@@ -214,11 +237,13 @@ export function useRasterMaskRecords<TSource extends string = string>(
   const queueRef = useRef<RasterMaskLoadJob<TSource>[]>([]);
   const inFlightRef = useRef(0);
   const maxConcurrentRef = useRef(maxConcurrent);
+  const maxCacheBytesRef = useRef(maxCacheBytes);
   const maxCachedRecordsRef = useRef(maxCachedRecords);
   const pumpRef = useRef<() => void>(() => undefined);
   const disposedImagesRef = useRef(new WeakSet<object>());
 
   maxConcurrentRef.current = maxConcurrent;
+  maxCacheBytesRef.current = maxCacheBytes;
   maxCachedRecordsRef.current = maxCachedRecords;
 
   const descriptorState = useMemo(() => {
@@ -252,7 +277,15 @@ export function useRasterMaskRecords<TSource extends string = string>(
 
   const evictLru = useCallback(() => {
     const cache = cacheRef.current;
-    while (cache.size > maxCachedRecordsRef.current) {
+    const cacheBytes = () => {
+      let total = 0;
+      for (const cached of cache.values()) total += cached.byteSize;
+      return total;
+    };
+    while (
+      cache.size > maxCachedRecordsRef.current
+      || cacheBytes() > maxCacheBytesRef.current
+    ) {
       const evictKey = [...cache.keys()].find(
         (cacheKey) => !activeDescriptorsRef.current.has(cacheKey),
       );
@@ -313,6 +346,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
           cacheKey: job.cacheKey,
           analysis,
           rendered,
+          byteSize: analysis.crop.alpha.byteLength + rendered.width * rendered.height * 4,
         };
         rendered = null;
         cacheRef.current.delete(job.cacheKey);
@@ -417,7 +451,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
     }
     evictLru();
     pumpRef.current();
-  }, [descriptorEntries, disposeCached, enqueue, evictLru, maxCachedRecords, maxConcurrent, scopeKey]);
+  }, [descriptorEntries, disposeCached, enqueue, evictLru, maxCacheBytes, maxCachedRecords, maxConcurrent, scopeKey]);
 
   const retry = useCallback((id: string) => {
     const descriptor = descriptorsByIdRef.current.get(id);
@@ -442,6 +476,8 @@ export function useRasterMaskRecords<TSource extends string = string>(
         cacheKey,
         area: cached.analysis.area,
         componentCount: cached.analysis.componentCount,
+        holeCount: cached.analysis.holeCount,
+        boundaryPixelCount: cached.analysis.boundaryPixelCount,
         bounds: cached.analysis.bounds,
       });
       continue;
@@ -452,5 +488,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
     statusById.set(descriptor.id, error ?? { state: "loading" });
   }
 
-  return { records, statusById, retry };
+  let cacheBytes = 0;
+  for (const cached of cacheRef.current.values()) cacheBytes += cached.byteSize;
+  return { records, statusById, cacheBytes, retry };
 }

@@ -3,7 +3,7 @@
 // - 各操作回调透传正确的 annotationId / flag / value
 // - 有属性 schema 时渲染 AttributeForm,改值经 onUpdateAttributes 上抛
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import type { AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
@@ -22,6 +22,10 @@ function makeAnnotation(overrides: Partial<AnnotationResponse> = {}): Annotation
 const noop = () => {};
 
 describe("ImageSelectionCardContent", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("渲染 bbox 像素指标(尺寸 + 占图)", () => {
     const { getByText } = render(
       <ImageSelectionCardContent
@@ -128,14 +132,63 @@ describe("ImageSelectionCardContent", () => {
           cacheKey: "mask-v1",
           area: 17,
           componentCount: 2,
+          holeCount: 1,
+          boundaryPixelCount: 12,
           bounds: { x: 0.1, y: 0.2, w: 0.5, h: 0.4 },
         }}
       />,
     );
 
-    expect(getByRole("status").textContent).toContain("已按真实像素渲染 · 17 px · 2 个组件");
+    expect(getByRole("status").textContent).toContain("已按真实像素渲染 · 17 px · 2 个组件 · 1 个孔洞 · 12 边界像素");
     expect((getByLabelText("修改类别") as HTMLButtonElement).disabled).toBe(false);
     expect((getByLabelText("删除标注") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("raster_mask 错误保留后端原因到状态和复制诊断", () => {
+    const writeText = vi.fn();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { getByRole, getByLabelText } = render(
+      <ImageSelectionCardContent
+        annotation={makeAnnotation({
+          geometry: {
+            type: "raster_mask",
+            mask: {
+              encoding: "coco_rle_ref",
+              size: [10, 20],
+              object_key: "raster-masks/sha256/aa/bb/digest.json",
+              sha256: "a".repeat(64),
+              runs: 4,
+              bytes: 32,
+            },
+          },
+        })}
+        imageWidth={20}
+        imageHeight={10}
+        attributeSchema={undefined}
+        readOnly={false}
+        onChangeClass={noop}
+        onToggleFlag={noop}
+        onDelete={noop}
+        onUpdateAttributes={noop}
+        rasterMaskStatus={{
+          state: "error",
+          reason: "corrupt",
+          backendReason: "missing_object",
+          message: "Mask object is missing",
+          retryable: true,
+          httpStatus: 409,
+        }}
+      />,
+    );
+
+    expect(getByRole("status").textContent).toContain("missing_object：Mask object is missing");
+    fireEvent.click(getByLabelText("复制 Mask 诊断"));
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify({
+      annotationId: "anno-1",
+      reason: "missing_object",
+      message: "Mask object is missing",
+      httpStatus: 409,
+    }));
   });
 
   it("改类 / 锁定 / 删除 回调透传正确参数", () => {

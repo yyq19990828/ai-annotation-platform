@@ -1,10 +1,10 @@
 # 图像 / 视频栅格 Mask 能力统一 Epic
 
-> Status: In progress（Phase 1–2 completed，Phase 3 implementation started）· 2026-07-21
+> Status: In progress（Phase 1–3 completed，Phase 4 ready）· 2026-07-21
 >
 > 起始版本：v0.23.5
 >
-> 当前基线：v0.23.6 实施完成，基线 commit `07aca6f8`；生产图片 create 总闸保持关闭。
+> 当前基线：v0.23.7 发布门禁通过；图片原生 Mask 工作台、双向转换、性能预算和可观测性已完成，生产图片 create 总闸保持关闭。
 >
 > 相关决策：[ADR-0022 Mask 编辑器 v1](../adr/archive/0022-mask-editor-tool-architecture.md) ·
 > [ADR-0048 视频栅格 Mask 内容寻址 RLE](../adr/archive/0048-video-raster-mask-content-addressed-rle.md) ·

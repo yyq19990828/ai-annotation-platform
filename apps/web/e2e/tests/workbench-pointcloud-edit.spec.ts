@@ -20,7 +20,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
-      if (msg.type() === "error") consoleErrors.push(msg.text());
+      if (msg.type() !== "error") return;
+      const sourceUrl = msg.location().url;
+      consoleErrors.push(sourceUrl ? `${msg.text()} (${sourceUrl})` : msg.text());
     });
     page.on("pageerror", (err) => consoleErrors.push(`pageerror: ${err.message}`));
 

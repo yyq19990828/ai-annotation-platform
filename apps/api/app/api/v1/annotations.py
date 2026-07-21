@@ -61,6 +61,7 @@ from app.services.raster_mask_storage import (
     assert_raster_mask_write_enabled,
     build_rle_gzip_reference,
     build_rle_reference,
+    classify_raster_mask_content_error,
     load_coco_rle,
     reserve_raster_mask_upload,
     store_coco_rle,
@@ -149,10 +150,7 @@ async def _load_visible_mask_annotation(
         raise HTTPException(status_code=404, detail="task not found")
     await _assert_task_visible(db, task, user)
     geometry = annotation.geometry or {}
-    if (
-        geometry.get("type") == "raster_mask"
-        and not settings.raster_mask_read_enabled
-    ):
+    if geometry.get("type") == "raster_mask" and not settings.raster_mask_read_enabled:
         raise HTTPException(
             status_code=404, detail={"reason": "raster_mask_read_disabled"}
         )
@@ -182,7 +180,12 @@ async def _mask_content_response(
         payload = await load_coco_rle(mask_ref)
     except (KeyError, ValueError) as exc:
         raise HTTPException(
-            status_code=409, detail=f"mask object is invalid: {exc}"
+            status_code=409,
+            detail={
+                "reason": classify_raster_mask_content_error(exc),
+                "retryable": True,
+                "message": f"mask object is invalid: {exc}",
+            },
         ) from exc
     except Exception as exc:
         logger.warning(
@@ -190,7 +193,11 @@ async def _mask_content_response(
         )
         raise HTTPException(
             status_code=503,
-            detail={"reason": "mask_storage_unavailable", "retryable": True},
+            detail={
+                "reason": "mask_storage_unavailable",
+                "retryable": True,
+                "message": "Mask object storage is unavailable",
+            },
         ) from exc
     return JSONResponse(payload, headers=headers)
 

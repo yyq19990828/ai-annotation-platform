@@ -27,7 +27,9 @@ test.describe("workbench image konva smoke", () => {
 
     // 固定容器尺寸,降低截图 flaky
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(`/projects/${data.project_id}/annotate`);
+    await page.goto(
+      `/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`,
+    );
     await page.waitForLoadState("networkidle");
 
     // 选 bbox 工具

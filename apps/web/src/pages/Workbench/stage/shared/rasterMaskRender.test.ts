@@ -21,6 +21,8 @@ describe("analyzeRasterMaskAlpha", () => {
 
     expect(result.area).toBe(5);
     expect(result.componentCount).toBe(2);
+    expect(result.holeCount).toBe(0);
+    expect(result.boundaryPixelCount).toBe(5);
     expect(result.bounds).toEqual({ x: 1 / 5, y: 0, w: 4 / 5, h: 1 });
     expect(result.crop).toMatchObject({ x: 1, y: 0, width: 4, height: 3 });
     expect([...result.crop.alpha]).toEqual([
@@ -42,6 +44,8 @@ describe("analyzeRasterMaskAlpha", () => {
 
     expect(result.area).toBe(16);
     expect(result.componentCount).toBe(1);
+    expect(result.holeCount).toBe(1);
+    expect(result.boundaryPixelCount).toBe(16);
     expect(result.bounds).toEqual({ x: 0, y: 0, w: 1, h: 1 });
     expect(result.crop.alpha[2 * result.crop.width + 2]).toBe(0);
   });
@@ -57,6 +61,7 @@ describe("analyzeRasterMaskAlpha", () => {
 
     expect(result.area).toBe(6);
     expect(result.componentCount).toBe(3);
+    expect(result.holeCount).toBe(0);
     expect(result.bounds).toEqual({ x: 0, y: 0, w: 1, h: 1 });
   });
 
@@ -65,9 +70,24 @@ describe("analyzeRasterMaskAlpha", () => {
 
     expect(result.area).toBe(0);
     expect(result.componentCount).toBe(0);
+    expect(result.holeCount).toBe(0);
+    expect(result.boundaryPixelCount).toBe(0);
     expect(result.bounds).toEqual({ x: 0, y: 0, w: 0, h: 0 });
     expect(result.crop).toMatchObject({ x: 0, y: 0, width: 0, height: 0 });
     expect(result.crop.alpha).toHaveLength(0);
+  });
+
+  it("counts multiple enclosed background regions without treating diagonal gaps as open", () => {
+    const result = analyzeRasterMaskAlpha(alpha([
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 0, 1, 0, 1, 0, 1],
+      [1, 0, 1, 0, 1, 0, 1],
+      [1, 0, 1, 0, 1, 0, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ]), 7, 5);
+
+    expect(result.componentCount).toBe(1);
+    expect(result.holeCount).toBe(3);
   });
 });
 

@@ -94,6 +94,26 @@ export interface SeedLidarData {
   lidar_task_ids: string[];
 }
 
+export type RasterMaskFixtureVariant = "single" | "donut_three" | "corrupt";
+
+export interface SeedRasterMaskData {
+  annotation_id: string;
+  variant: RasterMaskFixtureVariant;
+  mask: {
+    encoding: "coco_rle_ref";
+    size: [number, number];
+    object_key: string;
+    sha256: string;
+    runs: number;
+    bytes: number;
+  };
+}
+
+export interface SeedRasterPredictionData {
+  prediction_id: string;
+  mask: SeedRasterMaskData["mask"];
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -104,8 +124,18 @@ export interface SeedPeekData {
 
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
 
-class SeedAPI {
+export class SeedAPI {
   constructor(private request: APIRequestContext) {}
+
+  async accessToken(email: string): Promise<string> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+      data: { email },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
+    }
+    return ((await res.json()) as { access_token: string }).access_token;
+  }
 
   async reset(): Promise<SeedData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`);
@@ -139,6 +169,72 @@ class SeedAPI {
     return (await res.json()) as SeedLidarData;
   }
 
+  /** 只切项目 opt-in；部署级 read/create 总闸由 API 进程环境决定。 */
+  async configureRasterMask(projectId: string, enabled: boolean): Promise<void> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/configure-raster-mask`,
+      { data: { project_id: projectId, enabled } },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/configure-raster-mask failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+  }
+
+  /** 构造已有 raster annotation，用于只读、损坏内容与锁定矩阵。 */
+  async injectRasterMask(opts: {
+    taskId: string;
+    userEmail: string;
+    variant?: RasterMaskFixtureVariant;
+    label?: string;
+    locked?: boolean;
+  }): Promise<SeedRasterMaskData> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/inject-raster-mask`,
+      {
+        data: {
+          task_id: opts.taskId,
+          user_email: opts.userEmail,
+          variant: opts.variant ?? "single",
+          label: opts.label ?? "car",
+          locked: opts.locked ?? false,
+        },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/inject-raster-mask failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as SeedRasterMaskData;
+  }
+
+  /** 构造待接受的 raster prediction，只用于 gate 关闭矩阵。 */
+  async injectRasterPrediction(opts: {
+    taskId: string;
+    userEmail: string;
+    label?: string;
+  }): Promise<SeedRasterPredictionData> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/inject-raster-prediction`,
+      {
+        data: {
+          task_id: opts.taskId,
+          user_email: opts.userEmail,
+          variant: "single",
+          label: opts.label ?? "car",
+        },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/inject-raster-prediction failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as SeedRasterPredictionData;
+  }
+
   /** v0.8.7 F4 · 只读窥探现有数据；不破坏 dev 数据。 */
   async peek(): Promise<SeedPeekData> {
     const res = await this.request.get(`${API_BASE}/api/v1/__test/seed/peek`);
@@ -153,9 +249,7 @@ class SeedAPI {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
       data: { email },
     });
-    if (!res.ok()) {
-      throw new Error(`seed/login failed: ${res.status()}`);
-    }
+    if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
     const target =
       baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";

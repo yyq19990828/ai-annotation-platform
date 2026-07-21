@@ -206,6 +206,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
             {"pids": fixture_project_ids},
         )
 
+    # reset 中创建的图像 dataset 不由 project_datasets 反向级联删除；
+    # 必须在删 E2E 用户前显式清理，避免 datasets.created_by 拦住用户删除。
+    await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-%'")
+
     if fixture_user_ids:
         # 删用户的反向引用，再删用户。表名 / 列名见 v0.8.7+ DB schema：
         # bug_reports.reporter_id（不是 submitter_id）；annotation_comments.author_id；
@@ -303,10 +307,56 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     db.add(batch)
     await db.flush()
 
+    # 原生图片 raster_mask 校验必须有真实 DatasetItem 及宽高。
+    # 用固定 MinIO key 覆写一组小 SVG，避免每次 reset 制造孤儿对象。
+    from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+    from app.services.storage import storage_service
+
+    image_dataset = Dataset(
+        display_id="DS-E2E-IMAGE",
+        name="E2E Image Dataset",
+        data_type="image",
+        file_count=5,
+        created_by=admin.id,
+    )
+    db.add(image_dataset)
+    await db.flush()
+    db.add(ProjectDataset(project_id=project.id, dataset_id=image_dataset.id))
+
     tasks = []
-    for _ in range(5):
+    for index in range(5):
+        image_key = f"e2e/image/task-{index + 1}.svg"
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" '
+            'viewBox="0 0 64 48">'
+            f'<rect width="64" height="48" fill="hsl({index * 48} 30% 88%)"/>'
+            '<rect x="4" y="4" width="56" height="40" rx="3" '
+            'fill="none" stroke="#64748b" stroke-width="1"/>'
+            f'<text x="32" y="27" text-anchor="middle" font-size="9" '
+            f'fill="#334155">E2E {index + 1}</text></svg>'
+        ).encode("utf-8")
+        storage_service.client.put_object(
+            Bucket=storage_service.datasets_bucket,
+            Key=image_key,
+            Body=svg,
+            ContentType="image/svg+xml",
+        )
+        item = DatasetItem(
+            dataset_id=image_dataset.id,
+            file_name=f"task-{index + 1}.svg",
+            file_path=image_key,
+            file_type="image",
+            file_size=len(svg),
+            width=64,
+            height=48,
+        )
+        db.add(item)
+        await db.flush()
         t = await create_task(db, project_id=project.id)
         t.batch_id = batch.id
+        t.dataset_item_id = item.id
+        t.file_name = item.file_name
+        t.file_path = item.file_path
         tasks.append(t)
     await db.flush()
     batch.total_tasks = len(tasks)
@@ -772,6 +822,216 @@ async def seed_inject_prediction(
     pred_id = str(pred.id)
     await db.commit()
     return InjectPredictionResponse(prediction_id=pred_id)
+
+
+class ConfigureRasterMaskRequest(BaseModel):
+    project_id: str
+    enabled: bool
+
+
+class ConfigureRasterMaskResponse(BaseModel):
+    project_id: str
+    enabled: bool
+
+
+@router.post(
+    "/seed/configure-raster-mask",
+    response_model=ConfigureRasterMaskResponse,
+    include_in_schema=False,
+)
+async def seed_configure_raster_mask(
+    payload: ConfigureRasterMaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ConfigureRasterMaskResponse:
+    """切换 E2E 项目的原生 Mask opt-in。
+
+    部署级 read/create 总闸仍由当前 API 进程的环境变量决定，
+    本辅助端点只改项目级灰度开关。
+    """
+    _ensure_non_production()
+
+    from uuid import UUID
+
+    from app.db.models.project import Project
+
+    project = await db.get(Project, UUID(payload.project_id))
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    project.raster_mask_native_editing_enabled = payload.enabled
+    await db.commit()
+    return ConfigureRasterMaskResponse(
+        project_id=str(project.id),
+        enabled=project.raster_mask_native_editing_enabled,
+    )
+
+
+RasterMaskFixtureVariant = Literal["single", "donut_three", "corrupt"]
+
+
+class InjectRasterMaskRequest(BaseModel):
+    task_id: str
+    user_email: str
+    variant: RasterMaskFixtureVariant = "single"
+    label: str = "car"
+    locked: bool = False
+
+
+class InjectRasterMaskResponse(BaseModel):
+    annotation_id: str
+    variant: RasterMaskFixtureVariant
+    mask: dict
+
+
+class InjectRasterPredictionResponse(BaseModel):
+    prediction_id: str
+    mask: dict
+
+
+def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
+    """生成 64×48 row-major fixture；donut_three = 3 个分量 + 1 个孔洞。"""
+    width, height = 64, 48
+    pixels = [0] * (width * height)
+
+    def _rect(x0: int, y0: int, x1: int, y1: int, value: int = 1) -> None:
+        for y in range(y0, y1):
+            offset = y * width
+            for x in range(x0, x1):
+                pixels[offset + x] = value
+
+    if variant == "single":
+        _rect(12, 10, 43, 34)
+    elif variant == "donut_three":
+        _rect(3, 3, 21, 21)
+        _rect(8, 8, 16, 16, 0)
+        _rect(29, 5, 41, 18)
+        _rect(46, 29, 60, 43)
+    else:
+        # 损坏 fixture 使用独立形状，并故意不存对象。
+        _rect(6, 30, 18, 42)
+    return pixels
+
+
+@router.post(
+    "/seed/inject-raster-mask",
+    response_model=InjectRasterMaskResponse,
+    include_in_schema=False,
+)
+async def seed_inject_raster_mask(
+    payload: InjectRasterMaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> InjectRasterMaskResponse:
+    """直插原生 raster annotation，用于 reader / corrupt / lock E2E。
+
+    端点只在非生产环境挂载，刻意绕过 create gate，以便在
+    ``read=true/create=false`` 矩阵中构造“已有内容可读”的真实基线。
+    """
+    _ensure_non_production()
+
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
+    from app.db.models.user import User
+    from app.services.raster_mask_storage import (
+        build_rle_reference,
+        rle_object_key,
+        store_coco_rle,
+    )
+    from app.utils.raster_mask_rle import encode_coco_rle
+
+    task = await db.get(Task, UUID(payload.task_id))
+    user = (
+        await db.execute(select(User).where(User.email == payload.user_email))
+    ).scalar_one_or_none()
+    if task is None or user is None:
+        raise HTTPException(status_code=404, detail="task or user not found")
+
+    rle = encode_coco_rle(_make_test_raster_mask(payload.variant), 64, 48)
+    if payload.variant == "corrupt":
+        reference = build_rle_reference(rle)
+        missing_digest = secrets.token_hex(32)
+        reference = {
+            **reference,
+            "sha256": missing_digest,
+            "object_key": rle_object_key(missing_digest),
+        }
+    else:
+        reference = await store_coco_rle(rle)
+
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        source="manual",
+        annotation_type="raster_mask",
+        tool_unit_id="region",
+        class_name=payload.label,
+        geometry={"type": "raster_mask", "mask": reference},
+        confidence=1,
+        is_locked=payload.locked,
+    )
+    db.add(annotation)
+    task.total_annotations = int(task.total_annotations or 0) + 1
+    await db.flush()
+    annotation_id = str(annotation.id)
+    await db.commit()
+    return InjectRasterMaskResponse(
+        annotation_id=annotation_id,
+        variant=payload.variant,
+        mask=reference,
+    )
+
+
+@router.post(
+    "/seed/inject-raster-prediction",
+    response_model=InjectRasterPredictionResponse,
+    include_in_schema=False,
+)
+async def seed_inject_raster_prediction(
+    payload: InjectRasterMaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> InjectRasterPredictionResponse:
+    """构造待接受的 raster prediction，用于验证 accept write gate。"""
+    _ensure_non_production()
+
+    from uuid import UUID
+
+    from app.db.models.prediction import Prediction
+    from app.db.models.task import Task
+    from app.services.raster_mask_storage import store_coco_rle
+    from app.utils.raster_mask_rle import encode_coco_rle
+
+    task = await db.get(Task, UUID(payload.task_id))
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    rle = encode_coco_rle(_make_test_raster_mask("single"), 64, 48)
+    reference = await store_coco_rle(rle)
+    prediction = Prediction(
+        task_id=task.id,
+        project_id=task.project_id,
+        tool_unit_id="region",
+        score=0.9,
+        source="ml_backend",
+        result=[
+            {
+                "type": "raster_mask",
+                "tool_unit_id": "region",
+                "class_name": payload.label,
+                "geometry": {"type": "raster_mask", "mask": reference},
+                "confidence": 0.9,
+            }
+        ],
+    )
+    db.add(prediction)
+    await db.flush()
+    prediction_id = str(prediction.id)
+    await db.commit()
+    return InjectRasterPredictionResponse(
+        prediction_id=prediction_id,
+        mask=reference,
+    )
 
 
 class AdvanceTaskRequest(BaseModel):

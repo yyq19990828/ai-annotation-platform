@@ -114,11 +114,16 @@ test.describe("mask editor (I11)", () => {
     const stage = page.getByTestId("workbench-stage");
     const box = await stage.boundingBox();
     if (!box) throw new Error("stage boundingBox 不可用");
-    const cx = box.x + box.width * 0.5;
-    const cy = box.y + box.height * 0.5;
+    // 真实 E2E 图片为 64x48；默认 16px 橡皮会把约 19x14px 的候选整个擦空。
+    // 用 2px 半径从左边界向内擦出与外部连通的小缺口，既保留前景，也不制造 hole。
+    const slider = page.getByTestId("mask-radius-slider");
+    await slider.fill("2");
+    await expect(slider).toHaveValue("2");
+    const cx = box.x + box.width * 0.3;
+    const cy = box.y + box.height * 0.45;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
-    await page.mouse.move(cx + 30, cy + 10, { steps: 6 });
+    await page.mouse.move(cx + 20, cy, { steps: 4 });
     await page.mouse.up();
 
     // commit 触发：reject prediction + create new polygon

@@ -22,7 +22,9 @@ async def test_seed_reset_returns_fixture_payload(httpx_client):
 async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client, db_session):
     from sqlalchemy import select
 
+    from app.db.models.dataset import DatasetItem
     from app.db.models.ml_backend_registry import ProjectMLBackendPool
+    from app.db.models.task import Task
 
     first = await httpx_client.post("/api/v1/__test/seed/reset")
     second = await httpx_client.post("/api/v1/__test/seed/reset")
@@ -39,6 +41,28 @@ async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client, db_ses
     )
     assert assoc is not None
     assert assoc.enabled is True
+
+    tasks = list(
+        (
+            await db_session.scalars(
+                select(Task).where(Task.project_id == body["project_id"])
+            )
+        ).all()
+    )
+    assert len(tasks) == 5
+    assert all(task.dataset_item_id is not None for task in tasks)
+    items = list(
+        (
+            await db_session.scalars(
+                select(DatasetItem).where(
+                    DatasetItem.id.in_([task.dataset_item_id for task in tasks])
+                )
+            )
+        ).all()
+    )
+    assert {(item.width, item.height, item.file_type) for item in items} == {
+        (64, 48, "image")
+    }
 
 
 async def test_seed_login_after_reset_returns_jwt(httpx_client):
@@ -61,6 +85,41 @@ async def test_seed_login_unknown_email_404(httpx_client):
         json={"email": "no-such@nowhere"},
     )
     assert res.status_code == 404
+
+
+async def test_seed_raster_mask_project_opt_in_and_content_fixtures(httpx_client):
+    reset = await httpx_client.post("/api/v1/__test/seed/reset")
+    data = reset.json()
+
+    configured = await httpx_client.post(
+        "/api/v1/__test/seed/configure-raster-mask",
+        json={"project_id": data["project_id"], "enabled": True},
+    )
+    assert configured.status_code == 200, configured.text
+    assert configured.json()["enabled"] is True
+
+    healthy = await httpx_client.post(
+        "/api/v1/__test/seed/inject-raster-mask",
+        json={
+            "task_id": data["task_ids"][0],
+            "user_email": data["annotator_email"],
+            "variant": "donut_three",
+        },
+    )
+    assert healthy.status_code == 200, healthy.text
+    assert healthy.json()["mask"]["size"] == [48, 64]
+
+    corrupt = await httpx_client.post(
+        "/api/v1/__test/seed/inject-raster-mask",
+        json={
+            "task_id": data["task_ids"][0],
+            "user_email": data["annotator_email"],
+            "variant": "corrupt",
+            "locked": True,
+        },
+    )
+    assert corrupt.status_code == 200, corrupt.text
+    assert corrupt.json()["mask"]["object_key"].endswith(".json")
 
 
 async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):

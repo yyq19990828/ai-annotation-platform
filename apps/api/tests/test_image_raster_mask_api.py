@@ -190,7 +190,7 @@ async def test_static_mask_get_supports_etag_and_frame_alias(
 
     cached = await httpx_client_bound.get(
         f"/api/v1/annotations/{annotation.id}/mask-content",
-        headers=_headers(token, **{"If-None-Match": f'W/{etag}'}),
+        headers=_headers(token, **{"If-None-Match": f"W/{etag}"}),
     )
     alias = await httpx_client_bound.get(
         f"/api/v1/annotations/{annotation.id}/mask-content/99",
@@ -199,6 +199,58 @@ async def test_static_mask_get_supports_etag_and_frame_alias(
     assert cached.status_code == 304
     assert alias.status_code == 304
     load.assert_awaited_once()
+
+
+async def test_static_mask_get_returns_retryable_structured_corruption(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    _task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    monkeypatch.setattr(
+        "app.api.v1.annotations.load_coco_rle",
+        AsyncMock(side_effect=ValueError("stored mask RLE digest mismatch")),
+    )
+    await db_session.commit()
+
+    response = await httpx_client_bound.get(
+        f"/api/v1/annotations/{annotation.id}/mask-content",
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "reason": "digest_mismatch",
+        "retryable": True,
+        "message": "mask object is invalid: stored mask RLE digest mismatch",
+    }
+
+
+async def test_static_mask_get_returns_structured_storage_unavailable(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    _task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    monkeypatch.setattr(
+        "app.api.v1.annotations.load_coco_rle",
+        AsyncMock(side_effect=RuntimeError("object storage offline")),
+    )
+    await db_session.commit()
+
+    response = await httpx_client_bound.get(
+        f"/api/v1/annotations/{annotation.id}/mask-content",
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "reason": "mask_storage_unavailable",
+        "retryable": True,
+        "message": "Mask object storage is unavailable",
+    }
 
 
 async def test_mask_get_enforces_task_assignment(
@@ -428,12 +480,22 @@ async def test_polygon_to_raster_syncs_type_and_rejects_stale_version(
 
     stale = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
-        json={"geometry": {"type": "raster_mask", "mask": build_rle_reference(FOREGROUND_RLE)}},
+        json={
+            "geometry": {
+                "type": "raster_mask",
+                "mask": build_rle_reference(FOREGROUND_RLE),
+            }
+        },
         headers=_headers(token, **{"If-Match": 'W/"0"'}),
     )
     converted = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
-        json={"geometry": {"type": "raster_mask", "mask": build_rle_reference(FOREGROUND_RLE)}},
+        json={
+            "geometry": {
+                "type": "raster_mask",
+                "mask": build_rle_reference(FOREGROUND_RLE),
+            }
+        },
         headers=_headers(token, **{"If-Match": 'W/"1"'}),
     )
 

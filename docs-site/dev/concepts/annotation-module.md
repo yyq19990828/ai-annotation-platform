@@ -120,6 +120,8 @@ graph TD
 
 `raster_mask` 保存单个图片尺寸的内容寻址 RLE 引用；`video_track_mask` 沿用 track 外壳，在关键帧保存同一种引用。创建 / 更新必须同时通过 Pydantic 强类型与 task 的媒体、尺寸和帧数上下文校验；读取对象还会复核 SHA-256、canonical bytes、runs 和 size。图片 Mask 没有时间轴语义，视频 Mask 帧间采用 hold 解析、不写展开帧；对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过 grace period 的内容。
 
+图片工作台通过受任务权限保护的 `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力，不在浏览器复制环境变量。原生写入需同时通过部署总闸、项目 opt-in、`region` 绑定和任务 / 对象锁。`polygon | multi_polygon | raster_mask` 只能在同一 `region` 工具单元内原位转换；类型转换和 Raster 内容替换必须带最新 `If-Match`，同一事务内同步 `annotation_type` 与 `geometry.type`。
+
 ### 属性 schema 与派生渲染
 
 `Annotation.attributes` 是 JSONB 自由字段，由项目级 `AttributeField` schema（`apps/api/app/db/models/project.py` → `attribute_schema`，前端在「项目设置 / 类别与属性」用 `AttributeSchemaEditor` 维护）约束 key、类型、必填、`applies_to` 类别白名单等。

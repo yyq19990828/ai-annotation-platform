@@ -193,7 +193,7 @@ def _task_with_url(
     """
     bucket = (
         storage_service.datasets_bucket
-        if task.dataset_item_id
+        if task.dataset_item_id or task.file_type == "point_cloud"
         else storage_service.bucket
     )
     try:

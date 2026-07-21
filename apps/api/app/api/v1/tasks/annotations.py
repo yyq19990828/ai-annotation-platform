@@ -626,9 +626,7 @@ async def update_annotation(
         previous_type = str((existing.geometry or {}).get("type") or "")
         next_geometry = fields["geometry"]
         next_type = str((next_geometry or {}).get("type") or "")
-        requires_precondition = (
-            previous_type != next_type or next_type == "raster_mask"
-        )
+        requires_precondition = previous_type != next_type or next_type == "raster_mask"
         if requires_precondition and not if_match:
             raise HTTPException(
                 status_code=428,

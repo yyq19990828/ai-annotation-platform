@@ -1529,14 +1529,14 @@ export function useWorkbenchShellModel({
         initialPageParam: 0,
         queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0),
       });
-      if (t.file_url) {
+      if (stageKind === "image" && t.file_url) {
         const img = new Image();
         img.src = t.file_url;
       }
     };
     prefetch(tasks[idx + 1]);
     prefetch(tasks[idx - 1]);
-  }, [taskId, tasks, queryClient, debouncedConf]);
+  }, [taskId, tasks, queryClient, debouncedConf, stageKind]);
 
   const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending || videoFrameAiRunning;
 

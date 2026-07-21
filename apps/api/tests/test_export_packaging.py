@@ -676,12 +676,11 @@ async def test_davis_zip_writes_full_resolution_palette_png_and_independent_fram
         "size": [2, 3],
         "counts": [0, 1, 5],
     }
+
     async def _fake_load(_reference):
         return rle
 
-    monkeypatch.setattr(
-        "app.services.exporting.packaging.load_coco_rle", _fake_load
-    )
+    monkeypatch.setattr("app.services.exporting.packaging.load_coco_rle", _fake_load)
     mask = Annotation(
         id=uuid.uuid4(),
         task_id=task_id,

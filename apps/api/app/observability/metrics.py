@@ -112,9 +112,7 @@ def record_raster_mask_content_operation(
     ):
         return
     reason = (
-        error_reason
-        if error_reason in RASTER_MASK_CONTENT_ERROR_REASONS
-        else "unknown"
+        error_reason if error_reason in RASTER_MASK_CONTENT_ERROR_REASONS else "unknown"
     )
     try:
         RASTER_MASK_CONTENT_OPERATIONS_TOTAL.labels(

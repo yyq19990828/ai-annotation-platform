@@ -212,11 +212,11 @@ export function BoxListItem({
       : rasterMaskStatus.state === "ready"
         ? {
             label: baseToolMeta.label,
-            detail: `${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
+            detail: `${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · ${rasterMaskStatus.holeCount} 孔洞 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
           }
         : {
             label: baseToolMeta.label,
-            detail: `${rasterMaskStatus.reason} · ${rasterMaskStatus.message}`,
+            detail: `${rasterMaskStatus.backendReason ?? rasterMaskStatus.reason} · ${rasterMaskStatus.message}`,
           };
   const predictionSource = isAi ? getPredictionSource(b) : null;
   // v0.14.9 · OCR / doc_layout 候选: 文本摘要 + 版面 type badge (仅 AI 行展示).

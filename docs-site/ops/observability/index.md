@@ -57,6 +57,15 @@ sum by (operation, reason) (rate(raster_mask_content_errors_total[5m]))
 raster_mask_active_geometries
 ```
 
+监控栈预置三条 Raster Mask 告警：
+
+- `RasterMaskContentCorruption`：对象缺失、摘要、尺寸、runs、bytes 或 payload 校验错误持续 5 分钟，视为严重内容完整性问题；
+- `RasterMaskStorageUnavailable`：对象存储错误持续 5 分钟，检查 MinIO 健康、网络和 bucket 权限；
+- `RasterMaskInventoryMetricMissing`：annotation / prediction 任一固定库存序列缺失 15 分钟，检查健康巡检、GC 与 scrape。
+
+告警 label 不含业务标识。收到告警后，先在 `Anno Overview` 按
+`operation / reason` 确定错误类型和时间窗，再检索同窗口 API / worker 日志中的 request id 与 task id。
+
 ---
 
 ## 1. 本地启动监控栈
@@ -75,7 +84,8 @@ Grafana 启动时自动 provision：
 - Dashboard 文件夹 `Anno`（`infra/grafana/provisioning/dashboards/default.yaml`）
 - Dashboard JSON `Anno Overview`（`infra/grafana/dashboards/anno-overview.json`）
 
-打开 Grafana → Dashboards → Anno → Anno Overview，五个 panel 即可看到当前 stack：HTTP rate / HTTP p95 / ML p50/p95/p99 / Celery queue / Celery worker heartbeat。
+打开 Grafana → Dashboards → Anno → Anno Overview，可查看 HTTP rate / HTTP p95 /
+ML p50/p95/p99 / Celery queue / Celery worker heartbeat，以及 Raster Mask 错误速率、操作速率和活跃库存。
 
 > Linux 上 `host.docker.internal` 默认未解析；docker-compose.yml 已显式 `extra_hosts: host.docker.internal:host-gateway`。如果 Docker 版本太旧不支持，把 `infra/prometheus/prometheus.yml` 中的 target 改成宿主机 LAN IP。
 

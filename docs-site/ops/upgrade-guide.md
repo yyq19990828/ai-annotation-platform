@@ -62,8 +62,9 @@ curl -f http://localhost:5173
 - `0116` 分批归位 prediction，并把项目 / 模板 `tool_bindings.ai_interactive` 中的类别与属性合并到真实几何单位。冲突时保留目标单位配置；downgrade 是 no-op，无法恢复退役单位。
 - `0117` 新增 `video_tracker_jobs.staged_result`。downgrade 会删除该列，所有尚未接受的视频追踪候选随之丢失；回滚前先处理 `pending_review` / 带候选的 `cancelled` job。
 - `0134` 新增 `raster_mask_uploads`，用于 task 级匿名 Mask 上传归属和并发配额。downgrade 会丢失尚未认领对象的额度账本，但内容寻址对象仍由 24 小时引用扫描 GC 回收。
+- `0135` 新增项目级 `raster_mask_native_editing_enabled`，既有项目默认为关闭。downgrade 会删除该列并丢失项目的原生 Mask 灰度选择，不会删除已有 annotation 或内容对象。
 
-升级后先核对 migration head，再验证：旧项目的 region / bbox 类别仍完整、交互式 AI 总开关符合预期、视频追踪完成后进入待审且接受 / 丢弃可用。
+升级后先核对 migration head，再验证：旧项目的 region / bbox 类别仍完整、原生 Mask 开关默认关闭、交互式 AI 总开关符合预期、视频追踪完成后进入待审且接受 / 丢弃可用。
 
 ### 视频媒体处理
 

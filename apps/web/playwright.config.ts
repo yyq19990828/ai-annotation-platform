@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
+const rasterMaskCreateEnabled = rasterMaskMatrix === "native";
+const configDir = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Playwright E2E 配置。
@@ -60,12 +66,29 @@ export default defineConfig({
     // 起步只跑 chromium；稳定后再加 firefox/webkit
   ],
 
-  webServer: process.env.CI
-    ? {
+  webServer: rasterMaskMatrix
+    ? [
+        {
+          command: `RASTER_MASK_READ_ENABLED=true RASTER_MASK_CREATE_ENABLED=${rasterMaskCreateEnabled ? "true" : "false"} uv run uvicorn app.main:app --host 127.0.0.1 --port 8010`,
+          cwd: resolve(configDir, "../api"),
+          url: "http://127.0.0.1:8010/health",
+          reuseExistingServer: false,
+          timeout: 120_000,
+        },
+        {
+          command: "API_PROXY_TARGET=http://127.0.0.1:8010 PORT=3001 pnpm dev --host 127.0.0.1",
+          cwd: configDir,
+          url: "http://127.0.0.1:3001",
+          reuseExistingServer: false,
+          timeout: 120_000,
+        },
+      ]
+    : process.env.CI
+      ? {
         command: "pnpm preview --port 3000",
         url: "http://localhost:3000",
         reuseExistingServer: false,
         timeout: 120_000,
-      }
-    : undefined,
+        }
+      : undefined,
 });

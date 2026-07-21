@@ -90,9 +90,7 @@ async def _make_job(
         from_frame=0,
         to_frame=2,
         prompt={
-            "expected_source_versions": {
-                str(annotation.id): int(annotation.version)
-            }
+            "expected_source_versions": {str(annotation.id): int(annotation.version)}
         },
         event_channel="video-tracker-job:test",
     )
@@ -311,9 +309,7 @@ async def _make_staged_job(db, task, item, owner_id):
         from_frame=0,
         to_frame=2,
         prompt={
-            "expected_source_versions": {
-                str(annotation.id): int(annotation.version)
-            }
+            "expected_source_versions": {str(annotation.id): int(annotation.version)}
         },
         event_channel="video-tracker-job:test",
         staged_result={

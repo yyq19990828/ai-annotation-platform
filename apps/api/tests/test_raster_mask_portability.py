@@ -147,9 +147,7 @@ async def test_aap_raster_mask_round_trip_deduplicates_objects(
     )
     assert len(imported) == 2
     assert {ann.tool_unit_id for ann in imported} == {"region"}
-    assert {ann.geometry["mask"]["sha256"] for ann in imported} == {
-        reference["sha256"]
-    }
+    assert {ann.geometry["mask"]["sha256"] for ann in imported} == {reference["sha256"]}
 
 
 async def test_aap_raster_mask_dry_run_validates_objects_and_create_flag(

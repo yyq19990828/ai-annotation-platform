@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "v0.8.8 · 顶层概览：HTTP / ML Backend / Celery 队列 + Worker 健康。基于 apps/api/app/observability/metrics.py 暴露的 4 组 metrics。",
+  "description": "顶层概览：HTTP / ML Backend / Celery / Raster Mask 内容健康与库存。",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -131,6 +131,63 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "title": "Raster Mask content errors (per second)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "sum by (operation, reason) (rate(raster_mask_content_errors_total[5m]))",
+          "legendFormat": "{{operation}} / {{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Raster Mask content operations (per second)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "sum by (operation, outcome) (rate(raster_mask_content_operations_total[5m]))",
+          "legendFormat": "{{operation}} / {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active image Raster Mask geometries",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 8,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "raster_mask_active_geometries",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -141,6 +198,6 @@
   "timezone": "browser",
   "title": "Anno Overview",
   "uid": "anno-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
