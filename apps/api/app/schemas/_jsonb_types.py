@@ -703,6 +703,32 @@ class CocoRleMaskRef(BaseModel):
         return self
 
 
+class CocoRleContent(BaseModel):
+    """Materialized uncompressed COCO RLE returned by mask-content APIs."""
+
+    encoding: Literal["coco_rle"] = "coco_rle"
+    size: tuple[StrictInt, StrictInt]
+    counts: list[StrictInt] = Field(min_length=1, max_length=1_000_000)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _check_rle_contract(self):
+        height, width = self.size
+        if height <= 0 or width <= 0 or height > 4096 or width > 4096:
+            raise ValueError("mask size 必须是 (0, 4096] 内的 [height, width]")
+        total = 0
+        for count in self.counts:
+            if count < 0:
+                raise ValueError("mask counts 必须是非负整数")
+            total += count
+            if total > height * width:
+                raise ValueError("mask counts 总和超过 height * width")
+        if total != height * width:
+            raise ValueError("mask counts 总和必须等于 height * width")
+        return self
+
+
 class VideoTrackMaskKeyframe(BaseModel):
     frame_index: StrictInt = Field(ge=0)
     mask: CocoRleMaskRef

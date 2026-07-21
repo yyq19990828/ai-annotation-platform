@@ -9,9 +9,10 @@ from botocore.exceptions import ClientError
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.dataset import DatasetItem
-from app.db.models.task import Task
 from app.db.models.raster_mask_upload import RasterMaskUpload
+from app.db.models.task import Task
 from app.services.storage import StorageService, storage_service
 from app.utils.raster_mask_gzip import (
     MAX_COMPRESSED_BYTES,
@@ -30,6 +31,32 @@ COCO_RLE_REF_ENCODING = "coco_rle_ref"
 COCO_RLE_GZIP_ENCODING = "coco_rle_gzip"  # legacy request/reference marker
 RLE_STORAGE_IDENTITY = "identity"
 RLE_STORAGE_GZIP = "gzip"
+
+
+class RasterMaskContractError(ValueError):
+    """Stable API-facing rejection raised at the annotation write boundary."""
+
+    def __init__(self, *, status_code: int, reason: str, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.detail = {"reason": reason, "message": message}
+
+
+def _assert_raster_mask_create_enabled(geometry: dict[str, Any]) -> None:
+    if (
+        geometry.get("type") == "raster_mask"
+        and not settings.raster_mask_create_enabled
+    ):
+        raise RasterMaskContractError(
+            status_code=409,
+            reason="raster_mask_create_disabled",
+            message="raster mask creation is not enabled",
+        )
+
+
+def _rle_has_foreground(rle: dict[str, Any]) -> bool:
+    """COCO uncompressed RLE starts with background; odd runs are foreground."""
+    return sum(int(count) for count in (rle.get("counts") or [])[1::2]) > 0
 
 
 def _mask_references(value: Any) -> list[dict[str, Any]]:
@@ -52,6 +79,7 @@ async def lock_raster_mask_references(
     *,
     verify: bool = True,
     task_id: Any | None = None,
+    require_raster_foreground: bool = False,
 ) -> list[str]:
     """Serialize reference commits with GC until the current DB transaction ends."""
     references = {
@@ -63,7 +91,18 @@ async def lock_raster_mask_references(
             {"key": f"aap:raster-mask:{key}"},
         )
         if verify:
-            await load_coco_rle(references[key])
+            payload = await load_coco_rle(references[key])
+            if (
+                require_raster_foreground
+                and value.get("type") == "raster_mask"
+                and key == str((value.get("mask") or {}).get("object_key"))
+                and not _rle_has_foreground(payload)
+            ):
+                raise RasterMaskContractError(
+                    status_code=422,
+                    reason="raster_mask_empty_foreground",
+                    message="raster mask annotation must contain foreground pixels",
+                )
     if task_id is not None and references:
         await db.execute(
             update(RasterMaskUpload)
@@ -131,20 +170,36 @@ async def validate_mask_geometry_for_task(
     if geom_type == "raster_mask":
         # v0.23.6 · 图片掩码验证
         if task.dataset_item_id is None:
-            raise ValueError("raster mask requires a primary dataset item")
+            raise RasterMaskContractError(
+                status_code=422,
+                reason="raster_mask_dataset_item_required",
+                message="raster mask requires a primary dataset item",
+            )
         item = await db.get(DatasetItem, task.dataset_item_id)
         if item is None or item.file_type != "image":
-            raise ValueError("raster mask requires an image dataset item")
+            raise RasterMaskContractError(
+                status_code=422,
+                reason="raster_mask_image_required",
+                message="raster mask requires an image dataset item",
+            )
         width = item.width
         height = item.height
         if not width or not height:
-            raise ValueError(
-                "source image width / height metadata is required for raster mask"
+            raise RasterMaskContractError(
+                status_code=409,
+                reason="raster_mask_source_dimensions_missing",
+                message=(
+                    "source image width / height metadata is required for raster mask"
+                ),
             )
         expected_size = [int(height), int(width)]
         mask = geometry.get("mask") or {}
         if list(mask.get("size") or []) != expected_size:
-            raise ValueError(f"mask size must match source image {expected_size}")
+            raise RasterMaskContractError(
+                status_code=422,
+                reason="raster_mask_size_mismatch",
+                message=f"mask size must match source image {expected_size}",
+            )
         return
 
     if geom_type == "video_track_mask":
@@ -183,6 +238,46 @@ async def validate_mask_geometry_for_task(
 
     # 其他几何类型不需要验证
     return
+
+
+async def prepare_mask_geometry_for_annotation_write(
+    db: AsyncSession,
+    task: Task,
+    geometry: dict[str, Any],
+) -> None:
+    """Gate, validate and claim mask references in one annotation transaction."""
+    _assert_raster_mask_create_enabled(geometry)
+    try:
+        await validate_mask_geometry_for_task(db, task, geometry)
+    except RasterMaskContractError:
+        raise
+    except ValueError as exc:
+        raise RasterMaskContractError(
+            status_code=422,
+            reason="mask_geometry_invalid",
+            message=f"mask geometry is invalid: {exc}",
+        ) from exc
+    try:
+        await lock_raster_mask_references(
+            db,
+            geometry,
+            task_id=task.id,
+            require_raster_foreground=geometry.get("type") == "raster_mask",
+        )
+    except RasterMaskContractError:
+        raise
+    except (KeyError, ValueError) as exc:
+        raise RasterMaskContractError(
+            status_code=409,
+            reason="mask_reference_invalid",
+            message=f"mask object is invalid: {exc}",
+        ) from exc
+    except Exception as exc:
+        raise RasterMaskContractError(
+            status_code=503,
+            reason="mask_storage_unavailable",
+            message="mask object storage is unavailable",
+        ) from exc
 
 
 def canonical_rle_bytes(rle: dict[str, Any]) -> bytes:

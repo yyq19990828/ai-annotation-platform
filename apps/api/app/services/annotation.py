@@ -32,7 +32,7 @@ from app.services.annotation_propagation import (
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
     lock_raster_mask_references,
-    validate_mask_geometry_for_task,
+    prepare_mask_geometry_for_annotation_write,
 )
 
 logger = logging.getLogger("app.services.annotation")
@@ -173,8 +173,7 @@ class AnnotationService:
             await self._validate_parent_annotation(task_id, parent_annotation_id)
 
         if task is not None:
-            await validate_mask_geometry_for_task(self.db, task, geometry)
-            await lock_raster_mask_references(self.db, geometry, task_id=task_id)
+            await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
         geometry, track_id = prepare_compact_track_identity(geometry)
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -1098,9 +1097,8 @@ class AnnotationService:
         if geometry is not None:
             task = await self.db.get(Task, annotation.task_id)
             if task is not None:
-                await validate_mask_geometry_for_task(self.db, task, geometry)
-                await lock_raster_mask_references(
-                    self.db, geometry, task_id=annotation.task_id
+                await prepare_mask_geometry_for_annotation_write(
+                    self.db, task, geometry
                 )
             try:
                 geometry, track_id = prepare_compact_track_identity(

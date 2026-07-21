@@ -2,6 +2,7 @@ import base64
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
@@ -43,6 +44,7 @@ from app.services.gpu_arbitration.contracts import (
 )
 from app.services.ml_backend import MLBackendService
 from app.services.pipeline_validation import check_capability_violations
+from app.services.raster_mask_storage import RasterMaskContractError
 from app.services.secondary_inference import run_secondary_inference
 from app.services.task_lock import TaskLockService
 
@@ -226,19 +228,22 @@ async def create_annotation(
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
-    annotation = await svc.create(
-        task_id=task_id,
-        user_id=current_user.id,
-        annotation_type=data.annotation_type,
-        tool_unit_id=data.tool_unit_id,
-        class_name=data.class_name,
-        geometry=data.geometry.model_dump(),
-        confidence=data.confidence,
-        parent_prediction_id=data.parent_prediction_id,
-        parent_annotation_id=data.parent_annotation_id,
-        lead_time=data.lead_time,
-        attributes=data.attributes,
-    )
+    try:
+        annotation = await svc.create(
+            task_id=task_id,
+            user_id=current_user.id,
+            annotation_type=data.annotation_type,
+            tool_unit_id=data.tool_unit_id,
+            class_name=data.class_name,
+            geometry=data.geometry.model_dump(),
+            confidence=data.confidence,
+            parent_prediction_id=data.parent_prediction_id,
+            parent_annotation_id=data.parent_annotation_id,
+            lead_time=data.lead_time,
+            attributes=data.attributes,
+        )
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     # v0.7.2 · annotation 编辑历史可追溯
     await AuditService.log(
@@ -588,7 +593,17 @@ async def update_annotation(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     # 早 load 一次：用于 If-Match 校验 + 字段级审计 diff（attributes 变更）
-    existing = await db.get(Annotation, annotation_id)
+    # Lock before checking If-Match. Under READ COMMITTED a waiter observes the
+    # committed version from the preceding writer, so two requests carrying the
+    # same ETag cannot both pass and publish version N+1.
+    existing = (
+        await db.execute(
+            select(Annotation)
+            .where(Annotation.id == annotation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if existing is None or not existing.is_active:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
@@ -613,7 +628,10 @@ async def update_annotation(
                 },
             )
 
-    annotation = await svc.update(annotation_id, **fields)
+    try:
+        annotation = await svc.update(annotation_id, **fields)
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
     if annotation.task_id != task_id:
