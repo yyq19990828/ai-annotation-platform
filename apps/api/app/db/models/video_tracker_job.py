@@ -19,6 +19,7 @@ class VideoTrackerJobStatus(str, enum.Enum):
     # PENDING_REVIEW = 追踪完、结果已暂存、annotation 未改; ACCEPTED = 已应用到 annotation;
     # DISCARDED = 用户丢弃、annotation 零改动。CANCELLED 亦可携带 staged_result (部分结果可审)。
     PENDING_REVIEW = "pending_review"
+    PARTIALLY_REVIEWED = "partially_reviewed"
     ACCEPTED = "accepted"
     DISCARDED = "discarded"
 
@@ -75,6 +76,11 @@ class VideoTrackerJob(Base):
     # confidence, outside, instance_id, primary}]), 用户接受时才 _persist_tracker_results
     # 落库、丢弃时清空。缺省 None = 老直接落库路径 / 未产出结果。
     staged_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Optimistic review revision. Every non-idempotent local decision increments
+    # it while holding the job row lock; clients must echo the preview revision.
+    revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     event_channel: Mapped[str] = mapped_column(String(160), nullable=False)
     celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cancel_requested_at: Mapped[datetime | None] = mapped_column(

@@ -172,6 +172,7 @@ def pending_tracker_jobs_expr(user: User | None, project: Project):
         VideoTrackerJob.status.in_(
             [
                 VideoTrackerJobStatus.PENDING_REVIEW.value,
+                VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
                 VideoTrackerJobStatus.CANCELLED.value,
             ]
         ),

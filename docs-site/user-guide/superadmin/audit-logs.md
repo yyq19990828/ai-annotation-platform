@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.8.1
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # 审计日志
@@ -53,7 +53,7 @@ last_reviewed: 2026-07-20
 ### AI / ML
 - `predictions.import` / `predictions.purge`
 - `failed_prediction.dismissed` / `failed_prediction.restored`
-- `video_tracker_job.create` / `video_tracker_job.cancel` / `video_tracker_job.accept` / `video_tracker_job.discard`
+- `video_tracker_job.create` / `video_tracker_job.cancel` / `video_tracker_job.accept` / `video_tracker_job.discard` / `video_tracker_job.decision`
 - `ml_registry.created` / `ml_registry.updated` / `ml_registry.deleted`（全局注册 CRUD）
 - `ml_service_pool.created` / `ml_service_pool.updated` / `ml_service_pool.deleted` / `ml_service_pool.member_upserted` / `ml_service_pool.member_removed` / `ml_service_pool.member_drained` / `ml_service_pool.member_resumed`
 - `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` / `ml_backend.enablement` / `ml_backend.reloaded` / `ml_backend.unloaded` / `ml_backend.warmup` / `ml_backend.smoke_tested`（项目兼容与实例生命周期；详见 [ML Backend 注册](./ml-backend-registry)）

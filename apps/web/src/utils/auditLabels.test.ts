@@ -29,6 +29,7 @@ describe("AUDIT_BUSINESS_ACTIONS / AUDIT_TARGET_TYPES", () => {
     // 仍包含核心业务动作
     expect(AUDIT_BUSINESS_ACTIONS).toContain("auth.login");
     expect(AUDIT_BUSINESS_ACTIONS).toContain("user.invite");
+    expect(AUDIT_BUSINESS_ACTIONS).toContain("video_tracker_job.decision");
   });
 
   it("AUDIT_ACTION_LABELS 包含 http.post / http.patch / http.put / http.delete", () => {
@@ -48,6 +49,7 @@ describe("AUDIT_BUSINESS_ACTIONS / AUDIT_TARGET_TYPES", () => {
       "system",
       "ml_backend",
       "bug_report",
+      "video_tracker_job",
     ]);
   });
 });

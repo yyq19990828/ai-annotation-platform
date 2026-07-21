@@ -2,12 +2,12 @@
 audience: [dev]
 type: how-to
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-22
 ---
 
 # Video Tracker Jobs
 
-Video Tracker Job API 用于视频工作台里的异步 AI 追踪。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，调用 accept 后才写入 annotation。
+Video Tracker Job API 用于视频工作台里的异步 AI 追踪。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，客户端可整批或按目标与帧窗口决定，接受后才写入 annotation。
 
 ## 创建追踪任务
 
@@ -136,6 +136,12 @@ GET /api/v1/video-tracker-jobs/{job_id}/preview
   "annotation_id": "...",
   "grid_step": 1,
   "output_geometry": "bbox",
+  "job_revision": 1,
+  "expected_source_versions": { "11111111-1111-4111-8111-111111111111": 3 },
+  "candidate_total": 1,
+  "candidate_pending": 1,
+  "candidate_accepted": 0,
+  "candidate_rejected": 0,
   "results": [
     {
       "frame_index": 1,
@@ -143,7 +149,12 @@ GET /api/v1/video-tracker-jobs/{job_id}/preview
       "confidence": 0.91,
       "outside": false,
       "instance_id": "1",
-      "primary": true
+      "primary": true,
+      "candidate_key": "1:1:...",
+      "geometry_digest": "...",
+      "source_annotation_id": "11111111-1111-4111-8111-111111111111",
+      "target_annotation_id": "11111111-1111-4111-8111-111111111111",
+      "manual_protected": false
     }
   ]
 }
@@ -162,6 +173,7 @@ GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
 ```http
 POST /api/v1/video-tracker-jobs/{job_id}/accept
 POST /api/v1/video-tracker-jobs/{job_id}/discard
+POST /api/v1/video-tracker-jobs/{job_id}/decisions
 DELETE /api/v1/video-tracker-jobs/{job_id}
 ```
 
@@ -169,7 +181,24 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 
 - `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。服务端在同一事务内重新锁定 task、segment 和按 UUID 排序的全部源 annotation，复核 task 状态、assignment、segment lease、源版本与 annotation lock；任一源被软删或变化都 fail closed 返回 409。单源模式把主实例回填源轨迹，额外实例新建；多源模式按 `instance_id` 把各实例回填各自源轨迹；无源模式全部新建。接受后立即清空 staged result（引用已由 annotation 保活），响应的 `touched_annotation_ids` 列出本次回填和新建的轨迹。
 - `discard`：只允许带暂存结果的 `pending_review` / `cancelled` job，清空 staged result，annotation 保持不变；已丢弃时幂等返回，其它状态返回 `409`。
+- `decisions`：显式选择 `instance_ids` 与闭区间 `from_frame / to_frame`，决定 `accept` 或 `reject`。请求还要回传 preview 的 `job_revision` 与 `expected_source_versions`；接受人工关键帧需在收到 `manual_keyframe_protected` 后由用户确认，再用 `override_manual=true` 重试。服务端只处理选区，未选目标、窗口外结果和未决 Mask 引用保持不变；相同决定可安全重试，响应以 `review_replayed=true` 标识回放。
 - `DELETE`：请求停止 queued / running job。已计算的部分结果可能保留为 candidate，之后仍可接受或丢弃。
+
+局部决定请求示例：
+
+```json
+{
+  "instance_ids": ["1"],
+  "from_frame": 10,
+  "to_frame": 20,
+  "decision": "accept",
+  "job_revision": 1,
+  "expected_source_versions": {
+    "11111111-1111-4111-8111-111111111111": 3
+  },
+  "override_manual": false
+}
+```
 
 不要把 `DELETE` 当成“回滚已接受结果”；接受后需要通过 annotation API 做后续修改。
 
@@ -180,7 +209,7 @@ GET /api/v1/tasks/{task_id}/video/tracker-jobs/reviewable
 GET /api/v1/tasks/{task_id}/video/tracker-jobs/active
 ```
 
-`reviewable` 返回当前任务中仍可审阅的 `pending_review`，以及带有 staged result 的 `cancelled` job，按创建时间倒序排列。客户端拿到 job 后继续调用 preview 端点加载逐帧候选；不要从 annotation 推导未接受结果。
+`reviewable` 返回当前任务中仍可审阅的 `pending_review`、`partially_reviewed`，以及带有 staged result 的 `cancelled` job，按创建时间倒序排列。客户端拿到 job 后继续调用 preview 端点加载逐帧候选；不要从 annotation 推导未接受结果。
 
 `active` 返回当前任务下仍在运行的 `queued` / `running` job，供刷新后重连 WebSocket——这样运行中的追踪任务不会因整页刷新从界面消失，完成时仍能进入候选审阅。二者共享同一套 task 可见性与归属规则：先执行 task 可见性校验，普通用户只恢复自己创建的 job，项目 owner / 超级管理员可恢复该任务下全部 job。
 
@@ -191,6 +220,7 @@ GET /api/v1/tasks/{task_id}/video/tracker-jobs/active
 | `queued` | 已入队，worker 尚未开始 |
 | `running` | 正在分窗推理 |
 | `pending_review` | 推理完成，候选已暂存，annotation 未改 |
+| `partially_reviewed` | 已决定部分候选，仍有 staged result 待审 |
 | `cancelled` | 已取消；可能仍有部分 staged result |
 | `accepted` | 候选已写入 annotation |
 | `discarded` | 候选已丢弃 |

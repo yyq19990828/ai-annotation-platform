@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -15,6 +16,7 @@ from app.db.models.task import Task
 from app.db.models.user import User
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.schemas.video_tracker_job import (
+    VideoTrackerDecisionRequest,
     VideoTrackerJobOut,
     VideoTrackerPropagateRequest,
 )
@@ -37,6 +39,7 @@ _TERMINAL_STATUSES = {
     VideoTrackerJobStatus.CANCELLED.value,
     # v0.21.28 · 候选/接受: 追踪已完成 (待审/已接受/已丢弃) 均不可再「取消追踪」。
     VideoTrackerJobStatus.PENDING_REVIEW.value,
+    VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
     VideoTrackerJobStatus.ACCEPTED.value,
     VideoTrackerJobStatus.DISCARDED.value,
 }
@@ -374,7 +377,10 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
-    if row.status == VideoTrackerJobStatus.PENDING_REVIEW.value:
+    if row.status in {
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
+    }:
         # 候选待审不是"运行中"任务, 不能 cancel; 让前端据 409 引导用户改用 discard,
         # 而不是静默返回 200 让人以为取消没生效。
         await db.rollback()
@@ -405,7 +411,7 @@ async def accept_tracker_job(
             db, job_id, actor_id=actor_id, privileged=privileged
         )
     except _runner.TrackerJobStateConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
     return _job_out(row)
@@ -418,10 +424,124 @@ async def discard_tracker_job(
     try:
         row = await _runner.discard_tracker_job(db, job_id)
     except _runner.TrackerJobStateConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
     return _job_out(row)
+
+
+async def decide_tracker_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    body: VideoTrackerDecisionRequest,
+    *,
+    actor_id: uuid.UUID | None = None,
+    privileged: bool = False,
+) -> VideoTrackerJobOut:
+    try:
+        row = await _runner.decide_tracker_job(
+            db,
+            job_id,
+            instance_ids=body.instance_ids,
+            from_frame=body.from_frame,
+            to_frame=body.to_frame,
+            decision=body.decision,
+            expected_source_versions=body.expected_source_versions,
+            job_revision=body.job_revision,
+            override_manual=body.override_manual,
+            actor_id=actor_id,
+            privileged=privileged,
+            commit=False,
+        )
+    except _runner.TrackerJobStateConflict as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    result = _job_out(row)
+    result.review_replayed = bool(getattr(row, "_review_replayed", False))
+    return result
+
+
+async def tracker_job_preview(
+    db: AsyncSession, row: VideoTrackerJob
+) -> dict[str, Any]:
+    staged = dict(row.staged_result or {})
+    results = [
+        _runner._ensure_candidate_contract(item)
+        for item in (staged.get("results") or [])
+        if isinstance(item, dict)
+    ]
+    source_ids = _runner._review_source_map_ids(row, staged)
+    annotation_ids = set(source_ids.values())
+    annotations = {}
+    if annotation_ids:
+        annotations = {
+            annotation.id: annotation
+            for annotation in (
+                (
+                    await db.execute(
+                        select(Annotation).where(Annotation.id.in_(annotation_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        }
+    state = _runner._review_state(row)
+    instance_annotations = dict(state.get("instance_annotations") or {})
+    hydrated: list[dict[str, Any]] = []
+    for item in results:
+        instance_id = _runner._tracker_instance_key(item)
+        source_id = source_ids.get(instance_id)
+        target_id = instance_annotations.get(instance_id) or source_id
+        source = annotations.get(source_id) if source_id else None
+        frame_index = int(item["frame_index"])
+        manual_protected = bool(
+            source
+            and any(
+                int(keyframe.get("frame_index", -1)) == frame_index
+                and keyframe.get("source", "manual") == "manual"
+                for keyframe in (source.geometry or {}).get("keyframes") or []
+            )
+        )
+        hydrated.append(
+            {
+                **item,
+                "source_annotation_id": source_id,
+                "target_annotation_id": target_id,
+                "manual_protected": manual_protected,
+            }
+        )
+    decisions = state.get("decisions") or {}
+    accepted = sum(
+        1
+        for item in decisions.values()
+        if isinstance(item, dict) and item.get("decision") == "accept"
+    )
+    rejected = sum(
+        1
+        for item in decisions.values()
+        if isinstance(item, dict) and item.get("decision") == "reject"
+    )
+    expected_versions = {
+        str(key): int(value)
+        for key, value in ((row.prompt or {}).get("expected_source_versions") or {}).items()
+    }
+    return {
+        "job_id": row.id,
+        "status": row.status,
+        "annotation_id": row.annotation_id,
+        "results": hydrated,
+        "grid_step": int(staged.get("grid_step", 1)),
+        "output_geometry": staged.get("output_geometry", "bbox"),
+        "job_revision": int(row.revision or 1),
+        "expected_source_versions": expected_versions,
+        "candidate_total": len(hydrated) + accepted + rejected,
+        "candidate_pending": len(hydrated),
+        "candidate_accepted": accepted,
+        "candidate_rejected": rejected,
+    }
 
 
 async def list_reviewable_tracker_jobs(
@@ -436,6 +556,7 @@ async def list_reviewable_tracker_jobs(
         VideoTrackerJob.status.in_(
             [
                 VideoTrackerJobStatus.PENDING_REVIEW.value,
+                VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
                 VideoTrackerJobStatus.CANCELLED.value,
             ]
         ),

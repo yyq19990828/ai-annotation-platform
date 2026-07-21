@@ -2,7 +2,7 @@
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-07-12
+last_reviewed: 2026-07-22
 ---
 
 # Data Manager 查询与聚合
@@ -101,7 +101,7 @@ task-centric summary 聚合的是“匹配任务中的全部对象”。object /
 
 低置信待审使用相同集合，读取每个 shape 自身的 `score`，兼容 `confidence`；缺失或非数字按 `0` 处理。固定阈值为 `< 0.5`，任务列与 `ai.low_confidence_prediction_shape_count` 过滤器都返回候选数量。summary 的 `by_model_version` 和 `confidence_buckets` 也只聚合这个当前待审集合，不混入已接受、已拒绝或仅存在于历史运行中的候选。历史 `prediction.model_version` 仍可用于任务追溯筛选，但 Task 表不展示跨运行拼接的模型版本或 prediction 行级平均分。
 
-追踪候选只统计带非空 `staged_result.results` 且状态为 `pending_review` 或可审阅 `cancelled` 的 job。非特权用户还需满足 tracker job 的 `created_by` 限制，避免列表显示其无法恢复审阅的候选。
+追踪候选只统计带非空 `staged_result.results` 且状态为 `pending_review`、`partially_reviewed` 或可审阅 `cancelled` 的 job。非特权用户还需满足 tracker job 的 `created_by` 限制，避免列表显示其无法恢复审阅的候选。
 
 ## 轨迹标识
 

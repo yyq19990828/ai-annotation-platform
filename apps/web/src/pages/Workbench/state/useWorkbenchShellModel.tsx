@@ -4383,20 +4383,16 @@ export function useWorkbenchShellModel({
   // v0.21.28 · 候选/接受审阅条 props。
   const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
     open: Boolean(trackerReviewCandidate),
-    frameCount: trackerReviewCandidate
-      ? new Set(trackerReviewCandidate.preview.results.map((r) => r.frame_index)).size
-      : 0,
-    targetCount: trackerReviewCandidate
-      ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size
-      : 0,
+    preview: trackerReviewCandidate?.preview ?? null,
     submitting: trackerReviewCandidate
       ? Boolean(trackerJobs.submitting[trackerReviewCandidate.jobId])
       : false,
-    onAccept: () => {
-      if (trackerReviewCandidate) void trackerJobs.accept(trackerReviewCandidate.jobId);
+    onDecide: async (selection) => {
+      if (!trackerReviewCandidate) return { ok: false, reason: "candidate_missing" };
+      return trackerJobs.decide(trackerReviewCandidate.jobId, selection);
     },
-    onDiscard: () => {
-      if (trackerReviewCandidate) void trackerJobs.discard(trackerReviewCandidate.jobId);
+    onRefresh: () => {
+      if (trackerReviewCandidate) void trackerJobs.refreshReview(trackerReviewCandidate.jobId);
     },
   };
 

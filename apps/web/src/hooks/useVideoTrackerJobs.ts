@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   videoTrackerApi,
   type VideoTrackerJob,
+  type VideoTrackerDecisionPayload,
   type VideoTrackerJobPreview,
   type VideoTrackerJobStatus,
 } from "@/api/videoTracker";
@@ -21,12 +22,23 @@ export interface VideoTrackerJobState {
   // v0.22.1 · B · 无源检测 job 无 annotationId (画布级发起)。
   annotationId: string | null;
   status: VideoTrackerJobStatus;
+  revision?: number;
   fromFrame: number;
   toFrame: number;
   windowProgress?: { current: number; total: number };
   errorMessage?: string | null;
   modelKey: string;
   receivedAt: number;
+}
+
+export type TrackerReviewDecision = Pick<
+  VideoTrackerDecisionPayload,
+  "instance_ids" | "from_frame" | "to_frame" | "decision" | "override_manual"
+>;
+
+export interface TrackerReviewDecisionOutcome {
+  ok: boolean;
+  reason?: string;
 }
 
 // v0.21.28 · 候选/接受流: 追踪完成 (pending_review) 拉出的暂存预览, 供画布叠加 + 接受/丢弃。
@@ -340,6 +352,87 @@ export class TrackerJobStore {
     });
   }
 
+  async refreshReview(jobId: string): Promise<void> {
+    const current = this.jobs[jobId];
+    if (!current) return;
+    try {
+      const [job, preview] = await Promise.all([
+        videoTrackerApi.get(jobId),
+        videoTrackerApi.preview(jobId),
+      ]);
+      if (this.currentTaskId !== current.taskId) return;
+      this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
+      if (preview.results.length > 0) {
+        this.candidates = { ...this.candidates, [jobId]: preview };
+      } else {
+        const { [jobId]: _drop, ...rest } = this.candidates;
+        this.candidates = rest;
+      }
+      this.emit();
+    } catch {
+      useToastStore.getState().push({
+        msg: "刷新 AI 追踪候选失败",
+        sub: "当前选择已保留，请稍后重试",
+        kind: "error",
+      });
+    }
+  }
+
+  async decide(
+    jobId: string,
+    selection: TrackerReviewDecision,
+  ): Promise<TrackerReviewDecisionOutcome> {
+    const current = this.jobs[jobId];
+    const preview = this.candidates[jobId];
+    if (!current || !preview) return { ok: false, reason: "candidate_missing" };
+    const payload: VideoTrackerDecisionPayload = {
+      ...selection,
+      expected_source_versions: preview.expected_source_versions ?? {},
+      job_revision: preview.job_revision ?? current.revision ?? 1,
+    };
+    this.setSubmitting(jobId, true);
+    let updated: VideoTrackerJob;
+    try {
+      updated = await videoTrackerApi.decide(jobId, payload);
+    } catch (err) {
+      const detail = err instanceof ApiError && err.detailRaw && typeof err.detailRaw === "object"
+        ? err.detailRaw as { reason?: string }
+        : undefined;
+      const reason = detail?.reason;
+      if (reason === "manual_keyframe_protected") return { ok: false, reason };
+      if (reason === "job_revision_conflict" || reason === "source_version_conflict") {
+        await this.refreshReview(jobId);
+        useToastStore.getState().push({
+          msg: "追踪候选已发生变化",
+          sub: "已刷新最新版本，请重新确认选区",
+          kind: "warning",
+        });
+        return { ok: false, reason };
+      }
+      this.pushActionError(selection.decision === "accept" ? "接受" : "拒绝", err);
+      return { ok: false, reason };
+    } finally {
+      this.setSubmitting(jobId, false);
+    }
+    if (selection.decision === "accept") this.invalidateAnnotations(current.taskId);
+    if (updated.status === "partially_reviewed") {
+      this.jobs = { ...this.jobs, [jobId]: toJobState(updated) };
+      await this.refreshReview(jobId);
+      useToastStore.getState().push({
+        msg: selection.decision === "accept" ? "已接受所选追踪候选" : "已拒绝所选追踪候选",
+        sub: "仍有候选待审阅",
+        kind: "success",
+      });
+    } else {
+      useToastStore.getState().push({
+        msg: updated.status === "accepted" ? "追踪候选审阅完成" : "已丢弃全部追踪候选",
+        kind: "success",
+      });
+      this.finishReview(jobId, updated.status);
+    }
+    return { ok: true };
+  }
+
   async accept(jobId: string): Promise<void> {
     const cur = this.jobs[jobId];
     this.setSubmitting(jobId, true);
@@ -437,6 +530,7 @@ function toJobState(job: VideoTrackerJob): VideoTrackerJobState {
     taskId: job.task_id,
     annotationId: job.annotation_id,
     status: job.status,
+    revision: job.revision,
     fromFrame: job.from_frame,
     toFrame: job.to_frame,
     modelKey: job.model_key,
@@ -520,6 +614,11 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const cancel = useCallback((jobId: string) => trackerStore.cancel(jobId), []);
   const accept = useCallback((jobId: string) => trackerStore.accept(jobId), []);
   const discard = useCallback((jobId: string) => trackerStore.discard(jobId), []);
+  const decide = useCallback(
+    (jobId: string, selection: TrackerReviewDecision) => trackerStore.decide(jobId, selection),
+    [],
+  );
+  const refreshReview = useCallback((jobId: string) => trackerStore.refreshReview(jobId), []);
 
   const jobs = state.jobs;
   const candidates = state.candidates;
@@ -550,5 +649,18 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     return map;
   }, [candidates]);
 
-  return { jobs, byAnnotation, candidates, candidateByAnnotation, submitting, propagate, track, cancel, accept, discard };
+  return {
+    jobs,
+    byAnnotation,
+    candidates,
+    candidateByAnnotation,
+    submitting,
+    propagate,
+    track,
+    cancel,
+    accept,
+    discard,
+    decide,
+    refreshReview,
+  };
 }

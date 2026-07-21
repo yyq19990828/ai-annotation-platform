@@ -654,6 +654,7 @@ class DataManagerService:
                 VideoTrackerJob.status.in_(
                     [
                         VideoTrackerJobStatus.PENDING_REVIEW.value,
+                        VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
                         VideoTrackerJobStatus.CANCELLED.value,
                     ]
                 ),

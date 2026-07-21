@@ -548,6 +548,7 @@
 | DELETE | `/{job_id}` |
 | POST | `/{job_id}/accept` |
 | POST | `/{job_id}/discard` |
+| POST | `/{job_id}/decisions` |
 | GET | `/{job_id}/preview` |
 | GET | `/{job_id}/mask-content/{sha256}` |
 
@@ -571,4 +572,4 @@
 
 ---
 
-_共 54 模块 / 314 路由_
+_共 54 模块 / 315 路由_

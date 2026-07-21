@@ -967,6 +967,130 @@ async def seed_video_task(
     return SeedVideoTaskResponse(task_id=task_id)
 
 
+class SeedTrackerReviewRequest(BaseModel):
+    task_id: str
+    user_email: str
+
+
+class SeedTrackerReviewResponse(BaseModel):
+    job_id: str
+    source_annotation_ids: list[str]
+
+
+@router.post(
+    "/seed/tracker-review",
+    response_model=SeedTrackerReviewResponse,
+    include_in_schema=False,
+)
+async def seed_tracker_review(
+    payload: SeedTrackerReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedTrackerReviewResponse:
+    """Create a deterministic two-target staged tracker review for browser E2E."""
+
+    _ensure_non_production()
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
+    from app.db.models.user import User
+    from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+
+    task = await db.get(Task, UUID(payload.task_id))
+    user = (
+        await db.execute(select(User).where(User.email == payload.user_email))
+    ).scalar_one_or_none()
+    if task is None or task.file_type != "video" or user is None:
+        raise HTTPException(status_code=404, detail="video task or user not found")
+
+    def source(track_id: str, x: float, frame_index: int) -> Annotation:
+        return Annotation(
+            task_id=task.id,
+            project_id=task.project_id,
+            user_id=user.id,
+            source="manual",
+            annotation_type="video_track_bbox",
+            class_name="car",
+            tool_unit_id="bbox",
+            track_id=track_id,
+            geometry={
+                "type": "video_track_bbox",
+                "track_id": track_id,
+                "keyframes": [
+                    {
+                        "frame_index": frame_index,
+                        "bbox": {"x": x, "y": 0.2, "w": 0.16, "h": 0.18},
+                        "source": "manual",
+                        "occluded": False,
+                    }
+                ],
+                "outside": [],
+            },
+        )
+
+    source_a = source("e2e-track-a", 0.16, 12)
+    source_b = source("e2e-track-b", 0.62, 9)
+    db.add_all([source_a, source_b])
+    await db.flush()
+    results = []
+    for instance_id, x in (("A", 0.16), ("B", 0.62)):
+        for frame_index in range(10, 15):
+            results.append(
+                {
+                    "frame_index": frame_index,
+                    "geometry": {
+                        "type": "bbox",
+                        "x": x + (frame_index - 10) * 0.005,
+                        "y": 0.2,
+                        "w": 0.16,
+                        "h": 0.18,
+                    },
+                    "confidence": 0.92,
+                    "outside": False,
+                    "instance_id": instance_id,
+                    "primary": instance_id == "A",
+                }
+            )
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=task.dataset_item_id,
+        annotation_id=None,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=10,
+        to_frame=14,
+        prompt={
+            "seeds": [
+                {"obj_id": "A", "source_annotation_id": str(source_a.id)},
+                {"obj_id": "B", "source_annotation_id": str(source_b.id)},
+            ],
+            "expected_source_versions": {
+                str(source_a.id): int(source_a.version),
+                str(source_b.id): int(source_b.version),
+            },
+        },
+        staged_result={
+            "results": results,
+            "grid_step": 1,
+            "output_geometry": "bbox",
+        },
+        event_channel="pending",
+    )
+    db.add(job)
+    await db.flush()
+    job.event_channel = f"video-tracker-job:{job.id}"
+    response = SeedTrackerReviewResponse(
+        job_id=str(job.id),
+        source_annotation_ids=[str(source_a.id), str(source_b.id)],
+    )
+    await db.commit()
+    return response
+
+
 class SeedNativeMaskPromptSource(BaseModel):
     annotation_id: str
     source_version: int

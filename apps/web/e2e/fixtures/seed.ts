@@ -123,6 +123,11 @@ export interface SeedNativeMaskCandidateData {
   };
 }
 
+export interface SeedTrackerReviewData {
+  job_id: string;
+  source_annotation_ids: string[];
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -200,6 +205,17 @@ export class SeedAPI {
       throw new Error(`seed/video-task failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as { task_id: string };
+  }
+
+  async trackerReview(taskId: string, userEmail: string): Promise<SeedTrackerReviewData> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/tracker-review`,
+      { data: { task_id: taskId, user_email: userEmail } },
+    );
+    if (!res.ok()) {
+      throw new Error(`seed/tracker-review failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedTrackerReviewData;
   }
 
   async nativeMaskCandidate(

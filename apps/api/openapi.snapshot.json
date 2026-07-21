@@ -24878,6 +24878,67 @@
         "title": "VideoTrackPolylineKeyframe",
         "type": "object"
       },
+      "VideoTrackerDecisionRequest": {
+        "description": "Select and decide an explicit target/window slice of staged candidates.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "expected_source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Expected Source Versions",
+            "type": "object"
+          },
+          "from_frame": {
+            "minimum": 0.0,
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "instance_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Instance Ids",
+            "type": "array"
+          },
+          "job_revision": {
+            "minimum": 1.0,
+            "title": "Job Revision",
+            "type": "integer"
+          },
+          "override_manual": {
+            "default": false,
+            "title": "Override Manual",
+            "type": "boolean"
+          },
+          "to_frame": {
+            "minimum": 0.0,
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instance_ids",
+          "from_frame",
+          "to_frame",
+          "decision",
+          "job_revision"
+        ],
+        "title": "VideoTrackerDecisionRequest",
+        "type": "object"
+      },
       "VideoTrackerJobCounts": {
         "properties": {
           "accepted": {
@@ -24903,6 +24964,11 @@
           "failed": {
             "default": 0,
             "title": "Failed",
+            "type": "integer"
+          },
+          "partially_reviewed": {
+            "default": 0,
+            "title": "Partially Reviewed",
             "type": "integer"
           },
           "pending_review": {
@@ -25059,6 +25125,7 @@
               "failed",
               "cancelled",
               "pending_review",
+              "partially_reviewed",
               "accepted",
               "discarded"
             ],
@@ -25203,6 +25270,16 @@
             "title": "Prompt",
             "type": "object"
           },
+          "review_replayed": {
+            "default": false,
+            "title": "Review Replayed",
+            "type": "boolean"
+          },
+          "revision": {
+            "default": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
           "segment_id": {
             "anyOf": [
               {
@@ -25235,6 +25312,7 @@
               "failed",
               "cancelled",
               "pending_review",
+              "partially_reviewed",
               "accepted",
               "discarded"
             ],
@@ -25308,6 +25386,36 @@
             ],
             "title": "Annotation Id"
           },
+          "candidate_accepted": {
+            "default": 0,
+            "title": "Candidate Accepted",
+            "type": "integer"
+          },
+          "candidate_pending": {
+            "default": 0,
+            "title": "Candidate Pending",
+            "type": "integer"
+          },
+          "candidate_rejected": {
+            "default": 0,
+            "title": "Candidate Rejected",
+            "type": "integer"
+          },
+          "candidate_total": {
+            "default": 0,
+            "title": "Candidate Total",
+            "type": "integer"
+          },
+          "expected_source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Expected Source Versions",
+            "type": "object"
+          },
           "grid_step": {
             "default": 1,
             "title": "Grid Step",
@@ -25318,13 +25426,17 @@
             "title": "Job Id",
             "type": "string"
           },
+          "job_revision": {
+            "default": 1,
+            "title": "Job Revision",
+            "type": "integer"
+          },
           "output_geometry": {
             "default": "bbox",
             "title": "Output Geometry",
             "type": "string"
           },
           "results": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/VideoTrackerPreviewResult"
             },
@@ -25339,6 +25451,7 @@
               "failed",
               "cancelled",
               "pending_review",
+              "partially_reviewed",
               "accepted",
               "discarded"
             ],
@@ -25361,6 +25474,7 @@
           "failed",
           "cancelled",
           "pending_review",
+          "partially_reviewed",
           "accepted",
           "discarded"
         ],
@@ -25401,6 +25515,10 @@
       "VideoTrackerPreviewResult": {
         "description": "候选预览的逐帧结果。形状与 video_tracker_runner._serialize_results 一致\n(TrackerFrameResult → dict)。必需/默认刻意对齐 _deserialize_results 的容错读取\n(frame_index 必需, 其余可缺省), 避免 typed 响应对部分 staged 行过严而 500。",
         "properties": {
+          "candidate_key": {
+            "title": "Candidate Key",
+            "type": "string"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -25428,6 +25546,10 @@
             ],
             "title": "Geometry"
           },
+          "geometry_digest": {
+            "title": "Geometry Digest",
+            "type": "string"
+          },
           "instance_id": {
             "anyOf": [
               {
@@ -25439,6 +25561,11 @@
             ],
             "title": "Instance Id"
           },
+          "manual_protected": {
+            "default": false,
+            "title": "Manual Protected",
+            "type": "boolean"
+          },
           "outside": {
             "default": false,
             "title": "Outside",
@@ -25448,10 +25575,36 @@
             "default": false,
             "title": "Primary",
             "type": "boolean"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "target_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Annotation Id"
           }
         },
         "required": [
-          "frame_index"
+          "frame_index",
+          "candidate_key",
+          "geometry_digest"
         ],
         "title": "VideoTrackerPreviewResult",
         "type": "object"
@@ -44177,6 +44330,65 @@
           }
         ],
         "summary": "Accept Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}/decisions": {
+      "post": {
+        "description": "Accept or reject an explicit instance/window candidate slice.",
+        "operationId": "decide_video_tracker_candidates_api_v1_video_tracker_jobs__job_id__decisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackerDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Decide Video Tracker Candidates",
         "tags": [
           "video-tracker-jobs"
         ]

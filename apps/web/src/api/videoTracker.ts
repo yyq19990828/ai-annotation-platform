@@ -11,6 +11,7 @@ export type VideoTrackerJobStatus =
   // v0.21.28 · 候选/接受流。pending_review = 追踪完、结果暂存待审; accepted = 已落库;
   // discarded = 已丢弃。
   | "pending_review"
+  | "partially_reviewed"
   | "accepted"
   | "discarded";
 
@@ -22,6 +23,8 @@ export interface VideoTrackerJob {
   segment_id: string | null;
   created_by: string | null;
   status: VideoTrackerJobStatus;
+  revision?: number;
+  review_replayed?: boolean;
   model_key: string;
   direction: VideoTrackerDirection;
   from_frame: number;
@@ -83,6 +86,11 @@ export interface VideoTrackerPreviewResult {
   outside?: boolean;
   instance_id?: string | null;
   primary?: boolean;
+  candidate_key?: string;
+  geometry_digest?: string;
+  source_annotation_id?: string | null;
+  target_annotation_id?: string | null;
+  manual_protected?: boolean;
 }
 
 export interface VideoTrackerJobPreview {
@@ -92,6 +100,22 @@ export interface VideoTrackerJobPreview {
   results: VideoTrackerPreviewResult[];
   grid_step: number;
   output_geometry: string;
+  job_revision?: number;
+  expected_source_versions?: Record<string, number>;
+  candidate_total?: number;
+  candidate_pending?: number;
+  candidate_accepted?: number;
+  candidate_rejected?: number;
+}
+
+export interface VideoTrackerDecisionPayload {
+  instance_ids: string[];
+  from_frame: number;
+  to_frame: number;
+  decision: "accept" | "reject";
+  expected_source_versions: Record<string, number>;
+  job_revision: number;
+  override_manual?: boolean;
 }
 
 export const videoTrackerApi = {
@@ -128,4 +152,6 @@ export const videoTrackerApi = {
     apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/accept`, {}),
   discard: (jobId: string) =>
     apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/discard`, {}),
+  decide: (jobId: string, payload: VideoTrackerDecisionPayload) =>
+    apiClient.post<VideoTrackerJob>(`/video-tracker-jobs/${jobId}/decisions`, payload),
 };

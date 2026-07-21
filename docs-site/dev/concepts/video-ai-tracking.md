@@ -2,7 +2,7 @@
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 ---
 
 # 视频 AI 追踪架构
@@ -16,7 +16,7 @@ last_reviewed: 2026-07-20
 | 数据 | 用途 | 是否已落标注 | 人工决策 |
 |---|---|---:|---|
 | `Prediction` | 图片 / 视频当前帧批量预标候选 | 否 | 逐 shape 采纳 / 忽略 |
-| `VideoTrackerJob.staged_result` | 一次视频传播产生的逐帧、多目标候选 | 否 | job 级接受 / 丢弃 |
+| `VideoTrackerJob.staged_result` | 一次视频传播产生的逐帧、多目标候选 | 否 | 按目标与帧窗口接受 / 拒绝 |
 | `Annotation(source="ai_tracker")` 或 prediction keyframe | 已接受的视频追踪结果 | 是 | 后续按轨迹 / 关键帧继续人工编辑 |
 
 `staged_result` 的存在保证 tracker 完成、取消或模型返回坏结果时不会先污染 committed annotation。它不是 `Prediction` 的另一种序列化，也不参与 `task.total_predictions` 或批量预标状态机。
@@ -31,10 +31,11 @@ flowchart LR
     D --> E["Celery worker 分窗调用 /predict"]
     E --> F["跨窗续种或身份关联"]
     F --> G["staged_result 候选"]
-    G --> H{"人工决策"}
-    H -->|接受| I["主实例回填源轨迹(无源则新建)"]
+    G --> H{"选择目标与帧窗口"}
+    H -->|接受所选| I["主实例回填源轨迹(无源则新建)"]
     I --> J["额外实例创建新轨迹"]
-    H -->|丢弃| K["清空候选，annotation 不变"]
+    H -->|拒绝所选| K["移除选区，annotation 不变"]
+    H -->|仍有未决| G
 ```
 
 核心入口：
@@ -43,7 +44,7 @@ flowchart LR
 - API：`POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate`（延展选中轨迹）或 `POST /tasks/{task_id}/video:track`（源可选）创建 job。`video:track` 的源模式有三种：`source_annotation_id` 单源延展；`source_annotation_ids[]` 多选批量（一个 job 延展 N 条已有轨迹，各回填各自源）；两者皆缺省即无源检测（`target_class_name` 指定新轨迹类别）。
 - worker：`app.workers.video_tracker.run_video_tracker_job` 调用 `app.services.video_tracking.runner`。
 - backend adapter：`app.services.video_tracking.adapters` 把平台 context 转为 ML Backend `/predict` 请求。
-- 决策：`POST /video-tracker-jobs/{job_id}/accept|discard`。
+- 决策：`POST /video-tracker-jobs/{job_id}/decisions` 处理目标 / 帧窗口；`accept|discard` 保留为整批兼容入口。
 
 ## 能力路由
 
@@ -116,9 +117,9 @@ runner 根据模型选择窗口大小：SAM3 系使用 `VIDEO_TRACKER_SAM3_WINDO
 正常状态机：
 
 ```text
-queued -> running -> pending_review -> accepted | discarded
-                  -> failed
-                  -> cancelled -> accepted | discarded   # 已有部分结果时
+queued -> running -> pending_review -> partially_reviewed -> accepted | discarded
+                  -> failed              ^          |
+                  -> cancelled ----------+----------+     # 已有部分结果时
 ```
 
 runner 把结果序列化到：
@@ -132,7 +133,9 @@ runner 把结果序列化到：
       "confidence": 0.91,
       "outside": false,
       "instance_id": "1",
-      "primary": true
+      "primary": true,
+      "geometry_digest": "sha256:...",
+      "candidate_key": "1:24:sha256:..."
     }
   ],
   "grid_step": 1,
@@ -142,9 +145,11 @@ runner 把结果序列化到：
 
 `geometry` 是 typed union：bbox、polygon，或 `{type:"mask", mask:coco_rle_ref, bbox?}`。`output_geometry` 可显式选择 `bbox / polygon / mask`；省略时跟随源轨迹。runner 在发布帧事件和追加候选前校验并把 inline tracker RLE 写成内容寻址引用。单 mask 限制 4096×4096、1,000,000 runs、4 MiB canonical object；annotation geometry 限 8 MiB，整个 staged payload 限 64 MiB。超限 job 以 `tracker_candidate_too_large` 失败并保持 `staged_result=NULL`。
 
-正常完成进入 `pending_review`。取消时 worker 在停止前暂存已收集的部分结果，状态保持 `cancelled`；若候选非空，前端仍可进入审阅。失败不生成可审候选。
+正常完成进入 `pending_review`。第一次局部决定后进入 `partially_reviewed`，`staged_result.results` 只保留未决集合；全部候选决定后才进入 `accepted` 或 `discarded`。取消时 worker 在停止前暂存已收集的部分结果，状态保持 `cancelled`；若候选非空，前端仍可进入审阅。失败不生成可审候选。
 
-接受与丢弃都需要 task 可见性，并限制为 job 创建者或项目特权角色。accept 在落库事务内锁定并刷新 task、segment 和全部源 annotation，复核 task 状态、assignment、segment lease、源版本、active 状态与 annotation lock；源删除不降级为新轨迹。accept 成功和 discard 都清空 `staged_result`，对象引用分别转由 annotation 保活或进入 GC 宽限。API 记录 `VIDEO_TRACKER_JOB_ACCEPT` / `VIDEO_TRACKER_JOB_DISCARD` 审计动作。
+局部决定需要 task 可见性，并限制为 job 创建者或项目特权角色。preview 返回 job revision、源 annotation version、稳定 candidate key、人工帧保护标记与决定计数；客户端必须把 revision 和源版本原样回传。服务端在落库事务内锁定并刷新 job、task、segment 和选中目标对应的源 annotation，复核 task 状态、assignment、segment lease、源版本、active 状态与 annotation lock；源删除不降级为新轨迹。重复相同决定幂等回放，旧 revision、相反决定或源版本漂移返回结构化 409。
+
+接受只写选中目标与闭区间帧窗口，拒绝只移除选区；窗口外、其它目标和未决 Mask 引用保持不变。人工关键帧默认返回 `manual_keyframe_protected`，显式 `override_manual=true` 才允许覆盖，并在与 annotation 变更同一事务的 `VIDEO_TRACKER_JOB_DECISION` 审计中记录 before / after digest。部分接受产生的新实例会把 `instance_id → annotation_id` 映射保存在 review state，后续窗口复用同一轨迹；每次写入后源版本基线随 annotation 单调更新。
 
 ## 接受阶段如何落库
 
@@ -162,7 +167,7 @@ runner 把结果序列化到：
 
 归属由 `_TrackTarget` 提供——有源继承源 label，无源取 job 的 `target_class_name` / `target_tool_unit_id` 显式类别。持久化时：
 
-- 人工关键帧优先，预测不得覆盖 manual frame。
+- 人工关键帧优先；只有局部决定经过显式二次确认时，选中的 manual frame 才能被预测覆盖。
 - outside 结果合并为 prediction outside ranges。
 - polygon 输出少于三个顶点时按 outside 处理，避免写入非法几何。
 - mask 输出保存 RLE 引用；accept 提交前再次按源视频 width / height / frame_count 校验，不能把错误尺寸写进 annotation。
@@ -175,9 +180,9 @@ runner 把结果序列化到：
 - `job_completed` 与带部分结果的 `job_cancelled` 触发 `GET .../preview`。
 - 工作台进入视频任务时调用任务级 reviewable 端点，以服务端 `VideoTrackerJob` 为真值恢复刷新前的候选；同时调用 active 端点拉取仍在 `queued` / `running` 的 job 并重连各自的 WebSocket，使运行中的追踪任务不会因整页刷新从界面消失。普通用户只恢复自己创建的任务，项目 owner / 超级管理员可恢复该任务下全部 job。
 - `TrackerJobStore` 是跨任务复用的模块级单例。恢复某任务前会先按当前任务 scope 一次：关闭并清掉不属于该任务的 job / 候选 / WebSocket / 清理定时器，避免旧任务的完成提示或候选串到新任务；异步恢复以当前任务为护栏，若恢复途中已切走任务，迟到的旧任务结果会被丢弃。
-- `VideoTrackerReviewBar` 提供 job 级接受 / 丢弃。
+- `VideoTrackerReviewBar` 提供目标勾选、起止帧、局部接受 / 拒绝、进度、冲突刷新与人工帧二次确认。
 - 画布候选层只展示暂存结果，不把它们混入 annotation query cache。
-- accept 成功后才 invalidate annotation query；discard 不需要刷新 committed annotation。
+- 局部 accept 成功后才 invalidate annotation query；reject 不需要刷新 committed annotation。部分决定后重新拉 preview，以服务端 revision 和未决集合为真值。
 
 运行历史由 `/ai-pre/jobs?tab=video` 汇总，当前题审阅则留在工作台。历史列表与工作台实时候选不是同一份前端状态；`useVideoTrackerJobs` 在实时事件之外还会读取 `GET /tasks/{task_id}/video/tracker-jobs/reviewable`，再逐 job 拉 preview 恢复候选。恢复链路必须以 job + preview API 为真值，不能从 annotation 反推尚未接受的候选。
 

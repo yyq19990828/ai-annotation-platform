@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { videoTrackerApi, type VideoTrackerJob } from "@/api/videoTracker";
+import { ApiError } from "@/api/client";
 import { TrackerJobStore, type TrackerStoreState } from "./useVideoTrackerJobs";
 
 vi.mock("@/api/videoTracker", () => ({
@@ -8,6 +9,8 @@ vi.mock("@/api/videoTracker", () => ({
     reviewable: vi.fn(),
     active: vi.fn(),
     preview: vi.fn(),
+    get: vi.fn(),
+    decide: vi.fn(),
     accept: vi.fn(),
     discard: vi.fn(),
     cancel: vi.fn(),
@@ -48,6 +51,7 @@ const reviewableJob: VideoTrackerJob = {
   segment_id: null,
   created_by: "user-1",
   status: "pending_review",
+  revision: 1,
   model_key: "sam2_video",
   direction: "forward",
   from_frame: 0,
@@ -75,10 +79,20 @@ const stagedPreview: import("@/api/videoTracker").VideoTrackerJobPreview = {
   status: reviewableJob.status,
   annotation_id: reviewableJob.annotation_id,
   results: [
-    { frame_index: 1, geometry: { type: "bbox", x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+    {
+      frame_index: 1,
+      instance_id: "1",
+      geometry: { type: "bbox", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+    },
   ],
   grid_step: 1,
   output_geometry: "bbox",
+  job_revision: 1,
+  expected_source_versions: { "annotation-1": 1 },
+  candidate_total: 2,
+  candidate_pending: 1,
+  candidate_accepted: 0,
+  candidate_rejected: 0,
 };
 
 beforeEach(() => {
@@ -88,6 +102,7 @@ beforeEach(() => {
   // 两路拉取默认空,单测按需覆盖其一。
   vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([]);
   vi.mocked(videoTrackerApi.active).mockResolvedValue([]);
+  vi.mocked(videoTrackerApi.get).mockResolvedValue(reviewableJob);
 });
 
 afterAll(() => {
@@ -281,5 +296,86 @@ describe("TrackerJobStore.restoreReviewable · 切任务 scope 清理 (#9)", () 
     // 护栏应丢弃 task-1 的结果, 不污染 task-2。
     expect(snapshot.jobs["job-1"]).toBeUndefined();
     expect(snapshot.candidates["job-1"]).toBeUndefined();
+  });
+});
+
+describe("TrackerJobStore.decide · 局部审阅", () => {
+  async function restoredStore() {
+    vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableJob]);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview });
+    const store = new TrackerJobStore();
+    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    store.subscribe((next) => {
+      snapshot = next;
+    });
+    await store.restoreReviewable("task-1");
+    return { store, getSnapshot: () => snapshot };
+  }
+
+  it("局部成功后用服务端 revision/source version 刷新并保留审阅", async () => {
+    const { store, getSnapshot } = await restoredStore();
+    const updatedJob = { ...reviewableJob, status: "partially_reviewed" as const, revision: 2 };
+    const updatedPreview = {
+      ...stagedPreview,
+      status: "partially_reviewed" as const,
+      job_revision: 2,
+      expected_source_versions: { "annotation-1": 2 },
+      results: [{ ...stagedPreview.results[0], frame_index: 2 }],
+      candidate_accepted: 1,
+    };
+    vi.mocked(videoTrackerApi.decide).mockResolvedValue(updatedJob);
+    vi.mocked(videoTrackerApi.get).mockResolvedValue(updatedJob);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue(updatedPreview);
+
+    const outcome = await store.decide("job-1", {
+      instance_ids: ["1"],
+      from_frame: 1,
+      to_frame: 1,
+      decision: "accept",
+      override_manual: false,
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    expect(videoTrackerApi.decide).toHaveBeenCalledWith("job-1", expect.objectContaining({
+      job_revision: 1,
+      expected_source_versions: { "annotation-1": 1 },
+    }));
+    expect(getSnapshot().jobs["job-1"]?.status).toBe("partially_reviewed");
+    expect(getSnapshot().candidates["job-1"]?.job_revision).toBe(2);
+  });
+
+  it("manual 409 保留候选并把原因交给二次确认", async () => {
+    const { store, getSnapshot } = await restoredStore();
+    vi.mocked(videoTrackerApi.decide).mockRejectedValue(
+      new ApiError(409, "manual", { reason: "manual_keyframe_protected" }),
+    );
+    const outcome = await store.decide("job-1", {
+      instance_ids: ["1"],
+      from_frame: 1,
+      to_frame: 1,
+      decision: "accept",
+      override_manual: false,
+    });
+    expect(outcome).toEqual({ ok: false, reason: "manual_keyframe_protected" });
+    expect(getSnapshot().candidates["job-1"]).toBeDefined();
+  });
+
+  it("revision 冲突刷新预览且不清候选", async () => {
+    const { store, getSnapshot } = await restoredStore();
+    const refreshedJob = { ...reviewableJob, status: "partially_reviewed" as const, revision: 3 };
+    vi.mocked(videoTrackerApi.decide).mockRejectedValue(
+      new ApiError(409, "stale", { reason: "job_revision_conflict" }),
+    );
+    vi.mocked(videoTrackerApi.get).mockResolvedValue(refreshedJob);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview, job_revision: 3 });
+    const outcome = await store.decide("job-1", {
+      instance_ids: ["1"],
+      from_frame: 1,
+      to_frame: 1,
+      decision: "reject",
+      override_manual: false,
+    });
+    expect(outcome.reason).toBe("job_revision_conflict");
+    expect(getSnapshot().candidates["job-1"]?.job_revision).toBe(3);
   });
 });

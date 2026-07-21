@@ -7,7 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,16 +21,22 @@ from app.db.models.video_tracker_job import (
     VideoTrackerJobStatus,
 )
 from app.deps import get_current_user, get_db, require_roles
-from app.schemas.video_tracker_job import TrackerJobStatus, VideoTrackerJobOut
+from app.schemas.video_tracker_job import (
+    TrackerJobStatus,
+    VideoTrackerDecisionRequest,
+    VideoTrackerJobOut,
+)
 from app.services.audit import AuditAction, AuditService
 from app.services.scheduler import is_privileged_for_project
 from app.services.raster_mask_storage import load_coco_rle
 from app.services.video_tracking.jobs import (
     accept_tracker_job,
     cancel_tracker_job,
+    decide_tracker_job,
     discard_tracker_job,
     get_tracker_job,
     tracker_job_out,
+    tracker_job_preview,
 )
 
 router = APIRouter()
@@ -65,6 +71,7 @@ class VideoTrackerJobCounts(BaseModel):
     cancelled: int = 0
     # v0.21.28 · 候选/接受流状态计数。
     pending_review: int = 0
+    partially_reviewed: int = 0
     accepted: int = 0
     discarded: int = 0
 
@@ -86,6 +93,11 @@ class VideoTrackerPreviewResult(BaseModel):
     outside: bool = False
     instance_id: str | None = None
     primary: bool = False
+    candidate_key: str
+    geometry_digest: str
+    source_annotation_id: uuid.UUID | None = None
+    target_annotation_id: uuid.UUID | None = None
+    manual_protected: bool = False
 
 
 class VideoTrackerJobPreview(BaseModel):
@@ -94,9 +106,15 @@ class VideoTrackerJobPreview(BaseModel):
     job_id: uuid.UUID
     status: TrackerJobStatus
     annotation_id: uuid.UUID | None = None
-    results: list[VideoTrackerPreviewResult] = []
+    results: list[VideoTrackerPreviewResult] = Field(default_factory=list)
     grid_step: int = 1
     output_geometry: str = "bbox"
+    job_revision: int = 1
+    expected_source_versions: dict[uuid.UUID, int] = Field(default_factory=dict)
+    candidate_total: int = 0
+    candidate_pending: int = 0
+    candidate_accepted: int = 0
+    candidate_rejected: int = 0
 
 
 def _encode_cursor(created_at: datetime, job_id: uuid.UUID) -> str:
@@ -356,6 +374,49 @@ async def discard_video_tracker_job(
     return body
 
 
+@router.post("/{job_id}/decisions", response_model=VideoTrackerJobOut)
+async def decide_video_tracker_candidates(
+    job_id: uuid.UUID,
+    body: VideoTrackerDecisionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """Accept or reject an explicit instance/window candidate slice."""
+
+    task, visible = await _load_visible_job_task(db, job_id, current_user)
+    await _assert_can_cancel(db, task, visible, current_user)
+    project = await db.get(Project, task.project_id)
+    result = await decide_tracker_job(
+        db,
+        job_id,
+        body,
+        actor_id=current_user.id,
+        privileged=bool(project and is_privileged_for_project(current_user, project)),
+    )
+    last_decision = (
+        ((result.prompt or {}).get("review_state") or {}).get("last_decision") or {}
+    )
+    if not result.review_replayed:
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action=AuditAction.VIDEO_TRACKER_JOB_DECISION,
+            target_type="video_tracker_job",
+            target_id=job_id,
+            request=request,
+            status_code=200,
+            detail={
+                "task_id": str(task.id),
+                "status": result.status,
+                **last_decision,
+            },
+        )
+    # The review mutation and its mandatory audit row share this transaction.
+    await db.commit()
+    return result
+
+
 @router.get("/{job_id}/preview", response_model=VideoTrackerJobPreview)
 async def get_video_tracker_job_preview(
     job_id: uuid.UUID,
@@ -368,15 +429,7 @@ async def get_video_tracker_job_preview(
     if task is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
     await _assert_task_visible(db, task, current_user)
-    staged = row.staged_result or {}
-    return VideoTrackerJobPreview(
-        job_id=row.id,
-        status=row.status,
-        annotation_id=row.annotation_id,
-        results=staged.get("results") or [],
-        grid_step=int(staged.get("grid_step", 1)),
-        output_geometry=staged.get("output_geometry", "bbox"),
-    )
+    return VideoTrackerJobPreview.model_validate(await tracker_job_preview(db, row))
 
 
 @router.get("/{job_id}/mask-content/{sha256}")

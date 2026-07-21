@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.workers.cleanup import _eligible_raster_mask_objects
+from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.workers.cleanup import (
+    _eligible_raster_mask_objects,
+    _referenced_raster_mask_keys,
+)
+from tests.test_video_tracker_jobs_list import _make_video_task
 
 
 def test_raster_mask_gc_keeps_referenced_and_grace_period_objects():
@@ -101,3 +106,40 @@ async def test_gc_rechecks_reference_under_object_lock_before_delete(
     lock.assert_awaited_once_with(db, {"object_key": key}, verify=False)
     assert delete.call_count == expected_deleted
     assert result["deleted"] == expected_deleted
+
+
+@pytest.mark.asyncio
+async def test_gc_keeps_partially_reviewed_tracker_mask_reference(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    key = "raster-masks/sha256/aa/aa/partial.json"
+    db_session.add(
+        VideoTrackerJob(
+            task_id=task.id,
+            dataset_item_id=item.id,
+            annotation_id=None,
+            created_by=user.id,
+            status=VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
+            model_key="sam3_video",
+            direction="forward",
+            from_frame=0,
+            to_frame=1,
+            prompt={},
+            staged_result={
+                "results": [
+                    {
+                        "frame_index": 1,
+                        "geometry": {
+                            "type": "mask",
+                            "mask": {"object_key": key},
+                        },
+                    }
+                ]
+            },
+            event_channel="video-tracker-job:test",
+        )
+    )
+    await db_session.flush()
+    assert key in await _referenced_raster_mask_keys(db_session)

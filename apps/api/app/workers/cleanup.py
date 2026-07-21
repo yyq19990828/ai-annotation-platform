@@ -100,7 +100,7 @@ _MASK_REFERENCE_QUERIES = (
     SELECT DISTINCT value #>> '{}' AS object_key
     FROM video_tracker_jobs, LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
     WHERE staged_result IS NOT NULL
-      AND status IN ('pending_review', 'cancelled')
+      AND status IN ('pending_review', 'partially_reviewed', 'cancelled')
       AND value #>> '{}' LIKE 'raster-masks/sha256/%'
     """,
     """
@@ -133,7 +133,7 @@ _MASK_REFERENCE_EXISTS_QUERIES = (
         FROM video_tracker_jobs,
              LATERAL jsonb_path_query(staged_result, '$.**.object_key') value
         WHERE staged_result IS NOT NULL
-          AND status IN ('pending_review', 'cancelled')
+          AND status IN ('pending_review', 'partially_reviewed', 'cancelled')
           AND value #>> '{}' = :key
     )
     """,

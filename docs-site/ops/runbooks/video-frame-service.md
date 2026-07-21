@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.25
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-22
 ---
 
 # Runbook：视频帧服务
@@ -179,7 +179,8 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - 返回 400：frame range 越界、反向，或跨越多个 segment。第一版要求单 job 在一个 segment 内。
 - job 长时间停留 `queued`：确认 `celery-worker-gpu` 正在运行并订阅 `gpu` 队列。默认 worker 只消费 `default,media,cleanup,audit`；GPU worker 消费 `ml,gpu`。
 - job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示项目已启用 backend 中没有任何实例在能力快照里声明该 `model_key`；先健康检查并核对 `supported_trackers`。
-- job 长时间停在 `pending_review`：推理已结束，但 staged candidate 还没有被接受 / 丢弃；annotation 此时尚未改变。用 preview 端点确认候选是否存在。
+- job 长时间停在 `pending_review`：推理已结束，但 staged candidate 尚未开始审核；annotation 此时尚未改变。用 preview 端点确认候选是否存在。
+- job 长时间停在 `partially_reviewed`：部分目标 / 帧窗口已经决定，`staged_result.results` 只保留未决候选。检查 preview 的 revision、待决计数和源版本；不要手工清空 staged JSON。旧 revision 或源版本漂移会返回结构化 409，客户端刷新后重选即可。
 - 用户刷新后审阅条没有恢复：工作台会按当前 task 调 reviewable 端点并拉 preview。检查 task 可见性、job 是否属于当前普通用户（项目 owner / 超级管理员可看该 task 全部候选）、`staged_result.results` 是否非空，以及浏览器请求是否返回 401 / 404；不要盲目重跑。
 - 取消后仍看到部分候选：worker 会把停止前已收集的结果写入 `staged_result`，不是已落库 annotation。接受可保留部分结果，丢弃则 annotation 零改动。
 - accept 返回 409：检查 task 是否进入 review/completed、assignee 是否变化、segment lease 是否过期或转移，以及任一源 annotation 是否被修改、锁定或软删。accept 会 fail closed，不再把失效源降级为新轨迹。

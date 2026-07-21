@@ -17,6 +17,7 @@ TrackerJobStatus = Literal[
     "cancelled",
     # v0.21.28 · 候选/接受流。
     "pending_review",
+    "partially_reviewed",
     "accepted",
     "discarded",
 ]
@@ -88,6 +89,8 @@ class VideoTrackerJobOut(BaseModel):
     segment_id: UUID | None = None
     created_by: UUID | None = None
     status: TrackerJobStatus
+    revision: int = 1
+    review_replayed: bool = False
     model_key: str
     direction: TrackerDirection
     from_frame: int
@@ -114,3 +117,31 @@ class VideoTrackerJobOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VideoTrackerDecisionRequest(BaseModel):
+    """Select and decide an explicit target/window slice of staged candidates."""
+
+    instance_ids: list[str] = Field(min_length=1, max_length=256)
+    from_frame: int = Field(ge=0)
+    to_frame: int = Field(ge=0)
+    decision: Literal["accept", "reject"]
+    expected_source_versions: dict[UUID, int] = Field(default_factory=dict)
+    job_revision: int = Field(ge=1)
+    override_manual: bool = False
+
+    @field_validator("instance_ids")
+    @classmethod
+    def _unique_instance_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 128 for item in normalized):
+            raise ValueError("instance_ids must contain non-empty values <= 128 chars")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("instance_ids must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> "VideoTrackerDecisionRequest":
+        if self.from_frame > self.to_frame:
+            raise ValueError("from_frame must be <= to_frame")
+        return self

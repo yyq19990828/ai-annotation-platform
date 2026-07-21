@@ -113,6 +113,7 @@ async def test_list_empty(httpx_client, super_admin):
         "failed": 0,
         "cancelled": 0,
         "pending_review": 0,
+        "partially_reviewed": 0,
         "accepted": 0,
         "discarded": 0,
     }
