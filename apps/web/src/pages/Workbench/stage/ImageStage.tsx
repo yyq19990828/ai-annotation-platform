@@ -879,7 +879,12 @@ export function ImageStage({
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
         }
-        // v0.10.8 · maskBrush 松手不 commit；buffer 累积笔迹，由 Enter / MaskToolbar 显式触发 commitMaskAsPolygon。
+        // v0.23.5 · WS-B/A3 · maskBrush 松手关闭一笔历史边界, 把这一笔压入 undo 栈
+        // (与 VideoKonvaStage 一致)。仍不 commit; buffer 累积笔迹, 由 Enter / MaskToolbar
+        // 显式触发 commitMaskAsPolygon。
+        if (d.kind === "maskBrush") {
+          maskEditor?.endStroke();
+        }
       }
       setDrag(null);
       setSnapIndicator(null);

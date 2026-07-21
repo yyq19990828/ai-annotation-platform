@@ -24,6 +24,9 @@ export const MaskTool: CanvasToolMeta = {
     if (!maskEditor.active) {
       maskEditor.beginBlank();
     }
+    // v0.23.5 · WS-B/A3 · 开启一笔的历史边界: 配合 ImageStage pointerup 的 endStroke,
+    // 让图片 mask 每笔可 undo (与视频路径 VideoKonvaStage 一致)。
+    maskEditor.beginStroke();
     // 立即落第一笔；连续 paintAt 由 ImageStage 在 pointermove 中线段插值。
     maskEditor.paintAt(px, py);
     return { kind: "maskBrush", lastX: px, lastY: py } as DragInit;
