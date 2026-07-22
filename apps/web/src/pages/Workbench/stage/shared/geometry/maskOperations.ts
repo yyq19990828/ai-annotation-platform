@@ -49,6 +49,26 @@ export interface MaskRegionLabels {
   hit: (x: number, y: number) => MaskRegion | null;
 }
 
+export type MaskOperationSpec =
+  | {
+      type: "polygon";
+      points: ReadonlyArray<readonly [number, number]>;
+      value: 0 | 255;
+    }
+  | {
+      type: "flood_fill";
+      x: number;
+      y: number;
+      value: 0 | 255;
+      connectivity: MaskConnectivity;
+    }
+  | {
+      type: "morphology";
+      operation: MaskMorphologyOperation;
+      kernelShape: MaskKernelShape;
+      radius: number;
+    };
+
 function assertAlpha(alpha: Uint8Array, width: number, height: number): void {
   if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
     throw new Error("mask dimensions must be positive integers");
@@ -520,4 +540,19 @@ export function applyMaskMorphology(
     after = oneMorphologyPass(source, width, height, radius, kernelShape, operation);
   }
   return operationResult(source, after, width, height);
+}
+
+export function applyMaskOperation(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  operation: MaskOperationSpec,
+): MaskOperationResult {
+  if (operation.type === "polygon") {
+    return applyMaskPolygon(source, width, height, operation);
+  }
+  if (operation.type === "flood_fill") {
+    return applyMaskFloodFill(source, width, height, operation);
+  }
+  return applyMaskMorphology(source, width, height, operation);
 }

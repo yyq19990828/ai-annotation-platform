@@ -15,6 +15,7 @@ import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import { MaskBuffer } from "./shared/geometry/maskBuffer";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX } from "../state/useMaskEditor";
 import { canEditMask } from "../state/canEditMask";
 import type { CommentCanvasDrawing } from "@/api/comments";
@@ -85,6 +86,7 @@ type Drag =
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] }
   | { kind: "maskBrush"; lastX: number; lastY: number }
+  | { kind: "maskLasso"; points: [number, number][] }
   // v0.10.28 · 旋转框旋转手柄拖拽。cx/cy 为框中心 (归一化), startAngle 为按下时角度, cur 实时角度。
   | { kind: "rotateBox"; id: string; cx: number; cy: number; startAngle: number; cur: number };
 
@@ -321,6 +323,7 @@ const SAM_CANDIDATE_STROKE = "#a855f7";
 const SAM_DASH: [number, number] = [6, 4];
 const SAM_DASH_PERIOD = SAM_DASH[0] + SAM_DASH[1];
 const SAM_FLOW_SPEED = 22;
+const MASK_OPERATION_PREVIEW_COLOR = [245, 158, 11] as const;
 
 function SamCandidateOverlay({
   candidates,
@@ -845,6 +848,14 @@ export function ImageStage({
         }
         d.lastX = px;
         d.lastY = py;
+      } else if (d.kind === "maskLasso") {
+        const px = pt.x * imgW;
+        const py = pt.y * imgH;
+        const previous = d.points[d.points.length - 1];
+        if (!previous || Math.hypot(px - previous[0], py - previous[1]) >= 1) {
+          d.points.push([px, py]);
+          setDrag({ ...d, points: [...d.points] });
+        }
       } else if (d.kind === "rotateBox") {
         // v0.10.28 · 旋转手柄: 光标相对框中心的方位角。手柄默认在正上方 (angle=0),
         // 顺时针为正; atan2(dx, -dy) 给出从上方起顺时针角度 (y 轴向下需取负)。
@@ -951,6 +962,12 @@ export function ImageStage({
         } else if (d.kind === "canvasStroke") {
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
+        } else if (d.kind === "maskLasso" && d.points.length >= 3 && maskEditor) {
+          void maskEditor.runOperation(maskEditor.tool, {
+            type: "polygon",
+            points: d.points,
+            value: maskEditor.tool === "lasso_subtract" ? 0 : 255,
+          });
         }
         // v0.23.5 · WS-B/A3 · maskBrush 松手关闭一笔历史边界, 把这一笔压入 undo 栈
         // (与 VideoKonvaStage 一致)。仍不 commit; buffer 累积笔迹, 由 Enter / MaskToolbar
@@ -1094,6 +1111,13 @@ export function ImageStage({
   const [snapIndicator, setSnapIndicator] = useState<{ x: number; y: number } | null>(null);
   // v0.10.9 · Mask 笔刷光标 (image-space pixels)；overlay 层据此画跟随圆圈。
   const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
+  const maskOperationPreviewBuffer = useMemo(() => {
+    const preview = maskEditor?.operationPreview;
+    if (!preview || preview.alpha.length !== imgW * imgH) return null;
+    const buffer = new MaskBuffer({ width: imgW, height: imgH });
+    buffer.replaceAlpha(preview.alpha);
+    return buffer;
+  }, [imgH, imgW, maskEditor?.operationPreview]);
 
   const drawingPreview = drag?.kind === "draw"
     ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
@@ -1641,7 +1665,7 @@ export function ImageStage({
         </Layer>
 
         {/* v0.10.8 · Mask 编辑器临时叠加层 (仅 tool === "mask" 且 active 时挂)。 */}
-        {tool === "mask" && maskEditor?.active && maskEditor.buffer && (
+        {tool === "mask" && maskEditor?.active && maskEditor.buffer && !maskOperationPreviewBuffer && (
           <MaskOverlayLayer
             buffer={maskEditor.buffer}
             revision={maskEditor.revision}
@@ -1649,6 +1673,17 @@ export function ImageStage({
             imgH={imgH}
             opacity={workbenchConfig.image.maskOverlayOpacity}
             visible={true}
+          />
+        )}
+        {tool === "mask" && maskOperationPreviewBuffer && (
+          <MaskOverlayLayer
+            buffer={maskOperationPreviewBuffer}
+            revision={maskEditor?.operationPreview?.id ?? 0}
+            imgW={imgW}
+            imgH={imgH}
+            opacity={workbenchConfig.image.maskOverlayOpacity}
+            color={MASK_OPERATION_PREVIEW_COLOR}
+            visible
           />
         )}
 
@@ -1844,6 +1879,17 @@ export function ImageStage({
               listening={false}
             />
           )}
+          {drag?.kind === "maskLasso" && drag.points.length > 1 && (
+            <Line
+              points={drag.points.flatMap(([x, y]) => [x, y])}
+              stroke={maskEditor?.tool === "lasso_subtract" ? "#f97316" : "#22c55e"}
+              strokeWidth={2 / vp.scale}
+              dash={[5 / vp.scale, 3 / vp.scale]}
+              lineCap="round"
+              lineJoin="round"
+              listening={false}
+            />
+          )}
           {samCandidates && samCandidates.length > 0 && (
             <SamCandidateOverlay
               candidates={samCandidates}
@@ -2000,7 +2046,8 @@ export function ImageStage({
           )}
           {/* v0.10.9 · Mask 笔刷光标圈：仅 mask 工具激活时渲染；圆心 = maskCursor，半径 = maskEditor.radius
               (image-space px)，描边宽度按 vp.scale 取倒数保持像素级视觉。brush=红、erase=灰。 */}
-          {tool === "mask" && maskCursor && maskEditor && (
+          {tool === "mask" && maskCursor && maskEditor
+            && (maskEditor.tool === "brush" || maskEditor.tool === "erase") && (
             <Circle
               x={maskCursor.x}
               y={maskCursor.y}

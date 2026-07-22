@@ -1,88 +1,100 @@
-// v0.10.7.1 M4-δ 后续 · I11 · Mask 编辑器状态层。
-//
-// 把 v0.10.7 落地的 MaskBuffer / maskToPolygon 算法核组装成一个可由 WorkbenchShell
-// 单点接入的 React hook：维护 buffer / 当前模式 (brush|erase) / 笔刷半径 / dirty 标志，
-// 并提供 `paintAt`、`commitToPolygon`、`initFromPolygon`、`cancel` 工具。
-//
-// v0.10.7.1 不包含：Konva 渲染层（MaskCanvasOverlay）、ImageStage maskBrush DragInit
-// 派发、ToolDock 按钮、AIPredictionPopover「精修」入口、B/E/Shift+滚轮/Esc/Enter hotkey。
-// 这些 UI 集成留到 v0.10.7.2 / v0.11.0；本期只稳状态层 + 单测。
-//
-// 与 useDirtyTracker 协同（v0.10.6 落地）：mask 编辑的「一笔不入 history、松手前累计
-// flush 一次」语义可由 useDirtyTracker.flush 承载；本 hook 暴露 commit 入口由调用方
-// 决定何时 flush。
+// 图片 / 视频共用的 Mask 编辑器状态层：二值 Buffer、pointer tool、operation preview 与 history。
 
 import { useCallback, useRef, useState } from "react";
-import { MaskBuffer } from "../stage/shared/geometry/maskBuffer";
+import { MaskBuffer, type MaskBrushShape } from "../stage/shared/geometry/maskBuffer";
 import { maskToPolygon } from "../stage/shared/geometry/maskToPolygon";
 import type { CocoRle } from "../stage/shared/geometry/maskRle";
+import type {
+  MaskConnectivity,
+  MaskOperationReport,
+  MaskOperationResult,
+  MaskOperationSpec,
+} from "../stage/shared/geometry/maskOperations";
+import { applyMaskOperation } from "../stage/shared/geometry/maskOperations";
+import {
+  executeRasterMaskOperationAsync,
+  RasterMaskWorkerCancelledError,
+} from "../stage/shared/rasterMaskCompute";
 import type { MaskEditorPhase } from "./canEditMask";
 
 export type MaskMode = "brush" | "erase";
+export type MaskEditorTool =
+  | MaskMode
+  | "lasso_add"
+  | "lasso_subtract"
+  | "fill_add"
+  | "fill_subtract";
 
-/** 笔刷半径上下界（像素）。 */
 export const MASK_BRUSH_MIN_PX = 1;
 export const MASK_BRUSH_MAX_PX = 200;
 export const MASK_BRUSH_DEFAULT_PX = 16;
 
+export interface MaskOperationPreview {
+  id: number;
+  name: string;
+  sourceRevision: number;
+  alpha: Uint8Array;
+  report: MaskOperationReport;
+}
+
+export type MaskOperationStatus = "idle" | "computing" | "preview" | "error";
+
+interface MaskHistoryCommand {
+  name: string;
+  before: CocoRle;
+  after: CocoRle;
+  report?: MaskOperationReport;
+}
+
 export interface UseMaskEditorOptions {
-  /** 离屏 buffer 尺寸（必须与图像像素尺寸一致；调用方按 task 切换）。 */
   width: number;
   height: number;
-  /** 初始笔刷半径，默认 16px；自动 clamp 到 [MIN, MAX]。 */
   initialRadius?: number;
 }
 
 export interface UseMaskEditorReturn {
-  /** 会话包装器注入；裸编辑器缺省时由调用方按 active/dirty 推导。 */
   phase?: MaskEditorPhase;
-  /** 是否处于活跃编辑态。`initFromPolygon` / `beginBlank` 后变 true；`cancel` / `commitToPolygon` 后清空。 */
   active: boolean;
-  /** 当前模式：笔刷 / 橡皮。 */
   mode: MaskMode;
-  /** 笔刷半径（像素，已 clamp）。 */
+  tool: MaskEditorTool;
+  brushShape: MaskBrushShape;
+  connectivity: MaskConnectivity;
   radius: number;
-  /** 是否在当前会话中改过 buffer（用于 UI 提示「未保存」与 Enter 是否落地）。 */
   dirty: boolean;
-  /** 当前 buffer 引用（调用方只读访问）；非编辑态返回 null。 */
   buffer: MaskBuffer | null;
-  /**
-   * v0.10.8 · buffer 写入计数。paintAt / brush 都会 ++，渲染层（MaskOverlayLayer）可
-   * 把它放进 useEffect 依赖来触发 putImageData 重画；不直接代表 buffer 引用变化。
-   */
   revision: number;
   canUndo: boolean;
   canRedo: boolean;
-  /** 从空白 buffer 开始（独立 mask 工具入口）。 */
+  operationPreview: MaskOperationPreview | null;
+  operationStatus: MaskOperationStatus;
+  operationError: unknown;
   beginBlank: () => void;
-  /** 从 polygon 顶点初始化（AI 候选精修入口）。 */
   initFromPolygon: (points: ReadonlyArray<readonly [number, number]>) => void;
-  /** 从视频持久化 RLE 初始化。RLE 尺寸必须与 editor 尺寸一致。 */
   initFromRle: (rle: CocoRle) => void;
-  /** 在像素坐标 (x, y) 处按当前 mode + radius 画一下；越界静默。 */
+  materializeFromRle: (rle: CocoRle) => void;
   paintAt: (x: number, y: number) => void;
-  /** 一次 pointer stroke 的历史边界。 */
   beginStroke: () => void;
   endStroke: () => void;
   undo: () => void;
   redo: () => void;
-  /** 切换模式。 */
-  setMode: (m: MaskMode) => void;
-  /** 设置笔刷半径，自动 clamp。 */
-  setRadius: (r: number) => void;
-  /** 退出编辑态、不落库；buffer 清空。 */
+  setMode: (mode: MaskMode) => void;
+  setTool: (tool: MaskEditorTool) => void;
+  setBrushShape: (shape: MaskBrushShape) => void;
+  setConnectivity: (connectivity: MaskConnectivity) => void;
+  setRadius: (radius: number) => void;
+  previewOperation: (
+    name: string,
+    result: MaskOperationResult,
+    sourceRevision?: number,
+  ) => boolean;
+  runOperation: (
+    name: string,
+    operation: MaskOperationSpec,
+    context?: { sessionId: string; generation: number },
+  ) => Promise<boolean>;
+  confirmOperation: () => boolean;
+  cancelOperation: () => void;
   cancel: () => void;
-  /**
-   * 收尾：调用 maskToPolygon 转出外环顶点。
-   *
-   * - 空 mask / 顶点 < 3 → 返回 null，调用方可提示「mask 为空」；
-   * - 非 null → 调用方走 submitPolygon 落库；
-   * - 调用 commitToPolygon 不会自动退出 active；调用方在拿到 polygon 后自行 cancel。
-   *
-   * v0.23.5 WS-E (ADR-0052 D5)：返回值新增 lossy / droppedComponents / lossyReason。
-   * 调用方必须在落库前检查 `lossy`：若 true, 不可静默提交 (会丢多连通分量 / 孔),
-   * 应提示用户「请等待原生 Mask 工作台 (v0.23.7)」并保留编辑态。
-   */
   commitToPolygon: () => {
     points: [number, number][];
     multipleComponents: boolean;
@@ -91,92 +103,143 @@ export interface UseMaskEditorReturn {
     droppedHoles?: number;
     lossyReason?: string;
   } | null;
-  /** 视频路径收尾：保持逐像素 RLE，不做 polygon 矢量化。 */
   commitToRle: () => CocoRle | null;
 }
 
-function clampRadius(r: number): number {
-  if (!Number.isFinite(r)) return MASK_BRUSH_DEFAULT_PX;
-  return Math.max(MASK_BRUSH_MIN_PX, Math.min(MASK_BRUSH_MAX_PX, Math.round(r)));
+function clampRadius(radius: number): number {
+  if (!Number.isFinite(radius)) return MASK_BRUSH_DEFAULT_PX;
+  return Math.max(MASK_BRUSH_MIN_PX, Math.min(MASK_BRUSH_MAX_PX, Math.round(radius)));
 }
 
-/**
- * v0.10.7.1 mask 编辑器状态 hook。
- *
- * 设计：buffer 用 useRef 持有（避免 paintAt 每笔都 rerender），active / mode /
- * radius / dirty 用 useState 触发 UI；buffer 引用通过 getter 暴露给渲染层。
- */
-export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAULT_PX }: UseMaskEditorOptions): UseMaskEditorReturn {
+function equalRle(left: CocoRle, right: CocoRle): boolean {
+  return left.size[0] === right.size[0]
+    && left.size[1] === right.size[1]
+    && left.counts.length === right.counts.length
+    && left.counts.every((count, index) => count === right.counts[index]);
+}
+
+export function useMaskEditor({
+  width,
+  height,
+  initialRadius = MASK_BRUSH_DEFAULT_PX,
+}: UseMaskEditorOptions): UseMaskEditorReturn {
   const bufferRef = useRef<MaskBuffer | null>(null);
   const strokeBeforeRef = useRef<CocoRle | null>(null);
-  const undoRef = useRef<CocoRle[]>([]);
-  const redoRef = useRef<CocoRle[]>([]);
+  const undoRef = useRef<MaskHistoryCommand[]>([]);
+  const redoRef = useRef<MaskHistoryCommand[]>([]);
+  const operationPreviewRef = useRef<MaskOperationPreview | null>(null);
+  const operationIdRef = useRef(0);
+  const operationAbortRef = useRef<AbortController | null>(null);
+  const revisionRef = useRef(0);
   const [active, setActive] = useState(false);
-  const [mode, setMode] = useState<MaskMode>("brush");
-  const [radius, _setRadius] = useState<number>(clampRadius(initialRadius));
+  const [mode, setModeState] = useState<MaskMode>("brush");
+  const [tool, setToolState] = useState<MaskEditorTool>("brush");
+  const [brushShape, setBrushShape] = useState<MaskBrushShape>("circle");
+  const [connectivity, setConnectivity] = useState<MaskConnectivity>(4);
+  const [radius, setRadiusState] = useState(clampRadius(initialRadius));
   const [dirty, setDirty] = useState(false);
-  // 引用计数用 revision 让 mask 写入触发 buffer-getter 的消费者 rerender（如 Konva.Image）
-  const [revision, setRev] = useState(0);
+  const [revision, setRevision] = useState(0);
   const [historyRevision, setHistoryRevision] = useState(0);
+  const [operationPreview, setOperationPreview] = useState<MaskOperationPreview | null>(null);
+  const [operationStatus, setOperationStatus] = useState<MaskOperationStatus>("idle");
+  const [operationError, setOperationError] = useState<unknown>(undefined);
   void historyRevision;
-  const bump = useCallback(() => setRev((n) => n + 1), []);
 
-  const setRadius = useCallback((r: number) => {
-    _setRadius(clampRadius(r));
+  const bump = useCallback(() => {
+    revisionRef.current += 1;
+    setRevision(revisionRef.current);
   }, []);
 
-  const beginBlank = useCallback(() => {
-    bufferRef.current = new MaskBuffer({ width, height });
-    setActive(true);
-    setDirty(false);
+  const clearOperationPreview = useCallback(() => {
+    operationPreviewRef.current = null;
+    setOperationPreview(null);
+    setOperationStatus("idle");
+  }, []);
+
+  const cancelActiveOperation = useCallback(() => {
+    operationAbortRef.current?.abort();
+    operationAbortRef.current = null;
+    setOperationError(undefined);
+    clearOperationPreview();
+  }, [clearOperationPreview]);
+
+  const resetHistory = useCallback(() => {
     undoRef.current = [];
     redoRef.current = [];
     strokeBeforeRef.current = null;
-    setHistoryRevision((n) => n + 1);
-    bump();
-  }, [width, height, bump]);
+    setHistoryRevision((value) => value + 1);
+  }, []);
 
-  const initFromPolygon = useCallback((points: ReadonlyArray<readonly [number, number]>) => {
-    const b = new MaskBuffer({ width, height });
-    b.fromPolygon(points);
-    bufferRef.current = b;
-    setActive(true);
-    setDirty(false);
-    undoRef.current = [];
-    redoRef.current = [];
-    strokeBeforeRef.current = null;
-    setHistoryRevision((n) => n + 1);
-    bump();
-  }, [width, height, bump]);
-
-  const initFromRle = useCallback((rle: CocoRle) => {
+  const validateRleSize = useCallback((rle: CocoRle) => {
     const [rleHeight, rleWidth] = rle.size;
     if (rleWidth !== width || rleHeight !== height) {
       throw new Error(`mask RLE size ${rleWidth}x${rleHeight} does not match editor ${width}x${height}`);
     }
-    bufferRef.current = MaskBuffer.fromRle(rle);
+  }, [height, width]);
+
+  const installBuffer = useCallback((buffer: MaskBuffer, isDirty: boolean) => {
+    bufferRef.current = buffer;
     setActive(true);
-    setDirty(false);
-    undoRef.current = [];
-    redoRef.current = [];
-    strokeBeforeRef.current = null;
-    setHistoryRevision((n) => n + 1);
+    setDirty(isDirty);
+    resetHistory();
+    cancelActiveOperation();
     bump();
-  }, [width, height, bump]);
+  }, [bump, cancelActiveOperation, resetHistory]);
+
+  const beginBlank = useCallback(() => {
+    installBuffer(new MaskBuffer({ width, height }), false);
+  }, [height, installBuffer, width]);
+
+  const initFromPolygon = useCallback((points: ReadonlyArray<readonly [number, number]>) => {
+    const buffer = new MaskBuffer({ width, height });
+    buffer.fromPolygon(points);
+    installBuffer(buffer, false);
+  }, [height, installBuffer, width]);
+
+  const initFromRle = useCallback((rle: CocoRle) => {
+    validateRleSize(rle);
+    installBuffer(MaskBuffer.fromRle(rle), false);
+  }, [installBuffer, validateRleSize]);
+
+  const materializeFromRle = useCallback((rle: CocoRle) => {
+    validateRleSize(rle);
+    installBuffer(MaskBuffer.fromRle(rle), true);
+  }, [installBuffer, validateRleSize]);
+
+  const setRadius = useCallback((nextRadius: number) => {
+    setRadiusState(clampRadius(nextRadius));
+  }, []);
+
+  const setMode = useCallback((nextMode: MaskMode) => {
+    setModeState(nextMode);
+    setToolState(nextMode);
+    cancelActiveOperation();
+  }, [cancelActiveOperation]);
+
+  const setTool = useCallback((nextTool: MaskEditorTool) => {
+    setToolState(nextTool);
+    if (nextTool === "brush" || nextTool === "erase") setModeState(nextTool);
+    cancelActiveOperation();
+  }, [cancelActiveOperation]);
 
   const paintAt = useCallback((x: number, y: number) => {
-    const b = bufferRef.current;
-    if (!b) return;
-    if (mode === "erase") b.erase(x, y, radius);
-    else b.brush(x, y, radius);
-    if (!dirty) setDirty(true);
+    const buffer = bufferRef.current;
+    if (!buffer || operationPreviewRef.current || (tool !== "brush" && tool !== "erase")) return;
+    if (mode === "erase") buffer.erase(x, y, radius, brushShape);
+    else buffer.brush(x, y, radius, 255, brushShape);
+    setDirty(true);
     bump();
-  }, [mode, radius, dirty, bump]);
+  }, [brushShape, bump, mode, radius, tool]);
 
   const beginStroke = useCallback(() => {
-    if (!bufferRef.current || strokeBeforeRef.current) return;
+    if (
+      !bufferRef.current
+      || strokeBeforeRef.current
+      || operationPreviewRef.current
+      || (tool !== "brush" && tool !== "erase")
+    ) return;
     strokeBeforeRef.current = bufferRef.current.toRle();
-  }, []);
+  }, [tool]);
 
   const endStroke = useCallback(() => {
     const before = strokeBeforeRef.current;
@@ -184,62 +247,153 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     strokeBeforeRef.current = null;
     if (!before || !current) return;
     const after = current.toRle();
-    if (before.counts.length === after.counts.length
-      && before.counts.every((count, index) => count === after.counts[index])) return;
-    undoRef.current = [...undoRef.current.slice(-19), before];
+    if (equalRle(before, after)) return;
+    undoRef.current = [...undoRef.current.slice(-19), { name: "stroke", before, after }];
     redoRef.current = [];
-    setHistoryRevision((n) => n + 1);
+    setHistoryRevision((value) => value + 1);
   }, []);
 
   const restore = useCallback((rle: CocoRle) => {
     bufferRef.current = MaskBuffer.fromRle(rle);
+    cancelActiveOperation();
     setDirty(true);
     bump();
-  }, [bump]);
+  }, [bump, cancelActiveOperation]);
 
   const undo = useCallback(() => {
-    const current = bufferRef.current;
-    const previous = undoRef.current.pop();
-    if (!current || !previous) return;
-    redoRef.current.push(current.toRle());
-    restore(previous);
-    setHistoryRevision((n) => n + 1);
-  }, [restore]);
+    if (operationPreviewRef.current) {
+      clearOperationPreview();
+      return;
+    }
+    const command = undoRef.current.pop();
+    if (!bufferRef.current || !command) return;
+    redoRef.current.push(command);
+    restore(command.before);
+    setHistoryRevision((value) => value + 1);
+  }, [clearOperationPreview, restore]);
 
   const redo = useCallback(() => {
-    const current = bufferRef.current;
-    const next = redoRef.current.pop();
-    if (!current || !next) return;
-    undoRef.current.push(current.toRle());
-    restore(next);
-    setHistoryRevision((n) => n + 1);
+    const command = redoRef.current.pop();
+    if (!bufferRef.current || !command) return;
+    undoRef.current.push(command);
+    restore(command.after);
+    setHistoryRevision((value) => value + 1);
   }, [restore]);
+
+  const previewOperation = useCallback((
+    name: string,
+    result: MaskOperationResult,
+    sourceRevision = revisionRef.current,
+  ): boolean => {
+    const current = bufferRef.current;
+    if (!current || sourceRevision !== revisionRef.current) return false;
+    if (result.alpha.length !== current.data.length) {
+      throw new Error("mask operation preview dimensions do not match the editor buffer");
+    }
+    operationIdRef.current += 1;
+    const preview: MaskOperationPreview = {
+      id: operationIdRef.current,
+      name,
+      sourceRevision,
+      alpha: result.alpha,
+      report: result.report,
+    };
+    operationPreviewRef.current = preview;
+    setOperationPreview(preview);
+    setOperationError(undefined);
+    setOperationStatus("preview");
+    return true;
+  }, []);
+
+  const runOperation = useCallback(async (
+    name: string,
+    operation: MaskOperationSpec,
+    context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
+  ): Promise<boolean> => {
+    const current = bufferRef.current;
+    if (!current) return false;
+    cancelActiveOperation();
+    const sourceRevision = revisionRef.current;
+    const rle = current.toRle();
+    operationIdRef.current += 1;
+    const operationId = operationIdRef.current;
+    const controller = new AbortController();
+    operationAbortRef.current = controller;
+    setOperationStatus("computing");
+    setOperationError(undefined);
+    try {
+      const shouldUseWorker = width * height > 1_000_000
+        || (operation.type === "morphology" && operation.radius > 4);
+      const result = shouldUseWorker
+        ? (await executeRasterMaskOperationAsync(
+            rle,
+            operation,
+            { ...context, operationId },
+            { signal: controller.signal },
+          )).result
+        : applyMaskOperation(current.data, width, height, operation);
+      if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
+      operationAbortRef.current = null;
+      const accepted = previewOperation(name, result, sourceRevision);
+      if (!accepted) setOperationStatus("idle");
+      return accepted;
+    } catch (error) {
+      if (operationAbortRef.current === controller) operationAbortRef.current = null;
+      const isCurrent = operationIdRef.current === operationId;
+      if (error instanceof RasterMaskWorkerCancelledError || controller.signal.aborted) {
+        if (isCurrent) setOperationStatus("idle");
+        return false;
+      }
+      if (!isCurrent) return false;
+      setOperationError(error);
+      setOperationStatus("error");
+      return false;
+    }
+  }, [cancelActiveOperation, height, previewOperation, width]);
+
+  const confirmOperation = useCallback((): boolean => {
+    const preview = operationPreviewRef.current;
+    const current = bufferRef.current;
+    if (!preview || !current || preview.sourceRevision !== revisionRef.current) {
+      clearOperationPreview();
+      return false;
+    }
+    const before = current.toRle();
+    const change = current.replaceAlpha(preview.alpha);
+    clearOperationPreview();
+    if (change.changedPixels === 0) return false;
+    const after = current.toRle();
+    undoRef.current = [...undoRef.current.slice(-19), {
+      name: preview.name,
+      before,
+      after,
+      report: preview.report,
+    }];
+    redoRef.current = [];
+    setDirty(true);
+    setHistoryRevision((value) => value + 1);
+    bump();
+    return true;
+  }, [bump, clearOperationPreview]);
+
+  const cancelOperation = useCallback(() => {
+    cancelActiveOperation();
+  }, [cancelActiveOperation]);
 
   const cancel = useCallback(() => {
     bufferRef.current = null;
     setActive(false);
     setDirty(false);
-    undoRef.current = [];
-    redoRef.current = [];
-    strokeBeforeRef.current = null;
-    setHistoryRevision((n) => n + 1);
+    resetHistory();
+    cancelActiveOperation();
     bump();
-  }, [bump]);
+  }, [bump, cancelActiveOperation, resetHistory]);
 
-  const commitToPolygon = useCallback((): {
-    points: [number, number][];
-    multipleComponents: boolean;
-    lossy: boolean;
-    droppedComponents?: number;
-    droppedHoles?: number;
-    lossyReason?: string;
-  } | null => {
-    const b = bufferRef.current;
-    if (!b) return null;
-    const out = maskToPolygon(b);
-    if (out.points.length < 3) return null;
-    // v0.23.5 WS-E · 透传 maskToPolygon 的 lossy 诊断字段, 调用方据此决定是否落库。
-    return out;
+  const commitToPolygon = useCallback(() => {
+    const buffer = bufferRef.current;
+    if (!buffer) return null;
+    const result = maskToPolygon(buffer);
+    return result.points.length < 3 ? null : result;
   }, []);
 
   const commitToRle = useCallback((): CocoRle | null => {
@@ -249,22 +403,36 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
   return {
     active,
     mode,
+    tool,
+    brushShape,
+    connectivity,
     radius,
     dirty,
     buffer: bufferRef.current,
     revision,
     canUndo: undoRef.current.length > 0,
     canRedo: redoRef.current.length > 0,
+    operationPreview,
+    operationStatus,
+    operationError,
     beginBlank,
     initFromPolygon,
     initFromRle,
+    materializeFromRle,
     paintAt,
     beginStroke,
     endStroke,
     undo,
     redo,
     setMode,
+    setTool,
+    setBrushShape,
+    setConnectivity,
     setRadius,
+    previewOperation,
+    runOperation,
+    confirmOperation,
+    cancelOperation,
     cancel,
     commitToPolygon,
     commitToRle,

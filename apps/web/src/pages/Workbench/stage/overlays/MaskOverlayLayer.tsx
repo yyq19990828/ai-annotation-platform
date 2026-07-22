@@ -11,9 +11,7 @@ import { Layer, Image as KonvaImage } from "react-konva";
 import type Konva from "konva";
 import type { MaskBuffer } from "../shared/geometry/maskBuffer";
 
-const FILL_R = 220;
-const FILL_G = 38;
-const FILL_B = 38;
+const DEFAULT_FILL: readonly [number, number, number] = [220, 38, 38];
 
 interface MaskOverlayLayerProps {
   buffer: MaskBuffer | null;
@@ -21,6 +19,7 @@ interface MaskOverlayLayerProps {
   imgW: number;
   imgH: number;
   opacity?: number;
+  color?: readonly [number, number, number];
   /** 仅 mask 工具激活且 active 为 true 时挂载。 */
   visible: boolean;
 }
@@ -31,6 +30,7 @@ export function MaskOverlayLayer({
   imgW,
   imgH,
   opacity = 0.45,
+  color = DEFAULT_FILL,
   visible,
 }: MaskOverlayLayerProps) {
   const canvas = useMemo(() => {
@@ -67,9 +67,9 @@ export function MaskOverlayLayer({
     const data = buffer.toAlphaImageDataRect(rect);
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] > 0) {
-        data[i] = FILL_R;
-        data[i + 1] = FILL_G;
-        data[i + 2] = FILL_B;
+        data[i] = color[0];
+        data[i + 1] = color[1];
+        data[i + 2] = color[2];
         data[i + 3] = opacityByte;
       }
     }
@@ -78,7 +78,7 @@ export function MaskOverlayLayer({
     ctx.putImageData(img, rect.x0, rect.y0);
     const node = imageRef.current;
     if (node) node.getLayer()?.batchDraw();
-  }, [buffer, canvas, revision, imgW, imgH, opacityByte]);
+  }, [buffer, canvas, revision, imgW, imgH, opacityByte, color]);
 
   if (!visible || !buffer || !canvas) return null;
 

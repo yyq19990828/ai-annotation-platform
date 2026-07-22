@@ -13,6 +13,7 @@ import {
   MASK_BRUSH_MAX_PX,
   MASK_BRUSH_DEFAULT_PX,
 } from "./useMaskEditor";
+import { applyMaskPolygon } from "../stage/shared/geometry/maskOperations";
 
 describe("useMaskEditor · 初始态", () => {
   it("初始非 active，dirty=false，buffer=null，revision=0", () => {
@@ -169,5 +170,109 @@ describe("useMaskEditor · stroke undo / redo", () => {
 
     act(() => result.current.redo());
     expect(result.current.buffer?.countSet()).toBe(painted);
+  });
+});
+
+describe("useMaskEditor · operation preview / command", () => {
+  it("preview 不修改 live buffer，confirm 后只产生一个可撤销 command", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 6, height: 4 }));
+    act(() => result.current.beginBlank());
+    const sourceRevision = result.current.revision;
+    const operation = applyMaskPolygon(result.current.buffer!.data, 6, 4, {
+      points: [[1, 1], [5, 1], [5, 3], [1, 3]],
+      value: 255,
+    });
+
+    let accepted = false;
+    act(() => {
+      accepted = result.current.previewOperation("lasso_add", operation, sourceRevision);
+    });
+    expect(accepted).toBe(true);
+    expect(result.current.buffer?.countSet()).toBe(0);
+    expect(result.current.dirty).toBe(false);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.operationPreview?.report.afterArea).toBe(8);
+
+    act(() => result.current.confirmOperation());
+    expect(result.current.operationPreview).toBeNull();
+    expect(result.current.buffer?.countSet()).toBe(8);
+    expect(result.current.dirty).toBe(true);
+    expect(result.current.canUndo).toBe(true);
+
+    act(() => result.current.undo());
+    expect(result.current.buffer?.countSet()).toBe(0);
+    act(() => result.current.redo());
+    expect(result.current.buffer?.countSet()).toBe(8);
+  });
+
+  it("cancel preview 不 dirty，旧 revision 的 Worker 结果被拒绝", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 5, height: 5, initialRadius: 1 }));
+    act(() => result.current.beginBlank());
+    const staleRevision = result.current.revision;
+    const stale = applyMaskPolygon(result.current.buffer!.data, 5, 5, {
+      points: [[0, 0], [3, 0], [3, 3], [0, 3]],
+      value: 255,
+    });
+    act(() => result.current.paintAt(4, 4));
+
+    let accepted = true;
+    act(() => {
+      accepted = result.current.previewOperation("stale", stale, staleRevision);
+    });
+    expect(accepted).toBe(false);
+    expect(result.current.operationPreview).toBeNull();
+
+    const current = applyMaskPolygon(result.current.buffer!.data, 5, 5, {
+      points: [[0, 0], [2, 0], [2, 2], [0, 2]],
+      value: 255,
+    });
+    act(() => {
+      result.current.previewOperation("current", current, result.current.revision);
+      result.current.cancelOperation();
+    });
+    expect(result.current.operationPreview).toBeNull();
+    expect(result.current.buffer?.get(4, 4)).toBe(255);
+  });
+
+  it("materializeFromRle 明确进入 dirty，不伪造像素笔画", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 3, height: 2 }));
+    const rle = {
+      encoding: "coco_rle" as const,
+      size: [2, 3] as [number, number],
+      counts: [1, 2, 2, 1],
+    };
+    act(() => result.current.materializeFromRle(rle));
+    expect(result.current.active).toBe(true);
+    expect(result.current.dirty).toBe(true);
+    expect(result.current.commitToRle()).toEqual(rle);
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  it("高级工具与 brush/erase 兼容 mode 同步", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 3, height: 2 }));
+    act(() => result.current.setTool("lasso_add"));
+    expect(result.current.tool).toBe("lasso_add");
+    expect(result.current.mode).toBe("brush");
+    act(() => result.current.setMode("erase"));
+    expect(result.current.tool).toBe("erase");
+    act(() => result.current.setBrushShape("square"));
+    expect(result.current.brushShape).toBe("square");
+  });
+
+  it("runOperation 在小图同步计算并进入 preview 状态", async () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 4, height: 3 }));
+    act(() => result.current.beginBlank());
+    await act(async () => {
+      expect(await result.current.runOperation("fill_add", {
+        type: "flood_fill",
+        x: 0,
+        y: 0,
+        value: 255,
+        connectivity: 4,
+      })).toBe(true);
+    });
+    expect(result.current.operationStatus).toBe("preview");
+    expect(result.current.operationPreview?.report.afterArea).toBe(12);
+    expect(result.current.buffer?.countSet()).toBe(0);
   });
 });

@@ -3986,12 +3986,16 @@ export function useWorkbenchShellModel({
             {(isVideoTask ? s.videoTool === "mask" : s.tool === "mask") && (
               <MaskToolbar
                 active={maskEditor.active}
-                mode={maskEditor.mode}
+                tool={maskEditor.tool}
+                brushShape={maskEditor.brushShape}
+                connectivity={maskEditor.connectivity}
                 radius={maskEditor.radius}
                 dirty={maskEditor.dirty}
                 phase={maskEditor.phase}
                 canUndo={maskEditor.canUndo}
                 canRedo={maskEditor.canRedo}
+                operationPreview={maskEditor.operationPreview}
+                operationStatus={maskEditor.operationStatus}
                 canEdit={(() => {
                   // v0.23.5 · WS-C · 工具栏经 canEditMask 统一准入 (与 pointer / hotkey 同源)。
                   const sel = s.selectedId
@@ -4008,8 +4012,12 @@ export function useWorkbenchShellModel({
                     editorPhase: maskEditor.phase,
                   });
                 })()}
-                onSetMode={maskEditor.setMode}
+                onSetTool={maskEditor.setTool}
+                onSetBrushShape={maskEditor.setBrushShape}
+                onSetConnectivity={maskEditor.setConnectivity}
                 onSetRadius={maskEditor.setRadius}
+                onConfirmOperation={maskEditor.confirmOperation}
+                onCancelOperation={maskEditor.cancelOperation}
                 onUndo={maskEditor.undo}
                 onRedo={maskEditor.redo}
                 onRetry={isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession}

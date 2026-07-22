@@ -82,6 +82,8 @@ export type DragInit =
    * Enter / MaskToolbar 显式触发。
    */
   | { kind: "maskBrush"; lastX: number; lastY: number }
+  /** Mask lasso 草稿使用原图像素坐标，松手后才计算 preview。 */
+  | { kind: "maskLasso"; points: [number, number][] }
   /**
    * v0.10.28 · 旋转框 (OBB) 旋转手柄拖拽。cx/cy 为框中心 (归一化), startAngle 为按下时角度,
    * cur 为拖拽中实时角度 (度数 [0,360) 顺时针)。ImageStage 松手时 commit angle 变更。

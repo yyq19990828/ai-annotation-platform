@@ -280,6 +280,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
         e.preventDefault(); e.stopImmediatePropagation();
         if (!maskEditable) return;
+        if (maskEditor.operationPreview) {
+          maskEditor.confirmOperation();
+          return;
+        }
         if (!canCommitMask(
           maskEditor.phase ?? (maskEditor.dirty ? "dirty" : "ready"),
           maskEditor.dirty,
@@ -292,6 +296,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         // Esc 都应丢弃缓冲（若有）并切回默认 box 工具。早先 `&& maskEditor.active` 守卫
         // 导致「按 M 进入但未落笔时 Esc 失效」，与工具栏文案矛盾。
         e.preventDefault(); e.stopPropagation();
+        if (maskEditor.operationPreview) {
+          maskEditor.cancelOperation();
+          return;
+        }
         cancelMaskEdit?.();
         return;
       }
@@ -784,7 +792,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     isPromptSupported, aiInteractiveEnabled,
     aiBoxes, autoAdvanceOnDecide, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
-    flushNudges,
+    flushNudges, updateMutation,
   ]);
 
   return { spacePan, markSpacePanDrag, nudgeMap, flushNudges };

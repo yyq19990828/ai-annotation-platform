@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-22
 ---
 
 # 视频追踪标注
@@ -40,7 +40,7 @@ last_reviewed: 2026-07-14
 | 选择 `V` | — | 点选、移动、resize 已有视频标注，不在空白处创建新框 |
 | 矩形框 `B` | `video_bbox` | 只属于当前 `frame_index`，其它帧不显示 |
 | 矩形框轨迹 `T` | `video_track_bbox` | 一条对象轨迹，多个关键帧之间会插值 |
-| Mask 轨迹 `M` | `video_track_mask` | 笔刷 / 橡皮编辑逐像素关键帧；关键帧之间保持最近 mask，不做形状插值 |
+| Mask 轨迹 `M` | `video_track_mask` | 笔刷、橡皮、套索与区域填充编辑逐像素关键帧；关键帧之间保持最近 mask，不做形状插值 |
 | 多边形 `P` | `video_polygon` | 逐点画，`Enter` / 双击闭合；只属于当前帧 |
 | 折线 | `video_polyline` | 同上，但不闭合；没有快捷键（`L` 在视频里是播放快进）|
 | 多边形轨迹 / 折线轨迹 | `video_track_polygon` / `video_track_polyline` | 跨帧关键帧版本；没有快捷键 |

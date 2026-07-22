@@ -18,6 +18,7 @@ import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaMaskLayer } from "./VideoKonvaMaskLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import { MaskBuffer } from "./shared/geometry/maskBuffer";
 import { canCommitMask, canEditMask } from "../state/canEditMask";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
@@ -74,6 +75,7 @@ const EMPTY_LOCKED = new Set<string>();
 // 解构默认值写 `= []` 会每次渲染产生新引用, 把 frameViews 的 memo 打穿(视频画布逐帧重算)。
 const EMPTY_SELECTED_IDS: string[] = [];
 const EMPTY_MASK_CANDIDATES: VideoMaskCandidate[] = [];
+const MASK_OPERATION_PREVIEW_COLOR = [245, 158, 11] as const;
 
 interface VideoKonvaStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -268,6 +270,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   const [panning, setPanning] = useState(false);
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const maskStrokeRef = useRef<{ lastX: number; lastY: number } | null>(null);
+  const maskLassoRef = useRef<[number, number][] | null>(null);
+  const [maskLassoPoints, setMaskLassoPoints] = useState<[number, number][]>([]);
   const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
 
   // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
@@ -290,6 +294,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     () => videoIntrinsicSize(manifest?.metadata.width, manifest?.metadata.height),
     [manifest?.metadata.height, manifest?.metadata.width],
   );
+  const maskOperationPreviewBuffer = useMemo(() => {
+    const preview = maskEditor?.operationPreview;
+    if (!preview || preview.alpha.length !== size.w * size.h) return null;
+    const buffer = new MaskBuffer({ width: size.w, height: size.h });
+    buffer.replaceAlpha(preview.alpha);
+    return buffer;
+  }, [maskEditor?.operationPreview, size.h, size.w]);
 
   // 右键上下文菜单状态
   const contextMenu = useCanvasContextMenu();
@@ -659,9 +670,26 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       e.cancelBubble = true;
       containerRef.current?.setPointerCapture?.(native.pointerId);
       if (!maskEditor.active) maskEditor.beginBlank();
-      maskEditor.beginStroke();
       const x = point.x * size.w;
       const y = point.y * size.h;
+      if (maskEditor.tool === "fill_add" || maskEditor.tool === "fill_subtract") {
+        void maskEditor.runOperation(maskEditor.tool, {
+          type: "flood_fill",
+          x,
+          y,
+          value: maskEditor.tool === "fill_add" ? 255 : 0,
+          connectivity: maskEditor.connectivity,
+        });
+        setMaskCursor(point);
+        return;
+      }
+      if (maskEditor.tool === "lasso_add" || maskEditor.tool === "lasso_subtract") {
+        maskLassoRef.current = [[x, y]];
+        setMaskLassoPoints([[x, y]]);
+        setMaskCursor(point);
+        return;
+      }
+      maskEditor.beginStroke();
       maskEditor.paintAt(x, y);
       maskStrokeRef.current = { lastX: x, lastY: y };
       setMaskCursor(point);
@@ -730,11 +758,20 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       } else if (event.key === "Enter") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (!editable || !canCommitMask(phase, maskEditor.dirty)) return;
+        if (!editable) return;
+        if (maskEditor.operationPreview) {
+          maskEditor.confirmOperation();
+          return;
+        }
+        if (!canCommitMask(phase, maskEditor.dirty)) return;
         onMaskCommit?.();
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (maskEditor.operationPreview) {
+          maskEditor.cancelOperation();
+          return;
+        }
         onMaskCancel?.();
       }
     };
@@ -1094,6 +1131,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (videoTool === "mask") setMaskCursor(inFrame);
     }
     const maskStroke = maskStrokeRef.current;
+    const maskLasso = maskLassoRef.current;
     const selectedTrackId = selectedManagedTrack?.geometry.track_id;
     const maskEditable = !!maskEditor && canEditMask({
       taskReadOnly: !!readOnly || isPlaybackActive,
@@ -1102,7 +1140,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       segmentLocked: false,
       editorPhase: maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
     });
-    if (maskStroke && maskEditor && maskEditable) {
+    if (maskLasso && maskEditor && maskEditable) {
+      const point = pointFromClientEvt(evt.clientX, evt.clientY);
+      if (point) {
+        const next: [number, number] = [point.x * size.w, point.y * size.h];
+        const previous = maskLasso[maskLasso.length - 1];
+        if (!previous || Math.hypot(next[0] - previous[0], next[1] - previous[1]) >= 1) {
+          maskLasso.push(next);
+          setMaskLassoPoints([...maskLasso]);
+        }
+      }
+    } else if (maskStroke && maskEditor && maskEditable) {
       const point = pointFromClientEvt(evt.clientX, evt.clientY);
       if (point) {
         const x = point.x * size.w;
@@ -1130,6 +1178,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     if (maskStrokeRef.current) {
       maskStrokeRef.current = null;
       maskEditor?.endStroke();
+    }
+    const lasso = maskLassoRef.current;
+    if (lasso) {
+      maskLassoRef.current = null;
+      setMaskLassoPoints([]);
+      if (maskEditor && lasso.length >= 3) {
+        void maskEditor.runOperation(maskEditor.tool, {
+          type: "polygon",
+          points: lasso,
+          value: maskEditor.tool === "lasso_subtract" ? 0 : 255,
+        });
+      }
     }
     panRef.current = null;
     setPanning(false);
@@ -1228,7 +1288,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             visual={visual}
           />
           <VideoKonvaMaskLayer records={displayedMaskRecords} size={size} />
-          {videoTool === "mask" && maskEditor?.active && maskEditor.buffer && (
+          {videoTool === "mask" && maskEditor?.active && maskEditor.buffer && !maskOperationPreviewBuffer && (
             <MaskOverlayLayer
               buffer={maskEditor.buffer}
               revision={maskEditor.revision}
@@ -1236,6 +1296,29 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               imgH={size.h}
               visible
             />
+          )}
+          {videoTool === "mask" && maskOperationPreviewBuffer && (
+            <MaskOverlayLayer
+              buffer={maskOperationPreviewBuffer}
+              revision={maskEditor?.operationPreview?.id ?? 0}
+              imgW={size.w}
+              imgH={size.h}
+              color={MASK_OPERATION_PREVIEW_COLOR}
+              visible
+            />
+          )}
+          {videoTool === "mask" && maskLassoPoints.length > 1 && (
+            <Layer name="mask-lasso-preview" listening={false}>
+              <Line
+                points={maskLassoPoints.flatMap(([x, y]) => [x, y])}
+                stroke={maskEditor?.tool === "lasso_subtract" ? "#f97316" : "#22c55e"}
+                strokeWidth={2 / vp.scale}
+                dash={[5 / vp.scale, 3 / vp.scale]}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />
+            </Layer>
           )}
           <VideoKonvaOverlayLayer
             pendingDraft={pendingDraft}
@@ -1274,7 +1357,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             preview={preview}
             onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
           />
-          {videoTool === "mask" && maskCursor && maskEditor && (
+          {videoTool === "mask" && maskCursor && maskEditor
+            && (maskEditor.tool === "brush" || maskEditor.tool === "erase") && (
             <Layer name="video-mask-cursor" listening={false}>
               <Circle
                 x={maskCursor.x * size.w}
