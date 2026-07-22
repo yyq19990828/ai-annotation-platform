@@ -43,6 +43,7 @@ from app.db.models.annotation_operation import (
     AnnotationOperation,
 )
 from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
+from app.db.models.mask_annotation_revision import MaskAnnotationRevision
 from app.db.models.video_chapter import VideoChapter
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -107,6 +108,7 @@ __all__ = [
     "AnnotationOperation",
     "AnnotationLineageEdge",
     "AnnotationConversionPlan",
+    "MaskAnnotationRevision",
     "VideoChapter",
     "AuditLog",
     "UserInvitation",

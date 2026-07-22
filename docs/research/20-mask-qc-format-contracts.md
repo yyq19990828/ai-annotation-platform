@@ -91,6 +91,10 @@ M1 / M2 实现前固定下列输入与预期；fixture 的 RLE digest 和预期�
 | `drift-three` | manual anchor 与连续阈值 | anchor frame、连续帧数、source / confidence lineage 稳定 |
 | `revision-race` | 晚到 run | 旧 run 只能写 stale，current summary 不被覆盖 |
 
+视频详细 resolver 冻结五态 `exact | held | absent | outside | occluded`。现有
+`outside[].source=prediction` 表示模型明确判空，映射为 `absent`；`source=manual` 映射为
+`outside`。旧兼容 resolver 对这两态都返回 `None`，不为此扩展 geometry schema。
+
 性能 fixture 固定三档：1080p × 20 Mask 单帧、300 frames × 20 tracks、8192² sparse Mask。分别验证 kernel
 p95、取消检查点、held / outside 正确性、tile + halo materialization、Worker RSS 回稳；8K 路径禁止创建全帧
 RGBA 或 dense alpha。任何 benchmark 生成的大包、trace 和临时目录在记录聚合数据后删除。

@@ -93,6 +93,53 @@
       "left_containment_denominator": 6
     }
   },
+  "kernel_oracles": {
+    "threshold_semantics": {
+      "near_empty": "0 < area_pixels < near_empty_pixels",
+      "small_component": "area_pixels < absolute OR ratio < configured ratio",
+      "small_hole": "area_pixels < small_hole_pixels",
+      "boundary_noise": "xor_pixels / boundary_length_4 > configured ratio"
+    },
+    "tile_seam_512": {
+      "size": [32, 1024],
+      "bbox_pixels": [510, 10, 514, 14],
+      "area_pixels": 16,
+      "component_count": 1
+    },
+    "narrow_bridge": {
+      "rows": [
+        "...............",
+        ".#####...#####.",
+        ".#####...#####.",
+        ".#############.",
+        ".#####...#####.",
+        ".#####...#####.",
+        "..............."
+      ],
+      "width": 1,
+      "region_area_pixels": 35,
+      "thin_object_false_positive_rows": [".......", ".#####.", "......."]
+    },
+    "boundary_noise": {
+      "rows": [
+        ".........",
+        "..#####..",
+        "..#####..",
+        ".#######.",
+        "..#####..",
+        "..#####..",
+        "........."
+      ],
+      "xor_pixels": 2,
+      "boundary_length_4": 24
+    },
+    "temporal": {
+      "flicker_middle": [1, 2],
+      "flicker_truncated_edge": false,
+      "drift_consecutive_frames": 3,
+      "drift_preserves": ["anchor_frame", "source", "confidence", "correction_lineage"]
+    }
+  },
   "temporal_300": {
     "frame_count": 300,
     "image_size": [1920, 1080],

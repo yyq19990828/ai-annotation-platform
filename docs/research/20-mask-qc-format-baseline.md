@@ -4,12 +4,16 @@
 
 确定性 golden fixture 已冻结单帧拓扑、重叠计算、300 帧时序状态和格式损失码。基线 runner
 使用现有 API 环境，在同一进程内对当前 `analyze_mask` 完成 1080p、4K、8192 × 8192
-稀疏 Mask 各两轮测量；8K p50 / p95 为 16,383.7 / 16,400.7 ms，进程累计峰值 RSS
-为 975.3 MiB。这是当前 dense decode / analyze 路径的诊断基线，不是最终 QC kernel 的性能目标。
+稀疏 Mask 各两轮测量；8K p50 / p95 为 16,236.2 / 16,266.6 ms，进程累计峰值 RSS
+为 1,031.4 MiB。这是当前 dense decode / analyze 路径的诊断基线，不是最终 QC kernel 的性能目标。
 
 现有 `analyze_mask` 的前景连通域是 **4-connectivity**，而冻结合同要求前景 8-connectivity、
 背景 4-connectivity。对角相邻的两个前景像素在当前实现中得到 2 个 component，合同期望 1 个。
 因此 golden reference 已冻结，但当前 analyzer **尚未满足**该合同；这是后续 QC 实现必须修复的明确差距。
+
+M1 已以独立的稀疏 RLE QC kernel 消除这一差距；上述数字仍保留为旧
+`analyze_mask` conversion 路径的诊断基线，不表示 QC 仍使用 4-connectivity。新 kernel 的
+8192² 实测为 topology 76.2 ms、close→open 4,841.3 ms，进程峰值 RSS 39.0 MiB。
 
 聚合机器数据见 [`data/20-mask-qc-format-baseline.json`](./data/20-mask-qc-format-baseline.json)，
 不会保留原始 trace、临时导出包或逐帧副本。
@@ -36,9 +40,9 @@ exact 4,375、held 1,465、absent 10、outside 100、occluded 50。runner 会在
 
 | 分辨率 | 像素 | RLE runs | RLE JSON bytes | 两轮耗时 (ms) | p50 / p95 (ms) |
 |---|---:|---:|---:|---:|---:|
-| 1920 × 1080 | 2,073,600 | 1,075 | 4,016 | 492.3 / 506.1 | 499.2 / 505.4 |
-| 3840 × 2160 | 8,294,400 | 2,149 | 9,426 | 2,010.3 / 2,001.4 | 2,005.8 / 2,009.8 |
-| 8192 × 8192 | 67,108,864 | 4,587 | 21,360 | 16,402.5 / 16,364.9 | 16,383.7 / 16,400.7 |
+| 1920 × 1080 | 2,073,600 | 1,075 | 4,016 | 497.9 / 490.3 | 494.1 / 497.6 |
+| 3840 × 2160 | 8,294,400 | 2,149 | 9,426 | 2,021.1 / 2,004.1 | 2,012.6 / 2,020.2 |
+| 8192 × 8192 | 67,108,864 | 4,587 | 21,360 | 16,270.0 / 16,202.3 | 16,236.2 / 16,266.6 |
 
 峰值 RSS 是进程级累计值，不能拆成单个分辨率的独占内存；它说明当前 8K dense 路径与后续
 “QC kernel 不 materialize 全幅 alpha”的目标存在显著距离。后续优化应继续用同一 fixture 对比，

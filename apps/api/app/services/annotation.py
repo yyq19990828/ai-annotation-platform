@@ -513,6 +513,7 @@ class AnnotationService:
         if not annotation:
             return False
         annotation.is_active = False
+        annotation.version += 1
         # v0.20.9 · 级联软删子框: 删父框时其所有 active 子框一并软删, 不留 orphan。
         # 父子仅一层 (create 时约束), 故无需递归。
         children = (
@@ -529,6 +530,7 @@ class AnnotationService:
         )
         for child in children:
             child.is_active = False
+            child.version += 1
         await self.db.flush()
         await self._update_task_stats(annotation.task_id)
         return True

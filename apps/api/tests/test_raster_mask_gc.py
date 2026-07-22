@@ -8,6 +8,7 @@ import pytest
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.workers.cleanup import (
     _eligible_raster_mask_objects,
+    _expire_mask_annotation_revisions,
     _expire_stale_video_tracker_candidates,
     _referenced_raster_mask_keys,
 )
@@ -48,6 +49,18 @@ def test_raster_mask_gc_caps_each_run_at_1000():
         for index in range(1005)
     ]
     assert len(_eligible_raster_mask_objects(candidates, set(), cutoff)) == 1000
+
+
+@pytest.mark.asyncio
+async def test_expire_mask_annotation_revisions_uses_database_retention_deadline():
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = ["revision-1", "revision-2"]
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    now = datetime.now(timezone.utc)
+
+    assert await _expire_mask_annotation_revisions(db, now=now) == 2
+    statement = db.execute.await_args.args[0]
+    assert "mask_annotation_revisions.expires_at" in str(statement)
 
 
 @pytest.mark.asyncio

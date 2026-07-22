@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "environment": {
-    "git_sha": "69490e08334080d589ea3bbf51cd3820f99ac276",
+    "git_sha": "884de6d7752cb2a23b9be9963da2443c4203b13a",
     "python": "3.12.11",
     "numpy": "2.4.4",
     "pillow": "12.2.0",
@@ -10,7 +10,7 @@
   },
   "fixture": {
     "path": "apps/api/tests/_fixtures/mask_qc_golden.json",
-    "sha256": "b559d1598a3627092ee99b3c9c4408a8a48b28d55df01bb7be45964db7b0747f",
+    "sha256": "c62a31b6c90f24527f054414889b24c4942e01831be4f79a40a95e9b8ff08a76",
     "golden": {
       "cases": {
         "empty": "896d024eadf90990f60070bd422ab6e281815df579484868db4bddbab2de3cc3",
@@ -47,12 +47,12 @@
       "component_count_current": 2,
       "hole_count_current": 1,
       "round_ms": [
-        492.333,
-        506.119
+        497.944,
+        490.347
       ],
-      "p50_ms": 499.226,
-      "p95_ms": 505.429,
-      "process_peak_rss_bytes_after": 1022722048
+      "p50_ms": 494.145,
+      "p95_ms": 497.564,
+      "process_peak_rss_bytes_after": 1081516032
     },
     {
       "resolution": "4k",
@@ -66,12 +66,12 @@
       "component_count_current": 2,
       "hole_count_current": 1,
       "round_ms": [
-        2010.271,
-        2001.362
+        2021.075,
+        2004.111
       ],
-      "p50_ms": 2005.816,
-      "p95_ms": 2009.825,
-      "process_peak_rss_bytes_after": 1022722048
+      "p50_ms": 2012.593,
+      "p95_ms": 2020.227,
+      "process_peak_rss_bytes_after": 1081516032
     },
     {
       "resolution": "8k_square",
@@ -85,12 +85,12 @@
       "component_count_current": 2,
       "hole_count_current": 1,
       "round_ms": [
-        16402.537,
-        16364.941
+        16270.028,
+        16202.32
       ],
-      "p50_ms": 16383.739,
-      "p95_ms": 16400.657,
-      "process_peak_rss_bytes_after": 1022722048
+      "p50_ms": 16236.174,
+      "p95_ms": 16266.643,
+      "process_peak_rss_bytes_after": 1081516032
     }
   ],
   "temporal_foundation": {

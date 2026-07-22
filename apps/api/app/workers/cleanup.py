@@ -15,6 +15,7 @@ from sqlalchemy import case, delete, select, text, update
 from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
 from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
+from app.db.models.mask_annotation_revision import MaskAnnotationRevision
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.observability.raster_mask import (
@@ -30,6 +31,20 @@ log = logging.getLogger(__name__)
 VIDEO_TRACKER_STAGED_TTL = timedelta(hours=24)
 
 
+async def _expire_mask_annotation_revisions(
+    db,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Delete snapshots after their retention window has actually elapsed."""
+    result = await db.execute(
+        delete(MaskAnnotationRevision)
+        .where(MaskAnnotationRevision.expires_at <= (now or datetime.now(timezone.utc)))
+        .returning(MaskAnnotationRevision.id)
+    )
+    return len(result.scalars().all())
+
+
 async def _expire_annotation_conversion_plans(
     db,
     *,
@@ -38,8 +53,7 @@ async def _expire_annotation_conversion_plans(
     result = await db.execute(
         delete(AnnotationConversionPlan)
         .where(
-            AnnotationConversionPlan.expires_at
-            <= (now or datetime.now(timezone.utc))
+            AnnotationConversionPlan.expires_at <= (now or datetime.now(timezone.utc))
         )
         .returning(AnnotationConversionPlan.id)
     )
@@ -130,6 +144,13 @@ _MASK_REFERENCE_QUERIES = (
     WHERE expires_at > now()
       AND value #>> '{}' LIKE 'raster-masks/sha256/%'
     """,
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM mask_annotation_revisions,
+         LATERAL jsonb_path_query(geometry, '$.**.object_key') value
+    WHERE expires_at > now()
+      AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
 )
 
 _MASK_REFERENCE_EXISTS_QUERIES = (
@@ -162,6 +183,15 @@ _MASK_REFERENCE_EXISTS_QUERIES = (
         SELECT 1
         FROM ai_mask_accept_decisions,
              LATERAL jsonb_path_query(response_json, '$.**.object_key') value
+        WHERE expires_at > now()
+          AND value #>> '{}' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM mask_annotation_revisions,
+             LATERAL jsonb_path_query(geometry, '$.**.object_key') value
         WHERE expires_at > now()
           AND value #>> '{}' = :key
     )
@@ -255,6 +285,7 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
         )
         expired_tracker_candidates = await _expire_stale_video_tracker_candidates(db)
         expired_conversion_plans = await _expire_annotation_conversion_plans(db)
+        expired_mask_revisions = await _expire_mask_annotation_revisions(db)
         await db.commit()
         await refresh_raster_mask_active_geometries_safely(db)
         referenced = await _referenced_raster_mask_keys(db)
@@ -325,6 +356,7 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
         "errors": errors,
         "expired_tracker_candidates": expired_tracker_candidates,
         "expired_conversion_plans": expired_conversion_plans,
+        "expired_mask_revisions": expired_mask_revisions,
     }
     log.info("purge_unreferenced_raster_masks done: %s", result)
     return result
