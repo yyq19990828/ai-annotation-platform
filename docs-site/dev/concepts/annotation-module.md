@@ -48,7 +48,10 @@ graph TD
 | `apps/api/app/db/models/task_lock.py` | `AnnotationDraft` 模型，当前与 `TaskLock` 同文件 |
 | `apps/api/app/schemas/annotation.py` | annotation 请求 / 响应 schema |
 | `apps/api/app/services/annotation.py` | create / update / delete / accept_prediction / draft |
+| `apps/api/app/db/models/annotation_operation.py` | 原子多对象操作与 lineage 账本 |
+| `apps/api/app/services/mask_mutation.py` | Mask split / copy / join / overlap 事务边界 |
 | `apps/api/app/api/v1/tasks/annotations.py` · `predictions.py` | annotation 与 prediction 相关 HTTP 入口 |
+| `apps/api/app/api/v1/tasks/mask_mutations.py` | 任务级 Mask 原子 mutation 入口 |
 | `apps/api/app/services/batch.py` | annotation 写入后 batch 自动迁移 |
 | `apps/web/src/api/tasks.ts` | 前端 annotation API wrapper |
 | `apps/web/src/hooks/useTasks.ts` | React Query mutation 与 optimistic update |
@@ -121,6 +124,17 @@ graph TD
 `raster_mask` 保存单个图片尺寸的内容寻址 RLE 引用；`video_track_mask` 沿用 track 外壳，在关键帧保存同一种引用。创建 / 更新必须同时通过 Pydantic 强类型与 task 的媒体、尺寸和帧数上下文校验；读取对象还会复核 SHA-256、canonical bytes、runs 和 size。图片 Mask 没有时间轴语义，视频 Mask 帧间采用 hold 解析、不写展开帧；对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过 grace period 的内容。
 
 图片工作台通过受任务权限保护的 `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力，不在浏览器复制环境变量。原生写入需同时通过部署总闸、项目 opt-in、`region` 绑定和任务 / 对象锁。`polygon | multi_polygon | raster_mask` 只能在同一 `region` 工具单元内原位转换；类型转换和 Raster 内容替换必须带最新 `If-Match`，同一事务内同步 `annotation_type` 与 `geometry.type`。
+
+### 原子多对象 Mask 操作
+
+split / copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和
+`expected_versions`，然后调用 `POST /tasks/{task_id}/annotations/mask-mutations:commit`。服务会稳定锁定范围对象，重算
+fingerprint，复核 task / annotation / segment 锁、类别、帧、内容引用和非空结果，并从对象存储的实际 RLE 校验 copy 子集、split 分区、join 并集与 overlap 差集，再在一个 DB 事务内完成全部
+update / create / soft-delete、任务统计、heartbeat、operation、lineage 和聚合审计。
+
+`annotation_operations` 以 task + actor + idempotency key 去重，保存请求摘要、范围摘要、源 / 结果版本和类型化报告；
+`annotation_lineage_edges` 表示多源到多结果的 split / copied / joined / overlap-erased 关系。两张表都不存完整
+geometry 或 RLE counts，source / result annotation ID 为软引用，使账本不会因标注或用户生命周期被意外删除。
 
 交互式 AI 的原生 Mask 候选不先写 Prediction，也不由浏览器拆成内容上传和标注创建。平台代理响应为每个候选签发绑定 task、像素、prompt revision 与实际路由的短生命周期 receipt；接受时 `POST /tasks/{task_id}/ai-mask-candidates/accept` 重新检查权限、写闸、锁和源版本，并在同一提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。decision 以 task + 客户端幂等键唯一保存完整响应并设有效期；相同请求可安全重放，不同请求复用 key 或过期重放返回冲突。有效 decision 引用的内容受 Raster GC 保活，过期 decision 先清理后才参与对象扫描。
 
@@ -258,6 +272,17 @@ graph TD
 - 重新计算 task 统计
 - 续期 task lock
 - 写 `ANNOTATION_DELETE` 审计
+
+### 5. Mask 实例原子写入
+
+入口与主流程：
+
+- `POST /tasks/{task_id}/annotations/mask-mutations:commit`
+- `MaskMutationService.commit()`
+- 可见性检查先于幂等回放；回放可跳过新事务才需要的版本 / scope 检查，但不能绕过当前 assignment。
+- 响应只返回操作 ID、对象 ID / 版本、删除 ID、lineage、digest 和审计 ID；成功前前端不清除草稿。
+- 图片 join 支持「替换来源」和「创建副本并保留来源」；视频 join 只允许后者，新轨只含当前 manual keyframe。
+- 任一校验或写入失败由路由层 rollback，不会留下部分 annotation、lineage 或 audit。
 
 ## 跨帧 propagate 与插值（3D 时序）
 

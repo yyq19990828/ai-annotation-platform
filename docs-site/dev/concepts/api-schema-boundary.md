@@ -129,6 +129,10 @@ pre-commit 会在 capability registry、schema 或 API 序列化文件变更时�
 
 前端手写 `Geometry` union 与后端 `_jsonb_types.Geometry` 同步包含 `RasterMaskGeometry` 和 `VideoTrackMaskGeometry`。OpenAPI 覆盖上传、静态/逐帧读取端点与 tracker request；geometry JSONB union 仍需要专门的跨语言 fixture 测试，不能只依赖路由 codegen。
 
+Mask 多对象写入使用独立的 `MaskMutationCommitRequest / Response` 边界，而不扩写通用 bulk-update。请求的 mutation 是按 `kind`
+判别的 update / create / delete union，report 为 `extra=forbid` 的有界强类型模型；响应对 annotation 只返回 ID 和 version。前端的
+`maskMutations.ts` 与 `maskMutationDraft.ts` 必须保持 scope 字段、UUID 排序和 canonical SHA-256 一致，并用固定向量防止跨语言摘要漂移。
+
 ## 何时跑 codegen
 
 | 场景 | 动作 |

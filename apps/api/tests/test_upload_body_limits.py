@@ -3,6 +3,7 @@ import json
 from app.middleware.upload_body_limits import (
     MAX_AI_MASK_ACCEPT_BODY_BYTES,
     MAX_INTERACTIVE_CONTEXT_BODY_BYTES,
+    MAX_MASK_MUTATION_BODY_BYTES,
     UploadBodyLimitMiddleware,
 )
 from app.utils.raster_mask_gzip import compress_mask_gzip
@@ -160,6 +161,60 @@ async def test_ai_mask_accept_rejects_encoded_body():
     )
     assert called is False
     assert sent[0]["status"] == 415
+
+
+async def test_mask_mutation_declared_size_is_bounded_before_json_parser():
+    called = False
+    sent = []
+
+    async def downstream(scope, receive, send):
+        nonlocal called
+        called = True
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = UploadBodyLimitMiddleware(downstream)
+    await middleware(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/tasks/x/annotations/mask-mutations:commit",
+            "headers": [
+                (b"content-length", str(MAX_MASK_MUTATION_BODY_BYTES + 1).encode())
+            ],
+        },
+        _receive_chunks(b""),
+        send,
+    )
+    assert called is False
+    assert sent[0]["status"] == 413
+
+
+async def test_mask_mutation_chunked_overflow_is_bounded():
+    called = False
+    sent = []
+
+    async def downstream(scope, receive, send):
+        nonlocal called
+        called = True
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = UploadBodyLimitMiddleware(downstream)
+    await middleware(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/tasks/x/annotations/mask-mutations:commit",
+            "headers": [],
+        },
+        _receive_chunks(b"x" * MAX_MASK_MUTATION_BODY_BYTES, b"x"),
+        send,
+    )
+    assert called is False
+    assert sent[0]["status"] == 413
 
 
 async def test_interactive_context_declared_size_is_bounded_before_json_parser():

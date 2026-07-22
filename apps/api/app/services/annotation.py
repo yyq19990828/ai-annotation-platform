@@ -40,6 +40,37 @@ logger = logging.getLogger("app.services.annotation")
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
 
 
+def validate_geometry_type_transition(
+    *,
+    tool_unit_id: str,
+    previous_geometry: dict | None,
+    next_geometry: dict,
+) -> None:
+    """Reject unsupported geometry type changes without storage or database I/O."""
+    previous_type = str((previous_geometry or {}).get("type") or "")
+    next_type = str(next_geometry.get("type") or "")
+    if previous_type == next_type:
+        return
+    region_types = {"polygon", "multi_polygon", "raster_mask"}
+    if (
+        tool_unit_id == "region"
+        and previous_type in region_types
+        and next_type in region_types
+    ):
+        return
+
+    from fastapi import HTTPException
+
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "reason": "geometry_type_transition_not_allowed",
+            "from_type": previous_type,
+            "to_type": next_type,
+        },
+    )
+
+
 def _sync_attributes_meta(
     old_attrs: dict | None,
     old_meta: dict | None,
@@ -530,6 +561,35 @@ class AnnotationService:
             raise HTTPException(
                 status_code=404,
                 detail=f"annotations not found: {sorted(str(m) for m in missing)}",
+            )
+        mask_task_ids = sorted(
+            {
+                row.task_id
+                for row in rows
+                if (row.geometry or {}).get("type")
+                in {"raster_mask", "video_track_mask"}
+            },
+            key=str,
+        )
+        if mask_task_ids:
+            await self.db.execute(
+                select(Task)
+                .where(Task.id.in_(mask_task_ids))
+                .order_by(Task.id)
+                .with_for_update()
+            )
+            rows = (
+                (
+                    await self.db.execute(
+                        select(Annotation)
+                        .where(Annotation.id.in_(ids))
+                        .order_by(Annotation.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .all()
             )
         # 整体校验: 任一被锁 / 已软删 → 422 + 整体回滚 (调用方上游事务承担).
         for r in rows:
@@ -1089,6 +1149,7 @@ class AnnotationService:
         z_order: int | None = None,
         is_locked: bool | None = None,
         is_hidden: bool | None = None,
+        mask_payload_prepared: bool = False,
     ) -> Annotation | None:
         """Surgical update of mutable fields. Increments version for optimistic concurrency."""
         annotation = await self.db.get(Annotation, annotation_id)
@@ -1101,27 +1162,17 @@ class AnnotationService:
                 annotation.project_id, annotation.tool_unit_id, class_name
             )
         if geometry is not None:
-            previous_type = str((annotation.geometry or {}).get("type") or "")
             next_type = str(geometry.get("type") or "")
-            if previous_type != next_type:
-                region_types = {"polygon", "multi_polygon", "raster_mask"}
-                if (
-                    annotation.tool_unit_id != "region"
-                    or previous_type not in region_types
-                    or next_type not in region_types
-                ):
-                    from fastapi import HTTPException
-
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "reason": "geometry_type_transition_not_allowed",
-                            "from_type": previous_type,
-                            "to_type": next_type,
-                        },
-                    )
-            task = await self.db.get(Task, annotation.task_id)
-            await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
+            validate_geometry_type_transition(
+                tool_unit_id=annotation.tool_unit_id,
+                previous_geometry=annotation.geometry,
+                next_geometry=geometry,
+            )
+            if not mask_payload_prepared:
+                task = await self.db.get(Task, annotation.task_id)
+                await prepare_mask_geometry_for_annotation_write(
+                    self.db, task, geometry
+                )
             try:
                 geometry, track_id = prepare_compact_track_identity(
                     geometry,

@@ -52,16 +52,24 @@ def test_raster_mask_gc_caps_each_run_at_1000():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("finally_referenced", "expected_deleted"),
-    [(True, 0), (False, 1)],
+    ("reference_checks", "upload_exists", "expected_deleted"),
+    [([True], None, 0), ([False, False], None, 1), ([False], "upload-id", 0)],
 )
 async def test_gc_rechecks_reference_under_object_lock_before_delete(
-    monkeypatch, finally_referenced, expected_deleted
+    monkeypatch, reference_checks, upload_exists, expected_deleted
 ):
     import app.workers.cleanup as cleanup
 
     key = "raster-masks/sha256/aa/aa/live.json"
-    db = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock(), rollback=AsyncMock())
+    events: list[str] = []
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = upload_exists
+    execute = AsyncMock(return_value=execute_result)
+    db = SimpleNamespace(
+        execute=execute,
+        commit=AsyncMock(side_effect=lambda: events.append("commit")),
+        rollback=AsyncMock(),
+    )
 
     @asynccontextmanager
     async def session():
@@ -88,7 +96,7 @@ async def test_gc_rechecks_reference_under_object_lock_before_delete(
     monkeypatch.setattr(
         cleanup,
         "_is_raster_mask_key_referenced",
-        AsyncMock(return_value=finally_referenced),
+        AsyncMock(side_effect=reference_checks),
     )
     lock = AsyncMock()
     monkeypatch.setattr(cleanup, "lock_raster_mask_references", lock)
@@ -104,16 +112,19 @@ async def test_gc_rechecks_reference_under_object_lock_before_delete(
             ]
         ),
     )
-    delete = MagicMock()
+    delete = MagicMock(side_effect=lambda _key: events.append("delete"))
     monkeypatch.setattr(cleanup.storage_service, "delete_object", delete)
 
     result = await cleanup._purge_unreferenced_raster_masks_async()
 
     refresh_gauge.assert_awaited_once_with(db)
     expire_candidates.assert_awaited_once_with(db)
-    lock.assert_awaited_once_with(db, {"object_key": key}, verify=False)
+    assert lock.await_count == (2 if reference_checks[0] is False else 1)
+    lock.assert_any_await(db, {"object_key": key}, verify=False)
     assert delete.call_count == expected_deleted
     assert result["deleted"] == expected_deleted
+    if expected_deleted:
+        assert events[-3:] == ["commit", "delete", "commit"]
 
 
 @pytest.mark.asyncio

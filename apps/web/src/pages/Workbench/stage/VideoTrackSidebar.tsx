@@ -48,7 +48,7 @@ interface VideoTrackSidebarProps {
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
   classes?: string[];
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onToggleHiddenTrack: (trackId: string) => void;
   onToggleLockedTrack: (trackId: string) => void;
   onSeekFrame?: (frameIndex: number) => void;
@@ -577,12 +577,12 @@ export function VideoTrackSidebar({
               return (
                 <div
                   key={annotation.id}
-                  className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${selectedId === annotation.id ? "border-brand/40 bg-brand/10" : "border-border bg-card"}`}
+                  className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${selectedId === annotation.id || selectedIds.includes(annotation.id) ? "border-brand/40 bg-brand/10" : "border-border bg-card"}`}
                 >
                   <button
                     type="button"
                     className="min-w-0 flex-1 text-left"
-                    onClick={() => onSelect(annotation.id)}
+                    onClick={(event) => onSelect(annotation.id, { shift: event.shiftKey })}
                   >
                     <span className="block truncate text-xs font-medium text-foreground">{annotation.class_name}</span>
                     <span className="block text-2xs text-muted-foreground">

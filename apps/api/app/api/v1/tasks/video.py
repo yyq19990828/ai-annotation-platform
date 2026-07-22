@@ -14,6 +14,7 @@ from app.deps import (
 )
 from app.db.models.user import User
 from app.db.models.dataset import Dataset, DatasetItem, VideoFrameIndex
+from app.db.models.task import Task
 from app.schemas.annotation import AnnotationOut
 from app.schemas.task import (
     PointCloudCameraOut,
@@ -697,14 +698,21 @@ async def save_video_mask_correction_keyframe(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    task = await _load_task_or_404(db, task_id)
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     await _assert_task_visible(db, task, current_user)
     _assert_task_editable(task, current_user)
     raw_if_match = request.headers.get("If-Match", "").strip()
     if not raw_if_match:
-        raise HTTPException(
-            status_code=428, detail={"reason": "if_match_required"}
-        )
+        raise HTTPException(status_code=428, detail={"reason": "if_match_required"})
     try:
         expected_version = int(raw_if_match.removeprefix('W/"').removesuffix('"'))
     except ValueError as exc:

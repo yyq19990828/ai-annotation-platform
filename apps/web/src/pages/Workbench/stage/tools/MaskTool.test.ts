@@ -143,7 +143,7 @@ describe("MaskTool", () => {
     const me = fakeMaskEditor(true);
     me.tool = "component_copy";
     expect(MaskTool.onPointerDown!(baseCtx(me))).toBeNull();
-    expect(me.runInstanceOperation).toHaveBeenCalledWith("component_copy", {
+    expect(me.runInstanceOperation).toHaveBeenCalledWith("copy_component", {
       type: "copy_component",
       x: 400,
       y: 300,

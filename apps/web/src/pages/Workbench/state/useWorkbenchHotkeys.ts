@@ -127,6 +127,7 @@ export interface UseWorkbenchHotkeysArgs {
   /** v0.10.8 · mask 工具激活时的 B/E/Enter/Esc 上下文键由这组 callback 消费。 */
   maskEditor?: UseMaskEditorReturn;
   commitMaskAsPolygon?: () => void;
+  commitMaskInstanceOperation?: () => void;
   cancelMaskEdit?: () => void;
   /** v0.23.5 · WS-C · task 级只读 (review/completed 锁), 供 canEditMask 判定 B/E 是否可用。 */
   maskTaskReadOnly?: boolean;
@@ -161,7 +162,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported, aiInteractiveEnabled,
-    maskEditor, commitMaskAsPolygon, cancelMaskEdit, maskTaskReadOnly = false,
+    maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskTaskReadOnly = false,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -280,7 +281,11 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
         e.preventDefault(); e.stopImmediatePropagation();
         if (!maskEditable) return;
-        if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
+        if (maskEditor.instanceOperationPreview) {
+          commitMaskInstanceOperation?.();
+          return;
+        }
+        if (maskEditor.operationPreview) {
           maskEditor.confirmOperation();
           return;
         }
@@ -306,7 +311,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, cancelMaskEdit, maskTaskReadOnly, annotationsRef]);
+  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskTaskReadOnly, annotationsRef]);
 
   // 主 keydown / keyup
   useEffect(() => {

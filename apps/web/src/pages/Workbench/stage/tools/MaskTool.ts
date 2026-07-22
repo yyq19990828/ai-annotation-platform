@@ -68,7 +68,7 @@ export const MaskTool: CanvasToolMeta = {
       return null;
     }
     if (maskEditor.tool === "component_copy") {
-      void maskEditor.runInstanceOperation(maskEditor.tool, {
+      void maskEditor.runInstanceOperation("copy_component", {
         type: "copy_component",
         x: px,
         y: py,

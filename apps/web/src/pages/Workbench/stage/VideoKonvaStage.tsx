@@ -709,7 +709,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         return;
       }
       if (maskEditor.tool === "component_copy") {
-        void maskEditor.runInstanceOperation(maskEditor.tool, {
+        void maskEditor.runInstanceOperation("copy_component", {
           type: "copy_component",
           x,
           y,
@@ -798,7 +798,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         event.preventDefault();
         event.stopImmediatePropagation();
         if (!editable) return;
-        if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
+        if (maskEditor.instanceOperationPreview) {
+          onMaskCommit?.();
+          return;
+        }
+        if (maskEditor.operationPreview) {
           maskEditor.confirmOperation();
           return;
         }

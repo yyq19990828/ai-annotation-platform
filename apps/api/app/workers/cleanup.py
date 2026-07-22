@@ -248,23 +248,48 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
         errors = 0
         if not dry_run:
             for item in deletable:
+                key = item["key"]
                 try:
-                    key = item["key"]
                     await lock_raster_mask_references(
                         db,
                         {"object_key": key},
                         verify=False,
                     )
                     if not await _is_raster_mask_key_referenced(db, key):
-                        # D5 · delete_object wraps boto3 sync I/O in to_thread so the
-                        # async GC path doesn't block the event loop on each delete.
-                        await asyncio.to_thread(storage_service.delete_object, key)
                         await db.execute(
                             delete(RasterMaskUpload).where(
                                 RasterMaskUpload.object_key == key
                             )
                         )
-                        deleted += 1
+                        # Commit the recoverable database state first.  If the
+                        # process stops before object deletion, the next GC pass
+                        # sees a harmless storage orphan; the inverse order could
+                        # leave a committed upload row pointing at missing bytes.
+                        await db.commit()
+                        # A same-key upload can start immediately after that
+                        # commit. Reacquire the content lock in a second
+                        # transaction and recheck both references and upload
+                        # reservations before deleting while the lock is held.
+                        await lock_raster_mask_references(
+                            db,
+                            {"object_key": key},
+                            verify=False,
+                        )
+                        upload_exists = (
+                            await db.execute(
+                                select(RasterMaskUpload.id)
+                                .where(RasterMaskUpload.object_key == key)
+                                .limit(1)
+                            )
+                        ).scalar_one_or_none()
+                        if (
+                            upload_exists is None
+                            and not await _is_raster_mask_key_referenced(db, key)
+                        ):
+                            await asyncio.to_thread(storage_service.delete_object, key)
+                            deleted += 1
+                        await db.commit()
+                        continue
                     await db.commit()
                 except Exception as exc:  # noqa: BLE001 - conservative GC retains on failure
                     await db.rollback()

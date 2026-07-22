@@ -25,6 +25,7 @@ MAX_FRAME_MULTIPART_BODY_BYTES = MAX_FRAME_FILE_BYTES + 1024 * 1024
 # receipt, lineage, prompt summary, and JSON field names before Pydantic parsing.
 MAX_AI_MASK_ACCEPT_BODY_BYTES = MAX_UNCOMPRESSED_BYTES + 1024 * 1024
 MAX_INTERACTIVE_CONTEXT_BODY_BYTES = 1024 * 1024
+MAX_MASK_MUTATION_BODY_BYTES = 12 * 1024 * 1024
 
 
 async def _json_error(send, status: int, detail: Any) -> None:
@@ -146,8 +147,11 @@ class UploadBodyLimitMiddleware:
         is_ai_mask_accept = path.startswith("/api/v1/tasks/") and path.endswith(
             "/ai-mask-candidates/accept"
         )
-        is_interactive_context = (
-            "/ml-backends/" in path and path.endswith("/interactive-annotating")
+        is_mask_mutation = path.startswith("/api/v1/tasks/") and path.endswith(
+            "/annotations/mask-mutations:commit"
+        )
+        is_interactive_context = "/ml-backends/" in path and path.endswith(
+            "/interactive-annotating"
         )
         if is_mask and headers.get(b"content-encoding", b"").lower() not in {
             b"",
@@ -162,7 +166,15 @@ class UploadBodyLimitMiddleware:
         }:
             await _json_error(send, 415, "Unsupported Content-Encoding")
             return
-        if is_interactive_context and headers.get(b"content-encoding", b"").lower() not in {
+        if is_mask_mutation and headers.get(b"content-encoding", b"").lower() not in {
+            b"",
+            b"identity",
+        }:
+            await _json_error(send, 415, "Unsupported Content-Encoding")
+            return
+        if is_interactive_context and headers.get(
+            b"content-encoding", b""
+        ).lower() not in {
             b"",
             b"identity",
         }:
@@ -172,6 +184,7 @@ class UploadBodyLimitMiddleware:
             not is_frame
             and not is_mask_gzip
             and not is_ai_mask_accept
+            and not is_mask_mutation
             and not is_interactive_context
         ):
             await self.app(scope, receive, send)
@@ -184,9 +197,13 @@ class UploadBodyLimitMiddleware:
                 MAX_AI_MASK_ACCEPT_BODY_BYTES
                 if is_ai_mask_accept
                 else (
-                    MAX_INTERACTIVE_CONTEXT_BODY_BYTES
-                    if is_interactive_context
-                    else MAX_COMPRESSED_BYTES
+                    MAX_MASK_MUTATION_BODY_BYTES
+                    if is_mask_mutation
+                    else (
+                        MAX_INTERACTIVE_CONTEXT_BODY_BYTES
+                        if is_interactive_context
+                        else MAX_COMPRESSED_BYTES
+                    )
                 )
             )
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,9 +12,13 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.project import Project
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
-from app.schemas.video_tracker_job import VideoTrackerJobOut
+from app.schemas.video_tracker_job import (
+    VideoMaskKeyframeSaveRequest,
+    VideoTrackerJobOut,
+)
 from app.services.audit import AuditAction
 from app.services.raster_mask_storage import build_rle_reference
+from app.services.video_tracking.jobs import save_video_mask_keyframe
 from app.services.video_tracking.runner import (
     _correction_execution_windows,
     _correction_seed,
@@ -72,7 +77,9 @@ async def _seed_mask_track(
                     "task": "tracker",
                     "supported_trackers": [model_key],
                     "text_driven_trackers": [] if native_mask else [model_key],
-                    "supported_prompts": ["correction_frame"] if native_mask else ["text"],
+                    "supported_prompts": ["correction_frame"]
+                    if native_mask
+                    else ["text"],
                     "supported_inputs": (
                         ["video", "mask_prompt"]
                         if native_mask
@@ -136,13 +143,18 @@ async def test_save_frame_zero_is_surgical_versioned_and_audited(
     correction_storage_mocks,
 ):
     user, token = super_admin
-    task, _backend, _model_id, _model_key, annotation, _reference = (
-        await _seed_mask_track(
-            db_session,
-            user.id,
-            frame_index=4,
-            version=1,
-        )
+    (
+        task,
+        _backend,
+        _model_id,
+        _model_key,
+        annotation,
+        _reference,
+    ) = await _seed_mask_track(
+        db_session,
+        user.id,
+        frame_index=4,
+        version=1,
     )
     new_reference = build_rle_reference(ALT_RLE)
 
@@ -165,7 +177,9 @@ async def test_save_frame_zero_is_surgical_versioned_and_audited(
     await db_session.refresh(annotation)
     assert [item["frame_index"] for item in annotation.geometry["keyframes"]] == [0, 4]
     assert annotation.geometry["keyframes"][0]["source"] == "manual"
-    assert annotation.geometry["keyframes"][0]["mask"]["sha256"] == new_reference["sha256"]
+    assert (
+        annotation.geometry["keyframes"][0]["mask"]["sha256"] == new_reference["sha256"]
+    )
     assert annotation.geometry["outside"] == [
         {"from": 1, "to": 8, "source": "prediction"}
     ]
@@ -194,6 +208,109 @@ async def test_save_frame_zero_is_surgical_versioned_and_audited(
     assert audit.detail_json["frame_index"] == 0
     assert audit.detail_json["source_version"] == 1
     assert audit.detail_json["result_version"] == 2
+
+
+async def test_save_mask_keyframe_holds_task_lock_before_rle_lock(
+    monkeypatch,
+):
+    task_id = uuid.uuid4()
+    annotation_id = uuid.uuid4()
+    reference = build_rle_reference(RLE)
+    annotation = SimpleNamespace(
+        id=annotation_id,
+        task_id=task_id,
+        is_active=True,
+        is_locked=False,
+        version=1,
+        track_id="mask-track-1",
+        geometry={
+            "type": "video_track_mask",
+            "track_id": "mask-track-1",
+            "keyframes": [
+                {
+                    "frame_index": 4,
+                    "mask": reference,
+                    "source": "manual",
+                    "occluded": False,
+                }
+            ],
+            "outside": [],
+        },
+    )
+    task = SimpleNamespace(id=task_id, project_id=uuid.uuid4())
+    user = SimpleNamespace(id=uuid.uuid4())
+    ctx = SimpleNamespace(metadata=SimpleNamespace(frame_count=12))
+    events: list[str] = []
+
+    class _Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    results = iter([task, annotation, annotation])
+
+    async def execute(_statement):
+        value = next(results)
+        if value is task:
+            events.append("task")
+        elif events == ["task"]:
+            events.append("annotation-read")
+        else:
+            events.append("annotation-lock")
+        return _Result(value)
+
+    db = SimpleNamespace(
+        execute=AsyncMock(side_effect=execute),
+        flush=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs._is_privileged",
+        AsyncMock(return_value=True),
+    )
+
+    async def segment_lock(*_args, **_kwargs):
+        events.append("segment")
+        return uuid.uuid4()
+
+    async def validate(*_args, **_kwargs):
+        events.append("validate")
+
+    async def content_lock(*_args, **_kwargs):
+        events.append("rle")
+
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs._assert_segment_lock", segment_lock
+    )
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs.validate_mask_geometry_for_task", validate
+    )
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs.lock_raster_mask_references", content_lock
+    )
+
+    saved, _detail = await save_video_mask_keyframe(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        frame_index=0,
+        payload=VideoMaskKeyframeSaveRequest(mask=build_rle_reference(ALT_RLE)),
+        expected_version=1,
+        user=user,
+    )
+
+    assert events == [
+        "task",
+        "annotation-read",
+        "segment",
+        "validate",
+        "rle",
+        "annotation-lock",
+    ]
+    assert saved.version == 2
 
 
 async def test_create_correction_freezes_exact_route_and_single_active_lease(
@@ -239,7 +356,9 @@ async def test_create_correction_freezes_exact_route_and_single_active_lease(
     assert correction["seed_mode"] == "native_mask"
     assert correction["routing"] == {
         "requested_backend_id": str(backend.id),
-        "backend_pool_id": str((await db_session.get(Project, task.project_id)).ml_backend_pool_id),
+        "backend_pool_id": str(
+            (await db_session.get(Project, task.project_id)).ml_backend_pool_id
+        ),
         "model_id": model_id,
         "model_key": model_key,
         "max_window_frames": 16,
@@ -477,7 +596,9 @@ async def test_correction_cancel_preserves_manual_frame_and_blocks_bulk_review(
             headers=_bearer(token),
         )
         assert blocked.status_code == 409
-        assert blocked.json()["detail"]["reason"] == "correction_requires_local_decision"
+        assert (
+            blocked.json()["detail"]["reason"] == "correction_requires_local_decision"
+        )
 
     cancelled = await httpx_client_bound.delete(
         f"/api/v1/video-tracker-jobs/{job_id}",

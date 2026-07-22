@@ -99,6 +99,8 @@ export interface UseMaskEditorSessionReturn extends UseMaskEditorReturn {
   save: (commit: () => Promise<MaskSaveResult>) => Promise<MaskSaveResult>;
   /** 从 error 恢复到 dirty (用户继续编辑)。 */
   recoverFromError: () => void;
+  /** 外部刷新已确认新版本时同步接纳会话键，避免再启动一轮常规加载。 */
+  rebaseSession: (nextKey: MaskSessionKey) => number;
 }
 
 function serializeKey(key: MaskSessionKey): string {
@@ -143,8 +145,9 @@ export function useMaskEditorSession({
   useEffect(() => { onLeaveDirtyRef.current = onLeaveDirty; }, [onLeaveDirty]);
   const editorActiveRef = useRef(editor.active);
   editorActiveRef.current = editor.active;
-  const editorDirtyRef = useRef(editor.dirty);
-  editorDirtyRef.current = editor.dirty;
+  const hasPendingDraft = editor.dirty || editor.instanceOperationPreview !== null;
+  const editorDirtyRef = useRef(hasPendingDraft);
+  editorDirtyRef.current = hasPendingDraft;
   const requestedKeyRef = useRef(sessionKey);
   requestedKeyRef.current = sessionKey;
   const requestedSessionIdRef = useRef(sessionId);
@@ -223,8 +226,8 @@ export function useMaskEditorSession({
   useEffect(() => {
     const cur = phaseRef.current;
     if (cur === "idle" || cur === "loading" || cur === "saving" || cur === "error") return;
-    updatePhase(editor.dirty ? "dirty" : "ready");
-  }, [editor.dirty, updatePhase]);
+    updatePhase(hasPendingDraft ? "dirty" : "ready");
+  }, [hasPendingDraft, updatePhase]);
 
   const beginBlank = useCallback(() => {
     editorBeginBlank();
@@ -318,8 +321,17 @@ export function useMaskEditorSession({
   const recoverFromError = useCallback(() => {
     setLastSaveError(undefined);
     // 回到 dirty: buffer/history 仍在, 用户继续编辑或手动 retry。
-    updatePhase(editor.dirty ? "dirty" : "ready");
-  }, [editor.dirty, updatePhase]);
+    updatePhase(hasPendingDraft ? "dirty" : "ready");
+  }, [hasPendingDraft, updatePhase]);
+
+  const rebaseSession = useCallback((nextKey: MaskSessionKey) => {
+    const serialized = serializeKey(nextKey);
+    transitionTokenRef.current += 1;
+    if (lastKeyRef.current !== serialized) {
+      acceptTransition(serialized, nextKey);
+    }
+    return generationRef.current;
+  }, [acceptTransition]);
 
   return {
     ...editor,
@@ -342,5 +354,6 @@ export function useMaskEditorSession({
     markReady,
     save,
     recoverFromError,
+    rebaseSession,
   };
 }

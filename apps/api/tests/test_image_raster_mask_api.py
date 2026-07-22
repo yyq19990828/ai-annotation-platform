@@ -392,6 +392,41 @@ async def test_raster_mask_replacement_requires_if_match(
     assert response.json()["detail"]["reason"] == "if_match_required"
 
 
+async def test_invalid_mask_type_transition_rejects_before_storage_io(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    prepare = AsyncMock()
+    monkeypatch.setattr(
+        "app.api.v1.tasks.annotations.prepare_mask_geometry_for_annotation_write",
+        prepare,
+    )
+    await db_session.commit()
+
+    response = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
+        json={
+            "geometry": {
+                "type": "video_track_mask",
+                "track_id": "track-1",
+                "keyframes": [{"frame_index": 0, "mask": annotation.geometry["mask"]}],
+            }
+        },
+        headers=_headers(token, **{"If-Match": 'W/"1"'}),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "reason": "geometry_type_transition_not_allowed",
+        "from_type": "raster_mask",
+        "to_type": "video_track_mask",
+    }
+    prepare.assert_not_awaited()
+
+
 async def test_locked_annotation_rejects_geometry_patch(
     httpx_client_bound, db_session, super_admin, monkeypatch
 ):

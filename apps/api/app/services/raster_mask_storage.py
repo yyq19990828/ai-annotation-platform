@@ -46,10 +46,17 @@ _T = TypeVar("_T")
 class RasterMaskContractError(ValueError):
     """Stable API-facing rejection raised at the mask persistence boundary."""
 
-    def __init__(self, *, status_code: int, reason: str, message: str):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        reason: str,
+        message: str,
+        **detail: Any,
+    ):
         super().__init__(message)
         self.status_code = status_code
-        self.detail = {"reason": reason, "message": message}
+        self.detail = {"reason": reason, "message": message, **detail}
 
 
 def classify_raster_mask_content_error(exc: Exception) -> str:
@@ -190,12 +197,7 @@ async def _verify_mask_reference_content(
     require_raster_foreground: bool,
 ) -> None:
     payload = await load_coco_rle(reference)
-    if (
-        require_raster_foreground
-        and value.get("type") == "raster_mask"
-        and key == str((value.get("mask") or {}).get("object_key"))
-        and not _rle_has_foreground(payload)
-    ):
+    if require_raster_foreground and not _rle_has_foreground(payload):
         raise RasterMaskContractError(
             status_code=422,
             reason="raster_mask_empty_foreground",
@@ -226,6 +228,7 @@ async def lock_raster_mask_references(
     verify: bool = True,
     task_id: Any | None = None,
     require_raster_foreground: bool = False,
+    foreground_object_keys: set[str] | None = None,
 ) -> list[str]:
     """Serialize reference commits with GC until the current DB transaction ends."""
     references = {
@@ -244,7 +247,10 @@ async def lock_raster_mask_references(
                     references[key],
                     key=key,
                     value=value,
-                    require_raster_foreground=require_raster_foreground,
+                    require_raster_foreground=(
+                        require_raster_foreground
+                        or key in (foreground_object_keys or set())
+                    ),
                 ),
             )
     if task_id is not None and references:
@@ -410,6 +416,9 @@ async def prepare_mask_payload_for_write(
     db: AsyncSession,
     task: Task | None,
     value: Any,
+    *,
+    reference_value: Any | None = None,
+    required_upload_keys: set[str] | None = None,
 ) -> None:
     """Gate, validate and claim every mask in a nested persistence payload.
 
@@ -422,6 +431,24 @@ async def prepare_mask_payload_for_write(
     if not geometries:
         return
 
+    if task is None:
+        raise RasterMaskContractError(
+            status_code=409,
+            reason="mask_task_context_missing",
+            message="mask persistence requires an existing task",
+        )
+
+    # Every mask persistence path takes the task row before content/upload locks.
+    # Atomic mutations already own it; re-acquiring the same row is harmless and
+    # keeps ordinary create/update/prediction paths on the same global lock order.
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if task is None:
         raise RasterMaskContractError(
             status_code=409,
@@ -447,16 +474,56 @@ async def prepare_mask_payload_for_write(
                 message=f"mask geometry is invalid: {exc}",
             ) from exc
 
-    # Verify every referenced object before associating any upload with the row.
-    # The transaction-scoped advisory locks remain held through the final claim.
+    # Verify all references in one globally sorted advisory-lock pass.  Atomic
+    # video mutations may pass only their current-frame references: unchanged
+    # historical keyframes are already linked and were compared byte-for-byte by
+    # the mutation contract, so re-reading thousands of old objects is wasteful.
+    references_to_commit = value if reference_value is None else reference_value
+    foreground_keys = {
+        str(reference["object_key"])
+        for geometry in geometries
+        if geometry.get("type") == "raster_mask"
+        for reference in collect_mask_references(geometry)
+    }
     try:
-        for geometry in geometries:
-            await lock_raster_mask_references(
-                db,
-                geometry,
-                require_raster_foreground=geometry.get("type") == "raster_mask",
+        committed_keys = await lock_raster_mask_references(
+            db,
+            references_to_commit,
+            foreground_object_keys=foreground_keys,
+        )
+        required = sorted(required_upload_keys or set())
+        if required:
+            owned = set(
+                (
+                    await db.execute(
+                        select(RasterMaskUpload.object_key)
+                        .where(
+                            RasterMaskUpload.task_id == task.id,
+                            RasterMaskUpload.object_key.in_(required),
+                        )
+                        .order_by(RasterMaskUpload.object_key)
+                        .with_for_update()
+                    )
+                ).scalars()
             )
-        await lock_raster_mask_references(db, value, verify=False, task_id=task.id)
+            missing = [key for key in required if key not in owned]
+            if missing:
+                raise RasterMaskContractError(
+                    status_code=422,
+                    reason="mask_reference_not_reserved",
+                    message="mask reference was not reserved by this task",
+                    object_keys=missing,
+                )
+        if committed_keys:
+            await db.execute(
+                update(RasterMaskUpload)
+                .where(
+                    RasterMaskUpload.task_id == task.id,
+                    RasterMaskUpload.object_key.in_(committed_keys),
+                    RasterMaskUpload.linked_at.is_(None),
+                )
+                .values(linked_at=func.now())
+            )
     except RasterMaskContractError:
         raise
     except (KeyError, ValueError) as exc:

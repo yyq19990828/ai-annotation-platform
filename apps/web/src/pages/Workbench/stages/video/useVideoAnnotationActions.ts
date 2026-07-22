@@ -196,11 +196,22 @@ export function upsertVideoMaskKeyframe(
   mask: CocoRleMaskRef,
 ): VideoTrackMaskGeometry {
   const visibleGeometry = removeOutsideFrame(geometry, frameIndex);
+  const previous = visibleGeometry.keyframes.find(
+    (keyframe) => keyframe.frame_index === frameIndex,
+  );
   return {
     ...visibleGeometry,
     keyframes: [
       ...visibleGeometry.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
-      { frame_index: frameIndex, mask, source: "manual" as const, occluded: false },
+      {
+        frame_index: frameIndex,
+        mask,
+        source: "manual" as const,
+        occluded: previous?.occluded ?? false,
+        ...(previous?.attributes !== undefined
+          ? { attributes: previous.attributes }
+          : {}),
+      },
     ].sort((a, b) => a.frame_index - b.frame_index),
   };
 }

@@ -248,4 +248,226 @@ describe("MaskToolbar", () => {
     fireEvent.click(view.getByRole("button", { name: "确认清空" }));
     expect(onConfirmOperation).toHaveBeenCalledOnce();
   });
+
+  it("实例预览走原子提交，冲突可重试或刷新范围", () => {
+    const onCommitInstanceOperation = vi.fn();
+    const onRefreshInstanceOperation = vi.fn();
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={8}
+        dirty
+        phase="dirty"
+        canUndo={false}
+        canRedo={false}
+        canEdit
+        operationPreview={null}
+        instanceOperationPreview={{
+          id: 3,
+          name: "split_components",
+          sourceRevision: 4,
+          plan: {
+            kind: "split_components",
+            sourceCount: 1,
+            resultCount: 2,
+            sourceAreas: [4],
+            resultAreas: [3, 1],
+            primary: new Uint8Array(4),
+            created: [new Uint8Array(4)],
+            focusAlpha: new Uint8Array(4),
+          },
+        }}
+        operationStatus="preview"
+        instanceCommitError="scope_stale"
+        instanceCanRetry
+        instanceCanRefresh
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+        onCommitInstanceOperation={onCommitInstanceOperation}
+        onRefreshInstanceOperation={onRefreshInstanceOperation}
+      />,
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "原子提交" }));
+    fireEvent.click(view.getByRole("button", { name: "重试" }));
+    fireEvent.click(view.getByRole("button", { name: "刷新范围" }));
+    expect(onCommitInstanceOperation).toHaveBeenCalledTimes(2);
+    expect(onRefreshInstanceOperation).toHaveBeenCalledOnce();
+    expect(view.getByRole("alert").textContent).toContain("scope_stale");
+  });
+
+  it("按错误恢复策略只显示可用动作，提交中禁用取消", () => {
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={8}
+        dirty
+        phase="saving"
+        canUndo={false}
+        canRedo={false}
+        canEdit={false}
+        operationPreview={null}
+        instanceOperationPreview={{
+          id: 4,
+          name: "join_masks",
+          sourceRevision: 5,
+          plan: {
+            kind: "join_masks",
+            sourceCount: 2,
+            resultCount: 1,
+            sourceAreas: [3, 2],
+            resultAreas: [5],
+            primary: new Uint8Array(4),
+            created: [],
+            focusAlpha: new Uint8Array(4),
+          },
+        }}
+        operationStatus="preview"
+        instanceCommitError="范围已变更"
+        instanceCanRefresh
+        instancePreviewDetail="创建 1 个合并副本，保留 2 个来源"
+        instanceCommitting
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+        onCommitInstanceOperation={vi.fn()}
+        onRefreshInstanceOperation={vi.fn()}
+      />,
+    );
+
+    expect(view.queryByRole("button", { name: "重试" })).toBeNull();
+    expect((view.getByRole("button", { name: "刷新范围" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByRole("button", { name: "取消预览" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(view.getByText("创建 1 个合并副本，保留 2 个来源")).not.toBeNull();
+  });
+
+  it("未解决实例禁用提交并列出冻结的受影响对象", () => {
+    const onRetry = vi.fn();
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={8}
+        dirty
+        phase="error"
+        canUndo={false}
+        canRedo={false}
+        canEdit
+        operationPreview={null}
+        instanceOperationPreview={{
+          id: 5,
+          name: "overlap",
+          sourceRevision: 6,
+          plan: {
+            kind: "overlap",
+            sourceCount: 2,
+            resultCount: 2,
+            sourceAreas: [4],
+            resultAreas: [4, 2],
+            primary: new Uint8Array(4),
+            created: [],
+            focusAlpha: new Uint8Array(4),
+          },
+        }}
+        operationStatus="preview"
+        instanceCommitError="1 个对象未解决"
+        instanceCommitBlocked
+        instancePreviewRows={[{
+          annotationId: "12345678-aaaa-bbbb-cccc-1234567890ab",
+          version: 7,
+          changedPixels: 12,
+          status: "unresolved",
+        }]}
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onRetry={onRetry}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+        onCommitInstanceOperation={vi.fn()}
+      />,
+    );
+
+    expect((view.getByRole("button", { name: "原子提交" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(view.queryByTitle("恢复或重试 Mask")).toBeNull();
+    expect(view.getByText("12345678·v7·12px·未解决")).not.toBeNull();
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it("合并菜单显式区分替换与保留来源", async () => {
+    const onPrepareJoin = vi.fn();
+    const user = userEvent.setup();
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={8}
+        dirty={false}
+        phase="ready"
+        canUndo={false}
+        canRedo={false}
+        canEdit
+        operationPreview={null}
+        instanceOperationPreview={null}
+        operationStatus="idle"
+        canPrepareJoin
+        onPrepareJoin={onPrepareJoin}
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+      />,
+    );
+
+    await user.click(view.getByTitle("Mask 高级工具"));
+    await user.click(screen.getByRole("menuitem", { name: "合并已选 Mask（替换来源）" }));
+    await user.click(view.getByTitle("Mask 高级工具"));
+    await user.click(screen.getByRole("menuitem", { name: "合并为副本（保留来源）" }));
+    expect(onPrepareJoin).toHaveBeenNthCalledWith(1, "replace_sources");
+    expect(onPrepareJoin).toHaveBeenNthCalledWith(2, "preserve_sources");
+  });
 });

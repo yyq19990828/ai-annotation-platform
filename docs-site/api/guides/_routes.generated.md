@@ -489,6 +489,12 @@
 |---|---|
 | GET | `/{task_id}/mask-capabilities` |
 
+## `tasks/mask_mutations.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/annotations/mask-mutations:commit` |
+
 ## `tasks/predictions.py`
 
 | Method | Path |
@@ -574,4 +580,4 @@
 
 ---
 
-_共 54 模块 / 317 路由_
+_共 55 模块 / 318 路由_

@@ -63,6 +63,7 @@ from app.services.raster_mask_storage import (
     build_rle_reference,
     classify_raster_mask_content_error,
     load_coco_rle,
+    lock_raster_mask_references,
     reserve_raster_mask_upload,
     store_coco_rle,
     store_coco_rle_gzip,
@@ -287,7 +288,15 @@ async def upload_task_mask_content(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles(*_ANNOTATORS)),
 ) -> dict:
-    task = await db.get(Task, task_id)
+    # Match all Mask writers: the Task row is the first database row lock.
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
     await assert_project_visible(task.project_id, db, user)
@@ -344,6 +353,10 @@ async def upload_task_mask_content(
                 expected = build_rle_reference(body)
         else:
             expected = build_rle_reference(body)
+        # Hold the same content lock used by GC from reservation through object
+        # storage and commit. This closes the window where GC could miss an
+        # uncommitted reservation and delete a concurrently uploaded object.
+        await lock_raster_mask_references(db, expected, verify=False)
         try:
             await reserve_raster_mask_upload(
                 db,

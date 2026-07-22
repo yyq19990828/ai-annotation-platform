@@ -38,6 +38,10 @@ from app.db.models.video_tracker_job import (
 )
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
+from app.db.models.annotation_operation import (
+    AnnotationLineageEdge,
+    AnnotationOperation,
+)
 from app.db.models.video_chapter import VideoChapter
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -99,6 +103,8 @@ __all__ = [
     "VideoTrackerJobStatus",
     "RasterMaskUpload",
     "AiMaskAcceptDecision",
+    "AnnotationOperation",
+    "AnnotationLineageEdge",
     "VideoChapter",
     "AuditLog",
     "UserInvitation",

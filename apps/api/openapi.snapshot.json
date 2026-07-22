@@ -12763,6 +12763,630 @@
         "title": "ManagedLifecycleCapabilities",
         "type": "object"
       },
+      "MaskCreateMutation": {
+        "additionalProperties": false,
+        "properties": {
+          "geometry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RasterMaskGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackMaskGeometry"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "kind": {
+            "const": "create",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Source Annotation Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "source_annotation_ids",
+          "geometry"
+        ],
+        "title": "MaskCreateMutation",
+        "type": "object"
+      },
+      "MaskDeleteMutation": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "delete",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "annotation_id"
+        ],
+        "title": "MaskDeleteMutation",
+        "type": "object"
+      },
+      "MaskExpectedVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "version"
+        ],
+        "title": "MaskExpectedVersion",
+        "type": "object"
+      },
+      "MaskLineageEdgeOut": {
+        "properties": {
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "result_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Annotation Id"
+          },
+          "result_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Version"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          }
+        },
+        "required": [
+          "relation"
+        ],
+        "title": "MaskLineageEdgeOut",
+        "type": "object"
+      },
+      "MaskMutationAffectedReport": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "changed_pixels": {
+            "minimum": 0.0,
+            "title": "Changed Pixels",
+            "type": "integer"
+          },
+          "unresolved": {
+            "default": false,
+            "title": "Unresolved",
+            "type": "boolean"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "version",
+          "changed_pixels"
+        ],
+        "title": "MaskMutationAffectedReport",
+        "type": "object"
+      },
+      "MaskMutationAnnotationResult": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ],
+        "title": "MaskMutationAnnotationResult",
+        "type": "object"
+      },
+      "MaskMutationCommitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_versions": {
+            "items": {
+              "$ref": "#/components/schemas/MaskExpectedVersion"
+            },
+            "maxItems": 1000,
+            "title": "Expected Versions",
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "mutations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "create": "#/components/schemas/MaskCreateMutation",
+                  "delete": "#/components/schemas/MaskDeleteMutation",
+                  "update": "#/components/schemas/MaskUpdateMutation"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MaskUpdateMutation"
+                },
+                {
+                  "$ref": "#/components/schemas/MaskCreateMutation"
+                },
+                {
+                  "$ref": "#/components/schemas/MaskDeleteMutation"
+                }
+              ]
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Mutations",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "split_components",
+              "copy_component",
+              "join_masks",
+              "overlap"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/MaskMutationReport"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MaskMutationScope"
+          },
+          "scope_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Scope Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "operation",
+          "scope",
+          "scope_fingerprint",
+          "mutations"
+        ],
+        "title": "MaskMutationCommitRequest",
+        "type": "object"
+      },
+      "MaskMutationCommitResponse": {
+        "properties": {
+          "after_digest": {
+            "title": "After Digest",
+            "type": "string"
+          },
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "integer"
+          },
+          "before_digest": {
+            "title": "Before Digest",
+            "type": "string"
+          },
+          "created_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/MaskMutationAnnotationResult"
+            },
+            "title": "Created Annotations",
+            "type": "array"
+          },
+          "deleted_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Deleted Annotation Ids",
+            "type": "array"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "lineage_edges": {
+            "items": {
+              "$ref": "#/components/schemas/MaskLineageEdgeOut"
+            },
+            "title": "Lineage Edges",
+            "type": "array"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "result_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Result Versions",
+            "type": "object"
+          },
+          "updated_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/MaskMutationAnnotationResult"
+            },
+            "title": "Updated Annotations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation_id",
+          "before_digest",
+          "after_digest",
+          "audit_id"
+        ],
+        "title": "MaskMutationCommitResponse",
+        "type": "object"
+      },
+      "MaskMutationReport": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/MaskMutationAffectedReport"
+            },
+            "maxItems": 1000,
+            "title": "Affected Annotations",
+            "type": "array"
+          },
+          "after_area": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Area"
+          },
+          "after_components": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Components"
+          },
+          "after_holes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Holes"
+          },
+          "before_area": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Area"
+          },
+          "before_components": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Components"
+          },
+          "before_holes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Holes"
+          },
+          "bounds": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  },
+                  {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  },
+                  {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  },
+                  {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounds"
+          },
+          "changed_pixels": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed Pixels"
+          },
+          "connectivity": {
+            "anyOf": [
+              {
+                "enum": [
+                  4,
+                  8
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectivity"
+          },
+          "result_areas": {
+            "items": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "title": "Result Areas",
+            "type": "array"
+          },
+          "source_areas": {
+            "items": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "title": "Source Areas",
+            "type": "array"
+          }
+        },
+        "title": "MaskMutationReport",
+        "type": "object"
+      },
+      "MaskMutationScope": {
+        "additionalProperties": false,
+        "properties": {
+          "class_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "instance_filter": {
+            "default": "same_class",
+            "enum": [
+              "same_class",
+              "all"
+            ],
+            "title": "Instance Filter",
+            "type": "string"
+          },
+          "media": {
+            "enum": [
+              "image",
+              "video"
+            ],
+            "title": "Media",
+            "type": "string"
+          },
+          "overlap_policy": {
+            "default": "allow",
+            "enum": [
+              "allow",
+              "erase_same_class",
+              "erase_all"
+            ],
+            "title": "Overlap Policy",
+            "type": "string"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "strict_non_overlap": {
+            "default": false,
+            "title": "Strict Non Overlap",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "media"
+        ],
+        "title": "MaskMutationScope",
+        "type": "object"
+      },
+      "MaskUpdateMutation": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RasterMaskGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackMaskGeometry"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "kind": {
+            "const": "update",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "annotation_id",
+          "geometry"
+        ],
+        "title": "MaskUpdateMutation",
+        "type": "object"
+      },
       "Mention": {
         "properties": {
           "displayName": {
@@ -41171,6 +41795,65 @@
           }
         ],
         "summary": "Interpolate Annotations Range",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/mask-mutations:commit": {
+      "post": {
+        "description": "Commit one versioned multi-annotation Mask operation atomically.",
+        "operationId": "commit_mask_mutations_api_v1_tasks__task_id__annotations_mask_mutations_commit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskMutationCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskMutationCommitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Commit Mask Mutations",
         "tags": [
           "tasks"
         ]

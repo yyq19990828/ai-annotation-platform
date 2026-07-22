@@ -74,7 +74,7 @@ flowchart TD
 - 批次：`batch.*`
 - 标注：`annotation.*`
 - 任务审核：`task.submit / withdraw / approve / reject / reopen / skip`
-- AI 预标、原生 Mask 与视频追踪：`preannotate.bulk_clear`、`mask_ai.candidate_accept`、`video_tracker_job.create / cancel / accept / discard / decision`、`video_correction_job.create / cancel`
+- AI 预标、原生 Mask 与视频追踪：`preannotate.bulk_clear`、`mask_ai.candidate_accept`、`annotation.mask_mutation`、`video_tracker_job.create / cancel / accept / discard / decision`、`video_correction_job.create / cancel`
 - 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移）
 - 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
 
@@ -143,6 +143,8 @@ flowchart TD
 不要把大块重复对象整份塞进去。`detail_json` 更适合“补事实”，不是“存快照”。
 
 原生 Mask 候选接受的审计只记录 candidate / content digest、Prediction、源/结果版本、帧号、实际 backend / pool / model 与有界 prompt 计数摘要。它不记录 RLE counts、原图、scribble 点集、receipt 或 logits；这些大载荷和凭证也不得进入普通日志。
+
+`annotation.mask_mutation` 每次 split / copy / join / overlap 只写一条聚合审计，target 指向 operation ledger。detail 可包含 task、operation、updated / created / deleted ID 和类型化的面积 / 拓扑摘要，但不得包含完整 geometry、RLE counts 或未知客户端字段。operation、lineage、annotation 变更与这条 audit 必须同事务成功或失败。
 
 视频追踪局部决定与 annotation 变更在同一事务提交。`video_tracker_job.decision` 只记录目标标识、帧窗口、决定、候选数量、前后 revision，以及显式覆盖人工关键帧时的 before / after geometry digest；不记录 staged geometry、Mask RLE 或原始媒体。
 

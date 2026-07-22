@@ -6,6 +6,7 @@ from app.api.v1.tasks import (
     lifecycle,
     locks,
     mask_capabilities,
+    mask_mutations,
     predictions,
     review,
     video,
@@ -25,6 +26,7 @@ router = APIRouter()
 router.include_router(task_list.router, prefix="/tasks")
 router.include_router(video.router, prefix="/tasks")
 router.include_router(mask_capabilities.router, prefix="/tasks")
+router.include_router(mask_mutations.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
 router.include_router(ai_masks.router, prefix="/tasks")
 router.include_router(predictions.router, prefix="/tasks")

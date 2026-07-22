@@ -5,7 +5,7 @@ import {
   type MaskRegion,
 } from "./maskOperations";
 
-export type MaskInstanceOperationKind = "copy_component" | "split_components" | "join_masks";
+export type MaskInstanceOperationKind = "copy_component" | "split_components" | "join_masks" | "overlap";
 
 export type MaskInstanceOperationSpec =
   | {

@@ -36,7 +36,7 @@ function deferred<T>() {
 }
 
 function setup(initialTaskId: string | undefined = "A") {
-  const navigate = vi.fn();
+  const navigate = vi.fn(async () => true);
   const pushToast = vi.fn();
   const queryClient = new QueryClient();
   vi.spyOn(queryClient, "invalidateQueries").mockImplementation(() => Promise.resolve());
@@ -99,6 +99,22 @@ describe("usePredictionPropagation · 跨帧守卫", () => {
     });
 
     expect(navigate).not.toHaveBeenCalled();
+    expect(result.current.pendingCrossFrameSelectRef.current).toBeNull();
+  });
+
+  it("离开守卫拒绝导航时不留下过期补选目标", async () => {
+    vi.mocked(tasksApi.propagateToTask).mockResolvedValue({
+      annotation: { id: "new-ann" },
+      motion_compensated: true,
+    } as never);
+    const { result, navigate } = setup("A");
+    navigate.mockResolvedValue(false);
+
+    await act(async () => {
+      await result.current.crossFramePropagate("next");
+    });
+
+    expect(navigate).toHaveBeenCalledWith("t3");
     expect(result.current.pendingCrossFrameSelectRef.current).toBeNull();
   });
 

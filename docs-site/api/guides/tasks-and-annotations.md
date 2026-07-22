@@ -192,6 +192,32 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 
 每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。图片读取使用 `GET /api/v1/annotations/{annotation_id}/mask-content`；视频当前解析帧使用带 `{frame_index}` 的路径，兼容客户端也可以用带帧路径读取图片单态 Mask。响应支持 `If-None-Match` 命中返回 304；对象损坏或尺寸失配返回 409，存储暂时不可用返回可重试 503。部署可以分别控制读取和创建；创建关闭时仍允许安全读取存量 geometry。
 
+## Mask 实例原子操作
+
+拆分、复制、合并和严格非重叠会在一个任务级事务内提交：
+
+```http
+POST /api/v1/tasks/:id/annotations/mask-mutations:commit
+```
+
+请求的核心字段是：
+
+- `idempotency_key`：同一预览重试必须复用同一个 key；同 key 异参返回 `idempotency_conflict`。
+- `operation`：`split_components`、`copy_component`、`join_masks` 或 `overlap`。
+- `scope`：固定 image / video、当前帧与 segment、同类 / 全部对象过滤、overlap policy 和是否要求严格非重叠。
+- `scope_fingerprint` 与 `expected_versions`：必须来自同一个预览快照；版本项按 annotation UUID 排序并覆盖范围内全部对象。
+- `mutations`：只允许有判别字段的 `update | create | delete`；geometry 只能是 `raster_mask` 或 `video_track_mask`，新内容引用必须先由当前任务上传保留。
+- `report`：只接收受控的面积、拓扑、连通性和受影响对象摘要；不得携带 RLE counts 或任意客户端 JSON。服务端会从实际 RLE 重算并覆盖可审计指标，不信任客户端面积或变化像素。
+
+服务端在同一事务内复核任务可见性与可编辑状态、对象与分段锁、范围成员、版本、类别、帧和内容引用，然后一次写入
+annotation 变更、内容关联、操作账本、lineage、任务统计和聚合审计。响应只返回操作 ID、对象 ID / 版本、删除 ID、lineage、摘要和审计 ID，不回传完整 geometry 或 RLE。
+
+服务端还会对像素代数做权威校验：copy 必须等于指定 4/8 连通性下的一个完整源连通域，split 的每个结果必须是完整连通域且不重叠地覆盖全部来源，join 必须等于全部来源并集，overlap 必须精确等于「原对象 − 主 Mask」。视频 join 只允许在当前帧创建副本并保留源轨迹；不允许用单帧请求删除整条来源轨迹。视频 update 只重验当前帧新引用，其他关键帧必须与已锁定的源 geometry 逐项相同，不会在提交时重读整条历史轨迹的对象。
+
+请求体上限为 12 MiB，范围候选对象、版本项、mutation 和引用的 RLE 对象各不得超过 1000，单次验证的 RLE runs 总数不得超过 200 万，派生 RLE 不得超过 100 万 runs，累计代数与连通域扫描不得超过 500 万步，严格非重叠经过 bbox 剪枝后最多比较 10 万对。范围查询在 SQL 层使用 `limit + 1` 预检；超限请求会在无界加载或更大规模的像素计算之前被拒绝。
+
+缺少范围版本返回 `428 expected_versions_missing`。范围成员变化、版本漂移、任务 / 对象 / 分段锁冲突分别返回结构化 409 reason；操作合同、类别、geometry、引用或空结果无效返回结构化 422 reason。任一失败都不会留下部分 annotation 或账本记录。
+
 ## 原生 AI Mask 候选采纳
 
 交互式推理返回的原生 Mask 是短生命周期候选，不应由客户端拆成“上传内容 + 创建标注”两次写操作。客户端应把候选和平台签发的 receipt 提交到任务级原子采纳接口：

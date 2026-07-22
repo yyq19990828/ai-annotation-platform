@@ -15,6 +15,7 @@ from app.deps import (
 )
 from app.db.models.user import User
 from app.db.models.annotation import Annotation
+from app.db.models.task import Task
 from app.schemas.annotation import (
     AnnotationCreate,
     AnnotationListPage,
@@ -36,7 +37,10 @@ from app.schemas.annotation import (
     VideoTrackConvertToBboxesRequest,
     VideoTrackConvertToBboxesResponse,
 )
-from app.services.annotation import AnnotationService
+from app.services.annotation import (
+    AnnotationService,
+    validate_geometry_type_transition,
+)
 from app.services.audit import AuditAction, AuditService
 from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
@@ -44,7 +48,10 @@ from app.services.gpu_arbitration.contracts import (
 )
 from app.services.ml_backend import MLBackendService
 from app.services.pipeline_validation import check_capability_violations
-from app.services.raster_mask_storage import RasterMaskContractError
+from app.services.raster_mask_storage import (
+    RasterMaskContractError,
+    prepare_mask_geometry_for_annotation_write,
+)
 from app.services.secondary_inference import run_secondary_inference
 from app.services.task_lock import TaskLockService
 
@@ -585,7 +592,18 @@ async def update_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _task = await _load_task_or_404(db, task_id)
+    # Match atomic Mask mutations: Task must be the first database row lock.
+    # This also serializes class-only changes that alter a same-class Mask scope.
+    _task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if _task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     _assert_task_editable(_task, current_user)
     svc = AnnotationService(db)
     fields = data.model_dump(exclude_unset=True)
@@ -593,16 +611,12 @@ async def update_annotation(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     # 早 load 一次：用于 If-Match 校验 + 字段级审计 diff（attributes 变更）
-    # Lock before checking If-Match. Under READ COMMITTED a waiter observes the
-    # committed version from the preceding writer, so two requests carrying the
-    # same ETag cannot both pass and publish version N+1.
+    # Read metadata without a row lock first.  For Mask geometry, content and
+    # upload locks must be acquired before the Annotation row lock; the Task row
+    # above prevents another compliant Mask writer from changing this object in
+    # between.
     existing = (
-        await db.execute(
-            select(Annotation)
-            .where(Annotation.id == annotation_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
+        await db.execute(select(Annotation).where(Annotation.id == annotation_id))
     ).scalar_one_or_none()
     if existing is None or not existing.is_active:
         raise HTTPException(status_code=404, detail="Annotation not found")
@@ -616,17 +630,18 @@ async def update_annotation(
             detail={"reason": "annotation_locked"},
         )
 
-    before_attributes: dict | None = None
-    if "attributes" in fields:
-        before_attributes = dict(existing.attributes or {})
-
-    # 乐观并发控制：If-Match 头校验
+    # Reject missing/malformed/stale preconditions before any object-storage I/O.
+    # The Task row lock serializes Mask writers, and the same version is checked
+    # again after the Annotation row lock below.
     if_match = request.headers.get("If-Match", "").strip()
+    expected_v: int | None = None
     if "geometry" in fields:
         previous_type = str((existing.geometry or {}).get("type") or "")
-        next_geometry = fields["geometry"]
-        next_type = str((next_geometry or {}).get("type") or "")
-        requires_precondition = previous_type != next_type or next_type == "raster_mask"
+        proposed_geometry = fields["geometry"]
+        proposed_type = str((proposed_geometry or {}).get("type") or "")
+        requires_precondition = (
+            previous_type != proposed_type or proposed_type == "raster_mask"
+        )
         if requires_precondition and not if_match:
             raise HTTPException(
                 status_code=428,
@@ -647,8 +662,64 @@ async def update_annotation(
                 },
             )
 
+    mask_payload_prepared = False
+    next_geometry = fields.get("geometry")
+    if isinstance(next_geometry, dict):
+        validate_geometry_type_transition(
+            tool_unit_id=existing.tool_unit_id,
+            previous_geometry=existing.geometry,
+            next_geometry=next_geometry,
+        )
+    if isinstance(next_geometry, dict) and next_geometry.get("type") in {
+        "raster_mask",
+        "video_track_mask",
+    }:
+        try:
+            await prepare_mask_geometry_for_annotation_write(db, _task, next_geometry)
+        except RasterMaskContractError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        mask_payload_prepared = True
+
+    # Lock before checking If-Match. Under READ COMMITTED a waiter observes the
+    # committed version from the preceding writer, so two requests carrying the
+    # same ETag cannot both pass and publish version N+1.
+    existing = (
+        await db.execute(
+            select(Annotation)
+            .where(Annotation.id == annotation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if existing is None or not existing.is_active or existing.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if "geometry" in fields and existing.is_locked:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "annotation_locked"},
+        )
+
+    before_attributes: dict | None = None
+    if "attributes" in fields:
+        before_attributes = dict(existing.attributes or {})
+
+    # 乐观并发控制：行锁后再次校验相同 ETag。
+    if expected_v is not None:
+        if existing.version != expected_v:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "version_mismatch",
+                    "current_version": existing.version,
+                },
+            )
+
     try:
-        annotation = await svc.update(annotation_id, **fields)
+        annotation = await svc.update(
+            annotation_id,
+            mask_payload_prepared=mask_payload_prepared,
+            **fields,
+        )
     except RasterMaskContractError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not annotation:
@@ -884,7 +955,15 @@ async def delete_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _assert_task_editable(await _load_task_or_404(db, task_id), current_user)
+    # Keep the same Task -> Annotation lock order as task-scoped atomic Mask
+    # mutations. Otherwise DELETE can hold Annotation while waiting for Task,
+    # forming a deadlock cycle with a concurrent atomic mutation.
+    task = (
+        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    _assert_task_editable(task, current_user)
     # 先取一份 detail 供 audit 用（soft delete 之后字段仍能读，但安全起见提前）
     pre = await db.get(Annotation, annotation_id)
     if pre is None or pre.task_id != task_id or not pre.is_active:

@@ -194,13 +194,20 @@ async def save_video_mask_keyframe(
     """Persist one manual Mask keyframe without accepting a whole-track geometry."""
 
     _assert_frame_range(ctx, frame_index, frame_index)
-    annotation = (
+    # Match atomic Mask mutation ordering. The Task row is the first database
+    # row lock and serializes same-task writers before content/annotation locks.
+    task = (
         await db.execute(
-            select(Annotation)
-            .where(Annotation.id == annotation_id)
+            select(Task)
+            .where(Task.id == task.id)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    annotation = (
+        await db.execute(select(Annotation).where(Annotation.id == annotation_id))
     ).scalar_one_or_none()
     if annotation is None or not annotation.is_active:
         raise HTTPException(status_code=404, detail="Annotation not found")
@@ -209,9 +216,7 @@ async def save_video_mask_keyframe(
             status_code=400, detail="Annotation does not belong to this task"
         )
     if annotation.is_locked:
-        raise HTTPException(
-            status_code=409, detail={"reason": "annotation_locked"}
-        )
+        raise HTTPException(status_code=409, detail={"reason": "annotation_locked"})
     if int(annotation.version or 1) != expected_version:
         raise HTTPException(
             status_code=409,
@@ -253,7 +258,9 @@ async def save_video_mask_keyframe(
         "mask": payload.mask.model_dump(mode="json"),
         "source": "manual",
         "occluded": payload.occluded,
-        **({"attributes": payload.attributes} if payload.attributes is not None else {}),
+        **(
+            {"attributes": payload.attributes} if payload.attributes is not None else {}
+        ),
     }
     next_geometry = {
         **geometry,
@@ -280,6 +287,39 @@ async def save_video_mask_keyframe(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # RLE locks precede the Annotation row lock. Recheck every mutable
+    # precondition after acquiring the row so a non-compliant legacy writer
+    # cannot publish over this save.
+    annotation = (
+        await db.execute(
+            select(Annotation)
+            .where(Annotation.id == annotation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task.id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if annotation.is_locked:
+        raise HTTPException(status_code=409, detail={"reason": "annotation_locked"})
+    if int(annotation.version or 1) != expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "source_version_conflict",
+                "current_version": int(annotation.version or 1),
+            },
+        )
+    if (annotation.geometry or {}).get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "video_mask_track_required"},
+        )
+
     source_version = int(annotation.version or 1)
     annotation.geometry = next_geometry
     annotation.version = source_version + 1
@@ -303,9 +343,8 @@ def _tracker_model_capability(
 ) -> dict | None:
     capabilities = (backend.health_meta or {}).get("capabilities") or {}
     for model in capabilities.get("models") or []:
-        if (
-            str(model.get("id") or "") == model_id
-            and model_key in set(model.get("supported_trackers") or [])
+        if str(model.get("id") or "") == model_id and model_key in set(
+            model.get("supported_trackers") or []
         ):
             return model
     return None
@@ -365,7 +404,9 @@ async def enqueue_tracker_job(
             )
         ).scalar_one_or_none()
         if row is None:
-            raise HTTPException(status_code=404, detail="Video tracker job not found") from exc
+            raise HTTPException(
+                status_code=404, detail="Video tracker job not found"
+            ) from exc
         if row.status == VideoTrackerJobStatus.QUEUED.value:
             row.status = VideoTrackerJobStatus.FAILED.value
             row.error_message = "tracker_enqueue_failed"
@@ -410,9 +451,7 @@ async def create_video_mask_correction_job(
             status_code=400, detail="Annotation does not belong to this task"
         )
     if annotation.is_locked:
-        raise HTTPException(
-            status_code=409, detail={"reason": "annotation_locked"}
-        )
+        raise HTTPException(status_code=409, detail={"reason": "annotation_locked"})
     geometry = annotation.geometry or {}
     if geometry.get("type") != "video_track_mask":
         raise HTTPException(
@@ -429,7 +468,9 @@ async def create_video_mask_correction_job(
         )
     track_id = str(annotation.track_id or geometry.get("track_id") or "")
     if not track_id:
-        raise HTTPException(status_code=409, detail={"reason": "track_identity_missing"})
+        raise HTTPException(
+            status_code=409, detail={"reason": "track_identity_missing"}
+        )
     keyframe = next(
         (
             item
@@ -476,7 +517,8 @@ async def create_video_mask_correction_job(
         backend is None
         or backend.state != "connected"
         or not await backend_service.is_enabled(task.project_id, payload.backend_id)
-        or payload.model_key not in set((capabilities or {}).get("supported_trackers") or [])
+        or payload.model_key
+        not in set((capabilities or {}).get("supported_trackers") or [])
     ):
         raise HTTPException(
             status_code=422,
@@ -951,9 +993,7 @@ async def decide_tracker_job(
     return result
 
 
-async def tracker_job_preview(
-    db: AsyncSession, row: VideoTrackerJob
-) -> dict[str, Any]:
+async def tracker_job_preview(db: AsyncSession, row: VideoTrackerJob) -> dict[str, Any]:
     staged = dict(row.staged_result or {})
     results = [
         _runner._ensure_candidate_contract(item)
@@ -1014,7 +1054,9 @@ async def tracker_job_preview(
     )
     expected_versions = {
         str(key): int(value)
-        for key, value in ((row.prompt or {}).get("expected_source_versions") or {}).items()
+        for key, value in (
+            (row.prompt or {}).get("expected_source_versions") or {}
+        ).items()
     }
     correction = (row.prompt or {}).get("correction") or {}
     return {

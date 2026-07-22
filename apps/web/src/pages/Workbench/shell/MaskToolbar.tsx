@@ -74,6 +74,25 @@ interface MaskToolbarProps {
   onCancelOperation: () => void;
   onRunOperation: (name: string, operation: MaskOperationSpec) => Promise<boolean>;
   onRunInstanceOperation: (name: string, operation: MaskInstanceOperationSpec) => Promise<boolean>;
+  onCommitInstanceOperation?: () => void;
+  onPrepareJoin?: (mode: "replace_sources" | "preserve_sources") => void;
+  onPrepareOverlap?: (policy: "erase_same_class" | "erase_all") => void;
+  onRefreshInstanceOperation?: () => void;
+  canPrepareJoin?: boolean;
+  joinSupportsReplace?: boolean;
+  instanceCommitting?: boolean;
+  instanceRefreshing?: boolean;
+  instanceCommitError?: string | null;
+  instanceCanRetry?: boolean;
+  instanceCanRefresh?: boolean;
+  instancePreviewDetail?: string | null;
+  instancePreviewRows?: Array<{
+    annotationId: string;
+    version: number | null;
+    changedPixels: number | null;
+    status: "update" | "delete" | "source" | "unresolved";
+  }>;
+  instanceCommitBlocked?: boolean;
   onCommit: () => void;
   onCommitAndPropagate?: () => void;
   onCancel: () => void;
@@ -146,6 +165,20 @@ export function MaskToolbar({
   onCancelOperation,
   onRunOperation,
   onRunInstanceOperation,
+  onCommitInstanceOperation,
+  onPrepareJoin,
+  onPrepareOverlap,
+  onRefreshInstanceOperation,
+  canPrepareJoin = false,
+  joinSupportsReplace = true,
+  instanceCommitting = false,
+  instanceRefreshing = false,
+  instanceCommitError,
+  instanceCanRetry = false,
+  instanceCanRefresh = false,
+  instancePreviewDetail,
+  instancePreviewRows = [],
+  instanceCommitBlocked = false,
   onCommit,
   onCommitAndPropagate,
   onCancel,
@@ -153,6 +186,7 @@ export function MaskToolbar({
   onRedo,
   onRetry,
 }: MaskToolbarProps) {
+  const instanceBusy = instanceCommitting || instanceRefreshing;
   const [componentThreshold, setComponentThreshold] = useState(16);
   const [morphologyRadius, setMorphologyRadius] = useState(1);
   const [kernelShape, setKernelShape] = useState<MaskKernelShape>("disk");
@@ -265,6 +299,34 @@ export function MaskToolbar({
           >
             拆分全部组件（保留最大）
           </DropdownMenuItem>
+          {onPrepareJoin && (
+            <>
+              {joinSupportsReplace && (
+                <DropdownMenuItem
+                  disabled={!canPrepareJoin}
+                  onSelect={() => onPrepareJoin("replace_sources")}
+                >
+                  合并已选 Mask（替换来源）
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                disabled={!canPrepareJoin}
+                onSelect={() => onPrepareJoin("preserve_sources")}
+              >
+                合并为副本（保留来源）
+              </DropdownMenuItem>
+            </>
+          )}
+          {onPrepareOverlap && (
+            <>
+              <DropdownMenuItem onSelect={() => onPrepareOverlap("erase_same_class")}>
+                预览同类严格非重叠
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onPrepareOverlap("erase_all")}>
+                预览全类严格非重叠
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuLabel>形态学</DropdownMenuLabel>
           <DropdownMenuLabel className="flex items-center gap-2 font-normal">
@@ -381,19 +443,80 @@ export function MaskToolbar({
         </div>
       )}
       {instanceOperationPreview && (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
+        <div className="flex max-w-3xl flex-wrap items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
           <span className="text-xs text-foreground">
             {instanceOperationPreview.plan.kind === "copy_component"
               ? "复制组件"
               : instanceOperationPreview.plan.kind === "join_masks"
                 ? "合并 Mask"
+                : instanceOperationPreview.plan.kind === "overlap"
+                  ? "严格非重叠"
                 : "拆分组件"}
           </span>
           <span className="text-xs text-muted-foreground">
             {instanceOperationPreview.plan.sourceCount} 个来源 → {instanceOperationPreview.plan.resultCount} 个结果
           </span>
-          <span className="text-xs text-status-caution">等待原子提交</span>
-          <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>取消预览</Button>
+          {instancePreviewDetail && (
+            <span className="text-xs text-muted-foreground">{instancePreviewDetail}</span>
+          )}
+          {instancePreviewRows.length > 0 && (
+            <div className="flex max-h-20 basis-full flex-wrap gap-x-3 gap-y-1 overflow-y-auto border-t border-border pt-1" aria-label="受影响 Mask 对象">
+              {instancePreviewRows.map((row) => (
+                <span key={row.annotationId} className="text-xs text-muted-foreground">
+                  {row.annotationId.slice(0, 8)}·v{row.version ?? "?"}
+                  {row.changedPixels === null ? "" : `·${row.changedPixels}px`}
+                  ·{row.status === "delete"
+                    ? "删除"
+                    : row.status === "unresolved"
+                      ? "未解决"
+                      : row.status === "update"
+                        ? "更新"
+                        : "来源"}
+                </span>
+              ))}
+            </div>
+          )}
+          <span className="text-xs text-status-caution">待原子提交</span>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={instanceBusy}
+            onClick={onCancelOperation}
+          >取消预览</Button>
+          {onCommitInstanceOperation && (
+            <Button
+              type="button"
+              size="xs"
+              disabled={instanceBusy || instanceCommitBlocked || !canEdit}
+              onClick={onCommitInstanceOperation}
+            >
+              {instanceRefreshing ? "刷新中…" : instanceCommitting ? "提交中…" : "原子提交"}
+            </Button>
+          )}
+        </div>
+      )}
+      {instanceCommitError && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1" role="alert">
+          <span className="text-xs text-destructive">{instanceCommitError}</span>
+          {onCommitInstanceOperation && instanceCanRetry && (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={instanceBusy}
+              onClick={onCommitInstanceOperation}
+            >重试</Button>
+          )}
+          {onRefreshInstanceOperation && instanceCanRefresh && (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={instanceBusy}
+              onClick={onRefreshInstanceOperation}
+            >刷新范围</Button>
+          )}
         </div>
       )}
       {operationStatus === "computing" && (
@@ -419,12 +542,12 @@ export function MaskToolbar({
         <Redo2 />
         <span className="sr-only">重做</span>
       </Button>
-      {phase === "error" && onRetry && (
+      {phase === "error" && onRetry && !instanceOperationPreview && (
         <Button type="button" size="sm" variant="ghost" onClick={onRetry} title="恢复或重试 Mask">
           重试
         </Button>
       )}
-      <Button type="button" size="sm" variant="outline" onClick={onCancel} title="取消 (Esc)">
+      <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={instanceBusy} title="取消 (Esc)">
         取消
       </Button>
       <Button

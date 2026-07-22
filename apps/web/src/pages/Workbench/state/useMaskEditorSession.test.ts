@@ -117,6 +117,28 @@ describe("useMaskEditorSession · A1 迟到 GET 不得覆盖当前 Buffer", () =
     expect(result.current.buffer?.countSet()).toBe(200);
     expect(result.current.buffer?.countSet()).not.toBe(before);
   });
+
+  it("外部刷新 rebase 后接纳同一新 session 不会再次推进 generation", async () => {
+    const onLeaveDirty = vi.fn(async () => "continue" as const);
+    const { result, rerender } = renderSession({ sessionKey: KEY_A, onLeaveDirty });
+    await act(async () => result.current.loadBlank(result.current.generation));
+    const refreshedKey = { ...KEY_A, annotationVersion: 2 };
+
+    act(() => {
+      result.current.cancel();
+      result.current.rebaseSession(refreshedKey);
+      result.current.initFromRle(RLE_DIFFERENT);
+    });
+    const refreshedGeneration = result.current.generation;
+
+    rerender({ sessionKey: refreshedKey, onLeaveDirty });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(result.current.generation).toBe(refreshedGeneration);
+    expect(result.current.phase).toBe("ready");
+    expect(result.current.buffer?.countSet()).toBe(200);
+    expect(onLeaveDirty).not.toHaveBeenCalled();
+  });
 });
 
 describe("useMaskEditorSession · dirty leave guard", () => {
@@ -149,6 +171,34 @@ describe("useMaskEditorSession · dirty leave guard", () => {
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(true))).toBe("discard");
     expect(promptMaskLeaveChoice(vi.fn(() => false))).toBe("continue");
+  });
+
+  it("实例预览即使 Buffer 未变也会阻止切换 session", async () => {
+    const onLeaveDirty = vi.fn(async () => "continue" as const);
+    const { result, rerender } = renderSession({ sessionKey: KEY_A, onLeaveDirty });
+    await act(async () => {
+      result.current.loadRle(result.current.generation, {
+        encoding: "coco_rle",
+        size: [20, 20],
+        counts: [0, 1, 10, 1, 388],
+      });
+      expect(await result.current.runInstanceOperation("split_components", {
+        type: "split_components",
+        keep: "largest",
+        connectivity: 4,
+      })).toBe(true);
+    });
+    expect(result.current.dirty).toBe(false);
+    expect(result.current.instanceOperationPreview).not.toBeNull();
+    expect(result.current.phase).toBe("dirty");
+    const generation = result.current.generation;
+
+    rerender({ sessionKey: KEY_B, onLeaveDirty });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(onLeaveDirty).toHaveBeenCalledWith(KEY_A, KEY_B);
+    expect(result.current.generation).toBe(generation);
+    expect(result.current.instanceOperationPreview).not.toBeNull();
   });
 });
 

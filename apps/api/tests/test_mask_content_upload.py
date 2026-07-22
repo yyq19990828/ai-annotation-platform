@@ -199,8 +199,12 @@ async def test_upload_task_mask_content_defaults_to_json_path(
 
     json_store = AsyncMock(return_value=build_rle_reference(RLE))
     gzip_store = AsyncMock()
+    content_lock = AsyncMock()
     monkeypatch.setattr("app.api.v1.annotations.store_coco_rle", json_store)
     monkeypatch.setattr("app.api.v1.annotations.store_coco_rle_gzip", gzip_store)
+    monkeypatch.setattr(
+        "app.api.v1.annotations.lock_raster_mask_references", content_lock
+    )
     await db_session.commit()
 
     resp = await httpx_client_bound.post(
@@ -211,6 +215,11 @@ async def test_upload_task_mask_content_defaults_to_json_path(
     assert resp.status_code == 200, resp.text
     json_store.assert_awaited_once()
     gzip_store.assert_not_awaited()
+    content_lock.assert_awaited_once_with(
+        db_session,
+        build_rle_reference(RLE),
+        verify=False,
+    )
     assert resp.json()["encoding"] == "coco_rle_ref"
 
 
