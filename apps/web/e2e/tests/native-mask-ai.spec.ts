@@ -13,6 +13,7 @@ interface AcceptedMaskResponse {
   annotation: {
     id: string;
     annotation_type: "raster_mask" | "video_track_mask";
+    version?: number;
   };
   content_digest: string;
   replayed: boolean;
@@ -26,6 +27,7 @@ const nativeSetup = {
   supported_prompts: ["point", "interactive_box", "exemplar", "mask", "scribble"],
   supported_inputs: ["full_image", "point_prompt", "bbox_prompt", "mask_prompt", "scribble_prompt"],
   supported_geometric_outputs: ["polygon", "mask"],
+  supported_trackers: ["sam2_video"],
   models: [
     {
       id: "e2e-native-mask",
@@ -39,8 +41,43 @@ const nativeSetup = {
       supported_geometric_outputs: ["polygon", "mask"],
       resource_profile: { device: "cpu", batchable: false },
     },
+    {
+      id: "grounded-sam2-tracker",
+      display_name: "Grounded-SAM2 Tracker",
+      task: "tracker",
+      model_family: "grounded-sam2",
+      composition: "composite",
+      is_interactive: false,
+      supported_prompts: ["point", "bbox", "correction_frame"],
+      supported_inputs: ["video", "point_prompt", "bbox_prompt", "mask_prompt"],
+      supported_geometric_outputs: ["mask"],
+      supported_trackers: ["sam2_video"],
+      max_window_frames: 16,
+      resource_profile: { device: "gpu", batchable: false },
+    },
   ],
 };
+
+interface VideoMaskAnnotationResponse {
+  id: string;
+  version: number;
+  geometry: {
+    type: "video_track_mask";
+    track_id: string;
+    keyframes: Array<{
+      frame_index: number;
+      mask: {
+        encoding: "coco_rle_ref";
+        size: [number, number];
+        object_key: string;
+        sha256: string;
+        runs: number;
+        bytes: number;
+      };
+      source?: string;
+    }>;
+  };
+}
 
 async function routeNativeCandidate(
   page: Page,
@@ -181,6 +218,239 @@ test.describe("native Mask interactive candidate acceptance", () => {
       ),
       fixture.rle,
     );
+  });
+
+  test("video drift frame correction propagates backward and accepts a local window", async ({ page, request, seed }) => {
+    test.setTimeout(60_000);
+    const data = await seed.reset();
+    const { task_id: taskId } = await seed.videoTask(data.project_id);
+    await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
+    const fixture = await seed.nativeMaskCandidate(taskId);
+    await routeNativeCandidate(page, fixture);
+    await seed.injectToken(page, data.annotator_email);
+
+    const accepted = await generateAndAccept(page, data.project_id, taskId, "video");
+    const annotationId = accepted.annotation.id;
+    const token = await seed.accessToken(data.annotator_email);
+    const segmentsResponse = await request.get(
+      `${API_BASE}/api/v1/tasks/${taskId}/video/segments`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(segmentsResponse.ok(), await segmentsResponse.text()).toBeTruthy();
+    const segments = await segmentsResponse.json() as {
+      segments: Array<{ id: string; start_frame: number; end_frame: number }>;
+    };
+    const segment = segments.segments.find(
+      (item) => item.start_frame <= 2 && item.end_frame >= 2,
+    );
+    if (!segment) throw new Error("video correction segment is missing");
+    const claimResponse = await request.post(
+      `${API_BASE}/api/v1/tasks/${taskId}/video/segments/${segment.id}:claim`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(claimResponse.ok(), await claimResponse.text()).toBeTruthy();
+    const jobId = "00000000-0000-4000-8000-000000000238";
+    let correctionPayload: Record<string, unknown> | null = null;
+    let decisionPayload: Record<string, unknown> | null = null;
+    let resolveCandidate!: (value: {
+      saved: VideoMaskAnnotationResponse;
+      mask: SeedNativeMaskCandidateData["rle"];
+    }) => void;
+    const candidateReady = new Promise<{
+      saved: VideoMaskAnnotationResponse;
+      mask: SeedNativeMaskCandidateData["rle"];
+    }>((resolve) => {
+      resolveCandidate = resolve;
+    });
+
+    const jobBody = (status: "pending_review" | "accepted") => ({
+      id: jobId,
+      task_id: taskId,
+      dataset_item_id: "00000000-0000-4000-8000-000000000239",
+      annotation_id: annotationId,
+      segment_id: correctionPayload?.segment_id ?? null,
+      created_by: null,
+      status,
+      job_kind: "correction",
+      track_id_snapshot: "e2e-mask-track",
+      correction_frame: correctionPayload?.correction_frame ?? 2,
+      revision: 1,
+      model_key: "sam2_video",
+      direction: "backward",
+      from_frame: correctionPayload?.from_frame ?? 0,
+      to_frame: correctionPayload?.to_frame ?? 2,
+      prompt: {},
+      event_channel: `video-tracker-job:${jobId}`,
+      celery_task_id: null,
+      cancel_requested_at: null,
+      started_at: null,
+      completed_at: status === "accepted" ? new Date().toISOString() : null,
+      error_message: null,
+      created_at: new Date().toISOString(),
+      updated_at: null,
+    });
+
+    await page.route(
+      new RegExp(`/api/v1/tasks/${taskId}/video/tracks/${annotationId}/correction-jobs$`),
+      async (route) => {
+        correctionPayload = route.request().postDataJSON() as Record<string, unknown>;
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify(jobBody("pending_review")),
+        });
+      },
+    );
+    await page.route(
+      new RegExp(`/api/v1/video-tracker-jobs/${jobId}$`),
+      (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(jobBody("pending_review")),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/v1/video-tracker-jobs/${jobId}/preview$`),
+      async (route) => {
+        const { saved } = await candidateReady;
+        const correctionFrame = Number(correctionPayload?.correction_frame ?? 2);
+        const keyframe = saved.geometry.keyframes.find(
+          (item) => item.frame_index === correctionFrame,
+        );
+        if (!keyframe) throw new Error("saved correction keyframe is missing");
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            job_id: jobId,
+            status: "pending_review",
+            annotation_id: annotationId,
+            job_kind: "correction",
+            correction_frame: correctionFrame,
+            direction: "backward",
+            from_frame: correctionPayload?.from_frame ?? 0,
+            to_frame: correctionPayload?.to_frame ?? correctionFrame,
+            fallback_reason: null,
+            seed_mode: "native_mask",
+            protect_manual: true,
+            results: [{
+              frame_index: correctionFrame - 1,
+              instance_id: "1",
+              candidate_key: `1:${correctionFrame - 1}`,
+              source_annotation_id: annotationId,
+              target_annotation_id: annotationId,
+              manual_protected: false,
+              geometry: { type: "mask", mask: keyframe.mask },
+            }],
+            grid_step: 1,
+            output_geometry: "mask",
+            job_revision: 1,
+            expected_source_versions: { [annotationId]: saved.version },
+            candidate_total: 1,
+            candidate_pending: 1,
+            candidate_accepted: 0,
+            candidate_rejected: 0,
+          }),
+        });
+      },
+    );
+    await page.route(
+      new RegExp(`/api/v1/video-tracker-jobs/${jobId}/mask-content/[a-f0-9]{64}$`),
+      async (route) => {
+        const { mask } = await candidateReady;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(mask),
+        });
+      },
+    );
+    await page.route(
+      new RegExp(`/api/v1/video-tracker-jobs/${jobId}/decisions$`),
+      async (route) => {
+        decisionPayload = route.request().postDataJSON() as Record<string, unknown>;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(jobBody("accepted")),
+        });
+      },
+    );
+
+    const row = page.getByTestId(`box-list-item-${annotationId}`);
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.click();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByText(/F 2 \//)).toBeVisible({ timeout: 10_000 });
+    await page.getByTitle("编辑当前帧 Mask").click();
+    const toolbar = page.getByTestId("mask-toolbar");
+    await expect(toolbar).toContainText("就绪", { timeout: 15_000 });
+
+    const stage = page.getByTestId("video-konva-stage");
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("video stage has no bounding box");
+    await page.mouse.move(box.x + box.width * 0.48, box.y + box.height * 0.48);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.56, box.y + box.height * 0.54, { steps: 6 });
+    await page.mouse.up();
+    await expect(toolbar).toContainText("未保存");
+    await toolbar.getByRole("button", { name: "保存并传播" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "保存 Mask 纠错帧" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("radio", { name: "← 更早帧" }).click();
+    const saveResponsePromise = page.waitForResponse((response) =>
+      response.url().endsWith(
+        `/api/v1/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/2`,
+      ) && response.request().method() === "PUT",
+    );
+    await dialog.getByRole("button", { name: "保存并启动传播" }).click();
+    const saveResponse = await saveResponsePromise;
+    expect(saveResponse.status(), await saveResponse.text()).toBe(200);
+    const saved = await saveResponse.json() as VideoMaskAnnotationResponse;
+    await expect.poll(() => correctionPayload).not.toBeNull();
+    const correctionFrame = Number(correctionPayload?.correction_frame);
+    const savedMask = saved.geometry.keyframes.find(
+      (item) => item.frame_index === correctionFrame,
+    )?.mask;
+    expect(savedMask).toBeTruthy();
+    expect(saved.geometry.keyframes.find((item) => item.frame_index === 2)?.source).toBe("manual");
+    expect(correctionPayload).toMatchObject({
+      correction_frame: 2,
+      direction: "backward",
+      model_key: "sam2_video",
+      model_id: "grounded-sam2-tracker",
+      source_annotation_version: saved.version,
+      corrected_mask_digest: savedMask?.sha256,
+    });
+
+    const maskResponse = await request.get(
+      `${API_BASE}/api/v1/annotations/${annotationId}/mask-content/${correctionFrame}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(maskResponse.ok(), await maskResponse.text()).toBeTruthy();
+    resolveCandidate({
+      saved,
+      mask: await maskResponse.json() as SeedNativeMaskCandidateData["rle"],
+    });
+
+    const review = page.getByRole("dialog", { name: "Mask 纠错候选审阅" });
+    await expect(review).toBeVisible({ timeout: 15_000 });
+    await expect(review.getByTestId("tracker-review-correction-summary")).toContainText(
+      "向更早帧 · 原生 Mask seed · 保护人工帧",
+    );
+    await review.getByTestId("tracker-review-accept").click();
+    await expect(review).toBeHidden();
+    expect(decisionPayload).toMatchObject({
+      instance_ids: ["1"],
+      from_frame: 1,
+      to_frame: 1,
+      decision: "accept",
+      override_manual: false,
+      expected_source_versions: { [annotationId]: saved.version },
+      job_revision: 1,
+    });
   });
 
   test("saved Mask negative scribble survives a failed prompt retry and refresh", async ({ page, request, seed }) => {

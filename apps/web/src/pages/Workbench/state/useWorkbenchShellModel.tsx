@@ -2,7 +2,7 @@ import {
   useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode,
 } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useProjectPipelines } from "@/hooks/useProjectPipelines";
@@ -21,6 +21,7 @@ import { useAcceptNativeMaskCandidate } from "@/hooks/useAcceptNativeMaskCandida
 import { tasksApi } from "@/api/tasks";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import { ApiError } from "@/api/client";
+import { videoTrackerApi } from "@/api/videoTracker";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
@@ -105,6 +106,12 @@ import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSideba
 import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
+import {
+  VideoMaskCorrectionDialog,
+  type VideoMaskCorrectionIntent,
+  type VideoMaskCorrectionModel,
+} from "../stage/VideoMaskCorrectionDialog";
+import { executeVideoMaskCorrectionFlow } from "./videoMaskCorrectionFlow";
 import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
 import { isAnyVideoSingleFrame, isVideoBbox, isVideoMaskTrack, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
@@ -196,6 +203,7 @@ interface WorkbenchShellReadyModel {
   kind: "ready";
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
+  maskCorrectionDialog: ComponentProps<typeof VideoMaskCorrectionDialog>;
   trackerReview: ComponentProps<typeof VideoTrackerReviewBar>;
   issueSection?: WorkbenchShellIssueSection;
 }
@@ -512,6 +520,12 @@ export function useWorkbenchShellModel({
         ? "legacy"
         : "blocked";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
+  const videoSegmentsQuery = useQuery({
+    queryKey: ["video-segments", taskId],
+    queryFn: () => videoTrackerApi.segments(taskId as string),
+    enabled: isVideoTask && !!taskId,
+    staleTime: 30_000,
+  });
   const videoFrameTimetable = useVideoFrameTimetable(taskId, isVideoTask && !!videoManifest.data);
   const videoDatasetItemId = videoManifest.data?.dataset_item_id ?? null;
   const videoChaptersQuery = useVideoChapters(isVideoTask ? videoDatasetItemId : null);
@@ -1249,6 +1263,38 @@ export function useWorkbenchShellModel({
     () => Object.keys(trackerModelProviders),
     [trackerModelProviders],
   );
+  const correctionModels = useMemo<VideoMaskCorrectionModel[]>(() => {
+    const models = new Map<string, VideoMaskCorrectionModel>();
+    for (const backend of backends) {
+      const entry = routing.capIndex[backend.id];
+      if (backend.state !== "connected" || !entry?.reachable) continue;
+      for (const model of entry.videoModels) {
+        const nativeMask = model.prompts.has("correction_frame")
+          && model.inputs.has("video")
+          && model.inputs.has("mask_prompt")
+          && model.outputs.has("mask");
+        const bboxFallback = model.inputs.has("video")
+          && model.inputs.has("bbox_prompt")
+          && model.outputs.has("mask");
+        if ((!nativeMask && !bboxFallback) || !model.maxWindowFrames) continue;
+        for (const modelKey of model.trackers) {
+          const candidate: VideoMaskCorrectionModel = {
+            backendId: backend.id,
+            modelKey,
+            modelId: model.id,
+            nativeMask,
+            textRequired: model.textDrivenTrackers.has(modelKey),
+            maxWindowFrames: model.maxWindowFrames,
+          };
+          const current = models.get(modelKey);
+          if (!current || (!current.nativeMask && candidate.nativeMask)) {
+            models.set(modelKey, candidate);
+          }
+        }
+      }
+    }
+    return [...models.values()];
+  }, [backends, routing.capIndex]);
   const allTextDrivenTrackers = useMemo(() => {
     const set = new Set<string>();
     for (const backend of backends) {
@@ -2358,6 +2404,70 @@ export function useWorkbenchShellModel({
     maskEditor.cancel();
     s.setVideoTool("select");
   }, [maskEditor, s]);
+  const [videoMaskCorrectionOpen, setVideoMaskCorrectionOpen] = useState(false);
+  const [videoMaskCorrectionSubmitting, setVideoMaskCorrectionSubmitting] = useState(false);
+  const [videoMaskCorrectionContext, setVideoMaskCorrectionContext] = useState<{
+    annotationId: string;
+    frameIndex: number;
+    sessionId: string;
+    segmentId?: string;
+    segmentStart: number;
+    segmentEnd: number;
+  } | null>(null);
+  const [savedVideoMaskCorrection, setSavedVideoMaskCorrection] = useState<
+    Awaited<ReturnType<typeof handleVideoMaskCommit>> | null
+  >(null);
+  const [videoMaskCorrectionCreateError, setVideoMaskCorrectionCreateError] = useState<string | null>(null);
+  const [videoMaskCorrectionCreateRetryable, setVideoMaskCorrectionCreateRetryable] = useState(true);
+  const currentVideoSegment = useMemo(
+    () => videoSegmentsQuery.data?.segments.find(
+      (segment) => segment.start_frame <= s.videoFrameIndex
+        && s.videoFrameIndex <= segment.end_frame,
+    ) ?? null,
+    [s.videoFrameIndex, videoSegmentsQuery.data?.segments],
+  );
+  useEffect(() => {
+    if (!videoMaskCorrectionOpen || !videoMaskCorrectionContext || videoMaskCorrectionContext.segmentId) return;
+    const segment = videoSegmentsQuery.data?.segments.find(
+      (item) => item.start_frame <= videoMaskCorrectionContext.frameIndex
+        && videoMaskCorrectionContext.frameIndex <= item.end_frame,
+    );
+    if (!segment) return;
+    setVideoMaskCorrectionContext((current) => {
+      if (!current || current.segmentId || current.frameIndex !== videoMaskCorrectionContext.frameIndex) {
+        return current;
+      }
+      return {
+        ...current,
+        segmentId: segment.id,
+        segmentStart: segment.start_frame,
+        segmentEnd: segment.end_frame,
+      };
+    });
+  }, [videoMaskCorrectionContext, videoMaskCorrectionOpen, videoSegmentsQuery.data?.segments]);
+  const openVideoMaskCorrection = useCallback(() => {
+    if (!selectedVideoMask) return;
+    setSavedVideoMaskCorrection(null);
+    setVideoMaskCorrectionCreateError(null);
+    setVideoMaskCorrectionCreateRetryable(true);
+    setVideoMaskCorrectionContext({
+      annotationId: selectedVideoMask.id,
+      frameIndex: s.videoFrameIndex,
+      sessionId: maskEditor.sessionId,
+      segmentId: currentVideoSegment?.id,
+      segmentStart: currentVideoSegment?.start_frame ?? 0,
+      segmentEnd: currentVideoSegment?.end_frame ?? Math.max(0, videoFrameCount - 1),
+    });
+    setVideoMaskCorrectionOpen(true);
+  }, [currentVideoSegment, maskEditor.sessionId, s.videoFrameIndex, selectedVideoMask, videoFrameCount]);
+  const changeVideoMaskCorrectionOpen = useCallback((open: boolean) => {
+    setVideoMaskCorrectionOpen(open);
+    if (open) return;
+    setSavedVideoMaskCorrection(null);
+    setVideoMaskCorrectionCreateError(null);
+    setVideoMaskCorrectionCreateRetryable(true);
+    setVideoMaskCorrectionContext(null);
+  }, []);
   const commitVideoMask = useCallback(() => {
     const trackLocked = !!selectedVideoMask
       && s.lockedVideoTrackIds.has(selectedVideoMask.geometry.track_id);
@@ -2369,20 +2479,20 @@ export function useWorkbenchShellModel({
       editorPhase: maskEditor.phase,
     }) || !canCommitMask(maskEditor.phase, maskEditor.dirty)) {
       pushToast({ msg: "当前 Mask 不可提交", sub: "请检查锁状态或等待加载/保存完成", kind: "warning" });
-      return Promise.resolve({ ok: false, retryable: false });
+      return Promise.resolve({ ok: false, retryable: false, savedKeyframe: null });
     }
     const rle = maskEditor.commitToRle();
     if (!rle || !maskEditor.buffer || maskEditor.buffer.countSet() === 0) {
       pushToast({ msg: "Mask 为空，未提交", kind: "warning" });
-      return Promise.resolve({ ok: false, retryable: false });
+      return Promise.resolve({ ok: false, retryable: false, savedKeyframe: null });
     }
     // v0.23.5 · WS-B/A7 · 经 session 单飞 save: 重复 Enter / 双击只产生一次 mutation;
     // 失败保留 buffer/history 进入 error 相位, 可 retry (A2)。
-    let committedAnnotation: AnnotationResponse | null = null;
+    let savedKeyframe: Awaited<ReturnType<typeof handleVideoMaskCommit>> | null = null;
     return maskEditor
       .save(async () => {
         try {
-          committedAnnotation = await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
+          savedKeyframe = await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
           return { ok: true, retryable: false };
         } catch (error: unknown) {
           const retryable = error instanceof ApiError
@@ -2395,7 +2505,7 @@ export function useWorkbenchShellModel({
         if (result.ok) {
           maskEditor.cancel();
           s.setVideoTool("select");
-          if (committedAnnotation) s.setSelectedId(committedAnnotation.id);
+          if (savedKeyframe) s.setSelectedId(savedKeyframe.annotation.id);
         } else {
           pushToast({
             msg: "Mask 保存失败",
@@ -2403,9 +2513,119 @@ export function useWorkbenchShellModel({
             kind: "error",
           });
         }
-        return result;
+        return { ...result, savedKeyframe };
       });
   }, [handleVideoMaskCommit, isLockedForActions, lockConflict, lockError, maskEditor, pushToast, s, selectedVideoMask]);
+  const submitVideoMaskCorrection = useCallback(async (intent: VideoMaskCorrectionIntent) => {
+    setVideoMaskCorrectionSubmitting(true);
+    let savedDuringSubmit = savedVideoMaskCorrection;
+    try {
+      const outcome = await executeVideoMaskCorrectionFlow({
+        intent,
+        savedKeyframe: savedDuringSubmit,
+        saveKeyframe: async () => {
+          if (
+            !videoMaskCorrectionContext
+            || videoMaskCorrectionContext.annotationId !== selectedVideoMask?.id
+            || videoMaskCorrectionContext.frameIndex !== s.videoFrameIndex
+            || videoMaskCorrectionContext.sessionId !== maskEditor.sessionId
+          ) {
+            pushToast({
+              msg: "Mask 纠错上下文已变化",
+              sub: "请回到原轨迹和帧后重新打开",
+              kind: "warning",
+            });
+            changeVideoMaskCorrectionOpen(false);
+            return null;
+          }
+          const saved = await commitVideoMask();
+          return saved.ok ? saved.savedKeyframe : null;
+        },
+        onKeyframeSaved: (savedKeyframe) => {
+          savedDuringSubmit = savedKeyframe;
+          setSavedVideoMaskCorrection(savedKeyframe);
+        },
+        createPropagation: async (savedKeyframe, correctionIntent) => {
+          if (
+            !taskId
+            || !correctionIntent.direction
+            || !correctionIntent.modelKey
+            || !correctionIntent.modelId
+            || !correctionIntent.backendId
+          ) {
+            throw new Error("correction_context_incomplete");
+          }
+          const sourceVersion = savedKeyframe.annotation.version;
+          if (sourceVersion == null) {
+            throw new Error("source_annotation_version_missing");
+          }
+          await trackerJobs.correct(taskId, savedKeyframe.annotation.id, {
+            correction_frame: savedKeyframe.frameIndex,
+            from_frame: correctionIntent.fromFrame,
+            to_frame: correctionIntent.toFrame,
+            model_key: correctionIntent.modelKey,
+            model_id: correctionIntent.modelId,
+            backend_id: correctionIntent.backendId,
+            direction: correctionIntent.direction,
+            segment_id: correctionIntent.segmentId,
+            source_annotation_version: sourceVersion,
+            corrected_mask_digest: savedKeyframe.mask.sha256,
+            allow_bbox_fallback: correctionIntent.allowBboxFallback,
+            text: correctionIntent.text,
+          });
+        },
+      });
+      if (outcome.kind === "save_failed") return;
+      if (outcome.kind === "saved") {
+        changeVideoMaskCorrectionOpen(false);
+        pushToast({ msg: "人工 Mask 纠错帧已保存", kind: "success" });
+        return;
+      }
+      changeVideoMaskCorrectionOpen(false);
+    } catch (error) {
+      const detail = error instanceof ApiError && error.detailRaw && typeof error.detailRaw === "object"
+        ? error.detailRaw as { reason?: string }
+        : undefined;
+      pushToast({
+        msg: savedDuringSubmit
+          ? "人工纠错帧已保存，但重传播未启动"
+          : "Mask 纠错帧保存失败",
+        sub: detail?.reason === "correction_job_active"
+          ? "同一轨迹已有纠错作业，请先完成或取消"
+          : detail?.reason === "mask_prompt_unsupported"
+            ? "模型能力已变化，请刷新后重新选择纠错模型"
+            : detail?.reason ?? String(error),
+        kind: "warning",
+      });
+      if (savedDuringSubmit) {
+        setVideoMaskCorrectionCreateError(
+          detail?.reason ?? (error instanceof Error ? error.message : String(error)),
+        );
+        setVideoMaskCorrectionCreateRetryable(
+          error instanceof ApiError
+            ? error.status >= 500 || detail?.reason === "correction_job_active"
+            : error instanceof Error
+              && ![
+                "correction_context_incomplete",
+                "source_annotation_version_missing",
+              ].includes(error.message),
+        );
+      }
+    } finally {
+      setVideoMaskCorrectionSubmitting(false);
+    }
+  }, [
+    changeVideoMaskCorrectionOpen,
+    commitVideoMask,
+    maskEditor.sessionId,
+    pushToast,
+    s.videoFrameIndex,
+    savedVideoMaskCorrection,
+    selectedVideoMask?.id,
+    taskId,
+    trackerJobs,
+    videoMaskCorrectionContext,
+  ]);
   commitCurrentMaskRef.current = async () => {
     const result = isVideoTask
       ? await commitVideoMask()
@@ -3794,6 +4014,11 @@ export function useWorkbenchShellModel({
                 onRedo={maskEditor.redo}
                 onRetry={isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession}
                 onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}
+                onCommitAndPropagate={
+                  isVideoTask && selectedVideoMask
+                    ? openVideoMaskCorrection
+                    : undefined
+                }
                 onCancel={isVideoTask ? cancelVideoMaskEdit : cancelMaskEdit}
               />
             )}
@@ -4396,6 +4621,21 @@ export function useWorkbenchShellModel({
     },
   };
 
+  const maskCorrectionDialogProps: ComponentProps<typeof VideoMaskCorrectionDialog> = {
+    open: videoMaskCorrectionOpen,
+    frameIndex: videoMaskCorrectionContext?.frameIndex ?? s.videoFrameIndex,
+    minFrame: videoMaskCorrectionContext?.segmentStart ?? 0,
+    maxFrame: videoMaskCorrectionContext?.segmentEnd ?? Math.max(0, videoFrameCount - 1),
+    segmentId: videoMaskCorrectionContext?.segmentId,
+    models: correctionModels,
+    keyframeSaved: savedVideoMaskCorrection !== null,
+    createError: videoMaskCorrectionCreateError,
+    createRetryable: videoMaskCorrectionCreateRetryable,
+    submitting: videoMaskCorrectionSubmitting,
+    onOpenChange: changeVideoMaskCorrectionOpen,
+    onSubmit: submitVideoMaskCorrection,
+  };
+
   const issueSection = projectId && taskId ? {
     openIssueCount,
     stageKind,
@@ -4421,6 +4661,7 @@ export function useWorkbenchShellModel({
     kind: "ready",
     layout,
     propagateDialog: propagateDialogProps,
+    maskCorrectionDialog: maskCorrectionDialogProps,
     trackerReview: trackerReviewProps,
     issueSection,
   };

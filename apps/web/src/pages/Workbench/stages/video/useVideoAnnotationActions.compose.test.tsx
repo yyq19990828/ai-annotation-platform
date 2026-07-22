@@ -6,10 +6,20 @@ import { useVideoAnnotationActions } from "./useVideoAnnotationActions";
 
 const apiMocks = vi.hoisted(() => ({
   composeVideoTracks: vi.fn(),
+  uploadTaskContent: vi.fn(),
+  saveMaskKeyframe: vi.fn(),
 }));
 
 vi.mock("@/api/tasks", () => ({
   tasksApi: apiMocks,
+}));
+
+vi.mock("@/api/rasterMasks", () => ({
+  rasterMasksApi: { uploadTaskContent: apiMocks.uploadTaskContent },
+}));
+
+vi.mock("@/api/videoTracker", () => ({
+  videoTrackerApi: { saveMaskKeyframe: apiMocks.saveMaskKeyframe },
 }));
 
 const trackAnn: AnnotationResponse = {
@@ -57,7 +67,7 @@ function setup() {
     },
   };
   const { result } = renderHook(() => useVideoAnnotationActions(args as never));
-  return result;
+  return { result, history, queryClient: args.queryClient };
 }
 
 describe("handleVideoComposeTracks gap_mode passthrough", () => {
@@ -72,7 +82,7 @@ describe("handleVideoComposeTracks gap_mode passthrough", () => {
   });
 
   it("forwards gapMode as gap_mode for join_tracks", async () => {
-    const result = setup();
+    const { result } = setup();
     await result.current.handleVideoComposeTracks({
       operation: "join_tracks",
       annotationIds: ["ann-a"],
@@ -88,7 +98,7 @@ describe("handleVideoComposeTracks gap_mode passthrough", () => {
   });
 
   it("leaves gap_mode undefined for merge_tracks", async () => {
-    const result = setup();
+    const { result } = setup();
     await result.current.handleVideoComposeTracks({
       operation: "merge_tracks",
       annotationIds: ["ann-a"],
@@ -100,5 +110,78 @@ describe("handleVideoComposeTracks gap_mode passthrough", () => {
       delete_sources: undefined,
       gap_mode: undefined,
     });
+  });
+});
+
+describe("handleVideoMaskCommit", () => {
+  const digest = "a".repeat(64);
+  const rle = {
+    encoding: "coco_rle" as const,
+    size: [2, 3] as [number, number],
+    counts: [1, 2, 3],
+  };
+  const reference = {
+    encoding: "coco_rle_ref" as const,
+    size: [2, 3] as [number, number],
+    object_key: `raster-masks/sha256/aa/aa/${digest}.json`,
+    sha256: digest,
+    runs: 3,
+    bytes: 64,
+  };
+  const maskTrack: AnnotationResponse = {
+    ...trackAnn,
+    id: "mask-1",
+    annotation_type: "video_track_mask",
+    tool_unit_id: "region",
+    version: 3,
+    geometry: {
+      type: "video_track_mask",
+      track_id: "mask-track-1",
+      keyframes: [{ frame_index: 1, mask: reference, source: "manual" }],
+      outside: [],
+    },
+  };
+
+  beforeEach(() => {
+    apiMocks.uploadTaskContent.mockReset();
+    apiMocks.saveMaskKeyframe.mockReset();
+    apiMocks.uploadTaskContent.mockResolvedValue(reference);
+    apiMocks.saveMaskKeyframe.mockResolvedValue({ ...maskTrack, version: 4 });
+  });
+
+  it("已有 Mask 轨迹走专用单帧 PUT 并采信服务端新版本", async () => {
+    const { result, history, queryClient } = setup();
+    queryClient.setQueryData(["annotations", "task-1"], [maskTrack]);
+
+    const saved = await result.current.handleVideoMaskCommit(rle, 5, maskTrack);
+
+    expect(apiMocks.uploadTaskContent).toHaveBeenCalledWith("task-1", rle);
+    expect(apiMocks.saveMaskKeyframe).toHaveBeenCalledWith(
+      "task-1",
+      "mask-1",
+      5,
+      reference,
+      3,
+    );
+    expect(saved).toMatchObject({
+      annotation: { id: "mask-1", version: 4 },
+      mask: reference,
+      frameIndex: 5,
+    });
+    expect(history.push).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"])?.[0])
+      .toMatchObject({ id: "mask-1", version: 4 });
+  });
+
+  it("版本缺失时在上传前稳定失败", async () => {
+    const { result } = setup();
+
+    await expect(result.current.handleVideoMaskCommit(
+      rle,
+      5,
+      { ...maskTrack, version: undefined },
+    )).rejects.toThrow("version is missing");
+    expect(apiMocks.uploadTaskContent).not.toHaveBeenCalled();
+    expect(apiMocks.saveMaskKeyframe).not.toHaveBeenCalled();
   });
 });

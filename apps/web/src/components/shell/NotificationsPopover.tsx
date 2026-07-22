@@ -71,6 +71,7 @@ const TYPE_LABEL: Record<string, string> = {
 const JOB_KIND_LABEL: Record<string, string> = {
   batch_predict: "批量预标",
   video_tracker: "视频追踪",
+  video_correction: "视频 Mask 纠错",
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
   dataset_import: "数据集导入",

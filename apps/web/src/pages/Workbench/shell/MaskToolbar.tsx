@@ -21,6 +21,7 @@ interface MaskToolbarProps {
   onSetMode: (m: MaskMode) => void;
   onSetRadius: (r: number) => void;
   onCommit: () => void;
+  onCommitAndPropagate?: () => void;
   onCancel: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -37,7 +38,7 @@ const MODE_BTN_ACTIVE = "border-brand/30 bg-brand/10 text-brand";
 
 export function MaskToolbar({
   active, mode, radius, dirty, phase, canUndo, canRedo, canEdit,
-  onSetMode, onSetRadius, onCommit, onCancel, onUndo, onRedo, onRetry,
+  onSetMode, onSetRadius, onCommit, onCommitAndPropagate, onCancel, onUndo, onRedo, onRetry,
 }: MaskToolbarProps) {
   const phaseLabel: Record<MaskEditorPhase, string> = {
     idle: "未激活",
@@ -109,6 +110,17 @@ export function MaskToolbar({
       <Button size="sm" variant="primary" onClick={onCommit} disabled={!canEdit || !active || !dirty || phase !== "dirty"} title="确认 (Enter)">
         <Icon name="check" size={11} /> 确认
       </Button>
+      {onCommitAndPropagate && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onCommitAndPropagate}
+          disabled={!canEdit || !active || !dirty || phase !== "dirty"}
+          title="保存人工纠错帧并选择定向重传播"
+        >
+          保存并传播
+        </Button>
+      )}
     </div>
   );
 }

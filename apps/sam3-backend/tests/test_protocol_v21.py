@@ -102,6 +102,45 @@ def test_multiplex_collects_all_continuation_seed_bboxes(main_module):
     ]
 
 
+def test_multiplex_collects_correction_fallback_top_level_bbox(main_module):
+    ctx = {
+        "seeds": [
+            {
+                "obj_id": 1,
+                "bbox": {"x": 0.15, "y": 0.25, "w": 0.35, "h": 0.45},
+                "prompts": [{"frame_index": 12}],
+            }
+        ]
+    }
+
+    assert main_module._seed_bboxes_from_video_ctx(ctx) == [
+        {"x": 0.15, "y": 0.25, "w": 0.35, "h": 0.45}
+    ]
+
+
+def test_pvs_preserves_validated_correction_frame_seed(main_module):
+    prompt = {
+        "type": "correction_frame",
+        "frame_index": 12,
+        "direction": "backward",
+        "output_geometry": "mask",
+        "mask_prompt": {
+            "rle": {
+                "encoding": "coco_rle",
+                "size": [2, 3],
+                "counts": [1, 2, 3],
+            },
+            "source_annotation_id": "annotation-1",
+            "source_version": 3,
+            "source_digest": "a" * 64,
+        },
+    }
+
+    assert main_module._seeds_from_video_ctx(
+        {"seeds": [{"obj_id": 4, "prompts": [prompt]}]}
+    ) == [{"obj_id": 4, "prompts": [prompt]}]
+
+
 def test_multiplex_seed_bboxes_fall_back_to_source_geometry(main_module):
     ctx = {
         "source_geometry": {

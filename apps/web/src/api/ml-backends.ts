@@ -134,6 +134,7 @@ export interface MLModelCapability {
   supported_trackers?: string[];
   // v0.21.19 · text-driven tracker (sam3_video) 子集; propagate 需 text/exemplars。
   text_driven_trackers?: string[];
+  max_window_frames?: number | null;
   supported_variants?: MLBackendSupportedVariantGroup[];
   // v0.14.12 · 显式合法组合 (可选): backend 多 axis 非真笛卡尔积时使用. yolo 的
   // (series, size) 受 MODEL_MATRIX 约束 (rtdetr 只有 l/x; v9 detect 仅 t/s/m/c/e),
@@ -196,6 +197,7 @@ export interface MLBackendCapability {
   // v0.21.19 · text-driven tracker (sam3_video) 子集; 前端选中该 tracker 时显 text 框、
   // 未在 supported_trackers 声明时该 tracker 灰置。空/缺 = 无 text-driven tracker。
   text_driven_trackers?: string[];
+  max_window_frames?: number | null;
   // v0.10.40 · 变体富元数据; 缺失时前端回落 params.*_variant.enum.
   supported_variants?: MLBackendSupportedVariantGroup[];
   params?: {

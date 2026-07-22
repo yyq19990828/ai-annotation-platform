@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import settings
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.db.models.video_tracker_job import (
+    VideoTrackerJob,
+    VideoTrackerJobKind,
+    VideoTrackerJobStatus,
+)
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
 from app.services.gpu_arbitration.contracts import gpu_arbiter_failure_record
@@ -40,7 +44,11 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                     project = await db.get(Project, project_id) if project_id else None
                     aj = await async_job_svc.create_job(
                         db,
-                        kind="video_tracker",
+                        kind=(
+                            "video_correction"
+                            if job.job_kind == VideoTrackerJobKind.CORRECTION.value
+                            else "video_tracker"
+                        ),
                         project_id=project_id,
                         user_id=job.created_by,
                         payload={
@@ -54,6 +62,8 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                             "to_frame": job.to_frame,
                             "model_key": job.model_key,
                             "direction": job.direction,
+                            "job_kind": job.job_kind,
+                            "correction_frame": job.correction_frame,
                         },
                         celery_task_id=celery_task_id,
                     )

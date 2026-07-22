@@ -561,6 +561,46 @@ def test_modality_video_from_tracker_task():
     assert caps["modalities"] == ["video"]
 
 
+def test_tracker_max_window_is_clamped_to_platform_limit(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ml_capabilities.settings.video_tracker_sam3_window_size_frames",
+        16,
+    )
+    caps = extract_capabilities(
+        {
+            "name": "sam3",
+            "models": [
+                {
+                    "id": "tracker",
+                    "task": "tracker",
+                    "supported_trackers": ["sam3_video_interactive"],
+                    "max_window_frames": 64,
+                }
+            ],
+        }
+    )
+
+    assert caps["models"][0]["max_window_frames"] == 16
+
+
+def test_tracker_non_positive_max_window_is_not_advertised():
+    caps = extract_capabilities(
+        {
+            "name": "broken-tracker",
+            "models": [
+                {
+                    "id": "tracker",
+                    "task": "tracker",
+                    "supported_trackers": ["sam2_video"],
+                    "max_window_frames": 0,
+                }
+            ],
+        }
+    )
+
+    assert caps["models"][0]["max_window_frames"] is None
+
+
 def test_modality_lidar_from_geometry():
     setup = {
         "name": "pc",

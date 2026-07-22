@@ -40,6 +40,7 @@ from aap_backend_runtime import (
 )
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
+    CorrectionFramePrompt,
     PROTOCOL_VERSION,
     ModelUnavailableError,
     MaskInteractionDiagnostic,
@@ -916,13 +917,19 @@ def setup() -> dict:
             "is_interactive": True,
             # 跨帧 memory bank 的有状态视频追踪,内部编排复合。
             "composition": "composite",
-            "supported_prompts": ["bbox"],
+            "supported_prompts": ["point", "bbox", "correction_frame"],
             # 视频追踪: 以框提示初始化 (有状态视频, 非批量 crop 下游)。
-            "supported_inputs": ["video", "bbox_prompt"],
+            "supported_inputs": [
+                "video",
+                "point_prompt",
+                "bbox_prompt",
+                "mask_prompt",
+            ],
             "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             # 有状态视频追踪, 跨帧串行不可批量。output_attribute_types 留空。
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam2_video"],
+            "max_window_frames": VIDEO_TRACKER_MAX_WINDOW_FRAMES,
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},
@@ -1750,17 +1757,32 @@ def _seeds_from_ctx(ctx: dict) -> list[dict]:
                 continue
             entry: dict = {"obj_id": int(s.get("obj_id", i + 1))}
             if isinstance(s.get("prompts"), list) and s["prompts"]:
-                entry["prompts"] = s["prompts"]  # 多帧纠偏, 原样透传
+                entry["prompts"] = [
+                    CorrectionFramePrompt.model_validate(prompt).model_dump(
+                        mode="json"
+                    )
+                    if isinstance(prompt, dict)
+                    and prompt.get("type") == "correction_frame"
+                    else prompt
+                    for prompt in s["prompts"]
+                ]
             elif isinstance(s.get("bbox"), dict):
                 entry["bbox"] = s["bbox"]
             elif isinstance(s.get("points"), list) and s["points"]:
                 entry["points"] = s["points"]
+            elif isinstance(s.get("mask_prompt"), dict):
+                entry["mask_prompt"] = s["mask_prompt"]
             elif s.get("geometry") is not None:
                 try:
                     entry["bbox"] = _seed_bbox_from_ctx({"source_geometry": s["geometry"]})
                 except HTTPException:
                     pass
-            if "prompts" in entry or "bbox" in entry or "points" in entry:
+            if (
+                "prompts" in entry
+                or "bbox" in entry
+                or "points" in entry
+                or "mask_prompt" in entry
+            ):
                 seeds.append(entry)
         if seeds:
             return seeds

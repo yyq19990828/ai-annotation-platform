@@ -4,6 +4,7 @@ import base64
 import json
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -20,7 +21,7 @@ from app.db.models.video_tracker_job import (
     VideoTrackerJob,
     VideoTrackerJobStatus,
 )
-from app.deps import get_current_user, get_db, require_roles
+from app.deps import get_current_user, get_db, require_roles, require_scopes
 from app.schemas.video_tracker_job import (
     TrackerJobStatus,
     VideoTrackerDecisionRequest,
@@ -106,6 +107,14 @@ class VideoTrackerJobPreview(BaseModel):
     job_id: uuid.UUID
     status: TrackerJobStatus
     annotation_id: uuid.UUID | None = None
+    job_kind: Literal["tracking", "correction"] = "tracking"
+    correction_frame: int | None = None
+    direction: Literal["forward", "backward", "bidirectional"] | None = None
+    from_frame: int
+    to_frame: int
+    fallback_reason: str | None = None
+    seed_mode: Literal["native_mask", "bbox"] | None = None
+    protect_manual: bool = False
     results: list[VideoTrackerPreviewResult] = Field(default_factory=list)
     grid_step: int = 1
     output_geometry: str = "bbox"
@@ -141,18 +150,25 @@ _ANNOTATORS = (
 async def _load_visible_job_task(
     db: AsyncSession, job_id: uuid.UUID, user: User
 ) -> tuple[Task, VideoTrackerJobOut]:
+    task, row = await _load_visible_job_task_row(db, job_id, user)
+    return task, tracker_job_out(row)
+
+
+async def _load_visible_job_task_row(
+    db: AsyncSession, job_id: uuid.UUID, user: User
+) -> tuple[Task, VideoTrackerJob]:
     row = await get_tracker_job(db, job_id)
     task = await db.get(Task, row.task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
     await _assert_task_visible(db, task, user)
-    return task, tracker_job_out(row)
+    return task, row
 
 
 async def _assert_can_cancel(
     db: AsyncSession,
     task: Task,
-    body: VideoTrackerJobOut,
+    body: VideoTrackerJob | VideoTrackerJobOut,
     user: User,
 ) -> None:
     project = await db.get(Project, task.project_id)
@@ -294,31 +310,53 @@ async def get_video_tracker_job(
     return body
 
 
-@router.delete("/{job_id}", response_model=VideoTrackerJobOut)
+@router.delete(
+    "/{job_id}",
+    response_model=VideoTrackerJobOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def cancel_video_tracker_job(
     job_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    task, body = await _load_visible_job_task(db, job_id, current_user)
-    await _assert_can_cancel(db, task, body, current_user)
+    task, row = await _load_visible_job_task_row(db, job_id, current_user)
+    await _assert_can_cancel(db, task, row, current_user)
+    job_kind = row.job_kind
+    status_before = row.status
     body = await cancel_tracker_job(db, job_id)
-    await AuditService.log(
-        db,
-        actor=current_user,
-        action=AuditAction.VIDEO_TRACKER_JOB_CANCEL,
-        target_type="video_tracker_job",
-        target_id=job_id,
-        request=request,
-        status_code=200,
-        detail={"task_id": str(task.id), "status": body.status},
-    )
+    if status_before != VideoTrackerJobStatus.CANCELLED.value:
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action=(
+                AuditAction.VIDEO_CORRECTION_JOB_CANCEL
+                if job_kind == "correction"
+                else AuditAction.VIDEO_TRACKER_JOB_CANCEL
+            ),
+            target_type="video_tracker_job",
+            target_id=job_id,
+            request=request,
+            status_code=200,
+            detail={
+                "task_id": str(task.id),
+                "status_before": status_before,
+                "status": body.status,
+                "job_kind": job_kind,
+                "manual_keyframe_preserved": job_kind == "correction",
+                "staged_discarded": job_kind == "correction",
+            },
+        )
     await db.commit()
     return body
 
 
-@router.post("/{job_id}/accept", response_model=VideoTrackerJobOut)
+@router.post(
+    "/{job_id}/accept",
+    response_model=VideoTrackerJobOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def accept_video_tracker_job(
     job_id: uuid.UUID,
     request: Request,
@@ -326,8 +364,13 @@ async def accept_video_tracker_job(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     """v0.21.28 · 接受候选: 把 job 暂存结果落库 (主实例回填源轨迹 + 新轨迹建), status=ACCEPTED。"""
-    task, body = await _load_visible_job_task(db, job_id, current_user)
-    await _assert_can_cancel(db, task, body, current_user)
+    task, row = await _load_visible_job_task_row(db, job_id, current_user)
+    await _assert_can_cancel(db, task, row, current_user)
+    if row.job_kind == "correction":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "correction_requires_local_decision"},
+        )
     project = await db.get(Project, task.project_id)
     body = await accept_tracker_job(
         db,
@@ -349,7 +392,11 @@ async def accept_video_tracker_job(
     return body
 
 
-@router.post("/{job_id}/discard", response_model=VideoTrackerJobOut)
+@router.post(
+    "/{job_id}/discard",
+    response_model=VideoTrackerJobOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def discard_video_tracker_job(
     job_id: uuid.UUID,
     request: Request,
@@ -357,8 +404,13 @@ async def discard_video_tracker_job(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
-    task, body = await _load_visible_job_task(db, job_id, current_user)
-    await _assert_can_cancel(db, task, body, current_user)
+    task, row = await _load_visible_job_task_row(db, job_id, current_user)
+    await _assert_can_cancel(db, task, row, current_user)
+    if row.job_kind == "correction":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "correction_requires_local_decision"},
+        )
     body = await discard_tracker_job(db, job_id)
     await AuditService.log(
         db,
@@ -374,7 +426,11 @@ async def discard_video_tracker_job(
     return body
 
 
-@router.post("/{job_id}/decisions", response_model=VideoTrackerJobOut)
+@router.post(
+    "/{job_id}/decisions",
+    response_model=VideoTrackerJobOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
 async def decide_video_tracker_candidates(
     job_id: uuid.UUID,
     body: VideoTrackerDecisionRequest,
@@ -384,7 +440,7 @@ async def decide_video_tracker_candidates(
 ):
     """Accept or reject an explicit instance/window candidate slice."""
 
-    task, visible = await _load_visible_job_task(db, job_id, current_user)
+    task, visible = await _load_visible_job_task_row(db, job_id, current_user)
     await _assert_can_cancel(db, task, visible, current_user)
     project = await db.get(Project, task.project_id)
     result = await decide_tracker_job(
@@ -397,6 +453,7 @@ async def decide_video_tracker_candidates(
     last_decision = (
         ((result.prompt or {}).get("review_state") or {}).get("last_decision") or {}
     )
+    correction = (result.prompt or {}).get("correction") or {}
     if not result.review_replayed:
         await AuditService.log(
             db,
@@ -409,6 +466,15 @@ async def decide_video_tracker_candidates(
             detail={
                 "task_id": str(task.id),
                 "status": result.status,
+                "job_kind": result.job_kind,
+                "track_id": result.track_id_snapshot,
+                "correction_frame": result.correction_frame,
+                "source_version": correction.get("source_version"),
+                "result_versions": (result.prompt or {}).get(
+                    "expected_source_versions"
+                ),
+                "seed_mode": correction.get("seed_mode"),
+                "fallback_reason": correction.get("fallback_reason"),
                 **last_decision,
             },
         )

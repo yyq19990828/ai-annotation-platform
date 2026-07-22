@@ -9,9 +9,11 @@ from app.deps import (
     get_db,
     get_current_user,
     require_roles,
+    require_scopes,
 )
 from app.db.models.user import User
 from app.db.models.dataset import Dataset, DatasetItem, VideoFrameIndex
+from app.schemas.annotation import AnnotationOut
 from app.schemas.task import (
     PointCloudCameraOut,
     TaskPointCloudManifestResponse,
@@ -32,6 +34,8 @@ from app.schemas.video_frame_service import (
     VideoSegmentsResponse,
 )
 from app.schemas.video_tracker_job import (
+    VideoMaskCorrectionRequest,
+    VideoMaskKeyframeSaveRequest,
     VideoTrackerJobOut,
     VideoTrackerPropagateRequest,
 )
@@ -57,10 +61,14 @@ from app.services.video_segment_service import (
     release_segment,
 )
 from app.services.video_tracking.jobs import (
+    create_video_mask_correction_job,
     create_tracker_job,
+    enqueue_tracker_job,
     list_active_tracker_jobs,
     list_reviewable_tracker_jobs,
+    save_video_mask_keyframe,
 )
+from app.services.task_lock import TaskLockService
 
 
 from app.api.v1.tasks._shared import (
@@ -670,6 +678,120 @@ async def retry_video_frame_assets(
         payload.format,
         force=payload.force,
     )
+
+
+@router.put(
+    "/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}",
+    response_model=AnnotationOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def save_video_mask_correction_keyframe(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    frame_index: int,
+    payload: VideoMaskKeyframeSaveRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    raw_if_match = request.headers.get("If-Match", "").strip()
+    if not raw_if_match:
+        raise HTTPException(
+            status_code=428, detail={"reason": "if_match_required"}
+        )
+    try:
+        expected_version = int(raw_if_match.removeprefix('W/"').removesuffix('"'))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid If-Match format") from exc
+    ctx = await build_context_from_task(db, task)
+    annotation, audit_detail = await save_video_mask_keyframe(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        frame_index=frame_index,
+        payload=payload,
+        expected_version=expected_version,
+        user=current_user,
+    )
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_MASK_KEYFRAME_CORRECT,
+        target_type="annotation",
+        target_id=annotation.id,
+        request=request,
+        status_code=200,
+        detail=audit_detail,
+    )
+    await db.commit()
+    await db.refresh(annotation)
+    response.headers["ETag"] = f'W/"{annotation.version}"'
+    return AnnotationOut.model_validate(annotation)
+
+
+@router.post(
+    "/{task_id}/video/tracks/{annotation_id}/correction-jobs",
+    response_model=VideoTrackerJobOut,
+    status_code=202,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def create_video_mask_correction(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    payload: VideoMaskCorrectionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await create_video_mask_correction_job(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        payload=payload,
+        user=current_user,
+    )
+    correction = (body.prompt or {}).get("correction") or {}
+    routing = correction.get("routing") or {}
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_CORRECTION_JOB_CREATE,
+        target_type="video_tracker_job",
+        target_id=body.id,
+        request=request,
+        status_code=202,
+        detail={
+            "task_id": str(task.id),
+            "annotation_id": str(annotation_id),
+            "track_id": body.track_id_snapshot,
+            "correction_frame": body.correction_frame,
+            "from_frame": body.from_frame,
+            "to_frame": body.to_frame,
+            "direction": body.direction,
+            "model_key": body.model_key,
+            "model_id": routing.get("model_id"),
+            "requested_backend_id": routing.get("requested_backend_id"),
+            "backend_pool_id": routing.get("backend_pool_id"),
+            "source_version": correction.get("source_version"),
+            "corrected_digest": correction.get("corrected_digest"),
+            "segment": correction.get("segment"),
+            "seed_mode": correction.get("seed_mode"),
+            "fallback_reason": correction.get("fallback_reason"),
+        },
+    )
+    await db.commit()
+    return await enqueue_tracker_job(db, body.id, fail_closed=True)
 
 
 @router.post(

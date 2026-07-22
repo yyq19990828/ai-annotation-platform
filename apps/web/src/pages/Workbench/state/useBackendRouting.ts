@@ -41,6 +41,16 @@ export interface BackendCapEntry {
     inputs: Set<string>;
     outputs: Set<string>;
   }>;
+  /** 同一 model 行的视频追踪能力，用于纠错路由，禁止跨 model 拼接。 */
+  videoModels: Array<{
+    id: string;
+    trackers: string[];
+    prompts: Set<string>;
+    inputs: Set<string>;
+    outputs: Set<string>;
+    textDrivenTrackers: Set<string>;
+    maxWindowFrames: number | null;
+  }>;
   /** 是否支持文本 prompt (批量线判定用)。 */
   textCapable: boolean;
   /** 后端整体是否交互 (任一 model 或顶层 is_interactive)。 */
@@ -66,6 +76,7 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
     return {
       prompts,
       interactiveModels: [],
+      videoModels: [],
       textCapable,
       isInteractive,
       trackers: [],
@@ -75,6 +86,7 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
   }
 
   const models = Array.isArray(cap.models) ? cap.models : [];
+  const videoModels: BackendCapEntry["videoModels"] = [];
   const addPrompts = (interactive: boolean, supported: string[] | undefined) => {
     for (const p of supported ?? []) {
       if (p === "text") textCapable = true;
@@ -95,6 +107,21 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
           outputs: new Set(m.supported_geometric_outputs ?? []),
         });
       }
+      if ((m.supported_trackers?.length ?? 0) > 0) {
+        videoModels.push({
+          id: m.id,
+          trackers: [...(m.supported_trackers ?? [])],
+          prompts: new Set(m.supported_prompts ?? []),
+          inputs: new Set(m.supported_inputs ?? []),
+          outputs: new Set(m.supported_geometric_outputs ?? []),
+          textDrivenTrackers: new Set(m.text_driven_trackers ?? []),
+          maxWindowFrames: typeof m.max_window_frames === "number"
+            && Number.isInteger(m.max_window_frames)
+            && m.max_window_frames > 0
+            ? m.max_window_frames
+            : null,
+        });
+      }
       for (const t of m.supported_trackers ?? []) trackers.add(t);
       for (const t of m.text_driven_trackers ?? []) textDrivenTrackers.add(t);
     }
@@ -111,6 +138,21 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
         outputs: new Set(cap.supported_geometric_outputs ?? []),
       });
     }
+    if ((cap.supported_trackers?.length ?? 0) > 0) {
+      videoModels.push({
+        id: "__top__",
+        trackers: [...(cap.supported_trackers ?? [])],
+        prompts: new Set(cap.supported_prompts ?? []),
+        inputs: new Set(cap.supported_inputs ?? []),
+        outputs: new Set(cap.supported_geometric_outputs ?? []),
+        textDrivenTrackers: new Set(cap.text_driven_trackers ?? []),
+        maxWindowFrames: typeof cap.max_window_frames === "number"
+          && Number.isInteger(cap.max_window_frames)
+          && cap.max_window_frames > 0
+          ? cap.max_window_frames
+          : null,
+      });
+    }
   }
   for (const t of cap.supported_trackers ?? []) trackers.add(t);
   for (const t of cap.text_driven_trackers ?? []) textDrivenTrackers.add(t);
@@ -118,6 +160,7 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
   return {
     prompts,
     interactiveModels,
+    videoModels,
     textCapable,
     isInteractive,
     trackers: [...trackers],
@@ -140,11 +183,11 @@ export function capFingerprint(cap: MLBackendCapability | undefined): string {
     return models
       .map(
         (m) =>
-          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_inputs ?? []).join(",")}/${(m.supported_geometric_outputs ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}/${(m.text_driven_trackers ?? []).join(",")}`,
+          `${m.is_interactive ? 1 : 0}/${(m.supported_prompts ?? []).join(",")}/${(m.supported_inputs ?? []).join(",")}/${(m.supported_geometric_outputs ?? []).join(",")}/${(m.supported_trackers ?? []).join(",")}/${(m.text_driven_trackers ?? []).join(",")}/${m.max_window_frames ?? ""}`,
       )
       .join(";");
   }
-  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_inputs ?? []).join(",")}/${(cap.supported_geometric_outputs ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}/${(cap.text_driven_trackers ?? []).join(",")}`;
+  return `${cap.is_interactive === false ? 0 : 1}/${(cap.supported_prompts ?? []).join(",")}/${(cap.supported_inputs ?? []).join(",")}/${(cap.supported_geometric_outputs ?? []).join(",")}/${(cap.supported_trackers ?? []).join(",")}/${(cap.text_driven_trackers ?? []).join(",")}/${cap.max_window_frames ?? ""}`;
 }
 
 export interface InteractiveRouteRequirement {

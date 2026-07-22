@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import { tasksApi, type AnnotationPayload } from "@/api/tasks";
 import { rasterMasksApi } from "@/api/rasterMasks";
+import { videoTrackerApi } from "@/api/videoTracker";
 import type { CocoRle } from "../../stage/shared/geometry/maskRle";
 import type {
   AnnotationResponse,
@@ -87,6 +88,12 @@ export interface VideoTrackCompositionOptions {
   deleteSources?: boolean;
   // v0.10.30 · 2.5 join: gap 填充模式, 仅 join_tracks 透传给后端 gap_mode。
   gapMode?: "interpolate" | "outside";
+}
+
+export interface SavedVideoMaskKeyframe {
+  annotation: AnnotationResponse;
+  mask: CocoRleMaskRef;
+  frameIndex: number;
 }
 
 export function buildVideoCreatePayload(
@@ -393,39 +400,44 @@ export function useVideoAnnotationActions({
     selected: AnnotationResponse | null,
   ) => {
     if (!taskId) throw new Error("Task is not available");
-    const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
     if (selected?.geometry.type === "video_track_mask") {
+      const selectedMaskVersion = selected.version;
+      if (selectedMaskVersion == null) {
+        throw new Error("Video Mask annotation version is missing");
+      }
+      const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
       const geometry = upsertVideoMaskKeyframe(selected.geometry, frameIndex, reference);
       const command = buildVideoUpdateCommand(selected, geometry);
-      await new Promise<void>((resolve, reject) => {
-        mutations.update.mutate(
-          { annotationId: selected.id, payload: { geometry } },
-          {
-            onSuccess: () => {
-              history.push(command);
-              resolve();
-            },
-            onError: reject,
-          },
-        );
-      });
-      return selected;
+      const updated = await videoTrackerApi.saveMaskKeyframe(
+        taskId,
+        selected.id,
+        frameIndex,
+        reference,
+        selectedMaskVersion,
+      );
+      queryClient.setQueryData<AnnotationResponse[]>(
+        ["annotations", taskId],
+        (current) => (current ?? []).map((item) => item.id === updated.id ? updated : item),
+      );
+      history.push(command);
+      return { annotation: updated, mask: reference, frameIndex } satisfies SavedVideoMaskKeyframe;
     }
+    const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
     const payload = buildVideoMaskTrackCreatePayload(
       frameIndex,
       reference,
       s.activeClass || UNKNOWN_CLASS,
     );
-    return new Promise<AnnotationResponse>((resolve, reject) => {
+    return new Promise<SavedVideoMaskKeyframe>((resolve, reject) => {
       mutations.create.mutate(payload, {
         onSuccess: (created) => {
           history.push({ kind: "create", annotationId: created.id, payload });
-          resolve(created);
+          resolve({ annotation: created, mask: reference, frameIndex });
         },
         onError: reject,
       });
     });
-  }, [history, mutations.create, mutations.update, s.activeClass, taskId]);
+  }, [history, mutations.create, queryClient, s.activeClass, taskId]);
 
   const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
     const before = { class_name: ann.class_name };

@@ -24,6 +24,13 @@ function instanceKey(value: string | null | undefined): string {
   return value ?? "1";
 }
 
+function directionLabel(direction: VideoTrackerJobPreview["direction"]): string {
+  if (direction === "backward") return "向更早帧";
+  if (direction === "forward") return "向更晚帧";
+  if (direction === "bidirectional") return "双向";
+  return "指定窗口";
+}
+
 export function VideoTrackerReviewBar({
   open,
   preview,
@@ -64,6 +71,7 @@ export function VideoTrackerReviewBar({
   );
   const resolved = (preview?.candidate_accepted ?? 0) + (preview?.candidate_rejected ?? 0);
   const disabled = submitting || selected.length === 0 || fromFrame > toFrame;
+  const isCorrection = preview?.job_kind === "correction";
 
   const submit = async (decision: "accept" | "reject") => {
     const selection: TrackerReviewDecision = {
@@ -87,7 +95,7 @@ export function VideoTrackerReviewBar({
   return (
     <div
       role="dialog"
-      aria-label="AI 追踪候选审阅"
+      aria-label={isCorrection ? "Mask 纠错候选审阅" : "AI 追踪候选审阅"}
       aria-live="polite"
       data-testid="video-tracker-review-bar"
       className="absolute left-1/2 top-3 z-workbench-modal w-[min(46rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xl"
@@ -99,10 +107,19 @@ export function VideoTrackerReviewBar({
               <Bot className="size-4" />
             </span>
             <div className="flex min-w-0 flex-col gap-1">
-              <h2 className="text-sm font-semibold tracking-tight">AI 追踪候选</h2>
+              <h2 className="text-sm font-semibold tracking-tight">
+                {isCorrection ? "Mask 纠错传播候选" : "AI 追踪候选"}
+              </h2>
               <p className="text-xs leading-relaxed text-muted-foreground">
                 已审 {resolved}/{total}，当前选区 {selected.length} 个候选；确认后才写入轨迹。
               </p>
+              {isCorrection ? (
+                <p className="text-xs leading-relaxed text-muted-foreground" data-testid="tracker-review-correction-summary">
+                  F{preview.correction_frame} 人工纠错帧 · 窗口 F{preview.from_frame}–F{preview.to_frame} · {directionLabel(preview.direction)} ·
+                  {preview.seed_mode === "native_mask" ? " 原生 Mask seed" : " bbox seed 降级"}
+                  {preview.protect_manual ? " · 保护人工帧" : ""}
+                </p>
+              ) : null}
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onRefresh} disabled={submitting}>
@@ -160,6 +177,13 @@ export function VideoTrackerReviewBar({
           <div className="flex items-center gap-2 text-xs text-status-warning" data-testid="tracker-review-manual-warning">
             <ShieldAlert className="size-4" />
             选区包含 {manualCount} 个受保护的人工关键帧，接受时需要二次确认。
+          </div>
+        ) : null}
+
+        {isCorrection && preview.fallback_reason ? (
+          <div className="flex items-center gap-2 text-xs text-status-warning" data-testid="tracker-review-fallback-warning">
+            <ShieldAlert className="size-4" />
+            当前候选使用 bbox seed 降级：{preview.fallback_reason}。输出仍为 Mask。
           </div>
         ) : null}
 

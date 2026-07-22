@@ -50,6 +50,7 @@ from aap_backend_runtime import (
 )
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
+    CorrectionFramePrompt,
     PROTOCOL_VERSION,
     ModelUnavailableError,
     MaskInteractionDiagnostic,
@@ -104,8 +105,14 @@ from predictor import (
     MODEL_VARIANT,
     SAM3Predictor,
 )
-from video_predictor import SAM3MultiplexVideoTracker
-from pvs_video_predictor import SAM3PVSVideoTracker
+from video_predictor import (
+    DEFAULT_MAX_WINDOW_FRAMES as MULTIPLEX_MAX_WINDOW_FRAMES,
+    SAM3MultiplexVideoTracker,
+)
+from pvs_video_predictor import (
+    DEFAULT_MAX_WINDOW_FRAMES as PVS_MAX_WINDOW_FRAMES,
+    SAM3PVSVideoTracker,
+)
 from pool_domain import Sam3Pools
 from schemas import BatchPredictResponse, Context, PredictionResult, WarmupResponse
 
@@ -808,12 +815,13 @@ def setup() -> dict:
             "composition": "composite",
             # text-driven: 以文本 query 初始化 (非 bbox 种子)。
             "supported_prompts": ["text"],
-            "supported_inputs": ["video"],
+            "supported_inputs": ["video", "bbox_prompt"],
             "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam3_video"],
             "text_driven_trackers": ["sam3_video"],
+            "max_window_frames": MULTIPLEX_MAX_WINDOW_FRAMES,
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
             "default_variants": _default_variants,
@@ -828,10 +836,16 @@ def setup() -> dict:
             "is_interactive": True,
             "composition": "composite",
             "supported_prompts": ["point", "interactive_box", "correction_frame"],
-            "supported_inputs": ["video", "mask_prompt"],
+            "supported_inputs": [
+                "video",
+                "point_prompt",
+                "bbox_prompt",
+                "mask_prompt",
+            ],
             "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam3_video_interactive"],
+            "max_window_frames": PVS_MAX_WINDOW_FRAMES,
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
             "default_variants": _default_variants,
@@ -1625,7 +1639,15 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
                 continue
             entry: dict[str, Any] = {"obj_id": int(s.get("obj_id", i + 1))}
             if isinstance(s.get("prompts"), list) and s["prompts"]:
-                entry["prompts"] = s["prompts"]  # 多帧纠偏, 原样透传
+                entry["prompts"] = [
+                    CorrectionFramePrompt.model_validate(prompt).model_dump(
+                        mode="json"
+                    )
+                    if isinstance(prompt, dict)
+                    and prompt.get("type") == "correction_frame"
+                    else prompt
+                    for prompt in s["prompts"]
+                ]
             elif isinstance(s.get("bbox"), dict):
                 entry["bbox"] = s["bbox"]
             elif isinstance(s.get("points"), list) and s["points"]:

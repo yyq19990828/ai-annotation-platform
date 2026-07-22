@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from aap_protocol_v2.lifecycle import canonical_managed_lifecycle_capabilities
 
+from app.config import settings
+
 # v0.14.11 · 受控词表与 task→默认几何统一由 capability_registry SSOT 派生,
 # 协议元数据 (label / summary / suggested_backends) 同源, 供
 # `GET /v1/ml-capabilities/protocol` 直接对外暴露。
@@ -108,6 +110,20 @@ def _model_modality(model: dict) -> str:
     return "image"
 
 
+def _effective_max_window_frames(model: dict) -> int | None:
+    raw = model.get("max_window_frames")
+    if type(raw) is not int or raw <= 0:
+        return None
+    trackers = list(model.get("supported_trackers") or [])
+    platform_limits = [
+        int(settings.video_tracker_sam3_window_size_frames)
+        if tracker.startswith("sam3")
+        else int(settings.video_tracker_window_size_frames)
+        for tracker in trackers
+    ]
+    return min([raw, *platform_limits]) if platform_limits else raw
+
+
 def _normalize_model(model: dict, backend_infra: str) -> dict:
     """规范化一个 `/setup.models[]` 条目, infra 缺省继承 backend 默认。"""
     task = model.get("task") or "unknown"
@@ -147,6 +163,9 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         # v0.21.19 · text-driven tracker (sam3_video) 子集: 这些 tracker 的 propagate
         # 请求需 text/exemplars 而非仅 seed bbox。前端据此在选中该 tracker 时显 text 框。
         "text_driven_trackers": list(model.get("text_driven_trackers") or []),
+        # 对前端暴露的是平台与 backend 两层限制的交集，与创建作业的
+        # fail-closed 校验保持同一个有效窗口。
+        "max_window_frames": _effective_max_window_frames(model),
         "supported_variants": model.get("supported_variants") or [],
         "variant_combinations": list(model.get("variant_combinations") or []),
         "variants_shared_across_tasks": bool(

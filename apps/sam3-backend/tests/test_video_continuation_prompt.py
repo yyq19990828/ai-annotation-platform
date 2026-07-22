@@ -10,6 +10,7 @@ from video_predictor import SAM3MultiplexVideoTracker
 class _FakePredictor:
     def __init__(self) -> None:
         self.requests: list[dict] = []
+        self.stream_requests: list[dict] = []
 
     def handle_request(self, request: dict) -> dict:
         self.requests.append(request)
@@ -24,7 +25,8 @@ class _FakePredictor:
             }
         return {}
 
-    def handle_stream_request(self, _request: dict):
+    def handle_stream_request(self, request: dict):
+        self.stream_requests.append(request)
         return iter(())
 
 
@@ -76,3 +78,33 @@ def test_first_window_text_prompt_has_no_synthetic_box(monkeypatch, tmp_path):
     add_prompt = next(r for r in predictor.requests if r["type"] == "add_prompt")
     assert "bounding_boxes" not in add_prompt
     assert "bounding_box_labels" not in add_prompt
+
+
+def test_backward_window_forwards_vendor_direction_and_bounds(monkeypatch, tmp_path):
+    predictor = _FakePredictor()
+    tracker = object.__new__(SAM3MultiplexVideoTracker)
+    tracker.device = "cpu"
+    tracker.max_window_frames = 16
+    tracker.active_sessions = 0
+    tracker._predictor = predictor
+    monkeypatch.setattr(tracker, "_extract_window_jpegs", lambda *_args: (100, 100, 6))
+    monkeypatch.setattr(tracker, "_cleanup_tmp", MagicMock())
+
+    tracker.propagate(
+        str(tmp_path / "video.mp4"),
+        10,
+        15,
+        "backward",
+        "red car",
+        seed_bboxes=[{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}],
+    )
+
+    assert predictor.stream_requests == [
+        {
+            "type": "propagate_in_video",
+            "session_id": "session-1",
+            "propagation_direction": "backward",
+            "start_frame_index": 5,
+            "max_frame_num_to_track": 6,
+        }
+    ]

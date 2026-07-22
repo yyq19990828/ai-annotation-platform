@@ -48,6 +48,8 @@ import numpy as np
 import torch
 
 from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
+from aap_protocol_v2 import MaskPromptPayload
+from mask_utils import decode_coco_rle
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
 from mask_utils.rle import encode_coco_rle
 
@@ -310,6 +312,29 @@ class SAM2VideoTracker:
     ) -> bool:
         """在指定(局部)帧对 obj_id 加一条 prompt(框/点)。归一化输入 → 像素
         (normalize_coords=True 时 vendor 内部再按 video 宽高归一化)。无框无点返回 False。"""
+        mask_prompt = prompt.get("mask_prompt")
+        if mask_prompt is not None:
+            payload = MaskPromptPayload.model_validate(mask_prompt)
+            height, width = payload.rle.size
+            if (height, width) != (frame_h, frame_w):
+                raise ValueError(
+                    "mask_prompt size must match video frame "
+                    f"{frame_h}x{frame_w}, got {height}x{width}"
+                )
+            decoded = decode_coco_rle(payload.rle.model_dump(mode="json"))
+            mask = torch.from_numpy(
+                np.frombuffer(decoded, dtype=np.uint8)
+                .reshape(height, width)
+                .copy()
+            ).to(dtype=torch.bool)
+            self._predictor.add_new_mask(
+                inference_state=state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                mask=mask,
+            )
+            return True
+
         bbox = prompt.get("bbox")
         pts = prompt.get("points")
         if not bbox and not pts:
@@ -349,8 +374,8 @@ class SAM2VideoTracker:
         """把一条 seed 的 prompt(s) 按 obj_id 加进 state。
 
         - 多帧 (纠偏): seed["prompts"]=[{frame_index?, points?/bbox?}], 各在其局部帧
-          (frame_index-lo, 越界钳到窗内) 播种; 缺 frame_index 的落窗种子帧。
-        - 单帧: seed 直接带 points/bbox, 落窗种子帧 local_seed。
+          (frame_index-lo) 播种，越界稳定拒绝; 缺 frame_index 的落窗种子帧。
+        - 单帧: seed 直接带 points/bbox/mask_prompt, 落窗种子帧 local_seed。
         """
         obj_id = int(seed["obj_id"])
         prompts = seed.get("prompts")
@@ -360,17 +385,23 @@ class SAM2VideoTracker:
                 if not isinstance(p, dict):
                     continue
                 fi = p.get("frame_index")
-                local_f = (
-                    local_seed
-                    if fi is None
-                    else max(0, min(int(fi) - lo, local_count - 1))
-                )
+                if fi is None:
+                    local_f = local_seed
+                else:
+                    local_f = int(fi) - lo
+                    if local_f < 0 or local_f >= local_count:
+                        raise ValueError(
+                            f"seed frame {fi} outside decoded window "
+                            f"[{lo},{lo + local_count - 1}]"
+                        )
                 if self._add_prompt(state, local_f, obj_id, p, frame_w, frame_h):
                     added += 1
             if added == 0:
-                raise ValueError(f"seed obj_id={obj_id} 的 prompts 无有效框/点")
+                raise ValueError(f"seed obj_id={obj_id} 的 prompts 无有效框/点/Mask")
         elif not self._add_prompt(state, local_seed, obj_id, seed, frame_w, frame_h):
-            raise ValueError(f"seed for obj_id={obj_id} has neither bbox nor points")
+            raise ValueError(
+                f"seed for obj_id={obj_id} has neither bbox, points nor mask_prompt"
+            )
 
     @staticmethod
     def _masks_to_bool(video_res_masks: Any) -> np.ndarray:

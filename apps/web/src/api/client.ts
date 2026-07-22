@@ -101,8 +101,8 @@ export const apiClient = {
   /** 探测式 POST：不弹全局 toast（见 silentGet 说明）。 */
   silentPost: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, { silent: true }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
+  put: <T>(path: string, body?: unknown, extra?: RequestInit) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}), ...extra }),
   patch: <T>(path: string, body?: unknown, extra?: RequestInit) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}), ...extra }),
   delete: <T>(path: string, body?: unknown) =>

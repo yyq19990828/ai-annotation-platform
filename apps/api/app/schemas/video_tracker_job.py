@@ -7,8 +7,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas._jsonb_types import CocoRleMaskRef
+
 
 TrackerDirection = Literal["forward", "backward", "bidirectional"]
+TrackerJobKind = Literal["tracking", "correction"]
 TrackerJobStatus = Literal[
     "queued",
     "running",
@@ -78,6 +81,50 @@ class VideoTrackerPropagateRequest(BaseModel):
         return dict(value or {})
 
 
+class VideoMaskKeyframeSaveRequest(BaseModel):
+    mask: CocoRleMaskRef
+    occluded: bool = False
+    attributes: dict[str, Any] | None = None
+
+
+class VideoMaskCorrectionRequest(BaseModel):
+    correction_frame: int = Field(ge=0)
+    from_frame: int = Field(ge=0)
+    to_frame: int = Field(ge=0)
+    model_key: str = Field(min_length=1, max_length=80)
+    model_id: str = Field(min_length=1, max_length=160)
+    backend_id: UUID
+    direction: TrackerDirection
+    segment_id: UUID | None = None
+    source_annotation_version: int = Field(ge=1)
+    corrected_mask_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    allow_bbox_fallback: bool = False
+    text: str | None = Field(default=None, max_length=500)
+    sam_variant: str | None = None
+
+    @model_validator(mode="after")
+    def _valid_correction_window(self) -> "VideoMaskCorrectionRequest":
+        if self.from_frame > self.to_frame:
+            raise ValueError("from_frame must be <= to_frame")
+        if not self.from_frame <= self.correction_frame <= self.to_frame:
+            raise ValueError("correction_frame must be inside the requested window")
+        if self.direction == "forward" and self.correction_frame >= self.to_frame:
+            raise ValueError("forward correction requires a later target frame")
+        if self.direction == "backward" and self.correction_frame <= self.from_frame:
+            raise ValueError("backward correction requires an earlier target frame")
+        if (
+            self.direction == "bidirectional"
+            and (
+                self.correction_frame <= self.from_frame
+                or self.correction_frame >= self.to_frame
+            )
+        ):
+            raise ValueError(
+                "bidirectional correction requires target frames on both sides"
+            )
+        return self
+
+
 class VideoTrackerJobOut(BaseModel):
     id: UUID
     task_id: UUID
@@ -89,6 +136,9 @@ class VideoTrackerJobOut(BaseModel):
     segment_id: UUID | None = None
     created_by: UUID | None = None
     status: TrackerJobStatus
+    job_kind: TrackerJobKind = "tracking"
+    track_id_snapshot: str | None = None
+    correction_frame: int | None = None
     revision: int = 1
     review_replayed: bool = False
     model_key: str

@@ -114,4 +114,32 @@ describe("VideoTrackerReviewBar", () => {
     expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
     expect(screen.getByTestId("tracker-review-discard")).toBeDisabled();
   });
+
+  it("展示 Mask 纠错窗口、种子和 fallback lineage", () => {
+    render(
+      <VideoTrackerReviewBar
+        open
+        preview={{
+          ...preview,
+          job_kind: "correction",
+          correction_frame: 12,
+          direction: "backward",
+          from_frame: 2,
+          to_frame: 12,
+          seed_mode: "bbox",
+          fallback_reason: "mask_prompt_unsupported",
+          protect_manual: true,
+        }}
+        onDecide={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Mask 纠错传播候选")).toBeInTheDocument();
+    expect(screen.getByTestId("tracker-review-correction-summary")).toHaveTextContent(
+      "F12 人工纠错帧 · 窗口 F2–F12 · 向更早帧 · bbox seed 降级 · 保护人工帧",
+    );
+    expect(screen.getByTestId("tracker-review-fallback-warning")).toHaveTextContent(
+      "mask_prompt_unsupported",
+    );
+  });
 });

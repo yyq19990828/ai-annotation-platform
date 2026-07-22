@@ -12,6 +12,7 @@ export type AsyncJobStatus =
 export type AsyncJobKind =
   | "batch_predict"
   | "video_tracker"
+  | "video_correction"
   | "audit_archive"
   | "predictions_import"
   | "prediction_retry"

@@ -7,7 +7,26 @@ tracker / interactive_seg) 各拆成独立 model 条目, 让平台「协议能�
 
 from __future__ import annotations
 
-from main import setup
+from main import _seeds_from_ctx, setup
+
+
+def _correction_prompt() -> dict:
+    return {
+        "type": "correction_frame",
+        "frame_index": 12,
+        "direction": "forward",
+        "output_geometry": "mask",
+        "mask_prompt": {
+            "rle": {
+                "encoding": "coco_rle",
+                "size": [2, 3],
+                "counts": [1, 2, 3],
+            },
+            "source_annotation_id": "annotation-1",
+            "source_version": 3,
+            "source_digest": "a" * 64,
+        },
+    }
 
 
 def test_setup_top_level_infra_is_pytorch():
@@ -69,7 +88,12 @@ def test_setup_models_declare_supported_inputs():
         "scribble_prompt",
         "full_image",
     ]
-    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == ["video", "bbox_prompt"]
+    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == [
+        "video",
+        "point_prompt",
+        "bbox_prompt",
+        "mask_prompt",
+    ]
     assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
 
 
@@ -141,13 +165,14 @@ def test_image_mask_and_scribble_prompts_are_advertised_only_on_consumer():
     assert interactive["supported_geometric_outputs"] == ["polygon", "mask"]
 
     tracker = by_id["grounded-sam2-tracker"]
-    assert {"mask", "scribble", "correction_frame"}.isdisjoint(
-        tracker["supported_prompts"]
-    )
-    assert {"mask_prompt", "scribble_prompt"}.isdisjoint(
-        tracker["supported_inputs"]
-    )
+    assert "correction_frame" in tracker["supported_prompts"]
+    assert "point" in tracker["supported_prompts"]
+    assert {"mask", "scribble"}.isdisjoint(tracker["supported_prompts"])
+    assert "mask_prompt" in tracker["supported_inputs"]
+    assert "point_prompt" in tracker["supported_inputs"]
+    assert "scribble_prompt" not in tracker["supported_inputs"]
     assert "video" in tracker["supported_inputs"]
+    assert tracker["max_window_frames"] > 0
 
 
 def test_tracker_model_sam2_video():
@@ -155,6 +180,14 @@ def test_tracker_model_sam2_video():
     tracker = next(m for m in data["models"] if m["task"] == "tracker")
     assert tracker["supported_trackers"] == ["sam2_video"]
     assert tracker["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+
+
+def test_tracker_preserves_validated_correction_frame_seed():
+    prompt = _correction_prompt()
+
+    assert _seeds_from_ctx(
+        {"seeds": [{"obj_id": 7, "prompts": [prompt]}]}
+    ) == [{"obj_id": 7, "prompts": [prompt]}]
 
 
 def test_top_level_back_compat_fields_unchanged():

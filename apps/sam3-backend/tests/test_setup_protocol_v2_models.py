@@ -67,9 +67,14 @@ def test_setup_models_declare_supported_inputs(setup_fn):
         "scribble_prompt",
         "full_image",
     ]
-    assert by_id["sam3-video-tracker"]["supported_inputs"] == ["video"]
+    assert by_id["sam3-video-tracker"]["supported_inputs"] == [
+        "video",
+        "bbox_prompt",
+    ]
     assert by_id["sam3-video-interactive-tracker"]["supported_inputs"] == [
         "video",
+        "point_prompt",
+        "bbox_prompt",
         "mask_prompt",
     ]
 
@@ -150,12 +155,14 @@ def test_only_pvs_advertises_mask_correction_seed(setup_fn):
         tracker["supported_prompts"]
     )
     assert {"mask_prompt", "scribble_prompt"}.isdisjoint(tracker["supported_inputs"])
-    assert tracker["supported_inputs"] == ["video"]
+    assert tracker["supported_inputs"] == ["video", "bbox_prompt"]
     assert tracker["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    assert tracker["max_window_frames"] > 0
     pvs = by_id["sam3-video-interactive-tracker"]
     assert "correction_frame" in pvs["supported_prompts"]
     assert "mask_prompt" in pvs["supported_inputs"]
     assert pvs["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    assert pvs["max_window_frames"] > 0
 
 
 def test_models_carry_composition_dimension(setup_fn):

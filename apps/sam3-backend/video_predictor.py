@@ -222,7 +222,13 @@ class SAM3MultiplexVideoTracker:
             # 收集逐帧输出 (含种子帧)。
             per_frame: dict[int, dict] = {local_seed: seed_out}
             for response in self._predictor.handle_stream_request(
-                dict(type="propagate_in_video", session_id=session_id)
+                dict(
+                    type="propagate_in_video",
+                    session_id=session_id,
+                    propagation_direction=("backward" if reverse else "forward"),
+                    start_frame_index=local_seed,
+                    max_frame_num_to_track=local_count,
+                )
             ):
                 per_frame[int(response["frame_index"])] = response["outputs"]
 

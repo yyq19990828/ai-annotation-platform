@@ -2,7 +2,17 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +32,11 @@ class VideoTrackerJobStatus(str, enum.Enum):
     PARTIALLY_REVIEWED = "partially_reviewed"
     ACCEPTED = "accepted"
     DISCARDED = "discarded"
+
+
+class VideoTrackerJobKind(str, enum.Enum):
+    TRACKING = "tracking"
+    CORRECTION = "correction"
 
 
 class VideoTrackerJob(Base):
@@ -67,6 +82,14 @@ class VideoTrackerJob(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=VideoTrackerJobStatus.QUEUED.value
     )
+    job_kind: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=VideoTrackerJobKind.TRACKING.value,
+        server_default=VideoTrackerJobKind.TRACKING.value,
+    )
+    track_id_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    correction_frame: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_key: Mapped[str] = mapped_column(String(80), nullable=False)
     direction: Mapped[str] = mapped_column(String(20), nullable=False)
     from_frame: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -101,11 +124,32 @@ class VideoTrackerJob(Base):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "job_kind IN ('tracking', 'correction')",
+            name="ck_video_tracker_jobs_kind",
+        ),
+        CheckConstraint(
+            "(job_kind = 'tracking' AND correction_frame IS NULL) OR "
+            "(job_kind = 'correction' AND annotation_id IS NOT NULL "
+            "AND track_id_snapshot IS NOT NULL AND correction_frame IS NOT NULL "
+            "AND correction_frame >= from_frame AND correction_frame <= to_frame)",
+            name="ck_video_tracker_jobs_correction_shape",
+        ),
         Index("ix_video_tracker_jobs_task_status", "task_id", "status"),
         Index(
             "ix_video_tracker_jobs_dataset_frames",
             "dataset_item_id",
             "from_frame",
             "to_frame",
+        ),
+        Index(
+            "uq_video_tracker_jobs_active_correction_track",
+            "task_id",
+            "track_id_snapshot",
+            unique=True,
+            postgresql_where=text(
+                "job_kind = 'correction' AND status IN "
+                "('queued', 'running', 'pending_review', 'partially_reviewed')"
+            ),
         ),
     )

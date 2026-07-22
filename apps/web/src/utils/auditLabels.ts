@@ -24,6 +24,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   // B-5 · AI 相关审计
   "ai.preannotate.triggered": "触发 AI 预标注",
   "video_tracker_job.decision": "审核视频追踪候选",
+  "video_mask.keyframe_correct": "保存视频 Mask 纠错帧",
+  "video_correction_job.create": "启动视频 Mask 纠错传播",
+  "video_correction_job.cancel": "取消视频 Mask 纠错传播",
   "ml_backend.created": "注册 ML 后端",
   "ml_backend.updated": "更新 ML 后端",
   "ml_backend.deleted": "删除 ML 后端",

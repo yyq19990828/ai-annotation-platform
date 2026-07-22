@@ -24,6 +24,7 @@ class AsyncJobKind(str, enum.Enum):
 
     BATCH_PREDICT = "batch_predict"  # 项目 / 批次预标
     VIDEO_TRACKER = "video_tracker"  # 视频追踪
+    VIDEO_CORRECTION = "video_correction"  # 视频 Mask 纠错传播
     AUDIT_ARCHIVE = "audit_archive"  # 审计日志月分区归档
     PREDICTIONS_IMPORT = "predictions_import"  # 外部 prediction 导入
     PREDICTION_RETRY = "prediction_retry"  # 失败预测重试

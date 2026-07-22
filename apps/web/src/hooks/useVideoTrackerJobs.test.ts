@@ -74,6 +74,19 @@ const runningJob: VideoTrackerJob = {
   annotation_id: "annotation-2",
 };
 
+const runningCorrectionJob: VideoTrackerJob = {
+  ...runningJob,
+  id: "job-correction-1",
+  annotation_id: "annotation-1",
+  job_kind: "correction",
+  correction_frame: 5,
+};
+
+const reviewableCorrectionJob: VideoTrackerJob = {
+  ...runningCorrectionJob,
+  status: "pending_review",
+};
+
 const stagedPreview: import("@/api/videoTracker").VideoTrackerJobPreview = {
   job_id: reviewableJob.id,
   status: reviewableJob.status,
@@ -142,7 +155,7 @@ describe("TrackerJobStore.restoreReviewable", () => {
     expect(snapshot.candidates["job-1"].results).toHaveLength(1);
   });
 
-  it("does not restore a job whose staged preview is empty", async () => {
+  it("preview 为空时保留作业以供轮询确认", async () => {
     vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableJob]);
     vi.mocked(videoTrackerApi.preview).mockResolvedValue({
       job_id: "job-1",
@@ -160,8 +173,9 @@ describe("TrackerJobStore.restoreReviewable", () => {
 
     await store.restoreReviewable("task-1");
 
-    expect(snapshot.jobs).toEqual({});
+    expect(snapshot.jobs["job-1"]?.status).toBe("pending_review");
     expect(snapshot.candidates).toEqual({});
+    await store.restoreReviewable("task-2");
   });
 });
 
@@ -200,6 +214,60 @@ describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () 
     expect(MockWebSocket.instances).toHaveLength(0);
   });
 
+  it("无 token 时轮询到终态并恢复纠错候选", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(videoTrackerApi.active).mockResolvedValue([runningCorrectionJob]);
+      vi.mocked(videoTrackerApi.get).mockResolvedValue(reviewableCorrectionJob);
+      vi.mocked(videoTrackerApi.preview).mockResolvedValue({
+        ...stagedPreview,
+        job_id: runningCorrectionJob.id,
+        job_kind: "correction",
+        correction_frame: 5,
+      });
+      const store = new TrackerJobStore();
+      let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+      store.subscribe((next) => {
+        snapshot = next;
+      });
+
+      await store.restoreReviewable("task-1");
+      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(videoTrackerApi.get).toHaveBeenCalledWith("job-correction-1");
+      expect(videoTrackerApi.preview).toHaveBeenCalledWith("job-correction-1");
+      expect(snapshot.jobs["job-correction-1"]?.status).toBe("pending_review");
+      expect(snapshot.candidates["job-correction-1"]?.results).toHaveLength(1);
+      await store.restoreReviewable("task-2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("WebSocket 断开后轮询恢复作业状态", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(videoTrackerApi.active).mockResolvedValue([runningCorrectionJob]);
+      vi.mocked(videoTrackerApi.get).mockResolvedValue({
+        ...runningCorrectionJob,
+        status: "running",
+      });
+      const store = new TrackerJobStore();
+      await store.restoreReviewable("task-1", "tok-abc");
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      MockWebSocket.instances[0].onclose?.();
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(videoTrackerApi.get).toHaveBeenCalledWith("job-correction-1");
+      await store.restoreReviewable("task-2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reviewable 拉取失败不阻断运行中任务的重连", async () => {
     vi.mocked(videoTrackerApi.reviewable).mockRejectedValue(new Error("boom"));
     vi.mocked(videoTrackerApi.active).mockResolvedValue([runningJob]);
@@ -213,6 +281,90 @@ describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () 
 
     expect(snapshot.jobs["job-run-1"]?.status).toBe("running");
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe("TrackerJobStore.cancel · Mask 纠错", () => {
+  it("取消成功后立即移除候选并保留终态", async () => {
+    vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableCorrectionJob]);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({
+      ...stagedPreview,
+      job_id: reviewableCorrectionJob.id,
+      job_kind: "correction",
+      correction_frame: 5,
+    });
+    vi.mocked(videoTrackerApi.cancel).mockResolvedValue({
+      ...reviewableCorrectionJob,
+      status: "cancelled",
+    });
+    const store = new TrackerJobStore();
+    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    store.subscribe((next) => {
+      snapshot = next;
+    });
+    await store.restoreReviewable("task-1");
+    expect(snapshot.candidates["job-correction-1"]).toBeDefined();
+
+    await store.cancel("job-correction-1");
+
+    expect(snapshot.jobs["job-correction-1"]?.status).toBe("cancelled");
+    expect(snapshot.candidates["job-correction-1"]).toBeUndefined();
+    await store.restoreReviewable("task-2");
+  });
+
+  it("取消失败时保留作业与候选", async () => {
+    vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableCorrectionJob]);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({
+      ...stagedPreview,
+      job_id: reviewableCorrectionJob.id,
+      job_kind: "correction",
+      correction_frame: 5,
+    });
+    vi.mocked(videoTrackerApi.cancel).mockRejectedValue(new Error("offline"));
+    const store = new TrackerJobStore();
+    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    store.subscribe((next) => {
+      snapshot = next;
+    });
+    await store.restoreReviewable("task-1");
+
+    await store.cancel("job-correction-1");
+
+    expect(snapshot.jobs["job-correction-1"]?.status).toBe("pending_review");
+    expect(snapshot.candidates["job-correction-1"]).toBeDefined();
+    await store.restoreReviewable("task-2");
+  });
+
+  it("取消期间迟到的轮询响应不会复活作业", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = deferred<VideoTrackerJob>();
+      vi.mocked(videoTrackerApi.active).mockResolvedValue([runningCorrectionJob]);
+      vi.mocked(videoTrackerApi.get).mockReturnValue(gate.promise);
+      vi.mocked(videoTrackerApi.cancel).mockResolvedValue({
+        ...runningCorrectionJob,
+        status: "cancelled",
+      });
+      const store = new TrackerJobStore();
+      let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+      store.subscribe((next) => {
+        snapshot = next;
+      });
+      await store.restoreReviewable("task-1");
+      vi.advanceTimersByTime(2000);
+      await Promise.resolve();
+      expect(videoTrackerApi.get).toHaveBeenCalledWith("job-correction-1");
+
+      await store.cancel("job-correction-1");
+      gate.resolve({ ...runningCorrectionJob, status: "running" });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(snapshot.jobs["job-correction-1"]?.status).toBe("cancelled");
+      await store.restoreReviewable("task-2");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

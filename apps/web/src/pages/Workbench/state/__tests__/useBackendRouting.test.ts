@@ -296,4 +296,52 @@ describe("capFingerprint — capSignature 内容变化感知", () => {
     };
     expect(capFingerprint(changed)).not.toBe(capFingerprint(base));
   });
+  it("视频纠错能力按单个 model 行保留，不交叉拼接", () => {
+    const entry = buildCapEntry({
+      name: "split-tracker",
+      supported_prompts: [],
+      models: [
+        {
+          id: "prompt-only",
+          task: "tracker",
+          supported_trackers: ["sam2_video"],
+          supported_prompts: ["correction_frame"],
+          supported_inputs: ["video", "mask_prompt"],
+          supported_geometric_outputs: ["bbox"],
+          max_window_frames: 32,
+        },
+        {
+          id: "output-only",
+          task: "tracker",
+          supported_trackers: ["sam2_video"],
+          supported_inputs: ["video"],
+          supported_geometric_outputs: ["mask"],
+          max_window_frames: 16,
+        },
+      ],
+    });
+
+    expect(entry.videoModels).toHaveLength(2);
+    expect(entry.videoModels[0].outputs.has("mask")).toBe(false);
+    expect(entry.videoModels[1].prompts.has("correction_frame")).toBe(false);
+    expect(entry.videoModels.map((model) => model.maxWindowFrames)).toEqual([32, 16]);
+  });
+  it("视频单窗上限变化 → 指纹变化", () => {
+    const base: MLBackendCapability = {
+      name: "tracker",
+      supported_prompts: [],
+      models: [{
+        id: "tracker",
+        task: "tracker",
+        supported_trackers: ["sam2_video"],
+        max_window_frames: 16,
+      }],
+    };
+    const changed: MLBackendCapability = {
+      ...base,
+      models: [{ ...base.models![0], max_window_frames: 32 }],
+    };
+
+    expect(capFingerprint(changed)).not.toBe(capFingerprint(base));
+  });
 });

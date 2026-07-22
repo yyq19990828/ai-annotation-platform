@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 TERMINAL_NOTIFY_KINDS = {
     "batch_predict",
     "video_tracker",
+    "video_correction",
     "predictions_import",
     "audit_archive",
     "prediction_retry",

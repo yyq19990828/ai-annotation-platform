@@ -1,33 +1,53 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import VideoSegment
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.db.models.video_tracker_job import (
+    VideoTrackerJob,
+    VideoTrackerJobKind,
+    VideoTrackerJobStatus,
+)
 from app.schemas.video_tracker_job import (
+    VideoMaskCorrectionRequest,
+    VideoMaskKeyframeSaveRequest,
     VideoTrackerDecisionRequest,
     VideoTrackerJobOut,
     VideoTrackerPropagateRequest,
 )
 from app.services.scheduler import is_privileged_for_project
 from app.services.ml_backend import MLBackendService
-from app.services.raster_mask_storage import load_coco_rle
+from app.services.raster_mask_storage import (
+    RasterMaskContractError,
+    load_coco_rle,
+    lock_raster_mask_references,
+    validate_mask_geometry_for_task,
+)
 from app.services.video_frame_service import VideoContext
 from app.services.video_segment_service import ensure_segments
 from app.services.video_tracking.adapters import registered_tracker_models
 from app.services.video_tracking import runner as _runner
-from app.services.video_tracks import is_polyline_track, resolve_track_at_frame
+from app.services.video_tracks import (
+    is_polyline_track,
+    remove_frame_from_outside_ranges,
+    resolve_track_at_frame,
+)
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
 
 
@@ -42,6 +62,13 @@ _TERMINAL_STATUSES = {
     VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
     VideoTrackerJobStatus.ACCEPTED.value,
     VideoTrackerJobStatus.DISCARDED.value,
+}
+
+_ACTIVE_CORRECTION_STATUSES = {
+    VideoTrackerJobStatus.QUEUED.value,
+    VideoTrackerJobStatus.RUNNING.value,
+    VideoTrackerJobStatus.PENDING_REVIEW.value,
+    VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
 }
 
 
@@ -144,6 +171,461 @@ async def _assert_segment_lock(
             status_code=409, detail="Video segment must be locked by current user"
         )
     return overlapping[0].id
+
+
+def _keyframe_digest(value: dict | None) -> str | None:
+    if not value:
+        return None
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return f"sha256:{hashlib.sha256(raw).hexdigest()}"
+
+
+async def save_video_mask_keyframe(
+    db: AsyncSession,
+    *,
+    task: Task,
+    ctx: VideoContext,
+    annotation_id: uuid.UUID,
+    frame_index: int,
+    payload: VideoMaskKeyframeSaveRequest,
+    expected_version: int,
+    user: User,
+) -> tuple[Annotation, dict[str, Any]]:
+    """Persist one manual Mask keyframe without accepting a whole-track geometry."""
+
+    _assert_frame_range(ctx, frame_index, frame_index)
+    annotation = (
+        await db.execute(
+            select(Annotation)
+            .where(Annotation.id == annotation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task.id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if annotation.is_locked:
+        raise HTTPException(
+            status_code=409, detail={"reason": "annotation_locked"}
+        )
+    if int(annotation.version or 1) != expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "source_version_conflict",
+                "current_version": int(annotation.version or 1),
+            },
+        )
+    geometry = annotation.geometry or {}
+    if geometry.get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "video_mask_track_required"},
+        )
+
+    privileged = await _is_privileged(db, task, user)
+    segment_id = await _assert_segment_lock(
+        db,
+        ctx,
+        SimpleNamespace(
+            from_frame=frame_index,
+            to_frame=frame_index,
+            segment_id=None,
+        ),
+        user,
+        privileged=privileged,
+    )
+    keyframes = [dict(item) for item in geometry.get("keyframes") or []]
+    before = next(
+        (
+            dict(item)
+            for item in keyframes
+            if int(item.get("frame_index", -1)) == frame_index
+        ),
+        None,
+    )
+    keyframe = {
+        "frame_index": frame_index,
+        "mask": payload.mask.model_dump(mode="json"),
+        "source": "manual",
+        "occluded": payload.occluded,
+        **({"attributes": payload.attributes} if payload.attributes is not None else {}),
+    }
+    next_geometry = {
+        **geometry,
+        "keyframes": sorted(
+            [
+                item
+                for item in keyframes
+                if int(item.get("frame_index", -1)) != frame_index
+            ]
+            + [keyframe],
+            key=lambda item: int(item.get("frame_index", 0)),
+        ),
+        "outside": remove_frame_from_outside_ranges(
+            geometry.get("outside") or [], frame_index
+        ),
+    }
+    try:
+        await validate_mask_geometry_for_task(db, task, next_geometry)
+        await lock_raster_mask_references(
+            db, next_geometry, task_id=task.id, require_raster_foreground=False
+        )
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    source_version = int(annotation.version or 1)
+    annotation.geometry = next_geometry
+    annotation.version = source_version + 1
+    await db.flush()
+    await db.refresh(annotation)
+    return annotation, {
+        "task_id": str(task.id),
+        "track_id": str(annotation.track_id or geometry.get("track_id") or ""),
+        "segment_id": str(segment_id),
+        "frame_index": frame_index,
+        "source_version": source_version,
+        "result_version": int(annotation.version),
+        "before_digest": _keyframe_digest(before),
+        "after_digest": _keyframe_digest(keyframe),
+        "mask_digest": payload.mask.sha256,
+    }
+
+
+def _tracker_model_capability(
+    backend: Any, model_key: str, model_id: str
+) -> dict | None:
+    capabilities = (backend.health_meta or {}).get("capabilities") or {}
+    for model in capabilities.get("models") or []:
+        if (
+            str(model.get("id") or "") == model_id
+            and model_key in set(model.get("supported_trackers") or [])
+        ):
+            return model
+    return None
+
+
+def _native_correction_supported(model: dict) -> bool:
+    prompts = set(model.get("supported_prompts") or [])
+    inputs = set(model.get("supported_inputs") or [])
+    outputs = set(model.get("supported_geometric_outputs") or [])
+    return (
+        "correction_frame" in prompts
+        and "mask_prompt" in inputs
+        and "video" in inputs
+        and "mask" in outputs
+    )
+
+
+def _bbox_correction_supported(model: dict) -> bool:
+    inputs = set(model.get("supported_inputs") or [])
+    outputs = set(model.get("supported_geometric_outputs") or [])
+    return "video" in inputs and "bbox_prompt" in inputs and "mask" in outputs
+
+
+async def enqueue_tracker_job(
+    db: AsyncSession,
+    row_or_id: VideoTrackerJob | uuid.UUID,
+    *,
+    fail_closed: bool = False,
+) -> VideoTrackerJobOut:
+    row = (
+        row_or_id
+        if isinstance(row_or_id, VideoTrackerJob)
+        else await db.get(VideoTrackerJob, row_or_id)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    row_id = row.id
+    try:
+        from celery import current_app
+
+        result = current_app.send_task(
+            "app.workers.video_tracker.run_video_tracker_job",
+            args=[str(row_id)],
+            queue="gpu",
+        )
+        row.celery_task_id = result.id
+        await db.commit()
+        await db.refresh(row)
+    except Exception as exc:
+        log.warning("video tracker job enqueue failed job_id=%s err=%s", row_id, exc)
+        await db.rollback()
+        row = (
+            await db.execute(
+                select(VideoTrackerJob)
+                .where(VideoTrackerJob.id == row_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Video tracker job not found") from exc
+        if row.status == VideoTrackerJobStatus.QUEUED.value:
+            row.status = VideoTrackerJobStatus.FAILED.value
+            row.error_message = "tracker_enqueue_failed"
+            row.completed_at = _now()
+            row.staged_result = None
+        await db.commit()
+        await db.refresh(row)
+        if fail_closed:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "reason": "tracker_enqueue_failed",
+                    "job_id": str(row.id),
+                    "retryable": True,
+                },
+            ) from exc
+    return _job_out(row)
+
+
+async def create_video_mask_correction_job(
+    db: AsyncSession,
+    *,
+    task: Task,
+    ctx: VideoContext,
+    annotation_id: uuid.UUID,
+    payload: VideoMaskCorrectionRequest,
+    user: User,
+) -> VideoTrackerJobOut:
+    _assert_frame_range(ctx, payload.from_frame, payload.to_frame)
+    annotation = (
+        await db.execute(
+            select(Annotation)
+            .where(Annotation.id == annotation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task.id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if annotation.is_locked:
+        raise HTTPException(
+            status_code=409, detail={"reason": "annotation_locked"}
+        )
+    geometry = annotation.geometry or {}
+    if geometry.get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=409, detail={"reason": "video_mask_track_required"}
+        )
+    current_version = int(annotation.version or 1)
+    if current_version != payload.source_annotation_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "source_version_conflict",
+                "current_version": current_version,
+            },
+        )
+    track_id = str(annotation.track_id or geometry.get("track_id") or "")
+    if not track_id:
+        raise HTTPException(status_code=409, detail={"reason": "track_identity_missing"})
+    keyframe = next(
+        (
+            item
+            for item in geometry.get("keyframes") or []
+            if int(item.get("frame_index", -1)) == payload.correction_frame
+        ),
+        None,
+    )
+    if not isinstance(keyframe, dict) or keyframe.get("source") != "manual":
+        raise HTTPException(
+            status_code=409, detail={"reason": "manual_correction_frame_required"}
+        )
+    reference = keyframe.get("mask") or {}
+    current_digest = str(reference.get("sha256") or "")
+    if current_digest != payload.corrected_mask_digest:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "corrected_mask_digest_mismatch",
+                "current_digest": current_digest,
+            },
+        )
+
+    existing = (
+        await db.execute(
+            select(VideoTrackerJob.id).where(
+                VideoTrackerJob.task_id == task.id,
+                VideoTrackerJob.job_kind == VideoTrackerJobKind.CORRECTION.value,
+                VideoTrackerJob.track_id_snapshot == track_id,
+                VideoTrackerJob.status.in_(_ACTIVE_CORRECTION_STATUSES),
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "correction_job_active", "job_id": str(existing)},
+        )
+
+    backend_service = MLBackendService(db)
+    backend = await backend_service.get(payload.backend_id)
+    capabilities = (backend.health_meta or {}).get("capabilities") if backend else {}
+    if (
+        backend is None
+        or backend.state != "connected"
+        or not await backend_service.is_enabled(task.project_id, payload.backend_id)
+        or payload.model_key not in set((capabilities or {}).get("supported_trackers") or [])
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "tracker_backend_unavailable",
+                "model_key": payload.model_key,
+                "backend_id": str(payload.backend_id),
+            },
+        )
+    model = _tracker_model_capability(backend, payload.model_key, payload.model_id)
+    if model is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "tracker_model_capability_missing"},
+        )
+    outputs = set(model.get("supported_geometric_outputs") or [])
+    if "mask" not in outputs:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "mask_output_unsupported"},
+        )
+    native_mask = _native_correction_supported(model)
+    bbox_fallback = _bbox_correction_supported(model)
+    rle = await load_coco_rle(reference)
+    seed_bbox = coco_rle_bbox_norm(rle)
+    if not seed_bbox:
+        raise HTTPException(status_code=422, detail={"reason": "empty_correction_mask"})
+    if not native_mask and not bbox_fallback:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "correction_prompt_unsupported"},
+        )
+    if not native_mask and not payload.allow_bbox_fallback:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "mask_prompt_unsupported",
+                "fallback_available": True,
+                "seed_bbox": seed_bbox,
+                "model_key": payload.model_key,
+            },
+        )
+    text_driven = payload.model_key in set(model.get("text_driven_trackers") or [])
+    if not native_mask and text_driven and not payload.text:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "text_required_for_bbox_fallback"},
+        )
+
+    platform_window_limit = (
+        int(settings.video_tracker_sam3_window_size_frames)
+        if payload.model_key.startswith("sam3")
+        else int(settings.video_tracker_window_size_frames)
+    )
+    backend_window_limit = model.get("max_window_frames")
+    if type(backend_window_limit) is not int or backend_window_limit <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "tracker_window_capability_missing"},
+        )
+    native_window_limit = min(platform_window_limit, backend_window_limit)
+    directional_spans = []
+    if payload.direction in {"backward", "bidirectional"}:
+        directional_spans.append(payload.correction_frame - payload.from_frame + 1)
+    if payload.direction in {"forward", "bidirectional"}:
+        directional_spans.append(payload.to_frame - payload.correction_frame + 1)
+    if native_mask and any(span > native_window_limit for span in directional_spans):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "correction_window_exceeds_native_limit",
+                "max_frames_per_direction": native_window_limit,
+            },
+        )
+
+    privileged = await _is_privileged(db, task, user)
+    segment_id = await _assert_segment_lock(
+        db, ctx, payload, user, privileged=privileged
+    )
+    segment = await db.get(VideoSegment, segment_id)
+    if segment is None:
+        raise HTTPException(status_code=404, detail="Video segment not found")
+    pool_id = await backend_service.pool_id_for_registry(backend.id)
+    if pool_id is None:
+        raise HTTPException(
+            status_code=422, detail={"reason": "tracker_backend_pool_missing"}
+        )
+    correction = {
+        "schema_version": 1,
+        "source_annotation_id": str(annotation.id),
+        "track_id": track_id,
+        "source_version": current_version,
+        "correction_frame": payload.correction_frame,
+        "corrected_digest": current_digest,
+        "from_frame": payload.from_frame,
+        "to_frame": payload.to_frame,
+        "direction": payload.direction,
+        "protect_manual": True,
+        "segment": {
+            "id": str(segment_id),
+            "lease_enforced": not privileged,
+            "locked_by": str(segment.locked_by) if segment.locked_by else None,
+            "locked_at": segment.locked_at.isoformat() if segment.locked_at else None,
+        },
+        "routing": {
+            "requested_backend_id": str(backend.id),
+            "backend_pool_id": str(pool_id),
+            "model_id": payload.model_id,
+            "model_key": payload.model_key,
+            "max_window_frames": native_window_limit,
+        },
+        "seed_mode": "native_mask" if native_mask else "bbox",
+        "fallback_reason": None if native_mask else "mask_prompt_unsupported",
+        "fallback_confirmed": bool(not native_mask and payload.allow_bbox_fallback),
+        "seed_bbox": None if native_mask else seed_bbox,
+    }
+    row = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=ctx.item.id,
+        annotation_id=annotation.id,
+        segment_id=segment_id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        job_kind=VideoTrackerJobKind.CORRECTION.value,
+        track_id_snapshot=track_id,
+        correction_frame=payload.correction_frame,
+        model_key=payload.model_key,
+        direction=payload.direction,
+        from_frame=payload.from_frame,
+        to_frame=payload.to_frame,
+        prompt={
+            "output_geometry": "mask",
+            "expected_source_versions": {str(annotation.id): current_version},
+            "correction": correction,
+            **({"text": payload.text} if payload.text else {}),
+            **({"sam_variant": payload.sam_variant} if payload.sam_variant else {}),
+        },
+        event_channel="pending",
+    )
+    db.add(row)
+    try:
+        await db.flush()
+        row.event_channel = f"video-tracker-job:{row.id}"
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail={"reason": "correction_job_active"}
+        ) from exc
+    return _job_out(row)
 
 
 def _job_out(row: VideoTrackerJob) -> VideoTrackerJobOut:
@@ -339,23 +821,7 @@ async def create_tracker_job(
     await db.commit()
     await db.refresh(row)
 
-    try:
-        # v0.23.0 · dispatch by task name via the global Celery app instead of importing
-        # the worker module, so the video_tracking domain package has no service → worker
-        # reverse dependency. Celery registers the task under its fully qualified
-        # module path (also used by task_routes in workers/celery_app.py).
-        from celery import current_app
-
-        result = current_app.send_task(
-            "app.workers.video_tracker.run_video_tracker_job",
-            args=[str(row.id)],
-            queue="gpu",
-        )
-        row.celery_task_id = result.id
-        await db.commit()
-        await db.refresh(row)
-    except Exception as exc:
-        log.warning("video tracker job enqueue failed job_id=%s err=%s", row.id, exc)
+    await enqueue_tracker_job(db, row)
 
     return _job_out(row)
 
@@ -377,7 +843,27 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
-    if row.status in {
+    is_correction = row.job_kind == VideoTrackerJobKind.CORRECTION.value
+    if is_correction and row.status in {
+        VideoTrackerJobStatus.ACCEPTED.value,
+        VideoTrackerJobStatus.DISCARDED.value,
+        VideoTrackerJobStatus.FAILED.value,
+    }:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "correction_job_terminal", "status": row.status},
+        )
+    if is_correction and row.status in {
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
+    }:
+        now = _now()
+        row.status = VideoTrackerJobStatus.CANCELLED.value
+        row.staged_result = None
+        row.cancel_requested_at = row.cancel_requested_at or now
+        row.completed_at = row.completed_at or now
+    elif row.status in {
         VideoTrackerJobStatus.PENDING_REVIEW.value,
         VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
     }:
@@ -391,9 +877,11 @@ async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTracke
     if row.status not in _TERMINAL_STATUSES:
         now = _now()
         row.status = VideoTrackerJobStatus.CANCELLED.value
+        if is_correction:
+            row.staged_result = None
         row.cancel_requested_at = row.cancel_requested_at or now
         row.completed_at = row.completed_at or now
-    await db.commit()
+    await db.flush()
     await db.refresh(row)
     return _job_out(row)
 
@@ -528,10 +1016,19 @@ async def tracker_job_preview(
         str(key): int(value)
         for key, value in ((row.prompt or {}).get("expected_source_versions") or {}).items()
     }
+    correction = (row.prompt or {}).get("correction") or {}
     return {
         "job_id": row.id,
         "status": row.status,
         "annotation_id": row.annotation_id,
+        "job_kind": row.job_kind,
+        "correction_frame": row.correction_frame,
+        "direction": row.direction,
+        "from_frame": row.from_frame,
+        "to_frame": row.to_frame,
+        "fallback_reason": correction.get("fallback_reason"),
+        "seed_mode": correction.get("seed_mode"),
+        "protect_manual": bool(correction.get("protect_manual", False)),
         "results": hydrated,
         "grid_step": int(staged.get("grid_step", 1)),
         "output_geometry": staged.get("output_geometry", "bbox"),

@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
+from aap_protocol_v2 import CorrectionFramePrompt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,11 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem, VideoSegment
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.db.models.video_tracker_job import (
+    VideoTrackerJob,
+    VideoTrackerJobKind,
+    VideoTrackerJobStatus,
+)
 from app.services.annotation_propagation import _new_track_id
 from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
@@ -48,7 +53,11 @@ from app.services.video_tracking.adapters import (
     get_tracker_adapter,
 )
 from app.services.video_tracks import is_polygon_track
-from app.services.video_tracks import is_mask_track, resolve_track_at_frame
+from app.services.video_tracks import (
+    is_mask_track,
+    remove_frame_from_outside_ranges,
+    resolve_track_at_frame,
+)
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
 
 log = logging.getLogger(__name__)
@@ -174,6 +183,136 @@ def _tracker_windows(job: VideoTrackerJob) -> list[tuple[int, int]]:
     if job.direction == "backward":
         windows.reverse()
     return windows
+
+
+def _bounded_tracker_windows(
+    from_frame: int, to_frame: int, direction: str, size: int
+) -> list[tuple[int, int]]:
+    windows: list[tuple[int, int]] = []
+    start = from_frame
+    while start <= to_frame:
+        end = min(to_frame, start + max(1, size) - 1)
+        windows.append((start, end))
+        start = end + 1
+    if direction == "backward":
+        windows.reverse()
+    return windows
+
+
+def _correction_execution_windows(
+    job: VideoTrackerJob,
+) -> list[tuple[int, int, str, bool]]:
+    correction_frame = int(
+        job.correction_frame
+        if job.correction_frame is not None
+        else job.from_frame
+    )
+    correction = (job.prompt or {}).get("correction") or {}
+    routing = correction.get("routing") or {}
+    frozen_limit = routing.get("max_window_frames")
+    size = max(1, int(settings.video_tracker_window_size_frames))
+    if job.model_key.startswith("sam3"):
+        size = min(
+            size, max(1, int(settings.video_tracker_sam3_window_size_frames))
+        )
+    if type(frozen_limit) is int and frozen_limit > 0:
+        size = min(size, frozen_limit)
+    windows: list[tuple[int, int, str, bool]] = []
+    if job.direction in {"backward", "bidirectional"}:
+        backward = _bounded_tracker_windows(
+            job.from_frame, correction_frame, "backward", size
+        )
+        windows.extend(
+            (start, end, "backward", index == 0)
+            for index, (start, end) in enumerate(backward)
+        )
+    if job.direction in {"forward", "bidirectional"}:
+        forward = _bounded_tracker_windows(
+            correction_frame, job.to_frame, "forward", size
+        )
+        windows.extend(
+            (start, end, "forward", index == 0)
+            for index, (start, end) in enumerate(forward)
+        )
+    return windows
+
+
+async def _correction_seed(
+    db: AsyncSession, job: VideoTrackerJob, annotation: Annotation
+) -> list[dict]:
+    correction = (job.prompt or {}).get("correction") or {}
+    if int(annotation.version or 1) != int(correction.get("source_version", 0)):
+        raise ValueError("source_version_conflict")
+    geometry = annotation.geometry or {}
+    if geometry.get("type") != "video_track_mask":
+        raise ValueError("video_mask_track_required")
+    track_id = str(annotation.track_id or geometry.get("track_id") or "")
+    if track_id != str(correction.get("track_id") or ""):
+        raise ValueError("track_identity_changed")
+    correction_frame = int(
+        job.correction_frame if job.correction_frame is not None else -1
+    )
+    keyframe = next(
+        (
+            item
+            for item in geometry.get("keyframes") or []
+            if int(item.get("frame_index", -1)) == correction_frame
+        ),
+        None,
+    )
+    if not isinstance(keyframe, dict) or keyframe.get("source") != "manual":
+        raise ValueError("manual_correction_frame_missing")
+    reference = keyframe.get("mask") or {}
+    digest = str(reference.get("sha256") or "")
+    if digest != str(correction.get("corrected_digest") or ""):
+        raise ValueError("corrected_mask_digest_mismatch")
+    segment_snapshot = correction.get("segment") or {}
+    segment = await db.get(VideoSegment, job.segment_id) if job.segment_id else None
+    lease_enforced = segment_snapshot.get("lease_enforced") is not False
+    if (
+        segment is None
+        or str(segment.id) != str(segment_snapshot.get("id") or "")
+        or job.from_frame < segment.start_frame
+        or job.to_frame > segment.end_frame
+        or (
+            lease_enforced
+            and (
+                (str(segment.locked_by) if segment.locked_by else None)
+                != segment_snapshot.get("locked_by")
+                or (segment.locked_at.isoformat() if segment.locked_at else None)
+                != segment_snapshot.get("locked_at")
+                or segment.lock_expires_at is None
+                or segment.lock_expires_at <= _now()
+            )
+        )
+    ):
+        raise ValueError("segment_lease_changed")
+
+    if correction.get("seed_mode") == "native_mask":
+        rle = await load_coco_rle(reference)
+        prompt = CorrectionFramePrompt.model_validate(
+            {
+                "frame_index": correction_frame,
+                "direction": job.direction,
+                "mask_prompt": {
+                    "rle": rle,
+                    "source_annotation_id": str(annotation.id),
+                    "source_version": int(annotation.version or 1),
+                    "source_digest": digest,
+                },
+                "output_geometry": "mask",
+            }
+        ).model_dump(mode="json")
+    else:
+        if (
+            correction.get("fallback_reason") != "mask_prompt_unsupported"
+            or correction.get("fallback_confirmed") is not True
+        ):
+            raise ValueError("bbox_fallback_not_confirmed")
+        return [
+            {"obj_id": 1, "bbox": dict(correction.get("seed_bbox") or {})}
+        ]
+    return [{"obj_id": 1, "prompts": [prompt]}]
 
 
 def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
@@ -331,8 +470,16 @@ def apply_tracker_results(
     geometry["keyframes"] = sorted(
         merged, key=lambda item: int(item.get("frame_index", 0))
     )
+    visible_result_frames = {
+        result.frame_index for result in results if not result.outside
+    }
+    existing_outside = geometry.get("outside") or []
+    for frame_index in sorted(visible_result_frames):
+        existing_outside = remove_frame_from_outside_ranges(
+            existing_outside, frame_index
+        )
     geometry["outside"] = _merge_outside_ranges(
-        geometry.get("outside") or [], sorted(set(outside_frames))
+        existing_outside, sorted(set(outside_frames))
     )
 
     annotation.geometry = geometry
@@ -1538,6 +1685,12 @@ async def run_tracker_job(
         item = await db.get(DatasetItem, job.dataset_item_id)
         if item is None:
             raise ValueError("Dataset item not found")
+        is_correction = job.job_kind == VideoTrackerJobKind.CORRECTION.value
+        correction_seeds = (
+            await _correction_seed(db, job, annotation)
+            if is_correction and annotation is not None
+            else None
+        )
         # v0.22.2 · B-combo · sam3_video_combo = multiplex 发现 → PVS 追踪 两趟编排。
         # 两趟都在 sam3-backend (声明 sam3_video + sam3_video_interactive); 后端按 PVS 能力
         # 解析 (同一 backend), 追踪趟 adapter 用 PVS, 发现趟另取 multiplex adapter (见下)。
@@ -1546,12 +1699,37 @@ async def run_tracker_job(
         # sam3_video 的 backend(sam3-backend), 而非静默落到项目绑定的 grounded-sam2。
         tracker_capability = "sam3_video_interactive" if is_combo else job.model_key
         ml_svc = MLBackendService(db)
-        backend = await ml_svc.get_tracker_backend_for_capabilities(
-            task.project_id,
-            ["sam3_video", "sam3_video_interactive"]
-            if is_combo
-            else [tracker_capability],
+        frozen_routing = (
+            (((job.prompt or {}).get("correction") or {}).get("routing") or {})
+            if is_correction
+            else {}
         )
+        if is_correction:
+            try:
+                requested_backend_id = uuid.UUID(
+                    str(frozen_routing["requested_backend_id"])
+                )
+                tracker_pool_id = uuid.UUID(str(frozen_routing["backend_pool_id"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("correction_routing_snapshot_invalid") from exc
+            backend = await ml_svc.get(requested_backend_id)
+            if backend is None:
+                raise ValueError("correction_backend_missing")
+            current_pool_id = await ml_svc.pool_id_for_registry(backend.id)
+            if current_pool_id != tracker_pool_id:
+                raise ValueError("correction_backend_pool_changed")
+        else:
+            backend = await ml_svc.get_tracker_backend_for_capabilities(
+                task.project_id,
+                ["sam3_video", "sam3_video_interactive"]
+                if is_combo
+                else [tracker_capability],
+            )
+            tracker_pool_id = (
+                await ml_svc.pool_id_for_registry(backend.id)
+                if backend is not None
+                else None
+            )
         # v0.23.3 ADR-0050 §11 · tracker pins one instance per job (stateful session).
         # 经 MLBackendRouter 取得 job-scope route lease (enforce) 或记录 would-select
         # 证据 (observe); off 模式行为不变 (legacy instance dispatch)。lease 在整个 job
@@ -1561,9 +1739,6 @@ async def run_tracker_job(
             make_ledger_from_settings,
         )
 
-        tracker_pool_id = None
-        if backend is not None:
-            tracker_pool_id = await ml_svc.pool_id_for_registry(backend.id)
         adapter = get_tracker_adapter(tracker_capability)
 
         # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
@@ -1575,7 +1750,10 @@ async def run_tracker_job(
 
         results: list[TrackerFrameResult] = []
         staged_bytes = 0
-        total = max(1, job.to_frame - job.from_frame + 1)
+        total = max(
+            1,
+            job.to_frame - job.from_frame + 1 - (1 if is_correction else 0),
+        )
         progress = 0
         # v0.23.3 ADR-0050 §11 · 取得 job-scope route lease (enforce) / 记录 would-select
         # (observe)。tracker 整 job pin 一个实例, lease 周期 heartbeat 续命 (不能中途换实例)。
@@ -1651,6 +1829,14 @@ async def run_tracker_job(
                 backend.id,
                 settings.ml_backend_router_mode,
             )
+            if is_correction:
+                correction = dict((job.prompt or {}).get("correction") or {})
+                routing = dict(correction.get("routing") or {})
+                routing["execution_backend_id"] = str(backend.id)
+                correction["routing"] = routing
+                job.prompt = {**(job.prompt or {}), "correction": correction}
+                await db.commit()
+                await db.refresh(job)
         task_data = {
             "id": str(task.id),
             "file_path": resolve_task_url(task),
@@ -1692,11 +1878,32 @@ async def run_tracker_job(
             else "bbox"
         )
 
-        tracker_windows = _tracker_windows(job)
+        execution_windows = (
+            _correction_execution_windows(job)
+            if is_correction
+            else [
+                (start, end, job.direction, index == 0)
+                for index, (start, end) in enumerate(_tracker_windows(job))
+            ]
+        )
+        correction = (job.prompt or {}).get("correction") or {}
+        if is_correction and correction.get("seed_mode") == "native_mask":
+            expected_directions = (
+                {"backward", "forward"}
+                if job.direction == "bidirectional"
+                else {job.direction}
+            )
+            actual_directions = {window[2] for window in execution_windows}
+            if (
+                len(execution_windows) != len(expected_directions)
+                or actual_directions != expected_directions
+                or any(not window[3] for window in execution_windows)
+            ):
+                raise ValueError("native_correction_must_fit_one_window_per_direction")
         # v0.21.27 · U-pvs-1 · PVS 点/多目标种子 (画布点 → PVS track) 从 prompt JSONB 读出。
         # 只在种子窗 (首窗, 含原始种子帧) 下发: points 锚在种子帧, 后续窗靠 last_geometry
         # (上一窗末帧框) 续追, 不重发点种子。缺省无 seeds 时行为与 B-pvs 框种子完全一致。
-        prompt_seeds = (job.prompt or {}).get("seeds")
+        prompt_seeds = correction_seeds or (job.prompt or {}).get("seeds")
 
         # v0.22.2 · B-combo · 发现趟 (先于追踪窗循环, 串行 → 中间 idle 可卸载 multiplex 再载
         # PVS, 避两模型同容峰值)。multiplex 在种子帧按 text 检测 → per-obj 框 → 铸成 PVS 种子
@@ -1743,10 +1950,35 @@ async def run_tracker_job(
                     f"sam3_video_combo discovery found no objects for text: {discovery_text!r}"
                 )
 
-        for win_idx, (from_frame, to_frame) in enumerate(tracker_windows):
+        for win_idx, (
+            from_frame,
+            to_frame,
+            window_direction,
+            is_seed_window,
+        ) in enumerate(execution_windows):
             # 种子窗下发原始点/框种子; 后续窗若多实例则各自续种 (见 _continuation_seeds),
             # 单实例则靠 source_geometry=last_geometry 兜底 (零回归)。
-            if win_idx == 0:
+            if is_correction and is_seed_window:
+                last_geometry = source_geometry
+                last_geom_by_instance.clear()
+                mp_prev_boundary.clear()
+                mp_next_global[0] = 1
+                window_seeds = correction_seeds
+                if window_seeds and correction.get("seed_mode") == "native_mask":
+                    window_seeds = [
+                        {
+                            **seed,
+                            "prompts": [
+                                {
+                                    **prompt,
+                                    "direction": window_direction,
+                                }
+                                for prompt in seed.get("prompts") or []
+                            ],
+                        }
+                        for seed in window_seeds
+                    ]
+            elif not is_correction and win_idx == 0:
                 window_seeds = prompt_seeds or None
             elif len(last_geom_by_instance) > 1:
                 window_seeds = _continuation_seeds(last_geom_by_instance)
@@ -1760,7 +1992,7 @@ async def run_tracker_job(
                 annotation_id=job.annotation_id,
                 from_frame=from_frame,
                 to_frame=to_frame,
-                direction=job.direction,
+                direction=window_direction,
                 prompt=job.prompt or {},
                 source_geometry=last_geometry,
                 task_data=task_data,
@@ -1782,6 +2014,8 @@ async def run_tracker_job(
             async for result in adapter.propagate(ctx):
                 if heartbeat_failed:
                     raise RuntimeError("tracker route lease heartbeat failed")
+                if is_correction and result.frame_index == job.correction_frame:
+                    continue
                 result = await _materialize_tracker_mask_result(result)
                 staged_bytes += _tracker_result_json_bytes(result)
                 if staged_bytes > MAX_TRACKER_STAGED_BYTES:
@@ -1794,14 +2028,17 @@ async def run_tracker_job(
                     or job.status == VideoTrackerJobStatus.CANCELLED.value
                 ):
                     # v0.21.28 · 取消也暂存部分结果 (候选); multiplex 先关联本窗已收部分。
-                    if associate_multiplex and window_results:
+                    if associate_multiplex and window_results and not is_correction:
                         window_results = _associate_multiplex_window(
                             window_results, mp_prev_boundary, mp_next_global
                         )
-                    results.extend(window_results)
-                    if results:
+                    if not is_correction:
+                        results.extend(window_results)
+                    if results and not is_correction:
                         _stage_tracker_results(job, results, grid_step, output_geometry)
                         await lock_raster_mask_references(db, job.staged_result)
+                    elif is_correction:
+                        job.staged_result = None
                     job.status = VideoTrackerJobStatus.CANCELLED.value
                     job.completed_at = job.completed_at or _now()
                     await db.commit()
@@ -1839,6 +2076,12 @@ async def run_tracker_job(
                 window_results = _associate_multiplex_window(
                     window_results, mp_prev_boundary, mp_next_global
                 )
+            if is_correction:
+                primary_results, _ = _partition_results_by_instance(window_results)
+                window_results = [
+                    replace(result, instance_id="1", primary=True)
+                    for result in primary_results
+                ]
             results.extend(window_results)
             # 续种状态 (关联后 id): 逐实例记末帧几何 (供多实例续种); 主实例 (或单实例 None)
             # 另记 last_geometry 供 source_geometry 兜底 (与既有单 track 续追一致)。
@@ -1854,14 +2097,19 @@ async def run_tracker_job(
             raise RuntimeError("tracker route lease heartbeat failed")
         if job.cancel_requested_at is not None:
             # v0.21.28 · 取消也暂存部分结果 (候选)。
-            if results:
+            if results and not is_correction:
                 _stage_tracker_results(job, results, grid_step, output_geometry)
                 await lock_raster_mask_references(db, job.staged_result)
+            elif is_correction:
+                job.staged_result = None
             job.status = VideoTrackerJobStatus.CANCELLED.value
             job.completed_at = job.completed_at or _now()
             await db.commit()
             await publisher(job.event_channel, _event(job, "job_cancelled"))
             return job
+
+        if is_correction and not results:
+            raise ValueError("correction_empty_result")
 
         # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
         # PENDING_REVIEW = 追踪完、结果已暂存、committed annotations 未改。
