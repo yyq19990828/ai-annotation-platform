@@ -61,6 +61,10 @@ class TemporalMaskDelta:
     area_change_denominator: int
     centroid_shift_squared_numerator: int
     centroid_shift_squared_denominator: int
+    boundary_xor_numerator: int
+    boundary_xor_denominator: int
+    component_delta: int
+    hole_delta: int
 
 
 @dataclass(frozen=True)

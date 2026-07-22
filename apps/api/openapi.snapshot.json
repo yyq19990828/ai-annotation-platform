@@ -3206,6 +3206,46 @@
         "title": "ApiKeyUpdate",
         "type": "object"
       },
+      "ApproveTaskRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_qc_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Qc Digest"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "warning_issue_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Warning Issue Ids",
+            "type": "array"
+          }
+        },
+        "title": "ApproveTaskRequest",
+        "type": "object"
+      },
       "AsyncJobListResponse": {
         "properties": {
           "items": {
@@ -13794,6 +13834,595 @@
         "title": "MaskMutationScope",
         "type": "object"
       },
+      "MaskQCConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_run": {
+            "default": "on_review_submit",
+            "enum": [
+              "off",
+              "manual",
+              "on_review_submit"
+            ],
+            "title": "Auto Run",
+            "type": "string"
+          },
+          "blocking": {
+            "default": false,
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "config_revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "severity_overrides": {
+            "additionalProperties": {
+              "enum": [
+                "info",
+                "warning",
+                "blocker",
+                "off"
+              ],
+              "type": "string"
+            },
+            "title": "Severity Overrides",
+            "type": "object"
+          },
+          "single_frame": {
+            "$ref": "#/components/schemas/MaskQCSingleFrameConfig"
+          },
+          "temporal": {
+            "$ref": "#/components/schemas/MaskQCTemporalConfig"
+          }
+        },
+        "title": "MaskQCConfig",
+        "type": "object"
+      },
+      "MaskQCIssueOut": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "annotation_version": {
+            "title": "Annotation Version",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effective_status": {
+            "title": "Effective Status",
+            "type": "string"
+          },
+          "frame_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame End"
+          },
+          "frame_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Start"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen Run Id"
+          },
+          "metric": {
+            "additionalProperties": true,
+            "title": "Metric",
+            "type": "object"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "region_bbox": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Bbox"
+          },
+          "region_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Digest"
+          },
+          "region_mask_ref": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Mask Ref"
+          },
+          "related_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Related Annotation Ids",
+            "type": "array"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "blocker"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Versions",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "threshold": {
+            "additionalProperties": true,
+            "title": "Threshold",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "last_seen_run_id",
+          "project_id",
+          "task_id",
+          "annotation_id",
+          "annotation_version",
+          "related_annotation_ids",
+          "source_versions",
+          "code",
+          "severity",
+          "status",
+          "effective_status",
+          "frame_start",
+          "frame_end",
+          "metric",
+          "threshold",
+          "region_bbox",
+          "region_mask_ref",
+          "region_digest",
+          "source",
+          "suggestion",
+          "resolved_by_id",
+          "resolved_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MaskQCIssueOut",
+        "type": "object"
+      },
+      "MaskQCIssuePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaskQCIssueOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MaskQCIssuePage",
+        "type": "object"
+      },
+      "MaskQCIssuePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "wont_fix"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "MaskQCIssuePatch",
+        "type": "object"
+      },
+      "MaskQCRunOut": {
+        "properties": {
+          "async_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Async Job Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "config_digest": {
+            "title": "Config Digest",
+            "type": "string"
+          },
+          "config_revision": {
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "progress_pct": {
+            "title": "Progress Pct",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reused": {
+            "default": false,
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "source_snapshot_digest": {
+            "title": "Source Snapshot Digest",
+            "type": "string"
+          },
+          "source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Versions",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "async_job_id",
+          "status",
+          "progress_pct",
+          "config_revision",
+          "config_digest",
+          "source_snapshot_digest",
+          "source_versions",
+          "summary",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "MaskQCRunOut",
+        "type": "object"
+      },
+      "MaskQCRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "expected_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Expected Versions",
+            "type": "object"
+          },
+          "scope": {
+            "enum": [
+              "project",
+              "task_ids",
+              "annotation_ids"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "MaskQCRunRequest",
+        "type": "object"
+      },
+      "MaskQCSingleFrameConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox_iou_min": {
+            "default": 0.98,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Bbox Iou Min",
+            "type": "number"
+          },
+          "boundary_noise_ratio": {
+            "default": 0.15,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Boundary Noise Ratio",
+            "type": "number"
+          },
+          "narrow_bridge_width": {
+            "default": 2,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Narrow Bridge Width",
+            "type": "integer"
+          },
+          "near_empty_pixels": {
+            "default": 16,
+            "minimum": 1.0,
+            "title": "Near Empty Pixels",
+            "type": "integer"
+          },
+          "overlap_pixels": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Overlap Pixels",
+            "type": "integer"
+          },
+          "small_component_pixels": {
+            "default": 32,
+            "minimum": 1.0,
+            "title": "Small Component Pixels",
+            "type": "integer"
+          },
+          "small_component_ratio": {
+            "default": 0.005,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Small Component Ratio",
+            "type": "number"
+          },
+          "small_hole_pixels": {
+            "default": 32,
+            "minimum": 1.0,
+            "title": "Small Hole Pixels",
+            "type": "integer"
+          }
+        },
+        "title": "MaskQCSingleFrameConfig",
+        "type": "object"
+      },
+      "MaskQCTemporalConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "area_change_ratio": {
+            "default": 0.5,
+            "minimum": 0.0,
+            "title": "Area Change Ratio",
+            "type": "number"
+          },
+          "centroid_shift_diagonal": {
+            "default": 0.15,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Centroid Shift Diagonal",
+            "type": "number"
+          },
+          "component_delta": {
+            "default": 2,
+            "minimum": 0.0,
+            "title": "Component Delta",
+            "type": "integer"
+          },
+          "drift_min_consecutive": {
+            "default": 3,
+            "minimum": 1.0,
+            "title": "Drift Min Consecutive",
+            "type": "integer"
+          },
+          "flicker_max_frames": {
+            "default": 2,
+            "minimum": 1.0,
+            "title": "Flicker Max Frames",
+            "type": "integer"
+          },
+          "iou_drop": {
+            "default": 0.35,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Iou Drop",
+            "type": "number"
+          },
+          "sample_step": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Sample Step",
+            "type": "integer"
+          }
+        },
+        "title": "MaskQCTemporalConfig",
+        "type": "object"
+      },
       "MaskUpdateMutation": {
         "additionalProperties": false,
         "properties": {
@@ -17012,6 +17641,9 @@
             "title": "Label Config",
             "type": "object"
           },
+          "mask_qc_config": {
+            "$ref": "#/components/schemas/MaskQCConfig"
+          },
           "maximum_annotations": {
             "default": 1,
             "title": "Maximum Annotations",
@@ -18858,6 +19490,16 @@
               }
             ],
             "title": "Iou Dedup Threshold"
+          },
+          "mask_qc_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaskQCConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "maximum_annotations": {
             "anyOf": [
@@ -22171,6 +22813,83 @@
           "max_bytes"
         ],
         "title": "TaskMaskCapabilitiesResponse",
+        "type": "object"
+      },
+      "TaskMaskQCSummary": {
+        "properties": {
+          "blocking": {
+            "default": false,
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "qc_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qc Digest"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source_snapshot_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Snapshot Digest"
+          },
+          "status": {
+            "enum": [
+              "not_applicable",
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id",
+          "qc_digest",
+          "source_snapshot_digest",
+          "status"
+        ],
+        "title": "TaskMaskQCSummary",
         "type": "object"
       },
       "TaskOut": {
@@ -34532,6 +35251,110 @@
         ]
       }
     },
+    "/api/v1/mask-qc/issues/{issue_id}": {
+      "get": {
+        "operationId": "get_issue_api_v1_mask_qc_issues__issue_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskQCIssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issue",
+        "tags": [
+          "mask-qc"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_issue_api_v1_mask_qc_issues__issue_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskQCIssuePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskQCIssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Issue",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
     "/api/v1/me/api-keys": {
       "get": {
         "operationId": "list_my_keys_api_v1_me_api_keys_get",
@@ -38456,6 +39279,250 @@
         "summary": "Guide Asset Upload Init",
         "tags": [
           "guide-assets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-qc/issues": {
+      "get": {
+        "operationId": "get_project_issues_api_v1_projects__project_id__mask_qc_issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "resolved",
+                    "wont_fix",
+                    "stale"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "blocker",
+                    "warning",
+                    "info"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Frame"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskQCIssuePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Issues",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-qc/runs": {
+      "post": {
+        "operationId": "create_run_api_v1_projects__project_id__mask_qc_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskQCRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskQCRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Run",
+        "tags": [
+          "mask-qc"
         ]
       }
     },
@@ -43326,6 +44393,54 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/mask-qc/summary": {
+      "get": {
+        "operationId": "get_task_summary_api_v1_tasks__task_id__mask_qc_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskMaskQCSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Summary",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/neighbor-annotations": {
       "get": {
         "description": "v0.15.17 · 中心 task 前后 k 帧的邻帧标注,一次性返回。\n\n替代前端「对 2k 个邻帧 task 各发一条 getAnnotations + client 端按 track_id 过滤」。\nv0.21.2 · ADR-0045 · 跨帧链按 track_id(原 group_id)过滤。\n非 scene / 历史未 backfill 的 task → 200 + frames=[](与 neighbors 端点一致,不报错)。\n\nv0.15.26 · 可见性:与被替代的旧链路一致,邻帧逐 task 复核 batch 可见性 / 分派状态\n(`_visible_task_ids`)。对调用者不可见的邻帧(如分派给别人 / 状态非可见的 batch)\n仍返回 frame 占位但 `annotations=[]`,不外泄他人 batch 的框几何。",
@@ -43871,6 +44986,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveTaskRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

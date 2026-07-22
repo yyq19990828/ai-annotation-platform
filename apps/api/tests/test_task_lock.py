@@ -23,6 +23,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 
 
 async def _seed_project_and_task(
@@ -43,6 +44,17 @@ async def _seed_project_and_task(
     db.add(project)
     await db.flush()
 
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-T-{suffix}",
+        name="任务锁测试批次",
+        status="active",
+        annotator_id=assignee_id,
+        total_tasks=1,
+    )
+    db.add(batch)
+    await db.flush()
+
     task = Task(
         id=uuid.uuid4(),
         project_id=project.id,
@@ -53,6 +65,7 @@ async def _seed_project_and_task(
         tags=[],
         status="in_progress",
         assignee_id=assignee_id,
+        batch_id=batch.id,
     )
     db.add(task)
     await db.flush()
@@ -238,6 +251,10 @@ class TestTaskLockFlow:
         await httpx_client_bound.post(
             f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
         )
+        claim = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/claim", headers=_bearer(rev_token)
+        )
+        assert claim.status_code == 200
 
         # 缺 reason_type → 422
         r = await httpx_client_bound.post(

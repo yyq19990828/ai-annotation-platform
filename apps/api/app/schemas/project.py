@@ -11,6 +11,7 @@ from app.schemas._jsonb_types import (
     ToolBindings,
     validate_tool_bindings_keys,
 )
+from app.schemas.mask_qc import MaskQCConfig
 from pydantic import field_validator
 
 
@@ -121,6 +122,15 @@ class ProjectUpdate(BaseModel):
     # 交互式 AI 工具总开关 (归 ML 模型设置项)。
     ai_interactive_enabled: bool | None = None
     raster_mask_native_editing_enabled: bool | None = None
+    mask_qc_config: MaskQCConfig | None = None
+
+    @field_validator("mask_qc_config")
+    @classmethod
+    def _mask_qc_config_cannot_be_null(cls, value: MaskQCConfig | None) -> MaskQCConfig:
+        if value is None:
+            raise ValueError("mask_qc_config cannot be null")
+        return value
+
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
     rendering_config: ProjectRenderingConfig | None = None
     # v0.10.13 · E1 · 标注指引 Markdown 原文; 显式 None 仅在 owner 主动清空时出现.
@@ -180,6 +190,7 @@ class ProjectOut(BaseModel):
     # 交互式 AI 工具总开关 (归 ML 模型设置项)。
     ai_interactive_enabled: bool = True
     raster_mask_native_editing_enabled: bool = False
+    mask_qc_config: MaskQCConfig = Field(default_factory=MaskQCConfig)
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.

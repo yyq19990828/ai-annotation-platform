@@ -691,6 +691,27 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     payload = data.model_dump(exclude_unset=True)
+    if "mask_qc_config" in payload:
+        from app.services.mask_qc.config import load_mask_qc_config
+
+        project = (
+            await db.execute(
+                select(Project).where(Project.id == project.id).with_for_update()
+            )
+        ).scalar_one()
+        current_config = load_mask_qc_config(project.mask_qc_config)
+        requested_config = load_mask_qc_config(payload["mask_qc_config"])
+        if requested_config.config_revision != current_config.config_revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "mask_qc_config_revision_conflict",
+                    "expected": requested_config.config_revision,
+                    "actual": current_config.config_revision,
+                },
+            )
+        requested_config.config_revision = current_config.config_revision + 1
+        payload["mask_qc_config"] = requested_config.model_dump(mode="json")
     # v0.13.x 收口 PR#30 review #5: type_key 与 data_type 媒体维度必须一致.
     # 单独 PATCH 任一字段也要校验 (用 payload 给值 + 项目现值组合后的有效值).
     if "type_key" in payload or "data_type" in payload:

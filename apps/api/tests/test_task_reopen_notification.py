@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -39,6 +40,17 @@ async def _seed_project_and_task(
     db.add(project)
     await db.flush()
 
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-RN-{suffix}",
+        name="reopen notification batch",
+        status="active",
+        annotator_id=assignee_id,
+        total_tasks=1,
+    )
+    db.add(batch)
+    await db.flush()
+
     task = Task(
         id=uuid.uuid4(),
         project_id=project.id,
@@ -48,6 +60,7 @@ async def _seed_project_and_task(
         file_type="image",
         status="in_progress",
         assignee_id=assignee_id,
+        batch_id=batch.id,
     )
     db.add(task)
     await db.flush()

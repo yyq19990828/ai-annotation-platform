@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from celery.signals import task_failure, task_revoked
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -23,6 +25,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.config import settings
 from app.db.models.async_job import AsyncJobStatus
+from app.db.models.mask_qc import MaskQCRun
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
 
@@ -46,6 +49,18 @@ async def _mark_failed(celery_task_id: str, error: str) -> None:
             }:
                 return
             await async_job_svc.mark_failed(db, aj.id, error=error)
+            if aj.kind == "mask_qc":
+                run = (
+                    await db.execute(
+                        select(MaskQCRun)
+                        .where(MaskQCRun.async_job_id == aj.id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if run is not None and run.status in {"pending", "running"}:
+                    run.status = "failed"
+                    run.error_message = error[:4000]
+                    run.completed_at = datetime.now(timezone.utc)
             await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     finally:
@@ -63,6 +78,17 @@ async def _mark_cancelled(celery_task_id: str) -> None:
             if aj is None:
                 return
             await async_job_svc.mark_cancelled(db, aj.id)
+            if aj.kind == "mask_qc":
+                run = (
+                    await db.execute(
+                        select(MaskQCRun)
+                        .where(MaskQCRun.async_job_id == aj.id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if run is not None and run.status in {"pending", "running"}:
+                    run.status = "cancelled"
+                    run.completed_at = datetime.now(timezone.utc)
             await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     finally:

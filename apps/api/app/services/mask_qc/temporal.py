@@ -21,6 +21,8 @@ def _centroid_moments(rle: dict) -> tuple[int, int, int]:
 
 def compare_temporal_masks(before: dict, after: dict) -> TemporalMaskDelta:
     overlap = compare_rles(before, after)
+    before_topology = analyze_rle_topology(before)
+    after_topology = analyze_rle_topology(after)
     before_area, before_x, before_y = _centroid_moments(before)
     after_area, after_x, after_y = _centroid_moments(after)
     if before_area and after_area:
@@ -41,6 +43,16 @@ def compare_temporal_masks(before: dict, after: dict) -> TemporalMaskDelta:
         area_change_denominator=max(before_area, 1),
         centroid_shift_squared_numerator=centroid_numerator,
         centroid_shift_squared_denominator=centroid_denominator,
+        boundary_xor_numerator=overlap.xor_pixels,
+        boundary_xor_denominator=max(
+            before_topology.boundary_length_4,
+            after_topology.boundary_length_4,
+            1,
+        ),
+        component_delta=abs(
+            after_topology.component_count - before_topology.component_count
+        ),
+        hole_delta=abs(after_topology.hole_count - before_topology.hole_count),
     )
 
 
@@ -50,6 +62,9 @@ def scan_temporal_frames(
     flicker_max_frames: int = 2,
     drift_min_consecutive: int = 3,
     centroid_shift_diagonal_ppm: int = 150_000,
+    iou_drop_ppm: int = 350_000,
+    area_change_ratio_ppm: int = 500_000,
+    component_delta: int = 2,
 ) -> tuple[TemporalQCFinding, ...]:
     """Find bounded absent flicker and prediction drift from a frozen sequence."""
 
@@ -66,9 +81,9 @@ def scan_temporal_frames(
         previous = ordered[index - 1] if index else None
         following = ordered[end + 1] if end + 1 < len(ordered) else None
         if (
-            end - index + 1 <= flicker_max_frames
-            and previous is not None
+            previous is not None
             and following is not None
+            and following.frame_index - previous.frame_index - 1 <= flicker_max_frames
             and previous.state in {"exact", "held"}
             and following.state in {"exact", "held"}
         ):
@@ -78,7 +93,11 @@ def scan_temporal_frames(
                     frame_start=ordered[index].frame_index,
                     frame_end=ordered[end].frame_index,
                     anchor_frame=previous.resolved_from_frame,
-                    metric={"absent_frames": end - index + 1},
+                    metric={
+                        "absent_frames": (
+                            following.frame_index - previous.frame_index - 1
+                        )
+                    },
                     source="prediction",
                     confidence=None,
                     correction_lineage=None,
@@ -102,6 +121,15 @@ def scan_temporal_frames(
                 anchor_frame=anchor.frame_index,
                 metric={
                     "consecutive_frames": len(drift_run),
+                    "intersection_pixels": final_delta.intersection_pixels,
+                    "union_pixels": final_delta.union_pixels,
+                    "xor_pixels": final_delta.xor_pixels,
+                    "area_change_numerator": final_delta.area_change_numerator,
+                    "area_change_denominator": final_delta.area_change_denominator,
+                    "boundary_xor_numerator": final_delta.boundary_xor_numerator,
+                    "boundary_xor_denominator": final_delta.boundary_xor_denominator,
+                    "component_delta": final_delta.component_delta,
+                    "hole_delta": final_delta.hole_delta,
                     "centroid_shift_squared_numerator": (
                         final_delta.centroid_shift_squared_numerator
                     ),
@@ -137,13 +165,28 @@ def scan_temporal_frames(
         delta = compare_temporal_masks(anchor.mask, frame.mask)
         topology = analyze_rle_topology(anchor.mask)
         diagonal_squared = topology.width**2 + topology.height**2
-        exceeds = (
+        centroid_exceeds = (
             delta.centroid_shift_squared_denominator > 0
             and delta.centroid_shift_squared_numerator * 1_000_000**2
             > delta.centroid_shift_squared_denominator
             * diagonal_squared
             * threshold_squared
         )
+        iou_exceeds = (
+            delta.union_pixels > 0
+            and delta.intersection_pixels * 1_000_000
+            < delta.union_pixels * iou_drop_ppm
+        )
+        area_exceeds = (
+            delta.area_change_denominator > 0
+            and delta.area_change_numerator * 1_000_000
+            > delta.area_change_denominator * area_change_ratio_ppm
+        )
+        topology_exceeds = (
+            delta.component_delta > component_delta
+            or delta.hole_delta > component_delta
+        )
+        exceeds = centroid_exceeds or iou_exceeds or area_exceeds or topology_exceeds
         if exceeds:
             drift_run.append((frame, delta))
         else:

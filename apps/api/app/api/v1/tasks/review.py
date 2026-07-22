@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
@@ -10,6 +11,7 @@ from app.deps import (
     require_roles,
 )
 from app.db.models.user import User
+from app.db.models.project import Project
 from app.schemas.task import (
     ReviewClaimResponse,
 )
@@ -17,9 +19,10 @@ from app.services.audit import AuditAction, AuditService
 
 
 from app.api.v1.tasks._shared import (
-    _load_task_or_404,
     _REVIEWERS,
+    _assert_task_visible,
 )
+from app.services.scheduler import is_privileged_for_project
 
 router = APIRouter()
 
@@ -34,6 +37,43 @@ class ReviewAction(BaseModel):
     reason: str | None = None
 
 
+class ApproveTaskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_qc_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    warning_issue_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+async def _lock_review_task(db: AsyncSession, task_id: uuid.UUID, user: User):
+    from app.db.models.task import Task
+
+    task = (
+        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_visible(db, task, user)
+    return task
+
+
+async def _assert_review_owner(db: AsyncSession, *, task, user: User) -> Project:
+    project = await db.get(Project, task.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if is_privileged_for_project(user, project):
+        return project
+    if task.reviewer_id != user.id or task.reviewer_claimed_at is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "task_review_not_claimed_by_user",
+                "reviewer_id": str(task.reviewer_id) if task.reviewer_id else None,
+            },
+        )
+    return project
+
+
 @router.post("/{task_id}/review/claim", response_model=ReviewClaimResponse)
 async def claim_review(
     task_id: uuid.UUID,
@@ -45,7 +85,7 @@ async def claim_review(
     第一个调用者写 reviewer_id + reviewer_claimed_at；
     后续调用者读取已存在的认领信息（不覆盖）。
     `reviewer_claimed_at` 一经设置即冻结标注员的 withdraw 入口。"""
-    task = await _load_task_or_404(db, task_id)
+    task = await _lock_review_task(db, task_id, current_user)
     if task.status != "review":
         raise HTTPException(
             status_code=409,
@@ -79,12 +119,76 @@ async def claim_review(
 async def approve_task(
     task_id: uuid.UUID,
     request: Request,
+    body: ApproveTaskRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_REVIEWERS)),
 ):
-    task = await _load_task_or_404(db, task_id)
+    task = await _lock_review_task(db, task_id, current_user)
     if task.status != "review":
-        raise HTTPException(status_code=400, detail="Task is not in review status")
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_in_review", "status": task.status},
+        )
+
+    project = await _assert_review_owner(db, task=task, user=current_user)
+    from app.services.mask_qc.config import load_mask_qc_config
+    from app.services.mask_qc.service import (
+        current_completed_task_run,
+        current_open_task_issues,
+        qc_digest_for_issues,
+    )
+
+    config = load_mask_qc_config(project.mask_qc_config)
+    completed_run, source_digest = await current_completed_task_run(
+        db, task=task, project=project
+    )
+    qc_digest = (
+        await qc_digest_for_issues(db, run=completed_run, task_id=task.id)
+        if completed_run is not None
+        else None
+    )
+    if body and body.expected_qc_digest is not None:
+        if qc_digest != body.expected_qc_digest:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "mask_qc_digest_conflict",
+                    "expected": body.expected_qc_digest,
+                    "actual": qc_digest,
+                },
+            )
+    if config.enabled and config.blocking and source_digest is not None:
+        if completed_run is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "mask_qc_current_run_required"},
+            )
+        blockers = await current_open_task_issues(
+            db, task_id=task.id, severity="blocker"
+        )
+        if blockers:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "mask_qc_blockers_present",
+                    "issue_ids": [str(issue.id) for issue in blockers],
+                    "qc_digest": qc_digest,
+                },
+            )
+
+    warning_ids = set(body.warning_issue_ids if body else [])
+    if warning_ids:
+        warnings = await current_open_task_issues(
+            db,
+            task_id=task.id,
+            severity="warning",
+            issue_ids=warning_ids,
+        )
+        if {issue.id for issue in warnings} != warning_ids:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "mask_qc_warning_issue_invalid"},
+            )
 
     task.status = "completed"
     now = datetime.now(timezone.utc)
@@ -94,12 +198,8 @@ async def approve_task(
     if task.reviewer_claimed_at is None:
         task.reviewer_claimed_at = now
 
-    from app.db.models.project import Project
-
-    project = await db.get(Project, task.project_id)
-    if project:
-        project.completed_tasks = (project.completed_tasks or 0) + 1
-        project.review_tasks = max((project.review_tasks or 0) - 1, 0)
+    project.completed_tasks = (project.completed_tasks or 0) + 1
+    project.review_tasks = max((project.review_tasks or 0) - 1, 0)
 
     from app.services.batch import BatchService
 
@@ -119,6 +219,9 @@ async def approve_task(
         detail={
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+            "mask_qc_digest": qc_digest,
+            "mask_qc_warning_issue_ids": sorted(str(value) for value in warning_ids),
+            "mask_qc_note": (body.note.strip() if body and body.note else None),
         },
     )
 
@@ -152,9 +255,13 @@ async def reject_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_REVIEWERS)),
 ):
-    task = await _load_task_or_404(db, task_id)
+    task = await _lock_review_task(db, task_id, current_user)
     if task.status != "review":
-        raise HTTPException(status_code=400, detail="Task is not in review status")
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_in_review", "status": task.status},
+        )
+    await _assert_review_owner(db, task=task, user=current_user)
 
     reason_type = body.reason_type if body else None
     if reason_type is None:

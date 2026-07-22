@@ -151,6 +151,18 @@ _MASK_REFERENCE_QUERIES = (
     WHERE expires_at > now()
       AND value #>> '{}' LIKE 'raster-masks/sha256/%'
     """,
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM mask_qc_runs,
+         LATERAL jsonb_path_query(source_snapshot, '$.**.object_key') value
+    WHERE status IN ('pending', 'running')
+      AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
+    """
+    SELECT DISTINCT region_mask_ref->>'object_key' AS object_key
+    FROM mask_qc_issues
+    WHERE region_mask_ref->>'object_key' LIKE 'raster-masks/sha256/%'
+    """,
 )
 
 _MASK_REFERENCE_EXISTS_QUERIES = (
@@ -194,6 +206,22 @@ _MASK_REFERENCE_EXISTS_QUERIES = (
              LATERAL jsonb_path_query(geometry, '$.**.object_key') value
         WHERE expires_at > now()
           AND value #>> '{}' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM mask_qc_runs,
+             LATERAL jsonb_path_query(source_snapshot, '$.**.object_key') value
+        WHERE status IN ('pending', 'running')
+          AND value #>> '{}' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM mask_qc_issues
+        WHERE region_mask_ref->>'object_key' = :key
     )
     """,
 )

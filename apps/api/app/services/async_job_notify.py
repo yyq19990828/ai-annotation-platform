@@ -25,6 +25,7 @@ TERMINAL_NOTIFY_KINDS = {
     "audit_archive",
     "prediction_retry",
     "dataset_import",
+    "mask_qc",
 }
 
 _STATUS_TO_TYPE = {
@@ -56,6 +57,7 @@ _PAYLOAD_SUMMARY_KEYS = (
     "model_key",
     "direction",
     "retain_months",
+    "source_snapshot_digest",
 )
 
 _RESULT_SUMMARY_KEYS = (
@@ -78,6 +80,8 @@ _RESULT_SUMMARY_KEYS = (
     "cache_hit",
     "archived",
     "deleted",
+    "run_id",
+    "issue_count",
 )
 
 

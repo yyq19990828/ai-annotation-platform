@@ -27,6 +27,7 @@ from app.api.v1 import (
     me,
     ml_backends,
     ml_capabilities,
+    mask_qc,
     notifications,
     predictions,
     projects,
@@ -133,6 +134,7 @@ api_router.include_router(notifications.router, tags=["notifications"])
 api_router.include_router(predictions.router, tags=["predictions"])
 # v0.10.16 · 统一异步任务表
 api_router.include_router(async_jobs.router, tags=["async-jobs"])
+api_router.include_router(mask_qc.router, tags=["mask-qc"])
 # v0.10.16 · DuckDB 离线分析面板（super_admin only）
 api_router.include_router(
     admin_analytics.router, prefix="/admin/analytics", tags=["admin-analytics"]
