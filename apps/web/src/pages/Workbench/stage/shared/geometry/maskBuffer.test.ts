@@ -65,6 +65,33 @@ describe("MaskBuffer · brush / erase / clear", () => {
     m.clear();
     expect(m.countSet()).toBe(0);
   });
+
+  it("方笔刷与方橡皮遵循同一硬边 footprint", () => {
+    const m = new MaskBuffer({ width: 5, height: 3 });
+    m.brush(0, 1, 1, 255, "square");
+    expect(Array.from(m.data, (value) => value ? 1 : 0)).toEqual([
+      1, 1, 0, 0, 0,
+      1, 1, 0, 0, 0,
+      1, 1, 0, 0, 0,
+    ]);
+    m.erase(0, 1, 1, "square");
+    expect(m.countSet()).toBe(0);
+  });
+
+  it("replaceAlpha 只标记真实变化范围并拒绝灰度", () => {
+    const m = new MaskBuffer({ width: 4, height: 3 });
+    const replacement = new Uint8Array(12);
+    replacement[1 * 4 + 2] = 255;
+    replacement[2 * 4 + 3] = 255;
+    expect(m.replaceAlpha(replacement)).toEqual({
+      changedPixels: 2,
+      bounds: { x0: 2, y0: 1, x1: 4, y1: 3 },
+    });
+    expect(m.consumeDirty()).toEqual({ x0: 2, y0: 1, x1: 4, y1: 3 });
+    expect(m.replaceAlpha(replacement)).toEqual({ changedPixels: 0, bounds: null });
+    expect(m.consumeDirty()).toBeNull();
+    expect(() => m.replaceAlpha(Uint8Array.from({ length: 12 }, () => 128))).toThrow(/binary/);
+  });
 });
 
 describe("MaskBuffer · fromPolygon", () => {
@@ -101,6 +128,18 @@ describe("MaskBuffer · fromPolygon", () => {
     m.fromPolygon([[-10, -10], [25, -10], [25, 25], [-10, 25]]);
     // 应该填满整个画布
     expect(m.countSet()).toBe(20 * 20);
+  });
+
+  it("polygon subtract 与 add 使用相同像素中心规则", () => {
+    const m = new MaskBuffer({ width: 6, height: 4 });
+    m.fromPolygon([[1, 1], [5, 1], [5, 3], [1, 3]]);
+    m.fromPolygon([[2, 0], [4, 0], [4, 4], [2, 4]], 0);
+    expect(Array.from(m.data, (value) => value ? 1 : 0)).toEqual([
+      0, 0, 0, 0, 0, 0,
+      0, 1, 0, 0, 1, 0,
+      0, 1, 0, 0, 1, 0,
+      0, 0, 0, 0, 0, 0,
+    ]);
   });
 });
 

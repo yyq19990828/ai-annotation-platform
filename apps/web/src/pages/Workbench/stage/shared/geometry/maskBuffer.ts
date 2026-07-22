@@ -4,7 +4,7 @@
 // 设计取舍：
 // - 数据存 `Uint8Array(W*H)` 单通道 alpha（0/255 二值，无中间灰度）；环境无 OffscreenCanvas
 //   依赖（vitest jsdom 也能跑）。真正展示叠加靠 Konva.Image 拉这块 ImageData 即可。
-// - 笔刷形状只做圆（CVAT 也是默认圆；方笔刷可后续扩）。圆心 + 半径用栅格化双循环画，
+// - 笔刷支持圆 / 方硬边。圆心 + 半径用栅格化双循环画，
 //   半径上限 200px 时单笔 ≤ ~125k 像素操作，远低于 1 帧预算。
 // - polygon → mask 用扫描线填充（ray casting），与浏览器 canvas2d 的 fill 等价；
 //   v1 不引入 d3-contour / scanline 库依赖。
@@ -25,6 +25,13 @@ export interface DirtyRect {
   y0: number;
   x1: number;
   y1: number;
+}
+
+export type MaskBrushShape = "circle" | "square";
+
+export interface MaskBufferChange {
+  changedPixels: number;
+  bounds: DirtyRect | null;
 }
 
 /**
@@ -91,6 +98,40 @@ export class MaskBuffer {
     this.markDirty(0, 0, this.width, this.height);
   }
 
+  /** Replace the full binary alpha plane and mark only actually changed pixels dirty. */
+  replaceAlpha(alpha: Uint8Array): MaskBufferChange {
+    if (alpha.length !== this.data.length) {
+      throw new Error("MaskBuffer: replacement alpha length must match the buffer");
+    }
+    for (const value of alpha) {
+      if (value !== 0 && value !== 255) {
+        throw new Error("MaskBuffer: replacement alpha must be binary (0 or 255)");
+      }
+    }
+    let changedPixels = 0;
+    let minX = this.width;
+    let minY = this.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let index = 0; index < alpha.length; index += 1) {
+      const value = alpha[index];
+      if (this.data[index] === value) continue;
+      this.data[index] = value;
+      changedPixels += 1;
+      const x = index % this.width;
+      const y = Math.floor(index / this.width);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    const bounds = changedPixels === 0
+      ? null
+      : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 };
+    if (bounds) this.markDirty(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+    return { changedPixels, bounds };
+  }
+
   /** 当前非零像素数（调试 / 测试用，O(N)）。 */
   countSet(): number {
     let n = 0;
@@ -105,10 +146,16 @@ export class MaskBuffer {
   }
 
   /**
-   * 圆笔刷：以 (cx, cy) 为中心、半径 r 画一个实心圆（v=255）或擦除（v=0）。
+   * 硬边笔刷：以 (cx, cy) 为中心、半径 r 画实心圆 / 方形（v=255）或擦除（v=0）。
    * 半径 < 1 时仍至少改中心点；越界部分裁掉。
    */
-  brush(cx: number, cy: number, r: number, value: 0 | 255 = 255): void {
+  brush(
+    cx: number,
+    cy: number,
+    r: number,
+    value: 0 | 255 = 255,
+    shape: MaskBrushShape = "circle",
+  ): void {
     const radius = Math.max(0.5, r);
     const rSq = radius * radius;
     const x0 = Math.max(0, Math.floor(cx - radius));
@@ -121,7 +168,10 @@ export class MaskBuffer {
       const row = y * this.width;
       for (let x = x0; x <= x1; x++) {
         const dx = x - cx;
-        if (dx * dx + dy2 <= rSq) {
+        if (
+          (shape === "square" && Math.abs(dx) <= radius && Math.abs(dy) <= radius)
+          || (shape === "circle" && dx * dx + dy2 <= rSq)
+        ) {
           this.data[row + x] = value;
         }
       }
@@ -131,8 +181,8 @@ export class MaskBuffer {
   }
 
   /** 橡皮 = brush(cx, cy, r, 0) 的语义糖。 */
-  erase(cx: number, cy: number, r: number): void {
-    this.brush(cx, cy, r, 0);
+  erase(cx: number, cy: number, r: number, shape: MaskBrushShape = "circle"): void {
+    this.brush(cx, cy, r, 0, shape);
   }
 
   /**
@@ -140,9 +190,9 @@ export class MaskBuffer {
    *
    * - 用扫描线算法（射线投票判内外）；环不必闭合，会自动连首尾。
    * - 顶点 < 3 时静默不画。
-   * - 与已有 mask 是「OR」叠加，调用方要清零先 `clear()`。
+   * - value=255 与已有 Mask 做 add，value=0 做 subtract；调用方要全量替换时先 `clear()`。
    */
-  fromPolygon(points: ReadonlyArray<readonly [number, number]>): void {
+  fromPolygon(points: ReadonlyArray<readonly [number, number]>, value: 0 | 255 = 255): void {
     if (points.length < 3) return;
     const { width, height } = this;
     // 计算 x/y 范围（x 用于脏区，y 用于裁剪迭代上下界）
@@ -153,8 +203,8 @@ export class MaskBuffer {
       if (py < yMin) yMin = py;
       if (py > yMax) yMax = py;
     }
-    const y0 = Math.max(0, Math.floor(yMin));
-    const y1 = Math.min(height - 1, Math.ceil(yMax));
+    const y0 = Math.max(0, Math.ceil(yMin - 0.5));
+    const y1 = Math.min(height - 1, Math.ceil(yMax - 0.5) - 1);
     // 脏区 = polygon bbox（已 clamp）
     this.markDirty(xMin, yMin, xMax + 1, yMax + 1);
     const n = points.length;
@@ -178,10 +228,10 @@ export class MaskBuffer {
       }
       xs.sort((p, q) => p - q);
       for (let i = 0; i + 1 < xs.length; i += 2) {
-        const xa = Math.max(0, Math.floor(xs[i]));
-        const xb = Math.min(width - 1, Math.ceil(xs[i + 1]));
+        const xa = Math.max(0, Math.ceil(xs[i] - 0.5));
+        const xb = Math.min(width - 1, Math.ceil(xs[i + 1] - 0.5) - 1);
         const row = y * width;
-        for (let x = xa; x <= xb; x++) this.data[row + x] = 255;
+        for (let x = xa; x <= xb; x++) this.data[row + x] = value;
       }
     }
   }
