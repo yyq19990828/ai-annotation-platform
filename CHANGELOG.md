@@ -36,6 +36,8 @@
 
 ## [Unreleased]
 
+## [0.23.9] - 2026-07-22
+
 ### Added
 - **Mask 高级像素操作内核**. 图片与视频共用的二值 Buffer 现具备圆形 / 方形硬边写入、像素中心
   polygon 加减、4 / 8 邻域 flood fill、可命中的连通域 / hole membership，以及方形 / 圆盘 kernel
@@ -58,6 +60,9 @@
 - **Mask 帧状态来源保真**. 撤销 / 重做保留关键帧的 manual / prediction 来源、遮挡和属性；manual 与 prediction `outside` 区间分别归并，人工恢复不再改写预测区间。
 
 ### Fixed
+- **Mask 高级预览与多选合并可达性**. 选择 8 邻域时，预览中的组件前后数量现在按同一邻域统计，
+  不再显示实际合并但报告仍按 4 邻域计算的矛盾结果；从多选对象进入 Mask 编辑也会保留选择集合，
+  「合并已选 Mask」不再因入口把多选收敛成单选而保持禁用。
 - **Mask 原子提交安全边界**. 上传到提交结束期间现在统一阻止取消、切题和切 batch，预览后新锁定的受影响视频轨迹也会在提交前再次拒绝，避免用户已丢弃界面稿件但服务端仍落库。
 - **Mask 内容锁序与计算预算**. 普通写入、视频单帧保存、内容上传与原子 mutation 统一 Task / RLE / upload / annotation 锁序；GC 先提交可恢复的数据库删除，再重新取得同键锁并复查引用和新上传 reservation 后删除对象。范围、派生 runs、累计代数步数和非重叠候选对均有硬上限，copy / split 会按指定的 4 / 8 连通性复核完整连通域。
 - **视频 Mask 帧操作冲突边界**. 保存、删除、outside 与 held 恢复统一复核 task / annotation / segment 锁和 `If-Match`；删除最后一个关键帧、恢复纯预测 outside、过期版本和范围变化都会稳定拒绝，不再由通用 geometry PATCH 绕过。

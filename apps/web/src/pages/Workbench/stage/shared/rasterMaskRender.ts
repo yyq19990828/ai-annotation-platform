@@ -76,7 +76,12 @@ function assertAlphaPlane(alpha: Uint8Array, width: number, height: number) {
   }
 }
 
-function scanRasterMaskAlpha(alpha: Uint8Array, width: number, height: number) {
+function scanRasterMaskAlpha(
+  alpha: Uint8Array,
+  width: number,
+  height: number,
+  connectivity: 4 | 8 = 4,
+) {
   assertAlphaPlane(alpha, width, height);
 
   let area = 0;
@@ -145,9 +150,10 @@ function scanRasterMaskAlpha(alpha: Uint8Array, width: number, height: number) {
       }
 
       const overlappingLabels: number[] = [];
+      const diagonalPadding = connectivity === 8 ? 1 : 0;
       for (const run of previousRuns) {
-        if (run.end < start) continue;
-        if (run.start > end) break;
+        if (run.end < start - diagonalPadding) continue;
+        if (run.start > end + diagonalPadding) break;
         overlappingLabels.push(find(run.label));
       }
 
@@ -304,14 +310,16 @@ function normalizedBounds(
 
 /**
  * Analyze a row-major binary alpha plane and return its exact cropped truth.
- * Foreground connectivity is 4-neighbour; holes do not create components.
+ * Foreground connectivity defaults to 4-neighbour; hole counting remains the
+ * frozen 4-neighbour contract regardless of the foreground choice.
  */
 export function analyzeRasterMaskAlpha(
   alpha: Uint8Array,
   width: number,
   height: number,
+  connectivity: 4 | 8 = 4,
 ): RasterMaskAnalysis {
-  const scanned = scanRasterMaskAlpha(alpha, width, height);
+  const scanned = scanRasterMaskAlpha(alpha, width, height, connectivity);
   const { x, y, width: cropWidth, height: cropHeight } = scanned.pixelBounds;
   const croppedAlpha = new Uint8Array(cropWidth * cropHeight);
   for (let row = 0; row < cropHeight; row += 1) {

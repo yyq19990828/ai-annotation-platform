@@ -137,9 +137,10 @@ function operationResult(
   after: Uint8Array,
   width: number,
   height: number,
+  connectivity: MaskConnectivity = 4,
 ): MaskOperationResult {
-  const beforeAnalysis = analyzeRasterMaskAlpha(before, width, height);
-  const afterAnalysis = analyzeRasterMaskAlpha(after, width, height);
+  const beforeAnalysis = analyzeRasterMaskAlpha(before, width, height, connectivity);
+  const afterAnalysis = analyzeRasterMaskAlpha(after, width, height, connectivity);
   const changed = changedBounds(before, after, width);
   return {
     alpha: after,
@@ -349,20 +350,20 @@ export function applyMaskFloodFill(
   const y = Math.floor(options.y);
   const after = source.slice();
   if (x < 0 || y < 0 || x >= width || y >= height) {
-    return operationResult(source, after, width, height);
+    return operationResult(source, after, width, height, options.connectivity);
   }
   const target = source[y * width + x] as 0 | 255;
-  if (target === options.value) return operationResult(source, after, width, height);
+  if (target === options.value) return operationResult(source, after, width, height, options.connectivity);
   const labels = labelMaskRegions(source, width, height, {
     value: target,
     connectivity: options.connectivity,
   });
   const region = labels.hit(x, y);
-  if (!region) return operationResult(source, after, width, height);
+  if (!region) return operationResult(source, after, width, height, options.connectivity);
   for (const span of region.spans) {
     after.fill(options.value, span.y * width + span.x0, span.y * width + span.x1);
   }
-  return operationResult(source, after, width, height);
+  return operationResult(source, after, width, height, options.connectivity);
 }
 
 function fillRegion(after: Uint8Array, width: number, region: MaskRegion, value: 0 | 255): void {
@@ -391,7 +392,7 @@ export function applyMaskComponent(
   const after = options.action === "keep" ? new Uint8Array(source.length) : source.slice();
   if (selected) fillRegion(after, width, selected, options.action === "keep" ? 255 : 0);
   else if (options.action === "keep") after.set(source);
-  return operationResult(source, after, width, height);
+  return operationResult(source, after, width, height, options.connectivity);
 }
 
 export function removeSmallMaskComponents(
@@ -412,7 +413,7 @@ export function removeSmallMaskComponents(
   for (const region of labels.regions) {
     if (region.area <= options.maxArea) fillRegion(after, width, region, 0);
   }
-  return operationResult(source, after, width, height);
+  return operationResult(source, after, width, height, options.connectivity);
 }
 
 export function fillMaskHoles(

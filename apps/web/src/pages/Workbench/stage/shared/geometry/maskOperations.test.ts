@@ -163,6 +163,10 @@ describe("Mask operations · connectivity and membership", () => {
 
     expect(four.report.changedPixels).toBe(1);
     expect(eight.report.changedPixels).toBe(2);
+    expect(four.report.beforeComponents).toBe(2);
+    expect(eight.report.beforeComponents).toBe(1);
+    expect(four.report.afterComponents).toBe(1);
+    expect(eight.report.afterComponents).toBe(0);
     expect(rows(four.alpha, 3)[1][1]).toBe(1);
     expect(rows(eight.alpha, 3)[1][1]).toBe(0);
   });

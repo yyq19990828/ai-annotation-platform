@@ -2295,6 +2295,16 @@ export function useWorkbenchShellModel({
     }
   }, [s]);
 
+  const enterImageRasterMaskEdit = useCallback((id: string) => {
+    if (!s.selectedIds.includes(id)) {
+      s.setSelectedId(id);
+    } else if (s.selectedId !== id) {
+      // 编辑对象成为 primary，但保留 Shift 多选集合，供 join 预览消费。
+      s.replaceSelected([...s.selectedIds.filter((selectedId) => selectedId !== id), id]);
+    }
+    s.setTool("mask");
+  }, [s]);
+
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
     const mlBackendId = batchBackendId;
@@ -4989,12 +4999,7 @@ export function useWorkbenchShellModel({
           onUpdateAttributes={handleUpdateAttributes}
           rasterMaskStatus={imageRasterMasks.statusById.get(ann.id)}
           onRetryRasterMask={imageRasterMasks.retry}
-          onEditRasterMask={imageMaskPersistenceMode === "native"
-              ? (id) => {
-                handleSelectBox(id);
-                setTool("mask");
-              }
-            : undefined}
+          onEditRasterMask={imageMaskPersistenceMode === "native" ? enterImageRasterMaskEdit : undefined}
           onConvertRegionToRaster={imageMaskPersistenceMode === "native" ? openAnnotationConversion : undefined}
           onConvertRasterToRegion={openAnnotationConversion}
         />
@@ -5067,9 +5072,9 @@ export function useWorkbenchShellModel({
     handleRefinePrediction,
     openAnnotationConversion,
     imageMaskPersistenceMode,
+    enterImageRasterMaskEdit,
     imageRasterMasks.retry,
     imageRasterMasks.statusById,
-    setTool,
     renderVideoTrackSidebar,
     floatingSelectionPosition,
     onSelectionPositionChange,
@@ -5873,10 +5878,7 @@ export function useWorkbenchShellModel({
       onRefinePrediction: handleRefinePrediction,
       onRefineUserPolygon: handleRefineUserPolygon,
       onEditRasterMask: imageMaskPersistenceMode === "native"
-        ? (id: string) => {
-            handleSelectBox(id);
-            s.setTool("mask");
-          }
+        ? enterImageRasterMaskEdit
         : undefined,
       onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
       onChangeUserBoxClass: handleStartChangeClass,

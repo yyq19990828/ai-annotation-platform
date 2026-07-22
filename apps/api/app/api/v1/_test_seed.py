@@ -1303,7 +1303,13 @@ async def seed_native_mask_candidate(
     return SeedNativeMaskCandidateResponse(response=response, rle=rles[0], rles=rles)
 
 
-RasterMaskFixtureVariant = Literal["single", "donut_three", "corrupt"]
+RasterMaskFixtureVariant = Literal[
+    "single",
+    "donut_three",
+    "diagonal_two",
+    "island",
+    "corrupt",
+]
 
 
 class InjectRasterMaskRequest(BaseModel):
@@ -1343,6 +1349,12 @@ def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
         _rect(8, 8, 16, 16, 0)
         _rect(29, 5, 41, 18)
         _rect(46, 29, 60, 43)
+    elif variant == "diagonal_two":
+        # 两个 4×4 块只在角点相邻：4 邻域为两个组件，8 邻域合并为一个。
+        _rect(18, 18, 22, 22)
+        _rect(22, 22, 26, 26)
+    elif variant == "island":
+        _rect(24, 31, 28, 35)
     else:
         # 损坏 fixture 使用独立形状，并故意不存对象。
         _rect(6, 30, 18, 42)

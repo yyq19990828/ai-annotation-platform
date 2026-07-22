@@ -2,16 +2,20 @@ import { chromium } from "@playwright/test";
 import { cpus, platform, release } from "node:os";
 
 const baseUrl = process.env.RASTER_MASK_BENCH_BASE_URL ?? "http://localhost:3000";
-const iterations = Number(process.env.RASTER_MASK_BENCH_ITERATIONS ?? 7);
+const iterations = Number(process.env.RASTER_MASK_BENCH_ITERATIONS ?? 20);
 const warmup = Number(process.env.RASTER_MASK_BENCH_WARMUP ?? 2);
 const width = Number(process.env.RASTER_MASK_BENCH_WIDTH ?? 1920);
 const height = Number(process.env.RASTER_MASK_BENCH_HEIGHT ?? 1080);
 
-if (![iterations, warmup, width, height].every(Number.isFinite)) {
-  throw new Error("benchmark numeric options must be finite");
+if (![iterations, width, height].every((value) => Number.isInteger(value) && value > 0)
+  || !Number.isInteger(warmup) || warmup < 0) {
+  throw new Error("benchmark numeric options must be positive integers");
 }
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  args: ["--enable-precise-memory-info", "--js-flags=--expose-gc"],
+});
 const page = await browser.newPage();
 await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
 
@@ -27,6 +31,20 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
       max_ms: Math.max(...values),
     };
   };
+  const summarizeLongTasks = (values) => ({
+    count: values.length,
+    total_ms: values.reduce((sum, value) => sum + value, 0),
+    max_ms: values.length ? Math.max(...values) : 0,
+  });
+  const yieldToBrowser = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const longTaskDurations = [];
+  const longTaskObserver = typeof PerformanceObserver !== "undefined"
+    && PerformanceObserver.supportedEntryTypes?.includes("longtask")
+    ? new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) longTaskDurations.push(entry.duration);
+      })
+    : null;
+  longTaskObserver?.observe({ type: "longtask", buffered: true });
   const moduleUrl = (path) => new URL(path, window.location.origin).href;
   const { encodeCocoRle } = await import(moduleUrl(
     "/src/pages/Workbench/stage/shared/geometry/maskRle.ts",
@@ -51,6 +69,8 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
     };
     if (kind === "sparse") {
       fillRect(Math.floor(width * 0.35), Math.floor(height * 0.3), Math.floor(width * 0.65), Math.floor(height * 0.7));
+    } else if (kind === "dense") {
+      fillRect(Math.floor(width * 0.03), Math.floor(height * 0.03), Math.floor(width * 0.97), Math.floor(height * 0.97));
     } else if (kind === "hole") {
       fillRect(Math.floor(width * 0.15), Math.floor(height * 0.15), Math.floor(width * 0.85), Math.floor(height * 0.85));
       fillRect(Math.floor(width * 0.4), Math.floor(height * 0.4), Math.floor(width * 0.6), Math.floor(height * 0.6), 0);
@@ -67,6 +87,7 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
 
   const samples = {
     sparse: buildSample("sparse"),
+    dense: buildSample("dense"),
     hole: buildSample("hole"),
     multi_component: buildSample("multi_component"),
   };
@@ -98,6 +119,11 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
       operation: { type: "morphology", operation: "close", kernelShape: "disk", radius: 2 },
     },
     {
+      name: "morphology_erode_disk_r2_dense",
+      sample: "dense",
+      operation: { type: "morphology", operation: "erode", kernelShape: "disk", radius: 2 },
+    },
+    {
       name: "smooth_square_r2",
       sample: "multi_component",
       operation: { type: "smooth", kernelShape: "square", radius: 2 },
@@ -110,7 +136,11 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
     },
   ];
 
+  await yieldToBrowser();
+  globalThis.gc?.();
+  await yieldToBrowser();
   const heapBefore = performance.memory?.usedJSHeapSize ?? null;
+  let peakUsedHeap = heapBefore;
   const rows = [];
   let operationId = 0;
   for (const entry of cases) {
@@ -118,6 +148,7 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
     const rle = encodeCocoRle(source, width, height);
     const mainSamples = [];
     const workerSamples = [];
+    let measuredLongTaskStart = longTaskDurations.length;
     let resultArea = 0;
     let resultCount = 0;
     for (let index = 0; index < warmup + iterations; index += 1) {
@@ -126,6 +157,8 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
         ? applyMaskInstanceOperation(source, width, height, entry.operation)
         : applyMaskOperation(source, width, height, entry.operation);
       const mainMs = performance.now() - mainStarted;
+      const afterMainHeap = performance.memory?.usedJSHeapSize ?? null;
+      if (afterMainHeap != null) peakUsedHeap = Math.max(peakUsedHeap ?? 0, afterMainHeap);
       operationId += 1;
       const workerStarted = performance.now();
       const workerResult = entry.instance
@@ -140,6 +173,8 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
             operationId,
           });
       const workerMs = performance.now() - workerStarted;
+      const afterWorkerHeap = performance.memory?.usedJSHeapSize ?? null;
+      if (afterWorkerHeap != null) peakUsedHeap = Math.max(peakUsedHeap ?? 0, afterWorkerHeap);
       if (entry.instance) {
         if (!mainResult || !workerResult.plan) throw new Error(`${entry.name} produced no instance plan`);
         resultArea = workerResult.plan.resultAreas.reduce((sum, value) => sum + value, 0);
@@ -148,11 +183,16 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
         resultArea = workerResult.result.report.afterArea;
         resultCount = workerResult.result.report.afterComponents;
       }
+      if (index === warmup - 1) {
+        await yieldToBrowser();
+        measuredLongTaskStart = longTaskDurations.length;
+      }
       if (index >= warmup) {
         mainSamples.push(mainMs);
         workerSamples.push(workerMs);
       }
     }
+    await yieldToBrowser();
     rows.push({
       name: entry.name,
       sample: entry.sample,
@@ -160,17 +200,30 @@ const result = await page.evaluate(async ({ width, height, iterations, warmup })
       result_count: resultCount,
       main_thread: summarize(mainSamples),
       worker_round_trip: summarize(workerSamples),
+      main_thread_long_tasks: summarizeLongTasks(
+        longTaskDurations.slice(measuredLongTaskStart),
+      ),
     });
   }
+  longTaskObserver?.disconnect();
+  const heapAfterBeforeGc = performance.memory?.usedJSHeapSize ?? null;
+  globalThis.gc?.();
+  await yieldToBrowser();
   const heapAfter = performance.memory?.usedJSHeapSize ?? null;
   return {
     resolution: [width, height],
     iterations,
     warmup,
     rows,
+    gc_available: typeof globalThis.gc === "function",
     heap_before_bytes: heapBefore,
+    heap_after_before_gc_bytes: heapAfterBeforeGc,
     heap_after_bytes: heapAfter,
     heap_delta_bytes: heapBefore == null || heapAfter == null ? null : heapAfter - heapBefore,
+    peak_used_js_heap_bytes: peakUsedHeap,
+    peak_temporary_heap_bytes: heapBefore == null || peakUsedHeap == null
+      ? null
+      : peakUsedHeap - heapBefore,
   };
 }, { width, height, iterations, warmup });
 

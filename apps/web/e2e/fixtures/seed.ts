@@ -94,7 +94,12 @@ export interface SeedLidarData {
   lidar_task_ids: string[];
 }
 
-export type RasterMaskFixtureVariant = "single" | "donut_three" | "corrupt";
+export type RasterMaskFixtureVariant =
+  | "single"
+  | "donut_three"
+  | "diagonal_two"
+  | "island"
+  | "corrupt";
 
 export interface SeedRasterMaskData {
   annotation_id: string;
