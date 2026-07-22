@@ -897,19 +897,27 @@ async def seed_video_task(
 
     project_id = UUID(payload.project_id)
     image_task = (
-        await db.execute(
-            select(Task)
-            .where(Task.project_id == project_id, Task.dataset_item_id.is_not(None))
-            .order_by(Task.created_at)
+        (
+            await db.execute(
+                select(Task)
+                .where(Task.project_id == project_id, Task.dataset_item_id.is_not(None))
+                .order_by(Task.created_at)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     batch = (
-        await db.execute(
-            select(TaskBatch)
-            .where(TaskBatch.project_id == project_id)
-            .order_by(TaskBatch.created_at)
+        (
+            await db.execute(
+                select(TaskBatch)
+                .where(TaskBatch.project_id == project_id)
+                .order_by(TaskBatch.created_at)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if image_task is None or batch is None:
         raise HTTPException(status_code=404, detail="project fixture not found")
     image_item = await db.get(DatasetItem, image_task.dataset_item_id)

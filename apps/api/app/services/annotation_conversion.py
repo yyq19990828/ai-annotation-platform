@@ -366,7 +366,9 @@ class AnnotationConversionService:
         expected = build_rle_reference(rle)
         object_key = str(expected["object_key"])
         previous = self._generated_rles.get(object_key)
-        if previous is not None and _canonical_digest(previous) != _canonical_digest(rle):
+        if previous is not None and _canonical_digest(previous) != _canonical_digest(
+            rle
+        ):
             raise RuntimeError("mask content identity collision during conversion")
         self._generated_rles[object_key] = rle
         return expected
@@ -795,27 +797,33 @@ class AnnotationConversionService:
             source_type = str((source.geometry or {}).get("type") or "")
             try:
                 if media == "image":
-                    planned_actions, report, planned_uploads = (
-                        await self._plan_image_source(
-                            source,
-                            payload,
-                            width=width,
-                            height=height,
-                        )
+                    (
+                        planned_actions,
+                        report,
+                        planned_uploads,
+                    ) = await self._plan_image_source(
+                        source,
+                        payload,
+                        width=width,
+                        height=height,
                     )
                 elif source_type in {"video_polygon", "video_track_polygon"}:
-                    planned_actions, report, planned_uploads = (
-                        await self._plan_video_polygon(
-                            source,
-                            payload,
-                            width=width,
-                            height=height,
-                        )
+                    (
+                        planned_actions,
+                        report,
+                        planned_uploads,
+                    ) = await self._plan_video_polygon(
+                        source,
+                        payload,
+                        width=width,
+                        height=height,
                     )
                 else:
-                    planned_actions, report, planned_uploads = (
-                        await self._plan_video_mask_bbox(source, payload)
-                    )
+                    (
+                        planned_actions,
+                        report,
+                        planned_uploads,
+                    ) = await self._plan_video_mask_bbox(source, payload)
             except AnnotationConversionError:
                 raise
             except ValueError as exc:

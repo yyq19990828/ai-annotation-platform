@@ -29,6 +29,18 @@ const result = await page.evaluate(async ({ iterations, warmup, frameSwitches })
   const { createTintedRasterMaskImage } = await import(moduleUrl(
     "/src/pages/Workbench/stage/shared/rasterMaskRender.ts",
   ));
+  const { MaskBuffer } = await import(moduleUrl(
+    "/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts",
+  ));
+  const { MaskHistoryCheckpoint, MaskHistoryStore } = await import(moduleUrl(
+    "/src/pages/Workbench/stage/shared/maskHistory.ts",
+  ));
+  const { RasterMaskWorkerPool } = await import(moduleUrl(
+    "/src/pages/Workbench/stage/shared/rasterMaskWorkerPool.ts",
+  ));
+  const { SparseMaskTileStore } = await import(moduleUrl(
+    "/src/pages/Workbench/stage/shared/sparseMaskTileStore.ts",
+  ));
 
   const resolutions = [
     { name: "720p", width: 1280, height: 720 },
@@ -371,6 +383,214 @@ const result = await page.evaluate(async ({ iterations, warmup, frameSwitches })
     };
   });
 
+  // Implementation exit gates. Keep the baseline above intact so the same run reports a
+  // directly comparable before/after pair on one browser and machine.
+  await yieldToBrowser();
+  globalThis.gc?.();
+  await yieldToBrowser();
+  const implementationHeapBefore = performance.memory?.usedJSHeapSize ?? null;
+  let implementationPeakHeap = implementationHeapBefore;
+  const implementationPool = new RasterMaskWorkerPool({ size: 2, queueLimit: 32 });
+  const implementationPipelineRows = [];
+  let implementationBitmapsCreated = 0;
+  let implementationBitmapsClosed = 0;
+  for (const resolution of resolutions) {
+    let alpha = buildSamStyleAlpha(resolution.width, resolution.height);
+    let rle = encodeCocoRle(alpha, resolution.width, resolution.height);
+    const samples = [];
+    let measuredLongTaskStart = longTaskDurations.length;
+    for (let index = 0; index < warmup + iterations; index += 1) {
+      const started = performance.now();
+      const analysis = await implementationPool.analyze(rle, { priority: "current" });
+      const rendered = await createTintedRasterMaskImage(analysis, "#8b5cf6");
+      if (!rendered) throw new Error(`${resolution.name} implementation pipeline produced an empty bitmap`);
+      implementationBitmapsCreated += 1;
+      if (typeof rendered.image.close === "function") {
+        rendered.image.close();
+        implementationBitmapsClosed += 1;
+      }
+      const elapsed = performance.now() - started;
+      const usedHeap = performance.memory?.usedJSHeapSize ?? null;
+      if (usedHeap != null) implementationPeakHeap = Math.max(implementationPeakHeap ?? 0, usedHeap);
+      if (index === warmup - 1) {
+        await yieldToBrowser();
+        measuredLongTaskStart = longTaskDurations.length;
+      }
+      if (index >= warmup) samples.push(elapsed);
+    }
+    implementationPipelineRows.push({
+      name: resolution.name,
+      resolution: [resolution.width, resolution.height],
+      pipeline: summarize(samples),
+      long_tasks: summarizeLongTasks(longTaskDurations.slice(measuredLongTaskStart)),
+    });
+    alpha = null;
+    rle = null;
+  }
+
+  let denseAlpha = buildSamStyleAlpha(3840, 2160);
+  let denseBuffer = new MaskBuffer({ width: 3840, height: 2160 });
+  denseBuffer.data.set(denseAlpha);
+  denseAlpha = null;
+  const denseHistory = new MaskHistoryStore(32 * 1024 * 1024);
+  const densePointerSamples = [];
+  const densePointerUpSamples = [];
+  const denseHistoryLongTaskStart = longTaskDurations.length;
+  for (let index = 0; index < warmup + iterations; index += 1) {
+    const cx = 640 + (index % 4) * 12;
+    const cy = 540;
+    const checkpoint = new MaskHistoryCheckpoint(3840, 2160);
+    const pointerStarted = performance.now();
+    checkpoint.captureDenseRect(denseBuffer.data, {
+      x0: cx - 24,
+      y0: cy - 24,
+      x1: cx + 25,
+      y1: cy + 25,
+    });
+    denseBuffer.brush(cx, cy, 24, index % 2 === 0 ? 255 : 0, "circle");
+    const pointerMs = performance.now() - pointerStarted;
+    const pointerUpStarted = performance.now();
+    const command = checkpoint.finishDense("benchmark-stroke", index, denseBuffer.data);
+    if (command) denseHistory.push(command);
+    const pointerUpMs = performance.now() - pointerUpStarted;
+    if (index >= warmup) {
+      densePointerSamples.push(pointerMs);
+      densePointerUpSamples.push(pointerUpMs);
+    }
+    await yieldToBrowser();
+  }
+  const denseHistoryResult = {
+    resolution: [3840, 2160],
+    pointer: summarize(densePointerSamples),
+    pointer_up: summarize(densePointerUpSamples),
+    history: denseHistory.snapshot(),
+    long_tasks: summarizeLongTasks(longTaskDurations.slice(denseHistoryLongTaskStart)),
+  };
+  denseHistory.clear();
+  denseBuffer = null;
+
+  const eightKSize = 8192;
+  const eightKPixels = eightKSize * eightKSize;
+  const eightKBase = {
+    encoding: "coco_rle",
+    size: [eightKSize, eightKSize],
+    counts: [eightKPixels],
+  };
+  const eightKStore = new SparseMaskTileStore({
+    sessionId: "benchmark-8k",
+    sha256: "benchmark-8k-blank",
+    baseRle: eightKBase,
+    backend: implementationPool,
+    deviceMemory: 4,
+  });
+  const eightKHistory = new MaskHistoryStore(32 * 1024 * 1024, 100, {
+    onRetain: (command) => eightKStore.retainHistoryCommand(command),
+    onRelease: (command) => eightKStore.releaseHistoryCommand(command),
+  });
+  eightKStore.setViewport({ x: 3840, y: 3840, width: 512, height: 512 });
+  await eightKStore.loadViewport();
+  const eightKBrushSamples = [];
+  const eightKLassoSamples = [];
+  const eightKLongTaskStart = longTaskDurations.length;
+  for (let index = 0; index < warmup + iterations; index += 1) {
+    const checkpoint = eightKStore.beginHistoryCheckpoint();
+    const started = performance.now();
+    await eightKStore.brush({
+      cx: 4096,
+      cy: 4096,
+      radius: 24,
+      value: index % 2 === 0 ? 255 : 0,
+      shape: "circle",
+      checkpoint,
+    });
+    const command = eightKStore.finishHistoryCheckpoint(checkpoint, "benchmark-brush", index);
+    if (command) eightKHistory.push(command);
+    if (index >= warmup) eightKBrushSamples.push(performance.now() - started);
+    await yieldToBrowser();
+  }
+  const lasso = [[4000, 4000], [4192, 4016], [4080, 4192]];
+  for (let index = 0; index < warmup + iterations; index += 1) {
+    const checkpoint = eightKStore.beginHistoryCheckpoint();
+    const started = performance.now();
+    await eightKStore.lasso(lasso, index % 2 === 0 ? 255 : 0, { checkpoint });
+    const command = eightKStore.finishHistoryCheckpoint(checkpoint, "benchmark-lasso", index);
+    if (command) eightKHistory.push(command);
+    if (index >= warmup) eightKLassoSamples.push(performance.now() - started);
+    await yieldToBrowser();
+  }
+  const finalCheckpoint = eightKStore.beginHistoryCheckpoint();
+  await eightKStore.brush({
+    cx: 4160,
+    cy: 4160,
+    radius: 24,
+    value: 255,
+    shape: "circle",
+    checkpoint: finalCheckpoint,
+  });
+  const finalCommand = eightKStore.finishHistoryCheckpoint(
+    finalCheckpoint,
+    "benchmark-final-dirty",
+    warmup + iterations,
+  );
+  if (finalCommand) eightKHistory.push(finalCommand);
+  const mergeSamples = [];
+  let mergedPixelSum = 0;
+  for (let index = 0; index < warmup + iterations; index += 1) {
+    const started = performance.now();
+    const merged = await eightKStore.merge();
+    if (index >= warmup) mergeSamples.push(performance.now() - started);
+    mergedPixelSum = merged.counts.reduce((sum, count) => sum + count, 0);
+  }
+  const eightKResourcesBeforeDispose = eightKStore.snapshot();
+  const eightKHistoryResources = eightKHistory.snapshot();
+  const implementationPoolBeforeDispose = implementationPool.getSnapshot();
+  const eightKResult = {
+    resolution: [eightKSize, eightKSize],
+    brush: summarize(eightKBrushSamples),
+    lasso: summarize(eightKLassoSamples),
+    merge: summarize(mergeSamples),
+    long_tasks: summarizeLongTasks(longTaskDurations.slice(eightKLongTaskStart)),
+    full_alpha_allocated: false,
+    merged_pixel_sum: mergedPixelSum,
+    resources: eightKResourcesBeforeDispose,
+    history: eightKHistoryResources,
+  };
+  eightKHistory.clear();
+  eightKStore.dispose();
+  const eightKResourcesAfterDispose = eightKStore.snapshot();
+  implementationPool.dispose();
+  const implementationPoolAfterDispose = implementationPool.getSnapshot();
+  await yieldToBrowser();
+  const implementationHeapBeforeGc = performance.memory?.usedJSHeapSize ?? null;
+  globalThis.gc?.();
+  await yieldToBrowser();
+  const implementationHeapAfter = performance.memory?.usedJSHeapSize ?? null;
+  const postImplementation = {
+    pipeline_rows: implementationPipelineRows,
+    dense_4k_history: denseHistoryResult,
+    sparse_8k: eightKResult,
+    resources: {
+      pool_before_dispose: implementationPoolBeforeDispose,
+      pool_after_dispose: implementationPoolAfterDispose,
+      tile_store_after_dispose: eightKResourcesAfterDispose,
+      bitmaps_created: implementationBitmapsCreated,
+      bitmaps_closed: implementationBitmapsClosed,
+      live_bitmaps: implementationBitmapsCreated - implementationBitmapsClosed,
+    },
+    heap: {
+      before_bytes: implementationHeapBefore,
+      before_gc_bytes: implementationHeapBeforeGc,
+      after_gc_bytes: implementationHeapAfter,
+      gc_delta_bytes: implementationHeapBefore == null || implementationHeapAfter == null
+        ? null
+        : implementationHeapAfter - implementationHeapBefore,
+      peak_used_bytes: implementationPeakHeap,
+      peak_temporary_bytes: implementationHeapBefore == null || implementationPeakHeap == null
+        ? null
+        : implementationPeakHeap - implementationHeapBefore,
+    },
+  };
+
   URL.revokeObjectURL(workerUrl);
   longTaskObserver?.disconnect();
   await yieldToBrowser();
@@ -386,6 +606,7 @@ const result = await page.evaluate(async ({ iterations, warmup, frameSwitches })
     history_rows: historyRows,
     rapid_frame_switch: rapidFrameSwitch,
     large_canvas_cases: largeCanvasCases,
+    post_implementation: postImplementation,
     resources: {
       ...resources,
       live_workers: resources.workers_created - resources.workers_terminated,

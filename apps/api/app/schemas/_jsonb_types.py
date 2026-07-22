@@ -677,9 +677,7 @@ class CocoRleMaskRef(BaseModel):
         if height <= 0 or width <= 0:
             raise ValueError("mask size 必须是正整数 [height, width]")
         if height > MAX_IMAGE_MASK_DIMENSION or width > MAX_IMAGE_MASK_DIMENSION:
-            raise ValueError(
-                f"mask width / height 必须 <= {MAX_IMAGE_MASK_DIMENSION}"
-            )
+            raise ValueError(f"mask width / height 必须 <= {MAX_IMAGE_MASK_DIMENSION}")
         return value
 
     @model_validator(mode="after")
@@ -726,8 +724,7 @@ class CocoRleContent(BaseModel):
             or width > MAX_IMAGE_MASK_DIMENSION
         ):
             raise ValueError(
-                "mask size 必须是 "
-                f"(0, {MAX_IMAGE_MASK_DIMENSION}] 内的 [height, width]"
+                f"mask size 必须是 (0, {MAX_IMAGE_MASK_DIMENSION}] 内的 [height, width]"
             )
         total = 0
         for count in self.counts:

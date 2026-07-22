@@ -32,6 +32,17 @@ interface CocoRle {
   counts: number[];
 }
 
+interface ConversionResponse {
+  updated_annotations: AnnotationDto[];
+  created_annotations: AnnotationDto[];
+  deleted_annotation_ids: string[];
+  report: {
+    source_count: number;
+    result_count: number;
+    lossy_count: number;
+  };
+}
+
 function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
@@ -270,8 +281,8 @@ test.describe("raster mask native write matrix", () => {
     await page.keyboard.press("m");
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toBeVisible({ timeout: 10_000 });
-    await expect(toolbar.getByTestId("mask-mode-brush")).toBeDisabled();
-    await expect(toolbar.getByTestId("mask-mode-erase")).toBeDisabled();
+    await expect(toolbar.getByRole("radio", { name: "\u7b14\u5237" })).toBeDisabled();
+    await expect(toolbar.getByRole("radio", { name: "\u6a61\u76ae" })).toBeDisabled();
 
     let mutationCount = 0;
     page.on("request", (request) => {
@@ -287,7 +298,7 @@ test.describe("raster mask native write matrix", () => {
     expect(mutationCount).toBe(0);
   });
 
-  test("6. polygon with a hole converts to Mask and undo restores identity and geometry", async ({ page, request, seed }) => {
+  test("6. polygon with a hole replaces to Mask while preserving identity", async ({ page, request, seed }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await openTask(page, seed, data, taskId);
@@ -311,32 +322,30 @@ test.describe("raster mask native write matrix", () => {
     ));
     await page.reload();
     await page.getByTestId(`box-list-item-${created.id}`).click();
-    const dialogMessages: string[] = [];
-    page.on("dialog", (dialog) => {
-      dialogMessages.push(dialog.message());
-      void dialog.accept();
-    });
     const convertedResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${created.id}`)
-      && response.request().method() === "PATCH"
+      response.url().endsWith(`/api/v1/tasks/${taskId}/annotation-conversions:execute`)
+      && response.request().method() === "POST"
       && response.ok(),
     );
     await page.getByRole("button", { name: "\u8f6c\u4e3a Mask" }).click();
-    const converted = await json<AnnotationDto>(await convertedResponse);
+    const dialog = page.getByRole("dialog", { name: "\u6807\u6ce8\u8f6c\u6362\u4e2d\u5fc3" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("\u7ed3\u679c\u7b56\u7565").click();
+    await page.getByRole("option", { name: "\u66ff\u6362\u6765\u6e90" }).click();
+    await dialog.getByRole("button", { name: "\u751f\u6210\u9884\u89c8" }).click();
+    const report = dialog.getByLabel("\u8f6c\u6362\u9884\u89c8\u62a5\u544a");
+    await expect(report).toContainText("\u5b54\u6d1e 1 \u2192 1");
+    await dialog.getByRole("button", { name: "\u6267\u884c\u8f6c\u6362" }).click();
+    await page.getByRole("alertdialog", { name: "\u786e\u8ba4\u6267\u884c\u8f6c\u6362\uff1f" })
+      .getByRole("button", { name: "\u786e\u8ba4\u6267\u884c" }).click();
+    const conversion = await json<ConversionResponse>(await convertedResponse);
+    const converted = conversion.updated_annotations[0];
     expect(converted.id).toBe(created.id);
     expect(converted.annotation_type).toBe("raster_mask");
-    expect(dialogMessages[0]).toContain("\u5b54\u6d1e: 1");
-
-    const undoResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${created.id}`)
-      && response.request().method() === "PATCH"
-      && response.ok(),
-    );
-    await page.keyboard.press("Control+z");
-    const restored = await json<AnnotationDto>(await undoResponse);
-    expect(restored.id).toBe(created.id);
-    expect(restored.annotation_type).toBe("polygon");
-    expect(restored.geometry).toEqual(sourceGeometry);
+    expect(converted.geometry.type).toBe("raster_mask");
+    expect(conversion.created_annotations).toHaveLength(0);
+    expect(conversion.deleted_annotation_ids).toHaveLength(0);
+    expect(conversion.report).toMatchObject({ source_count: 1, result_count: 1, lossy_count: 0 });
   });
 
   test("7. Mask to multi-polygon reports loss, cancel is inert, confirm syncs both types", async ({ page, request, seed }) => {
@@ -353,26 +362,36 @@ test.describe("raster mask native write matrix", () => {
     await expect(row).toContainText("3 \u7ec4\u4ef6", { timeout: 15_000 });
     await row.click();
 
-    const cancelledReportPromise = page.waitForEvent("dialog").then(async (dialog) => {
-      const message = dialog.message();
-      await dialog.dismiss();
-      return message;
-    });
     await page.getByRole("button", { name: "\u8f6c\u4e3a\u77e2\u91cf\u51e0\u4f55" }).click();
-    const cancelledReport = await cancelledReportPromise;
+    let dialog = page.getByRole("dialog", { name: "\u6807\u6ce8\u8f6c\u6362\u4e2d\u5fc3" });
+    await dialog.getByLabel("\u7ed3\u679c\u7b56\u7565").click();
+    await page.getByRole("option", { name: "\u66ff\u6362\u6765\u6e90" }).click();
+    await dialog.getByRole("button", { name: "\u751f\u6210\u9884\u89c8" }).click();
+    let report = dialog.getByLabel("\u8f6c\u6362\u9884\u89c8\u62a5\u544a");
+    await expect(report).toContainText("\u7ec4\u4ef6 3 \u2192 3");
+    await expect(report).toContainText("\u5b54\u6d1e 1 \u2192 1");
+    await dialog.getByRole("button", { name: "\u53d6\u6d88" }).click();
+    await expect(dialog).not.toBeVisible();
     await expect.poll(async () => (await listAnnotations(request, taskId, token))
       .find((item) => item.id === fixture.annotation_id)?.geometry.type).toBe("raster_mask");
-    expect(cancelledReport).toContain("\u7ec4\u4ef6: 3");
-    expect(cancelledReport).toContain("\u5b54\u6d1e: 1");
 
-    page.on("dialog", (dialog) => void dialog.accept());
     const convertedResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`)
-      && response.request().method() === "PATCH"
+      response.url().endsWith(`/api/v1/tasks/${taskId}/annotation-conversions:execute`)
+      && response.request().method() === "POST"
       && response.ok(),
     );
     await page.getByRole("button", { name: "\u8f6c\u4e3a\u77e2\u91cf\u51e0\u4f55" }).click();
-    const converted = await json<AnnotationDto>(await convertedResponse);
+    dialog = page.getByRole("dialog", { name: "\u6807\u6ce8\u8f6c\u6362\u4e2d\u5fc3" });
+    await dialog.getByLabel("\u7ed3\u679c\u7b56\u7565").click();
+    await page.getByRole("option", { name: "\u66ff\u6362\u6765\u6e90" }).click();
+    await dialog.getByRole("button", { name: "\u751f\u6210\u9884\u89c8" }).click();
+    report = dialog.getByLabel("\u8f6c\u6362\u9884\u89c8\u62a5\u544a");
+    await expect(report).toContainText("\u6709\u635f\u9879");
+    await dialog.getByRole("button", { name: "\u6267\u884c\u8f6c\u6362" }).click();
+    await page.getByRole("alertdialog", { name: "\u786e\u8ba4\u6267\u884c\u8f6c\u6362\uff1f" })
+      .getByRole("button", { name: "\u786e\u8ba4\u6267\u884c" }).click();
+    const conversion = await json<ConversionResponse>(await convertedResponse);
+    const converted = conversion.updated_annotations[0];
     expect(converted.id).toBe(fixture.annotation_id);
     expect(converted.annotation_type).toBe("multi_polygon");
     expect(converted.geometry.type).toBe("multi_polygon");

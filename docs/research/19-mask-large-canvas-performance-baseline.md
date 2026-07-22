@@ -8,6 +8,16 @@
 
 8K 若延续当前整图实现，单 alpha 为 64 MiB，alpha + RGBA 与编辑临时量的保守估算约 576 MiB。当前 codec 在任一边超过 4096 时已先行拒绝；直接放宽常量会把内存风险推到工作台，因此图片 8K 必须与 sparse tile editor 同时落地，不能只改 schema。
 
+实现后用同一 runner、机器和浏览器再次独立执行两轮。固定 Worker pool 下 4K 显示流水线 p50 / p95
+降至 42.1–49.8 / 50.0–59.0 ms；4K 笔刷 pointer p95 为 1.2 ms，pointer-up XOR history p95 为
+2.9–3.1 ms，均无 Long Task。8K sparse brush / lasso p95 分别为 16.1–16.8 / 10.3–10.7 ms，
+包含一个 dirty tile 的 canonical merge p95 为 9.4–10.2 ms；全程只 materialize 16 个 viewport tile，
+没有分配 8192² alpha，合并结果像素总数保持 67,108,864。
+
+两轮各用固定 2 个 Worker 完成 104 个 job，释放后 Worker、bitmap、tile、queue、running job 和 session
+均归零；实施段强制 GC 后相对段前的 heap 增量为 6.68 / 6.69 MiB，低于 16 MiB 门。精简聚合数据见
+[`data/19-mask-large-canvas-performance-final.json`](./data/19-mask-large-canvas-performance-final.json)。
+
 ## 测量方法
 
 - 脚本：`apps/web/scripts/benchmark-mask-large-canvas.mjs`
@@ -19,6 +29,7 @@
 - 重复：每轮 2 次预热 + 20 次记录，共独立执行两轮
 - 压力项：1 / 10 / 50 个 1080p Mask、20 次 brush / lasso / history、50 帧并发切换、5K / 8K / 超宽边界
 - 原始 trace、video 与 heap snapshot不保留；聚合数据见 `data/19-mask-large-canvas-performance-baseline.json`
+- 实施后聚合数据：`data/19-mask-large-canvas-performance-final.json`
 
 `pipeline` 包括临时 Worker 创建、RLE decode / analyze、cropped bitmap 构建和关闭。history 基线模拟当前 stroke 前后 RLE 快照；Long Task 按每次编辑迭代让出事件循环后由 `PerformanceObserver` 记录。
 
@@ -85,3 +96,19 @@ RLE byte数在稀疏样本上看似不大，但每次生成快照都要按 COCO 
 5. 全图扫描超预算时只允许显式 ROI morphology；component、hole、split 等返回稳定原因，不静默回主线程。
 
 这些值的架构理由与替代方案记录在 ADR-0054。高级 morphology / component 的独立 1080p 基线继续参考 [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md)。
+
+## 实施后退出门
+
+| 场景 | 第一轮 | 第二轮 | 结果 |
+|---|---:|---:|---|
+| 4K pointer p95 | 1.2 ms | 1.2 ms | 通过（≤ 16 ms） |
+| 4K pointer-up p95 | 3.1 ms | 2.9 ms | 通过（≤ 50 ms） |
+| 8K brush p95 | 16.8 ms | 16.1 ms | 通过（无 > 50 ms Long Task） |
+| 8K lasso p95 | 10.7 ms | 10.3 ms | 通过（无 > 50 ms Long Task） |
+| 8K dirty-tile merge p95 | 10.2 ms | 9.4 ms | 通过（≤ 5 s） |
+| 实施段 GC heap 增量 | 6.68 MiB | 6.69 MiB | 通过（≤ 16 MiB） |
+| Worker / bitmap / tile / queue / session 退出值 | 全部 0 | 全部 0 | 通过 |
+
+显示流水线的 4K 工作仍包含真实 decode、拓扑分析和 crop bitmap 构建，因此不能把 50–59 ms p95
+解释为逐帧播放预算；播放路径依靠缓存、优先级和相邻帧预取。这里的改进证明短生命周期 Worker 启动与
+结构化克隆成本已经移除，交互退出门则由 pointer、history 和 sparse tile 的独立指标判定。
