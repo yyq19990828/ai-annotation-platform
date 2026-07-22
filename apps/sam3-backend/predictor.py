@@ -272,7 +272,7 @@ class SAM3Predictor:
         self._processor.reset_all_prompts(state)
 
         if masks is None or len(masks) == 0:
-            logger.info("SAM 3 returned 0 instances for text=%r", text)
+            logger.info("SAM 3 returned 0 instances for text prompt")
             return [], hit
 
         return self._build_results(
@@ -372,8 +372,8 @@ class SAM3Predictor:
 
         if masks is None or len(masks) == 0:
             logger.info(
-                "SAM 3 returned 0 instances for exemplars=%d text=%r",
-                len(exemplars), trimmed_text or None,
+                "SAM 3 returned 0 instances for exemplar prompt; exemplars=%d",
+                len(exemplars),
             )
             return [], hit
 

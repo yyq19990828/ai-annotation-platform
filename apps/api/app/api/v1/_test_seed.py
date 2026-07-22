@@ -1030,13 +1030,13 @@ async def seed_tracker_review(
             },
         )
 
-    source_a = source("e2e-track-a", 0.16, 12)
+    source_a = source("e2e-track-a", 0.16, 16)
     source_b = source("e2e-track-b", 0.62, 9)
     db.add_all([source_a, source_b])
     await db.flush()
     results = []
     for instance_id, x in (("A", 0.16), ("B", 0.62)):
-        for frame_index in range(10, 15):
+        for frame_index in range(10, 20):
             results.append(
                 {
                     "frame_index": frame_index,
@@ -1062,7 +1062,7 @@ async def seed_tracker_review(
         model_key="sam3_video",
         direction="forward",
         from_frame=10,
-        to_frame=14,
+        to_frame=19,
         prompt={
             "seeds": [
                 {"obj_id": "A", "source_annotation_id": str(source_a.id)},
@@ -1099,7 +1099,7 @@ class SeedNativeMaskPromptSource(BaseModel):
 
 class SeedNativeMaskCandidateRequest(BaseModel):
     task_id: str
-    variant: Literal["default", "negative_scribble"] = "default"
+    variant: Literal["default", "negative_scribble", "multimask_donut"] = "default"
     prompt_family: Literal["point", "scribble"] = "point"
     negative_scribbles: int = 0
     prompt_source: SeedNativeMaskPromptSource | None = None
@@ -1108,6 +1108,7 @@ class SeedNativeMaskCandidateRequest(BaseModel):
 class SeedNativeMaskCandidateResponse(BaseModel):
     response: dict
     rle: dict
+    rles: list[dict]
 
 
 @router.post(
@@ -1136,6 +1137,7 @@ async def seed_native_mask_candidate(
     from app.db.models.project import Project
     from app.db.models.task import Task
     from app.services.ai_mask_receipt import issue_ai_mask_receipt
+    from app.utils.raster_mask_rle import encode_coco_rle
 
     task = await db.get(Task, UUID(payload.task_id))
     if task is None or task.dataset_item_id is None:
@@ -1156,7 +1158,7 @@ async def seed_native_mask_candidate(
         1,
         total // 4 if payload.variant == "negative_scribble" else total // 3,
     )
-    rle_model = CocoRlePayload(
+    primary_rle = CocoRlePayload(
         encoding="coco_rle",
         size=(int(item.height), int(item.width)),
         counts=(
@@ -1165,14 +1167,45 @@ async def seed_native_mask_candidate(
             total - foreground_start - foreground_length,
         ),
     )
-    rle = rle_model.model_dump(mode="json")
+    rle_models = [primary_rle]
+    if payload.variant == "multimask_donut":
+        secondary_start = total // 6
+        secondary_length = max(1, total // 5)
+        rle_models.append(
+            CocoRlePayload(
+                encoding="coco_rle",
+                size=(int(item.height), int(item.width)),
+                counts=(
+                    secondary_start,
+                    secondary_length,
+                    total - secondary_start - secondary_length,
+                ),
+            )
+        )
+        width = int(item.width)
+        height = int(item.height)
+        pixels = bytearray(total)
+
+        def rect(x0: float, y0: float, x1: float, y1: float, value: int = 1) -> None:
+            left = max(0, min(width, int(width * x0)))
+            top = max(0, min(height, int(height * y0)))
+            right = max(left, min(width, int(width * x1)))
+            bottom = max(top, min(height, int(height * y1)))
+            for y in range(top, bottom):
+                pixels[y * width + left : y * width + right] = bytes([value]) * (
+                    right - left
+                )
+
+        rect(0.08, 0.08, 0.38, 0.42)
+        rect(0.17, 0.17, 0.29, 0.31, 0)
+        rect(0.53, 0.10, 0.70, 0.30)
+        rect(0.72, 0.58, 0.90, 0.84)
+        rle_models.append(
+            CocoRlePayload.model_validate(encode_coco_rle(pixels, width, height))
+        )
+    rles = [rle_model.model_dump(mode="json") for rle_model in rle_models]
     prompt_revision = (
         f"e2e-native-mask:{task.id}:{payload.variant}:{payload.prompt_family}"
-    )
-    candidate_id = native_mask_candidate_id(
-        rle_model,
-        prompt_revision=prompt_revision,
-        candidate_index=0,
     )
     routing = {
         "requested_backend_id": str(pool.legacy_instance_id),
@@ -1198,7 +1231,6 @@ async def seed_native_mask_candidate(
         "multimask": payload.prompt_family == "point",
         "parameters_digest": None,
     }
-    content_digest = hashlib.sha256(canonical_rle_bytes(rle_model)).hexdigest()
     prompt_source = (
         {
             "source_annotation_id": payload.prompt_source.annotation_id,
@@ -1216,31 +1248,44 @@ async def seed_native_mask_candidate(
         "source_version": prompt_source["source_version"] if prompt_source else None,
         "frame_index": frame_index,
     }
-    receipt = issue_ai_mask_receipt(
-        {
-            "task_id": str(task.id),
-            "frame_index": frame_index,
-            "candidate_id": candidate_id,
-            "candidate_index": 0,
-            "content_digest": content_digest,
-            "prompt_revision": prompt_revision,
-            "score": 0.95,
-            "routing": routing,
-            "inference": inference,
-            "prompt_summary": prompt_summary,
-            "prompt_source": prompt_source,
-            "accept_target": accept_target,
-        }
-    )
-    response = {
-        "result": [
+    results = []
+    accept_receipts = {}
+    for candidate_index, rle_model in enumerate(rle_models):
+        candidate_id = native_mask_candidate_id(
+            rle_model,
+            prompt_revision=prompt_revision,
+            candidate_index=candidate_index,
+        )
+        content_digest = hashlib.sha256(canonical_rle_bytes(rle_model)).hexdigest()
+        results.append(
             {
                 "type": "mask",
-                "value": {"rle": rle, "masklabels": ["object"]},
-                "score": 0.95,
+                "value": {
+                    "rle": rles[candidate_index],
+                    "masklabels": ["object"],
+                },
+                "score": 0.95 - candidate_index * 0.05,
                 "candidate_id": candidate_id,
             }
-        ],
+        )
+        accept_receipts[candidate_id] = issue_ai_mask_receipt(
+            {
+                "task_id": str(task.id),
+                "frame_index": frame_index,
+                "candidate_id": candidate_id,
+                "candidate_index": candidate_index,
+                "content_digest": content_digest,
+                "prompt_revision": prompt_revision,
+                "score": 0.95 - candidate_index * 0.05,
+                "routing": routing,
+                "inference": inference,
+                "prompt_summary": prompt_summary,
+                "prompt_source": prompt_source,
+                "accept_target": accept_target,
+            }
+        )
+    response = {
+        "result": results,
         "score": 0.95,
         "model_version": inference["model_version"],
         "inference_time_ms": inference["inference_time_ms"],
@@ -1253,9 +1298,9 @@ async def seed_native_mask_candidate(
         "frame_index": frame_index,
         "routing": routing,
         "prompt_summary": prompt_summary,
-        "accept_receipts": {candidate_id: receipt},
+        "accept_receipts": accept_receipts,
     }
-    return SeedNativeMaskCandidateResponse(response=response, rle=rle)
+    return SeedNativeMaskCandidateResponse(response=response, rle=rles[0], rles=rles)
 
 
 RasterMaskFixtureVariant = Literal["single", "donut_three", "corrupt"]

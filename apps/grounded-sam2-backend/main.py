@@ -83,6 +83,7 @@ from observability import (
     init_perfhud_collectors,
     record_cache,
     record_inference,
+    record_mask_ai_backend_inference,
     record_video_tracker,
     sample_perfhud,
     shutdown_perfhud_collectors,
@@ -1938,10 +1939,31 @@ async def predict(request: Request):
         ctx = body.get("context") or {}
         # v0.10.35 §B · video_tracker 分支 (走独立 video pool, 不进图片缓存路径).
         if ctx.get("type") == "video_tracker":
-            result, sv = await _run_video_tracker(
-                task["file_path"],
-                ctx,
-                operation,
+            correction = ((ctx.get("prompt") or {}).get("correction") or {})
+            tracker_started = time.perf_counter()
+            try:
+                result, sv = await _run_video_tracker(
+                    task["file_path"],
+                    ctx,
+                    operation,
+                )
+            except Exception:
+                record_mask_ai_backend_inference(
+                    model_role="sam2_video",
+                    operation="correction" if correction else "tracking",
+                    fallback_reason=correction.get("fallback_reason"),
+                    candidate_count=0,
+                    outcome="error",
+                    duration_seconds=time.perf_counter() - tracker_started,
+                )
+                raise
+            record_mask_ai_backend_inference(
+                model_role="sam2_video",
+                operation="correction" if correction else "tracking",
+                fallback_reason=correction.get("fallback_reason"),
+                candidate_count=len(result),
+                outcome="success",
+                duration_seconds=time.perf_counter() - tracker_started,
             )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return PredictionResult(

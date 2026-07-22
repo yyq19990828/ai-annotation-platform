@@ -1,13 +1,14 @@
 # 图像 / 视频栅格 Mask 能力统一 Epic
 
-> Status: In progress（Phase 1–3 completed，Phase 4 ready）· 2026-07-21
+> Status: In progress（Phase 1–4 completed，Phase 5 ready）· 2026-07-22
 >
 > 起始版本：v0.23.5
 >
-> 当前基线：v0.23.7 发布门禁通过；图片原生 Mask 工作台、双向转换、性能预算和可观测性已完成，生产图片 create 总闸保持关闭。
+> 当前基线：v0.23.8 发布门禁通过；原生 Mask AI、Mask-as-prompt、scribble、Tracker 局部决定和视频定向纠错已完成。部署级 `RASTER_MASK_CREATE_ENABLED` 默认开启并保留为紧急总闸；项目级 `raster_mask_native_editing_enabled` 仍默认关闭。
 >
 > 相关决策：[ADR-0022 Mask 编辑器 v1](../adr/archive/0022-mask-editor-tool-architecture.md) ·
 > [ADR-0048 视频栅格 Mask 内容寻址 RLE](../adr/archive/0048-video-raster-mask-content-addressed-rle.md) ·
+> [ADR-0053 原生 Mask AI 候选生命周期与视频纠错](../adr/0053-native-mask-ai-candidate-lifecycle-and-video-correction.md) ·
 > [v0.22.0 真·栅格 Mask Track](archive/2026-07-12-v0.22.0-raster-mask-track-davis.md)
 
 ## 1. Epic 结论

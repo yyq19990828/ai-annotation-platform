@@ -58,6 +58,21 @@ const nativeSetup = {
   ],
 };
 
+const polygonOnlySetup = {
+  ...nativeSetup,
+  supported_prompts: ["point", "interactive_box", "exemplar"],
+  supported_inputs: ["full_image", "point_prompt", "bbox_prompt"],
+  supported_geometric_outputs: ["polygon"],
+  models: nativeSetup.models.map((model) => model.id === "e2e-native-mask"
+    ? {
+        ...model,
+        supported_prompts: ["point", "interactive_box", "exemplar"],
+        supported_inputs: ["full_image", "point_prompt", "bbox_prompt"],
+        supported_geometric_outputs: ["polygon"],
+      }
+    : model),
+};
+
 interface VideoMaskAnnotationResponse {
   id: string;
   version: number;
@@ -120,11 +135,54 @@ async function routeNativeCandidate(
   return { contexts };
 }
 
+async function routePolygonCandidate(page: Page): Promise<Array<Record<string, unknown>>> {
+  const contexts: Array<Record<string, unknown>> = [];
+  await page.route(
+    /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
+    (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(polygonOnlySetup),
+    }),
+  );
+  await page.route(
+    /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating(?:-frame)?/,
+    async (route) => {
+      const request = route.request();
+      if (request.headers()["content-type"]?.includes("application/json")) {
+        const body = request.postDataJSON() as { context?: Record<string, unknown> };
+        contexts.push(body.context ?? {});
+      } else {
+        const match = request.postData()?.match(/name="context"\r?\n\r?\n([^\r\n]+)/);
+        contexts.push(match ? JSON.parse(match[1]) as Record<string, unknown> : {});
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          result: [{
+            type: "polygonlabels",
+            value: {
+              points: [[0.42, 0.34], [0.72, 0.36], [0.68, 0.66], [0.4, 0.62]],
+              polygonlabels: ["object"],
+            },
+            score: 0.91,
+          }],
+          output_geometry: "polygon",
+          model_version: "e2e-polygon-only",
+        }),
+      });
+    },
+  );
+  return contexts;
+}
+
 async function generateAndAccept(
   page: Page,
   projectId: string,
   taskId: string,
   media: "image" | "video",
+  options?: { candidateCycles?: number },
 ): Promise<AcceptedMaskResponse> {
   await page.goto(`/projects/${projectId}/annotate?task=${taskId}`);
   const stage = page.getByTestId(media === "image" ? "workbench-stage" : "video-konva-stage");
@@ -145,9 +203,15 @@ async function generateAndAccept(
   );
   await page.mouse.click(box.x + box.width * 0.68, box.y + box.height * 0.48);
   expect((await interactiveResponse).status()).toBe(200);
-  await expect(page.getByText("候选待处理", { exact: true })).toBeVisible({ timeout: 10_000 });
+  const pendingLabel = options?.candidateCycles
+    ? `${options.candidateCycles + 1} 个候选待处理`
+    : "候选待处理";
+  await expect(page.getByText(pendingLabel, { exact: true })).toBeVisible({ timeout: 10_000 });
   // Native candidate bounds are derived asynchronously by the shared raster renderer.
   await page.waitForTimeout(media === "image" ? 250 : 750);
+  for (let index = 0; index < (options?.candidateCycles ?? 0); index += 1) {
+    await page.keyboard.press("Tab");
+  }
 
   await page.keyboard.press("Enter");
   const picker = page.getByTestId("class-picker-popover");
@@ -178,11 +242,13 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const taskId = data.task_ids[0];
     await seed.configureRasterMask(data.project_id, true);
     await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
-    const fixture = await seed.nativeMaskCandidate(taskId);
+    const fixture = await seed.nativeMaskCandidate(taskId, { variant: "multimask_donut" });
     const routed = await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
 
-    const accepted = await generateAndAccept(page, data.project_id, taskId, "image");
+    const accepted = await generateAndAccept(page, data.project_id, taskId, "image", {
+      candidateCycles: 2,
+    });
     expect(accepted.annotation.annotation_type).toBe("raster_mask");
     expect(accepted.prediction.id).toBeTruthy();
     expect(accepted.replayed).toBe(false);
@@ -194,8 +260,125 @@ test.describe("native Mask interactive candidate acceptance", () => {
         `${API_BASE}/api/v1/annotations/${accepted.annotation.id}/mask-content`,
         { headers: { Authorization: `Bearer ${token}` } },
       ),
-      fixture.rle,
+      fixture.rles[2],
     );
+    const row = page.getByTestId(`box-list-item-${accepted.annotation.id}`);
+    await expect(row).toContainText("3 组件", { timeout: 15_000 });
+    await expect(row).toContainText("1 孔洞");
+  });
+
+  test("model without Mask capability stays on explicit polygon without creating a raster annotation", async ({ page, request, seed }) => {
+    const data = await seed.reset();
+    const taskId = data.task_ids[0];
+    await seed.configureRasterMask(data.project_id, true);
+    await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
+    const contexts = await routePolygonCandidate(page);
+    await seed.injectToken(page, data.annotator_email);
+
+    await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
+    const stage = page.getByTestId("workbench-stage");
+    await expect(stage).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("tool-btn-smart-point").click();
+    const output = page.getByTestId("single-frame-output-geometry-select");
+    await expect(output).toHaveValue("polygon");
+    await expect(output).toHaveAttribute("title", "当前模型未声明原生 Mask 输出能力");
+
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("workbench stage has no bounding box");
+    await page.mouse.click(box.x + box.width * 0.58, box.y + box.height * 0.5);
+    await expect(page.getByText("候选待处理", { exact: true })).toBeVisible({ timeout: 10_000 });
+    expect(contexts.at(-1)?.output_geometry).toBe("polygon");
+
+    await page.keyboard.press("Enter");
+    const picker = page.getByTestId("class-picker-popover");
+    const created = page.waitForResponse((response) =>
+      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`)
+      && response.request().method() === "POST"
+      && response.status() === 201,
+    );
+    await picker.getByText("car", { exact: true }).click();
+    const createdBody = await created.then((response) => response.json()) as {
+      annotation_type: string;
+    };
+    expect(createdBody.annotation_type).toBe("polygon");
+
+    const token = await seed.accessToken(data.annotator_email);
+    const rows = await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(rows.ok(), await rows.text()).toBeTruthy();
+    expect((await rows.json() as Array<{ annotation_type: string }>).some(
+      (annotation) => annotation.annotation_type === "raster_mask",
+    )).toBe(false);
+  });
+
+  test("lost accept response retries with the same idempotency key and commits once", async ({ page, request, seed }) => {
+    test.setTimeout(60_000);
+    const data = await seed.reset();
+    const taskId = data.task_ids[0];
+    await seed.configureRasterMask(data.project_id, true);
+    await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
+    const fixture = await seed.nativeMaskCandidate(taskId);
+    await routeNativeCandidate(page, fixture);
+    await seed.injectToken(page, data.annotator_email);
+
+    let attempts = 0;
+    let committedBeforeDisconnect: AcceptedMaskResponse | null = null;
+    await page.route(
+      new RegExp(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept$`),
+      async (route) => {
+        attempts += 1;
+        if (attempts === 1) {
+          const serverResponse = await route.fetch();
+          expect(serverResponse.status(), await serverResponse.text()).toBe(200);
+          committedBeforeDisconnect = await serverResponse.json() as AcceptedMaskResponse;
+          await route.abort("failed");
+          return;
+        }
+        await route.continue();
+      },
+    );
+
+    await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
+    const stage = page.getByTestId("workbench-stage");
+    await expect(stage).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("tool-btn-smart-point").click();
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("workbench stage has no bounding box");
+    await page.mouse.click(box.x + box.width * 0.63, box.y + box.height * 0.47);
+    await expect(page.getByText("候选待处理", { exact: true })).toBeVisible({ timeout: 10_000 });
+
+    await page.keyboard.press("Enter");
+    let picker = page.getByTestId("class-picker-popover");
+    await picker.getByText("car", { exact: true }).click();
+    await expect(page.getByText("原生 Mask 采纳失败", { exact: true })).toBeVisible({ timeout: 15_000 });
+    expect(committedBeforeDisconnect).not.toBeNull();
+
+    await page.keyboard.press("Enter");
+    picker = page.getByTestId("class-picker-popover");
+    await expect(picker).toBeVisible();
+    const replay = page.waitForResponse((response) =>
+      response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`)
+      && response.request().method() === "POST",
+    );
+    await picker.getByText("car", { exact: true }).click();
+    const replayResponse = await replay;
+    expect(replayResponse.status(), await replayResponse.text()).toBe(200);
+    const replayed = await replayResponse.json() as AcceptedMaskResponse;
+    expect(replayed.replayed).toBe(true);
+    expect(replayed.annotation.id).toBe(committedBeforeDisconnect?.annotation.id);
+    expect(replayed.prediction.id).toBe(committedBeforeDisconnect?.prediction.id);
+    expect(attempts).toBe(2);
+
+    const token = await seed.accessToken(data.annotator_email);
+    const rows = await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(rows.ok(), await rows.text()).toBeTruthy();
+    const matching = (await rows.json() as Array<{ id: string }>).filter(
+      (annotation) => annotation.id === replayed.annotation.id,
+    );
+    expect(matching).toHaveLength(1);
   });
 
   test("video current-frame candidate and committed keyframe keep identical pixels", async ({ page, request, seed }) => {
@@ -218,6 +401,10 @@ test.describe("native Mask interactive candidate acceptance", () => {
       ),
       fixture.rle,
     );
+    await page.getByLabel("收起浮窗").click();
+    await expect(page.getByLabel(/展开选中信息卡.*可拖动/)).toBeVisible();
+    await page.getByTitle("AI 延展 Mask 轨迹").click();
+    await expect(page.getByTestId("video-tracker-propagate-dialog")).toBeVisible();
   });
 
   test("video drift frame correction propagates backward and accepts a local window", async ({ page, request, seed }) => {
@@ -472,6 +659,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
         sourceDigest: source.mask.sha256,
       },
     });
+    fixture.response.mask_input_next = "opaque-e2e-mask-session";
     const routed = await routeNativeCandidate(page, fixture, { failFirst: true });
     await seed.injectToken(page, data.annotator_email);
 
@@ -486,9 +674,9 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const stage = page.getByTestId("workbench-stage");
     await expect(stage).toBeVisible({ timeout: 20_000 });
     await page.getByTestId(`box-list-item-${source.annotation_id}`).click();
-    const scribble = page.getByTestId("tool-btn-smart-scribble");
-    await expect(scribble).not.toHaveAttribute("aria-disabled", "true");
-    await scribble.click();
+    const point = page.getByTestId("tool-btn-smart-point");
+    await expect(point).not.toHaveAttribute("aria-disabled", "true");
+    await point.click();
     await expect(page.getByTestId("mask-prompt-source")).toContainText("精修 Mask");
     const polarity = page.getByTestId("ai-tool-polarity");
     await polarity.click();
@@ -496,6 +684,22 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     const box = await stage.boundingBox();
     if (!box) throw new Error("workbench stage has no bounding box");
+    const pointContexts = () => routed.contexts.filter((context) =>
+      context.type === "point"
+      && (context.mask_prompt_source as { annotation_id?: unknown } | undefined)?.annotation_id
+        === source.annotation_id,
+    );
+    await page.mouse.click(box.x + box.width * 0.52, box.y + box.height * 0.48);
+    await expect.poll(() => pointContexts().length, { timeout: 10_000 }).toBe(1);
+    expect(pointContexts().at(-1)).toMatchObject({
+      labels: [0],
+      mask_prompt_source: { annotation_id: source.annotation_id },
+    });
+
+    const scribble = page.getByTestId("tool-btn-smart-scribble");
+    await expect(scribble).not.toHaveAttribute("aria-disabled", "true");
+    await scribble.click();
+    await expect(polarity).toHaveAttribute("title", /负向/);
     await page.mouse.move(box.x + box.width * 0.46, box.y + box.height * 0.46);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.54, { steps: 8 });
@@ -526,6 +730,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     expect(scribbleContexts()[1]?.mask_prompt_source).toMatchObject({
       annotation_id: source.annotation_id,
     });
+    expect(scribbleContexts()[1]?.mask_input).toBe("opaque-e2e-mask-session");
     expect(scribbleContexts()[1]?.scribbles).toEqual([
       expect.objectContaining({ polarity: 0 }),
     ]);

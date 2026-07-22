@@ -73,6 +73,12 @@ from app.services.ai_mask_receipt import issue_ai_mask_receipt
 from app.services.ai_mask_prompt import resolve_authorized_mask_prompt
 from app.services.ai_mask_session import issue_ai_mask_session
 from app.api.v1.tasks._shared import _assert_task_visible
+from app.observability.metrics import (
+    mask_ai_operation,
+    mask_ai_prompt_family,
+    observe_mask_ai_phase,
+    record_mask_ai_operation,
+)
 
 # v0.10.1 · /setup 代理结果的进程内 TTL 缓存. 工作台进入即拉, 避免 N 次 backend 探活.
 # key = backend_id (绑定改动 → 重绑后新 backend_id 自然 invalidate); 30s TTL 兜底.
@@ -771,11 +777,28 @@ def _interactive_response(
     task_id: uuid.UUID,
     frame_index: int | None,
 ) -> dict:
-    normalized, diagnostic = normalize_native_mask_response(
-        result.result,
-        getattr(result, "diagnostic", None),
-        context=context,
-        expected_size=expected_size,
+    operation = mask_ai_operation(context)
+    decode_started = time.monotonic()
+    try:
+        normalized, diagnostic = normalize_native_mask_response(
+            result.result,
+            getattr(result, "diagnostic", None),
+            context=context,
+            expected_size=expected_size,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=operation,
+            phase="decode",
+            outcome="error",
+            duration_seconds=time.monotonic() - decode_started,
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=operation,
+        phase="decode",
+        outcome="success",
+        duration_seconds=time.monotonic() - decode_started,
     )
     routing = {
         "requested_backend_id": str(requested_backend_id),
@@ -1191,21 +1214,76 @@ async def interactive_annotating(
         if context.get("output_geometry") == "mask"
         else {}
     )
-    result = await client.predict_interactive(
-        task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
-        context=context,
-        **predict_kwargs,
+    metric_operation = mask_ai_operation(context)
+    metric_prompt = mask_ai_prompt_family(context)
+    metric_geometry = str(context.get("output_geometry") or "unknown")
+    inference_started = time.monotonic()
+    try:
+        result = await client.predict_interactive(
+            task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
+            context=context,
+            **predict_kwargs,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="inference",
+            outcome="error",
+            duration_seconds=time.monotonic() - inference_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="inference",
+        outcome="success",
+        duration_seconds=time.monotonic() - inference_started,
     )
-    return _interactive_response(
-        result,
-        context=context,
-        expected_size=expected_size,
-        client=client,
-        requested_backend_id=backend_id,
-        model_id=model_id,
-        task_id=task.id,
-        frame_index=None,
+    encode_started = time.monotonic()
+    try:
+        response_body = _interactive_response(
+            result,
+            context=context,
+            expected_size=expected_size,
+            client=client,
+            requested_backend_id=backend_id,
+            model_id=model_id,
+            task_id=task.id,
+            frame_index=None,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="encode",
+            outcome="error",
+            duration_seconds=time.monotonic() - encode_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="encode",
+        outcome="success",
+        duration_seconds=time.monotonic() - encode_started,
     )
+    record_mask_ai_operation(
+        operation=metric_operation,
+        prompt_family=metric_prompt,
+        output_geometry=metric_geometry,
+        candidate_count=len(response_body["result"]),
+        outcome="success",
+    )
+    return response_body
 
 
 @router.post(
@@ -1428,10 +1506,35 @@ async def interactive_annotating_frame(
 
     storage = StorageService()
     # v0.23.5 · WS-D · D5 · boto3 sync put_object wrapped in to_thread.
-    frame_url = await asyncio.to_thread(
-        storage.upload_crop_bytes,
-        jpeg_bytes,
-        f"frame-interactive/{task_id}/{frame_index}.jpg",
+    metric_operation = mask_ai_operation(ctx)
+    metric_prompt = mask_ai_prompt_family(ctx)
+    metric_geometry = str(ctx.get("output_geometry") or "unknown")
+    upload_started = time.monotonic()
+    try:
+        frame_url = await asyncio.to_thread(
+            storage.upload_crop_bytes,
+            jpeg_bytes,
+            f"frame-interactive/{task_id}/{frame_index}.jpg",
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="upload",
+            outcome="error",
+            duration_seconds=time.monotonic() - upload_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="upload",
+        outcome="success",
+        duration_seconds=time.monotonic() - upload_started,
     )
     await db.commit()
 
@@ -1451,21 +1554,73 @@ async def interactive_annotating_frame(
         if ctx.get("output_geometry") == "mask"
         else {}
     )
-    result = await client.predict_interactive(
-        task_data={"id": str(task.id), "file_path": frame_url},
-        context=ctx,
-        **predict_kwargs,
+    inference_started = time.monotonic()
+    try:
+        result = await client.predict_interactive(
+            task_data={"id": str(task.id), "file_path": frame_url},
+            context=ctx,
+            **predict_kwargs,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="inference",
+            outcome="error",
+            duration_seconds=time.monotonic() - inference_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="inference",
+        outcome="success",
+        duration_seconds=time.monotonic() - inference_started,
     )
-    return _interactive_response(
-        result,
-        context=ctx,
-        expected_size=expected_size,
-        client=client,
-        requested_backend_id=backend_id,
-        model_id=model_id,
-        task_id=task.id,
-        frame_index=frame_index,
+    encode_started = time.monotonic()
+    try:
+        response_body = _interactive_response(
+            result,
+            context=ctx,
+            expected_size=expected_size,
+            client=client,
+            requested_backend_id=backend_id,
+            model_id=model_id,
+            task_id=task.id,
+            frame_index=frame_index,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="encode",
+            outcome="error",
+            duration_seconds=time.monotonic() - encode_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="encode",
+        outcome="success",
+        duration_seconds=time.monotonic() - encode_started,
     )
+    record_mask_ai_operation(
+        operation=metric_operation,
+        prompt_family=metric_prompt,
+        output_geometry=metric_geometry,
+        candidate_count=len(response_body["result"]),
+        outcome="success",
+    )
+    return response_body
 
 
 # ── v0.23.3 ADR-0050 §12.2 · 项目服务池绑定 API (pool-level) ──────────────────

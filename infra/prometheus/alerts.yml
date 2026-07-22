@@ -68,3 +68,68 @@ groups:
         annotations:
           summary: "Raster Mask 活跃库存指标缺失"
           description: "annotation/prediction 固定序列已缺失 15m；检查 API 健康巡检、GC 任务与 Prometheus scrape。"
+
+  - name: mask-ai
+    rules:
+      - alert: MaskAIFailureRateHigh
+        expr: sum(rate(mask_ai_operations_total{outcome="error"}[10m])) / clamp_min(sum(rate(mask_ai_operations_total[10m])), 0.001) > 0.1 and sum(increase(mask_ai_operations_total[10m])) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mask AI 失败率持续高于 10%"
+          description: "至少 10 次操作且失败率持续超阈值；按 operation/prompt_family/output_geometry 排查。"
+
+      - alert: MaskAIConflictRateHigh
+        expr: sum(increase(mask_ai_operations_total{outcome="conflict"}[10m])) / clamp_min(sum(increase(mask_ai_operations_total[10m])), 1) > 0.25 and sum(increase(mask_ai_operations_total{outcome="conflict"}[10m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mask AI 冲突率持续高于 25%"
+          description: "至少 5 次 409 冲突；检查 source version、segment lease、active correction lease 与重复提交。"
+
+      - alert: VideoCorrectionQueuedTooLong
+        expr: mask_ai_correction_oldest_age_seconds{status="queued"} > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "视频 Mask 纠错排队超过 10 分钟"
+          description: "检查 gpu 队列、Celery worker、backend 路由和入队状态。"
+
+      - alert: VideoCorrectionRunningStuck
+        expr: mask_ai_correction_oldest_age_seconds{status="running"} > 3600
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "视频 Mask 纠错运行超过 60 分钟"
+          description: "检查 worker、路由租约和 backend 会话；不要直接覆盖人工关键帧。"
+
+      - alert: VideoCorrectionReviewBacklog
+        expr: max(mask_ai_correction_oldest_age_seconds{status=~"pending_review|partially_reviewed"}) > 86400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "视频 Mask 纠错候选待审超过 24 小时"
+          description: "候选将在 TTL 清理时释放 staged 引用与同轨活跃租约。"
+
+      - alert: MaskAIExpiredDecisionBacklog
+        expr: mask_ai_oldest_expired_decision_age_seconds > 93600
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mask AI 过期幂等快照积压超过 26 小时"
+          description: "检查每日 Raster Mask GC/cleanup beat 是否正常执行。"
+
+      - alert: MaskAIObservabilityMetricMissing
+        expr: absent(mask_ai_correction_jobs{status="queued"}) or absent(mask_ai_staged_mask_references{job_kind="correction"}) or absent(mask_ai_accept_decisions{state="active"})
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mask AI 权威库存指标缺失"
+          description: "检查 API /metrics 数据库访问和 Prometheus scrape；固定零序列不应消失。"

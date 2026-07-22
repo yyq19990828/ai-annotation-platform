@@ -475,7 +475,10 @@ def test_propagate_rejects_mask_seed_with_wrong_frame_size(monkeypatch):
                             "encoding": "coco_rle",
                             "size": [2, 3],
                             "counts": [1, 2, 2, 1],
-                        }
+                        },
+                        "source_annotation_id": "annotation-1",
+                        "source_version": 3,
+                        "source_digest": "a" * 64,
                     },
                 }
             ],

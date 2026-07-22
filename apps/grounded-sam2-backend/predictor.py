@@ -463,7 +463,7 @@ class GroundedSAM2Predictor:
             device=self.device,
         )
         if boxes is None or len(boxes) == 0:
-            logger.info("DINO returned 0 boxes for caption=%r", caption)
+            logger.info("DINO returned 0 boxes for text prompt")
             return [], False
 
         # 归一化 cxcywh → 像素 xyxy

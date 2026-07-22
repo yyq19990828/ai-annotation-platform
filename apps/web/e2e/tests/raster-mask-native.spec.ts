@@ -393,7 +393,7 @@ test.describe("raster mask native write matrix", () => {
 
     await expect(page.getByTestId(`box-list-item-${healthy.annotation_id}`)).toContainText("px", { timeout: 15_000 });
     const corruptRow = page.getByTestId(`box-list-item-${corrupt.annotation_id}`);
-    await expect(corruptRow).toContainText("corrupt", { timeout: 15_000 });
+    await expect(corruptRow).toContainText("missing_object", { timeout: 15_000 });
     await corruptRow.click();
     await expect(page.getByRole("button", { name: "\u590d\u5236 Mask \u8bca\u65ad" })).toBeVisible();
     await expect(page.getByLabel("Mask \u52a0\u8f7d\u9519\u8bef")).toContainText("mask object is invalid");
@@ -439,7 +439,7 @@ test.describe("raster mask native write matrix", () => {
     const healthyRow = page.getByTestId(`box-list-item-${healthy.annotation_id}`);
     const corruptRow = page.getByTestId(`box-list-item-${corrupt.annotation_id}`);
     await expect(healthyRow).toContainText("px", { timeout: 15_000 });
-    await expect(corruptRow).toContainText("corrupt", { timeout: 15_000 });
+    await expect(corruptRow).toContainText("missing_object", { timeout: 15_000 });
     expect(reads.get(healthy.annotation_id)).toBe(1);
     expect(reads.get(corrupt.annotation_id)).toBe(1);
 

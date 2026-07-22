@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -39,6 +40,7 @@ from app.services.video_tracking.jobs import (
     tracker_job_out,
     tracker_job_preview,
 )
+from app.observability.metrics import observe_mask_ai_phase, record_mask_ai_operation
 
 router = APIRouter()
 
@@ -325,7 +327,26 @@ async def cancel_video_tracker_job(
     await _assert_can_cancel(db, task, row, current_user)
     job_kind = row.job_kind
     status_before = row.status
-    body = await cancel_tracker_job(db, job_id)
+    commit_started = time.monotonic()
+    try:
+        body = await cancel_tracker_job(db, job_id)
+    except HTTPException as exc:
+        if job_kind == "correction":
+            outcome = "conflict" if exc.status_code == 409 else "error"
+            observe_mask_ai_phase(
+                operation="correction",
+                phase="commit",
+                outcome=outcome,
+                duration_seconds=time.monotonic() - commit_started,
+            )
+            record_mask_ai_operation(
+                operation="correction",
+                prompt_family="correction_frame",
+                output_geometry="mask",
+                decision="cancel",
+                outcome=outcome,
+            )
+        raise
     if status_before != VideoTrackerJobStatus.CANCELLED.value:
         await AuditService.log(
             db,
@@ -348,7 +369,38 @@ async def cancel_video_tracker_job(
                 "staged_discarded": job_kind == "correction",
             },
         )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        if job_kind == "correction":
+            observe_mask_ai_phase(
+                operation="correction",
+                phase="commit",
+                outcome="error",
+                duration_seconds=time.monotonic() - commit_started,
+            )
+            record_mask_ai_operation(
+                operation="correction",
+                prompt_family="correction_frame",
+                output_geometry="mask",
+                decision="cancel",
+                outcome="error",
+            )
+        raise
+    if job_kind == "correction":
+        observe_mask_ai_phase(
+            operation="correction",
+            phase="commit",
+            outcome="success",
+            duration_seconds=time.monotonic() - commit_started,
+        )
+        record_mask_ai_operation(
+            operation="correction",
+            prompt_family="correction_frame",
+            output_geometry="mask",
+            decision="cancel",
+            outcome="success",
+        )
     return body
 
 
@@ -443,13 +495,37 @@ async def decide_video_tracker_candidates(
     task, visible = await _load_visible_job_task_row(db, job_id, current_user)
     await _assert_can_cancel(db, task, visible, current_user)
     project = await db.get(Project, task.project_id)
-    result = await decide_tracker_job(
-        db,
-        job_id,
-        body,
-        actor_id=current_user.id,
-        privileged=bool(project and is_privileged_for_project(current_user, project)),
-    )
+    staged = visible.staged_result or {}
+    output_geometry = str(staged.get("output_geometry") or "unknown")
+    observe_decision = visible.job_kind == "correction" or output_geometry == "mask"
+    commit_started = time.monotonic()
+    try:
+        result = await decide_tracker_job(
+            db,
+            job_id,
+            body,
+            actor_id=current_user.id,
+            privileged=bool(
+                project and is_privileged_for_project(current_user, project)
+            ),
+        )
+    except HTTPException as exc:
+        if observe_decision:
+            outcome = "conflict" if exc.status_code == 409 else "error"
+            observe_mask_ai_phase(
+                operation="correction",
+                phase="commit",
+                outcome=outcome,
+                duration_seconds=time.monotonic() - commit_started,
+            )
+            record_mask_ai_operation(
+                operation="correction",
+                prompt_family="correction_frame",
+                output_geometry=output_geometry,
+                decision=body.decision,
+                outcome=outcome,
+            )
+        raise
     last_decision = (
         ((result.prompt or {}).get("review_state") or {}).get("last_decision") or {}
     )
@@ -479,7 +555,42 @@ async def decide_video_tracker_candidates(
             },
         )
     # The review mutation and its mandatory audit row share this transaction.
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        if observe_decision:
+            observe_mask_ai_phase(
+                operation="correction",
+                phase="commit",
+                outcome="error",
+                duration_seconds=time.monotonic() - commit_started,
+            )
+            record_mask_ai_operation(
+                operation="correction",
+                prompt_family="correction_frame",
+                output_geometry=output_geometry,
+                candidate_count=int(last_decision.get("candidate_count") or 0),
+                decision=body.decision,
+                fallback_reason=correction.get("fallback_reason"),
+                outcome="error",
+            )
+        raise
+    if observe_decision:
+        observe_mask_ai_phase(
+            operation="correction",
+            phase="commit",
+            outcome="success",
+            duration_seconds=time.monotonic() - commit_started,
+        )
+        record_mask_ai_operation(
+            operation="correction",
+            prompt_family="correction_frame",
+            output_geometry=output_geometry,
+            candidate_count=int(last_decision.get("candidate_count") or 0),
+            decision=body.decision,
+            fallback_reason=correction.get("fallback_reason"),
+            outcome="success",
+        )
     return result
 
 

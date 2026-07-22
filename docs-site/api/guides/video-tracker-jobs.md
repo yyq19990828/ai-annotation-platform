@@ -120,6 +120,69 @@ POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
 WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<jwt>
 ```
 
+## 保存 Mask 纠错帧并定向重传播
+
+视频 Mask 纠错分为两个显式步骤。先用 annotation 当前版本保存人工关键帧：
+
+```http
+PUT /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+If-Match: W/"<annotation-version>"
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+请求正文只接受已通过 task 级上传接口验证的 `coco_rle_ref`：
+
+```json
+{
+  "mask": {
+    "encoding": "coco_rle_ref",
+    "size": [1080, 1920],
+    "object_key": "raster-masks/sha256/ab/cd/<sha256>.json",
+    "sha256": "<sha256>",
+    "runs": 4096,
+    "bytes": 16384
+  },
+  "occluded": false
+}
+```
+
+服务端锁定 task 与 annotation，复核 assignment、segment lease、版本、媒体尺寸和内容引用后，把该帧写成 `source="manual"`，从 `outside` 中移除该帧，并返回新的 `ETag`。保存成功后，即使后续传播创建或入队失败，人工关键帧也保留。
+
+再用返回的新 annotation version、RLE 摘要以及精确 backend/model 创建纠错 job：
+
+```http
+POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs
+```
+
+```json
+{
+  "correction_frame": 50,
+  "from_frame": 40,
+  "to_frame": 50,
+  "direction": "backward",
+  "segment_id": "<segment-uuid>",
+  "source_annotation_version": 8,
+  "corrected_mask_digest": "<sha256>",
+  "backend_id": "<backend-uuid>",
+  "model_id": "sam3-pvs",
+  "model_key": "sam3_video_interactive",
+  "allow_bbox_fallback": false
+}
+```
+
+创建时冻结 backend registry、service pool、model、方向窗口、源版本、segment lease 和 corrected digest。同一 task + track 同时只允许一个 `queued / running / pending_review / partially_reviewed` correction job。平台与 backend 的窗口上限取较小值；双向传播按纠错帧拆成两个独立单窗，纠错帧本身不会成为预测候选。
+
+模型声明 `correction_frame + mask_prompt` 时使用原生 RLE seed。只支持 bbox 的模型必须由用户显式设置 `allow_bbox_fallback=true`；job lineage 会记录 `fallback_reason="mask_prompt_unsupported"`，文本模型还必须提供 `text`。纠错 job 只能通过 `POST .../{job_id}/decisions` 做局部接受或拒绝；对它调用整批 `accept / discard` 固定返回 `correction_requires_local_decision`。
+
+稳定冲突 / 校验原因包括：
+
+- `source_version_conflict`、`corrected_mask_digest_mismatch`；
+- `correction_job_active`、`segment_lease_changed`；
+- `mask_prompt_unsupported`、`correction_prompt_unsupported`、`text_required_for_bbox_fallback`；
+- `tracker_window_capability_missing`、`correction_window_exceeds_native_limit`；
+- `correction_requires_local_decision`。
+
 ## 查询 job 与候选
 
 ```http
@@ -183,6 +246,8 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 - `discard`：只允许带暂存结果的 `pending_review` / `cancelled` job，清空 staged result，annotation 保持不变；已丢弃时幂等返回，其它状态返回 `409`。
 - `decisions`：显式选择 `instance_ids` 与闭区间 `from_frame / to_frame`，决定 `accept` 或 `reject`。请求还要回传 preview 的 `job_revision` 与 `expected_source_versions`；接受人工关键帧需在收到 `manual_keyframe_protected` 后由用户确认，再用 `override_manual=true` 重试。服务端只处理选区，未选目标、窗口外结果和未决 Mask 引用保持不变；相同决定可安全重试，响应以 `review_replayed=true` 标识回放。
 - `DELETE`：请求停止 queued / running job。已计算的部分结果可能保留为 candidate，之后仍可接受或丢弃。
+
+一般 tracking job 已计算的部分结果可在取消后继续审阅；correction job 取消时会立即丢弃 staged candidate、释放同轨活跃租约，但已保存的人工纠错关键帧不回滚。无人处理的 staged candidate 保留 24 小时，之后清理任务会清空引用：待审 / 部分审阅 job 转为 `discarded`，已取消 job 保持 `cancelled`。
 
 局部决定请求示例：
 

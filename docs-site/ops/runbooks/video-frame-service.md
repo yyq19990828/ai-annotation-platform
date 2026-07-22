@@ -15,6 +15,7 @@ last_reviewed: 2026-07-22
 - 时间轴 hover / 预取图片一直不可用。
 - segment claim 后很快丢锁，或同一段持续显示被他人占用。
 - tracker job 长时间 queued/running，或前端收不到逐帧事件。
+- 视频 Mask 纠错返回 409、卡在待审，或保存人工关键帧后没有产生重传播候选。
 - MinIO 空间增长明显。
 - Celery media 队列积压。
 
@@ -170,7 +171,7 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 ```bash
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
-  "SELECT id, task_id, annotation_id, segment_id, status, from_frame, to_frame, cancel_requested_at, staged_result IS NOT NULL AS has_candidate FROM video_tracker_jobs ORDER BY created_at DESC LIMIT 20;"
+  "SELECT id, task_id, annotation_id, job_kind, status, correction_frame, track_id_snapshot, segment_id, from_frame, to_frame, revision, cancel_requested_at, staged_result IS NOT NULL AS has_candidate FROM video_tracker_jobs ORDER BY created_at DESC LIMIT 20;"
 ```
 
 常见原因：
@@ -185,6 +186,17 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - 取消后仍看到部分候选：worker 会把停止前已收集的结果写入 `staged_result`，不是已落库 annotation。接受可保留部分结果，丢弃则 annotation 零改动。
 - accept 返回 409：检查 task 是否进入 review/completed、assignee 是否变化、segment lease 是否过期或转移，以及任一源 annotation 是否被修改、锁定或软删。accept 会 fail closed，不再把失效源降级为新轨迹。
 - accept 后看不到新轨迹：检查 job 是否真的进入 `accepted` 和 `prompt.touched_annotation_ids`，并查看 accept 审计日志；成功后 `staged_result` 会立即清空，主实例回填源轨迹，额外 `instance_id` 才新建轨迹。
+- `correction_job_active`：同一 `track_id_snapshot` 已有活跃纠错。先恢复并决定已有候选，或显式取消旧 job；不要并发覆盖同一轨迹。
+- `source_version_conflict`：人工纠错保存后，源 annotation 又被编辑。刷新任务并基于新 version 重新纠错。
+- `segment_lease_changed`：创建 job 时冻结的 segment lease 已过期、转移或 heartbeat 漂移。重新 claim 对应 segment 后重试。
+- `mask_prompt_unsupported`：所选 backend 不支持 Mask seed。只有用户确认后才能以 bbox seed 降级；lineage 和指标会保留原因。
+- `tracker_window_capability_missing` / `correction_window_exceeds_native_limit`：backend 未声明窗口能力或请求窗口超过其上限。缩小窗口或选择支持该能力的模型。
+- `correction_requires_local_decision`：纠错候选不能走整 job accept / discard，必须使用局部 decisions API 选择目标与帧窗口。
+- 创建返回 202 后入队失败：服务端会把 job 标成 `failed` 并保留人工纠错关键帧；检查 `gpu` 队列、worker 和路由后重新创建，不要手工改状态。
+
+待审候选以完成时间起算保留 24 小时。每日 Raster Mask GC 会清空过期 `staged_result`、释放 Mask
+引用和同轨活跃租约；`pending_review` / `partially_reviewed` 转为 `discarded`，`cancelled` 状态保持不变。
+候选释放后不能恢复，只能从仍保留的人工纠错关键帧重新发起。
 
 ## Tracker GPU OOM / 长视频分窗
 
@@ -256,6 +268,16 @@ docker compose restart celery-worker-gpu
 - `video_chunk_generation_seconds{outcome="error"}`：持续增加说明转码失败。
 - `video_frame_asset_bytes{asset_type}`：容量预算与清理是否生效。
 - `celery_queue_length{queue="media"}`：media 队列积压。
+- `mask_ai_operations_total`：按 operation / prompt / decision / fallback / outcome 定位失败或冲突。
+- `mask_ai_phase_duration_seconds`：区分 upload / inference / decode / encode / commit 的 p95。
+- `mask_ai_correction_jobs{status}` 与 `mask_ai_correction_oldest_age_seconds{status}`：纠错状态和最老年龄。
+- `mask_ai_staged_mask_references{job_kind}`：待审 Tracker / correction 对象引用库存。
+- `mask_ai_accept_decisions{state}` 与 `mask_ai_oldest_expired_decision_age_seconds`：接受幂等快照与 GC 积压。
+
+对应告警为 `MaskAIFailureRateHigh`、`MaskAIConflictRateHigh`、`VideoCorrectionQueuedTooLong`、
+`VideoCorrectionRunningStuck`、`VideoCorrectionReviewBacklog`、`MaskAIExpiredDecisionBacklog` 和
+`MaskAIObservabilityMetricMissing`。先用 `Anno Overview` 确定平台阶段，再到 `ML Backends` 查看
+grounded-SAM2 / SAM3 multiplex / PVS 的 backend 推理速率与 p95。
 
 ## 相关文档
 

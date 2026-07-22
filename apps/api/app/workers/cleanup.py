@@ -10,11 +10,12 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import case, delete, select, text, update
 
 from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
 from app.db.models.raster_mask_upload import RasterMaskUpload
+from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.observability.raster_mask import (
     refresh_raster_mask_active_geometries_safely,
 )
@@ -24,6 +25,8 @@ from app.workers._db import task_session
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
+
+VIDEO_TRACKER_STAGED_TTL = timedelta(hours=24)
 
 
 @celery_app.task(name="app.workers.cleanup.purge_soft_deleted_attachments")
@@ -164,6 +167,47 @@ async def _is_raster_mask_key_referenced(db, key: str) -> bool:
     return False
 
 
+async def _expire_stale_video_tracker_candidates(
+    db,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Release abandoned staged Mask refs and correction track leases after 24h."""
+    cutoff = (now or datetime.now(timezone.utc)) - VIDEO_TRACKER_STAGED_TTL
+    expirable = (
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
+        VideoTrackerJobStatus.CANCELLED.value,
+    )
+    result = await db.execute(
+        update(VideoTrackerJob)
+        .where(
+            VideoTrackerJob.staged_result.is_not(None),
+            VideoTrackerJob.status.in_(expirable),
+            VideoTrackerJob.completed_at.is_not(None),
+            VideoTrackerJob.completed_at <= cutoff,
+        )
+        .values(
+            staged_result=None,
+            status=case(
+                (
+                    VideoTrackerJob.status.in_(
+                        (
+                            VideoTrackerJobStatus.PENDING_REVIEW.value,
+                            VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
+                        )
+                    ),
+                    VideoTrackerJobStatus.DISCARDED.value,
+                ),
+                else_=VideoTrackerJob.status,
+            ),
+            revision=VideoTrackerJob.revision + 1,
+        )
+        .returning(VideoTrackerJob.id)
+    )
+    return len(result.scalars().all())
+
+
 def _eligible_raster_mask_objects(
     candidates: list[dict], referenced: set[str], cutoff: datetime
 ) -> list[dict]:
@@ -192,6 +236,7 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
                 AiMaskAcceptDecision.expires_at <= datetime.now(timezone.utc)
             )
         )
+        expired_tracker_candidates = await _expire_stale_video_tracker_candidates(db)
         await db.commit()
         await refresh_raster_mask_active_geometries_safely(db)
         referenced = await _referenced_raster_mask_keys(db)
@@ -225,9 +270,8 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
                     await db.rollback()
                     errors += 1
                     log.warning(
-                        "delete unreferenced raster mask %s failed: %s",
-                        item["key"],
-                        exc,
+                        "delete unreferenced raster mask failed; error_type=%s",
+                        type(exc).__name__,
                     )
     result = {
         "dry_run": dry_run,
@@ -236,6 +280,7 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
         "eligible": len(deletable),
         "deleted": deleted,
         "errors": errors,
+        "expired_tracker_candidates": expired_tracker_candidates,
     }
     log.info("purge_unreferenced_raster_masks done: %s", result)
     return result

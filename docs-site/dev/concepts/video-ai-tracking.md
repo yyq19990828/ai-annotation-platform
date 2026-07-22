@@ -151,6 +151,16 @@ runner 把结果序列化到：
 
 接受只写选中目标与闭区间帧窗口，拒绝只移除选区；窗口外、其它目标和未决 Mask 引用保持不变。人工关键帧默认返回 `manual_keyframe_protected`，显式 `override_manual=true` 才允许覆盖，并在与 annotation 变更同一事务的 `VIDEO_TRACKER_JOB_DECISION` 审计中记录 before / after digest。部分接受产生的新实例会把 `instance_id → annotation_id` 映射保存在 review state，后续窗口复用同一轨迹；每次写入后源版本基线随 annotation 单调更新。
 
+### 人工 Mask 纠错与定向重传播
+
+纠错不会修改既有 tracking job，也不会在保存笔画时直接覆盖一段预测。工作台先通过版本条件写入一个 `source="manual"` 的 Mask 关键帧，再创建独立 `job_kind="correction"` 的 job。这样传播创建、路由或入队失败时，人工修正仍然是可恢复的持久事实；重试只创建新 job，不重复保存关键帧。
+
+correction prompt 冻结源 annotation / track、source version、corrected digest、方向窗口、segment lease、backend registry / pool / model 和 `protect_manual=true`。数据库的 partial unique lease 保证同一 task + track 只有一个活跃 correction。原生 seed 要求一个方向完全落在 backend 的单窗上限内；双向传播拆成 backward / forward 两次单窗调用，两个窗口都以同一人工帧播种，runner 丢弃 seed frame 的预测结果。
+
+Grounded-SAM2 与 SAM3 PVS 可消费 `CorrectionFramePrompt.mask_prompt`。SAM3 Multiplex 只消费显式 bbox fallback：用户必须确认，文本模型还必须提供文本，lineage 固定记录 fallback 原因和 seed digest。无论哪种 seed，runner 只暂存所选轨迹、所选窗口的 candidate，后续仍走局部 decision；整批 accept / discard 对 correction 固定拒绝。
+
+取消 correction 会清 staged candidate、释放活跃租约并保留人工帧。无人处理的 staged candidate 在 24 小时后释放引用；待审状态转为 discarded，避免候选和同轨租约永久阻止对象 GC。
+
 ## 接受阶段如何落库
 
 `_partition_results_by_instance()` 把结果拆为主实例与额外实例：
@@ -195,6 +205,7 @@ runner 把结果序列化到：
 3. 检查 GPU worker 是否订阅 `gpu` queue、是否收到正确窗口环境变量。
 4. 检查 backend `/health` 的 `video_pool` 与模型权重状态。
 5. 对多目标漂移，区分 PVS 续种问题和 multiplex 窗边界 IoU 关联问题。
+6. 对纠错检查 `job_kind / correction_frame / track_id_snapshot`、冻结路由和 Mask AI correction age / staged reference 指标。
 
 精确端点与状态码见 [Video Tracker Jobs API](/api/guides/video-tracker-jobs)；具体命令见[视频帧服务 Runbook](/ops/runbooks/video-frame-service)。
 

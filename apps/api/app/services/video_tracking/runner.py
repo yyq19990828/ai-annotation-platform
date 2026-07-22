@@ -1946,9 +1946,7 @@ async def run_tracker_job(
                 discovery_results, seed_frame=job.from_frame
             )
             if not prompt_seeds:
-                raise ValueError(
-                    f"sam3_video_combo discovery found no objects for text: {discovery_text!r}"
-                )
+                raise ValueError("sam3_video_combo discovery found no objects")
 
         for win_idx, (
             from_frame,

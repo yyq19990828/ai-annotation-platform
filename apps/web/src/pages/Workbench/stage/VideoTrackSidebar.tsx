@@ -24,6 +24,7 @@ import { useVideoTrackActions } from "./useVideoTrackActions";
 // VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
+  VideoManagedTrackAnnotation,
   VideoTrackAnnotation,
   VideoTrackCompositionOptions,
   VideoTrackConversionOptions,
@@ -61,7 +62,7 @@ interface VideoTrackSidebarProps {
   onSelectionChange?: (selectedTracks: VideoTrackAnnotation[]) => void;
   reviewDisplayMode?: DiffMode;
   trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
-  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onPropagateTrack?: (annotation: VideoManagedTrackAnnotation) => void;
   /** v0.22.2 · M2 · 批量 AI 追踪: 把多选的 ≥2 条轨迹一次喂给追踪对话框 (单 job 多源)。 */
   onBatchTrack?: (annotations: AnnotationResponse[]) => void;
   onCancelTrackerJob?: (jobId: string) => void;
@@ -288,11 +289,7 @@ export function VideoTrackSidebar({
     },
     onToggleHiddenTrack,
     onToggleLockedTrack,
-    onPropagateTrack: onPropagateTrack
-      ? (annotation) => {
-          if (annotation.geometry.type === "video_track_bbox") onPropagateTrack(annotation as VideoTrackAnnotation);
-        }
-      : undefined,
+    onPropagateTrack,
   });
 
   const selectTrack = useCallback((id: string, opts?: { toggle?: boolean }) => {
@@ -597,6 +594,15 @@ export function VideoTrackSidebar({
                   </Button>
                   <Button variant="ghost" size="sm" title={locked ? "解锁轨迹" : "锁定轨迹"} onClick={() => onToggleLockedTrack(annotation.geometry.track_id)}>
                     <Icon name={locked ? "lock" : "unlock"} size={13} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="AI 延展 Mask 轨迹"
+                    disabled={readOnly || locked || !onPropagateTrack}
+                    onClick={() => onPropagateTrack?.(annotation)}
+                  >
+                    <Icon name="bot" size={13} />
                   </Button>
                   <Button
                     variant="danger"

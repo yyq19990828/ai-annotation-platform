@@ -219,6 +219,8 @@ POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:release
 
 ```http
 POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
+PUT /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs
 GET /api/v1/video-tracker-jobs?project_id=&status=&model_key=&cursor=&limit=
 GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
@@ -353,6 +355,12 @@ queued -> running -> pending_review -> accepted | discarded
 
 `video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。两个决策都写审计动作。
 
+`job_kind` 区分普通 `tracking` 与人工 Mask `correction`。后者同时保存 `track_id_snapshot` 和 `correction_frame`，prompt 冻结源 version / digest、segment lease、方向窗口和精确 backend / pool / model。同一 task + track 的活跃 correction 由 partial unique index 串行化；取消或终态释放租约。correction 不允许整批 accept / discard，只允许带 revision、源版本与显式窗口的局部 decision。
+
+纠错保存使用独立的 Mask keyframe PUT，并强制 `If-Match`。保存先于 job 创建，失败重试不得重复写关键帧。原生 correction 每方向只能执行一个 backend window；双向在人工帧处分成两窗，seed frame 不进入 staged candidate。仅 bbox seed 可用时必须由用户确认，并把 fallback 原因写入 lineage。
+
+staged candidate 的保留期为 24 小时。每日内容 GC 先清理过期 staged result：待审 / 部分审阅转为 discarded，cancelled 保持 cancelled；随后对象引用扫描才允许删除已超过宽限期且不再被 annotation、prediction、有效 decision 或 staged job 引用的 RLE。
+
 接受时先在同一事务内复核 task、assignment、segment lease 和按 UUID 排序锁定后的全部源 annotation，再把主实例回填到源、把额外 `instance_id` 创建为同类轨迹；人工关键帧不会被 prediction 覆盖。接受成功与丢弃都会清空 `staged_result`，后者不修改 annotation。该数据边界与批量预标的 `Prediction` 不同，见[视频 AI 追踪架构](../concepts/video-ai-tracking)。
 
 SAM video adapter 会调用能力匹配的 ML Backend `/predict`：
@@ -429,6 +437,11 @@ Prometheus 指标：
 - `video_frame_cache_total{result,format}`
 - `video_frame_extraction_seconds{outcome,format}`
 - `video_frame_asset_bytes{asset_type}`
+- `mask_ai_correction_jobs{status}`
+- `mask_ai_correction_oldest_age_seconds{status}`
+- `mask_ai_staged_mask_references{job_kind}`
+- `mask_ai_accept_decisions{state}`
+- `mask_ai_backend_inference_total{service,model_role,operation,fallback_reason,candidate_count,outcome}`
 
 ## 运维注意
 

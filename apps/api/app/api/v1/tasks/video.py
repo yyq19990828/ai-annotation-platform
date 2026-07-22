@@ -1,3 +1,4 @@
+import time
 import uuid
 from typing import Literal
 from botocore.exceptions import BotoCoreError, ClientError
@@ -69,6 +70,7 @@ from app.services.video_tracking.jobs import (
     save_video_mask_keyframe,
 )
 from app.services.task_lock import TaskLockService
+from app.observability.metrics import observe_mask_ai_phase, record_mask_ai_operation
 
 
 from app.api.v1.tasks._shared import (
@@ -753,14 +755,37 @@ async def create_video_mask_correction(
     await _assert_task_visible(db, task, current_user)
     _assert_task_editable(task, current_user)
     ctx = await build_context_from_task(db, task)
-    body = await create_video_mask_correction_job(
-        db,
-        task=task,
-        ctx=ctx,
-        annotation_id=annotation_id,
-        payload=payload,
-        user=current_user,
-    )
+    commit_started = time.monotonic()
+    try:
+        body = await create_video_mask_correction_job(
+            db,
+            task=task,
+            ctx=ctx,
+            annotation_id=annotation_id,
+            payload=payload,
+            user=current_user,
+        )
+    except HTTPException as exc:
+        reason = exc.detail.get("reason") if isinstance(exc.detail, dict) else None
+        outcome = "conflict" if exc.status_code == 409 else "error"
+        observe_mask_ai_phase(
+            operation="correction",
+            phase="commit",
+            outcome=outcome,
+            duration_seconds=time.monotonic() - commit_started,
+        )
+        record_mask_ai_operation(
+            operation="correction",
+            prompt_family="correction_frame",
+            output_geometry="mask",
+            fallback_reason=(
+                "mask_prompt_unsupported"
+                if reason == "mask_prompt_unsupported"
+                else None
+            ),
+            outcome=outcome,
+        )
+        raise
     correction = (body.prompt or {}).get("correction") or {}
     routing = correction.get("routing") or {}
     await AuditService.log(
@@ -790,8 +815,54 @@ async def create_video_mask_correction(
             "fallback_reason": correction.get("fallback_reason"),
         },
     )
-    await db.commit()
-    return await enqueue_tracker_job(db, body.id, fail_closed=True)
+    try:
+        await db.commit()
+        enqueued = await enqueue_tracker_job(db, body.id, fail_closed=True)
+    except HTTPException as exc:
+        outcome = "conflict" if exc.status_code == 409 else "error"
+        observe_mask_ai_phase(
+            operation="correction",
+            phase="commit",
+            outcome=outcome,
+            duration_seconds=time.monotonic() - commit_started,
+        )
+        record_mask_ai_operation(
+            operation="correction",
+            prompt_family="correction_frame",
+            output_geometry="mask",
+            fallback_reason=correction.get("fallback_reason"),
+            outcome=outcome,
+        )
+        raise
+    except Exception:
+        observe_mask_ai_phase(
+            operation="correction",
+            phase="commit",
+            outcome="error",
+            duration_seconds=time.monotonic() - commit_started,
+        )
+        record_mask_ai_operation(
+            operation="correction",
+            prompt_family="correction_frame",
+            output_geometry="mask",
+            fallback_reason=correction.get("fallback_reason"),
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation="correction",
+        phase="commit",
+        outcome="success",
+        duration_seconds=time.monotonic() - commit_started,
+    )
+    record_mask_ai_operation(
+        operation="correction",
+        prompt_family="correction_frame",
+        output_geometry="mask",
+        fallback_reason=correction.get("fallback_reason"),
+        outcome="success",
+    )
+    return enqueued
 
 
 @router.post(

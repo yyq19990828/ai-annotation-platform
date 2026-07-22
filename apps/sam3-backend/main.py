@@ -94,6 +94,7 @@ from observability import (
     init_perfhud_collectors,
     record_cache,
     record_inference,
+    record_mask_ai_backend_inference,
     sample_perfhud,
     shutdown_perfhud_collectors,
     update_cache_size,
@@ -1771,18 +1772,44 @@ async def predict(request: Request):
         # v0.21.26 · 按 model_key 分派: sam3_video_interactive → PVS 点/框 memory 追踪,
         # 否则 (sam3_video) → multiplex 文本追踪。
         if ctx.get("type") == "video_tracker":
-            if ctx.get("model_key") == "sam3_video_interactive":
-                result = await _run_pvs_video_tracker(
-                    task["file_path"],
-                    ctx,
-                    operation,
+            correction = ((ctx.get("prompt") or {}).get("correction") or {})
+            model_role = (
+                "sam3_pvs"
+                if ctx.get("model_key") == "sam3_video_interactive"
+                else "sam3_multiplex"
+            )
+            tracker_started = time.perf_counter()
+            try:
+                if ctx.get("model_key") == "sam3_video_interactive":
+                    result = await _run_pvs_video_tracker(
+                        task["file_path"],
+                        ctx,
+                        operation,
+                    )
+                else:
+                    result = await _run_video_tracker(
+                        task["file_path"],
+                        ctx,
+                        operation,
+                    )
+            except Exception:
+                record_mask_ai_backend_inference(
+                    model_role=model_role,
+                    operation="correction" if correction else "tracking",
+                    fallback_reason=correction.get("fallback_reason"),
+                    candidate_count=0,
+                    outcome="error",
+                    duration_seconds=time.perf_counter() - tracker_started,
                 )
-            else:
-                result = await _run_video_tracker(
-                    task["file_path"],
-                    ctx,
-                    operation,
-                )
+                raise
+            record_mask_ai_backend_inference(
+                model_role=model_role,
+                operation="correction" if correction else "tracking",
+                fallback_reason=correction.get("fallback_reason"),
+                candidate_count=len(result),
+                outcome="success",
+                duration_seconds=time.perf_counter() - tracker_started,
+            )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return PredictionResult(
                 result=result,

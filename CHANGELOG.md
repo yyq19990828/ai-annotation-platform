@@ -36,6 +36,8 @@
 
 ## [Unreleased]
 
+## [0.23.8] - 2026-07-22
+
 ### Added
 - **原生 Mask AI 交互协议地基**. 扩展 ML capability 受控词表与共享协议包，冻结原生 COCO RLE
   候选、Mask prompt、正负 scribble、视频纠错帧、空结果诊断和显式 fallback lineage；Tracker
@@ -55,6 +57,11 @@
   刷新后恢复；全部候选决定后才结束审核，新发现实例在分批接受时保持同一轨迹映射。
 - **视频 Mask 纠错与定向重传播**. 当前帧可先以人工 RLE 关键帧保存，再选择向前、向后或双向窗口
   生成待审候选；Grounded-SAM2 与 SAM3 PVS 消费原生 Mask seed，SAM3 Multiplex 只在用户明示确认后使用 bbox fallback。
+- **Mask AI 发布可观测性**. 新增低基数操作与阶段耗时、纠错 job / staged 引用 / 幂等决定库存指标，
+  Prometheus 告警覆盖失败率、冲突率、纠错排队与待审积压；平台和 ML Backend Grafana 面板可分别
+  定位 upload / inference / decode / encode / commit 与 grounded-SAM2、SAM3 Multiplex / PVS 推理。
+- **原生 Mask AI 生命周期决策（ADR-0053）**. 冻结瞬态候选、加密 logits 令牌、服务端原子接受、
+  Tracker 局部决定、人工纠错关键帧、定向重传播与 staged 引用 TTL 的统一边界。
 
 ### Changed
 - **交互候选代理返回路由 lineage**. 图片与视频单帧响应补充请求 backend、实际实例、
@@ -75,6 +82,10 @@
   payload 重试；成功空结果才结束上一轮候选，避免瞬时网络故障中断精修。
 - **纠错作业失败恢复**. 人工关键帧保存后入队失败会释放活跃作业租约；可重试错误只重建作业，
   不重复保存关键帧。WebSocket 断线后使用有界退避轮询，取消时立即清除候选并忽略迟到状态。
+- **Tracker staged Mask 引用回收**. 待审或已取消的候选超过 24 小时后会清空 staged result 并释放
+  内容引用与同轨纠错租约；待审 job 转为 discarded，已取消 job 保持取消状态，不再无限阻塞 GC。
+- **HTTP 指标路由基数**. 请求计数与延迟现统一按 FastAPI 路由模板聚合，未知 API 归入固定
+  `/api/unmatched`，不再为含 UUID 的真实 URL 创建无界时序。
 
 ### Security
 - **原生 Mask 安全代理**. 平台按同一目标 model 同时检查 prompt 与输出能力，重建 prompt
@@ -84,10 +95,12 @@
   类别和源版本；签名 receipt 绑定像素、prompt 摘要、模型与历史路由，跨 actor 回放和同 key 异请求
   均稳定拒绝，普通日志与审计不记录 RLE counts。
 - **Mask prompt 鉴权与短期 logits**. 浏览器只提交源 annotation ID 与版本；平台复核任务、帧、锁和
-  版本后解析 RLE，并以绑定 actor、backend、model、prompt revision 和候选的短期签名封装连接多轮
+  版本后解析 RLE，并以绑定 actor、backend、model、prompt revision 和候选的短期加密鉴权令牌连接多轮
   推理。输入正文、解压结果、笔迹数量和点数均有上限，日志不记录 RLE 或 logits。
 - **视频局部决策并发边界**. 每次接受或拒绝都在同一事务内复核 job revision、源轨迹版本、任务与
   assignment 状态、segment lease 和标注锁；重复同一决定幂等回放，冲突返回稳定 reason 并保留候选。
+- **Mask AI 日志与指标隐私守卫**. 普通日志不再记录文本提示、RLE counts、scribble 点集、logits 或
+  对象 key；指标对未知 label 强制归一化，HTTP path 只取静态路由模板，避免正文泄露和高基数放大。
 
 ## [0.23.7] - 2026-07-21
 

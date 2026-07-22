@@ -20,6 +20,8 @@ def test_mask_session_roundtrip_and_expiry() -> None:
     claims = verify_ai_mask_session(token, now=100)
     assert claims["raw"] == raw
     assert claims["frame_index"] == 4
+    assert raw not in token
+    assert "task-1" not in token
 
     with pytest.raises(AiMaskSessionError) as caught:
         verify_ai_mask_session(token, now=100 + MASK_SESSION_TTL_SECONDS)
@@ -29,7 +31,7 @@ def test_mask_session_roundtrip_and_expiry() -> None:
 def test_mask_session_rejects_tampering() -> None:
     raw = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
     token = issue_ai_mask_session(raw, {"task_id": "task-1"}, now=100)
-    encoded, signature = token.split(".", 1)
+    replacement = "A" if token[-1] != "A" else "B"
     with pytest.raises(AiMaskSessionError) as caught:
-        verify_ai_mask_session(f"{encoded[:-1]}A.{signature}", now=100)
+        verify_ai_mask_session(f"{token[:-1]}{replacement}", now=100)
     assert caught.value.reason == "invalid_mask_session"

@@ -576,11 +576,11 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 请求返回首次完整响应；同 key 不同请求或过期 decision 返回 409。失败事务最多留下受宽限期 GC
 管理的未引用内容对象，不会留下半个预测或标注。
 
-> **`mask_input` 回灌（多轮精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次追加点、框或笔迹时提升 Mask 稳定性与边界质量。backend 把本轮 `low_res_masks` 编码为内部 raw logits；平台代理将其封装成短期签名 token 后才作为 `mask_input_next` 返回。浏览器只保存并原样回传 token，不能读取或自行构造 raw logits；平台复核 task、frame、backend、model、模型变体、源 Mask、origin revision 与候选后再解封给 backend。
+> **`mask_input` 回灌（多轮精修增量）**：SAM2/SAM3 的 `predict()` 接收上一轮 256×256 low-res logits 回灌，多次追加点、框或笔迹时提升 Mask 稳定性与边界质量。backend 把本轮 `low_res_masks` 编码为内部 raw logits；平台代理将其封装成五分钟 Fernet 加密鉴权 token 后才作为 `mask_input_next` 返回。浏览器只保存并原样回传 token，不能读取或自行构造 raw logits；平台复核 task、frame、backend、model、模型变体、源 Mask、origin revision 与候选后再解封给 backend。token 不写数据库、对象存储、审计详情或普通日志，部署 secret 轮换会立即使旧会话失效。
 >
 > - **内部编码**：`float16(256×256)` → `tobytes` → `zlib(level=6)` → 前缀 magic `m1` → `base64(ascii)`；解压后必须精确为 256×256、有限并位于 `[-32,32]`。该 raw 串只存在于平台代理与 backend 之间。
 > - **候选边界**：`multimask_output=true` 的多候选存在 index 歧义，不返回下一轮 token；已存 Mask seed 或单候选 point / box / scribble 精修可以返回 token，并跨这三种工具继续同一会话。
-> - **失效与恢复**：接受、取消、切题、切帧、切 backend / model / 变体、TTL 到期都会释放 token。坏、过期或绑定不一致的 token 由平台稳定拒绝；工作台清除旧 token，并在仍有已授权源 Mask 时保留笔迹、禁用旧候选接受并允许重试。
+> - **失效与恢复**：接受、取消、切题、切帧、切 backend / model / 变体、五分钟 TTL 到期都会释放 token。篡改、过期或绑定不一致的 token 由平台稳定拒绝；工作台清除旧 token，并在仍有已授权源 Mask 时保留笔迹、禁用旧候选接受并允许重试。平台不维护服务端会话缓存，浏览器丢失 token 后重新推理。
 
 > **`type=mask` / `type=scribble`**：浏览器只提交源 annotation ID 与版本，平台完成权限、任务 / 帧、锁、版本和内容摘要校验后，才把有界 inline RLE 交给 backend。`scribble` 使用归一化折线；`width` 是相对图片短边的完整笔宽，后画笔迹覆盖先画笔迹。每请求最多 64 条、8,192 个 wire 点和 2,000,000 个累计栅格工作像素；adapter 最多确定性采样 512 个正负点交给底层 SAM。只有负笔迹时必须同时有已授权 Mask seed 或有效 session token。
 

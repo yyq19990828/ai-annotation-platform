@@ -300,6 +300,15 @@ jobs:
       - name: Run E2E
         working-directory: apps/web
         run: pnpm test:e2e
+      - name: Run Raster Mask readonly matrix
+        working-directory: apps/web
+        run: pnpm test:e2e:mask-readonly
+      - name: Run Raster Mask native matrix
+        working-directory: apps/web
+        run: pnpm test:e2e:mask-native
+      - name: Run native Mask AI and local review matrix
+        working-directory: apps/web
+        run: pnpm test:e2e:mask-ai-native
       - uses: actions/upload-artifact@v4
         if: always()
         with:

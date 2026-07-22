@@ -11043,6 +11043,18 @@
             "title": "Is Interactive",
             "type": "boolean"
           },
+          "max_window_frames": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Window Frames"
+          },
           "modality": {
             "anyOf": [
               {
@@ -12851,6 +12863,18 @@
             "default": false,
             "title": "Is Interactive",
             "type": "boolean"
+          },
+          "max_window_frames": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Window Frames"
           },
           "modality": {
             "anyOf": [
@@ -23759,6 +23783,143 @@
         "title": "VideoManifestV2Response",
         "type": "object"
       },
+      "VideoMaskCorrectionRequest": {
+        "properties": {
+          "allow_bbox_fallback": {
+            "default": false,
+            "title": "Allow Bbox Fallback",
+            "type": "boolean"
+          },
+          "backend_id": {
+            "format": "uuid",
+            "title": "Backend Id",
+            "type": "string"
+          },
+          "corrected_mask_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Corrected Mask Digest",
+            "type": "string"
+          },
+          "correction_frame": {
+            "minimum": 0.0,
+            "title": "Correction Frame",
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "forward",
+              "backward",
+              "bidirectional"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "from_frame": {
+            "minimum": 0.0,
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "model_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Model Id",
+            "type": "string"
+          },
+          "model_key": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Model Key",
+            "type": "string"
+          },
+          "sam_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sam Variant"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "source_annotation_version": {
+            "minimum": 1.0,
+            "title": "Source Annotation Version",
+            "type": "integer"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "to_frame": {
+            "minimum": 0.0,
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "correction_frame",
+          "from_frame",
+          "to_frame",
+          "model_key",
+          "model_id",
+          "backend_id",
+          "direction",
+          "source_annotation_version",
+          "corrected_mask_digest"
+        ],
+        "title": "VideoMaskCorrectionRequest",
+        "type": "object"
+      },
+      "VideoMaskKeyframeSaveRequest": {
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "mask": {
+            "$ref": "#/components/schemas/CocoRleMaskRef"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mask"
+        ],
+        "title": "VideoMaskKeyframeSaveRequest",
+        "type": "object"
+      },
       "VideoMetadata": {
         "properties": {
           "codec": {
@@ -25206,6 +25367,17 @@
             ],
             "title": "Completed At"
           },
+          "correction_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Frame"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -25259,6 +25431,15 @@
           "id": {
             "format": "uuid",
             "title": "Id",
+            "type": "string"
+          },
+          "job_kind": {
+            "default": "tracking",
+            "enum": [
+              "tracking",
+              "correction"
+            ],
+            "title": "Job Kind",
             "type": "string"
           },
           "model_key": {
@@ -25343,6 +25524,17 @@
             ],
             "title": "Touched Annotation Ids"
           },
+          "track_id_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id Snapshot"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -25406,6 +25598,33 @@
             "title": "Candidate Total",
             "type": "integer"
           },
+          "correction_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Frame"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "backward",
+                  "bidirectional"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
           "expected_source_versions": {
             "additionalProperties": {
               "type": "integer"
@@ -25416,6 +25635,21 @@
             "title": "Expected Source Versions",
             "type": "object"
           },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "from_frame": {
+            "title": "From Frame",
+            "type": "integer"
+          },
           "grid_step": {
             "default": 1,
             "title": "Grid Step",
@@ -25424,6 +25658,15 @@
           "job_id": {
             "format": "uuid",
             "title": "Job Id",
+            "type": "string"
+          },
+          "job_kind": {
+            "default": "tracking",
+            "enum": [
+              "tracking",
+              "correction"
+            ],
+            "title": "Job Kind",
             "type": "string"
           },
           "job_revision": {
@@ -25436,12 +25679,32 @@
             "title": "Output Geometry",
             "type": "string"
           },
+          "protect_manual": {
+            "default": false,
+            "title": "Protect Manual",
+            "type": "boolean"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/VideoTrackerPreviewResult"
             },
             "title": "Results",
             "type": "array"
+          },
+          "seed_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "native_mask",
+                  "bbox"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed Mode"
           },
           "status": {
             "enum": [
@@ -25457,11 +25720,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "to_frame": {
+            "title": "To Frame",
+            "type": "integer"
           }
         },
         "required": [
           "job_id",
-          "status"
+          "status",
+          "from_frame",
+          "to_frame"
         ],
         "title": "VideoTrackerJobPreview",
         "type": "object"
@@ -26344,7 +26613,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.7"
+    "version": "0.23.8"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -43421,6 +43690,151 @@
           }
         ],
         "summary": "Get Reviewable Video Tracker Jobs",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs": {
+      "post": {
+        "operationId": "create_video_mask_correction_api_v1_tasks__task_id__video_tracks__annotation_id__correction_jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMaskCorrectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Video Mask Correction",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}": {
+      "put": {
+        "operationId": "save_video_mask_correction_keyframe_api_v1_tasks__task_id__video_tracks__annotation_id__mask_keyframes__frame_index__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMaskKeyframeSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Video Mask Correction Keyframe",
         "tags": [
           "tasks"
         ]

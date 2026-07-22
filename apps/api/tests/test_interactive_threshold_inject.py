@@ -65,6 +65,24 @@ def patched_client():
     """Mock MLBackendClient.predict_interactive 抓取调用上下文。"""
     captured: dict = {}
 
+    async def fake_setup(self):
+        return {
+            "models": [
+                {
+                    "id": "interactive",
+                    "task": "interactive_seg",
+                    "is_interactive": True,
+                    "supported_prompts": ["point", "interactive_box", "text"],
+                    "supported_inputs": [
+                        "full_image",
+                        "point_prompt",
+                        "bbox_prompt",
+                    ],
+                    "supported_geometric_outputs": ["polygon"],
+                }
+            ]
+        }
+
     async def fake_predict_interactive(self, task_data, context):
         captured["task_data"] = task_data
         captured["context"] = context
@@ -78,9 +96,15 @@ def patched_client():
             model_load_ms=123,
         )
 
-    with patch(
-        "app.services.ml_client.MLBackendClient.predict_interactive",
-        new=fake_predict_interactive,
+    with (
+        patch(
+            "app.services.ml_client.MLBackendClient.predict_interactive",
+            new=fake_predict_interactive,
+        ),
+        patch(
+            "app.services.ml_client.MLBackendClient.setup",
+            new=fake_setup,
+        ),
     ):
         yield captured
 

@@ -1,16 +1,15 @@
-"""Short-lived signed envelope for backend low-resolution Mask logits."""
+"""Short-lived encrypted envelope for backend low-resolution Mask logits."""
 
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
-import hmac
 import json
 import time
 from typing import Any
 
 from aap_protocol_v2 import MAX_LOW_RES_MASK_INPUT_CHARS, decode_low_res_mask
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import settings
 
@@ -27,20 +26,14 @@ class AiMaskSessionError(ValueError):
         self.reason = reason
 
 
-def _b64_encode(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).decode().rstrip("=")
-
-
-def _b64_decode(value: str) -> bytes:
-    return base64.b64decode(
-        value + "=" * (-len(value) % 4), altchars=b"-_", validate=True
-    )
-
-
 def _session_key() -> bytes:
     return hashlib.sha256(
         f"aap:ai-mask-session:v{_SESSION_VERSION}:{settings.secret_key}".encode()
     ).digest()
+
+
+def _session_cipher() -> Fernet:
+    return Fernet(base64.urlsafe_b64encode(_session_key()))
 
 
 def issue_ai_mask_session(
@@ -62,11 +55,15 @@ def issue_ai_mask_session(
         "raw": raw,
         **claims,
     }
-    encoded = _b64_encode(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-    )
-    signature = hmac.new(_session_key(), encoded.encode(), hashlib.sha256).digest()
-    token = f"{encoded}.{_b64_encode(signature)}"
+    token = _session_cipher().encrypt_at_time(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode(),
+        current_time=issued_at,
+    ).decode()
     if len(token) > MAX_MASK_SESSION_TOKEN_CHARS:
         raise ValueError("Mask session token exceeds the byte budget")
     return token
@@ -75,26 +72,39 @@ def issue_ai_mask_session(
 def verify_ai_mask_session(token: str, *, now: int | None = None) -> dict[str, Any]:
     if not isinstance(token, str) or len(token) > MAX_MASK_SESSION_TOKEN_CHARS:
         raise AiMaskSessionError("invalid_mask_session", "Mask session is invalid")
+    current = int(time.time() if now is None else now)
     try:
-        encoded, signature_text = token.split(".", 1)
-        signature = _b64_decode(signature_text)
-        expected = hmac.new(_session_key(), encoded.encode(), hashlib.sha256).digest()
-        if not hmac.compare_digest(signature, expected):
-            raise ValueError
-        payload = json.loads(_b64_decode(encoded))
+        payload = json.loads(
+            _session_cipher().decrypt_at_time(
+                token.encode(),
+                ttl=MASK_SESSION_TTL_SECONDS,
+                current_time=current,
+            )
+        )
     except (
-        ValueError,
+        InvalidToken,
         TypeError,
-        binascii.Error,
         json.JSONDecodeError,
         UnicodeDecodeError,
     ) as exc:
+        # Preserve a stable expiry reason for a valid token whose authenticated
+        # payload has simply exceeded the short session lifetime.
+        try:
+            payload = json.loads(_session_cipher().decrypt(token.encode()))
+        except (InvalidToken, TypeError, json.JSONDecodeError, UnicodeDecodeError):
+            raise AiMaskSessionError(
+                "invalid_mask_session", "Mask session is invalid"
+            ) from exc
+        expires_at = payload.get("exp") if isinstance(payload, dict) else None
+        if type(expires_at) is int and expires_at <= current:
+            raise AiMaskSessionError(
+                "mask_session_expired", "Mask session has expired"
+            ) from exc
         raise AiMaskSessionError("invalid_mask_session", "Mask session is invalid") from exc
     if not isinstance(payload, dict) or payload.get("v") != _SESSION_VERSION:
         raise AiMaskSessionError("invalid_mask_session", "Mask session is invalid")
     issued_at = payload.get("iat")
     expires_at = payload.get("exp")
-    current = int(time.time() if now is None else now)
     if (
         type(issued_at) is not int
         or type(expires_at) is not int

@@ -50,45 +50,47 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
 
   const review = page.getByTestId("video-tracker-review-bar");
   await expect(review).toBeVisible({ timeout: 20_000 });
-  await expect(review).toContainText("已审 0/10");
+  await expect(review).toContainText("已审 0/20");
 
-  // 仅接受 A 的 F10-F11；B 与窗口外必须保持不变。
+  // 仅接受 A 的 F10-F15；B 与窗口外必须保持不变。
   await page.getByTestId("tracker-review-instance-B").click();
-  await setWindow(page, 10, 11);
+  await setWindow(page, 10, 15);
   const accepted = page.waitForResponse(
     (response) => decisionResponse(response) && response.status() === 200,
   );
   await page.getByTestId("tracker-review-accept").click();
   await accepted;
-  await expect(review).toContainText("已审 2/10");
+  await expect(review).toContainText("已审 6/20");
 
   let rows = await annotations(request, video.task_id, token);
   const sourceA = rows.find((item) => item.id === fixture.source_annotation_ids[0]);
   const sourceB = rows.find((item) => item.id === fixture.source_annotation_ids[1]);
-  expect(sourceA?.geometry.keyframes?.map((item) => item.frame_index)).toEqual([10, 11, 12]);
+  expect(sourceA?.geometry.keyframes?.map((item) => item.frame_index)).toEqual([
+    10, 11, 12, 13, 14, 15, 16,
+  ]);
   expect(sourceB?.geometry.keyframes?.map((item) => item.frame_index)).toEqual([9]);
 
   // 部分状态可跨刷新恢复。
   await page.reload();
   await expect(review).toBeVisible({ timeout: 20_000 });
-  await expect(review).toContainText("已审 2/10");
+  await expect(review).toContainText("已审 6/20");
 
-  // 仅拒绝 B 的 F10-F11；annotation 保持字节语义不变。
+  // 仅拒绝 B 的 F10-F15；annotation 保持字节语义不变。
   await page.getByTestId("tracker-review-instance-A").click();
-  await setWindow(page, 10, 11);
+  await setWindow(page, 10, 15);
   const rejected = page.waitForResponse(
     (response) => decisionResponse(response) && response.status() === 200,
   );
   await page.getByTestId("tracker-review-discard").click();
   await rejected;
-  await expect(review).toContainText("已审 4/10");
+  await expect(review).toContainText("已审 12/20");
   rows = await annotations(request, video.task_id, token);
   expect(rows.find((item) => item.id === fixture.source_annotation_ids[1])
     ?.geometry.keyframes?.map((item) => item.frame_index)).toEqual([9]);
 
-  // A/F12 是人工关键帧：第一次 409，确认后同 selector 以 override=true 成功。
+  // A/F16 是人工关键帧：第一次 409，确认后同 selector 以 override=true 成功。
   await page.getByTestId("tracker-review-instance-B").click();
-  await setWindow(page, 12, 12);
+  await setWindow(page, 16, 16);
   const statuses: number[] = [];
   page.on("response", (response) => {
     if (decisionResponse(response)) statuses.push(response.status());
@@ -96,11 +98,11 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("tracker-review-accept").click();
   await expect.poll(() => statuses, { timeout: 15_000 }).toEqual([409, 200]);
-  await expect(review).toContainText("已审 5/10");
+  await expect(review).toContainText("已审 13/20");
 
   rows = await annotations(request, video.task_id, token);
   const overridden = rows.find((item) => item.id === fixture.source_annotation_ids[0]);
-  expect(overridden?.geometry.keyframes?.find((item) => item.frame_index === 12)?.source)
+  expect(overridden?.geometry.keyframes?.find((item) => item.frame_index === 16)?.source)
     .toBe("prediction");
 
   const preview = await request.get(
@@ -110,8 +112,8 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
   expect(preview.ok(), await preview.text()).toBe(true);
   expect(await preview.json()).toMatchObject({
     status: "partially_reviewed",
-    candidate_pending: 5,
-    candidate_accepted: 3,
-    candidate_rejected: 2,
+    candidate_pending: 7,
+    candidate_accepted: 7,
+    candidate_rejected: 6,
   });
 });

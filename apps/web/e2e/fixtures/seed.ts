@@ -121,6 +121,11 @@ export interface SeedNativeMaskCandidateData {
     size: [number, number];
     counts: number[];
   };
+  rles: Array<{
+    encoding: "coco_rle";
+    size: [number, number];
+    counts: number[];
+  }>;
 }
 
 export interface SeedTrackerReviewData {
@@ -221,7 +226,7 @@ export class SeedAPI {
   async nativeMaskCandidate(
     taskId: string,
     options?: {
-      variant?: "default" | "negative_scribble";
+      variant?: "default" | "negative_scribble" | "multimask_donut";
       promptFamily?: "point" | "scribble";
       negativeScribbles?: number;
       promptSource?: {

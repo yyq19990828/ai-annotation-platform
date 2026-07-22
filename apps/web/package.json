@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.23.7",
+  "version": "0.23.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:mask-readonly": "PLAYWRIGHT_RASTER_MASK_MATRIX=readonly PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 PLAYWRIGHT_API_BASE=http://127.0.0.1:8010 playwright test e2e/tests/raster-mask-native.spec.ts --project=chromium",
     "test:e2e:mask-native": "PLAYWRIGHT_RASTER_MASK_MATRIX=native PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 PLAYWRIGHT_API_BASE=http://127.0.0.1:8010 playwright test e2e/tests/raster-mask-native.spec.ts --project=chromium",
+    "test:e2e:mask-ai-native": "PLAYWRIGHT_RASTER_MASK_MATRIX=native PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 PLAYWRIGHT_API_BASE=http://127.0.0.1:8010 playwright test e2e/tests/native-mask-ai.spec.ts e2e/tests/video-tracker-local-review.spec.ts --project=chromium",
     "screenshots": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light",
     "screenshots:dark": "playwright test --config=playwright.screenshots.config.ts --project=desktop-dark",
     "screenshots:matrix": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light --project=desktop-dark --project=mobile",

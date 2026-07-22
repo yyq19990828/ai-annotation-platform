@@ -3,7 +3,7 @@ audience: [ops, dev]
 type: reference
 since: v0.8.7
 status: stable
-last_reviewed: 2026-07-21
+last_reviewed: 2026-07-22
 ---
 
 # 可观测性 / 运维监控
@@ -14,7 +14,7 @@ FastAPI `/metrics` 暴露 Prometheus metrics。超管也可以直接打开 `/adm
 
 | Metric | 类型 | Labels | 用途 |
 |---|---|---|---|
-| `http_requests_total` | Counter | `method`, `path`, `status_code` | 请求 QPS / 错误率 |
+| `http_requests_total` | Counter | `method`, `path`, `status_code` | 按路由模板统计请求 QPS / 错误率 |
 | `http_request_duration_seconds` | Histogram | `method`, `path` | 请求延迟分位（p50 / p95 / p99） |
 | `ml_backend_request_duration_seconds` | Histogram | `backend_id`, `outcome` | ML Backend 调用延迟 |
 | `celery_queue_length` | Gauge | `queue` | 各队列堆积（default / ml / media / audit / events） |
@@ -22,6 +22,13 @@ FastAPI `/metrics` 暴露 Prometheus metrics。超管也可以直接打开 `/adm
 | `raster_mask_content_operations_total` | Counter | `operation`, `outcome` | Mask 内容加载、存储与校验结果 |
 | `raster_mask_content_errors_total` | Counter | `operation`, `reason` | Mask 内容错误的固定原因分类 |
 | `raster_mask_active_geometries` | Gauge | `kind` | 活跃图片 Mask 标注与含 Mask 预测数量 |
+| `mask_ai_operations_total` | Counter | 受控操作、提示、输出、候选、决定、降级与结果 | Mask AI 成功、失败与冲突率 |
+| `mask_ai_phase_duration_seconds` | Histogram | `operation`, `phase`, `outcome` | Mask AI 各阶段耗时 |
+| `mask_ai_correction_jobs` | Gauge | `status` | 视频 Mask 纠错 job 库存 |
+| `mask_ai_correction_oldest_age_seconds` | Gauge | `status` | 最老活跃纠错 job 年龄 |
+| `mask_ai_staged_mask_references` | Gauge | `job_kind` | Tracker staged Mask 引用库存 |
+| `mask_ai_accept_decisions` | Gauge | `state` | 原生 Mask 接受幂等快照库存 |
+| `mask_ai_oldest_expired_decision_age_seconds` | Gauge | — | 最老过期幂等快照积压年龄 |
 
 定义在 `apps/api/app/observability/metrics.py` 与 `apps/api/app/main.py:108`。
 
@@ -68,6 +75,48 @@ raster_mask_active_geometries
 
 ---
 
+## Mask AI 指标与隐私边界
+
+`mask_ai_operations_total` 只接受固定低基数词表：
+
+- `operation`：`single_frame`、`refine`、`correction`；
+- `prompt_family`：`point`、`bbox`、`mask`、`scribble`、`text`、`exemplar`、
+  `correction_frame`、`unknown`；
+- `output_geometry`：`mask`、`polygon`、`bbox`、`unknown`；
+- `candidate_count`：`0`、`1`、`2_3`、`4_10`、`11_plus`；
+- `decision`：`none`、`accept`、`reject`、`cancel`；
+- `fallback_reason`：`none`、`mask_prompt_unsupported`、`unknown`；
+- `outcome`：`success`、`error`、`conflict`。
+
+任何未知调用值都会归一化，不能把 task、annotation、backend、object key、候选摘要或用户提示正文
+带入 label。HTTP 指标的 `path` 同样只使用 FastAPI 路由模板；未匹配的 `/api/` 请求统一归入
+`/api/unmatched`，不会为 UUID 路径创建时序。
+
+阶段耗时的定义如下：
+
+| `phase` | 边界 |
+|---|---|
+| `upload` | 视频当前帧完成有界读取后，上传临时帧到对象存储 |
+| `inference` | 平台调用实际路由到的 ML Backend |
+| `decode` | 校验并归一化 backend 响应、RLE 和诊断 |
+| `encode` | 生成平台响应、候选签名与短期会话令牌 |
+| `commit` | 接受候选、局部决定或纠错 job 状态写入数据库并提交 |
+
+库存 Gauge 在 API `/metrics` scrape 时从 PostgreSQL 刷新，并为所有固定 status / kind / state
+显式输出零值。查询失败时保留上次成功值并让 scrape 继续返回；排查时不要把陈旧值理解为实时零。
+`mask_ai_correction_jobs` 区分 `queued`、`running`、`pending_review`、`partially_reviewed`、
+`accepted`、`discarded`、`failed`、`cancelled`；待审 staged candidate 超过 24 小时会由每日 GC
+释放引用，待审 job 转为 `discarded`，已取消 job 保持 `cancelled`。
+
+平台与 SAM backend 的普通日志不写完整图片、RLE counts、scribble 点集、文本提示或 logits；
+`mask_input_next` 是加密且鉴权的五分钟令牌，只存在于当前浏览器会话和请求响应，不持久化。
+
+预置告警覆盖：操作失败率、冲突率、纠错排队 / 运行超时、待审积压、过期幂等快照积压和固定
+库存序列缺失。`Anno Overview` 展示平台操作、阶段 p95、纠错状态 / 年龄、staged 引用和决定库存；
+`ML Backends` 展示 backend 侧 Mask AI 请求速率与推理 p95。
+
+---
+
 ## 1. 本地启动监控栈
 
 本地监控栈通过 docker-compose `monitoring` profile 启动（默认不启动，避免 dev 多吃约 200 MB）：
@@ -85,7 +134,8 @@ Grafana 启动时自动 provision：
 - Dashboard JSON `Anno Overview`（`infra/grafana/dashboards/anno-overview.json`）
 
 打开 Grafana → Dashboards → Anno → Anno Overview，可查看 HTTP rate / HTTP p95 /
-ML p50/p95/p99 / Celery queue / Celery worker heartbeat，以及 Raster Mask 错误速率、操作速率和活跃库存。
+ML p50/p95/p99 / Celery queue / Celery worker heartbeat、Raster Mask 内容指标，以及 Mask AI 操作、
+阶段延迟、纠错 job、staged 引用与决定库存。
 
 > Linux 上 `host.docker.internal` 默认未解析；docker-compose.yml 已显式 `extra_hosts: host.docker.internal:host-gateway`。如果 Docker 版本太旧不支持，把 `infra/prometheus/prometheus.yml` 中的 target 改成宿主机 LAN IP。
 
@@ -134,6 +184,8 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 | `embedding_cache_hits_total` / `_misses_total` / `embedding_cache_size` | Counter/Gauge | embedding cache 命中与容量 |
 | `container_cpu_percent` / `container_memory_percent` | Gauge | 容器 CPU / 内存 |
 | `video_tracker_*`（仅 grounded-sam2） | Counter/Histogram | 视频追踪帧数 / 延迟 |
+| `mask_ai_backend_inference_total` | Counter | 视频追踪 / 纠错调用、候选桶、显式降级与结果 |
+| `mask_ai_backend_inference_seconds` | Histogram | grounded-SAM2、SAM3 multiplex / PVS 的追踪 / 纠错推理延迟 |
 
 > backend 在独立 GPU 机、prometheus 不在同网时，把 `ml-backends` job 的 `http_sd_configs` 注释掉，改用同 job 里注释好的 static 兜底（target 填 prometheus 视角可达地址）。
 >

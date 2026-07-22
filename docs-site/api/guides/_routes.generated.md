@@ -524,6 +524,8 @@
 | GET | `/{task_id}/video/frames/{frame_index}` |
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
+| PUT | `/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}` |
+| POST | `/{task_id}/video/tracks/{annotation_id}/correction-jobs` |
 | POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
 | POST | `/{task_id}/video:track` |
 
@@ -572,4 +574,4 @@
 
 ---
 
-_共 54 模块 / 315 路由_
+_共 54 模块 / 317 路由_
