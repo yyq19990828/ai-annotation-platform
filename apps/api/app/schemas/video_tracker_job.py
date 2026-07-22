@@ -174,9 +174,13 @@ class VideoTrackerJobOut(BaseModel):
 class VideoTrackerDecisionRequest(BaseModel):
     """Select and decide an explicit target/window slice of staged candidates."""
 
-    instance_ids: list[str] = Field(min_length=1, max_length=256)
-    from_frame: int = Field(ge=0)
-    to_frame: int = Field(ge=0)
+    instance_ids: list[str] | None = Field(default=None, min_length=1, max_length=256)
+    from_frame: int | None = Field(default=None, ge=0)
+    to_frame: int | None = Field(default=None, ge=0)
+    qc_issue_id: UUID | None = None
+    candidate_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
     decision: Literal["accept", "reject"]
     expected_source_versions: dict[UUID, int] = Field(default_factory=dict)
     job_revision: int = Field(ge=1)
@@ -184,7 +188,9 @@ class VideoTrackerDecisionRequest(BaseModel):
 
     @field_validator("instance_ids")
     @classmethod
-    def _unique_instance_ids(cls, value: list[str]) -> list[str]:
+    def _unique_instance_ids(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
         normalized = [item.strip() for item in value]
         if any(not item or len(item) > 128 for item in normalized):
             raise ValueError("instance_ids must contain non-empty values <= 128 chars")
@@ -194,6 +200,25 @@ class VideoTrackerDecisionRequest(BaseModel):
 
     @model_validator(mode="after")
     def _valid_window(self) -> "VideoTrackerDecisionRequest":
+        region_selector = self.qc_issue_id is not None or self.candidate_digest is not None
+        legacy_selector = any(
+            value is not None
+            for value in (self.instance_ids, self.from_frame, self.to_frame)
+        )
+        if region_selector:
+            if self.qc_issue_id is None or self.candidate_digest is None:
+                raise ValueError(
+                    "qc_issue_id and candidate_digest must be provided together"
+                )
+            if legacy_selector:
+                raise ValueError(
+                    "QC issue and instance/window decision selectors are mutually exclusive"
+                )
+            return self
+        if self.instance_ids is None or self.from_frame is None or self.to_frame is None:
+            raise ValueError(
+                "instance_ids, from_frame and to_frame are required together"
+            )
         if self.from_frame > self.to_frame:
             raise ValueError("from_frame must be <= to_frame")
         return self

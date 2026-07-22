@@ -183,6 +183,37 @@ async def _assert_can_cancel(
     )
 
 
+async def _assert_can_decide(
+    db: AsyncSession,
+    task: Task,
+    body: VideoTrackerJob,
+    user: User,
+) -> None:
+    project = await db.get(Project, task.project_id)
+    if task.status == "completed":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_locked", "status": task.status},
+        )
+    if project and is_privileged_for_project(user, project):
+        return
+    if task.status == "review":
+        if task.reviewer_id == user.id and task.reviewer_claimed_at is not None:
+            return
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "task_review_not_claimed_by_user",
+                "reviewer_id": str(task.reviewer_id) if task.reviewer_id else None,
+            },
+        )
+    if body.created_by == user.id:
+        return
+    raise HTTPException(
+        status_code=403, detail="Video tracker job belongs to another user"
+    )
+
+
 @router.get("", response_model=VideoTrackerJobsResponse)
 async def list_video_tracker_jobs(
     project_id: uuid.UUID | None = Query(default=None),
@@ -490,10 +521,10 @@ async def decide_video_tracker_candidates(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    """Accept or reject an explicit instance/window candidate slice."""
+    """Accept or reject an instance/window or QC issue region selector."""
 
     task, visible = await _load_visible_job_task_row(db, job_id, current_user)
-    await _assert_can_cancel(db, task, visible, current_user)
+    await _assert_can_decide(db, task, visible, current_user)
     project = await db.get(Project, task.project_id)
     staged = visible.staged_result or {}
     output_geometry = str(staged.get("output_geometry") or "unknown")

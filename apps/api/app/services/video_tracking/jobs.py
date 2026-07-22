@@ -1196,6 +1196,8 @@ async def decide_tracker_job(
             decision=body.decision,
             expected_source_versions=body.expected_source_versions,
             job_revision=body.job_revision,
+            qc_issue_id=body.qc_issue_id,
+            candidate_digest=body.candidate_digest,
             override_manual=body.override_manual,
             actor_id=actor_id,
             privileged=privileged,
@@ -1319,7 +1321,12 @@ async def list_reviewable_tracker_jobs(
         ),
         VideoTrackerJob.staged_result.is_not(None),
     ]
-    if not await _is_privileged(db, task, user):
+    claimed_reviewer = bool(
+        task.status == "review"
+        and task.reviewer_id == user.id
+        and task.reviewer_claimed_at is not None
+    )
+    if not claimed_reviewer and not await _is_privileged(db, task, user):
         conditions.append(VideoTrackerJob.created_by == user.id)
     rows = (
         (

@@ -77,28 +77,20 @@ describe("VideoTrackerReviewBar", () => {
     }));
   });
 
-  it("manual 409 后确认才以 override 重试", async () => {
-    const onDecide = vi.fn()
-      .mockResolvedValueOnce({ ok: false, reason: "manual_keyframe_protected" })
-      .mockResolvedValueOnce({ ok: true });
-    const confirmManualOverride = vi.fn(() => true);
+  it("选区含 manual 时不从审阅条提供覆盖入口", () => {
+    const onDecide = vi.fn();
     render(
       <VideoTrackerReviewBar
         open
         preview={preview}
         onDecide={onDecide}
         onRefresh={vi.fn()}
-        confirmManualOverride={confirmManualOverride}
       />,
     );
     expect(screen.getByTestId("tracker-review-manual-warning")).toHaveTextContent("1 个");
-    fireEvent.click(screen.getByTestId("tracker-review-accept"));
-    await waitFor(() => expect(onDecide).toHaveBeenCalledTimes(2));
-    expect(confirmManualOverride).toHaveBeenCalledTimes(1);
-    expect(onDecide.mock.calls[1][0]).toMatchObject({
-      decision: "accept",
-      override_manual: true,
-    });
+    expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
+    expect(screen.getByTestId("tracker-review-discard")).not.toBeDisabled();
+    expect(onDecide).not.toHaveBeenCalled();
   });
 
   it("无可选 candidate 或提交中时禁用决策", () => {

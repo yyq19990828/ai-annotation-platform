@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem, VideoSegment
+from app.db.models.mask_qc import MaskQCIssue
+from app.db.models.mask_review_scope import MaskReviewScope
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import (
@@ -45,6 +47,7 @@ from app.services.raster_mask_storage import (
     validate_mask_geometry_for_task,
     lock_raster_mask_references,
 )
+from app.services.mask_qc.topology import rle_and, rle_replace_region, rle_xor
 from app.services.storage import resolve_task_url
 from app.services.video_frame_service import derive_step
 from app.services.video_tracking.adapters import (
@@ -56,9 +59,10 @@ from app.services.video_tracks import is_polygon_track
 from app.services.video_tracks import (
     is_mask_track,
     remove_frame_from_outside_ranges,
+    resolve_mask_track_state_at_frame,
     resolve_track_at_frame,
 )
-from app.utils.raster_mask_rle import coco_rle_bbox_norm
+from app.utils.raster_mask_rle import coco_rle_area, coco_rle_bbox_norm
 
 log = logging.getLogger(__name__)
 
@@ -1044,11 +1048,19 @@ async def _lock_tracker_review_context(
     if task is None:
         raise TrackerJobStateConflict("task no longer exists", reason="task_changed")
     effective_actor = actor_id or job.created_by
-    if task.status in {"review", "completed"}:
+    if task.status == "completed":
         raise TrackerJobStateConflict(
             f"task is locked in status {task.status}", reason="task_locked"
         )
-    if (
+    if task.status == "review":
+        if not privileged and (
+            task.reviewer_id != effective_actor or task.reviewer_claimed_at is None
+        ):
+            raise TrackerJobStateConflict(
+                "task review is not claimed by the current reviewer",
+                reason="task_review_not_claimed_by_user",
+            )
+    elif (
         not privileged
         and task.assignee_id is not None
         and task.assignee_id != effective_actor
@@ -1066,21 +1078,30 @@ async def _lock_tracker_review_context(
             )
         ).scalar_one_or_none()
         now = _now()
-        if (
+        invalid_scope = (
             segment is None
             or segment.dataset_item_id != job.dataset_item_id
             or job.from_frame < segment.start_frame
             or job.to_frame > segment.end_frame
-            or (
-                not privileged
-                and (
-                    segment.assignee_id not in (None, effective_actor)
-                    or segment.locked_by != effective_actor
-                    or segment.lock_expires_at is None
-                    or segment.lock_expires_at <= now
-                )
+        )
+        active_other_lock = bool(
+            segment
+            and segment.locked_by not in (None, effective_actor)
+            and segment.lock_expires_at is not None
+            and segment.lock_expires_at > now
+        )
+        annotating_lease_invalid = bool(
+            segment
+            and task.status != "review"
+            and not privileged
+            and (
+                segment.assignee_id not in (None, effective_actor)
+                or segment.locked_by != effective_actor
+                or segment.lock_expires_at is None
+                or segment.lock_expires_at <= now
             )
-        ):
+        )
+        if invalid_scope or active_other_lock or annotating_lease_invalid:
             raise TrackerJobStateConflict(
                 "video segment lease changed before review",
                 reason="segment_lease_changed",
@@ -1089,16 +1110,499 @@ async def _lock_tracker_review_context(
     return task, locked_sources
 
 
+async def _assert_review_scopes_available(
+    db: AsyncSession,
+    *,
+    annotation: Annotation,
+    from_frame: int,
+    to_frame: int,
+    region_rle: dict | None = None,
+    frame_indices: set[int] | None = None,
+) -> None:
+    scopes = list(
+        (
+            await db.execute(
+                select(MaskReviewScope)
+                .where(
+                    MaskReviewScope.annotation_id == annotation.id,
+                    MaskReviewScope.result_annotation_version
+                    == int(annotation.version or 1),
+                    MaskReviewScope.frame_start <= to_frame,
+                    MaskReviewScope.frame_end >= from_frame,
+                )
+                .order_by(MaskReviewScope.id)
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    conflicts: list[dict] = []
+    for scope in scopes:
+        if frame_indices is not None and not any(
+            scope.frame_start <= frame_index <= scope.frame_end
+            for frame_index in frame_indices
+        ):
+            continue
+        if region_rle is not None:
+            try:
+                protected_region = await load_coco_rle(scope.region_mask_ref)
+                if coco_rle_area(rle_and(region_rle, protected_region)) == 0:
+                    continue
+            except (KeyError, TypeError, ValueError) as exc:
+                raise TrackerJobStateConflict(
+                    "reviewed Mask scope content is unavailable",
+                    reason="reviewed_scope_unavailable",
+                ) from exc
+        conflicts.append(
+            {
+                "scope_id": str(scope.id),
+                "frame_start": scope.frame_start,
+                "frame_end": scope.frame_end,
+                "region_digest": scope.region_digest,
+                "decision": scope.decision,
+            }
+        )
+    if conflicts:
+        raise TrackerJobStateConflict(
+            "selected candidates overlap a current reviewed Mask scope",
+            reason="reviewed_scope_protected",
+            conflicts=conflicts,
+        )
+
+
+def _region_decision_history_key(
+    *, issue_id: uuid.UUID, candidate_digest: str, region_digest: str
+) -> str:
+    raw = f"{issue_id}:{candidate_digest}:{region_digest}".encode()
+    return f"region:{hashlib.sha256(raw).hexdigest()}"
+
+
+async def _decide_tracker_issue_region(
+    db: AsyncSession,
+    *,
+    job: VideoTrackerJob,
+    staged: dict,
+    rows: list[dict],
+    issue_id: uuid.UUID,
+    candidate_digest: str,
+    decision: str,
+    expected_source_versions: dict[uuid.UUID, int],
+    job_revision: int,
+    override_manual: bool,
+    actor_id: uuid.UUID | None,
+    privileged: bool,
+    publisher: TrackerEventPublisher,
+    commit: bool,
+) -> VideoTrackerJob:
+    issue_snapshot = await db.get(MaskQCIssue, issue_id)
+    if issue_snapshot is None:
+        raise TrackerJobStateConflict(
+            "Mask QC issue no longer exists", reason="mask_qc_issue_not_found"
+        )
+    if (
+        issue_snapshot.task_id != job.task_id
+        or issue_snapshot.frame_start is None
+        or issue_snapshot.frame_start != issue_snapshot.frame_end
+        or not isinstance(issue_snapshot.region_mask_ref, dict)
+        or not issue_snapshot.region_digest
+    ):
+        raise TrackerJobStateConflict(
+            "Mask QC issue is not a single-frame regional issue",
+            reason="mask_qc_issue_region_invalid",
+        )
+    state = _review_state(job)
+    history = dict(state.get("decisions") or {})
+    history_key = _region_decision_history_key(
+        issue_id=issue_snapshot.id,
+        candidate_digest=candidate_digest,
+        region_digest=issue_snapshot.region_digest,
+    )
+    previous = history.get(history_key)
+    if isinstance(previous, dict):
+        if previous.get("decision") == decision:
+            job._review_replayed = True
+            if commit:
+                await db.commit()
+            return job
+        raise TrackerJobStateConflict(
+            "QC region already has the opposite decision",
+            reason="candidate_decision_conflict",
+        )
+    frame_index = int(issue_snapshot.frame_start)
+    source_ids_by_instance = _review_source_map_ids(job, staged)
+    instance_annotations = dict(state.get("instance_annotations") or {})
+    selected: list[dict] = []
+    for row in rows:
+        if int(row.get("frame_index", -1)) != frame_index:
+            continue
+        if row.get("geometry_digest") != candidate_digest:
+            continue
+        instance_id = _tracker_instance_key(row)
+        source_id = source_ids_by_instance.get(instance_id)
+        target_id = instance_annotations.get(instance_id) or source_id
+        if str(target_id or "") != str(issue_snapshot.annotation_id):
+            continue
+        selected.append(row)
+    if len(selected) != 1:
+        raise TrackerJobStateConflict(
+            "QC issue does not resolve to one staged Mask candidate",
+            reason=(
+                "candidate_selection_ambiguous"
+                if selected
+                else "candidate_digest_conflict"
+            ),
+        )
+    selected_row = selected[0]
+    instance_id = _tracker_instance_key(selected_row)
+    source_annotation_id = source_ids_by_instance.get(instance_id)
+    if source_annotation_id != issue_snapshot.annotation_id:
+        raise TrackerJobStateConflict(
+            "regional decisions require an existing source annotation",
+            reason="mask_qc_issue_source_conflict",
+        )
+
+    expected = {
+        uuid.UUID(str(annotation_id)): int(version)
+        for annotation_id, version in expected_source_versions.items()
+    }
+    expected_version = expected.get(source_annotation_id)
+    prompt_versions = (job.prompt or {}).get("expected_source_versions") or {}
+    if (
+        expected_version is None
+        or int(prompt_versions.get(str(source_annotation_id), -1))
+        != expected_version
+    ):
+        raise TrackerJobStateConflict(
+            "source version snapshot differs from the current preview",
+            reason="source_version_conflict",
+        )
+
+    task, locked_sources = await _lock_tracker_review_context(
+        db,
+        job,
+        actor_id=actor_id,
+        privileged=privileged,
+        source_ids={source_annotation_id},
+    )
+    annotation = locked_sources[source_annotation_id]
+    issue = (
+        await db.execute(
+            select(MaskQCIssue)
+            .where(MaskQCIssue.id == issue_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if issue is None:
+        raise TrackerJobStateConflict(
+            "Mask QC issue no longer exists", reason="mask_qc_issue_not_found"
+        )
+    if (
+        issue.task_id != job.task_id
+        or issue.project_id != task.project_id
+        or issue.annotation_id != annotation.id
+        or issue.annotation_version != int(annotation.version or 1)
+        or int(issue.source_versions.get(str(annotation.id), -1))
+        != int(annotation.version or 1)
+        or issue.status != "open"
+        or issue.frame_start != frame_index
+        or issue.frame_end != frame_index
+        or issue.region_digest != issue_snapshot.region_digest
+        or issue.region_mask_ref != issue_snapshot.region_mask_ref
+    ):
+        raise TrackerJobStateConflict(
+            "Mask QC issue is stale or no longer matches the candidate source",
+            reason="mask_qc_issue_stale",
+        )
+
+    reviewable = job.status in {
+        VideoTrackerJobStatus.PENDING_REVIEW.value,
+        VideoTrackerJobStatus.PARTIALLY_REVIEWED.value,
+        VideoTrackerJobStatus.CANCELLED.value,
+    }
+    if not reviewable or not rows:
+        raise TrackerJobStateConflict(
+            f"Video tracker job cannot be reviewed from status {job.status}",
+            reason="tracker_job_not_reviewable",
+        )
+    if int(job.revision or 1) != job_revision:
+        raise TrackerJobStateConflict(
+            "tracker job revision changed; refresh the preview",
+            reason="job_revision_conflict",
+            conflicts=[
+                {
+                    "expected_revision": job_revision,
+                    "current_revision": int(job.revision or 1),
+                }
+            ],
+        )
+    if expected_version != int(annotation.version or 1):
+        raise TrackerJobStateConflict(
+            "source annotation version changed",
+            reason="source_version_conflict",
+        )
+    if override_manual and not privileged:
+        raise TrackerJobStateConflict(
+            "manual keyframe override requires project privilege",
+            reason="manual_override_forbidden",
+        )
+    if staged.get("output_geometry") != "mask" or bool(
+        selected_row.get("outside", False)
+    ):
+        raise TrackerJobStateConflict(
+            "regional decisions require a visible Mask candidate",
+            reason="mask_candidate_required",
+        )
+    candidate_reference = (selected_row.get("geometry") or {}).get("mask")
+    if not isinstance(candidate_reference, dict):
+        raise TrackerJobStateConflict(
+            "regional decisions require immutable candidate content",
+            reason="mask_candidate_required",
+        )
+    geometry = annotation.geometry or {}
+    if geometry.get("type") != "video_track_mask":
+        raise TrackerJobStateConflict(
+            "regional decisions require a video Mask source",
+            reason="video_mask_track_required",
+        )
+    resolved = resolve_mask_track_state_at_frame(geometry, frame_index)
+    current_reference = resolved.get("mask")
+    if not isinstance(current_reference, dict) or not current_reference:
+        raise TrackerJobStateConflict(
+            "the QC issue frame has no current Mask content",
+            reason="mask_qc_issue_source_conflict",
+        )
+    manual_conflicts: list[dict] = []
+    if resolved.get("state") == "exact" and resolved.get("source") == "manual":
+        manual_conflicts.append(
+            {
+                "annotation_id": str(annotation.id),
+                "frame_index": frame_index,
+                "before_digest": _geometry_sha256(
+                    next(
+                        item
+                        for item in geometry.get("keyframes") or []
+                        if int(item.get("frame_index", -1)) == frame_index
+                    )
+                ),
+            }
+        )
+    if decision == "accept" and manual_conflicts and not override_manual:
+        raise TrackerJobStateConflict(
+            "selected candidate overlaps a protected manual keyframe",
+            reason="manual_keyframe_protected",
+            conflicts=manual_conflicts,
+        )
+
+    try:
+        current_rle = await load_coco_rle(current_reference)
+        candidate_rle = await load_coco_rle(candidate_reference)
+        region_rle = await load_coco_rle(issue.region_mask_ref)
+        changed_in_region = rle_and(rle_xor(current_rle, candidate_rle), region_rle)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TrackerJobStateConflict(
+            "regional decision Mask content is invalid",
+            reason="mask_region_content_invalid",
+        ) from exc
+    if coco_rle_area(changed_in_region) == 0:
+        raise TrackerJobStateConflict(
+            "candidate has no changed pixels inside the QC issue region",
+            reason="mask_qc_issue_candidate_mismatch",
+        )
+    await _assert_review_scopes_available(
+        db,
+        annotation=annotation,
+        from_frame=frame_index,
+        to_frame=frame_index,
+        region_rle=region_rle,
+    )
+
+    source_version = int(annotation.version or 1)
+    after_rle = current_rle
+    touched = False
+    if decision == "accept":
+        after_rle = rle_replace_region(current_rle, candidate_rle, region_rle)
+        if coco_rle_area(after_rle) == 0:
+            result = TrackerFrameResult(
+                frame_index=frame_index,
+                geometry={},
+                confidence=selected_row.get("confidence"),
+                outside=True,
+                instance_id=instance_id,
+                primary=bool(selected_row.get("primary", False)),
+            )
+        else:
+            result_reference = await store_coco_rle(after_rle)
+            result = TrackerFrameResult(
+                frame_index=frame_index,
+                geometry={
+                    "type": "mask",
+                    "mask": result_reference,
+                    "bbox": coco_rle_bbox_norm(after_rle),
+                },
+                confidence=selected_row.get("confidence"),
+                outside=False,
+                instance_id=instance_id,
+                primary=bool(selected_row.get("primary", False)),
+            )
+        apply_tracker_results(
+            annotation,
+            job,
+            [result],
+            1,
+            "mask",
+            override_manual_frames={frame_index} if override_manual else None,
+        )
+        await validate_mask_geometry_for_task(db, task, annotation.geometry or {})
+        await lock_raster_mask_references(
+            db, annotation.geometry or {}, task_id=task.id
+        )
+        touched = True
+
+    residual_rle = (
+        candidate_rle
+        if decision == "accept"
+        else rle_replace_region(candidate_rle, current_rle, region_rle)
+    )
+    residual_changed = coco_rle_area(rle_xor(after_rle, residual_rle)) > 0
+    remaining: list[dict] = []
+    for row in rows:
+        if row["candidate_key"] != selected_row["candidate_key"]:
+            remaining.append(row)
+            continue
+        if not residual_changed:
+            continue
+        if decision == "accept":
+            remaining.append(row)
+            continue
+        residual_reference = await store_coco_rle(residual_rle)
+        residual_geometry = {
+            **(row.get("geometry") or {}),
+            "mask": residual_reference,
+            "bbox": coco_rle_bbox_norm(residual_rle),
+        }
+        updated = {**row, "geometry": residual_geometry}
+        updated.pop("geometry_digest", None)
+        updated.pop("candidate_key", None)
+        remaining.append(_ensure_candidate_contract(updated))
+
+    next_revision = int(job.revision or 1) + 1
+    history[history_key] = {
+        "decision": decision,
+        "selector": "qc_issue",
+        "qc_issue_id": str(issue.id),
+        "instance_id": instance_id,
+        "frame_index": frame_index,
+        "geometry_digest": candidate_digest,
+        "region_digest": issue.region_digest,
+        "revision": next_revision,
+    }
+    manual_overrides: list[dict] = []
+    if touched and manual_conflicts and override_manual:
+        keyframe = next(
+            item
+            for item in (annotation.geometry or {}).get("keyframes") or []
+            if int(item.get("frame_index", -1)) == frame_index
+        )
+        manual_overrides = [
+            {**manual_conflicts[0], "after_digest": _geometry_sha256(keyframe)}
+        ]
+    state = {
+        **state,
+        "decisions": history,
+        "last_decision": {
+            "decision": decision,
+            "selector": "qc_issue",
+            "qc_issue_id": str(issue.id),
+            "instance_ids": [instance_id],
+            "from_frame": frame_index,
+            "to_frame": frame_index,
+            "candidate_digest": candidate_digest,
+            "region_digest": issue.region_digest,
+            "candidate_count": 1,
+            "revision_before": job_revision,
+            "revision_after": next_revision,
+            "manual_overrides": manual_overrides,
+        },
+    }
+    updated_prompt = {**(job.prompt or {}), "review_state": state}
+    if touched:
+        touched_ids = {
+            *[str(value) for value in updated_prompt.get("touched_annotation_ids") or []],
+            str(annotation.id),
+        }
+        updated_prompt["touched_annotation_ids"] = sorted(touched_ids)
+        source_versions = dict(updated_prompt.get("expected_source_versions") or {})
+        source_versions[str(annotation.id)] = int(annotation.version or 1)
+        updated_prompt["expected_source_versions"] = source_versions
+    job.prompt = updated_prompt
+    job.revision = next_revision
+    job._review_replayed = False
+    if remaining:
+        job.status = VideoTrackerJobStatus.PARTIALLY_REVIEWED.value
+        job.staged_result = {**staged, "results": remaining}
+        await lock_raster_mask_references(db, job.staged_result, task_id=task.id)
+    else:
+        accepted_any = any(
+            item.get("decision") == "accept"
+            for item in history.values()
+            if isinstance(item, dict)
+        )
+        job.status = (
+            VideoTrackerJobStatus.ACCEPTED.value
+            if accepted_any
+            else VideoTrackerJobStatus.DISCARDED.value
+        )
+        job.staged_result = None
+
+    db.add(
+        MaskReviewScope(
+            project_id=task.project_id,
+            task_id=task.id,
+            annotation_id=annotation.id,
+            qc_issue_id=issue.id,
+            source_job_id=job.id,
+            reviewer_id=actor_id,
+            source_annotation_version=source_version,
+            result_annotation_version=int(annotation.version or 1),
+            source_job_revision=job_revision,
+            frame_start=frame_index,
+            frame_end=frame_index,
+            region_mask_ref=dict(issue.region_mask_ref),
+            region_digest=issue.region_digest,
+            candidate_digest=candidate_digest,
+            decision=decision,
+        )
+    )
+    await db.flush()
+    if commit:
+        await db.commit()
+        await db.refresh(job)
+    else:
+        await db.refresh(job)
+    event_type = (
+        "job_partially_reviewed"
+        if remaining
+        else "job_accepted"
+        if job.status == VideoTrackerJobStatus.ACCEPTED.value
+        else "job_discarded"
+    )
+    if commit:
+        await publisher(job.event_channel, _event(job, event_type))
+    return job
+
+
 async def decide_tracker_job(
     db: AsyncSession,
     job_id: uuid.UUID,
     *,
-    instance_ids: list[str],
-    from_frame: int,
-    to_frame: int,
+    instance_ids: list[str] | None,
+    from_frame: int | None,
+    to_frame: int | None,
     decision: str,
     expected_source_versions: dict[uuid.UUID, int],
     job_revision: int,
+    qc_issue_id: uuid.UUID | None = None,
+    candidate_digest: str | None = None,
     override_manual: bool = False,
     actor_id: uuid.UUID | None = None,
     privileged: bool = False,
@@ -1121,6 +1625,33 @@ async def decide_tracker_job(
         raise TrackerJobStateConflict(
             "staged candidates contain duplicate candidate keys",
             reason="duplicate_candidate_key",
+        )
+    if qc_issue_id is not None:
+        if candidate_digest is None:
+            raise TrackerJobStateConflict(
+                "QC issue selector requires a candidate digest",
+                reason="candidate_digest_required",
+            )
+        return await _decide_tracker_issue_region(
+            db,
+            job=job,
+            staged=staged,
+            rows=rows,
+            issue_id=qc_issue_id,
+            candidate_digest=candidate_digest,
+            decision=decision,
+            expected_source_versions=expected_source_versions,
+            job_revision=job_revision,
+            override_manual=override_manual,
+            actor_id=actor_id,
+            privileged=privileged,
+            publisher=publisher,
+            commit=commit,
+        )
+    if instance_ids is None or from_frame is None or to_frame is None:
+        raise TrackerJobStateConflict(
+            "instance/window decision selector is incomplete",
+            reason="candidate_selector_invalid",
         )
     if from_frame < job.from_frame or to_frame > job.to_frame or from_frame > to_frame:
         raise TrackerJobStateConflict(
@@ -1177,6 +1708,11 @@ async def decide_tracker_job(
             conflicts=[
                 {"expected_revision": job_revision, "current_revision": int(job.revision or 1)}
             ],
+        )
+    if override_manual and not privileged:
+        raise TrackerJobStateConflict(
+            "manual keyframe override requires project privilege",
+            reason="manual_override_forbidden",
         )
     if not selected:
         raise TrackerJobStateConflict(
@@ -1289,6 +1825,20 @@ async def decide_tracker_job(
             reason="manual_keyframe_protected",
             conflicts=manual_conflicts,
         )
+    for instance_id, source in source_map.items():
+        selected_frames = [
+            int(row["frame_index"])
+            for row in selected
+            if _tracker_instance_key(row) == instance_id
+        ]
+        if selected_frames:
+            await _assert_review_scopes_available(
+                db,
+                annotation=source,
+                from_frame=min(selected_frames),
+                to_frame=max(selected_frames),
+                frame_indices=set(selected_frames),
+            )
 
     touched: list[Annotation] = []
     instance_annotations = dict(state.get("instance_annotations") or {})

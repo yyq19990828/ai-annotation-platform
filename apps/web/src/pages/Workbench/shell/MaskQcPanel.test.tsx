@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MaskQcIssue } from "@/api/maskQc";
 import type { MaskQcTrackerCandidate } from "../state/useMaskQcReview";
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   runMutate: vi.fn(),
   patchMutate: vi.fn(),
   createFeedbackMutate: vi.fn(),
+  summaryRefetch: vi.fn(),
   feedback: null as unknown,
 }));
 
@@ -17,6 +18,7 @@ vi.mock("@/hooks/useMaskQc", () => ({
   useTaskMaskQcSummary: () => ({
     data: { status: "completed", progress_pct: 100, counts: { open: 1 }, run_id: "run-1" },
     isLoading: false,
+    refetch: mocks.summaryRefetch,
   }),
   useRunTaskMaskQc: () => ({ mutate: mocks.runMutate, isPending: false }),
   usePatchMaskQcIssue: () => ({ mutate: mocks.patchMutate, isPending: false }),
@@ -98,6 +100,7 @@ function props(overrides: Partial<MaskQcPanelProps> = {}): MaskQcPanelProps {
     onSetMode: vi.fn(),
     onSetBaseline: vi.fn(),
     onSetTrackerCandidate: vi.fn(),
+    onDecideTrackerRegion: vi.fn().mockResolvedValue({ ok: true }),
     onUpdateIssue: vi.fn(),
     ...overrides,
   };
@@ -196,5 +199,67 @@ describe("MaskQcPanel", () => {
       activeIssue,
       expect.objectContaining({ mode: "boundary", baseline_kind: "previous_version" }),
     );
+  });
+
+  it("对精确 Tracker 候选提交区域决定", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDecideTrackerRegion = vi.fn().mockResolvedValue({ ok: true });
+    render(<MaskQcPanel {...props({
+      baseline: "tracker_candidate",
+      trackerCandidateKey: trackerCandidate.key,
+      onDecideTrackerRegion,
+      compare: {
+        baseline_kind: "tracker_candidate",
+        current: {
+          annotation_id: "annotation-1",
+          annotation_version: 7,
+          frame_index: 3,
+          source: "prediction",
+          state: "exact",
+          digest: "current",
+          size: [4, 4],
+          content_path: "/current",
+          candidate_job_id: null,
+          candidate_digest: null,
+          candidate_instance_id: null,
+        },
+        baseline: {
+          annotation_id: "annotation-1",
+          annotation_version: 7,
+          frame_index: 3,
+          source: "tracker_candidate",
+          state: "candidate",
+          digest: "candidate",
+          size: [4, 4],
+          content_path: "/candidate",
+          candidate_job_id: trackerCandidate.jobId,
+          candidate_digest: trackerCandidate.digest,
+          candidate_instance_id: trackerCandidate.instanceId,
+        },
+        metrics: {
+          current_area_pixels: 4,
+          baseline_area_pixels: 5,
+          intersection_pixels: 4,
+          union_pixels: 5,
+          changed_pixels: 1,
+          added_pixels: 1,
+          removed_pixels: 0,
+          iou_numerator: 4,
+          iou_denominator: 5,
+          dice_numerator: 8,
+          dice_denominator: 9,
+        },
+        loss: [],
+      },
+    })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "区域接受" }));
+    await waitFor(() => {
+      expect(onDecideTrackerRegion).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "issue-1" }),
+        trackerCandidate,
+        "accept",
+      );
+    });
   });
 });

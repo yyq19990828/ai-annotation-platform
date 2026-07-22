@@ -150,15 +150,29 @@ export interface VideoTrackerJobPreview {
   candidate_rejected?: number;
 }
 
-export interface VideoTrackerDecisionPayload {
-  instance_ids: string[];
-  from_frame: number;
-  to_frame: number;
+interface VideoTrackerDecisionCommon {
   decision: "accept" | "reject";
   expected_source_versions: Record<string, number>;
   job_revision: number;
   override_manual?: boolean;
 }
+
+export type VideoTrackerDecisionPayload = VideoTrackerDecisionCommon & (
+  | {
+      instance_ids: string[];
+      from_frame: number;
+      to_frame: number;
+      qc_issue_id?: never;
+      candidate_digest?: never;
+    }
+  | {
+      qc_issue_id: string;
+      candidate_digest: string;
+      instance_ids?: never;
+      from_frame?: never;
+      to_frame?: never;
+    }
+);
 
 export const videoTrackerApi = {
   segments: (taskId: string) =>

@@ -17,7 +17,6 @@ export interface VideoTrackerReviewBarProps {
     selection: TrackerReviewDecision,
   ) => Promise<TrackerReviewDecisionOutcome>;
   onRefresh: () => void;
-  confirmManualOverride?: () => boolean;
 }
 
 function instanceKey(value: string | null | undefined): string {
@@ -37,9 +36,6 @@ export function VideoTrackerReviewBar({
   submitting = false,
   onDecide,
   onRefresh,
-  confirmManualOverride = () => window.confirm(
-    "所选范围包含人工关键帧。确认覆盖这些人工结果吗？此操作会写入审计记录。",
-  ),
 }: VideoTrackerReviewBarProps) {
   const instances = useMemo(
     () => [...new Set((preview?.results ?? []).map((item) => instanceKey(item.instance_id)))].sort(),
@@ -81,14 +77,7 @@ export function VideoTrackerReviewBar({
       decision,
       override_manual: false,
     };
-    const outcome = await onDecide(selection);
-    if (
-      decision === "accept"
-      && outcome.reason === "manual_keyframe_protected"
-      && confirmManualOverride()
-    ) {
-      await onDecide({ ...selection, override_manual: true });
-    }
+    await onDecide(selection);
   };
 
   if (!open || !preview) return null;
@@ -176,7 +165,7 @@ export function VideoTrackerReviewBar({
         {manualCount > 0 ? (
           <div className="flex items-center gap-2 text-xs text-status-warning" data-testid="tracker-review-manual-warning">
             <ShieldAlert className="size-4" />
-            选区包含 {manualCount} 个受保护的人工关键帧，接受时需要二次确认。
+            选区包含 {manualCount} 个受保护的人工关键帧，审阅条不会覆盖这些帧。
           </div>
         ) : null}
 
@@ -202,7 +191,7 @@ export function VideoTrackerReviewBar({
             variant="primary"
             size="sm"
             onClick={() => void submit("accept")}
-            disabled={disabled}
+            disabled={disabled || manualCount > 0}
             data-testid="tracker-review-accept"
           >
             <Check data-icon="inline-start" />

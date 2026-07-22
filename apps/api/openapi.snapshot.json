@@ -27282,6 +27282,18 @@
       "VideoTrackerDecisionRequest": {
         "description": "Select and decide an explicit target/window slice of staged candidates.",
         "properties": {
+          "candidate_digest": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Digest"
+          },
           "decision": {
             "enum": [
               "accept",
@@ -27301,18 +27313,32 @@
             "type": "object"
           },
           "from_frame": {
-            "minimum": 0.0,
-            "title": "From Frame",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Frame"
           },
           "instance_ids": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 256,
-            "minItems": 1,
-            "title": "Instance Ids",
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 256,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Ids"
           },
           "job_revision": {
             "minimum": 1.0,
@@ -27324,16 +27350,32 @@
             "title": "Override Manual",
             "type": "boolean"
           },
+          "qc_issue_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qc Issue Id"
+          },
           "to_frame": {
-            "minimum": 0.0,
-            "title": "To Frame",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Frame"
           }
         },
         "required": [
-          "instance_ids",
-          "from_frame",
-          "to_frame",
           "decision",
           "job_revision"
         ],
@@ -47953,7 +47995,7 @@
     },
     "/api/v1/video-tracker-jobs/{job_id}/decisions": {
       "post": {
-        "description": "Accept or reject an explicit instance/window candidate slice.",
+        "description": "Accept or reject an instance/window or QC issue region selector.",
         "operationId": "decide_video_tracker_candidates_api_v1_video_tracker_jobs__job_id__decisions_post",
         "parameters": [
           {

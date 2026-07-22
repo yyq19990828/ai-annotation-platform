@@ -6155,6 +6155,15 @@ export function useWorkbenchShellModel({
         onSetMode: maskQcReview.setMode,
         onSetBaseline: maskQcReview.setBaseline,
         onSetTrackerCandidate: maskQcReview.setTrackerCandidate,
+        onDecideTrackerRegion: async (issue, candidate, decision) => {
+          const outcome = await trackerJobs.decide(candidate.jobId, {
+            qc_issue_id: issue.id,
+            candidate_digest: candidate.digest,
+            decision,
+          });
+          if (outcome.ok) maskQcReview.clear();
+          return outcome;
+        },
         onUpdateIssue: maskQcReview.updateIssue,
       } : undefined,
       annotationId: s.selectedId,

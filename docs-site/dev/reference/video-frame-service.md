@@ -228,6 +228,7 @@ DELETE /api/v1/video-tracker-jobs/{job_id}
 GET /api/v1/video-tracker-jobs/{job_id}/preview
 POST /api/v1/video-tracker-jobs/{job_id}/accept
 POST /api/v1/video-tracker-jobs/{job_id}/discard
+POST /api/v1/video-tracker-jobs/{job_id}/decisions
 ```
 
 创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。当前支持四类 `model_key`：
@@ -354,7 +355,13 @@ queued -> running -> pending_review -> accepted | discarded
 
 `completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；取消前已收集的结果会暂存为部分候选。待审 / 已接受 / 已丢弃属于终态，不能再取消。
 
-`video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。两个决策都写审计动作。
+`video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。局部 decision 允许 job 创建者、已认领任务的审核员或项目特权角色执行，并在行锁后再次复核身份。所有决定都写审计动作。
+
+`POST .../decisions` 接受两种互斥 selector：普通 selector 使用 `instance_ids + from_frame + to_frame`；
+QC 区域 selector 使用 `qc_issue_id + candidate_digest`。后者要求当前 issue 是同 task、同 annotation、单帧且
+具有可读取的 region Mask。accept 计算 `current XOR candidate` 后只把 region 内差异写入 annotation；reject
+只从 staged candidate 扣除 region 内差异。剩余差异继续留在 staged result，并在内容变化后获得新的
+candidate digest。`job_revision`、候选摘要或源版本过期均返回结构化 409。
 
 `job_kind` 区分普通 `tracking` 与人工 Mask `correction`。后者同时保存 `track_id_snapshot` 和 `correction_frame`，prompt 冻结源 version / digest、segment lease、方向窗口和精确 backend / pool / model。同一 task + track 的活跃 correction 由 partial unique index 串行化；取消或终态释放租约。correction 不允许整批 accept / discard，只允许带 revision、源版本与显式窗口的局部 decision。
 

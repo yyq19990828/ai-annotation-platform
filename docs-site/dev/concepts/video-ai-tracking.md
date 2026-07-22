@@ -188,9 +188,10 @@ Grounded-SAM2 与 SAM3 PVS 可消费 `CorrectionFramePrompt.mask_prompt`。SAM3 
 `useVideoTrackerJobs` 维护当前会话的运行 job 与候选预览：
 
 - `job_completed` 与带部分结果的 `job_cancelled` 触发 `GET .../preview`。
-- 工作台进入视频任务时调用任务级 reviewable 端点，以服务端 `VideoTrackerJob` 为真值恢复刷新前的候选；同时调用 active 端点拉取仍在 `queued` / `running` 的 job 并重连各自的 WebSocket，使运行中的追踪任务不会因整页刷新从界面消失。普通用户只恢复自己创建的任务，项目 owner / 超级管理员可恢复该任务下全部 job。
+- 工作台进入视频任务时调用任务级 reviewable 端点，以服务端 `VideoTrackerJob` 为真值恢复刷新前的候选；同时调用 active 端点拉取仍在 `queued` / `running` 的 job 并重连各自的 WebSocket，使运行中的追踪任务不会因整页刷新从界面消失。普通标注员只恢复自己创建的任务；任务进入 review 后，已认领的审核员可恢复并决定该任务候选，项目特权角色可处理项目内候选。
 - `TrackerJobStore` 是跨任务复用的模块级单例。恢复某任务前会先按当前任务 scope 一次：关闭并清掉不属于该任务的 job / 候选 / WebSocket / 清理定时器，避免旧任务的完成提示或候选串到新任务；异步恢复以当前任务为护栏，若恢复途中已切走任务，迟到的旧任务结果会被丢弃。
-- `VideoTrackerReviewBar` 提供目标勾选、起止帧、局部接受 / 拒绝、进度、冲突刷新与人工帧二次确认。
+- `VideoTrackerReviewBar` 提供目标勾选、起止帧、局部接受 / 拒绝、进度与冲突刷新；含人工关键帧的选区不提供接受快捷入口。
+- Mask QC 对比使用互斥的 issue selector：服务端在 job、task、annotation 和 issue 行锁后复核单帧区域、候选摘要与源版本，只把 candidate XOR 在区域内应用或扣除。`mask_review_scopes` 保存不可变决定证据；只有与 annotation 当前版本绑定的 scope 继续充当写保护，后续人工改动产生新版本后旧 scope 仅供审计。
 - 画布候选层只展示暂存结果，不把它们混入 annotation query cache。
 - 局部 accept 成功后才 invalidate annotation query；reject 不需要刷新 committed annotation。部分决定后重新拉 preview，以服务端 revision 和未决集合为真值。
 

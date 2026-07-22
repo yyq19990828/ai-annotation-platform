@@ -37,10 +37,25 @@ export interface VideoTrackerJobState {
   receivedAt: number;
 }
 
-export type TrackerReviewDecision = Pick<
-  VideoTrackerDecisionPayload,
-  "instance_ids" | "from_frame" | "to_frame" | "decision" | "override_manual"
->;
+export type TrackerReviewDecision = (
+  | {
+      instance_ids: string[];
+      from_frame: number;
+      to_frame: number;
+      qc_issue_id?: never;
+      candidate_digest?: never;
+    }
+  | {
+      qc_issue_id: string;
+      candidate_digest: string;
+      instance_ids?: never;
+      from_frame?: never;
+      to_frame?: never;
+    }
+) & {
+  decision: "accept" | "reject";
+  override_manual?: boolean;
+};
 
 export interface TrackerReviewDecisionOutcome {
   ok: boolean;

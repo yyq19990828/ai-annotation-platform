@@ -87,6 +87,11 @@ export interface MaskQcPanelProps {
   onSetMode: (mode: RasterMaskCompareMode) => void;
   onSetBaseline: (baseline: MaskCompareBaseline) => void;
   onSetTrackerCandidate: (candidate: MaskQcTrackerCandidate) => void;
+  onDecideTrackerRegion: (
+    issue: MaskQcIssue,
+    candidate: MaskQcTrackerCandidate,
+    decision: "accept" | "reject",
+  ) => Promise<{ ok: boolean; reason?: string }>;
   onUpdateIssue: (issue: MaskQcIssue) => void;
 }
 
@@ -109,6 +114,7 @@ export function MaskQcPanel({
   onSetMode,
   onSetBaseline,
   onSetTrackerCandidate,
+  onDecideTrackerRegion,
   onUpdateIssue,
 }: MaskQcPanelProps) {
   const [status, setStatus] = useState<MaskQcIssueStatus | "all">("all");
@@ -116,6 +122,8 @@ export function MaskQcPanel({
   const [code, setCode] = useState("all");
   const [scope, setScope] = useState<"task" | "project">("task");
   const [comment, setComment] = useState("");
+  const [regionDecision, setRegionDecision] = useState<"accept" | "reject" | null>(null);
+  const [regionDecisionError, setRegionDecisionError] = useState<string | null>(null);
   const query = useMaskQcIssues({
     projectId,
     taskId: scope === "task" ? taskId : undefined,
@@ -170,6 +178,22 @@ export function MaskQcPanel({
   const dice = compare && compare.metrics.dice_denominator > 0
     ? compare.metrics.dice_numerator / compare.metrics.dice_denominator
     : compare ? 1 : null;
+  const selectedTrackerCandidate = trackerCandidates.find(
+    (candidate) => candidate.key === trackerCandidateKey,
+  ) ?? trackerCandidates[0] ?? null;
+  const canDecideTrackerRegion = Boolean(
+    !stale
+    && activeIssue?.effective_status === "open"
+    && activeIssue.region_digest
+    && activeIssue.frame_start != null
+    && activeIssue.frame_start === activeIssue.frame_end
+    && baseline === "tracker_candidate"
+    && compare?.baseline.candidate_job_id
+    && compare.baseline.candidate_digest
+    && selectedTrackerCandidate
+    && compare.baseline.candidate_job_id === selectedTrackerCandidate.jobId
+    && compare.baseline.candidate_digest === selectedTrackerCandidate.digest,
+  );
 
   useEffect(() => {
     const completedRunId = summary.data?.status === "completed"
@@ -182,6 +206,8 @@ export function MaskQcPanel({
 
   useEffect(() => {
     setComment("");
+    setRegionDecision(null);
+    setRegionDecisionError(null);
   }, [activeIssue?.id]);
 
   useEffect(() => {
@@ -235,6 +261,30 @@ export function MaskQcPanel({
       },
       body: comment.trim(),
     }, { onSuccess: () => setComment("") });
+  };
+
+  const decideTrackerRegion = async (decision: "accept" | "reject") => {
+    if (!activeIssue || !selectedTrackerCandidate || !canDecideTrackerRegion) return;
+    const verb = decision === "accept" ? "接受" : "拒绝";
+    if (!window.confirm(`${verb}只会作用于当前质检问题区域，区域外候选保持待审。确认继续吗？`)) {
+      return;
+    }
+    setRegionDecision(decision);
+    setRegionDecisionError(null);
+    try {
+      const outcome = await onDecideTrackerRegion(
+        activeIssue,
+        selectedTrackerCandidate,
+        decision,
+      );
+      if (!outcome.ok) {
+        setRegionDecisionError(outcome.reason ?? "区域决定失败，请刷新候选后重试");
+        return;
+      }
+      await Promise.all([query.refetch(), summary.refetch()]);
+    } finally {
+      setRegionDecision(null);
+    }
   };
 
   return (
@@ -460,6 +510,34 @@ export function MaskQcPanel({
                 ))}
               </div>
             </>
+          )}
+          {canDecideTrackerRegion && (
+            <div className="flex flex-col gap-1 rounded border border-border bg-muted p-2">
+              <span className="text-2xs text-muted-foreground">
+                只处理质检区域内的 Tracker 差异；区域外与其它帧候选保持待审。
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={regionDecision !== null}
+                  onClick={() => { void decideTrackerRegion("accept"); }}
+                >
+                  {regionDecision === "accept" ? "提交中…" : "区域接受"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={regionDecision !== null}
+                  onClick={() => { void decideTrackerRegion("reject"); }}
+                >
+                  {regionDecision === "reject" ? "提交中…" : "区域拒绝"}
+                </Button>
+              </div>
+              {regionDecisionError && (
+                <span className="text-2xs text-status-danger">{regionDecisionError}</span>
+              )}
+            </div>
           )}
           {!stale && (
             <div className="flex gap-1">

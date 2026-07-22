@@ -324,8 +324,20 @@ def rle_and_not(left: dict, right: dict) -> dict:
     return _combine_rles(left, right, "and_not")
 
 
+def rle_and(left: dict, right: dict) -> dict:
+    return _combine_rles(left, right, "and")
+
+
 def rle_xor(left: dict, right: dict) -> dict:
     return _combine_rles(left, right, "xor")
+
+
+def rle_replace_region(current: dict, replacement: dict, region: dict) -> dict:
+    """Use replacement pixels inside region while preserving current outside it."""
+
+    changed = _combine_rles(current, replacement, "xor")
+    selected = _combine_rles(changed, region, "and")
+    return _combine_rles(current, selected, "xor")
 
 
 def compare_rles(left: dict, right: dict) -> MaskOverlapMetrics:
