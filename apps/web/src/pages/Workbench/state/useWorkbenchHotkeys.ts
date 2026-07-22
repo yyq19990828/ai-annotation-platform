@@ -471,22 +471,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
               ? selected.geometry.track_id
               : null;
             if (selected?.is_locked || (trackId && s.lockedVideoTrackIds.has(trackId))) return;
-            // v0.23.5 · WS-C · A5 止血: video_track_mask 也走关键帧级删除, 不能 fall-through
-            // 到 handleDeleteBox 误删整轨。与 video_track_bbox 同语义: 只剩 1 个关键帧 →
-            // 删它 = 删整条 (回退); 多关键帧但当前帧无关键帧 → 保持不动 (避免误删整轨)。
+            // Mask 与 bbox 都委托舞台控制器删除关键帧。Mask 控制器会进一步走
+            // 专用 PATCH 合同，保留 segment/task lock、审计与 frame history 语义。
             if (selected?.geometry.type === "video_track_mask") {
-              const keyframes = selected.geometry.keyframes;
-              if (keyframes.length <= 1) return;
-              if (!keyframes.some((kf) => kf.frame_index === s.videoFrameIndex)) return;
-              updateMutation.mutate({
-                annotationId: selected.id,
-                payload: {
-                  geometry: {
-                    ...selected.geometry,
-                    keyframes: keyframes.filter((kf) => kf.frame_index !== s.videoFrameIndex),
-                  },
-                },
-              });
+              videoControlsRef?.current?.deleteSelectedTrackKeyframe();
               return;
             }
             if (selected?.geometry.type === "video_track_bbox") {

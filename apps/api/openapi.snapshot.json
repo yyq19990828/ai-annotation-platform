@@ -13014,6 +13014,7 @@
             "enum": [
               "split_components",
               "copy_component",
+              "copy_keyframe",
               "join_masks",
               "overlap"
             ],
@@ -13030,6 +13031,18 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Scope Fingerprint",
             "type": "string"
+          },
+          "source_frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Frame Index"
           }
         },
         "required": [
@@ -24515,6 +24528,24 @@
         "title": "VideoMaskCorrectionRequest",
         "type": "object"
       },
+      "VideoMaskKeyframeOperationRequest": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "delete_keyframe",
+              "mark_outside",
+              "restore_held"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "VideoMaskKeyframeOperationRequest",
+        "type": "object"
+      },
       "VideoMaskKeyframeSaveRequest": {
         "properties": {
           "attributes": {
@@ -24536,6 +24567,15 @@
             "default": false,
             "title": "Occluded",
             "type": "boolean"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
@@ -44447,6 +44487,81 @@
       }
     },
     "/api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}": {
+      "patch": {
+        "operationId": "operate_video_mask_correction_keyframe_api_v1_tasks__task_id__video_tracks__annotation_id__mask_keyframes__frame_index__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMaskKeyframeOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Operate Video Mask Correction Keyframe",
+        "tags": [
+          "tasks"
+        ]
+      },
       "put": {
         "operationId": "save_video_mask_correction_keyframe_api_v1_tasks__task_id__video_tracks__annotation_id__mask_keyframes__frame_index__put",
         "parameters": [

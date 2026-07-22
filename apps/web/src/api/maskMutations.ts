@@ -1,7 +1,7 @@
 import type { RasterMaskGeometry, VideoTrackMaskGeometry } from "@/types";
 import { apiClient } from "./client";
 
-export type MaskMutationOperation = "split_components" | "copy_component" | "join_masks" | "overlap";
+export type MaskMutationOperation = "split_components" | "copy_component" | "copy_keyframe" | "join_masks" | "overlap";
 export type MaskMutationGeometry = RasterMaskGeometry | VideoTrackMaskGeometry;
 
 export interface MaskMutationScope {
@@ -43,6 +43,7 @@ export interface MaskMutationCommitRequest {
   idempotency_key: string;
   operation: MaskMutationOperation;
   scope: MaskMutationScope;
+  source_frame_index?: number | null;
   scope_fingerprint: string;
   expected_versions: Array<{ annotation_id: string; version: number }>;
   mutations: MaskMutation[];

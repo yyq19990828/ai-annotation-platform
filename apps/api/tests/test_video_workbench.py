@@ -1229,8 +1229,9 @@ async def test_video_export_preserves_and_applies_outside_ranges(
     user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
     _, track = await _video_fixture_task_and_track(db_session, project)
-    # frame 4 关键帧仍消失 (沿用 fixture 的 {4,4} outside); 再叠加 {1,1} 与 {5,6}。
-    # {4,4}+{5,6} 相邻合并为 {4,6,prediction}，验证 normalize 行为。
+    # frame 4 关键帧仍消失 (沿用 fixture 的 {4,4} manual outside);
+    # 再叠加 {1,1} manual 与 {5,6} prediction。不同来源的相邻区间不合并，
+    # 避免恢复 manual outside 时意外删除 prediction 范围。
     track.geometry = {
         **track.geometry,
         "outside": [
@@ -1249,7 +1250,8 @@ async def test_video_export_preserves_and_applies_outside_ranges(
     car = next(track for track in body["tracks"] if track["track_id"] == "trk_car")
     assert car["outside"] == [
         {"from": 1, "to": 1, "source": "manual"},
-        {"from": 4, "to": 6, "source": "prediction"},
+        {"from": 4, "to": 4, "source": "manual"},
+        {"from": 5, "to": 6, "source": "prediction"},
     ]
     assert [frame["frame_index"] for frame in car["frames"]] == [0, 2]
 

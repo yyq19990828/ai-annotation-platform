@@ -14,6 +14,7 @@ describe("auditActionLabel", () => {
     expect(auditActionLabel("auth.login")).toBe("登录");
     expect(auditActionLabel("user.invite")).toBe("邀请用户");
     expect(auditActionLabel("project.delete")).toBe("删除项目");
+    expect(auditActionLabel("video_mask.keyframe_operate")).toBe("操作视频 Mask 关键帧");
   });
 
   it("未知 action → 原 action 串", () => {

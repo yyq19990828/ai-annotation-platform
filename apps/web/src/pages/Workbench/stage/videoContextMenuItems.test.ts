@@ -2,8 +2,9 @@
  * v0.16.4 · 视频右键菜单 builder 纯函数测试(栈无关,SVG + Konva 共用)。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type { AnnotationResponse, VideoBboxGeometry, VideoTrackGeometry, VideoTrackMaskGeometry } from "@/types";
 import { buildVideoContextMenuItems, type VideoContextMenuCtx } from "./videoContextMenuItems";
+import type { VideoMaskKeyframeActionHandlers } from "./videoMaskKeyframeActions";
 import type { VideoTrackActions } from "./useVideoTrackActions";
 
 function bbox(id: string, frameIndex: number, cls = "car"): AnnotationResponse {
@@ -11,6 +12,30 @@ function bbox(id: string, frameIndex: number, cls = "car"): AnnotationResponse {
 }
 function track(id: string, trackId = "t1"): AnnotationResponse {
   return { id, class_name: "car", geometry: { type: "video_track_bbox", track_id: trackId, keyframes: [{ frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", occluded: false }] } satisfies VideoTrackGeometry } as unknown as AnnotationResponse;
+}
+function maskTrack(outside: VideoTrackMaskGeometry["outside"] = []): AnnotationResponse {
+  return {
+    id: "mask-1",
+    class_name: "car",
+    is_locked: false,
+    geometry: {
+      type: "video_track_mask",
+      track_id: "mask-track-1",
+      keyframes: [0, 5].map((frame_index) => ({
+        frame_index,
+        source: "manual" as const,
+        mask: {
+          encoding: "coco_rle_ref" as const,
+          size: [2, 3],
+          object_key: `raster-masks/${frame_index}.json`,
+          sha256: String(frame_index).padStart(64, "0"),
+          runs: 3,
+          bytes: 12,
+        },
+      })),
+      outside,
+    } satisfies VideoTrackMaskGeometry,
+  } as unknown as AnnotationResponse;
 }
 
 const trackActions: VideoTrackActions = {
@@ -25,6 +50,18 @@ const trackActions: VideoTrackActions = {
   toggleSelectedTrackHidden: vi.fn(),
   toggleSelectedTrackLocked: vi.fn(),
   propagateSelectedTrack: vi.fn(),
+};
+
+const maskKeyframeActions: VideoMaskKeyframeActionHandlers = {
+  clipboardLabel: "F0",
+  hasClipboard: true,
+  busy: false,
+  copyCurrent: vi.fn(),
+  pasteSameTrack: vi.fn(),
+  pasteNewTrack: vi.fn(),
+  deleteCurrentKeyframe: vi.fn(),
+  toggleCurrentOutside: vi.fn(),
+  splitCurrentComponents: vi.fn(),
 };
 
 const base: VideoContextMenuCtx = {
@@ -94,5 +131,51 @@ describe("buildVideoContextMenuItems", () => {
   it("选中 track 但 contextMenuTargetId 不匹配 → 空菜单", () => {
     const t = track("trk1");
     expect(buildVideoContextMenuItems({ ...base, selectedAnnotation: t, contextMenuTargetId: "other" })).toEqual([]);
+  });
+
+  it("Mask 轨迹提供剪贴板、帧状态、组件拆轨与整轨操作", () => {
+    const annotation = maskTrack();
+    const items = buildVideoContextMenuItems({
+      ...base,
+      contextMenuAnnotation: annotation,
+      maskKeyframeActions,
+    });
+    expect(items.filter((item) => !item.divider).map((item) => item.id)).toEqual([
+      "mask-copy-current",
+      "mask-paste-current",
+      "mask-paste-new",
+      "mask-outside",
+      "mask-delete-keyframe",
+      "mask-split-components",
+      "mask-track-class",
+      "mask-delete-track",
+    ]);
+    items.find((item) => item.id === "mask-paste-new")?.onSelect?.();
+    expect(maskKeyframeActions.pasteNewTrack).toHaveBeenCalledWith(annotation);
+  });
+
+  it("Mask 当前帧 outside 时禁用复制、删除与拆轨，保留恢复 held 入口", () => {
+    const items = buildVideoContextMenuItems({
+      ...base,
+      frameIndex: 5,
+      contextMenuAnnotation: maskTrack([{ from: 5, to: 5, source: "manual" }]),
+      maskKeyframeActions,
+    });
+    expect(items.find((item) => item.id === "mask-copy-current")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "mask-delete-keyframe")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "mask-split-components")?.disabled).toBe(true);
+    expect(items.find((item) => item.id === "mask-outside")?.label).toBe("恢复保持");
+    expect(items.find((item) => item.id === "mask-outside")?.disabled).toBe(false);
+  });
+
+  it("Mask 预测 outside 不冒充可恢复的人工 held 状态", () => {
+    const items = buildVideoContextMenuItems({
+      ...base,
+      frameIndex: 5,
+      contextMenuAnnotation: maskTrack([{ from: 5, to: 5, source: "prediction" }]),
+      maskKeyframeActions,
+    });
+    expect(items.find((item) => item.id === "mask-outside")?.label).toBe("预测消失");
+    expect(items.find((item) => item.id === "mask-outside")?.disabled).toBe(true);
   });
 });

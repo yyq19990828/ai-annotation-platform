@@ -169,10 +169,32 @@ export const videoTrackerApi = {
     frameIndex: number,
     mask: CocoRleMaskRef,
     sourceVersion: number,
+    metadata?: {
+      source?: "manual" | "prediction";
+      occluded?: boolean;
+      attributes?: Record<string, unknown> | null;
+    },
   ) =>
     apiClient.put<AnnotationResponse>(
       `/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/${frameIndex}`,
-      { mask },
+      {
+        mask,
+        source: metadata?.source ?? "manual",
+        occluded: metadata?.occluded ?? false,
+        ...(metadata?.attributes !== undefined ? { attributes: metadata.attributes } : {}),
+      },
+      { headers: { "If-Match": `W/"${sourceVersion}"` } },
+    ),
+  operateMaskKeyframe: (
+    taskId: string,
+    annotationId: string,
+    frameIndex: number,
+    operation: "delete_keyframe" | "mark_outside" | "restore_held",
+    sourceVersion: number,
+  ) =>
+    apiClient.patch<AnnotationResponse>(
+      `/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/${frameIndex}`,
+      { operation },
       { headers: { "If-Match": `W/"${sourceVersion}"` } },
     ),
   correct: (

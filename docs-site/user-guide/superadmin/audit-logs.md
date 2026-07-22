@@ -55,6 +55,7 @@ last_reviewed: 2026-07-22
 - `failed_prediction.dismissed` / `failed_prediction.restored`
 - `video_tracker_job.create` / `video_tracker_job.cancel` / `video_tracker_job.accept` / `video_tracker_job.discard` / `video_tracker_job.decision`
 - `video_correction_job.create` / `video_correction_job.cancel`（人工 Mask 纠错传播创建 / 取消）
+- `video_mask.keyframe_correct` / `video_mask.keyframe_operate`（保存纠错帧，以及删除、消失或恢复关键帧状态）
 - `annotation.mask_mutation`（Mask 拆分、复制、合并或严格非重叠的聚合提交）
 - `ml_registry.created` / `ml_registry.updated` / `ml_registry.deleted`（全局注册 CRUD）
 - `ml_service_pool.created` / `ml_service_pool.updated` / `ml_service_pool.deleted` / `ml_service_pool.member_upserted` / `ml_service_pool.member_removed` / `ml_service_pool.member_drained` / `ml_service_pool.member_resumed`

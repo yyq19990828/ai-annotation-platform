@@ -447,6 +447,8 @@ export function MaskToolbar({
           <span className="text-xs text-foreground">
             {instanceOperationPreview.plan.kind === "copy_component"
               ? "复制组件"
+              : instanceOperationPreview.plan.kind === "copy_keyframe"
+                ? "粘贴为新轨迹"
               : instanceOperationPreview.plan.kind === "join_masks"
                 ? "合并 Mask"
                 : instanceOperationPreview.plan.kind === "overlap"

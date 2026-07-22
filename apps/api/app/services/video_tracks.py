@@ -81,14 +81,16 @@ def normalize_outside_ranges(ranges: list[dict] | None) -> list[dict]:
         for range_ in (clean_outside_range(item) for item in ranges or [])
         if range_ is not None
     ]
-    cleaned.sort(key=lambda item: (item["from"], item["to"]))
+    cleaned.sort(key=lambda item: (item["from"], item["to"], item["source"]))
     merged: list[dict] = []
     for range_ in cleaned:
         previous = merged[-1] if merged else None
-        if previous and range_["from"] <= previous["to"] + 1:
+        if (
+            previous
+            and previous["source"] == range_["source"]
+            and range_["from"] <= previous["to"] + 1
+        ):
             previous["to"] = max(previous["to"], range_["to"])
-            if range_["source"] == "prediction":
-                previous["source"] = "prediction"
             continue
         merged.append(dict(range_))
     return merged
@@ -110,6 +112,35 @@ def remove_frame_from_outside_ranges(
         if frame < range_["to"]:
             result.append({**range_, "from": frame + 1})
     return normalize_outside_ranges(result)
+
+
+def remove_manual_frame_from_outside_ranges(
+    ranges: list[dict] | None, frame_index: int
+) -> tuple[list[dict], bool]:
+    """Remove one frame only from manual outside ranges.
+
+    Prediction-owned ranges remain authoritative.  The boolean reports whether a
+    manual range actually covered the frame so callers can distinguish a no-op
+    from a successful held restore.
+    """
+
+    frame = max(0, int(frame_index))
+    result: list[dict] = []
+    removed = False
+    for range_ in normalize_outside_ranges(ranges):
+        if (
+            range_["source"] != "manual"
+            or frame < range_["from"]
+            or frame > range_["to"]
+        ):
+            result.append(range_)
+            continue
+        removed = True
+        if range_["from"] < frame:
+            result.append({**range_, "to": frame - 1})
+        if frame < range_["to"]:
+            result.append({**range_, "from": frame + 1})
+    return normalize_outside_ranges(result), removed
 
 
 def effective_outside_ranges(geometry: dict) -> list[dict]:

@@ -25,7 +25,8 @@ class AnnotationOperation(Base):
     __tablename__ = "annotation_operations"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('split_components', 'copy_component', 'join_masks', 'overlap')",
+            "kind IN ('split_components', 'copy_component', 'copy_keyframe', "
+            "'join_masks', 'overlap')",
             name="ck_annotation_operations_kind",
         ),
         CheckConstraint(
@@ -95,7 +96,8 @@ class AnnotationLineageEdge(Base):
             name="ck_annotation_lineage_frame_index",
         ),
         CheckConstraint(
-            "relation IN ('split', 'copied', 'joined', 'overlap_erased')",
+            "relation IN ('split', 'copied', 'keyframe_copied', 'joined', "
+            "'overlap_erased')",
             name="ck_annotation_lineage_relation",
         ),
         Index("ix_annotation_lineage_source", "source_annotation_id"),

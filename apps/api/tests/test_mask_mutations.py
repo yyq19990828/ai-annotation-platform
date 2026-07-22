@@ -1170,6 +1170,171 @@ async def test_video_copy_only_creates_current_frame_with_server_track_id(
 
 
 @pytest.mark.asyncio
+async def test_video_copy_keyframe_can_copy_external_held_source_atomically(
+    db_session, httpx_client, super_admin, mask_content
+):
+    user, token = super_admin
+    task, segment = await _seed_video_task(db_session, user.id)
+    source = await _seed_video_annotation(db_session, task, user.id)
+    source.geometry = {
+        **source.geometry,
+        "outside": [{"from": 3, "to": 3, "source": "manual"}],
+    }
+    await db_session.flush()
+    scope = MaskMutationScope(
+        media="video",
+        frame_index=3,
+        segment_id=segment.id,
+        instance_filter="same_class",
+        class_name="object",
+        overlap_policy="allow",
+    )
+    source_reference = source.geometry["keyframes"][1]["mask"]
+    payload = {
+        "idempotency_key": "mask-video-copy-keyframe-0001",
+        "operation": "copy_keyframe",
+        "scope": scope.model_dump(mode="json"),
+        "source_frame_index": 5,
+        "scope_fingerprint": scope_fingerprint(scope, [source]),
+        "expected_versions": [{"annotation_id": str(source.id), "version": 1}],
+        "mutations": [
+            {
+                "kind": "create",
+                "source_annotation_ids": [str(source.id)],
+                "geometry": {
+                    "type": "video_track_mask",
+                    "track_id": "trk_client_copy",
+                    "semantic_label": "object",
+                    "keyframes": [
+                        {
+                            "frame_index": 3,
+                            "mask": source_reference,
+                            "source": "manual",
+                            "occluded": False,
+                        }
+                    ],
+                    "outside": [],
+                },
+            }
+        ],
+    }
+
+    response = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/annotations/mask-mutations:commit",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["updated_annotations"] == []
+    assert body["deleted_annotation_ids"] == []
+    assert body["lineage_edges"] == [
+        {
+            "source_annotation_id": str(source.id),
+            "result_annotation_id": body["created_annotations"][0]["id"],
+            "relation": "keyframe_copied",
+            "source_version": 1,
+            "result_version": 1,
+            "frame_index": 3,
+        }
+    ]
+    created = await db_session.get(
+        Annotation, uuid.UUID(body["created_annotations"][0]["id"])
+    )
+    assert created is not None
+    assert created.geometry["outside"] == []
+    assert len(created.geometry["keyframes"]) == 1
+    created_keyframe = created.geometry["keyframes"][0]
+    assert created_keyframe["frame_index"] == 3
+    assert created_keyframe["mask"]["sha256"] == source_reference["sha256"]
+    assert created_keyframe["source"] == "manual"
+    assert created_keyframe["occluded"] is False
+    await db_session.refresh(source)
+    assert source.version == 1
+    assert [item["frame_index"] for item in source.geometry["keyframes"]] == [0, 5]
+    operation = await db_session.get(
+        AnnotationOperation, uuid.UUID(body["operation_id"])
+    )
+    assert operation is not None
+    assert operation.kind == "copy_keyframe"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["version", "content"])
+async def test_video_copy_keyframe_rejects_stale_or_changed_source(
+    failure, db_session, httpx_client, super_admin, mask_content
+):
+    user, token = super_admin
+    task, segment = await _seed_video_task(db_session, user.id)
+    source = await _seed_video_annotation(db_session, task, user.id)
+    scope = MaskMutationScope(
+        media="video",
+        frame_index=3,
+        segment_id=segment.id,
+        instance_filter="same_class",
+        class_name="object",
+        overlap_policy="allow",
+    )
+    result_reference = (
+        source.geometry["keyframes"][0]["mask"]
+        if failure == "content"
+        else source.geometry["keyframes"][1]["mask"]
+    )
+    payload = {
+        "idempotency_key": f"mask-video-copy-keyframe-{failure}-0001",
+        "operation": "copy_keyframe",
+        "scope": scope.model_dump(mode="json"),
+        "source_frame_index": 5,
+        "scope_fingerprint": scope_fingerprint(scope, [source]),
+        "expected_versions": [
+            {
+                "annotation_id": str(source.id),
+                "version": 99 if failure == "version" else 1,
+            }
+        ],
+        "mutations": [
+            {
+                "kind": "create",
+                "source_annotation_ids": [str(source.id)],
+                "geometry": {
+                    "type": "video_track_mask",
+                    "track_id": "trk_client_copy",
+                    "keyframes": [
+                        {
+                            "frame_index": 3,
+                            "mask": result_reference,
+                            "source": "manual",
+                            "occluded": False,
+                        }
+                    ],
+                    "outside": [],
+                },
+            }
+        ],
+    }
+
+    response = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/annotations/mask-mutations:commit",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code in {409, 422}
+    assert response.json()["detail"]["reason"] == (
+        "version_mismatch" if failure == "version" else "invalid_operation"
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(AnnotationOperation)
+            .where(AnnotationOperation.task_id == task.id)
+        )
+        == 0
+    )
+
+
+@pytest.mark.asyncio
 async def test_video_join_creates_current_frame_copy_and_preserves_source_tracks(
     db_session, httpx_client, super_admin, mask_content
 ):
@@ -1515,9 +1680,7 @@ def test_derived_rle_run_budget_returns_stable_operation_error(monkeypatch):
 
 
 def test_cumulative_algebra_budget_returns_stable_operation_error(monkeypatch):
-    monkeypatch.setattr(
-        "app.services.mask_mutation.MAX_MASK_MUTATION_ALGEBRA_STEPS", 1
-    )
+    monkeypatch.setattr("app.services.mask_mutation.MAX_MASK_MUTATION_ALGEBRA_STEPS", 1)
     budget = _AlgebraBudget()
 
     with pytest.raises(MaskMutationError) as captured:
@@ -1535,9 +1698,7 @@ async def test_scope_candidate_limit_rejects_before_loading_unbounded_task(
     task = await _seed_image_task(db_session, user.id)
     first = await _seed_annotation(db_session, task, user.id, rle=RLE_A)
     await _seed_annotation(db_session, task, user.id, rle=RLE_B)
-    monkeypatch.setattr(
-        "app.services.mask_mutation.MAX_MASK_MUTATION_SCOPE_MEMBERS", 1
-    )
+    monkeypatch.setattr("app.services.mask_mutation.MAX_MASK_MUTATION_SCOPE_MEMBERS", 1)
     payload = _payload(first, _scope(), reference=first.geometry["mask"])
 
     response = await httpx_client.post(
@@ -1555,9 +1716,7 @@ async def test_ordinary_mask_prepare_waits_for_task_before_rle_advisory(
     monkeypatch, test_engine
 ):
     """Two real sessions prove ordinary writes cannot hold RLE while waiting Task."""
-    maker = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     user_id = uuid.uuid4()
     task_id: uuid.UUID | None = None
     project_id: uuid.UUID | None = None
@@ -1613,11 +1772,8 @@ async def test_ordinary_mask_prepare_waits_for_task_before_rle_advisory(
             )
             await asyncio.sleep(0.05)
             acquired = await atomic_session.scalar(
-                text(
-                    "SELECT pg_try_advisory_xact_lock("
-                    "hashtextextended(:key, 0))"
-                ),
-                {"key": f'aap:raster-mask:{reference["object_key"]}'},
+                text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"aap:raster-mask:{reference['object_key']}"},
             )
             assert acquired is True
             await atomic_session.rollback()
@@ -1627,11 +1783,7 @@ async def test_ordinary_mask_prepare_waits_for_task_before_rle_advisory(
         if task_id and project_id and dataset_id:
             async with maker() as cleanup:
                 await cleanup.execute(delete(Task).where(Task.id == task_id))
-                await cleanup.execute(
-                    delete(Project).where(Project.id == project_id)
-                )
-                await cleanup.execute(
-                    delete(Dataset).where(Dataset.id == dataset_id)
-                )
+                await cleanup.execute(delete(Project).where(Project.id == project_id))
+                await cleanup.execute(delete(Dataset).where(Dataset.id == dataset_id))
                 await cleanup.execute(delete(User).where(User.id == user_id))
                 await cleanup.commit()

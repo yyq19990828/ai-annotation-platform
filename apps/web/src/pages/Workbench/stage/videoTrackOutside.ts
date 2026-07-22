@@ -26,14 +26,17 @@ export function normalizeOutsideRanges(ranges: readonly OutsideInput[] | undefin
   const cleaned = (ranges ?? [])
     .map(cleanRange)
     .filter((range): range is VideoTrackOutsideRange => Boolean(range))
-    .sort((a, b) => a.from - b.from || a.to - b.to);
+    .sort((a, b) => (
+      a.from - b.from
+      || a.to - b.to
+      || (a.source ?? "manual").localeCompare(b.source ?? "manual")
+    ));
 
   const merged: VideoTrackOutsideRange[] = [];
   for (const range of cleaned) {
     const prev = merged[merged.length - 1];
-    if (prev && range.from <= prev.to + 1) {
+    if (prev && prev.source === range.source && range.from <= prev.to + 1) {
       prev.to = Math.max(prev.to, range.to);
-      if (range.source === "prediction") prev.source = "prediction";
       continue;
     }
     merged.push({ ...range });

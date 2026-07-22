@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -249,7 +249,7 @@ def _validate_operation_shape(
             and all(set(item.source_annotation_ids) == source_ids for item in creates)
             and not deletes
         )
-    elif payload.operation == "copy_component":
+    elif payload.operation in {"copy_component", "copy_keyframe"}:
         valid = (
             len(source_ids) == 1
             and len(creates) == 1
@@ -598,9 +598,8 @@ def _is_complete_source_component(
             elif result_root != root:
                 return False
             result_area += result_end - result_start + 1
-    return (
-        result_root is not None
-        and result_area == component_areas.get(result_root, -1)
+    return result_root is not None and result_area == component_areas.get(
+        result_root, -1
     )
 
 
@@ -657,10 +656,10 @@ class MaskMutationService:
         scope: MaskMutationScope,
         *,
         for_update: bool = True,
+        include_annotation_ids: set[uuid.UUID] | None = None,
     ) -> list[Annotation]:
-        expected_type = (
-            "raster_mask" if scope.media == "image" else "video_track_mask"
-        )
+        included_ids = include_annotation_ids or set()
+        expected_type = "raster_mask" if scope.media == "image" else "video_track_mask"
         query = select(Annotation).where(
             Annotation.task_id == task_id,
             Annotation.is_active.is_(True),
@@ -668,15 +667,16 @@ class MaskMutationService:
             Annotation.annotation_type == expected_type,
         )
         if scope.instance_filter == "same_class":
-            query = query.where(Annotation.class_name == scope.class_name)
+            class_filter = Annotation.class_name == scope.class_name
+            if included_ids:
+                class_filter = or_(class_filter, Annotation.id.in_(included_ids))
+            query = query.where(class_filter)
         query = query.order_by(Annotation.id.asc()).limit(
             MAX_MASK_MUTATION_SCOPE_MEMBERS + 1
         )
         if for_update:
             query = query.with_for_update().execution_options(populate_existing=True)
-        rows = list(
-            (await self.db.execute(query)).scalars().all()
-        )
+        rows = list((await self.db.execute(query)).scalars().all())
         if len(rows) > MAX_MASK_MUTATION_SCOPE_MEMBERS:
             raise MaskMutationError(
                 status_code=422,
@@ -685,7 +685,9 @@ class MaskMutationService:
                 max_scope_members=MAX_MASK_MUTATION_SCOPE_MEMBERS,
             )
         return [
-            annotation for annotation in rows if _annotation_in_scope(annotation, scope)
+            annotation
+            for annotation in rows
+            if _annotation_in_scope(annotation, scope) or annotation.id in included_ids
         ]
 
     async def _assert_segment_lease(
@@ -804,10 +806,24 @@ class MaskMutationService:
         needed_source_ids = set(by_id) if needs_full_scope else source_ids
         source_rles: dict[uuid.UUID, dict] = {}
         for annotation_id in sorted(needed_source_ids, key=str):
-            source_rles[annotation_id] = await load_geometry(
-                by_id[annotation_id].geometry,
-                result=False,
-            )
+            if payload.operation == "copy_keyframe" and annotation_id in source_ids:
+                source_resolved = resolve_track_at_frame(
+                    by_id[annotation_id].geometry,
+                    int(payload.source_frame_index or 0),
+                )
+                source_reference = (source_resolved or {}).get("mask")
+                if source_reference is None:
+                    raise MaskMutationError(
+                        status_code=422,
+                        reason="invalid_geometry",
+                        message="copied source keyframe is not visible",
+                    )
+                source_rles[annotation_id] = await load_reference(source_reference)
+            else:
+                source_rles[annotation_id] = await load_geometry(
+                    by_id[annotation_id].geometry,
+                    result=False,
+                )
 
         result_rles: dict[int, dict] = {}
         for index, mutation in enumerate(payload.mutations):
@@ -819,22 +835,32 @@ class MaskMutationService:
             )
 
         invalid_message: str | None = None
-        if payload.operation == "copy_component":
-            source_rle = source_rles[next(iter(source_ids))]
+        if payload.operation in {"copy_component", "copy_keyframe"}:
+            source_id = next(iter(source_ids))
+            if payload.operation == "copy_keyframe":
+                source_rle = source_rles[source_id]
+            else:
+                source_rle = source_rles[source_id]
             result_rle = next(iter(result_rles.values()))
-            connectivity = payload.report.connectivity
-            if connectivity not in {4, 8}:
-                invalid_message = "component copy requires 4 or 8 connectivity"
-            elif not _rle_subset(result_rle, source_rle, algebra_budget):
-                invalid_message = "copied component must be a subset of its source"
-            elif not _is_complete_source_component(
-                result_rle,
-                source_index=_source_component_index(
-                    source_rle, connectivity, algebra_budget
-                ),
-                budget=algebra_budget,
-            ):
-                invalid_message = "copied result must equal one complete source component"
+            if payload.operation == "copy_keyframe":
+                if not _rle_equal(result_rle, source_rle, algebra_budget):
+                    invalid_message = "copied keyframe must equal its source snapshot"
+            else:
+                connectivity = payload.report.connectivity
+                if connectivity not in {4, 8}:
+                    invalid_message = "component copy requires 4 or 8 connectivity"
+                elif not _rle_subset(result_rle, source_rle, algebra_budget):
+                    invalid_message = "copied component must be a subset of its source"
+                elif not _is_complete_source_component(
+                    result_rle,
+                    source_index=_source_component_index(
+                        source_rle, connectivity, algebra_budget
+                    ),
+                    budget=algebra_budget,
+                ):
+                    invalid_message = (
+                        "copied result must equal one complete source component"
+                    )
         elif payload.operation == "split_components":
             source_rle = source_rles[next(iter(source_ids))]
             split_results = list(result_rles.values())
@@ -863,9 +889,7 @@ class MaskMutationService:
                 if _rle_intersects(combined, result_rle, algebra_budget):
                     invalid_message = "split results must not overlap"
                     break
-                combined = _combine_rles(
-                    combined, result_rle, "or", algebra_budget
-                )
+                combined = _combine_rles(combined, result_rle, "or", algebra_budget)
             if invalid_message is None and not _rle_equal(
                 combined, source_rle, algebra_budget
             ):
@@ -899,9 +923,7 @@ class MaskMutationService:
                     expected = _combine_rles(
                         before, primary_result, "and_not", algebra_budget
                     )
-                    changed = _rle_changed_pixels(
-                        before, expected, algebra_budget
-                    )
+                    changed = _rle_changed_pixels(before, expected, algebra_budget)
                     target = targets.get(annotation.id)
                     if changed == 0:
                         if target is not None:
@@ -939,9 +961,7 @@ class MaskMutationService:
                             )
                             break
                     elif not isinstance(target_mutation, MaskUpdateMutation) or not (
-                        _rle_equal(
-                            result_rles[target_index], expected, algebra_budget
-                        )
+                        _rle_equal(result_rles[target_index], expected, algebra_budget)
                     ):
                         invalid_message = (
                             "overlap result must equal source minus the primary mask"
@@ -1142,8 +1162,21 @@ class MaskMutationService:
         # Read the bounded scope before acquiring Annotation row locks.  The Task
         # row above serializes every mask persistence path; RLE/upload locks must
         # come before Annotation locks to match GC and ordinary writes.
+        explicit_source_ids = (
+            {
+                source_id
+                for mutation in payload.mutations
+                if isinstance(mutation, MaskCreateMutation)
+                for source_id in mutation.source_annotation_ids
+            }
+            if payload.operation == "copy_keyframe"
+            else set()
+        )
         annotations = await self._lock_scope(
-            task_id, payload.scope, for_update=False
+            task_id,
+            payload.scope,
+            for_update=False,
+            include_annotation_ids=explicit_source_ids,
         )
         current_fingerprint = scope_fingerprint(payload.scope, annotations)
         current_versions = {
@@ -1327,12 +1360,17 @@ class MaskMutationService:
             for reference in submitted_references
             if reference.get("object_key")
         }
+        source_scope = (
+            payload.scope.model_copy(update={"frame_index": payload.source_frame_index})
+            if payload.operation == "copy_keyframe"
+            else payload.scope
+        )
         source_keys = {
             str(reference["object_key"])
             for annotation_id in source_ids
             if (
                 reference := _geometry_for_frame(
-                    by_id[annotation_id].geometry, payload.scope
+                    by_id[annotation_id].geometry, source_scope
                 )
             )
             is not None
@@ -1379,7 +1417,11 @@ class MaskMutationService:
                 message=str(exc.detail.get("message") or exc),
             ) from exc
 
-        locked_annotations = await self._lock_scope(task_id, payload.scope)
+        locked_annotations = await self._lock_scope(
+            task_id,
+            payload.scope,
+            include_annotation_ids=explicit_source_ids,
+        )
         locked_fingerprint = scope_fingerprint(payload.scope, locked_annotations)
         locked_versions = {
             str(item.id): int(item.version or 1) for item in locked_annotations
@@ -1487,10 +1529,16 @@ class MaskMutationService:
         relation = {
             "split_components": "split",
             "copy_component": "copied",
+            "copy_keyframe": "keyframe_copied",
             "join_masks": "joined",
             "overlap": "overlap_erased",
         }[payload.operation]
-        if payload.operation in {"split_components", "copy_component", "join_masks"}:
+        if payload.operation in {
+            "split_components",
+            "copy_component",
+            "copy_keyframe",
+            "join_masks",
+        }:
             for source_id in sorted(source_ids, key=str):
                 for result_id in result_ids:
                     lineage.append(

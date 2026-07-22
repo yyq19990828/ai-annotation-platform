@@ -34,6 +34,7 @@ import { MetricGrid } from "./MetricGrid";
 import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics, type Metric } from "./geometryMetrics";
+import { VideoKeyframeControls } from "./VideoKeyframeControls";
 
 const BODY_CLASS =
   "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
@@ -72,11 +73,6 @@ const TRACKER_JOB_ROW_CLASS = "flex items-center gap-1.5";
 /* ─── 标题行图标按钮 ─── */
 const HEADER_ACTIONS_CLASS = "flex items-center gap-1";
 const ICON_BUTTON_CLASS = "size-7! p-0! justify-center! rounded-lg!";
-
-/* ─── 关键帧导航 ─── */
-const KF_NAV_CLASS = "grid grid-cols-2 gap-1";
-const KF_NAV_BUTTON_CLASS =
-  "min-h-7! justify-center! rounded-lg! px-2! text-xs!";
 
 /* ─── 关键帧表 ─── */
 const KF_TABLE_CLASS =
@@ -503,26 +499,11 @@ export function VideoTrackCardContent({
           <span className={SECTION_TITLE_CLASS}>关键帧</span>
           <span className={cn("mono", SECTION_COUNT_CLASS)}>{geom.keyframes.length}</span>
         </div>
-        <div className={KF_NAV_CLASS}>
-          <Button
-            size="sm"
-            className={KF_NAV_BUTTON_CLASS}
-            disabled={prevKf === null || !onSeekFrame}
-            title="上一关键帧"
-            onClick={() => prevKf !== null && onSeekFrame?.(prevKf)}
-          >
-            <Icon name="chevLeft" size={14} />上一关键帧
-          </Button>
-          <Button
-            size="sm"
-            className={KF_NAV_BUTTON_CLASS}
-            disabled={nextKf === null || !onSeekFrame}
-            title="下一关键帧"
-            onClick={() => nextKf !== null && onSeekFrame?.(nextKf)}
-          >
-            下一关键帧<Icon name="chevRight" size={14} />
-          </Button>
-        </div>
+        <VideoKeyframeControls
+          previousFrame={prevKf}
+          nextFrame={nextKf}
+          onSeekFrame={onSeekFrame}
+        />
         <div className={KF_TABLE_CLASS}>
           <div className={KF_HEADER_CLASS}>
             <span>帧</span>

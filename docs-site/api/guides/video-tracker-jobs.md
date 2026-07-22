@@ -143,11 +143,25 @@ Content-Type: application/json
     "runs": 4096,
     "bytes": 16384
   },
+  "source": "manual",
   "occluded": false
 }
 ```
 
-服务端锁定 task 与 annotation，复核 assignment、segment lease、版本、媒体尺寸和内容引用后，把该帧写成 `source="manual"`，从 `outside` 中移除该帧，并返回新的 `ETag`。保存成功后，即使后续传播创建或入队失败，人工关键帧也保留。
+普通交互可省略 `source`，默认写成 `manual`；撤销 / 重做回放原关键帧时可传回原始 `manual | prediction` 值。服务端按 task → task edit lock → segment → RLE / upload → annotation 的顺序锁定，复核 assignment、segment lease、版本、媒体尺寸和内容引用，从 `outside` 中移除该帧，并返回新的 `ETag`。保存成功后，即使后续传播创建或入队失败，人工关键帧也保留。
+
+关键帧删除和 `outside` 状态使用同路径的 `PATCH`，同样必须携带 annotation 当前版本：
+
+```http
+PATCH /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+If-Match: W/"<annotation-version>"
+```
+
+```json
+{ "operation": "delete_keyframe" }
+```
+
+`operation` 可为 `delete_keyframe | mark_outside | restore_held`。删除要求当前帧存在精确关键帧且轨迹仍有其它关键帧；`mark_outside` 只增加 manual 区间，`restore_held` 只移除覆盖当前帧的 manual 区间，不修改 prediction 区间。响应返回新 `ETag`、`X-Resolved-Keyframe-Frame` 与 `X-Restored-Held`；稳定冲突原因包括 `source_version_conflict`、`task_lock_conflict`、`annotation_locked`、`keyframe_missing`、`manual_outside_missing` 和 `frame_already_outside`。
 
 再用返回的新 annotation version、RLE 摘要以及精确 backend/model 创建纠错 job：
 

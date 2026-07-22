@@ -28,6 +28,7 @@ import { resolveAnnotationVisual } from "../../stage/annotationVisual";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
+import type { VideoMaskKeyframeActionHandlers } from "../../stage/videoMaskKeyframeActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
@@ -80,6 +81,7 @@ export interface VideoWorkbenchProps {
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   maskCandidates?: VideoMaskCandidate[];
   maskEditor?: UseMaskEditorReturn;
+  maskKeyframeActions?: VideoMaskKeyframeActionHandlers;
   onMaskCommit?: () => void;
   onMaskCancel?: () => void;
   samPolarity?: "positive" | "negative";
@@ -153,6 +155,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     samSessionBoxes,
     maskCandidates,
     maskEditor,
+    maskKeyframeActions,
     onMaskCommit,
     onMaskCancel,
     samPolarity,
@@ -225,6 +228,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         samSessionBoxes={samSessionBoxes}
         maskCandidates={maskCandidates}
         maskEditor={maskEditor}
+        maskKeyframeActions={maskKeyframeActions}
         onMaskCommit={onMaskCommit}
         onMaskCancel={onMaskCancel}
         samPolarity={samPolarity}

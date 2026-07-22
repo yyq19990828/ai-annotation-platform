@@ -10,7 +10,7 @@ from app.schemas._jsonb_types import RasterMaskGeometry, VideoTrackMaskGeometry
 MaskGeometry = RasterMaskGeometry | VideoTrackMaskGeometry
 NonNegativeInt = Annotated[int, Field(ge=0)]
 MaskOperationKind = Literal[
-    "split_components", "copy_component", "join_masks", "overlap"
+    "split_components", "copy_component", "copy_keyframe", "join_masks", "overlap"
 ]
 
 
@@ -144,6 +144,7 @@ class MaskMutationCommitRequest(BaseModel):
     )
     operation: MaskOperationKind
     scope: MaskMutationScope
+    source_frame_index: int | None = Field(default=None, ge=0)
     scope_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     # Keep request parsing permissive enough for the service to return the
     # stable 428 expected_versions_missing contract for an omitted/empty list.
@@ -176,6 +177,11 @@ class MaskMutationCommitRequest(BaseModel):
         ]
         if len(targets) != len(set(targets)):
             raise ValueError("an annotation may only be updated or deleted once")
+        if self.operation == "copy_keyframe":
+            if self.scope.media != "video" or self.source_frame_index is None:
+                raise ValueError("video copy_keyframe requires source_frame_index")
+        elif self.source_frame_index is not None:
+            raise ValueError("source_frame_index is only valid for copy_keyframe")
         return self
 
 

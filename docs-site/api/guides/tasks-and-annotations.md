@@ -203,7 +203,7 @@ POST /api/v1/tasks/:id/annotations/mask-mutations:commit
 请求的核心字段是：
 
 - `idempotency_key`：同一预览重试必须复用同一个 key；同 key 异参返回 `idempotency_conflict`。
-- `operation`：`split_components`、`copy_component`、`join_masks` 或 `overlap`。
+- `operation`：`split_components`、`copy_component`、`copy_keyframe`、`join_masks` 或 `overlap`。`copy_keyframe` 只用于视频，并要求 `source_frame_index`。
 - `scope`：固定 image / video、当前帧与 segment、同类 / 全部对象过滤、overlap policy 和是否要求严格非重叠。
 - `scope_fingerprint` 与 `expected_versions`：必须来自同一个预览快照；版本项按 annotation UUID 排序并覆盖范围内全部对象。
 - `mutations`：只允许有判别字段的 `update | create | delete`；geometry 只能是 `raster_mask` 或 `video_track_mask`，新内容引用必须先由当前任务上传保留。
@@ -212,7 +212,7 @@ POST /api/v1/tasks/:id/annotations/mask-mutations:commit
 服务端在同一事务内复核任务可见性与可编辑状态、对象与分段锁、范围成员、版本、类别、帧和内容引用，然后一次写入
 annotation 变更、内容关联、操作账本、lineage、任务统计和聚合审计。响应只返回操作 ID、对象 ID / 版本、删除 ID、lineage、摘要和审计 ID，不回传完整 geometry 或 RLE。
 
-服务端还会对像素代数做权威校验：copy 必须等于指定 4/8 连通性下的一个完整源连通域，split 的每个结果必须是完整连通域且不重叠地覆盖全部来源，join 必须等于全部来源并集，overlap 必须精确等于「原对象 − 主 Mask」。视频 join 只允许在当前帧创建副本并保留源轨迹；不允许用单帧请求删除整条来源轨迹。视频 update 只重验当前帧新引用，其他关键帧必须与已锁定的源 geometry 逐项相同，不会在提交时重读整条历史轨迹的对象。
+服务端还会对像素代数做权威校验：component copy 必须等于指定 4/8 连通性下的一个完整源连通域，keyframe copy 必须与来源帧当时解析的完整 RLE 逐像素相同，split 的每个结果必须是完整连通域且不重叠地覆盖全部来源，join 必须等于全部来源并集，overlap 必须精确等于「原对象 − 主 Mask」。视频 keyframe copy 即使来源在目标帧不可见，也会把来源加入范围指纹与版本锁；新轨只含目标帧的 manual keyframe。视频 join 只允许在当前帧创建副本并保留源轨迹；不允许用单帧请求删除整条来源轨迹。视频 update 只重验当前帧新引用，其他关键帧必须与已锁定的源 geometry 逐项相同，不会在提交时重读整条历史轨迹的对象。
 
 请求体上限为 12 MiB，范围候选对象、版本项、mutation 和引用的 RLE 对象各不得超过 1000，单次验证的 RLE runs 总数不得超过 200 万，派生 RLE 不得超过 100 万 runs，累计代数与连通域扫描不得超过 500 万步，严格非重叠经过 bbox 剪枝后最多比较 10 万对。范围查询在 SQL 层使用 `limit + 1` 预检；超限请求会在无界加载或更大规模的像素计算之前被拒绝。
 

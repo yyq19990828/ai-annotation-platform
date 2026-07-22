@@ -83,8 +83,13 @@ class VideoTrackerPropagateRequest(BaseModel):
 
 class VideoMaskKeyframeSaveRequest(BaseModel):
     mask: CocoRleMaskRef
+    source: Literal["manual", "prediction"] = "manual"
     occluded: bool = False
     attributes: dict[str, Any] | None = None
+
+
+class VideoMaskKeyframeOperationRequest(BaseModel):
+    operation: Literal["delete_keyframe", "mark_outside", "restore_held"]
 
 
 class VideoMaskCorrectionRequest(BaseModel):
@@ -112,12 +117,9 @@ class VideoMaskCorrectionRequest(BaseModel):
             raise ValueError("forward correction requires a later target frame")
         if self.direction == "backward" and self.correction_frame <= self.from_frame:
             raise ValueError("backward correction requires an earlier target frame")
-        if (
-            self.direction == "bidirectional"
-            and (
-                self.correction_frame <= self.from_frame
-                or self.correction_frame >= self.to_frame
-            )
+        if self.direction == "bidirectional" and (
+            self.correction_frame <= self.from_frame
+            or self.correction_frame >= self.to_frame
         ):
             raise ValueError(
                 "bidirectional correction requires target frames on both sides"

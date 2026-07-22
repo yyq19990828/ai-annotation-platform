@@ -531,6 +531,7 @@
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
 | PUT | `/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}` |
+| PATCH | `/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}` |
 | POST | `/{task_id}/video/tracks/{annotation_id}/correction-jobs` |
 | POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
 | POST | `/{task_id}/video:track` |
@@ -580,4 +581,4 @@
 
 ---
 
-_共 55 模块 / 318 路由_
+_共 55 模块 / 319 路由_

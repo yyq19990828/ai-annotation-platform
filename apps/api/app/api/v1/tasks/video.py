@@ -37,6 +37,7 @@ from app.schemas.video_frame_service import (
 )
 from app.schemas.video_tracker_job import (
     VideoMaskCorrectionRequest,
+    VideoMaskKeyframeOperationRequest,
     VideoMaskKeyframeSaveRequest,
     VideoTrackerJobOut,
     VideoTrackerPropagateRequest,
@@ -68,6 +69,7 @@ from app.services.video_tracking.jobs import (
     enqueue_tracker_job,
     list_active_tracker_jobs,
     list_reviewable_tracker_jobs,
+    operate_video_mask_keyframe,
     save_video_mask_keyframe,
 )
 from app.services.task_lock import TaskLockService
@@ -742,6 +744,75 @@ async def save_video_mask_correction_keyframe(
     await db.commit()
     await db.refresh(annotation)
     response.headers["ETag"] = f'W/"{annotation.version}"'
+    return AnnotationOut.model_validate(annotation)
+
+
+@router.patch(
+    "/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}",
+    response_model=AnnotationOut,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def operate_video_mask_correction_keyframe(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    frame_index: int,
+    payload: VideoMaskKeyframeOperationRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    raw_if_match = request.headers.get("If-Match", "").strip()
+    if not raw_if_match:
+        raise HTTPException(status_code=428, detail={"reason": "if_match_required"})
+    try:
+        expected_version = int(raw_if_match.removeprefix('W/"').removesuffix('"'))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid If-Match format") from exc
+    ctx = await build_context_from_task(db, task)
+    annotation, audit_detail = await operate_video_mask_keyframe(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        frame_index=frame_index,
+        payload=payload,
+        expected_version=expected_version,
+        user=current_user,
+    )
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_MASK_KEYFRAME_OPERATE,
+        target_type="annotation",
+        target_id=annotation.id,
+        request=request,
+        status_code=200,
+        detail=audit_detail,
+    )
+    await db.commit()
+    await db.refresh(annotation)
+    response.headers["ETag"] = f'W/"{annotation.version}"'
+    if audit_detail["resolved_keyframe_frame"] is not None:
+        response.headers["X-Resolved-Keyframe-Frame"] = str(
+            audit_detail["resolved_keyframe_frame"]
+        )
+    response.headers["X-Restored-Held"] = (
+        "true" if audit_detail["restored_held"] else "false"
+    )
     return AnnotationOut.model_validate(annotation)
 
 

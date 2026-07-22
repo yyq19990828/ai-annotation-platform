@@ -43,6 +43,7 @@ import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
 import type { RasterMaskRenderRecord } from "../stage/shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
+import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframeActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -122,6 +123,7 @@ interface WorkbenchStageHostVideoProps {
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   videoMaskCandidates?: VideoMaskCandidate[];
   videoMaskEditor?: UseMaskEditorReturn;
+  videoMaskKeyframeActions?: VideoMaskKeyframeActionHandlers;
   onVideoMaskCommit?: () => void;
   onVideoMaskCancel?: () => void;
   /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool 同语义)。 */
@@ -356,6 +358,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       samSessionBoxes: videoSamSessionBoxes,
       videoMaskCandidates,
       videoMaskEditor,
+      videoMaskKeyframeActions,
       onVideoMaskCommit,
       onVideoMaskCancel,
       samPolarity: videoSamPolarity,
@@ -523,6 +526,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             samSessionBoxes={videoSamSessionBoxes}
             maskCandidates={videoMaskCandidates}
             maskEditor={videoMaskEditor}
+            maskKeyframeActions={videoMaskKeyframeActions}
             onMaskCommit={onVideoMaskCommit}
             onMaskCancel={onVideoMaskCancel}
             samPolarity={videoSamPolarity}

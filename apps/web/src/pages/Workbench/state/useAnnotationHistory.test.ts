@@ -237,6 +237,56 @@ describe("applyLeaf · video keyframe undo / redo", () => {
   });
 });
 
+describe("applyLeaf · video Mask frame undo / redo", () => {
+  const keyframe = {
+    frame_index: 4,
+    source: "manual" as const,
+    mask: {
+      encoding: "coco_rle_ref" as const,
+      size: [2, 3] as [number, number],
+      object_key: "raster-masks/frame-4.json",
+      sha256: "a".repeat(64),
+      runs: 3,
+      bytes: 12,
+    },
+  };
+
+  it("undo 删除关键帧时恢复精确帧及 manual outside 状态", async () => {
+    const updateVideoMaskFrame = vi.fn(async () => ({}));
+    const h = makeHandlers({ updateVideoMaskFrame });
+    const before = { keyframe, manualOutside: true };
+    const after = { keyframe: null, manualOutside: false };
+
+    await applyLeaf(
+      { kind: "videoMaskFrame", annotationId: "mask-1", frameIndex: 4, before, after },
+      "undo",
+      h,
+    );
+
+    expect(updateVideoMaskFrame).toHaveBeenCalledWith("mask-1", 4, before);
+  });
+
+  it("redo outside 操作时应用 after 状态", async () => {
+    const updateVideoMaskFrame = vi.fn(async () => ({}));
+    const h = makeHandlers({ updateVideoMaskFrame });
+    const after = { keyframe, manualOutside: true };
+
+    await applyLeaf(
+      {
+        kind: "videoMaskFrame",
+        annotationId: "mask-1",
+        frameIndex: 4,
+        before: { keyframe, manualOutside: false },
+        after,
+      },
+      "redo",
+      h,
+    );
+
+    expect(updateVideoMaskFrame).toHaveBeenCalledWith("mask-1", 4, after);
+  });
+});
+
 
 // ── v0.8.7 F8 · sessionStorage 持久化 ────────────────────────────────
 

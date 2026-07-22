@@ -30,6 +30,16 @@ describe("videoTrackOutside", () => {
     ]);
   });
 
+  it("preserves ownership when manual and prediction ranges touch", () => {
+    expect(normalizeOutsideRanges([
+      { from: 0, to: 3, source: "prediction" },
+      { from: 4, to: 4, source: "manual" },
+    ])).toEqual([
+      { from: 0, to: 3, source: "prediction" },
+      { from: 4, to: 4, source: "manual" },
+    ]);
+  });
+
   it("derives effective outside ranges from the explicit outside field only", () => {
     const ranges = effectiveOutsideRanges({
       ...track,

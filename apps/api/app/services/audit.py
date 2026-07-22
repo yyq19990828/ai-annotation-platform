@@ -109,6 +109,7 @@ class AuditAction(str, Enum):
     VIDEO_TRACKER_JOB_DISCARD = "video_tracker_job.discard"
     VIDEO_TRACKER_JOB_DECISION = "video_tracker_job.decision"
     VIDEO_MASK_KEYFRAME_CORRECT = "video_mask.keyframe_correct"
+    VIDEO_MASK_KEYFRAME_OPERATE = "video_mask.keyframe_operate"
     VIDEO_CORRECTION_JOB_CREATE = "video_correction_job.create"
     VIDEO_CORRECTION_JOB_CANCEL = "video_correction_job.cancel"
     VIDEO_CHAPTER_CREATE = "video_chapter.create"

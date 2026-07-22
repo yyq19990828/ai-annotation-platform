@@ -25,6 +25,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "ai.preannotate.triggered": "触发 AI 预标注",
   "video_tracker_job.decision": "审核视频追踪候选",
   "video_mask.keyframe_correct": "保存视频 Mask 纠错帧",
+  "video_mask.keyframe_operate": "操作视频 Mask 关键帧",
   "video_correction_job.create": "启动视频 Mask 纠错传播",
   "video_correction_job.cancel": "取消视频 Mask 纠错传播",
   "ml_backend.created": "注册 ML 后端",

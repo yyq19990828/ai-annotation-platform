@@ -26,12 +26,14 @@ from app.db.models.video_tracker_job import (
 )
 from app.schemas.video_tracker_job import (
     VideoMaskCorrectionRequest,
+    VideoMaskKeyframeOperationRequest,
     VideoMaskKeyframeSaveRequest,
     VideoTrackerDecisionRequest,
     VideoTrackerJobOut,
     VideoTrackerPropagateRequest,
 )
 from app.services.scheduler import is_privileged_for_project
+from app.services.task_lock import TaskLockConflictError, TaskLockService
 from app.services.ml_backend import MLBackendService
 from app.services.raster_mask_storage import (
     RasterMaskContractError,
@@ -45,6 +47,8 @@ from app.services.video_tracking.adapters import registered_tracker_models
 from app.services.video_tracking import runner as _runner
 from app.services.video_tracks import (
     is_polyline_track,
+    normalize_outside_ranges,
+    remove_manual_frame_from_outside_ranges,
     remove_frame_from_outside_ranges,
     resolve_track_at_frame,
 )
@@ -126,10 +130,12 @@ async def _assert_segment_lock(
     if payload.segment_id is not None:
         segment = (
             await db.execute(
-                select(VideoSegment).where(
+                select(VideoSegment)
+                .where(
                     VideoSegment.id == payload.segment_id,
                     VideoSegment.dataset_item_id == ctx.item.id,
                 )
+                .with_for_update()
             )
         ).scalar_one_or_none()
         if segment is None:
@@ -157,6 +163,7 @@ async def _assert_segment_lock(
                     VideoSegment.end_frame >= payload.from_frame,
                 )
                 .order_by(VideoSegment.segment_index.asc())
+                .with_for_update()
             )
         )
         .scalars()
@@ -180,6 +187,17 @@ def _keyframe_digest(value: dict | None) -> str | None:
     return f"sha256:{hashlib.sha256(raw).hexdigest()}"
 
 
+async def _assert_task_write_allowed(
+    db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    try:
+        await TaskLockService(db).assert_write_allowed(task_id, user_id)
+    except TaskLockConflictError as exc:
+        raise HTTPException(
+            status_code=409, detail={"reason": "task_lock_conflict"}
+        ) from exc
+
+
 async def save_video_mask_keyframe(
     db: AsyncSession,
     *,
@@ -191,7 +209,7 @@ async def save_video_mask_keyframe(
     expected_version: int,
     user: User,
 ) -> tuple[Annotation, dict[str, Any]]:
-    """Persist one manual Mask keyframe without accepting a whole-track geometry."""
+    """Persist one Mask keyframe without accepting a whole-track geometry."""
 
     _assert_frame_range(ctx, frame_index, frame_index)
     # Match atomic Mask mutation ordering. The Task row is the first database
@@ -206,6 +224,7 @@ async def save_video_mask_keyframe(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_write_allowed(db, task.id, user.id)
     annotation = (
         await db.execute(select(Annotation).where(Annotation.id == annotation_id))
     ).scalar_one_or_none()
@@ -256,7 +275,7 @@ async def save_video_mask_keyframe(
     keyframe = {
         "frame_index": frame_index,
         "mask": payload.mask.model_dump(mode="json"),
-        "source": "manual",
+        "source": payload.source,
         "occluded": payload.occluded,
         **(
             {"attributes": payload.attributes} if payload.attributes is not None else {}
@@ -335,6 +354,205 @@ async def save_video_mask_keyframe(
         "before_digest": _keyframe_digest(before),
         "after_digest": _keyframe_digest(keyframe),
         "mask_digest": payload.mask.sha256,
+    }
+
+
+async def operate_video_mask_keyframe(
+    db: AsyncSession,
+    *,
+    task: Task,
+    ctx: VideoContext,
+    annotation_id: uuid.UUID,
+    frame_index: int,
+    payload: VideoMaskKeyframeOperationRequest,
+    expected_version: int,
+    user: User,
+) -> tuple[Annotation, dict[str, Any]]:
+    """Apply one versioned Mask-track frame-state operation.
+
+    The lock order mirrors Mask persistence: Task, video segment, then Annotation.
+    These operations never introduce a new content reference, so no RLE lock is
+    needed between the segment and Annotation locks.
+    """
+
+    _assert_frame_range(ctx, frame_index, frame_index)
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_write_allowed(db, task.id, user.id)
+
+    annotation = (
+        await db.execute(select(Annotation).where(Annotation.id == annotation_id))
+    ).scalar_one_or_none()
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task.id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if annotation.is_locked:
+        raise HTTPException(status_code=409, detail={"reason": "annotation_locked"})
+    if int(annotation.version or 1) != expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "source_version_conflict",
+                "current_version": int(annotation.version or 1),
+            },
+        )
+    if (annotation.geometry or {}).get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=409, detail={"reason": "video_mask_track_required"}
+        )
+
+    privileged = await _is_privileged(db, task, user)
+    segment_id = await _assert_segment_lock(
+        db,
+        ctx,
+        SimpleNamespace(
+            from_frame=frame_index,
+            to_frame=frame_index,
+            segment_id=None,
+        ),
+        user,
+        privileged=privileged,
+    )
+
+    annotation = (
+        await db.execute(
+            select(Annotation)
+            .where(Annotation.id == annotation_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task.id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if annotation.is_locked:
+        raise HTTPException(status_code=409, detail={"reason": "annotation_locked"})
+    if int(annotation.version or 1) != expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "source_version_conflict",
+                "current_version": int(annotation.version or 1),
+            },
+        )
+    geometry = annotation.geometry or {}
+    if geometry.get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=409, detail={"reason": "video_mask_track_required"}
+        )
+
+    keyframes = [dict(item) for item in geometry.get("keyframes") or []]
+    outside = [dict(item) for item in geometry.get("outside") or []]
+    exact = next(
+        (item for item in keyframes if int(item.get("frame_index", -1)) == frame_index),
+        None,
+    )
+    before_geometry = {**geometry, "keyframes": keyframes, "outside": outside}
+
+    if payload.operation == "delete_keyframe":
+        if exact is None:
+            raise HTTPException(status_code=409, detail={"reason": "keyframe_missing"})
+        if len(keyframes) <= 1:
+            raise HTTPException(
+                status_code=422, detail={"reason": "last_keyframe_required"}
+            )
+        next_geometry = {
+            **geometry,
+            "keyframes": [item for item in keyframes if item is not exact],
+            "outside": outside,
+        }
+    elif payload.operation == "mark_outside":
+        already_outside = any(
+            item.get("source") != "prediction"
+            and int(item.get("from", -1)) <= frame_index <= int(item.get("to", -1))
+            for item in normalize_outside_ranges(outside)
+        )
+        if already_outside:
+            raise HTTPException(
+                status_code=409, detail={"reason": "frame_already_outside"}
+            )
+        next_geometry = {
+            **geometry,
+            "keyframes": keyframes,
+            "outside": normalize_outside_ranges(
+                [
+                    *outside,
+                    {"from": frame_index, "to": frame_index, "source": "manual"},
+                ]
+            ),
+        }
+    else:
+        next_outside, removed = remove_manual_frame_from_outside_ranges(
+            outside, frame_index
+        )
+        if not removed:
+            raise HTTPException(
+                status_code=409, detail={"reason": "manual_outside_missing"}
+            )
+        next_geometry = {
+            **geometry,
+            "keyframes": keyframes,
+            "outside": next_outside,
+        }
+
+    source_version = int(annotation.version or 1)
+    annotation.geometry = next_geometry
+    annotation.version = source_version + 1
+    await db.flush()
+    await db.refresh(annotation)
+    resolved = resolve_track_at_frame(next_geometry, frame_index)
+    normalized_outside = normalize_outside_ranges(next_geometry.get("outside") or [])
+    visible_keyframes = [
+        item
+        for item in next_geometry.get("keyframes") or []
+        if not any(
+            int(range_["from"]) <= int(item.get("frame_index", -1)) <= int(range_["to"])
+            for range_ in normalized_outside
+        )
+    ]
+    resolved_keyframe = (
+        min(
+            visible_keyframes,
+            key=lambda item: (
+                abs(int(item.get("frame_index", 0)) - frame_index),
+                int(item.get("frame_index", 0)),
+            ),
+        )
+        if resolved is not None and visible_keyframes
+        else None
+    )
+    resolved_keyframe_frame = (
+        int(resolved_keyframe["frame_index"]) if resolved_keyframe is not None else None
+    )
+    return annotation, {
+        "task_id": str(task.id),
+        "track_id": str(annotation.track_id or geometry.get("track_id") or ""),
+        "segment_id": str(segment_id),
+        "frame_index": frame_index,
+        "operation": payload.operation,
+        "source_version": source_version,
+        "result_version": int(annotation.version),
+        "before_digest": _keyframe_digest(before_geometry),
+        "after_digest": _keyframe_digest(next_geometry),
+        "resolved_keyframe_frame": resolved_keyframe_frame,
+        "restored_held": bool(
+            resolved_keyframe_frame is not None
+            and resolved_keyframe_frame != frame_index
+        ),
     }
 
 

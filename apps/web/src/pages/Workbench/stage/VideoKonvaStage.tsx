@@ -38,11 +38,12 @@ import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { deriveTrackNumber, isAnyVideoSingleFrame, isAnyVideoTrack, isVideoBbox, isVideoPolygon, isVideoPolygonTrack, isVideoPolyline, isVideoPolylineTrack, isVideoTrack, normalizeGeom, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
-import { buildSelectedTrackTimeline } from "./videoTrackTimeline";
+import { buildSelectedTrackTimeline, visibleKeyframesForTimeline } from "./videoTrackTimeline";
 import { pickTopVideoEntryAt, pickTopVideoMaskAt } from "./videoStagePicking";
 import { useVideoMaskFrames, type VideoMaskCandidate } from "./videoMaskFrames";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { buildVideoContextMenuItems } from "./videoContextMenuItems";
+import type { VideoMaskKeyframeActionHandlers } from "./videoMaskKeyframeActions";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import type { VideoManagedTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions, VideoSamPrompt } from "./videoStageTypes";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
@@ -165,6 +166,7 @@ interface VideoKonvaStageProps {
   onPropagateTrack?: (annotation: VideoManagedTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
+  maskKeyframeActions?: VideoMaskKeyframeActionHandlers;
   /** 时间轴章节(从工作台 shell 透传)。 */
   chapters?: VideoTimelineChapter[];
   /** v0.21.13 · 章节 × 时间轴联动控制器 (刷选建章节 / resize / hover)。 */
@@ -249,6 +251,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   onPropagateTrack,
   onToggleHiddenTrack,
   onToggleLockedTrack,
+  maskKeyframeActions,
   chapters = [],
   timelineChapterControls,
   propagateRange = null,
@@ -942,16 +945,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     selectedManagedTrack
     && selectedManagedCurrentKeyframe
     && !readOnly
+    && !selectedManagedTrack.is_locked
     && !trackActions.selectedTrackLocked
-    && selectedManagedTrack.geometry.keyframes.length > 1,
+    && selectedManagedTrack.geometry.keyframes.length > 1
+    && (
+      selectedManagedTrack.geometry.type !== "video_track_mask"
+      || (maskKeyframeActions && !maskKeyframeActions.busy)
+    ),
   );
   const deleteSelectedTrackKeyframe = useCallback(() => {
     if (!selectedManagedTrack || !selectedManagedCurrentKeyframe || !canDeleteSelectedTrackKeyframe) return false;
     if (selectedManagedTrack.geometry.type === "video_track_mask") {
-      (onUpdate ?? noopUpdate)(selectedManagedTrack, {
-        ...selectedManagedTrack.geometry,
-        keyframes: selectedManagedTrack.geometry.keyframes.filter((keyframe) => keyframe.frame_index !== frameIndex),
-      });
+      maskKeyframeActions?.deleteCurrentKeyframe(selectedManagedTrack);
     } else {
       (onUpdate ?? noopUpdate)(selectedManagedTrack, {
         ...selectedManagedTrack.geometry,
@@ -959,7 +964,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       });
     }
     return true;
-  }, [canDeleteSelectedTrackKeyframe, frameIndex, noopUpdate, onUpdate, selectedManagedCurrentKeyframe, selectedManagedTrack]);
+  }, [canDeleteSelectedTrackKeyframe, frameIndex, maskKeyframeActions, noopUpdate, onUpdate, selectedManagedCurrentKeyframe, selectedManagedTrack]);
 
   const contextMenuItems = useMemo<DropdownItem[]>(() => buildVideoContextMenuItems({
     contextMenuAnnotation,
@@ -980,10 +985,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     onToggleLockedTrack,
     hiddenTrackIds,
     lockedTrackIds,
+    maskKeyframeActions,
   }), [
     canDeleteSelectedTrackKeyframe, contextMenuAnnotation, contextMenuTargetId, deleteSelectedTrackKeyframe,
     frameIndex, onChangeUserBoxClass, onComposeTracks, onConvertToBboxes, onDelete, onPropagateTrack,
-    onToggleHiddenTrack, onToggleLockedTrack, readOnly, selectedAnnotation, selectedVideoBboxes, trackActions,
+    maskKeyframeActions, onToggleHiddenTrack, onToggleLockedTrack, readOnly, selectedAnnotation, selectedVideoBboxes, trackActions,
     hiddenTrackIds, lockedTrackIds,
   ]);
 
@@ -1089,7 +1095,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const track = selectedManagedTrack;
       if (!track) return;
-      const frames = track.geometry.keyframes.map((keyframe) => keyframe.frame_index);
+      const frames = track.geometry.type === "video_track_mask"
+        ? visibleKeyframesForTimeline(track.geometry).map((keyframe) => keyframe.frame_index)
+        : track.geometry.keyframes.map((keyframe) => keyframe.frame_index);
       if (e.key === "Home") {
         const frame = frames.length > 0 ? Math.min(...frames) : null;
         if (frame == null) return;
@@ -1113,9 +1121,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       controls.seekToKeyframe(dir, options);
       return;
     }
-    const frames = selectedManagedTrack.geometry.keyframes
-      .map((keyframe) => keyframe.frame_index)
-      .sort((a, b) => a - b);
+    const frames = visibleKeyframesForTimeline(selectedManagedTrack.geometry)
+      .map((keyframe) => keyframe.frame_index);
     const next = dir > 0
       ? frames.find((candidate) => candidate > frameIndex)
       : [...frames].reverse().find((candidate) => candidate < frameIndex);
@@ -1132,11 +1139,30 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return { left: p.x, top: p.y };
   }, [size, vpRef]);
 
+  const toggleManagedTrackOutside = useCallback(() => {
+    if (selectedManagedTrack?.geometry.type === "video_track_mask") {
+      if (
+        readOnly
+        || selectedManagedTrack.is_locked
+        || trackActions.selectedTrackLocked
+        || maskKeyframeActions?.busy
+      ) return;
+      maskKeyframeActions?.toggleCurrentOutside(selectedManagedTrack);
+      return;
+    }
+    trackActions.toggleSelectedTrackOutside();
+  }, [maskKeyframeActions, readOnly, selectedManagedTrack, trackActions]);
+
+  const toggleManagedTrackOccluded = useCallback(() => {
+    if (selectedManagedTrack?.geometry.type === "video_track_mask") return;
+    trackActions.toggleSelectedTrackOccluded();
+  }, [selectedManagedTrack, trackActions]);
+
   useImperativeHandle(ref, () => ({
     ...controls,
     seekToKeyframe: seekManagedKeyframe,
-    toggleSelectedTrackOutside: trackActions.toggleSelectedTrackOutside,
-    toggleSelectedTrackOccluded: trackActions.toggleSelectedTrackOccluded,
+    toggleSelectedTrackOutside: toggleManagedTrackOutside,
+    toggleSelectedTrackOccluded: toggleManagedTrackOccluded,
     toggleSelectedTrackHidden: trackActions.toggleSelectedTrackHidden,
     toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
     propagateSelectedTrack: trackActions.propagateSelectedTrack,
@@ -1145,7 +1171,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     cycleInCategory,
     stepCategory,
     focusObject,
-  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, normToClient, seekManagedKeyframe, stepCategory, trackActions]);
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, normToClient, seekManagedKeyframe, stepCategory, toggleManagedTrackOccluded, toggleManagedTrackOutside, trackActions]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;

@@ -220,6 +220,7 @@ POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:release
 ```http
 POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
 PUT /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+PATCH /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
 POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs
 GET /api/v1/video-tracker-jobs?project_id=&status=&model_key=&cursor=&limit=
 GET /api/v1/video-tracker-jobs/{job_id}
@@ -357,7 +358,7 @@ queued -> running -> pending_review -> accepted | discarded
 
 `job_kind` 区分普通 `tracking` 与人工 Mask `correction`。后者同时保存 `track_id_snapshot` 和 `correction_frame`，prompt 冻结源 version / digest、segment lease、方向窗口和精确 backend / pool / model。同一 task + track 的活跃 correction 由 partial unique index 串行化；取消或终态释放租约。correction 不允许整批 accept / discard，只允许带 revision、源版本与显式窗口的局部 decision。
 
-纠错保存使用独立的 Mask keyframe PUT，并强制 `If-Match`。保存先于 job 创建，失败重试不得重复写关键帧。原生 correction 每方向只能执行一个 backend window；双向在人工帧处分成两窗，seed frame 不进入 staged candidate。仅 bbox seed 可用时必须由用户确认，并把 fallback 原因写入 lineage。
+关键帧保存使用独立的 Mask keyframe PUT，删除 / manual outside / held 恢复使用同路径 PATCH，两者都强制 `If-Match`。帧操作按 task → task edit lock → segment → annotation 锁序列化，对 keyframe 与 outside 做局部几何更新，不改写其它帧的引用。纠错保存先于 job 创建，失败重试不得重复写关键帧。原生 correction 每方向只能执行一个 backend window；双向在人工帧处分成两窗，seed frame 不进入 staged candidate。仅 bbox seed 可用时必须由用户确认，并把 fallback 原因写入 lineage。
 
 staged candidate 的保留期为 24 小时。每日内容 GC 先清理过期 staged result：待审 / 部分审阅转为 discarded，cancelled 保持 cancelled；随后对象引用扫描才允许删除已超过宽限期且不再被 annotation、prediction、有效 decision 或 staged job 引用的 RLE。
 

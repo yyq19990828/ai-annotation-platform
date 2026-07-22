@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,14 +12,19 @@ from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.ml_backend_registry import ProjectMLBackendPool
 from app.db.models.project import Project
+from app.db.models.task_lock import TaskLock
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.schemas.video_tracker_job import (
+    VideoMaskKeyframeOperationRequest,
     VideoMaskKeyframeSaveRequest,
     VideoTrackerJobOut,
 )
 from app.services.audit import AuditAction
 from app.services.raster_mask_storage import build_rle_reference
-from app.services.video_tracking.jobs import save_video_mask_keyframe
+from app.services.video_tracking.jobs import (
+    operate_video_mask_keyframe,
+    save_video_mask_keyframe,
+)
 from app.services.video_tracking.runner import (
     _correction_execution_windows,
     _correction_seed,
@@ -255,7 +261,7 @@ async def test_save_mask_keyframe_holds_task_lock_before_rle_lock(
         value = next(results)
         if value is task:
             events.append("task")
-        elif events == ["task"]:
+        elif events == ["task", "task-edit-lock"]:
             events.append("annotation-read")
         else:
             events.append("annotation-lock")
@@ -269,6 +275,14 @@ async def test_save_mask_keyframe_holds_task_lock_before_rle_lock(
     monkeypatch.setattr(
         "app.services.video_tracking.jobs._is_privileged",
         AsyncMock(return_value=True),
+    )
+
+    async def task_write_lock(*_args, **_kwargs):
+        events.append("task-edit-lock")
+
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs._assert_task_write_allowed",
+        task_write_lock,
     )
 
     async def segment_lock(*_args, **_kwargs):
@@ -297,17 +311,359 @@ async def test_save_mask_keyframe_holds_task_lock_before_rle_lock(
         ctx=ctx,
         annotation_id=annotation_id,
         frame_index=0,
-        payload=VideoMaskKeyframeSaveRequest(mask=build_rle_reference(ALT_RLE)),
+        payload=VideoMaskKeyframeSaveRequest(
+            mask=build_rle_reference(ALT_RLE), source="prediction"
+        ),
         expected_version=1,
         user=user,
     )
 
     assert events == [
         "task",
+        "task-edit-lock",
         "annotation-read",
         "segment",
         "validate",
         "rle",
+        "annotation-lock",
+    ]
+    assert saved.version == 2
+    assert saved.geometry["keyframes"][0]["source"] == "prediction"
+
+
+async def test_mask_keyframe_delete_is_versioned_surgical_and_restores_hold(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+):
+    user, token = super_admin
+    (
+        task,
+        _backend,
+        _model_id,
+        _model_key,
+        annotation,
+        reference,
+    ) = await _seed_mask_track(db_session, user.id, frame_index=2, version=3)
+    other_reference = build_rle_reference(ALT_RLE)
+    annotation.geometry = {
+        **annotation.geometry,
+        "keyframes": [
+            {
+                "frame_index": 2,
+                "mask": reference,
+                "source": "manual",
+                "occluded": False,
+            },
+            {
+                "frame_index": 8,
+                "mask": other_reference,
+                "source": "manual",
+                "occluded": True,
+            },
+        ],
+        "outside": [],
+    }
+    await db_session.flush()
+    path = f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/8"
+
+    missing = await httpx_client_bound.patch(
+        path,
+        json={"operation": "delete_keyframe"},
+        headers=_bearer(token),
+    )
+    assert missing.status_code == 428
+
+    deleted = await httpx_client_bound.patch(
+        path,
+        json={"operation": "delete_keyframe"},
+        headers={**_bearer(token), "If-Match": 'W/"3"'},
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.headers["etag"] == 'W/"4"'
+    assert deleted.headers["x-resolved-keyframe-frame"] == "2"
+    assert deleted.headers["x-restored-held"] == "true"
+    await db_session.refresh(annotation)
+    assert annotation.version == 4
+    assert annotation.geometry["keyframes"] == [
+        {
+            "frame_index": 2,
+            "mask": reference,
+            "source": "manual",
+            "occluded": False,
+        }
+    ]
+    assert annotation.geometry["outside"] == []
+
+    last = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/2",
+        json={"operation": "delete_keyframe"},
+        headers={**_bearer(token), "If-Match": 'W/"4"'},
+    )
+    assert last.status_code == 422
+    assert last.json()["detail"]["reason"] == "last_keyframe_required"
+
+    stale = await httpx_client_bound.patch(
+        path,
+        json={"operation": "mark_outside"},
+        headers={**_bearer(token), "If-Match": 'W/"3"'},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == {
+        "reason": "source_version_conflict",
+        "current_version": 4,
+    }
+    audit = (
+        await db_session.execute(
+            select(AuditLog).where(
+                AuditLog.action == AuditAction.VIDEO_MASK_KEYFRAME_OPERATE,
+                AuditLog.target_id == str(annotation.id),
+            )
+        )
+    ).scalar_one()
+    assert audit.detail_json["operation"] == "delete_keyframe"
+    assert audit.detail_json["resolved_keyframe_frame"] == 2
+
+
+async def test_mask_manual_outside_restore_preserves_prediction_and_keyframes(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+):
+    user, token = super_admin
+    (
+        task,
+        _backend,
+        _model_id,
+        _model_key,
+        annotation,
+        reference,
+    ) = await _seed_mask_track(db_session, user.id, frame_index=2, version=5)
+    other_reference = build_rle_reference(ALT_RLE)
+    keyframes = [
+        {
+            "frame_index": 2,
+            "mask": reference,
+            "source": "manual",
+            "occluded": False,
+        },
+        {
+            "frame_index": 8,
+            "mask": other_reference,
+            "source": "prediction",
+            "occluded": False,
+        },
+    ]
+    annotation.geometry = {
+        **annotation.geometry,
+        "keyframes": keyframes,
+        "outside": [{"from": 0, "to": 3, "source": "prediction"}],
+    }
+    await db_session.flush()
+    path = f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/4"
+
+    hidden = await httpx_client_bound.patch(
+        path,
+        json={"operation": "mark_outside"},
+        headers={**_bearer(token), "If-Match": 'W/"5"'},
+    )
+    assert hidden.status_code == 200, hidden.text
+    await db_session.refresh(annotation)
+    assert annotation.geometry["outside"] == [
+        {"from": 0, "to": 3, "source": "prediction"},
+        {"from": 4, "to": 4, "source": "manual"},
+    ]
+    assert annotation.geometry["keyframes"] == keyframes
+
+    restored = await httpx_client_bound.patch(
+        path,
+        json={"operation": "restore_held"},
+        headers={**_bearer(token), "If-Match": 'W/"6"'},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.headers["x-resolved-keyframe-frame"] == "8"
+    assert restored.headers["x-restored-held"] == "true"
+    await db_session.refresh(annotation)
+    assert annotation.version == 7
+    assert annotation.geometry["outside"] == [
+        {"from": 0, "to": 3, "source": "prediction"}
+    ]
+    assert annotation.geometry["keyframes"] == keyframes
+
+    prediction_only = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/3",
+        json={"operation": "restore_held"},
+        headers={**_bearer(token), "If-Match": 'W/"7"'},
+    )
+    assert prediction_only.status_code == 409
+    assert prediction_only.json()["detail"]["reason"] == "manual_outside_missing"
+
+    overlapping_manual = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/3",
+        json={"operation": "mark_outside"},
+        headers={**_bearer(token), "If-Match": 'W/"7"'},
+    )
+    assert overlapping_manual.status_code == 200, overlapping_manual.text
+    await db_session.refresh(annotation)
+    assert annotation.geometry["outside"] == [
+        {"from": 0, "to": 3, "source": "prediction"},
+        {"from": 3, "to": 3, "source": "manual"},
+    ]
+
+    restored_overlap = await httpx_client_bound.patch(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/3",
+        json={"operation": "restore_held"},
+        headers={**_bearer(token), "If-Match": 'W/"8"'},
+    )
+    assert restored_overlap.status_code == 200, restored_overlap.text
+    await db_session.refresh(annotation)
+    assert annotation.geometry["outside"] == [
+        {"from": 0, "to": 3, "source": "prediction"}
+    ]
+
+
+async def test_mask_keyframe_operations_honor_task_and_annotation_locks(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+    annotator,
+):
+    actor, token = super_admin
+    lock_owner, _ = annotator
+    (
+        task,
+        _backend,
+        _model_id,
+        _model_key,
+        annotation,
+        _reference,
+    ) = await _seed_mask_track(db_session, actor.id, frame_index=5, version=1)
+    db_session.add(
+        TaskLock(
+            task_id=task.id,
+            user_id=lock_owner.id,
+            expire_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+    )
+    await db_session.flush()
+    path = f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/4"
+
+    task_locked = await httpx_client_bound.patch(
+        path,
+        json={"operation": "mark_outside"},
+        headers={**_bearer(token), "If-Match": 'W/"1"'},
+    )
+    assert task_locked.status_code == 409
+    assert task_locked.json()["detail"]["reason"] == "task_lock_conflict"
+
+    await db_session.execute(
+        TaskLock.__table__.delete().where(TaskLock.task_id == task.id)
+    )
+    annotation.is_locked = True
+    await db_session.flush()
+    annotation_locked = await httpx_client_bound.patch(
+        path,
+        json={"operation": "mark_outside"},
+        headers={**_bearer(token), "If-Match": 'W/"1"'},
+    )
+    assert annotation_locked.status_code == 409
+    assert annotation_locked.json()["detail"]["reason"] == "annotation_locked"
+
+
+async def test_operate_mask_keyframe_lock_order_is_task_segment_annotation(
+    monkeypatch,
+):
+    task_id = uuid.uuid4()
+    annotation_id = uuid.uuid4()
+    reference = build_rle_reference(RLE)
+    task = SimpleNamespace(id=task_id, project_id=uuid.uuid4())
+    annotation = SimpleNamespace(
+        id=annotation_id,
+        task_id=task_id,
+        is_active=True,
+        is_locked=False,
+        version=1,
+        track_id="mask-track-1",
+        geometry={
+            "type": "video_track_mask",
+            "track_id": "mask-track-1",
+            "keyframes": [
+                {
+                    "frame_index": 4,
+                    "mask": reference,
+                    "source": "manual",
+                    "occluded": False,
+                }
+            ],
+            "outside": [],
+        },
+    )
+    user = SimpleNamespace(id=uuid.uuid4())
+    ctx = SimpleNamespace(metadata=SimpleNamespace(frame_count=12))
+    events: list[str] = []
+
+    class _Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    results = iter([task, annotation, annotation])
+
+    async def execute(_statement):
+        value = next(results)
+        events.append(
+            "task"
+            if value is task
+            else "annotation-read"
+            if events[-1] == "task-edit-lock"
+            else "annotation-lock"
+        )
+        return _Result(value)
+
+    db = SimpleNamespace(
+        execute=AsyncMock(side_effect=execute),
+        flush=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    async def task_write_lock(*_args, **_kwargs):
+        events.append("task-edit-lock")
+
+    async def segment_lock(*_args, **_kwargs):
+        events.append("segment")
+        return uuid.uuid4()
+
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs._assert_task_write_allowed",
+        task_write_lock,
+    )
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs._is_privileged",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.services.video_tracking.jobs._assert_segment_lock",
+        segment_lock,
+    )
+
+    saved, _detail = await operate_video_mask_keyframe(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        frame_index=5,
+        payload=VideoMaskKeyframeOperationRequest(operation="mark_outside"),
+        expected_version=1,
+        user=user,
+    )
+
+    assert events == [
+        "task",
+        "task-edit-lock",
+        "annotation-read",
+        "segment",
         "annotation-lock",
     ]
     assert saved.version == 2

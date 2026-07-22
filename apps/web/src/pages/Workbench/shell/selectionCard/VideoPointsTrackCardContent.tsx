@@ -7,6 +7,10 @@ import { MetricGrid } from "./MetricGrid";
 import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics } from "./geometryMetrics";
+import { isFrameOutside } from "../../stage/videoTrackOutside";
+import { visibleKeyframesForTimeline } from "../../stage/videoTrackTimeline";
+import type { VideoMaskKeyframeActionHandlers } from "../../stage/videoMaskKeyframeActions";
+import { VideoKeyframeControls } from "./VideoKeyframeControls";
 
 const BODY_CLASS =
   "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
@@ -32,6 +36,7 @@ export interface VideoPointsTrackCardContentProps {
   onToggleLock: (trackId: string) => void;
   onEditMask?: () => void;
   onPropagate?: () => void;
+  maskActions?: VideoMaskKeyframeActionHandlers;
 }
 
 /** 秒 → 紧凑时间码 m:ss。 */
@@ -66,6 +71,7 @@ export function VideoPointsTrackCardContent({
   onToggleLock,
   onEditMask,
   onPropagate,
+  maskActions,
 }: VideoPointsTrackCardContentProps) {
   if (!isVideoPointsTrack(annotation) && !isVideoMaskTrack(annotation)) return null;
   const track = annotation.geometry;
@@ -85,6 +91,22 @@ export function VideoPointsTrackCardContent({
     : null;
   const exactMaskKeyframe = isVideoMaskTrack(annotation)
     && annotation.geometry.keyframes.some((keyframe) => keyframe.frame_index === frameIndex);
+  const visibleFrames = isVideoMaskTrack(annotation)
+    ? visibleKeyframesForTimeline(annotation.geometry).map((keyframe) => keyframe.frame_index)
+    : frames;
+  const previousFrame = [...visibleFrames].reverse().find((frame) => frame < frameIndex) ?? null;
+  const nextFrame = visibleFrames.find((frame) => frame > frameIndex) ?? null;
+  const currentFrameOutside = isVideoMaskTrack(annotation)
+    && isFrameOutside(annotation.geometry, frameIndex);
+  const currentFrameManualOutside = isVideoMaskTrack(annotation)
+    && (annotation.geometry.outside ?? []).some((range) => (
+      range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to
+    ));
+  const canMutateMask = isVideoMaskTrack(annotation)
+    && !readOnly
+    && !locked
+    && !annotation.is_locked
+    && !maskActions?.busy;
 
   const timeLabel = fps ? formatTimecode(frameIndex / fps) : null;
   const frameChip = (
@@ -117,6 +139,58 @@ export function VideoPointsTrackCardContent({
             : "点集轨迹的关键帧逐帧编辑暂未开放,可在画布上拖动顶点改形。"}
         </div>
       </div>
+
+      {isVideoMaskTrack(annotation) && maskActions && (
+        <div className="grid gap-2 border-t border-border pt-2">
+          <VideoKeyframeControls
+            previousFrame={previousFrame}
+            nextFrame={nextFrame}
+            onSeekFrame={onSeekFrame}
+            onCopy={() => maskActions.copyCurrent(annotation)}
+            onPasteSame={() => maskActions.pasteSameTrack(annotation)}
+            onPasteNew={() => maskActions.pasteNewTrack(annotation)}
+            canCopy={Boolean(resolvedMask) && !maskActions.busy}
+            canPasteSame={canMutateMask && maskActions.hasClipboard}
+            canPasteNew={canMutateMask && maskActions.hasClipboard}
+            clipboardLabel={maskActions.clipboardLabel}
+          />
+          <div className="grid grid-cols-2 gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canMutateMask || !exactMaskKeyframe || track.keyframes.length <= 1 || currentFrameOutside}
+              title="删除当前精确 Mask 关键帧"
+              onClick={() => maskActions.deleteCurrentKeyframe(annotation)}
+            >
+              <Icon name="trash" size={14} />删除关键帧
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canMutateMask || (currentFrameOutside && !currentFrameManualOutside)}
+              aria-pressed={currentFrameOutside}
+              title={currentFrameOutside
+                ? currentFrameManualOutside ? "恢复人工消失状态" : "预测 outside 不可人工恢复"
+                : "标记当前帧消失"}
+              onClick={() => maskActions.toggleCurrentOutside(annotation)}
+            >
+              <Icon name="eyeOff" size={14} />
+              {currentFrameOutside
+                ? currentFrameManualOutside ? "恢复保持" : "预测消失"
+                : "标记消失"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canMutateMask || !resolvedMask}
+              title="按连通组件拆分当前 Mask 为多条轨迹"
+              onClick={() => maskActions.splitCurrentComponents(annotation)}
+            >
+              <Icon name="scissors" size={14} />组件拆轨
+            </Button>
+          </div>
+        </div>
+      )}
 
       <MetaFooter
         id={annotation.id}
