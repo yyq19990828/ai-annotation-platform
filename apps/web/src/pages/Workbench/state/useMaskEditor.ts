@@ -22,6 +22,16 @@ import {
   RasterMaskWorkerCancelledError,
 } from "../stage/shared/rasterMaskCompute";
 import type { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
+import {
+  createDenseMaskHistoryCommand,
+  MaskHistoryCheckpoint,
+  MaskHistoryStore,
+  MASK_HISTORY_TILE_SIZE,
+  maskHistoryBudgetBytes,
+  navigatorMaskHistoryBudgetBytes,
+  type MaskHistoryCommand,
+  type MaskHistoryResources,
+} from "../stage/shared/maskHistory";
 import type { MaskEditorPhase } from "./canEditMask";
 
 export type MaskMode = "brush" | "erase";
@@ -57,18 +67,14 @@ export interface MaskInstanceOperationPreview {
 
 export type MaskOperationStatus = "idle" | "computing" | "preview" | "error";
 
-interface MaskHistoryCommand {
-  name: string;
-  before: CocoRle;
-  after: CocoRle;
-  report?: MaskOperationReport;
-}
-
 export interface UseMaskEditorOptions {
   width: number;
   height: number;
   initialRadius?: number;
   workerPool?: RasterMaskWorkerPool;
+  /** Test/SSR override; omitted values read navigator.deviceMemory. */
+  deviceMemory?: number | null;
+  historyMaxBytes?: number;
 }
 
 export interface UseMaskEditorReturn {
@@ -84,6 +90,7 @@ export interface UseMaskEditorReturn {
   revision: number;
   canUndo: boolean;
   canRedo: boolean;
+  historyResources: MaskHistoryResources;
   operationPreview: MaskOperationPreview | null;
   instanceOperationPreview: MaskInstanceOperationPreview | null;
   operationStatus: MaskOperationStatus;
@@ -141,11 +148,19 @@ function clampRadius(radius: number): number {
   return Math.max(MASK_BRUSH_MIN_PX, Math.min(MASK_BRUSH_MAX_PX, Math.round(radius)));
 }
 
-function equalRle(left: CocoRle, right: CocoRle): boolean {
-  return left.size[0] === right.size[0]
-    && left.size[1] === right.size[1]
-    && left.counts.length === right.counts.length
-    && left.counts.every((count, index) => count === right.counts[index]);
+function brushBounds(
+  x: number,
+  y: number,
+  radius: number,
+  width: number,
+  height: number,
+) {
+  const effectiveRadius = Math.max(0.5, radius);
+  const x0 = Math.max(0, Math.floor(x - effectiveRadius));
+  const y0 = Math.max(0, Math.floor(y - effectiveRadius));
+  const x1 = Math.min(width - 1, Math.ceil(x + effectiveRadius));
+  const y1 = Math.min(height - 1, Math.ceil(y + effectiveRadius));
+  return { x0, y0, x1: x1 + 1, y1: y1 + 1 };
 }
 
 export function useMaskEditor({
@@ -153,11 +168,21 @@ export function useMaskEditor({
   height,
   initialRadius = MASK_BRUSH_DEFAULT_PX,
   workerPool,
+  deviceMemory,
+  historyMaxBytes,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
+  const resolvedHistoryMaxBytes = historyMaxBytes
+    ?? (deviceMemory === undefined
+      ? navigatorMaskHistoryBudgetBytes()
+      : maskHistoryBudgetBytes(deviceMemory));
   const bufferRef = useRef<MaskBuffer | null>(null);
-  const strokeBeforeRef = useRef<CocoRle | null>(null);
-  const undoRef = useRef<MaskHistoryCommand[]>([]);
-  const redoRef = useRef<MaskHistoryCommand[]>([]);
+  const strokeCheckpointRef = useRef<{
+    sourceRevision: number;
+    checkpoint: MaskHistoryCheckpoint;
+  } | null>(null);
+  const [historyRef] = useState(() => ({
+    current: new MaskHistoryStore(resolvedHistoryMaxBytes),
+  }));
   const operationPreviewRef = useRef<MaskOperationPreview | null>(null);
   const instanceOperationPreviewRef = useRef<MaskInstanceOperationPreview | null>(null);
   const operationIdRef = useRef(0);
@@ -199,11 +224,10 @@ export function useMaskEditor({
   }, [clearOperationPreview]);
 
   const resetHistory = useCallback(() => {
-    undoRef.current = [];
-    redoRef.current = [];
-    strokeBeforeRef.current = null;
+    historyRef.current = new MaskHistoryStore(resolvedHistoryMaxBytes);
+    strokeCheckpointRef.current = null;
     setHistoryRevision((value) => value + 1);
-  }, []);
+  }, [historyRef, resolvedHistoryMaxBytes]);
 
   const validateRleSize = useCallback((rle: CocoRle) => {
     const [rleHeight, rleWidth] = rle.size;
@@ -265,37 +289,53 @@ export function useMaskEditor({
       || instanceOperationPreviewRef.current
       || (tool !== "brush" && tool !== "erase")
     ) return;
+    strokeCheckpointRef.current?.checkpoint.captureDenseRect(
+      buffer.data,
+      brushBounds(x, y, radius, width, height),
+    );
     if (mode === "erase") buffer.erase(x, y, radius, brushShape);
     else buffer.brush(x, y, radius, 255, brushShape);
     setDirty(true);
     bump();
-  }, [brushShape, bump, mode, radius, tool]);
+  }, [brushShape, bump, height, mode, radius, tool, width]);
 
   const beginStroke = useCallback(() => {
     if (
       !bufferRef.current
-      || strokeBeforeRef.current
+      || strokeCheckpointRef.current
       || operationPreviewRef.current
       || instanceOperationPreviewRef.current
       || (tool !== "brush" && tool !== "erase")
     ) return;
-    strokeBeforeRef.current = bufferRef.current.toRle();
-  }, [tool]);
+    strokeCheckpointRef.current = {
+      sourceRevision: revisionRef.current,
+      checkpoint: new MaskHistoryCheckpoint(width, height),
+    };
+  }, [height, tool, width]);
 
   const endStroke = useCallback(() => {
-    const before = strokeBeforeRef.current;
+    const stroke = strokeCheckpointRef.current;
     const current = bufferRef.current;
-    strokeBeforeRef.current = null;
-    if (!before || !current) return;
-    const after = current.toRle();
-    if (equalRle(before, after)) return;
-    undoRef.current = [...undoRef.current.slice(-19), { name: "stroke", before, after }];
-    redoRef.current = [];
+    strokeCheckpointRef.current = null;
+    if (!stroke || !current) return;
+    const command = stroke.checkpoint.finishDense("stroke", stroke.sourceRevision, current.data);
+    if (!command) return;
+    historyRef.current.push(command);
     setHistoryRevision((value) => value + 1);
-  }, []);
+  }, [historyRef]);
 
-  const restore = useCallback((rle: CocoRle) => {
-    bufferRef.current = MaskBuffer.fromRle(rle);
+  const applyHistoryCommand = useCallback((command: MaskHistoryCommand) => {
+    const current = bufferRef.current;
+    if (!current) return;
+    for (const patch of command.patches) {
+      current.applyXorBits(
+        patch.tileX * MASK_HISTORY_TILE_SIZE,
+        patch.tileY * MASK_HISTORY_TILE_SIZE,
+        patch.width,
+        patch.height,
+        patch.xorBits,
+      );
+    }
     cancelActiveOperation();
     setDirty(true);
     bump();
@@ -306,20 +346,18 @@ export function useMaskEditor({
       clearOperationPreview();
       return;
     }
-    const command = undoRef.current.pop();
-    if (!bufferRef.current || !command) return;
-    redoRef.current.push(command);
-    restore(command.before);
+    if (!bufferRef.current) return;
+    const command = historyRef.current.undo(applyHistoryCommand);
+    if (!command) return;
     setHistoryRevision((value) => value + 1);
-  }, [clearOperationPreview, restore]);
+  }, [applyHistoryCommand, clearOperationPreview, historyRef]);
 
   const redo = useCallback(() => {
-    const command = redoRef.current.pop();
-    if (!bufferRef.current || !command) return;
-    undoRef.current.push(command);
-    restore(command.after);
+    if (!bufferRef.current) return;
+    const command = historyRef.current.redo(applyHistoryCommand);
+    if (!command) return;
     setHistoryRevision((value) => value + 1);
-  }, [restore]);
+  }, [applyHistoryCommand, historyRef]);
 
   const previewOperation = useCallback((
     name: string,
@@ -483,23 +521,31 @@ export function useMaskEditor({
       clearOperationPreview();
       return false;
     }
-    const before = current.toRle();
+    if (preview.report.changedPixels === 0) {
+      clearOperationPreview();
+      return false;
+    }
+    const command = createDenseMaskHistoryCommand(
+      preview.name,
+      preview.sourceRevision,
+      current.data,
+      preview.alpha,
+      width,
+      height,
+      preview.report.bounds,
+    );
     const change = current.replaceAlpha(preview.alpha);
     clearOperationPreview();
     if (change.changedPixels === 0) return false;
-    const after = current.toRle();
-    undoRef.current = [...undoRef.current.slice(-19), {
-      name: preview.name,
-      before,
-      after,
-      report: preview.report,
-    }];
-    redoRef.current = [];
+    if (!command || command.changedPixels !== change.changedPixels) {
+      throw new Error("mask history patch does not match the confirmed operation");
+    }
+    historyRef.current.push(command);
     setDirty(true);
     setHistoryRevision((value) => value + 1);
     bump();
     return true;
-  }, [bump, clearOperationPreview]);
+  }, [bump, clearOperationPreview, height, historyRef, width]);
 
   const cancelOperation = useCallback(() => {
     cancelActiveOperation();
@@ -525,6 +571,8 @@ export function useMaskEditor({
     return bufferRef.current?.toRle() ?? null;
   }, []);
 
+  const historyResources = historyRef.current.snapshot();
+
   return {
     active,
     mode,
@@ -535,8 +583,9 @@ export function useMaskEditor({
     dirty,
     buffer: bufferRef.current,
     revision,
-    canUndo: undoRef.current.length > 0,
-    canRedo: redoRef.current.length > 0,
+    canUndo: historyRef.current.canUndo,
+    canRedo: historyRef.current.canRedo,
+    historyResources,
     operationPreview,
     instanceOperationPreview,
     operationStatus,

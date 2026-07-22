@@ -44,6 +44,9 @@
 - **Mask 计算复用 Worker 池**. 同一任务的内容分析、高级编辑和实例操作共享按设备分档的固定 Worker，
   COCO RLE counts 改为 `Uint32Array` transferable；编辑、选中、当前和预取任务按优先级进入有界队列，
   取消、超时或单 Worker 崩溃只替换对应 slot，并在切题或离开工作台时释放全部 Worker 与会话索引。
+- **Mask XOR 分块历史**. 笔刷、橡皮和已确认操作改为保留 512 像素 tile 的 1-bit XOR patch，
+  笔画期间仅捕获首次触及 tile 的临时基线，不再为每次编辑生成 before / after RLE。撤销与重做
+  共用同一 patch，最多保留 100 条并同时受 16 / 32 / 64 MiB 设备档位硬预算约束。
 
 ## [0.23.9] - 2026-07-22
 

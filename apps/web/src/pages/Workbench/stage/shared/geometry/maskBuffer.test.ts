@@ -143,6 +143,29 @@ describe("MaskBuffer · fromPolygon", () => {
   });
 });
 
+describe("MaskBuffer · XOR bit patch", () => {
+  it("toggles the same patch in both directions and marks its exact bounds dirty", () => {
+    const buffer = new MaskBuffer({ width: 6, height: 4 });
+    buffer.consumeDirty();
+    const bits = Uint8Array.of(0b0000_1001);
+    expect(buffer.applyXorBits(2, 1, 2, 2, bits)).toEqual({
+      changedPixels: 2,
+      bounds: { x0: 2, y0: 1, x1: 4, y1: 3 },
+    });
+    expect(buffer.get(2, 1)).toBe(255);
+    expect(buffer.get(3, 2)).toBe(255);
+    expect(buffer.consumeDirty()).toEqual({ x0: 2, y0: 1, x1: 4, y1: 3 });
+    buffer.applyXorBits(2, 1, 2, 2, bits);
+    expect(buffer.countSet()).toBe(0);
+  });
+
+  it("rejects malformed patch dimensions and byte lengths", () => {
+    const buffer = new MaskBuffer({ width: 4, height: 4 });
+    expect(() => buffer.applyXorBits(3, 3, 2, 2, Uint8Array.of(1))).toThrow(/bounds/);
+    expect(() => buffer.applyXorBits(0, 0, 4, 4, Uint8Array.of(1))).toThrow(/length/);
+  });
+});
+
 describe("MaskBuffer · dirtyRect (v0.10.10)", () => {
   it("初始无脏区", () => {
     const m = new MaskBuffer({ width: 30, height: 30 });

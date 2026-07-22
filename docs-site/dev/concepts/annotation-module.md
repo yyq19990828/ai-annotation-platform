@@ -139,6 +139,12 @@ transferable buffer 返回。分析默认 15 秒、普通操作 30 秒、tile me
 只终止并补充对应 Worker，其他 slot 继续。pool 按 task 创建，切题或卸载时 dispose，队列、session run
 index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误，不在主线程静默执行大操作。
 
+Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始后只在首次触及某个 tile
+时捕获临时基线，结束时与当前二值像素生成 XOR 并释放基线；高级操作在确认时按变更边界
+生成同种 patch。undo / redo 对当前真值执行同一次 XOR，不再构造 before / after RLE。历史最多
+100 条，并按 Low / Standard / High 档位共享 16 / 32 / 64 MiB 硬预算；新写入会释放 redo，超预算
+时只从最旧 undo 开始淘汰。这是编辑器本地历史，不改变服务端 annotation history 与审计语义。
+
 ### 原子多对象 Mask 操作
 
 split / component copy / keyframe copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和

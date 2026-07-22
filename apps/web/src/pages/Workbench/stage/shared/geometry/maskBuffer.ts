@@ -132,6 +132,57 @@ export class MaskBuffer {
     return { changedPixels, bounds };
   }
 
+  /** Apply a row-major 1-bit XOR patch at the given pixel origin. */
+  applyXorBits(
+    x0: number,
+    y0: number,
+    width: number,
+    height: number,
+    xorBits: Uint8Array,
+  ): MaskBufferChange {
+    if (
+      !Number.isInteger(x0)
+      || !Number.isInteger(y0)
+      || !Number.isInteger(width)
+      || !Number.isInteger(height)
+      || x0 < 0
+      || y0 < 0
+      || width <= 0
+      || height <= 0
+      || x0 + width > this.width
+      || y0 + height > this.height
+    ) {
+      throw new Error("MaskBuffer: XOR patch bounds must fit the buffer");
+    }
+    if (xorBits.byteLength !== Math.ceil(width * height / 8)) {
+      throw new Error("MaskBuffer: XOR patch length does not match its dimensions");
+    }
+    let changedPixels = 0;
+    let minX = this.width;
+    let minY = this.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y += 1) {
+      const targetRow = (y0 + y) * this.width + x0;
+      const patchRow = y * width;
+      for (let x = 0; x < width; x += 1) {
+        const bitIndex = patchRow + x;
+        if ((xorBits[bitIndex >> 3] & (1 << (bitIndex & 7))) === 0) continue;
+        this.data[targetRow + x] = this.data[targetRow + x] === 0 ? 255 : 0;
+        changedPixels += 1;
+        minX = Math.min(minX, x0 + x);
+        minY = Math.min(minY, y0 + y);
+        maxX = Math.max(maxX, x0 + x);
+        maxY = Math.max(maxY, y0 + y);
+      }
+    }
+    const bounds = changedPixels === 0
+      ? null
+      : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 };
+    if (bounds) this.markDirty(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+    return { changedPixels, bounds };
+  }
+
   /** 当前非零像素数（调试 / 测试用，O(N)）。 */
   countSet(): number {
     let n = 0;

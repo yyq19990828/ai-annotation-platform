@@ -5,7 +5,7 @@
 // - dirty 在 paintAt 后变 true；cancel 后 false
 // - commitToPolygon 空 mask 返回 null；有内容时返回外环顶点
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import {
   useMaskEditor,
@@ -15,6 +15,7 @@ import {
 } from "./useMaskEditor";
 import { applyMaskPolygon } from "../stage/shared/geometry/maskOperations";
 import { planMaskJoin } from "../stage/shared/geometry/maskInstanceOperations";
+import { MaskBuffer } from "../stage/shared/geometry/maskBuffer";
 
 describe("useMaskEditor · 初始态", () => {
   it("初始非 active，dirty=false，buffer=null，revision=0", () => {
@@ -172,6 +173,79 @@ describe("useMaskEditor · stroke undo / redo", () => {
     act(() => result.current.redo());
     expect(result.current.buffer?.countSet()).toBe(painted);
   });
+
+  it("does not encode before/after RLE and records cross-tile strokes as bit patches", () => {
+    const toRle = vi.spyOn(MaskBuffer.prototype, "toRle");
+    const { result } = renderHook(() => useMaskEditor({
+      width: 514,
+      height: 4,
+      initialRadius: 1,
+      deviceMemory: 2,
+    }));
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(511, 2);
+      result.current.paintAt(512, 2);
+      result.current.endStroke();
+    });
+    expect(toRle).not.toHaveBeenCalled();
+    expect(result.current.historyResources).toMatchObject({
+      maxBytes: 16 * 1024 * 1024,
+      undoCommands: 1,
+      redoCommands: 0,
+    });
+    expect(result.current.historyResources.retainedBytes).toBeLessThan(1024);
+    const painted = result.current.buffer?.countSet();
+    act(() => result.current.undo());
+    expect(result.current.buffer?.countSet()).toBe(0);
+    act(() => result.current.redo());
+    expect(result.current.buffer?.countSet()).toBe(painted);
+    toRle.mockRestore();
+  });
+
+  it("does not retain a no-op stroke", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 8, height: 8, initialRadius: 1 }));
+    act(() => result.current.beginBlank());
+    act(() => result.current.setMode("erase"));
+    act(() => {
+      result.current.beginStroke();
+      result.current.paintAt(2, 2);
+      result.current.endStroke();
+    });
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.historyResources.retainedBytes).toBe(0);
+  });
+
+  it("evicts the oldest undo by byte budget and clears redo on a new stroke", () => {
+    const { result } = renderHook(() => useMaskEditor({
+      width: 8,
+      height: 8,
+      initialRadius: 1,
+      historyMaxBytes: 110,
+    }));
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(1, 1);
+      result.current.endStroke();
+      result.current.beginStroke();
+      result.current.paintAt(6, 6);
+      result.current.endStroke();
+    });
+    expect(result.current.historyResources).toMatchObject({ undoCommands: 1, evictedCommands: 1 });
+    act(() => result.current.undo());
+    expect(result.current.buffer?.get(1, 1)).toBe(255);
+    expect(result.current.buffer?.get(6, 6)).toBe(0);
+    expect(result.current.canRedo).toBe(true);
+    act(() => {
+      result.current.beginStroke();
+      result.current.paintAt(4, 4);
+      result.current.endStroke();
+    });
+    expect(result.current.canRedo).toBe(false);
+    expect(result.current.historyResources.redoCommands).toBe(0);
+  });
 });
 
 describe("useMaskEditor · operation preview / command", () => {
@@ -206,6 +280,22 @@ describe("useMaskEditor · operation preview / command", () => {
     expect(result.current.buffer?.countSet()).toBe(8);
   });
 
+  it("确认 no-op 操作不写入 history", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 6, height: 4 }));
+    act(() => result.current.beginBlank());
+    const noOp = applyMaskPolygon(result.current.buffer!.data, 6, 4, {
+      points: [],
+      value: 255,
+    });
+    act(() => result.current.previewOperation("no-op", noOp));
+    let confirmed = true;
+    act(() => { confirmed = result.current.confirmOperation(); });
+    expect(confirmed).toBe(false);
+    expect(result.current.operationPreview).toBeNull();
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.historyResources.retainedBytes).toBe(0);
+  });
+
   it("cancel preview 不 dirty，旧 revision 的 Worker 结果被拒绝", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 5, height: 5, initialRadius: 1 }));
     act(() => result.current.beginBlank());
@@ -233,6 +323,29 @@ describe("useMaskEditor · operation preview / command", () => {
     });
     expect(result.current.operationPreview).toBeNull();
     expect(result.current.buffer?.get(4, 4)).toBe(255);
+  });
+
+  it("操作取消保留已有 XOR history", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 8, height: 8, initialRadius: 1 }));
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(2, 2);
+      result.current.endStroke();
+    });
+    const retainedBytes = result.current.historyResources.retainedBytes;
+    const preview = applyMaskPolygon(result.current.buffer!.data, 8, 8, {
+      points: [[4, 4], [7, 4], [7, 7], [4, 7]],
+      value: 255,
+    });
+    act(() => {
+      result.current.previewOperation("lasso_add", preview);
+      result.current.cancelOperation();
+    });
+    expect(result.current.historyResources.retainedBytes).toBe(retainedBytes);
+    expect(result.current.canUndo).toBe(true);
+    act(() => result.current.undo());
+    expect(result.current.buffer?.countSet()).toBe(0);
   });
 
   it("materializeFromRle 明确进入 dirty，不伪造像素笔画", () => {
