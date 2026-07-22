@@ -1197,7 +1197,8 @@ async def export_project(
     request: Request,
     targets: list[str] = Query(
         default=["coco"],
-        description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
+        description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg"
+        " / label-studio-brush / binary-png / indexed-png / aap_json"
         " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti"
         " / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
@@ -1215,6 +1216,11 @@ async def export_project(
         "iso",
         pattern="^(iso|source)$",
         description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+    ),
+    indexed_overlap_policy: str = Query(
+        "error",
+        pattern="^(error|z_order|larger_area|smaller_area)$",
+        description="Indexed PNG 的实例重叠策略；默认拒绝重叠",
     ),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
@@ -1275,6 +1281,7 @@ async def export_project(
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
+            "indexed_overlap_policy": indexed_overlap_policy,
             "project_display_id": project.display_id,
         },
     )
@@ -1294,6 +1301,7 @@ async def export_project(
                 "include_attributes": include_attributes,
                 "video_frame_mode": video_frame_mode,
                 "axis_frame": axis_frame,
+                "indexed_overlap_policy": indexed_overlap_policy,
             },
         ),
     )
@@ -1307,6 +1315,7 @@ async def export_project(
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
+            "indexed_overlap_policy": indexed_overlap_policy,
         },
         async_job_id=str(job.id),
     )

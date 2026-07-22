@@ -37,7 +37,10 @@ from app.services.raster_mask_storage import (
     validate_mask_geometry_for_task,
 )
 from app.services.task_lock import TaskLockConflictError, TaskLockService
-from app.services.video_tracks import remove_frame_from_outside_ranges, resolve_track_at_frame
+from app.services.video_tracks import (
+    remove_frame_from_outside_ranges,
+    resolve_track_at_frame,
+)
 
 
 class AiMaskAcceptError(ValueError):
@@ -147,7 +150,9 @@ def _validate_receipt(
             message="candidate receipt does not match the accept request",
         )
     accept_target = claims.get("accept_target")
-    if accept_target is not None and accept_target != data.target.model_dump(mode="json"):
+    if accept_target is not None and accept_target != data.target.model_dump(
+        mode="json"
+    ):
         raise AiMaskAcceptError(
             status_code=409,
             reason="candidate_receipt_mismatch",
@@ -291,6 +296,8 @@ async def _load_source_for_update(
     task_id: uuid.UUID,
     expected_version: int | None,
     expected_geometry_type: str,
+    receipt_claims: dict[str, Any],
+    frame_index: int | None,
 ) -> Annotation | None:
     if data.target.mode == "create":
         if expected_version is not None:
@@ -338,6 +345,11 @@ async def _load_source_for_update(
             reason="source_version_mismatch",
             message="If-Match must equal target.source_version",
         )
+    _validate_prompt_source_digest(
+        receipt_claims,
+        source,
+        frame_index=frame_index,
+    )
     if source.version != expected_version:
         raise AiMaskAcceptError(
             status_code=409,
@@ -451,7 +463,11 @@ async def accept_ai_mask_candidate(
     )
     prediction_backend_id, prediction_pool_id = await _resolve_routing_lineage(db, data)
 
-    item = await db.get(DatasetItem, task.dataset_item_id) if task.dataset_item_id else None
+    item = (
+        await db.get(DatasetItem, task.dataset_item_id)
+        if task.dataset_item_id
+        else None
+    )
     media_type = item.file_type if item is not None else None
     if media_type not in {"image", "video"}:
         raise AiMaskAcceptError(
@@ -480,10 +496,7 @@ async def accept_ai_mask_candidate(
         task_id=task_id,
         expected_version=expected_version,
         expected_geometry_type=geometry_type,
-    )
-    _validate_prompt_source_digest(
-        receipt_claims,
-        source,
+        receipt_claims=receipt_claims,
         frame_index=frame_index,
     )
     source_version = source.version if source is not None else None
@@ -651,9 +664,7 @@ async def accept_ai_mask_candidate(
     await db.refresh(prediction)
     await db.refresh(annotation)
     response = AiMaskAcceptResponse(
-        prediction=_prediction_out(
-            prediction, inference_time_ms=inference_time_ms
-        ),
+        prediction=_prediction_out(prediction, inference_time_ms=inference_time_ms),
         annotation=AnnotationOut.model_validate(annotation),
         source_version=source_version,
         result_version=annotation.version,

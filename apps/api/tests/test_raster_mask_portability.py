@@ -15,6 +15,7 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.annotations_import import import_aap_json_annotations
 from app.services.exporting.service import ExportService
+from app.services.mask_formats.image_codecs import normalize_coco_segmentation_rle
 from app.services.predictions_import import import_aap_json
 from app.services.raster_mask_storage import build_rle_reference
 from app.utils.raster_mask_rle import encode_coco_rle
@@ -304,10 +305,18 @@ async def test_export_coco_raster_mask_uses_pixel_bbox_area_and_rle(
     assert rows[0]["bbox"] == [2.0, 1.0, 1.0, 1.0]
     assert rows[0]["area"] == 1
     assert rows[0]["iscrowd"] == 1
-    assert rows[0]["segmentation"] == {
-        "size": [2, 3],
-        "counts": single["counts"],
-    }
+    assert isinstance(rows[0]["segmentation"]["counts"], str)
+    assert (
+        normalize_coco_segmentation_rle(
+            rows[0]["segmentation"], expected_width=3, expected_height=2
+        )
+        == single
+    )
     assert rows[1]["bbox"] == [0.0, 0.0, 0.0, 0.0]
     assert rows[1]["area"] == 0
-    assert rows[1]["segmentation"]["counts"] == empty["counts"]
+    assert (
+        normalize_coco_segmentation_rle(
+            rows[1]["segmentation"], expected_width=3, expected_height=2
+        )
+        == empty
+    )

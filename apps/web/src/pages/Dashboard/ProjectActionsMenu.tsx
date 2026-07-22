@@ -15,12 +15,13 @@ import { Icon } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import {
   PredictionImportWizard,
-  ANNOTATIONS_IMPORT_ENABLED,
   type ImportTarget,
 } from "@/components/predictions/PredictionImportWizard";
+import { MaskFormatImportWizard } from "@/components/mask-formats/MaskFormatImportWizard";
 import { PredictionPurgeModal } from "@/components/predictions/PredictionPurgeModal";
 import { ExportModal } from "./ExportModal";
 import type { ProjectResponse } from "@/api/projects";
+import { maskFormatsApi } from "@/api/maskFormats";
 
 export function ProjectActionsMenu({
   project,
@@ -33,6 +34,29 @@ export function ProjectActionsMenu({
   const [importTarget, setImportTarget] = useState<ImportTarget | null>(null);
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [formatRegistryState, setFormatRegistryState] = useState<
+    "idle" | "loading" | "available" | "unavailable"
+  >("idle");
+
+  const loadImportCapability = async () => {
+    if (!canManage || formatRegistryState !== "idle") return;
+    setFormatRegistryState("loading");
+    try {
+      const formats = await maskFormatsApi.list(project.id);
+      setFormatRegistryState(
+        formats.some(
+          (format) =>
+            format.import_capability.supported &&
+            format.import_capability.verified &&
+            format.import_capability.enabled_for_ui,
+        )
+          ? "available"
+          : "unavailable",
+      );
+    } catch {
+      setFormatRegistryState("unavailable");
+    }
+  };
 
   const items: DropdownItem[] = [
     {
@@ -64,8 +88,7 @@ export function ProjectActionsMenu({
             icon: "trash",
             onSelect: () => setPurgeOpen(true),
           },
-          // v0.10.54 · 标注导入入口暂隐 (后端已就绪, ANNOTATIONS_IMPORT_ENABLED 控制)。
-          ...(ANNOTATIONS_IMPORT_ENABLED
+          ...(formatRegistryState === "available"
             ? [
                 {
                   id: "import-annotations",
@@ -90,6 +113,7 @@ export function ProjectActionsMenu({
             size="sm"
             onClick={(e) => {
               e.stopPropagation();
+              if (!open) void loadImportCapability();
               toggle();
             }}
             aria-haspopup="menu"
@@ -142,7 +166,7 @@ function ProjectActionModals({
 
   return (
     <>
-      {importTarget && (
+      {importTarget === "predictions" && (
         <PredictionImportWizard
           open
           key={importTarget}
@@ -150,6 +174,15 @@ function ProjectActionModals({
           initialTarget={importTarget}
           onClose={() => setImportTarget(null)}
           onComplete={invalidateProjectData}
+        />
+      )}
+      {importTarget === "annotations" && (
+        <MaskFormatImportWizard
+          open
+          key={importTarget}
+          projectId={projectId}
+          onClose={() => setImportTarget(null)}
+          onQueued={invalidateProjectData}
         />
       )}
       {purgeOpen && (

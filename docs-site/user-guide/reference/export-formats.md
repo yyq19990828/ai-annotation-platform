@@ -6,14 +6,14 @@ status: stable
 last_reviewed: 2026-07-23
 ---
 
-# 数据导出格式
+# Mask 标注导入与数据导出格式
 
 ![导出格式选择](../images/export/format-select.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / AAP JSON 选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -27,6 +27,9 @@ last_reviewed: 2026-07-23
 | 图像 | YOLO 检测 | `yolo-det`（`yolo` 为旧别名） | 训练 YOLOv8 检测（矩形框） |
 | 图像 | YOLO 旋转框 | `yolo-obb` | 训练 YOLOv8 OBB（rotated_bbox） |
 | 图像 | YOLO 分割 | `yolo-seg` | 训练 YOLOv8 分割（polygon / mask） |
+| 图像 | Label Studio Brush | `label-studio-brush` | 与 Label Studio BrushLabels 交换实例 Mask |
+| 图像 | 逐实例 Binary PNG | `binary-png` | 以独立 0/255 PNG 无损保留重叠实例 |
+| 图像 | Indexed PNG | `indexed-png` | 交换单张 palette instance map；重叠时需显式 winner 策略 |
 | 图像 | AAP JSON | `aap_json` | 跨实例无损迁移 / 客户自训模型预测灌入 / 备份 |
 | **视频轨迹** | Video JSON | `video_json` | 轨迹备份 / 质检 / 继续编辑 |
 | 视频轨迹 | YOLO 逐帧检测 | `yolo-frames-det` | 视频逐帧检测训练（polygon / polyline 降级为顶点外接框） |
@@ -46,6 +49,16 @@ last_reviewed: 2026-07-23
 > **视频几何的导出边界**：Video JSON / AAP JSON 保真保存 bbox、polygon、polyline 与 Mask 轨迹；MOT / KITTI / YOLO 逐帧检测把 polygon / polyline 按顶点外接框、Mask 按非空像素外接框降级；YOLO 逐帧分割只收 polygon；COCO 逐帧分割同时收 polygon 与标准 COCO RLE Mask；DAVIS 只收 Mask 轨迹。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
+
+## 导入 Mask 标注
+
+项目卡片 `⋮` 菜单的「导入 Mask 标注」由后端格式 registry 驱动，只列出当前项目媒体类型下已验证且开放 UI 的 adapter。图片项目可导入 AAP JSON、COCO Instance、Label Studio BrushLabels、逐实例 Binary PNG、Indexed PNG 和 YOLO Segmentation。
+
+1. 选择格式并上传 JSON 或 ZIP；浏览器会计算 SHA-256，上传后先生成短时预检收据。
+2. 预检展示无损、有损或不支持，并列出尺寸冲突、任务未匹配和未知类别。未知类别必须映射到项目类别并重新预检。
+3. 有损计划需显式确认，不支持计划不可执行。提交后按 task 原子导入，可在任务铃查看进度。
+
+COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio 必须提供与 labeling config 一致的 `from_name` / `to_name`、原图尺寸与 `value.format="rle"`。PNG 包必须带 `manifest.json`：Binary PNG 为 8-bit `L`、0/255 像素，每个实例独立文件；Indexed PNG 为 8-bit `P`，0 是背景，1–255 是实例 ID。manifest 中的媒体路径、尺寸、类别、实例身份和内容 SHA-256 都会校验。
 
 ## 导出流程
 
@@ -94,7 +107,7 @@ python fetch_images.py
 
 ## COCO JSON
 
-图片 `raster_mask` 以标准 COCO uncompressed RLE 写入 `segmentation`；`bbox` 与 `area` 从实际前景像素计算，不使用上传时的占位框。polygon / multi_polygon 继续输出多边形 segmentation，其他不兼容几何计入 `info.skipped_annotations`。
+图片 `raster_mask` 以标准 COCO compressed RLE 写入 `segmentation`，并设置 `iscrowd=1`；`bbox` 与 `area` 从实际前景像素计算，不使用上传时的占位框。polygon / multi_polygon 继续输出多边形 segmentation，其他不兼容几何计入 `info.skipped_annotations`。
 
 最常用格式，适配 Detectron2、MMDetection、YOLOv8 等。COCO 是单文档格式，落在包根的 `annotations.json`（无 per-image label 文件）。图片的 `width` / `height` 现在取**真实尺寸**（来自 dataset 记录；早期版本曾硬编码 1920×1280，已修复）。
 
@@ -146,9 +159,15 @@ YOLO 不同变体的标注行格式互不相同，因此导出拆成三个可独
 |---|---|---|
 | `YOLO 检测`(det) | `<cls> <cx> <cy> <w> <h>`（归一化） | bbox |
 | `YOLO 旋转框`(obb) | `<cls> <x1> <y1> … <x4> <y4>`（归一化四角） | rotated_bbox |
-| `YOLO 分割`(seg) | `<cls> <x1> <y1> <x2> <y2> …`（归一化多边形） | polygon / multi_polygon |
+| `YOLO 分割`(seg) | `<cls> <x1> <y1> <x2> <y2> …`（归一化多边形） | polygon / multi_polygon / raster_mask |
 
-> OBB 四角在像素空间按旋转角计算后再归一化（图像非正方形时直接在归一化坐标旋转会变形）。seg 对 multi_polygon 的每个连通域各出一行。
+> OBB 四角在像素空间按旋转角计算后再归一化（图像非正方形时直接在归一化坐标旋转会变形）。seg 对 multi_polygon 和 Mask 的每个连通域各出一行。Mask 转 polygon 无法保留孔洞、细结构与曲线边界，预检会以 `holes_polygonized` / `components_split` 报告并要求有损确认。
+
+## Label Studio Brush 与 PNG Mask 包
+
+- `label-studio-brush`：`annotations.json` 使用 Label Studio BrushLabels 的 RGBA RLE，保留标签、原始尺寸和 `from_name` / `to_name`。
+- `binary-png`：`manifest.json` 将每个 annotation 映射到独立 `masks/<task>/<annotation>.png`，因此实例重叠仍然无损。
+- `indexed-png`：每个 task 只写一张 palette PNG。单图超过 255 个实例会阻止导出；存在重叠时默认阻止，也可显式选择 `z_order`、`larger_area` 或 `smaller_area`。非 `error` 策略会在 manifest 的 `loss_report` 记录被覆盖实例、像素数和 winner 策略。
 
 label 文件按**镜像目录**组织，保留原数据集的递归子目录结构：
 

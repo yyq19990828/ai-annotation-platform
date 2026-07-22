@@ -365,6 +365,8 @@ async def test_mask_keyframe_delete_is_versioned_surgical_and_restores_hold(
         "outside": [],
     }
     await db_session.flush()
+    await db_session.refresh(annotation)
+    current_version = annotation.version
     path = f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/8"
 
     missing = await httpx_client_bound.patch(
@@ -377,14 +379,14 @@ async def test_mask_keyframe_delete_is_versioned_surgical_and_restores_hold(
     deleted = await httpx_client_bound.patch(
         path,
         json={"operation": "delete_keyframe"},
-        headers={**_bearer(token), "If-Match": 'W/"3"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version}"'},
     )
     assert deleted.status_code == 200, deleted.text
-    assert deleted.headers["etag"] == 'W/"4"'
+    assert deleted.headers["etag"] == f'W/"{current_version + 1}"'
     assert deleted.headers["x-resolved-keyframe-frame"] == "2"
     assert deleted.headers["x-restored-held"] == "true"
     await db_session.refresh(annotation)
-    assert annotation.version == 4
+    assert annotation.version == current_version + 1
     assert annotation.geometry["keyframes"] == [
         {
             "frame_index": 2,
@@ -398,7 +400,7 @@ async def test_mask_keyframe_delete_is_versioned_surgical_and_restores_hold(
     last = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/2",
         json={"operation": "delete_keyframe"},
-        headers={**_bearer(token), "If-Match": 'W/"4"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version + 1}"'},
     )
     assert last.status_code == 422
     assert last.json()["detail"]["reason"] == "last_keyframe_required"
@@ -406,12 +408,12 @@ async def test_mask_keyframe_delete_is_versioned_surgical_and_restores_hold(
     stale = await httpx_client_bound.patch(
         path,
         json={"operation": "mark_outside"},
-        headers={**_bearer(token), "If-Match": 'W/"3"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version}"'},
     )
     assert stale.status_code == 409
     assert stale.json()["detail"] == {
         "reason": "source_version_conflict",
-        "current_version": 4,
+        "current_version": current_version + 1,
     }
     audit = (
         await db_session.execute(
@@ -460,12 +462,14 @@ async def test_mask_manual_outside_restore_preserves_prediction_and_keyframes(
         "outside": [{"from": 0, "to": 3, "source": "prediction"}],
     }
     await db_session.flush()
+    await db_session.refresh(annotation)
+    current_version = annotation.version
     path = f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/4"
 
     hidden = await httpx_client_bound.patch(
         path,
         json={"operation": "mark_outside"},
-        headers={**_bearer(token), "If-Match": 'W/"5"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version}"'},
     )
     assert hidden.status_code == 200, hidden.text
     await db_session.refresh(annotation)
@@ -478,13 +482,13 @@ async def test_mask_manual_outside_restore_preserves_prediction_and_keyframes(
     restored = await httpx_client_bound.patch(
         path,
         json={"operation": "restore_held"},
-        headers={**_bearer(token), "If-Match": 'W/"6"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version + 1}"'},
     )
     assert restored.status_code == 200, restored.text
     assert restored.headers["x-resolved-keyframe-frame"] == "8"
     assert restored.headers["x-restored-held"] == "true"
     await db_session.refresh(annotation)
-    assert annotation.version == 7
+    assert annotation.version == current_version + 2
     assert annotation.geometry["outside"] == [
         {"from": 0, "to": 3, "source": "prediction"}
     ]
@@ -493,7 +497,7 @@ async def test_mask_manual_outside_restore_preserves_prediction_and_keyframes(
     prediction_only = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/3",
         json={"operation": "restore_held"},
-        headers={**_bearer(token), "If-Match": 'W/"7"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version + 2}"'},
     )
     assert prediction_only.status_code == 409
     assert prediction_only.json()["detail"]["reason"] == "manual_outside_missing"
@@ -501,7 +505,7 @@ async def test_mask_manual_outside_restore_preserves_prediction_and_keyframes(
     overlapping_manual = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/3",
         json={"operation": "mark_outside"},
-        headers={**_bearer(token), "If-Match": 'W/"7"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version + 2}"'},
     )
     assert overlapping_manual.status_code == 200, overlapping_manual.text
     await db_session.refresh(annotation)
@@ -513,7 +517,7 @@ async def test_mask_manual_outside_restore_preserves_prediction_and_keyframes(
     restored_overlap = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}/mask-keyframes/3",
         json={"operation": "restore_held"},
-        headers={**_bearer(token), "If-Match": 'W/"8"'},
+        headers={**_bearer(token), "If-Match": f'W/"{current_version + 3}"'},
     )
     assert restored_overlap.status_code == 200, restored_overlap.text
     await db_session.refresh(annotation)

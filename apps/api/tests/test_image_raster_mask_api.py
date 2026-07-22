@@ -512,6 +512,8 @@ async def test_polygon_to_raster_syncs_type_and_rejects_stale_version(
     load = AsyncMock(return_value=FOREGROUND_RLE)
     monkeypatch.setattr("app.services.raster_mask_storage.load_coco_rle", load)
     await db_session.commit()
+    await db_session.refresh(annotation)
+    current_version = annotation.version
 
     stale = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
@@ -521,7 +523,7 @@ async def test_polygon_to_raster_syncs_type_and_rejects_stale_version(
                 "mask": build_rle_reference(FOREGROUND_RLE),
             }
         },
-        headers=_headers(token, **{"If-Match": 'W/"0"'}),
+        headers=_headers(token, **{"If-Match": f'W/"{current_version - 1}"'}),
     )
     converted = await httpx_client_bound.patch(
         f"/api/v1/tasks/{task.id}/annotations/{annotation.id}",
@@ -531,13 +533,13 @@ async def test_polygon_to_raster_syncs_type_and_rejects_stale_version(
                 "mask": build_rle_reference(FOREGROUND_RLE),
             }
         },
-        headers=_headers(token, **{"If-Match": 'W/"1"'}),
+        headers=_headers(token, **{"If-Match": f'W/"{current_version}"'}),
     )
 
     assert stale.status_code == 409
     assert stale.json()["detail"] == {
         "reason": "version_mismatch",
-        "current_version": 1,
+        "current_version": current_version,
     }
     assert converted.status_code == 200, converted.text
     assert converted.json()["annotation_type"] == "raster_mask"

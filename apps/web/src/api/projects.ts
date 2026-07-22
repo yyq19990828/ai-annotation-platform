@@ -132,6 +132,9 @@ export type ExportTarget =
   | "yolo-det"
   | "yolo-obb"
   | "yolo-seg"
+  | "label-studio-brush"
+  | "binary-png"
+  | "indexed-png"
   | "aap_json"
   | "video_json"
   | "mot"
@@ -147,6 +150,7 @@ export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {
   includeAttributes?: boolean;
   videoFrameMode?: VideoFrameMode;
+  indexedOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
 }
 
 export interface ProjectClassUsageResponse {
@@ -266,6 +270,9 @@ export const projectsApi = {
     const params = new URLSearchParams({ include_attributes: String(includeAttr) });
     targets.forEach((t) => params.append("targets", t));
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
+    if (opts?.indexedOverlapPolicy) {
+      params.set("indexed_overlap_policy", opts.indexedOverlapPolicy);
+    }
     return apiClient.post<{ job_id: string }>(
       `/projects/${id}/export?${params.toString()}`,
     );

@@ -132,6 +132,7 @@ async def _run_mask_format_import(
                     raise RuntimeError("format_options_digest_conflict")
                 plan = batch.plan_json
                 options = dict(batch.options_json or {})
+                mapping = dict(batch.mapping_json or {})
                 requested_by_id = batch.requested_by_id
                 project_id = batch.project_id
             from app.schemas.mask_format import MaskFormatPlan
@@ -175,6 +176,7 @@ async def _run_mask_format_import(
                             plan=typed_plan,
                             item_index=item_index,
                             operator_user_id=requested_by_id,
+                            mapping=mapping,
                             options=options,
                         )
                         result = _result_copy(batch)

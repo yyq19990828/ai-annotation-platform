@@ -324,6 +324,7 @@ async def _run_export(
                     include_attributes=include_attributes,
                     video_frame_mode=video_frame_mode,
                     axis_frame=axis_frame,
+                    format_options=opts,
                 )
                 try:
                     await async_job_svc.update_progress(db, job_uuid, 70)

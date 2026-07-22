@@ -71,6 +71,12 @@ from app.services.project import (
 )
 from app.services.storage import storage_service
 from app.services.mask_formats import registry as mask_format_registry
+from app.services.mask_formats.image_export import (
+    write_binary_png_export,
+    write_indexed_png_export,
+    write_label_studio_export,
+    yolo_seg_lines_with_masks,
+)
 from app.services.raster_mask_storage import load_coco_rle
 from app.config import settings
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
@@ -105,7 +111,17 @@ async def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
 LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
-IMAGE_EXPORT_TARGETS = {"coco", "yolo", "yolo-det", "yolo-obb", "yolo-seg", "aap_json"}
+IMAGE_EXPORT_TARGETS = {
+    "coco",
+    "yolo",
+    "yolo-det",
+    "yolo-obb",
+    "yolo-seg",
+    "aap_json",
+    "label-studio-brush",
+    "binary-png",
+    "indexed-png",
+}
 ALL_EXPORT_TARGETS = (
     IMAGE_EXPORT_TARGETS | VIDEO_EXPORT_FORMATS | LIDAR_EXPORT_TARGETS | {"voc"}
 )
@@ -467,6 +483,7 @@ async def build_export_zip(
     include_attributes: bool,
     video_frame_mode: str,
     axis_frame: AxisFrame = "iso",
+    format_options: dict | None = None,
 ) -> tuple[str, int, int]:
     """生成镜像目录 ZIP 到磁盘临时文件，返回 (zip 路径, label 文件数, size_bytes)。
 
@@ -541,8 +558,13 @@ async def build_export_zip(
         multi = len(targets) > 1
         yolo_targets = [t for t in targets if t in YOLO_TARGETS]
         other_targets = [t for t in targets if t not in YOLO_TARGETS]
+        custom_mask_targets = {
+            "label-studio-brush",
+            "binary-png",
+            "indexed-png",
+        }
         for target in other_targets:
-            if target not in ("coco", "aap_json"):
+            if target not in {"coco", "aap_json", *custom_mask_targets}:
                 raise UnsupportedExportError(f"unsupported export target: {target}")
         has_yolo = bool(yolo_targets)
         # COCO 需 DatasetItem 真值尺寸算像素坐标；仅在请求 coco 时累积全量 items
@@ -587,14 +609,21 @@ async def build_export_zip(
                             img_h = (
                                 int(item.height) if item and item.height else FALLBACK_H
                             )
-                            lines, attrs_per_line = _yolo_target_lines(
-                                target,
-                                ann_by_task.get(t.id, []),
-                                cat_map,
-                                img_w=img_w,
-                                img_h=img_h,
-                                include_attributes=include_attributes,
-                            )
+                            if target == "yolo-seg":
+                                lines, attrs_per_line = await yolo_seg_lines_with_masks(
+                                    ann_by_task.get(t.id, []),
+                                    cat_map,
+                                    include_attributes=include_attributes,
+                                )
+                            else:
+                                lines, attrs_per_line = _yolo_target_lines(
+                                    target,
+                                    ann_by_task.get(t.id, []),
+                                    cat_map,
+                                    img_w=img_w,
+                                    img_h=img_h,
+                                    include_attributes=include_attributes,
+                                )
                             dataset_id = str(item.dataset_id) if item else "unknown"
                             base = f"{prefix}{project_id}/{dataset_id}/labels/{rel}"
                             zf.writestr(f"{base}.txt", "\n".join(lines))
@@ -653,6 +682,8 @@ async def build_export_zip(
 
             # 单文档目标（coco/aap_json）：本质全量物化，svc 自加载落包根/子目录。
             for target in other_targets:
+                if target in custom_mask_targets:
+                    continue
                 prefix = f"{target}/" if multi else ""
                 if target == "coco":
                     content = await svc.export_coco(
@@ -671,6 +702,39 @@ async def build_export_zip(
                     )
                 zf.writestr(f"{prefix}annotations.json", content)
                 file_count += total_tasks
+
+            export_options = format_options or {}
+            for target in sorted(custom_mask_targets & set(targets)):
+                prefix = f"{target}/" if multi else ""
+                chunks = svc.iter_export_chunks(
+                    project_id, batch_id, with_annotations=True
+                )
+                if target == "binary-png":
+                    file_count += await write_binary_png_export(
+                        zf,
+                        prefix=prefix,
+                        project=project,
+                        chunks=chunks,
+                    )
+                elif target == "indexed-png":
+                    file_count += await write_indexed_png_export(
+                        zf,
+                        prefix=prefix,
+                        project=project,
+                        chunks=chunks,
+                        overlap_policy=str(
+                            export_options.get("indexed_overlap_policy") or "error"
+                        ),
+                    )
+                else:
+                    file_count += await write_label_studio_export(
+                        zf,
+                        prefix=prefix,
+                        chunks=chunks,
+                        data_key=str(export_options.get("ls_data_key") or "image"),
+                        from_name=str(export_options.get("ls_from_name") or "brush"),
+                        to_name=str(export_options.get("ls_to_name") or "image"),
+                    )
 
             zf.writestr("fetch_images.py", _FETCH_IMAGES_TEMPLATE)
             # 单 YOLO 目标根 data.yaml 已在上面写；纯 COCO/AAP 单目标补一份（兼容旧包结构）。

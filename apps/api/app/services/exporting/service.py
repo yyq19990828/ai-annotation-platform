@@ -43,6 +43,7 @@ from app.services.exporting.video import (
     VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
 )
+from app.services.mask_formats.image_codecs import compress_coco_rle
 from app.services.video_tracks import (
     VIDEO_FRAME_MODES,
     clean_keyframe,
@@ -763,10 +764,7 @@ class ExportService:
                 "iscrowd": 1 if raster_rle is not None else 0,
             }
             if raster_rle is not None:
-                row["segmentation"] = {
-                    "size": list(raster_rle["size"]),
-                    "counts": list(raster_rle["counts"]),
-                }
+                row["segmentation"] = compress_coco_rle(raster_rle)
             else:
                 seg = _coco_segmentation(g, img_w, img_h)
                 if seg:

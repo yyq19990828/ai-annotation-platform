@@ -42,6 +42,9 @@ const IMAGE_OPTIONS: ImageOption[] = [
     ],
   },
   { kind: "single", value: "aap_json", label: "AAP JSON", description: "平台原生无损，含 predictions + annotations 双数组。" },
+  { kind: "single", value: "label-studio-brush", label: "Label Studio Brush", description: "BrushLabels 官方 RLE，可被 Label Studio 直接消费。" },
+  { kind: "single", value: "binary-png", label: "逐实例 Binary PNG", description: "每个实例独立 0/255 PNG，无损保留重叠。" },
+  { kind: "single", value: "indexed-png", label: "Indexed PNG", description: "每张图一份 palette instance map；重叠需显式策略。" },
 ];
 
 const VIDEO_OPTIONS: TargetOption[] = [
@@ -156,6 +159,9 @@ function ExportForm({
   const [yoloExpanded, setYoloExpanded] = useState(false);
   const [includeAttributes, setIncludeAttributes] = useState(true);
   const [videoFrameMode, setVideoFrameMode] = useState<VideoFrameMode>("keyframes");
+  const [indexedOverlapPolicy, setIndexedOverlapPolicy] = useState<
+    "error" | "z_order" | "larger_area" | "smaller_area"
+  >("error");
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<MaskFormatExportPreflight | null>(null);
   const [lossyConfirmed, setLossyConfirmed] = useState(false);
@@ -167,7 +173,7 @@ function ExportForm({
   useEffect(() => {
     setPreflight(null);
     setLossyConfirmed(false);
-  }, [includeAttributes, targets, videoFrameMode]);
+  }, [includeAttributes, indexedOverlapPolicy, targets, videoFrameMode]);
 
   const toggleTarget = (value: ExportTarget) => {
     setTargets((prev) =>
@@ -182,6 +188,7 @@ function ExportForm({
       const options = {
         includeAttributes,
         ...(showFrameMode ? { videoFrameMode } : {}),
+        ...(targets.includes("indexed-png") ? { indexedOverlapPolicy } : {}),
       };
       const checked = preflight
         ?? await maskFormatsApi.preflightExport(projectId, targets, options);
@@ -313,6 +320,24 @@ function ExportForm({
               );
             })}
           </div>
+        </div>
+      )}
+      {targets.includes("indexed-png") && (
+        <div className="flex flex-col gap-2">
+          <label htmlFor="indexed-overlap-policy" className="text-xs font-semibold text-foreground">
+            Indexed PNG 重叠策略
+          </label>
+          <select
+            id="indexed-overlap-policy"
+            value={indexedOverlapPolicy}
+            onChange={(event) => setIndexedOverlapPolicy(event.target.value as typeof indexedOverlapPolicy)}
+            className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+          >
+            <option value="error">检测到重叠时阻止（默认）</option>
+            <option value="z_order">z-order 较高者覆盖</option>
+            <option value="larger_area">较大实例覆盖</option>
+            <option value="smaller_area">较小实例覆盖</option>
+          </select>
         </div>
       )}
       <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted px-3 py-2.5">

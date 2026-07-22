@@ -218,8 +218,8 @@ describe("PredictionImportWizard", () => {
     expect(screen.getByText(/b\.json: task not found/)).toBeInTheDocument();
   });
 
-  it("标注导入入口默认隐藏 (ANNOTATIONS_IMPORT_ENABLED=false)", () => {
-    // v0.10.54 · 后端就绪但前端暂隐: 不渲染「导入对象」切换, 向导固定走预测导入。
+  it("预测导入向导不再承载标注导入切换", () => {
+    // Mask 标注导入已迁入独立的 registry-driven 向导，此处固定走预测导入。
     render(
       <PredictionImportWizard open onClose={() => {}} projectId="p-anno" />,
     );

@@ -147,6 +147,28 @@ describe("ExportModal", () => {
     });
   });
 
+  it("Indexed PNG 显式重叠策略同时传入预检和导出", async () => {
+    render(<ExportModalHarness projectId="p-indexed" />);
+    fireEvent.click(screen.getByText("COCO"));
+    fireEvent.click(screen.getByText("Indexed PNG"));
+    fireEvent.change(screen.getByLabelText("Indexed PNG 重叠策略"), {
+      target: { value: "z_order" },
+    });
+    submitExport();
+
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith(
+      "p-indexed",
+      ["indexed-png"],
+      { includeAttributes: true, indexedOverlapPolicy: "z_order" },
+    );
+    expect(projectsApi.exportProject).toHaveBeenCalledWith(
+      "p-indexed",
+      ["indexed-png"],
+      { includeAttributes: true, indexedOverlapPolicy: "z_order" },
+    );
+  });
+
   it("视频项目展示视频目标并传递 Video JSON frame mode", async () => {
     render(<ExportModalHarness projectId="p3" projectTypeKey="video-track" />);
 

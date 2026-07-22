@@ -24,10 +24,6 @@ type WizardStep = "select" | "preview" | "done";
 // v0.10.54 · 导入对象: 预测 (predictions[]) 或标注 (annotations[], ADR-0028).
 export type ImportTarget = "predictions" | "annotations";
 
-// v0.10.54 · annotations 导入后端已就绪 (ADR-0028), 但前端入口暂不暴露。
-// 翻为 true 即可恢复「导入对象」切换与 ⋮ 菜单「导入标注」入口。
-export const ANNOTATIONS_IMPORT_ENABLED = false;
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -279,29 +275,6 @@ export function PredictionImportWizard({
 
         {step === "select" && (
           <>
-            {ANNOTATIONS_IMPORT_ENABLED && (
-              <div className={styles.formRow}>
-                <label htmlFor="pi-target" className={styles.formLabel}>
-                  导入对象
-                </label>
-                <select
-                  id="pi-target"
-                  className={styles.input}
-                  value={target}
-                  onChange={(e) => {
-                    const next = e.target.value as ImportTarget;
-                    setTarget(next);
-                    setOverwriteExisting(next === "predictions");
-                    // 标注只走 aap_json; 切过去时归一格式避免残留 coco。
-                    if (next === "annotations") setFormat("aap_json");
-                  }}
-                >
-                  <option value="predictions">预测 (predictions)</option>
-                  <option value="annotations">标注 (annotations)</option>
-                </select>
-              </div>
-            )}
-
             {target === "predictions" && (
               <div className={styles.formRow}>
                 <label htmlFor="pi-format" className={styles.formLabel}>

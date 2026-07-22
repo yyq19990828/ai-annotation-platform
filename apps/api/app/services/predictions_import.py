@@ -43,6 +43,7 @@ from app.schemas.aap_json import (
 )
 from app.schemas._jsonb_types import Geometry
 from app.services.prediction import PredictionService
+from app.services.mask_formats.image_codecs import normalize_coco_segmentation_rle
 from app.services.project import derive_classes_list
 from app.services.task_matcher import (
     normalize_file_stem_path,
@@ -57,7 +58,7 @@ from app.services.raster_mask_storage import (
     store_mask_reference_objects,
     validate_mask_geometry_for_task,
 )
-from app.utils.raster_mask_rle import coco_rle_area, validate_coco_rle
+from app.utils.raster_mask_rle import coco_rle_area
 
 logger = logging.getLogger(__name__)
 
@@ -597,18 +598,13 @@ def _coco_uncompressed_rle(
 ) -> dict[str, Any]:
     if not isinstance(segmentation, dict):
         raise ValueError("RLE segmentation must be an object")
-    counts = segmentation.get("counts")
-    if not isinstance(counts, list):
-        raise ValueError("compressed COCO RLE counts are not supported")
-    rle = {
-        "encoding": "coco_rle",
-        "size": segmentation.get("size"),
-        "counts": counts,
-    }
-    height, width, _ = validate_coco_rle(rle)
-    if float(width) != image_width or float(height) != image_height:
-        raise ValueError("RLE size must match COCO image width / height")
-    return rle
+    if not image_width.is_integer() or not image_height.is_integer():
+        raise ValueError("COCO image width / height must be integers")
+    return normalize_coco_segmentation_rle(
+        segmentation,
+        expected_width=int(image_width),
+        expected_height=int(image_height),
+    )
 
 
 async def import_coco(
@@ -622,7 +618,7 @@ async def import_coco(
     image_size_hint: tuple[int, int] | None = None,
     purged_tasks: set[uuid.UUID] | None = None,
 ) -> AAPImportResult:
-    """COCO detection / polygon / uncompressed RLE importer.
+    """COCO detection / polygon / compressed or uncompressed RLE importer.
 
     bbox 保持历史行为；polygon-only annotation 转内部 polygon；uncompressed RLE
     写入内容寻址对象后，以 raster_mask 内部 prediction shape 保存。

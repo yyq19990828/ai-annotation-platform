@@ -58,6 +58,9 @@
 - **Mask 格式 adapter 与预检合同**. 导入、导出格式由带 adapter / manifest 版本的统一 registry 声明，
   预检返回逐任务的无损、有损或不支持结论、稳定损失码与对象 / 文件 / 字节估算。
   导入使用短时收据绑定 staged object SHA-256、mapping、options 与 plan digest，并按任务原子执行、保留可续跑结果。
+- **图片 Mask 格式双向闭环**. COCO 现接受 polygon、uncompressed 与 compressed RLE，并以标准
+  compressed RLE 导出；新增 Label Studio BrushLabels、逐实例 Binary PNG、Indexed PNG 和 YOLO Segmentation
+  标注导入 / 导出，使用真实下游 consumer 验证像素、类别、实例 ID 与有损报告。
 
 ### Changed
 - **审阅接入 Mask 质检证据**. 提交任务后自动排队当前 Mask 扫描，阻断配置下必须拥有
@@ -67,6 +70,12 @@
   待审 Tracker 候选；completed 任务、未认领用户和冲突中的有效分段租约仍会被拒绝。
 - **导出先预检再入队**. 导出弹窗现在先显示格式损失报告；无损计划直接入队，有损计划必须二次确认，
   含不支持项的计划不可执行。缓存键同步绑定 adapter / manifest 版本与 options digest，相同未命中请求合并为一次构建。
+- **Mask 标注导入按项目 adapter 能力开放**. Dashboard 不再依赖编译期隐藏开关，只展示后端
+  registry 中已验证且适配当前媒体类型的格式；未知类别需映射并重新预检，有损项需显式确认。
+
+### Fixed
+- **Mask prompt 源内容冲突返回精确原因**. refine 收据绑定的源 Mask 像素已变化时，现在优先返回
+  `mask_prompt_source_changed`，不再被通用 annotation 版本冲突提前覆盖。
 
 ### Security
 - **Mask 质检权限与旧结果隔离**. 项目级列表只返回当前审核员可见批次中的任务，审阅操作

@@ -41,7 +41,7 @@ def _zip_bytes(entries: list[tuple[zipfile.ZipInfo | str, bytes]]) -> bytes:
     return output.getvalue()
 
 
-def test_registry_is_versioned_and_annotation_import_remains_hidden() -> None:
+def test_registry_is_versioned_and_verified_import_is_visible() -> None:
     format_ids = {
         adapter.descriptor.format_id
         for adapter in registry.list(media_type="image", direction="export")
@@ -51,7 +51,23 @@ def test_registry_is_versioned_and_annotation_import_remains_hidden() -> None:
     assert aap.adapter_version == "1.0.0"
     assert aap.manifest_version == "1.3"
     assert aap.import_capability.supported is True
-    assert aap.import_capability.enabled_for_ui is False
+    assert aap.import_capability.verified is True
+    assert aap.import_capability.enabled_for_ui is True
+    verified_imports = {
+        adapter.descriptor.format_id
+        for adapter in registry.list(
+            media_type="image", direction="import", ui_only=True
+        )
+        if adapter.descriptor.import_capability.verified
+    }
+    assert verified_imports == {
+        "aap_json",
+        "binary-png",
+        "coco",
+        "indexed-png",
+        "label-studio-brush",
+        "yolo-seg",
+    }
 
 
 def test_export_cache_key_includes_adapter_and_options_contract() -> None:

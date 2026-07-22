@@ -33,6 +33,8 @@ _LOSS_MESSAGES = {
     "overlap_resolved": "重叠实例将按目标格式的显式 winner 规则合成。",
     "holes_polygonized": "目标格式不能保留孔洞，Mask 将转换为多边形。",
     "components_split": "一个实例的多个连通区域将在目标格式中拆分。",
+    "instance_id_overflow": "目标格式的实例 ID 容量不足。",
+    "overlap_policy_required": "实例存在重叠；请选择显式 winner 策略或改用逐实例格式。",
     "track_identity_lost": "目标格式不能完整保留跨帧轨迹身份。",
     "occlusion_lost": "目标格式不能表达遮挡状态。",
     "frame_base_changed": "输出帧编号基准与平台源帧不同。",
@@ -78,6 +80,9 @@ _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
     "yolo-det": frozenset({"bbox"}),
     "yolo-obb": frozenset({"rotated_bbox"}),
     "yolo-seg": frozenset({"polygon", "multi_polygon", "raster_mask"}),
+    "label-studio-brush": frozenset({"raster_mask"}),
+    "binary-png": frozenset({"raster_mask"}),
+    "indexed-png": frozenset({"raster_mask"}),
     "video_json": None,
     "yolo-frames-det": frozenset({"video_track", "bbox"}),
     "yolo-frames-seg": frozenset({"video_track", "video_track_mask", "polygon"}),
@@ -337,7 +342,8 @@ class AAPJsonAdapter(LegacyPackagingAdapter):
         plan: MaskFormatPlan,
         item_index: int,
         operator_user_id,
-        options: dict[str, Any],
+        mapping: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         item = plan.items[item_index]
         if item.loss_class == "unsupported" or item.task_id is None:
@@ -362,7 +368,7 @@ class AAPJsonAdapter(LegacyPackagingAdapter):
             project.id,
             _aap_subset_bytes(envelope, item.source_index),
             operator_user_id=operator_user_id,
-            overwrite=bool(options.get("overwrite")),
+            overwrite=bool((options or {}).get("overwrite")),
             dry_run=False,
         )
         if result.errors or result.skipped:
@@ -395,8 +401,65 @@ _DESCRIPTORS = [
         adapter_version="1.0.0",
         manifest_version="1.3",
         media_types=frozenset({"image", "video", "lidar"}),
-        import_capability=_capability(True),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
         export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="coco",
+        label="COCO Instance",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="yolo-seg",
+        label="YOLO Segmentation",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="label-studio-brush",
+        label="Label Studio BrushLabels",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "data_key": {"type": "string", "default": "image"},
+            "from_name": {"type": "string", "default": "brush"},
+            "to_name": {"type": "string", "default": "image"},
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="binary-png",
+        label="Binary PNG per instance",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="indexed-png",
+        label="Indexed PNG instance map",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "overlap_policy": {
+                "type": "string",
+                "enum": ["error", "z_order", "larger_area", "smaller_area"],
+                "default": "error",
+            }
+        },
     ),
     *[
         MaskFormatDescriptor(
@@ -409,11 +472,9 @@ _DESCRIPTORS = [
             export_capability=_capability(True, verified=True, enabled_for_ui=True),
         )
         for format_id, label, media_types in (
-            ("coco", "COCO", {"image"}),
             ("yolo", "YOLO Detection", {"image"}),
             ("yolo-det", "YOLO Detection", {"image"}),
             ("yolo-obb", "YOLO OBB", {"image"}),
-            ("yolo-seg", "YOLO Segmentation", {"image"}),
             ("voc", "Pascal VOC", {"image"}),
             ("video_json", "Video JSON", {"video"}),
             ("yolo-frames-det", "YOLO Frames Detection", {"video"}),
@@ -432,5 +493,23 @@ _DESCRIPTORS = [
 for descriptor in _DESCRIPTORS:
     if descriptor.format_id == "aap_json":
         registry.register(AAPJsonAdapter(descriptor))
+    elif descriptor.format_id in {
+        "coco",
+        "yolo-seg",
+        "label-studio-brush",
+        "binary-png",
+        "indexed-png",
+    }:
+        from app.services.mask_formats.image_adapters import (
+            IMAGE_IMPORT_PARSERS,
+            ImageMaskImportAdapter,
+        )
+
+        registry.register(
+            ImageMaskImportAdapter(
+                descriptor,
+                IMAGE_IMPORT_PARSERS[descriptor.format_id],
+            )
+        )
     else:
         registry.register(LegacyPackagingAdapter(descriptor))

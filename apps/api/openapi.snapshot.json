@@ -41125,7 +41125,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -41133,7 +41133,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -41176,6 +41176,19 @@
               "description": "3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
               "pattern": "^(iso|source)$",
               "title": "Axis Frame",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Indexed PNG 的实例重叠策略；默认拒绝重叠",
+            "in": "query",
+            "name": "indexed_overlap_policy",
+            "required": false,
+            "schema": {
+              "default": "error",
+              "description": "Indexed PNG 的实例重叠策略；默认拒绝重叠",
+              "pattern": "^(error|z_order|larger_area|smaller_area)$",
+              "title": "Indexed Overlap Policy",
               "type": "string"
             }
           }

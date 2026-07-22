@@ -60,7 +60,84 @@ export interface MaskFormatExportPreflight {
   preflight_digest: string;
 }
 
+export interface MaskFormatCapability {
+  supported: boolean;
+  verified: boolean;
+  enabled_for_ui: boolean;
+}
+
+export interface MaskFormatDescriptor {
+  format_id: string;
+  label: string;
+  adapter_version: string;
+  manifest_version: string;
+  media_types: string[];
+  import_capability: MaskFormatCapability;
+  export_capability: MaskFormatCapability;
+  option_schema: Record<string, unknown>;
+}
+
+export interface MaskFormatUploadInit {
+  object_key: string;
+  upload_url: string;
+  expires_in: number;
+}
+
+export interface MaskFormatImportPreflight {
+  import_id: string;
+  receipt: string;
+  receipt_expires_at: string;
+  plan: MaskFormatPlan;
+}
+
+export interface MaskFormatImportBatch {
+  id: string;
+  project_id: string;
+  async_job_id: string | null;
+  format_id: string;
+  status: string;
+  result: Record<string, unknown>;
+}
+
 export const maskFormatsApi = {
+  list: (projectId: string) =>
+    apiClient.get<MaskFormatDescriptor[]>(`/projects/${projectId}/mask-formats`),
+  initImportUpload: (projectId: string, file: File) =>
+    apiClient.post<MaskFormatUploadInit>(
+      `/projects/${projectId}/mask-formats/imports:upload-init`,
+      {
+        file_name: file.name,
+        content_type: file.type || "application/octet-stream",
+      },
+    ),
+  preflightImport: (
+    projectId: string,
+    body: {
+      format_id: string;
+      staged_object_key: string;
+      staged_sha256: string;
+      mapping: Record<string, unknown>;
+      options: Record<string, unknown>;
+    },
+  ) =>
+    apiClient.post<MaskFormatImportPreflight>(
+      `/projects/${projectId}/mask-formats/imports:preflight`,
+      body,
+    ),
+  executeImport: (
+    projectId: string,
+    receipt: string,
+    planDigest: string,
+    confirmLossy: boolean,
+  ) =>
+    apiClient.post<MaskFormatImportBatch>(
+      `/projects/${projectId}/mask-formats/imports`,
+      {
+        receipt,
+        plan_digest: planDigest,
+        confirm_lossy: confirmLossy,
+      },
+    ),
   preflightExport: (
     projectId: string,
     targets: ExportTarget[],
@@ -73,7 +150,11 @@ export const maskFormatsApi = {
         include_attributes: opts?.includeAttributes !== false,
         video_frame_mode: opts?.videoFrameMode ?? "keyframes",
         axis_frame: "iso",
-        options: {},
+        options: {
+          ...(opts?.indexedOverlapPolicy
+            ? { indexed_overlap_policy: opts.indexedOverlapPolicy }
+            : {}),
+        },
       },
     ),
 };

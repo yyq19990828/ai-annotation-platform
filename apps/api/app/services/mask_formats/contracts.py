@@ -80,6 +80,7 @@ class MaskFormatAdapter(Protocol):
         plan: MaskFormatPlan,
         item_index: int,
         operator_user_id,
+        mapping: dict[str, Any],
         options: dict[str, Any],
     ) -> dict[str, Any]: ...
 
