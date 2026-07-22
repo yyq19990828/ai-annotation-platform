@@ -32,7 +32,8 @@
     "video:bench": "node scripts/video-bench/run-video-bench.mjs",
     "image:bench": "node scripts/image-bench/run-image-bench.mjs",
     "mask:bench": "node scripts/benchmark-image-raster-mask.mjs",
-    "mask:operations-bench": "node scripts/benchmark-mask-operations.mjs"
+    "mask:operations-bench": "node scripts/benchmark-mask-operations.mjs",
+    "mask:large-canvas-bench": "node scripts/benchmark-mask-large-canvas.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

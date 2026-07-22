@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-22",
+  "environment": {
+    "node": "v22.23.1",
+    "browser": "chromium-147.0.7727.15",
+    "os": "linux-5.15.0-185-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "cpu_count": 112,
+    "base_url": "http://localhost:3000",
+    "warmup": 2,
+    "iterations": 20,
+    "rounds": 2
+  },
+  "round_1": {
+    "pipeline_ms": {
+      "720p": { "p50": 56.9, "p95": 58.8 },
+      "1080p": { "p50": 92.1, "p95": 107.3 },
+      "4k": { "p50": 238.8, "p95": 267.2 }
+    },
+    "worker_round_trip_ms": {
+      "720p": { "p50": 53.8, "p95": 55.9 },
+      "1080p": { "p50": 87.5, "p95": 100.4 },
+      "4k": { "p50": 224.4, "p95": 252.7 }
+    },
+    "history": {
+      "1080p": {
+        "brush_and_rle_ms": { "p50": 37.6, "p95": 74.2 },
+        "lasso_ms": { "p50": 25.8, "p95": 59.9 },
+        "twenty_command_bytes": 339312,
+        "long_tasks": { "count": 22, "total_ms": 1798, "max_ms": 272 }
+      },
+      "4k": {
+        "brush_and_rle_ms": { "p50": 161.1, "p95": 170.7 },
+        "lasso_ms": { "p50": 101.0, "p95": 104.4 },
+        "twenty_command_bytes": 731609,
+        "long_tasks": { "count": 22, "total_ms": 5752, "max_ms": 269 }
+      }
+    },
+    "rapid_frame_switch": {
+      "frames": 50,
+      "concurrency": 4,
+      "elapsed_ms": 763.4,
+      "latency_ms": { "p50": 55.8, "p95": 109.6 },
+      "stale_commits": 0,
+      "final_queue": 0
+    },
+    "resources": {
+      "workers_created": 180,
+      "workers_terminated": 180,
+      "bitmaps_created": 66,
+      "bitmaps_closed": 66,
+      "peak_in_flight": 4,
+      "live_workers": 0,
+      "live_bitmaps": 0
+    },
+    "heap": {
+      "before_bytes": 21799586,
+      "after_before_gc_bytes": 45245163,
+      "after_gc_bytes": 44903055,
+      "gc_delta_bytes": 23103469,
+      "peak_temporary_bytes": 36505886
+    }
+  },
+  "round_2": {
+    "pipeline_ms": {
+      "720p": { "p50": 57.3, "p95": 65.4 },
+      "1080p": { "p50": 94.7, "p95": 112.4 },
+      "4k": { "p50": 235.2, "p95": 254.5 }
+    },
+    "worker_round_trip_ms": {
+      "720p": { "p50": 54.8, "p95": 63.6 },
+      "1080p": { "p50": 89.4, "p95": 105.7 },
+      "4k": { "p50": 218.1, "p95": 237.9 }
+    },
+    "history": {
+      "1080p": {
+        "brush_and_rle_ms": { "p50": 36.5, "p95": 74.1 },
+        "lasso_ms": { "p50": 25.4, "p95": 59.2 },
+        "twenty_command_bytes": 339312,
+        "long_tasks": { "count": 22, "total_ms": 1781, "max_ms": 269 }
+      },
+      "4k": {
+        "brush_and_rle_ms": { "p50": 161.6, "p95": 164.9 },
+        "lasso_ms": { "p50": 97.7, "p95": 104.3 },
+        "twenty_command_bytes": 731609,
+        "long_tasks": { "count": 22, "total_ms": 5727, "max_ms": 267 }
+      }
+    },
+    "rapid_frame_switch": {
+      "frames": 50,
+      "concurrency": 4,
+      "elapsed_ms": 763.1,
+      "latency_ms": { "p50": 55.3, "p95": 106.9 },
+      "stale_commits": 0,
+      "final_queue": 0
+    },
+    "resources": {
+      "workers_created": 180,
+      "workers_terminated": 180,
+      "bitmaps_created": 66,
+      "bitmaps_closed": 66,
+      "peak_in_flight": 4,
+      "live_workers": 0,
+      "live_bitmaps": 0
+    },
+    "heap": {
+      "before_bytes": 21796454,
+      "after_before_gc_bytes": 45242687,
+      "after_gc_bytes": 44900255,
+      "gc_delta_bytes": 23103801,
+      "peak_temporary_bytes": 36561482
+    }
+  },
+  "deterministic_sizes": {
+    "cache_retained_bytes": {
+      "1_mask_1080p": 1133207,
+      "10_masks_1080p": 12232706,
+      "50_masks_1080p": 61772007
+    },
+    "current_dense_editor_bytes": {
+      "720p": 8294400,
+      "1080p": 18662400,
+      "4k": 74649600,
+      "8k": 603979776
+    },
+    "large_canvas": {
+      "5k": { "resolution": [5120, 2880], "tiles_512": 60 },
+      "8k": { "resolution": [8192, 8192], "tiles_512": 256 },
+      "ultrawide": { "resolution": [7680, 2160], "tiles_512": 75 },
+      "8k_noise_estimated_runs": 33554432,
+      "8k_checkerboard_estimated_runs": 67108864,
+      "current_codec_error": "mask dimensions must be <= 4096"
+    }
+  }
+}

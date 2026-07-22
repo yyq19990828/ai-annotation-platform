@@ -96,3 +96,4 @@
 - [0051](0051-model-market-observability-information-architecture.md) — 模型市场可观测性 IA（四状态轴 + 诊断去重 + 卸载安全门 + 只读字段补齐）
 - [0052](0052-shared-raster-mask-and-image-geometry.md) — 图片 / 视频共享内容寻址 RLE，引入图片 `raster_mask` 与静态读取合同
 - [0053](0053-native-mask-ai-candidate-lifecycle-and-video-correction.md) — 原生 Mask AI 瞬态候选、原子接受、视频局部纠错与可回收生命周期
+- [0054](0054-raster-mask-large-canvas-memory-and-tiles.md) — 图片大画布采用稀疏 tile、XOR history 与固定 Worker pool，视频 / AI 保持 4096 边界

@@ -84,3 +84,4 @@
 | 16 | [质量体系前置调研](./16-quality-system-1t1a1r.md) | 1 task : 1 annotator : 1 reviewer 模式下 GT / Honeypot / Consensus 的可行边界 |
 | 17 | [图片 Raster Mask 工作台基准](./17-image-raster-mask-workbench-benchmark.md) | 1080p Worker decode / analyze / bitmap p50/p95、临时内存与 20 Mask 缓存字节基线 |
 | 18 | [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md) | 1080p component / hole / morphology / split 的主线程与 Worker p50/p95、Long Task 和重复 20 次 heap 基线 |
+| 19 | [Mask 大画布性能基线](./19-mask-large-canvas-performance-baseline.md) | 720p / 1080p / 4K 渲染、缓存、编辑历史、快速切帧和 5K / 8K 内存边界 |
