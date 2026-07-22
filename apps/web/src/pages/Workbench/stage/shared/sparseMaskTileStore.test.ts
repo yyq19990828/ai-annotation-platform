@@ -159,10 +159,12 @@ describe("SparseMaskTileStore", () => {
     await store.brush({ cx: 10, cy: 10, radius: 1, value: 255, shape: "square", checkpoint });
     const command = retain(store, store.finishHistoryCheckpoint(checkpoint, "stroke", 0));
     await expect(store.materializeTile(1, 0)).rejects.toBeInstanceOf(SparseMaskTileBudgetError);
+    expect(store.snapshot().admissionBlocked).toBe(true);
     store.applyHistoryCommand(command);
     await expect(store.materializeTile(1, 0)).rejects.toBeInstanceOf(SparseMaskTileBudgetError);
     store.releaseHistoryCommand(command);
     await store.materializeTile(1, 0);
+    expect(store.snapshot().admissionBlocked).toBe(false);
     expect(store.getRenderableTiles().map((tile) => tile.tileX)).toEqual([1]);
   });
 

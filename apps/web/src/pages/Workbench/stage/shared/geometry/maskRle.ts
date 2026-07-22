@@ -4,8 +4,13 @@ export interface CocoRle {
   counts: number[];
 }
 
-export const MAX_MASK_DIMENSION = 4096;
-export const MAX_MASK_PIXELS = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION;
+export const MAX_IMAGE_MASK_DIMENSION = 8192;
+export const MAX_IMAGE_MASK_PIXELS = 67_108_864;
+export const MAX_VIDEO_MASK_DIMENSION = 4096;
+export const MAX_VIDEO_MASK_PIXELS = 16_777_216;
+export const MAX_DENSE_MASK_PIXELS = MAX_VIDEO_MASK_PIXELS;
+export const MAX_MASK_DIMENSION = MAX_IMAGE_MASK_DIMENSION;
+export const MAX_MASK_PIXELS = MAX_IMAGE_MASK_PIXELS;
 export const MAX_MASK_RUNS = 1_000_000;
 export const MAX_MASK_GZIP_COMPRESSED_BYTES = 8 * 1024 * 1024;
 export const MAX_MASK_GZIP_UNCOMPRESSED_BYTES = 4 * 1024 * 1024;
@@ -128,6 +133,13 @@ export function cocoRleContainsPixel(rle: CocoRle, x: number, y: number): boolea
     foreground = !foreground;
   }
   return false;
+}
+
+export function cocoRleArea(rle: CocoRle): number {
+  return rle.counts.reduce(
+    (area, count, index) => area + ((index & 1) === 1 ? count : 0),
+    0,
+  );
 }
 
 async function compressWithBrowserStream(input: Uint8Array): Promise<Uint8Array> {

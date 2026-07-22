@@ -46,6 +46,7 @@ import {
   formatMaskConversionReport,
   type RegionGeometry,
 } from "../../stage/shared/geometry/maskConversion";
+import { cocoRleArea } from "../../stage/shared/geometry/maskRle";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -860,7 +861,23 @@ export function useImageAnnotationActions({
       return false;
     }
     const pxPoints: [number, number][] = normPoints.map(([x, y]) => [x * imgW, y * imgH]);
-    maskEditor.initFromPolygon(pxPoints);
+    try {
+      maskEditor.initFromPolygon(pxPoints);
+    } catch (error: unknown) {
+      const reason = error && typeof error === "object" && "reason" in error
+        ? (error as { reason?: unknown }).reason
+        : undefined;
+      pushToast({
+        msg: "Mask 初始化失败",
+        sub: reason === "large_mask_full_scan_required"
+          ? "大画布暂不支持从 Polygon 整图栅格化，请新建空白 Mask 或编辑已有 Raster Mask"
+          : error instanceof Error
+            ? error.message
+            : "当前图片无法从 Polygon 进入精修",
+        kind: "warning",
+      });
+      return false;
+    }
     return true;
   }, [maskEditor, pushToast, stageGeom]);
 
@@ -933,7 +950,7 @@ export function useImageAnnotationActions({
     s.setSelectedId(null);
   }, [annotationsRef, initMaskFromNormalizedPoints, isLocked, pushToast, s]);
 
-  const commitMaskAsPolygon = useCallback(() => {
+  const commitMaskAsPolygon = useCallback(async () => {
     if (!maskEditor) return Promise.resolve({ ok: false, retryable: false });
     // v0.23.5 · WS-C · 提交边界 defense-in-depth: 即便 Enter hotkey 漏判, commit 本身也
     // 经 canEditMask 拦截锁定对象 (task 只读 / 选中 annotation is_locked)。
@@ -970,11 +987,21 @@ export function useImageAnnotationActions({
         pushToast({ msg: "Mask 保存失败", sub: "当前任务未就绪", kind: "error" });
         return Promise.resolve({ ok: false, retryable: false });
       }
-      const rle = maskEditor.commitToRle();
-      const foregroundPixels = maskEditor.buffer?.countSet() ?? 0;
+      let rle;
+      try {
+        rle = await maskEditor.commitToRleAsync();
+      } catch (error: unknown) {
+        pushToast({
+          msg: "Mask 合并失败",
+          sub: "分块稿件与撤销历史已保留，可重试",
+          kind: "error",
+        });
+        return { ok: false, retryable: true, error };
+      }
+      const foregroundPixels = rle ? cocoRleArea(rle) : 0;
       const selectedRaster = sel?.geometry.type === "raster_mask" ? sel : null;
       const updateTarget = refinedAnnotation ?? selectedRaster;
-      if (!rle || !maskEditor.buffer || foregroundPixels === 0) {
+      if (!rle || foregroundPixels === 0) {
         if (!selectedRaster) {
           pushToast({ msg: "Mask 为空", sub: "请继续编辑或取消本次绘制", kind: "warning" });
           return Promise.resolve({ ok: false, retryable: false });

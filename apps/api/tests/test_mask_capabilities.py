@@ -10,8 +10,8 @@ from app.db.models.task import Task
 from app.services.display_id import next_display_id
 from app.services.raster_mask_storage import MAX_RLE_OBJECT_BYTES
 from app.utils.raster_mask_rle import (
-    MAX_MASK_DIMENSION,
-    MAX_MASK_PIXELS,
+    MAX_IMAGE_MASK_DIMENSION,
+    MAX_IMAGE_MASK_PIXELS,
     MAX_MASK_RUNS,
 )
 
@@ -158,8 +158,8 @@ async def test_mask_capability_reasons_and_limits(
         "project_enabled": project_enabled,
         "region_enabled": region_enabled,
         "reason": expected_reason,
-        "max_dimension": MAX_MASK_DIMENSION,
-        "max_pixels": MAX_MASK_PIXELS,
+        "max_dimension": MAX_IMAGE_MASK_DIMENSION,
+        "max_pixels": MAX_IMAGE_MASK_PIXELS,
         "max_runs": MAX_MASK_RUNS,
         "max_bytes": MAX_RLE_OBJECT_BYTES,
     }

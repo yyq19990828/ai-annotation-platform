@@ -34,7 +34,8 @@ export type MaskEditBlockReason =
   | "editor_idle"
   | "editor_loading"
   | "editor_saving"
-  | "editor_error";
+  | "editor_error"
+  | "large_canvas_budget_exceeded";
 
 export function maskEditBlockReason(ctx: CanEditMaskContext): MaskEditBlockReason | null {
   if (ctx.taskReadOnly) return "task_read_only";

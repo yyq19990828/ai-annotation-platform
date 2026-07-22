@@ -60,6 +60,7 @@ from app.services.video_tracks import (
     resolve_track_at_frame,
     sorted_keyframes,
 )
+from app.utils.raster_mask_rle import MAX_DENSE_MASK_PIXELS
 
 CONVERSION_PLAN_TTL_SECONDS = 600
 MAX_CONVERSION_MASK_OBJECTS_PER_TASK = 256
@@ -748,6 +749,16 @@ class AnnotationConversionService:
         list[AnnotationConversionItemReport],
         list[str],
     ]:
+        if media == "image" and width * height > MAX_DENSE_MASK_PIXELS:
+            raise AnnotationConversionError(
+                status_code=422,
+                reason="large_mask_full_scan_required",
+                message=(
+                    "mask conversion requires a full scan that exceeds the "
+                    "synchronous pixel budget"
+                ),
+                max_pixels=MAX_DENSE_MASK_PIXELS,
+            )
         raster_frames = 0
         for source in sources:
             geometry = source.geometry or {}

@@ -85,6 +85,46 @@ describe("MaskToolbar", () => {
     expect(view.getByText("不可编辑：当前标注已锁定")).not.toBeNull();
   });
 
+  it("低内存只读时禁用编辑但允许保存已有草稿", () => {
+    const onCommit = vi.fn();
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={12}
+        dirty
+        phase="dirty"
+        canUndo
+        canRedo={false}
+        canEdit={false}
+        canCommit
+        editBlockReason="large_canvas_budget_exceeded"
+        operationPreview={null}
+        instanceOperationPreview={null}
+        operationStatus="idle"
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+        onCommit={onCommit}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+      />,
+    );
+
+    expect((view.getByTitle("撤销笔画 (Ctrl+Z)") as HTMLButtonElement).disabled).toBe(true);
+    expect(view.getByText(/不可编辑：当前设备无法容纳可见分块/)).not.toBeNull();
+    fireEvent.click(view.getByTitle("确认 (Enter)"));
+    expect(onCommit).toHaveBeenCalledOnce();
+  });
+
   it("高级 pointer tool 使用单选组并显示 operation preview 指标", () => {
     const onSetTool = vi.fn();
     const onConfirmOperation = vi.fn();

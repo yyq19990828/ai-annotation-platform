@@ -24,7 +24,14 @@ from app.utils.raster_mask_gzip import (
     compress_mask_gzip,
     decompress_mask_gzip,
 )
-from app.utils.raster_mask_rle import coco_rle_area, validate_coco_rle
+from app.utils.raster_mask_rle import (
+    MAX_IMAGE_MASK_DIMENSION,
+    MAX_IMAGE_MASK_PIXELS,
+    MAX_VIDEO_MASK_DIMENSION,
+    MAX_VIDEO_MASK_PIXELS,
+    coco_rle_area,
+    validate_coco_rle,
+)
 
 MAX_RLE_OBJECT_BYTES = 4 * 1024 * 1024
 RLE_OBJECT_PREFIX = "raster-masks/sha256"
@@ -364,6 +371,21 @@ async def validate_mask_geometry_for_task(
                     "source image width / height metadata is required for raster mask"
                 ),
             )
+        if (
+            int(width) > MAX_IMAGE_MASK_DIMENSION
+            or int(height) > MAX_IMAGE_MASK_DIMENSION
+            or int(width) * int(height) > MAX_IMAGE_MASK_PIXELS
+        ):
+            raise RasterMaskContractError(
+                status_code=422,
+                reason="raster_mask_dimensions_exceeded",
+                message=(
+                    "source image exceeds the raster mask limit "
+                    f"({MAX_IMAGE_MASK_DIMENSION}px / {MAX_IMAGE_MASK_PIXELS} pixels)"
+                ),
+                max_dimension=MAX_IMAGE_MASK_DIMENSION,
+                max_pixels=MAX_IMAGE_MASK_PIXELS,
+            )
         expected_size = [int(height), int(width)]
         mask = geometry.get("mask") or {}
         if list(mask.get("size") or []) != expected_size:
@@ -389,6 +411,21 @@ async def validate_mask_geometry_for_task(
         if not width or not height:
             raise ValueError(
                 "source video width / height metadata is required for mask tracks"
+            )
+        if (
+            int(width) > MAX_VIDEO_MASK_DIMENSION
+            or int(height) > MAX_VIDEO_MASK_DIMENSION
+            or int(width) * int(height) > MAX_VIDEO_MASK_PIXELS
+        ):
+            raise RasterMaskContractError(
+                status_code=422,
+                reason="video_mask_dimensions_exceeded",
+                message=(
+                    "source video exceeds the raster mask limit "
+                    f"({MAX_VIDEO_MASK_DIMENSION}px / {MAX_VIDEO_MASK_PIXELS} pixels)"
+                ),
+                max_dimension=MAX_VIDEO_MASK_DIMENSION,
+                max_pixels=MAX_VIDEO_MASK_PIXELS,
             )
         expected_size = [int(height), int(width)]
         for keyframe in geometry.get("keyframes") or []:

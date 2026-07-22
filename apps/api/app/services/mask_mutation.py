@@ -43,6 +43,7 @@ from app.services.scheduler import is_privileged_for_project
 from app.services.task_lock import TaskLockConflictError, TaskLockService
 from app.services.video_tracks import normalize_outside_ranges, resolve_track_at_frame
 from app.utils.raster_mask_rle import (
+    MAX_DENSE_MASK_PIXELS,
     MAX_MASK_RUNS,
     coco_rle_area,
     coco_rle_bbox_norm,
@@ -761,13 +762,26 @@ class MaskMutationService:
                 )
             try:
                 rle = await load_coco_rle(reference)
-                _, _, counts = validate_coco_rle(rle)
+                height, width, counts = validate_coco_rle(rle)
             except Exception as exc:
                 raise MaskMutationError(
                     status_code=422,
                     reason="invalid_geometry",
                     message="mask content could not be validated",
                 ) from exc
+            if (
+                payload.scope.media == "image"
+                and height * width > MAX_DENSE_MASK_PIXELS
+            ):
+                raise MaskMutationError(
+                    status_code=422,
+                    reason="large_mask_full_scan_required",
+                    message=(
+                        "mask instance operations require a full scan that exceeds "
+                        "the synchronous pixel budget"
+                    ),
+                    max_pixels=MAX_DENSE_MASK_PIXELS,
+                )
             total_runs += len(counts)
             if total_runs > MAX_MASK_MUTATION_TOTAL_RUNS:
                 raise MaskMutationError(

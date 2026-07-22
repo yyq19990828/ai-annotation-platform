@@ -30,6 +30,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.utils.raster_mask_rle import MAX_IMAGE_MASK_DIMENSION
+
 
 # ── v0.13.11 · 点云 lidar 坐标系约定 ──────────────────────────────────
 
@@ -674,8 +676,10 @@ class CocoRleMaskRef(BaseModel):
         height, width = value
         if height <= 0 or width <= 0:
             raise ValueError("mask size 必须是正整数 [height, width]")
-        if height > 4096 or width > 4096:
-            raise ValueError("mask width / height 必须 <= 4096")
+        if height > MAX_IMAGE_MASK_DIMENSION or width > MAX_IMAGE_MASK_DIMENSION:
+            raise ValueError(
+                f"mask width / height 必须 <= {MAX_IMAGE_MASK_DIMENSION}"
+            )
         return value
 
     @model_validator(mode="after")
@@ -715,8 +719,16 @@ class CocoRleContent(BaseModel):
     @model_validator(mode="after")
     def _check_rle_contract(self):
         height, width = self.size
-        if height <= 0 or width <= 0 or height > 4096 or width > 4096:
-            raise ValueError("mask size 必须是 (0, 4096] 内的 [height, width]")
+        if (
+            height <= 0
+            or width <= 0
+            or height > MAX_IMAGE_MASK_DIMENSION
+            or width > MAX_IMAGE_MASK_DIMENSION
+        ):
+            raise ValueError(
+                "mask size 必须是 "
+                f"(0, {MAX_IMAGE_MASK_DIMENSION}] 内的 [height, width]"
+            )
         total = 0
         for count in self.counts:
             if count < 0:

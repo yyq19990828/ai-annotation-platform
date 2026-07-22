@@ -103,6 +103,7 @@ export function TiledMaskOverlayLayer({
           y={overview.y}
           width={overview.width}
           height={overview.height}
+          opacity={opacity}
           listening={false}
         />
       )}

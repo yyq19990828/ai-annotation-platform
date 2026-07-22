@@ -61,6 +61,8 @@ interface MaskToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   canEdit: boolean;
+  canCommit?: boolean;
+  largeCanvas?: boolean;
   editBlockReason?: MaskEditBlockReason | null;
   operationPreview: MaskOperationPreview | null;
   instanceOperationPreview: MaskInstanceOperationPreview | null;
@@ -140,6 +142,7 @@ const editBlockReasonLabel: Record<MaskEditBlockReason, string> = {
   editor_loading: "正在加载 Mask",
   editor_saving: "正在保存 Mask",
   editor_error: "请先恢复失败的编辑会话",
+  large_canvas_budget_exceeded: "当前设备无法容纳可见分块，请放大局部 ROI 或更换高内存设备",
 };
 
 export function MaskToolbar({
@@ -153,6 +156,8 @@ export function MaskToolbar({
   canUndo,
   canRedo,
   canEdit,
+  canCommit,
+  largeCanvas = false,
   editBlockReason,
   operationPreview,
   instanceOperationPreview,
@@ -189,6 +194,7 @@ export function MaskToolbar({
   onRetry,
 }: MaskToolbarProps) {
   const instanceBusy = instanceCommitting || instanceRefreshing;
+  const commitAllowed = canCommit ?? canEdit;
   const [componentThreshold, setComponentThreshold] = useState(16);
   const [morphologyRadius, setMorphologyRadius] = useState(1);
   const [kernelShape, setKernelShape] = useState<MaskKernelShape>("disk");
@@ -248,14 +254,14 @@ export function MaskToolbar({
           className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto"
         >
           <DropdownMenuLabel>区域工具</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => onSetTool("fill_add")}>填充命中区域</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onSetTool("fill_subtract")}>擦除命中区域</DropdownMenuItem>
+          <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("fill_add")}>填充命中区域</DropdownMenuItem>
+          <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("fill_subtract")}>擦除命中区域</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>组件与孔洞</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => onSetTool("component_keep")}>保留命中组件</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onSetTool("component_delete")}>删除命中组件</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onSetTool("component_copy")}>复制命中组件为新实例</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onSetTool("hole_fill")}>填充命中孔洞</DropdownMenuItem>
+          <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("component_keep")}>保留命中组件</DropdownMenuItem>
+          <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("component_delete")}>删除命中组件</DropdownMenuItem>
+          <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("component_copy")}>复制命中组件为新实例</DropdownMenuItem>
+          <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("hole_fill")}>填充命中孔洞</DropdownMenuItem>
           <DropdownMenuLabel className="flex items-center gap-2 font-normal">
             <span className="text-xs text-muted-foreground">面积阈值</span>
             <Input
@@ -270,6 +276,7 @@ export function MaskToolbar({
             <span className="text-xs text-muted-foreground">px</span>
           </DropdownMenuLabel>
           <DropdownMenuItem
+            disabled={largeCanvas}
             onSelect={() => void onRunOperation("deburr", {
               type: "remove_small_components",
               maxArea: componentThreshold,
@@ -279,6 +286,7 @@ export function MaskToolbar({
             去除小组件（≤ {componentThreshold}px）
           </DropdownMenuItem>
           <DropdownMenuItem
+            disabled={largeCanvas}
             onSelect={() => void onRunOperation("fill_holes_small", {
               type: "fill_holes",
               mode: "max_area",
@@ -288,11 +296,13 @@ export function MaskToolbar({
             填充小孔洞（≤ {componentThreshold}px）
           </DropdownMenuItem>
           <DropdownMenuItem
+            disabled={largeCanvas}
             onSelect={() => void onRunOperation("fill_holes_all", { type: "fill_holes", mode: "all" })}
           >
             填充全部孔洞
           </DropdownMenuItem>
           <DropdownMenuItem
+            disabled={largeCanvas}
             onSelect={() => void onRunInstanceOperation("split_components", {
               type: "split_components",
               keep: "largest",
@@ -304,8 +314,8 @@ export function MaskToolbar({
           <DropdownMenuSeparator />
           <DropdownMenuLabel>派生与转换</DropdownMenuLabel>
           <DropdownMenuItem
-            disabled={!onOpenConversion || dirty}
-            title={dirty ? "请先保存当前 Mask 草稿" : "打开标注转换中心"}
+            disabled={!onOpenConversion || dirty || largeCanvas}
+            title={largeCanvas ? "大画布全图转换超出同步预算" : dirty ? "请先保存当前 Mask 草稿" : "打开标注转换中心"}
             onSelect={() => onOpenConversion?.()}
           >
             转为紧致 BBox / Polygon
@@ -314,14 +324,14 @@ export function MaskToolbar({
             <>
               {joinSupportsReplace && (
                 <DropdownMenuItem
-                  disabled={!canPrepareJoin}
+                  disabled={!canPrepareJoin || largeCanvas}
                   onSelect={() => onPrepareJoin("replace_sources")}
                 >
                   合并已选 Mask（替换来源）
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
-                disabled={!canPrepareJoin}
+                disabled={!canPrepareJoin || largeCanvas}
                 onSelect={() => onPrepareJoin("preserve_sources")}
               >
                 合并为副本（保留来源）
@@ -330,16 +340,16 @@ export function MaskToolbar({
           )}
           {onPrepareOverlap && (
             <>
-              <DropdownMenuItem onSelect={() => onPrepareOverlap("erase_same_class")}>
+              <DropdownMenuItem disabled={largeCanvas} onSelect={() => onPrepareOverlap("erase_same_class")}>
                 预览同类严格非重叠
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onPrepareOverlap("erase_all")}>
+              <DropdownMenuItem disabled={largeCanvas} onSelect={() => onPrepareOverlap("erase_all")}>
                 预览全类严格非重叠
               </DropdownMenuItem>
             </>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>形态学</DropdownMenuLabel>
+          <DropdownMenuLabel>{largeCanvas ? "形态学（当前视口 ROI）" : "形态学"}</DropdownMenuLabel>
           <DropdownMenuLabel className="flex items-center gap-2 font-normal">
             <span className="text-xs text-muted-foreground">半径</span>
             <Input
@@ -368,6 +378,7 @@ export function MaskToolbar({
           <DropdownMenuItem onSelect={() => runMorphology("open")}>开运算</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => runMorphology("close")}>闭运算</DropdownMenuItem>
           <DropdownMenuItem
+            disabled={largeCanvas}
             onSelect={() => void onRunOperation("smooth", {
               type: "smooth",
               kernelShape,
@@ -422,6 +433,11 @@ export function MaskToolbar({
       {!canEdit && editBlockReason && (
         <span className="text-xs text-status-caution" role="status">
           不可编辑：{editBlockReasonLabel[editBlockReason]}
+        </span>
+      )}
+      {largeCanvas && (
+        <span className="text-xs text-muted-foreground" role="status">
+          大画布分块模式：形态学仅作用当前视口，全图扫描工具已禁用
         </span>
       )}
 
@@ -567,7 +583,7 @@ export function MaskToolbar({
         type="button"
         size="sm"
         onClick={onCommit}
-        disabled={!canEdit || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"}
+        disabled={!commitAllowed || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"}
         title="确认 (Enter)"
       >
         <Check /> 确认
@@ -578,7 +594,7 @@ export function MaskToolbar({
           size="sm"
           variant="ghost"
           onClick={onCommitAndPropagate}
-          disabled={!canEdit || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"}
+          disabled={!commitAllowed || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"}
           title="保存人工纠错帧并选择定向重传播"
         >
           保存并传播

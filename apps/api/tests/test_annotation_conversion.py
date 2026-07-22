@@ -514,6 +514,38 @@ async def test_batch_execute_rejects_snapshot_drift_without_partial_results(
     )
 
 
+async def test_large_image_conversion_rejects_before_raster_allocation(
+    httpx_client_bound, db_session, super_admin
+):
+    user, token = super_admin
+    task = await _seed_task(db_session, user.id)
+    item = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert item is not None
+    item.width = 8192
+    item.height = 8192
+    source = await _seed_annotation(
+        db_session,
+        task,
+        user.id,
+        {"type": "polygon", "points": [[0, 0], [1, 0], [1, 1], [0, 1]]},
+    )
+    await db_session.commit()
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotation-conversions:dry-run",
+        json={
+            "annotation_ids": [str(source.id)],
+            "target": "mask",
+            "operation": "replace",
+            "scope": "image",
+        },
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "large_mask_full_scan_required"
+
+
 async def test_execute_rejects_conversion_report_drift_before_storage(
     httpx_client_bound, db_session, super_admin, monkeypatch
 ):

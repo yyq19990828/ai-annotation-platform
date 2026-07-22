@@ -14,6 +14,7 @@ import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
+import { TiledMaskOverlayLayer } from "./overlays/TiledMaskOverlayLayer";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { MaskBuffer } from "./shared/geometry/maskBuffer";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX } from "../state/useMaskEditor";
@@ -142,6 +143,7 @@ function SamRefineButton({
 
 interface ImageStageProps {
   rasterMaskRecords?: readonly RasterMaskRenderRecord<"annotation">[];
+  tiledMaskOverviewRecord?: RasterMaskRenderRecord<"annotation"> | null;
   rasterMaskStatusById?: ReadonlyMap<string, RasterMaskRecordStatus>;
   onRetryRasterMask?: (id: string) => void;
   maskReadOnly?: boolean;
@@ -423,6 +425,7 @@ function SamCandidateOverlay({
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
   rasterMaskRecords = [], rasterMaskStatusById = new Map(), onRetryRasterMask, maskReadOnly = false,
+  tiledMaskOverviewRecord,
   fileUrl, mediaKey, blurhash, imageWidth, imageHeight, tool, activeClass,
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap, pendingGeomMap,
@@ -564,6 +567,20 @@ export function ImageStage({
       maxY: Math.min(1, (vpSize.h - vp.ty + bufferPx) / sxH),
     };
   }, [imgW, imgH, vp.scale, vp.tx, vp.ty, vpSize.w, vpSize.h]);
+  const setMaskViewport = maskEditor?.setViewport;
+  const maskEditorBackend = maskEditor?.backend;
+  useEffect(() => {
+    if (!setMaskViewport || maskEditorBackend !== "tiled" || !viewportBBox || !imgW || !imgH) {
+      setMaskViewport?.(null);
+      return;
+    }
+    setMaskViewport({
+      x: viewportBBox.minX * imgW,
+      y: viewportBBox.minY * imgH,
+      width: (viewportBBox.maxX - viewportBBox.minX) * imgW,
+      height: (viewportBBox.maxY - viewportBBox.minY) * imgH,
+    });
+  }, [imgH, imgW, maskEditorBackend, setMaskViewport, viewportBBox]);
 
   // 把几何信息上抛给父级（Minimap / popover 锚点用）
   useEffect(() => {
@@ -1681,6 +1698,22 @@ export function ImageStage({
             imgH={imgH}
             opacity={workbenchConfig.image.maskOverlayOpacity}
             visible={true}
+          />
+        )}
+        {tool === "mask" && maskEditor?.active && maskEditor.backend === "tiled" && (
+          <TiledMaskOverlayLayer
+            tiles={maskEditor.tiledTiles}
+            overview={tiledMaskOverviewRecord
+              ? {
+                  image: tiledMaskOverviewRecord.image,
+                  x: tiledMaskOverviewRecord.bounds.x * imgW,
+                  y: tiledMaskOverviewRecord.bounds.y * imgH,
+                  width: tiledMaskOverviewRecord.bounds.w * imgW,
+                  height: tiledMaskOverviewRecord.bounds.h * imgH,
+                }
+              : null}
+            opacity={workbenchConfig.image.maskOverlayOpacity}
+            visible
           />
         )}
         {tool === "mask" && maskOperationPreviewBuffer && (

@@ -100,6 +100,7 @@ export type RasterMaskFixtureVariant =
   | "diagonal_two"
   | "island"
   | "corrupt";
+export type RasterMaskFixtureCanvas = "default" | "5k" | "8k";
 
 export interface SeedRasterMaskData {
   annotation_id: string;
@@ -274,6 +275,7 @@ export class SeedAPI {
     variant?: RasterMaskFixtureVariant;
     label?: string;
     locked?: boolean;
+    canvas?: RasterMaskFixtureCanvas;
   }): Promise<SeedRasterMaskData> {
     const res = await this.request.post(
       `${API_BASE}/api/v1/__test/seed/inject-raster-mask`,
@@ -284,6 +286,7 @@ export class SeedAPI {
           variant: opts.variant ?? "single",
           label: opts.label ?? "car",
           locked: opts.locked ?? false,
+          canvas: opts.canvas ?? "default",
         },
       },
     );

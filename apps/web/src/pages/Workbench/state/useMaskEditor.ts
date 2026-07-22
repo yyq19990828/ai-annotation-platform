@@ -1,9 +1,13 @@
 // 图片 / 视频共用的 Mask 编辑器状态层：二值 Buffer、pointer tool、operation preview 与 history。
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MaskBuffer, type MaskBrushShape } from "../stage/shared/geometry/maskBuffer";
 import { maskToPolygon } from "../stage/shared/geometry/maskToPolygon";
-import type { CocoRle } from "../stage/shared/geometry/maskRle";
+import {
+  MAX_DENSE_MASK_PIXELS,
+  MAX_VIDEO_MASK_DIMENSION,
+  type CocoRle,
+} from "../stage/shared/geometry/maskRle";
 import type {
   MaskConnectivity,
   MaskOperationReport,
@@ -33,6 +37,13 @@ import {
   type MaskHistoryResources,
 } from "../stage/shared/maskHistory";
 import type { MaskEditorPhase } from "./canEditMask";
+import {
+  LargeMaskFullScanRequiredError,
+  SparseMaskTileStore,
+  type SparseMaskRenderableTile,
+  type SparseMaskTileResources,
+  type SparseMaskViewportRect,
+} from "../stage/shared/sparseMaskTileStore";
 
 export type MaskMode = "brush" | "erase";
 export type MaskEditorTool =
@@ -66,6 +77,7 @@ export interface MaskInstanceOperationPreview {
 }
 
 export type MaskOperationStatus = "idle" | "computing" | "preview" | "error";
+export type MaskEditorBackend = "dense" | "tiled";
 
 export interface UseMaskEditorOptions {
   width: number;
@@ -75,6 +87,7 @@ export interface UseMaskEditorOptions {
   /** Test/SSR override; omitted values read navigator.deviceMemory. */
   deviceMemory?: number | null;
   historyMaxBytes?: number;
+  tileMaxBytes?: number;
 }
 
 export interface UseMaskEditorReturn {
@@ -87,6 +100,11 @@ export interface UseMaskEditorReturn {
   radius: number;
   dirty: boolean;
   buffer: MaskBuffer | null;
+  backend: MaskEditorBackend;
+  tiledTiles: readonly SparseMaskRenderableTile[];
+  tiledResources: SparseMaskTileResources | null;
+  tiledReadOnly: boolean;
+  commitInFlight: boolean;
   revision: number;
   canUndo: boolean;
   canRedo: boolean;
@@ -141,7 +159,11 @@ export interface UseMaskEditorReturn {
     lossyReason?: string;
   } | null;
   commitToRle: () => CocoRle | null;
+  commitToRleAsync: () => Promise<CocoRle | null>;
+  setViewport: (rect: SparseMaskViewportRect | null) => void;
 }
+
+let sparseEditorSessionSequence = 0;
 
 function clampRadius(radius: number): number {
   if (!Number.isFinite(radius)) return MASK_BRUSH_DEFAULT_PX;
@@ -170,12 +192,18 @@ export function useMaskEditor({
   workerPool,
   deviceMemory,
   historyMaxBytes,
+  tileMaxBytes,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
   const resolvedHistoryMaxBytes = historyMaxBytes
     ?? (deviceMemory === undefined
       ? navigatorMaskHistoryBudgetBytes()
       : maskHistoryBudgetBytes(deviceMemory));
   const bufferRef = useRef<MaskBuffer | null>(null);
+  const tiledStoreRef = useRef<SparseMaskTileStore | null>(null);
+  const tiledQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const tiledCommitPromiseRef = useRef<Promise<CocoRle | null> | null>(null);
+  const viewportRef = useRef<SparseMaskViewportRect | null>(null);
+  const viewportGenerationRef = useRef(0);
   const strokeCheckpointRef = useRef<{
     sourceRevision: number;
     checkpoint: MaskHistoryCheckpoint;
@@ -189,6 +217,11 @@ export function useMaskEditor({
   const operationAbortRef = useRef<AbortController | null>(null);
   const revisionRef = useRef(0);
   const [active, setActive] = useState(false);
+  const [backend, setBackend] = useState<MaskEditorBackend>("dense");
+  const [tiledTiles, setTiledTiles] = useState<readonly SparseMaskRenderableTile[]>([]);
+  const [tiledResources, setTiledResources] = useState<SparseMaskTileResources | null>(null);
+  const [tiledReadOnly, setTiledReadOnly] = useState(false);
+  const [commitInFlight, setCommitInFlight] = useState(false);
   const [mode, setModeState] = useState<MaskMode>("brush");
   const [tool, setToolState] = useState<MaskEditorTool>("brush");
   const [brushShape, setBrushShape] = useState<MaskBrushShape>("circle");
@@ -202,6 +235,10 @@ export function useMaskEditor({
   const [operationStatus, setOperationStatus] = useState<MaskOperationStatus>("idle");
   const [operationError, setOperationError] = useState<unknown>(undefined);
   void historyRevision;
+
+  const shouldUseTiled = width > MAX_VIDEO_MASK_DIMENSION
+    || height > MAX_VIDEO_MASK_DIMENSION
+    || width * height > MAX_DENSE_MASK_PIXELS;
 
   const bump = useCallback(() => {
     revisionRef.current += 1;
@@ -223,11 +260,71 @@ export function useMaskEditor({
     clearOperationPreview();
   }, [clearOperationPreview]);
 
-  const resetHistory = useCallback(() => {
-    historyRef.current = new MaskHistoryStore(resolvedHistoryMaxBytes);
+  const resetHistory = useCallback((store: SparseMaskTileStore | null = null) => {
+    historyRef.current.clear();
+    historyRef.current = new MaskHistoryStore(
+      resolvedHistoryMaxBytes,
+      undefined,
+      store
+        ? {
+            onRetain: (command) => store.retainHistoryCommand(command),
+            onRelease: (command) => store.releaseHistoryCommand(command),
+          }
+        : {},
+    );
     strokeCheckpointRef.current = null;
     setHistoryRevision((value) => value + 1);
   }, [historyRef, resolvedHistoryMaxBytes]);
+
+  const refreshTiledState = useCallback((store: SparseMaskTileStore) => {
+    if (tiledStoreRef.current !== store) return;
+    setTiledTiles(store.getRenderableTiles());
+    const resources = store.snapshot();
+    setTiledResources(resources);
+    setTiledReadOnly(resources.admissionBlocked);
+  }, []);
+
+  const disposeTiledStore = useCallback(() => {
+    const current = tiledStoreRef.current;
+    if (!current) return;
+    resetHistory();
+    tiledStoreRef.current = null;
+    current.dispose();
+    tiledQueueRef.current = Promise.resolve();
+    tiledCommitPromiseRef.current = null;
+    viewportRef.current = null;
+    viewportGenerationRef.current += 1;
+    setTiledTiles([]);
+    setTiledResources(null);
+    setTiledReadOnly(false);
+    setCommitInFlight(false);
+  }, [resetHistory]);
+
+  const enqueueTiledAction = useCallback((
+    store: SparseMaskTileStore,
+    action: () => void | Promise<void>,
+  ): Promise<boolean> => {
+    let succeeded = false;
+    const next = tiledQueueRef.current.then(async () => {
+      if (tiledStoreRef.current !== store) return;
+      await action();
+      if (tiledStoreRef.current !== store) return;
+      succeeded = true;
+      refreshTiledState(store);
+      bump();
+    }).catch((error: unknown) => {
+      if (tiledStoreRef.current !== store) return;
+      if (error instanceof RasterMaskWorkerCancelledError) {
+        setOperationStatus("idle");
+        return;
+      }
+      setOperationError(error);
+      setOperationStatus("error");
+      refreshTiledState(store);
+    });
+    tiledQueueRef.current = next;
+    return next.then(() => succeeded);
+  }, [bump, refreshTiledState]);
 
   const validateRleSize = useCallback((rle: CocoRle) => {
     const [rleHeight, rleWidth] = rle.size;
@@ -237,33 +334,95 @@ export function useMaskEditor({
   }, [height, width]);
 
   const installBuffer = useCallback((buffer: MaskBuffer, isDirty: boolean) => {
+    disposeTiledStore();
     bufferRef.current = buffer;
+    setBackend("dense");
     setActive(true);
     setDirty(isDirty);
     resetHistory();
     cancelActiveOperation();
     bump();
-  }, [bump, cancelActiveOperation, resetHistory]);
+  }, [bump, cancelActiveOperation, disposeTiledStore, resetHistory]);
+
+  const installTiledStore = useCallback((rle: CocoRle, isDirty: boolean) => {
+    if (!workerPool) {
+      throw new LargeMaskFullScanRequiredError(
+        "large Mask editing requires the Raster Mask Worker pool",
+      );
+    }
+    disposeTiledStore();
+    bufferRef.current = null;
+    const sequence = ++sparseEditorSessionSequence;
+    const store = new SparseMaskTileStore({
+      sessionId: `mask-editor-${sequence}`,
+      sha256: sequence.toString(16).padStart(64, "0"),
+      baseRle: rle,
+      backend: workerPool,
+      ...(deviceMemory === undefined ? {} : { deviceMemory }),
+      ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
+    });
+    tiledStoreRef.current = store;
+    resetHistory(store);
+    tiledQueueRef.current = Promise.resolve();
+    tiledCommitPromiseRef.current = null;
+    setBackend("tiled");
+    setActive(true);
+    setDirty(isDirty);
+    setTiledTiles([]);
+    setTiledResources(store.snapshot());
+    setTiledReadOnly(false);
+    cancelActiveOperation();
+    bump();
+  }, [
+    bump,
+    cancelActiveOperation,
+    deviceMemory,
+    disposeTiledStore,
+    resetHistory,
+    tileMaxBytes,
+    workerPool,
+  ]);
 
   const beginBlank = useCallback(() => {
+    if (shouldUseTiled) {
+      installTiledStore({
+        encoding: "coco_rle",
+        size: [height, width],
+        counts: [height * width],
+      }, false);
+      return;
+    }
     installBuffer(new MaskBuffer({ width, height }), false);
-  }, [height, installBuffer, width]);
+  }, [height, installBuffer, installTiledStore, shouldUseTiled, width]);
 
   const initFromPolygon = useCallback((points: ReadonlyArray<readonly [number, number]>) => {
+    if (shouldUseTiled) {
+      throw new LargeMaskFullScanRequiredError(
+        "large image polygon refinement requires an explicit bounded ROI",
+      );
+    }
     const buffer = new MaskBuffer({ width, height });
     buffer.fromPolygon(points);
     installBuffer(buffer, false);
-  }, [height, installBuffer, width]);
+  }, [height, installBuffer, shouldUseTiled, width]);
 
   const initFromRle = useCallback((rle: CocoRle) => {
     validateRleSize(rle);
+    if (shouldUseTiled) {
+      installTiledStore(rle, false);
+      return;
+    }
     installBuffer(MaskBuffer.fromRle(rle), false);
-  }, [installBuffer, validateRleSize]);
+  }, [installBuffer, installTiledStore, shouldUseTiled, validateRleSize]);
 
   const materializeFromRle = useCallback((rle: CocoRle) => {
     validateRleSize(rle);
+    if (shouldUseTiled) {
+      installTiledStore(rle, true);
+      return;
+    }
     installBuffer(MaskBuffer.fromRle(rle), true);
-  }, [installBuffer, validateRleSize]);
+  }, [installBuffer, installTiledStore, shouldUseTiled, validateRleSize]);
 
   const setRadius = useCallback((nextRadius: number) => {
     setRadiusState(clampRadius(nextRadius));
@@ -282,6 +441,27 @@ export function useMaskEditor({
   }, [cancelActiveOperation]);
 
   const paintAt = useCallback((x: number, y: number) => {
+    const tiledStore = tiledStoreRef.current;
+    if (tiledStore) {
+      if (
+        operationPreviewRef.current
+        || instanceOperationPreviewRef.current
+        || (tool !== "brush" && tool !== "erase")
+      ) return;
+      const checkpoint = strokeCheckpointRef.current?.checkpoint;
+      void enqueueTiledAction(tiledStore, async () => {
+        const changed = await tiledStore.brush({
+          cx: x,
+          cy: y,
+          radius,
+          value: mode === "erase" ? 0 : 255,
+          shape: brushShape,
+          ...(checkpoint ? { checkpoint } : {}),
+        });
+        if (changed > 0) setDirty(true);
+      });
+      return;
+    }
     const buffer = bufferRef.current;
     if (
       !buffer
@@ -297,11 +477,11 @@ export function useMaskEditor({
     else buffer.brush(x, y, radius, 255, brushShape);
     setDirty(true);
     bump();
-  }, [brushShape, bump, height, mode, radius, tool, width]);
+  }, [brushShape, bump, enqueueTiledAction, height, mode, radius, tool, width]);
 
   const beginStroke = useCallback(() => {
     if (
-      !bufferRef.current
+      (!bufferRef.current && !tiledStoreRef.current)
       || strokeCheckpointRef.current
       || operationPreviewRef.current
       || instanceOperationPreviewRef.current
@@ -315,6 +495,21 @@ export function useMaskEditor({
 
   const endStroke = useCallback(() => {
     const stroke = strokeCheckpointRef.current;
+    const tiledStore = tiledStoreRef.current;
+    if (stroke && tiledStore) {
+      strokeCheckpointRef.current = null;
+      void enqueueTiledAction(tiledStore, () => {
+        const command = tiledStore.finishHistoryCheckpoint(
+          stroke.checkpoint,
+          "stroke",
+          stroke.sourceRevision,
+        );
+        if (!command) return;
+        historyRef.current.push(command);
+        setHistoryRevision((value) => value + 1);
+      });
+      return;
+    }
     const current = bufferRef.current;
     strokeCheckpointRef.current = null;
     if (!stroke || !current) return;
@@ -322,9 +517,16 @@ export function useMaskEditor({
     if (!command) return;
     historyRef.current.push(command);
     setHistoryRevision((value) => value + 1);
-  }, [historyRef]);
+  }, [enqueueTiledAction, historyRef]);
 
   const applyHistoryCommand = useCallback((command: MaskHistoryCommand) => {
+    const tiledStore = tiledStoreRef.current;
+    if (tiledStore) {
+      tiledStore.applyHistoryCommand(command);
+      cancelActiveOperation();
+      setDirty(true);
+      return;
+    }
     const current = bufferRef.current;
     if (!current) return;
     for (const patch of command.patches) {
@@ -346,18 +548,36 @@ export function useMaskEditor({
       clearOperationPreview();
       return;
     }
+    const tiledStore = tiledStoreRef.current;
+    if (tiledStore) {
+      void enqueueTiledAction(tiledStore, () => {
+        const command = historyRef.current.undo(applyHistoryCommand);
+        if (!command) return;
+        setHistoryRevision((value) => value + 1);
+      });
+      return;
+    }
     if (!bufferRef.current) return;
     const command = historyRef.current.undo(applyHistoryCommand);
     if (!command) return;
     setHistoryRevision((value) => value + 1);
-  }, [applyHistoryCommand, clearOperationPreview, historyRef]);
+  }, [applyHistoryCommand, clearOperationPreview, enqueueTiledAction, historyRef]);
 
   const redo = useCallback(() => {
+    const tiledStore = tiledStoreRef.current;
+    if (tiledStore) {
+      void enqueueTiledAction(tiledStore, () => {
+        const command = historyRef.current.redo(applyHistoryCommand);
+        if (!command) return;
+        setHistoryRevision((value) => value + 1);
+      });
+      return;
+    }
     if (!bufferRef.current) return;
     const command = historyRef.current.redo(applyHistoryCommand);
     if (!command) return;
     setHistoryRevision((value) => value + 1);
-  }, [applyHistoryCommand, historyRef]);
+  }, [applyHistoryCommand, enqueueTiledAction, historyRef]);
 
   const previewOperation = useCallback((
     name: string,
@@ -389,6 +609,41 @@ export function useMaskEditor({
     operation: MaskOperationSpec,
     context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
   ): Promise<boolean> => {
+    const tiledStore = tiledStoreRef.current;
+    if (tiledStore) {
+      cancelActiveOperation();
+      const sourceRevision = revisionRef.current;
+      const controller = new AbortController();
+      operationAbortRef.current = controller;
+      setOperationStatus("computing");
+      setOperationError(undefined);
+      const checkpoint = tiledStore.beginHistoryCheckpoint();
+      let changedPixels = 0;
+      const succeeded = await enqueueTiledAction(tiledStore, async () => {
+        if (operation.type === "polygon") {
+          changedPixels = await tiledStore.lasso(operation.points, operation.value, {
+            checkpoint,
+            signal: controller.signal,
+          });
+        } else if (operation.type === "morphology" && viewportRef.current) {
+          changedPixels = await tiledStore.morphologyRoi(
+            viewportRef.current,
+            operation,
+            { checkpoint, signal: controller.signal },
+          );
+        } else {
+          throw new LargeMaskFullScanRequiredError();
+        }
+        const command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
+        if (!command) return;
+        historyRef.current.push(command);
+        setDirty(true);
+        setHistoryRevision((value) => value + 1);
+      });
+      if (operationAbortRef.current === controller) operationAbortRef.current = null;
+      if (succeeded) setOperationStatus("idle");
+      return succeeded && changedPixels > 0;
+    }
     const current = bufferRef.current;
     if (!current) return false;
     cancelActiveOperation();
@@ -432,7 +687,7 @@ export function useMaskEditor({
       setOperationStatus("error");
       return false;
     }
-  }, [cancelActiveOperation, height, previewOperation, width, workerPool]);
+  }, [cancelActiveOperation, enqueueTiledAction, height, historyRef, previewOperation, width, workerPool]);
 
   const previewInstanceOperation = useCallback((
     name: string,
@@ -466,6 +721,12 @@ export function useMaskEditor({
     operation: MaskInstanceOperationSpec,
     context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
   ): Promise<boolean> => {
+    if (tiledStoreRef.current) {
+      cancelActiveOperation();
+      setOperationError(new LargeMaskFullScanRequiredError());
+      setOperationStatus("error");
+      return false;
+    }
     const current = bufferRef.current;
     if (!current) return false;
     cancelActiveOperation();
@@ -553,12 +814,14 @@ export function useMaskEditor({
 
   const cancel = useCallback(() => {
     bufferRef.current = null;
+    if (tiledStoreRef.current) disposeTiledStore();
+    else resetHistory();
+    setBackend("dense");
     setActive(false);
     setDirty(false);
-    resetHistory();
     cancelActiveOperation();
     bump();
-  }, [bump, cancelActiveOperation, resetHistory]);
+  }, [bump, cancelActiveOperation, disposeTiledStore, resetHistory]);
 
   const commitToPolygon = useCallback(() => {
     const buffer = bufferRef.current;
@@ -571,6 +834,63 @@ export function useMaskEditor({
     return bufferRef.current?.toRle() ?? null;
   }, []);
 
+  const commitToRleAsync = useCallback((): Promise<CocoRle | null> => {
+    const dense = bufferRef.current;
+    if (dense) return Promise.resolve(dense.toRle());
+    const store = tiledStoreRef.current;
+    if (!store) return Promise.resolve(null);
+    if (tiledCommitPromiseRef.current) return tiledCommitPromiseRef.current;
+    setCommitInFlight(true);
+    const promise = (async () => {
+      await tiledQueueRef.current;
+      if (tiledStoreRef.current !== store) return null;
+      return store.merge();
+    })().finally(() => {
+      if (tiledCommitPromiseRef.current === promise) {
+        tiledCommitPromiseRef.current = null;
+        setCommitInFlight(false);
+      }
+    });
+    tiledCommitPromiseRef.current = promise;
+    return promise;
+  }, []);
+
+  const setViewport = useCallback((rect: SparseMaskViewportRect | null) => {
+    viewportRef.current = rect;
+    const store = tiledStoreRef.current;
+    if (!store) return;
+    const generation = ++viewportGenerationRef.current;
+    try {
+      store.setViewport(rect);
+      refreshTiledState(store);
+      void store.loadViewport().then(() => {
+        if (
+          tiledStoreRef.current !== store
+          || viewportGenerationRef.current !== generation
+        ) return;
+        refreshTiledState(store);
+        bump();
+      }).catch((error: unknown) => {
+        if (
+          tiledStoreRef.current !== store
+          || viewportGenerationRef.current !== generation
+        ) return;
+        setOperationError(error);
+        setOperationStatus("error");
+        refreshTiledState(store);
+      });
+    } catch (error: unknown) {
+      setOperationError(error);
+      setOperationStatus("error");
+    }
+  }, [bump, refreshTiledState]);
+
+  useEffect(() => () => {
+    historyRef.current.clear();
+    tiledStoreRef.current?.dispose();
+    tiledStoreRef.current = null;
+  }, [historyRef]);
+
   const historyResources = historyRef.current.snapshot();
 
   return {
@@ -582,6 +902,11 @@ export function useMaskEditor({
     radius,
     dirty,
     buffer: bufferRef.current,
+    backend,
+    tiledTiles,
+    tiledResources,
+    tiledReadOnly,
+    commitInFlight,
     revision,
     canUndo: historyRef.current.canUndo,
     canRedo: historyRef.current.canRedo,
@@ -613,5 +938,7 @@ export function useMaskEditor({
     cancel,
     commitToPolygon,
     commitToRle,
+    commitToRleAsync,
+    setViewport,
   };
 }

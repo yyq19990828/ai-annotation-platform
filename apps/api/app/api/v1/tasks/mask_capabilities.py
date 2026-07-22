@@ -17,8 +17,8 @@ from app.schemas.task import TaskMaskCapabilitiesResponse
 from app.services.raster_mask_capabilities import evaluate_raster_mask_capabilities
 from app.services.raster_mask_storage import MAX_RLE_OBJECT_BYTES
 from app.utils.raster_mask_rle import (
-    MAX_MASK_DIMENSION,
-    MAX_MASK_PIXELS,
+    MAX_IMAGE_MASK_DIMENSION,
+    MAX_IMAGE_MASK_PIXELS,
     MAX_MASK_RUNS,
 )
 
@@ -63,8 +63,8 @@ async def get_mask_capabilities(
         project_enabled=capabilities.project_enabled,
         region_enabled=capabilities.region_enabled,
         reason=reason,
-        max_dimension=MAX_MASK_DIMENSION,
-        max_pixels=MAX_MASK_PIXELS,
+        max_dimension=MAX_IMAGE_MASK_DIMENSION,
+        max_pixels=MAX_IMAGE_MASK_PIXELS,
         max_runs=MAX_MASK_RUNS,
         max_bytes=MAX_RLE_OBJECT_BYTES,
     )

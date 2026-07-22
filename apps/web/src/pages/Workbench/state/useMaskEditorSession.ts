@@ -333,6 +333,8 @@ export function useMaskEditorSession({
     return generationRef.current;
   }, [acceptTransition]);
 
+  const publicPhase: MaskEditorPhase = editor.commitInFlight ? "saving" : phase;
+
   return {
     ...editor,
     beginBlank,
@@ -342,7 +344,7 @@ export function useMaskEditorSession({
     runOperation,
     runInstanceOperation,
     cancel,
-    phase,
+    phase: publicPhase,
     sessionId,
     acceptedSessionId,
     generation,

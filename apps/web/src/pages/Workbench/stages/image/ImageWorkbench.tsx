@@ -233,6 +233,12 @@ export function ImageWorkbench({
       .filter((record) => !hiddenIds.has(record.id) && record.id !== editingRasterMaskId)
       .sort((left, right) => left.zOrder - right.zOrder);
   }, [editingRasterMaskId, rasterMaskRecords, userBoxes]);
+  const editingRasterMaskRecord = useMemo(
+    () => editingRasterMaskId
+      ? rasterMaskRecords.find((record) => record.id === editingRasterMaskId) ?? null
+      : null,
+    [editingRasterMaskId, rasterMaskRecords],
+  );
   // v0.21.11 · 图片焦点联动: 选中对象(键盘两级循环 / 点选)若出视口或过小则平移居中 + 适度放大。
   // 与视频同构, 由 common.focusSelectionEnabled gate; 默认关。用 ref 读最新盒集/几何,
   // effect 只在 selectedId 变化时跑(避免盒集逐次变身份触发重排)。
@@ -294,9 +300,10 @@ export function ImageWorkbench({
   return (
     <ImageStage
       rasterMaskRecords={displayedRasterMaskRecords}
+      tiledMaskOverviewRecord={editingRasterMaskRecord}
       rasterMaskStatusById={rasterMaskStatusById}
       onRetryRasterMask={onRetryRasterMask}
-      maskReadOnly={maskReadOnly}
+      maskReadOnly={maskReadOnly || !!maskEditor?.tiledReadOnly}
       readOnly={readOnly}
       fileUrl={fileUrl}
       mediaKey={mediaKey}

@@ -66,6 +66,29 @@ describe("MaskHistoryCheckpoint", () => {
 });
 
 describe("MaskHistoryStore", () => {
+  it("releases retained commands on redo reset, eviction, and clear", () => {
+    const retained: string[] = [];
+    const released: string[] = [];
+    const store = new MaskHistoryStore(120, 3, {
+      onRetain: (command) => retained.push(command.name),
+      onRelease: (command) => released.push(command.name),
+    });
+    const first = syntheticCommand("first", 60);
+    const second = syntheticCommand("second", 60);
+    const third = syntheticCommand("third", 60);
+    const fourth = syntheticCommand("fourth", 60);
+
+    store.push(first);
+    store.push(second);
+    store.undo(() => {});
+    store.push(third);
+    store.push(fourth);
+    store.clear();
+
+    expect(retained).toEqual(["first", "second", "third", "fourth"]);
+    expect(released).toEqual(["second", "first", "third", "fourth"]);
+  });
+
   it("counts redo in the budget, evicts oldest undo, and clears redo on a new write", () => {
     const store = new MaskHistoryStore(120, 3);
     const first = syntheticCommand("first", 60);

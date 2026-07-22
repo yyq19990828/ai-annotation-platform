@@ -655,12 +655,19 @@ export function useWorkbenchShellModel({
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const maskCapabilities = useMaskCapabilities(taskId, !!taskId && !isVideoTask);
+  const imageMaskSizeSupported = !imageWidth || !imageHeight || !maskCapabilities.data
+    ? true
+    : imageWidth <= maskCapabilities.data.max_dimension
+      && imageHeight <= maskCapabilities.data.max_dimension
+      && imageWidth * imageHeight <= maskCapabilities.data.max_pixels;
   const imageMaskPersistenceMode: "native" | "legacy" | "blocked" =
-    maskCapabilities.data?.write_enabled === true
-      ? "native"
-      : maskCapabilities.data?.legacy_polygon_commit_enabled === true
-        ? "legacy"
-        : "blocked";
+    !imageMaskSizeSupported
+      ? "blocked"
+      : maskCapabilities.data?.write_enabled === true
+        ? "native"
+        : maskCapabilities.data?.legacy_polygon_commit_enabled === true
+          ? "legacy"
+          : "blocked";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
   const videoSegmentsQuery = useQuery({
     queryKey: ["video-segments", taskId],
@@ -4508,6 +4515,7 @@ export function useWorkbenchShellModel({
     commitMaskInstanceOperation: () => void requestCommitMaskInstanceOperation(),
     cancelMaskEdit: cancelImageMaskEdit,
     maskTaskReadOnly: isLockedForActions || imageMaskInteractionBlocked || maskInstanceTransitionBusy,
+    maskPixelReadOnly: maskEditor.tiledReadOnly,
   });
 
   const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
@@ -5345,7 +5353,10 @@ export function useWorkbenchShellModel({
     segmentLocked: !!lockConflict || !!lockError,
     editorPhase: maskInstanceTransitionBusy ? "saving" : maskEditor.phase,
   };
-  const maskToolbarBlockReason = maskEditBlockReason(maskToolbarEditContext);
+  const maskToolbarBaseBlockReason = maskEditBlockReason(maskToolbarEditContext);
+  const maskToolbarBlockReason = maskEditor.tiledReadOnly
+    ? "large_canvas_budget_exceeded" as const
+    : maskToolbarBaseBlockReason;
   const selectedMaskJoinCandidates = [
     ...new Set([...(s.selectedId ? [s.selectedId] : []), ...s.selectedIds]),
   ]
@@ -5494,6 +5505,8 @@ export function useWorkbenchShellModel({
                 operationStatus={maskEditor.operationStatus}
                 operationError={maskEditor.operationError}
                 canEdit={maskToolbarBlockReason === null}
+                canCommit={maskToolbarBaseBlockReason === null}
+                largeCanvas={maskEditor.backend === "tiled"}
                 editBlockReason={maskToolbarBlockReason}
                 onSetTool={maskEditor.setTool}
                 onSetBrushShape={maskEditor.setBrushShape}

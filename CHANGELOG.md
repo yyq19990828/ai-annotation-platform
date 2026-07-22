@@ -36,6 +36,11 @@
 
 ## [Unreleased]
 
+### Added
+- **8K 图片 Mask 分块编辑**. 图片 Mask 最大支持 8192 像素单边与 67,108,864 总像素；
+  任一边超过 4096 或总像素超过 16,777,216 时，工作台自动使用稀疏 tile 后端，保留
+  笔刷、橡皮、套索加减、撤销重做、保存刷新与当前视口 ROI 形态学，不分配整图 alpha 或 canvas。
+
 ### Changed
 - **Mask 显示缓存硬预算**. 工作台按设备内存使用 Low / Standard / High 缓存与下载并发档位，在插入前执行
   retained bytes 准入并优先保护正在编辑或选中的对象；同一内容摘要的并发读取合并为一次请求。无法准入的
@@ -50,6 +55,9 @@
 - **Mask 稀疏 tile 编辑核心**. 大画布真值由不可变 base RLE 与按需解码的 512 像素 override tile 组成；
   brush、erase、lasso、精确命中与 XOR history 均只读写相交 tile。viewport 只 pin 可见区及一圈预取，
   全图缩放使用受限 overview；保存在 Worker 中合并 dirty tile 与未访问 base 区间，不物化整图 alpha。
+- **Mask 媒体边界与全图降级**. 图片持久化边界与视频、交互式 AI 的 4096 / 16,777,216
+  边界分离；超出 dense 预算的 mutation、conversion、组件、孔洞与全图扫描工具会在分配前以
+  `large_mask_full_scan_required` 明确拒绝。当可见 tile 无法进入设备硬预算时，工作台保留只读预览与未丢失草稿的重试路径。
 
 ## [0.23.9] - 2026-07-22
 

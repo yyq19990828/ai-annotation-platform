@@ -1310,6 +1310,7 @@ RasterMaskFixtureVariant = Literal[
     "island",
     "corrupt",
 ]
+RasterMaskFixtureCanvas = Literal["default", "5k", "8k"]
 
 
 class InjectRasterMaskRequest(BaseModel):
@@ -1318,6 +1319,7 @@ class InjectRasterMaskRequest(BaseModel):
     variant: RasterMaskFixtureVariant = "single"
     label: str = "car"
     locked: bool = False
+    canvas: RasterMaskFixtureCanvas = "default"
 
 
 class InjectRasterMaskResponse(BaseModel):
@@ -1361,6 +1363,26 @@ def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
     return pixels
 
 
+def _make_sparse_test_rle(width: int, height: int) -> dict:
+    """Build a centered 64px square without allocating a full large-canvas buffer."""
+    side = min(64, width, height)
+    x0 = (width - side) // 2
+    y0 = (height - side) // 2
+    y1 = y0 + side
+    counts: list[int] = []
+    offset = 0
+    for x in range(x0, x0 + side):
+        foreground_start = x * height + y0
+        counts.extend([foreground_start - offset, side])
+        offset = x * height + y1
+    counts.append(width * height - offset)
+    return {
+        "encoding": "coco_rle",
+        "size": [height, width],
+        "counts": counts,
+    }
+
+
 @router.post(
     "/seed/inject-raster-mask",
     response_model=InjectRasterMaskResponse,
@@ -1382,6 +1404,7 @@ async def seed_inject_raster_mask(
     from sqlalchemy import select
 
     from app.db.models.annotation import Annotation
+    from app.db.models.dataset import DatasetItem
     from app.db.models.task import Task
     from app.db.models.user import User
     from app.services.raster_mask_storage import (
@@ -1398,7 +1421,26 @@ async def seed_inject_raster_mask(
     if task is None or user is None:
         raise HTTPException(status_code=404, detail="task or user not found")
 
-    rle = encode_coco_rle(_make_test_raster_mask(payload.variant), 64, 48)
+    if payload.canvas != "default" and payload.variant != "single":
+        raise HTTPException(
+            status_code=422,
+            detail="large-canvas raster fixture only supports the single variant",
+        )
+    dimensions = {
+        "default": (64, 48),
+        "5k": (5120, 2880),
+        "8k": (8192, 8192),
+    }
+    width, height = dimensions[payload.canvas]
+    if payload.canvas == "default":
+        rle = encode_coco_rle(_make_test_raster_mask(payload.variant), width, height)
+    else:
+        rle = _make_sparse_test_rle(width, height)
+    if task.dataset_item_id is not None:
+        item = await db.get(DatasetItem, task.dataset_item_id)
+        if item is not None:
+            item.width = width
+            item.height = height
     if payload.variant == "corrupt":
         reference = build_rle_reference(rle)
         missing_digest = secrets.token_hex(32)

@@ -15,6 +15,11 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
     radius: 16,
     dirty: false,
     buffer: null,
+    backend: "dense",
+    tiledTiles: [],
+    tiledResources: null,
+    tiledReadOnly: false,
+    commitInFlight: false,
     revision: 0,
     canUndo: false,
     canRedo: false,
@@ -54,6 +59,8 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
     cancel: vi.fn(),
     commitToPolygon: vi.fn(() => null),
     commitToRle: vi.fn(() => null),
+    commitToRleAsync: vi.fn(async () => null),
+    setViewport: vi.fn(),
   };
 }
 

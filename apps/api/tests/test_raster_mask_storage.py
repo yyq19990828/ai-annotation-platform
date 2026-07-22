@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.services.raster_mask_storage import (
+    RasterMaskContractError,
     load_coco_rle,
     lock_raster_mask_references,
     store_coco_rle,
@@ -127,3 +128,45 @@ async def test_mask_geometry_context_matches_video_size_and_frame_count():
     geometry["keyframes"][0] = {"frame_index": 9, "mask": {"size": [720, 1280]}}
     with pytest.raises(ValueError, match="mask size"):
         await validate_mask_geometry_for_task(db, task, geometry)
+
+
+@pytest.mark.asyncio
+async def test_mask_geometry_context_separates_image_8k_from_video_4k_limit():
+    image_db = SimpleNamespace(
+        get=AsyncMock(
+            return_value=SimpleNamespace(
+                file_type="image",
+                width=8192,
+                height=8192,
+                metadata_={},
+            )
+        )
+    )
+    task = SimpleNamespace(dataset_item_id="item-1")
+    await validate_mask_geometry_for_task(
+        image_db,
+        task,
+        {"type": "raster_mask", "mask": {"size": [8192, 8192]}},
+    )
+
+    video_db = SimpleNamespace(
+        get=AsyncMock(
+            return_value=SimpleNamespace(
+                file_type="video",
+                width=4097,
+                height=1,
+                metadata_={"video": {"frame_count": 1}},
+            )
+        )
+    )
+    with pytest.raises(RasterMaskContractError) as captured:
+        await validate_mask_geometry_for_task(
+            video_db,
+            task,
+            {
+                "type": "video_track_mask",
+                "keyframes": [{"frame_index": 0, "mask": {"size": [1, 4097]}}],
+            },
+        )
+
+    assert captured.value.detail["reason"] == "video_mask_dimensions_exceeded"

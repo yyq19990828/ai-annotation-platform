@@ -152,6 +152,13 @@ COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中�
 与一圈预取；全图缩放时不解码全部 tile，而是使用不参与写入和精确命中的受限 overview。
 保存只传 dirty overrides，Worker 按 COCO column-major 顺序合并并直接复用未访问 base 区间。
 
+图片 RLE 结构与任务能力允许最大 8192 像素单边和 67,108,864 总像素；视频与交互式 AI
+仍在媒体感知边界收紧到 4096 和 16,777,216。图片任一边超过 4096 或超过 dense 像素
+预算时选择 sparse backend。大画布只开放局部 brush / erase / lasso；morphology 读取当前视口
+`ROI + halo` 并只写回 core。flood fill、component / hole、split / join / overlap、整图 morphology
+和 conversion 在分配前以 `large_mask_full_scan_required` 拒绝。如果可见 tile 也无法通过硬预算准入，
+编辑器保持只读 overview；已经 dirty 的 tile 与 history 保留到用户保存、重试或显式丢弃。
+
 ### 原子多对象 Mask 操作
 
 split / component copy / keyframe copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和

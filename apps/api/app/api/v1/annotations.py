@@ -70,6 +70,12 @@ from app.services.raster_mask_storage import (
     validate_mask_geometry_for_task,
 )
 from app.services.video_tracks import resolve_track_at_frame
+from app.utils.raster_mask_rle import (
+    MAX_IMAGE_MASK_DIMENSION,
+    MAX_IMAGE_MASK_PIXELS,
+    MAX_VIDEO_MASK_DIMENSION,
+    MAX_VIDEO_MASK_PIXELS,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -333,6 +339,42 @@ async def upload_task_mask_content(
         if source_file_type != "video":
             project = await db.get(Project, task.project_id)
             assert_raster_mask_write_enabled(project)
+        if (
+            isinstance(size, list)
+            and len(size) == 2
+            and all(type(value) is int and value > 0 for value in size)
+        ):
+            mask_height, mask_width = size
+            max_dimension = (
+                MAX_VIDEO_MASK_DIMENSION
+                if source_file_type == "video"
+                else MAX_IMAGE_MASK_DIMENSION
+            )
+            max_pixels = (
+                MAX_VIDEO_MASK_PIXELS
+                if source_file_type == "video"
+                else MAX_IMAGE_MASK_PIXELS
+            )
+            if (
+                mask_height > max_dimension
+                or mask_width > max_dimension
+                or mask_height * mask_width > max_pixels
+            ):
+                reason = (
+                    "video_mask_dimensions_exceeded"
+                    if source_file_type == "video"
+                    else "raster_mask_dimensions_exceeded"
+                )
+                raise RasterMaskContractError(
+                    status_code=422,
+                    reason=reason,
+                    message=(
+                        "mask content exceeds the media limit "
+                        f"({max_dimension}px / {max_pixels} pixels)"
+                    ),
+                    max_dimension=max_dimension,
+                    max_pixels=max_pixels,
+                )
         if item is not None:
             video = (item.metadata_ or {}).get("video")
             video = video if isinstance(video, dict) else {}
@@ -340,7 +382,7 @@ async def upload_task_mask_content(
             height = item.height or video.get("height")
             if width and height and size != [int(height), int(width)]:
                 raise ValueError(
-                    f"mask size must match source video [{height}, {width}]"
+                    f"mask size must match source media [{height}, {width}]"
                 )
         # HTTP Content-Encoding is handled before JSON parsing. This field is
         # only the object-storage preference; reference encoding stays stable.

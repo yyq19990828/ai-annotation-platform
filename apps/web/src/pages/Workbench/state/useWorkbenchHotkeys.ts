@@ -131,6 +131,8 @@ export interface UseWorkbenchHotkeysArgs {
   cancelMaskEdit?: () => void;
   /** v0.23.5 · WS-C · task 级只读 (review/completed 锁), 供 canEditMask 判定 B/E 是否可用。 */
   maskTaskReadOnly?: boolean;
+  /** 分块缓存超预算时停止像素编辑，但保留已有草稿的保存入口。 */
+  maskPixelReadOnly?: boolean;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -162,7 +164,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported, aiInteractiveEnabled,
-    maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskTaskReadOnly = false,
+    maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit,
+    maskTaskReadOnly = false, maskPixelReadOnly = false,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -249,6 +252,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         ? annotationsRef.current.find((a) => a.id === s.selectedId)
         : null;
       const maskEditable = canEditMask({
+        taskReadOnly: !!maskTaskReadOnly || !!maskPixelReadOnly,
+        annotationLocked: !!sel?.is_locked,
+        trackLocked: false,
+        segmentLocked: false,
+        editorPhase: maskEditor.phase
+          ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
+      });
+      const maskCommitAllowed = canEditMask({
         taskReadOnly: !!maskTaskReadOnly,
         annotationLocked: !!sel?.is_locked,
         trackLocked: false,
@@ -280,15 +291,17 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe;
         // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
         e.preventDefault(); e.stopImmediatePropagation();
-        if (!maskEditable) return;
         if (maskEditor.instanceOperationPreview) {
+          if (!maskEditable) return;
           commitMaskInstanceOperation?.();
           return;
         }
         if (maskEditor.operationPreview) {
+          if (!maskEditable) return;
           maskEditor.confirmOperation();
           return;
         }
+        if (!maskCommitAllowed) return;
         if (!canCommitMask(
           maskEditor.phase ?? (maskEditor.dirty ? "dirty" : "ready"),
           maskEditor.dirty,
@@ -311,7 +324,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskTaskReadOnly, annotationsRef]);
+  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskTaskReadOnly, maskPixelReadOnly, annotationsRef]);
 
   // 主 keydown / keyup
   useEffect(() => {

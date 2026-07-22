@@ -223,6 +223,55 @@ async def test_upload_task_mask_content_defaults_to_json_path(
     assert resp.json()["encoding"] == "coco_rle_ref"
 
 
+async def test_upload_task_mask_content_accepts_8k_image_envelope(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    user, token = super_admin
+    _proj, task = await _seed_task(db_session, user.id)
+    rle = {"encoding": "coco_rle", "size": [8192, 8192], "counts": [67_108_864]}
+
+    from app.services.raster_mask_storage import build_rle_reference
+
+    expected = build_rle_reference(rle)
+    store = AsyncMock(return_value=expected)
+    monkeypatch.setattr("app.api.v1.annotations.store_coco_rle", store)
+    monkeypatch.setattr(
+        "app.api.v1.annotations.lock_raster_mask_references", AsyncMock()
+    )
+    await db_session.commit()
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/mask-content",
+        json=rle,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["size"] == [8192, 8192]
+    store.assert_awaited_once()
+
+
+async def test_upload_task_mask_content_keeps_video_at_4k(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    user, token = super_admin
+    _proj, task = await _seed_task(db_session, user.id)
+    task.file_type = "video"
+    store = AsyncMock()
+    monkeypatch.setattr("app.api.v1.annotations.store_coco_rle", store)
+    await db_session.commit()
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/mask-content",
+        json={"encoding": "coco_rle", "size": [1, 4097], "counts": [4097]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "video_mask_dimensions_exceeded"
+    store.assert_not_awaited()
+
+
 # Note (D3): the per-annotation ``is_locked`` check does NOT apply at upload
 # time because the endpoint returns an anonymous reference not yet linked to
 # any annotation. ``_assert_task_editable`` still runs (task-level review /

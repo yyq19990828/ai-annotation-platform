@@ -1691,6 +1691,40 @@ def test_cumulative_algebra_budget_returns_stable_operation_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_large_image_mutation_rejects_before_pixel_algebra(
+    monkeypatch, db_session, httpx_client, super_admin
+):
+    user, token = super_admin
+    task = await _seed_image_task(db_session, user.id)
+    large_rle = {
+        "encoding": "coco_rle",
+        "size": [8192, 8192],
+        "counts": [0, 1, 67_108_863],
+    }
+    source = await _seed_annotation(db_session, task, user.id, rle=large_rle)
+    item = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert item is not None
+    item.width = 8192
+    item.height = 8192
+    reference = source.geometry["mask"]
+    load = AsyncMock(return_value=large_rle)
+    monkeypatch.setattr("app.services.mask_mutation.load_coco_rle", load)
+    monkeypatch.setattr("app.services.raster_mask_storage.load_coco_rle", load)
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    await db_session.commit()
+
+    response = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/annotations/mask-mutations:commit",
+        json=_payload(source, _scope(), reference=reference),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["reason"] == "large_mask_full_scan_required"
+    load.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_scope_candidate_limit_rejects_before_loading_unbounded_task(
     monkeypatch, db_session, httpx_client, super_admin, mask_content
 ):

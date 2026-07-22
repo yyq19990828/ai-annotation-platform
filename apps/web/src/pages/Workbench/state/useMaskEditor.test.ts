@@ -6,7 +6,7 @@
 // - commitToPolygon 空 mask 返回 null；有内容时返回外环顶点
 
 import { describe, expect, it, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import {
   useMaskEditor,
   MASK_BRUSH_MIN_PX,
@@ -16,6 +16,45 @@ import {
 import { applyMaskPolygon } from "../stage/shared/geometry/maskOperations";
 import { planMaskJoin } from "../stage/shared/geometry/maskInstanceOperations";
 import { MaskBuffer } from "../stage/shared/geometry/maskBuffer";
+import { decodeCocoRle, type CocoRle } from "../stage/shared/geometry/maskRle";
+import { applyMaskMorphology } from "../stage/shared/geometry/maskOperations";
+import type { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
+import type { RasterMaskTileOverride, RasterMaskTileRect } from "../stage/shared/rasterMaskWorkerProtocol";
+import {
+  buildRasterMaskWorkerSession,
+  decodeRasterMaskSessionTile,
+  mergeRasterMaskSessionTiles,
+  type RasterMaskWorkerSession,
+} from "../stage/shared/rasterMaskWorkerRuntime";
+
+class HookTileBackend {
+  readonly sessions = new Map<string, RasterMaskWorkerSession>();
+  mergeGate: Promise<void> | null = null;
+
+  registerSession(sessionId: string, sha256: string, rle: { size: [number, number]; counts: number[] }): void {
+    this.sessions.set(sessionId, buildRasterMaskWorkerSession(sha256, {
+      size: rle.size,
+      counts: Uint32Array.from(rle.counts),
+    }));
+  }
+
+  releaseSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+  }
+
+  async decodeTile(sessionId: string, sha256: string, rect: RasterMaskTileRect) {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.sha256 !== sha256) throw new Error("missing test session");
+    return { sessionId, sha256, rect, alpha: decodeRasterMaskSessionTile(session, rect) };
+  }
+
+  async mergeTiles(sessionId: string, sha256: string, tiles: readonly RasterMaskTileOverride[]) {
+    await this.mergeGate;
+    const session = this.sessions.get(sessionId);
+    if (!session || session.sha256 !== sha256) throw new Error("missing test session");
+    return { sessionId, sha256, rle: mergeRasterMaskSessionTiles(session, tiles) };
+  }
+}
 
 describe("useMaskEditor · 初始态", () => {
   it("初始非 active，dirty=false，buffer=null，revision=0", () => {
@@ -433,5 +472,172 @@ describe("useMaskEditor · operation preview / command", () => {
     act(() => result.current.paintAt(2, 0));
     expect(result.current.previewInstanceOperation("join_masks", plan, sourceRevision)).toBe(false);
     expect(result.current.instanceOperationPreview).toBeNull();
+  });
+});
+
+describe("useMaskEditor · tiled large canvas", () => {
+  it("rejects full-canvas polygon initialization with a stable reason", () => {
+    const backend = new HookTileBackend();
+    const { result } = renderHook(() => useMaskEditor({
+      width: 4097,
+      height: 512,
+      workerPool: backend as unknown as RasterMaskWorkerPool,
+    }));
+
+    expect(() => result.current.initFromPolygon([[0, 0], [10, 0], [10, 10]])).toThrow(
+      expect.objectContaining({ reason: "large_mask_full_scan_required" }),
+    );
+    expect(result.current.active).toBe(false);
+  });
+
+  it("keeps 8K brush/lasso/history/save on sparse tiles without a dense buffer", async () => {
+    const backend = new HookTileBackend();
+    const { result, unmount } = renderHook(() => useMaskEditor({
+      width: 8192,
+      height: 8192,
+      initialRadius: 2,
+      workerPool: backend as unknown as RasterMaskWorkerPool,
+      deviceMemory: 2,
+    }));
+
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(511, 511);
+      result.current.paintAt(512, 512);
+      result.current.endStroke();
+    });
+    let painted = 0;
+    await act(async () => {
+      const rle = await result.current.commitToRleAsync();
+      painted = rle?.counts.reduce((area, count, index) => area + (index % 2 ? count : 0), 0) ?? 0;
+    });
+
+    expect(result.current.backend).toBe("tiled");
+    expect(result.current.buffer).toBeNull();
+    expect(result.current.tiledResources).toMatchObject({ dirtyTiles: 4 });
+    expect(result.current.canUndo).toBe(true);
+    expect(painted).toBeGreaterThan(0);
+
+    await act(async () => {
+      result.current.undo();
+      const undone = await result.current.commitToRleAsync();
+      expect(undone?.counts).toEqual([67_108_864]);
+    });
+    await act(async () => {
+      result.current.redo();
+      const redone = await result.current.commitToRleAsync();
+      const area = redone?.counts.reduce((sum, count, index) => sum + (index % 2 ? count : 0), 0);
+      expect(area).toBe(painted);
+    });
+
+    unmount();
+    expect(backend.sessions.size).toBe(0);
+  });
+
+  it("applies morphology only to the current ROI core and rejects full-scan tools", async () => {
+    const backend = new HookTileBackend();
+    const width = 4097;
+    const height = 16;
+    const { result } = renderHook(() => useMaskEditor({
+      width,
+      height,
+      initialRadius: 1,
+      workerPool: backend as unknown as RasterMaskWorkerPool,
+    }));
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(100, 8);
+      result.current.endStroke();
+      result.current.setViewport({ x: 90, y: 2, width: 20, height: 12 });
+    });
+    let before = new Uint8Array();
+    await act(async () => {
+      before = decodeCocoRle(await result.current.commitToRleAsync());
+      expect(await result.current.runOperation("dilate", {
+        type: "morphology",
+        operation: "dilate",
+        kernelShape: "disk",
+        radius: 2,
+      })).toBe(true);
+    });
+    let finalRle: CocoRle | null = null;
+    await act(async () => {
+      finalRle = await result.current.commitToRleAsync();
+    });
+    const after = decodeCocoRle(finalRle);
+    const denseGolden = applyMaskMorphology(before, width, height, {
+      operation: "dilate",
+      kernelShape: "disk",
+      radius: 2,
+    }).alpha;
+    for (let y = 2; y < 14; y += 1) {
+      for (let x = 90; x < 110; x += 1) {
+        expect(after[y * width + x]).toBe(denseGolden[y * width + x]);
+      }
+    }
+    expect(after[0]).toBe(before[0]);
+
+    await act(async () => {
+      expect(await result.current.runOperation("fill_add", {
+        type: "flood_fill",
+        x: 100,
+        y: 8,
+        value: 255,
+        connectivity: 4,
+      })).toBe(false);
+    });
+    expect(result.current.operationStatus).toBe("error");
+    expect(result.current.operationError).toMatchObject({
+      reason: "large_mask_full_scan_required",
+    });
+  });
+
+  it("enters a stable read-only state when visible tiles cannot fit the cache budget", async () => {
+    const backend = new HookTileBackend();
+    const { result } = renderHook(() => useMaskEditor({
+      width: 4097,
+      height: 512,
+      workerPool: backend as unknown as RasterMaskWorkerPool,
+      tileMaxBytes: 1,
+    }));
+
+    act(() => {
+      result.current.beginBlank();
+      result.current.setViewport({ x: 0, y: 0, width: 512, height: 512 });
+    });
+
+    await waitFor(() => expect(result.current.tiledReadOnly).toBe(true));
+    expect(result.current.tiledResources).toMatchObject({
+      admissionBlocked: true,
+      liveTiles: 0,
+      dirtyTiles: 0,
+    });
+    expect(result.current.operationStatus).toBe("idle");
+  });
+
+  it("locks the editor while a tiled merge is in flight", async () => {
+    const backend = new HookTileBackend();
+    let releaseMerge!: () => void;
+    backend.mergeGate = new Promise<void>((resolve) => { releaseMerge = resolve; });
+    const { result } = renderHook(() => useMaskEditor({
+      width: 4097,
+      height: 512,
+      workerPool: backend as unknown as RasterMaskWorkerPool,
+    }));
+    act(() => {
+      result.current.beginBlank();
+      result.current.beginStroke();
+      result.current.paintAt(100, 100);
+      result.current.endStroke();
+    });
+    let commit!: Promise<unknown>;
+    act(() => { commit = result.current.commitToRleAsync(); });
+
+    await waitFor(() => expect(result.current.commitInFlight).toBe(true));
+    act(() => releaseMerge());
+    await act(async () => { await commit; });
+    expect(result.current.commitInFlight).toBe(false);
   });
 });

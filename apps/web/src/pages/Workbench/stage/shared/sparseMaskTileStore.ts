@@ -1,6 +1,11 @@
 import type { CocoRle } from "./geometry/maskRle";
 import { rasterizeMaskBrush, rasterizeMaskPolygon, type MaskRasterBrushShape } from "./geometry/maskRasterization";
 import {
+  applyMaskMorphology,
+  type MaskKernelShape,
+  type MaskMorphologyOperation,
+} from "./geometry/maskOperations";
+import {
   MaskHistoryCheckpoint,
   MASK_HISTORY_TILE_SIZE,
   type MaskHistoryCommand,
@@ -15,6 +20,7 @@ import type {
 const MIB = 1024 * 1024;
 const TILE_METADATA_BYTES = 96;
 const MAX_VIEWPORT_MATERIALIZED_TILES = 16;
+const MAX_ROI_PIXELS = 16_777_216;
 
 export interface SparseMaskTileBackend {
   registerSession: (sessionId: string, sha256: string, rle: CocoRle) => void;
@@ -61,6 +67,7 @@ export interface SparseMaskTileResources {
   tilesCreated: number;
   tilesEvicted: number;
   overviewOnly: boolean;
+  admissionBlocked: boolean;
   disposed: boolean;
 }
 
@@ -83,6 +90,15 @@ export class SparseMaskTileBudgetError extends SparseMaskTileStoreError {
   constructor(requiredBytes: number, budgetBytes: number) {
     super(`mask tile requires ${requiredBytes} bytes but the ${budgetBytes}-byte cache budget is exhausted`);
     this.name = "SparseMaskTileBudgetError";
+  }
+}
+
+export class LargeMaskFullScanRequiredError extends SparseMaskTileStoreError {
+  readonly reason = "large_mask_full_scan_required";
+
+  constructor(message = "large Mask operation requires a bounded viewport ROI") {
+    super(message);
+    this.name = "LargeMaskFullScanRequiredError";
   }
 }
 
@@ -184,6 +200,7 @@ export class SparseMaskTileStore {
   private tilesCreated = 0;
   private tilesEvicted = 0;
   private overviewOnly = false;
+  private admissionBlocked = false;
   private disposed = false;
 
   constructor(options: {
@@ -268,7 +285,10 @@ export class SparseMaskTileStore {
     if (pending) return pending;
     const rect = this.tileRect(tileX, tileY);
     const byteSize = this.requiredBytes(rect);
-    if (!this.evictFor(byteSize)) throw new SparseMaskTileBudgetError(byteSize, this.maxCacheBytes);
+    if (!this.evictFor(byteSize)) {
+      this.admissionBlocked = true;
+      throw new SparseMaskTileBudgetError(byteSize, this.maxCacheBytes);
+    }
     this.reservedBytes += byteSize;
     const promise = Promise.resolve().then(() => this.backend.decodeTile(this.sessionId, this.sha256, rect, {
       priority: options.priority ?? "current",
@@ -307,6 +327,7 @@ export class SparseMaskTileStore {
       this.tiles.set(key, tile);
       this.retainedBytes += byteSize;
       this.tilesCreated += 1;
+      this.admissionBlocked = false;
       return tile;
     }).finally(() => {
       this.reservedBytes -= byteSize;
@@ -444,6 +465,91 @@ export class SparseMaskTileStore {
     return changedPixels;
   }
 
+  async morphologyRoi(
+    rect: SparseMaskViewportRect,
+    operation: {
+      operation: MaskMorphologyOperation;
+      kernelShape: MaskKernelShape;
+      radius: number;
+    },
+    options: { checkpoint?: MaskHistoryCheckpoint; signal?: AbortSignal } = {},
+  ): Promise<number> {
+    this.assertActive();
+    const coreX0 = Math.max(0, Math.floor(rect.x));
+    const coreY0 = Math.max(0, Math.floor(rect.y));
+    const coreX1 = Math.min(this.width, Math.ceil(rect.x + rect.width));
+    const coreY1 = Math.min(this.height, Math.ceil(rect.y + rect.height));
+    if (coreX1 <= coreX0 || coreY1 <= coreY0) {
+      throw new LargeMaskFullScanRequiredError("current viewport does not contain an editable Mask ROI");
+    }
+    const passes = operation.operation === "open" || operation.operation === "close" ? 2 : 1;
+    const halo = operation.radius * passes;
+    const inputX0 = Math.max(0, coreX0 - halo);
+    const inputY0 = Math.max(0, coreY0 - halo);
+    const inputX1 = Math.min(this.width, coreX1 + halo);
+    const inputY1 = Math.min(this.height, coreY1 + halo);
+    const inputWidth = inputX1 - inputX0;
+    const inputHeight = inputY1 - inputY0;
+    if (inputWidth * inputHeight > MAX_ROI_PIXELS) {
+      throw new LargeMaskFullScanRequiredError(
+        `viewport ROI plus halo exceeds the ${MAX_ROI_PIXELS}-pixel synchronous budget`,
+      );
+    }
+
+    const inputCoords = this.tileRange({
+      x: inputX0,
+      y: inputY0,
+      width: inputWidth,
+      height: inputHeight,
+    });
+    await Promise.all(inputCoords.map(({ tileX, tileY }) => (
+      this.materializeTile(tileX, tileY, { priority: "editing", signal: options.signal })
+    )));
+    const source = new Uint8Array(inputWidth * inputHeight);
+    for (let y = inputY0; y < inputY1; y += 1) {
+      for (let x = inputX0; x < inputX1; x += 1) {
+        const tileX = Math.floor(x / MASK_HISTORY_TILE_SIZE);
+        const tileY = Math.floor(y / MASK_HISTORY_TILE_SIZE);
+        const tile = this.tiles.get(keyFor(tileX, tileY));
+        if (!tile) throw new SparseMaskTileStoreError("ROI tile is no longer materialized");
+        source[(y - inputY0) * inputWidth + x - inputX0] = (
+          tile.alpha[(y - tile.y) * tile.width + x - tile.x]
+        );
+      }
+    }
+    const after = applyMaskMorphology(source, inputWidth, inputHeight, operation).alpha;
+    const coreCoords = this.tileRange({
+      x: coreX0,
+      y: coreY0,
+      width: coreX1 - coreX0,
+      height: coreY1 - coreY0,
+    });
+    for (const { tileX, tileY } of coreCoords) {
+      const tile = this.tiles.get(keyFor(tileX, tileY));
+      if (!tile) throw new SparseMaskTileStoreError("ROI core tile is no longer materialized");
+      options.checkpoint?.captureTile(tile.tileX, tile.tileY, tile.width, tile.height, tile.alpha);
+    }
+    const touched = new Set<SparseMaskTile>();
+    let changedPixels = 0;
+    for (let y = coreY0; y < coreY1; y += 1) {
+      for (let x = coreX0; x < coreX1; x += 1) {
+        const tile = this.tiles.get(keyFor(
+          Math.floor(x / MASK_HISTORY_TILE_SIZE),
+          Math.floor(y / MASK_HISTORY_TILE_SIZE),
+        ));
+        if (!tile) throw new SparseMaskTileStoreError("ROI core tile is no longer materialized");
+        const tileIndex = (y - tile.y) * tile.width + x - tile.x;
+        const next = after[(y - inputY0) * inputWidth + x - inputX0];
+        if (tile.alpha[tileIndex] === next) continue;
+        tile.alpha[tileIndex] = next;
+        touched.add(tile);
+        changedPixels += 1;
+      }
+    }
+    for (const tile of touched) this.refreshDirty(tile);
+    return changedPixels;
+  }
+
   retainHistoryCommand(command: MaskHistoryCommand): void {
     for (const patch of command.patches) {
       const tile = this.tiles.get(keyFor(patch.tileX, patch.tileY));
@@ -529,6 +635,9 @@ export class SparseMaskTileStore {
     const unexpected = results.find((result) => (
       result.status === "rejected" && !(result.reason instanceof SparseMaskTileBudgetError)
     ));
+    this.admissionBlocked = results.some((result) => (
+      result.status === "rejected" && result.reason instanceof SparseMaskTileBudgetError
+    ));
     if (unexpected?.status === "rejected") throw unexpected.reason;
   }
 
@@ -585,6 +694,7 @@ export class SparseMaskTileStore {
       tilesCreated: this.tilesCreated,
       tilesEvicted: this.tilesEvicted,
       overviewOnly: this.overviewOnly,
+      admissionBlocked: this.admissionBlocked,
       disposed: this.disposed,
     };
   }

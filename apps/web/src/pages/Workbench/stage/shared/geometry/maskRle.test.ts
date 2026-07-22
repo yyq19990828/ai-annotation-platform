@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import fixture from "@/__fixtures__/rasterMaskRle.json";
 import {
   cocoRleContainsPixel,
+  cocoRleArea,
   decodeCocoRle,
   encodeCocoRle,
   prepareCocoRleGzipUpload,
   validateCocoRle,
+  MAX_IMAGE_MASK_PIXELS,
 } from "./maskRle";
 
 interface ValidCase {
@@ -44,6 +46,14 @@ describe("COCO uncompressed RLE", () => {
     });
   }
 
+  it("accepts the structural 8K image envelope without decoding it", () => {
+    expect(validateCocoRle({
+      encoding: "coco_rle",
+      size: [8192, 8192],
+      counts: [MAX_IMAGE_MASK_PIXELS],
+    }).size).toEqual([8192, 8192]);
+  });
+
   it("prepares HTTP gzip with a separate storage preference", async () => {
     let captured: Uint8Array | undefined;
     const prepared = await prepareCocoRleGzipUpload(
@@ -76,6 +86,7 @@ describe("COCO uncompressed RLE", () => {
     expect(cocoRleContainsPixel(rle, 2, 0)).toBe(true);
     expect(cocoRleContainsPixel(rle, -1, 0)).toBe(false);
     expect(cocoRleContainsPixel(rle, 3, 0)).toBe(false);
+    expect(cocoRleArea(rle)).toBe(3);
   });
 
   it("falls back when gzip would exceed the shared expansion ratio", async () => {

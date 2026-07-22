@@ -447,6 +447,49 @@ test.describe("raster mask native write matrix", () => {
     await expect.poll(() => reads.get(corrupt.annotation_id)).toBe(2);
     expect(reads.get(healthy.annotation_id)).toBe(1);
   });
+
+  test("13. 8K sparse Mask edits, saves and reloads through the tiled workbench", async ({ page, request, seed }) => {
+    const data = await seed.reset();
+    const taskId = data.task_ids[0];
+    const fixture = await seed.injectRasterMask({
+      taskId,
+      userEmail: data.annotator_email,
+      canvas: "8k",
+    });
+    await openTask(page, seed, data, taskId);
+    const token = await seed.accessToken(data.annotator_email);
+    const before = await getMaskContent(request, fixture.annotation_id, token);
+    expect(before.size).toEqual([8192, 8192]);
+
+    await beginRasterEdit(page, fixture.annotation_id);
+    const toolbar = page.getByTestId("mask-toolbar");
+    await expect(toolbar).toContainText("大画布分块模式");
+    const advancedTools = toolbar.getByTitle("Mask 高级工具");
+    await advancedTools.click();
+    await expect(page.getByRole("menuitem", { name: "填充全部孔洞" })).toBeDisabled();
+    await expect(page.getByText("形态学（当前视口 ROI）", { exact: true })).toBeVisible();
+    await page.mouse.click(1, 1);
+    await expect(page.getByRole("menuitem", { name: "填充全部孔洞" })).toHaveCount(0);
+    await expect(toolbar).toBeVisible();
+
+    await paintStroke(page, [0.35, 0.35], [0.46, 0.42]);
+    await expect(toolbar).toContainText("未保存");
+    const updateResponse = page.waitForResponse((response) =>
+      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`)
+      && response.request().method() === "PATCH"
+      && response.ok(),
+    );
+    await page.keyboard.press("Enter");
+    await updateResponse;
+    const saved = await getMaskContent(request, fixture.annotation_id, token);
+    expect(saved.size).toEqual([8192, 8192]);
+    expect(saved.counts).not.toEqual(before.counts);
+
+    await page.reload();
+    await beginRasterEdit(page, fixture.annotation_id);
+    await expect(page.getByTestId("mask-toolbar")).toContainText("大画布分块模式");
+    expect(await getMaskContent(request, fixture.annotation_id, token)).toEqual(saved);
+  });
 });
 
 test.describe("raster mask read-only and closed-gate matrix", () => {

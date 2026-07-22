@@ -121,6 +121,29 @@ async def test_seed_raster_mask_project_opt_in_and_content_fixtures(httpx_client
     assert corrupt.status_code == 200, corrupt.text
     assert corrupt.json()["mask"]["object_key"].endswith(".json")
 
+    five_k = await httpx_client.post(
+        "/api/v1/__test/seed/inject-raster-mask",
+        json={
+            "task_id": data["task_ids"][1],
+            "user_email": data["annotator_email"],
+            "canvas": "5k",
+        },
+    )
+    assert five_k.status_code == 200, five_k.text
+    assert five_k.json()["mask"]["size"] == [2880, 5120]
+
+    eight_k = await httpx_client.post(
+        "/api/v1/__test/seed/inject-raster-mask",
+        json={
+            "task_id": data["task_ids"][2],
+            "user_email": data["annotator_email"],
+            "canvas": "8k",
+        },
+    )
+    assert eight_k.status_code == 200, eight_k.text
+    assert eight_k.json()["mask"]["size"] == [8192, 8192]
+    assert eight_k.json()["mask"]["runs"] == 129
+
 
 async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
     """v0.8.7+ · D 方案核心断言：reset 不动非 fixture 的开发数据。
