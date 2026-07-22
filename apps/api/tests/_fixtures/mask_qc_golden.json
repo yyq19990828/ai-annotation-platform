@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "pixel_contract": {
+    "foreground_connectivity": 8,
+    "background_connectivity": 4,
+    "region_bounds": "normalized half-open [x0,y0,x1,y1)"
+  },
+  "single_frame": [
+    {
+      "id": "empty",
+      "rows": ["......", "......", "......", "......"],
+      "expected": {
+        "area_pixels": 0,
+        "component_count": 0,
+        "hole_count": 0,
+        "min_component_pixels": 0,
+        "max_component_pixels": 0,
+        "bbox_pixels": null,
+        "touches_border": false
+      }
+    },
+    {
+      "id": "diagonal_foreground_is_connected",
+      "rows": ["#.", ".#"],
+      "expected": {
+        "area_pixels": 2,
+        "component_count": 1,
+        "hole_count": 0,
+        "min_component_pixels": 2,
+        "max_component_pixels": 2,
+        "bbox_pixels": [0, 0, 2, 2],
+        "touches_border": true
+      }
+    },
+    {
+      "id": "donut_and_island",
+      "rows": [
+        "........",
+        ".###....",
+        ".#.#..#.",
+        ".###..#.",
+        "......#.",
+        "........"
+      ],
+      "expected": {
+        "area_pixels": 11,
+        "component_count": 2,
+        "hole_count": 1,
+        "min_component_pixels": 3,
+        "max_component_pixels": 8,
+        "bbox_pixels": [1, 1, 7, 5],
+        "touches_border": false
+      }
+    },
+    {
+      "id": "border_and_detached_component",
+      "rows": ["#.....", "......", "..##..", "..##.."],
+      "expected": {
+        "area_pixels": 5,
+        "component_count": 2,
+        "hole_count": 0,
+        "min_component_pixels": 1,
+        "max_component_pixels": 4,
+        "bbox_pixels": [0, 0, 4, 4],
+        "touches_border": true
+      }
+    },
+    {
+      "id": "one_pixel_bridge",
+      "rows": [".........", ".###.###.", ".#######.", ".###.###.", "........."],
+      "expected": {
+        "area_pixels": 19,
+        "component_count": 1,
+        "hole_count": 0,
+        "min_component_pixels": 19,
+        "max_component_pixels": 19,
+        "bbox_pixels": [1, 1, 8, 4],
+        "touches_border": false
+      }
+    }
+  ],
+  "overlap": {
+    "left_rows": [".###..", ".###..", "......"],
+    "right_rows": ["..###.", "..###.", "......"],
+    "expected": {
+      "left_area_pixels": 6,
+      "right_area_pixels": 6,
+      "intersection_pixels": 4,
+      "union_pixels": 8,
+      "iou_numerator": 4,
+      "iou_denominator": 8,
+      "left_containment_numerator": 4,
+      "left_containment_denominator": 6
+    }
+  },
+  "temporal_300": {
+    "frame_count": 300,
+    "image_size": [1920, 1080],
+    "track_count": 20,
+    "profiles": [
+      {
+        "id": "stable_held",
+        "copies": 5,
+        "exact_frames": [0, 50, 100, 150, 200, 250, 299]
+      },
+      {
+        "id": "two_frame_flicker",
+        "copies": 5,
+        "absent_ranges": [[120, 121]]
+      },
+      {
+        "id": "prediction_drift",
+        "copies": 5,
+        "drift_from_frame": 150,
+        "centroid_shift_per_frame": [0.001, 0.0005]
+      },
+      {
+        "id": "outside_and_occluded",
+        "copies": 5,
+        "outside_ranges": [[50, 69]],
+        "occluded_ranges": [[150, 159]]
+      }
+    ],
+    "expected": {
+      "record_count": 6000,
+      "state_counts": {
+        "exact": 4375,
+        "held": 1465,
+        "absent": 10,
+        "outside": 100,
+        "occluded": 50
+      },
+      "records_sha256": "ddafd7c21f6950c432a6682d1ccdd23d7ba5cd71da7280cc63a40d7a99c0386c"
+    }
+  },
+  "format_consumer": {
+    "id": "donut_and_island_8x6",
+    "rows": [
+      "........",
+      ".###....",
+      ".#.#..#.",
+      ".###..#.",
+      "......#.",
+      "........"
+    ],
+    "class_id": 3,
+    "instance_id": 7,
+    "track_id": 42,
+    "frame_index": 12,
+    "expected_area_pixels": 11
+  },
+  "loss_codes": [
+    "overlap_resolved",
+    "holes_polygonized",
+    "components_split",
+    "track_identity_lost",
+    "sparse_frames_collapsed",
+    "occlusion_lost",
+    "class_id_remapped",
+    "instance_id_remapped",
+    "instance_id_overflow",
+    "frame_base_changed",
+    "unknown_label",
+    "image_size_mismatch",
+    "unsupported_geometry",
+    "nonportable_media_reference"
+  ]
+}

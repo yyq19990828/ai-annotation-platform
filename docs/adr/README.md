@@ -97,3 +97,4 @@
 - [0052](0052-shared-raster-mask-and-image-geometry.md) — 图片 / 视频共享内容寻址 RLE，引入图片 `raster_mask` 与静态读取合同
 - [0053](0053-native-mask-ai-candidate-lifecycle-and-video-correction.md) — 原生 Mask AI 瞬态候选、原子接受、视频局部纠错与可回收生命周期
 - [0054](0054-raster-mask-large-canvas-memory-and-tiles.md) — 图片大画布采用稀疏 tile、XOR history 与固定 Worker pool，视频 / AI 保持 4096 边界
+- [0055](0055-mask-quality-and-format-contracts.md) — Mask 质量闭环采用版本化账本，格式适配使用 preflight、显式损失与真实 consumer 门

@@ -85,3 +85,4 @@
 | 17 | [图片 Raster Mask 工作台基准](./17-image-raster-mask-workbench-benchmark.md) | 1080p Worker decode / analyze / bitmap p50/p95、临时内存与 20 Mask 缓存字节基线 |
 | 18 | [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md) | 1080p component / hole / morphology / split 的主线程与 Worker p50/p95、Long Task 和重复 20 次 heap 基线 |
 | 19 | [Mask 大画布性能基线](./19-mask-large-canvas-performance-baseline.md) | 720p / 1080p / 4K 渲染、缓存、编辑历史、快速切帧、5K / 8K 内存边界与实施后退出门 |
+| 20 | [Mask 质检与格式生态合同](./20-mask-qc-format-contracts.md) | QC golden、格式事实标准、consumer fixture、稳定 loss / skip code 与并发 / 安全风险 |

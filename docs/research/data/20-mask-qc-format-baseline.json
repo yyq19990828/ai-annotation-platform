@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "git_sha": "69490e08334080d589ea3bbf51cd3820f99ac276",
+    "python": "3.12.11",
+    "numpy": "2.4.4",
+    "pillow": "12.2.0",
+    "platform": "Linux-5.15.0-185-generic-x86_64-with-glibc2.35",
+    "cpu": "x86_64"
+  },
+  "fixture": {
+    "path": "apps/api/tests/_fixtures/mask_qc_golden.json",
+    "sha256": "b559d1598a3627092ee99b3c9c4408a8a48b28d55df01bb7be45964db7b0747f",
+    "golden": {
+      "cases": {
+        "empty": "896d024eadf90990f60070bd422ab6e281815df579484868db4bddbab2de3cc3",
+        "diagonal_foreground_is_connected": "88e580521fd7049929941e9b87f2fa2c976c986787e1af409ffbdbfbdb65cf70",
+        "donut_and_island": "cc7a790f24e1315440121b81586968f1dc079cb27b949c128d2d6cb3ee7ff8ee",
+        "border_and_detached_component": "2827e8a0cd0c5e9b16ba22de3aebc08da1d0df5c308a6e4613ffeeb58b31137e",
+        "one_pixel_bridge": "37d9a2b28ac37f95f9cc09525392eb7364b75e665b3d1ee456689962f73aa283"
+      },
+      "overlap_sha256": "092098905da1e6600690c02c018c1524f6d29b856445b74703656c5770686c55"
+    }
+  },
+  "current_analyzer_contract_gap": {
+    "case_id": "diagonal_foreground_is_connected",
+    "current_analyzer": {
+      "foreground_connectivity": 4,
+      "component_count": 2
+    },
+    "frozen_contract": {
+      "foreground_connectivity": 8,
+      "component_count": 1
+    },
+    "matches_frozen_contract": false
+  },
+  "dense_analyze": [
+    {
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "pixels": 2073600,
+      "dense_alpha_bytes": 2073600,
+      "rle_runs": 1075,
+      "rle_json_bytes": 4016,
+      "area_pixels": 73737,
+      "component_count_current": 2,
+      "hole_count_current": 1,
+      "round_ms": [
+        492.333,
+        506.119
+      ],
+      "p50_ms": 499.226,
+      "p95_ms": 505.429,
+      "process_peak_rss_bytes_after": 1022722048
+    },
+    {
+      "resolution": "4k",
+      "width": 3840,
+      "height": 2160,
+      "pixels": 8294400,
+      "dense_alpha_bytes": 8294400,
+      "rle_runs": 2149,
+      "rle_json_bytes": 9426,
+      "area_pixels": 295254,
+      "component_count_current": 2,
+      "hole_count_current": 1,
+      "round_ms": [
+        2010.271,
+        2001.362
+      ],
+      "p50_ms": 2005.816,
+      "p95_ms": 2009.825,
+      "process_peak_rss_bytes_after": 1022722048
+    },
+    {
+      "resolution": "8k_square",
+      "width": 8192,
+      "height": 8192,
+      "pixels": 67108864,
+      "dense_alpha_bytes": 67108864,
+      "rle_runs": 4587,
+      "rle_json_bytes": 21360,
+      "area_pixels": 2387024,
+      "component_count_current": 2,
+      "hole_count_current": 1,
+      "round_ms": [
+        16402.537,
+        16364.941
+      ],
+      "p50_ms": 16383.739,
+      "p95_ms": 16400.657,
+      "process_peak_rss_bytes_after": 1022722048
+    }
+  ],
+  "temporal_foundation": {
+    "frame_count": 300,
+    "track_count": 20,
+    "record_count": 6000,
+    "state_counts": {
+      "exact": 4375,
+      "held": 1465,
+      "absent": 10,
+      "outside": 100,
+      "occluded": 50
+    },
+    "records_sha256": "ddafd7c21f6950c432a6682d1ccdd23d7ba5cd71da7280cc63a40d7a99c0386c"
+  },
+  "format_consumers": {
+    "fixture_sha256": "62497b81155474e22b1ffc670662142dc370498e5da1370f050154801a700a70",
+    "checks": {
+      "aap_json": {
+        "pixels": 11,
+        "pass": true
+      },
+      "coco_instance": {
+        "pixels": 11,
+        "pass": true
+      },
+      "binary_png": {
+        "mode": "L",
+        "pixels": 11,
+        "pass": true
+      },
+      "indexed_png_davis": {
+        "mode": "P",
+        "instance_ids": [
+          0,
+          7
+        ],
+        "pass": true
+      },
+      "mots": {
+        "frame_index": 12,
+        "track_id": 42,
+        "class_id": 3,
+        "pixels": 11,
+        "pass": true
+      }
+    },
+    "temporary_artifacts_retained": 0
+  },
+  "loss_codes": [
+    "overlap_resolved",
+    "holes_polygonized",
+    "components_split",
+    "track_identity_lost",
+    "sparse_frames_collapsed",
+    "occlusion_lost",
+    "class_id_remapped",
+    "instance_id_remapped",
+    "instance_id_overflow",
+    "frame_base_changed",
+    "unknown_label",
+    "image_size_mismatch",
+    "unsupported_geometry",
+    "nonportable_media_reference"
+  ],
+  "method": {
+    "rounds": 2,
+    "dense_analyzer": "app.services.mask_conversion.analyze_mask",
+    "large_mask_shape": "deterministic sparse donut plus detached island",
+    "timing": "perf_counter wall time; p50/p95 over recorded rounds",
+    "cleanup": "TemporaryDirectory removes all consumer packages before exit"
+  }
+}
